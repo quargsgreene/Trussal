@@ -51,8 +51,6 @@ Here are some user stories pertinent to each user category:
 ## 4. Minimum Viable Product User Stories
 * Live Coders
     * *As a live coder, I should be able to collaborate in real-time with the audience and other performers using in-browser code editors that mutually exchange data without sacrificing performance, while hosting an Algorave.* 
-    * *As a live coder, I need the option of removing disruptive audience members from the show and explaining why they have been removed.* 
-* Musical Artists
     * *As a musical artist, I need to get an idea of what my audience hears and sees, and react to it.*
     * *As a musical artist, I need to be able to collaborate with many other performers in remote locations.*
     * *As a musical artist, I should be able to see how many people are watching.*
@@ -60,7 +58,30 @@ Here are some user stories pertinent to each user category:
     * *As a concertgoer, I must able to interact with the shared emotions of the performance and other audience members.*
     * *As a concertgoer, I should be able to easily book tickets.*
 ## 5. Summary of Research
- * **Network Modeling using Graph Neural Networks (Galmés, 2024)**
- * **FairSIN: Achieving Fairness in Graph Neural Networks through Sensitive Information Neutralization (Yang, et al., 2024)**
- * **Neuroadaptive Haptics: Comparing Reinforcement Learning from Explicit Ratings and Neural Signals for Adaptive XR Systems (Gehrke, et al., 2025)**
- * **SIGMOD: U: Link Local Differential Privacy in GNNs via Bayesian Estimation (Xu, 2023)**
+Two particularly large obstacles in widespread adoption of online, real-time, collaborative musical platforms are: 1. Achieving sub 20ms rountrip audiovisual latency for the purposes o avoiding a perceptable amount of asynchrony and 2. The lack of immersive, interactive, co-creative online performing arts spaces that do not require specific, specialized, costly hardware and/or software purchases as a prerequisite for use and the provision of user feedback. Furthermore, there is a dearth of research and lack of the requisite audio codec standardization initiatives regarding posssible solutions to the aforementioned issues.
+
+Currently, mechanisms for robust user feedback and user-based application parameter tuning in musical Web XR workloads are largely limited to the use of a rather heterogeneous set of head-mounted devices, and noisy neuroimaging systems such as EEG. Existing related platforms either individually address a subset of the pertinent issues at play, or focus on a non-musical application of audio (e.g. Zoom, Microsoft), such as speech.
+
+There exist many parts of the network transmmission project, they will continue to make thlse surrounding[
+
+]
+
+The above issues imply that there is ample opportunity to focus on achieving imperceptible levels of audiovisual latency at scale by optimizing the transmission of video within a peer-to-peer network on the back end. Whether this will be accomplished merely by improving the algorithmic and physical performance of the audiovisual transmission process, or will ultimately require a suite of just-in-time imputation techniques via a machine learning model drawing from techniques such as reinforcement learning and graph neural network remains to be seen.
+
+## 6. Sprint 2 Goals
+
+Sprint 2 will focus on reducing backend audiovisual latency and investigating the suitability of multiple open source video conferencing tools for integration into a high-fidelity live audiovisual system for the web. This entails the pursuit of the following goals:
+    * Identifying and comparing the capabilities different open-source P2P video servers, particularly when it comes to the suitability for audiovisual workloads with audio sample rates at or above 44.1kHz with a bit depth of 24 bits.
+    * Choosing the P2P video server solution that will best suit the needs of the application
+    * Developing a set of benchmarks that comprise a standard of minimum acceptable audiovisual fidelity and a way to measure their attainment
+    * Understanding and starting to ameliorate the root causes technical infrastructural gaps that cause the latency issues hindering distributed remote multimedia musical collaboration and interaction, particularly with respect to each intended system component.
+
+## 7. References
+    * Networked Musical XR: where’s the limit? A preliminary investigation on the joint use of point clouds and low-latency audio communication (Turchet, et al.)
+    * Issues and Challenges of Audio Technologies for the Musical Metaverse (Boem, et al.)
+    * A Case Study in Live XR Performance (Santini)
+    * Embodiment in Extended Reality: Concepts, Challenges and Future Directions (Lara, et al.)
+    * Network Modeling using Graph Neural Networks (Galmés, 2024)
+    * FairSIN: Achieving Fairness in Graph Neural Networks through Sensitive Information Neutralization (Yang, et al., 2024)
+    * Neuroadaptive Haptics: Comparing Reinforcement Learning from Explicit Ratings and Neural Signals for Adaptive XR Systems (Gehrke, et al., 2025)
+    * SIGMOD: U: Link Local Differential Privacy in GNNs via Bayesian Estimation (Xu, 2023)
