@@ -99,6 +99,7 @@ Typical live coding practices also pose unique challenges, such as the coupling 
 Jin et al. have demonstrated the promise of a diffusion model approach in their implementation of *Audio Super Resolution (ASR)* within video conferencing applications including in music and film applications, and Verma et al. pioneered low-latency packet loss concealment via CNN architecture [13][14]. Rexford shows the viability of mitigating the inherent latency introduced by large physical distances and centralized cloud architectures via *Scallop*, a selective forwarding unit (SFU) implemented on top of WebRTC using the tenets of software-designed networking (SDN) [15] and Briscoe et al. propose the Low Latency, Low Loss, and Scalable Throughput (L4S) internet service architecture for achieving the required performance benchmarks [16].
 
 Therefore, the task will be to design an application-specialized non-standard neural audio codec alongside corresponding adaptive SFU-friendly container orchestration on the backend, before implementing a client-side interface that accepts performance audiovisual input and delivers it to audiences.
+
 ---
 ## 7. Sprint 2 Goals
 Sprint 2 will focus on the following:
