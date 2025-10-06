@@ -32,7 +32,9 @@ Trussal is a live multimedia concert platform. With a focus on and inspiration d
 | **Live Sound Engineer** | Dynamically adjusting audio-related parameters, such as frequency response and volume, from front of house, to optimize live musical performances | Quickly manipulating incoming audio from a console based on listening to performers and helping set up backline | Provides real-time audio customization and monitoring |
 ---
 **In short:**
+
 Trussal is for those seeking alternative venues and supplementation within traditional concert environments inspired by the Algorave ethos, as outlined by the corresponding set of general guidelines, with or without a prior software or electronic music background.
+
 ---
 
 ## 4. User Stories
