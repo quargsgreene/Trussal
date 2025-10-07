@@ -90,7 +90,7 @@ The following obstacles are currently paramount in hindering widespread adopting
 * Multiple factors contribute to latency accumulated, which stem from sources such as running algorithms, choice of hardware, and the physics of light and sound travel, causing latency to rapidly accumulate over long distances, even under ideal network conditions [9].
 * Making use of existing progress in this area, such as LoLa, currently either requires access to expensive, difficult-to-scale, specialized hardware and network setup, or offers limited multimedia application, such as in the case of JackTrip [10][11].
 * There is always some degree of tradeoff between fixed latency and the use of de-jitter buffers, and jitter must be dynamically estimated [8].
-* Additionally, existing HMD camera hardware implementing NMP XR applications introduces a bottleneck in the form of client-size recorded frame rate [12].
+* Additionally, existing HMD camera hardware implementing NMP XR applications introduces a bottleneck in the form of client-side recorded frame rate [12].
 
 The above issues imply not only ample opportunity to focus on achieving imperceptible levels of audiovisual latency at scale, but also the necessity of exploring not only the implementation of non-standard codecs on specialized dedicated client-side software systems, but also that of novel applications of edge computing and generative machine learning techniques in order to overcome the hurdles posed by physical distance and compensate for frequently inevitable data quality degradation, by respectively bringing computations closer to the user, as well as predicting and imputing lost data.
 
