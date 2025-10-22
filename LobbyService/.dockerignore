@@ -1,0 +1,51 @@
+# Never send your VCS to the build context
+.git
+.gitignore
+
+# Local deps & caches (install inside the image instead)
+node_modules
+.pnpm-store
+.npm
+.pnp.*
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+!.yarn/patches
+
+# Build/test output not needed for building from source
+dist
+build
+lib
+out
+coverage
+.nyc_output
+storybook-static
+
+# Framework caches
+.next
+.nuxt
+.cache
+.eslintcache
+.turbo
+.nx
+
+# Tests/docs (omit to slim context — remove if your Dockerfile COPY needs them)
+__tests__/
+tests/
+*.spec.ts
+*.test.ts
+docs/
+
+# Local env & compose (use ARG/ENV or BuildKit secrets instead)
+.env
+.env.*
+docker-compose*.yml
+
+# Editor / OS files
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
