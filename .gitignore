@@ -1,0 +1,113 @@
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+Icon?
+ehthumbs.db
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.code-workspace
+.history/
+.fleet/
+
+# --- Monorepo task runners / caches ---
+.turbo/
+.nx/cache/
+.pnpm-store/
+
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+lib/
+out/
+.next/
+.nuxt/
+.cache/
+.eslintcache
+.npm/
+.pnp.*
+*.tsbuildinfo
+coverage/
+.nyc_output/
+storybook-static/
+# Lockfiles should be tracked (reproducible builds)
+# !package-lock.json
+# !yarn.lock
+# !pnpm-lock.yaml
+
+# --- Yarn Berry (keep the important bits) ---
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+!.yarn/patches
+
+# --- Rust ---
+target/
+**/*.rs.bk
+# Keep Cargo.lock if this repo builds binaries or deployables.
+# Libraries published to crates.io may choose to ignore it.
+
+# --- Docker / Compose (local-only convenience) ---
+.docker/
+.docker-compose/
+docker-compose.override.yml
+.buildx/
+*.docker.tar
+docker-save-*.tar
+
+# --- Kubernetes / local cluster tooling ---
+.kube/
+.kubeconfig
+.k9s/
+.minikube/
+.skaffold/
+.tilt/
+.tiltbuild
+
+# --- Env / secrets (keep examples) ---
+.env
+.env.*
+!.env.example
+!.env.*.example
+.secrets/
+**/*.pem
+**/*.key
+**/*.crt
+**/*.pfx
+**/*.p12
+*.keystore
+
+# --- AWS CLI (if someone drops these in the repo by mistake) ---
+.aws/
+.aws-sso/
+
+# --- Logs / PIDs / temp ---
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.pid
+*.pid.lock
+tmp/
+temp/
+
+# --- Binaries / artifacts ---
+*.wasm
+*.exe
+*.dll
+*.so
+*.dylib
+
+# --- Misc editor swap files ---
+*.swp
+*.swo
+*~
+
