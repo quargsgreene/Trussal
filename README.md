@@ -1,4 +1,4 @@
-## Authors
+### Authors
 ---
 | Name | Email |
 | :--- | :--- |
@@ -32,7 +32,9 @@ Trussal is a live multimedia concert platform. With a focus on and inspiration d
 | **Live Sound Engineer** | Dynamically adjusting audio-related parameters, such as frequency response and volume, from front of house, to optimize live musical performances | Quickly manipulating incoming audio from a console based on listening to performers and helping set up backline | Provides real-time audio customization and monitoring |
 ---
 **In short:**
+
 Trussal is for those seeking alternative venues and supplementation within traditional concert environments inspired by the Algorave ethos, as outlined by the corresponding set of general guidelines, with or without a prior software or electronic music background.
+
 ---
 
 ## 4. User Stories
@@ -88,7 +90,7 @@ The following obstacles are currently paramount in hindering widespread adopting
 * Multiple factors contribute to latency accumulated, which stem from sources such as running algorithms, choice of hardware, and the physics of light and sound travel, causing latency to rapidly accumulate over long distances, even under ideal network conditions [9].
 * Making use of existing progress in this area, such as LoLa, currently either requires access to expensive, difficult-to-scale, specialized hardware and network setup, or offers limited multimedia application, such as in the case of JackTrip [10][11].
 * There is always some degree of tradeoff between fixed latency and the use of de-jitter buffers, and jitter must be dynamically estimated [8].
-* Additionally, existing HMD camera hardware implementing NMP XR applications introduces a bottleneck in the form of client-size recorded frame rate [12].
+* Additionally, existing HMD camera hardware implementing NMP XR applications introduces a bottleneck in the form of client-side recorded frame rate [12].
 
 The above issues imply not only ample opportunity to focus on achieving imperceptible levels of audiovisual latency at scale, but also the necessity of exploring not only the implementation of non-standard codecs on specialized dedicated client-side software systems, but also that of novel applications of edge computing and generative machine learning techniques in order to overcome the hurdles posed by physical distance and compensate for frequently inevitable data quality degradation, by respectively bringing computations closer to the user, as well as predicting and imputing lost data.
 
@@ -97,6 +99,7 @@ Typical live coding practices also pose unique challenges, such as the coupling 
 Jin et al. have demonstrated the promise of a diffusion model approach in their implementation of *Audio Super Resolution (ASR)* within video conferencing applications including in music and film applications, and Verma et al. pioneered low-latency packet loss concealment via CNN architecture [13][14]. Rexford shows the viability of mitigating the inherent latency introduced by large physical distances and centralized cloud architectures via *Scallop*, a selective forwarding unit (SFU) implemented on top of WebRTC using the tenets of software-designed networking (SDN) [15] and Briscoe et al. propose the Low Latency, Low Loss, and Scalable Throughput (L4S) internet service architecture for achieving the required performance benchmarks [16].
 
 Therefore, the task will be to design an application-specialized non-standard neural audio codec alongside corresponding adaptive SFU-friendly container orchestration on the backend, before implementing a client-side interface that accepts performance audiovisual input and delivers it to audiences.
+
 ---
 ## 7. Sprint 2 Goals
 Sprint 2 will focus on the following:
