@@ -74,6 +74,11 @@ docker-save-*.tar
 !.env.example
 !.env.*.example
 .secrets/
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
 **/*.pem
 **/*.key
 **/*.crt
@@ -84,6 +89,7 @@ docker-save-*.tar
 # --- AWS CLI (if someone drops these in the repo by mistake) ---
 .aws/
 .aws-sso/
+.aws/credentials
 
 # --- Logs / PIDs / temp ---
 logs/
