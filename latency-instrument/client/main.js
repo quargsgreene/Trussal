@@ -92,6 +92,11 @@ function startPingLoop() {
 }
 
 // User must click to start audio (browser autoplay policy)
+ const osc = audioCtx.createOscillator();
+ osc.type = 'sine';
+ osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+ osc.connect(audioCtx.destination);
+
 startBtn.addEventListener('click', async () => {
   ensureAudioContext();
 
@@ -101,4 +106,8 @@ startBtn.addEventListener('click', async () => {
 
   statusEl.textContent = 'Audio enabled. Connecting…';
   connectWs();
+  osc.start();
+  console.log("BEEP");
 });
+
+

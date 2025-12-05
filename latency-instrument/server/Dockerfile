@@ -6,7 +6,7 @@ COPY package*.json ./
 
 RUN npm ci
 
-COPY . .
+COPY server.js ./
 
 EXPOSE 8081
 

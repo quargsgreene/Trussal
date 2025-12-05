@@ -1,0 +1,14 @@
+{
+  "name": "simple-ws",
+  "version": "0.1.0",
+  "private": true,
+  "main": "simple-ws.js",
+  "scripts": {
+    "start": "node simple-ws.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "ws": "^8.18.0",
+    "wscat": "^6.1.0"
+  }
+}
