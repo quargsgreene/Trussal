@@ -21,6 +21,7 @@ services:
       - ${CONFIG}/transcripts:/usr/share/jitsi-meet/transcripts:Z
       - ${CONFIG}/web/load-test:/usr/share/jitsi-meet/load-test:Z
       - ${CONFIG}/web/nginx/meet.conf.final:/etc/nginx/sites-enabled/meet.conf:ro
+      - ./trussal-impulse.wav:/usr/share/jitsi-meet/trussal-impulse.wav
     labels:
       service: "jitsi-web"
     environment:

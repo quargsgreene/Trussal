@@ -8,13 +8,12 @@ COPY welcome-background.png  /usr/share/jitsi-meet/images/welcome-background.png
 # Translations (English)
 COPY main.json /usr/share/jitsi-meet/lang/main.json
 COPY main.json /usr/share/jitsi-meet/lang/main-enGB.json
-
 # Title / meta tags
 COPY title.html /usr/share/jitsi-meet/title.html
 # CSS overrides (already working for you)
 COPY custom.css /tmp/custom.css
 RUN cat /tmp/custom.css >> /usr/share/jitsi-meet/css/all.css
-COPY latency-worklet.js /usr/share/jitsi-meet/latency-worklet.js
+COPY latency-worklet-v2.js /usr/share/jitsi-meet/latency-worklet-v2.js
 
 # **Patch the React bundle fallback strings**
 RUN sed -i \
