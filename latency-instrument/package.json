@@ -1,0 +1,13 @@
+{
+  "name": "latency-instrument-server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "ws": "^8.18.0"
+  }
+}

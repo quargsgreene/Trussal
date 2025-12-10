@@ -1,0 +1,177 @@
+
+
+
+/* 1) Hide any built-in welcome header text inside the header container */
+body.welcome-page .header-container h1,
+body.welcome-page .header-container h2,
+body.welcome-page .header-container p {
+  display: none !important;
+}
+
+body.welcome-page #enter_room_field {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -9999px;  
+}
+
+
+/* 2) Add your own title + subtitle onto the header area */
+body.welcome-page .header-container::after {
+  content: "Trussal"; /* \A = line break */
+  white-space: pre; /* so the \A becomes a new line */
+
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  transform: translate(-50%, -50%);
+
+  text-align: center;
+  font-family: Monaco, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 600;
+  color: #9b02e8;
+}
+
+/* Make sure the header is a positioning context */
+body.welcome-page .header {
+  position: relative;
+}
+/* Outer area behind the recent-meeting card */
+body.welcome-page .welcome-page-content {
+  background: #06371f !important;           /* dark green */
+  padding-bottom: 4rem;          /* breathing room at bottom */
+}
+
+/* The card container itself (the big blue block in your screenshot) */
+body.welcome-page .welcome-page-content > div {
+  background-color: #0e3b29 !important;   /* mid green */
+  border-radius: 18px;
+  padding: 24px;
+}
+
+/* The individual recent-room row/card */
+body.welcome-page .welcome-page-content [class*="recent"] {
+  background-color: #198754 !important;   /* lighter green */
+  border-radius: 12px;
+  border: none !important;
+}
+
+
+/* Hide original Jitsi hero title/subtitle on the welcome page */
+body.welcome-page #welcome_page h1,
+body.welcome-page #welcome_page h2,
+body.welcome-page #welcome_page p,
+body.welcome-page #welcome_page .welcome-page-title,
+body.welcome-page #welcome_page .welcome-page-subtitle,
+body.welcome-page #welcome_page .welcome-page-header-text {
+  opacity: 0 !important;      /* keep layout but make them invisible */
+}
+
+
+/* Mid-green container block around the recent meetings list */
+body.welcome-page #welcome_page .welcome-page-content > * {
+  background-color: #0f5132 !important;
+  border-radius: 18px;
+  padding: 24px;
+}
+
+/* Give the room-name input area some extra top margin */
+body.welcome-page #welcome_page .welcome-page-controls {
+  margin-top: 2.5rem !important;
+}
+
+/* Light-green for the actual recent-meeting card/rows */
+body.welcome-page #welcome_page .welcome-page-content .recent-list,
+body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
+body.welcome-page #welcome_page .welcome-page-content [class*="recent"] {
+  background-color: #198754 !important;
+  border-radius: 16px;
+  border: none !important;
+}
+
+/* Hide mobile-app download strip & footer on welcome page */
+body.welcome-page .welcome-footer,
+body.welcome-page .welcome-page-mobile-apps {
+  display: none !important;
+}
+
+body, body * {
+ color: #1ff466 !important;
+ background-color: #0f5132 !important;
+}
+
+
+div
+{
+
+  background: #000 url("../images/welcome-background.png")
+              center center / cover no-repeat !important;	
+
+}
+
+button{
+	background-color: #000000 !important;
+
+}
+
+/* Make the welcome-page meeting input text + placeholder the same bright green */
+body.welcome-page #enter_room_field,
+body.welcome-page #trussal-room-field {
+  color: #1ff466 !important;  /* or whatever exact green you used above */
+}
+
+/* Placeholder text color */
+body.welcome-page #enter_room_field::placeholder,
+body.welcome-page #trussal-room-field::placeholder {
+  color: #1ff466 !important;
+  opacity: 1; /* some browsers dim the placeholder unless you force this */
+}
+
+
+/* Trussal: hide all Jitsi watermarks/logos (top-right rectangle) */
+.watermark,
+.watermark.rightwatermark,
+.watermark.leftwatermark {
+  display: none !important;
+}
+
+/* Only hide watermark on prejoin + in-conference views */
+.prejoin-screen .watermark,
+.conference .watermark {
+  display: none !important;
+}
+
+/* Trussal: hide all Jitsi pop-up notifications (including "no audio output") */
+#notifications-container,
+.notifications-container,
+#notification-container,
+.notification,
+.notification-with-icon {
+  display: none !important;
+}
+
+/* Trussal: Strudel overlay inside each video tile */
+.trussal-strudel-frame {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+
+  /* ~bottom third of the tile */
+  width:100%;
+  height: 40%;
+
+  border: none;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.85);
+
+  /* allow mouse / keyboard focus */
+  pointer-events: auto;
+}
+
+/* Make sure each video container can hold absolutely-positioned children */
+.trussal-video-host {
+  position: relative !important;
+}
