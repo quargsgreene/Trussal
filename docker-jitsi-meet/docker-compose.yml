@@ -2,7 +2,7 @@ services:
   # Frontend
   latency:
     build:
-      context: ../latency-instrument/server
+      context: ../latency-instrument
     restart: unless-stopped
     ports:
       - 8081
