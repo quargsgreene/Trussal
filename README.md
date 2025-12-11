@@ -6,6 +6,9 @@
 
 # Trussal - A Networked Algorave Platform
 
+## 0. Video
+[Link to Video](https://drive.google.com/file/d/1lUwyc61QysvvyS1FYGxXaMGErrUWAvnc/view?usp=sharing)
+
 ## 1. Introduction
 Where did the name "Trussal" come from?
 
