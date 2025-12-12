@@ -1,0 +1,26 @@
+[Unit]
+Description=Jamulus server on UDP port %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=jamulus
+Group=nogroup
+
+ExecStart=/usr/bin/Jamulus \
+  --server \
+  --nogui \
+  --port %i \
+  --serverinfo "Jamulus room on port %i" \
+
+# Basic hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
