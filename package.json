@@ -1,0 +1,17 @@
+{
+  "name": "trussal-custom-config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "deploy:local": "npm run build && sudo cp dist/custom-config.js \"$HOME/.jitsi-meet-cfg/web/custom-config.js\"",
+    "watch": "node build.mjs --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "dotenv": "^16.4.0"
+  }
+}
+
