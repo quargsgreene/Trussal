@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "deploy:local": "npm run build && sudo cp dist/custom-config.js \"$HOME/.jitsi-meet-cfg/web/custom-config.js\"",
+    "deploy:local": "npm run build && sudo cp dist/custom-config.js /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web",
     "watch": "node build.mjs --watch",
     "clean": "rm -rf dist"
   },
