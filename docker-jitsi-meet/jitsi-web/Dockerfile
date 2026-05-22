@@ -14,6 +14,7 @@ COPY title.html /usr/share/jitsi-meet/title.html
 COPY custom.css /tmp/custom.css
 RUN cat /tmp/custom.css >> /usr/share/jitsi-meet/css/all.css
 COPY latency-worklet-v2.js /usr/share/jitsi-meet/latency-worklet-v2.js
+COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 
 # **Patch the React bundle fallback strings**
 RUN sed -i \

@@ -296,52 +296,94 @@
   }
 
   // src/strudel.js
-  var STRUDEL_URL = "https://strudel.cc/#c2V0Y3BzKDEpCm4oIjwwIDEgMiAzIDQ%2BKjgiKS5zY2FsZSgnRzQgbWlub3InKQoucygiZ21fbGVhZF82X3ZvaWNlIikKLmNsaXAoc2luZS5yYW5nZSguMiwuOCkuc2xvdyg4KSkKLmp1eChyZXYpCi5yb29tKDIpCi5zb21ldGltZXMoYWRkKG5vdGUoIjEyIikpKQoubHBmKHBlcmxpbi5yYW5nZSgyMDAsMjAwMDApLnNsb3coNCkp";
+  var STRUDEL_URL = "https://strudel.cc/?xwWRfuCE8TAR";
   var TILE_SELECTORS = [
     "#largeVideoContainer",
     ".videocontainer",
     '[id^="participant_"]',
     "#localVideoContainer"
   ];
-  function isVideoTile(el) {
-    if (!el) return false;
-    return !!el.querySelector("video");
-  }
-  function attachStrudelToTile(tile) {
-    const rect = tile.getBoundingClientRect();
-    if (rect.width < 200 || rect.height < 150) return;
-    if (!tile || tile.dataset.trussalStrudel === "1") return;
-    if (!isVideoTile(tile)) return;
-    tile.dataset.trussalStrudel = "1";
-    tile.classList.add("trussal-video-host");
-    const iframe = document.createElement("iframe");
-    iframe.src = STRUDEL_URL;
-    iframe.className = "trussal-strudel-frame";
-    iframe.title = "Strudel live-coding editor";
-    iframe.setAttribute("allow", "autoplay; clipboard-write");
-    tile.appendChild(iframe);
-  }
-  function scanAndAttach() {
-    const selector = TILE_SELECTORS.join(",");
-    const tiles = document.querySelectorAll(selector);
-    tiles.forEach(attachStrudelToTile);
-  }
-  function startStrudelOverlayRender() {
-    console.log("[Trussal] Strudel overlay init");
-    scanAndAttach();
-    setInterval(scanAndAttach, 2e3);
-    const target = document.body || document.documentElement;
-    if (!target) return;
-    const obs = new MutationObserver(scanAndAttach);
-    obs.observe(target, { childList: true, subtree: true });
-  }
-  function renderStrudelOverlay() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startStrudelOverlayRender();
-    } else {
-      window.addEventListener("DOMContentLoaded", startStrudelOverlayRender);
+  function initTrussalUI() {
+    console.log("\u{1F680} [Trussal Engine] Jitsi DOM detected. Mounting custom UI layers...");
+    const styleOverride = document.createElement("style");
+    styleOverride.textContent = `      
+	.strudel-overlay-container, #strudel-grid, .custom-trussal-ui {
+		width: 25vw;
+		height: 25vh;
+		opacity: 1 !important;
+		top: 0 !important;
+		left: 0 !important;
+		right: 0 !important;
+		bottom: 0 ! important;
+		visibility: visible !important;
+		display: block !important;
+		position: fixed !important;
+		z-index: 999999 !important;
+		background-color: rgba(255, 0, 0, 0.3) !important;
+	}
+
+	.strudel-overlay-contaier button,
+	.strudel-overlay-container textarea,
+	.strudel-overlay-container input,
+	.strudel-overlay-container .strudel-repl,
+	.strudel-overlay-container a,
+	.custom-trussal-ui-element {
+	   pointer-events: auto !important;
+	}
+      `;
+    document.head.appendChild(styleOverride);
+    const myIframeOverlay = document.createElement("iframe");
+    myIframeOverlay.src = STRUDEL_URL;
+    myIframeOverlay.className = "strudel-overlay-container";
+    document.body.appendChild(myIframeOverlay);
+    function isVideoTile(el) {
+      if (!el) return false;
+      return !!el.querySelector("video");
+    }
+    function attachStrudelToTile(tile) {
+      const rect = tile.getBoundingClientRect();
+      if (rect.width < 200 || rect.height < 150) return;
+      if (!tile || tile.dataset.trussalStrudel === "1") return;
+      if (!isVideoTile(tile)) return;
+      tile.dataset.trussalStrudel = "1";
+      tile.classList.add("trussal-video-host");
+      const iframe = document.createElement("iframe");
+      iframe.src = STRUDEL_URL;
+      iframe.className = "trussal-strudel-frame";
+      iframe.title = "Strudel live-coding editor";
+      iframe.setAttribute("allow", "autoplay; clipboard-write");
+      tile.appendChild(iframe);
+    }
+    function scanAndAttach() {
+      const selector = TILE_SELECTORS.join(",");
+      const tiles = document.querySelectorAll(selector);
+      tiles.forEach(attachStrudelToTile);
+    }
+    function startStrudelOverlayRender() {
+      console.log("[Trussal] Strudel overlay init");
+      scanAndAttach();
+      setInterval(scanAndAttach, 2e3);
+      const target = document.body || document.documentElement;
+      if (!target) return;
+      const obs = new MutationObserver(scanAndAttach);
+      obs.observe(target, { childList: true, subtree: true });
+    }
+    function renderStrudelOverlay() {
+      if (document.readyState === "complete" || document.readyState === "interactive") {
+        startStrudelOverlayRender();
+      } else {
+        window.addEventListener("DOMContentLoaded", startStrudelOverlayRender);
+      }
     }
   }
+  var waitForJitsiUI = setInterval(() => {
+    const jitsiContainer = document.getElementById("videospace") || document.querySelector(".videoconference-layout");
+    const isPrejoinActive = document.getElementById("preview");
+    if (jitsiContainer && !isPrejoinActive) {
+      clearInterval(waitForJitsiUI);
+      initTrussalUI();
+    }
+  }, 200);
 
   // src/latency-instrument.js
   var BUTTON_ID = "trussal-latency-toggle";
@@ -867,6 +909,5 @@
   renderHideStartMeetingButton();
   renderPrejoinScreen();
   renderNoAudioToast();
-  renderStrudelOverlay();
   createLatencyInstrument();
 })();
