@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "deploy:local": "npm run build && sudo cp dist/custom-config.js /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web",
+    "deploy:local": "npm run build && sudo cp dist/custom-config.js /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web && sudo mkdir -p /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets && sudo cp -r dist/assets/. /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "@strudel/soundfonts": "^1.3.0",
+    "@strudel/web": "^1.3.0"
   }
 }
-

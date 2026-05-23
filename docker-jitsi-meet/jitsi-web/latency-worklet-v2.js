@@ -101,8 +101,8 @@ class LatencyProcessor extends AudioWorkletProcessor {
           if (intensity > 0.001) {
             const clamped = Math.max(0, Math.min(1, intensity));
 
-            // Drive: 1..41 (pretty extreme at 1.0)
-            const drive = 1 + clamped * 40;
+            // Drive: 1..91 (very extreme at 1.0)
+            const drive = 1 + clamped * 90;
 
             // Pre-gain
             let z = x * drive;
@@ -112,14 +112,14 @@ class LatencyProcessor extends AudioWorkletProcessor {
             if (z < -1) z = -1;
 
             // Optional "glitch": add a bit of foldback at high intensities
-            if (clamped > 0.5) {
-              const foldAmount = (clamped - 0.5) * 2; // 0..1
+            if (clamped > 0.35) {
+              const foldAmount = Math.min(1, (clamped - 0.35) * 1.5); // 0..1
               const folded = 1 - Math.abs((z % 2) - 1); // 0..1 triangle-ish
               z = z * (1 - foldAmount) + (folded * Math.sign(z)) * foldAmount;
             }
 
             // Soft clip / tame high harmonics
-            y = Math.tanh(z * 2);
+            y = Math.tanh(z * 3);
           }
 
 
@@ -129,13 +129,13 @@ class LatencyProcessor extends AudioWorkletProcessor {
             const w = this._white();
             if (noiseType < 1.5) {
               // white
-              noise = w * 0.1;
+              noise = w * 0.3;
             } else if (noiseType < 2.5) {
               // brown
-              noise = this._brown(w);
+              noise = this._brown(w) * 2.5;
             } else {
               // pink
-              noise = this._pink(w);
+              noise = this._pink(w) * 2.5;
             }
           }
 
