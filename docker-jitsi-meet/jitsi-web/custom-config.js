@@ -29707,6 +29707,120 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
 
+  // src/user-samples.js
+  var DB_NAME = "samples";
+  var DB_VERSION = 1;
+  var DB_TABLE = "usersamples";
+  var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["wav", "mp3", "flac", "ogg", "m4a", "aac"]);
+  function isAudioFile(filename) {
+    return AUDIO_EXTENSIONS.has(filename.split(".").pop().toLowerCase());
+  }
+  function openSamplesDB() {
+    return new Promise((resolve, reject) => {
+      if (typeof window === "undefined" || !("indexedDB" in window)) {
+        resolve(null);
+        return;
+      }
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const store = req.result.createObjectStore(DB_TABLE, { keyPath: "id", autoIncrement: false });
+        ["blob", "title"].forEach((c2) => store.createIndex(c2, c2, { unique: false }));
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction([DB_TABLE], "readwrite");
+        resolve({ objectStore: tx.objectStore(DB_TABLE), db });
+      };
+    });
+  }
+  async function registerSamplesFromDB(registerSampleSource2) {
+    const idb = await openSamplesDB().catch(() => null);
+    if (!idb) return;
+    const { objectStore } = idb;
+    const soundFiles = await new Promise((resolve, reject) => {
+      const q2 = objectStore.getAll();
+      q2.onerror = () => reject(q2.error);
+      q2.onsuccess = (e30) => resolve(e30.target.result);
+    });
+    if (!soundFiles?.length) return;
+    const sounds = /* @__PURE__ */ new Map();
+    await Promise.all(
+      [...soundFiles].sort((a2, b) => a2.title.localeCompare(b.title, void 0, { numeric: true, sensitivity: "base" })).map((sf) => {
+        if (!isAudioFile(sf.title)) return null;
+        const parts = sf.id.split("/");
+        const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
+        const url2 = URL.createObjectURL(sf.blob);
+        const bank2 = sounds.get(parent) ?? /* @__PURE__ */ new Map();
+        bank2.set(sf.title, url2);
+        sounds.set(parent, bank2);
+        return null;
+      }).filter(Boolean)
+    );
+    sounds.forEach((bank2, key) => {
+      const urls = Array.from(bank2.keys()).sort((a2, b) => a2.localeCompare(b)).map((t) => bank2.get(t));
+      registerSampleSource2(key, urls, { prebake: false });
+    });
+    if (sounds.size > 0) {
+      console.log("[trussal] local samples registered:", [...sounds.keys()].join(", "));
+    }
+  }
+  async function getSampleBanks() {
+    const idb = await openSamplesDB().catch(() => null);
+    if (!idb) return [];
+    const { objectStore } = idb;
+    const soundFiles = await new Promise((resolve, reject) => {
+      const q2 = objectStore.getAll();
+      q2.onerror = () => reject(q2.error);
+      q2.onsuccess = (e30) => resolve(e30.target.result);
+    }).catch(() => []);
+    if (!soundFiles?.length) return [];
+    const counts = /* @__PURE__ */ new Map();
+    for (const sf of soundFiles) {
+      if (!isAudioFile(sf.title)) continue;
+      const parts = sf.id.split("/");
+      const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
+      counts.set(parent, (counts.get(parent) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a2, b) => a2[0].localeCompare(b[0])).map(([name3, count]) => ({ name: name3, count }));
+  }
+  async function clearSamplesDB() {
+    return new Promise((resolve) => {
+      if (typeof window === "undefined" || !("indexedDB" in window)) {
+        resolve();
+        return;
+      }
+      const req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = resolve;
+      req.onerror = resolve;
+      req.onblocked = resolve;
+    });
+  }
+  async function uploadSamplesToDB(files2, onDone) {
+    const audioFiles = Array.from(files2).filter((f2) => isAudioFile(f2.name));
+    if (!audioFiles.length) {
+      onDone?.(0);
+      return;
+    }
+    const records = await Promise.all(audioFiles.map(async (f2) => {
+      const blob = await fetch(URL.createObjectURL(f2)).then((r2) => r2.blob());
+      return {
+        id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
+        title: f2.name,
+        blob
+      };
+    }));
+    const idb = await openSamplesDB();
+    if (!idb) {
+      onDone?.(0);
+      return;
+    }
+    const { objectStore } = idb;
+    records.forEach((r2) => objectStore.put(r2));
+    console.log(`[trussal] stored ${records.length} sample(s) in IDB`);
+    onDone?.(records.length);
+  }
+
   // src/strudel.js
   var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4 minor')
   .s("gm_lead_6_voice")
@@ -29720,6 +29834,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var strudelBoot = null;
   var lastEvaluated = null;
   var anyPlaying = false;
+  var runPrebake = null;
   function computePeerStrudelParams(peer) {
     const rtt = typeof peer.rtt === "number" ? peer.rtt : 0;
     const jitter = typeof peer.jitter === "number" ? peer.jitter : 0;
@@ -29796,139 +29911,138 @@ ${labeled}`;
         get: () => destinationNode
       });
       const mod2 = await loadStrudel();
-      const { initStrudel: initStrudel2, initAudio: initAudio2, samples: samples2, registerSynthSounds: registerSynthSounds2, registerZZFXSounds: registerZZFXSounds2, registerSoundfonts: registerSoundfonts2, aliasBank: aliasBank2 } = mod2;
-      await initStrudel2({
-        audioContext: audioCtx2,
-        prebake: async () => {
-          const safe = (p) => Promise.resolve(p).catch((e30) => console.warn("[strudel] prebake item failed", e30));
-          await Promise.all([
-            safe(typeof registerSynthSounds2 === "function" && registerSynthSounds2()),
-            safe(typeof registerZZFXSounds2 === "function" && registerZZFXSounds2()),
-            safe(typeof registerSoundfonts2 === "function" && registerSoundfonts2()),
-            safe(samples2(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
-            safe(samples2(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
-            safe(samples2(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: "drum-machines" })),
-            safe(samples2(`${baseCDN}/uzu-drumkit.json`, `${baseCDN}/uzu-drumkit/`, { prebake: true, tag: "drum-machines" })),
-            safe(samples2(`${baseCDN}/uzu-wavetables.json`, `${baseCDN}/uzu-wavetables/`, { prebake: true })),
-            safe(samples2(`${baseCDN}/mridangam.json`, `${baseCDN}/mrid/`, { prebake: true, tag: "drum-machines" })),
-            safe(samples2(
-              {
-                casio: ["casio/high.wav", "casio/low.wav", "casio/noise.wav"],
-                crow: ["crow/000_crow.wav", "crow/001_crow2.wav", "crow/002_crow3.wav", "crow/003_crow4.wav"],
-                insect: [
-                  "insect/000_everglades_conehead.wav",
-                  "insect/001_robust_shieldback.wav",
-                  "insect/002_seashore_meadow_katydid.wav"
-                ],
-                wind: [
-                  "wind/000_wind1.wav",
-                  "wind/001_wind10.wav",
-                  "wind/002_wind2.wav",
-                  "wind/003_wind3.wav",
-                  "wind/004_wind4.wav",
-                  "wind/005_wind5.wav",
-                  "wind/006_wind6.wav",
-                  "wind/007_wind7.wav",
-                  "wind/008_wind8.wav",
-                  "wind/009_wind9.wav"
-                ],
-                jazz: [
-                  "jazz/000_BD.wav",
-                  "jazz/001_CB.wav",
-                  "jazz/002_FX.wav",
-                  "jazz/003_HH.wav",
-                  "jazz/004_OH.wav",
-                  "jazz/005_P1.wav",
-                  "jazz/006_P2.wav",
-                  "jazz/007_SN.wav"
-                ],
-                metal: [
-                  "metal/000_0.wav",
-                  "metal/001_1.wav",
-                  "metal/002_2.wav",
-                  "metal/003_3.wav",
-                  "metal/004_4.wav",
-                  "metal/005_5.wav",
-                  "metal/006_6.wav",
-                  "metal/007_7.wav",
-                  "metal/008_8.wav",
-                  "metal/009_9.wav"
-                ],
-                east: [
-                  "east/000_nipon_wood_block.wav",
-                  "east/001_ohkawa_mute.wav",
-                  "east/002_ohkawa_open.wav",
-                  "east/003_shime_hi.wav",
-                  "east/004_shime_hi_2.wav",
-                  "east/005_shime_mute.wav",
-                  "east/006_taiko_1.wav",
-                  "east/007_taiko_2.wav",
-                  "east/008_taiko_3.wav"
-                ],
-                space: [
-                  "space/000_0.wav",
-                  "space/001_1.wav",
-                  "space/002_11.wav",
-                  "space/003_12.wav",
-                  "space/004_13.wav",
-                  "space/005_14.wav",
-                  "space/006_15.wav",
-                  "space/007_16.wav",
-                  "space/008_17.wav",
-                  "space/009_18.wav",
-                  "space/010_2.wav",
-                  "space/011_3.wav",
-                  "space/012_4.wav",
-                  "space/013_5.wav",
-                  "space/014_6.wav",
-                  "space/015_7.wav",
-                  "space/016_8.wav",
-                  "space/017_9.wav"
-                ],
-                numbers: [
-                  "numbers/0.wav",
-                  "numbers/1.wav",
-                  "numbers/2.wav",
-                  "numbers/3.wav",
-                  "numbers/4.wav",
-                  "numbers/5.wav",
-                  "numbers/6.wav",
-                  "numbers/7.wav",
-                  "numbers/8.wav"
-                ],
-                num: [
-                  "num/00.wav",
-                  "num/01.wav",
-                  "num/02.wav",
-                  "num/03.wav",
-                  "num/04.wav",
-                  "num/05.wav",
-                  "num/06.wav",
-                  "num/07.wav",
-                  "num/08.wav",
-                  "num/09.wav",
-                  "num/10.wav",
-                  "num/11.wav",
-                  "num/12.wav",
-                  "num/13.wav",
-                  "num/14.wav",
-                  "num/15.wav",
-                  "num/16.wav",
-                  "num/17.wav",
-                  "num/18.wav",
-                  "num/19.wav",
-                  "num/20.wav"
-                ]
-              },
-              `${baseCDN}/Dirt-Samples/`,
-              { prebake: true }
-            ))
-          ]);
-          if (typeof aliasBank2 === "function") {
-            safe(aliasBank2(`${baseCDN}/tidal-drum-machines-alias.json`));
-          }
+      const { initStrudel: initStrudel2, initAudio: initAudio2, samples: samples2, registerSynthSounds: registerSynthSounds2, registerZZFXSounds: registerZZFXSounds2, registerSoundfonts: registerSoundfonts2, aliasBank: aliasBank2, registerSampleSource: registerSampleSource2 } = mod2;
+      runPrebake = async () => {
+        const safe = (p) => Promise.resolve(p).catch((e30) => console.warn("[strudel] prebake item failed", e30));
+        await Promise.all([
+          safe(typeof registerSynthSounds2 === "function" && registerSynthSounds2()),
+          safe(typeof registerZZFXSounds2 === "function" && registerZZFXSounds2()),
+          safe(typeof registerSoundfonts2 === "function" && registerSoundfonts2()),
+          safe(typeof registerSampleSource2 === "function" && registerSamplesFromDB(registerSampleSource2)),
+          safe(samples2(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
+          safe(samples2(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
+          safe(samples2(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: "drum-machines" })),
+          safe(samples2(`${baseCDN}/uzu-drumkit.json`, `${baseCDN}/uzu-drumkit/`, { prebake: true, tag: "drum-machines" })),
+          safe(samples2(`${baseCDN}/uzu-wavetables.json`, `${baseCDN}/uzu-wavetables/`, { prebake: true })),
+          safe(samples2(`${baseCDN}/mridangam.json`, `${baseCDN}/mrid/`, { prebake: true, tag: "drum-machines" })),
+          safe(samples2(
+            {
+              casio: ["casio/high.wav", "casio/low.wav", "casio/noise.wav"],
+              crow: ["crow/000_crow.wav", "crow/001_crow2.wav", "crow/002_crow3.wav", "crow/003_crow4.wav"],
+              insect: [
+                "insect/000_everglades_conehead.wav",
+                "insect/001_robust_shieldback.wav",
+                "insect/002_seashore_meadow_katydid.wav"
+              ],
+              wind: [
+                "wind/000_wind1.wav",
+                "wind/001_wind10.wav",
+                "wind/002_wind2.wav",
+                "wind/003_wind3.wav",
+                "wind/004_wind4.wav",
+                "wind/005_wind5.wav",
+                "wind/006_wind6.wav",
+                "wind/007_wind7.wav",
+                "wind/008_wind8.wav",
+                "wind/009_wind9.wav"
+              ],
+              jazz: [
+                "jazz/000_BD.wav",
+                "jazz/001_CB.wav",
+                "jazz/002_FX.wav",
+                "jazz/003_HH.wav",
+                "jazz/004_OH.wav",
+                "jazz/005_P1.wav",
+                "jazz/006_P2.wav",
+                "jazz/007_SN.wav"
+              ],
+              metal: [
+                "metal/000_0.wav",
+                "metal/001_1.wav",
+                "metal/002_2.wav",
+                "metal/003_3.wav",
+                "metal/004_4.wav",
+                "metal/005_5.wav",
+                "metal/006_6.wav",
+                "metal/007_7.wav",
+                "metal/008_8.wav",
+                "metal/009_9.wav"
+              ],
+              east: [
+                "east/000_nipon_wood_block.wav",
+                "east/001_ohkawa_mute.wav",
+                "east/002_ohkawa_open.wav",
+                "east/003_shime_hi.wav",
+                "east/004_shime_hi_2.wav",
+                "east/005_shime_mute.wav",
+                "east/006_taiko_1.wav",
+                "east/007_taiko_2.wav",
+                "east/008_taiko_3.wav"
+              ],
+              space: [
+                "space/000_0.wav",
+                "space/001_1.wav",
+                "space/002_11.wav",
+                "space/003_12.wav",
+                "space/004_13.wav",
+                "space/005_14.wav",
+                "space/006_15.wav",
+                "space/007_16.wav",
+                "space/008_17.wav",
+                "space/009_18.wav",
+                "space/010_2.wav",
+                "space/011_3.wav",
+                "space/012_4.wav",
+                "space/013_5.wav",
+                "space/014_6.wav",
+                "space/015_7.wav",
+                "space/016_8.wav",
+                "space/017_9.wav"
+              ],
+              numbers: [
+                "numbers/0.wav",
+                "numbers/1.wav",
+                "numbers/2.wav",
+                "numbers/3.wav",
+                "numbers/4.wav",
+                "numbers/5.wav",
+                "numbers/6.wav",
+                "numbers/7.wav",
+                "numbers/8.wav"
+              ],
+              num: [
+                "num/00.wav",
+                "num/01.wav",
+                "num/02.wav",
+                "num/03.wav",
+                "num/04.wav",
+                "num/05.wav",
+                "num/06.wav",
+                "num/07.wav",
+                "num/08.wav",
+                "num/09.wav",
+                "num/10.wav",
+                "num/11.wav",
+                "num/12.wav",
+                "num/13.wav",
+                "num/14.wav",
+                "num/15.wav",
+                "num/16.wav",
+                "num/17.wav",
+                "num/18.wav",
+                "num/19.wav",
+                "num/20.wav"
+              ]
+            },
+            `${baseCDN}/Dirt-Samples/`,
+            { prebake: true }
+          ))
+        ]);
+        if (typeof aliasBank2 === "function") {
+          safe(aliasBank2(`${baseCDN}/tidal-drum-machines-alias.json`));
         }
-      });
+      };
+      await initStrudel2({ audioContext: audioCtx2, prebake: runPrebake });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({});
@@ -29973,6 +30087,19 @@ ${labeled}`;
     }
     anyPlaying = false;
     lastEvaluated = null;
+  }
+  async function refreshLocalSamples() {
+    const mod2 = strudelMod;
+    if (!mod2 || typeof mod2.registerSampleSource !== "function") return;
+    await registerSamplesFromDB(mod2.registerSampleSource).catch(
+      (e30) => console.warn("[strudel] refreshLocalSamples failed", e30)
+    );
+  }
+  async function rebakeStrudel() {
+    const mod2 = strudelMod;
+    if (!mod2 || !runPrebake) return;
+    if (typeof mod2.resetLoadedSounds === "function") mod2.resetLoadedSounds();
+    await runPrebake().catch((e30) => console.warn("[strudel] rebake failed", e30));
   }
   subscribePeerState((event, payload) => {
     if (event !== "peer-upsert" && event !== "peer-leave") return;
@@ -30630,6 +30757,11 @@ ${code2}${BTN_MARKER}`;
   var codeDebounce = null;
   var lastStatus = "Idle";
   var routedSet = /* @__PURE__ */ new Set();
+  var sampleBanks = [];
+  async function refreshSampleBanks() {
+    sampleBanks = await getSampleBanks().catch(() => []);
+    renderAll();
+  }
   function isInMeeting() {
     const body = document.body;
     if (!body) return false;
@@ -30806,6 +30938,22 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
     #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
 
+    #${OVERLAY_ID} .ts-sample-banks {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-bank {
+      padding: 1px 7px; border-radius: 3px;
+      background: rgba(31,244,102,0.1); color: #1ff466;
+      border: 1px solid rgba(31,244,102,0.25);
+      white-space: nowrap;
+    }
+    #${OVERLAY_ID} .ts-sample-banks-del {
+      margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
+      background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+
     #${BUTTON_ID} {
       position: fixed; bottom: 80px; right: 20px;
       z-index: 9999;
@@ -30913,10 +31061,17 @@ ${code2}${BTN_MARKER}`;
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
         <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load audio files from disk into Strudel">\u2B06 Samples</button>
+        <input type="file" class="ts-samples-input" accept="audio/*" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
       </div>` : `<div class="ts-section-controls"><span class="ts-readonly-badge">READ ONLY</span></div>`;
     const playing = peer.playing ? "Playing" : "Idle";
     const status = isLocal ? lastStatus : playing;
+    const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
+    <div class="ts-sample-banks">
+      ${sampleBanks.map((b) => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join("")}
+      <button class="ts-sample-banks-del" data-action="delete-samples">\xD7 delete all user samples</button>
+    </div>` : "";
     container.innerHTML = `
     <div class="ts-detail-header">
       <div class="ts-detail-name">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
@@ -30937,6 +31092,7 @@ ${code2}${BTN_MARKER}`;
         <div class="ts-section-title">Strudel</div>
         ${strudelControls}
       </div>
+      ${sampleBanksRow}
       ${codeBlock}
       ${isLocal ? '<div class="ts-voice-btns"></div>' : ""}
     </div>
@@ -30986,6 +31142,38 @@ ${code2}${BTN_MARKER}`;
     if (stopBtn) stopBtn.addEventListener("click", onStopClick);
     const captureBtnEl = container.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
+    const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
+    const samplesInput = container.querySelector(".ts-samples-input");
+    if (loadSamplesBtn && samplesInput) {
+      loadSamplesBtn.addEventListener("click", () => samplesInput.click());
+      samplesInput.addEventListener("change", async () => {
+        const files2 = samplesInput.files;
+        if (!files2 || !files2.length) return;
+        setStatus("Loading samples\u2026");
+        await uploadSamplesToDB(files2, async (count) => {
+          if (count === 0) {
+            setStatus("No audio files found");
+            return;
+          }
+          await refreshLocalSamples();
+          await refreshSampleBanks();
+          setStatus(`Loaded ${count} sample${count === 1 ? "" : "s"} \u2014 use s("foldername") in patterns`);
+        });
+        samplesInput.value = "";
+      });
+    }
+    const deleteBtn = container.querySelector('[data-action="delete-samples"]');
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", async () => {
+        if (!window.confirm("Delete all imported user samples?")) return;
+        setStatus("Deleting samples\u2026");
+        await clearSamplesDB();
+        sampleBanks = [];
+        await rebakeStrudel();
+        setStatus("User samples deleted");
+        renderAll();
+      });
+    }
   }
   async function onEvalAndPlay(code2) {
     setStatus("Starting\u2026");
@@ -31157,6 +31345,7 @@ ${voiceCode}${BTN_MARKER2}`);
       overlay.style.display = "none";
     });
     injectFacialGestureToggle(overlay.querySelector(".ts-header"));
+    refreshSampleBanks();
     const localPeer2 = getLocalPeer();
     if (localPeer2.jitsiId && !localPeer2.pattern) {
       let seed2 = DEFAULT_PATTERN;
