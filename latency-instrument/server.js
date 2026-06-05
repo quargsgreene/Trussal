@@ -96,7 +96,25 @@ wss.on('connection', (ws, req) => {
         record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
 
         const room = getRoom(roomName);
-        const roster = Array.from(room.values()).map(publicView);
+
+        // Evict any stale entry with the same jitsiId (e.g. a lingering connection
+        // from a reconnect or a re-hello on the same socket after displayName change).
+        // Broadcast peer-leave first so existing peers remove the old entry.
+        if (record.jitsiId) {
+          for (const [stalePeerId, staleRecord] of room.entries()) {
+            if (stalePeerId !== peerId && staleRecord.jitsiId === record.jitsiId) {
+              room.delete(stalePeerId);
+              broadcast(room, peerId, { type: 'peer-leave', peerId: stalePeerId });
+              break;
+            }
+          }
+        }
+
+        // Exclude this peer's own record from the roster (guards against re-hello
+        // on the same socket where the record is already present in the room).
+        const roster = Array.from(room.values())
+          .filter(r => r.peerId !== peerId)
+          .map(publicView);
         room.set(peerId, record);
 
         send(ws, { type: 'roster', peers: roster });

@@ -1,9 +1,12 @@
 import 'dotenv/config';
 import esbuild from 'esbuild';
 import { mkdirSync, copyFileSync, readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const STRUDEL_ASSETS_SRC = 'node_modules/@strudel/web/dist/assets';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STRUDEL_FORK_WEB = resolve(__dirname, '../strudel-fork/packages/web');
+const STRUDEL_ASSETS_SRC = join(STRUDEL_FORK_WEB, 'dist/assets');
 const STRUDEL_ASSETS_DEST = 'dist/assets';
 
 // Strudel's bundle references a SharedWorker via `new URL("assets/clockworker-*.js", import.meta.url)`,
@@ -24,6 +27,15 @@ await esbuild.build({
 	entryPoints: ['src/index.js'],
 	outfile: 'dist/custom-config.js',
 	bundle: true,
+	// Redirect strudel packages to the local strudel-fork builds. Core and
+	// webaudio are pinned to Trussal's node_modules so esbuild doesn't walk
+	// into strudel-fork's pnpm workspace and encounter ?audioworklet imports.
+	alias: {
+		'@strudel/web': join(STRUDEL_FORK_WEB, 'dist/index.mjs'),
+		'@strudel/soundfonts': resolve(__dirname, '../strudel-fork/packages/soundfonts/dist/index.mjs'),
+		'@strudel/core': resolve(__dirname, 'node_modules/@strudel/core/dist/index.mjs'),
+		'@strudel/webaudio': resolve(__dirname, 'node_modules/@strudel/webaudio/dist/index.mjs'),
+	},
 	// Capture our own <script> URL synchronously at script load so
 	// `import.meta.url` (used by Strudel for its SharedWorker asset) resolves
 	// to a path relative to custom-config.js. document.currentScript is only

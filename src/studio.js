@@ -21,6 +21,7 @@ import {
   sendLocalPlaying
 } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel, DEFAULT_PATTERN } from './strudel.js';
+import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
 import {
   bootAudioEngine,
   subscribeAudioRouting,
@@ -210,6 +211,20 @@ function injectStyles() {
       max-width: 220px;
     }
 
+    #${OVERLAY_ID} .ts-voice-btns {
+      display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
+    }
+    #${OVERLAY_ID} .ts-voice-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: transparent; color: #7aa68a;
+      font-size: 11px; font-family: monospace; cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
+    #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+
     #${BUTTON_ID} {
       position: fixed; bottom: 80px; right: 20px;
       z-index: 9999;
@@ -360,6 +375,7 @@ function renderDetail(container) {
         ${strudelControls}
       </div>
       ${codeBlock}
+      ${isLocal ? '<div class="ts-voice-btns"></div>' : ''}
     </div>
 
     <div class="ts-status">${escapeHtml(status)}</div>
@@ -375,6 +391,7 @@ function renderDetail(container) {
         try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
         sendLocalPattern(codeEl.value);
       }, 200);
+      renderVoiceButtons(container, codeEl.value);
     });
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -490,6 +507,39 @@ async function onCaptureClick() {
   }
 }
 
+const BTN_MARKER = ' // strudel-btn';
+
+function parseVoiceButtons(code) {
+  const buttons = [];
+  const re = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    const voiceCode = `${m[1]}: ${m[2].trim()}`;
+    const isActive = code.includes(`\n${voiceCode}${BTN_MARKER}`);
+    buttons.push({ name: m[1], voiceCode, isActive });
+  }
+  return buttons;
+}
+
+function renderVoiceButtons(container, code) {
+  const area = container.querySelector('.ts-voice-btns');
+  if (!area) return;
+  const buttons = parseVoiceButtons(code);
+  if (!buttons.length) { area.innerHTML = ''; return; }
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  area.innerHTML = buttons.map(b => {
+    const label = b.name.length > 18 ? b.name.slice(0, 18) + '…' : b.name;
+    return `<button class="ts-voice-btn${b.isActive ? ' on' : ''}" data-voice-code="${esc(b.voiceCode).replace(/"/g,'&quot;')}">▶ ${esc(label)}</button>`;
+  }).join('');
+  area.querySelectorAll('.ts-voice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleButtonCode(btn.dataset.voiceCode);
+      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+      if (ta) renderVoiceButtons(container, ta.value);
+    });
+  });
+}
+
 function setStatus(text) {
   lastStatus = text;
   const statusEl = document.querySelector(`#${OVERLAY_ID} .ts-status`);
@@ -516,6 +566,7 @@ function renderAll() {
       const scrollTop = isCodeFocused ? active.scrollTop : null;
 
       renderDetail(detail);
+      refreshFacialGestureButtons();
 
       if (isCodeFocused) {
         const next = detail.querySelector('.ts-code');
@@ -528,6 +579,9 @@ function renderAll() {
           if (scrollTop != null) next.scrollTop = scrollTop;
         }
       }
+
+      const codeEl = detail.querySelector('.ts-code');
+      if (codeEl) renderVoiceButtons(detail, codeEl.value);
     }
   });
 }
@@ -554,6 +608,8 @@ function ensureOverlay() {
   overlay.querySelector('.ts-close').addEventListener('click', () => {
     overlay.style.display = 'none';
   });
+
+  injectFacialGestureToggle(overlay.querySelector('.ts-header'));
 
   const localPeer = getLocalPeer();
   if (localPeer.jitsiId && !localPeer.pattern) {

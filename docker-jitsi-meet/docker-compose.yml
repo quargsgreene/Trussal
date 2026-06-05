@@ -1,4 +1,23 @@
 services:
+  # Dynamic DNS updater — keeps meet.trussal.com pointed at this machine's
+  # current public IP via the Cloudflare API.
+  ddns:
+    image: favonia/cloudflare-ddns:latest
+    restart: unless-stopped
+    network_mode: host
+    cap_drop:
+      - all
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - DOMAINS=meet.trussal.com
+      - PROXIED=false
+      - UPDATE_CRON=@every 5m
+
   # Frontend
   latency:
     build:
@@ -26,6 +45,8 @@ services:
       - ../src:/usr/share/jitsi-meet/css/src:ro
       - ${CONFIG}/web/letsencrypt:/etc/acme.sh
       - ${CONFIG}/web/body.html:/usr/share/jitsi-meet/body.html:ro
+      - ./jitsi-web/custom-config.js:/usr/share/jitsi-meet/custom-config.js:ro
+      - ./jitsi-web/assets:/usr/share/jitsi-meet/assets:ro
     labels:
       service: "jitsi-web"
     environment:

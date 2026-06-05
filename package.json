@@ -7,14 +7,15 @@
     "build": "node build.mjs",
     "deploy:local": "npm run build && sudo cp dist/custom-config.js /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web && sudo mkdir -p /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets && sudo cp -r dist/assets/. /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "build:strudel-fork": "cd ../strudel-fork && /home/trussal-video/node_modules/.bin/pnpm --filter @strudel/web build && /home/trussal-video/node_modules/.bin/pnpm --filter @strudel/soundfonts build"
   },
   "devDependencies": {
     "dotenv": "^16.4.0",
     "esbuild": "^0.24.0"
   },
   "dependencies": {
-    "@strudel/soundfonts": "^1.3.0",
-    "@strudel/web": "^1.3.0"
+    "@strudel/core": "^1.2.6",
+    "@strudel/webaudio": "^1.3.0"
   }
 }

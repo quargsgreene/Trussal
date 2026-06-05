@@ -20,10 +20,11 @@ let reverbBuffer = null;
 let masterStrudelGain = null;
 let bootPromise = null;
 
-const chains = new Map();       // jitsiId -> chain
-const remoteSources = new Map(); // jitsiId -> { tag, source, label }
-const externalSources = new Map(); // jitsiId -> { source, stream }
-const audioRouted = new Set();  // jitsiIds whose chain has any live source
+const chains = new Map();           // jitsiId -> chain
+const remoteSources = new Map();    // jitsiId -> { tag, source, label }
+const pendingCaptures = new Set();  // jitsiIds currently being wired (prevents concurrent duplicates)
+const externalSources = new Map();  // jitsiId -> { source, stream }
+const audioRouted = new Set();      // jitsiIds whose chain has any live source
 const routingSubscribers = new Set();
 let audioTagObserver = null;
 
@@ -180,6 +181,8 @@ function destroyChain(jitsiId) {
 // is how Jamulus audio ends up running through the per-peer worklet chain.
 function captureJitsiAudio() {
   if (!audioCtx) return;
+  const local = getLocalParticipant();
+  const localJitsiId = local ? local.id : null;
   const tags = document.querySelectorAll('audio');
   tags.forEach(async tag => {
     if (!tag.srcObject) return;
@@ -194,11 +197,34 @@ function captureJitsiAudio() {
       }
       return;
     }
+    // Never route the local user's own audio back to their speakers.
+    if (localJitsiId && jitsiId === localJitsiId) return;
+    // Skip hidden participants (Jicofo, virtual sources, etc.).
+    try {
+      const conf = window.APP && window.APP.conference;
+      const member = conf && typeof conf.getParticipantById === 'function'
+        ? conf.getParticipantById(jitsiId) : null;
+      if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
+    } catch (e) { /* ignore — if we can't tell, proceed */ }
+    // Only route audio through WebAudio for peers in our signalling system.
+    // Ghost/stale sessions (e.g. SMACKS hibernating sessions) never connect to
+    // our WS server, so they stay with native Jitsi playback where the browser's
+    // AEC reference is intact. Bypassing AEC for those participants is what lets
+    // their audio (which is often an echo of your own voice from the JVB) loop
+    // back through your mic uncancelled — persisting even when you mute Jitsi.
+    if (!getPeerByJitsiId(jitsiId)) return;
     if (remoteSources.has(jitsiId)) return;
+    // Guard against concurrent async captures for the same jitsiId (MutationObserver
+    // can fire multiple times before the first await resolves, which would create
+    // duplicate MediaStreamSource nodes on the same chain and cause doubled audio).
+    if (pendingCaptures.has(jitsiId)) return;
+    pendingCaptures.add(jitsiId);
 
     try {
       const chain = await ensureChain(jitsiId);
       if (!chain) return;
+      // Re-check after the async gap — another call may have completed first.
+      if (remoteSources.has(jitsiId)) return;
       const source = audioCtx.createMediaStreamSource(tag.srcObject);
       source.connect(chain.input);
       tag.muted = true;
@@ -210,6 +236,8 @@ function captureJitsiAudio() {
       notifyRoutingChange();
     } catch (e) {
       console.warn('[latency] failed to wire audio tag for', jitsiId, e);
+    } finally {
+      pendingCaptures.delete(jitsiId);
     }
   });
 }
@@ -221,13 +249,18 @@ function startAudioTagsObserver() {
   captureJitsiAudio();
 }
 
-// React to peer state updates: rebuild effect params for that peer's chain.
+// React to peer state updates: rebuild effect params for that peer's chain,
+// and re-scan audio tags when a peer first appears (their Jitsi audio element
+// may have arrived before their WS hello, so captureJitsiAudio skipped them).
 subscribePeerState((event, payload) => {
   if (event !== 'peer-upsert') return;
   if (!payload.jitsiId) return;
   const chain = chains.get(payload.jitsiId);
-  if (!chain) return; // chain created lazily when audio actually appears
-  applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
+  if (chain) {
+    applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
+  } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
+    captureJitsiAudio();
+  }
 });
 
 // React to participants: drop chains for peers who left.

@@ -39,10 +39,14 @@ function readRemotes() {
   try {
     const conf = window.APP && window.APP.conference;
     if (!conf) return map;
+    const localId = typeof conf.getMyUserId === 'function' ? conf.getMyUserId() : null;
     const members = typeof conf.listMembers === 'function' ? conf.listMembers() : [];
     for (const m of members) {
       const id = typeof m.getId === 'function' ? m.getId() : m._id;
       if (!id) continue;
+      if (localId && id === localId) continue;
+      // Skip hidden participants (Jicofo, SMACKS ghost sessions, virtual sources).
+      try { if (typeof m.isHidden === 'function' && m.isHidden()) continue; } catch (e) {}
       let displayName = null;
       try { displayName = typeof m.getDisplayName === 'function' ? m.getDisplayName() : m._displayName; } catch (e) {}
       map.set(id, { id, displayName: displayName || 'Participant', isLocal: false });

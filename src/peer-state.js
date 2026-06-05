@@ -108,6 +108,11 @@ function openSocket() {
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
   helloSent = false;
 
+  // Discard all remote peer state from the previous room so stale entries
+  // don't bleed into the new room's participant strip.
+  peersByPeerId.clear();
+  peerIdByJitsiId.clear();
+
   const loc = window.location;
   const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = `${proto}//${loc.host}/ws?room=${encodeURIComponent(currentRoom)}&role=player`;
@@ -300,8 +305,18 @@ export function getLocalPeer() { return localPeer; }
 
 export function getAllPeers() {
   const all = [];
-  if (localPeer.jitsiId) all.push(localPeer);
-  for (const p of peersByPeerId.values()) all.push(p);
+  const seenJitsiIds = new Set();
+  if (localPeer.jitsiId) {
+    all.push(localPeer);
+    seenJitsiIds.add(localPeer.jitsiId);
+  }
+  for (const p of peersByPeerId.values()) {
+    // Skip our own echoed entry and any duplicate jitsiId (e.g. from a stale
+    // server entry left over from a reconnect before the old socket closed).
+    if (!p.jitsiId || seenJitsiIds.has(p.jitsiId)) continue;
+    seenJitsiIds.add(p.jitsiId);
+    all.push(p);
+  }
   return all;
 }
 
