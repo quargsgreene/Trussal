@@ -16,10 +16,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ClockCollator: () => ClockCollator,
     Cyclist: () => Cyclist,
     DEFAULT_MAX_POLYPHONY: () => DEFAULT_MAX_POLYPHONY,
+    Drawer: () => Drawer,
     FXr: () => FXr,
     FXrel: () => FXrel,
     FXrelease: () => FXrelease,
     Fraction: () => fraction$1,
+    Framer: () => Framer,
     H: () => H$1,
     Hap: () => Hap,
     Pattern: () => Pattern$1,
@@ -29,6 +31,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     TimeSpan: () => TimeSpan,
     Warpmode: () => Warpmode,
     __chooseWith: () => __chooseWith,
+    __pianoroll: () => __pianoroll,
     _brandBy: () => _brandBy,
     _fitslice: () => _fitslice,
     _irand: () => _irand,
@@ -55,6 +58,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     analyze: () => analyze,
     anchor: () => anchor,
     and: () => and,
+    angle: () => angle,
     apply: () => apply,
     applyFM: () => applyFM,
     applyGainCurve: () => applyGainCurve,
@@ -150,6 +154,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     chunkbackinto: () => chunkbackinto,
     chunkinto: () => chunkinto,
     clamp: () => clamp$1,
+    cleanupDraw: () => cleanupDraw,
+    cleanupDrawContext: () => cleanupDrawContext,
     cleanupOnEnd: () => cleanupOnEnd,
     cleanupUi: () => cleanupUi,
     clearHydra: () => clearHydra,
@@ -158,6 +164,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     coarse: () => coarse,
     code2hash: () => code2hash,
     color: () => color,
+    colorMap: () => colorMap,
     colour: () => colour,
     comb: () => comb,
     complex: () => complex,
@@ -178,6 +185,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     contract: () => contract,
     control: () => control,
     controls: () => controls,
+    convertColorToNumber: () => convertColorToNumber,
+    convertHexToNumber: () => convertHexToNumber,
     cosine: () => cosine,
     cosine2: () => cosine2,
     cpm: () => cpm,
@@ -230,6 +239,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     doughsamples: () => doughsamples,
     drawFrequencyScope: () => drawFrequencyScope,
     drawLine: () => drawLine,
+    drawPianoroll: () => drawPianoroll,
     drawTimeScope: () => drawTimeScope,
     drive: () => drive,
     drop: () => drop,
@@ -279,6 +289,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     fastchunk: () => fastchunk,
     fastgap: () => fastgap,
     fft: () => fft,
+    fill: () => fill,
     filter: () => filter$1,
     filterWhen: () => filterWhen,
     firstOf: () => firstOf,
@@ -417,6 +428,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     freq: () => freq$1,
     freqToMidi: () => freqToMidi$2,
     fromBipolar: () => fromBipolar,
+    fscope: () => fscope,
     fshift: () => fshift,
     fshiftnote: () => fshiftnote,
     fshiftphase: () => fshiftphase,
@@ -437,12 +449,15 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getAudioDevices: () => getAudioDevices,
     getCachedBuffer: () => getCachedBuffer,
     getCompressor: () => getCompressor,
+    getComputedPropertyValue: () => getComputedPropertyValue,
     getControlName: () => getControlName,
     getCps: () => getCps,
     getCurrentKeyboardState: () => getCurrentKeyboardState,
     getDefaultValue: () => getDefaultValue,
     getDistortion: () => getDistortion,
     getDistortionAlgorithm: () => getDistortionAlgorithm,
+    getDrawContext: () => getDrawContext,
+    getDrawOptions: () => getDrawOptions,
     getDur: () => getDur,
     getDuration: () => getDuration,
     getEnvelope: () => getEnvelope,
@@ -466,6 +481,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getPitchEnvelope: () => getPitchEnvelope,
     getPlayableNoteValue: () => getPlayableNoteValue,
     getPlugins: () => getPlugins,
+    getPunchcardPainter: () => getPunchcardPainter,
     getRandsAtTime: () => getRandsAtTime,
     getSampleBuffer: () => getSampleBuffer,
     getSampleBufferSource: () => getSampleBufferSource,
@@ -473,6 +489,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getSound: () => getSound,
     getSoundIndex: () => getSoundIndex$1,
     getSuperdoughAudioController: () => getSuperdoughAudioController,
+    getTheme: () => getTheme,
     getTime: () => getTime,
     getTrigger: () => getTrigger,
     getTriggerFunc: () => getTriggerFunc,
@@ -483,7 +500,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     grow: () => grow,
     gt: () => gt$1,
     gte: () => gte,
-    h: () => h,
     hard: () => hard,
     harmonic: () => harmonic,
     hash2code: () => hash2code,
@@ -631,6 +647,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     mouseY: () => mouseY,
     mousex: () => mousex,
     mousey: () => mousey,
+    moveXY: () => moveXY,
     mtranspose: () => mtranspose,
     mul: () => mul,
     multiChannelOrbits: () => multiChannelOrbits,
@@ -706,6 +723,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     phc: () => phc,
     phd: () => phd,
     phs: () => phs,
+    pianoroll: () => pianoroll,
     pick: () => pick,
     pickF: () => pickF,
     pickOut: () => pickOut,
@@ -721,6 +739,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     pipe: () => pipe,
     pitchJump: () => pitchJump,
     pitchJumpTime: () => pitchJumpTime,
+    pitchwheel: () => pitchwheel,
     ply: () => ply,
     plyForEach: () => plyForEach,
     plyWith: () => plyWith,
@@ -744,6 +763,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     pw: () => pw,
     pwrate: () => pwrate,
     pwsweep: () => pwsweep,
+    r: () => r,
     rand: () => rand,
     rand2: () => rand2,
     randL: () => randL,
@@ -781,6 +801,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     repeatCycles: () => repeatCycles,
     repl: () => repl$2,
     replicate: () => replicate,
+    rescale: () => rescale,
     resetDefaultValues: () => resetDefaultValues,
     resetDefaults: () => resetDefaults,
     resetGlobalEffects: () => resetGlobalEffects,
@@ -830,6 +851,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     scaleTrans: () => scaleTrans,
     scaleTranspose: () => scaleTranspose,
     scheduleAtTime: () => scheduleAtTime,
+    scope: () => scope,
     scram: () => scram,
     scramble: () => scramble,
     scrub: () => scrub,
@@ -860,6 +882,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     setSoundfontUrl: () => setSoundfontUrl,
     setStringParser: () => setStringParser,
     setSuperdoughAudioController: () => setSuperdoughAudioController,
+    setTheme: () => setTheme,
     setTime: () => setTime,
     setTriggerFunc: () => setTriggerFunc,
     setVersionDefaults: () => setVersionDefaults,
@@ -882,7 +905,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     slowcat: () => slowcat,
     slowcatPrime: () => slowcatPrime,
     slowchunk: () => slowchunk,
-    smear: () => smear$1,
     soft: () => soft,
     sol2note: () => sol2note,
     someCycles: () => someCycles,
@@ -897,7 +919,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     source: () => source,
     sparsity: () => sparsity,
     speak: () => speak,
+    spectrum: () => spectrum,
     speed: () => speed,
+    spiral: () => spiral,
     splice: () => splice,
     splitAt: () => splitAt,
     spread: () => spread,
@@ -964,6 +988,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     tri: () => tri,
     tri2: () => tri2,
     triode: () => triode,
+    tscope: () => tscope,
     tsdelay: () => tsdelay,
     uid: () => uid,
     undegrade: () => undegrade,
@@ -991,6 +1016,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     voicingRegistry: () => voicingRegistry,
     voicings: () => voicings,
     vowel: () => vowel,
+    w: () => w$1,
     warp: () => warp,
     warpatt: () => warpatt,
     warpattack: () => warpattack,
@@ -1043,8 +1069,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     wtsus: () => wtsus,
     wtsustain: () => wtsustain,
     wtsync: () => wtsync,
+    x: () => x$2,
     xfade: () => xfade,
     xsdelay: () => xsdelay,
+    y: () => y$1,
     zcrush: () => zcrush,
     zdelay: () => zdelay,
     zip: () => zip,
@@ -1053,6 +1081,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     znoise: () => znoise,
     zoom: () => zoom,
     zoomArc: () => zoomArc,
+    zoomIn: () => zoomIn,
     zoomarc: () => zoomarc,
     zrand: () => zrand,
     zzfx: () => zzfx
@@ -1701,7 +1730,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     function Sn(Dn) {
       return Object.entries(Gn).flatMap(([Jn, Rn]) => Jn === "$" ? Array.isArray(Rn) ? Rn.flatMap((xn) => xn[Dn] || []) : [] : Rn[Dn] || []);
     }
-    function Xn(Dn, Jn, Rn, xn, Yn) {
+    function kn(Dn, Jn, Rn, xn, Yn) {
       const Tn = Dn[Jn], ns = Dn[Jn + 1] || { index: Rn.length, end: Rn.length }, hs = Rn.slice(Tn.index, ns.index), Es = [Tn.index + xn.range[0], Tn.end + xn.range[0]], Rs = Tn.index + xn.range[0], ms = ns.index + xn.range[0], xs = (Yn?.widgets || []).filter((is) => {
         const zn = is.from ?? is.index ?? 0;
         return zn >= Rs && zn < ms;
@@ -1864,7 +1893,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           );
         if (hs.length > 0)
           for (let ms = 0; ms < hs.length; ms++)
-            Xn(hs, ms, Tn.output, Rn, Tn);
+            kn(hs, ms, Tn.output, Rn, Tn);
         else
           Nn(Dn, Rn, Tn);
         Tn.miniLocations = Sn("miniLocations"), Tn.widgets = Sn("widgets"), Tn.sliders = Sn("sliders");
@@ -2183,12 +2212,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           if (!p[nn]) {
             const hn = nn === 1 ? "" : nn, { osc: yn, freq: Gn } = fm(e30, t[`fmh${hn}`] ?? 1, t[`fmwave${hn}`] ?? "sine");
             d.push(yn);
-            const vn = [yn], Fn = ["attack", "decay", "sustain", "release"].map((Xn) => t[`fm${Xn}${hn}`]);
+            const vn = [yn], Fn = ["attack", "decay", "sustain", "release"].map((kn) => t[`fm${kn}${hn}`]);
             let Sn = yn;
-            if (Fn.some((Xn) => Xn !== void 0)) {
-              const Xn = l.createGain(), [wn, Ln, Nn, $n] = getADSRValues(Fn), Bn = o + t.duration, Wn = t[`fmenv${hn}`] ?? "exp";
+            if (Fn.some((kn) => kn !== void 0)) {
+              const kn = l.createGain(), [wn, Ln, Nn, $n] = getADSRValues(Fn), Bn = o + t.duration, Wn = t[`fmenv${hn}`] ?? "exp";
               getParamADSR(
-                Xn.gain,
+                kn.gain,
                 wn,
                 Ln,
                 Nn,
@@ -2198,7 +2227,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
                 o,
                 Bn,
                 Wn === "exp" ? "exponential" : "linear"
-              ), vn.push(Xn), Sn = yn.connect(Xn);
+              ), vn.push(kn), Sn = yn.connect(kn);
             }
             p[nn] = { input: yn.frequency, output: Sn, freq: Gn, osc: yn, toCleanup: vn }, b[`fm_${nn}`] = [yn];
           }
@@ -2326,8 +2355,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     vn.connect(Sn), onceEnded(gn, function() {
       releaseAudioNode(gn), hn?.stop(), releaseAudioNode(vn), releaseAudioNode(Sn), o();
     });
-    let Xn = Fn + pn + 0.01;
-    gn.stop(Xn);
+    let kn = Fn + pn + 0.01;
+    gn.stop(kn);
     const wn = (Nn) => {
       gn.stop(Nn);
     }, Ln = { node: Sn, nodes: { source: [gn], ...hn?.nodes }, stop: wn };
@@ -2429,7 +2458,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       logger$1(`[wavetable] still loading sound "${b}:${R}"`, "highlight");
       return;
     }
-    const Sn = [t.wtattack, t.wtdecay, t.wtsustain, t.wtrelease], Xn = [t.warpattack, t.warpdecay, t.warpsustain, t.warprelease], wn = Fn.parameters, Ln = wn.get("position"), Nn = wn.get("warp");
+    const Sn = [t.wtattack, t.wtdecay, t.wtsustain, t.wtrelease], kn = [t.warpattack, t.warpdecay, t.warpsustain, t.warprelease], wn = Fn.parameters, Ln = wn.get("position"), Nn = wn.get("warp");
     let $n = t.wtrate;
     t.wtsync != null && ($n = d * t.wtsync);
     const Bn = applyParameterModulators(
@@ -2467,7 +2496,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         amount: t.warpenv,
         defaultAmount: 0.5,
         shape: "linear",
-        values: Xn,
+        values: kn,
         holdEnd: _n,
         defaultValues: [0, 0.5, 0, 0.1]
       },
@@ -2760,8 +2789,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           voices: ln,
           panspread: pn
         }, _n = getNodeFromPool("supersaw", () => new AudioWorkletNode(l, "supersaw-oscillator", { outputChannelCount: [2] }));
-        Object.entries(gn).forEach(([Sn, Xn]) => {
-          const wn = _n.parameters.get(Sn), Ln = Xn !== void 0 ? Xn : wn.defaultValue;
+        Object.entries(gn).forEach(([Sn, kn]) => {
+          const wn = _n.parameters.get(Sn), Ln = kn !== void 0 ? kn : wn.defaultValue;
           wn.value = Ln;
         }), _n.port.postMessage({ type: "initialize" });
         const hn = 1 / Math.sqrt(ln);
@@ -3002,14 +3031,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     };
   }
   function buildSamples(e30 = 1, t = 0.05, o = 220, l = 0, d = 0, p = 0.1, b = 0, R = 1, I = 0, z = 0, se = 0, tn = 0, rn = 0, nn = 0, an = 0, on = 0, ln = 0, pn = 1, gn = 0, Mn = 0) {
-    let _n = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (cs) => cs > 0 ? 1 : -1, Gn = I *= 500 * _n / hn / hn, vn = o *= (1 + t * 2 * Math.random() - t) * _n / hn, Fn = [], Sn = 0, Xn = 0, wn = 0, Ln = 1, Nn = 0, $n = 0, Bn = 0, Wn, In;
+    let _n = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (cs) => cs > 0 ? 1 : -1, Gn = I *= 500 * _n / hn / hn, vn = o *= (1 + t * 2 * Math.random() - t) * _n / hn, Fn = [], Sn = 0, kn = 0, wn = 0, Ln = 1, Nn = 0, $n = 0, Bn = 0, Wn, In;
     for (l = l * hn + 9, gn *= hn, d *= hn, p *= hn, ln *= hn, z *= 500 * _n / hn ** 3, an *= _n / hn, se *= _n / hn, tn *= hn, rn = rn * hn | 0, In = l + gn + d + p + ln | 0; wn < In; Fn[wn++] = Bn)
       ++$n % (on * 100 | 0) || (Bn = b ? b > 1 ? b > 2 ? b > 3 ? Math.sin((Sn % _n) ** 3) : Math.max(Math.min(Math.tan(Sn), 1), -1) : 1 - (2 * Sn / _n % 2 + 2) % 2 : 1 - 4 * Math.abs(Math.round(Sn / _n) - Sn / _n) : Math.sin(Sn), Bn = (rn ? 1 - Mn + Mn * Math.sin(_n * wn / rn) : 1) * yn(Bn) * Math.abs(Bn) ** R * // curve 0=square, 2=pointy
       e30 * 1 * // envelope
       (wn < l ? wn / l : wn < l + gn ? 1 - (wn - l) / gn * (1 - pn) : wn < l + gn + d ? pn : wn < In - ln ? (In - wn - ln) / p * // release falloff
       pn : 0), Bn = ln ? Bn / 2 + (ln > wn ? 0 : (wn < In - ln ? 1 : (In - wn) / ln) * // release delay
       Fn[wn - ln | 0] / 2) : Bn), Wn = (o += I += z) * // frequency
-      Math.cos(an * Xn++), Sn += Wn - Wn * nn * (1 - (Math.sin(wn) + 1) * 1e9 % 2), Ln && ++Ln > tn && (o += se, vn += se, Ln = 0), rn && !(++Nn % rn) && (o = vn, I = Gn, Ln ||= 1);
+      Math.cos(an * kn++), Sn += Wn - Wn * nn * (1 - (Math.sin(wn) + 1) * 1e9 % 2), Ln && ++Ln > tn && (o += se, vn += se, Ln = 0), rn && !(++Nn % rn) && (o = vn, I = Gn, Ln ||= 1);
     return Fn;
   }
   function registerZZFXSounds() {
@@ -3199,8 +3228,26 @@ registerProcessor('${o}', MyProcessor);
   function stopAnimationFrame(e30) {
     animationFrames[e30] !== void 0 && (cancelAnimationFrame(animationFrames[e30]), delete animationFrames[e30]);
   }
+  function stopAllAnimations(e30) {
+    Object.keys(animationFrames).forEach((t) => (!e30 || t.startsWith(e30)) && stopAnimationFrame(t));
+  }
+  function getComputedPropertyValue(e30) {
+    return typeof window > "u" ? "#fff" : getComputedStyle(document.documentElement).getPropertyValue(e30);
+  }
   function getTheme() {
     return theme;
+  }
+  function setTheme(e30) {
+    theme = e30;
+  }
+  function convertColorToNumber(e30) {
+    return e30 = e30.toLowerCase(), e30[0] === "#" ? convertHexToNumber(e30) : colorMap[e30] !== void 0 ? convertHexToNumber(colorMap[e30]) : -1;
+  }
+  function convertHexToNumber(e30) {
+    return e30 = e30.slice(1), parseInt(e30, 16);
+  }
+  function pianoroll(e30) {
+    return isPattern(e30) ? e30.pianoroll() : (t) => t.pianoroll(e30);
   }
   function __pianoroll({
     time: e30,
@@ -3230,11 +3277,11 @@ registerProcessor('${o}', MyProcessor);
     colorizeInactive: vn = 1,
     fontFamily: Fn,
     ctx: Sn,
-    id: Xn
+    id: kn
   } = {}) {
     const wn = Sn.canvas.width, Ln = Sn.canvas.height;
     let Nn = -o * l, $n = o * (1 - l);
-    Xn && (t = t.filter((us) => us.hasTag(Xn))), on && (console.warn("timeframe is deprecated! use from/to instead"), Nn = 0, $n = on);
+    kn && (t = t.filter((us) => us.hasTag(kn))), on && (console.warn("timeframe is deprecated! use from/to instead"), Nn = 0, $n = on);
     const Bn = pn ? Ln : wn, Wn = pn ? wn : Ln;
     let In = pn ? [Bn, 0] : [0, Bn];
     const cs = $n - Nn, _s = pn ? [0, Wn] : [Wn, 0];
@@ -3301,6 +3348,10 @@ registerProcessor('${o}', MyProcessor);
     o = Math.abs(o);
     const d = l + o, p = d !== 0 ? o / d : 0;
     return { fold: 1, ...t, cycles: d, playhead: p };
+  }
+  function drawPianoroll(e30) {
+    const { drawTime: t, ...o } = e30;
+    __pianoroll({ ...getDrawOptions(t), ...o });
   }
   function fromPolar(e30, t, o, l) {
     const d = (e30 - 90) * Math.PI / 180;
@@ -3374,7 +3425,7 @@ registerProcessor('${o}', MyProcessor);
       from: p - R,
       to: p,
       color: b
-    }, [Sn] = gn, Xn = se * ln;
+    }, [Sn] = gn, kn = se * ln;
     pn.forEach((wn) => {
       const Ln = wn.whole.begin <= ln && wn.endClipped > ln, Nn = wn.whole.begin - ln + p, $n = wn.endClipped - ln + p - z, Bn = wn.value?.color || tn, Wn = nn || Ln ? Bn : rn, In = an ? 1 - Math.abs((wn.whole.begin - ln) / Sn) : 1;
       spiralSegment({
@@ -3382,7 +3433,7 @@ registerProcessor('${o}', MyProcessor);
         ...vn,
         from: Nn,
         to: $n,
-        rotate: Xn,
+        rotate: kn,
         color: Wn,
         fromOpacity: In,
         toOpacity: In
@@ -3390,8 +3441,11 @@ registerProcessor('${o}', MyProcessor);
     }), spiralSegment({
       ctx: on,
       ...Fn,
-      rotate: Xn
+      rotate: kn
     });
+  }
+  function spiral(e30, t) {
+    return e30.spiral(t);
   }
   function pitchwheel({
     haps: e30,
@@ -3415,14 +3469,14 @@ registerProcessor('${o}', MyProcessor);
       t.font = "20px sans-serif";
       const Gn = `${p} EDO`;
       t.fillText(Gn, gn + pn - t.measureText(Gn).width + 15, Mn + pn), Array.from({ length: p }, (vn, Fn) => {
-        const Sn = freq2angle(b * Math.pow(2, Fn / p), b), [Xn, wn] = circlePos(gn, Mn, pn, Sn);
+        const Sn = freq2angle(b * Math.pow(2, Fn / p), b), [kn, wn] = circlePos(gn, Mn, pn, Sn);
         if (t.beginPath(), hn === null || hn.includes(Fn)) {
-          if (t.globalAlpha = 1, t.arc(Xn, wn, I, 0, 2 * Math.PI), yn !== null) {
+          if (t.globalAlpha = 1, t.arc(kn, wn, I, 0, 2 * Math.PI), yn !== null) {
             const Ln = hn.indexOf(Fn);
-            yn[Ln] && (Sn < 0.32 && Sn > 0.125 ? t.fillText(yn[Ln], Xn - 34, wn) : Sn < 0.1 && Sn > -1.125 ? t.fillText(yn[Ln], Xn - 7, wn - 12) : t.fillText(yn[Ln], Xn + 9, wn));
+            yn[Ln] && (Sn < 0.32 && Sn > 0.125 ? t.fillText(yn[Ln], kn - 34, wn) : Sn < 0.1 && Sn > -1.125 ? t.fillText(yn[Ln], kn - 7, wn - 12) : t.fillText(yn[Ln], kn + 9, wn));
           }
         } else
-          t.globalAlpha = 0.15, t.arc(Xn, wn, I, 0, 2 * Math.PI);
+          t.globalAlpha = 0.15, t.arc(kn, wn, I, 0, 2 * Math.PI);
         t.fill();
       }), t.stroke();
     }
@@ -3436,7 +3490,7 @@ registerProcessor('${o}', MyProcessor);
       }
       const Gn = freq2angle(yn, b), [vn, Fn] = circlePos(gn, Mn, pn, Gn), Sn = hn.value.color || on;
       t.strokeStyle = Sn, t.fillStyle = Sn;
-      const { velocity: Xn = 1, gain: wn = 1 } = hn.value || {}, Ln = Xn * wn;
+      const { velocity: kn = 1, gain: wn = 1 } = hn.value || {}, Ln = kn * wn;
       t.globalAlpha = Ln, _n.push([vn, Fn, Gn, Sn, Ln]), t.beginPath(), l && (t.moveTo(vn + I, Fn), t.arc(vn, Fn, I, 0, 2 * Math.PI), t.fill()), rn && (t.moveTo(gn, Mn), t.lineTo(vn, Fn)), t.stroke();
     }), t.strokeStyle = on, t.globalAlpha = 1, tn && _n.length && (_n = _n.sort((hn, yn) => hn[2] - yn[2]), t.beginPath(), t.moveTo(_n[0][0], _n[0][1]), _n.forEach(([hn, yn, Gn, vn, Fn]) => {
       t.strokeStyle = vn, t.globalAlpha = Fn, t.lineTo(hn, yn);
@@ -3491,6 +3545,18 @@ registerProcessor('${o}', MyProcessor);
   }
   function clearScreen(e30 = 0, t = "0,0,0", o = getDrawContext()) {
     e30 ? (o.fillStyle = `rgba(${t},${1 - e30})`, o.fillRect(0, 0, o.canvas.width, o.canvas.height)) : o.clearRect(0, 0, o.canvas.width, o.canvas.height);
+  }
+  function scope(e30, t) {
+    return e30.scope(t);
+  }
+  function tscope(e30, t) {
+    return e30.tscope(t);
+  }
+  function fscope(e30, t) {
+    return e30.fscope(t);
+  }
+  function spectrum(e30, t) {
+    return e30.spectrum(t);
   }
   function drawSpectrum(e30, { thickness: t = 3, speed: o = 1, min: l = -80, max: d = 0, ctx: p = getDrawContext(), id: b = 1, color: R } = {}) {
     if (p.lineWidth = t, p.strokeStyle = R, !e30)
@@ -3985,12 +4051,12 @@ registerProcessor('${o}', MyProcessor);
               });
             }, z = function(nn, an, on, ln, pn, gn) {
               for (var Mn = [], _n = 0; _n < nn.length; _n++) {
-                for (var hn = nn[_n], yn = nn[_n + 1], Gn = hn.bagIndex, vn = yn ? yn.bagIndex : an.length, Fn = [], Sn = void 0, Xn = Gn; Xn < vn; Xn++) {
-                  var wn = se(Xn, an, on), Ln = tn(Xn, an, ln), Nn = Ln[R.GeneratorType.KeyRange] && Ln[R.GeneratorType.KeyRange].range, $n = Ln[gn];
+                for (var hn = nn[_n], yn = nn[_n + 1], Gn = hn.bagIndex, vn = yn ? yn.bagIndex : an.length, Fn = [], Sn = void 0, kn = Gn; kn < vn; kn++) {
+                  var wn = se(kn, an, on), Ln = tn(kn, an, ln), Nn = Ln[R.GeneratorType.KeyRange] && Ln[R.GeneratorType.KeyRange].range, $n = Ln[gn];
                   if ($n) {
                     var Bn = pn[$n.value];
                     Bn && Fn.push({ keyRange: Nn, modulators: wn, generators: Ln, reference: Bn });
-                  } else Xn - Gn == 0 && (Sn = { keyRange: Nn, modulators: wn, generators: Ln });
+                  } else kn - Gn == 0 && (Sn = { keyRange: Nn, modulators: wn, generators: Ln });
                 }
                 Mn.push({ header: hn, globalZone: Sn, zones: Fn });
               }
@@ -4443,11 +4509,11 @@ registerProcessor('${o}', MyProcessor);
                         return pn.isKeyInRange($n, _n);
                       });
                       if (Fn) {
-                        var Sn = Fn.instrument, Xn = Sn.zones.find(function($n) {
+                        var Sn = Fn.instrument, kn = Sn.zones.find(function($n) {
                           return pn.isKeyInRange($n, _n);
                         });
-                        if (Xn) {
-                          var wn = Xn.sample, Ln = se({}, Fn.generators, Xn.generators), Nn = se({}, Fn.modulators, Xn.modulators);
+                        if (kn) {
+                          var wn = kn.sample, Ln = se({}, Fn.generators, kn.generators), Nn = se({}, Fn.modulators, kn.modulators);
                           return { keyNumber: _n, preset: vn, instrument: Sn, sample: wn, generators: Ln, modulators: Nn };
                         }
                       }
@@ -4807,11 +4873,11 @@ registerProcessor('${o}', MyProcessor);
       sustainVolEnv: vn = 0,
       releaseVolEnv: Fn = -12e3,
       pan: Sn = 0,
-      ...Xn
+      ...kn
     } = o, wn = 100 * (an !== void 0 && an !== -1 ? an : se) + tn - on, Ln = d * 100 - wn, Nn = 1 * Math.pow(2, Ln / 1200);
     t.playbackRate.value = Nn;
     const $n = R + ln + pn * 32768, Bn = I + gn + Mn * 32768;
-    Bn > $n && nn === 1 ? (t.loopStart = $n / z, t.loopEnd = Bn / z, t.loop = true) : nn === 3 && console.warn("unimplemented sampleMode 3 (play till end on note off)"), Object.keys(Xn).filter(
+    Bn > $n && nn === 1 ? (t.loopStart = $n / z, t.loopEnd = Bn / z, t.loop = true) : nn === 3 && console.warn("unimplemented sampleMode 3 (play till end on note off)"), Object.keys(kn).filter(
       (vs) => !["name", "instrument", "keyRange", "sampleID", "end"].includes(vs)
     ).length;
     const Wn = e30.createGain(), In = [
@@ -5203,7 +5269,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         function nn() {
         }
         nn.prototype.path = function() {
-          var yn, Gn, vn, Fn, Sn, Xn;
+          var yn, Gn, vn, Fn, Sn, kn;
           function wn(Ln, Nn) {
             if (Array.isArray(Nn))
               for (vn = 0, Fn = Nn.length; vn < Fn; ++vn)
@@ -5214,7 +5280,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           if (!this.__current.path)
             return null;
           for (Sn = [], yn = 2, Gn = this.__leavelist.length; yn < Gn; ++yn)
-            Xn = this.__leavelist[yn], wn(Sn, Xn.path);
+            kn = this.__leavelist[yn], wn(Sn, kn.path);
           return wn(Sn, this.__current.path), Sn;
         }, nn.prototype.type = function() {
           var hn = this.current();
@@ -5253,7 +5319,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return false;
         }
         nn.prototype.traverse = function(yn, Gn) {
-          var vn, Fn, Sn, Xn, wn, Ln, Nn, $n, Bn, Wn, In, cs;
+          var vn, Fn, Sn, kn, wn, Ln, Nn, $n, Bn, Wn, In, cs;
           for (this.__initialize(yn, Gn), cs = {}, vn = this.__worklist, Fn = this.__leavelist, vn.push(new rn(yn, null, null, null)), Fn.push(new rn(null, null, null, null)); vn.length; ) {
             if (Sn = vn.pop(), Sn === cs) {
               if (Sn = Fn.pop(), Ln = this.__execute(Gn.leave, Sn), this.__state === b || Ln === b)
@@ -5265,13 +5331,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
                 return;
               if (vn.push(cs), Fn.push(Sn), this.__state === R || Ln === R)
                 continue;
-              if (Xn = Sn.node, wn = Xn.type || Sn.wrap, Wn = this.__keys[wn], !Wn)
+              if (kn = Sn.node, wn = kn.type || Sn.wrap, Wn = this.__keys[wn], !Wn)
                 if (this.__fallback)
-                  Wn = this.__fallback(Xn);
+                  Wn = this.__fallback(kn);
                 else
                   throw new Error("Unknown node type " + wn + ".");
               for ($n = Wn.length; ($n -= 1) >= 0; )
-                if (Nn = Wn[$n], In = Xn[Nn], !!In) {
+                if (Nn = Wn[$n], In = kn[Nn], !!In) {
                   if (Array.isArray(In)) {
                     for (Bn = In.length; (Bn -= 1) >= 0; )
                       if (In[Bn] && !ln(Fn, In[Bn])) {
@@ -5292,7 +5358,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             }
           }
         }, nn.prototype.replace = function(yn, Gn) {
-          var vn, Fn, Sn, Xn, wn, Ln, Nn, $n, Bn, Wn, In, cs, _s;
+          var vn, Fn, Sn, kn, wn, Ln, Nn, $n, Bn, Wn, In, cs, _s;
           function vs(Zn) {
             var bs, Ls, Ss, es;
             if (Zn.ref.remove()) {
@@ -5315,17 +5381,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             if (wn = this.__execute(Gn.enter, Ln), wn !== void 0 && wn !== b && wn !== R && wn !== I && (Ln.ref.replace(wn), Ln.node = wn), (this.__state === I || wn === I) && (vs(Ln), Ln.node = null), this.__state === b || wn === b)
               return cs.root;
             if (Sn = Ln.node, !!Sn && (vn.push(In), Fn.push(Ln), !(this.__state === R || wn === R))) {
-              if (Xn = Sn.type || Ln.wrap, Bn = this.__keys[Xn], !Bn)
+              if (kn = Sn.type || Ln.wrap, Bn = this.__keys[kn], !Bn)
                 if (this.__fallback)
                   Bn = this.__fallback(Sn);
                 else
-                  throw new Error("Unknown node type " + Xn + ".");
+                  throw new Error("Unknown node type " + kn + ".");
               for (Nn = Bn.length; (Nn -= 1) >= 0; )
                 if (_s = Bn[Nn], Wn = Sn[_s], !!Wn)
                   if (Array.isArray(Wn)) {
                     for ($n = Wn.length; ($n -= 1) >= 0; )
                       if (Wn[$n]) {
-                        if (on(Xn, Bn[Nn]))
+                        if (on(kn, Bn[Nn]))
                           Ln = new rn(Wn[$n], [_s, $n], "Property", new tn(Wn, $n));
                         else if (an(Wn[$n]))
                           Ln = new rn(Wn[$n], [_s, $n], null, new tn(Wn, $n));
@@ -5353,19 +5419,19 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           }), hn.extendedRange = [hn.range[0], hn.range[1]], Gn !== yn.length && (hn.extendedRange[1] = yn[Gn].range[0]), Gn -= 1, Gn >= 0 && (hn.extendedRange[0] = yn[Gn].range[1]), hn;
         }
         function _n(hn, yn, Gn) {
-          var vn = [], Fn, Sn, Xn, wn;
+          var vn = [], Fn, Sn, kn, wn;
           if (!hn.range)
             throw new Error("attachComments needs range information");
           if (!Gn.length) {
             if (yn.length) {
-              for (Xn = 0, Sn = yn.length; Xn < Sn; Xn += 1)
-                Fn = z(yn[Xn]), Fn.extendedRange = [0, hn.range[0]], vn.push(Fn);
+              for (kn = 0, Sn = yn.length; kn < Sn; kn += 1)
+                Fn = z(yn[kn]), Fn.extendedRange = [0, hn.range[0]], vn.push(Fn);
               hn.leadingComments = vn;
             }
             return hn;
           }
-          for (Xn = 0, Sn = yn.length; Xn < Sn; Xn += 1)
-            vn.push(Mn(z(yn[Xn]), Gn));
+          for (kn = 0, Sn = yn.length; kn < Sn; kn += 1)
+            vn.push(Mn(z(yn[kn]), Gn));
           return wn = 0, pn(hn, {
             enter: function(Ln) {
               for (var Nn; wn < vn.length && (Nn = vn[wn], !(Nn.extendedRange[1] > Ln.range[0])); )
@@ -5765,8 +5831,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return _n;
           hn = yn.path;
         }
-        for (var Gn = e30.isAbsolute(hn), vn = hn.split(/\/+/), Fn, Sn = 0, Xn = vn.length - 1; Xn >= 0; Xn--)
-          Fn = vn[Xn], Fn === "." ? vn.splice(Xn, 1) : Fn === ".." ? Sn++ : Sn > 0 && (Fn === "" ? (vn.splice(Xn + 1, Sn), Sn = 0) : (vn.splice(Xn, 2), Sn--));
+        for (var Gn = e30.isAbsolute(hn), vn = hn.split(/\/+/), Fn, Sn = 0, kn = vn.length - 1; kn >= 0; kn--)
+          Fn = vn[kn], Fn === "." ? vn.splice(kn, 1) : Fn === ".." ? Sn++ : Sn > 0 && (Fn === "" ? (vn.splice(kn + 1, Sn), Sn = 0) : (vn.splice(kn, 2), Sn--));
         return hn = vn.join("/"), hn === "" && (hn = Gn ? "/" : "."), yn ? (yn.path = hn, p(yn)) : hn;
       }
       e30.normalize = b;
@@ -6217,18 +6283,18 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       this.generatedLine = 0, this.generatedColumn = 0, this.source = null, this.originalLine = null, this.originalColumn = null, this.name = null;
     }
     b.prototype._parseMappings = function(se, tn) {
-      for (var rn = 1, nn = 0, an = 0, on = 0, ln = 0, pn = 0, gn = se.length, Mn = 0, _n = {}, hn = {}, yn = [], Gn = [], vn, Fn, Sn, Xn, wn; Mn < gn; )
+      for (var rn = 1, nn = 0, an = 0, on = 0, ln = 0, pn = 0, gn = se.length, Mn = 0, _n = {}, hn = {}, yn = [], Gn = [], vn, Fn, Sn, kn, wn; Mn < gn; )
         if (se.charAt(Mn) === ";")
           rn++, Mn++, nn = 0;
         else if (se.charAt(Mn) === ",")
           Mn++;
         else {
-          for (vn = new R(), vn.generatedLine = rn, Xn = Mn; Xn < gn && !this._charIsMappingSeparator(se, Xn); Xn++)
+          for (vn = new R(), vn.generatedLine = rn, kn = Mn; kn < gn && !this._charIsMappingSeparator(se, kn); kn++)
             ;
-          if (Fn = se.slice(Mn, Xn), Sn = _n[Fn], Sn)
+          if (Fn = se.slice(Mn, kn), Sn = _n[Fn], Sn)
             Mn += Fn.length;
           else {
-            for (Sn = []; Mn < Xn; )
+            for (Sn = []; Mn < kn; )
               l.decode(se, Mn, hn), wn = hn.value, Mn = hn.rest, Sn.push(wn);
             if (Sn.length === 2)
               throw new Error("Found a source, but no line and column");
@@ -6609,7 +6675,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       (function() {
         var t, o, l, d, p, b, R, I, z, se, tn, rn, nn, an, on, ln, pn, gn, Mn, _n, hn, yn, Gn, vn, Fn, Sn;
         p = requireEstraverse(), b = requireUtils(), t = p.Syntax;
-        function Xn(le) {
+        function kn(le) {
           return rs.Expression.hasOwnProperty(le.type);
         }
         function wn(le) {
@@ -6757,12 +6823,12 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return (le & -2) === 8232 ? (cn ? "u" : "\\u") + (le === 8232 ? "2028" : "2029") : le === 10 || le === 13 ? (cn ? "" : "\\") + (le === 10 ? "n" : "r") : String.fromCharCode(le);
         }
         function hs(le) {
-          var cn, un, fn, mn, An, En, kn, Vn;
+          var cn, un, fn, mn, An, En, Xn, Vn;
           if (un = le.toString(), le.source) {
             if (cn = un.match(/\/([^/]*)$/), !cn)
               return un;
-            for (fn = cn[1], un = "", kn = false, Vn = false, mn = 0, An = le.source.length; mn < An; ++mn)
-              En = le.source.charCodeAt(mn), Vn ? (un += ns(En, Vn), Vn = false) : (kn ? En === 93 && (kn = false) : En === 47 ? un += "\\" : En === 91 && (kn = true), un += ns(En, Vn), Vn = En === 92);
+            for (fn = cn[1], un = "", Xn = false, Vn = false, mn = 0, An = le.source.length; mn < An; ++mn)
+              En = le.source.charCodeAt(mn), Vn ? (un += ns(En, Vn), Vn = false) : (Xn ? En === 93 && (Xn = false) : En === 47 ? un += "\\" : En === 91 && (Xn = true), un += ns(En, Vn), Vn = En === 92);
             return "/" + un + "/" + fn;
           }
           return un;
@@ -6797,7 +6863,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return mn + le + mn;
         }
         function xs(le) {
-          var cn = "", un, fn, mn, An = 0, En = 0, kn, Vn;
+          var cn = "", un, fn, mn, An = 0, En = 0, Xn, Vn;
           for (un = 0, fn = le.length; un < fn; ++un) {
             if (mn = le.charCodeAt(un), mn === 39)
               ++An;
@@ -6814,10 +6880,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             }
             cn += String.fromCharCode(mn);
           }
-          if (kn = !(rn === "double" || rn === "auto" && En < An), Vn = kn ? "'" : '"', !(kn ? An : En))
+          if (Xn = !(rn === "double" || rn === "auto" && En < An), Vn = Xn ? "'" : '"', !(Xn ? An : En))
             return Vn + cn + Vn;
           for (le = cn, cn = Vn, un = 0, fn = le.length; un < fn; ++un)
-            mn = le.charCodeAt(un), (mn === 39 && kn || mn === 34 && !kn) && (cn += "\\"), cn += String.fromCharCode(mn);
+            mn = le.charCodeAt(un), (mn === 39 && Xn || mn === 34 && !Xn) && (cn += "\\"), cn += String.fromCharCode(mn);
           return cn + Vn;
         }
         function Ns(le) {
@@ -6857,14 +6923,14 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return le.length - 1 - cn;
         }
         function Ys(le, cn) {
-          var un, fn, mn, An, En, kn, Vn, os;
-          for (un = le.split(/\r\n|[\r\n]/), kn = Number.MAX_VALUE, fn = 1, mn = un.length; fn < mn; ++fn) {
+          var un, fn, mn, An, En, Xn, Vn, os;
+          for (un = le.split(/\r\n|[\r\n]/), Xn = Number.MAX_VALUE, fn = 1, mn = un.length; fn < mn; ++fn) {
             for (An = un[fn], En = 0; En < An.length && b.code.isWhiteSpace(An.charCodeAt(En)); )
               ++En;
-            kn > En && (kn = En);
+            Xn > En && (Xn = En);
           }
-          for (typeof cn < "u" ? (Vn = R, un[1][kn] === "*" && (cn += " "), R = cn) : (kn & 1 && --kn, Vn = R), fn = 1, mn = un.length; fn < mn; ++fn)
-            os = ss(Ms(un[fn].slice(kn))), un[fn] = yn ? os.join("") : os;
+          for (typeof cn < "u" ? (Vn = R, un[1][Xn] === "*" && (cn += " "), R = cn) : (Xn & 1 && --Xn, Vn = R), fn = 1, mn = un.length; fn < mn; ++fn)
+            os = ss(Ms(un[fn].slice(Xn))), un[fn] = yn ? os.join("") : os;
           return R = Vn, un.join(`
 `);
         }
@@ -6879,7 +6945,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return _n.format.indent.adjustMultilineComment && /[\n\r]/.test(le.value) ? Ys("/*" + le.value + "*/", cn) : "/*" + le.value + "*/";
         }
         function Ws(le, cn) {
-          var un, fn, mn, An, En, kn, Vn, os, Ps, Bs, $s, rr, ur, Zs;
+          var un, fn, mn, An, En, Xn, Vn, os, Ps, Bs, $s, rr, ur, Zs;
           if (le.leadingComments && le.leadingComments.length > 0) {
             if (An = cn, vn) {
               for (mn = le.leadingComments[0], cn = [], os = mn.extendedRange, Ps = mn.range, $s = Gn.substring(os[0], Ps[0]), Zs = ($s.match(/\n/g) || []).length, Zs > 0 ? (cn.push(Dn(`
@@ -6901,8 +6967,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
               mn = le.trailingComments[0], os = mn.extendedRange, Ps = mn.range, $s = Gn.substring(os[0], Ps[0]), Zs = ($s.match(/\n/g) || []).length, Zs > 0 ? (cn.push(Dn(`
 `, Zs)), cn.push(Ms(Fs(mn)))) : (cn.push($s), cn.push(Fs(mn)));
             else
-              for (En = !Rn(ss(cn).toString()), kn = Dn(" ", Hs(ss([R, cn, I]).toString())), un = 0, fn = le.trailingComments.length; un < fn; ++un)
-                mn = le.trailingComments[un], En ? (un === 0 ? cn = [cn, I] : cn = [cn, kn], cn.push(Fs(mn, kn))) : cn = [cn, Ms(Fs(mn))], un !== fn - 1 && !Rn(ss(cn).toString()) && (cn = [cn, `
+              for (En = !Rn(ss(cn).toString()), Xn = Dn(" ", Hs(ss([R, cn, I]).toString())), un = 0, fn = le.trailingComments.length; un < fn; ++un)
+                mn = le.trailingComments[un], En ? (un === 0 ? cn = [cn, I] : cn = [cn, Xn], cn.push(Fs(mn, Xn))) : cn = [cn, Ms(Fs(mn))], un !== fn - 1 && !Rn(ss(cn).toString()) && (cn = [cn, `
 `]);
           return cn;
         }
@@ -6944,25 +7010,25 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         function fs(le) {
           return ss(le.name, le);
         }
-        function Xs(le, cn) {
+        function ks(le, cn) {
           return le.async ? "async" + (cn ? is() : on) : "";
         }
-        function ks(le) {
+        function Xs(le) {
           var cn = le.generator && !_n.moz.starlessGenerator;
           return cn ? "*" + on : "";
         }
         function sr(le) {
           var cn = le.value, un = "";
-          return cn.async && (un += Xs(cn, !le.computed)), cn.generator && (un += ks(cn) ? "*" : ""), un;
+          return cn.async && (un += ks(cn, !le.computed)), cn.generator && (un += Xs(cn) ? "*" : ""), un;
         }
         rs.prototype.generatePattern = function(le, cn, un) {
           return le.type === t.Identifier ? fs(le) : this.generateExpression(le, cn, un);
         }, rs.prototype.generateFunctionParams = function(le) {
           var cn, un, fn, mn;
           if (mn = false, le.type === t.ArrowFunctionExpression && !le.rest && (!le.defaults || le.defaults.length === 0) && le.params.length === 1 && le.params[0].type === t.Identifier)
-            fn = [Xs(le, true), fs(le.params[0])];
+            fn = [ks(le, true), fs(le.params[0])];
           else {
-            for (fn = le.type === t.ArrowFunctionExpression ? [Xs(le, false)] : [], fn.push("("), le.defaults && (mn = true), cn = 0, un = le.params.length; cn < un; ++cn)
+            for (fn = le.type === t.ArrowFunctionExpression ? [ks(le, false)] : [], fn.push("("), le.defaults && (mn = true), cn = 0, un = le.params.length; cn < un; ++cn)
               mn && le.defaults[cn] ? fn.push(this.generateAssignment(le.params[cn], le.defaults[cn], "=", o.Assignment, Zn)) : fn.push(this.generatePattern(le.params[cn], o.Assignment, Zn)), cn + 1 < un && fn.push("," + on);
             le.rest && (le.params.length && fn.push("," + on), fn.push("..."), fn.push(fs(le.rest))), fn.push(")");
           }
@@ -7001,10 +7067,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return ys(function() {
               le.body.length === 0 && vn && (un = le.range, un[1] - un[0] > 2 && (fn = Gn.substring(un[0] + 1, un[1] - 1), fn[0] === `
 ` && (mn = ["{"]), mn.push(fn)));
-              var En, kn, Vn, os;
-              for (os = es, cn & Bn && (os |= Wn), En = 0, kn = le.body.length; En < kn; ++En)
+              var En, Xn, Vn, os;
+              for (os = es, cn & Bn && (os |= Wn), En = 0, Xn = le.body.length; En < Xn; ++En)
                 vn && (En === 0 && (le.body[0].leadingComments && (un = le.body[0].leadingComments[0].extendedRange, fn = Gn.substring(un[0], un[1]), fn[0] === `
-` && (mn = ["{"])), le.body[0].leadingComments || Kn(le.range[0], le.body[0].range[0], mn)), En > 0 && !le.body[En - 1].trailingComments && !le.body[En].leadingComments && Kn(le.body[En - 1].range[1], le.body[En].range[0], mn)), En === kn - 1 && (os |= In), le.body[En].leadingComments && vn ? Vn = An.generateStatement(le.body[En], os) : Vn = Ms(An.generateStatement(le.body[En], os)), mn.push(Vn), Rn(ss(Vn).toString()) || vn && En < kn - 1 && le.body[En + 1].leadingComments || mn.push(an), vn && En === kn - 1 && (le.body[En].trailingComments || Kn(le.body[En].range[1], le.range[1], mn));
+` && (mn = ["{"])), le.body[0].leadingComments || Kn(le.range[0], le.body[0].range[0], mn)), En > 0 && !le.body[En - 1].trailingComments && !le.body[En].leadingComments && Kn(le.body[En - 1].range[1], le.body[En].range[0], mn)), En === Xn - 1 && (os |= In), le.body[En].leadingComments && vn ? Vn = An.generateStatement(le.body[En], os) : Vn = Ms(An.generateStatement(le.body[En], os)), mn.push(Vn), Rn(ss(Vn).toString()) || vn && En < Xn - 1 && le.body[En + 1].leadingComments || mn.push(an), vn && En === Xn - 1 && (le.body[En].trailingComments || Kn(le.body[En].range[1], le.range[1], mn));
             }), mn.push(Ms("}")), mn;
           },
           BreakStatement: function(le, cn) {
@@ -7060,9 +7126,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           ExportNamedDeclaration: function(le, cn) {
             var un = ["export"], fn, mn = this;
             return fn = cn & In ? gs : es, le.declaration ? zn(un, this.generateStatement(le.declaration, fn)) : (le.specifiers && (le.specifiers.length === 0 ? un = zn(un, "{" + on + "}") : le.specifiers[0].type === t.ExportBatchSpecifier ? un = zn(un, this.generateExpression(le.specifiers[0], o.Sequence, Zn)) : (un = zn(un, "{"), ys(function(An) {
-              var En, kn;
-              for (un.push(an), En = 0, kn = le.specifiers.length; En < kn; ++En)
-                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < kn && un.push("," + an);
+              var En, Xn;
+              for (un.push(an), En = 0, Xn = le.specifiers.length; En < Xn; ++En)
+                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < Xn && un.push("," + an);
             }), Rn(ss(un).toString()) || un.push(an), un.push(R + "}")), le.source ? un = zn(un, [
               "from" + on,
               // ModuleSpecifier
@@ -7082,21 +7148,21 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           },
           ExpressionStatement: function(le, cn) {
             var un, fn;
-            function mn(kn) {
+            function mn(Xn) {
               var Vn;
-              return kn.slice(0, 5) !== "class" ? false : (Vn = kn.charCodeAt(5), Vn === 123 || b.code.isWhiteSpace(Vn) || b.code.isLineTerminator(Vn));
+              return Xn.slice(0, 5) !== "class" ? false : (Vn = Xn.charCodeAt(5), Vn === 123 || b.code.isWhiteSpace(Vn) || b.code.isLineTerminator(Vn));
             }
-            function An(kn) {
+            function An(Xn) {
               var Vn;
-              return kn.slice(0, 8) !== "function" ? false : (Vn = kn.charCodeAt(8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
+              return Xn.slice(0, 8) !== "function" ? false : (Vn = Xn.charCodeAt(8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
             }
-            function En(kn) {
+            function En(Xn) {
               var Vn, os, Ps;
-              if (kn.slice(0, 5) !== "async" || !b.code.isWhiteSpace(kn.charCodeAt(5)))
+              if (Xn.slice(0, 5) !== "async" || !b.code.isWhiteSpace(Xn.charCodeAt(5)))
                 return false;
-              for (os = 6, Ps = kn.length; os < Ps && b.code.isWhiteSpace(kn.charCodeAt(os)); ++os)
+              for (os = 6, Ps = Xn.length; os < Ps && b.code.isWhiteSpace(Xn.charCodeAt(os)); ++os)
                 ;
-              return os === Ps || kn.slice(os, os + 8) !== "function" ? false : (Vn = kn.charCodeAt(os + 8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
+              return os === Ps || Xn.slice(os, os + 8) !== "function" ? false : (Vn = Xn.charCodeAt(os + 8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
             }
             return un = [this.generateExpression(le.expression, o.Sequence, Zn)], fn = ss(un).toString(), fn.charCodeAt(0) === 123 || // ObjectExpression
             mn(fn) || An(fn) || En(fn) || Mn && cn & Wn && le.expression.type === t.Literal && typeof le.expression.value == "string" ? un = ["(", un, ")" + this.semicolon(cn)] : un.push(this.semicolon(cn)), un;
@@ -7117,9 +7183,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
               on,
               this.generateExpression(le.specifiers[fn], o.Sequence, Zn)
             ]) : (un.push(on + "{"), le.specifiers.length - fn === 1 ? (un.push(on), un.push(this.generateExpression(le.specifiers[fn], o.Sequence, Zn)), un.push(on + "}" + on)) : (ys(function(An) {
-              var En, kn;
-              for (un.push(an), En = fn, kn = le.specifiers.length; En < kn; ++En)
-                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < kn && un.push("," + an);
+              var En, Xn;
+              for (un.push(an), En = fn, Xn = le.specifiers.length; En < Xn; ++En)
+                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < Xn && un.push("," + an);
             }), Rn(ss(un).toString()) || un.push(an), un.push(R + "}" + on)))), un = zn(un, [
               "from" + on,
               // ModuleSpecifier
@@ -7138,12 +7204,12 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             ] : this.generatePattern(le.id, o.Assignment, un);
           },
           VariableDeclaration: function(le, cn) {
-            var un, fn, mn, An, En, kn = this;
+            var un, fn, mn, An, En, Xn = this;
             un = [le.kind], En = cn & Ln ? es : us;
             function Vn() {
               for (An = le.declarations[0], _n.comment && An.leadingComments ? (un.push(`
-`), un.push(Ms(kn.generateStatement(An, En)))) : (un.push(is()), un.push(kn.generateStatement(An, En))), fn = 1, mn = le.declarations.length; fn < mn; ++fn)
-                An = le.declarations[fn], _n.comment && An.leadingComments ? (un.push("," + an), un.push(Ms(kn.generateStatement(An, En)))) : (un.push("," + on), un.push(kn.generateStatement(An, En)));
+`), un.push(Ms(Xn.generateStatement(An, En)))) : (un.push(is()), un.push(Xn.generateStatement(An, En))), fn = 1, mn = le.declarations.length; fn < mn; ++fn)
+                An = le.declarations[fn], _n.comment && An.leadingComments ? (un.push("," + an), un.push(Ms(Xn.generateStatement(An, En)))) : (un.push("," + on), un.push(Xn.generateStatement(An, En)));
             }
             return le.declarations.length > 1 ? ys(Vn) : Vn(), un.push(this.semicolon(cn)), un;
           },
@@ -7171,11 +7237,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return le.finalizer && (un = zn(un, ["finally", this.maybeBlock(le.finalizer, es)])), un;
           },
           SwitchStatement: function(le, cn) {
-            var un, fn, mn, An, En, kn = this;
+            var un, fn, mn, An, En, Xn = this;
             if (ys(function() {
               un = [
                 "switch" + on + "(",
-                kn.generateExpression(le.discriminant, o.Sequence, Zn),
+                Xn.generateExpression(le.discriminant, o.Sequence, Zn),
                 ")" + on + "{" + an
               ];
             }), le.cases)
@@ -7184,13 +7250,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return un.push(Ms("}")), un;
           },
           SwitchCase: function(le, cn) {
-            var un, fn, mn, An, En, kn = this;
+            var un, fn, mn, An, En, Xn = this;
             return ys(function() {
               for (le.test ? un = [
-                zn("case", kn.generateExpression(le.test, o.Sequence, Zn)),
+                zn("case", Xn.generateExpression(le.test, o.Sequence, Zn)),
                 ":"
-              ] : un = ["default:"], mn = 0, An = le.consequent.length, An && le.consequent[0].type === t.BlockStatement && (fn = kn.maybeBlock(le.consequent[0], es), un.push(fn), mn = 1), mn !== An && !Rn(ss(un).toString()) && un.push(an), En = es; mn < An; ++mn)
-                mn === An - 1 && cn & In && (En |= In), fn = Ms(kn.generateStatement(le.consequent[mn], En)), un.push(fn), mn + 1 !== An && !Rn(ss(fn).toString()) && un.push(an);
+              ] : un = ["default:"], mn = 0, An = le.consequent.length, An && le.consequent[0].type === t.BlockStatement && (fn = Xn.maybeBlock(le.consequent[0], es), un.push(fn), mn = 1), mn !== An && !Rn(ss(un).toString()) && un.push(an), En = es; mn < An; ++mn)
+                mn === An - 1 && cn & In && (En |= In), fn = Ms(Xn.generateStatement(le.consequent[mn], En)), un.push(fn), mn + 1 !== An && !Rn(ss(fn).toString()) && un.push(an);
             }), un;
           },
           IfStatement: function(le, cn) {
@@ -7227,9 +7293,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           },
           FunctionDeclaration: function(le, cn) {
             return [
-              Xs(le, true),
+              ks(le, true),
               "function",
-              ks(le) || is(),
+              Xs(le) || is(),
               le.id ? fs(le.id) : "",
               this.generateFunctionBody(le)
             ];
@@ -7290,8 +7356,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return le.operator === "??" && (un |= cs), this.BinaryExpression(le, cn, un);
           },
           BinaryExpression: function(le, cn, un) {
-            var fn, mn, An, En, kn, Vn;
-            return En = l[le.operator], mn = le.operator === "**" ? o.Postfix : En, An = le.operator === "**" ? En : En + 1, En < cn && (un |= Ln), kn = this.generateExpression(le.left, mn, un), Vn = kn.toString(), Vn.charCodeAt(Vn.length - 1) === 47 && b.code.isIdentifierPartES5(le.operator.charCodeAt(0)) ? fn = [kn, is(), le.operator] : fn = zn(kn, le.operator), kn = this.generateExpression(le.right, An, un), le.operator === "/" && kn.toString().charAt(0) === "/" || le.operator.slice(-1) === "<" && kn.toString().slice(0, 3) === "!--" ? (fn.push(is()), fn.push(kn)) : fn = zn(fn, kn), le.operator === "in" && !(un & Ln) ? ["(", fn, ")"] : (le.operator === "||" || le.operator === "&&") && un & cs ? ["(", fn, ")"] : Qn(fn, En, cn);
+            var fn, mn, An, En, Xn, Vn;
+            return En = l[le.operator], mn = le.operator === "**" ? o.Postfix : En, An = le.operator === "**" ? En : En + 1, En < cn && (un |= Ln), Xn = this.generateExpression(le.left, mn, un), Vn = Xn.toString(), Vn.charCodeAt(Vn.length - 1) === 47 && b.code.isIdentifierPartES5(le.operator.charCodeAt(0)) ? fn = [Xn, is(), le.operator] : fn = zn(Xn, le.operator), Xn = this.generateExpression(le.right, An, un), le.operator === "/" && Xn.toString().charAt(0) === "/" || le.operator.slice(-1) === "<" && Xn.toString().slice(0, 3) === "!--" ? (fn.push(is()), fn.push(Xn)) : fn = zn(fn, Xn), le.operator === "in" && !(un & Ln) ? ["(", fn, ")"] : (le.operator === "||" || le.operator === "&&") && un & cs ? ["(", fn, ")"] : Qn(fn, En, cn);
           },
           CallExpression: function(le, cn, un) {
             var fn, mn, An;
@@ -7305,10 +7371,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return Qn(fn, o.OptionalChaining, cn);
           },
           NewExpression: function(le, cn, un) {
-            var fn, mn, An, En, kn;
-            if (mn = le.arguments.length, kn = un & $n && !ln && mn === 0 ? Ss : bs, fn = zn(
+            var fn, mn, An, En, Xn;
+            if (mn = le.arguments.length, Xn = un & $n && !ln && mn === 0 ? Ss : bs, fn = zn(
               "new",
-              this.generateExpression(le.callee, o.New, kn)
+              this.generateExpression(le.callee, o.New, Xn)
             ), !(un & $n) || ln || mn > 0) {
               for (fn.push("("), An = 0, En = mn; An < En; ++An)
                 fn.push(this.generateExpression(le.arguments[An], o.Assignment, Zn)), An + 1 < En && fn.push("," + on);
@@ -7325,8 +7391,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return fn = [], fn.push(typeof le.meta == "string" ? le.meta : fs(le.meta)), fn.push("."), fn.push(typeof le.property == "string" ? le.property : fs(le.property)), Qn(fn, o.Member, cn);
           },
           UnaryExpression: function(le, cn, un) {
-            var fn, mn, An, En, kn;
-            return mn = this.generateExpression(le.argument, o.Unary, Zn), on === "" ? fn = zn(le.operator, mn) : (fn = [le.operator], le.operator.length > 2 ? fn = zn(fn, mn) : (En = ss(fn).toString(), kn = En.charCodeAt(En.length - 1), An = mn.toString().charCodeAt(0), ((kn === 43 || kn === 45) && kn === An || b.code.isIdentifierPartES5(kn) && b.code.isIdentifierPartES5(An)) && fn.push(is()), fn.push(mn))), Qn(fn, o.Unary, cn);
+            var fn, mn, An, En, Xn;
+            return mn = this.generateExpression(le.argument, o.Unary, Zn), on === "" ? fn = zn(le.operator, mn) : (fn = [le.operator], le.operator.length > 2 ? fn = zn(fn, mn) : (En = ss(fn).toString(), Xn = En.charCodeAt(En.length - 1), An = mn.toString().charCodeAt(0), ((Xn === 43 || Xn === 45) && Xn === An || b.code.isIdentifierPartES5(Xn) && b.code.isIdentifierPartES5(An)) && fn.push(is()), fn.push(mn))), Qn(fn, o.Unary, cn);
           },
           YieldExpression: function(le, cn, un) {
             var fn;
@@ -7361,20 +7427,20 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           },
           FunctionExpression: function(le, cn, un) {
             var fn = [
-              Xs(le, true),
+              ks(le, true),
               "function"
             ];
-            return le.id ? (fn.push(ks(le) || is()), fn.push(fs(le.id))) : fn.push(ks(le) || on), fn.push(this.generateFunctionBody(le)), fn;
+            return le.id ? (fn.push(Xs(le) || is()), fn.push(fs(le.id))) : fn.push(Xs(le) || on), fn.push(this.generateFunctionBody(le)), fn;
           },
           ArrayPattern: function(le, cn, un) {
             return this.ArrayExpression(le, cn, un, true);
           },
           ArrayExpression: function(le, cn, un, fn) {
             var mn, An, En = this;
-            return le.elements.length ? (An = fn ? false : le.elements.length > 1, mn = ["[", An ? an : ""], ys(function(kn) {
+            return le.elements.length ? (An = fn ? false : le.elements.length > 1, mn = ["[", An ? an : ""], ys(function(Xn) {
               var Vn, os;
               for (Vn = 0, os = le.elements.length; Vn < os; ++Vn)
-                le.elements[Vn] ? (mn.push(An ? kn : ""), mn.push(En.generateExpression(le.elements[Vn], o.Assignment, Zn))) : (An && mn.push(kn), Vn + 1 === os && mn.push(",")), Vn + 1 < os && mn.push("," + (An ? an : on));
+                le.elements[Vn] ? (mn.push(An ? Xn : ""), mn.push(En.generateExpression(le.elements[Vn], o.Assignment, Zn))) : (An && mn.push(Xn), Vn + 1 === os && mn.push(",")), Vn + 1 < os && mn.push("," + (An ? an : on));
             }), An && !Rn(ss(mn).toString()) && mn.push(an), mn.push(An ? R : ""), mn.push("]"), mn) : "[]";
           },
           RestElement: function(le, cn, un) {
@@ -7415,25 +7481,25 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             var fn, mn, An, En = this;
             return le.properties.length ? (fn = le.properties.length > 1, ys(function() {
               An = En.generateExpression(le.properties[0], o.Sequence, Zn);
-            }), !fn && !Jn(ss(An).toString()) ? ["{", on, An, on, "}"] : (ys(function(kn) {
+            }), !fn && !Jn(ss(An).toString()) ? ["{", on, An, on, "}"] : (ys(function(Xn) {
               var Vn, os;
-              if (mn = ["{", an, kn, An], fn)
+              if (mn = ["{", an, Xn, An], fn)
                 for (mn.push("," + an), Vn = 1, os = le.properties.length; Vn < os; ++Vn)
-                  mn.push(kn), mn.push(En.generateExpression(le.properties[Vn], o.Sequence, Zn)), Vn + 1 < os && mn.push("," + an);
+                  mn.push(Xn), mn.push(En.generateExpression(le.properties[Vn], o.Sequence, Zn)), Vn + 1 < os && mn.push("," + an);
             }), Rn(ss(mn).toString()) || mn.push(an), mn.push(R), mn.push("}"), mn)) : "{}";
           },
           AssignmentPattern: function(le, cn, un) {
             return this.generateAssignment(le.left, le.right, "=", cn, un);
           },
           ObjectPattern: function(le, cn, un) {
-            var fn, mn, An, En, kn, Vn = this;
+            var fn, mn, An, En, Xn, Vn = this;
             if (!le.properties.length)
               return "{}";
             if (En = false, le.properties.length === 1)
-              kn = le.properties[0], kn.type === t.Property && kn.value.type !== t.Identifier && (En = true);
+              Xn = le.properties[0], Xn.type === t.Property && Xn.value.type !== t.Identifier && (En = true);
             else
               for (mn = 0, An = le.properties.length; mn < An; ++mn)
-                if (kn = le.properties[mn], kn.type === t.Property && !kn.shorthand) {
+                if (Xn = le.properties[mn], Xn.type === t.Property && !Xn.shorthand) {
                   En = true;
                   break;
                 }
@@ -7481,10 +7547,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return this.ComprehensionExpression(le, cn, un);
           },
           ComprehensionExpression: function(le, cn, un) {
-            var fn, mn, An, En, kn = this;
+            var fn, mn, An, En, Xn = this;
             return fn = le.type === t.GeneratorExpression ? ["("] : ["["], _n.moz.comprehensionExpressionStartsWithAssignment && (En = this.generateExpression(le.body, o.Assignment, Zn), fn.push(En)), le.blocks && ys(function() {
               for (mn = 0, An = le.blocks.length; mn < An; ++mn)
-                En = kn.generateExpression(le.blocks[mn], o.Sequence, Zn), mn > 0 || _n.moz.comprehensionExpressionStartsWithAssignment ? fn = zn(fn, En) : fn.push(En);
+                En = Xn.generateExpression(le.blocks[mn], o.Sequence, Zn), mn > 0 || _n.moz.comprehensionExpressionStartsWithAssignment ? fn = zn(fn, En) : fn.push(En);
             }), le.filter && (fn = zn(fn, "if" + on), En = this.generateExpression(le.filter, o.Sequence, Zn), fn = zn(fn, ["(", En, ")"])), _n.moz.comprehensionExpressionStartsWithAssignment || (En = this.generateExpression(le.body, o.Assignment, Zn), fn = zn(fn, En)), fn.push(le.type === t.GeneratorExpression ? ")" : "]"), fn;
           },
           ComprehensionBlock: function(le, cn, un) {
@@ -7541,7 +7607,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           var cn;
           if (cn = new rs(), wn(le))
             return cn.generateStatement(le, es);
-          if (Xn(le))
+          if (kn(le))
             return cn.generateExpression(le, o.Sequence, Zn);
           throw new Error("Unknown node type: " + le.type);
         }
@@ -7602,8 +7668,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const { wrapAsync: o, addReturn: l, emitMiniLocations: d, emitWidgets: p, blockBased: b, range: R } = t, I = [];
     let z = 0;
     e30 = e30.replace(/^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg, (yn, Gn, vn, Fn) => {
-      const Sn = vn.replace(/\\/g, "\\\\").replace(/'/g, "\\'"), Xn = `new StrudelButton('${Gn}: ${Sn}')`, wn = Xn.length - yn.length;
-      return I.push({ afterPos: Fn + z + Xn.length, delta: wn }), z += wn, Xn;
+      const Sn = vn.replace(/\\/g, "\\\\").replace(/'/g, "\\'"), kn = `new StrudelButton('${Gn}: ${Sn}')`, wn = kn.length - yn.length;
+      return I.push({ afterPos: Fn + z + kn.length, delta: wn }), z += wn, kn;
     });
     const se = [];
     let tn = parse$6(e30, {
@@ -7929,16 +7995,16 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   }
   function peg$parse(e30, t) {
     t = t !== void 0 ? t : {};
-    var o = {}, l = t.grammarSource, d = { start: Sr }, p = Sr, b = ".", R = "-", I = "0", z = ",", se = "|", tn = "[", rn = "]", nn = "{", an = "}", on = "%", ln = "<", pn = ">", gn = "!", Mn = "(", _n = ")", hn = "/", yn = "*", Gn = "?", vn = ":", Fn = "..", Sn = "^", Xn = "struct", wn = "target", Ln = "euclid", Nn = "slow", $n = "rotL", Bn = "rotR", Wn = "fast", In = "scale", cs = "//", _s = "cat", vs = "$", Zn = "setcps", bs = "setbpm", Ls = "hush", Ss = /^[1-9]/, es = /^[eE]/, gs = /^[+\-]/, us = /^[0-9]/, ps = /^[ \n\r\t\xA0]/, Ds = /^["']/, On = /^[#\--.0-9A-Z\^-_a-z~\xAA\xB5\xBA\xC0-\xD6\xD8-\xF6\xF8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376-\u0377\u037A-\u037D\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u052F\u0531-\u0556\u0559\u0560-\u0588\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06D5\u06E5-\u06E6\u06EE-\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4-\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u0860-\u086A\u08A0-\u08B4\u08B6-\u08BD\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098C\u098F-\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC-\u09DD\u09DF-\u09E1\u09F0-\u09F1\u09FC\u0A05-\u0A0A\u0A0F-\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32-\u0A33\u0A35-\u0A36\u0A38-\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2-\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0-\u0AE1\u0AF9\u0B05-\u0B0C\u0B0F-\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32-\u0B33\u0B35-\u0B39\u0B3D\u0B5C-\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99-\u0B9A\u0B9C\u0B9E-\u0B9F\u0BA3-\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C39\u0C3D\u0C58-\u0C5A\u0C60-\u0C61\u0C80\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDE\u0CE0-\u0CE1\u0CF1-\u0CF2\u0D05-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D54-\u0D56\u0D5F-\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32-\u0E33\u0E40-\u0E46\u0E81-\u0E82\u0E84\u0E87-\u0E88\u0E8A\u0E8D\u0E94-\u0E97\u0E99-\u0E9F\u0EA1-\u0EA3\u0EA5\u0EA7\u0EAA-\u0EAB\u0EAD-\u0EB0\u0EB2-\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065-\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F5\u13F8-\u13FD\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u16EE-\u16F8\u1700-\u170C\u170E-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1878\u1880-\u1884\u1887-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191E\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19B0-\u19C9\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4B\u1B83-\u1BA0\u1BAE-\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1C80-\u1C88\u1C90-\u1CBA\u1CBD-\u1CBF\u1CE9-\u1CEC\u1CEE-\u1CF1\u1CF5-\u1CF6\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2119-\u211D\u2124\u2126\u2128\u212A-\u212D\u212F-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2160-\u2188\u2C00-\u2C2E\u2C30-\u2C5E\u2C60-\u2CE4\u2CEB-\u2CEE\u2CF2-\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u2E2F\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303C\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BA\u31F0-\u31FF\u3400-\u4DB5\u4E00-\u9FEF\uA000-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A-\uA62B\uA640-\uA66E\uA67F-\uA69D\uA6A0-\uA6EF\uA717-\uA71F\uA722-\uA788\uA78B-\uA7B9\uA7F7-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA8FD-\uA8FE\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uA9E0-\uA9E4\uA9E6-\uA9EF\uA9FA-\uA9FE\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA7E-\uAAAF\uAAB1\uAAB5-\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uAB30-\uAB5A\uAB5C-\uAB65\uAB70-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40-\uFB41\uFB43-\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC]/, Dn = /^[@_]/, Jn = /^[^\n]/, Rn = _r("number"), xn = ls(".", false), Yn = Is([["1", "9"]], false, false), Tn = Is(["e", "E"], false, false), ns = Is(["+", "-"], false, false), hs = ls("-", false), Es = ls("0", false), Rs = Is([["0", "9"]], false, false), ms = _r("whitespace"), xs = Is([" ", `
-`, "\r", "	", "\xA0"], false, false), Ns = ls(",", false), ss = ls("|", false), is = Is(['"', "'"], false, false), zn = _r('a letter, a number, "-", "#", ".", "^", "_"'), Ms = Is(["#", ["-", "."], ["0", "9"], ["A", "Z"], ["^", "_"], ["a", "z"], "~", "\xAA", "\xB5", "\xBA", ["\xC0", "\xD6"], ["\xD8", "\xF6"], ["\xF8", "\u02C1"], ["\u02C6", "\u02D1"], ["\u02E0", "\u02E4"], "\u02EC", "\u02EE", ["\u0370", "\u0374"], ["\u0376", "\u0377"], ["\u037A", "\u037D"], "\u037F", "\u0386", ["\u0388", "\u038A"], "\u038C", ["\u038E", "\u03A1"], ["\u03A3", "\u03F5"], ["\u03F7", "\u0481"], ["\u048A", "\u052F"], ["\u0531", "\u0556"], "\u0559", ["\u0560", "\u0588"], ["\u05D0", "\u05EA"], ["\u05EF", "\u05F2"], ["\u0620", "\u064A"], ["\u066E", "\u066F"], ["\u0671", "\u06D3"], "\u06D5", ["\u06E5", "\u06E6"], ["\u06EE", "\u06EF"], ["\u06FA", "\u06FC"], "\u06FF", "\u0710", ["\u0712", "\u072F"], ["\u074D", "\u07A5"], "\u07B1", ["\u07CA", "\u07EA"], ["\u07F4", "\u07F5"], "\u07FA", ["\u0800", "\u0815"], "\u081A", "\u0824", "\u0828", ["\u0840", "\u0858"], ["\u0860", "\u086A"], ["\u08A0", "\u08B4"], ["\u08B6", "\u08BD"], ["\u0904", "\u0939"], "\u093D", "\u0950", ["\u0958", "\u0961"], ["\u0971", "\u0980"], ["\u0985", "\u098C"], ["\u098F", "\u0990"], ["\u0993", "\u09A8"], ["\u09AA", "\u09B0"], "\u09B2", ["\u09B6", "\u09B9"], "\u09BD", "\u09CE", ["\u09DC", "\u09DD"], ["\u09DF", "\u09E1"], ["\u09F0", "\u09F1"], "\u09FC", ["\u0A05", "\u0A0A"], ["\u0A0F", "\u0A10"], ["\u0A13", "\u0A28"], ["\u0A2A", "\u0A30"], ["\u0A32", "\u0A33"], ["\u0A35", "\u0A36"], ["\u0A38", "\u0A39"], ["\u0A59", "\u0A5C"], "\u0A5E", ["\u0A72", "\u0A74"], ["\u0A85", "\u0A8D"], ["\u0A8F", "\u0A91"], ["\u0A93", "\u0AA8"], ["\u0AAA", "\u0AB0"], ["\u0AB2", "\u0AB3"], ["\u0AB5", "\u0AB9"], "\u0ABD", "\u0AD0", ["\u0AE0", "\u0AE1"], "\u0AF9", ["\u0B05", "\u0B0C"], ["\u0B0F", "\u0B10"], ["\u0B13", "\u0B28"], ["\u0B2A", "\u0B30"], ["\u0B32", "\u0B33"], ["\u0B35", "\u0B39"], "\u0B3D", ["\u0B5C", "\u0B5D"], ["\u0B5F", "\u0B61"], "\u0B71", "\u0B83", ["\u0B85", "\u0B8A"], ["\u0B8E", "\u0B90"], ["\u0B92", "\u0B95"], ["\u0B99", "\u0B9A"], "\u0B9C", ["\u0B9E", "\u0B9F"], ["\u0BA3", "\u0BA4"], ["\u0BA8", "\u0BAA"], ["\u0BAE", "\u0BB9"], "\u0BD0", ["\u0C05", "\u0C0C"], ["\u0C0E", "\u0C10"], ["\u0C12", "\u0C28"], ["\u0C2A", "\u0C39"], "\u0C3D", ["\u0C58", "\u0C5A"], ["\u0C60", "\u0C61"], "\u0C80", ["\u0C85", "\u0C8C"], ["\u0C8E", "\u0C90"], ["\u0C92", "\u0CA8"], ["\u0CAA", "\u0CB3"], ["\u0CB5", "\u0CB9"], "\u0CBD", "\u0CDE", ["\u0CE0", "\u0CE1"], ["\u0CF1", "\u0CF2"], ["\u0D05", "\u0D0C"], ["\u0D0E", "\u0D10"], ["\u0D12", "\u0D3A"], "\u0D3D", "\u0D4E", ["\u0D54", "\u0D56"], ["\u0D5F", "\u0D61"], ["\u0D7A", "\u0D7F"], ["\u0D85", "\u0D96"], ["\u0D9A", "\u0DB1"], ["\u0DB3", "\u0DBB"], "\u0DBD", ["\u0DC0", "\u0DC6"], ["\u0E01", "\u0E30"], ["\u0E32", "\u0E33"], ["\u0E40", "\u0E46"], ["\u0E81", "\u0E82"], "\u0E84", ["\u0E87", "\u0E88"], "\u0E8A", "\u0E8D", ["\u0E94", "\u0E97"], ["\u0E99", "\u0E9F"], ["\u0EA1", "\u0EA3"], "\u0EA5", "\u0EA7", ["\u0EAA", "\u0EAB"], ["\u0EAD", "\u0EB0"], ["\u0EB2", "\u0EB3"], "\u0EBD", ["\u0EC0", "\u0EC4"], "\u0EC6", ["\u0EDC", "\u0EDF"], "\u0F00", ["\u0F40", "\u0F47"], ["\u0F49", "\u0F6C"], ["\u0F88", "\u0F8C"], ["\u1000", "\u102A"], "\u103F", ["\u1050", "\u1055"], ["\u105A", "\u105D"], "\u1061", ["\u1065", "\u1066"], ["\u106E", "\u1070"], ["\u1075", "\u1081"], "\u108E", ["\u10A0", "\u10C5"], "\u10C7", "\u10CD", ["\u10D0", "\u10FA"], ["\u10FC", "\u1248"], ["\u124A", "\u124D"], ["\u1250", "\u1256"], "\u1258", ["\u125A", "\u125D"], ["\u1260", "\u1288"], ["\u128A", "\u128D"], ["\u1290", "\u12B0"], ["\u12B2", "\u12B5"], ["\u12B8", "\u12BE"], "\u12C0", ["\u12C2", "\u12C5"], ["\u12C8", "\u12D6"], ["\u12D8", "\u1310"], ["\u1312", "\u1315"], ["\u1318", "\u135A"], ["\u1380", "\u138F"], ["\u13A0", "\u13F5"], ["\u13F8", "\u13FD"], ["\u1401", "\u166C"], ["\u166F", "\u167F"], ["\u1681", "\u169A"], ["\u16A0", "\u16EA"], ["\u16EE", "\u16F8"], ["\u1700", "\u170C"], ["\u170E", "\u1711"], ["\u1720", "\u1731"], ["\u1740", "\u1751"], ["\u1760", "\u176C"], ["\u176E", "\u1770"], ["\u1780", "\u17B3"], "\u17D7", "\u17DC", ["\u1820", "\u1878"], ["\u1880", "\u1884"], ["\u1887", "\u18A8"], "\u18AA", ["\u18B0", "\u18F5"], ["\u1900", "\u191E"], ["\u1950", "\u196D"], ["\u1970", "\u1974"], ["\u1980", "\u19AB"], ["\u19B0", "\u19C9"], ["\u1A00", "\u1A16"], ["\u1A20", "\u1A54"], "\u1AA7", ["\u1B05", "\u1B33"], ["\u1B45", "\u1B4B"], ["\u1B83", "\u1BA0"], ["\u1BAE", "\u1BAF"], ["\u1BBA", "\u1BE5"], ["\u1C00", "\u1C23"], ["\u1C4D", "\u1C4F"], ["\u1C5A", "\u1C7D"], ["\u1C80", "\u1C88"], ["\u1C90", "\u1CBA"], ["\u1CBD", "\u1CBF"], ["\u1CE9", "\u1CEC"], ["\u1CEE", "\u1CF1"], ["\u1CF5", "\u1CF6"], ["\u1D00", "\u1DBF"], ["\u1E00", "\u1F15"], ["\u1F18", "\u1F1D"], ["\u1F20", "\u1F45"], ["\u1F48", "\u1F4D"], ["\u1F50", "\u1F57"], "\u1F59", "\u1F5B", "\u1F5D", ["\u1F5F", "\u1F7D"], ["\u1F80", "\u1FB4"], ["\u1FB6", "\u1FBC"], "\u1FBE", ["\u1FC2", "\u1FC4"], ["\u1FC6", "\u1FCC"], ["\u1FD0", "\u1FD3"], ["\u1FD6", "\u1FDB"], ["\u1FE0", "\u1FEC"], ["\u1FF2", "\u1FF4"], ["\u1FF6", "\u1FFC"], "\u2071", "\u207F", ["\u2090", "\u209C"], "\u2102", "\u2107", ["\u210A", "\u2113"], "\u2115", ["\u2119", "\u211D"], "\u2124", "\u2126", "\u2128", ["\u212A", "\u212D"], ["\u212F", "\u2139"], ["\u213C", "\u213F"], ["\u2145", "\u2149"], "\u214E", ["\u2160", "\u2188"], ["\u2C00", "\u2C2E"], ["\u2C30", "\u2C5E"], ["\u2C60", "\u2CE4"], ["\u2CEB", "\u2CEE"], ["\u2CF2", "\u2CF3"], ["\u2D00", "\u2D25"], "\u2D27", "\u2D2D", ["\u2D30", "\u2D67"], "\u2D6F", ["\u2D80", "\u2D96"], ["\u2DA0", "\u2DA6"], ["\u2DA8", "\u2DAE"], ["\u2DB0", "\u2DB6"], ["\u2DB8", "\u2DBE"], ["\u2DC0", "\u2DC6"], ["\u2DC8", "\u2DCE"], ["\u2DD0", "\u2DD6"], ["\u2DD8", "\u2DDE"], "\u2E2F", ["\u3005", "\u3007"], ["\u3021", "\u3029"], ["\u3031", "\u3035"], ["\u3038", "\u303C"], ["\u3041", "\u3096"], ["\u309D", "\u309F"], ["\u30A1", "\u30FA"], ["\u30FC", "\u30FF"], ["\u3105", "\u312F"], ["\u3131", "\u318E"], ["\u31A0", "\u31BA"], ["\u31F0", "\u31FF"], ["\u3400", "\u4DB5"], ["\u4E00", "\u9FEF"], ["\uA000", "\uA48C"], ["\uA4D0", "\uA4FD"], ["\uA500", "\uA60C"], ["\uA610", "\uA61F"], ["\uA62A", "\uA62B"], ["\uA640", "\uA66E"], ["\uA67F", "\uA69D"], ["\uA6A0", "\uA6EF"], ["\uA717", "\uA71F"], ["\uA722", "\uA788"], ["\uA78B", "\uA7B9"], ["\uA7F7", "\uA801"], ["\uA803", "\uA805"], ["\uA807", "\uA80A"], ["\uA80C", "\uA822"], ["\uA840", "\uA873"], ["\uA882", "\uA8B3"], ["\uA8F2", "\uA8F7"], "\uA8FB", ["\uA8FD", "\uA8FE"], ["\uA90A", "\uA925"], ["\uA930", "\uA946"], ["\uA960", "\uA97C"], ["\uA984", "\uA9B2"], "\uA9CF", ["\uA9E0", "\uA9E4"], ["\uA9E6", "\uA9EF"], ["\uA9FA", "\uA9FE"], ["\uAA00", "\uAA28"], ["\uAA40", "\uAA42"], ["\uAA44", "\uAA4B"], ["\uAA60", "\uAA76"], "\uAA7A", ["\uAA7E", "\uAAAF"], "\uAAB1", ["\uAAB5", "\uAAB6"], ["\uAAB9", "\uAABD"], "\uAAC0", "\uAAC2", ["\uAADB", "\uAADD"], ["\uAAE0", "\uAAEA"], ["\uAAF2", "\uAAF4"], ["\uAB01", "\uAB06"], ["\uAB09", "\uAB0E"], ["\uAB11", "\uAB16"], ["\uAB20", "\uAB26"], ["\uAB28", "\uAB2E"], ["\uAB30", "\uAB5A"], ["\uAB5C", "\uAB65"], ["\uAB70", "\uABE2"], ["\uAC00", "\uD7A3"], ["\uD7B0", "\uD7C6"], ["\uD7CB", "\uD7FB"], ["\uF900", "\uFA6D"], ["\uFA70", "\uFAD9"], ["\uFB00", "\uFB06"], ["\uFB13", "\uFB17"], "\uFB1D", ["\uFB1F", "\uFB28"], ["\uFB2A", "\uFB36"], ["\uFB38", "\uFB3C"], "\uFB3E", ["\uFB40", "\uFB41"], ["\uFB43", "\uFB44"], ["\uFB46", "\uFBB1"], ["\uFBD3", "\uFD3D"], ["\uFD50", "\uFD8F"], ["\uFD92", "\uFDC7"], ["\uFDF0", "\uFDFB"], ["\uFE70", "\uFE74"], ["\uFE76", "\uFEFC"], ["\uFF21", "\uFF3A"], ["\uFF41", "\uFF5A"], ["\uFF66", "\uFFBE"], ["\uFFC2", "\uFFC7"], ["\uFFCA", "\uFFCF"], ["\uFFD2", "\uFFD7"], ["\uFFDA", "\uFFDC"]], false, false), ys = ls("[", false), Hs = ls("]", false), Ys = ls("{", false), Fs = ls("}", false), Ws = ls("%", false), Kn = ls("<", false), Qn = ls(">", false), Gs = Is(["@", "_"], false, false), Cs = ls("!", false), rs = ls("(", false), fs = ls(")", false), Xs = ls("/", false), ks = ls("*", false), sr = ls("?", false), hr = ls(":", false), mr = ls("..", false), le = ls("^", false), cn = ls("struct", false), un = ls("target", false), fn = ls("euclid", false), mn = ls("slow", false), An = ls("rotL", false), En = ls("rotR", false), kn = ls("fast", false), Vn = ls("scale", false), os = ls("//", false), Ps = Is([`
+    var o = {}, l = t.grammarSource, d = { start: Sr }, p = Sr, b = ".", R = "-", I = "0", z = ",", se = "|", tn = "[", rn = "]", nn = "{", an = "}", on = "%", ln = "<", pn = ">", gn = "!", Mn = "(", _n = ")", hn = "/", yn = "*", Gn = "?", vn = ":", Fn = "..", Sn = "^", kn = "struct", wn = "target", Ln = "euclid", Nn = "slow", $n = "rotL", Bn = "rotR", Wn = "fast", In = "scale", cs = "//", _s = "cat", vs = "$", Zn = "setcps", bs = "setbpm", Ls = "hush", Ss = /^[1-9]/, es = /^[eE]/, gs = /^[+\-]/, us = /^[0-9]/, ps = /^[ \n\r\t\xA0]/, Ds = /^["']/, On = /^[#\--.0-9A-Z\^-_a-z~\xAA\xB5\xBA\xC0-\xD6\xD8-\xF6\xF8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376-\u0377\u037A-\u037D\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u052F\u0531-\u0556\u0559\u0560-\u0588\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06D5\u06E5-\u06E6\u06EE-\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4-\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u0860-\u086A\u08A0-\u08B4\u08B6-\u08BD\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098C\u098F-\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC-\u09DD\u09DF-\u09E1\u09F0-\u09F1\u09FC\u0A05-\u0A0A\u0A0F-\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32-\u0A33\u0A35-\u0A36\u0A38-\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2-\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0-\u0AE1\u0AF9\u0B05-\u0B0C\u0B0F-\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32-\u0B33\u0B35-\u0B39\u0B3D\u0B5C-\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99-\u0B9A\u0B9C\u0B9E-\u0B9F\u0BA3-\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C39\u0C3D\u0C58-\u0C5A\u0C60-\u0C61\u0C80\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDE\u0CE0-\u0CE1\u0CF1-\u0CF2\u0D05-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D54-\u0D56\u0D5F-\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32-\u0E33\u0E40-\u0E46\u0E81-\u0E82\u0E84\u0E87-\u0E88\u0E8A\u0E8D\u0E94-\u0E97\u0E99-\u0E9F\u0EA1-\u0EA3\u0EA5\u0EA7\u0EAA-\u0EAB\u0EAD-\u0EB0\u0EB2-\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065-\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F5\u13F8-\u13FD\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u16EE-\u16F8\u1700-\u170C\u170E-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1878\u1880-\u1884\u1887-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191E\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19B0-\u19C9\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4B\u1B83-\u1BA0\u1BAE-\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1C80-\u1C88\u1C90-\u1CBA\u1CBD-\u1CBF\u1CE9-\u1CEC\u1CEE-\u1CF1\u1CF5-\u1CF6\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2119-\u211D\u2124\u2126\u2128\u212A-\u212D\u212F-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2160-\u2188\u2C00-\u2C2E\u2C30-\u2C5E\u2C60-\u2CE4\u2CEB-\u2CEE\u2CF2-\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u2E2F\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303C\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BA\u31F0-\u31FF\u3400-\u4DB5\u4E00-\u9FEF\uA000-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A-\uA62B\uA640-\uA66E\uA67F-\uA69D\uA6A0-\uA6EF\uA717-\uA71F\uA722-\uA788\uA78B-\uA7B9\uA7F7-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA8FD-\uA8FE\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uA9E0-\uA9E4\uA9E6-\uA9EF\uA9FA-\uA9FE\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA7E-\uAAAF\uAAB1\uAAB5-\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uAB30-\uAB5A\uAB5C-\uAB65\uAB70-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40-\uFB41\uFB43-\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC]/, Dn = /^[@_]/, Jn = /^[^\n]/, Rn = _r("number"), xn = ls(".", false), Yn = Is([["1", "9"]], false, false), Tn = Is(["e", "E"], false, false), ns = Is(["+", "-"], false, false), hs = ls("-", false), Es = ls("0", false), Rs = Is([["0", "9"]], false, false), ms = _r("whitespace"), xs = Is([" ", `
+`, "\r", "	", "\xA0"], false, false), Ns = ls(",", false), ss = ls("|", false), is = Is(['"', "'"], false, false), zn = _r('a letter, a number, "-", "#", ".", "^", "_"'), Ms = Is(["#", ["-", "."], ["0", "9"], ["A", "Z"], ["^", "_"], ["a", "z"], "~", "\xAA", "\xB5", "\xBA", ["\xC0", "\xD6"], ["\xD8", "\xF6"], ["\xF8", "\u02C1"], ["\u02C6", "\u02D1"], ["\u02E0", "\u02E4"], "\u02EC", "\u02EE", ["\u0370", "\u0374"], ["\u0376", "\u0377"], ["\u037A", "\u037D"], "\u037F", "\u0386", ["\u0388", "\u038A"], "\u038C", ["\u038E", "\u03A1"], ["\u03A3", "\u03F5"], ["\u03F7", "\u0481"], ["\u048A", "\u052F"], ["\u0531", "\u0556"], "\u0559", ["\u0560", "\u0588"], ["\u05D0", "\u05EA"], ["\u05EF", "\u05F2"], ["\u0620", "\u064A"], ["\u066E", "\u066F"], ["\u0671", "\u06D3"], "\u06D5", ["\u06E5", "\u06E6"], ["\u06EE", "\u06EF"], ["\u06FA", "\u06FC"], "\u06FF", "\u0710", ["\u0712", "\u072F"], ["\u074D", "\u07A5"], "\u07B1", ["\u07CA", "\u07EA"], ["\u07F4", "\u07F5"], "\u07FA", ["\u0800", "\u0815"], "\u081A", "\u0824", "\u0828", ["\u0840", "\u0858"], ["\u0860", "\u086A"], ["\u08A0", "\u08B4"], ["\u08B6", "\u08BD"], ["\u0904", "\u0939"], "\u093D", "\u0950", ["\u0958", "\u0961"], ["\u0971", "\u0980"], ["\u0985", "\u098C"], ["\u098F", "\u0990"], ["\u0993", "\u09A8"], ["\u09AA", "\u09B0"], "\u09B2", ["\u09B6", "\u09B9"], "\u09BD", "\u09CE", ["\u09DC", "\u09DD"], ["\u09DF", "\u09E1"], ["\u09F0", "\u09F1"], "\u09FC", ["\u0A05", "\u0A0A"], ["\u0A0F", "\u0A10"], ["\u0A13", "\u0A28"], ["\u0A2A", "\u0A30"], ["\u0A32", "\u0A33"], ["\u0A35", "\u0A36"], ["\u0A38", "\u0A39"], ["\u0A59", "\u0A5C"], "\u0A5E", ["\u0A72", "\u0A74"], ["\u0A85", "\u0A8D"], ["\u0A8F", "\u0A91"], ["\u0A93", "\u0AA8"], ["\u0AAA", "\u0AB0"], ["\u0AB2", "\u0AB3"], ["\u0AB5", "\u0AB9"], "\u0ABD", "\u0AD0", ["\u0AE0", "\u0AE1"], "\u0AF9", ["\u0B05", "\u0B0C"], ["\u0B0F", "\u0B10"], ["\u0B13", "\u0B28"], ["\u0B2A", "\u0B30"], ["\u0B32", "\u0B33"], ["\u0B35", "\u0B39"], "\u0B3D", ["\u0B5C", "\u0B5D"], ["\u0B5F", "\u0B61"], "\u0B71", "\u0B83", ["\u0B85", "\u0B8A"], ["\u0B8E", "\u0B90"], ["\u0B92", "\u0B95"], ["\u0B99", "\u0B9A"], "\u0B9C", ["\u0B9E", "\u0B9F"], ["\u0BA3", "\u0BA4"], ["\u0BA8", "\u0BAA"], ["\u0BAE", "\u0BB9"], "\u0BD0", ["\u0C05", "\u0C0C"], ["\u0C0E", "\u0C10"], ["\u0C12", "\u0C28"], ["\u0C2A", "\u0C39"], "\u0C3D", ["\u0C58", "\u0C5A"], ["\u0C60", "\u0C61"], "\u0C80", ["\u0C85", "\u0C8C"], ["\u0C8E", "\u0C90"], ["\u0C92", "\u0CA8"], ["\u0CAA", "\u0CB3"], ["\u0CB5", "\u0CB9"], "\u0CBD", "\u0CDE", ["\u0CE0", "\u0CE1"], ["\u0CF1", "\u0CF2"], ["\u0D05", "\u0D0C"], ["\u0D0E", "\u0D10"], ["\u0D12", "\u0D3A"], "\u0D3D", "\u0D4E", ["\u0D54", "\u0D56"], ["\u0D5F", "\u0D61"], ["\u0D7A", "\u0D7F"], ["\u0D85", "\u0D96"], ["\u0D9A", "\u0DB1"], ["\u0DB3", "\u0DBB"], "\u0DBD", ["\u0DC0", "\u0DC6"], ["\u0E01", "\u0E30"], ["\u0E32", "\u0E33"], ["\u0E40", "\u0E46"], ["\u0E81", "\u0E82"], "\u0E84", ["\u0E87", "\u0E88"], "\u0E8A", "\u0E8D", ["\u0E94", "\u0E97"], ["\u0E99", "\u0E9F"], ["\u0EA1", "\u0EA3"], "\u0EA5", "\u0EA7", ["\u0EAA", "\u0EAB"], ["\u0EAD", "\u0EB0"], ["\u0EB2", "\u0EB3"], "\u0EBD", ["\u0EC0", "\u0EC4"], "\u0EC6", ["\u0EDC", "\u0EDF"], "\u0F00", ["\u0F40", "\u0F47"], ["\u0F49", "\u0F6C"], ["\u0F88", "\u0F8C"], ["\u1000", "\u102A"], "\u103F", ["\u1050", "\u1055"], ["\u105A", "\u105D"], "\u1061", ["\u1065", "\u1066"], ["\u106E", "\u1070"], ["\u1075", "\u1081"], "\u108E", ["\u10A0", "\u10C5"], "\u10C7", "\u10CD", ["\u10D0", "\u10FA"], ["\u10FC", "\u1248"], ["\u124A", "\u124D"], ["\u1250", "\u1256"], "\u1258", ["\u125A", "\u125D"], ["\u1260", "\u1288"], ["\u128A", "\u128D"], ["\u1290", "\u12B0"], ["\u12B2", "\u12B5"], ["\u12B8", "\u12BE"], "\u12C0", ["\u12C2", "\u12C5"], ["\u12C8", "\u12D6"], ["\u12D8", "\u1310"], ["\u1312", "\u1315"], ["\u1318", "\u135A"], ["\u1380", "\u138F"], ["\u13A0", "\u13F5"], ["\u13F8", "\u13FD"], ["\u1401", "\u166C"], ["\u166F", "\u167F"], ["\u1681", "\u169A"], ["\u16A0", "\u16EA"], ["\u16EE", "\u16F8"], ["\u1700", "\u170C"], ["\u170E", "\u1711"], ["\u1720", "\u1731"], ["\u1740", "\u1751"], ["\u1760", "\u176C"], ["\u176E", "\u1770"], ["\u1780", "\u17B3"], "\u17D7", "\u17DC", ["\u1820", "\u1878"], ["\u1880", "\u1884"], ["\u1887", "\u18A8"], "\u18AA", ["\u18B0", "\u18F5"], ["\u1900", "\u191E"], ["\u1950", "\u196D"], ["\u1970", "\u1974"], ["\u1980", "\u19AB"], ["\u19B0", "\u19C9"], ["\u1A00", "\u1A16"], ["\u1A20", "\u1A54"], "\u1AA7", ["\u1B05", "\u1B33"], ["\u1B45", "\u1B4B"], ["\u1B83", "\u1BA0"], ["\u1BAE", "\u1BAF"], ["\u1BBA", "\u1BE5"], ["\u1C00", "\u1C23"], ["\u1C4D", "\u1C4F"], ["\u1C5A", "\u1C7D"], ["\u1C80", "\u1C88"], ["\u1C90", "\u1CBA"], ["\u1CBD", "\u1CBF"], ["\u1CE9", "\u1CEC"], ["\u1CEE", "\u1CF1"], ["\u1CF5", "\u1CF6"], ["\u1D00", "\u1DBF"], ["\u1E00", "\u1F15"], ["\u1F18", "\u1F1D"], ["\u1F20", "\u1F45"], ["\u1F48", "\u1F4D"], ["\u1F50", "\u1F57"], "\u1F59", "\u1F5B", "\u1F5D", ["\u1F5F", "\u1F7D"], ["\u1F80", "\u1FB4"], ["\u1FB6", "\u1FBC"], "\u1FBE", ["\u1FC2", "\u1FC4"], ["\u1FC6", "\u1FCC"], ["\u1FD0", "\u1FD3"], ["\u1FD6", "\u1FDB"], ["\u1FE0", "\u1FEC"], ["\u1FF2", "\u1FF4"], ["\u1FF6", "\u1FFC"], "\u2071", "\u207F", ["\u2090", "\u209C"], "\u2102", "\u2107", ["\u210A", "\u2113"], "\u2115", ["\u2119", "\u211D"], "\u2124", "\u2126", "\u2128", ["\u212A", "\u212D"], ["\u212F", "\u2139"], ["\u213C", "\u213F"], ["\u2145", "\u2149"], "\u214E", ["\u2160", "\u2188"], ["\u2C00", "\u2C2E"], ["\u2C30", "\u2C5E"], ["\u2C60", "\u2CE4"], ["\u2CEB", "\u2CEE"], ["\u2CF2", "\u2CF3"], ["\u2D00", "\u2D25"], "\u2D27", "\u2D2D", ["\u2D30", "\u2D67"], "\u2D6F", ["\u2D80", "\u2D96"], ["\u2DA0", "\u2DA6"], ["\u2DA8", "\u2DAE"], ["\u2DB0", "\u2DB6"], ["\u2DB8", "\u2DBE"], ["\u2DC0", "\u2DC6"], ["\u2DC8", "\u2DCE"], ["\u2DD0", "\u2DD6"], ["\u2DD8", "\u2DDE"], "\u2E2F", ["\u3005", "\u3007"], ["\u3021", "\u3029"], ["\u3031", "\u3035"], ["\u3038", "\u303C"], ["\u3041", "\u3096"], ["\u309D", "\u309F"], ["\u30A1", "\u30FA"], ["\u30FC", "\u30FF"], ["\u3105", "\u312F"], ["\u3131", "\u318E"], ["\u31A0", "\u31BA"], ["\u31F0", "\u31FF"], ["\u3400", "\u4DB5"], ["\u4E00", "\u9FEF"], ["\uA000", "\uA48C"], ["\uA4D0", "\uA4FD"], ["\uA500", "\uA60C"], ["\uA610", "\uA61F"], ["\uA62A", "\uA62B"], ["\uA640", "\uA66E"], ["\uA67F", "\uA69D"], ["\uA6A0", "\uA6EF"], ["\uA717", "\uA71F"], ["\uA722", "\uA788"], ["\uA78B", "\uA7B9"], ["\uA7F7", "\uA801"], ["\uA803", "\uA805"], ["\uA807", "\uA80A"], ["\uA80C", "\uA822"], ["\uA840", "\uA873"], ["\uA882", "\uA8B3"], ["\uA8F2", "\uA8F7"], "\uA8FB", ["\uA8FD", "\uA8FE"], ["\uA90A", "\uA925"], ["\uA930", "\uA946"], ["\uA960", "\uA97C"], ["\uA984", "\uA9B2"], "\uA9CF", ["\uA9E0", "\uA9E4"], ["\uA9E6", "\uA9EF"], ["\uA9FA", "\uA9FE"], ["\uAA00", "\uAA28"], ["\uAA40", "\uAA42"], ["\uAA44", "\uAA4B"], ["\uAA60", "\uAA76"], "\uAA7A", ["\uAA7E", "\uAAAF"], "\uAAB1", ["\uAAB5", "\uAAB6"], ["\uAAB9", "\uAABD"], "\uAAC0", "\uAAC2", ["\uAADB", "\uAADD"], ["\uAAE0", "\uAAEA"], ["\uAAF2", "\uAAF4"], ["\uAB01", "\uAB06"], ["\uAB09", "\uAB0E"], ["\uAB11", "\uAB16"], ["\uAB20", "\uAB26"], ["\uAB28", "\uAB2E"], ["\uAB30", "\uAB5A"], ["\uAB5C", "\uAB65"], ["\uAB70", "\uABE2"], ["\uAC00", "\uD7A3"], ["\uD7B0", "\uD7C6"], ["\uD7CB", "\uD7FB"], ["\uF900", "\uFA6D"], ["\uFA70", "\uFAD9"], ["\uFB00", "\uFB06"], ["\uFB13", "\uFB17"], "\uFB1D", ["\uFB1F", "\uFB28"], ["\uFB2A", "\uFB36"], ["\uFB38", "\uFB3C"], "\uFB3E", ["\uFB40", "\uFB41"], ["\uFB43", "\uFB44"], ["\uFB46", "\uFBB1"], ["\uFBD3", "\uFD3D"], ["\uFD50", "\uFD8F"], ["\uFD92", "\uFDC7"], ["\uFDF0", "\uFDFB"], ["\uFE70", "\uFE74"], ["\uFE76", "\uFEFC"], ["\uFF21", "\uFF3A"], ["\uFF41", "\uFF5A"], ["\uFF66", "\uFFBE"], ["\uFFC2", "\uFFC7"], ["\uFFCA", "\uFFCF"], ["\uFFD2", "\uFFD7"], ["\uFFDA", "\uFFDC"]], false, false), ys = ls("[", false), Hs = ls("]", false), Ys = ls("{", false), Fs = ls("}", false), Ws = ls("%", false), Kn = ls("<", false), Qn = ls(">", false), Gs = Is(["@", "_"], false, false), Cs = ls("!", false), rs = ls("(", false), fs = ls(")", false), ks = ls("/", false), Xs = ls("*", false), sr = ls("?", false), hr = ls(":", false), mr = ls("..", false), le = ls("^", false), cn = ls("struct", false), un = ls("target", false), fn = ls("euclid", false), mn = ls("slow", false), An = ls("rotL", false), En = ls("rotR", false), Xn = ls("fast", false), Vn = ls("scale", false), os = ls("//", false), Ps = Is([`
 `], true, false), Bs = ls("cat", false), $s = ls("$", false), rr = ls("setcps", false), ur = ls("setbpm", false), Zs = ls("hush", false), Dr = function() {
       return parseFloat(ga());
     }, Rr = function(sn) {
       const dn = sn.join("");
       return dn === "." || dn === "_";
-    }, Xr = function(sn) {
-      return new ao(sn.join(""));
     }, kr = function(sn) {
+      return new ao(sn.join(""));
+    }, Xr = function(sn) {
       return sn;
     }, Zr = function(sn, dn) {
       return sn.arguments_.stepsPerCycle = dn, sn;
@@ -8187,11 +8253,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           dn.push(Cn), Cn = fr();
       else
         dn = o;
-      return dn !== o ? (Cn = qn(), ts = bn, Pn = Rr(dn), Pn ? Pn = o : Pn = void 0, Pn !== o ? (ts = sn, sn = Xr(dn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return dn !== o ? (Cn = qn(), ts = bn, Pn = Rr(dn), Pn ? Pn = o : Pn = void 0, Pn !== o ? (ts = sn, sn = kr(dn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function xa() {
       var sn, dn, Cn, Pn;
-      return sn = bn, qn(), e30.charCodeAt(bn) === 91 ? (dn = tn, bn++) : (dn = o, Un === 0 && jn(ys)), dn !== o ? (qn(), Cn = Er(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 93 ? (Pn = rn, bn++) : (Pn = o, Un === 0 && jn(Hs)), Pn !== o ? (qn(), ts = sn, sn = kr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), e30.charCodeAt(bn) === 91 ? (dn = tn, bn++) : (dn = o, Un === 0 && jn(ys)), dn !== o ? (qn(), Cn = Er(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 93 ? (Pn = rn, bn++) : (Pn = o, Un === 0 && jn(Hs)), Pn !== o ? (qn(), ts = sn, sn = Xr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Fa() {
       var sn, dn, Cn, Pn, Hn;
@@ -8211,7 +8277,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function Fr() {
       var sn;
-      return sn = La(), sn === o && (sn = Ra(), sn === o && (sn = Xa(), sn === o && (sn = ka(), sn === o && (sn = Da(), sn === o && (sn = Za(), sn === o && (sn = Na(), sn === o && (sn = Ta()))))))), sn;
+      return sn = La(), sn === o && (sn = Ra(), sn === o && (sn = ka(), sn === o && (sn = Xa(), sn === o && (sn = Da(), sn === o && (sn = Za(), sn === o && (sn = Na(), sn === o && (sn = Ta()))))))), sn;
     }
     function La() {
       var sn, dn, Cn;
@@ -8225,13 +8291,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       var sn, dn, Cn, Pn, Hn, As, Vs;
       return sn = bn, e30.charCodeAt(bn) === 40 ? (dn = Mn, bn++) : (dn = o, Un === 0 && jn(rs)), dn !== o ? (qn(), Cn = nr(), Cn !== o ? (qn(), Pn = Js(), Pn !== o ? (qn(), Hn = nr(), Hn !== o ? (qn(), Js(), qn(), As = nr(), As === o && (As = null), qn(), e30.charCodeAt(bn) === 41 ? (Vs = _n, bn++) : (Vs = o, Un === 0 && jn(fs)), Vs !== o ? (ts = sn, sn = Ir(Cn, Hn, As)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
-    function Xa() {
-      var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 47 ? (dn = hn, bn++) : (dn = o, Un === 0 && jn(Xs)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = zr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
     function ka() {
       var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 42 ? (dn = yn, bn++) : (dn = o, Un === 0 && jn(ks)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Wr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.charCodeAt(bn) === 47 ? (dn = hn, bn++) : (dn = o, Un === 0 && jn(ks)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = zr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function Xa() {
+      var sn, dn, Cn;
+      return sn = bn, e30.charCodeAt(bn) === 42 ? (dn = yn, bn++) : (dn = o, Un === 0 && jn(Xs)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Wr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Za() {
       var sn, dn, Cn;
@@ -8309,7 +8375,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function Wa() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 6) === Xn ? (dn = Xn, bn += 6) : (dn = o, Un === 0 && jn(cn)), dn !== o ? (qn(), Cn = Qs(), Cn !== o ? (ts = sn, sn = ta(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 6) === kn ? (dn = kn, bn += 6) : (dn = o, Un === 0 && jn(cn)), dn !== o ? (qn(), Cn = Qs(), Cn !== o ? (ts = sn, sn = ta(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function $a() {
       var sn, dn, Cn, Pn, Hn;
@@ -8333,7 +8399,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function Ka() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 4) === Wn ? (dn = Wn, bn += 4) : (dn = o, Un === 0 && jn(kn)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = oa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 4) === Wn ? (dn = Wn, bn += 4) : (dn = o, Un === 0 && jn(Xn)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = oa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Ja() {
       var sn, dn, Cn, Pn, Hn;
@@ -10047,6 +10113,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       Promise.resolve().then(() => index$1),
       Promise.resolve().then(() => index$9),
       Promise.resolve().then(() => hydra$1),
+      Promise.resolve().then(() => index$a),
       { hush, evaluate }
     );
     await Promise.all([e30, registerSynthSounds(), registerSoundfonts()]);
@@ -10230,7 +10297,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const l = new Blob([e30], { type: o }), d = document.createElement("a");
     d.href = window.URL.createObjectURL(l), d.download = t, d.click();
   }
-  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$2, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$1, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, latestColor, lastFrames, index$9, gm, defaultSoundfontUrl, soundfontUrl, loadCache, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$8, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$7, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$6, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$5, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$4, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$3, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$2, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$1, latestOptions, hydra, H$1, hydra$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
+  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$2, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$1, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$a, latestColor, lastFrames, index$9, gm, defaultSoundfontUrl, soundfontUrl, loadCache, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$8, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$7, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$6, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$5, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$4, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$3, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$2, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$1, latestOptions, hydra, H$1, hydra$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
     "../strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
@@ -16128,7 +16195,7 @@ Please check with "npm ls @strudel/core".`
           orbit: vn = getDefaultValue("orbit"),
           bus: Fn,
           busgain: Sn = getDefaultValue("busgain"),
-          room: Xn,
+          room: kn,
           roomfade: wn,
           roomlp: Ln,
           roomdim: Nn,
@@ -16201,7 +16268,7 @@ Please check with "npm ls @strudel/core".`
           if (ns = applyGainCurve(nanFallback(ns, 1)), Es = applyGainCurve(Es), ms = applyGainCurve(ms), hs = applyGainCurve(hs), xs = applyGainCurve(xs), ns *= hs, Ms = Ms ?? cycleToSeconds(zn, l), xn.workletSrc !== void 0) {
             const Kn = getWorklet(b, "generic-processor", {}, { outputChannelCount: [2] });
             On.connect(Kn);
-            const Qn = xn.workletSrc.replace(/\bpat\[(\d+)\]/g, (fs, Xs) => xn.workletInputs[Xs]).replaceAll("sFreq", getFrequencyFromValue(e30)).replaceAll("sGate", `cc('strudel-gate-${Ds}')`), { src: Gs, ugens: Cs, registers: rs } = compileKabel(Qn);
+            const Qn = xn.workletSrc.replace(/\bpat\[(\d+)\]/g, (fs, ks) => xn.workletInputs[ks]).replaceAll("sFreq", getFrequencyFromValue(e30)).replaceAll("sGate", `cc('strudel-gate-${Ds}')`), { src: Gs, ugens: Cs, registers: rs } = compileKabel(Qn);
             Kn.port.postMessage({ src: Gs, schema: { ugens: Cs, registers: rs }, start: t, gateEnd: gs, end: ps });
           }
           if (xn.stretch !== void 0) {
@@ -16381,8 +16448,8 @@ Please check with "npm ls @strudel/core".`
           if (Yn !== "main" && xn.room > 0) {
             let Kn;
             if (xn.ir !== void 0) {
-              let Xs, ks = getSound(xn.ir);
-              Array.isArray(ks) ? Xs = ks.data.samples[xn.i % ks.data.samples.length] : typeof ks == "object" && (Xs = Object.values(ks.data.samples).flat()[ys % Object.values(ks.data.samples).length]), Kn = await loadBuffer$1(Xs, b, xn.ir, 0);
+              let ks, Xs = getSound(xn.ir);
+              Array.isArray(Xs) ? ks = Xs.data.samples[xn.i % Xs.data.samples.length] : typeof Xs == "object" && (ks = Object.values(Xs.data.samples).flat()[ys % Object.values(Xs.data.samples).length]), Kn = await loadBuffer$1(ks, b, xn.ir, 0);
             }
             const Qn = gainNode(1), Gs = b.createReverb(
               xn.roomsize,
@@ -16407,7 +16474,7 @@ Please check with "npm ls @strudel/core".`
           const xn = es.sendDelay(Jn, _n);
           p.main.delay_mix = [xn], On.audioNodes.push(xn);
         }
-        if (Xn > 0) {
+        if (kn > 0) {
           let Rn;
           if (Bn !== void 0) {
             let Tn, ns = getSound(Bn);
@@ -16415,7 +16482,7 @@ Please check with "npm ls @strudel/core".`
           }
           const xn = es.getReverb($n, wn, Ln, Nn, Rn, Wn, In);
           p.main.room = [xn];
-          const Yn = es.sendReverb(Jn, Xn);
+          const Yn = es.sendReverb(Jn, kn);
           p.main.room_mix = [Yn], On.audioNodes.push(Yn);
         }
         if (Fn != null) {
@@ -16545,7 +16612,7 @@ Please check with "npm ls @strudel/core".`
             R,
             _n
           ])
-        ), Xn = getAudioContext(), wn = Xn.createBuffer(1, Sn.length, Xn.sampleRate);
+        ), kn = getAudioContext(), wn = kn.createBuffer(1, Sn.length, kn.sampleRate);
         wn.getChannelData(0).set(Sn);
         const Ln = getAudioContext().createBufferSource();
         return Ln.buffer = wn, Ln.start(t), {
@@ -16625,12 +16692,87 @@ Please check with "npm ls @strudel/core".`
         };
         return animationFrames[o] = requestAnimationFrame(I), this;
       };
+      cleanupDraw = (e30 = true, t) => {
+        const o = getDrawContext();
+        e30 && o.clearRect(0, 0, o.canvas.width, o.canvas.height), stopAllAnimations(t);
+      };
+      cleanupDrawContext = (e30) => {
+        const t = getDrawContext();
+        t.clearRect(0, 0, t.canvas.width, t.canvas.height), Object.keys(animationFrames).forEach(
+          (o) => (!e30 || o.startsWith(e30)) && !o.startsWith("_") && stopAnimationFrame(o)
+        );
+      };
       Pattern$1.prototype.onPaint = function(e30) {
         return this.withState((t) => (t.controls.painters || (t.controls.painters = []), t.controls.painters.push(e30), t));
       };
       Pattern$1.prototype.getPainters = function() {
         let e30 = [];
         return this.queryArc(0, 0, { painters: e30 }), e30;
+      };
+      Framer = class {
+        constructor(t, o) {
+          this.onFrame = t, this.onError = o;
+        }
+        start() {
+          const t = this;
+          let o = requestAnimationFrame(function l(d) {
+            try {
+              t.onFrame(d);
+            } catch (p) {
+              t.onError(p);
+            }
+            o = requestAnimationFrame(l);
+          });
+          t.cancel = () => {
+            cancelAnimationFrame(o);
+          };
+        }
+        stop() {
+          this.cancel && this.cancel();
+        }
+      };
+      Drawer = class {
+        constructor(t, o) {
+          this.visibleHaps = [], this.lastFrame = null, this.drawTime = o, this.painters = [], this.framer = new Framer(
+            () => {
+              if (!this.scheduler) {
+                console.warn("Drawer: no scheduler");
+                return;
+              }
+              const l = Math.abs(this.drawTime[0]), d = this.drawTime[1], p = this.scheduler.now() + d;
+              if (this.lastFrame === null) {
+                this.lastFrame = p;
+                return;
+              }
+              const b = this.scheduler.pattern.queryArc(Math.max(this.lastFrame, p - 1 / 10), p);
+              this.lastFrame = p, this.visibleHaps = (this.visibleHaps || []).filter((I) => I.whole && I.endClipped >= p - l - d).concat(b.filter((I) => I.hasOnset()));
+              const R = p - d;
+              t(this.visibleHaps, R, this, this.painters);
+            },
+            (l) => {
+              console.warn("draw error", l);
+            }
+          );
+        }
+        setDrawTime(t) {
+          this.drawTime = t;
+        }
+        invalidate(t = this.scheduler, o) {
+          if (!t)
+            return;
+          o = o ?? t.now(), this.scheduler = t;
+          let [l, d] = this.drawTime;
+          const [p, b] = [Math.max(o, 0), o + d + 0.1];
+          this.visibleHaps = this.visibleHaps.filter((I) => I.whole?.begin < o), this.painters = [];
+          const R = t.pattern.queryArc(p, b, { painters: this.painters });
+          this.visibleHaps = this.visibleHaps.concat(R);
+        }
+        start(t) {
+          this.scheduler = t, this.invalidate(), this.framer.start();
+        }
+        stop() {
+          this.framer && this.framer.stop();
+        }
       };
       theme = {
         background: "#222",
@@ -16666,16 +16808,165 @@ Please check with "npm ls @strudel/core".`
         return window.frame = requestAnimationFrame(R), silence;
       };
       ({ x: x$2, y: y$1, w: w$1, h: h$1, angle, r, fill, smear } = createParams("x", "y", "w", "h", "angle", "r", "fill", "smear"));
-      register("rescale", function(e30, t) {
+      rescale = register("rescale", function(e30, t) {
         return t.mul(x$2(e30).w(e30).y(e30).h(e30));
       });
-      register("moveXY", function(e30, t, o) {
+      moveXY = register("moveXY", function(e30, t, o) {
         return o.add(x$2(e30).y(t));
       });
-      register("zoomIn", function(e30, t) {
+      zoomIn = register("zoomIn", function(e30, t) {
         const o = pure(1).sub(e30).div(2);
         return t.rescale(e30).move(o, o);
       });
+      colorMap = {
+        aliceblue: "#f0f8ff",
+        antiquewhite: "#faebd7",
+        aqua: "#00ffff",
+        aquamarine: "#7fffd4",
+        azure: "#f0ffff",
+        beige: "#f5f5dc",
+        bisque: "#ffe4c4",
+        black: "#000000",
+        blanchedalmond: "#ffebcd",
+        blue: "#0000ff",
+        blueviolet: "#8a2be2",
+        brown: "#a52a2a",
+        burlywood: "#deb887",
+        cadetblue: "#5f9ea0",
+        chartreuse: "#7fff00",
+        chocolate: "#d2691e",
+        coral: "#ff7f50",
+        cornflowerblue: "#6495ed",
+        cornsilk: "#fff8dc",
+        crimson: "#dc143c",
+        cyan: "#00ffff",
+        darkblue: "#00008b",
+        darkcyan: "#008b8b",
+        darkgoldenrod: "#b8860b",
+        darkgray: "#a9a9a9",
+        darkgreen: "#006400",
+        darkgrey: "#a9a9a9",
+        darkkhaki: "#bdb76b",
+        darkmagenta: "#8b008b",
+        darkolivegreen: "#556b2f",
+        darkorange: "#ff8c00",
+        darkorchid: "#9932cc",
+        darkred: "#8b0000",
+        darksalmon: "#e9967a",
+        darkseagreen: "#8fbc8f",
+        darkslateblue: "#483d8b",
+        darkslategray: "#2f4f4f",
+        darkslategrey: "#2f4f4f",
+        darkturquoise: "#00ced1",
+        darkviolet: "#9400d3",
+        deeppink: "#ff1493",
+        deepskyblue: "#00bfff",
+        dimgray: "#696969",
+        dimgrey: "#696969",
+        dodgerblue: "#1e90ff",
+        firebrick: "#b22222",
+        floralwhite: "#fffaf0",
+        forestgreen: "#228b22",
+        fuchsia: "#ff00ff",
+        gainsboro: "#dcdcdc",
+        ghostwhite: "#f8f8ff",
+        gold: "#ffd700",
+        goldenrod: "#daa520",
+        gray: "#808080",
+        green: "#008000",
+        greenyellow: "#adff2f",
+        grey: "#808080",
+        honeydew: "#f0fff0",
+        hotpink: "#ff69b4",
+        indianred: "#cd5c5c",
+        indigo: "#4b0082",
+        ivory: "#fffff0",
+        khaki: "#f0e68c",
+        lavender: "#e6e6fa",
+        lavenderblush: "#fff0f5",
+        lawngreen: "#7cfc00",
+        lemonchiffon: "#fffacd",
+        lightblue: "#add8e6",
+        lightcoral: "#f08080",
+        lightcyan: "#e0ffff",
+        lightgoldenrodyellow: "#fafad2",
+        lightgray: "#d3d3d3",
+        lightgreen: "#90ee90",
+        lightgrey: "#d3d3d3",
+        lightpink: "#ffb6c1",
+        lightsalmon: "#ffa07a",
+        lightseagreen: "#20b2aa",
+        lightskyblue: "#87cefa",
+        lightslategray: "#778899",
+        lightslategrey: "#778899",
+        lightsteelblue: "#b0c4de",
+        lightyellow: "#ffffe0",
+        lime: "#00ff00",
+        limegreen: "#32cd32",
+        linen: "#faf0e6",
+        magenta: "#ff00ff",
+        maroon: "#800000",
+        mediumaquamarine: "#66cdaa",
+        mediumblue: "#0000cd",
+        mediumorchid: "#ba55d3",
+        mediumpurple: "#9370db",
+        mediumseagreen: "#3cb371",
+        mediumslateblue: "#7b68ee",
+        mediumspringgreen: "#00fa9a",
+        mediumturquoise: "#48d1cc",
+        mediumvioletred: "#c71585",
+        midnightblue: "#191970",
+        mintcream: "#f5fffa",
+        mistyrose: "#ffe4e1",
+        moccasin: "#ffe4b5",
+        navajowhite: "#ffdead",
+        navy: "#000080",
+        oldlace: "#fdf5e6",
+        olive: "#808000",
+        olivedrab: "#6b8e23",
+        orange: "#ffa500",
+        orangered: "#ff4500",
+        orchid: "#da70d6",
+        palegoldenrod: "#eee8aa",
+        palegreen: "#98fb98",
+        paleturquoise: "#afeeee",
+        palevioletred: "#db7093",
+        papayawhip: "#ffefd5",
+        peachpuff: "#ffdab9",
+        peru: "#cd853f",
+        pink: "#ffc0cb",
+        plum: "#dda0dd",
+        powderblue: "#b0e0e6",
+        purple: "#800080",
+        red: "#ff0000",
+        rosybrown: "#bc8f8f",
+        royalblue: "#4169e1",
+        saddlebrown: "#8b4513",
+        salmon: "#fa8072",
+        sandybrown: "#f4a460",
+        seagreen: "#2e8b57",
+        seashell: "#fff5ee",
+        sienna: "#a0522d",
+        silver: "#c0c0c0",
+        skyblue: "#87ceeb",
+        slateblue: "#6a5acd",
+        slategray: "#708090",
+        slategrey: "#708090",
+        snow: "#fffafa",
+        springgreen: "#00ff7f",
+        steelblue: "#4682b4",
+        tan: "#d2b48c",
+        teal: "#008080",
+        thistle: "#d8bfd8",
+        tomato: "#ff6347",
+        turquoise: "#40e0d0",
+        violet: "#ee82ee",
+        wheat: "#f5deb3",
+        white: "#ffffff",
+        whitesmoke: "#f5f5f5",
+        yellow: "#ffff00",
+        yellowgreen: "#9acd32"
+      };
       scale$2 = (e30, t, o) => e30 * (o - t) + t;
       getValue = (e30) => {
         let { value: t } = e30;
@@ -16717,10 +17008,20 @@ Please check with "npm ls @strudel/core".`
       Pattern$1.prototype.wordfall = function(e30) {
         return this.punchcard({ vertical: 1, labels: 1, stroke: 0, fillActive: 1, active: "white", ...e30 });
       };
+      Pattern$1.prototype._pianoroll = function(e30) {
+        return this.pianoroll(e30);
+      };
+      Pattern$1.prototype._punchcard = function(e30) {
+        return this.punchcard(e30);
+      };
+      Pattern$1.prototype._wordfall = function(e30) {
+        return this.wordfall(e30);
+      };
       xyOnSpiral = (e30, t, o, l, d = 0) => fromPolar((e30 + d) * 360, t * e30, o, l);
       Pattern$1.prototype.spiral = function(e30 = {}) {
         return this.onPaint((t, o, l, d) => drawSpiral({ ctx: t, time: o, haps: l, drawTime: d, ...e30 }));
       };
+      Pattern$1.prototype._spiral = Pattern$1.prototype.spiral;
       c$1 = midiToFreq$2(36);
       circlePos = (e30, t, o, l) => {
         l = l * Math.PI * 2;
@@ -16740,6 +17041,41 @@ Please check with "npm ls @strudel/core".`
           })
         );
       };
+      Pattern$1.prototype._pitchwheel = function(e30) {
+        return this.pitchwheel(e30);
+      };
+      index$a = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+        __proto__: null,
+        Drawer,
+        Framer,
+        __pianoroll,
+        angle,
+        cleanupDraw,
+        cleanupDrawContext,
+        colorMap,
+        convertColorToNumber,
+        convertHexToNumber,
+        drawPianoroll,
+        fill,
+        getComputedPropertyValue,
+        getDrawContext,
+        getDrawOptions,
+        getPunchcardPainter,
+        getTheme,
+        h: h$1,
+        moveXY,
+        pianoroll,
+        pitchwheel,
+        r,
+        rescale,
+        setTheme,
+        smear,
+        spiral,
+        w: w$1,
+        x: x$2,
+        y: y$1,
+        zoomIn
+      }, Symbol.toStringTag, { value: "Module" }));
       Pattern$1.prototype.fscope = function(e30 = {}) {
         let t = e30.id ?? 1;
         return this.analyze(t).draw(
@@ -16759,6 +17095,9 @@ Please check with "npm ls @strudel/core".`
         );
       };
       Pattern$1.prototype.scope = Pattern$1.prototype.tscope;
+      Pattern$1.prototype._scope = Pattern$1.prototype.tscope;
+      Pattern$1.prototype._tscope = Pattern$1.prototype.tscope;
+      Pattern$1.prototype._fscope = Pattern$1.prototype.fscope;
       latestColor = {};
       Pattern$1.prototype.spectrum = function(e30 = {}) {
         let t = e30.id ?? 1;
@@ -16770,6 +17109,7 @@ Please check with "npm ls @strudel/core".`
         );
       };
       Pattern$1.prototype.scope = Pattern$1.prototype.tscope;
+      Pattern$1.prototype._spectrum = Pattern$1.prototype.spectrum;
       lastFrames = /* @__PURE__ */ new Map();
       index$9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
@@ -16801,6 +17141,7 @@ Please check with "npm ls @strudel/core".`
         dspWorklet,
         effectSend,
         errorLogger,
+        fscope,
         gainNode,
         getADSRValues,
         getAnalyserById,
@@ -16864,6 +17205,7 @@ Please check with "npm ls @strudel/core".`
         reverseBuffer,
         samples,
         scheduleAtTime,
+        scope,
         setAudioContext,
         setDefault,
         setDefaultAudioContext,
@@ -16877,9 +17219,11 @@ Please check with "npm ls @strudel/core".`
         setVersionDefaults,
         soundAlias,
         soundMap: soundMap$1,
+        spectrum,
         superdough,
         superdoughTrigger,
         tables,
+        tscope,
         waveformN,
         webAudioTimeout,
         webaudioOutput,
@@ -30171,6 +30515,7 @@ ${buildStrudelVoice(strudelCode, fx)}`;
   var MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
   var MP_ESM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm";
   var BLINK_THRESHOLD = 0.8;
+  var WINK_THRESHOLD = 0.6;
   var BROW_INNER_THRESHOLD = 0.6;
   var BROW_OUTER_THRESHOLD = 0.45;
   var JAW_OPEN_THRESHOLD = 0.5;
@@ -30221,8 +30566,10 @@ ${buildStrudelVoice(strudelCode, fx)}`;
   }
   async function evaluate2() {
     try {
+      sendLocalPattern(getCode());
       await bootStrudelOnUserGesture();
       sendLocalPlaying(true);
+      document.dispatchEvent(new CustomEvent("trussal-eval"));
     } catch (e30) {
       console.warn("[facial-gesture] evaluate failed", e30);
     }
@@ -30249,7 +30596,7 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       return code2.replace(/\.transpose\((-?\d+)\)/, (_3, n2) => `.transpose(${+n2 + delta})`);
     if (/\.add\((-?\d+)\)/.test(code2))
       return code2.replace(/\.add\((-?\d+)\)/, (_3, n2) => `.add(${+n2 + delta})`);
-    return code2;
+    return code2.replace(/(\S)\s*$/, `$1.transpose(${delta})`);
   }
   function parseMediapipeConfigs(code2) {
     const configs = [];
@@ -30301,9 +30648,10 @@ ${code2}${BTN_MARKER}`;
       if (!ran) await mutateAndEvaluate(defaultMutator);
     };
   }
+  var _headTiltDelta = 2;
   var handleMouthOpen = makeGestureHandler("mouthOpen", cycleHiHat);
-  var handleHeadTiltLeft = makeGestureHandler("headTiltLeft", (c2) => shiftTranspose(c2, -2));
-  var handleHeadTiltRight = makeGestureHandler("headTiltRight", (c2) => shiftTranspose(c2, 2));
+  var handleHeadTiltLeft = makeGestureHandler("headTiltLeft", (c2) => shiftTranspose(c2, -_headTiltDelta));
+  var handleHeadTiltRight = makeGestureHandler("headTiltRight", (c2) => shiftTranspose(c2, _headTiltDelta));
   var _enabled = false;
   var _landmarker = null;
   var _mpClasses = null;
@@ -30328,7 +30676,7 @@ ${code2}${BTN_MARKER}`;
     cursorX: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
     cursorY: typeof window !== "undefined" ? window.innerHeight / 2 : 0
   };
-  var _latch = { mouthOpen: false, headLeft: false, headRight: false };
+  var _latch = { mouthOpen: false, headLeft: false, headRight: false, leftWink: false };
   var _lastFired = { play: 0, stop: 0 };
   var _dwell = { code: null, el: null, startMs: 0, fired: false };
   var _regexTrigger = "mouthOpen";
@@ -30339,9 +30687,10 @@ ${code2}${BTN_MARKER}`;
     const labels = {
       play: "\u25B6 play",
       stop: "\u25A0 stop",
+      eval: "\u21BA eval (left blink)",
       mouthOpen: "\u25C9 mouth \u2192 drum density",
-      headTiltLeft: "\u2190 tilt left \u2192 transpose \u22122",
-      headTiltRight: "\u2192 tilt right \u2192 transpose +2"
+      headTiltLeft: `\u2190 tilt left \u2192 \u2212${_headTiltDelta}st`,
+      headTiltRight: `\u2192 tilt right \u2192 +${_headTiltDelta}st`
     };
     _flashEl.textContent = labels[gesture] ?? gesture;
     _flashEl.style.opacity = "1";
@@ -30391,17 +30740,26 @@ ${code2}${BTN_MARKER}`;
     const jawOpen = score("jawOpen");
     const now = Date.now();
     const isBlink = eyeBlinkL > BLINK_THRESHOLD && eyeBlinkR > BLINK_THRESHOLD;
+    const isLeftWink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
     const isBrowRaise = browInnerUp > BROW_INNER_THRESHOLD && (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) && eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
     if (isBlink && now - _lastFired.play > COOLDOWN_MS) {
       _lastFired.play = now;
+      _latch.leftWink = false;
       _flash("play");
       bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {
       });
+    } else if (isLeftWink && !_latch.leftWink) {
+      _latch.leftWink = true;
+      _flash("eval");
+      evaluate2();
     } else if (isBrowRaise && now - _lastFired.stop > COOLDOWN_MS) {
       _lastFired.stop = now;
       _flash("stop");
       stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {
       });
+    }
+    if (_latch.leftWink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
+      _latch.leftWink = false;
     }
     if (!_latch.mouthOpen && jawOpen > JAW_OPEN_THRESHOLD) {
       _latch.mouthOpen = true;
@@ -30539,7 +30897,7 @@ ${code2}${BTN_MARKER}`;
       cursorX: window.innerWidth / 2,
       cursorY: window.innerHeight / 2
     });
-    Object.assign(_latch, { mouthOpen: false, headLeft: false, headRight: false });
+    Object.assign(_latch, { mouthOpen: false, headLeft: false, headRight: false, leftWink: false });
     if (_cursorEl) _cursorEl.style.display = "none";
     _setStatus("idle");
   }
@@ -30628,13 +30986,16 @@ ${code2}${BTN_MARKER}`;
       display: flex; flex-direction: column; gap: 4px;
     }
     #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#d6f5e2; font-size:11px; }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] {
-      width: 100%; background:#050f0a; color:#d6f5e2;
+    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
+      background:#050f0a; color:#d6f5e2;
       border:1px solid rgba(255,255,255,0.15); border-radius:4px;
       padding:3px 6px; font-size:11px; box-sizing:border-box;
     }
+    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
+    #${FG_PANEL_ID} input[type="number"] { width:52px; font-family:monospace; text-align:center; }
     #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
-    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus {
+    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
+    #${FG_PANEL_ID} input[type="number"]:focus {
       outline:1px solid rgba(31,244,102,0.4);
     }
 
@@ -30684,13 +31045,22 @@ ${code2}${BTN_MARKER}`;
     </div>
     <div class="fg-flash" id="trussal-fg-flash"></div>
     <div class="fg-hints">
+      blink left eye \u2192 eval code<br>
       blink both eyes \u2192 play<br>
       raise eyebrows \u2192 stop<br>
       open mouth \u2192 drum density<br>
-      tilt head \u2192 transpose \xB12<br>
+      tilt head \u2192 transpose \xB1<span id="trussal-fg-tilt-label">2</span>st<br>
       head cursor dwell 1s \u2192 toggle voice
     </div>
     <div class="fg-btns" id="trussal-fg-btns"></div>
+
+    <div class="fg-section">
+      <div class="fg-section-title">head tilt amount</div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
+        <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+      </div>
+    </div>
 
     <div class="fg-section">
       <div class="fg-section-title">regex mutator</div>
@@ -30739,6 +31109,14 @@ ${code2}${BTN_MARKER}`;
     });
     panel.querySelector("#trussal-fg-replacement").addEventListener("input", (e30) => {
       _regexReplacement = e30.target.value;
+    });
+    panel.querySelector("#trussal-fg-tilt-delta").addEventListener("input", (e30) => {
+      const v2 = parseInt(e30.target.value, 10);
+      if (!isNaN(v2) && v2 >= 1) {
+        _headTiltDelta = v2;
+        const lbl = document.getElementById("trussal-fg-tilt-label");
+        if (lbl) lbl.textContent = v2;
+      }
     });
     _makePanelDraggable(panel);
   }
@@ -30971,6 +31349,13 @@ ${code2}${BTN_MARKER}`;
       white-space: pre-wrap; overflow:auto;
     }
     #${OVERLAY_ID} .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+    @keyframes ts-eval-pulse {
+      0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
+      100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+    }
+    #${OVERLAY_ID} .ts-code.ts-eval-flash {
+      animation: ts-eval-pulse 0.55s ease-out forwards;
+    }
     #${OVERLAY_ID} .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} select.ts-select {
       background: #050f0a; color: #d6f5e2;
@@ -31168,7 +31553,6 @@ ${code2}${BTN_MARKER}`;
             localStorage.setItem(STORAGE_KEY, codeEl.value);
           } catch (e30) {
           }
-          sendLocalPattern(codeEl.value);
         }, 200);
         renderVoiceButtons(container, codeEl.value);
       });
@@ -31242,6 +31626,7 @@ ${code2}${BTN_MARKER}`;
       await bootStrudelOnUserGesture();
       sendLocalPlaying(true);
       setStatus("Playing");
+      document.dispatchEvent(new CustomEvent("trussal-eval"));
     } catch (e30) {
       console.error("[studio] play failed", e30);
       setStatus("Error: " + (e30 && e30.message ? e30.message : e30));
@@ -31457,6 +31842,14 @@ ${voiceCode}${BTN_MARKER2}`);
     if (btn) btn.style.display = "block";
     bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }
+  document.addEventListener("trussal-eval", () => {
+    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+    if (codeEl) {
+      codeEl.classList.remove("ts-eval-flash");
+      void codeEl.offsetWidth;
+      codeEl.classList.add("ts-eval-flash");
+    }
+  });
   subscribeParticipants((event, payload) => {
     if (event === "local" && payload && !selectedJitsiId) selectedJitsiId = payload.id;
     renderAll();
