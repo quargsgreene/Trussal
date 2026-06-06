@@ -30,6 +30,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     SyntaxError: () => peg$SyntaxError,
     TimeSpan: () => TimeSpan,
     Warpmode: () => Warpmode,
+    WebMidi: () => WebMidi,
     __chooseWith: () => __chooseWith,
     __pianoroll: () => __pianoroll,
     _brandBy: () => _brandBy,
@@ -209,6 +210,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     dec: () => dec,
     decay: () => decay,
     defaultPrebake: () => defaultPrebake,
+    defaultmidimap: () => defaultmidimap,
     degrade: () => degrade,
     degradeBy: () => degradeBy,
     degradeByWith: () => degradeByWith,
@@ -261,6 +263,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     edoScale: () => edoScale,
     effectSend: () => effectSend,
     eish: () => eish,
+    enableWebMidi: () => enableWebMidi,
     end: () => end,
     enhance: () => enhance,
     env: () => env,
@@ -632,8 +635,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     midibend: () => midibend,
     midichan: () => midichan,
     midicmd: () => midicmd,
+    midicontrolMap: () => midicontrolMap,
+    midikeys: () => midikeys,
     midimap: () => midimap,
+    midimaps: () => midimaps,
+    midin: () => midin,
     midiport: () => midiport,
+    midisoundMap: () => midisoundMap,
     miditouch: () => miditouch,
     mini: () => mini,
     mini2ast: () => mini2ast,
@@ -1302,11 +1310,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       const b = e30.queryArc(o, o + 1), R = b.filter((se) => se.hasOnset()).map((se) => se.duration), I = gcd(...R), z = I.inverse();
       d = d.map((se) => se + "|"), p += "|";
       for (let se = 0; se < z; se++) {
-        const [tn, rn] = [l, l.add(I)], nn = b.filter((on) => on.whole.begin.lte(tn) && on.whole.end.gte(rn)), an = nn.length - d.length;
+        const [le, rn] = [l, l.add(I)], tn = b.filter((on) => on.whole.begin.lte(le) && on.whole.end.gte(rn)), an = tn.length - d.length;
         an > 0 && (d = d.concat(Array(an).fill(p))), d = d.map((on, ln) => {
-          const pn = nn[ln];
+          const pn = tn[ln];
           if (pn) {
-            const Mn = pn.whole.begin.eq(tn) ? "" + pn.value : "-";
+            const Mn = pn.whole.begin.eq(le) ? "" + pn.value : "-";
             return on + Mn;
           }
           return on + ".";
@@ -1471,17 +1479,17 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       if (p === 1)
         se = t(z);
       else {
-        const tn = I.slice(0, -1);
-        if (tn.every((rn) => rn.__pure != null)) {
-          const rn = tn.map((an) => an.__pure), nn = tn.filter((an) => an.__pure_loc).map((an) => an.__pure_loc);
+        const le = I.slice(0, -1);
+        if (le.every((rn) => rn.__pure != null)) {
+          const rn = le.map((an) => an.__pure), tn = le.filter((an) => an.__pure_loc).map((an) => an.__pure_loc);
           se = t(...rn, z), se = se.withContext((an) => {
-            const on = (an.locations || []).concat(nn);
+            const on = (an.locations || []).concat(tn);
             return { ...an, locations: on };
           });
         } else {
-          const [rn, ...nn] = tn;
+          const [rn, ...tn] = le;
           let an = (...on) => t(...on, z);
-          an = curry(an, null, p - 1), se = d(nn.reduce((on, ln) => on.appLeft(ln), rn.fmap(an)));
+          an = curry(an, null, p - 1), se = d(tn.reduce((on, ln) => on.appLeft(ln), rn.fmap(an)));
         }
       }
       return l && (se._steps = z._steps), se;
@@ -1633,23 +1641,23 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return l;
   }
   function createClock(e30, t, o = 0.05, l = 0.1, d = 0.1, p = globalThis.setInterval, b = globalThis.clearInterval, R = true) {
-    let I = 0, z = 0, se = 10 ** 4, tn = 0.01;
-    const rn = (_n) => o = _n(o);
+    let I = 0, z = 0, se = 10 ** 4, le = 0.01;
+    const rn = (mn) => o = mn(o);
     d = d || l / 2;
-    const nn = () => {
-      const _n = e30(), hn = _n + l + d;
-      for (z === 0 && (z = _n + tn); z < hn; )
-        z = R ? Math.round(z * se) / se : z, t(z, o, I, _n), z += o, I++;
+    const tn = () => {
+      const mn = e30(), hn = mn + l + d;
+      for (z === 0 && (z = mn + le); z < hn; )
+        z = R ? Math.round(z * se) / se : z, t(z, o, I, mn), z += o, I++;
     };
     let an;
     const on = () => {
-      ln(), nn(), an = p(nn, l * 1e3);
+      ln(), tn(), an = p(tn, l * 1e3);
     }, ln = () => {
       an !== void 0 && b(an), an = void 0;
     };
     return { setDuration: rn, start: on, stop: () => {
       I = 0, z = 0, ln();
-    }, pause: () => ln(), duration: o, interval: l, getPhase: () => z, minLatency: tn };
+    }, pause: () => ln(), duration: o, interval: l, getPhase: () => z, minLatency: le };
   }
   function getTime() {
     if (!time$1)
@@ -1695,9 +1703,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     editPattern: I,
     onUpdateState: z,
     sync: se = false,
-    setInterval: tn,
+    setInterval: le,
     clearInterval: rn,
-    id: nn,
+    id: tn,
     mondo: an = false
   }) {
     const on = {
@@ -1712,116 +1720,116 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       pending: false,
       started: false
     }, ln = {
-      id: nn
-    }, pn = (Dn) => {
-      Object.assign(on, Dn), on.isDirty = on.code !== on.activeCode, on.error = on.evalError || on.schedulerError, z?.(on);
-    }, gn = {
+      id: tn
+    }, pn = (Ln) => {
+      Object.assign(on, Ln), on.isDirty = on.code !== on.activeCode, on.error = on.evalError || on.schedulerError, z?.(on);
+    }, _n = {
       onTrigger: getTrigger({ defaultOutput: e30, getTime: p }),
       getTime: p,
-      onToggle: (Dn) => {
-        pn({ started: Dn }), setIsStarted(Dn), R?.(Dn), Dn || reset_state();
+      onToggle: (Ln) => {
+        pn({ started: Ln }), setIsStarted(Ln), R?.(Ln), Ln || reset_state();
       },
-      setInterval: tn,
+      setInterval: le,
       clearInterval: rn,
       beforeStart: l
-    }, Mn = se && typeof SharedWorker < "u" ? new NeoCyclist(gn) : new Cyclist(gn);
-    setTriggerFunc(gn.onTrigger), setCpsFunc(() => Mn.cps);
-    let _n = {}, hn = 0, yn, Gn = {}, vn = null, Fn = /* @__PURE__ */ new Map();
-    function Sn(Dn) {
-      return Object.entries(Gn).flatMap(([Jn, Rn]) => Jn === "$" ? Array.isArray(Rn) ? Rn.flatMap((xn) => xn[Dn] || []) : [] : Rn[Dn] || []);
+    }, Mn = se && typeof SharedWorker < "u" ? new NeoCyclist(_n) : new Cyclist(_n);
+    setTriggerFunc(_n.onTrigger), setCpsFunc(() => Mn.cps);
+    let mn = {}, hn = 0, yn, Gn = {}, Sn = null, En = /* @__PURE__ */ new Map();
+    function vn(Ln) {
+      return Object.entries(Gn).flatMap(([Jn, Dn]) => Jn === "$" ? Array.isArray(Dn) ? Dn.flatMap((wn) => wn[Ln] || []) : [] : Dn[Ln] || []);
     }
-    function kn(Dn, Jn, Rn, xn, Yn) {
-      const Tn = Dn[Jn], ns = Dn[Jn + 1] || { index: Rn.length, end: Rn.length }, hs = Rn.slice(Tn.index, ns.index), Es = [Tn.index + xn.range[0], Tn.end + xn.range[0]], Rs = Tn.index + xn.range[0], ms = ns.index + xn.range[0], xs = (Yn?.widgets || []).filter((is) => {
+    function Nn(Ln, Jn, Dn, wn, Hn) {
+      const Zn = Ln[Jn], ts = Ln[Jn + 1] || { index: Dn.length, end: Dn.length }, ps = Dn.slice(Zn.index, ts.index), xs = [Zn.index + wn.range[0], Zn.end + wn.range[0]], Ls = Zn.index + wn.range[0], hs = ts.index + wn.range[0], Es = (Hn?.widgets || []).filter((is) => {
         const zn = is.from ?? is.index ?? 0;
-        return zn >= Rs && zn < ms;
-      }), Ns = (Yn?.sliders || []).filter((is) => {
+        return zn >= Ls && zn < hs;
+      }), Ts = (Hn?.sliders || []).filter((is) => {
         const zn = is.from ?? is.index ?? 0;
-        return zn >= Rs && zn < ms;
-      }), ss = (Yn?.miniLocations || []).filter((is) => {
+        return zn >= Ls && zn < hs;
+      }), ns = (Hn?.miniLocations || []).filter((is) => {
         const zn = Array.isArray(is) ? is[0] : is.start ?? is.from ?? 0;
-        return zn >= Rs && zn < ms;
+        return zn >= Ls && zn < hs;
       });
-      Ln(
-        Tn,
-        hs,
-        { ...xn, range: Es },
-        { widgets: xs, sliders: Ns, miniLocations: ss }
+      Rn(
+        Zn,
+        ps,
+        { ...wn, range: xs },
+        { widgets: Es, sliders: Ts, miniLocations: ns }
       );
     }
-    function wn(Dn, Jn, Rn) {
-      for (const [xn, Yn] of Object.entries(Dn)) {
-        if (xn === Jn || !Yn.range) continue;
-        const [Tn, ns] = Yn.range, [hs, Es] = Rn;
-        Es <= Tn || hs >= ns || delete Dn[xn];
+    function xn(Ln, Jn, Dn) {
+      for (const [wn, Hn] of Object.entries(Ln)) {
+        if (wn === Jn || !Hn.range) continue;
+        const [Zn, ts] = Hn.range, [ps, xs] = Dn;
+        xs <= Zn || ps >= ts || delete Ln[wn];
       }
     }
-    function Ln(Dn, Jn, Rn, xn) {
-      const Yn = Dn.activeVisualizer || null;
-      Yn !== null && (vn = Dn.name), Gn[Dn.name] = {
+    function Rn(Ln, Jn, Dn, wn) {
+      const Hn = Ln.activeVisualizer || null;
+      Hn !== null && (Sn = Ln.name), Gn[Ln.name] = {
         code: Jn,
-        range: Rn.range,
-        labels: [Dn.name],
-        miniLocations: xn?.miniLocations || [],
-        widgets: xn?.widgets || [],
-        sliders: xn?.sliders || [],
-        activeVisualizer: Yn
+        range: Dn.range,
+        labels: [Ln.name],
+        miniLocations: wn?.miniLocations || [],
+        widgets: wn?.widgets || [],
+        sliders: wn?.sliders || [],
+        activeVisualizer: Hn
         // Store the widget type if present, null otherwise
-      }, wn(Gn, Dn.name, Rn.range);
+      }, xn(Gn, Ln.name, Dn.range);
     }
-    function Nn(Dn, Jn, Rn) {
-      const xn = Jn.range || [];
-      if (xn.length < 2) return;
-      const Yn = `_decl:${xn[0]}:${xn[1]}`;
-      Gn[Yn] = {
-        code: Dn,
-        range: xn,
+    function Xn(Ln, Jn, Dn) {
+      const wn = Jn.range || [];
+      if (wn.length < 2) return;
+      const Hn = `_decl:${wn[0]}:${wn[1]}`;
+      Gn[Hn] = {
+        code: Ln,
+        range: wn,
         labels: [],
-        miniLocations: Rn?.miniLocations || [],
-        widgets: Rn?.widgets || [],
-        sliders: Rn?.sliders || [],
+        miniLocations: Dn?.miniLocations || [],
+        widgets: Dn?.widgets || [],
+        sliders: Dn?.sliders || [],
         activeVisualizer: null
-      }, wn(Gn, Yn, xn);
+      }, xn(Gn, Hn, wn);
     }
     const $n = function() {
-      return _n = {}, hn = 0, yn = void 0, Gn = {}, Fn.clear(), vn = null, silence;
+      return mn = {}, hn = 0, yn = void 0, Gn = {}, En.clear(), Sn = null, silence;
     };
-    function Bn(Dn) {
-      return Dn._Pattern ? Dn.__pure : Dn;
+    function Bn(Ln) {
+      return Ln._Pattern ? Ln.__pure : Ln;
     }
-    const Wn = async (Dn, Jn = true) => (Dn = I?.(Dn) || Dn, await Mn.setPattern(Dn, Jn), setPattern(Dn), Dn);
+    const Wn = async (Ln, Jn = true) => (Ln = I?.(Ln) || Ln, await Mn.setPattern(Ln, Jn), setPattern(Ln), Ln);
     setTime(() => Mn.now());
-    function In(Dn) {
-      if (Object.values(_n).length) {
-        let Rn = [], xn = false;
-        for (const [Yn, Tn] of Object.entries(_n)) {
-          const ns = Yn.length > 1 && Yn.startsWith("S");
-          if (ns && xn === false && (Rn = [], xn = true), !xn || xn && ns) {
-            const hs = Tn.withState((Es) => Es.setControls({ id: Yn }));
-            Rn.push(hs);
+    function Vn(Ln) {
+      if (Object.values(mn).length) {
+        let Dn = [], wn = false;
+        for (const [Hn, Zn] of Object.entries(mn)) {
+          const ts = Hn.length > 1 && Hn.startsWith("S");
+          if (ts && wn === false && (Dn = [], wn = true), !wn || wn && ts) {
+            const ps = Zn.withState((xs) => xs.setControls({ id: Hn }));
+            Dn.push(ps);
           }
         }
-        yn && (Rn = Rn.map((Yn) => yn(Yn))), Dn = stack(...Rn);
-      } else yn && (Dn = yn(Dn));
+        yn && (Dn = Dn.map((Hn) => yn(Hn))), Ln = stack(...Dn);
+      } else yn && (Ln = yn(Ln));
       if (Ss.length)
-        for (const Rn of Ss)
-          Dn = Rn(Dn);
-      return isPattern(Dn) || (Dn = silence), Dn;
+        for (const Dn of Ss)
+          Ln = Dn(Ln);
+      return isPattern(Ln) || (Ln = silence), Ln;
     }
-    const cs = () => {
-      Gn = {}, Fn.clear(), _n = {}, vn = null, pn({
+    const ls = () => {
+      Gn = {}, En.clear(), mn = {}, Sn = null, pn({
         miniLocations: [],
         widgets: [],
         sliders: []
       }), Mn.stop();
-    }, _s = () => Mn.start(), vs = () => Mn.pause(), Zn = () => Mn.toggle(), bs = (Dn) => (Mn.setCps(Bn(Dn)), silence), Ls = (Dn) => (Mn.setCps(Bn(Dn) / 60), silence);
+    }, ms = () => Mn.start(), Gs = () => Mn.pause(), Tn = () => Mn.toggle(), ys = (Ln) => (Mn.setCps(Bn(Ln)), silence), Fs = (Ln) => (Mn.setCps(Bn(Ln) / 60), silence);
     let Ss = [];
-    const es = function(Dn) {
-      return Ss.push(Dn), silence;
-    }, gs = function(Dn) {
-      return yn = Dn, silence;
-    }, us = () => {
+    const _i = function(Ln) {
+      return Ss.push(Ln), silence;
+    }, _s = function(Ln) {
+      return yn = Ln, silence;
+    }, os = () => {
       Pattern$1.prototype.p = function(Jn) {
-        return typeof Jn == "string" && (Jn.startsWith("_") || Jn.endsWith("_")) ? silence : (Jn.includes("$") && (Jn = `${Jn}${hn}`, hn++), _n[Jn] = this, this);
+        return typeof Jn == "string" && (Jn.startsWith("_") || Jn.endsWith("_")) ? silence : (Jn.includes("$") && (Jn = `${Jn}${hn}`, hn++), mn[Jn] = this, this);
       }, Pattern$1.prototype.q = function(Jn) {
         return silence;
       };
@@ -1841,93 +1849,93 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       } catch (Jn) {
         console.warn("injectPatternMethods: error:", Jn);
       }
-      const Dn = register("cpm", function(Jn, Rn) {
-        return Rn._fast(Jn / 60 / Mn.cps);
+      const Ln = register("cpm", function(Jn, Dn) {
+        return Dn._fast(Jn / 60 / Mn.cps);
       });
       return evalScope({
-        all: es,
-        each: gs,
+        all: _i,
+        each: _s,
         hush: $n,
-        cpm: Dn,
-        setCps: bs,
-        setcps: bs,
-        setCpm: Ls,
-        setcpm: Ls
+        cpm: Ln,
+        setCps: ys,
+        setcps: ys,
+        setCpm: Fs,
+        setcpm: Fs
       });
     };
-    return { scheduler: Mn, evaluate: async (Dn, Jn = true) => {
-      if (!Dn)
+    return { scheduler: Mn, evaluate: async (Ln, Jn = true) => {
+      if (!Ln)
         throw new Error("no code to evaluate");
       try {
-        pn({ code: Dn, pending: true }), await us(), setTime(() => Mn.now()), await o?.({ code: Dn, blockBased: false }), Ss = [], Gn = {}, $n(), an && (Dn = `mondolang\`${Dn}\``);
-        let { pattern: Rn, meta: xn } = await evaluate$1(Dn, b, ln);
-        return Rn = In(Rn), logger$2("[eval] code updated"), Rn = await Wn(Rn, Jn), pn({
-          miniLocations: xn?.miniLocations || [],
-          widgets: xn?.widgets || [],
-          sliders: xn?.sliders || [],
-          activeCode: Dn,
-          pattern: Rn,
+        pn({ code: Ln, pending: true }), await os(), setTime(() => Mn.now()), await o?.({ code: Ln, blockBased: false }), Ss = [], Gn = {}, $n(), an && (Ln = `mondolang\`${Ln}\``);
+        let { pattern: Dn, meta: wn } = await evaluate$1(Ln, b, ln);
+        return Dn = Vn(Dn), logger$2("[eval] code updated"), Dn = await Wn(Dn, Jn), pn({
+          miniLocations: wn?.miniLocations || [],
+          widgets: wn?.widgets || [],
+          sliders: wn?.sliders || [],
+          activeCode: Ln,
+          pattern: Dn,
           evalError: void 0,
           schedulerError: void 0,
           pending: false
-        }), d?.({ code: Dn, pattern: Rn, meta: xn, range: void 0, widgetRemoved: false }), Rn;
-      } catch (Rn) {
-        logger$2(`[eval] error: ${Rn.message}`, "error"), console.error(Rn), pn({ evalError: Rn, pending: false }), t?.(Rn);
+        }), d?.({ code: Ln, pattern: Dn, meta: wn, range: void 0, widgetRemoved: false }), Dn;
+      } catch (Dn) {
+        logger$2(`[eval] error: ${Dn.message}`, "error"), console.error(Dn), pn({ evalError: Dn, pending: false }), t?.(Dn);
       }
-    }, evaluateBlock: async (Dn, Jn = true, Rn = {}) => {
-      if (!Dn)
+    }, evaluateBlock: async (Ln, Jn = true, Dn = {}) => {
+      if (!Ln)
         throw new Error("no code to evaluate");
       try {
-        pn({ code: Dn, pending: true }), await us(), setTime(() => Mn.now()), await o?.({ code: Dn, blockBased: true }), Ss = [];
-        const xn = {
+        pn({ code: Ln, pending: true }), await os(), setTime(() => Mn.now()), await o?.({ code: Ln, blockBased: true }), Ss = [];
+        const wn = {
           ...ln,
           blockBased: true,
-          range: Rn.range || []
+          range: Dn.range || []
         };
-        an && (Dn = `mondolang\`${Dn}\``);
-        let { pattern: Yn, meta: Tn } = await evaluate$1(Dn, b, xn), ns = false;
-        const hs = Tn.labels || [];
-        if (hs.some((ms) => ms.name.startsWith("$")))
+        an && (Ln = `mondolang\`${Ln}\``);
+        let { pattern: Hn, meta: Zn } = await evaluate$1(Ln, b, wn), ts = false;
+        const ps = Zn.labels || [];
+        if (ps.some((hs) => hs.name.startsWith("$")))
           throw new Error(
             "anonymous labels disabled for block based evaluation (see https://strudel.cc/blog/#label-notation)"
           );
-        if (hs.length > 0)
-          for (let ms = 0; ms < hs.length; ms++)
-            kn(hs, ms, Tn.output, Rn, Tn);
+        if (ps.length > 0)
+          for (let hs = 0; hs < ps.length; hs++)
+            Nn(ps, hs, Zn.output, Dn, Zn);
         else
-          Nn(Dn, Rn, Tn);
-        Tn.miniLocations = Sn("miniLocations"), Tn.widgets = Sn("widgets"), Tn.sliders = Sn("sliders");
-        const Rs = hs.map((ms) => ms.name);
-        for (const [ms, xs] of Object.entries(Gn))
-          Rs.includes(ms) && (xs.activeVisualizer !== null ? vn = ms : vn === ms && (ns = true, vn = null));
-        return _n = Object.fromEntries(
-          Object.entries(_n).filter(([ms]) => Object.keys(Gn).includes(ms))
-        ), Yn = In(Yn), logger$2("[eval] code updated"), Yn = await Wn(Yn, Jn), pn({
-          miniLocations: Tn?.miniLocations || [],
-          widgets: Tn?.widgets || [],
-          sliders: Tn?.sliders || [],
-          activeCode: Dn,
-          pattern: Yn,
+          Xn(Ln, Dn, Zn);
+        Zn.miniLocations = vn("miniLocations"), Zn.widgets = vn("widgets"), Zn.sliders = vn("sliders");
+        const Ls = ps.map((hs) => hs.name);
+        for (const [hs, Es] of Object.entries(Gn))
+          Ls.includes(hs) && (Es.activeVisualizer !== null ? Sn = hs : Sn === hs && (ts = true, Sn = null));
+        return mn = Object.fromEntries(
+          Object.entries(mn).filter(([hs]) => Object.keys(Gn).includes(hs))
+        ), Hn = Vn(Hn), logger$2("[eval] code updated"), Hn = await Wn(Hn, Jn), pn({
+          miniLocations: Zn?.miniLocations || [],
+          widgets: Zn?.widgets || [],
+          sliders: Zn?.sliders || [],
+          activeCode: Ln,
+          pattern: Hn,
           evalError: void 0,
           schedulerError: void 0,
           pending: false
-        }), d?.({ code: Dn, pattern: Yn, meta: Tn, range: Rn.range, widgetRemoved: ns }), Yn;
-      } catch (xn) {
-        logger$2(`[eval] error: ${xn.message}`, "error"), console.error(xn), pn({ evalError: xn, pending: false }), t?.(xn);
+        }), d?.({ code: Ln, pattern: Hn, meta: Zn, range: Dn.range, widgetRemoved: ts }), Hn;
+      } catch (wn) {
+        logger$2(`[eval] error: ${wn.message}`, "error"), console.error(wn), pn({ evalError: wn, pending: false }), t?.(wn);
       }
-    }, start: _s, stop: cs, pause: vs, setCps: bs, setPattern: Wn, setCode: (Dn) => pn({ code: Dn }), toggle: Zn, state: on };
+    }, start: ms, stop: ls, pause: Gs, setCps: ys, setPattern: Wn, setCode: (Ln) => pn({ code: Ln }), toggle: Tn, state: on };
   }
   function steady(e30) {
     return new Pattern$1((t) => [new Hap(void 0, t.span, e30)]);
   }
   function _perlin(e30, t = 0) {
     let o = Math.floor(e30), l = o + 1;
-    const d = (z) => 6 * z ** 5 - 15 * z ** 4 + 10 * z ** 3, p = (z) => (se) => (tn) => se + d(z) * (tn - se), b = getRandsAtTime(o, 1, t), R = getRandsAtTime(l, 1, t);
+    const d = (z) => 6 * z ** 5 - 15 * z ** 4 + 10 * z ** 3, p = (z) => (se) => (le) => se + d(z) * (le - se), b = getRandsAtTime(o, 1, t), R = getRandsAtTime(l, 1, t);
     return p(e30 - o)(b)(R);
   }
   function _berlin(e30, t = 0) {
     const o = Math.floor(e30), l = o + 1, d = getRandsAtTime(o, 1, t), p = getRandsAtTime(l, 1, t), b = d + p, R = (e30 - o) / (l - o);
-    return ((z, se, tn) => z + tn * (se - z))(d, b, R) / 2;
+    return ((z, se, le) => z + le * (se - z))(d, b, R) / 2;
   }
   function _keyDown(e30) {
     Array.isArray(e30) === false && (e30 = [e30]);
@@ -1955,8 +1963,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (noiseCache[e30])
       return noiseCache[e30];
     const l = 2 * o.sampleRate, d = o.createBuffer(1, l, o.sampleRate), p = d.getChannelData(0);
-    let b = 0, R, I, z, se, tn, rn, nn;
-    R = I = z = se = tn = rn = nn = 0;
+    let b = 0, R, I, z, se, le, rn, tn;
+    R = I = z = se = le = rn = tn = 0;
     for (let an = 0; an < l; an++)
       if (e30 === "white")
         p[an] = Math.random() * 2 - 1;
@@ -1965,7 +1973,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         p[an] = (b + 0.02 * on) / 1.02, b = p[an];
       } else if (e30 === "pink") {
         let on = Math.random() * 2 - 1;
-        R = 0.99886 * R + on * 0.0555179, I = 0.99332 * I + on * 0.0750759, z = 0.969 * z + on * 0.153852, se = 0.8665 * se + on * 0.3104856, tn = 0.55 * tn + on * 0.5329522, rn = -0.7616 * rn - on * 0.016898, p[an] = R + I + z + se + tn + rn + nn + on * 0.5362, p[an] *= 0.11, nn = on * 0.115926;
+        R = 0.99886 * R + on * 0.0555179, I = 0.99332 * I + on * 0.0750759, z = 0.969 * z + on * 0.153852, se = 0.8665 * se + on * 0.3104856, le = 0.55 * le + on * 0.5329522, rn = -0.7616 * rn - on * 0.016898, p[an] = R + I + z + se + le + rn + tn + on * 0.5362, p[an] *= 0.11, tn = on * 0.115926;
       } else if (e30 === "crackle") {
         const on = t * 0.01;
         Math.random() < on ? p[an] = Math.random() * 2 - 1 : p[an] = 0;
@@ -2001,8 +2009,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (Array.isArray(t))
       R = getSoundIndex(l, t.length), b = t[R];
     else {
-      const z = (tn) => noteToMidi(tn) - d, se = Object.keys(t).filter((tn) => !tn.startsWith("_")).reduce(
-        (tn, rn, nn) => !tn || Math.abs(z(rn)) < Math.abs(z(tn)) ? rn : tn,
+      const z = (le) => noteToMidi(le) - d, se = Object.keys(t).filter((le) => !le.startsWith("_")).reduce(
+        (le, rn, tn) => !le || Math.abs(z(rn)) < Math.abs(z(le)) ? rn : le,
         null
       );
       p = -z(se), R = getSoundIndex(l, t[se].length), b = t[se][R];
@@ -2041,9 +2049,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       frequency: I = 1,
       skew: z = 0.5,
       phaseoffset: se = 0,
-      curve: tn = 1,
+      curve: le = 1,
       min: rn,
-      max: nn,
+      max: tn,
       ...an
     } = t, on = {
       begin: l,
@@ -2054,10 +2062,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       frequency: I,
       skew: z,
       phaseoffset: se,
-      curve: tn,
+      curve: le,
       shape: getModulationShapeInput(o),
       min: rn ?? R * b,
-      max: nn ?? R * b + b,
+      max: tn ?? R * b + b,
       ...an
     };
     return getWorklet(e30, "lfo-processor", on);
@@ -2076,7 +2084,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function getParamLfo(e30, t, o, l, d) {
     let { defaultDepth: p = 1, depth: b, dcoffset: R, ...I } = d;
-    b == null && (b = Object.values(I).some((tn) => tn != null) ? p : 0);
+    b == null && (b = Object.values(I).some((le) => le != null) ? p : 0);
     let z;
     return b && (z = getLfo(e30, {
       begin: o,
@@ -2087,12 +2095,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), z.connect(t)), z;
   }
   function applyParameterModulators(e30, t, o, l, d, p) {
-    let { amount: b, offset: R, defaultAmount: I = 1, curve: z = "linear", values: se, holdEnd: tn, defaultValues: rn } = d;
-    b == null && (b = se.some((gn) => gn != null) ? I : 0);
-    const nn = R ?? 0, an = b + nn;
-    if (Math.abs(an - nn)) {
-      const [pn, gn, Mn, _n] = getADSRValues(se, z, rn);
-      getParamADSR(t, pn, gn, Mn, _n, nn, an, o, tn, z);
+    let { amount: b, offset: R, defaultAmount: I = 1, curve: z = "linear", values: se, holdEnd: le, defaultValues: rn } = d;
+    b == null && (b = se.some((_n) => _n != null) ? I : 0);
+    const tn = R ?? 0, an = b + tn;
+    if (Math.abs(an - tn)) {
+      const [pn, _n, Mn, mn] = getADSRValues(se, z, rn);
+      getParamADSR(t, pn, _n, Mn, mn, tn, an, o, le, z);
     }
     return getParamLfo(e30, t, o, l, p);
   }
@@ -2103,45 +2111,45 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       env: I,
       type: z,
       model: se,
-      q: tn = 1,
+      q: le = 1,
       drive: rn = 0.69,
-      depth: nn,
+      depth: tn,
       depthfrequency: an,
       dcoffset: on = -0.5,
       skew: ln,
       shape: pn,
-      rate: gn,
+      rate: _n,
       sync: Mn
-    } = l, _n, hn;
-    se === "ladder" ? (hn = getWorklet(e30, "ladder-processor", { frequency: b, q: tn, drive: rn }), _n = hn.parameters.get("frequency")) : (hn = getNodeFromPool("filter", () => e30.createBiquadFilter()), hn.type = z, Object.entries({ Q: tn, frequency: b }).forEach(([$n, Bn]) => {
+    } = l, mn, hn;
+    se === "ladder" ? (hn = getWorklet(e30, "ladder-processor", { frequency: b, q: le, drive: rn }), mn = hn.parameters.get("frequency")) : (hn = getNodeFromPool("filter", () => e30.createBiquadFilter()), hn.type = z, Object.entries({ Q: le, frequency: b }).forEach(([$n, Bn]) => {
       hn[$n].value = Bn;
-    }), _n = hn.frequency);
-    const yn = [l.attack, l.decay, l.sustain, l.release], [Gn, vn, Fn, Sn] = getADSRValues(yn, "exponential", [5e-3, 0.14, 0, 0.1]);
-    if ([...yn, I].some((Nn) => Nn !== void 0)) {
+    }), mn = hn.frequency);
+    const yn = [l.attack, l.decay, l.sustain, l.release], [Gn, Sn, En, vn] = getADSRValues(yn, "exponential", [5e-3, 0.14, 0, 0.1]);
+    if ([...yn, I].some((Xn) => Xn !== void 0)) {
       I = nanFallback(I, 1, true), R = nanFallback(R, 0, true);
-      const Nn = Math.abs(I), $n = Nn * R;
-      let Bn = clamp(2 ** -$n * b, 0, 2e4), Wn = clamp(2 ** (Nn - $n) * b, 0, 2e4);
-      I < 0 && ([Bn, Wn] = [Wn, Bn]), getParamADSR(_n, Gn, vn, Fn, Sn, Bn, Wn, t, o, "exponential");
+      const Xn = Math.abs(I), $n = Xn * R;
+      let Bn = clamp(2 ** -$n * b, 0, 2e4), Wn = clamp(2 ** (Xn - $n) * b, 0, 2e4);
+      I < 0 && ([Bn, Wn] = [Wn, Bn]), getParamADSR(mn, Gn, Sn, En, vn, Bn, Wn, t, o, "exponential");
     }
-    Mn != null && (gn = d * Mn);
-    const wn = [nn, an, ln, pn, gn].some((Nn) => Nn !== void 0);
-    let Ln;
-    if (wn) {
-      nn = nn ?? 1;
-      const Nn = p / d, Bn = {
-        depth: an ?? (nn ?? 1) * b,
+    Mn != null && (_n = d * Mn);
+    const xn = [tn, an, ln, pn, _n].some((Xn) => Xn !== void 0);
+    let Rn;
+    if (xn) {
+      tn = tn ?? 1;
+      const Xn = p / d, Bn = {
+        depth: an ?? (tn ?? 1) * b,
         dcoffset: on,
         skew: ln,
         shape: pn,
-        frequency: gn ?? d,
+        frequency: _n ?? d,
         min: -b + 30,
         max: 2e4 - b,
-        time: Nn,
+        time: Xn,
         curve: 1
       };
-      Ln = getParamLfo(e30, _n, t, o, Bn);
+      Rn = getParamLfo(e30, mn, t, o, Bn);
     }
-    return { filter: hn, lfo: Ln };
+    return { filter: hn, lfo: Rn };
   }
   function drywet(e30, t, o = 0) {
     const l = getAudioContext();
@@ -2165,9 +2173,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       [t.pattack, t.pdecay, t.psustain, t.prelease],
       b,
       [0.2, 1e-3, 1, 1e-3]
-    ), tn = t.panchor ?? z;
-    const rn = p * 100, nn = 0 - rn * tn, an = rn - rn * tn;
-    getParamADSR(e30, R, I, z, se, nn, an, o, l, b);
+    ), le = t.panchor ?? z;
+    const rn = p * 100, tn = 0 - rn * le, an = rn - rn * le;
+    getParamADSR(e30, R, I, z, se, tn, an, o, l, b);
   }
   function getVibratoOscillator(e30, t, o) {
     const { vibmod: l = 0.5, vib: d } = t;
@@ -2198,50 +2206,50 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         R === I + 1 ? z = `fmi${R === 1 ? "" : R}` : z = `fmi${R}${I}`;
         const se = t[z];
         if (!se) continue;
-        let tn = [];
-        for (let [rn, nn] of [
+        let le = [];
+        for (let [rn, tn] of [
           [true, R],
           // source
           [false, I]
           // target
         ]) {
-          if (nn === 0) {
-            tn.push(e30);
+          if (tn === 0) {
+            le.push(e30);
             continue;
           }
-          if (!p[nn]) {
-            const hn = nn === 1 ? "" : nn, { osc: yn, freq: Gn } = fm(e30, t[`fmh${hn}`] ?? 1, t[`fmwave${hn}`] ?? "sine");
+          if (!p[tn]) {
+            const hn = tn === 1 ? "" : tn, { osc: yn, freq: Gn } = fm(e30, t[`fmh${hn}`] ?? 1, t[`fmwave${hn}`] ?? "sine");
             d.push(yn);
-            const vn = [yn], Fn = ["attack", "decay", "sustain", "release"].map((kn) => t[`fm${kn}${hn}`]);
-            let Sn = yn;
-            if (Fn.some((kn) => kn !== void 0)) {
-              const kn = l.createGain(), [wn, Ln, Nn, $n] = getADSRValues(Fn), Bn = o + t.duration, Wn = t[`fmenv${hn}`] ?? "exp";
+            const Sn = [yn], En = ["attack", "decay", "sustain", "release"].map((Nn) => t[`fm${Nn}${hn}`]);
+            let vn = yn;
+            if (En.some((Nn) => Nn !== void 0)) {
+              const Nn = l.createGain(), [xn, Rn, Xn, $n] = getADSRValues(En), Bn = o + t.duration, Wn = t[`fmenv${hn}`] ?? "exp";
               getParamADSR(
-                kn.gain,
-                wn,
-                Ln,
-                Nn,
+                Nn.gain,
+                xn,
+                Rn,
+                Xn,
                 $n,
                 0,
                 1,
                 o,
                 Bn,
                 Wn === "exp" ? "exponential" : "linear"
-              ), vn.push(kn), Sn = yn.connect(kn);
+              ), Sn.push(Nn), vn = yn.connect(Nn);
             }
-            p[nn] = { input: yn.frequency, output: Sn, freq: Gn, osc: yn, toCleanup: vn }, b[`fm_${nn}`] = [yn];
+            p[tn] = { input: yn.frequency, output: vn, freq: Gn, osc: yn, toCleanup: Sn }, b[`fm_${tn}`] = [yn];
           }
-          const { input: an, output: on, freq: ln, osc: pn, toCleanup: gn } = p[nn], Mn = gainNode(se), _n = gainNode(ln);
-          tn.push(rn ? on.connect(Mn).connect(_n) : an), cleanupOnEnd(pn, [...gn, Mn, _n]), b[`fm_${nn}_gain`] = [Mn];
+          const { input: an, output: on, freq: ln, osc: pn, toCleanup: _n } = p[tn], Mn = gainNode(se), mn = gainNode(ln);
+          le.push(rn ? on.connect(Mn).connect(mn) : an), cleanupOnEnd(pn, [..._n, Mn, mn]), b[`fm_${tn}_gain`] = [Mn];
         }
-        if (!tn[1]) {
+        if (!le[1]) {
           logger$1(
             `[superdough] control ${z} failed to connect FM ${R} to target ${I} due to missing frequency parameter (likely because fm${I} is noise)`,
             "warning"
           );
           continue;
         }
-        tn[0].connect(tn[1]);
+        le[0].connect(le[1]);
       }
     return {
       nodes: b,
@@ -2278,7 +2286,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return e30;
   }
-  function githubPath$2(e30, t = "") {
+  function githubPath$3(e30, t = "") {
     if (!e30.startsWith("github:"))
       throw new Error('expected "github:" at the start of pseudoUrl');
     let o = e30.slice(7);
@@ -2298,7 +2306,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const t = getSamplesPrefixHandler(e30);
     if (t)
       return t(e30);
-    if (e30 = resolveSpecialPaths(e30), e30.startsWith("github:") && (e30 = githubPath$2(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432"), e30.startsWith("shabda:")) {
+    if (e30 = resolveSpecialPaths(e30), e30.startsWith("github:") && (e30 = githubPath$3(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432"), e30.startsWith("shabda:")) {
       let [d, p] = e30.split("shabda:");
       e30 = `https://shabda.ndre.gr/${p}.json?strudel=1`;
     }
@@ -2328,43 +2336,43 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       clip: z = void 0,
       // if set, samples will be cut off when the hap ends
       n: se = 0,
-      speed: tn = 1,
+      speed: le = 1,
       // sample playback speed
       duration: rn
     } = t;
-    if (tn === 0)
+    if (le === 0)
       return;
-    const nn = getAudioContext();
+    const tn = getAudioContext();
     let [an, on, ln, pn] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
-    const { bufferSource: gn, sliceDuration: Mn, offset: _n } = await getSampleBufferSource(t, l, d);
-    if (!gn) {
+    const { bufferSource: _n, sliceDuration: Mn, offset: mn } = await getSampleBufferSource(t, l, d);
+    if (!_n) {
       logger$1(`[sampler] could not load "${p}:${se}"`, "error");
       return;
     }
-    if (nn.currentTime > e30) {
-      logger$1(`[sampler] loading sound "${p}:${se}" took too long`, "highlight"), releaseAudioNode(gn);
+    if (tn.currentTime > e30) {
+      logger$1(`[sampler] loading sound "${p}:${se}" took too long`, "highlight"), releaseAudioNode(_n);
       return;
     }
-    const hn = getVibratoOscillator(gn.detune, t, e30), yn = e30 + b;
-    gn.start(yn, _n);
-    const Gn = nn.createGain(), vn = gn.connect(Gn);
+    const hn = getVibratoOscillator(_n.detune, t, e30), yn = e30 + b;
+    _n.start(yn, mn);
+    const Gn = tn.createGain(), Sn = _n.connect(Gn);
     z == null && I == null && t.release == null && (rn = Mn);
-    let Fn = e30 + rn;
-    getParamADSR(vn.gain, an, on, ln, pn, 0, 1, e30, Fn, "linear"), getPitchEnvelope(gn.detune, t, e30, Fn);
-    const Sn = nn.createGain();
-    vn.connect(Sn), onceEnded(gn, function() {
-      releaseAudioNode(gn), hn?.stop(), releaseAudioNode(vn), releaseAudioNode(Sn), o();
+    let En = e30 + rn;
+    getParamADSR(Sn.gain, an, on, ln, pn, 0, 1, e30, En, "linear"), getPitchEnvelope(_n.detune, t, e30, En);
+    const vn = tn.createGain();
+    Sn.connect(vn), onceEnded(_n, function() {
+      releaseAudioNode(_n), hn?.stop(), releaseAudioNode(Sn), releaseAudioNode(vn), o();
     });
-    let kn = Fn + pn + 0.01;
-    gn.stop(kn);
-    const wn = (Nn) => {
-      gn.stop(Nn);
-    }, Ln = { node: Sn, nodes: { source: [gn], ...hn?.nodes }, stop: wn };
+    let Nn = En + pn + 0.01;
+    _n.stop(Nn);
+    const xn = (Xn) => {
+      _n.stop(Xn);
+    }, Rn = { node: vn, nodes: { source: [_n], ...hn?.nodes }, stop: xn };
     if (R !== void 0) {
-      const Nn = cutGroups[R];
-      Nn && (Nn.node.gain.setValueAtTime(1, yn), Nn.node.gain.linearRampToValueAtTime(0, yn + 0.01)), cutGroups[R] = Ln;
+      const Xn = cutGroups[R];
+      Xn && (Xn.node.gain.setValueAtTime(1, yn), Xn.node.gain.linearRampToValueAtTime(0, yn + 0.01)), cutGroups[R] = Rn;
     }
-    return Ln;
+    return Rn;
   }
   function registerSample(e30, t, o) {
     registerSound(e30, (l, d, p) => onTriggerSample(l, d, p, t), {
@@ -2415,7 +2423,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const t = parseWavSampleRate(e30) || 44100;
     return await new OfflineAudioContext(1, 1, t).decodeAudioData(e30);
   }
-  function githubPath$1(e30, t = "") {
+  function githubPath$2(e30, t = "") {
     if (!e30.startsWith("github:"))
       throw new Error('expected "github:" at the start of pseudoUrl');
     let [o, l] = e30.split("github:");
@@ -2433,13 +2441,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     );
   }
   async function onTriggerSynth(e30, t, o, l, d, p) {
-    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext(), [tn, rn, nn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
+    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext(), [le, rn, tn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
     let { warpmode: on } = t;
     typeof on == "string" && (on = Warpmode[on.toUpperCase()] ?? Warpmode.NONE);
-    const ln = getFrequencyFromValue(t), { url: pn, label: gn } = getCommonSampleInfo(t, l), Mn = await getPayload(pn, gn, p);
-    let _n = e30 + I;
-    z !== void 0 && (_n = Math.min(e30 + z * I, _n));
-    const hn = _n + an, yn = hn + 0.01, Gn = {
+    const ln = getFrequencyFromValue(t), { url: pn, label: _n } = getCommonSampleInfo(t, l), Mn = await getPayload(pn, _n, p);
+    let mn = e30 + I;
+    z !== void 0 && (mn = Math.min(e30 + z * I, mn));
+    const hn = mn + an, yn = hn + 0.01, Gn = {
       begin: e30,
       end: yn,
       frequency: ln,
@@ -2450,20 +2458,20 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       voices: Math.max(t.unison ?? 1, 1),
       panspread: t.spread,
       phaserand: t.wtphaserand ?? t.unison > 1 ? 1 : 0
-    }, Fn = getNodeFromPool("wavetable", () => new AudioWorkletNode(se, "wavetable-oscillator-processor", { outputChannelCount: [2] }));
-    if (Object.entries(Gn).forEach(([Ss, es]) => {
-      const gs = Fn.parameters.get(Ss), us = es !== void 0 ? es : gs.defaultValue;
-      gs.value = us;
-    }), Fn.port.postMessage({ type: "initialize", payload: Mn }), se.currentTime > e30) {
+    }, En = getNodeFromPool("wavetable", () => new AudioWorkletNode(se, "wavetable-oscillator-processor", { outputChannelCount: [2] }));
+    if (Object.entries(Gn).forEach(([Ss, _i]) => {
+      const _s = En.parameters.get(Ss), os = _i !== void 0 ? _i : _s.defaultValue;
+      _s.value = os;
+    }), En.port.postMessage({ type: "initialize", payload: Mn }), se.currentTime > e30) {
       logger$1(`[wavetable] still loading sound "${b}:${R}"`, "highlight");
       return;
     }
-    const Sn = [t.wtattack, t.wtdecay, t.wtsustain, t.wtrelease], kn = [t.warpattack, t.warpdecay, t.warpsustain, t.warprelease], wn = Fn.parameters, Ln = wn.get("position"), Nn = wn.get("warp");
+    const vn = [t.wtattack, t.wtdecay, t.wtsustain, t.wtrelease], Nn = [t.warpattack, t.warpdecay, t.warpsustain, t.warprelease], xn = En.parameters, Rn = xn.get("position"), Xn = xn.get("warp");
     let $n = t.wtrate;
     t.wtsync != null && ($n = d * t.wtsync);
     const Bn = applyParameterModulators(
       se,
-      Ln,
+      Rn,
       e30,
       hn,
       {
@@ -2471,8 +2479,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         amount: t.wtenv,
         defaultAmount: 0.5,
         shape: "linear",
-        values: Sn,
-        holdEnd: _n,
+        values: vn,
+        holdEnd: mn,
         defaultValues: [0, 0.5, 0, 0.1]
       },
       {
@@ -2486,9 +2494,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     );
     let Wn = t.warprate;
     t.warpsync != null && (Wn = Wn = d * t.warpsync);
-    const In = applyParameterModulators(
+    const Vn = applyParameterModulators(
       se,
-      Nn,
+      Xn,
       e30,
       hn,
       {
@@ -2496,8 +2504,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         amount: t.warpenv,
         defaultAmount: 0.5,
         shape: "linear",
-        values: kn,
-        holdEnd: _n,
+        values: Nn,
+        holdEnd: mn,
         defaultValues: [0, 0.5, 0, 0.1]
       },
       {
@@ -2508,28 +2516,28 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         skew: t.warpskew,
         dcoffset: t.warpdc ?? 0
       }
-    ), cs = getVibratoOscillator(Fn.parameters.get("detune"), t, e30), _s = applyFM(Fn.parameters.get("frequency"), t, e30), vs = se.createGain(), Zn = Fn.connect(vs);
-    getParamADSR(Zn.gain, tn, rn, nn, an, 0, 0.3, e30, _n, "linear"), getPitchEnvelope(Fn.parameters.get("detune"), t, e30, _n);
-    const bs = {
-      node: Zn,
+    ), ls = getVibratoOscillator(En.parameters.get("detune"), t, e30), ms = applyFM(En.parameters.get("frequency"), t, e30), Gs = se.createGain(), Tn = En.connect(Gs);
+    getParamADSR(Tn.gain, le, rn, tn, an, 0, 0.3, e30, mn, "linear"), getPitchEnvelope(En.parameters.get("detune"), t, e30, mn);
+    const ys = {
+      node: Tn,
       nodes: {
-        source: [Fn],
+        source: [En],
         wt_lfo: [Bn],
-        warp_lfo: [In],
-        ..._s?.nodes,
-        ...cs?.nodes
+        warp_lfo: [Vn],
+        ...ms?.nodes,
+        ...ls?.nodes
       }
-    }, Ls = webAudioTimeout(
+    }, Fs = webAudioTimeout(
       se,
       () => {
-        releaseNodeToPool(Fn), cs?.stop(), _s?.stop(), releaseAudioNode(Bn), releaseAudioNode(In), o();
+        releaseNodeToPool(En), ls?.stop(), ms?.stop(), releaseAudioNode(Bn), releaseAudioNode(Vn), o();
       },
       e30,
       yn
     );
-    return bs.stop = (Ss) => {
-      Ls.stop(Ss);
-    }, bs;
+    return ys.stop = (Ss) => {
+      Fs.stop(Ss);
+    }, ys;
   }
   function setMaxPolyphony(e30) {
     maxPolyphony = parseInt(e30) ?? DEFAULT_MAX_POLYPHONY;
@@ -2677,7 +2685,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const b = getAudioContext(), R = getLfo(b, { frequency: o, depth: p * 2, begin: e30, end: t }), I = 1;
     let z = 282;
     const se = [];
-    for (let tn = 0; tn < I; tn++) {
+    for (let le = 0; le < I; le++) {
       const rn = getNodeFromPool("filter", () => b.createBiquadFilter());
       rn.type = "notch", rn.gain.value = 1, rn.frequency.value = d + z, rn.Q.value = 2 - Math.min(Math.max(l * 2, 0), 1.9), R.connect(rn.detune), z += 282, se.push(rn);
     }
@@ -2729,12 +2737,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             [1e-3, 0.05, 0.6, 0.01]
           ), I = gainNode(0.3), z = getOscillator(e30, t, o, () => {
             releaseAudioNode(I), l();
-          }), { node: se, nodes: tn, stop: rn, triggerRelease: nn } = z, { duration: an } = o, on = gainNode(1), ln = se.connect(I).connect(on), pn = t + an;
+          }), { node: se, nodes: le, stop: rn, triggerRelease: tn } = z, { duration: an } = o, on = gainNode(1), ln = se.connect(I).connect(on), pn = t + an;
           getParamADSR(ln.gain, d, p, b, R, 0, 1, t, pn, "linear");
-          const gn = pn + R + 0.01;
-          return nn?.(gn), rn(gn), {
+          const _n = pn + R + 0.01;
+          return tn?.(_n), rn(_n), {
             node: ln,
-            nodes: tn,
+            nodes: le,
             stop: (Mn) => {
               rn(Mn);
             }
@@ -2745,26 +2753,26 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), registerSound(
       "sbd",
       (e30, t, o) => {
-        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext(), z = 0.02, se = 1.2, tn = 0.025, rn = 1, nn = I.createOscillator();
-        nn.type = "triangle", nn.frequency.value = getFrequencyFromValue(t, 29), nn.detune.setValueAtTime(b * 100, 0), nn.detune.setValueAtTime(b * 100, e30), nn.detune.exponentialRampToValueAtTime(1e-3, e30 + p);
+        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext(), z = 0.02, se = 1.2, le = 0.025, rn = 1, tn = I.createOscillator();
+        tn.type = "triangle", tn.frequency.value = getFrequencyFromValue(t, 29), tn.detune.setValueAtTime(b * 100, 0), tn.detune.setValueAtTime(b * 100, e30), tn.detune.exponentialRampToValueAtTime(1e-3, e30 + p);
         const an = gainNode(1);
-        an.gain.setValueAtTime(1, e30 + z), an.gain.exponentialRampToValueAtTime(1e-3, e30 + z + d), nn.start(e30);
+        an.gain.setValueAtTime(1, e30 + z), an.gain.exponentialRampToValueAtTime(1e-3, e30 + z + d), tn.start(e30);
         const on = getNoiseOscillator("brown", e30, 2), ln = gainNode(1);
-        ln.gain.setValueAtTime(se, e30), ln.gain.exponentialRampToValueAtTime(1e-3, e30 + tn);
+        ln.gain.setValueAtTime(se, e30), ln.gain.exponentialRampToValueAtTime(1e-3, e30 + le);
         const pn = new WaveShaperNode(I);
         pn.curve = makeSaturationCurve(2, I.sampleRate);
-        const gn = gainNode(rn);
-        onceEnded(nn, () => {
-          releaseAudioNode(nn), releaseAudioNode(an), releaseAudioNode(pn), releaseAudioNode(on.node), releaseAudioNode(ln), releaseAudioNode(gn), o();
+        const _n = gainNode(rn);
+        onceEnded(tn, () => {
+          releaseAudioNode(tn), releaseAudioNode(an), releaseAudioNode(pn), releaseAudioNode(on.node), releaseAudioNode(ln), releaseAudioNode(_n), o();
         });
-        const Mn = nn.connect(pn).connect(an).connect(gn);
-        on.node.connect(ln).connect(gn);
+        const Mn = tn.connect(pn).connect(an).connect(_n);
+        on.node.connect(ln).connect(_n);
         let hn = e30 + d + 0.01;
-        return R != null && (hn = Math.min(e30 + R * l, hn)), gn.gain.setValueAtTime(rn, hn - 0.01), gn.gain.linearRampToValueAtTime(0, hn), nn.stop(hn), on.stop(hn), {
+        return R != null && (hn = Math.min(e30 + R * l, hn)), _n.gain.setValueAtTime(rn, hn - 0.01), _n.gain.linearRampToValueAtTime(0, hn), tn.stop(hn), on.stop(hn), {
           node: Mn,
-          nodes: { source: [nn] },
+          nodes: { source: [tn] },
           stop: (yn) => {
-            nn.stop(yn);
+            tn.stop(yn);
           }
         };
       },
@@ -2775,42 +2783,42 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         const l = getAudioContext();
         let { duration: d, n: p, unison: b = 5, spread: R = 0.6, detune: I } = t;
         I = I ?? p ?? 0.18;
-        const z = getFrequencyFromValue(t), [se, tn, rn, nn] = getADSRValues(
+        const z = getFrequencyFromValue(t), [se, le, rn, tn] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 0.6, 0.01]
-        ), an = e30 + d, on = an + nn + 0.01, ln = clamp(b, 1, 100);
+        ), an = e30 + d, on = an + tn + 0.01, ln = clamp(b, 1, 100);
         let pn = ln > 1 ? clamp(R, 0, 1) : 0;
-        const gn = {
+        const _n = {
           frequency: z,
           begin: e30,
           end: on,
           freqspread: I,
           voices: ln,
           panspread: pn
-        }, _n = getNodeFromPool("supersaw", () => new AudioWorkletNode(l, "supersaw-oscillator", { outputChannelCount: [2] }));
-        Object.entries(gn).forEach(([Sn, kn]) => {
-          const wn = _n.parameters.get(Sn), Ln = kn !== void 0 ? kn : wn.defaultValue;
-          wn.value = Ln;
-        }), _n.port.postMessage({ type: "initialize" });
+        }, mn = getNodeFromPool("supersaw", () => new AudioWorkletNode(l, "supersaw-oscillator", { outputChannelCount: [2] }));
+        Object.entries(_n).forEach(([vn, Nn]) => {
+          const xn = mn.parameters.get(vn), Rn = Nn !== void 0 ? Nn : xn.defaultValue;
+          xn.value = Rn;
+        }), mn.port.postMessage({ type: "initialize" });
         const hn = 1 / Math.sqrt(ln);
-        getPitchEnvelope(_n.parameters.get("detune"), t, e30, an);
-        const yn = getVibratoOscillator(_n.parameters.get("detune"), t, e30), Gn = applyFM(_n.parameters.get("frequency"), t, e30);
-        let vn = gainNode(1);
-        vn = _n.connect(vn), getParamADSR(vn.gain, se, tn, rn, nn, 0, 0.3 * hn, e30, an, "linear");
-        let Fn = webAudioTimeout(
+        getPitchEnvelope(mn.parameters.get("detune"), t, e30, an);
+        const yn = getVibratoOscillator(mn.parameters.get("detune"), t, e30), Gn = applyFM(mn.parameters.get("frequency"), t, e30);
+        let Sn = gainNode(1);
+        Sn = mn.connect(Sn), getParamADSR(Sn.gain, se, le, rn, tn, 0, 0.3 * hn, e30, an, "linear");
+        let En = webAudioTimeout(
           l,
           () => {
-            releaseNodeToPool(_n), o(), Gn?.stop(), yn?.stop();
+            releaseNodeToPool(mn), o(), Gn?.stop(), yn?.stop();
           },
           e30,
           on
         );
         return {
-          node: vn,
-          nodes: { source: [_n], ...Gn?.nodes, ...yn?.nodes },
-          stop: (Sn) => {
-            Fn.stop(Sn);
+          node: Sn,
+          nodes: { source: [mn], ...Gn?.nodes, ...yn?.nodes },
+          stop: (vn) => {
+            En.stop(vn);
           }
         };
       },
@@ -2836,11 +2844,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           "((t^t/2+t+64)%7 * 24)"
         ], { n: d = 0 } = t, p = getFrequencyFromValue(t), { byteBeatExpression: b = l[d % l.length], byteBeatStartTime: R } = t, I = getAudioContext();
         let { duration: z } = t;
-        const [se, tn, rn, nn] = getADSRValues(
+        const [se, le, rn, tn] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 0.6, 0.01]
-        ), an = e30 + z, on = an + nn + 0.01;
+        ), an = e30 + z, on = an + tn + 0.01;
         let ln = getWorklet(
           I,
           "byte-beat-processor",
@@ -2855,8 +2863,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         );
         ln.port.postMessage({ codeText: b, byteBeatStartTime: R, frequency: p });
         let pn = gainNode(1);
-        pn = ln.connect(pn), getParamADSR(pn.gain, se, tn, rn, nn, 0, 1, e30, an, "linear");
-        let gn = webAudioTimeout(
+        pn = ln.connect(pn), getParamADSR(pn.gain, se, le, rn, tn, 0, 1, e30, an, "linear");
+        let _n = webAudioTimeout(
           I,
           () => {
             releaseAudioNode(ln), o();
@@ -2868,7 +2876,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           node: pn,
           source: ln,
           stop: (Mn) => {
-            gn.stop(Mn);
+            _n.stop(Mn);
           }
         };
       },
@@ -2880,11 +2888,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         let { pwrate: d, pwsweep: p } = t;
         p == null && (d != null ? p = 0.3 : p = 0), d == null && p != null && (d = 1);
         let { duration: b, pw: R = 0.5 } = t;
-        const I = getFrequencyFromValue(t), [z, se, tn, rn] = getADSRValues(
+        const I = getFrequencyFromValue(t), [z, se, le, rn] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 0.6, 0.01]
-        ), nn = e30 + b, an = nn + rn + 0.01;
+        ), tn = e30 + b, an = tn + rn + 0.01;
         let on = getWorklet(
           l,
           "pulse-oscillator",
@@ -2898,13 +2906,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             outputChannelCount: [2]
           }
         );
-        getPitchEnvelope(on.parameters.get("detune"), t, e30, nn);
+        getPitchEnvelope(on.parameters.get("detune"), t, e30, tn);
         const ln = getVibratoOscillator(on.parameters.get("detune"), t, e30), pn = applyFM(on.parameters.get("frequency"), t, e30);
-        let gn = gainNode(1);
-        gn = on.connect(gn), getParamADSR(gn.gain, z, se, tn, rn, 0, 1, e30, nn, "linear");
+        let _n = gainNode(1);
+        _n = on.connect(_n), getParamADSR(_n.gain, z, se, le, rn, 0, 1, e30, tn, "linear");
         let Mn;
         p != 0 && (Mn = getLfo(l, { frequency: d, depth: p, begin: e30, end: an }), Mn.connect(on.parameters.get("pulsewidth")));
-        let _n = webAudioTimeout(
+        let mn = webAudioTimeout(
           l,
           () => {
             releaseAudioNode(on), releaseAudioNode(Mn), o(), pn?.stop(), ln?.stop();
@@ -2913,10 +2921,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           an
         );
         return {
-          node: gn,
+          node: _n,
           nodes: { source: [on], pw_lfo: [Mn], ...pn?.nodes, ...ln?.nodes },
           stop: (hn) => {
-            _n.stop(hn);
+            mn.stop(hn);
           }
         };
       },
@@ -2928,21 +2936,21 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 1, 0.01]
-        ), I = e30 + t.duration, z = I + R + 0.01, se = getSuperdoughAudioController().getBus(t.n ?? 0), tn = se.connect(gainNode(0));
-        getParamADSR(tn.gain, d, p, b, R, 0, 1, e30, I, "linear");
+        ), I = e30 + t.duration, z = I + R + 0.01, se = getSuperdoughAudioController().getBus(t.n ?? 0), le = se.connect(gainNode(0));
+        getParamADSR(le.gain, d, p, b, R, 0, 1, e30, I, "linear");
         const rn = webAudioTimeout(
           l,
           () => {
-            se.disconnect(tn), o();
+            se.disconnect(le), o();
           },
           e30,
           z
         );
         return {
-          node: tn,
+          node: le,
           nodes: { source: [se] },
-          stop: (nn) => {
-            rn.stop(nn);
+          stop: (tn) => {
+            rn.stop(tn);
           }
         };
       },
@@ -2958,21 +2966,21 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           );
           let I, { density: z } = o;
           I = getNoiseOscillator(e30, t, z);
-          let { node: se, stop: tn, triggerRelease: rn } = I;
-          const nn = gainNode(0.3), { duration: an } = o;
+          let { node: se, stop: le, triggerRelease: rn } = I;
+          const tn = gainNode(0.3), { duration: an } = o;
           onceEnded(se, () => {
-            releaseAudioNode(se), releaseAudioNode(nn), l();
+            releaseAudioNode(se), releaseAudioNode(tn), l();
           });
           const on = gainNode(1);
-          let ln = se.connect(nn).connect(on);
+          let ln = se.connect(tn).connect(on);
           const pn = t + an;
           getParamADSR(ln.gain, d, p, b, R, 0, 1, t, pn, "linear");
-          const gn = pn + R + 0.01;
-          return rn?.(gn), tn(gn), {
+          const _n = pn + R + 0.01;
+          return rn?.(_n), le(_n), {
             node: ln,
             nodes: { source: [se] },
             stop: (Mn) => {
-              tn(Mn);
+              le(Mn);
             }
           };
         },
@@ -2983,21 +2991,21 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function waveformN(e30, t, o) {
     e30 = typeof e30 == "object" ? e30 : new Float32Array(e30).fill(1);
     const d = e30.length, p = new Float32Array(d + 1), b = new Float32Array(d + 1), R = getAudioContext(), I = R.createOscillator(), z = {
-      sawtooth: (tn) => [0, -1 / tn],
-      square: (tn) => [0, tn % 2 === 0 ? 0 : 1 / tn],
-      triangle: (tn) => [tn % 2 === 0 ? 0 : 1 / (tn * tn), 0],
-      user: (tn) => [0, 1]
+      sawtooth: (le) => [0, -1 / le],
+      square: (le) => [0, le % 2 === 0 ? 0 : 1 / le],
+      triangle: (le) => [le % 2 === 0 ? 0 : 1 / (le * le), 0],
+      user: (le) => [0, 1]
     };
     if (!z[o])
       throw new Error(`unknown wave type ${o}`);
-    for (let tn = 0; tn < d; tn++) {
-      const rn = e30[tn], [nn, an] = z[o](tn + 1), on = t?.[tn] ?? 0;
-      let ln = nn * rn, pn = an * rn;
+    for (let le = 0; le < d; le++) {
+      const rn = e30[le], [tn, an] = z[o](le + 1), on = t?.[le] ?? 0;
+      let ln = tn * rn, pn = an * rn;
       if (on !== 0) {
-        const gn = Math.cos(PI2 * on), Mn = Math.sin(PI2 * on), _n = ln, hn = pn;
-        ln = gn * _n - Mn * hn, pn = Mn * _n + gn * hn;
+        const _n = Math.cos(PI2 * on), Mn = Math.sin(PI2 * on), mn = ln, hn = pn;
+        ln = _n * mn - Mn * hn, pn = Mn * mn + _n * hn;
       }
-      p[tn + 1] = ln, b[tn + 1] = pn;
+      p[le + 1] = ln, b[le + 1] = pn;
     }
     const se = R.createPeriodicWave(p, b);
     return I.setPeriodicWave(se), I;
@@ -3011,7 +3019,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       return R = new ConstantSourceNode(getAudioContext(), { offset: 1 }), R.start(t), {
         node: R,
         nodes: { source: R },
-        stop: (tn) => R?.stop(tn)
+        stop: (le) => R?.stop(le)
       };
     !b || b?.length === 0 || e30 === "sine" ? (R = getAudioContext().createOscillator(), R.type = e30 || "triangle") : R = waveformN(b, o.phases, e30), R.frequency.value = getFrequencyFromValue(o);
     const I = getVibratoOscillator(R.detune, o, t);
@@ -3023,23 +3031,23 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), R.start(t), {
       node: se?.node || R,
       nodes: { source: [R], ...I?.nodes, ...z?.nodes },
-      stop: (tn) => {
-        z.stop(tn), I?.stop(tn), se?.stop(tn), R.stop(tn);
+      stop: (le) => {
+        z.stop(le), I?.stop(le), se?.stop(le), R.stop(le);
       },
-      triggerRelease: (tn) => {
+      triggerRelease: (le) => {
       }
     };
   }
-  function buildSamples(e30 = 1, t = 0.05, o = 220, l = 0, d = 0, p = 0.1, b = 0, R = 1, I = 0, z = 0, se = 0, tn = 0, rn = 0, nn = 0, an = 0, on = 0, ln = 0, pn = 1, gn = 0, Mn = 0) {
-    let _n = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (cs) => cs > 0 ? 1 : -1, Gn = I *= 500 * _n / hn / hn, vn = o *= (1 + t * 2 * Math.random() - t) * _n / hn, Fn = [], Sn = 0, kn = 0, wn = 0, Ln = 1, Nn = 0, $n = 0, Bn = 0, Wn, In;
-    for (l = l * hn + 9, gn *= hn, d *= hn, p *= hn, ln *= hn, z *= 500 * _n / hn ** 3, an *= _n / hn, se *= _n / hn, tn *= hn, rn = rn * hn | 0, In = l + gn + d + p + ln | 0; wn < In; Fn[wn++] = Bn)
-      ++$n % (on * 100 | 0) || (Bn = b ? b > 1 ? b > 2 ? b > 3 ? Math.sin((Sn % _n) ** 3) : Math.max(Math.min(Math.tan(Sn), 1), -1) : 1 - (2 * Sn / _n % 2 + 2) % 2 : 1 - 4 * Math.abs(Math.round(Sn / _n) - Sn / _n) : Math.sin(Sn), Bn = (rn ? 1 - Mn + Mn * Math.sin(_n * wn / rn) : 1) * yn(Bn) * Math.abs(Bn) ** R * // curve 0=square, 2=pointy
+  function buildSamples(e30 = 1, t = 0.05, o = 220, l = 0, d = 0, p = 0.1, b = 0, R = 1, I = 0, z = 0, se = 0, le = 0, rn = 0, tn = 0, an = 0, on = 0, ln = 0, pn = 1, _n = 0, Mn = 0) {
+    let mn = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (ls) => ls > 0 ? 1 : -1, Gn = I *= 500 * mn / hn / hn, Sn = o *= (1 + t * 2 * Math.random() - t) * mn / hn, En = [], vn = 0, Nn = 0, xn = 0, Rn = 1, Xn = 0, $n = 0, Bn = 0, Wn, Vn;
+    for (l = l * hn + 9, _n *= hn, d *= hn, p *= hn, ln *= hn, z *= 500 * mn / hn ** 3, an *= mn / hn, se *= mn / hn, le *= hn, rn = rn * hn | 0, Vn = l + _n + d + p + ln | 0; xn < Vn; En[xn++] = Bn)
+      ++$n % (on * 100 | 0) || (Bn = b ? b > 1 ? b > 2 ? b > 3 ? Math.sin((vn % mn) ** 3) : Math.max(Math.min(Math.tan(vn), 1), -1) : 1 - (2 * vn / mn % 2 + 2) % 2 : 1 - 4 * Math.abs(Math.round(vn / mn) - vn / mn) : Math.sin(vn), Bn = (rn ? 1 - Mn + Mn * Math.sin(mn * xn / rn) : 1) * yn(Bn) * Math.abs(Bn) ** R * // curve 0=square, 2=pointy
       e30 * 1 * // envelope
-      (wn < l ? wn / l : wn < l + gn ? 1 - (wn - l) / gn * (1 - pn) : wn < l + gn + d ? pn : wn < In - ln ? (In - wn - ln) / p * // release falloff
-      pn : 0), Bn = ln ? Bn / 2 + (ln > wn ? 0 : (wn < In - ln ? 1 : (In - wn) / ln) * // release delay
-      Fn[wn - ln | 0] / 2) : Bn), Wn = (o += I += z) * // frequency
-      Math.cos(an * kn++), Sn += Wn - Wn * nn * (1 - (Math.sin(wn) + 1) * 1e9 % 2), Ln && ++Ln > tn && (o += se, vn += se, Ln = 0), rn && !(++Nn % rn) && (o = vn, I = Gn, Ln ||= 1);
-    return Fn;
+      (xn < l ? xn / l : xn < l + _n ? 1 - (xn - l) / _n * (1 - pn) : xn < l + _n + d ? pn : xn < Vn - ln ? (Vn - xn - ln) / p * // release falloff
+      pn : 0), Bn = ln ? Bn / 2 + (ln > xn ? 0 : (xn < Vn - ln ? 1 : (Vn - xn) / ln) * // release delay
+      En[xn - ln | 0] / 2) : Bn), Wn = (o += I += z) * // frequency
+      Math.cos(an * Nn++), vn += Wn - Wn * tn * (1 - (Math.sin(xn) + 1) * 1e9 % 2), Rn && ++Rn > le && (o += se, Sn += se, Rn = 0), rn && !(++Xn % rn) && (o = Sn, I = Gn, Rn ||= 1);
+    return En;
   }
   function registerZZFXSounds() {
     ["zzfx", "z_sine", "z_sawtooth", "z_triangle", "z_square", "z_tan", "z_noise"].forEach((e30) => {
@@ -3119,14 +3127,14 @@ registerProcessor('${o}', MyProcessor);
       }
     ), connectToDestination(doughWorklet);
   }
-  function githubPath(e30, t = "") {
+  function githubPath$1(e30, t = "") {
     if (!e30.startsWith("github:"))
       throw new Error('expected "github:" at the start of pseudoUrl');
     let [o, l] = e30.split("github:");
     return l = l.endsWith("/") ? l.slice(0, -1) : l, l.split("/").length === 2 && (l += "/main"), `https://raw.githubusercontent.com/${l}/${t}`;
   }
   async function fetchSampleMap(e30) {
-    if (e30.startsWith("github:") && (e30 = githubPath(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432"), e30.startsWith("shabda:")) {
+    if (e30.startsWith("github:") && (e30 = githubPath$1(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432"), e30.startsWith("shabda:")) {
       let [l, d] = e30.split("shabda:");
       e30 = `https://shabda.ndre.gr/${d}.json?strudel=1`;
     }
@@ -3168,7 +3176,7 @@ registerProcessor('${o}', MyProcessor);
       maxPolyphony: p,
       multiChannelOrbits: b
     }), logger("[webaudio] preloading");
-    let z = e30.queryArc(o, l, { _cps: t }).sort((se, tn) => se.whole.begin.valueOf() - tn.whole.begin.valueOf());
+    let z = e30.queryArc(o, l, { _cps: t }).sort((se, le) => se.whole.begin.valueOf() - le.whole.begin.valueOf());
     for (const se of z)
       if (se.hasOnset())
         try {
@@ -3179,12 +3187,12 @@ registerProcessor('${o}', MyProcessor);
             t,
             (se.whole?.begin.valueOf() - o) / t
           );
-        } catch (tn) {
-          errorLogger(tn, "webaudio");
+        } catch (le) {
+          errorLogger(le, "webaudio");
         }
     return logger("[webaudio] start rendering"), I.startRendering().then((se) => {
-      const tn = audioBufferToWav(se), rn = new Blob([tn], { type: "audio/wav" }), nn = URL.createObjectURL(rn), an = document.createElement("a");
-      an.href = nn, R = R ? `${R}.wav` : `${(/* @__PURE__ */ new Date()).toISOString()}.wav`, an.download = `${R}`, document.body.appendChild(an), an.click(), document.body.removeChild(an), URL.revokeObjectURL(nn);
+      const le = audioBufferToWav(se), rn = new Blob([le], { type: "audio/wav" }), tn = URL.createObjectURL(rn), an = document.createElement("a");
+      an.href = tn, R = R ? `${R}.wav` : `${(/* @__PURE__ */ new Date()).toISOString()}.wav`, an.download = `${R}`, document.body.appendChild(an), an.click(), document.body.removeChild(an), URL.revokeObjectURL(tn);
     }).finally(async () => {
       setAudioContext(null), setSuperdoughAudioController(null), resetGlobalEffects();
     });
@@ -3261,87 +3269,87 @@ registerProcessor('${o}', MyProcessor);
     active: I = getTheme().foreground,
     background: z = "transparent",
     smear: se = 0,
-    playheadColor: tn = getTheme().foreground,
+    playheadColor: le = getTheme().foreground,
     minMidi: rn = 10,
-    maxMidi: nn = 90,
+    maxMidi: tn = 90,
     autorange: an = 0,
     timeframe: on,
     fold: ln = 1,
     vertical: pn = 0,
-    labels: gn = false,
+    labels: _n = false,
     fill: Mn = 1,
-    fillActive: _n = false,
+    fillActive: mn = false,
     strokeActive: hn = true,
     stroke: yn,
     hideInactive: Gn = 0,
-    colorizeInactive: vn = 1,
-    fontFamily: Fn,
-    ctx: Sn,
-    id: kn
+    colorizeInactive: Sn = 1,
+    fontFamily: En,
+    ctx: vn,
+    id: Nn
   } = {}) {
-    const wn = Sn.canvas.width, Ln = Sn.canvas.height;
-    let Nn = -o * l, $n = o * (1 - l);
-    kn && (t = t.filter((us) => us.hasTag(kn))), on && (console.warn("timeframe is deprecated! use from/to instead"), Nn = 0, $n = on);
-    const Bn = pn ? Ln : wn, Wn = pn ? wn : Ln;
-    let In = pn ? [Bn, 0] : [0, Bn];
-    const cs = $n - Nn, _s = pn ? [0, Wn] : [Wn, 0];
-    let vs = nn - rn + 1, Zn = Wn / vs, bs = [];
-    d && In.reverse(), p && _s.reverse();
-    const { min: Ls, max: Ss, values: es } = t.reduce(
-      ({ min: us, max: ps, values: Ds }, On) => {
-        const Dn = getValue(On);
+    const xn = vn.canvas.width, Rn = vn.canvas.height;
+    let Xn = -o * l, $n = o * (1 - l);
+    Nn && (t = t.filter((os) => os.hasTag(Nn))), on && (console.warn("timeframe is deprecated! use from/to instead"), Xn = 0, $n = on);
+    const Bn = pn ? Rn : xn, Wn = pn ? xn : Rn;
+    let Vn = pn ? [Bn, 0] : [0, Bn];
+    const ls = $n - Xn, ms = pn ? [0, Wn] : [Wn, 0];
+    let Gs = tn - rn + 1, Tn = Wn / Gs, ys = [];
+    d && Vn.reverse(), p && ms.reverse();
+    const { min: Fs, max: Ss, values: _i } = t.reduce(
+      ({ min: os, max: fs, values: Rs }, Yn) => {
+        const Ln = getValue(Yn);
         return {
-          min: Dn < us ? Dn : us,
-          max: Dn > ps ? Dn : ps,
-          values: Ds.includes(Dn) ? Ds : [...Ds, Dn]
+          min: Ln < os ? Ln : os,
+          max: Ln > fs ? Ln : fs,
+          values: Rs.includes(Ln) ? Rs : [...Rs, Ln]
         };
       },
       { min: 1 / 0, max: -1 / 0, values: [] }
     );
-    an && (rn = Ls, nn = Ss, vs = nn - rn + 1), bs = es.sort(
-      (us, ps) => typeof us == "number" && typeof ps == "number" ? us - ps : typeof us == "number" ? 1 : String(us).localeCompare(String(ps))
-    ), Zn = ln ? Wn / bs.length : Wn / vs, Sn.fillStyle = z, Sn.globalAlpha = 1, se || (Sn.clearRect(0, 0, wn, Ln), Sn.fillRect(0, 0, wn, Ln)), t.forEach((us) => {
-      const ps = us.whole.begin <= e30 && us.endClipped > e30;
-      let Ds = yn ?? (hn && ps), On = !ps && Mn || ps && _n;
-      if (Gn && !ps)
+    an && (rn = Fs, tn = Ss, Gs = tn - rn + 1), ys = _i.sort(
+      (os, fs) => typeof os == "number" && typeof fs == "number" ? os - fs : typeof os == "number" ? 1 : String(os).localeCompare(String(fs))
+    ), Tn = ln ? Wn / ys.length : Wn / Gs, vn.fillStyle = z, vn.globalAlpha = 1, se || (vn.clearRect(0, 0, xn, Rn), vn.fillRect(0, 0, xn, Rn)), t.forEach((os) => {
+      const fs = os.whole.begin <= e30 && os.endClipped > e30;
+      let Rs = yn ?? (hn && fs), Yn = !fs && Mn || fs && mn;
+      if (Gn && !fs)
         return;
-      let Dn = us.value?.color;
-      I = Dn || I, R = vn && Dn || R, Dn = ps ? I : R, Sn.fillStyle = On ? Dn : "transparent", Sn.strokeStyle = Dn;
-      const { velocity: Jn = 1, gain: Rn = 1 } = us.value || {};
-      Sn.globalAlpha = Jn * Rn;
-      const xn = (us.whole.begin - (d ? $n : Nn)) / cs, Yn = scale$2(xn, ...In);
-      let Tn = scale$2(us.duration / cs, 0, Bn);
-      const ns = getValue(us), hs = ln ? bs.indexOf(ns) / bs.length : (Number(ns) - rn) / vs, Es = scale$2(hs, ..._s);
-      let Rs = 0;
-      const ms = scale$2(e30 / cs, ...In);
-      let xs;
-      if (pn ? xs = [
-        Es + 1 - (p ? Zn : 0),
+      let Ln = os.value?.color;
+      I = Ln || I, R = Sn && Ln || R, Ln = fs ? I : R, vn.fillStyle = Yn ? Ln : "transparent", vn.strokeStyle = Ln;
+      const { velocity: Jn = 1, gain: Dn = 1 } = os.value || {};
+      vn.globalAlpha = Jn * Dn;
+      const wn = (os.whole.begin - (d ? $n : Xn)) / ls, Hn = scale$2(wn, ...Vn);
+      let Zn = scale$2(os.duration / ls, 0, Bn);
+      const ts = getValue(os), ps = ln ? ys.indexOf(ts) / ys.length : (Number(ts) - rn) / Gs, xs = scale$2(ps, ...ms);
+      let Ls = 0;
+      const hs = scale$2(e30 / ls, ...Vn);
+      let Es;
+      if (pn ? Es = [
+        xs + 1 - (p ? Tn : 0),
         // x
-        Bn - ms + Yn + Rs + 1 - (d ? 0 : Tn),
-        // y
-        Zn - 2,
-        // width
-        Tn - 2
-        // height
-      ] : xs = [
-        Yn - ms + Rs + 1 - (d ? Tn : 0),
-        // x
-        Es + 1 - (p ? 0 : Zn),
+        Bn - hs + Hn + Ls + 1 - (d ? 0 : Zn),
         // y
         Tn - 2,
-        // widith
+        // width
         Zn - 2
         // height
-      ], Ds && Sn.strokeRect(...xs), On && Sn.fillRect(...xs), gn) {
-        const Ns = us.value.note ?? us.value.s + (us.value.n ? `:${us.value.n}` : ""), { label: ss, activeLabel: is } = us.value, Ms = (ps && is || ss) ?? Ns;
-        let ys = pn ? Tn : Zn * 0.75;
-        Sn.font = `${ys}px ${Fn || "monospace"}`, Sn.fillStyle = /* isActive &&  */
-        On ? "black" : Dn, Sn.textBaseline = "top", Sn.fillText(Ms, ...xs);
+      ] : Es = [
+        Hn - hs + Ls + 1 - (d ? Zn : 0),
+        // x
+        xs + 1 - (p ? 0 : Tn),
+        // y
+        Zn - 2,
+        // widith
+        Tn - 2
+        // height
+      ], Rs && vn.strokeRect(...Es), Yn && vn.fillRect(...Es), _n) {
+        const Ts = os.value.note ?? os.value.s + (os.value.n ? `:${os.value.n}` : ""), { label: ns, activeLabel: is } = os.value, Cs = (fs && is || ns) ?? Ts;
+        let gs = pn ? Zn : Tn * 0.75;
+        vn.font = `${gs}px ${En || "monospace"}`, vn.fillStyle = /* isActive &&  */
+        Yn ? "black" : Ln, vn.textBaseline = "top", vn.fillText(Cs, ...Es);
       }
-    }), Sn.globalAlpha = 1;
-    const gs = scale$2(-Nn / cs, ...In);
-    return Sn.strokeStyle = tn, Sn.beginPath(), pn ? (Sn.moveTo(0, gs), Sn.lineTo(Wn, gs)) : (Sn.moveTo(gs, 0), Sn.lineTo(gs, Wn)), Sn.stroke(), this;
+    }), vn.globalAlpha = 1;
+    const _s = scale$2(-Xn / ls, ...Vn);
+    return vn.strokeStyle = le, vn.beginPath(), pn ? (vn.moveTo(0, _s), vn.lineTo(Wn, _s)) : (vn.moveTo(_s, 0), vn.lineTo(_s, Wn)), vn.stroke(), this;
   }
   function getDrawOptions(e30, t = {}) {
     let [o, l] = e30;
@@ -3369,18 +3377,18 @@ registerProcessor('${o}', MyProcessor);
       thickness: I = d / 2,
       color: z = getTheme().foreground,
       cap: se = "round",
-      stretch: tn = 1,
+      stretch: le = 1,
       fromOpacity: rn = 1,
-      toOpacity: nn = 1
+      toOpacity: tn = 1
     } = e30;
-    o *= tn, l *= tn, R *= tn, t.lineWidth = I, t.lineCap = se, t.strokeStyle = z, t.globalAlpha = rn, t.beginPath();
+    o *= le, l *= le, R *= le, t.lineWidth = I, t.lineCap = se, t.strokeStyle = z, t.globalAlpha = rn, t.beginPath();
     let [an, on] = xyOnSpiral(o, d, p, b, R);
     t.moveTo(an, on);
     const ln = 1 / 60;
     let pn = o;
     for (; pn <= l; ) {
-      const [gn, Mn] = xyOnSpiral(pn, d, p, b, R);
-      t.globalAlpha = (pn - o) / (l - o) * nn, t.lineTo(gn, Mn), pn += ln;
+      const [_n, Mn] = xyOnSpiral(pn, d, p, b, R);
+      t.globalAlpha = (pn - o) / (l - o) * tn, t.lineTo(_n, Mn), pn += ln;
     }
     t.stroke();
   }
@@ -3398,50 +3406,50 @@ registerProcessor('${o}', MyProcessor);
       playheadThickness: I = l,
       padding: z = 0,
       steady: se = 1,
-      activeColor: tn = getTheme().foreground,
+      activeColor: le = getTheme().foreground,
       inactiveColor: rn = getTheme().gutterForeground,
-      colorizeInactive: nn = 0,
+      colorizeInactive: tn = 0,
       fade: an = true,
       // logSpiral = true,
       ctx: on,
       time: ln,
       haps: pn,
-      drawTime: gn,
+      drawTime: _n,
       id: Mn
     } = e30;
-    Mn && (pn = pn.filter((wn) => wn.hasTag(Mn)));
-    const [_n, hn] = [on.canvas.width, on.canvas.height];
-    on.clearRect(0, 0, _n * 2, hn * 2);
-    const [yn, Gn] = [_n / 2, hn / 2], vn = {
+    Mn && (pn = pn.filter((xn) => xn.hasTag(Mn)));
+    const [mn, hn] = [on.canvas.width, on.canvas.height];
+    on.clearRect(0, 0, mn * 2, hn * 2);
+    const [yn, Gn] = [mn / 2, hn / 2], Sn = {
       margin: o / t,
       cx: yn,
       cy: Gn,
       stretch: t,
       cap: d,
       thickness: l
-    }, Fn = {
-      ...vn,
+    }, En = {
+      ...Sn,
       thickness: I,
       from: p - R,
       to: p,
       color: b
-    }, [Sn] = gn, kn = se * ln;
-    pn.forEach((wn) => {
-      const Ln = wn.whole.begin <= ln && wn.endClipped > ln, Nn = wn.whole.begin - ln + p, $n = wn.endClipped - ln + p - z, Bn = wn.value?.color || tn, Wn = nn || Ln ? Bn : rn, In = an ? 1 - Math.abs((wn.whole.begin - ln) / Sn) : 1;
+    }, [vn] = _n, Nn = se * ln;
+    pn.forEach((xn) => {
+      const Rn = xn.whole.begin <= ln && xn.endClipped > ln, Xn = xn.whole.begin - ln + p, $n = xn.endClipped - ln + p - z, Bn = xn.value?.color || le, Wn = tn || Rn ? Bn : rn, Vn = an ? 1 - Math.abs((xn.whole.begin - ln) / vn) : 1;
       spiralSegment({
         ctx: on,
-        ...vn,
-        from: Nn,
+        ...Sn,
+        from: Xn,
         to: $n,
-        rotate: kn,
+        rotate: Nn,
         color: Wn,
-        fromOpacity: In,
-        toOpacity: In
+        fromOpacity: Vn,
+        toOpacity: Vn
       });
     }), spiralSegment({
       ctx: on,
-      ...Fn,
-      rotate: kn
+      ...En,
+      rotate: Nn
     });
   }
   function spiral(e30, t) {
@@ -3460,27 +3468,27 @@ registerProcessor('${o}', MyProcessor);
     mode: z = "flake",
     margin: se = 10
   } = {}) {
-    const tn = z === "polygon", rn = z === "flake", nn = t.canvas.width, an = t.canvas.height;
-    t.clearRect(0, 0, nn, an);
-    const on = getTheme().foreground, pn = Math.min(nn, an) / 2 - R / 2 - I - se, gn = nn / 2, Mn = an / 2;
-    if (o && (e30 = e30.filter((hn) => hn.hasTag(o))), t.strokeStyle = on, t.fillStyle = on, t.globalAlpha = 1, t.lineWidth = R, d && (t.beginPath(), t.arc(gn, Mn, pn, 0, 2 * Math.PI), t.stroke()), p) {
+    const le = z === "polygon", rn = z === "flake", tn = t.canvas.width, an = t.canvas.height;
+    t.clearRect(0, 0, tn, an);
+    const on = getTheme().foreground, pn = Math.min(tn, an) / 2 - R / 2 - I - se, _n = tn / 2, Mn = an / 2;
+    if (o && (e30 = e30.filter((hn) => hn.hasTag(o))), t.strokeStyle = on, t.fillStyle = on, t.globalAlpha = 1, t.lineWidth = R, d && (t.beginPath(), t.arc(_n, Mn, pn, 0, 2 * Math.PI), t.stroke()), p) {
       p = e30.length >= 1 && e30[0].value && e30[0].value.edo ? e30[0].value.edo : p, b = e30.length >= 1 && e30[0].value && e30[0].value.root ? e30[0].value.root : b;
       const hn = e30.length >= 1 && e30[0].value && e30[0].value.degreeIndexes ? e30[0].value.degreeIndexes : null, yn = e30.length >= 1 && e30[0].value && e30[0].value.intLabels ? e30[0].value.intLabels : null;
       t.font = "20px sans-serif";
       const Gn = `${p} EDO`;
-      t.fillText(Gn, gn + pn - t.measureText(Gn).width + 15, Mn + pn), Array.from({ length: p }, (vn, Fn) => {
-        const Sn = freq2angle(b * Math.pow(2, Fn / p), b), [kn, wn] = circlePos(gn, Mn, pn, Sn);
-        if (t.beginPath(), hn === null || hn.includes(Fn)) {
-          if (t.globalAlpha = 1, t.arc(kn, wn, I, 0, 2 * Math.PI), yn !== null) {
-            const Ln = hn.indexOf(Fn);
-            yn[Ln] && (Sn < 0.32 && Sn > 0.125 ? t.fillText(yn[Ln], kn - 34, wn) : Sn < 0.1 && Sn > -1.125 ? t.fillText(yn[Ln], kn - 7, wn - 12) : t.fillText(yn[Ln], kn + 9, wn));
+      t.fillText(Gn, _n + pn - t.measureText(Gn).width + 15, Mn + pn), Array.from({ length: p }, (Sn, En) => {
+        const vn = freq2angle(b * Math.pow(2, En / p), b), [Nn, xn] = circlePos(_n, Mn, pn, vn);
+        if (t.beginPath(), hn === null || hn.includes(En)) {
+          if (t.globalAlpha = 1, t.arc(Nn, xn, I, 0, 2 * Math.PI), yn !== null) {
+            const Rn = hn.indexOf(En);
+            yn[Rn] && (vn < 0.32 && vn > 0.125 ? t.fillText(yn[Rn], Nn - 34, xn) : vn < 0.1 && vn > -1.125 ? t.fillText(yn[Rn], Nn - 7, xn - 12) : t.fillText(yn[Rn], Nn + 9, xn));
           }
         } else
-          t.globalAlpha = 0.15, t.arc(kn, wn, I, 0, 2 * Math.PI);
+          t.globalAlpha = 0.15, t.arc(Nn, xn, I, 0, 2 * Math.PI);
         t.fill();
       }), t.stroke();
     }
-    let _n = [];
+    let mn = [];
     t.lineWidth = I, e30.forEach((hn) => {
       let yn;
       try {
@@ -3488,13 +3496,13 @@ registerProcessor('${o}', MyProcessor);
       } catch {
         return;
       }
-      const Gn = freq2angle(yn, b), [vn, Fn] = circlePos(gn, Mn, pn, Gn), Sn = hn.value.color || on;
-      t.strokeStyle = Sn, t.fillStyle = Sn;
-      const { velocity: kn = 1, gain: wn = 1 } = hn.value || {}, Ln = kn * wn;
-      t.globalAlpha = Ln, _n.push([vn, Fn, Gn, Sn, Ln]), t.beginPath(), l && (t.moveTo(vn + I, Fn), t.arc(vn, Fn, I, 0, 2 * Math.PI), t.fill()), rn && (t.moveTo(gn, Mn), t.lineTo(vn, Fn)), t.stroke();
-    }), t.strokeStyle = on, t.globalAlpha = 1, tn && _n.length && (_n = _n.sort((hn, yn) => hn[2] - yn[2]), t.beginPath(), t.moveTo(_n[0][0], _n[0][1]), _n.forEach(([hn, yn, Gn, vn, Fn]) => {
-      t.strokeStyle = vn, t.globalAlpha = Fn, t.lineTo(hn, yn);
-    }), t.lineTo(_n[0][0], _n[0][1]), t.stroke());
+      const Gn = freq2angle(yn, b), [Sn, En] = circlePos(_n, Mn, pn, Gn), vn = hn.value.color || on;
+      t.strokeStyle = vn, t.fillStyle = vn;
+      const { velocity: Nn = 1, gain: xn = 1 } = hn.value || {}, Rn = Nn * xn;
+      t.globalAlpha = Rn, mn.push([Sn, En, Gn, vn, Rn]), t.beginPath(), l && (t.moveTo(Sn + I, En), t.arc(Sn, En, I, 0, 2 * Math.PI), t.fill()), rn && (t.moveTo(_n, Mn), t.lineTo(Sn, En)), t.stroke();
+    }), t.strokeStyle = on, t.globalAlpha = 1, le && mn.length && (mn = mn.sort((hn, yn) => hn[2] - yn[2]), t.beginPath(), t.moveTo(mn[0][0], mn[0][1]), mn.forEach(([hn, yn, Gn, Sn, En]) => {
+      t.strokeStyle = Sn, t.globalAlpha = En, t.lineTo(hn, yn);
+    }), t.lineTo(mn[0][0], mn[0][1]), t.stroke());
   }
   function drawTimeScope(e30, {
     align: t = true,
@@ -3516,14 +3524,14 @@ registerProcessor('${o}', MyProcessor);
     }
     const se = getAnalyzerData("time", I);
     R.beginPath();
-    const tn = e30.frequencyBinCount;
+    const le = e30.frequencyBinCount;
     let rn = t ? Array.from(se).findIndex((on, ln, pn) => ln && pn[ln - 1] > -b && on <= -b) : 0;
     rn = Math.max(rn, 0);
-    const nn = z.width * 1 / tn;
+    const tn = z.width * 1 / le;
     let an = 0;
-    for (let on = rn; on < tn; on++) {
+    for (let on = rn; on < le; on++) {
       const ln = se[on] + 1, pn = (p - d * (ln - 1)) * z.height;
-      on === 0 ? R.moveTo(an, pn) : R.lineTo(an, pn), an += nn;
+      on === 0 ? R.moveTo(an, pn) : R.lineTo(an, pn), an += tn;
     }
     R.stroke();
   }
@@ -3536,11 +3544,11 @@ registerProcessor('${o}', MyProcessor);
     }
     const z = getAnalyzerData("frequency", I), se = R.canvas;
     R.fillStyle = t;
-    const tn = e30.frequencyBinCount, rn = se.width * 1 / tn;
-    let nn = 0;
-    for (let an = 0; an < tn; an++) {
-      const ln = clamp$1((z[an] - p) / (b - p), 0, 1) * o, pn = ln * se.height, gn = (l - ln * d) * se.height;
-      R.fillRect(nn, gn, Math.max(rn, 1), pn), nn += rn;
+    const le = e30.frequencyBinCount, rn = se.width * 1 / le;
+    let tn = 0;
+    for (let an = 0; an < le; an++) {
+      const ln = clamp$1((z[an] - p) / (b - p), 0, 1) * o, pn = ln * se.height, _n = (l - ln * d) * se.height;
+      R.fillRect(tn, _n, Math.max(rn, 1), pn), tn += rn;
     }
   }
   function clearScreen(e30 = 0, t = "0,0,0", o = getDrawContext()) {
@@ -3563,15 +3571,15 @@ registerProcessor('${o}', MyProcessor);
       return;
     const I = o, z = getAnalyzerData("frequency", b), se = p.canvas;
     p.fillStyle = R;
-    const tn = e30.frequencyBinCount;
+    const le = e30.frequencyBinCount;
     let rn = lastFrames.get(b) || p.getImageData(0, 0, se.width, se.height);
     lastFrames.set(b, rn), p.clearRect(0, 0, p.canvas.width, p.canvas.height), p.putImageData(rn, -I, 0);
-    let nn = se.width - o;
-    for (let an = 0; an < tn; an++) {
+    let tn = se.width - o;
+    for (let an = 0; an < le; an++) {
       const on = clamp$1((z[an] - l) / (d - l), 0, 1);
       p.globalAlpha = on;
-      const ln = Math.log(an + 1) / Math.log(tn) * se.height;
-      p.fillRect(nn, se.height - ln, I, 2);
+      const ln = Math.log(an + 1) / Math.log(le) * se.height;
+      p.fillRect(tn, se.height - ln, I, 2);
     }
     lastFrames.set(b, p.getImageData(0, 0, se.width, se.height));
   }
@@ -3579,14 +3587,14 @@ registerProcessor('${o}', MyProcessor);
     soundfontUrl = e30;
   }
   async function loadFont(name) {
-    if (loadCache[name])
-      return loadCache[name];
+    if (loadCache$1[name])
+      return loadCache$1[name];
     const load = async () => {
       const url = `${soundfontUrl}/${name}.js`, preset = await fetch(url).then((e30) => e30.text());
       let [_, data] = preset.split("={");
       return eval("{" + data);
     };
-    return loadCache[name] = load(), loadCache[name];
+    return loadCache$1[name] = load(), loadCache$1[name];
   }
   async function getFontBufferSource(e30, t, o) {
     let { note: l = "c3", freq: d } = t, p;
@@ -3651,18 +3659,18 @@ registerProcessor('${o}', MyProcessor);
             l.decay,
             l.sustain,
             l.release
-          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), tn = t[se], rn = getAudioContext(), nn = await getFontBufferSource(tn, l, rn);
-          nn.start(o);
-          const an = rn.createGain(), on = nn.connect(an), ln = o + z;
+          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), le = t[se], rn = getAudioContext(), tn = await getFontBufferSource(le, l, rn);
+          tn.start(o);
+          const an = rn.createGain(), on = tn.connect(an), ln = o + z;
           getParamADSR(on.gain, p, b, R, I, 0, 0.3, o, ln, "linear");
           let pn = ln + I + 0.01;
-          const gn = getVibratoOscillator(nn.detune, l, o);
-          getPitchEnvelope(nn.detune, l, o, ln), nn.stop(pn);
-          const Mn = (_n) => {
+          const _n = getVibratoOscillator(tn.detune, l, o);
+          getPitchEnvelope(tn.detune, l, o, ln), tn.stop(pn);
+          const Mn = (mn) => {
           };
-          return onceEnded(nn, () => {
-            releaseAudioNode(nn), gn?.stop(), d();
-          }), { node: on, stop: Mn, nodes: { source: [nn], ...gn?.nodes } };
+          return onceEnded(tn, () => {
+            releaseAudioNode(tn), _n?.stop(), d();
+          }), { node: on, stop: Mn, nodes: { source: [tn], ..._n?.nodes } };
         },
         { type: "soundfont", prebake: true, fonts: t }
       );
@@ -3730,7 +3738,7 @@ registerProcessor('${o}', MyProcessor);
           /*! exports provided: SF2Chunk */
           function(o, l, d) {
             d.r(l), d.d(l, "SF2Chunk", function() {
-              return nn;
+              return tn;
             });
             var p = d(
               /*! ./riff */
@@ -3760,8 +3768,8 @@ registerProcessor('${o}', MyProcessor);
                 return on.__proto__ || Object.getPrototypeOf(on);
               })(an);
             }
-            function tn(an, on) {
-              return (tn = Object.setPrototypeOf || function(ln, pn) {
+            function le(an, on) {
+              return (le = Object.setPrototypeOf || function(ln, pn) {
                 return ln.__proto__ = pn, ln;
               })(an, on);
             }
@@ -3769,36 +3777,36 @@ registerProcessor('${o}', MyProcessor);
               if (an === void 0) throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
               return an;
             }
-            var nn = function(an) {
-              function on(gn) {
-                var Mn, _n, hn, yn, Gn, vn;
-                return function(Fn, Sn) {
-                  if (!(Fn instanceof Sn)) throw new TypeError("Cannot call a class as a function");
-                }(this, on), _n = this, Mn = !(hn = se(on).call(this, gn.id, gn.length, gn.buffer, gn.subChunks)) || I(hn) !== "object" && typeof hn != "function" ? rn(_n) : hn, yn = rn(rn(Mn)), vn = void 0, (Gn = "subChunks") in yn ? Object.defineProperty(yn, Gn, { value: vn, enumerable: true, configurable: true, writable: true }) : yn[Gn] = vn, Mn.subChunks = gn.subChunks.map(function(Fn) {
-                  return new on(Fn);
+            var tn = function(an) {
+              function on(_n) {
+                var Mn, mn, hn, yn, Gn, Sn;
+                return function(En, vn) {
+                  if (!(En instanceof vn)) throw new TypeError("Cannot call a class as a function");
+                }(this, on), mn = this, Mn = !(hn = se(on).call(this, _n.id, _n.length, _n.buffer, _n.subChunks)) || I(hn) !== "object" && typeof hn != "function" ? rn(mn) : hn, yn = rn(rn(Mn)), Sn = void 0, (Gn = "subChunks") in yn ? Object.defineProperty(yn, Gn, { value: Sn, enumerable: true, configurable: true, writable: true }) : yn[Gn] = Sn, Mn.subChunks = _n.subChunks.map(function(En) {
+                  return new on(En);
                 }), Mn;
               }
               var ln, pn;
-              return function(gn, Mn) {
+              return function(_n, Mn) {
                 if (typeof Mn != "function" && Mn !== null) throw new TypeError("Super expression must either be null or a function");
-                gn.prototype = Object.create(Mn && Mn.prototype, { constructor: { value: gn, writable: true, configurable: true } }), Mn && tn(gn, Mn);
+                _n.prototype = Object.create(Mn && Mn.prototype, { constructor: { value: _n, writable: true, configurable: true } }), Mn && le(_n, Mn);
               }(on, p.RIFFChunk), ln = on, (pn = [{ key: "getMetaData", value: function() {
                 if (this.id !== "LIST") throw new p.ParseError("Unexpected chunk ID", "'LIST'", "'".concat(this.id, "'"));
-                var gn = this.subChunks.reduce(function(Mn, _n) {
-                  if (_n.id === "ifil" || _n.id === "iver") {
-                    if (_n.length !== b.SF_VERSION_LENGTH) throw new p.ParseError("Invalid size for the '".concat(_n.id, "' sub-chunk"));
-                    Mn[_n.id] = "".concat(_n.getInt16(), ".").concat(_n.getInt16(2));
-                  } else Mn[_n.id] = _n.getString();
+                var _n = this.subChunks.reduce(function(Mn, mn) {
+                  if (mn.id === "ifil" || mn.id === "iver") {
+                    if (mn.length !== b.SF_VERSION_LENGTH) throw new p.ParseError("Invalid size for the '".concat(mn.id, "' sub-chunk"));
+                    Mn[mn.id] = "".concat(mn.getInt16(), ".").concat(mn.getInt16(2));
+                  } else Mn[mn.id] = mn.getString();
                   return Mn;
                 }, {});
-                if (!gn.ifil) throw new p.ParseError("Missing required 'ifil' sub-chunk");
-                if (!gn.INAM) throw new p.ParseError("Missing required 'INAM' sub-chunk");
-                return { version: gn.ifil, soundEngine: gn.isng || "EMU8000", name: gn.INAM, rom: gn.irom, romVersion: gn.iver, creationDate: gn.ICRD, author: gn.IENG, product: gn.IPRD, copyright: gn.ICOP, comments: gn.ICMT, createdBy: gn.ISFT };
+                if (!_n.ifil) throw new p.ParseError("Missing required 'ifil' sub-chunk");
+                if (!_n.INAM) throw new p.ParseError("Missing required 'INAM' sub-chunk");
+                return { version: _n.ifil, soundEngine: _n.isng || "EMU8000", name: _n.INAM, rom: _n.irom, romVersion: _n.iver, creationDate: _n.ICRD, author: _n.IENG, product: _n.IPRD, copyright: _n.ICOP, comments: _n.ICMT, createdBy: _n.ISFT };
               } }, { key: "getSampleData", value: function() {
                 if (this.id !== "LIST") throw new p.ParseError("Unexpected chunk ID", "'LIST'", "'".concat(this.id, "'"));
-                var gn = this.subChunks[0];
-                if (gn.id !== "smpl") throw new p.ParseError("Invalid chunk signature", "'smpl'", "'".concat(gn.id, "'"));
-                return gn.buffer;
+                var _n = this.subChunks[0];
+                if (_n.id !== "smpl") throw new p.ParseError("Invalid chunk signature", "'smpl'", "'".concat(_n.id, "'"));
+                return _n.buffer;
               } }, { key: "getPresetData", value: function() {
                 if (this.id !== "LIST") throw new p.ParseError("Unexpected chunk ID", "'LIST'", "'".concat(this.id, "'"));
                 return { presetHeaders: Object(R.getPresetHeaders)(this.subChunks[0]), presetZones: Object(R.getZones)(this.subChunks[1], "pbag"), presetModulators: Object(R.getModulators)(this.subChunks[2], "pmod"), presetGenerators: Object(R.getGenerators)(this.subChunks[3], "pgen"), instrumentHeaders: Object(R.getInstrumentHeaders)(this.subChunks[4]), instrumentZones: Object(R.getZones)(this.subChunks[5], "ibag"), instrumentModulators: Object(R.getModulators)(this.subChunks[6], "imod"), instrumentGenerators: Object(R.getGenerators)(this.subChunks[7], "igen"), sampleHeaders: Object(R.getSampleHeaders)(this.subChunks[8]) };
@@ -3812,7 +3820,7 @@ registerProcessor('${o}', MyProcessor);
           /*! exports provided: getGenerators */
           function(o, l, d) {
             d.r(l), d.d(l, "getGenerators", function() {
-              return tn;
+              return le;
             });
             var p = d(
               /*! ~/riff */
@@ -3823,12 +3831,12 @@ registerProcessor('${o}', MyProcessor);
             ), R = d(
               /*! ~/constants */
               "./src/constants.ts"
-            ), I = [b.GeneratorType.StartAddrsOffset, b.GeneratorType.EndAddrsOffset, b.GeneratorType.StartLoopAddrsOffset, b.GeneratorType.EndLoopAddrsOffset, b.GeneratorType.StartAddrsCoarseOffset, b.GeneratorType.EndAddrsCoarseOffset, b.GeneratorType.StartLoopAddrsCoarseOffset, b.GeneratorType.KeyNum, b.GeneratorType.Velocity, b.GeneratorType.EndLoopAddrsCoarseOffset, b.GeneratorType.SampleModes, b.GeneratorType.ExclusiveClass, b.GeneratorType.OverridingRootKey], z = [b.GeneratorType.Unused1, b.GeneratorType.Unused2, b.GeneratorType.Unused3, b.GeneratorType.Unused4, b.GeneratorType.Reserved1, b.GeneratorType.Reserved2, b.GeneratorType.Reserved3], se = [b.GeneratorType.KeyRange, b.GeneratorType.VelRange], tn = function(rn, nn) {
-              if (rn.id !== nn) throw new p.ParseError("Unexpected chunk ID", "'".concat(nn, "'"), "'".concat(rn.id, "'"));
-              if (rn.length % R.SF_GENERATOR_SIZE) throw new p.ParseError("Invalid size for the '".concat(nn, "' sub-chunk"));
+            ), I = [b.GeneratorType.StartAddrsOffset, b.GeneratorType.EndAddrsOffset, b.GeneratorType.StartLoopAddrsOffset, b.GeneratorType.EndLoopAddrsOffset, b.GeneratorType.StartAddrsCoarseOffset, b.GeneratorType.EndAddrsCoarseOffset, b.GeneratorType.StartLoopAddrsCoarseOffset, b.GeneratorType.KeyNum, b.GeneratorType.Velocity, b.GeneratorType.EndLoopAddrsCoarseOffset, b.GeneratorType.SampleModes, b.GeneratorType.ExclusiveClass, b.GeneratorType.OverridingRootKey], z = [b.GeneratorType.Unused1, b.GeneratorType.Unused2, b.GeneratorType.Unused3, b.GeneratorType.Unused4, b.GeneratorType.Reserved1, b.GeneratorType.Reserved2, b.GeneratorType.Reserved3], se = [b.GeneratorType.KeyRange, b.GeneratorType.VelRange], le = function(rn, tn) {
+              if (rn.id !== tn) throw new p.ParseError("Unexpected chunk ID", "'".concat(tn, "'"), "'".concat(rn.id, "'"));
+              if (rn.length % R.SF_GENERATOR_SIZE) throw new p.ParseError("Invalid size for the '".concat(tn, "' sub-chunk"));
               return rn.iterate(function(an) {
                 var on = an.getInt16();
-                return b.GeneratorType[on] ? nn === "pgen" && I.includes(on) || nn === "igen" && z.includes(on) ? null : se.includes(on) ? { id: on, range: { lo: an.getByte(), hi: an.getByte() } } : { id: on, value: an.getInt16BE() } : null;
+                return b.GeneratorType[on] ? tn === "pgen" && I.includes(on) || tn === "igen" && z.includes(on) ? null : se.includes(on) ? { id: on, range: { lo: an.getByte(), hi: an.getByte() } } : { id: on, value: an.getInt16BE() } : null;
               });
             };
           }
@@ -3942,8 +3950,8 @@ registerProcessor('${o}', MyProcessor);
             }, I = function(z, se) {
               if (z.id !== se) throw new p.ParseError("Unexpected chunk ID", "'".concat(se, "'"), "'".concat(z.id, "'"));
               if (z.length % b.SF_MODULATOR_SIZE) throw new p.ParseError("Invalid size for the '".concat(se, "' sub-chunk"));
-              return z.iterate(function(tn) {
-                return { source: R(tn.getInt16BE()), id: tn.getInt16BE(), value: tn.getInt16BE(), valueSource: R(tn.getInt16BE()), transform: tn.getInt16BE() };
+              return z.iterate(function(le) {
+                return { source: R(le.getInt16BE()), id: le.getInt16BE(), value: le.getInt16BE(), valueSource: R(le.getInt16BE()), transform: le.getInt16BE() };
               });
             };
           }
@@ -4043,34 +4051,34 @@ registerProcessor('${o}', MyProcessor);
             ), R = d(
               /*! ~/types */
               "./src/types/index.ts"
-            ), I = function(nn, an) {
-              if (nn.id !== an) throw new p.ParseError("Unexpected chunk ID", "'".concat(an, "'"), "'".concat(nn.id, "'"));
-              if (nn.length % b.SF_BAG_SIZE) throw new p.ParseError("Invalid size for the '".concat(an, "' sub-chunk"));
-              return nn.iterate(function(on) {
+            ), I = function(tn, an) {
+              if (tn.id !== an) throw new p.ParseError("Unexpected chunk ID", "'".concat(an, "'"), "'".concat(tn.id, "'"));
+              if (tn.length % b.SF_BAG_SIZE) throw new p.ParseError("Invalid size for the '".concat(an, "' sub-chunk"));
+              return tn.iterate(function(on) {
                 return { generatorIndex: on.getInt16(), modulatorIndex: on.getInt16() };
               });
-            }, z = function(nn, an, on, ln, pn, gn) {
-              for (var Mn = [], _n = 0; _n < nn.length; _n++) {
-                for (var hn = nn[_n], yn = nn[_n + 1], Gn = hn.bagIndex, vn = yn ? yn.bagIndex : an.length, Fn = [], Sn = void 0, kn = Gn; kn < vn; kn++) {
-                  var wn = se(kn, an, on), Ln = tn(kn, an, ln), Nn = Ln[R.GeneratorType.KeyRange] && Ln[R.GeneratorType.KeyRange].range, $n = Ln[gn];
+            }, z = function(tn, an, on, ln, pn, _n) {
+              for (var Mn = [], mn = 0; mn < tn.length; mn++) {
+                for (var hn = tn[mn], yn = tn[mn + 1], Gn = hn.bagIndex, Sn = yn ? yn.bagIndex : an.length, En = [], vn = void 0, Nn = Gn; Nn < Sn; Nn++) {
+                  var xn = se(Nn, an, on), Rn = le(Nn, an, ln), Xn = Rn[R.GeneratorType.KeyRange] && Rn[R.GeneratorType.KeyRange].range, $n = Rn[_n];
                   if ($n) {
                     var Bn = pn[$n.value];
-                    Bn && Fn.push({ keyRange: Nn, modulators: wn, generators: Ln, reference: Bn });
-                  } else kn - Gn == 0 && (Sn = { keyRange: Nn, modulators: wn, generators: Ln });
+                    Bn && En.push({ keyRange: Xn, modulators: xn, generators: Rn, reference: Bn });
+                  } else Nn - Gn == 0 && (vn = { keyRange: Xn, modulators: xn, generators: Rn });
                 }
-                Mn.push({ header: hn, globalZone: Sn, zones: Fn });
+                Mn.push({ header: hn, globalZone: vn, zones: En });
               }
               return Mn;
-            }, se = function(nn, an, on) {
-              var ln = an[nn], pn = an[nn + 1], gn = ln.modulatorIndex, Mn = pn ? pn.modulatorIndex : an.length;
-              return rn(gn, Mn, on);
-            }, tn = function(nn, an, on) {
-              var ln = an[nn], pn = an[nn + 1], gn = ln.generatorIndex, Mn = pn ? pn.generatorIndex : an.length;
-              return rn(gn, Mn, on);
-            }, rn = function(nn, an, on) {
-              for (var ln = {}, pn = nn; pn < an; pn++) {
-                var gn = on[pn];
-                gn && (ln[gn.id] = gn);
+            }, se = function(tn, an, on) {
+              var ln = an[tn], pn = an[tn + 1], _n = ln.modulatorIndex, Mn = pn ? pn.modulatorIndex : an.length;
+              return rn(_n, Mn, on);
+            }, le = function(tn, an, on) {
+              var ln = an[tn], pn = an[tn + 1], _n = ln.generatorIndex, Mn = pn ? pn.generatorIndex : an.length;
+              return rn(_n, Mn, on);
+            }, rn = function(tn, an, on) {
+              for (var ln = {}, pn = tn; pn < an; pn++) {
+                var _n = on[pn];
+                _n && (ln[_n.id] = _n);
               }
               return ln;
             };
@@ -4094,11 +4102,11 @@ registerProcessor('${o}', MyProcessor);
             }), d.d(l, "SF_INSTRUMENT_HEADER_SIZE", function() {
               return se;
             }), d.d(l, "SF_SAMPLE_HEADER_SIZE", function() {
-              return tn;
+              return le;
             }), d.d(l, "DEFAULT_SAMPLE_RATE", function() {
               return rn;
             });
-            var p = 4, b = 38, R = 4, I = 10, z = 4, se = 22, tn = 46, rn = 22050;
+            var p = 4, b = 38, R = 4, I = 10, z = 4, se = 22, le = 46, rn = 22050;
           }
         ), "./src/index.ts": (
           /*!**********************!*\
@@ -4166,30 +4174,30 @@ registerProcessor('${o}', MyProcessor);
               "./src/utils/index.ts"
             );
             function b(z, se) {
-              for (var tn = 0; tn < se.length; tn++) {
-                var rn = se[tn];
+              for (var le = 0; le < se.length; le++) {
+                var rn = se[le];
                 rn.enumerable = rn.enumerable || false, rn.configurable = true, "value" in rn && (rn.writable = true), Object.defineProperty(z, rn.key, rn);
               }
             }
-            function R(z, se, tn) {
-              return se in z ? Object.defineProperty(z, se, { value: tn, enumerable: true, configurable: true, writable: true }) : z[se] = tn, z;
+            function R(z, se, le) {
+              return se in z ? Object.defineProperty(z, se, { value: le, enumerable: true, configurable: true, writable: true }) : z[se] = le, z;
             }
             var I = function() {
               function z(rn) {
-                var nn = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0;
+                var tn = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0;
                 (function(an, on) {
                   if (!(an instanceof on)) throw new TypeError("Cannot call a class as a function");
-                })(this, z), R(this, "target", []), R(this, "chunk", void 0), R(this, "position", 0), this.chunk = rn, this.position = nn;
+                })(this, z), R(this, "target", []), R(this, "chunk", void 0), R(this, "position", 0), this.chunk = rn, this.position = tn;
               }
-              var se, tn;
-              return se = z, (tn = [{ key: "iterate", value: function(rn) {
+              var se, le;
+              return se = z, (le = [{ key: "iterate", value: function(rn) {
                 for (; this.position < this.chunk.length; ) {
-                  var nn = rn(this);
-                  nn && this.target.push(nn);
+                  var tn = rn(this);
+                  tn && this.target.push(tn);
                 }
               } }, { key: "getString", value: function() {
-                var rn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 20, nn = Object(p.getStringFromBuffer)(this.getBuffer(this.position, rn));
-                return this.position += rn, nn;
+                var rn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 20, tn = Object(p.getStringFromBuffer)(this.getBuffer(this.position, rn));
+                return this.position += rn, tn;
               } }, { key: "getInt16", value: function() {
                 return this.chunk.buffer[this.position++] | this.chunk.buffer[this.position++] << 8;
               } }, { key: "getInt16BE", value: function() {
@@ -4202,11 +4210,11 @@ registerProcessor('${o}', MyProcessor);
                 return this.chunk.buffer[this.position++] << 24 >> 24;
               } }, { key: "skip", value: function(rn) {
                 this.position += rn;
-              } }, { key: "getBuffer", value: function(rn, nn) {
-                return this.chunk.buffer.subarray(rn, rn + nn);
+              } }, { key: "getBuffer", value: function(rn, tn) {
+                return this.chunk.buffer.subarray(rn, rn + tn);
               } }, { key: "currentPosition", get: function() {
                 return this.position;
-              } }]) && b(se.prototype, tn), z;
+              } }]) && b(se.prototype, le), z;
             }();
           }
         ), "./src/riff/index.ts": (
@@ -4260,27 +4268,27 @@ registerProcessor('${o}', MyProcessor);
           /*! exports provided: ParseError */
           function(o, l, d) {
             function p(rn) {
-              return (p = typeof Symbol == "function" && typeof Symbol.iterator == "symbol" ? function(nn) {
-                return typeof nn;
-              } : function(nn) {
-                return nn && typeof Symbol == "function" && nn.constructor === Symbol && nn !== Symbol.prototype ? "symbol" : typeof nn;
+              return (p = typeof Symbol == "function" && typeof Symbol.iterator == "symbol" ? function(tn) {
+                return typeof tn;
+              } : function(tn) {
+                return tn && typeof Symbol == "function" && tn.constructor === Symbol && tn !== Symbol.prototype ? "symbol" : typeof tn;
               })(rn);
             }
-            function b(rn, nn) {
-              return !nn || p(nn) !== "object" && typeof nn != "function" ? function(an) {
+            function b(rn, tn) {
+              return !tn || p(tn) !== "object" && typeof tn != "function" ? function(an) {
                 if (an === void 0) throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
                 return an;
-              }(rn) : nn;
+              }(rn) : tn;
             }
             function R(rn) {
-              var nn = typeof Map == "function" ? /* @__PURE__ */ new Map() : void 0;
+              var tn = typeof Map == "function" ? /* @__PURE__ */ new Map() : void 0;
               return (R = function(an) {
                 if (an === null || (on = an, Function.toString.call(on).indexOf("[native code]") === -1)) return an;
                 var on;
                 if (typeof an != "function") throw new TypeError("Super expression must either be null or a function");
-                if (nn !== void 0) {
-                  if (nn.has(an)) return nn.get(an);
-                  nn.set(an, ln);
+                if (tn !== void 0) {
+                  if (tn.has(an)) return tn.get(an);
+                  tn.set(an, ln);
                 }
                 function ln() {
                   return I(an, arguments, se(this).constructor);
@@ -4288,7 +4296,7 @@ registerProcessor('${o}', MyProcessor);
                 return ln.prototype = Object.create(an.prototype, { constructor: { value: ln, enumerable: false, writable: true, configurable: true } }), z(ln, an);
               })(rn);
             }
-            function I(rn, nn, an) {
+            function I(rn, tn, an) {
               return (I = function() {
                 if (typeof Reflect > "u" || !Reflect.construct || Reflect.construct.sham) return false;
                 if (typeof Proxy == "function") return true;
@@ -4299,35 +4307,35 @@ registerProcessor('${o}', MyProcessor);
                   return false;
                 }
               }() ? Reflect.construct : function(on, ln, pn) {
-                var gn = [null];
-                gn.push.apply(gn, ln);
-                var Mn = new (Function.bind.apply(on, gn))();
+                var _n = [null];
+                _n.push.apply(_n, ln);
+                var Mn = new (Function.bind.apply(on, _n))();
                 return pn && z(Mn, pn.prototype), Mn;
               }).apply(null, arguments);
             }
-            function z(rn, nn) {
+            function z(rn, tn) {
               return (z = Object.setPrototypeOf || function(an, on) {
                 return an.__proto__ = on, an;
-              })(rn, nn);
+              })(rn, tn);
             }
             function se(rn) {
-              return (se = Object.setPrototypeOf ? Object.getPrototypeOf : function(nn) {
-                return nn.__proto__ || Object.getPrototypeOf(nn);
+              return (se = Object.setPrototypeOf ? Object.getPrototypeOf : function(tn) {
+                return tn.__proto__ || Object.getPrototypeOf(tn);
               })(rn);
             }
             d.r(l), d.d(l, "ParseError", function() {
-              return tn;
+              return le;
             });
-            var tn = function(rn) {
-              function nn(an, on, ln) {
-                return function(pn, gn) {
-                  if (!(pn instanceof gn)) throw new TypeError("Cannot call a class as a function");
-                }(this, nn), b(this, se(nn).call(this, "".concat(an).concat(on && ln ? ", expected ".concat(on, ", received ").concat(ln) : "")));
+            var le = function(rn) {
+              function tn(an, on, ln) {
+                return function(pn, _n) {
+                  if (!(pn instanceof _n)) throw new TypeError("Cannot call a class as a function");
+                }(this, tn), b(this, se(tn).call(this, "".concat(an).concat(on && ln ? ", expected ".concat(on, ", received ").concat(ln) : "")));
               }
               return function(an, on) {
                 if (typeof on != "function" && on !== null) throw new TypeError("Super expression must either be null or a function");
                 an.prototype = Object.create(on && on.prototype, { constructor: { value: an, writable: true, configurable: true } }), on && z(an, on);
-              }(nn, R(Error)), nn;
+              }(tn, R(Error)), tn;
             }();
           }
         ), "./src/riff/parser.ts": (
@@ -4343,7 +4351,7 @@ registerProcessor('${o}', MyProcessor);
             }), d.d(l, "getChunkLength", function() {
               return se;
             }), d.d(l, "getSubChunks", function() {
-              return tn;
+              return le;
             }), d.d(l, "getChunkId", function() {
               return rn;
             });
@@ -4356,27 +4364,27 @@ registerProcessor('${o}', MyProcessor);
             ), R = d(
               /*! ./riffChunk */
               "./src/riff/riffChunk.ts"
-            ), I = function(nn) {
-              var an = rn(nn);
+            ), I = function(tn) {
+              var an = rn(tn);
               if (an !== "RIFF") throw new p.ParseError("Invalid file format", "RIFF", an);
-              var on = rn(nn, 8);
+              var on = rn(tn, 8);
               if (on !== "sfbk") throw new p.ParseError("Invalid signature", "sfbk", on);
-              var ln = nn.subarray(8), pn = tn(ln.subarray(4));
+              var ln = tn.subarray(8), pn = le(ln.subarray(4));
               return new R.RIFFChunk(an, ln.length, ln, pn);
-            }, z = function(nn, an) {
-              var on = rn(nn, an), ln = se(nn, an + 4), pn = [];
-              return on !== "RIFF" && on !== "LIST" || (pn = tn(nn.subarray(an + 12))), new R.RIFFChunk(on, ln, nn.subarray(an + 8), pn);
-            }, se = function(nn, an) {
-              return ((nn = nn.subarray(an, an + 4))[0] | nn[1] << 8 | nn[2] << 16 | nn[3] << 24) >>> 0;
-            }, tn = function(nn) {
-              for (var an = [], on = 0; on <= nn.length - 8; ) {
-                var ln = z(nn, on);
+            }, z = function(tn, an) {
+              var on = rn(tn, an), ln = se(tn, an + 4), pn = [];
+              return on !== "RIFF" && on !== "LIST" || (pn = le(tn.subarray(an + 12))), new R.RIFFChunk(on, ln, tn.subarray(an + 8), pn);
+            }, se = function(tn, an) {
+              return ((tn = tn.subarray(an, an + 4))[0] | tn[1] << 8 | tn[2] << 16 | tn[3] << 24) >>> 0;
+            }, le = function(tn) {
+              for (var an = [], on = 0; on <= tn.length - 8; ) {
+                var ln = z(tn, on);
                 an.push(ln), on = (on += 8 + ln.length) % 2 ? on + 1 : on;
               }
               return an;
-            }, rn = function(nn) {
+            }, rn = function(tn) {
               var an = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0;
-              return Object(b.getStringFromBuffer)(nn.subarray(an, an + 4));
+              return Object(b.getStringFromBuffer)(tn.subarray(an, an + 4));
             };
           }
         ), "./src/riff/riffChunk.ts": (
@@ -4395,46 +4403,46 @@ registerProcessor('${o}', MyProcessor);
               /*! ~/utils */
               "./src/utils/index.ts"
             );
-            function R(se, tn) {
-              for (var rn = 0; rn < tn.length; rn++) {
-                var nn = tn[rn];
-                nn.enumerable = nn.enumerable || false, nn.configurable = true, "value" in nn && (nn.writable = true), Object.defineProperty(se, nn.key, nn);
+            function R(se, le) {
+              for (var rn = 0; rn < le.length; rn++) {
+                var tn = le[rn];
+                tn.enumerable = tn.enumerable || false, tn.configurable = true, "value" in tn && (tn.writable = true), Object.defineProperty(se, tn.key, tn);
               }
             }
-            function I(se, tn, rn) {
-              return tn in se ? Object.defineProperty(se, tn, { value: rn, enumerable: true, configurable: true, writable: true }) : se[tn] = rn, se;
+            function I(se, le, rn) {
+              return le in se ? Object.defineProperty(se, le, { value: rn, enumerable: true, configurable: true, writable: true }) : se[le] = rn, se;
             }
             var z = function() {
-              function se(nn, an, on, ln) {
-                (function(pn, gn) {
-                  if (!(pn instanceof gn)) throw new TypeError("Cannot call a class as a function");
-                })(this, se), I(this, "id", void 0), I(this, "length", void 0), I(this, "buffer", void 0), I(this, "subChunks", void 0), this.id = nn, this.length = an, this.buffer = on, this.subChunks = ln;
+              function se(tn, an, on, ln) {
+                (function(pn, _n) {
+                  if (!(pn instanceof _n)) throw new TypeError("Cannot call a class as a function");
+                })(this, se), I(this, "id", void 0), I(this, "length", void 0), I(this, "buffer", void 0), I(this, "subChunks", void 0), this.id = tn, this.length = an, this.buffer = on, this.subChunks = ln;
               }
-              var tn, rn;
-              return tn = se, (rn = [{ key: "getString", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0, an = arguments.length > 1 ? arguments[1] : void 0;
-                return Object(b.getStringFromBuffer)(this.getBuffer(nn, an || this.length - nn));
+              var le, rn;
+              return le = se, (rn = [{ key: "getString", value: function() {
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0, an = arguments.length > 1 ? arguments[1] : void 0;
+                return Object(b.getStringFromBuffer)(this.getBuffer(tn, an || this.length - tn));
               } }, { key: "getInt16", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
-                return this.buffer[nn++] | this.buffer[nn] << 8;
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+                return this.buffer[tn++] | this.buffer[tn] << 8;
               } }, { key: "getUInt32", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
-                return (this.buffer[nn++] | this.buffer[nn++] << 8 | this.buffer[nn++] << 16 | this.buffer[nn] << 24) >>> 0;
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+                return (this.buffer[tn++] | this.buffer[tn++] << 8 | this.buffer[tn++] << 16 | this.buffer[tn] << 24) >>> 0;
               } }, { key: "getByte", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
-                return this.buffer[nn];
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+                return this.buffer[tn];
               } }, { key: "getChar", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
-                return this.buffer[nn] << 24 >> 24;
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+                return this.buffer[tn] << 24 >> 24;
               } }, { key: "iterator", value: function() {
-                var nn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
-                return new p.ChunkIterator(this, nn);
-              } }, { key: "iterate", value: function(nn) {
+                var tn = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+                return new p.ChunkIterator(this, tn);
+              } }, { key: "iterate", value: function(tn) {
                 var an = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0, on = new p.ChunkIterator(this, an);
-                return on.iterate(nn), on.target;
-              } }, { key: "getBuffer", value: function(nn, an) {
-                return this.buffer.subarray(nn, nn + an);
-              } }]) && R(tn.prototype, rn), se;
+                return on.iterate(tn), on.target;
+              } }, { key: "getBuffer", value: function(tn, an) {
+                return this.buffer.subarray(tn, tn + an);
+              } }]) && R(le.prototype, rn), se;
             }();
           }
         ), "./src/soundFont2.ts": (
@@ -4464,32 +4472,32 @@ registerProcessor('${o}', MyProcessor);
             );
             function se(on) {
               for (var ln = 1; ln < arguments.length; ln++) {
-                var pn = arguments[ln] != null ? arguments[ln] : {}, gn = Object.keys(pn);
-                typeof Object.getOwnPropertySymbols == "function" && (gn = gn.concat(Object.getOwnPropertySymbols(pn).filter(function(Mn) {
+                var pn = arguments[ln] != null ? arguments[ln] : {}, _n = Object.keys(pn);
+                typeof Object.getOwnPropertySymbols == "function" && (_n = _n.concat(Object.getOwnPropertySymbols(pn).filter(function(Mn) {
                   return Object.getOwnPropertyDescriptor(pn, Mn).enumerable;
-                }))), gn.forEach(function(Mn) {
-                  nn(on, Mn, pn[Mn]);
+                }))), _n.forEach(function(Mn) {
+                  tn(on, Mn, pn[Mn]);
                 });
               }
               return on;
             }
-            function tn(on, ln) {
+            function le(on, ln) {
               for (var pn = 0; pn < ln.length; pn++) {
-                var gn = ln[pn];
-                gn.enumerable = gn.enumerable || false, gn.configurable = true, "value" in gn && (gn.writable = true), Object.defineProperty(on, gn.key, gn);
+                var _n = ln[pn];
+                _n.enumerable = _n.enumerable || false, _n.configurable = true, "value" in _n && (_n.writable = true), Object.defineProperty(on, _n.key, _n);
               }
             }
             function rn(on, ln, pn) {
-              return ln && tn(on.prototype, ln), pn && tn(on, pn), on;
+              return ln && le(on.prototype, ln), pn && le(on, pn), on;
             }
-            function nn(on, ln, pn) {
+            function tn(on, ln, pn) {
               return ln in on ? Object.defineProperty(on, ln, { value: pn, enumerable: true, configurable: true, writable: true }) : on[ln] = pn, on;
             }
             var an = function() {
               function on(ln) {
-                if (function(gn, Mn) {
-                  if (!(gn instanceof Mn)) throw new TypeError("Cannot call a class as a function");
-                }(this, on), nn(this, "chunk", void 0), nn(this, "metaData", void 0), nn(this, "sampleData", void 0), nn(this, "samples", void 0), nn(this, "presetData", void 0), nn(this, "instruments", void 0), nn(this, "presets", void 0), nn(this, "banks", void 0), !(ln instanceof b.SF2Chunk)) {
+                if (function(_n, Mn) {
+                  if (!(_n instanceof Mn)) throw new TypeError("Cannot call a class as a function");
+                }(this, on), tn(this, "chunk", void 0), tn(this, "metaData", void 0), tn(this, "sampleData", void 0), tn(this, "samples", void 0), tn(this, "presetData", void 0), tn(this, "instruments", void 0), tn(this, "presets", void 0), tn(this, "banks", void 0), !(ln instanceof b.SF2Chunk)) {
                   var pn = Object(R.parseBuffer)(ln);
                   ln = new b.SF2Chunk(pn);
                 }
@@ -4499,38 +4507,38 @@ registerProcessor('${o}', MyProcessor);
               return rn(on, null, [{ key: "from", value: function(ln) {
                 return new on(ln);
               } }]), rn(on, [{ key: "getKeyData", value: function(ln) {
-                var pn = this, gn = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0, Mn = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0;
-                return Object(z.memoize)(function(_n, hn, yn) {
+                var pn = this, _n = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0, Mn = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0;
+                return Object(z.memoize)(function(mn, hn, yn) {
                   var Gn = pn.banks[hn];
                   if (Gn) {
-                    var vn = Gn.presets[yn];
-                    if (vn) {
-                      var Fn = vn.zones.find(function($n) {
-                        return pn.isKeyInRange($n, _n);
+                    var Sn = Gn.presets[yn];
+                    if (Sn) {
+                      var En = Sn.zones.find(function($n) {
+                        return pn.isKeyInRange($n, mn);
                       });
-                      if (Fn) {
-                        var Sn = Fn.instrument, kn = Sn.zones.find(function($n) {
-                          return pn.isKeyInRange($n, _n);
+                      if (En) {
+                        var vn = En.instrument, Nn = vn.zones.find(function($n) {
+                          return pn.isKeyInRange($n, mn);
                         });
-                        if (kn) {
-                          var wn = kn.sample, Ln = se({}, Fn.generators, kn.generators), Nn = se({}, Fn.modulators, kn.modulators);
-                          return { keyNumber: _n, preset: vn, instrument: Sn, sample: wn, generators: Ln, modulators: Nn };
+                        if (Nn) {
+                          var xn = Nn.sample, Rn = se({}, En.generators, Nn.generators), Xn = se({}, En.modulators, Nn.modulators);
+                          return { keyNumber: mn, preset: Sn, instrument: vn, sample: xn, generators: Rn, modulators: Xn };
                         }
                       }
                     }
                   }
                   return null;
-                })(ln, gn, Mn);
+                })(ln, _n, Mn);
               } }, { key: "isKeyInRange", value: function(ln, pn) {
                 return ln.keyRange === void 0 || ln.keyRange.lo <= pn && ln.keyRange.hi >= pn;
               } }, { key: "getBanks", value: function() {
                 return this.presets.reduce(function(ln, pn) {
-                  var gn = pn.header.bank;
-                  return ln[gn] || (ln[gn] = { presets: [] }), ln[gn].presets[pn.header.preset] = pn, ln;
+                  var _n = pn.header.bank;
+                  return ln[_n] || (ln[_n] = { presets: [] }), ln[_n].presets[pn.header.preset] = pn, ln;
                 }, []);
               } }, { key: "getPresets", value: function() {
-                var ln = this.presetData, pn = ln.presetHeaders, gn = ln.presetZones, Mn = ln.presetGenerators, _n = ln.presetModulators;
-                return Object(I.getItemsInZone)(pn, gn, _n, Mn, this.instruments, p.GeneratorType.Instrument).filter(function(hn) {
+                var ln = this.presetData, pn = ln.presetHeaders, _n = ln.presetZones, Mn = ln.presetGenerators, mn = ln.presetModulators;
+                return Object(I.getItemsInZone)(pn, _n, mn, Mn, this.instruments, p.GeneratorType.Instrument).filter(function(hn) {
                   return hn.header.name !== "EOP";
                 }).map(function(hn) {
                   return { header: hn.header, globalZone: hn.globalZone, zones: hn.zones.map(function(yn) {
@@ -4538,8 +4546,8 @@ registerProcessor('${o}', MyProcessor);
                   }) };
                 });
               } }, { key: "getInstruments", value: function() {
-                var ln = this.presetData, pn = ln.instrumentHeaders, gn = ln.instrumentZones, Mn = ln.instrumentModulators, _n = ln.instrumentGenerators;
-                return Object(I.getItemsInZone)(pn, gn, Mn, _n, this.samples, p.GeneratorType.SampleId).filter(function(hn) {
+                var ln = this.presetData, pn = ln.instrumentHeaders, _n = ln.instrumentZones, Mn = ln.instrumentModulators, mn = ln.instrumentGenerators;
+                return Object(I.getItemsInZone)(pn, _n, Mn, mn, this.samples, p.GeneratorType.SampleId).filter(function(hn) {
                   return hn.header.name !== "EOI";
                 }).map(function(hn) {
                   return { header: hn.header, globalZone: hn.globalZone, zones: hn.zones.map(function(yn) {
@@ -4571,8 +4579,8 @@ registerProcessor('${o}', MyProcessor);
           /*! exports provided: GeneratorType, DEFAULT_GENERATOR_VALUES */
           function(o, l, d) {
             var p, b;
-            function R(z, se, tn) {
-              return se in z ? Object.defineProperty(z, se, { value: tn, enumerable: true, configurable: true, writable: true }) : z[se] = tn, z;
+            function R(z, se, le) {
+              return se in z ? Object.defineProperty(z, se, { value: le, enumerable: true, configurable: true, writable: true }) : z[se] = le, z;
             }
             d.r(l), d.d(l, "GeneratorType", function() {
               return b;
@@ -4635,24 +4643,24 @@ registerProcessor('${o}', MyProcessor);
                 return se[pn];
               });
             }(b);
-            var tn = d(
+            var le = d(
               /*! ./modulator */
               "./src/types/modulator.ts"
             );
             d.d(l, "ControllerType", function() {
-              return tn.ControllerType;
+              return le.ControllerType;
             }), d.d(l, "ControllerPolarity", function() {
-              return tn.ControllerPolarity;
+              return le.ControllerPolarity;
             }), d.d(l, "ControllerDirection", function() {
-              return tn.ControllerDirection;
+              return le.ControllerDirection;
             }), d.d(l, "ControllerPalette", function() {
-              return tn.ControllerPalette;
+              return le.ControllerPalette;
             }), d.d(l, "Controller", function() {
-              return tn.Controller;
+              return le.Controller;
             }), d.d(l, "TransformType", function() {
-              return tn.TransformType;
+              return le.TransformType;
             }), d.d(l, "DEFAULT_INSTRUMENT_MODULATORS", function() {
-              return tn.DEFAULT_INSTRUMENT_MODULATORS;
+              return le.DEFAULT_INSTRUMENT_MODULATORS;
             });
             var rn = d(
               /*! ./preset */
@@ -4663,13 +4671,13 @@ registerProcessor('${o}', MyProcessor);
                 return rn[pn];
               });
             }(b);
-            var nn = d(
+            var tn = d(
               /*! ./presetData */
               "./src/types/presetData.ts"
             );
-            for (var b in nn) ["GeneratorType", "DEFAULT_GENERATOR_VALUES", "ControllerType", "ControllerPolarity", "ControllerDirection", "ControllerPalette", "Controller", "TransformType", "DEFAULT_INSTRUMENT_MODULATORS", "default"].indexOf(b) < 0 && function(pn) {
+            for (var b in tn) ["GeneratorType", "DEFAULT_GENERATOR_VALUES", "ControllerType", "ControllerPolarity", "ControllerDirection", "ControllerPalette", "Controller", "TransformType", "DEFAULT_INSTRUMENT_MODULATORS", "default"].indexOf(b) < 0 && function(pn) {
               d.d(l, pn, function() {
-                return nn[pn];
+                return tn[pn];
               });
             }(b);
             var an = d(
@@ -4731,24 +4739,24 @@ registerProcessor('${o}', MyProcessor);
             }), d.d(l, "DEFAULT_INSTRUMENT_MODULATORS", function() {
               return rn;
             });
-            var p, b, R, I, z, se, tn = d(
+            var p, b, R, I, z, se, le = d(
               /*! ./generator */
               "./src/types/generator.ts"
             );
-            (function(nn) {
-              nn[nn.Linear = 0] = "Linear", nn[nn.Concave = 1] = "Concave", nn[nn.Convex = 2] = "Convex", nn[nn.Switch = 3] = "Switch";
-            })(p || (p = {})), function(nn) {
-              nn[nn.Unipolar = 0] = "Unipolar", nn[nn.Bipolar = 1] = "Bipolar";
-            }(b || (b = {})), function(nn) {
-              nn[nn.Increasing = 0] = "Increasing", nn[nn.Decreasing = 1] = "Decreasing";
-            }(R || (R = {})), function(nn) {
-              nn[nn.GeneralController = 0] = "GeneralController", nn[nn.MidiController = 1] = "MidiController";
-            }(I || (I = {})), function(nn) {
-              nn[nn.NoController = 0] = "NoController", nn[nn.NoteOnVelocity = 2] = "NoteOnVelocity", nn[nn.NoteOnKeyNumber = 3] = "NoteOnKeyNumber", nn[nn.PolyPressure = 10] = "PolyPressure", nn[nn.ChannelPressure = 13] = "ChannelPressure", nn[nn.PitchWheel = 14] = "PitchWheel", nn[nn.PitchWheelSensitivity = 16] = "PitchWheelSensitivity", nn[nn.Link = 127] = "Link";
-            }(z || (z = {})), function(nn) {
-              nn[nn.Linear = 0] = "Linear", nn[nn.Absolute = 2] = "Absolute";
+            (function(tn) {
+              tn[tn.Linear = 0] = "Linear", tn[tn.Concave = 1] = "Concave", tn[tn.Convex = 2] = "Convex", tn[tn.Switch = 3] = "Switch";
+            })(p || (p = {})), function(tn) {
+              tn[tn.Unipolar = 0] = "Unipolar", tn[tn.Bipolar = 1] = "Bipolar";
+            }(b || (b = {})), function(tn) {
+              tn[tn.Increasing = 0] = "Increasing", tn[tn.Decreasing = 1] = "Decreasing";
+            }(R || (R = {})), function(tn) {
+              tn[tn.GeneralController = 0] = "GeneralController", tn[tn.MidiController = 1] = "MidiController";
+            }(I || (I = {})), function(tn) {
+              tn[tn.NoController = 0] = "NoController", tn[tn.NoteOnVelocity = 2] = "NoteOnVelocity", tn[tn.NoteOnKeyNumber = 3] = "NoteOnKeyNumber", tn[tn.PolyPressure = 10] = "PolyPressure", tn[tn.ChannelPressure = 13] = "ChannelPressure", tn[tn.PitchWheel = 14] = "PitchWheel", tn[tn.PitchWheelSensitivity = 16] = "PitchWheelSensitivity", tn[tn.Link = 127] = "Link";
+            }(z || (z = {})), function(tn) {
+              tn[tn.Linear = 0] = "Linear", tn[tn.Absolute = 2] = "Absolute";
             }(se || (se = {}));
-            var rn = [{ id: tn.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.GeneralController, index: z.NoteOnVelocity }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.InitialFilterFc, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Decreasing, palette: I.GeneralController, index: z.NoteOnVelocity }, value: -2400, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.VibLFOToPitch, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.ChannelPressure }, value: 50, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.VibLFOToPitch, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 1 }, value: 50, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.MidiController, index: 7 }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.InitialAttenuation, source: { type: p.Linear, polarity: b.Bipolar, direction: R.Increasing, palette: I.MidiController, index: 10 }, value: 1e3, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.MidiController, index: 11 }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.ReverbEffectsSend, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 91 }, value: 200, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.ChorusEffectsSend, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 93 }, value: 200, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: tn.GeneratorType.CoarseTune, source: { type: p.Linear, polarity: b.Bipolar, direction: R.Increasing, palette: I.GeneralController, index: z.PitchWheel }, value: 12700, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.PitchWheelSensitivity }, transform: se.Linear }];
+            var rn = [{ id: le.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.GeneralController, index: z.NoteOnVelocity }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.InitialFilterFc, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Decreasing, palette: I.GeneralController, index: z.NoteOnVelocity }, value: -2400, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.VibLFOToPitch, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.ChannelPressure }, value: 50, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.VibLFOToPitch, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 1 }, value: 50, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.MidiController, index: 7 }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.InitialAttenuation, source: { type: p.Linear, polarity: b.Bipolar, direction: R.Increasing, palette: I.MidiController, index: 10 }, value: 1e3, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.InitialAttenuation, source: { type: p.Concave, polarity: b.Unipolar, direction: R.Decreasing, palette: I.MidiController, index: 11 }, value: 960, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.ReverbEffectsSend, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 91 }, value: 200, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.ChorusEffectsSend, source: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.MidiController, index: 93 }, value: 200, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.NoController }, transform: se.Linear }, { id: le.GeneratorType.CoarseTune, source: { type: p.Linear, polarity: b.Bipolar, direction: R.Increasing, palette: I.GeneralController, index: z.PitchWheel }, value: 12700, valueSource: { type: p.Linear, polarity: b.Unipolar, direction: R.Increasing, palette: I.GeneralController, index: z.PitchWheelSensitivity }, transform: se.Linear }];
           }
         ), "./src/types/preset.ts": (
           /*!*****************************!*\
@@ -4832,10 +4840,10 @@ registerProcessor('${o}', MyProcessor);
               var R = {};
               return function() {
                 for (var I = arguments.length, z = new Array(I), se = 0; se < I; se++) z[se] = arguments[se];
-                var tn = JSON.stringify(z);
-                if (tn in R) return R[tn];
+                var le = JSON.stringify(z);
+                if (le in R) return R[le];
                 var rn = b.apply(void 0, z);
-                return R[tn] = rn, rn;
+                return R[le] = rn, rn;
               };
             };
           }
@@ -4857,42 +4865,42 @@ registerProcessor('${o}', MyProcessor);
       endLoop: I,
       sampleRate: z,
       originalPitch: se,
-      pitchCorrection: tn,
+      pitchCorrection: le,
       type: rn,
-      sampleModes: nn = 0,
+      sampleModes: tn = 0,
       overridingRootKey: an,
       fineTune: on = 0,
       startloopAddrsOffset: ln = 0,
       startloopAddrsCoarseOffset: pn = 0,
-      endloopAddrsOffset: gn = 0,
+      endloopAddrsOffset: _n = 0,
       endloopAddrsCoarseOffset: Mn = 0,
-      delayVolEnv: _n = -12e3,
+      delayVolEnv: mn = -12e3,
       attackVolEnv: hn = -12e3,
       holdVolEnv: yn = -12e3,
       decayVolEnv: Gn = -12e3,
-      sustainVolEnv: vn = 0,
-      releaseVolEnv: Fn = -12e3,
-      pan: Sn = 0,
-      ...kn
-    } = o, wn = 100 * (an !== void 0 && an !== -1 ? an : se) + tn - on, Ln = d * 100 - wn, Nn = 1 * Math.pow(2, Ln / 1200);
-    t.playbackRate.value = Nn;
-    const $n = R + ln + pn * 32768, Bn = I + gn + Mn * 32768;
-    Bn > $n && nn === 1 ? (t.loopStart = $n / z, t.loopEnd = Bn / z, t.loop = true) : nn === 3 && console.warn("unimplemented sampleMode 3 (play till end on note off)"), Object.keys(kn).filter(
-      (vs) => !["name", "instrument", "keyRange", "sampleID", "end"].includes(vs)
+      sustainVolEnv: Sn = 0,
+      releaseVolEnv: En = -12e3,
+      pan: vn = 0,
+      ...Nn
+    } = o, xn = 100 * (an !== void 0 && an !== -1 ? an : se) + le - on, Rn = d * 100 - xn, Xn = 1 * Math.pow(2, Rn / 1200);
+    t.playbackRate.value = Xn;
+    const $n = R + ln + pn * 32768, Bn = I + _n + Mn * 32768;
+    Bn > $n && tn === 1 ? (t.loopStart = $n / z, t.loopEnd = Bn / z, t.loop = true) : tn === 3 && console.warn("unimplemented sampleMode 3 (play till end on note off)"), Object.keys(Nn).filter(
+      (Gs) => !["name", "instrument", "keyRange", "sampleID", "end"].includes(Gs)
     ).length;
-    const Wn = e30.createGain(), In = [
+    const Wn = e30.createGain(), Vn = [
       l,
       0,
       b,
-      m$1(_n),
+      m$1(mn),
       m$1(hn),
       m$1(yn),
       m$1(Gn),
-      vn >= 960 ? 0 : 1 - Q$1(vn),
-      m$1(Fn)
-    ], cs = Wn.gain.dahdsr(...In), _s = e30.createStereoPanner();
-    return _s.pan.value = Sn / 1e3, Wn.connect(_s), t.connect(Wn), _s.connect(e30.destination), t.start(l), (vs = e30.currentTime) => {
-      t.stop(vs + m$1(Fn)), cs(vs);
+      Sn >= 960 ? 0 : 1 - Q$1(Sn),
+      m$1(En)
+    ], ls = Wn.gain.dahdsr(...Vn), ms = e30.createStereoPanner();
+    return ms.pan.value = vn / 1e3, Wn.connect(ms), t.connect(Wn), ms.connect(e30.destination), t.start(l), (Gs = e30.currentTime) => {
+      t.stop(Gs + m$1(En)), ls(Gs);
     };
   }
   function Y$1(e30, t, o = {}) {
@@ -5079,16 +5087,16 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       (function t(o) {
         var l, d, p, b, R, I;
         function z(hn) {
-          var yn = {}, Gn, vn;
+          var yn = {}, Gn, Sn;
           for (Gn in hn)
-            hn.hasOwnProperty(Gn) && (vn = hn[Gn], typeof vn == "object" && vn !== null ? yn[Gn] = z(vn) : yn[Gn] = vn);
+            hn.hasOwnProperty(Gn) && (Sn = hn[Gn], typeof Sn == "object" && Sn !== null ? yn[Gn] = z(Sn) : yn[Gn] = Sn);
           return yn;
         }
         function se(hn, yn) {
-          var Gn, vn, Fn, Sn;
-          for (vn = hn.length, Fn = 0; vn; )
-            Gn = vn >>> 1, Sn = Fn + Gn, yn(hn[Sn]) ? vn = Gn : (Fn = Sn + 1, vn -= Gn + 1);
-          return Fn;
+          var Gn, Sn, En, vn;
+          for (Sn = hn.length, En = 0; Sn; )
+            Gn = Sn >>> 1, vn = En + Gn, yn(hn[vn]) ? Sn = Gn : (En = vn + 1, Sn -= Gn + 1);
+          return En;
         }
         l = {
           AssignmentExpression: "AssignmentExpression",
@@ -5255,55 +5263,55 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           Skip: R,
           Remove: I
         };
-        function tn(hn, yn) {
+        function le(hn, yn) {
           this.parent = hn, this.key = yn;
         }
-        tn.prototype.replace = function(yn) {
+        le.prototype.replace = function(yn) {
           this.parent[this.key] = yn;
-        }, tn.prototype.remove = function() {
+        }, le.prototype.remove = function() {
           return Array.isArray(this.parent) ? (this.parent.splice(this.key, 1), true) : (this.replace(null), false);
         };
-        function rn(hn, yn, Gn, vn) {
-          this.node = hn, this.path = yn, this.wrap = Gn, this.ref = vn;
+        function rn(hn, yn, Gn, Sn) {
+          this.node = hn, this.path = yn, this.wrap = Gn, this.ref = Sn;
         }
-        function nn() {
+        function tn() {
         }
-        nn.prototype.path = function() {
-          var yn, Gn, vn, Fn, Sn, kn;
-          function wn(Ln, Nn) {
-            if (Array.isArray(Nn))
-              for (vn = 0, Fn = Nn.length; vn < Fn; ++vn)
-                Ln.push(Nn[vn]);
+        tn.prototype.path = function() {
+          var yn, Gn, Sn, En, vn, Nn;
+          function xn(Rn, Xn) {
+            if (Array.isArray(Xn))
+              for (Sn = 0, En = Xn.length; Sn < En; ++Sn)
+                Rn.push(Xn[Sn]);
             else
-              Ln.push(Nn);
+              Rn.push(Xn);
           }
           if (!this.__current.path)
             return null;
-          for (Sn = [], yn = 2, Gn = this.__leavelist.length; yn < Gn; ++yn)
-            kn = this.__leavelist[yn], wn(Sn, kn.path);
-          return wn(Sn, this.__current.path), Sn;
-        }, nn.prototype.type = function() {
+          for (vn = [], yn = 2, Gn = this.__leavelist.length; yn < Gn; ++yn)
+            Nn = this.__leavelist[yn], xn(vn, Nn.path);
+          return xn(vn, this.__current.path), vn;
+        }, tn.prototype.type = function() {
           var hn = this.current();
           return hn.type || this.__current.wrap;
-        }, nn.prototype.parents = function() {
-          var yn, Gn, vn;
-          for (vn = [], yn = 1, Gn = this.__leavelist.length; yn < Gn; ++yn)
-            vn.push(this.__leavelist[yn].node);
-          return vn;
-        }, nn.prototype.current = function() {
+        }, tn.prototype.parents = function() {
+          var yn, Gn, Sn;
+          for (Sn = [], yn = 1, Gn = this.__leavelist.length; yn < Gn; ++yn)
+            Sn.push(this.__leavelist[yn].node);
+          return Sn;
+        }, tn.prototype.current = function() {
           return this.__current.node;
-        }, nn.prototype.__execute = function(yn, Gn) {
-          var vn, Fn;
-          return Fn = void 0, vn = this.__current, this.__current = Gn, this.__state = null, yn && (Fn = yn.call(this, Gn.node, this.__leavelist[this.__leavelist.length - 1].node)), this.__current = vn, Fn;
-        }, nn.prototype.notify = function(yn) {
+        }, tn.prototype.__execute = function(yn, Gn) {
+          var Sn, En;
+          return En = void 0, Sn = this.__current, this.__current = Gn, this.__state = null, yn && (En = yn.call(this, Gn.node, this.__leavelist[this.__leavelist.length - 1].node)), this.__current = Sn, En;
+        }, tn.prototype.notify = function(yn) {
           this.__state = yn;
-        }, nn.prototype.skip = function() {
+        }, tn.prototype.skip = function() {
           this.notify(R);
-        }, nn.prototype.break = function() {
+        }, tn.prototype.break = function() {
           this.notify(b);
-        }, nn.prototype.remove = function() {
+        }, tn.prototype.remove = function() {
           this.notify(I);
-        }, nn.prototype.__initialize = function(hn, yn) {
+        }, tn.prototype.__initialize = function(hn, yn) {
           this.visitor = yn, this.root = hn, this.__worklist = [], this.__leavelist = [], this.__current = null, this.__state = null, this.__fallback = null, yn.fallback === "iteration" ? this.__fallback = Object.keys : typeof yn.fallback == "function" && (this.__fallback = yn.fallback), this.__keys = p, yn.keys && (this.__keys = Object.assign(Object.create(this.__keys), yn.keys));
         };
         function an(hn) {
@@ -5318,141 +5326,141 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
               return true;
           return false;
         }
-        nn.prototype.traverse = function(yn, Gn) {
-          var vn, Fn, Sn, kn, wn, Ln, Nn, $n, Bn, Wn, In, cs;
-          for (this.__initialize(yn, Gn), cs = {}, vn = this.__worklist, Fn = this.__leavelist, vn.push(new rn(yn, null, null, null)), Fn.push(new rn(null, null, null, null)); vn.length; ) {
-            if (Sn = vn.pop(), Sn === cs) {
-              if (Sn = Fn.pop(), Ln = this.__execute(Gn.leave, Sn), this.__state === b || Ln === b)
+        tn.prototype.traverse = function(yn, Gn) {
+          var Sn, En, vn, Nn, xn, Rn, Xn, $n, Bn, Wn, Vn, ls;
+          for (this.__initialize(yn, Gn), ls = {}, Sn = this.__worklist, En = this.__leavelist, Sn.push(new rn(yn, null, null, null)), En.push(new rn(null, null, null, null)); Sn.length; ) {
+            if (vn = Sn.pop(), vn === ls) {
+              if (vn = En.pop(), Rn = this.__execute(Gn.leave, vn), this.__state === b || Rn === b)
                 return;
               continue;
             }
-            if (Sn.node) {
-              if (Ln = this.__execute(Gn.enter, Sn), this.__state === b || Ln === b)
+            if (vn.node) {
+              if (Rn = this.__execute(Gn.enter, vn), this.__state === b || Rn === b)
                 return;
-              if (vn.push(cs), Fn.push(Sn), this.__state === R || Ln === R)
+              if (Sn.push(ls), En.push(vn), this.__state === R || Rn === R)
                 continue;
-              if (kn = Sn.node, wn = kn.type || Sn.wrap, Wn = this.__keys[wn], !Wn)
+              if (Nn = vn.node, xn = Nn.type || vn.wrap, Wn = this.__keys[xn], !Wn)
                 if (this.__fallback)
-                  Wn = this.__fallback(kn);
+                  Wn = this.__fallback(Nn);
                 else
-                  throw new Error("Unknown node type " + wn + ".");
+                  throw new Error("Unknown node type " + xn + ".");
               for ($n = Wn.length; ($n -= 1) >= 0; )
-                if (Nn = Wn[$n], In = kn[Nn], !!In) {
-                  if (Array.isArray(In)) {
-                    for (Bn = In.length; (Bn -= 1) >= 0; )
-                      if (In[Bn] && !ln(Fn, In[Bn])) {
-                        if (on(wn, Wn[$n]))
-                          Sn = new rn(In[Bn], [Nn, Bn], "Property", null);
-                        else if (an(In[Bn]))
-                          Sn = new rn(In[Bn], [Nn, Bn], null, null);
+                if (Xn = Wn[$n], Vn = Nn[Xn], !!Vn) {
+                  if (Array.isArray(Vn)) {
+                    for (Bn = Vn.length; (Bn -= 1) >= 0; )
+                      if (Vn[Bn] && !ln(En, Vn[Bn])) {
+                        if (on(xn, Wn[$n]))
+                          vn = new rn(Vn[Bn], [Xn, Bn], "Property", null);
+                        else if (an(Vn[Bn]))
+                          vn = new rn(Vn[Bn], [Xn, Bn], null, null);
                         else
                           continue;
-                        vn.push(Sn);
+                        Sn.push(vn);
                       }
-                  } else if (an(In)) {
-                    if (ln(Fn, In))
+                  } else if (an(Vn)) {
+                    if (ln(En, Vn))
                       continue;
-                    vn.push(new rn(In, Nn, null, null));
+                    Sn.push(new rn(Vn, Xn, null, null));
                   }
                 }
             }
           }
-        }, nn.prototype.replace = function(yn, Gn) {
-          var vn, Fn, Sn, kn, wn, Ln, Nn, $n, Bn, Wn, In, cs, _s;
-          function vs(Zn) {
-            var bs, Ls, Ss, es;
-            if (Zn.ref.remove()) {
-              for (Ls = Zn.ref.key, es = Zn.ref.parent, bs = vn.length; bs--; )
-                if (Ss = vn[bs], Ss.ref && Ss.ref.parent === es) {
-                  if (Ss.ref.key < Ls)
+        }, tn.prototype.replace = function(yn, Gn) {
+          var Sn, En, vn, Nn, xn, Rn, Xn, $n, Bn, Wn, Vn, ls, ms;
+          function Gs(Tn) {
+            var ys, Fs, Ss, _i;
+            if (Tn.ref.remove()) {
+              for (Fs = Tn.ref.key, _i = Tn.ref.parent, ys = Sn.length; ys--; )
+                if (Ss = Sn[ys], Ss.ref && Ss.ref.parent === _i) {
+                  if (Ss.ref.key < Fs)
                     break;
                   --Ss.ref.key;
                 }
             }
           }
-          for (this.__initialize(yn, Gn), In = {}, vn = this.__worklist, Fn = this.__leavelist, cs = {
+          for (this.__initialize(yn, Gn), Vn = {}, Sn = this.__worklist, En = this.__leavelist, ls = {
             root: yn
-          }, Ln = new rn(yn, null, null, new tn(cs, "root")), vn.push(Ln), Fn.push(Ln); vn.length; ) {
-            if (Ln = vn.pop(), Ln === In) {
-              if (Ln = Fn.pop(), wn = this.__execute(Gn.leave, Ln), wn !== void 0 && wn !== b && wn !== R && wn !== I && Ln.ref.replace(wn), (this.__state === I || wn === I) && vs(Ln), this.__state === b || wn === b)
-                return cs.root;
+          }, Rn = new rn(yn, null, null, new le(ls, "root")), Sn.push(Rn), En.push(Rn); Sn.length; ) {
+            if (Rn = Sn.pop(), Rn === Vn) {
+              if (Rn = En.pop(), xn = this.__execute(Gn.leave, Rn), xn !== void 0 && xn !== b && xn !== R && xn !== I && Rn.ref.replace(xn), (this.__state === I || xn === I) && Gs(Rn), this.__state === b || xn === b)
+                return ls.root;
               continue;
             }
-            if (wn = this.__execute(Gn.enter, Ln), wn !== void 0 && wn !== b && wn !== R && wn !== I && (Ln.ref.replace(wn), Ln.node = wn), (this.__state === I || wn === I) && (vs(Ln), Ln.node = null), this.__state === b || wn === b)
-              return cs.root;
-            if (Sn = Ln.node, !!Sn && (vn.push(In), Fn.push(Ln), !(this.__state === R || wn === R))) {
-              if (kn = Sn.type || Ln.wrap, Bn = this.__keys[kn], !Bn)
+            if (xn = this.__execute(Gn.enter, Rn), xn !== void 0 && xn !== b && xn !== R && xn !== I && (Rn.ref.replace(xn), Rn.node = xn), (this.__state === I || xn === I) && (Gs(Rn), Rn.node = null), this.__state === b || xn === b)
+              return ls.root;
+            if (vn = Rn.node, !!vn && (Sn.push(Vn), En.push(Rn), !(this.__state === R || xn === R))) {
+              if (Nn = vn.type || Rn.wrap, Bn = this.__keys[Nn], !Bn)
                 if (this.__fallback)
-                  Bn = this.__fallback(Sn);
+                  Bn = this.__fallback(vn);
                 else
-                  throw new Error("Unknown node type " + kn + ".");
-              for (Nn = Bn.length; (Nn -= 1) >= 0; )
-                if (_s = Bn[Nn], Wn = Sn[_s], !!Wn)
+                  throw new Error("Unknown node type " + Nn + ".");
+              for (Xn = Bn.length; (Xn -= 1) >= 0; )
+                if (ms = Bn[Xn], Wn = vn[ms], !!Wn)
                   if (Array.isArray(Wn)) {
                     for ($n = Wn.length; ($n -= 1) >= 0; )
                       if (Wn[$n]) {
-                        if (on(kn, Bn[Nn]))
-                          Ln = new rn(Wn[$n], [_s, $n], "Property", new tn(Wn, $n));
+                        if (on(Nn, Bn[Xn]))
+                          Rn = new rn(Wn[$n], [ms, $n], "Property", new le(Wn, $n));
                         else if (an(Wn[$n]))
-                          Ln = new rn(Wn[$n], [_s, $n], null, new tn(Wn, $n));
+                          Rn = new rn(Wn[$n], [ms, $n], null, new le(Wn, $n));
                         else
                           continue;
-                        vn.push(Ln);
+                        Sn.push(Rn);
                       }
-                  } else an(Wn) && vn.push(new rn(Wn, _s, null, new tn(Sn, _s)));
+                  } else an(Wn) && Sn.push(new rn(Wn, ms, null, new le(vn, ms)));
             }
           }
-          return cs.root;
+          return ls.root;
         };
         function pn(hn, yn) {
-          var Gn = new nn();
+          var Gn = new tn();
           return Gn.traverse(hn, yn);
         }
-        function gn(hn, yn) {
-          var Gn = new nn();
+        function _n(hn, yn) {
+          var Gn = new tn();
           return Gn.replace(hn, yn);
         }
         function Mn(hn, yn) {
           var Gn;
-          return Gn = se(yn, function(Fn) {
-            return Fn.range[0] > hn.range[0];
+          return Gn = se(yn, function(En) {
+            return En.range[0] > hn.range[0];
           }), hn.extendedRange = [hn.range[0], hn.range[1]], Gn !== yn.length && (hn.extendedRange[1] = yn[Gn].range[0]), Gn -= 1, Gn >= 0 && (hn.extendedRange[0] = yn[Gn].range[1]), hn;
         }
-        function _n(hn, yn, Gn) {
-          var vn = [], Fn, Sn, kn, wn;
+        function mn(hn, yn, Gn) {
+          var Sn = [], En, vn, Nn, xn;
           if (!hn.range)
             throw new Error("attachComments needs range information");
           if (!Gn.length) {
             if (yn.length) {
-              for (kn = 0, Sn = yn.length; kn < Sn; kn += 1)
-                Fn = z(yn[kn]), Fn.extendedRange = [0, hn.range[0]], vn.push(Fn);
-              hn.leadingComments = vn;
+              for (Nn = 0, vn = yn.length; Nn < vn; Nn += 1)
+                En = z(yn[Nn]), En.extendedRange = [0, hn.range[0]], Sn.push(En);
+              hn.leadingComments = Sn;
             }
             return hn;
           }
-          for (kn = 0, Sn = yn.length; kn < Sn; kn += 1)
-            vn.push(Mn(z(yn[kn]), Gn));
-          return wn = 0, pn(hn, {
-            enter: function(Ln) {
-              for (var Nn; wn < vn.length && (Nn = vn[wn], !(Nn.extendedRange[1] > Ln.range[0])); )
-                Nn.extendedRange[1] === Ln.range[0] ? (Ln.leadingComments || (Ln.leadingComments = []), Ln.leadingComments.push(Nn), vn.splice(wn, 1)) : wn += 1;
-              if (wn === vn.length)
+          for (Nn = 0, vn = yn.length; Nn < vn; Nn += 1)
+            Sn.push(Mn(z(yn[Nn]), Gn));
+          return xn = 0, pn(hn, {
+            enter: function(Rn) {
+              for (var Xn; xn < Sn.length && (Xn = Sn[xn], !(Xn.extendedRange[1] > Rn.range[0])); )
+                Xn.extendedRange[1] === Rn.range[0] ? (Rn.leadingComments || (Rn.leadingComments = []), Rn.leadingComments.push(Xn), Sn.splice(xn, 1)) : xn += 1;
+              if (xn === Sn.length)
                 return d.Break;
-              if (vn[wn].extendedRange[0] > Ln.range[1])
+              if (Sn[xn].extendedRange[0] > Rn.range[1])
                 return d.Skip;
             }
-          }), wn = 0, pn(hn, {
-            leave: function(Ln) {
-              for (var Nn; wn < vn.length && (Nn = vn[wn], !(Ln.range[1] < Nn.extendedRange[0])); )
-                Ln.range[1] === Nn.extendedRange[0] ? (Ln.trailingComments || (Ln.trailingComments = []), Ln.trailingComments.push(Nn), vn.splice(wn, 1)) : wn += 1;
-              if (wn === vn.length)
+          }), xn = 0, pn(hn, {
+            leave: function(Rn) {
+              for (var Xn; xn < Sn.length && (Xn = Sn[xn], !(Rn.range[1] < Xn.extendedRange[0])); )
+                Rn.range[1] === Xn.extendedRange[0] ? (Rn.trailingComments || (Rn.trailingComments = []), Rn.trailingComments.push(Xn), Sn.splice(xn, 1)) : xn += 1;
+              if (xn === Sn.length)
                 return d.Break;
-              if (vn[wn].extendedRange[0] > Ln.range[1])
+              if (Sn[xn].extendedRange[0] > Rn.range[1])
                 return d.Skip;
             }
           }), hn;
         }
-        return o.Syntax = l, o.traverse = pn, o.replace = gn, o.attachComments = _n, o.VisitorKeys = p, o.VisitorOption = d, o.Controller = nn, o.cloneEnvironment = function() {
+        return o.Syntax = l, o.traverse = pn, o.replace = _n, o.attachComments = mn, o.VisitorKeys = p, o.VisitorOption = d, o.Controller = tn, o.cloneEnvironment = function() {
           return t({});
         }, o;
       })(e30);
@@ -5609,11 +5617,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       function se(ln) {
         return ln === 10 || ln === 13 || ln === 8232 || ln === 8233;
       }
-      function tn(ln) {
+      function le(ln) {
         if (ln <= 65535)
           return String.fromCharCode(ln);
-        var pn = String.fromCharCode(Math.floor((ln - 65536) / 1024) + 55296), gn = String.fromCharCode((ln - 65536) % 1024 + 56320);
-        return pn + gn;
+        var pn = String.fromCharCode(Math.floor((ln - 65536) / 1024) + 55296), _n = String.fromCharCode((ln - 65536) % 1024 + 56320);
+        return pn + _n;
       }
       for (l = new Array(128), p = 0; p < 128; ++p)
         l[p] = p >= 97 && p <= 122 || // a..z
@@ -5625,16 +5633,16 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         p >= 48 && p <= 57 || // 0..9
         p === 36 || p === 95;
       function rn(ln) {
-        return ln < 128 ? l[ln] : t.NonAsciiIdentifierStart.test(tn(ln));
+        return ln < 128 ? l[ln] : t.NonAsciiIdentifierStart.test(le(ln));
       }
-      function nn(ln) {
-        return ln < 128 ? d[ln] : t.NonAsciiIdentifierPart.test(tn(ln));
+      function tn(ln) {
+        return ln < 128 ? d[ln] : t.NonAsciiIdentifierPart.test(le(ln));
       }
       function an(ln) {
-        return ln < 128 ? l[ln] : e30.NonAsciiIdentifierStart.test(tn(ln));
+        return ln < 128 ? l[ln] : e30.NonAsciiIdentifierStart.test(le(ln));
       }
       function on(ln) {
-        return ln < 128 ? d[ln] : e30.NonAsciiIdentifierPart.test(tn(ln));
+        return ln < 128 ? d[ln] : e30.NonAsciiIdentifierPart.test(le(ln));
       }
       code.exports = {
         isDecimalDigit: b,
@@ -5643,7 +5651,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         isWhiteSpace: z,
         isLineTerminator: se,
         isIdentifierStartES5: rn,
-        isIdentifierPartES5: nn,
+        isIdentifierPartES5: tn,
         isIdentifierStartES6: an,
         isIdentifierPartES6: on
       };
@@ -5667,11 +5675,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return false;
         }
       }
-      function o(rn, nn) {
-        return !nn && rn === "yield" ? false : l(rn, nn);
+      function o(rn, tn) {
+        return !tn && rn === "yield" ? false : l(rn, tn);
       }
-      function l(rn, nn) {
-        if (nn && t(rn))
+      function l(rn, tn) {
+        if (tn && t(rn))
           return true;
         switch (rn.length) {
           case 2:
@@ -5694,34 +5702,34 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             return false;
         }
       }
-      function d(rn, nn) {
-        return rn === "null" || rn === "true" || rn === "false" || o(rn, nn);
+      function d(rn, tn) {
+        return rn === "null" || rn === "true" || rn === "false" || o(rn, tn);
       }
-      function p(rn, nn) {
-        return rn === "null" || rn === "true" || rn === "false" || l(rn, nn);
+      function p(rn, tn) {
+        return rn === "null" || rn === "true" || rn === "false" || l(rn, tn);
       }
       function b(rn) {
         return rn === "eval" || rn === "arguments";
       }
       function R(rn) {
-        var nn, an, on;
+        var tn, an, on;
         if (rn.length === 0 || (on = rn.charCodeAt(0), !e30.isIdentifierStartES5(on)))
           return false;
-        for (nn = 1, an = rn.length; nn < an; ++nn)
-          if (on = rn.charCodeAt(nn), !e30.isIdentifierPartES5(on))
+        for (tn = 1, an = rn.length; tn < an; ++tn)
+          if (on = rn.charCodeAt(tn), !e30.isIdentifierPartES5(on))
             return false;
         return true;
       }
-      function I(rn, nn) {
-        return (rn - 55296) * 1024 + (nn - 56320) + 65536;
+      function I(rn, tn) {
+        return (rn - 55296) * 1024 + (tn - 56320) + 65536;
       }
       function z(rn) {
-        var nn, an, on, ln, pn;
+        var tn, an, on, ln, pn;
         if (rn.length === 0)
           return false;
-        for (pn = e30.isIdentifierStartES6, nn = 0, an = rn.length; nn < an; ++nn) {
-          if (on = rn.charCodeAt(nn), 55296 <= on && on <= 56319) {
-            if (++nn, nn >= an || (ln = rn.charCodeAt(nn), !(56320 <= ln && ln <= 57343)))
+        for (pn = e30.isIdentifierStartES6, tn = 0, an = rn.length; tn < an; ++tn) {
+          if (on = rn.charCodeAt(tn), 55296 <= on && on <= 56319) {
+            if (++tn, tn >= an || (ln = rn.charCodeAt(tn), !(56320 <= ln && ln <= 57343)))
               return false;
             on = I(on, ln);
           }
@@ -5731,11 +5739,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         }
         return true;
       }
-      function se(rn, nn) {
-        return R(rn) && !d(rn, nn);
+      function se(rn, tn) {
+        return R(rn) && !d(rn, tn);
       }
-      function tn(rn, nn) {
-        return z(rn) && !p(rn, nn);
+      function le(rn, tn) {
+        return z(rn) && !p(rn, tn);
       }
       keyword.exports = {
         isKeywordES5: o,
@@ -5746,7 +5754,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         isIdentifierNameES5: R,
         isIdentifierNameES6: z,
         isIdentifierES5: se,
-        isIdentifierES6: tn
+        isIdentifierES6: le
       };
     }()), keyword.exports;
   }
@@ -5764,8 +5772,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         return e30[t];
       throw new TypeError("Must be between 0 and 63: " + t);
     }, base64.decode = function(t) {
-      var o = 65, l = 90, d = 97, p = 122, b = 48, R = 57, I = 43, z = 47, se = 26, tn = 52;
-      return o <= t && t <= l ? t - o : d <= t && t <= p ? t - d + se : b <= t && t <= R ? t - b + tn : t == I ? 62 : t == z ? 63 : -1;
+      var o = 65, l = 90, d = 97, p = 122, b = 48, R = 57, I = 43, z = 47, se = 26, le = 52;
+      return o <= t && t <= l ? t - o : d <= t && t <= p ? t - d + se : b <= t && t <= R ? t - b + le : t == I ? 62 : t == z ? 63 : -1;
     }, base64;
   }
   function requireBase64Vlq() {
@@ -5780,36 +5788,36 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return I ? -z : z;
     }
     return base64Vlq.encode = function(I) {
-      var z = "", se, tn = p(I);
+      var z = "", se, le = p(I);
       do
-        se = tn & l, tn >>>= t, tn > 0 && (se |= d), z += e30.encode(se);
-      while (tn > 0);
+        se = le & l, le >>>= t, le > 0 && (se |= d), z += e30.encode(se);
+      while (le > 0);
       return z;
     }, base64Vlq.decode = function(I, z, se) {
-      var tn = I.length, rn = 0, nn = 0, an, on;
+      var le = I.length, rn = 0, tn = 0, an, on;
       do {
-        if (z >= tn)
+        if (z >= le)
           throw new Error("Expected more digits in base 64 VLQ value.");
         if (on = e30.decode(I.charCodeAt(z++)), on === -1)
           throw new Error("Invalid base64 digit: " + I.charAt(z - 1));
-        an = !!(on & d), on &= l, rn = rn + (on << nn), nn += t;
+        an = !!(on & d), on &= l, rn = rn + (on << tn), tn += t;
       } while (an);
       se.value = b(rn), se.rest = z;
     }, base64Vlq;
   }
   function requireUtil() {
     return hasRequiredUtil || (hasRequiredUtil = 1, function(e30) {
-      function t(_n, hn, yn) {
-        if (hn in _n)
-          return _n[hn];
+      function t(mn, hn, yn) {
+        if (hn in mn)
+          return mn[hn];
         if (arguments.length === 3)
           return yn;
         throw new Error('"' + hn + '" is a required argument.');
       }
       e30.getArg = t;
       var o = /^(?:([\w+\-.]+):)?\/\/(?:(\w+:\w+)@)?([\w.-]*)(?::(\d+))?(.*)$/, l = /^data:.+\,.+$/;
-      function d(_n) {
-        var hn = _n.match(o);
+      function d(mn) {
+        var hn = mn.match(o);
         return hn ? {
           scheme: hn[1],
           auth: hn[2],
@@ -5819,105 +5827,105 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         } : null;
       }
       e30.urlParse = d;
-      function p(_n) {
+      function p(mn) {
         var hn = "";
-        return _n.scheme && (hn += _n.scheme + ":"), hn += "//", _n.auth && (hn += _n.auth + "@"), _n.host && (hn += _n.host), _n.port && (hn += ":" + _n.port), _n.path && (hn += _n.path), hn;
+        return mn.scheme && (hn += mn.scheme + ":"), hn += "//", mn.auth && (hn += mn.auth + "@"), mn.host && (hn += mn.host), mn.port && (hn += ":" + mn.port), mn.path && (hn += mn.path), hn;
       }
       e30.urlGenerate = p;
-      function b(_n) {
-        var hn = _n, yn = d(_n);
+      function b(mn) {
+        var hn = mn, yn = d(mn);
         if (yn) {
           if (!yn.path)
-            return _n;
+            return mn;
           hn = yn.path;
         }
-        for (var Gn = e30.isAbsolute(hn), vn = hn.split(/\/+/), Fn, Sn = 0, kn = vn.length - 1; kn >= 0; kn--)
-          Fn = vn[kn], Fn === "." ? vn.splice(kn, 1) : Fn === ".." ? Sn++ : Sn > 0 && (Fn === "" ? (vn.splice(kn + 1, Sn), Sn = 0) : (vn.splice(kn, 2), Sn--));
-        return hn = vn.join("/"), hn === "" && (hn = Gn ? "/" : "."), yn ? (yn.path = hn, p(yn)) : hn;
+        for (var Gn = e30.isAbsolute(hn), Sn = hn.split(/\/+/), En, vn = 0, Nn = Sn.length - 1; Nn >= 0; Nn--)
+          En = Sn[Nn], En === "." ? Sn.splice(Nn, 1) : En === ".." ? vn++ : vn > 0 && (En === "" ? (Sn.splice(Nn + 1, vn), vn = 0) : (Sn.splice(Nn, 2), vn--));
+        return hn = Sn.join("/"), hn === "" && (hn = Gn ? "/" : "."), yn ? (yn.path = hn, p(yn)) : hn;
       }
       e30.normalize = b;
-      function R(_n, hn) {
-        _n === "" && (_n = "."), hn === "" && (hn = ".");
-        var yn = d(hn), Gn = d(_n);
-        if (Gn && (_n = Gn.path || "/"), yn && !yn.scheme)
+      function R(mn, hn) {
+        mn === "" && (mn = "."), hn === "" && (hn = ".");
+        var yn = d(hn), Gn = d(mn);
+        if (Gn && (mn = Gn.path || "/"), yn && !yn.scheme)
           return Gn && (yn.scheme = Gn.scheme), p(yn);
         if (yn || hn.match(l))
           return hn;
         if (Gn && !Gn.host && !Gn.path)
           return Gn.host = hn, p(Gn);
-        var vn = hn.charAt(0) === "/" ? hn : b(_n.replace(/\/+$/, "") + "/" + hn);
-        return Gn ? (Gn.path = vn, p(Gn)) : vn;
+        var Sn = hn.charAt(0) === "/" ? hn : b(mn.replace(/\/+$/, "") + "/" + hn);
+        return Gn ? (Gn.path = Sn, p(Gn)) : Sn;
       }
-      e30.join = R, e30.isAbsolute = function(_n) {
-        return _n.charAt(0) === "/" || o.test(_n);
+      e30.join = R, e30.isAbsolute = function(mn) {
+        return mn.charAt(0) === "/" || o.test(mn);
       };
-      function I(_n, hn) {
-        _n === "" && (_n = "."), _n = _n.replace(/\/$/, "");
-        for (var yn = 0; hn.indexOf(_n + "/") !== 0; ) {
-          var Gn = _n.lastIndexOf("/");
-          if (Gn < 0 || (_n = _n.slice(0, Gn), _n.match(/^([^\/]+:\/)?\/*$/)))
+      function I(mn, hn) {
+        mn === "" && (mn = "."), mn = mn.replace(/\/$/, "");
+        for (var yn = 0; hn.indexOf(mn + "/") !== 0; ) {
+          var Gn = mn.lastIndexOf("/");
+          if (Gn < 0 || (mn = mn.slice(0, Gn), mn.match(/^([^\/]+:\/)?\/*$/)))
             return hn;
           ++yn;
         }
-        return Array(yn + 1).join("../") + hn.substr(_n.length + 1);
+        return Array(yn + 1).join("../") + hn.substr(mn.length + 1);
       }
       e30.relative = I;
       var z = function() {
-        var _n = /* @__PURE__ */ Object.create(null);
-        return !("__proto__" in _n);
+        var mn = /* @__PURE__ */ Object.create(null);
+        return !("__proto__" in mn);
       }();
-      function se(_n) {
-        return _n;
+      function se(mn) {
+        return mn;
       }
-      function tn(_n) {
-        return nn(_n) ? "$" + _n : _n;
+      function le(mn) {
+        return tn(mn) ? "$" + mn : mn;
       }
-      e30.toSetString = z ? se : tn;
-      function rn(_n) {
-        return nn(_n) ? _n.slice(1) : _n;
+      e30.toSetString = z ? se : le;
+      function rn(mn) {
+        return tn(mn) ? mn.slice(1) : mn;
       }
       e30.fromSetString = z ? se : rn;
-      function nn(_n) {
-        if (!_n)
+      function tn(mn) {
+        if (!mn)
           return false;
-        var hn = _n.length;
-        if (hn < 9 || _n.charCodeAt(hn - 1) !== 95 || _n.charCodeAt(hn - 2) !== 95 || _n.charCodeAt(hn - 3) !== 111 || _n.charCodeAt(hn - 4) !== 116 || _n.charCodeAt(hn - 5) !== 111 || _n.charCodeAt(hn - 6) !== 114 || _n.charCodeAt(hn - 7) !== 112 || _n.charCodeAt(hn - 8) !== 95 || _n.charCodeAt(hn - 9) !== 95)
+        var hn = mn.length;
+        if (hn < 9 || mn.charCodeAt(hn - 1) !== 95 || mn.charCodeAt(hn - 2) !== 95 || mn.charCodeAt(hn - 3) !== 111 || mn.charCodeAt(hn - 4) !== 116 || mn.charCodeAt(hn - 5) !== 111 || mn.charCodeAt(hn - 6) !== 114 || mn.charCodeAt(hn - 7) !== 112 || mn.charCodeAt(hn - 8) !== 95 || mn.charCodeAt(hn - 9) !== 95)
           return false;
         for (var yn = hn - 10; yn >= 0; yn--)
-          if (_n.charCodeAt(yn) !== 36)
+          if (mn.charCodeAt(yn) !== 36)
             return false;
         return true;
       }
-      function an(_n, hn, yn) {
-        var Gn = ln(_n.source, hn.source);
-        return Gn !== 0 || (Gn = _n.originalLine - hn.originalLine, Gn !== 0) || (Gn = _n.originalColumn - hn.originalColumn, Gn !== 0 || yn) || (Gn = _n.generatedColumn - hn.generatedColumn, Gn !== 0) || (Gn = _n.generatedLine - hn.generatedLine, Gn !== 0) ? Gn : ln(_n.name, hn.name);
+      function an(mn, hn, yn) {
+        var Gn = ln(mn.source, hn.source);
+        return Gn !== 0 || (Gn = mn.originalLine - hn.originalLine, Gn !== 0) || (Gn = mn.originalColumn - hn.originalColumn, Gn !== 0 || yn) || (Gn = mn.generatedColumn - hn.generatedColumn, Gn !== 0) || (Gn = mn.generatedLine - hn.generatedLine, Gn !== 0) ? Gn : ln(mn.name, hn.name);
       }
       e30.compareByOriginalPositions = an;
-      function on(_n, hn, yn) {
-        var Gn = _n.generatedLine - hn.generatedLine;
-        return Gn !== 0 || (Gn = _n.generatedColumn - hn.generatedColumn, Gn !== 0 || yn) || (Gn = ln(_n.source, hn.source), Gn !== 0) || (Gn = _n.originalLine - hn.originalLine, Gn !== 0) || (Gn = _n.originalColumn - hn.originalColumn, Gn !== 0) ? Gn : ln(_n.name, hn.name);
+      function on(mn, hn, yn) {
+        var Gn = mn.generatedLine - hn.generatedLine;
+        return Gn !== 0 || (Gn = mn.generatedColumn - hn.generatedColumn, Gn !== 0 || yn) || (Gn = ln(mn.source, hn.source), Gn !== 0) || (Gn = mn.originalLine - hn.originalLine, Gn !== 0) || (Gn = mn.originalColumn - hn.originalColumn, Gn !== 0) ? Gn : ln(mn.name, hn.name);
       }
       e30.compareByGeneratedPositionsDeflated = on;
-      function ln(_n, hn) {
-        return _n === hn ? 0 : _n === null ? 1 : hn === null ? -1 : _n > hn ? 1 : -1;
+      function ln(mn, hn) {
+        return mn === hn ? 0 : mn === null ? 1 : hn === null ? -1 : mn > hn ? 1 : -1;
       }
-      function pn(_n, hn) {
-        var yn = _n.generatedLine - hn.generatedLine;
-        return yn !== 0 || (yn = _n.generatedColumn - hn.generatedColumn, yn !== 0) || (yn = ln(_n.source, hn.source), yn !== 0) || (yn = _n.originalLine - hn.originalLine, yn !== 0) || (yn = _n.originalColumn - hn.originalColumn, yn !== 0) ? yn : ln(_n.name, hn.name);
+      function pn(mn, hn) {
+        var yn = mn.generatedLine - hn.generatedLine;
+        return yn !== 0 || (yn = mn.generatedColumn - hn.generatedColumn, yn !== 0) || (yn = ln(mn.source, hn.source), yn !== 0) || (yn = mn.originalLine - hn.originalLine, yn !== 0) || (yn = mn.originalColumn - hn.originalColumn, yn !== 0) ? yn : ln(mn.name, hn.name);
       }
       e30.compareByGeneratedPositionsInflated = pn;
-      function gn(_n) {
-        return JSON.parse(_n.replace(/^\)]}'[^\n]*\n/, ""));
+      function _n(mn) {
+        return JSON.parse(mn.replace(/^\)]}'[^\n]*\n/, ""));
       }
-      e30.parseSourceMapInput = gn;
-      function Mn(_n, hn, yn) {
-        if (hn = hn || "", _n && (_n[_n.length - 1] !== "/" && hn[0] !== "/" && (_n += "/"), hn = _n + hn), yn) {
+      e30.parseSourceMapInput = _n;
+      function Mn(mn, hn, yn) {
+        if (hn = hn || "", mn && (mn[mn.length - 1] !== "/" && hn[0] !== "/" && (mn += "/"), hn = mn + hn), yn) {
           var Gn = d(yn);
           if (!Gn)
             throw new Error("sourceMapURL could not be parsed");
           if (Gn.path) {
-            var vn = Gn.path.lastIndexOf("/");
-            vn >= 0 && (Gn.path = Gn.path.substring(0, vn + 1));
+            var Sn = Gn.path.lastIndexOf("/");
+            Sn >= 0 && (Gn.path = Gn.path.substring(0, Sn + 1));
           }
           hn = R(p(Gn), hn);
         }
@@ -6011,8 +6019,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       }), b.sources.forEach(function(z) {
         var se = z;
         R !== null && (se = t.relative(R, z)), I._sources.has(se) || I._sources.add(se);
-        var tn = b.sourceContentFor(z);
-        tn != null && I.setSourceContent(z, tn);
+        var le = b.sourceContentFor(z);
+        le != null && I.setSourceContent(z, le);
       }), I;
     }, d.prototype.addMapping = function(b) {
       var R = t.getArg(b, "generated"), I = t.getArg(b, "original", null), z = t.getArg(b, "source", null), se = t.getArg(b, "name", null);
@@ -6038,22 +6046,22 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       }
       var se = this._sourceRoot;
       se != null && (z = t.relative(se, z));
-      var tn = new o(), rn = new o();
-      this._mappings.unsortedForEach(function(nn) {
-        if (nn.source === z && nn.originalLine != null) {
+      var le = new o(), rn = new o();
+      this._mappings.unsortedForEach(function(tn) {
+        if (tn.source === z && tn.originalLine != null) {
           var an = b.originalPositionFor({
-            line: nn.originalLine,
-            column: nn.originalColumn
+            line: tn.originalLine,
+            column: tn.originalColumn
           });
-          an.source != null && (nn.source = an.source, I != null && (nn.source = t.join(I, nn.source)), se != null && (nn.source = t.relative(se, nn.source)), nn.originalLine = an.line, nn.originalColumn = an.column, an.name != null && (nn.name = an.name));
+          an.source != null && (tn.source = an.source, I != null && (tn.source = t.join(I, tn.source)), se != null && (tn.source = t.relative(se, tn.source)), tn.originalLine = an.line, tn.originalColumn = an.column, an.name != null && (tn.name = an.name));
         }
-        var on = nn.source;
-        on != null && !tn.has(on) && tn.add(on);
-        var ln = nn.name;
+        var on = tn.source;
+        on != null && !le.has(on) && le.add(on);
+        var ln = tn.name;
         ln != null && !rn.has(ln) && rn.add(ln);
-      }, this), this._sources = tn, this._names = rn, b.sources.forEach(function(nn) {
-        var an = b.sourceContentFor(nn);
-        an != null && (I != null && (nn = t.join(I, nn)), se != null && (nn = t.relative(se, nn)), this.setSourceContent(nn, an));
+      }, this), this._sources = le, this._names = rn, b.sources.forEach(function(tn) {
+        var an = b.sourceContentFor(tn);
+        an != null && (I != null && (tn = t.join(I, tn)), se != null && (tn = t.relative(se, tn)), this.setSourceContent(tn, an));
       }, this);
     }, d.prototype._validateMapping = function(b, R, I, z) {
       if (R && typeof R.line != "number" && typeof R.column != "number")
@@ -6071,16 +6079,16 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         }));
       }
     }, d.prototype._serializeMappings = function() {
-      for (var b = 0, R = 1, I = 0, z = 0, se = 0, tn = 0, rn = "", nn, an, on, ln, pn = this._mappings.toArray(), gn = 0, Mn = pn.length; gn < Mn; gn++) {
-        if (an = pn[gn], nn = "", an.generatedLine !== R)
+      for (var b = 0, R = 1, I = 0, z = 0, se = 0, le = 0, rn = "", tn, an, on, ln, pn = this._mappings.toArray(), _n = 0, Mn = pn.length; _n < Mn; _n++) {
+        if (an = pn[_n], tn = "", an.generatedLine !== R)
           for (b = 0; an.generatedLine !== R; )
-            nn += ";", R++;
-        else if (gn > 0) {
-          if (!t.compareByGeneratedPositionsInflated(an, pn[gn - 1]))
+            tn += ";", R++;
+        else if (_n > 0) {
+          if (!t.compareByGeneratedPositionsInflated(an, pn[_n - 1]))
             continue;
-          nn += ",";
+          tn += ",";
         }
-        nn += e30.encode(an.generatedColumn - b), b = an.generatedColumn, an.source != null && (ln = this._sources.indexOf(an.source), nn += e30.encode(ln - tn), tn = ln, nn += e30.encode(an.originalLine - 1 - z), z = an.originalLine - 1, nn += e30.encode(an.originalColumn - I), I = an.originalColumn, an.name != null && (on = this._names.indexOf(an.name), nn += e30.encode(on - se), se = on)), rn += nn;
+        tn += e30.encode(an.generatedColumn - b), b = an.generatedColumn, an.source != null && (ln = this._sources.indexOf(an.source), tn += e30.encode(ln - le), le = ln, tn += e30.encode(an.originalLine - 1 - z), z = an.originalLine - 1, tn += e30.encode(an.originalColumn - I), I = an.originalColumn, an.name != null && (on = this._names.indexOf(an.name), tn += e30.encode(on - se), se = on)), rn += tn;
       }
       return rn;
     }, d.prototype._generateSourcesContent = function(b, R) {
@@ -6146,8 +6154,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         for (var z = l[b], se = p; se < b; se++)
           d(l[se], z) <= 0 && (I += 1, e30(l, I, se));
         e30(l, I + 1, se);
-        var tn = I + 1;
-        o(l, d, p, tn - 1), o(l, d, tn + 1, b);
+        var le = I + 1;
+        o(l, d, p, le - 1), o(l, d, le + 1, b);
       }
     }
     return quickSort.quickSort = function(l, d) {
@@ -6159,8 +6167,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     hasRequiredSourceMapConsumer = 1;
     var e30 = requireUtil(), t = requireBinarySearch(), o = requireArraySet().ArraySet, l = requireBase64Vlq(), d = requireQuickSort().quickSort;
     function p(z, se) {
-      var tn = z;
-      return typeof z == "string" && (tn = e30.parseSourceMapInput(z)), tn.sections != null ? new I(tn, se) : new b(tn, se);
+      var le = z;
+      return typeof z == "string" && (le = e30.parseSourceMapInput(z)), le.sections != null ? new I(le, se) : new b(le, se);
     }
     p.fromSourceMap = function(z, se) {
       return b.fromSourceMap(z, se);
@@ -6176,13 +6184,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       get: function() {
         return this.__originalMappings || this._parseMappings(this._mappings, this.sourceRoot), this.__originalMappings;
       }
-    }), p.prototype._charIsMappingSeparator = function(se, tn) {
-      var rn = se.charAt(tn);
+    }), p.prototype._charIsMappingSeparator = function(se, le) {
+      var rn = se.charAt(le);
       return rn === ";" || rn === ",";
-    }, p.prototype._parseMappings = function(se, tn) {
+    }, p.prototype._parseMappings = function(se, le) {
       throw new Error("Subclasses must implement _parseMappings");
-    }, p.GENERATED_ORDER = 1, p.ORIGINAL_ORDER = 2, p.GREATEST_LOWER_BOUND = 1, p.LEAST_UPPER_BOUND = 2, p.prototype.eachMapping = function(se, tn, rn) {
-      var nn = tn || null, an = rn || p.GENERATED_ORDER, on;
+    }, p.GENERATED_ORDER = 1, p.ORIGINAL_ORDER = 2, p.GREATEST_LOWER_BOUND = 1, p.LEAST_UPPER_BOUND = 2, p.prototype.eachMapping = function(se, le, rn) {
+      var tn = le || null, an = rn || p.GENERATED_ORDER, on;
       switch (an) {
         case p.GENERATED_ORDER:
           on = this._generatedMappings;
@@ -6195,25 +6203,25 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       }
       var ln = this.sourceRoot;
       on.map(function(pn) {
-        var gn = pn.source === null ? null : this._sources.at(pn.source);
-        return gn = e30.computeSourceURL(ln, gn, this._sourceMapURL), {
-          source: gn,
+        var _n = pn.source === null ? null : this._sources.at(pn.source);
+        return _n = e30.computeSourceURL(ln, _n, this._sourceMapURL), {
+          source: _n,
           generatedLine: pn.generatedLine,
           generatedColumn: pn.generatedColumn,
           originalLine: pn.originalLine,
           originalColumn: pn.originalColumn,
           name: pn.name === null ? null : this._names.at(pn.name)
         };
-      }, this).forEach(se, nn);
+      }, this).forEach(se, tn);
     }, p.prototype.allGeneratedPositionsFor = function(se) {
-      var tn = e30.getArg(se, "line"), rn = {
+      var le = e30.getArg(se, "line"), rn = {
         source: e30.getArg(se, "source"),
-        originalLine: tn,
+        originalLine: le,
         originalColumn: e30.getArg(se, "column", 0)
       };
       if (rn.source = this._findSourceIndex(rn.source), rn.source < 0)
         return [];
-      var nn = [], an = this._findMapping(
+      var tn = [], an = this._findMapping(
         rn,
         this._originalMappings,
         "originalLine",
@@ -6225,53 +6233,53 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         var on = this._originalMappings[an];
         if (se.column === void 0)
           for (var ln = on.originalLine; on && on.originalLine === ln; )
-            nn.push({
+            tn.push({
               line: e30.getArg(on, "generatedLine", null),
               column: e30.getArg(on, "generatedColumn", null),
               lastColumn: e30.getArg(on, "lastGeneratedColumn", null)
             }), on = this._originalMappings[++an];
         else
-          for (var pn = on.originalColumn; on && on.originalLine === tn && on.originalColumn == pn; )
-            nn.push({
+          for (var pn = on.originalColumn; on && on.originalLine === le && on.originalColumn == pn; )
+            tn.push({
               line: e30.getArg(on, "generatedLine", null),
               column: e30.getArg(on, "generatedColumn", null),
               lastColumn: e30.getArg(on, "lastGeneratedColumn", null)
             }), on = this._originalMappings[++an];
       }
-      return nn;
+      return tn;
     }, sourceMapConsumer.SourceMapConsumer = p;
     function b(z, se) {
-      var tn = z;
-      typeof z == "string" && (tn = e30.parseSourceMapInput(z));
-      var rn = e30.getArg(tn, "version"), nn = e30.getArg(tn, "sources"), an = e30.getArg(tn, "names", []), on = e30.getArg(tn, "sourceRoot", null), ln = e30.getArg(tn, "sourcesContent", null), pn = e30.getArg(tn, "mappings"), gn = e30.getArg(tn, "file", null);
+      var le = z;
+      typeof z == "string" && (le = e30.parseSourceMapInput(z));
+      var rn = e30.getArg(le, "version"), tn = e30.getArg(le, "sources"), an = e30.getArg(le, "names", []), on = e30.getArg(le, "sourceRoot", null), ln = e30.getArg(le, "sourcesContent", null), pn = e30.getArg(le, "mappings"), _n = e30.getArg(le, "file", null);
       if (rn != this._version)
         throw new Error("Unsupported version: " + rn);
-      on && (on = e30.normalize(on)), nn = nn.map(String).map(e30.normalize).map(function(Mn) {
+      on && (on = e30.normalize(on)), tn = tn.map(String).map(e30.normalize).map(function(Mn) {
         return on && e30.isAbsolute(on) && e30.isAbsolute(Mn) ? e30.relative(on, Mn) : Mn;
-      }), this._names = o.fromArray(an.map(String), true), this._sources = o.fromArray(nn, true), this._absoluteSources = this._sources.toArray().map(function(Mn) {
+      }), this._names = o.fromArray(an.map(String), true), this._sources = o.fromArray(tn, true), this._absoluteSources = this._sources.toArray().map(function(Mn) {
         return e30.computeSourceURL(on, Mn, se);
-      }), this.sourceRoot = on, this.sourcesContent = ln, this._mappings = pn, this._sourceMapURL = se, this.file = gn;
+      }), this.sourceRoot = on, this.sourcesContent = ln, this._mappings = pn, this._sourceMapURL = se, this.file = _n;
     }
     b.prototype = Object.create(p.prototype), b.prototype.consumer = p, b.prototype._findSourceIndex = function(z) {
       var se = z;
       if (this.sourceRoot != null && (se = e30.relative(this.sourceRoot, se)), this._sources.has(se))
         return this._sources.indexOf(se);
-      var tn;
-      for (tn = 0; tn < this._absoluteSources.length; ++tn)
-        if (this._absoluteSources[tn] == z)
-          return tn;
+      var le;
+      for (le = 0; le < this._absoluteSources.length; ++le)
+        if (this._absoluteSources[le] == z)
+          return le;
       return -1;
-    }, b.fromSourceMap = function(se, tn) {
-      var rn = Object.create(b.prototype), nn = rn._names = o.fromArray(se._names.toArray(), true), an = rn._sources = o.fromArray(se._sources.toArray(), true);
+    }, b.fromSourceMap = function(se, le) {
+      var rn = Object.create(b.prototype), tn = rn._names = o.fromArray(se._names.toArray(), true), an = rn._sources = o.fromArray(se._sources.toArray(), true);
       rn.sourceRoot = se._sourceRoot, rn.sourcesContent = se._generateSourcesContent(
         rn._sources.toArray(),
         rn.sourceRoot
-      ), rn.file = se._file, rn._sourceMapURL = tn, rn._absoluteSources = rn._sources.toArray().map(function(yn) {
-        return e30.computeSourceURL(rn.sourceRoot, yn, tn);
+      ), rn.file = se._file, rn._sourceMapURL = le, rn._absoluteSources = rn._sources.toArray().map(function(yn) {
+        return e30.computeSourceURL(rn.sourceRoot, yn, le);
       });
-      for (var on = se._mappings.toArray().slice(), ln = rn.__generatedMappings = [], pn = rn.__originalMappings = [], gn = 0, Mn = on.length; gn < Mn; gn++) {
-        var _n = on[gn], hn = new R();
-        hn.generatedLine = _n.generatedLine, hn.generatedColumn = _n.generatedColumn, _n.source && (hn.source = an.indexOf(_n.source), hn.originalLine = _n.originalLine, hn.originalColumn = _n.originalColumn, _n.name && (hn.name = nn.indexOf(_n.name)), pn.push(hn)), ln.push(hn);
+      for (var on = se._mappings.toArray().slice(), ln = rn.__generatedMappings = [], pn = rn.__originalMappings = [], _n = 0, Mn = on.length; _n < Mn; _n++) {
+        var mn = on[_n], hn = new R();
+        hn.generatedLine = mn.generatedLine, hn.generatedColumn = mn.generatedColumn, mn.source && (hn.source = an.indexOf(mn.source), hn.originalLine = mn.originalLine, hn.originalColumn = mn.originalColumn, mn.name && (hn.name = tn.indexOf(mn.name)), pn.push(hn)), ln.push(hn);
       }
       return d(rn.__originalMappings, e30.compareByOriginalPositions), rn;
     }, b.prototype._version = 3, Object.defineProperty(b.prototype, "sources", {
@@ -6282,53 +6290,53 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     function R() {
       this.generatedLine = 0, this.generatedColumn = 0, this.source = null, this.originalLine = null, this.originalColumn = null, this.name = null;
     }
-    b.prototype._parseMappings = function(se, tn) {
-      for (var rn = 1, nn = 0, an = 0, on = 0, ln = 0, pn = 0, gn = se.length, Mn = 0, _n = {}, hn = {}, yn = [], Gn = [], vn, Fn, Sn, kn, wn; Mn < gn; )
+    b.prototype._parseMappings = function(se, le) {
+      for (var rn = 1, tn = 0, an = 0, on = 0, ln = 0, pn = 0, _n = se.length, Mn = 0, mn = {}, hn = {}, yn = [], Gn = [], Sn, En, vn, Nn, xn; Mn < _n; )
         if (se.charAt(Mn) === ";")
-          rn++, Mn++, nn = 0;
+          rn++, Mn++, tn = 0;
         else if (se.charAt(Mn) === ",")
           Mn++;
         else {
-          for (vn = new R(), vn.generatedLine = rn, kn = Mn; kn < gn && !this._charIsMappingSeparator(se, kn); kn++)
+          for (Sn = new R(), Sn.generatedLine = rn, Nn = Mn; Nn < _n && !this._charIsMappingSeparator(se, Nn); Nn++)
             ;
-          if (Fn = se.slice(Mn, kn), Sn = _n[Fn], Sn)
-            Mn += Fn.length;
+          if (En = se.slice(Mn, Nn), vn = mn[En], vn)
+            Mn += En.length;
           else {
-            for (Sn = []; Mn < kn; )
-              l.decode(se, Mn, hn), wn = hn.value, Mn = hn.rest, Sn.push(wn);
-            if (Sn.length === 2)
+            for (vn = []; Mn < Nn; )
+              l.decode(se, Mn, hn), xn = hn.value, Mn = hn.rest, vn.push(xn);
+            if (vn.length === 2)
               throw new Error("Found a source, but no line and column");
-            if (Sn.length === 3)
+            if (vn.length === 3)
               throw new Error("Found a source and line, but no column");
-            _n[Fn] = Sn;
+            mn[En] = vn;
           }
-          vn.generatedColumn = nn + Sn[0], nn = vn.generatedColumn, Sn.length > 1 && (vn.source = ln + Sn[1], ln += Sn[1], vn.originalLine = an + Sn[2], an = vn.originalLine, vn.originalLine += 1, vn.originalColumn = on + Sn[3], on = vn.originalColumn, Sn.length > 4 && (vn.name = pn + Sn[4], pn += Sn[4])), Gn.push(vn), typeof vn.originalLine == "number" && yn.push(vn);
+          Sn.generatedColumn = tn + vn[0], tn = Sn.generatedColumn, vn.length > 1 && (Sn.source = ln + vn[1], ln += vn[1], Sn.originalLine = an + vn[2], an = Sn.originalLine, Sn.originalLine += 1, Sn.originalColumn = on + vn[3], on = Sn.originalColumn, vn.length > 4 && (Sn.name = pn + vn[4], pn += vn[4])), Gn.push(Sn), typeof Sn.originalLine == "number" && yn.push(Sn);
         }
       d(Gn, e30.compareByGeneratedPositionsDeflated), this.__generatedMappings = Gn, d(yn, e30.compareByOriginalPositions), this.__originalMappings = yn;
-    }, b.prototype._findMapping = function(se, tn, rn, nn, an, on) {
+    }, b.prototype._findMapping = function(se, le, rn, tn, an, on) {
       if (se[rn] <= 0)
         throw new TypeError("Line must be greater than or equal to 1, got " + se[rn]);
-      if (se[nn] < 0)
-        throw new TypeError("Column must be greater than or equal to 0, got " + se[nn]);
-      return t.search(se, tn, an, on);
+      if (se[tn] < 0)
+        throw new TypeError("Column must be greater than or equal to 0, got " + se[tn]);
+      return t.search(se, le, an, on);
     }, b.prototype.computeColumnSpans = function() {
       for (var se = 0; se < this._generatedMappings.length; ++se) {
-        var tn = this._generatedMappings[se];
+        var le = this._generatedMappings[se];
         if (se + 1 < this._generatedMappings.length) {
           var rn = this._generatedMappings[se + 1];
-          if (tn.generatedLine === rn.generatedLine) {
-            tn.lastGeneratedColumn = rn.generatedColumn - 1;
+          if (le.generatedLine === rn.generatedLine) {
+            le.lastGeneratedColumn = rn.generatedColumn - 1;
             continue;
           }
         }
-        tn.lastGeneratedColumn = 1 / 0;
+        le.lastGeneratedColumn = 1 / 0;
       }
     }, b.prototype.originalPositionFor = function(se) {
-      var tn = {
+      var le = {
         generatedLine: e30.getArg(se, "line"),
         generatedColumn: e30.getArg(se, "column")
       }, rn = this._findMapping(
-        tn,
+        le,
         this._generatedMappings,
         "generatedLine",
         "generatedColumn",
@@ -6336,15 +6344,15 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         e30.getArg(se, "bias", p.GREATEST_LOWER_BOUND)
       );
       if (rn >= 0) {
-        var nn = this._generatedMappings[rn];
-        if (nn.generatedLine === tn.generatedLine) {
-          var an = e30.getArg(nn, "source", null);
+        var tn = this._generatedMappings[rn];
+        if (tn.generatedLine === le.generatedLine) {
+          var an = e30.getArg(tn, "source", null);
           an !== null && (an = this._sources.at(an), an = e30.computeSourceURL(this.sourceRoot, an, this._sourceMapURL));
-          var on = e30.getArg(nn, "name", null);
+          var on = e30.getArg(tn, "name", null);
           return on !== null && (on = this._names.at(on)), {
             source: an,
-            line: e30.getArg(nn, "originalLine", null),
-            column: e30.getArg(nn, "originalColumn", null),
+            line: e30.getArg(tn, "originalLine", null),
+            column: e30.getArg(tn, "originalColumn", null),
             name: on
           };
         }
@@ -6359,38 +6367,38 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return this.sourcesContent ? this.sourcesContent.length >= this._sources.size() && !this.sourcesContent.some(function(se) {
         return se == null;
       }) : false;
-    }, b.prototype.sourceContentFor = function(se, tn) {
+    }, b.prototype.sourceContentFor = function(se, le) {
       if (!this.sourcesContent)
         return null;
       var rn = this._findSourceIndex(se);
       if (rn >= 0)
         return this.sourcesContent[rn];
-      var nn = se;
-      this.sourceRoot != null && (nn = e30.relative(this.sourceRoot, nn));
+      var tn = se;
+      this.sourceRoot != null && (tn = e30.relative(this.sourceRoot, tn));
       var an;
       if (this.sourceRoot != null && (an = e30.urlParse(this.sourceRoot))) {
-        var on = nn.replace(/^file:\/\//, "");
+        var on = tn.replace(/^file:\/\//, "");
         if (an.scheme == "file" && this._sources.has(on))
           return this.sourcesContent[this._sources.indexOf(on)];
-        if ((!an.path || an.path == "/") && this._sources.has("/" + nn))
-          return this.sourcesContent[this._sources.indexOf("/" + nn)];
+        if ((!an.path || an.path == "/") && this._sources.has("/" + tn))
+          return this.sourcesContent[this._sources.indexOf("/" + tn)];
       }
-      if (tn)
+      if (le)
         return null;
-      throw new Error('"' + nn + '" is not in the SourceMap.');
+      throw new Error('"' + tn + '" is not in the SourceMap.');
     }, b.prototype.generatedPositionFor = function(se) {
-      var tn = e30.getArg(se, "source");
-      if (tn = this._findSourceIndex(tn), tn < 0)
+      var le = e30.getArg(se, "source");
+      if (le = this._findSourceIndex(le), le < 0)
         return {
           line: null,
           column: null,
           lastColumn: null
         };
       var rn = {
-        source: tn,
+        source: le,
         originalLine: e30.getArg(se, "line"),
         originalColumn: e30.getArg(se, "column")
-      }, nn = this._findMapping(
+      }, tn = this._findMapping(
         rn,
         this._originalMappings,
         "originalLine",
@@ -6398,8 +6406,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         e30.compareByOriginalPositions,
         e30.getArg(se, "bias", p.GREATEST_LOWER_BOUND)
       );
-      if (nn >= 0) {
-        var an = this._originalMappings[nn];
+      if (tn >= 0) {
+        var an = this._originalMappings[tn];
         if (an.source === rn.source)
           return {
             line: e30.getArg(an, "generatedLine", null),
@@ -6414,9 +6422,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       };
     }, sourceMapConsumer.BasicSourceMapConsumer = b;
     function I(z, se) {
-      var tn = z;
-      typeof z == "string" && (tn = e30.parseSourceMapInput(z));
-      var rn = e30.getArg(tn, "version"), nn = e30.getArg(tn, "sections");
+      var le = z;
+      typeof z == "string" && (le = e30.parseSourceMapInput(z));
+      var rn = e30.getArg(le, "version"), tn = e30.getArg(le, "sections");
       if (rn != this._version)
         throw new Error("Unsupported version: " + rn);
       this._sources = new o(), this._names = new o();
@@ -6424,18 +6432,18 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         line: -1,
         column: 0
       };
-      this._sections = nn.map(function(on) {
+      this._sections = tn.map(function(on) {
         if (on.url)
           throw new Error("Support for url field in sections not implemented.");
-        var ln = e30.getArg(on, "offset"), pn = e30.getArg(ln, "line"), gn = e30.getArg(ln, "column");
-        if (pn < an.line || pn === an.line && gn < an.column)
+        var ln = e30.getArg(on, "offset"), pn = e30.getArg(ln, "line"), _n = e30.getArg(ln, "column");
+        if (pn < an.line || pn === an.line && _n < an.column)
           throw new Error("Section offsets must be ordered and non-overlapping.");
         return an = ln, {
           generatedOffset: {
             // The offset fields are 0-based, but we use 1-based indices when
             // encoding/decoding from VLQ.
             generatedLine: pn + 1,
-            generatedColumn: gn + 1
+            generatedColumn: _n + 1
           },
           consumer: new p(e30.getArg(on, "map"), se)
         };
@@ -6444,25 +6452,25 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return I.prototype = Object.create(p.prototype), I.prototype.constructor = p, I.prototype._version = 3, Object.defineProperty(I.prototype, "sources", {
       get: function() {
         for (var z = [], se = 0; se < this._sections.length; se++)
-          for (var tn = 0; tn < this._sections[se].consumer.sources.length; tn++)
-            z.push(this._sections[se].consumer.sources[tn]);
+          for (var le = 0; le < this._sections[se].consumer.sources.length; le++)
+            z.push(this._sections[se].consumer.sources[le]);
         return z;
       }
     }), I.prototype.originalPositionFor = function(se) {
-      var tn = {
+      var le = {
         generatedLine: e30.getArg(se, "line"),
         generatedColumn: e30.getArg(se, "column")
       }, rn = t.search(
-        tn,
+        le,
         this._sections,
         function(an, on) {
           var ln = an.generatedLine - on.generatedOffset.generatedLine;
           return ln || an.generatedColumn - on.generatedOffset.generatedColumn;
         }
-      ), nn = this._sections[rn];
-      return nn ? nn.consumer.originalPositionFor({
-        line: tn.generatedLine - (nn.generatedOffset.generatedLine - 1),
-        column: tn.generatedColumn - (nn.generatedOffset.generatedLine === tn.generatedLine ? nn.generatedOffset.generatedColumn - 1 : 0),
+      ), tn = this._sections[rn];
+      return tn ? tn.consumer.originalPositionFor({
+        line: le.generatedLine - (tn.generatedOffset.generatedLine - 1),
+        column: le.generatedColumn - (tn.generatedOffset.generatedLine === le.generatedLine ? tn.generatedOffset.generatedColumn - 1 : 0),
         bias: se.bias
       }) : {
         source: null,
@@ -6474,24 +6482,24 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return this._sections.every(function(se) {
         return se.consumer.hasContentsOfAllSources();
       });
-    }, I.prototype.sourceContentFor = function(se, tn) {
+    }, I.prototype.sourceContentFor = function(se, le) {
       for (var rn = 0; rn < this._sections.length; rn++) {
-        var nn = this._sections[rn], an = nn.consumer.sourceContentFor(se, true);
+        var tn = this._sections[rn], an = tn.consumer.sourceContentFor(se, true);
         if (an)
           return an;
       }
-      if (tn)
+      if (le)
         return null;
       throw new Error('"' + se + '" is not in the SourceMap.');
     }, I.prototype.generatedPositionFor = function(se) {
-      for (var tn = 0; tn < this._sections.length; tn++) {
-        var rn = this._sections[tn];
+      for (var le = 0; le < this._sections.length; le++) {
+        var rn = this._sections[le];
         if (rn.consumer._findSourceIndex(e30.getArg(se, "source")) !== -1) {
-          var nn = rn.consumer.generatedPositionFor(se);
-          if (nn) {
+          var tn = rn.consumer.generatedPositionFor(se);
+          if (tn) {
             var an = {
-              line: nn.line + (rn.generatedOffset.generatedLine - 1),
-              column: nn.column + (rn.generatedOffset.generatedLine === nn.line ? rn.generatedOffset.generatedColumn - 1 : 0)
+              line: tn.line + (rn.generatedOffset.generatedLine - 1),
+              column: tn.column + (rn.generatedOffset.generatedLine === tn.line ? rn.generatedOffset.generatedColumn - 1 : 0)
             };
             return an;
           }
@@ -6501,21 +6509,21 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         line: null,
         column: null
       };
-    }, I.prototype._parseMappings = function(se, tn) {
+    }, I.prototype._parseMappings = function(se, le) {
       this.__generatedMappings = [], this.__originalMappings = [];
       for (var rn = 0; rn < this._sections.length; rn++)
-        for (var nn = this._sections[rn], an = nn.consumer._generatedMappings, on = 0; on < an.length; on++) {
-          var ln = an[on], pn = nn.consumer._sources.at(ln.source);
-          pn = e30.computeSourceURL(nn.consumer.sourceRoot, pn, this._sourceMapURL), this._sources.add(pn), pn = this._sources.indexOf(pn);
-          var gn = null;
-          ln.name && (gn = nn.consumer._names.at(ln.name), this._names.add(gn), gn = this._names.indexOf(gn));
+        for (var tn = this._sections[rn], an = tn.consumer._generatedMappings, on = 0; on < an.length; on++) {
+          var ln = an[on], pn = tn.consumer._sources.at(ln.source);
+          pn = e30.computeSourceURL(tn.consumer.sourceRoot, pn, this._sourceMapURL), this._sources.add(pn), pn = this._sources.indexOf(pn);
+          var _n = null;
+          ln.name && (_n = tn.consumer._names.at(ln.name), this._names.add(_n), _n = this._names.indexOf(_n));
           var Mn = {
             source: pn,
-            generatedLine: ln.generatedLine + (nn.generatedOffset.generatedLine - 1),
-            generatedColumn: ln.generatedColumn + (nn.generatedOffset.generatedLine === ln.generatedLine ? nn.generatedOffset.generatedColumn - 1 : 0),
+            generatedLine: ln.generatedLine + (tn.generatedOffset.generatedLine - 1),
+            generatedColumn: ln.generatedColumn + (tn.generatedOffset.generatedLine === ln.generatedLine ? tn.generatedOffset.generatedColumn - 1 : 0),
             originalLine: ln.originalLine,
             originalColumn: ln.originalColumn,
-            name: gn
+            name: _n
           };
           this.__generatedMappings.push(Mn), typeof Mn.originalLine == "number" && this.__originalMappings.push(Mn);
         }
@@ -6530,44 +6538,44 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       this.children = [], this.sourceContents = {}, this.line = b ?? null, this.column = R ?? null, this.source = I ?? null, this.name = se ?? null, this[d] = true, z != null && this.add(z);
     }
     return p.fromStringWithSourceMap = function(R, I, z) {
-      var se = new p(), tn = R.split(o), rn = 0, nn = function() {
-        var gn = _n(), Mn = _n() || "";
-        return gn + Mn;
-        function _n() {
-          return rn < tn.length ? tn[rn++] : void 0;
+      var se = new p(), le = R.split(o), rn = 0, tn = function() {
+        var _n = mn(), Mn = mn() || "";
+        return _n + Mn;
+        function mn() {
+          return rn < le.length ? le[rn++] : void 0;
         }
       }, an = 1, on = 0, ln = null;
-      return I.eachMapping(function(gn) {
+      return I.eachMapping(function(_n) {
         if (ln !== null)
-          if (an < gn.generatedLine)
-            pn(ln, nn()), an++, on = 0;
+          if (an < _n.generatedLine)
+            pn(ln, tn()), an++, on = 0;
           else {
-            var Mn = tn[rn] || "", _n = Mn.substr(0, gn.generatedColumn - on);
-            tn[rn] = Mn.substr(gn.generatedColumn - on), on = gn.generatedColumn, pn(ln, _n), ln = gn;
+            var Mn = le[rn] || "", mn = Mn.substr(0, _n.generatedColumn - on);
+            le[rn] = Mn.substr(_n.generatedColumn - on), on = _n.generatedColumn, pn(ln, mn), ln = _n;
             return;
           }
-        for (; an < gn.generatedLine; )
-          se.add(nn()), an++;
-        if (on < gn.generatedColumn) {
-          var Mn = tn[rn] || "";
-          se.add(Mn.substr(0, gn.generatedColumn)), tn[rn] = Mn.substr(gn.generatedColumn), on = gn.generatedColumn;
+        for (; an < _n.generatedLine; )
+          se.add(tn()), an++;
+        if (on < _n.generatedColumn) {
+          var Mn = le[rn] || "";
+          se.add(Mn.substr(0, _n.generatedColumn)), le[rn] = Mn.substr(_n.generatedColumn), on = _n.generatedColumn;
         }
-        ln = gn;
-      }, this), rn < tn.length && (ln && pn(ln, nn()), se.add(tn.splice(rn).join(""))), I.sources.forEach(function(gn) {
-        var Mn = I.sourceContentFor(gn);
-        Mn != null && (z != null && (gn = t.join(z, gn)), se.setSourceContent(gn, Mn));
+        ln = _n;
+      }, this), rn < le.length && (ln && pn(ln, tn()), se.add(le.splice(rn).join(""))), I.sources.forEach(function(_n) {
+        var Mn = I.sourceContentFor(_n);
+        Mn != null && (z != null && (_n = t.join(z, _n)), se.setSourceContent(_n, Mn));
       }), se;
-      function pn(gn, Mn) {
-        if (gn === null || gn.source === void 0)
+      function pn(_n, Mn) {
+        if (_n === null || _n.source === void 0)
           se.add(Mn);
         else {
-          var _n = z ? t.join(z, gn.source) : gn.source;
+          var mn = z ? t.join(z, _n.source) : _n.source;
           se.add(new p(
-            gn.originalLine,
-            gn.originalColumn,
-            _n,
+            _n.originalLine,
+            _n.originalColumn,
+            mn,
             Mn,
-            gn.name
+            _n.name
           ));
         }
       }
@@ -6630,9 +6638,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         code: "",
         line: 1,
         column: 0
-      }, z = new e30(R), se = false, tn = null, rn = null, nn = null, an = null;
+      }, z = new e30(R), se = false, le = null, rn = null, tn = null, an = null;
       return this.walk(function(on, ln) {
-        I.code += on, ln.source !== null && ln.line !== null && ln.column !== null ? ((tn !== ln.source || rn !== ln.line || nn !== ln.column || an !== ln.name) && z.addMapping({
+        I.code += on, ln.source !== null && ln.line !== null && ln.column !== null ? ((le !== ln.source || rn !== ln.line || tn !== ln.column || an !== ln.name) && z.addMapping({
           source: ln.source,
           original: {
             line: ln.line,
@@ -6643,14 +6651,14 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             column: I.column
           },
           name: ln.name
-        }), tn = ln.source, rn = ln.line, nn = ln.column, an = ln.name, se = true) : se && (z.addMapping({
+        }), le = ln.source, rn = ln.line, tn = ln.column, an = ln.name, se = true) : se && (z.addMapping({
           generated: {
             line: I.line,
             column: I.column
           }
-        }), tn = null, se = false);
-        for (var pn = 0, gn = on.length; pn < gn; pn++)
-          on.charCodeAt(pn) === l ? (I.line++, I.column = 0, pn + 1 === gn ? (tn = null, se = false) : se && z.addMapping({
+        }), le = null, se = false);
+        for (var pn = 0, _n = on.length; pn < _n; pn++)
+          on.charCodeAt(pn) === l ? (I.line++, I.column = 0, pn + 1 === _n ? (le = null, se = false) : se && z.addMapping({
             source: ln.source,
             original: {
               line: ln.line,
@@ -6673,13 +6681,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function requireEscodegen() {
     return hasRequiredEscodegen || (hasRequiredEscodegen = 1, function(e30) {
       (function() {
-        var t, o, l, d, p, b, R, I, z, se, tn, rn, nn, an, on, ln, pn, gn, Mn, _n, hn, yn, Gn, vn, Fn, Sn;
+        var t, o, l, d, p, b, R, I, z, se, le, rn, tn, an, on, ln, pn, _n, Mn, mn, hn, yn, Gn, Sn, En, vn;
         p = requireEstraverse(), b = requireUtils(), t = p.Syntax;
-        function kn(le) {
-          return rs.Expression.hasOwnProperty(le.type);
+        function Nn(nn) {
+          return ss.Expression.hasOwnProperty(nn.type);
         }
-        function wn(le) {
-          return rs.Statement.hasOwnProperty(le.type);
+        function xn(nn) {
+          return ss.Statement.hasOwnProperty(nn.type);
         }
         o = {
           Sequence: 0,
@@ -6737,8 +6745,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           "/": o.Multiplicative,
           "**": o.Exponentiation
         };
-        var Ln = 1, Nn = 2, $n = 4, Bn = 8, Wn = 16, In = 32, cs = 64, _s = Nn | $n, vs = Ln | Nn, Zn = Ln | Nn | $n, bs = Ln, Ls = $n, Ss = Ln | $n, es = Ln, gs = Ln | In, us = 0, ps = Ln | Wn, Ds = Ln | Bn;
-        function On() {
+        var Rn = 1, Xn = 2, $n = 4, Bn = 8, Wn = 16, Vn = 32, ls = 64, ms = Xn | $n, Gs = Rn | Xn, Tn = Rn | Xn | $n, ys = Rn, Fs = $n, Ss = Rn | $n, _i = Rn, _s = Rn | Vn, os = 0, fs = Rn | Wn, Rs = Rn | Bn;
+        function Yn() {
           return {
             indent: null,
             base: null,
@@ -6777,851 +6785,851 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             sourceCode: null
           };
         }
-        function Dn(le, cn) {
+        function Ln(nn, cn) {
           var un = "";
-          for (cn |= 0; cn > 0; cn >>>= 1, le += le)
-            cn & 1 && (un += le);
+          for (cn |= 0; cn > 0; cn >>>= 1, nn += nn)
+            cn & 1 && (un += nn);
           return un;
         }
-        function Jn(le) {
-          return /[\r\n]/g.test(le);
+        function Jn(nn) {
+          return /[\r\n]/g.test(nn);
         }
-        function Rn(le) {
-          var cn = le.length;
-          return cn && b.code.isLineTerminator(le.charCodeAt(cn - 1));
+        function Dn(nn) {
+          var cn = nn.length;
+          return cn && b.code.isLineTerminator(nn.charCodeAt(cn - 1));
         }
-        function xn(le, cn) {
+        function wn(nn, cn) {
           var un;
           for (un in cn)
-            cn.hasOwnProperty(un) && (le[un] = cn[un]);
-          return le;
+            cn.hasOwnProperty(un) && (nn[un] = cn[un]);
+          return nn;
         }
-        function Yn(le, cn) {
+        function Hn(nn, cn) {
           var un, fn;
-          function mn(An) {
+          function gn(An) {
             return typeof An == "object" && An instanceof Object && !(An instanceof RegExp);
           }
           for (un in cn)
-            cn.hasOwnProperty(un) && (fn = cn[un], mn(fn) ? mn(le[un]) ? Yn(le[un], fn) : le[un] = Yn({}, fn) : le[un] = fn);
-          return le;
+            cn.hasOwnProperty(un) && (fn = cn[un], gn(fn) ? gn(nn[un]) ? Hn(nn[un], fn) : nn[un] = Hn({}, fn) : nn[un] = fn);
+          return nn;
         }
-        function Tn(le) {
-          var cn, un, fn, mn, An;
-          if (le !== le)
+        function Zn(nn) {
+          var cn, un, fn, gn, An;
+          if (nn !== nn)
             throw new Error("Numeric literal whose value is NaN");
-          if (le < 0 || le === 0 && 1 / le < 0)
+          if (nn < 0 || nn === 0 && 1 / nn < 0)
             throw new Error("Numeric literal whose value is negative");
-          if (le === 1 / 0)
+          if (nn === 1 / 0)
             return z ? "null" : se ? "1e400" : "1e+400";
-          if (cn = "" + le, !se || cn.length < 3)
+          if (cn = "" + nn, !se || cn.length < 3)
             return cn;
-          for (un = cn.indexOf("."), !z && cn.charCodeAt(0) === 48 && un === 1 && (un = 0, cn = cn.slice(1)), fn = cn, cn = cn.replace("e+", "e"), mn = 0, (An = fn.indexOf("e")) > 0 && (mn = +fn.slice(An + 1), fn = fn.slice(0, An)), un >= 0 && (mn -= fn.length - un - 1, fn = +(fn.slice(0, un) + fn.slice(un + 1)) + ""), An = 0; fn.charCodeAt(fn.length + An - 1) === 48; )
+          for (un = cn.indexOf("."), !z && cn.charCodeAt(0) === 48 && un === 1 && (un = 0, cn = cn.slice(1)), fn = cn, cn = cn.replace("e+", "e"), gn = 0, (An = fn.indexOf("e")) > 0 && (gn = +fn.slice(An + 1), fn = fn.slice(0, An)), un >= 0 && (gn -= fn.length - un - 1, fn = +(fn.slice(0, un) + fn.slice(un + 1)) + ""), An = 0; fn.charCodeAt(fn.length + An - 1) === 48; )
             --An;
-          return An !== 0 && (mn -= An, fn = fn.slice(0, An)), mn !== 0 && (fn += "e" + mn), (fn.length < cn.length || tn && le > 1e12 && Math.floor(le) === le && (fn = "0x" + le.toString(16)).length < cn.length) && +fn === le && (cn = fn), cn;
+          return An !== 0 && (gn -= An, fn = fn.slice(0, An)), gn !== 0 && (fn += "e" + gn), (fn.length < cn.length || le && nn > 1e12 && Math.floor(nn) === nn && (fn = "0x" + nn.toString(16)).length < cn.length) && +fn === nn && (cn = fn), cn;
         }
-        function ns(le, cn) {
-          return (le & -2) === 8232 ? (cn ? "u" : "\\u") + (le === 8232 ? "2028" : "2029") : le === 10 || le === 13 ? (cn ? "" : "\\") + (le === 10 ? "n" : "r") : String.fromCharCode(le);
+        function ts(nn, cn) {
+          return (nn & -2) === 8232 ? (cn ? "u" : "\\u") + (nn === 8232 ? "2028" : "2029") : nn === 10 || nn === 13 ? (cn ? "" : "\\") + (nn === 10 ? "n" : "r") : String.fromCharCode(nn);
         }
-        function hs(le) {
-          var cn, un, fn, mn, An, En, Xn, Vn;
-          if (un = le.toString(), le.source) {
+        function ps(nn) {
+          var cn, un, fn, gn, An, Fn, kn, In;
+          if (un = nn.toString(), nn.source) {
             if (cn = un.match(/\/([^/]*)$/), !cn)
               return un;
-            for (fn = cn[1], un = "", Xn = false, Vn = false, mn = 0, An = le.source.length; mn < An; ++mn)
-              En = le.source.charCodeAt(mn), Vn ? (un += ns(En, Vn), Vn = false) : (Xn ? En === 93 && (Xn = false) : En === 47 ? un += "\\" : En === 91 && (Xn = true), un += ns(En, Vn), Vn = En === 92);
+            for (fn = cn[1], un = "", kn = false, In = false, gn = 0, An = nn.source.length; gn < An; ++gn)
+              Fn = nn.source.charCodeAt(gn), In ? (un += ts(Fn, In), In = false) : (kn ? Fn === 93 && (kn = false) : Fn === 47 ? un += "\\" : Fn === 91 && (kn = true), un += ts(Fn, In), In = Fn === 92);
             return "/" + un + "/" + fn;
           }
           return un;
         }
-        function Es(le, cn) {
+        function xs(nn, cn) {
           var un;
-          return le === 8 ? "\\b" : le === 12 ? "\\f" : le === 9 ? "\\t" : (un = le.toString(16).toUpperCase(), z || le > 255 ? "\\u" + "0000".slice(un.length) + un : le === 0 && !b.code.isDecimalDigit(cn) ? "\\0" : le === 11 ? "\\x0B" : "\\x" + "00".slice(un.length) + un);
+          return nn === 8 ? "\\b" : nn === 12 ? "\\f" : nn === 9 ? "\\t" : (un = nn.toString(16).toUpperCase(), z || nn > 255 ? "\\u" + "0000".slice(un.length) + un : nn === 0 && !b.code.isDecimalDigit(cn) ? "\\0" : nn === 11 ? "\\x0B" : "\\x" + "00".slice(un.length) + un);
         }
-        function Rs(le) {
-          if (le === 92)
+        function Ls(nn) {
+          if (nn === 92)
             return "\\\\";
-          if (le === 10)
+          if (nn === 10)
             return "\\n";
-          if (le === 13)
+          if (nn === 13)
             return "\\r";
-          if (le === 8232)
+          if (nn === 8232)
             return "\\u2028";
-          if (le === 8233)
+          if (nn === 8233)
             return "\\u2029";
           throw new Error("Incorrectly classified character");
         }
-        function ms(le) {
-          var cn, un, fn, mn;
-          for (mn = rn === "double" ? '"' : "'", cn = 0, un = le.length; cn < un; ++cn)
-            if (fn = le.charCodeAt(cn), fn === 39) {
-              mn = '"';
+        function hs(nn) {
+          var cn, un, fn, gn;
+          for (gn = rn === "double" ? '"' : "'", cn = 0, un = nn.length; cn < un; ++cn)
+            if (fn = nn.charCodeAt(cn), fn === 39) {
+              gn = '"';
               break;
             } else if (fn === 34) {
-              mn = "'";
+              gn = "'";
               break;
             } else fn === 92 && ++cn;
-          return mn + le + mn;
+          return gn + nn + gn;
         }
-        function xs(le) {
-          var cn = "", un, fn, mn, An = 0, En = 0, Xn, Vn;
-          for (un = 0, fn = le.length; un < fn; ++un) {
-            if (mn = le.charCodeAt(un), mn === 39)
+        function Es(nn) {
+          var cn = "", un, fn, gn, An = 0, Fn = 0, kn, In;
+          for (un = 0, fn = nn.length; un < fn; ++un) {
+            if (gn = nn.charCodeAt(un), gn === 39)
               ++An;
-            else if (mn === 34)
-              ++En;
-            else if (mn === 47 && z)
+            else if (gn === 34)
+              ++Fn;
+            else if (gn === 47 && z)
               cn += "\\";
-            else if (b.code.isLineTerminator(mn) || mn === 92) {
-              cn += Rs(mn);
+            else if (b.code.isLineTerminator(gn) || gn === 92) {
+              cn += Ls(gn);
               continue;
-            } else if (!b.code.isIdentifierPartES5(mn) && (z && mn < 32 || !z && !nn && (mn < 32 || mn > 126))) {
-              cn += Es(mn, le.charCodeAt(un + 1));
+            } else if (!b.code.isIdentifierPartES5(gn) && (z && gn < 32 || !z && !tn && (gn < 32 || gn > 126))) {
+              cn += xs(gn, nn.charCodeAt(un + 1));
               continue;
             }
-            cn += String.fromCharCode(mn);
+            cn += String.fromCharCode(gn);
           }
-          if (Xn = !(rn === "double" || rn === "auto" && En < An), Vn = Xn ? "'" : '"', !(Xn ? An : En))
-            return Vn + cn + Vn;
-          for (le = cn, cn = Vn, un = 0, fn = le.length; un < fn; ++un)
-            mn = le.charCodeAt(un), (mn === 39 && Xn || mn === 34 && !Xn) && (cn += "\\"), cn += String.fromCharCode(mn);
-          return cn + Vn;
+          if (kn = !(rn === "double" || rn === "auto" && Fn < An), In = kn ? "'" : '"', !(kn ? An : Fn))
+            return In + cn + In;
+          for (nn = cn, cn = In, un = 0, fn = nn.length; un < fn; ++un)
+            gn = nn.charCodeAt(un), (gn === 39 && kn || gn === 34 && !kn) && (cn += "\\"), cn += String.fromCharCode(gn);
+          return cn + In;
         }
-        function Ns(le) {
-          var cn, un, fn, mn = "";
-          for (cn = 0, un = le.length; cn < un; ++cn)
-            fn = le[cn], mn += Array.isArray(fn) ? Ns(fn) : fn;
-          return mn;
+        function Ts(nn) {
+          var cn, un, fn, gn = "";
+          for (cn = 0, un = nn.length; cn < un; ++cn)
+            fn = nn[cn], gn += Array.isArray(fn) ? Ts(fn) : fn;
+          return gn;
         }
-        function ss(le, cn) {
+        function ns(nn, cn) {
           if (!yn)
-            return Array.isArray(le) ? Ns(le) : le;
+            return Array.isArray(nn) ? Ts(nn) : nn;
           if (cn == null) {
-            if (le instanceof d)
-              return le;
+            if (nn instanceof d)
+              return nn;
             cn = {};
           }
-          return cn.loc == null ? new d(null, null, yn, le, cn.name || null) : new d(cn.loc.start.line, cn.loc.start.column, yn === true ? cn.loc.source || null : yn, le, cn.name || null);
+          return cn.loc == null ? new d(null, null, yn, nn, cn.name || null) : new d(cn.loc.start.line, cn.loc.start.column, yn === true ? cn.loc.source || null : yn, nn, cn.name || null);
         }
         function is() {
           return on || " ";
         }
-        function zn(le, cn) {
-          var un, fn, mn, An;
-          return un = ss(le).toString(), un.length === 0 ? [cn] : (fn = ss(cn).toString(), fn.length === 0 ? [le] : (mn = un.charCodeAt(un.length - 1), An = fn.charCodeAt(0), (mn === 43 || mn === 45) && mn === An || b.code.isIdentifierPartES5(mn) && b.code.isIdentifierPartES5(An) || mn === 47 && An === 105 ? [le, is(), cn] : b.code.isWhiteSpace(mn) || b.code.isLineTerminator(mn) || b.code.isWhiteSpace(An) || b.code.isLineTerminator(An) ? [le, cn] : [le, on, cn]));
+        function zn(nn, cn) {
+          var un, fn, gn, An;
+          return un = ns(nn).toString(), un.length === 0 ? [cn] : (fn = ns(cn).toString(), fn.length === 0 ? [nn] : (gn = un.charCodeAt(un.length - 1), An = fn.charCodeAt(0), (gn === 43 || gn === 45) && gn === An || b.code.isIdentifierPartES5(gn) && b.code.isIdentifierPartES5(An) || gn === 47 && An === 105 ? [nn, is(), cn] : b.code.isWhiteSpace(gn) || b.code.isLineTerminator(gn) || b.code.isWhiteSpace(An) || b.code.isLineTerminator(An) ? [nn, cn] : [nn, on, cn]));
         }
-        function Ms(le) {
-          return [R, le];
+        function Cs(nn) {
+          return [R, nn];
         }
-        function ys(le) {
+        function gs(nn) {
           var cn;
-          cn = R, R += I, le(R), R = cn;
+          cn = R, R += I, nn(R), R = cn;
         }
-        function Hs(le) {
+        function Us(nn) {
           var cn;
-          for (cn = le.length - 1; cn >= 0 && !b.code.isLineTerminator(le.charCodeAt(cn)); --cn)
+          for (cn = nn.length - 1; cn >= 0 && !b.code.isLineTerminator(nn.charCodeAt(cn)); --cn)
             ;
-          return le.length - 1 - cn;
+          return nn.length - 1 - cn;
         }
-        function Ys(le, cn) {
-          var un, fn, mn, An, En, Xn, Vn, os;
-          for (un = le.split(/\r\n|[\r\n]/), Xn = Number.MAX_VALUE, fn = 1, mn = un.length; fn < mn; ++fn) {
-            for (An = un[fn], En = 0; En < An.length && b.code.isWhiteSpace(An.charCodeAt(En)); )
-              ++En;
-            Xn > En && (Xn = En);
+        function Os(nn, cn) {
+          var un, fn, gn, An, Fn, kn, In, rs;
+          for (un = nn.split(/\r\n|[\r\n]/), kn = Number.MAX_VALUE, fn = 1, gn = un.length; fn < gn; ++fn) {
+            for (An = un[fn], Fn = 0; Fn < An.length && b.code.isWhiteSpace(An.charCodeAt(Fn)); )
+              ++Fn;
+            kn > Fn && (kn = Fn);
           }
-          for (typeof cn < "u" ? (Vn = R, un[1][Xn] === "*" && (cn += " "), R = cn) : (Xn & 1 && --Xn, Vn = R), fn = 1, mn = un.length; fn < mn; ++fn)
-            os = ss(Ms(un[fn].slice(Xn))), un[fn] = yn ? os.join("") : os;
-          return R = Vn, un.join(`
+          for (typeof cn < "u" ? (In = R, un[1][kn] === "*" && (cn += " "), R = cn) : (kn & 1 && --kn, In = R), fn = 1, gn = un.length; fn < gn; ++fn)
+            rs = ns(Cs(un[fn].slice(kn))), un[fn] = yn ? rs.join("") : rs;
+          return R = In, un.join(`
 `);
         }
-        function Fs(le, cn) {
-          if (le.type === "Line") {
-            if (Rn(le.value))
-              return "//" + le.value;
-            var un = "//" + le.value;
-            return vn || (un += `
+        function Ps(nn, cn) {
+          if (nn.type === "Line") {
+            if (Dn(nn.value))
+              return "//" + nn.value;
+            var un = "//" + nn.value;
+            return Sn || (un += `
 `), un;
           }
-          return _n.format.indent.adjustMultilineComment && /[\n\r]/.test(le.value) ? Ys("/*" + le.value + "*/", cn) : "/*" + le.value + "*/";
+          return mn.format.indent.adjustMultilineComment && /[\n\r]/.test(nn.value) ? Os("/*" + nn.value + "*/", cn) : "/*" + nn.value + "*/";
         }
-        function Ws(le, cn) {
-          var un, fn, mn, An, En, Xn, Vn, os, Ps, Bs, $s, rr, ur, Zs;
-          if (le.leadingComments && le.leadingComments.length > 0) {
-            if (An = cn, vn) {
-              for (mn = le.leadingComments[0], cn = [], os = mn.extendedRange, Ps = mn.range, $s = Gn.substring(os[0], Ps[0]), Zs = ($s.match(/\n/g) || []).length, Zs > 0 ? (cn.push(Dn(`
-`, Zs)), cn.push(Ms(Fs(mn)))) : (cn.push($s), cn.push(Fs(mn))), Bs = Ps, un = 1, fn = le.leadingComments.length; un < fn; un++)
-                mn = le.leadingComments[un], Ps = mn.range, rr = Gn.substring(Bs[1], Ps[0]), Zs = (rr.match(/\n/g) || []).length, cn.push(Dn(`
-`, Zs)), cn.push(Ms(Fs(mn))), Bs = Ps;
-              ur = Gn.substring(Ps[1], os[1]), Zs = (ur.match(/\n/g) || []).length, cn.push(Dn(`
-`, Zs));
+        function zs(nn, cn) {
+          var un, fn, gn, An, Fn, kn, In, rs, As, Is, Ws, rr, ur, ks;
+          if (nn.leadingComments && nn.leadingComments.length > 0) {
+            if (An = cn, Sn) {
+              for (gn = nn.leadingComments[0], cn = [], rs = gn.extendedRange, As = gn.range, Ws = Gn.substring(rs[0], As[0]), ks = (Ws.match(/\n/g) || []).length, ks > 0 ? (cn.push(Ln(`
+`, ks)), cn.push(Cs(Ps(gn)))) : (cn.push(Ws), cn.push(Ps(gn))), Is = As, un = 1, fn = nn.leadingComments.length; un < fn; un++)
+                gn = nn.leadingComments[un], As = gn.range, rr = Gn.substring(Is[1], As[0]), ks = (rr.match(/\n/g) || []).length, cn.push(Ln(`
+`, ks)), cn.push(Cs(Ps(gn))), Is = As;
+              ur = Gn.substring(As[1], rs[1]), ks = (ur.match(/\n/g) || []).length, cn.push(Ln(`
+`, ks));
             } else
-              for (mn = le.leadingComments[0], cn = [], gn && le.type === t.Program && le.body.length === 0 && cn.push(`
-`), cn.push(Fs(mn)), Rn(ss(cn).toString()) || cn.push(`
-`), un = 1, fn = le.leadingComments.length; un < fn; ++un)
-                mn = le.leadingComments[un], Vn = [Fs(mn)], Rn(ss(Vn).toString()) || Vn.push(`
-`), cn.push(Ms(Vn));
-            cn.push(Ms(An));
+              for (gn = nn.leadingComments[0], cn = [], _n && nn.type === t.Program && nn.body.length === 0 && cn.push(`
+`), cn.push(Ps(gn)), Dn(ns(cn).toString()) || cn.push(`
+`), un = 1, fn = nn.leadingComments.length; un < fn; ++un)
+                gn = nn.leadingComments[un], In = [Ps(gn)], Dn(ns(In).toString()) || In.push(`
+`), cn.push(Cs(In));
+            cn.push(Cs(An));
           }
-          if (le.trailingComments)
-            if (vn)
-              mn = le.trailingComments[0], os = mn.extendedRange, Ps = mn.range, $s = Gn.substring(os[0], Ps[0]), Zs = ($s.match(/\n/g) || []).length, Zs > 0 ? (cn.push(Dn(`
-`, Zs)), cn.push(Ms(Fs(mn)))) : (cn.push($s), cn.push(Fs(mn)));
+          if (nn.trailingComments)
+            if (Sn)
+              gn = nn.trailingComments[0], rs = gn.extendedRange, As = gn.range, Ws = Gn.substring(rs[0], As[0]), ks = (Ws.match(/\n/g) || []).length, ks > 0 ? (cn.push(Ln(`
+`, ks)), cn.push(Cs(Ps(gn)))) : (cn.push(Ws), cn.push(Ps(gn)));
             else
-              for (En = !Rn(ss(cn).toString()), Xn = Dn(" ", Hs(ss([R, cn, I]).toString())), un = 0, fn = le.trailingComments.length; un < fn; ++un)
-                mn = le.trailingComments[un], En ? (un === 0 ? cn = [cn, I] : cn = [cn, Xn], cn.push(Fs(mn, Xn))) : cn = [cn, Ms(Fs(mn))], un !== fn - 1 && !Rn(ss(cn).toString()) && (cn = [cn, `
+              for (Fn = !Dn(ns(cn).toString()), kn = Ln(" ", Us(ns([R, cn, I]).toString())), un = 0, fn = nn.trailingComments.length; un < fn; ++un)
+                gn = nn.trailingComments[un], Fn ? (un === 0 ? cn = [cn, I] : cn = [cn, kn], cn.push(Ps(gn, kn))) : cn = [cn, Cs(Ps(gn))], un !== fn - 1 && !Dn(ns(cn).toString()) && (cn = [cn, `
 `]);
           return cn;
         }
-        function Kn(le, cn, un) {
-          var fn, mn = 0;
-          for (fn = le; fn < cn; fn++)
+        function Kn(nn, cn, un) {
+          var fn, gn = 0;
+          for (fn = nn; fn < cn; fn++)
             Gn[fn] === `
-` && mn++;
-          for (fn = 1; fn < mn; fn++)
+` && gn++;
+          for (fn = 1; fn < gn; fn++)
             un.push(an);
         }
-        function Qn(le, cn, un) {
-          return cn < un ? ["(", le, ")"] : le;
+        function Qn(nn, cn, un) {
+          return cn < un ? ["(", nn, ")"] : nn;
         }
-        function Gs(le) {
+        function Ms(nn) {
           var cn, un, fn;
-          for (fn = le.split(/\r\n|\n/), cn = 1, un = fn.length; cn < un; cn++)
+          for (fn = nn.split(/\r\n|\n/), cn = 1, un = fn.length; cn < un; cn++)
             fn[cn] = an + R + fn[cn];
           return fn;
         }
-        function Cs(le, cn) {
-          var un, fn, mn;
-          return un = le[_n.verbatim], typeof un == "string" ? fn = Qn(Gs(un), o.Sequence, cn) : (fn = Gs(un.content), mn = un.precedence != null ? un.precedence : o.Sequence, fn = Qn(fn, mn, cn)), ss(fn, le);
+        function bs(nn, cn) {
+          var un, fn, gn;
+          return un = nn[mn.verbatim], typeof un == "string" ? fn = Qn(Ms(un), o.Sequence, cn) : (fn = Ms(un.content), gn = un.precedence != null ? un.precedence : o.Sequence, fn = Qn(fn, gn, cn)), ns(fn, nn);
         }
-        function rs() {
+        function ss() {
         }
-        rs.prototype.maybeBlock = function(le, cn) {
-          var un, fn, mn = this;
-          return fn = !_n.comment || !le.leadingComments, le.type === t.BlockStatement && fn ? [on, this.generateStatement(le, cn)] : le.type === t.EmptyStatement && fn ? ";" : (ys(function() {
+        ss.prototype.maybeBlock = function(nn, cn) {
+          var un, fn, gn = this;
+          return fn = !mn.comment || !nn.leadingComments, nn.type === t.BlockStatement && fn ? [on, this.generateStatement(nn, cn)] : nn.type === t.EmptyStatement && fn ? ";" : (gs(function() {
             un = [
               an,
-              Ms(mn.generateStatement(le, cn))
+              Cs(gn.generateStatement(nn, cn))
             ];
           }), un);
-        }, rs.prototype.maybeBlockSuffix = function(le, cn) {
-          var un = Rn(ss(cn).toString());
-          return le.type === t.BlockStatement && (!_n.comment || !le.leadingComments) && !un ? [cn, on] : un ? [cn, R] : [cn, an, R];
+        }, ss.prototype.maybeBlockSuffix = function(nn, cn) {
+          var un = Dn(ns(cn).toString());
+          return nn.type === t.BlockStatement && (!mn.comment || !nn.leadingComments) && !un ? [cn, on] : un ? [cn, R] : [cn, an, R];
         };
-        function fs(le) {
-          return ss(le.name, le);
+        function cs(nn) {
+          return ns(nn.name, nn);
         }
-        function ks(le, cn) {
-          return le.async ? "async" + (cn ? is() : on) : "";
+        function Ds(nn, cn) {
+          return nn.async ? "async" + (cn ? is() : on) : "";
         }
-        function Xs(le) {
-          var cn = le.generator && !_n.moz.starlessGenerator;
+        function Ns(nn) {
+          var cn = nn.generator && !mn.moz.starlessGenerator;
           return cn ? "*" + on : "";
         }
-        function sr(le) {
-          var cn = le.value, un = "";
-          return cn.async && (un += ks(cn, !le.computed)), cn.generator && (un += Xs(cn) ? "*" : ""), un;
+        function sr(nn) {
+          var cn = nn.value, un = "";
+          return cn.async && (un += Ds(cn, !nn.computed)), cn.generator && (un += Ns(cn) ? "*" : ""), un;
         }
-        rs.prototype.generatePattern = function(le, cn, un) {
-          return le.type === t.Identifier ? fs(le) : this.generateExpression(le, cn, un);
-        }, rs.prototype.generateFunctionParams = function(le) {
-          var cn, un, fn, mn;
-          if (mn = false, le.type === t.ArrowFunctionExpression && !le.rest && (!le.defaults || le.defaults.length === 0) && le.params.length === 1 && le.params[0].type === t.Identifier)
-            fn = [ks(le, true), fs(le.params[0])];
+        ss.prototype.generatePattern = function(nn, cn, un) {
+          return nn.type === t.Identifier ? cs(nn) : this.generateExpression(nn, cn, un);
+        }, ss.prototype.generateFunctionParams = function(nn) {
+          var cn, un, fn, gn;
+          if (gn = false, nn.type === t.ArrowFunctionExpression && !nn.rest && (!nn.defaults || nn.defaults.length === 0) && nn.params.length === 1 && nn.params[0].type === t.Identifier)
+            fn = [Ds(nn, true), cs(nn.params[0])];
           else {
-            for (fn = le.type === t.ArrowFunctionExpression ? [ks(le, false)] : [], fn.push("("), le.defaults && (mn = true), cn = 0, un = le.params.length; cn < un; ++cn)
-              mn && le.defaults[cn] ? fn.push(this.generateAssignment(le.params[cn], le.defaults[cn], "=", o.Assignment, Zn)) : fn.push(this.generatePattern(le.params[cn], o.Assignment, Zn)), cn + 1 < un && fn.push("," + on);
-            le.rest && (le.params.length && fn.push("," + on), fn.push("..."), fn.push(fs(le.rest))), fn.push(")");
+            for (fn = nn.type === t.ArrowFunctionExpression ? [Ds(nn, false)] : [], fn.push("("), nn.defaults && (gn = true), cn = 0, un = nn.params.length; cn < un; ++cn)
+              gn && nn.defaults[cn] ? fn.push(this.generateAssignment(nn.params[cn], nn.defaults[cn], "=", o.Assignment, Tn)) : fn.push(this.generatePattern(nn.params[cn], o.Assignment, Tn)), cn + 1 < un && fn.push("," + on);
+            nn.rest && (nn.params.length && fn.push("," + on), fn.push("..."), fn.push(cs(nn.rest))), fn.push(")");
           }
           return fn;
-        }, rs.prototype.generateFunctionBody = function(le) {
+        }, ss.prototype.generateFunctionBody = function(nn) {
           var cn, un;
-          return cn = this.generateFunctionParams(le), le.type === t.ArrowFunctionExpression && (cn.push(on), cn.push("=>")), le.expression ? (cn.push(on), un = this.generateExpression(le.body, o.Assignment, Zn), un.toString().charAt(0) === "{" && (un = ["(", un, ")"]), cn.push(un)) : cn.push(this.maybeBlock(le.body, Ds)), cn;
-        }, rs.prototype.generateIterationForStatement = function(le, cn, un) {
-          var fn = ["for" + (cn.await ? is() + "await" : "") + on + "("], mn = this;
-          return ys(function() {
-            cn.left.type === t.VariableDeclaration ? ys(function() {
-              fn.push(cn.left.kind + is()), fn.push(mn.generateStatement(cn.left.declarations[0], us));
-            }) : fn.push(mn.generateExpression(cn.left, o.Call, Zn)), fn = zn(fn, le), fn = [zn(
+          return cn = this.generateFunctionParams(nn), nn.type === t.ArrowFunctionExpression && (cn.push(on), cn.push("=>")), nn.expression ? (cn.push(on), un = this.generateExpression(nn.body, o.Assignment, Tn), un.toString().charAt(0) === "{" && (un = ["(", un, ")"]), cn.push(un)) : cn.push(this.maybeBlock(nn.body, Rs)), cn;
+        }, ss.prototype.generateIterationForStatement = function(nn, cn, un) {
+          var fn = ["for" + (cn.await ? is() + "await" : "") + on + "("], gn = this;
+          return gs(function() {
+            cn.left.type === t.VariableDeclaration ? gs(function() {
+              fn.push(cn.left.kind + is()), fn.push(gn.generateStatement(cn.left.declarations[0], os));
+            }) : fn.push(gn.generateExpression(cn.left, o.Call, Tn)), fn = zn(fn, nn), fn = [zn(
               fn,
-              mn.generateExpression(cn.right, o.Assignment, Zn)
+              gn.generateExpression(cn.right, o.Assignment, Tn)
             ), ")"];
           }), fn.push(this.maybeBlock(cn.body, un)), fn;
-        }, rs.prototype.generatePropertyKey = function(le, cn) {
+        }, ss.prototype.generatePropertyKey = function(nn, cn) {
           var un = [];
-          return cn && un.push("["), un.push(this.generateExpression(le, o.Assignment, Zn)), cn && un.push("]"), un;
-        }, rs.prototype.generateAssignment = function(le, cn, un, fn, mn) {
-          return o.Assignment < fn && (mn |= Ln), Qn(
+          return cn && un.push("["), un.push(this.generateExpression(nn, o.Assignment, Tn)), cn && un.push("]"), un;
+        }, ss.prototype.generateAssignment = function(nn, cn, un, fn, gn) {
+          return o.Assignment < fn && (gn |= Rn), Qn(
             [
-              this.generateExpression(le, o.Call, mn),
+              this.generateExpression(nn, o.Call, gn),
               on + un + on,
-              this.generateExpression(cn, o.Assignment, mn)
+              this.generateExpression(cn, o.Assignment, gn)
             ],
             o.Assignment,
             fn
           );
-        }, rs.prototype.semicolon = function(le) {
-          return !pn && le & In ? "" : ";";
-        }, rs.Statement = {
-          BlockStatement: function(le, cn) {
-            var un, fn, mn = ["{", an], An = this;
-            return ys(function() {
-              le.body.length === 0 && vn && (un = le.range, un[1] - un[0] > 2 && (fn = Gn.substring(un[0] + 1, un[1] - 1), fn[0] === `
-` && (mn = ["{"]), mn.push(fn)));
-              var En, Xn, Vn, os;
-              for (os = es, cn & Bn && (os |= Wn), En = 0, Xn = le.body.length; En < Xn; ++En)
-                vn && (En === 0 && (le.body[0].leadingComments && (un = le.body[0].leadingComments[0].extendedRange, fn = Gn.substring(un[0], un[1]), fn[0] === `
-` && (mn = ["{"])), le.body[0].leadingComments || Kn(le.range[0], le.body[0].range[0], mn)), En > 0 && !le.body[En - 1].trailingComments && !le.body[En].leadingComments && Kn(le.body[En - 1].range[1], le.body[En].range[0], mn)), En === Xn - 1 && (os |= In), le.body[En].leadingComments && vn ? Vn = An.generateStatement(le.body[En], os) : Vn = Ms(An.generateStatement(le.body[En], os)), mn.push(Vn), Rn(ss(Vn).toString()) || vn && En < Xn - 1 && le.body[En + 1].leadingComments || mn.push(an), vn && En === Xn - 1 && (le.body[En].trailingComments || Kn(le.body[En].range[1], le.range[1], mn));
-            }), mn.push(Ms("}")), mn;
+        }, ss.prototype.semicolon = function(nn) {
+          return !pn && nn & Vn ? "" : ";";
+        }, ss.Statement = {
+          BlockStatement: function(nn, cn) {
+            var un, fn, gn = ["{", an], An = this;
+            return gs(function() {
+              nn.body.length === 0 && Sn && (un = nn.range, un[1] - un[0] > 2 && (fn = Gn.substring(un[0] + 1, un[1] - 1), fn[0] === `
+` && (gn = ["{"]), gn.push(fn)));
+              var Fn, kn, In, rs;
+              for (rs = _i, cn & Bn && (rs |= Wn), Fn = 0, kn = nn.body.length; Fn < kn; ++Fn)
+                Sn && (Fn === 0 && (nn.body[0].leadingComments && (un = nn.body[0].leadingComments[0].extendedRange, fn = Gn.substring(un[0], un[1]), fn[0] === `
+` && (gn = ["{"])), nn.body[0].leadingComments || Kn(nn.range[0], nn.body[0].range[0], gn)), Fn > 0 && !nn.body[Fn - 1].trailingComments && !nn.body[Fn].leadingComments && Kn(nn.body[Fn - 1].range[1], nn.body[Fn].range[0], gn)), Fn === kn - 1 && (rs |= Vn), nn.body[Fn].leadingComments && Sn ? In = An.generateStatement(nn.body[Fn], rs) : In = Cs(An.generateStatement(nn.body[Fn], rs)), gn.push(In), Dn(ns(In).toString()) || Sn && Fn < kn - 1 && nn.body[Fn + 1].leadingComments || gn.push(an), Sn && Fn === kn - 1 && (nn.body[Fn].trailingComments || Kn(nn.body[Fn].range[1], nn.range[1], gn));
+            }), gn.push(Cs("}")), gn;
           },
-          BreakStatement: function(le, cn) {
-            return le.label ? "break " + le.label.name + this.semicolon(cn) : "break" + this.semicolon(cn);
+          BreakStatement: function(nn, cn) {
+            return nn.label ? "break " + nn.label.name + this.semicolon(cn) : "break" + this.semicolon(cn);
           },
-          ContinueStatement: function(le, cn) {
-            return le.label ? "continue " + le.label.name + this.semicolon(cn) : "continue" + this.semicolon(cn);
+          ContinueStatement: function(nn, cn) {
+            return nn.label ? "continue " + nn.label.name + this.semicolon(cn) : "continue" + this.semicolon(cn);
           },
-          ClassBody: function(le, cn) {
+          ClassBody: function(nn, cn) {
             var un = ["{", an], fn = this;
-            return ys(function(mn) {
-              var An, En;
-              for (An = 0, En = le.body.length; An < En; ++An)
-                un.push(mn), un.push(fn.generateExpression(le.body[An], o.Sequence, Zn)), An + 1 < En && un.push(an);
-            }), Rn(ss(un).toString()) || un.push(an), un.push(R), un.push("}"), un;
+            return gs(function(gn) {
+              var An, Fn;
+              for (An = 0, Fn = nn.body.length; An < Fn; ++An)
+                un.push(gn), un.push(fn.generateExpression(nn.body[An], o.Sequence, Tn)), An + 1 < Fn && un.push(an);
+            }), Dn(ns(un).toString()) || un.push(an), un.push(R), un.push("}"), un;
           },
-          ClassDeclaration: function(le, cn) {
+          ClassDeclaration: function(nn, cn) {
             var un, fn;
-            return un = ["class"], le.id && (un = zn(un, this.generateExpression(le.id, o.Sequence, Zn))), le.superClass && (fn = zn("extends", this.generateExpression(le.superClass, o.Unary, Zn)), un = zn(un, fn)), un.push(on), un.push(this.generateStatement(le.body, gs)), un;
+            return un = ["class"], nn.id && (un = zn(un, this.generateExpression(nn.id, o.Sequence, Tn))), nn.superClass && (fn = zn("extends", this.generateExpression(nn.superClass, o.Unary, Tn)), un = zn(un, fn)), un.push(on), un.push(this.generateStatement(nn.body, _s)), un;
           },
-          DirectiveStatement: function(le, cn) {
-            return _n.raw && le.raw ? le.raw + this.semicolon(cn) : ms(le.directive) + this.semicolon(cn);
+          DirectiveStatement: function(nn, cn) {
+            return mn.raw && nn.raw ? nn.raw + this.semicolon(cn) : hs(nn.directive) + this.semicolon(cn);
           },
-          DoWhileStatement: function(le, cn) {
-            var un = zn("do", this.maybeBlock(le.body, es));
-            return un = this.maybeBlockSuffix(le.body, un), zn(un, [
+          DoWhileStatement: function(nn, cn) {
+            var un = zn("do", this.maybeBlock(nn.body, _i));
+            return un = this.maybeBlockSuffix(nn.body, un), zn(un, [
               "while" + on + "(",
-              this.generateExpression(le.test, o.Sequence, Zn),
+              this.generateExpression(nn.test, o.Sequence, Tn),
               ")" + this.semicolon(cn)
             ]);
           },
-          CatchClause: function(le, cn) {
+          CatchClause: function(nn, cn) {
             var un, fn = this;
-            return ys(function() {
-              var mn;
-              le.param ? (un = [
+            return gs(function() {
+              var gn;
+              nn.param ? (un = [
                 "catch" + on + "(",
-                fn.generateExpression(le.param, o.Sequence, Zn),
+                fn.generateExpression(nn.param, o.Sequence, Tn),
                 ")"
-              ], le.guard && (mn = fn.generateExpression(le.guard, o.Sequence, Zn), un.splice(2, 0, " if ", mn))) : un = ["catch"];
-            }), un.push(this.maybeBlock(le.body, es)), un;
+              ], nn.guard && (gn = fn.generateExpression(nn.guard, o.Sequence, Tn), un.splice(2, 0, " if ", gn))) : un = ["catch"];
+            }), un.push(this.maybeBlock(nn.body, _i)), un;
           },
-          DebuggerStatement: function(le, cn) {
+          DebuggerStatement: function(nn, cn) {
             return "debugger" + this.semicolon(cn);
           },
-          EmptyStatement: function(le, cn) {
+          EmptyStatement: function(nn, cn) {
             return ";";
           },
-          ExportDefaultDeclaration: function(le, cn) {
+          ExportDefaultDeclaration: function(nn, cn) {
             var un = ["export"], fn;
-            return fn = cn & In ? gs : es, un = zn(un, "default"), wn(le.declaration) ? un = zn(un, this.generateStatement(le.declaration, fn)) : un = zn(un, this.generateExpression(le.declaration, o.Assignment, Zn) + this.semicolon(cn)), un;
+            return fn = cn & Vn ? _s : _i, un = zn(un, "default"), xn(nn.declaration) ? un = zn(un, this.generateStatement(nn.declaration, fn)) : un = zn(un, this.generateExpression(nn.declaration, o.Assignment, Tn) + this.semicolon(cn)), un;
           },
-          ExportNamedDeclaration: function(le, cn) {
-            var un = ["export"], fn, mn = this;
-            return fn = cn & In ? gs : es, le.declaration ? zn(un, this.generateStatement(le.declaration, fn)) : (le.specifiers && (le.specifiers.length === 0 ? un = zn(un, "{" + on + "}") : le.specifiers[0].type === t.ExportBatchSpecifier ? un = zn(un, this.generateExpression(le.specifiers[0], o.Sequence, Zn)) : (un = zn(un, "{"), ys(function(An) {
-              var En, Xn;
-              for (un.push(an), En = 0, Xn = le.specifiers.length; En < Xn; ++En)
-                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < Xn && un.push("," + an);
-            }), Rn(ss(un).toString()) || un.push(an), un.push(R + "}")), le.source ? un = zn(un, [
+          ExportNamedDeclaration: function(nn, cn) {
+            var un = ["export"], fn, gn = this;
+            return fn = cn & Vn ? _s : _i, nn.declaration ? zn(un, this.generateStatement(nn.declaration, fn)) : (nn.specifiers && (nn.specifiers.length === 0 ? un = zn(un, "{" + on + "}") : nn.specifiers[0].type === t.ExportBatchSpecifier ? un = zn(un, this.generateExpression(nn.specifiers[0], o.Sequence, Tn)) : (un = zn(un, "{"), gs(function(An) {
+              var Fn, kn;
+              for (un.push(an), Fn = 0, kn = nn.specifiers.length; Fn < kn; ++Fn)
+                un.push(An), un.push(gn.generateExpression(nn.specifiers[Fn], o.Sequence, Tn)), Fn + 1 < kn && un.push("," + an);
+            }), Dn(ns(un).toString()) || un.push(an), un.push(R + "}")), nn.source ? un = zn(un, [
               "from" + on,
               // ModuleSpecifier
-              this.generateExpression(le.source, o.Sequence, Zn),
+              this.generateExpression(nn.source, o.Sequence, Tn),
               this.semicolon(cn)
             ]) : un.push(this.semicolon(cn))), un);
           },
-          ExportAllDeclaration: function(le, cn) {
+          ExportAllDeclaration: function(nn, cn) {
             return [
               "export" + on,
               "*" + on,
               "from" + on,
               // ModuleSpecifier
-              this.generateExpression(le.source, o.Sequence, Zn),
+              this.generateExpression(nn.source, o.Sequence, Tn),
               this.semicolon(cn)
             ];
           },
-          ExpressionStatement: function(le, cn) {
+          ExpressionStatement: function(nn, cn) {
             var un, fn;
-            function mn(Xn) {
-              var Vn;
-              return Xn.slice(0, 5) !== "class" ? false : (Vn = Xn.charCodeAt(5), Vn === 123 || b.code.isWhiteSpace(Vn) || b.code.isLineTerminator(Vn));
+            function gn(kn) {
+              var In;
+              return kn.slice(0, 5) !== "class" ? false : (In = kn.charCodeAt(5), In === 123 || b.code.isWhiteSpace(In) || b.code.isLineTerminator(In));
             }
-            function An(Xn) {
-              var Vn;
-              return Xn.slice(0, 8) !== "function" ? false : (Vn = Xn.charCodeAt(8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
+            function An(kn) {
+              var In;
+              return kn.slice(0, 8) !== "function" ? false : (In = kn.charCodeAt(8), In === 40 || b.code.isWhiteSpace(In) || In === 42 || b.code.isLineTerminator(In));
             }
-            function En(Xn) {
-              var Vn, os, Ps;
-              if (Xn.slice(0, 5) !== "async" || !b.code.isWhiteSpace(Xn.charCodeAt(5)))
+            function Fn(kn) {
+              var In, rs, As;
+              if (kn.slice(0, 5) !== "async" || !b.code.isWhiteSpace(kn.charCodeAt(5)))
                 return false;
-              for (os = 6, Ps = Xn.length; os < Ps && b.code.isWhiteSpace(Xn.charCodeAt(os)); ++os)
+              for (rs = 6, As = kn.length; rs < As && b.code.isWhiteSpace(kn.charCodeAt(rs)); ++rs)
                 ;
-              return os === Ps || Xn.slice(os, os + 8) !== "function" ? false : (Vn = Xn.charCodeAt(os + 8), Vn === 40 || b.code.isWhiteSpace(Vn) || Vn === 42 || b.code.isLineTerminator(Vn));
+              return rs === As || kn.slice(rs, rs + 8) !== "function" ? false : (In = kn.charCodeAt(rs + 8), In === 40 || b.code.isWhiteSpace(In) || In === 42 || b.code.isLineTerminator(In));
             }
-            return un = [this.generateExpression(le.expression, o.Sequence, Zn)], fn = ss(un).toString(), fn.charCodeAt(0) === 123 || // ObjectExpression
-            mn(fn) || An(fn) || En(fn) || Mn && cn & Wn && le.expression.type === t.Literal && typeof le.expression.value == "string" ? un = ["(", un, ")" + this.semicolon(cn)] : un.push(this.semicolon(cn)), un;
+            return un = [this.generateExpression(nn.expression, o.Sequence, Tn)], fn = ns(un).toString(), fn.charCodeAt(0) === 123 || // ObjectExpression
+            gn(fn) || An(fn) || Fn(fn) || Mn && cn & Wn && nn.expression.type === t.Literal && typeof nn.expression.value == "string" ? un = ["(", un, ")" + this.semicolon(cn)] : un.push(this.semicolon(cn)), un;
           },
-          ImportDeclaration: function(le, cn) {
-            var un, fn, mn = this;
-            return le.specifiers.length === 0 ? [
+          ImportDeclaration: function(nn, cn) {
+            var un, fn, gn = this;
+            return nn.specifiers.length === 0 ? [
               "import",
               on,
               // ModuleSpecifier
-              this.generateExpression(le.source, o.Sequence, Zn),
+              this.generateExpression(nn.source, o.Sequence, Tn),
               this.semicolon(cn)
             ] : (un = [
               "import"
-            ], fn = 0, le.specifiers[fn].type === t.ImportDefaultSpecifier && (un = zn(un, [
-              this.generateExpression(le.specifiers[fn], o.Sequence, Zn)
-            ]), ++fn), le.specifiers[fn] && (fn !== 0 && un.push(","), le.specifiers[fn].type === t.ImportNamespaceSpecifier ? un = zn(un, [
+            ], fn = 0, nn.specifiers[fn].type === t.ImportDefaultSpecifier && (un = zn(un, [
+              this.generateExpression(nn.specifiers[fn], o.Sequence, Tn)
+            ]), ++fn), nn.specifiers[fn] && (fn !== 0 && un.push(","), nn.specifiers[fn].type === t.ImportNamespaceSpecifier ? un = zn(un, [
               on,
-              this.generateExpression(le.specifiers[fn], o.Sequence, Zn)
-            ]) : (un.push(on + "{"), le.specifiers.length - fn === 1 ? (un.push(on), un.push(this.generateExpression(le.specifiers[fn], o.Sequence, Zn)), un.push(on + "}" + on)) : (ys(function(An) {
-              var En, Xn;
-              for (un.push(an), En = fn, Xn = le.specifiers.length; En < Xn; ++En)
-                un.push(An), un.push(mn.generateExpression(le.specifiers[En], o.Sequence, Zn)), En + 1 < Xn && un.push("," + an);
-            }), Rn(ss(un).toString()) || un.push(an), un.push(R + "}" + on)))), un = zn(un, [
+              this.generateExpression(nn.specifiers[fn], o.Sequence, Tn)
+            ]) : (un.push(on + "{"), nn.specifiers.length - fn === 1 ? (un.push(on), un.push(this.generateExpression(nn.specifiers[fn], o.Sequence, Tn)), un.push(on + "}" + on)) : (gs(function(An) {
+              var Fn, kn;
+              for (un.push(an), Fn = fn, kn = nn.specifiers.length; Fn < kn; ++Fn)
+                un.push(An), un.push(gn.generateExpression(nn.specifiers[Fn], o.Sequence, Tn)), Fn + 1 < kn && un.push("," + an);
+            }), Dn(ns(un).toString()) || un.push(an), un.push(R + "}" + on)))), un = zn(un, [
               "from" + on,
               // ModuleSpecifier
-              this.generateExpression(le.source, o.Sequence, Zn),
+              this.generateExpression(nn.source, o.Sequence, Tn),
               this.semicolon(cn)
             ]), un);
           },
-          VariableDeclarator: function(le, cn) {
-            var un = cn & Ln ? Zn : _s;
-            return le.init ? [
-              this.generateExpression(le.id, o.Assignment, un),
+          VariableDeclarator: function(nn, cn) {
+            var un = cn & Rn ? Tn : ms;
+            return nn.init ? [
+              this.generateExpression(nn.id, o.Assignment, un),
               on,
               "=",
               on,
-              this.generateExpression(le.init, o.Assignment, un)
-            ] : this.generatePattern(le.id, o.Assignment, un);
+              this.generateExpression(nn.init, o.Assignment, un)
+            ] : this.generatePattern(nn.id, o.Assignment, un);
           },
-          VariableDeclaration: function(le, cn) {
-            var un, fn, mn, An, En, Xn = this;
-            un = [le.kind], En = cn & Ln ? es : us;
-            function Vn() {
-              for (An = le.declarations[0], _n.comment && An.leadingComments ? (un.push(`
-`), un.push(Ms(Xn.generateStatement(An, En)))) : (un.push(is()), un.push(Xn.generateStatement(An, En))), fn = 1, mn = le.declarations.length; fn < mn; ++fn)
-                An = le.declarations[fn], _n.comment && An.leadingComments ? (un.push("," + an), un.push(Ms(Xn.generateStatement(An, En)))) : (un.push("," + on), un.push(Xn.generateStatement(An, En)));
+          VariableDeclaration: function(nn, cn) {
+            var un, fn, gn, An, Fn, kn = this;
+            un = [nn.kind], Fn = cn & Rn ? _i : os;
+            function In() {
+              for (An = nn.declarations[0], mn.comment && An.leadingComments ? (un.push(`
+`), un.push(Cs(kn.generateStatement(An, Fn)))) : (un.push(is()), un.push(kn.generateStatement(An, Fn))), fn = 1, gn = nn.declarations.length; fn < gn; ++fn)
+                An = nn.declarations[fn], mn.comment && An.leadingComments ? (un.push("," + an), un.push(Cs(kn.generateStatement(An, Fn)))) : (un.push("," + on), un.push(kn.generateStatement(An, Fn)));
             }
-            return le.declarations.length > 1 ? ys(Vn) : Vn(), un.push(this.semicolon(cn)), un;
+            return nn.declarations.length > 1 ? gs(In) : In(), un.push(this.semicolon(cn)), un;
           },
-          ThrowStatement: function(le, cn) {
+          ThrowStatement: function(nn, cn) {
             return [zn(
               "throw",
-              this.generateExpression(le.argument, o.Sequence, Zn)
+              this.generateExpression(nn.argument, o.Sequence, Tn)
             ), this.semicolon(cn)];
           },
-          TryStatement: function(le, cn) {
-            var un, fn, mn, An;
-            if (un = ["try", this.maybeBlock(le.block, es)], un = this.maybeBlockSuffix(le.block, un), le.handlers)
-              for (fn = 0, mn = le.handlers.length; fn < mn; ++fn)
-                un = zn(un, this.generateStatement(le.handlers[fn], es)), (le.finalizer || fn + 1 !== mn) && (un = this.maybeBlockSuffix(le.handlers[fn].body, un));
+          TryStatement: function(nn, cn) {
+            var un, fn, gn, An;
+            if (un = ["try", this.maybeBlock(nn.block, _i)], un = this.maybeBlockSuffix(nn.block, un), nn.handlers)
+              for (fn = 0, gn = nn.handlers.length; fn < gn; ++fn)
+                un = zn(un, this.generateStatement(nn.handlers[fn], _i)), (nn.finalizer || fn + 1 !== gn) && (un = this.maybeBlockSuffix(nn.handlers[fn].body, un));
             else {
-              for (An = le.guardedHandlers || [], fn = 0, mn = An.length; fn < mn; ++fn)
-                un = zn(un, this.generateStatement(An[fn], es)), (le.finalizer || fn + 1 !== mn) && (un = this.maybeBlockSuffix(An[fn].body, un));
-              if (le.handler)
-                if (Array.isArray(le.handler))
-                  for (fn = 0, mn = le.handler.length; fn < mn; ++fn)
-                    un = zn(un, this.generateStatement(le.handler[fn], es)), (le.finalizer || fn + 1 !== mn) && (un = this.maybeBlockSuffix(le.handler[fn].body, un));
+              for (An = nn.guardedHandlers || [], fn = 0, gn = An.length; fn < gn; ++fn)
+                un = zn(un, this.generateStatement(An[fn], _i)), (nn.finalizer || fn + 1 !== gn) && (un = this.maybeBlockSuffix(An[fn].body, un));
+              if (nn.handler)
+                if (Array.isArray(nn.handler))
+                  for (fn = 0, gn = nn.handler.length; fn < gn; ++fn)
+                    un = zn(un, this.generateStatement(nn.handler[fn], _i)), (nn.finalizer || fn + 1 !== gn) && (un = this.maybeBlockSuffix(nn.handler[fn].body, un));
                 else
-                  un = zn(un, this.generateStatement(le.handler, es)), le.finalizer && (un = this.maybeBlockSuffix(le.handler.body, un));
+                  un = zn(un, this.generateStatement(nn.handler, _i)), nn.finalizer && (un = this.maybeBlockSuffix(nn.handler.body, un));
             }
-            return le.finalizer && (un = zn(un, ["finally", this.maybeBlock(le.finalizer, es)])), un;
+            return nn.finalizer && (un = zn(un, ["finally", this.maybeBlock(nn.finalizer, _i)])), un;
           },
-          SwitchStatement: function(le, cn) {
-            var un, fn, mn, An, En, Xn = this;
-            if (ys(function() {
+          SwitchStatement: function(nn, cn) {
+            var un, fn, gn, An, Fn, kn = this;
+            if (gs(function() {
               un = [
                 "switch" + on + "(",
-                Xn.generateExpression(le.discriminant, o.Sequence, Zn),
+                kn.generateExpression(nn.discriminant, o.Sequence, Tn),
                 ")" + on + "{" + an
               ];
-            }), le.cases)
-              for (En = es, mn = 0, An = le.cases.length; mn < An; ++mn)
-                mn === An - 1 && (En |= In), fn = Ms(this.generateStatement(le.cases[mn], En)), un.push(fn), Rn(ss(fn).toString()) || un.push(an);
-            return un.push(Ms("}")), un;
+            }), nn.cases)
+              for (Fn = _i, gn = 0, An = nn.cases.length; gn < An; ++gn)
+                gn === An - 1 && (Fn |= Vn), fn = Cs(this.generateStatement(nn.cases[gn], Fn)), un.push(fn), Dn(ns(fn).toString()) || un.push(an);
+            return un.push(Cs("}")), un;
           },
-          SwitchCase: function(le, cn) {
-            var un, fn, mn, An, En, Xn = this;
-            return ys(function() {
-              for (le.test ? un = [
-                zn("case", Xn.generateExpression(le.test, o.Sequence, Zn)),
+          SwitchCase: function(nn, cn) {
+            var un, fn, gn, An, Fn, kn = this;
+            return gs(function() {
+              for (nn.test ? un = [
+                zn("case", kn.generateExpression(nn.test, o.Sequence, Tn)),
                 ":"
-              ] : un = ["default:"], mn = 0, An = le.consequent.length, An && le.consequent[0].type === t.BlockStatement && (fn = Xn.maybeBlock(le.consequent[0], es), un.push(fn), mn = 1), mn !== An && !Rn(ss(un).toString()) && un.push(an), En = es; mn < An; ++mn)
-                mn === An - 1 && cn & In && (En |= In), fn = Ms(Xn.generateStatement(le.consequent[mn], En)), un.push(fn), mn + 1 !== An && !Rn(ss(fn).toString()) && un.push(an);
+              ] : un = ["default:"], gn = 0, An = nn.consequent.length, An && nn.consequent[0].type === t.BlockStatement && (fn = kn.maybeBlock(nn.consequent[0], _i), un.push(fn), gn = 1), gn !== An && !Dn(ns(un).toString()) && un.push(an), Fn = _i; gn < An; ++gn)
+                gn === An - 1 && cn & Vn && (Fn |= Vn), fn = Cs(kn.generateStatement(nn.consequent[gn], Fn)), un.push(fn), gn + 1 !== An && !Dn(ns(fn).toString()) && un.push(an);
             }), un;
           },
-          IfStatement: function(le, cn) {
-            var un, fn, mn, An = this;
-            return ys(function() {
+          IfStatement: function(nn, cn) {
+            var un, fn, gn, An = this;
+            return gs(function() {
               un = [
                 "if" + on + "(",
-                An.generateExpression(le.test, o.Sequence, Zn),
+                An.generateExpression(nn.test, o.Sequence, Tn),
                 ")"
               ];
-            }), mn = cn & In, fn = es, mn && (fn |= In), le.alternate ? (un.push(this.maybeBlock(le.consequent, es)), un = this.maybeBlockSuffix(le.consequent, un), le.alternate.type === t.IfStatement ? un = zn(un, ["else ", this.generateStatement(le.alternate, fn)]) : un = zn(un, zn("else", this.maybeBlock(le.alternate, fn)))) : un.push(this.maybeBlock(le.consequent, fn)), un;
+            }), gn = cn & Vn, fn = _i, gn && (fn |= Vn), nn.alternate ? (un.push(this.maybeBlock(nn.consequent, _i)), un = this.maybeBlockSuffix(nn.consequent, un), nn.alternate.type === t.IfStatement ? un = zn(un, ["else ", this.generateStatement(nn.alternate, fn)]) : un = zn(un, zn("else", this.maybeBlock(nn.alternate, fn)))) : un.push(this.maybeBlock(nn.consequent, fn)), un;
           },
-          ForStatement: function(le, cn) {
+          ForStatement: function(nn, cn) {
             var un, fn = this;
-            return ys(function() {
-              un = ["for" + on + "("], le.init ? le.init.type === t.VariableDeclaration ? un.push(fn.generateStatement(le.init, us)) : (un.push(fn.generateExpression(le.init, o.Sequence, _s)), un.push(";")) : un.push(";"), le.test && (un.push(on), un.push(fn.generateExpression(le.test, o.Sequence, Zn))), un.push(";"), le.update && (un.push(on), un.push(fn.generateExpression(le.update, o.Sequence, Zn))), un.push(")");
-            }), un.push(this.maybeBlock(le.body, cn & In ? gs : es)), un;
+            return gs(function() {
+              un = ["for" + on + "("], nn.init ? nn.init.type === t.VariableDeclaration ? un.push(fn.generateStatement(nn.init, os)) : (un.push(fn.generateExpression(nn.init, o.Sequence, ms)), un.push(";")) : un.push(";"), nn.test && (un.push(on), un.push(fn.generateExpression(nn.test, o.Sequence, Tn))), un.push(";"), nn.update && (un.push(on), un.push(fn.generateExpression(nn.update, o.Sequence, Tn))), un.push(")");
+            }), un.push(this.maybeBlock(nn.body, cn & Vn ? _s : _i)), un;
           },
-          ForInStatement: function(le, cn) {
-            return this.generateIterationForStatement("in", le, cn & In ? gs : es);
+          ForInStatement: function(nn, cn) {
+            return this.generateIterationForStatement("in", nn, cn & Vn ? _s : _i);
           },
-          ForOfStatement: function(le, cn) {
-            return this.generateIterationForStatement("of", le, cn & In ? gs : es);
+          ForOfStatement: function(nn, cn) {
+            return this.generateIterationForStatement("of", nn, cn & Vn ? _s : _i);
           },
-          LabeledStatement: function(le, cn) {
-            return [le.label.name + ":", this.maybeBlock(le.body, cn & In ? gs : es)];
+          LabeledStatement: function(nn, cn) {
+            return [nn.label.name + ":", this.maybeBlock(nn.body, cn & Vn ? _s : _i)];
           },
-          Program: function(le, cn) {
-            var un, fn, mn, An, En;
-            for (An = le.body.length, un = [gn && An > 0 ? `
-` : ""], En = ps, mn = 0; mn < An; ++mn)
-              !gn && mn === An - 1 && (En |= In), vn && (mn === 0 && (le.body[0].leadingComments || Kn(le.range[0], le.body[mn].range[0], un)), mn > 0 && !le.body[mn - 1].trailingComments && !le.body[mn].leadingComments && Kn(le.body[mn - 1].range[1], le.body[mn].range[0], un)), fn = Ms(this.generateStatement(le.body[mn], En)), un.push(fn), mn + 1 < An && !Rn(ss(fn).toString()) && (vn && le.body[mn + 1].leadingComments || un.push(an)), vn && mn === An - 1 && (le.body[mn].trailingComments || Kn(le.body[mn].range[1], le.range[1], un));
+          Program: function(nn, cn) {
+            var un, fn, gn, An, Fn;
+            for (An = nn.body.length, un = [_n && An > 0 ? `
+` : ""], Fn = fs, gn = 0; gn < An; ++gn)
+              !_n && gn === An - 1 && (Fn |= Vn), Sn && (gn === 0 && (nn.body[0].leadingComments || Kn(nn.range[0], nn.body[gn].range[0], un)), gn > 0 && !nn.body[gn - 1].trailingComments && !nn.body[gn].leadingComments && Kn(nn.body[gn - 1].range[1], nn.body[gn].range[0], un)), fn = Cs(this.generateStatement(nn.body[gn], Fn)), un.push(fn), gn + 1 < An && !Dn(ns(fn).toString()) && (Sn && nn.body[gn + 1].leadingComments || un.push(an)), Sn && gn === An - 1 && (nn.body[gn].trailingComments || Kn(nn.body[gn].range[1], nn.range[1], un));
             return un;
           },
-          FunctionDeclaration: function(le, cn) {
+          FunctionDeclaration: function(nn, cn) {
             return [
-              ks(le, true),
+              Ds(nn, true),
               "function",
-              Xs(le) || is(),
-              le.id ? fs(le.id) : "",
-              this.generateFunctionBody(le)
+              Ns(nn) || is(),
+              nn.id ? cs(nn.id) : "",
+              this.generateFunctionBody(nn)
             ];
           },
-          ReturnStatement: function(le, cn) {
-            return le.argument ? [zn(
+          ReturnStatement: function(nn, cn) {
+            return nn.argument ? [zn(
               "return",
-              this.generateExpression(le.argument, o.Sequence, Zn)
+              this.generateExpression(nn.argument, o.Sequence, Tn)
             ), this.semicolon(cn)] : ["return" + this.semicolon(cn)];
           },
-          WhileStatement: function(le, cn) {
+          WhileStatement: function(nn, cn) {
             var un, fn = this;
-            return ys(function() {
+            return gs(function() {
               un = [
                 "while" + on + "(",
-                fn.generateExpression(le.test, o.Sequence, Zn),
+                fn.generateExpression(nn.test, o.Sequence, Tn),
                 ")"
               ];
-            }), un.push(this.maybeBlock(le.body, cn & In ? gs : es)), un;
+            }), un.push(this.maybeBlock(nn.body, cn & Vn ? _s : _i)), un;
           },
-          WithStatement: function(le, cn) {
+          WithStatement: function(nn, cn) {
             var un, fn = this;
-            return ys(function() {
+            return gs(function() {
               un = [
                 "with" + on + "(",
-                fn.generateExpression(le.object, o.Sequence, Zn),
+                fn.generateExpression(nn.object, o.Sequence, Tn),
                 ")"
               ];
-            }), un.push(this.maybeBlock(le.body, cn & In ? gs : es)), un;
+            }), un.push(this.maybeBlock(nn.body, cn & Vn ? _s : _i)), un;
           }
-        }, xn(rs.prototype, rs.Statement), rs.Expression = {
-          SequenceExpression: function(le, cn, un) {
-            var fn, mn, An;
-            for (o.Sequence < cn && (un |= Ln), fn = [], mn = 0, An = le.expressions.length; mn < An; ++mn)
-              fn.push(this.generateExpression(le.expressions[mn], o.Assignment, un)), mn + 1 < An && fn.push("," + on);
+        }, wn(ss.prototype, ss.Statement), ss.Expression = {
+          SequenceExpression: function(nn, cn, un) {
+            var fn, gn, An;
+            for (o.Sequence < cn && (un |= Rn), fn = [], gn = 0, An = nn.expressions.length; gn < An; ++gn)
+              fn.push(this.generateExpression(nn.expressions[gn], o.Assignment, un)), gn + 1 < An && fn.push("," + on);
             return Qn(fn, o.Sequence, cn);
           },
-          AssignmentExpression: function(le, cn, un) {
-            return this.generateAssignment(le.left, le.right, le.operator, cn, un);
+          AssignmentExpression: function(nn, cn, un) {
+            return this.generateAssignment(nn.left, nn.right, nn.operator, cn, un);
           },
-          ArrowFunctionExpression: function(le, cn, un) {
-            return Qn(this.generateFunctionBody(le), o.ArrowFunction, cn);
+          ArrowFunctionExpression: function(nn, cn, un) {
+            return Qn(this.generateFunctionBody(nn), o.ArrowFunction, cn);
           },
-          ConditionalExpression: function(le, cn, un) {
-            return o.Conditional < cn && (un |= Ln), Qn(
+          ConditionalExpression: function(nn, cn, un) {
+            return o.Conditional < cn && (un |= Rn), Qn(
               [
-                this.generateExpression(le.test, o.Coalesce, un),
+                this.generateExpression(nn.test, o.Coalesce, un),
                 on + "?" + on,
-                this.generateExpression(le.consequent, o.Assignment, un),
+                this.generateExpression(nn.consequent, o.Assignment, un),
                 on + ":" + on,
-                this.generateExpression(le.alternate, o.Assignment, un)
+                this.generateExpression(nn.alternate, o.Assignment, un)
               ],
               o.Conditional,
               cn
             );
           },
-          LogicalExpression: function(le, cn, un) {
-            return le.operator === "??" && (un |= cs), this.BinaryExpression(le, cn, un);
+          LogicalExpression: function(nn, cn, un) {
+            return nn.operator === "??" && (un |= ls), this.BinaryExpression(nn, cn, un);
           },
-          BinaryExpression: function(le, cn, un) {
-            var fn, mn, An, En, Xn, Vn;
-            return En = l[le.operator], mn = le.operator === "**" ? o.Postfix : En, An = le.operator === "**" ? En : En + 1, En < cn && (un |= Ln), Xn = this.generateExpression(le.left, mn, un), Vn = Xn.toString(), Vn.charCodeAt(Vn.length - 1) === 47 && b.code.isIdentifierPartES5(le.operator.charCodeAt(0)) ? fn = [Xn, is(), le.operator] : fn = zn(Xn, le.operator), Xn = this.generateExpression(le.right, An, un), le.operator === "/" && Xn.toString().charAt(0) === "/" || le.operator.slice(-1) === "<" && Xn.toString().slice(0, 3) === "!--" ? (fn.push(is()), fn.push(Xn)) : fn = zn(fn, Xn), le.operator === "in" && !(un & Ln) ? ["(", fn, ")"] : (le.operator === "||" || le.operator === "&&") && un & cs ? ["(", fn, ")"] : Qn(fn, En, cn);
+          BinaryExpression: function(nn, cn, un) {
+            var fn, gn, An, Fn, kn, In;
+            return Fn = l[nn.operator], gn = nn.operator === "**" ? o.Postfix : Fn, An = nn.operator === "**" ? Fn : Fn + 1, Fn < cn && (un |= Rn), kn = this.generateExpression(nn.left, gn, un), In = kn.toString(), In.charCodeAt(In.length - 1) === 47 && b.code.isIdentifierPartES5(nn.operator.charCodeAt(0)) ? fn = [kn, is(), nn.operator] : fn = zn(kn, nn.operator), kn = this.generateExpression(nn.right, An, un), nn.operator === "/" && kn.toString().charAt(0) === "/" || nn.operator.slice(-1) === "<" && kn.toString().slice(0, 3) === "!--" ? (fn.push(is()), fn.push(kn)) : fn = zn(fn, kn), nn.operator === "in" && !(un & Rn) ? ["(", fn, ")"] : (nn.operator === "||" || nn.operator === "&&") && un & ls ? ["(", fn, ")"] : Qn(fn, Fn, cn);
           },
-          CallExpression: function(le, cn, un) {
-            var fn, mn, An;
-            for (fn = [this.generateExpression(le.callee, o.Call, vs)], le.optional && fn.push("?."), fn.push("("), mn = 0, An = le.arguments.length; mn < An; ++mn)
-              fn.push(this.generateExpression(le.arguments[mn], o.Assignment, Zn)), mn + 1 < An && fn.push("," + on);
-            return fn.push(")"), un & Nn ? Qn(fn, o.Call, cn) : ["(", fn, ")"];
+          CallExpression: function(nn, cn, un) {
+            var fn, gn, An;
+            for (fn = [this.generateExpression(nn.callee, o.Call, Gs)], nn.optional && fn.push("?."), fn.push("("), gn = 0, An = nn.arguments.length; gn < An; ++gn)
+              fn.push(this.generateExpression(nn.arguments[gn], o.Assignment, Tn)), gn + 1 < An && fn.push("," + on);
+            return fn.push(")"), un & Xn ? Qn(fn, o.Call, cn) : ["(", fn, ")"];
           },
-          ChainExpression: function(le, cn, un) {
-            o.OptionalChaining < cn && (un |= Nn);
-            var fn = this.generateExpression(le.expression, o.OptionalChaining, un);
+          ChainExpression: function(nn, cn, un) {
+            o.OptionalChaining < cn && (un |= Xn);
+            var fn = this.generateExpression(nn.expression, o.OptionalChaining, un);
             return Qn(fn, o.OptionalChaining, cn);
           },
-          NewExpression: function(le, cn, un) {
-            var fn, mn, An, En, Xn;
-            if (mn = le.arguments.length, Xn = un & $n && !ln && mn === 0 ? Ss : bs, fn = zn(
+          NewExpression: function(nn, cn, un) {
+            var fn, gn, An, Fn, kn;
+            if (gn = nn.arguments.length, kn = un & $n && !ln && gn === 0 ? Ss : ys, fn = zn(
               "new",
-              this.generateExpression(le.callee, o.New, Xn)
-            ), !(un & $n) || ln || mn > 0) {
-              for (fn.push("("), An = 0, En = mn; An < En; ++An)
-                fn.push(this.generateExpression(le.arguments[An], o.Assignment, Zn)), An + 1 < En && fn.push("," + on);
+              this.generateExpression(nn.callee, o.New, kn)
+            ), !(un & $n) || ln || gn > 0) {
+              for (fn.push("("), An = 0, Fn = gn; An < Fn; ++An)
+                fn.push(this.generateExpression(nn.arguments[An], o.Assignment, Tn)), An + 1 < Fn && fn.push("," + on);
               fn.push(")");
             }
             return Qn(fn, o.New, cn);
           },
-          MemberExpression: function(le, cn, un) {
-            var fn, mn;
-            return fn = [this.generateExpression(le.object, o.Call, un & Nn ? vs : bs)], le.computed ? (le.optional && fn.push("?."), fn.push("["), fn.push(this.generateExpression(le.property, o.Sequence, un & Nn ? Zn : Ss)), fn.push("]")) : (!le.optional && le.object.type === t.Literal && typeof le.object.value == "number" && (mn = ss(fn).toString(), mn.indexOf(".") < 0 && !/[eExX]/.test(mn) && b.code.isDecimalDigit(mn.charCodeAt(mn.length - 1)) && !(mn.length >= 2 && mn.charCodeAt(0) === 48) && fn.push(" ")), fn.push(le.optional ? "?." : "."), fn.push(fs(le.property))), Qn(fn, o.Member, cn);
+          MemberExpression: function(nn, cn, un) {
+            var fn, gn;
+            return fn = [this.generateExpression(nn.object, o.Call, un & Xn ? Gs : ys)], nn.computed ? (nn.optional && fn.push("?."), fn.push("["), fn.push(this.generateExpression(nn.property, o.Sequence, un & Xn ? Tn : Ss)), fn.push("]")) : (!nn.optional && nn.object.type === t.Literal && typeof nn.object.value == "number" && (gn = ns(fn).toString(), gn.indexOf(".") < 0 && !/[eExX]/.test(gn) && b.code.isDecimalDigit(gn.charCodeAt(gn.length - 1)) && !(gn.length >= 2 && gn.charCodeAt(0) === 48) && fn.push(" ")), fn.push(nn.optional ? "?." : "."), fn.push(cs(nn.property))), Qn(fn, o.Member, cn);
           },
-          MetaProperty: function(le, cn, un) {
+          MetaProperty: function(nn, cn, un) {
             var fn;
-            return fn = [], fn.push(typeof le.meta == "string" ? le.meta : fs(le.meta)), fn.push("."), fn.push(typeof le.property == "string" ? le.property : fs(le.property)), Qn(fn, o.Member, cn);
+            return fn = [], fn.push(typeof nn.meta == "string" ? nn.meta : cs(nn.meta)), fn.push("."), fn.push(typeof nn.property == "string" ? nn.property : cs(nn.property)), Qn(fn, o.Member, cn);
           },
-          UnaryExpression: function(le, cn, un) {
-            var fn, mn, An, En, Xn;
-            return mn = this.generateExpression(le.argument, o.Unary, Zn), on === "" ? fn = zn(le.operator, mn) : (fn = [le.operator], le.operator.length > 2 ? fn = zn(fn, mn) : (En = ss(fn).toString(), Xn = En.charCodeAt(En.length - 1), An = mn.toString().charCodeAt(0), ((Xn === 43 || Xn === 45) && Xn === An || b.code.isIdentifierPartES5(Xn) && b.code.isIdentifierPartES5(An)) && fn.push(is()), fn.push(mn))), Qn(fn, o.Unary, cn);
+          UnaryExpression: function(nn, cn, un) {
+            var fn, gn, An, Fn, kn;
+            return gn = this.generateExpression(nn.argument, o.Unary, Tn), on === "" ? fn = zn(nn.operator, gn) : (fn = [nn.operator], nn.operator.length > 2 ? fn = zn(fn, gn) : (Fn = ns(fn).toString(), kn = Fn.charCodeAt(Fn.length - 1), An = gn.toString().charCodeAt(0), ((kn === 43 || kn === 45) && kn === An || b.code.isIdentifierPartES5(kn) && b.code.isIdentifierPartES5(An)) && fn.push(is()), fn.push(gn))), Qn(fn, o.Unary, cn);
           },
-          YieldExpression: function(le, cn, un) {
+          YieldExpression: function(nn, cn, un) {
             var fn;
-            return le.delegate ? fn = "yield*" : fn = "yield", le.argument && (fn = zn(
+            return nn.delegate ? fn = "yield*" : fn = "yield", nn.argument && (fn = zn(
               fn,
-              this.generateExpression(le.argument, o.Yield, Zn)
+              this.generateExpression(nn.argument, o.Yield, Tn)
             )), Qn(fn, o.Yield, cn);
           },
-          AwaitExpression: function(le, cn, un) {
+          AwaitExpression: function(nn, cn, un) {
             var fn = zn(
-              le.all ? "await*" : "await",
-              this.generateExpression(le.argument, o.Await, Zn)
+              nn.all ? "await*" : "await",
+              this.generateExpression(nn.argument, o.Await, Tn)
             );
             return Qn(fn, o.Await, cn);
           },
-          UpdateExpression: function(le, cn, un) {
-            return le.prefix ? Qn(
+          UpdateExpression: function(nn, cn, un) {
+            return nn.prefix ? Qn(
               [
-                le.operator,
-                this.generateExpression(le.argument, o.Unary, Zn)
+                nn.operator,
+                this.generateExpression(nn.argument, o.Unary, Tn)
               ],
               o.Unary,
               cn
             ) : Qn(
               [
-                this.generateExpression(le.argument, o.Postfix, Zn),
-                le.operator
+                this.generateExpression(nn.argument, o.Postfix, Tn),
+                nn.operator
               ],
               o.Postfix,
               cn
             );
           },
-          FunctionExpression: function(le, cn, un) {
+          FunctionExpression: function(nn, cn, un) {
             var fn = [
-              ks(le, true),
+              Ds(nn, true),
               "function"
             ];
-            return le.id ? (fn.push(Xs(le) || is()), fn.push(fs(le.id))) : fn.push(Xs(le) || on), fn.push(this.generateFunctionBody(le)), fn;
+            return nn.id ? (fn.push(Ns(nn) || is()), fn.push(cs(nn.id))) : fn.push(Ns(nn) || on), fn.push(this.generateFunctionBody(nn)), fn;
           },
-          ArrayPattern: function(le, cn, un) {
-            return this.ArrayExpression(le, cn, un, true);
+          ArrayPattern: function(nn, cn, un) {
+            return this.ArrayExpression(nn, cn, un, true);
           },
-          ArrayExpression: function(le, cn, un, fn) {
-            var mn, An, En = this;
-            return le.elements.length ? (An = fn ? false : le.elements.length > 1, mn = ["[", An ? an : ""], ys(function(Xn) {
-              var Vn, os;
-              for (Vn = 0, os = le.elements.length; Vn < os; ++Vn)
-                le.elements[Vn] ? (mn.push(An ? Xn : ""), mn.push(En.generateExpression(le.elements[Vn], o.Assignment, Zn))) : (An && mn.push(Xn), Vn + 1 === os && mn.push(",")), Vn + 1 < os && mn.push("," + (An ? an : on));
-            }), An && !Rn(ss(mn).toString()) && mn.push(an), mn.push(An ? R : ""), mn.push("]"), mn) : "[]";
+          ArrayExpression: function(nn, cn, un, fn) {
+            var gn, An, Fn = this;
+            return nn.elements.length ? (An = fn ? false : nn.elements.length > 1, gn = ["[", An ? an : ""], gs(function(kn) {
+              var In, rs;
+              for (In = 0, rs = nn.elements.length; In < rs; ++In)
+                nn.elements[In] ? (gn.push(An ? kn : ""), gn.push(Fn.generateExpression(nn.elements[In], o.Assignment, Tn))) : (An && gn.push(kn), In + 1 === rs && gn.push(",")), In + 1 < rs && gn.push("," + (An ? an : on));
+            }), An && !Dn(ns(gn).toString()) && gn.push(an), gn.push(An ? R : ""), gn.push("]"), gn) : "[]";
           },
-          RestElement: function(le, cn, un) {
-            return "..." + this.generatePattern(le.argument);
+          RestElement: function(nn, cn, un) {
+            return "..." + this.generatePattern(nn.argument);
           },
-          ClassExpression: function(le, cn, un) {
-            var fn, mn;
-            return fn = ["class"], le.id && (fn = zn(fn, this.generateExpression(le.id, o.Sequence, Zn))), le.superClass && (mn = zn("extends", this.generateExpression(le.superClass, o.Unary, Zn)), fn = zn(fn, mn)), fn.push(on), fn.push(this.generateStatement(le.body, gs)), fn;
+          ClassExpression: function(nn, cn, un) {
+            var fn, gn;
+            return fn = ["class"], nn.id && (fn = zn(fn, this.generateExpression(nn.id, o.Sequence, Tn))), nn.superClass && (gn = zn("extends", this.generateExpression(nn.superClass, o.Unary, Tn)), fn = zn(fn, gn)), fn.push(on), fn.push(this.generateStatement(nn.body, _s)), fn;
           },
-          MethodDefinition: function(le, cn, un) {
-            var fn, mn;
-            return le.static ? fn = ["static" + on] : fn = [], le.kind === "get" || le.kind === "set" ? mn = [
-              zn(le.kind, this.generatePropertyKey(le.key, le.computed)),
-              this.generateFunctionBody(le.value)
-            ] : mn = [
-              sr(le),
-              this.generatePropertyKey(le.key, le.computed),
-              this.generateFunctionBody(le.value)
-            ], zn(fn, mn);
+          MethodDefinition: function(nn, cn, un) {
+            var fn, gn;
+            return nn.static ? fn = ["static" + on] : fn = [], nn.kind === "get" || nn.kind === "set" ? gn = [
+              zn(nn.kind, this.generatePropertyKey(nn.key, nn.computed)),
+              this.generateFunctionBody(nn.value)
+            ] : gn = [
+              sr(nn),
+              this.generatePropertyKey(nn.key, nn.computed),
+              this.generateFunctionBody(nn.value)
+            ], zn(fn, gn);
           },
-          Property: function(le, cn, un) {
-            return le.kind === "get" || le.kind === "set" ? [
-              le.kind,
+          Property: function(nn, cn, un) {
+            return nn.kind === "get" || nn.kind === "set" ? [
+              nn.kind,
               is(),
-              this.generatePropertyKey(le.key, le.computed),
-              this.generateFunctionBody(le.value)
-            ] : le.shorthand ? le.value.type === "AssignmentPattern" ? this.AssignmentPattern(le.value, o.Sequence, Zn) : this.generatePropertyKey(le.key, le.computed) : le.method ? [
-              sr(le),
-              this.generatePropertyKey(le.key, le.computed),
-              this.generateFunctionBody(le.value)
+              this.generatePropertyKey(nn.key, nn.computed),
+              this.generateFunctionBody(nn.value)
+            ] : nn.shorthand ? nn.value.type === "AssignmentPattern" ? this.AssignmentPattern(nn.value, o.Sequence, Tn) : this.generatePropertyKey(nn.key, nn.computed) : nn.method ? [
+              sr(nn),
+              this.generatePropertyKey(nn.key, nn.computed),
+              this.generateFunctionBody(nn.value)
             ] : [
-              this.generatePropertyKey(le.key, le.computed),
+              this.generatePropertyKey(nn.key, nn.computed),
               ":" + on,
-              this.generateExpression(le.value, o.Assignment, Zn)
+              this.generateExpression(nn.value, o.Assignment, Tn)
             ];
           },
-          ObjectExpression: function(le, cn, un) {
-            var fn, mn, An, En = this;
-            return le.properties.length ? (fn = le.properties.length > 1, ys(function() {
-              An = En.generateExpression(le.properties[0], o.Sequence, Zn);
-            }), !fn && !Jn(ss(An).toString()) ? ["{", on, An, on, "}"] : (ys(function(Xn) {
-              var Vn, os;
-              if (mn = ["{", an, Xn, An], fn)
-                for (mn.push("," + an), Vn = 1, os = le.properties.length; Vn < os; ++Vn)
-                  mn.push(Xn), mn.push(En.generateExpression(le.properties[Vn], o.Sequence, Zn)), Vn + 1 < os && mn.push("," + an);
-            }), Rn(ss(mn).toString()) || mn.push(an), mn.push(R), mn.push("}"), mn)) : "{}";
+          ObjectExpression: function(nn, cn, un) {
+            var fn, gn, An, Fn = this;
+            return nn.properties.length ? (fn = nn.properties.length > 1, gs(function() {
+              An = Fn.generateExpression(nn.properties[0], o.Sequence, Tn);
+            }), !fn && !Jn(ns(An).toString()) ? ["{", on, An, on, "}"] : (gs(function(kn) {
+              var In, rs;
+              if (gn = ["{", an, kn, An], fn)
+                for (gn.push("," + an), In = 1, rs = nn.properties.length; In < rs; ++In)
+                  gn.push(kn), gn.push(Fn.generateExpression(nn.properties[In], o.Sequence, Tn)), In + 1 < rs && gn.push("," + an);
+            }), Dn(ns(gn).toString()) || gn.push(an), gn.push(R), gn.push("}"), gn)) : "{}";
           },
-          AssignmentPattern: function(le, cn, un) {
-            return this.generateAssignment(le.left, le.right, "=", cn, un);
+          AssignmentPattern: function(nn, cn, un) {
+            return this.generateAssignment(nn.left, nn.right, "=", cn, un);
           },
-          ObjectPattern: function(le, cn, un) {
-            var fn, mn, An, En, Xn, Vn = this;
-            if (!le.properties.length)
+          ObjectPattern: function(nn, cn, un) {
+            var fn, gn, An, Fn, kn, In = this;
+            if (!nn.properties.length)
               return "{}";
-            if (En = false, le.properties.length === 1)
-              Xn = le.properties[0], Xn.type === t.Property && Xn.value.type !== t.Identifier && (En = true);
+            if (Fn = false, nn.properties.length === 1)
+              kn = nn.properties[0], kn.type === t.Property && kn.value.type !== t.Identifier && (Fn = true);
             else
-              for (mn = 0, An = le.properties.length; mn < An; ++mn)
-                if (Xn = le.properties[mn], Xn.type === t.Property && !Xn.shorthand) {
-                  En = true;
+              for (gn = 0, An = nn.properties.length; gn < An; ++gn)
+                if (kn = nn.properties[gn], kn.type === t.Property && !kn.shorthand) {
+                  Fn = true;
                   break;
                 }
-            return fn = ["{", En ? an : ""], ys(function(os) {
-              var Ps, Bs;
-              for (Ps = 0, Bs = le.properties.length; Ps < Bs; ++Ps)
-                fn.push(En ? os : ""), fn.push(Vn.generateExpression(le.properties[Ps], o.Sequence, Zn)), Ps + 1 < Bs && fn.push("," + (En ? an : on));
-            }), En && !Rn(ss(fn).toString()) && fn.push(an), fn.push(En ? R : ""), fn.push("}"), fn;
+            return fn = ["{", Fn ? an : ""], gs(function(rs) {
+              var As, Is;
+              for (As = 0, Is = nn.properties.length; As < Is; ++As)
+                fn.push(Fn ? rs : ""), fn.push(In.generateExpression(nn.properties[As], o.Sequence, Tn)), As + 1 < Is && fn.push("," + (Fn ? an : on));
+            }), Fn && !Dn(ns(fn).toString()) && fn.push(an), fn.push(Fn ? R : ""), fn.push("}"), fn;
           },
-          ThisExpression: function(le, cn, un) {
+          ThisExpression: function(nn, cn, un) {
             return "this";
           },
-          Super: function(le, cn, un) {
+          Super: function(nn, cn, un) {
             return "super";
           },
-          Identifier: function(le, cn, un) {
-            return fs(le);
+          Identifier: function(nn, cn, un) {
+            return cs(nn);
           },
-          ImportDefaultSpecifier: function(le, cn, un) {
-            return fs(le.id || le.local);
+          ImportDefaultSpecifier: function(nn, cn, un) {
+            return cs(nn.id || nn.local);
           },
-          ImportNamespaceSpecifier: function(le, cn, un) {
-            var fn = ["*"], mn = le.id || le.local;
-            return mn && fn.push(on + "as" + is() + fs(mn)), fn;
+          ImportNamespaceSpecifier: function(nn, cn, un) {
+            var fn = ["*"], gn = nn.id || nn.local;
+            return gn && fn.push(on + "as" + is() + cs(gn)), fn;
           },
-          ImportSpecifier: function(le, cn, un) {
-            var fn = le.imported, mn = [fn.name], An = le.local;
-            return An && An.name !== fn.name && mn.push(is() + "as" + is() + fs(An)), mn;
+          ImportSpecifier: function(nn, cn, un) {
+            var fn = nn.imported, gn = [fn.name], An = nn.local;
+            return An && An.name !== fn.name && gn.push(is() + "as" + is() + cs(An)), gn;
           },
-          ExportSpecifier: function(le, cn, un) {
-            var fn = le.local, mn = [fn.name], An = le.exported;
-            return An && An.name !== fn.name && mn.push(is() + "as" + is() + fs(An)), mn;
+          ExportSpecifier: function(nn, cn, un) {
+            var fn = nn.local, gn = [fn.name], An = nn.exported;
+            return An && An.name !== fn.name && gn.push(is() + "as" + is() + cs(An)), gn;
           },
-          Literal: function(le, cn, un) {
+          Literal: function(nn, cn, un) {
             var fn;
-            if (le.hasOwnProperty("raw") && hn && _n.raw)
+            if (nn.hasOwnProperty("raw") && hn && mn.raw)
               try {
-                if (fn = hn(le.raw).body[0].expression, fn.type === t.Literal && fn.value === le.value)
-                  return le.raw;
+                if (fn = hn(nn.raw).body[0].expression, fn.type === t.Literal && fn.value === nn.value)
+                  return nn.raw;
               } catch {
               }
-            return le.regex ? "/" + le.regex.pattern + "/" + le.regex.flags : typeof le.value == "bigint" ? le.value.toString() + "n" : le.bigint ? le.bigint + "n" : le.value === null ? "null" : typeof le.value == "string" ? xs(le.value) : typeof le.value == "number" ? Tn(le.value) : typeof le.value == "boolean" ? le.value ? "true" : "false" : hs(le.value);
+            return nn.regex ? "/" + nn.regex.pattern + "/" + nn.regex.flags : typeof nn.value == "bigint" ? nn.value.toString() + "n" : nn.bigint ? nn.bigint + "n" : nn.value === null ? "null" : typeof nn.value == "string" ? Es(nn.value) : typeof nn.value == "number" ? Zn(nn.value) : typeof nn.value == "boolean" ? nn.value ? "true" : "false" : ps(nn.value);
           },
-          GeneratorExpression: function(le, cn, un) {
-            return this.ComprehensionExpression(le, cn, un);
+          GeneratorExpression: function(nn, cn, un) {
+            return this.ComprehensionExpression(nn, cn, un);
           },
-          ComprehensionExpression: function(le, cn, un) {
-            var fn, mn, An, En, Xn = this;
-            return fn = le.type === t.GeneratorExpression ? ["("] : ["["], _n.moz.comprehensionExpressionStartsWithAssignment && (En = this.generateExpression(le.body, o.Assignment, Zn), fn.push(En)), le.blocks && ys(function() {
-              for (mn = 0, An = le.blocks.length; mn < An; ++mn)
-                En = Xn.generateExpression(le.blocks[mn], o.Sequence, Zn), mn > 0 || _n.moz.comprehensionExpressionStartsWithAssignment ? fn = zn(fn, En) : fn.push(En);
-            }), le.filter && (fn = zn(fn, "if" + on), En = this.generateExpression(le.filter, o.Sequence, Zn), fn = zn(fn, ["(", En, ")"])), _n.moz.comprehensionExpressionStartsWithAssignment || (En = this.generateExpression(le.body, o.Assignment, Zn), fn = zn(fn, En)), fn.push(le.type === t.GeneratorExpression ? ")" : "]"), fn;
+          ComprehensionExpression: function(nn, cn, un) {
+            var fn, gn, An, Fn, kn = this;
+            return fn = nn.type === t.GeneratorExpression ? ["("] : ["["], mn.moz.comprehensionExpressionStartsWithAssignment && (Fn = this.generateExpression(nn.body, o.Assignment, Tn), fn.push(Fn)), nn.blocks && gs(function() {
+              for (gn = 0, An = nn.blocks.length; gn < An; ++gn)
+                Fn = kn.generateExpression(nn.blocks[gn], o.Sequence, Tn), gn > 0 || mn.moz.comprehensionExpressionStartsWithAssignment ? fn = zn(fn, Fn) : fn.push(Fn);
+            }), nn.filter && (fn = zn(fn, "if" + on), Fn = this.generateExpression(nn.filter, o.Sequence, Tn), fn = zn(fn, ["(", Fn, ")"])), mn.moz.comprehensionExpressionStartsWithAssignment || (Fn = this.generateExpression(nn.body, o.Assignment, Tn), fn = zn(fn, Fn)), fn.push(nn.type === t.GeneratorExpression ? ")" : "]"), fn;
           },
-          ComprehensionBlock: function(le, cn, un) {
+          ComprehensionBlock: function(nn, cn, un) {
             var fn;
-            return le.left.type === t.VariableDeclaration ? fn = [
-              le.left.kind,
+            return nn.left.type === t.VariableDeclaration ? fn = [
+              nn.left.kind,
               is(),
-              this.generateStatement(le.left.declarations[0], us)
-            ] : fn = this.generateExpression(le.left, o.Call, Zn), fn = zn(fn, le.of ? "of" : "in"), fn = zn(fn, this.generateExpression(le.right, o.Sequence, Zn)), ["for" + on + "(", fn, ")"];
+              this.generateStatement(nn.left.declarations[0], os)
+            ] : fn = this.generateExpression(nn.left, o.Call, Tn), fn = zn(fn, nn.of ? "of" : "in"), fn = zn(fn, this.generateExpression(nn.right, o.Sequence, Tn)), ["for" + on + "(", fn, ")"];
           },
-          SpreadElement: function(le, cn, un) {
+          SpreadElement: function(nn, cn, un) {
             return [
               "...",
-              this.generateExpression(le.argument, o.Assignment, Zn)
+              this.generateExpression(nn.argument, o.Assignment, Tn)
             ];
           },
-          TaggedTemplateExpression: function(le, cn, un) {
-            var fn = vs;
-            un & Nn || (fn = bs);
-            var mn = [
-              this.generateExpression(le.tag, o.Call, fn),
-              this.generateExpression(le.quasi, o.Primary, Ls)
+          TaggedTemplateExpression: function(nn, cn, un) {
+            var fn = Gs;
+            un & Xn || (fn = ys);
+            var gn = [
+              this.generateExpression(nn.tag, o.Call, fn),
+              this.generateExpression(nn.quasi, o.Primary, Fs)
             ];
-            return Qn(mn, o.TaggedTemplate, cn);
+            return Qn(gn, o.TaggedTemplate, cn);
           },
-          TemplateElement: function(le, cn, un) {
-            return le.value.raw;
+          TemplateElement: function(nn, cn, un) {
+            return nn.value.raw;
           },
-          TemplateLiteral: function(le, cn, un) {
-            var fn, mn, An;
-            for (fn = ["`"], mn = 0, An = le.quasis.length; mn < An; ++mn)
-              fn.push(this.generateExpression(le.quasis[mn], o.Primary, Zn)), mn + 1 < An && (fn.push("${" + on), fn.push(this.generateExpression(le.expressions[mn], o.Sequence, Zn)), fn.push(on + "}"));
+          TemplateLiteral: function(nn, cn, un) {
+            var fn, gn, An;
+            for (fn = ["`"], gn = 0, An = nn.quasis.length; gn < An; ++gn)
+              fn.push(this.generateExpression(nn.quasis[gn], o.Primary, Tn)), gn + 1 < An && (fn.push("${" + on), fn.push(this.generateExpression(nn.expressions[gn], o.Sequence, Tn)), fn.push(on + "}"));
             return fn.push("`"), fn;
           },
-          ModuleSpecifier: function(le, cn, un) {
-            return this.Literal(le, cn, un);
+          ModuleSpecifier: function(nn, cn, un) {
+            return this.Literal(nn, cn, un);
           },
-          ImportExpression: function(le, cn, un) {
+          ImportExpression: function(nn, cn, un) {
             return Qn([
               "import(",
-              this.generateExpression(le.source, o.Assignment, Zn),
+              this.generateExpression(nn.source, o.Assignment, Tn),
               ")"
             ], o.Call, cn);
           }
-        }, xn(rs.prototype, rs.Expression), rs.prototype.generateExpression = function(le, cn, un) {
-          var fn, mn;
-          return mn = le.type || t.Property, _n.verbatim && le.hasOwnProperty(_n.verbatim) ? Cs(le, cn) : (fn = this[mn](le, cn, un), _n.comment && (fn = Ws(le, fn)), ss(fn, le));
-        }, rs.prototype.generateStatement = function(le, cn) {
+        }, wn(ss.prototype, ss.Expression), ss.prototype.generateExpression = function(nn, cn, un) {
+          var fn, gn;
+          return gn = nn.type || t.Property, mn.verbatim && nn.hasOwnProperty(mn.verbatim) ? bs(nn, cn) : (fn = this[gn](nn, cn, un), mn.comment && (fn = zs(nn, fn)), ns(fn, nn));
+        }, ss.prototype.generateStatement = function(nn, cn) {
           var un, fn;
-          return un = this[le.type](le, cn), _n.comment && (un = Ws(le, un)), fn = ss(un).toString(), le.type === t.Program && !gn && an === "" && fn.charAt(fn.length - 1) === `
-` && (un = yn ? ss(un).replaceRight(/\s+$/, "") : fn.replace(/\s+$/, "")), ss(un, le);
+          return un = this[nn.type](nn, cn), mn.comment && (un = zs(nn, un)), fn = ns(un).toString(), nn.type === t.Program && !_n && an === "" && fn.charAt(fn.length - 1) === `
+` && (un = yn ? ns(un).replaceRight(/\s+$/, "") : fn.replace(/\s+$/, "")), ns(un, nn);
         };
-        function hr(le) {
+        function hr(nn) {
           var cn;
-          if (cn = new rs(), wn(le))
-            return cn.generateStatement(le, es);
-          if (kn(le))
-            return cn.generateExpression(le, o.Sequence, Zn);
-          throw new Error("Unknown node type: " + le.type);
+          if (cn = new ss(), xn(nn))
+            return cn.generateStatement(nn, _i);
+          if (Nn(nn))
+            return cn.generateExpression(nn, o.Sequence, Tn);
+          throw new Error("Unknown node type: " + nn.type);
         }
-        function mr(le, cn) {
-          var un = On(), fn, mn;
-          return cn != null ? (typeof cn.indent == "string" && (un.format.indent.style = cn.indent), typeof cn.base == "number" && (un.format.indent.base = cn.base), cn = Yn(un, cn), I = cn.format.indent.style, typeof cn.base == "string" ? R = cn.base : R = Dn(I, cn.format.indent.base)) : (cn = un, I = cn.format.indent.style, R = Dn(I, cn.format.indent.base)), z = cn.format.json, se = cn.format.renumber, tn = z ? false : cn.format.hexadecimal, rn = z ? "double" : cn.format.quotes, nn = cn.format.escapeless, an = cn.format.newline, on = cn.format.space, cn.format.compact && (an = on = I = R = ""), ln = cn.format.parentheses, pn = cn.format.semicolons, gn = cn.format.safeConcatenation, Mn = cn.directive, hn = z ? null : cn.parse, yn = cn.sourceMap, Gn = cn.sourceCode, vn = cn.format.preserveBlankLines && Gn !== null, _n = cn, yn && (e30.browser ? d = commonjsGlobal.sourceMap.SourceNode : d = requireSourceMap().SourceNode), fn = hr(le), yn ? (mn = fn.toStringWithSourceMap({
+        function mr(nn, cn) {
+          var un = Yn(), fn, gn;
+          return cn != null ? (typeof cn.indent == "string" && (un.format.indent.style = cn.indent), typeof cn.base == "number" && (un.format.indent.base = cn.base), cn = Hn(un, cn), I = cn.format.indent.style, typeof cn.base == "string" ? R = cn.base : R = Ln(I, cn.format.indent.base)) : (cn = un, I = cn.format.indent.style, R = Ln(I, cn.format.indent.base)), z = cn.format.json, se = cn.format.renumber, le = z ? false : cn.format.hexadecimal, rn = z ? "double" : cn.format.quotes, tn = cn.format.escapeless, an = cn.format.newline, on = cn.format.space, cn.format.compact && (an = on = I = R = ""), ln = cn.format.parentheses, pn = cn.format.semicolons, _n = cn.format.safeConcatenation, Mn = cn.directive, hn = z ? null : cn.parse, yn = cn.sourceMap, Gn = cn.sourceCode, Sn = cn.format.preserveBlankLines && Gn !== null, mn = cn, yn && (e30.browser ? d = commonjsGlobal.sourceMap.SourceNode : d = requireSourceMap().SourceNode), fn = hr(nn), yn ? (gn = fn.toStringWithSourceMap({
             file: cn.file,
             sourceRoot: cn.sourceMapRoot
-          }), cn.sourceContent && mn.map.setSourceContent(
+          }), cn.sourceContent && gn.map.setSourceContent(
             cn.sourceMap,
             cn.sourceContent
-          ), cn.sourceMapWithCode ? mn : mn.map.toString()) : (mn = { code: fn.toString(), map: null }, cn.sourceMapWithCode ? mn : mn.code);
+          ), cn.sourceMapWithCode ? gn : gn.map.toString()) : (gn = { code: fn.toString(), map: null }, cn.sourceMapWithCode ? gn : gn.code);
         }
-        Fn = {
+        En = {
           indent: {
             style: "",
             base: 0
@@ -7633,7 +7641,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           compact: true,
           parentheses: false,
           semicolons: false
-        }, Sn = On().format, e30.version = require$$3.version, e30.generate = mr, e30.attachComments = p.attachComments, e30.Precedence = Yn({}, o), e30.browser = false, e30.FORMAT_MINIFY = Fn, e30.FORMAT_DEFAULTS = Sn;
+        }, vn = Yn().format, e30.version = require$$3.version, e30.generate = mr, e30.attachComments = p.attachComments, e30.Precedence = Hn({}, o), e30.browser = false, e30.FORMAT_MINIFY = En, e30.FORMAT_DEFAULTS = vn;
       })();
     }(escodegen$1)), escodegen$1;
   }
@@ -7667,51 +7675,51 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     };
     const { wrapAsync: o, addReturn: l, emitMiniLocations: d, emitWidgets: p, blockBased: b, range: R } = t, I = [];
     let z = 0;
-    e30 = e30.replace(/^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg, (yn, Gn, vn, Fn) => {
-      const Sn = vn.replace(/\\/g, "\\\\").replace(/'/g, "\\'"), kn = `new StrudelButton('${Gn}: ${Sn}')`, wn = kn.length - yn.length;
-      return I.push({ afterPos: Fn + z + kn.length, delta: wn }), z += wn, kn;
+    e30 = e30.replace(/^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg, (yn, Gn, Sn, En) => {
+      const vn = Sn.replace(/\\/g, "\\\\").replace(/'/g, "\\'"), Nn = `new StrudelButton('${Gn}: ${vn}')`, xn = Nn.length - yn.length;
+      return I.push({ afterPos: En + z + Nn.length, delta: xn }), z += xn, Nn;
     });
     const se = [];
-    let tn = parse$6(e30, {
+    let le = parse$6(e30, {
       ecmaVersion: 2022,
       allowAwaitOutsideFunction: true,
       locations: true,
       onComment: se
-    }), rn = findMiniDisableRanges(se, e30.length), nn = R && R.length > 0 ? R[0] : 0, an = [], on = [];
-    const ln = { options: t, input: e30, nodeOffset: nn, miniDisableRanges: rn, labels: on }, pn = getPlugins().map((yn) => yn.walk?.(ln));
-    walk(tn, {
-      enter(yn, Gn, vn, Fn) {
-        if (b && yn.start !== void 0 && (yn.start = yn.start + nn, yn.end = yn.end + nn), b && Gn?.type === "Program")
+    }), rn = findMiniDisableRanges(se, e30.length), tn = R && R.length > 0 ? R[0] : 0, an = [], on = [];
+    const ln = { options: t, input: e30, nodeOffset: tn, miniDisableRanges: rn, labels: on }, pn = getPlugins().map((yn) => yn.walk?.(ln));
+    walk(le, {
+      enter(yn, Gn, Sn, En) {
+        if (b && yn.start !== void 0 && (yn.start = yn.start + tn, yn.end = yn.end + tn), b && Gn?.type === "Program")
           if (yn.type === "VariableDeclaration")
-            for (const Sn of yn.declarations)
-              Sn.id?.name && an.push(Sn.id.name);
+            for (const vn of yn.declarations)
+              vn.id?.name && an.push(vn.id.name);
           else yn.type === "FunctionDeclaration" && yn.id?.name && an.push(yn.id.name);
-        for (const Sn of pn)
-          if (Sn?.enter?.call(this, yn, Gn, vn, Fn))
+        for (const vn of pn)
+          if (vn?.enter?.call(this, yn, Gn, Sn, En))
             return;
         if (isLabelStatement(yn))
           return b && on.push({
             name: yn.label.name,
-            index: yn.start - nn,
-            end: yn.label.end - nn,
-            fullMatch: e30.slice(yn.start - nn, yn.label.end - nn),
+            index: yn.start - tn,
+            end: yn.label.end - tn,
+            fullMatch: e30.slice(yn.start - tn, yn.label.end - tn),
             activeVisualizer: findVisualizerInSubtree(yn.body)
           }), this.replace(labelToP(yn));
         b && isAllCall(yn) && on.push({
           name: "all",
-          index: yn.start - nn,
-          end: yn.end - nn,
-          fullMatch: e30.slice(yn.start - nn, yn.end - nn),
+          index: yn.start - tn,
+          end: yn.end - tn,
+          fullMatch: e30.slice(yn.start - tn, yn.end - tn),
           activeVisualizer: yn.arguments[0] ? findVisualizerInSubtree(yn.arguments[0]) : null
         });
       },
-      leave(yn, Gn, vn, Fn) {
-        for (const Sn of pn)
-          if (Sn?.leave?.call(this, yn, Gn, vn, Fn))
+      leave(yn, Gn, Sn, En) {
+        for (const vn of pn)
+          if (vn?.leave?.call(this, yn, Gn, Sn, En))
             return;
       }
     });
-    let { body: gn } = tn;
+    let { body: _n } = le;
     const Mn = {
       type: "ExpressionStatement",
       expression: {
@@ -7719,28 +7727,28 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         name: "silence"
       }
     };
-    if (gn.length ? gn?.[gn.length - 1]?.expression || gn.push(Mn) : (console.warn("empty body -> fallback to silence"), gn.push(Mn)), b && an.length > 0) {
+    if (_n.length ? _n?.[_n.length - 1]?.expression || _n.push(Mn) : (console.warn("empty body -> fallback to silence"), _n.push(Mn)), b && an.length > 0) {
       const yn = an.flatMap((Gn) => createScopeAssignment(Gn));
-      gn.splice(gn.length - 1, 0, ...yn);
+      _n.splice(_n.length - 1, 0, ...yn);
     }
     if (l) {
-      const { expression: yn } = gn[gn.length - 1];
-      gn[gn.length - 1] = {
+      const { expression: yn } = _n[_n.length - 1];
+      _n[_n.length - 1] = {
         type: "ReturnStatement",
         argument: yn
       };
     }
-    let _n = escodegen.generate(tn);
-    if (o && (_n = `(async ()=>{${_n}})()`), !d)
-      return { output: _n };
+    let mn = escodegen.generate(le);
+    if (o && (mn = `(async ()=>{${mn}})()`), !d)
+      return { output: mn };
     I.length > 0 && ln.miniLocations && (ln.miniLocations = ln.miniLocations.map(([yn, Gn]) => {
-      let vn = 0;
-      for (const { afterPos: Fn, delta: Sn } of I)
-        yn >= Fn && (vn += Sn);
-      return [yn - vn, Gn - vn];
+      let Sn = 0;
+      for (const { afterPos: En, delta: vn } of I)
+        yn >= En && (Sn += vn);
+      return [yn - Sn, Gn - Sn];
     }));
     let hn;
-    return { options: t, input: e30, miniDisableRanges: rn, nodeOffset: nn, ...hn } = ln, { output: _n, ...hn };
+    return { options: t, input: e30, miniDisableRanges: rn, nodeOffset: tn, ...hn } = ln, { output: mn, ...hn };
   }
   function isAllCall(e30) {
     return e30.type === "CallExpression" && e30.callee.name === "all";
@@ -7951,8 +7959,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     if (walk(t, {
       enter(R, I, z, se) {
         o.set(R, { parent: I, prop: z, index: se });
-        const tn = getStrudelPatternExpr(R);
-        tn && (l.push({ node: R, patternExpr: tn }), this.skip());
+        const le = getStrudelPatternExpr(R);
+        le && (l.push({ node: R, patternExpr: le }), this.skip());
       }
     }), !l.length)
       return { template: genExprSource(t), patternExprs: [] };
@@ -7995,31 +8003,31 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   }
   function peg$parse(e30, t) {
     t = t !== void 0 ? t : {};
-    var o = {}, l = t.grammarSource, d = { start: Sr }, p = Sr, b = ".", R = "-", I = "0", z = ",", se = "|", tn = "[", rn = "]", nn = "{", an = "}", on = "%", ln = "<", pn = ">", gn = "!", Mn = "(", _n = ")", hn = "/", yn = "*", Gn = "?", vn = ":", Fn = "..", Sn = "^", kn = "struct", wn = "target", Ln = "euclid", Nn = "slow", $n = "rotL", Bn = "rotR", Wn = "fast", In = "scale", cs = "//", _s = "cat", vs = "$", Zn = "setcps", bs = "setbpm", Ls = "hush", Ss = /^[1-9]/, es = /^[eE]/, gs = /^[+\-]/, us = /^[0-9]/, ps = /^[ \n\r\t\xA0]/, Ds = /^["']/, On = /^[#\--.0-9A-Z\^-_a-z~\xAA\xB5\xBA\xC0-\xD6\xD8-\xF6\xF8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376-\u0377\u037A-\u037D\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u052F\u0531-\u0556\u0559\u0560-\u0588\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06D5\u06E5-\u06E6\u06EE-\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4-\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u0860-\u086A\u08A0-\u08B4\u08B6-\u08BD\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098C\u098F-\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC-\u09DD\u09DF-\u09E1\u09F0-\u09F1\u09FC\u0A05-\u0A0A\u0A0F-\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32-\u0A33\u0A35-\u0A36\u0A38-\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2-\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0-\u0AE1\u0AF9\u0B05-\u0B0C\u0B0F-\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32-\u0B33\u0B35-\u0B39\u0B3D\u0B5C-\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99-\u0B9A\u0B9C\u0B9E-\u0B9F\u0BA3-\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C39\u0C3D\u0C58-\u0C5A\u0C60-\u0C61\u0C80\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDE\u0CE0-\u0CE1\u0CF1-\u0CF2\u0D05-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D54-\u0D56\u0D5F-\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32-\u0E33\u0E40-\u0E46\u0E81-\u0E82\u0E84\u0E87-\u0E88\u0E8A\u0E8D\u0E94-\u0E97\u0E99-\u0E9F\u0EA1-\u0EA3\u0EA5\u0EA7\u0EAA-\u0EAB\u0EAD-\u0EB0\u0EB2-\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065-\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F5\u13F8-\u13FD\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u16EE-\u16F8\u1700-\u170C\u170E-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1878\u1880-\u1884\u1887-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191E\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19B0-\u19C9\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4B\u1B83-\u1BA0\u1BAE-\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1C80-\u1C88\u1C90-\u1CBA\u1CBD-\u1CBF\u1CE9-\u1CEC\u1CEE-\u1CF1\u1CF5-\u1CF6\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2119-\u211D\u2124\u2126\u2128\u212A-\u212D\u212F-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2160-\u2188\u2C00-\u2C2E\u2C30-\u2C5E\u2C60-\u2CE4\u2CEB-\u2CEE\u2CF2-\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u2E2F\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303C\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BA\u31F0-\u31FF\u3400-\u4DB5\u4E00-\u9FEF\uA000-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A-\uA62B\uA640-\uA66E\uA67F-\uA69D\uA6A0-\uA6EF\uA717-\uA71F\uA722-\uA788\uA78B-\uA7B9\uA7F7-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA8FD-\uA8FE\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uA9E0-\uA9E4\uA9E6-\uA9EF\uA9FA-\uA9FE\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA7E-\uAAAF\uAAB1\uAAB5-\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uAB30-\uAB5A\uAB5C-\uAB65\uAB70-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40-\uFB41\uFB43-\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC]/, Dn = /^[@_]/, Jn = /^[^\n]/, Rn = _r("number"), xn = ls(".", false), Yn = Is([["1", "9"]], false, false), Tn = Is(["e", "E"], false, false), ns = Is(["+", "-"], false, false), hs = ls("-", false), Es = ls("0", false), Rs = Is([["0", "9"]], false, false), ms = _r("whitespace"), xs = Is([" ", `
-`, "\r", "	", "\xA0"], false, false), Ns = ls(",", false), ss = ls("|", false), is = Is(['"', "'"], false, false), zn = _r('a letter, a number, "-", "#", ".", "^", "_"'), Ms = Is(["#", ["-", "."], ["0", "9"], ["A", "Z"], ["^", "_"], ["a", "z"], "~", "\xAA", "\xB5", "\xBA", ["\xC0", "\xD6"], ["\xD8", "\xF6"], ["\xF8", "\u02C1"], ["\u02C6", "\u02D1"], ["\u02E0", "\u02E4"], "\u02EC", "\u02EE", ["\u0370", "\u0374"], ["\u0376", "\u0377"], ["\u037A", "\u037D"], "\u037F", "\u0386", ["\u0388", "\u038A"], "\u038C", ["\u038E", "\u03A1"], ["\u03A3", "\u03F5"], ["\u03F7", "\u0481"], ["\u048A", "\u052F"], ["\u0531", "\u0556"], "\u0559", ["\u0560", "\u0588"], ["\u05D0", "\u05EA"], ["\u05EF", "\u05F2"], ["\u0620", "\u064A"], ["\u066E", "\u066F"], ["\u0671", "\u06D3"], "\u06D5", ["\u06E5", "\u06E6"], ["\u06EE", "\u06EF"], ["\u06FA", "\u06FC"], "\u06FF", "\u0710", ["\u0712", "\u072F"], ["\u074D", "\u07A5"], "\u07B1", ["\u07CA", "\u07EA"], ["\u07F4", "\u07F5"], "\u07FA", ["\u0800", "\u0815"], "\u081A", "\u0824", "\u0828", ["\u0840", "\u0858"], ["\u0860", "\u086A"], ["\u08A0", "\u08B4"], ["\u08B6", "\u08BD"], ["\u0904", "\u0939"], "\u093D", "\u0950", ["\u0958", "\u0961"], ["\u0971", "\u0980"], ["\u0985", "\u098C"], ["\u098F", "\u0990"], ["\u0993", "\u09A8"], ["\u09AA", "\u09B0"], "\u09B2", ["\u09B6", "\u09B9"], "\u09BD", "\u09CE", ["\u09DC", "\u09DD"], ["\u09DF", "\u09E1"], ["\u09F0", "\u09F1"], "\u09FC", ["\u0A05", "\u0A0A"], ["\u0A0F", "\u0A10"], ["\u0A13", "\u0A28"], ["\u0A2A", "\u0A30"], ["\u0A32", "\u0A33"], ["\u0A35", "\u0A36"], ["\u0A38", "\u0A39"], ["\u0A59", "\u0A5C"], "\u0A5E", ["\u0A72", "\u0A74"], ["\u0A85", "\u0A8D"], ["\u0A8F", "\u0A91"], ["\u0A93", "\u0AA8"], ["\u0AAA", "\u0AB0"], ["\u0AB2", "\u0AB3"], ["\u0AB5", "\u0AB9"], "\u0ABD", "\u0AD0", ["\u0AE0", "\u0AE1"], "\u0AF9", ["\u0B05", "\u0B0C"], ["\u0B0F", "\u0B10"], ["\u0B13", "\u0B28"], ["\u0B2A", "\u0B30"], ["\u0B32", "\u0B33"], ["\u0B35", "\u0B39"], "\u0B3D", ["\u0B5C", "\u0B5D"], ["\u0B5F", "\u0B61"], "\u0B71", "\u0B83", ["\u0B85", "\u0B8A"], ["\u0B8E", "\u0B90"], ["\u0B92", "\u0B95"], ["\u0B99", "\u0B9A"], "\u0B9C", ["\u0B9E", "\u0B9F"], ["\u0BA3", "\u0BA4"], ["\u0BA8", "\u0BAA"], ["\u0BAE", "\u0BB9"], "\u0BD0", ["\u0C05", "\u0C0C"], ["\u0C0E", "\u0C10"], ["\u0C12", "\u0C28"], ["\u0C2A", "\u0C39"], "\u0C3D", ["\u0C58", "\u0C5A"], ["\u0C60", "\u0C61"], "\u0C80", ["\u0C85", "\u0C8C"], ["\u0C8E", "\u0C90"], ["\u0C92", "\u0CA8"], ["\u0CAA", "\u0CB3"], ["\u0CB5", "\u0CB9"], "\u0CBD", "\u0CDE", ["\u0CE0", "\u0CE1"], ["\u0CF1", "\u0CF2"], ["\u0D05", "\u0D0C"], ["\u0D0E", "\u0D10"], ["\u0D12", "\u0D3A"], "\u0D3D", "\u0D4E", ["\u0D54", "\u0D56"], ["\u0D5F", "\u0D61"], ["\u0D7A", "\u0D7F"], ["\u0D85", "\u0D96"], ["\u0D9A", "\u0DB1"], ["\u0DB3", "\u0DBB"], "\u0DBD", ["\u0DC0", "\u0DC6"], ["\u0E01", "\u0E30"], ["\u0E32", "\u0E33"], ["\u0E40", "\u0E46"], ["\u0E81", "\u0E82"], "\u0E84", ["\u0E87", "\u0E88"], "\u0E8A", "\u0E8D", ["\u0E94", "\u0E97"], ["\u0E99", "\u0E9F"], ["\u0EA1", "\u0EA3"], "\u0EA5", "\u0EA7", ["\u0EAA", "\u0EAB"], ["\u0EAD", "\u0EB0"], ["\u0EB2", "\u0EB3"], "\u0EBD", ["\u0EC0", "\u0EC4"], "\u0EC6", ["\u0EDC", "\u0EDF"], "\u0F00", ["\u0F40", "\u0F47"], ["\u0F49", "\u0F6C"], ["\u0F88", "\u0F8C"], ["\u1000", "\u102A"], "\u103F", ["\u1050", "\u1055"], ["\u105A", "\u105D"], "\u1061", ["\u1065", "\u1066"], ["\u106E", "\u1070"], ["\u1075", "\u1081"], "\u108E", ["\u10A0", "\u10C5"], "\u10C7", "\u10CD", ["\u10D0", "\u10FA"], ["\u10FC", "\u1248"], ["\u124A", "\u124D"], ["\u1250", "\u1256"], "\u1258", ["\u125A", "\u125D"], ["\u1260", "\u1288"], ["\u128A", "\u128D"], ["\u1290", "\u12B0"], ["\u12B2", "\u12B5"], ["\u12B8", "\u12BE"], "\u12C0", ["\u12C2", "\u12C5"], ["\u12C8", "\u12D6"], ["\u12D8", "\u1310"], ["\u1312", "\u1315"], ["\u1318", "\u135A"], ["\u1380", "\u138F"], ["\u13A0", "\u13F5"], ["\u13F8", "\u13FD"], ["\u1401", "\u166C"], ["\u166F", "\u167F"], ["\u1681", "\u169A"], ["\u16A0", "\u16EA"], ["\u16EE", "\u16F8"], ["\u1700", "\u170C"], ["\u170E", "\u1711"], ["\u1720", "\u1731"], ["\u1740", "\u1751"], ["\u1760", "\u176C"], ["\u176E", "\u1770"], ["\u1780", "\u17B3"], "\u17D7", "\u17DC", ["\u1820", "\u1878"], ["\u1880", "\u1884"], ["\u1887", "\u18A8"], "\u18AA", ["\u18B0", "\u18F5"], ["\u1900", "\u191E"], ["\u1950", "\u196D"], ["\u1970", "\u1974"], ["\u1980", "\u19AB"], ["\u19B0", "\u19C9"], ["\u1A00", "\u1A16"], ["\u1A20", "\u1A54"], "\u1AA7", ["\u1B05", "\u1B33"], ["\u1B45", "\u1B4B"], ["\u1B83", "\u1BA0"], ["\u1BAE", "\u1BAF"], ["\u1BBA", "\u1BE5"], ["\u1C00", "\u1C23"], ["\u1C4D", "\u1C4F"], ["\u1C5A", "\u1C7D"], ["\u1C80", "\u1C88"], ["\u1C90", "\u1CBA"], ["\u1CBD", "\u1CBF"], ["\u1CE9", "\u1CEC"], ["\u1CEE", "\u1CF1"], ["\u1CF5", "\u1CF6"], ["\u1D00", "\u1DBF"], ["\u1E00", "\u1F15"], ["\u1F18", "\u1F1D"], ["\u1F20", "\u1F45"], ["\u1F48", "\u1F4D"], ["\u1F50", "\u1F57"], "\u1F59", "\u1F5B", "\u1F5D", ["\u1F5F", "\u1F7D"], ["\u1F80", "\u1FB4"], ["\u1FB6", "\u1FBC"], "\u1FBE", ["\u1FC2", "\u1FC4"], ["\u1FC6", "\u1FCC"], ["\u1FD0", "\u1FD3"], ["\u1FD6", "\u1FDB"], ["\u1FE0", "\u1FEC"], ["\u1FF2", "\u1FF4"], ["\u1FF6", "\u1FFC"], "\u2071", "\u207F", ["\u2090", "\u209C"], "\u2102", "\u2107", ["\u210A", "\u2113"], "\u2115", ["\u2119", "\u211D"], "\u2124", "\u2126", "\u2128", ["\u212A", "\u212D"], ["\u212F", "\u2139"], ["\u213C", "\u213F"], ["\u2145", "\u2149"], "\u214E", ["\u2160", "\u2188"], ["\u2C00", "\u2C2E"], ["\u2C30", "\u2C5E"], ["\u2C60", "\u2CE4"], ["\u2CEB", "\u2CEE"], ["\u2CF2", "\u2CF3"], ["\u2D00", "\u2D25"], "\u2D27", "\u2D2D", ["\u2D30", "\u2D67"], "\u2D6F", ["\u2D80", "\u2D96"], ["\u2DA0", "\u2DA6"], ["\u2DA8", "\u2DAE"], ["\u2DB0", "\u2DB6"], ["\u2DB8", "\u2DBE"], ["\u2DC0", "\u2DC6"], ["\u2DC8", "\u2DCE"], ["\u2DD0", "\u2DD6"], ["\u2DD8", "\u2DDE"], "\u2E2F", ["\u3005", "\u3007"], ["\u3021", "\u3029"], ["\u3031", "\u3035"], ["\u3038", "\u303C"], ["\u3041", "\u3096"], ["\u309D", "\u309F"], ["\u30A1", "\u30FA"], ["\u30FC", "\u30FF"], ["\u3105", "\u312F"], ["\u3131", "\u318E"], ["\u31A0", "\u31BA"], ["\u31F0", "\u31FF"], ["\u3400", "\u4DB5"], ["\u4E00", "\u9FEF"], ["\uA000", "\uA48C"], ["\uA4D0", "\uA4FD"], ["\uA500", "\uA60C"], ["\uA610", "\uA61F"], ["\uA62A", "\uA62B"], ["\uA640", "\uA66E"], ["\uA67F", "\uA69D"], ["\uA6A0", "\uA6EF"], ["\uA717", "\uA71F"], ["\uA722", "\uA788"], ["\uA78B", "\uA7B9"], ["\uA7F7", "\uA801"], ["\uA803", "\uA805"], ["\uA807", "\uA80A"], ["\uA80C", "\uA822"], ["\uA840", "\uA873"], ["\uA882", "\uA8B3"], ["\uA8F2", "\uA8F7"], "\uA8FB", ["\uA8FD", "\uA8FE"], ["\uA90A", "\uA925"], ["\uA930", "\uA946"], ["\uA960", "\uA97C"], ["\uA984", "\uA9B2"], "\uA9CF", ["\uA9E0", "\uA9E4"], ["\uA9E6", "\uA9EF"], ["\uA9FA", "\uA9FE"], ["\uAA00", "\uAA28"], ["\uAA40", "\uAA42"], ["\uAA44", "\uAA4B"], ["\uAA60", "\uAA76"], "\uAA7A", ["\uAA7E", "\uAAAF"], "\uAAB1", ["\uAAB5", "\uAAB6"], ["\uAAB9", "\uAABD"], "\uAAC0", "\uAAC2", ["\uAADB", "\uAADD"], ["\uAAE0", "\uAAEA"], ["\uAAF2", "\uAAF4"], ["\uAB01", "\uAB06"], ["\uAB09", "\uAB0E"], ["\uAB11", "\uAB16"], ["\uAB20", "\uAB26"], ["\uAB28", "\uAB2E"], ["\uAB30", "\uAB5A"], ["\uAB5C", "\uAB65"], ["\uAB70", "\uABE2"], ["\uAC00", "\uD7A3"], ["\uD7B0", "\uD7C6"], ["\uD7CB", "\uD7FB"], ["\uF900", "\uFA6D"], ["\uFA70", "\uFAD9"], ["\uFB00", "\uFB06"], ["\uFB13", "\uFB17"], "\uFB1D", ["\uFB1F", "\uFB28"], ["\uFB2A", "\uFB36"], ["\uFB38", "\uFB3C"], "\uFB3E", ["\uFB40", "\uFB41"], ["\uFB43", "\uFB44"], ["\uFB46", "\uFBB1"], ["\uFBD3", "\uFD3D"], ["\uFD50", "\uFD8F"], ["\uFD92", "\uFDC7"], ["\uFDF0", "\uFDFB"], ["\uFE70", "\uFE74"], ["\uFE76", "\uFEFC"], ["\uFF21", "\uFF3A"], ["\uFF41", "\uFF5A"], ["\uFF66", "\uFFBE"], ["\uFFC2", "\uFFC7"], ["\uFFCA", "\uFFCF"], ["\uFFD2", "\uFFD7"], ["\uFFDA", "\uFFDC"]], false, false), ys = ls("[", false), Hs = ls("]", false), Ys = ls("{", false), Fs = ls("}", false), Ws = ls("%", false), Kn = ls("<", false), Qn = ls(">", false), Gs = Is(["@", "_"], false, false), Cs = ls("!", false), rs = ls("(", false), fs = ls(")", false), ks = ls("/", false), Xs = ls("*", false), sr = ls("?", false), hr = ls(":", false), mr = ls("..", false), le = ls("^", false), cn = ls("struct", false), un = ls("target", false), fn = ls("euclid", false), mn = ls("slow", false), An = ls("rotL", false), En = ls("rotR", false), Xn = ls("fast", false), Vn = ls("scale", false), os = ls("//", false), Ps = Is([`
-`], true, false), Bs = ls("cat", false), $s = ls("$", false), rr = ls("setcps", false), ur = ls("setbpm", false), Zs = ls("hush", false), Dr = function() {
+    var o = {}, l = t.grammarSource, d = { start: vr }, p = vr, b = ".", R = "-", I = "0", z = ",", se = "|", le = "[", rn = "]", tn = "{", an = "}", on = "%", ln = "<", pn = ">", _n = "!", Mn = "(", mn = ")", hn = "/", yn = "*", Gn = "?", Sn = ":", En = "..", vn = "^", Nn = "struct", xn = "target", Rn = "euclid", Xn = "slow", $n = "rotL", Bn = "rotR", Wn = "fast", Vn = "scale", ls = "//", ms = "cat", Gs = "$", Tn = "setcps", ys = "setbpm", Fs = "hush", Ss = /^[1-9]/, _i = /^[eE]/, _s = /^[+\-]/, os = /^[0-9]/, fs = /^[ \n\r\t\xA0]/, Rs = /^["']/, Yn = /^[#\--.0-9A-Z\^-_a-z~\xAA\xB5\xBA\xC0-\xD6\xD8-\xF6\xF8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376-\u0377\u037A-\u037D\u037F\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u052F\u0531-\u0556\u0559\u0560-\u0588\u05D0-\u05EA\u05EF-\u05F2\u0620-\u064A\u066E-\u066F\u0671-\u06D3\u06D5\u06E5-\u06E6\u06EE-\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4-\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u0860-\u086A\u08A0-\u08B4\u08B6-\u08BD\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098C\u098F-\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC-\u09DD\u09DF-\u09E1\u09F0-\u09F1\u09FC\u0A05-\u0A0A\u0A0F-\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32-\u0A33\u0A35-\u0A36\u0A38-\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2-\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0-\u0AE1\u0AF9\u0B05-\u0B0C\u0B0F-\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32-\u0B33\u0B35-\u0B39\u0B3D\u0B5C-\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99-\u0B9A\u0B9C\u0B9E-\u0B9F\u0BA3-\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C39\u0C3D\u0C58-\u0C5A\u0C60-\u0C61\u0C80\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDE\u0CE0-\u0CE1\u0CF1-\u0CF2\u0D05-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D54-\u0D56\u0D5F-\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32-\u0E33\u0E40-\u0E46\u0E81-\u0E82\u0E84\u0E87-\u0E88\u0E8A\u0E8D\u0E94-\u0E97\u0E99-\u0E9F\u0EA1-\u0EA3\u0EA5\u0EA7\u0EAA-\u0EAB\u0EAD-\u0EB0\u0EB2-\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065-\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F5\u13F8-\u13FD\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u16EE-\u16F8\u1700-\u170C\u170E-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1878\u1880-\u1884\u1887-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191E\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19B0-\u19C9\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4B\u1B83-\u1BA0\u1BAE-\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1C80-\u1C88\u1C90-\u1CBA\u1CBD-\u1CBF\u1CE9-\u1CEC\u1CEE-\u1CF1\u1CF5-\u1CF6\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2119-\u211D\u2124\u2126\u2128\u212A-\u212D\u212F-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2160-\u2188\u2C00-\u2C2E\u2C30-\u2C5E\u2C60-\u2CE4\u2CEB-\u2CEE\u2CF2-\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u2E2F\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303C\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u31BA\u31F0-\u31FF\u3400-\u4DB5\u4E00-\u9FEF\uA000-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A-\uA62B\uA640-\uA66E\uA67F-\uA69D\uA6A0-\uA6EF\uA717-\uA71F\uA722-\uA788\uA78B-\uA7B9\uA7F7-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA8FD-\uA8FE\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uA9E0-\uA9E4\uA9E6-\uA9EF\uA9FA-\uA9FE\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA7E-\uAAAF\uAAB1\uAAB5-\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uAB30-\uAB5A\uAB5C-\uAB65\uAB70-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40-\uFB41\uFB43-\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC]/, Ln = /^[@_]/, Jn = /^[^\n]/, Dn = _r("number"), wn = us(".", false), Hn = Bs([["1", "9"]], false, false), Zn = Bs(["e", "E"], false, false), ts = Bs(["+", "-"], false, false), ps = us("-", false), xs = us("0", false), Ls = Bs([["0", "9"]], false, false), hs = _r("whitespace"), Es = Bs([" ", `
+`, "\r", "	", "\xA0"], false, false), Ts = us(",", false), ns = us("|", false), is = Bs(['"', "'"], false, false), zn = _r('a letter, a number, "-", "#", ".", "^", "_"'), Cs = Bs(["#", ["-", "."], ["0", "9"], ["A", "Z"], ["^", "_"], ["a", "z"], "~", "\xAA", "\xB5", "\xBA", ["\xC0", "\xD6"], ["\xD8", "\xF6"], ["\xF8", "\u02C1"], ["\u02C6", "\u02D1"], ["\u02E0", "\u02E4"], "\u02EC", "\u02EE", ["\u0370", "\u0374"], ["\u0376", "\u0377"], ["\u037A", "\u037D"], "\u037F", "\u0386", ["\u0388", "\u038A"], "\u038C", ["\u038E", "\u03A1"], ["\u03A3", "\u03F5"], ["\u03F7", "\u0481"], ["\u048A", "\u052F"], ["\u0531", "\u0556"], "\u0559", ["\u0560", "\u0588"], ["\u05D0", "\u05EA"], ["\u05EF", "\u05F2"], ["\u0620", "\u064A"], ["\u066E", "\u066F"], ["\u0671", "\u06D3"], "\u06D5", ["\u06E5", "\u06E6"], ["\u06EE", "\u06EF"], ["\u06FA", "\u06FC"], "\u06FF", "\u0710", ["\u0712", "\u072F"], ["\u074D", "\u07A5"], "\u07B1", ["\u07CA", "\u07EA"], ["\u07F4", "\u07F5"], "\u07FA", ["\u0800", "\u0815"], "\u081A", "\u0824", "\u0828", ["\u0840", "\u0858"], ["\u0860", "\u086A"], ["\u08A0", "\u08B4"], ["\u08B6", "\u08BD"], ["\u0904", "\u0939"], "\u093D", "\u0950", ["\u0958", "\u0961"], ["\u0971", "\u0980"], ["\u0985", "\u098C"], ["\u098F", "\u0990"], ["\u0993", "\u09A8"], ["\u09AA", "\u09B0"], "\u09B2", ["\u09B6", "\u09B9"], "\u09BD", "\u09CE", ["\u09DC", "\u09DD"], ["\u09DF", "\u09E1"], ["\u09F0", "\u09F1"], "\u09FC", ["\u0A05", "\u0A0A"], ["\u0A0F", "\u0A10"], ["\u0A13", "\u0A28"], ["\u0A2A", "\u0A30"], ["\u0A32", "\u0A33"], ["\u0A35", "\u0A36"], ["\u0A38", "\u0A39"], ["\u0A59", "\u0A5C"], "\u0A5E", ["\u0A72", "\u0A74"], ["\u0A85", "\u0A8D"], ["\u0A8F", "\u0A91"], ["\u0A93", "\u0AA8"], ["\u0AAA", "\u0AB0"], ["\u0AB2", "\u0AB3"], ["\u0AB5", "\u0AB9"], "\u0ABD", "\u0AD0", ["\u0AE0", "\u0AE1"], "\u0AF9", ["\u0B05", "\u0B0C"], ["\u0B0F", "\u0B10"], ["\u0B13", "\u0B28"], ["\u0B2A", "\u0B30"], ["\u0B32", "\u0B33"], ["\u0B35", "\u0B39"], "\u0B3D", ["\u0B5C", "\u0B5D"], ["\u0B5F", "\u0B61"], "\u0B71", "\u0B83", ["\u0B85", "\u0B8A"], ["\u0B8E", "\u0B90"], ["\u0B92", "\u0B95"], ["\u0B99", "\u0B9A"], "\u0B9C", ["\u0B9E", "\u0B9F"], ["\u0BA3", "\u0BA4"], ["\u0BA8", "\u0BAA"], ["\u0BAE", "\u0BB9"], "\u0BD0", ["\u0C05", "\u0C0C"], ["\u0C0E", "\u0C10"], ["\u0C12", "\u0C28"], ["\u0C2A", "\u0C39"], "\u0C3D", ["\u0C58", "\u0C5A"], ["\u0C60", "\u0C61"], "\u0C80", ["\u0C85", "\u0C8C"], ["\u0C8E", "\u0C90"], ["\u0C92", "\u0CA8"], ["\u0CAA", "\u0CB3"], ["\u0CB5", "\u0CB9"], "\u0CBD", "\u0CDE", ["\u0CE0", "\u0CE1"], ["\u0CF1", "\u0CF2"], ["\u0D05", "\u0D0C"], ["\u0D0E", "\u0D10"], ["\u0D12", "\u0D3A"], "\u0D3D", "\u0D4E", ["\u0D54", "\u0D56"], ["\u0D5F", "\u0D61"], ["\u0D7A", "\u0D7F"], ["\u0D85", "\u0D96"], ["\u0D9A", "\u0DB1"], ["\u0DB3", "\u0DBB"], "\u0DBD", ["\u0DC0", "\u0DC6"], ["\u0E01", "\u0E30"], ["\u0E32", "\u0E33"], ["\u0E40", "\u0E46"], ["\u0E81", "\u0E82"], "\u0E84", ["\u0E87", "\u0E88"], "\u0E8A", "\u0E8D", ["\u0E94", "\u0E97"], ["\u0E99", "\u0E9F"], ["\u0EA1", "\u0EA3"], "\u0EA5", "\u0EA7", ["\u0EAA", "\u0EAB"], ["\u0EAD", "\u0EB0"], ["\u0EB2", "\u0EB3"], "\u0EBD", ["\u0EC0", "\u0EC4"], "\u0EC6", ["\u0EDC", "\u0EDF"], "\u0F00", ["\u0F40", "\u0F47"], ["\u0F49", "\u0F6C"], ["\u0F88", "\u0F8C"], ["\u1000", "\u102A"], "\u103F", ["\u1050", "\u1055"], ["\u105A", "\u105D"], "\u1061", ["\u1065", "\u1066"], ["\u106E", "\u1070"], ["\u1075", "\u1081"], "\u108E", ["\u10A0", "\u10C5"], "\u10C7", "\u10CD", ["\u10D0", "\u10FA"], ["\u10FC", "\u1248"], ["\u124A", "\u124D"], ["\u1250", "\u1256"], "\u1258", ["\u125A", "\u125D"], ["\u1260", "\u1288"], ["\u128A", "\u128D"], ["\u1290", "\u12B0"], ["\u12B2", "\u12B5"], ["\u12B8", "\u12BE"], "\u12C0", ["\u12C2", "\u12C5"], ["\u12C8", "\u12D6"], ["\u12D8", "\u1310"], ["\u1312", "\u1315"], ["\u1318", "\u135A"], ["\u1380", "\u138F"], ["\u13A0", "\u13F5"], ["\u13F8", "\u13FD"], ["\u1401", "\u166C"], ["\u166F", "\u167F"], ["\u1681", "\u169A"], ["\u16A0", "\u16EA"], ["\u16EE", "\u16F8"], ["\u1700", "\u170C"], ["\u170E", "\u1711"], ["\u1720", "\u1731"], ["\u1740", "\u1751"], ["\u1760", "\u176C"], ["\u176E", "\u1770"], ["\u1780", "\u17B3"], "\u17D7", "\u17DC", ["\u1820", "\u1878"], ["\u1880", "\u1884"], ["\u1887", "\u18A8"], "\u18AA", ["\u18B0", "\u18F5"], ["\u1900", "\u191E"], ["\u1950", "\u196D"], ["\u1970", "\u1974"], ["\u1980", "\u19AB"], ["\u19B0", "\u19C9"], ["\u1A00", "\u1A16"], ["\u1A20", "\u1A54"], "\u1AA7", ["\u1B05", "\u1B33"], ["\u1B45", "\u1B4B"], ["\u1B83", "\u1BA0"], ["\u1BAE", "\u1BAF"], ["\u1BBA", "\u1BE5"], ["\u1C00", "\u1C23"], ["\u1C4D", "\u1C4F"], ["\u1C5A", "\u1C7D"], ["\u1C80", "\u1C88"], ["\u1C90", "\u1CBA"], ["\u1CBD", "\u1CBF"], ["\u1CE9", "\u1CEC"], ["\u1CEE", "\u1CF1"], ["\u1CF5", "\u1CF6"], ["\u1D00", "\u1DBF"], ["\u1E00", "\u1F15"], ["\u1F18", "\u1F1D"], ["\u1F20", "\u1F45"], ["\u1F48", "\u1F4D"], ["\u1F50", "\u1F57"], "\u1F59", "\u1F5B", "\u1F5D", ["\u1F5F", "\u1F7D"], ["\u1F80", "\u1FB4"], ["\u1FB6", "\u1FBC"], "\u1FBE", ["\u1FC2", "\u1FC4"], ["\u1FC6", "\u1FCC"], ["\u1FD0", "\u1FD3"], ["\u1FD6", "\u1FDB"], ["\u1FE0", "\u1FEC"], ["\u1FF2", "\u1FF4"], ["\u1FF6", "\u1FFC"], "\u2071", "\u207F", ["\u2090", "\u209C"], "\u2102", "\u2107", ["\u210A", "\u2113"], "\u2115", ["\u2119", "\u211D"], "\u2124", "\u2126", "\u2128", ["\u212A", "\u212D"], ["\u212F", "\u2139"], ["\u213C", "\u213F"], ["\u2145", "\u2149"], "\u214E", ["\u2160", "\u2188"], ["\u2C00", "\u2C2E"], ["\u2C30", "\u2C5E"], ["\u2C60", "\u2CE4"], ["\u2CEB", "\u2CEE"], ["\u2CF2", "\u2CF3"], ["\u2D00", "\u2D25"], "\u2D27", "\u2D2D", ["\u2D30", "\u2D67"], "\u2D6F", ["\u2D80", "\u2D96"], ["\u2DA0", "\u2DA6"], ["\u2DA8", "\u2DAE"], ["\u2DB0", "\u2DB6"], ["\u2DB8", "\u2DBE"], ["\u2DC0", "\u2DC6"], ["\u2DC8", "\u2DCE"], ["\u2DD0", "\u2DD6"], ["\u2DD8", "\u2DDE"], "\u2E2F", ["\u3005", "\u3007"], ["\u3021", "\u3029"], ["\u3031", "\u3035"], ["\u3038", "\u303C"], ["\u3041", "\u3096"], ["\u309D", "\u309F"], ["\u30A1", "\u30FA"], ["\u30FC", "\u30FF"], ["\u3105", "\u312F"], ["\u3131", "\u318E"], ["\u31A0", "\u31BA"], ["\u31F0", "\u31FF"], ["\u3400", "\u4DB5"], ["\u4E00", "\u9FEF"], ["\uA000", "\uA48C"], ["\uA4D0", "\uA4FD"], ["\uA500", "\uA60C"], ["\uA610", "\uA61F"], ["\uA62A", "\uA62B"], ["\uA640", "\uA66E"], ["\uA67F", "\uA69D"], ["\uA6A0", "\uA6EF"], ["\uA717", "\uA71F"], ["\uA722", "\uA788"], ["\uA78B", "\uA7B9"], ["\uA7F7", "\uA801"], ["\uA803", "\uA805"], ["\uA807", "\uA80A"], ["\uA80C", "\uA822"], ["\uA840", "\uA873"], ["\uA882", "\uA8B3"], ["\uA8F2", "\uA8F7"], "\uA8FB", ["\uA8FD", "\uA8FE"], ["\uA90A", "\uA925"], ["\uA930", "\uA946"], ["\uA960", "\uA97C"], ["\uA984", "\uA9B2"], "\uA9CF", ["\uA9E0", "\uA9E4"], ["\uA9E6", "\uA9EF"], ["\uA9FA", "\uA9FE"], ["\uAA00", "\uAA28"], ["\uAA40", "\uAA42"], ["\uAA44", "\uAA4B"], ["\uAA60", "\uAA76"], "\uAA7A", ["\uAA7E", "\uAAAF"], "\uAAB1", ["\uAAB5", "\uAAB6"], ["\uAAB9", "\uAABD"], "\uAAC0", "\uAAC2", ["\uAADB", "\uAADD"], ["\uAAE0", "\uAAEA"], ["\uAAF2", "\uAAF4"], ["\uAB01", "\uAB06"], ["\uAB09", "\uAB0E"], ["\uAB11", "\uAB16"], ["\uAB20", "\uAB26"], ["\uAB28", "\uAB2E"], ["\uAB30", "\uAB5A"], ["\uAB5C", "\uAB65"], ["\uAB70", "\uABE2"], ["\uAC00", "\uD7A3"], ["\uD7B0", "\uD7C6"], ["\uD7CB", "\uD7FB"], ["\uF900", "\uFA6D"], ["\uFA70", "\uFAD9"], ["\uFB00", "\uFB06"], ["\uFB13", "\uFB17"], "\uFB1D", ["\uFB1F", "\uFB28"], ["\uFB2A", "\uFB36"], ["\uFB38", "\uFB3C"], "\uFB3E", ["\uFB40", "\uFB41"], ["\uFB43", "\uFB44"], ["\uFB46", "\uFBB1"], ["\uFBD3", "\uFD3D"], ["\uFD50", "\uFD8F"], ["\uFD92", "\uFDC7"], ["\uFDF0", "\uFDFB"], ["\uFE70", "\uFE74"], ["\uFE76", "\uFEFC"], ["\uFF21", "\uFF3A"], ["\uFF41", "\uFF5A"], ["\uFF66", "\uFFBE"], ["\uFFC2", "\uFFC7"], ["\uFFCA", "\uFFCF"], ["\uFFD2", "\uFFD7"], ["\uFFDA", "\uFFDC"]], false, false), gs = us("[", false), Us = us("]", false), Os = us("{", false), Ps = us("}", false), zs = us("%", false), Kn = us("<", false), Qn = us(">", false), Ms = Bs(["@", "_"], false, false), bs = us("!", false), ss = us("(", false), cs = us(")", false), Ds = us("/", false), Ns = us("*", false), sr = us("?", false), hr = us(":", false), mr = us("..", false), nn = us("^", false), cn = us("struct", false), un = us("target", false), fn = us("euclid", false), gn = us("slow", false), An = us("rotL", false), Fn = us("rotR", false), kn = us("fast", false), In = us("scale", false), rs = us("//", false), As = Bs([`
+`], true, false), Is = us("cat", false), Ws = us("$", false), rr = us("setcps", false), ur = us("setbpm", false), ks = us("hush", false), Lr = function() {
       return parseFloat(ga());
-    }, Rr = function(sn) {
+    }, Dr = function(sn) {
       const dn = sn.join("");
       return dn === "." || dn === "_";
-    }, kr = function(sn) {
+    }, Nr = function(sn) {
       return new ao(sn.join(""));
+    }, kr = function(sn) {
+      return sn;
+    }, Tr = function(sn, dn) {
+      return sn.arguments_.stepsPerCycle = dn, sn;
     }, Xr = function(sn) {
       return sn;
-    }, Zr = function(sn, dn) {
-      return sn.arguments_.stepsPerCycle = dn, sn;
-    }, Nr = function(sn) {
-      return sn;
-    }, Tr = function(sn) {
+    }, Zr = function(sn) {
       return sn.arguments_.alignment = "polymeter_slowcat", sn;
-    }, Vr = function(sn) {
+    }, Ir = function(sn) {
       return (dn) => dn.options_.weight = (dn.options_.weight ?? 1) + (sn ?? 2) - 1;
     }, Br = function(sn) {
       return (dn) => {
         const Cn = (dn.options_.reps ?? 1) + (sn ?? 2) - 1;
         dn.options_.reps = Cn, dn.options_.ops = dn.options_.ops.filter((Pn) => Pn.type_ !== "replicate"), dn.options_.ops.push({ type_: "replicate", arguments_: { amount: Cn } }), dn.options_.weight = Cn;
       };
-    }, Ir = function(sn, dn, Cn) {
+    }, Vr = function(sn, dn, Cn) {
       return (Pn) => Pn.options_.ops.push({ type_: "bjorklund", arguments_: { pulse: sn, step: dn, rotation: Cn } });
     }, zr = function(sn) {
       return (dn) => dn.options_.ops.push({ type_: "stretch", arguments_: { amount: sn, type: "slow" } });
@@ -8029,14 +8037,14 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return (dn) => dn.options_.ops.push({ type_: "degradeBy", arguments_: { amount: sn, seed: Cr++ } });
     }, Ur = function(sn) {
       return (dn) => dn.options_.ops.push({ type_: "tail", arguments_: { element: sn } });
-    }, Hr = function(sn) {
+    }, Or = function(sn) {
       return (dn) => dn.options_.ops.push({ type_: "range", arguments_: { element: sn } });
-    }, Yr = function(sn, dn) {
+    }, Hr = function(sn, dn) {
       const Cn = new uo(sn, { ops: [], weight: 1, reps: 1 });
       for (const Pn of dn)
         Pn(Cn);
       return Cn;
-    }, Or = function(sn, dn) {
+    }, Yr = function(sn, dn) {
       return new dr(dn, "fastcat", void 0, !!sn);
     }, Kr = function(sn) {
       return { alignment: "stack", list: sn };
@@ -8054,9 +8062,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return { name: "struct", args: { mini: sn } };
     }, na = function(sn) {
       return { name: "target", args: { name: sn } };
-    }, sa = function(sn, dn, Cn) {
+    }, ia = function(sn, dn, Cn) {
       return { name: "bjorklund", args: { pulse: sn, step: parseInt(dn) } };
-    }, ia = function(sn) {
+    }, sa = function(sn) {
       return { name: "stretch", args: { amount: sn } };
     }, ra = function(sn) {
       return { name: "shift", args: { amount: "-" + sn } };
@@ -8084,22 +8092,22 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return new br("setcps", { value: sn / 120 / 2 });
     }, _a = function() {
       return new br("hush");
-    }, bn = t.peg$currPos | 0, ts = bn, Os = [{ line: 1, column: 1 }], Ts = bn, lr = t.peg$maxFailExpected || [], Un = t.peg$silentFails | 0, er;
+    }, bn = t.peg$currPos | 0, es = bn, Hs = [{ line: 1, column: 1 }], Xs = bn, lr = t.peg$maxFailExpected || [], Un = t.peg$silentFails | 0, er;
     if (t.startRule) {
       if (!(t.startRule in d))
         throw new Error(`Can't start parsing from rule "` + t.startRule + '".');
       p = d[t.startRule];
     }
     function ga() {
-      return e30.substring(ts, bn);
+      return e30.substring(es, bn);
     }
     function Gr() {
-      return gr(ts, bn);
+      return gr(es, bn);
     }
-    function ls(sn, dn) {
+    function us(sn, dn) {
       return { type: "literal", text: sn, ignoreCase: dn };
     }
-    function Is(sn, dn, Cn) {
+    function Bs(sn, dn, Cn) {
       return { type: "class", parts: sn, inverted: dn, ignoreCase: Cn };
     }
     function ya() {
@@ -8108,24 +8116,24 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     function _r(sn) {
       return { type: "other", description: sn };
     }
-    function vr(sn) {
-      var dn = Os[sn], Cn;
+    function Sr(sn) {
+      var dn = Hs[sn], Cn;
       if (dn)
         return dn;
-      if (sn >= Os.length)
-        Cn = Os.length - 1;
+      if (sn >= Hs.length)
+        Cn = Hs.length - 1;
       else
-        for (Cn = sn; !Os[--Cn]; )
+        for (Cn = sn; !Hs[--Cn]; )
           ;
-      for (dn = Os[Cn], dn = {
+      for (dn = Hs[Cn], dn = {
         line: dn.line,
         column: dn.column
       }; Cn < sn; )
         e30.charCodeAt(Cn) === 10 ? (dn.line++, dn.column = 1) : dn.column++, Cn++;
-      return Os[sn] = dn, dn;
+      return Hs[sn] = dn, dn;
     }
     function gr(sn, dn, Cn) {
-      var Pn = vr(sn), Hn = vr(dn), As = {
+      var Pn = Sr(sn), On = Sr(dn), vs = {
         source: l,
         start: {
           offset: sn,
@@ -8134,14 +8142,14 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         },
         end: {
           offset: dn,
-          line: Hn.line,
-          column: Hn.column
+          line: On.line,
+          column: On.column
         }
       };
-      return As;
+      return vs;
     }
     function jn(sn) {
-      bn < Ts || (bn > Ts && (Ts = bn, lr = []), lr.push(sn));
+      bn < Xs || (bn > Xs && (Xs = bn, lr = []), lr.push(sn));
     }
     function ba(sn, dn, Cn) {
       return new peg$SyntaxError(
@@ -8151,32 +8159,32 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         Cn
       );
     }
-    function Sr() {
+    function vr() {
       var sn;
       return sn = ro(), sn;
     }
-    function zs() {
+    function Vs() {
       var sn, dn;
-      return Un++, sn = bn, Aa(), dn = cr(), dn !== o ? (Sa(), va(), ts = sn, sn = Dr()) : (bn = sn, sn = o), Un--, sn === o && Un === 0 && jn(Rn), sn;
+      return Un++, sn = bn, Aa(), dn = cr(), dn !== o ? (va(), Sa(), es = sn, sn = Lr()) : (bn = sn, sn = o), Un--, sn === o && Un === 0 && jn(Dn), sn;
     }
     function Ca() {
       var sn;
-      return e30.charCodeAt(bn) === 46 ? (sn = b, bn++) : (sn = o, Un === 0 && jn(xn)), sn;
+      return e30.charCodeAt(bn) === 46 ? (sn = b, bn++) : (sn = o, Un === 0 && jn(wn)), sn;
     }
     function Ma() {
       var sn;
-      return sn = e30.charAt(bn), Ss.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Yn)), sn;
+      return sn = e30.charAt(bn), Ss.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Hn)), sn;
     }
     function Ga() {
       var sn;
-      return sn = e30.charAt(bn), es.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Tn)), sn;
+      return sn = e30.charAt(bn), _i.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Zn)), sn;
     }
-    function va() {
-      var sn, dn, Cn, Pn, Hn;
+    function Sa() {
+      var sn, dn, Cn, Pn, On;
       if (sn = bn, dn = Ga(), dn !== o) {
-        if (Cn = e30.charAt(bn), gs.test(Cn) ? bn++ : (Cn = o, Un === 0 && jn(ns)), Cn === o && (Cn = null), Pn = [], Hn = Ks(), Hn !== o)
-          for (; Hn !== o; )
-            Pn.push(Hn), Hn = Ks();
+        if (Cn = e30.charAt(bn), _s.test(Cn) ? bn++ : (Cn = o, Un === 0 && jn(ts)), Cn === o && (Cn = null), Pn = [], On = Ys(), On !== o)
+          for (; On !== o; )
+            Pn.push(On), On = Ys();
         else
           Pn = o;
         Pn !== o ? (dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o);
@@ -8184,12 +8192,12 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         bn = sn, sn = o;
       return sn;
     }
-    function Sa() {
+    function va() {
       var sn, dn, Cn, Pn;
       if (sn = bn, dn = Ca(), dn !== o) {
-        if (Cn = [], Pn = Ks(), Pn !== o)
+        if (Cn = [], Pn = Ys(), Pn !== o)
           for (; Pn !== o; )
-            Cn.push(Pn), Pn = Ks();
+            Cn.push(Pn), Pn = Ys();
         else
           Cn = o;
         Cn !== o ? (dn = [dn, Cn], sn = dn) : (bn = sn, sn = o);
@@ -8199,10 +8207,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function cr() {
       var sn, dn, Cn, Pn;
-      if (sn = Pa(), sn === o)
+      if (sn = Ea(), sn === o)
         if (sn = bn, dn = Ma(), dn !== o) {
-          for (Cn = [], Pn = Ks(); Pn !== o; )
-            Cn.push(Pn), Pn = Ks();
+          for (Cn = [], Pn = Ys(); Pn !== o; )
+            Cn.push(Pn), Pn = Ys();
           dn = [dn, Cn], sn = dn;
         } else
           bn = sn, sn = o;
@@ -8210,207 +8218,207 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function Aa() {
       var sn;
-      return e30.charCodeAt(bn) === 45 ? (sn = R, bn++) : (sn = o, Un === 0 && jn(hs)), sn;
+      return e30.charCodeAt(bn) === 45 ? (sn = R, bn++) : (sn = o, Un === 0 && jn(ps)), sn;
     }
-    function Pa() {
+    function Ea() {
       var sn;
-      return e30.charCodeAt(bn) === 48 ? (sn = I, bn++) : (sn = o, Un === 0 && jn(Es)), sn;
+      return e30.charCodeAt(bn) === 48 ? (sn = I, bn++) : (sn = o, Un === 0 && jn(xs)), sn;
     }
-    function Ks() {
+    function Ys() {
       var sn;
-      return sn = e30.charAt(bn), us.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Rs)), sn;
+      return sn = e30.charAt(bn), os.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Ls)), sn;
     }
     function qn() {
       var sn, dn;
-      for (Un++, sn = [], dn = e30.charAt(bn), ps.test(dn) ? bn++ : (dn = o, Un === 0 && jn(xs)); dn !== o; )
-        sn.push(dn), dn = e30.charAt(bn), ps.test(dn) ? bn++ : (dn = o, Un === 0 && jn(xs));
-      return Un--, dn = o, Un === 0 && jn(ms), sn;
+      for (Un++, sn = [], dn = e30.charAt(bn), fs.test(dn) ? bn++ : (dn = o, Un === 0 && jn(Es)); dn !== o; )
+        sn.push(dn), dn = e30.charAt(bn), fs.test(dn) ? bn++ : (dn = o, Un === 0 && jn(Es));
+      return Un--, dn = o, Un === 0 && jn(hs), sn;
     }
-    function Js() {
+    function Ks() {
       var sn, dn, Cn, Pn;
-      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 44 ? (Cn = z, bn++) : (Cn = o, Un === 0 && jn(Ns)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
+      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 44 ? (Cn = z, bn++) : (Cn = o, Un === 0 && jn(Ts)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
     }
     function Ar() {
       var sn, dn, Cn, Pn;
-      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 124 ? (Cn = se, bn++) : (Cn = o, Un === 0 && jn(ss)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
+      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 124 ? (Cn = se, bn++) : (Cn = o, Un === 0 && jn(ns)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
     }
-    function Pr() {
+    function Er() {
       var sn, dn, Cn, Pn;
-      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 46 ? (Cn = b, bn++) : (Cn = o, Un === 0 && jn(xn)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
+      return sn = bn, dn = qn(), e30.charCodeAt(bn) === 46 ? (Cn = b, bn++) : (Cn = o, Un === 0 && jn(wn)), Cn !== o ? (Pn = qn(), dn = [dn, Cn, Pn], sn = dn) : (bn = sn, sn = o), sn;
     }
-    function js() {
+    function Js() {
       var sn;
-      return sn = e30.charAt(bn), Ds.test(sn) ? bn++ : (sn = o, Un === 0 && jn(is)), sn;
+      return sn = e30.charAt(bn), Rs.test(sn) ? bn++ : (sn = o, Un === 0 && jn(is)), sn;
     }
     function fr() {
       var sn;
-      return Un++, sn = e30.charAt(bn), On.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Ms)), Un--, sn === o && Un === 0 && jn(zn), sn;
+      return Un++, sn = e30.charAt(bn), Yn.test(sn) ? bn++ : (sn = o, Un === 0 && jn(Cs)), Un--, sn === o && Un === 0 && jn(zn), sn;
     }
-    function xr() {
+    function Pr() {
       var sn, dn, Cn, Pn;
       if (sn = bn, qn(), dn = [], Cn = fr(), Cn !== o)
         for (; Cn !== o; )
           dn.push(Cn), Cn = fr();
       else
         dn = o;
-      return dn !== o ? (Cn = qn(), ts = bn, Pn = Rr(dn), Pn ? Pn = o : Pn = void 0, Pn !== o ? (ts = sn, sn = kr(dn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return dn !== o ? (Cn = qn(), es = bn, Pn = Dr(dn), Pn ? Pn = o : Pn = void 0, Pn !== o ? (es = sn, sn = Nr(dn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
-    function xa() {
+    function Pa() {
       var sn, dn, Cn, Pn;
-      return sn = bn, qn(), e30.charCodeAt(bn) === 91 ? (dn = tn, bn++) : (dn = o, Un === 0 && jn(ys)), dn !== o ? (qn(), Cn = Er(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 93 ? (Pn = rn, bn++) : (Pn = o, Un === 0 && jn(Hs)), Pn !== o ? (qn(), ts = sn, sn = Xr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function Fa() {
-      var sn, dn, Cn, Pn, Hn;
-      return sn = bn, qn(), e30.charCodeAt(bn) === 123 ? (dn = nn, bn++) : (dn = o, Un === 0 && jn(Ys)), dn !== o ? (qn(), Cn = Lr(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 125 ? (Pn = an, bn++) : (Pn = o, Un === 0 && jn(Fs)), Pn !== o ? (Hn = wa(), Hn === o && (Hn = null), qn(), ts = sn, sn = Zr(Cn, Hn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), e30.charCodeAt(bn) === 91 ? (dn = le, bn++) : (dn = o, Un === 0 && jn(gs)), dn !== o ? (qn(), Cn = Fr(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 93 ? (Pn = rn, bn++) : (Pn = o, Un === 0 && jn(Us)), Pn !== o ? (qn(), es = sn, sn = kr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function wa() {
+      var sn, dn, Cn, Pn, On;
+      return sn = bn, qn(), e30.charCodeAt(bn) === 123 ? (dn = tn, bn++) : (dn = o, Un === 0 && jn(Os)), dn !== o ? (qn(), Cn = Rr(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 125 ? (Pn = an, bn++) : (Pn = o, Un === 0 && jn(Ps)), Pn !== o ? (On = xa(), On === o && (On = null), qn(), es = sn, sn = Tr(Cn, On)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function xa() {
       var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 37 ? (dn = on, bn++) : (dn = o, Un === 0 && jn(Ws)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Nr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.charCodeAt(bn) === 37 ? (dn = on, bn++) : (dn = o, Un === 0 && jn(zs)), dn !== o ? (Cn = js(), Cn !== o ? (es = sn, sn = Xr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
-    function Ea() {
+    function Fa() {
       var sn, dn, Cn, Pn;
-      return sn = bn, qn(), e30.charCodeAt(bn) === 60 ? (dn = ln, bn++) : (dn = o, Un === 0 && jn(Kn)), dn !== o ? (qn(), Cn = Lr(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 62 ? (Pn = pn, bn++) : (Pn = o, Un === 0 && jn(Qn)), Pn !== o ? (qn(), ts = sn, sn = Tr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), e30.charCodeAt(bn) === 60 ? (dn = ln, bn++) : (dn = o, Un === 0 && jn(Kn)), dn !== o ? (qn(), Cn = Rr(), Cn !== o ? (qn(), e30.charCodeAt(bn) === 62 ? (Pn = pn, bn++) : (Pn = o, Un === 0 && jn(Qn)), Pn !== o ? (qn(), es = sn, sn = Zr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
-    function qs() {
+    function js() {
       var sn;
-      return sn = xr(), sn === o && (sn = xa(), sn === o && (sn = Fa(), sn === o && (sn = Ea()))), sn;
+      return sn = Pr(), sn === o && (sn = Pa(), sn === o && (sn = wa(), sn === o && (sn = Fa()))), sn;
     }
-    function Fr() {
+    function wr() {
       var sn;
-      return sn = La(), sn === o && (sn = Ra(), sn === o && (sn = ka(), sn === o && (sn = Xa(), sn === o && (sn = Da(), sn === o && (sn = Za(), sn === o && (sn = Na(), sn === o && (sn = Ta()))))))), sn;
+      return sn = Ra(), sn === o && (sn = Da(), sn === o && (sn = Na(), sn === o && (sn = ka(), sn === o && (sn = La(), sn === o && (sn = Ta(), sn === o && (sn = Xa(), sn === o && (sn = Za()))))))), sn;
+    }
+    function Ra() {
+      var sn, dn, Cn;
+      return sn = bn, qn(), dn = e30.charAt(bn), Ln.test(dn) ? bn++ : (dn = o, Un === 0 && jn(Ms)), dn !== o ? (Cn = Vs(), Cn === o && (Cn = null), es = sn, sn = Ir(Cn)) : (bn = sn, sn = o), sn;
     }
     function La() {
       var sn, dn, Cn;
-      return sn = bn, qn(), dn = e30.charAt(bn), Dn.test(dn) ? bn++ : (dn = o, Un === 0 && jn(Gs)), dn !== o ? (Cn = zs(), Cn === o && (Cn = null), ts = sn, sn = Vr(Cn)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), e30.charCodeAt(bn) === 33 ? (dn = _n, bn++) : (dn = o, Un === 0 && jn(bs)), dn !== o ? (Cn = Vs(), Cn === o && (Cn = null), es = sn, sn = Br(Cn)) : (bn = sn, sn = o), sn;
     }
     function Da() {
-      var sn, dn, Cn;
-      return sn = bn, qn(), e30.charCodeAt(bn) === 33 ? (dn = gn, bn++) : (dn = o, Un === 0 && jn(Cs)), dn !== o ? (Cn = zs(), Cn === o && (Cn = null), ts = sn, sn = Br(Cn)) : (bn = sn, sn = o), sn;
-    }
-    function Ra() {
-      var sn, dn, Cn, Pn, Hn, As, Vs;
-      return sn = bn, e30.charCodeAt(bn) === 40 ? (dn = Mn, bn++) : (dn = o, Un === 0 && jn(rs)), dn !== o ? (qn(), Cn = nr(), Cn !== o ? (qn(), Pn = Js(), Pn !== o ? (qn(), Hn = nr(), Hn !== o ? (qn(), Js(), qn(), As = nr(), As === o && (As = null), qn(), e30.charCodeAt(bn) === 41 ? (Vs = _n, bn++) : (Vs = o, Un === 0 && jn(fs)), Vs !== o ? (ts = sn, sn = Ir(Cn, Hn, As)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function ka() {
-      var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 47 ? (dn = hn, bn++) : (dn = o, Un === 0 && jn(ks)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = zr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function Xa() {
-      var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 42 ? (dn = yn, bn++) : (dn = o, Un === 0 && jn(Xs)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Wr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function Za() {
-      var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 63 ? (dn = Gn, bn++) : (dn = o, Un === 0 && jn(sr)), dn !== o ? (Cn = zs(), Cn === o && (Cn = null), ts = sn, sn = $r(Cn)) : (bn = sn, sn = o), sn;
+      var sn, dn, Cn, Pn, On, vs, Zs;
+      return sn = bn, e30.charCodeAt(bn) === 40 ? (dn = Mn, bn++) : (dn = o, Un === 0 && jn(ss)), dn !== o ? (qn(), Cn = nr(), Cn !== o ? (qn(), Pn = Ks(), Pn !== o ? (qn(), On = nr(), On !== o ? (qn(), Ks(), qn(), vs = nr(), vs === o && (vs = null), qn(), e30.charCodeAt(bn) === 41 ? (Zs = mn, bn++) : (Zs = o, Un === 0 && jn(cs)), Zs !== o ? (es = sn, sn = Vr(Cn, On, vs)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Na() {
       var sn, dn, Cn;
-      return sn = bn, e30.charCodeAt(bn) === 58 ? (dn = vn, bn++) : (dn = o, Un === 0 && jn(hr)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Ur(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.charCodeAt(bn) === 47 ? (dn = hn, bn++) : (dn = o, Un === 0 && jn(Ds)), dn !== o ? (Cn = js(), Cn !== o ? (es = sn, sn = zr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function ka() {
+      var sn, dn, Cn;
+      return sn = bn, e30.charCodeAt(bn) === 42 ? (dn = yn, bn++) : (dn = o, Un === 0 && jn(Ns)), dn !== o ? (Cn = js(), Cn !== o ? (es = sn, sn = Wr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Ta() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 2) === Fn ? (dn = Fn, bn += 2) : (dn = o, Un === 0 && jn(mr)), dn !== o ? (Cn = qs(), Cn !== o ? (ts = sn, sn = Hr(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.charCodeAt(bn) === 63 ? (dn = Gn, bn++) : (dn = o, Un === 0 && jn(sr)), dn !== o ? (Cn = Vs(), Cn === o && (Cn = null), es = sn, sn = $r(Cn)) : (bn = sn, sn = o), sn;
+    }
+    function Xa() {
+      var sn, dn, Cn;
+      return sn = bn, e30.charCodeAt(bn) === 58 ? (dn = Sn, bn++) : (dn = o, Un === 0 && jn(hr)), dn !== o ? (Cn = js(), Cn !== o ? (es = sn, sn = Ur(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function Za() {
+      var sn, dn, Cn;
+      return sn = bn, e30.substr(bn, 2) === En ? (dn = En, bn += 2) : (dn = o, Un === 0 && jn(mr)), dn !== o ? (Cn = js(), Cn !== o ? (es = sn, sn = Or(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function nr() {
       var sn, dn, Cn, Pn;
-      if (sn = bn, dn = qs(), dn !== o) {
-        for (Cn = [], Pn = Fr(); Pn !== o; )
-          Cn.push(Pn), Pn = Fr();
-        ts = sn, sn = Yr(dn, Cn);
+      if (sn = bn, dn = js(), dn !== o) {
+        for (Cn = [], Pn = wr(); Pn !== o; )
+          Cn.push(Pn), Pn = wr();
+        es = sn, sn = Hr(dn, Cn);
       } else
         bn = sn, sn = o;
       return sn;
     }
-    function Us() {
+    function $s() {
       var sn, dn, Cn, Pn;
-      if (sn = bn, e30.charCodeAt(bn) === 94 ? (dn = Sn, bn++) : (dn = o, Un === 0 && jn(le)), dn === o && (dn = null), Cn = [], Pn = nr(), Pn !== o)
+      if (sn = bn, e30.charCodeAt(bn) === 94 ? (dn = vn, bn++) : (dn = o, Un === 0 && jn(nn)), dn === o && (dn = null), Cn = [], Pn = nr(), Pn !== o)
         for (; Pn !== o; )
           Cn.push(Pn), Pn = nr();
       else
         Cn = o;
-      return Cn !== o ? (ts = sn, sn = Or(dn, Cn)) : (bn = sn, sn = o), sn;
+      return Cn !== o ? (es = sn, sn = Yr(dn, Cn)) : (bn = sn, sn = o), sn;
     }
-    function wr() {
-      var sn, dn, Cn, Pn, Hn;
-      if (sn = bn, dn = [], Cn = bn, Pn = Js(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
+    function xr() {
+      var sn, dn, Cn, Pn, On;
+      if (sn = bn, dn = [], Cn = bn, Pn = Ks(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
         for (; Cn !== o; )
-          dn.push(Cn), Cn = bn, Pn = Js(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
+          dn.push(Cn), Cn = bn, Pn = Ks(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
       else
         dn = o;
-      return dn !== o && (ts = sn, dn = Kr(dn)), sn = dn, sn;
-    }
-    function Va() {
-      var sn, dn, Cn, Pn, Hn;
-      if (sn = bn, dn = [], Cn = bn, Pn = Ar(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
-        for (; Cn !== o; )
-          dn.push(Cn), Cn = bn, Pn = Ar(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
-      else
-        dn = o;
-      return dn !== o && (ts = sn, dn = Jr(dn)), sn = dn, sn;
-    }
-    function Ba() {
-      var sn, dn, Cn, Pn, Hn;
-      if (sn = bn, dn = [], Cn = bn, Pn = Pr(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
-        for (; Cn !== o; )
-          dn.push(Cn), Cn = bn, Pn = Pr(), Pn !== o ? (Hn = Us(), Hn !== o ? Cn = Hn : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
-      else
-        dn = o;
-      return dn !== o && (ts = sn, dn = jr(dn)), sn = dn, sn;
-    }
-    function Er() {
-      var sn, dn, Cn;
-      return sn = bn, dn = Us(), dn !== o ? (Cn = wr(), Cn === o && (Cn = Va(), Cn === o && (Cn = Ba())), Cn === o && (Cn = null), ts = sn, sn = qr(dn, Cn)) : (bn = sn, sn = o), sn;
-    }
-    function Lr() {
-      var sn, dn, Cn;
-      return sn = bn, dn = Us(), dn !== o ? (Cn = wr(), Cn === o && (Cn = null), ts = sn, sn = Qr(dn, Cn)) : (bn = sn, sn = o), sn;
+      return dn !== o && (es = sn, dn = Kr(dn)), sn = dn, sn;
     }
     function Ia() {
+      var sn, dn, Cn, Pn, On;
+      if (sn = bn, dn = [], Cn = bn, Pn = Ar(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
+        for (; Cn !== o; )
+          dn.push(Cn), Cn = bn, Pn = Ar(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
+      else
+        dn = o;
+      return dn !== o && (es = sn, dn = Jr(dn)), sn = dn, sn;
+    }
+    function Ba() {
+      var sn, dn, Cn, Pn, On;
+      if (sn = bn, dn = [], Cn = bn, Pn = Er(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o), Cn !== o)
+        for (; Cn !== o; )
+          dn.push(Cn), Cn = bn, Pn = Er(), Pn !== o ? (On = $s(), On !== o ? Cn = On : (bn = Cn, Cn = o)) : (bn = Cn, Cn = o);
+      else
+        dn = o;
+      return dn !== o && (es = sn, dn = jr(dn)), sn = dn, sn;
+    }
+    function Fr() {
+      var sn, dn, Cn;
+      return sn = bn, dn = $s(), dn !== o ? (Cn = xr(), Cn === o && (Cn = Ia(), Cn === o && (Cn = Ba())), Cn === o && (Cn = null), es = sn, sn = qr(dn, Cn)) : (bn = sn, sn = o), sn;
+    }
+    function Rr() {
+      var sn, dn, Cn;
+      return sn = bn, dn = $s(), dn !== o ? (Cn = xr(), Cn === o && (Cn = null), es = sn, sn = Qr(dn, Cn)) : (bn = sn, sn = o), sn;
+    }
+    function Va() {
       var sn, dn, Cn, Pn;
-      return sn = bn, qn(), dn = js(), dn !== o ? (qn(), Cn = Er(), Cn !== o ? (qn(), Pn = js(), Pn !== o ? (ts = sn, sn = ea(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), dn = Js(), dn !== o ? (qn(), Cn = Fr(), Cn !== o ? (qn(), Pn = Js(), Pn !== o ? (es = sn, sn = ea(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function za() {
       var sn;
-      return sn = Ja(), sn === o && (sn = Ha(), sn === o && (sn = Ka(), sn === o && (sn = $a(), sn === o && (sn = Ua(), sn === o && (sn = Wa(), sn === o && (sn = Oa(), sn === o && (sn = Ya()))))))), sn;
+      return sn = Ja(), sn === o && (sn = Oa(), sn === o && (sn = Ka(), sn === o && (sn = $a(), sn === o && (sn = Ua(), sn === o && (sn = Wa(), sn === o && (sn = Ya(), sn === o && (sn = Ha()))))))), sn;
     }
     function Wa() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 6) === kn ? (dn = kn, bn += 6) : (dn = o, Un === 0 && jn(cn)), dn !== o ? (qn(), Cn = Qs(), Cn !== o ? (ts = sn, sn = ta(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 6) === Nn ? (dn = Nn, bn += 6) : (dn = o, Un === 0 && jn(cn)), dn !== o ? (qn(), Cn = qs(), Cn !== o ? (es = sn, sn = ta(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function $a() {
-      var sn, dn, Cn, Pn, Hn;
-      return sn = bn, e30.substr(bn, 6) === wn ? (dn = wn, bn += 6) : (dn = o, Un === 0 && jn(un)), dn !== o ? (qn(), Cn = js(), Cn !== o ? (Pn = xr(), Pn !== o ? (Hn = js(), Hn !== o ? (ts = sn, sn = na(Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      var sn, dn, Cn, Pn, On;
+      return sn = bn, e30.substr(bn, 6) === xn ? (dn = xn, bn += 6) : (dn = o, Un === 0 && jn(un)), dn !== o ? (qn(), Cn = Js(), Cn !== o ? (Pn = Pr(), Pn !== o ? (On = Js(), On !== o ? (es = sn, sn = na(Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Ua() {
       var sn, dn, Cn, Pn;
-      return sn = bn, e30.substr(bn, 6) === Ln ? (dn = Ln, bn += 6) : (dn = o, Un === 0 && jn(fn)), dn !== o ? (qn(), Cn = cr(), Cn !== o ? (qn(), Pn = cr(), Pn !== o ? (qn(), cr(), ts = sn, sn = sa(Cn, Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function Ha() {
-      var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 4) === Nn ? (dn = Nn, bn += 4) : (dn = o, Un === 0 && jn(mn)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = ia(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function Ya() {
-      var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 4) === $n ? (dn = $n, bn += 4) : (dn = o, Un === 0 && jn(An)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = ra(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 6) === Rn ? (dn = Rn, bn += 6) : (dn = o, Un === 0 && jn(fn)), dn !== o ? (qn(), Cn = cr(), Cn !== o ? (qn(), Pn = cr(), Pn !== o ? (qn(), cr(), es = sn, sn = ia(Cn, Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Oa() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 4) === Bn ? (dn = Bn, bn += 4) : (dn = o, Un === 0 && jn(En)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = aa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 4) === Xn ? (dn = Xn, bn += 4) : (dn = o, Un === 0 && jn(gn)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = sa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function Ha() {
+      var sn, dn, Cn;
+      return sn = bn, e30.substr(bn, 4) === $n ? (dn = $n, bn += 4) : (dn = o, Un === 0 && jn(An)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = ra(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function Ya() {
+      var sn, dn, Cn;
+      return sn = bn, e30.substr(bn, 4) === Bn ? (dn = Bn, bn += 4) : (dn = o, Un === 0 && jn(Fn)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = aa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Ka() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 4) === Wn ? (dn = Wn, bn += 4) : (dn = o, Un === 0 && jn(Xn)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = oa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 4) === Wn ? (dn = Wn, bn += 4) : (dn = o, Un === 0 && jn(kn)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = oa(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function Ja() {
-      var sn, dn, Cn, Pn, Hn;
-      if (sn = bn, e30.substr(bn, 5) === In ? (dn = In, bn += 5) : (dn = o, Un === 0 && jn(Vn)), dn !== o)
-        if (qn(), Cn = js(), Cn !== o) {
-          if (Pn = [], Hn = fr(), Hn !== o)
-            for (; Hn !== o; )
-              Pn.push(Hn), Hn = fr();
+      var sn, dn, Cn, Pn, On;
+      if (sn = bn, e30.substr(bn, 5) === Vn ? (dn = Vn, bn += 5) : (dn = o, Un === 0 && jn(In)), dn !== o)
+        if (qn(), Cn = Js(), Cn !== o) {
+          if (Pn = [], On = fr(), On !== o)
+            for (; On !== o; )
+              Pn.push(On), On = fr();
           else
             Pn = o;
-          Pn !== o ? (Hn = js(), Hn !== o ? (ts = sn, sn = ua(Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o);
+          Pn !== o ? (On = Js(), On !== o ? (es = sn, sn = ua(Pn)) : (bn = sn, sn = o)) : (bn = sn, sn = o);
         } else
           bn = sn, sn = o;
       else
@@ -8419,22 +8427,22 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function yr() {
       var sn, dn, Cn, Pn;
-      if (sn = bn, e30.substr(bn, 2) === cs ? (dn = cs, bn += 2) : (dn = o, Un === 0 && jn(os)), dn !== o) {
-        for (Cn = [], Pn = e30.charAt(bn), Jn.test(Pn) ? bn++ : (Pn = o, Un === 0 && jn(Ps)); Pn !== o; )
-          Cn.push(Pn), Pn = e30.charAt(bn), Jn.test(Pn) ? bn++ : (Pn = o, Un === 0 && jn(Ps));
+      if (sn = bn, e30.substr(bn, 2) === ls ? (dn = ls, bn += 2) : (dn = o, Un === 0 && jn(rs)), dn !== o) {
+        for (Cn = [], Pn = e30.charAt(bn), Jn.test(Pn) ? bn++ : (Pn = o, Un === 0 && jn(As)); Pn !== o; )
+          Cn.push(Pn), Pn = e30.charAt(bn), Jn.test(Pn) ? bn++ : (Pn = o, Un === 0 && jn(As));
         dn = [dn, Cn], sn = dn;
       } else
         bn = sn, sn = o;
       return sn;
     }
     function ja() {
-      var sn, dn, Cn, Pn, Hn, As, Vs, _i;
-      if (sn = bn, e30.substr(bn, 3) === _s ? (dn = _s, bn += 3) : (dn = o, Un === 0 && jn(Bs)), dn !== o)
-        if (qn(), e30.charCodeAt(bn) === 91 ? (Cn = tn, bn++) : (Cn = o, Un === 0 && jn(ys)), Cn !== o)
-          if (qn(), Pn = Qs(), Pn !== o) {
-            for (Hn = [], As = bn, Vs = Js(), Vs !== o ? (_i = Qs(), _i !== o ? (ts = As, As = Mr(Pn, _i)) : (bn = As, As = o)) : (bn = As, As = o); As !== o; )
-              Hn.push(As), As = bn, Vs = Js(), Vs !== o ? (_i = Qs(), _i !== o ? (ts = As, As = Mr(Pn, _i)) : (bn = As, As = o)) : (bn = As, As = o);
-            As = qn(), e30.charCodeAt(bn) === 93 ? (Vs = rn, bn++) : (Vs = o, Un === 0 && jn(Hs)), Vs !== o ? (ts = sn, sn = la(Pn, Hn)) : (bn = sn, sn = o);
+      var sn, dn, Cn, Pn, On, vs, Zs, Qs;
+      if (sn = bn, e30.substr(bn, 3) === ms ? (dn = ms, bn += 3) : (dn = o, Un === 0 && jn(Is)), dn !== o)
+        if (qn(), e30.charCodeAt(bn) === 91 ? (Cn = le, bn++) : (Cn = o, Un === 0 && jn(gs)), Cn !== o)
+          if (qn(), Pn = qs(), Pn !== o) {
+            for (On = [], vs = bn, Zs = Ks(), Zs !== o ? (Qs = qs(), Qs !== o ? (es = vs, vs = Mr(Pn, Qs)) : (bn = vs, vs = o)) : (bn = vs, vs = o); vs !== o; )
+              On.push(vs), vs = bn, Zs = Ks(), Zs !== o ? (Qs = qs(), Qs !== o ? (es = vs, vs = Mr(Pn, Qs)) : (bn = vs, vs = o)) : (bn = vs, vs = o);
+            vs = qn(), e30.charCodeAt(bn) === 93 ? (Zs = rn, bn++) : (Zs = o, Un === 0 && jn(Us)), Zs !== o ? (es = sn, sn = la(Pn, On)) : (bn = sn, sn = o);
           } else
             bn = sn, sn = o;
         else
@@ -8445,21 +8453,21 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function qa() {
       var sn;
-      return sn = ja(), sn === o && (sn = Ia()), sn;
+      return sn = ja(), sn === o && (sn = Va()), sn;
     }
-    function Qs() {
-      var sn, dn, Cn, Pn, Hn;
+    function qs() {
+      var sn, dn, Cn, Pn, On;
       if (sn = bn, dn = qa(), dn !== o) {
         for (qn(), Cn = [], Pn = yr(); Pn !== o; )
           Cn.push(Pn), Pn = yr();
-        ts = sn, sn = ca(dn);
+        es = sn, sn = ca(dn);
       } else
         bn = sn, sn = o;
-      return sn === o && (sn = bn, dn = za(), dn !== o ? (qn(), e30.charCodeAt(bn) === 36 ? (Cn = vs, bn++) : (Cn = o, Un === 0 && jn($s)), Cn !== o ? (Pn = qn(), Hn = Qs(), Hn !== o ? (ts = sn, sn = fa(dn, Hn)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)), sn;
+      return sn === o && (sn = bn, dn = za(), dn !== o ? (qn(), e30.charCodeAt(bn) === 36 ? (Cn = Gs, bn++) : (Cn = o, Un === 0 && jn(Ws)), Cn !== o ? (Pn = qn(), On = qs(), On !== o ? (es = sn, sn = fa(dn, On)) : (bn = sn, sn = o)) : (bn = sn, sn = o)) : (bn = sn, sn = o)), sn;
     }
     function Qa() {
       var sn, dn;
-      return sn = bn, dn = Qs(), dn !== o && (ts = sn, dn = da(dn)), sn = dn, sn === o && (sn = yr()), sn;
+      return sn = bn, dn = qs(), dn !== o && (es = sn, dn = da(dn)), sn = dn, sn === o && (sn = yr()), sn;
     }
     function eo() {
       var sn;
@@ -8467,19 +8475,19 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     }
     function to() {
       var sn, dn;
-      return sn = bn, qn(), dn = no(), dn === o && (dn = so(), dn === o && (dn = io())), dn !== o ? (qn(), ts = sn, sn = pa(dn)) : (bn = sn, sn = o), sn;
+      return sn = bn, qn(), dn = no(), dn === o && (dn = io(), dn === o && (dn = so())), dn !== o ? (qn(), es = sn, sn = pa(dn)) : (bn = sn, sn = o), sn;
     }
     function no() {
       var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 6) === Zn ? (dn = Zn, bn += 6) : (dn = o, Un === 0 && jn(rr)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = ha(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
-    }
-    function so() {
-      var sn, dn, Cn;
-      return sn = bn, e30.substr(bn, 6) === bs ? (dn = bs, bn += 6) : (dn = o, Un === 0 && jn(ur)), dn !== o ? (qn(), Cn = zs(), Cn !== o ? (ts = sn, sn = ma(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+      return sn = bn, e30.substr(bn, 6) === Tn ? (dn = Tn, bn += 6) : (dn = o, Un === 0 && jn(rr)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = ha(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
     }
     function io() {
+      var sn, dn, Cn;
+      return sn = bn, e30.substr(bn, 6) === ys ? (dn = ys, bn += 6) : (dn = o, Un === 0 && jn(ur)), dn !== o ? (qn(), Cn = Vs(), Cn !== o ? (es = sn, sn = ma(Cn)) : (bn = sn, sn = o)) : (bn = sn, sn = o), sn;
+    }
+    function so() {
       var sn, dn;
-      return sn = bn, e30.substr(bn, 4) === Ls ? (dn = Ls, bn += 4) : (dn = o, Un === 0 && jn(Zs)), dn !== o && (ts = sn, dn = _a()), sn = dn, sn;
+      return sn = bn, e30.substr(bn, 4) === Fs ? (dn = Fs, bn += 4) : (dn = o, Un === 0 && jn(ks)), dn !== o && (es = sn, dn = _a()), sn = dn, sn;
     }
     function ro() {
       var sn;
@@ -8504,15 +8512,15 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           peg$currPos: bn,
           peg$FAILED: o,
           peg$maxFailExpected: lr,
-          peg$maxFailPos: Ts
+          peg$maxFailPos: Xs
         }
       );
     if (er !== o && bn === e30.length)
       return er;
     throw er !== o && bn < e30.length && jn(ya()), ba(
       lr,
-      Ts < e30.length ? e30.charAt(Ts) : null,
-      Ts < e30.length ? gr(Ts, Ts + 1) : gr(Ts, Ts)
+      Xs < e30.length ? e30.charAt(Xs) : null,
+      Xs < e30.length ? gr(Xs, Xs + 1) : gr(Xs, Xs)
     );
   }
   function patternifyAST(e30, t, o, l = 0) {
@@ -8532,7 +8540,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             break;
           }
           case "polymeter": {
-            const z = e30.arguments_.stepsPerCycle ? d(e30.arguments_.stepsPerCycle).fmap((tn) => fraction$1(tn)) : pure(fraction$1(p.length > 0 ? p[0].__weight : 1)), se = p.map((tn) => tn.fast(z.fmap((rn) => rn.div(tn.__weight))));
+            const z = e30.arguments_.stepsPerCycle ? d(e30.arguments_.stepsPerCycle).fmap((le) => fraction$1(le)) : pure(fraction$1(p.length > 0 ? p[0].__weight : 1)), se = p.map((le) => le.fast(z.fmap((rn) => rn.div(le.__weight))));
             I = stack(...se);
             break;
           }
@@ -8547,12 +8555,12 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           default: {
             if (e30.source_.some((se) => !!se.options_?.weight)) {
               const se = e30.source_.reduce(
-                (tn, rn) => tn.add(rn.options_?.weight || fraction$1(1)),
+                (le, rn) => le.add(rn.options_?.weight || fraction$1(1)),
                 fraction$1(0)
               );
               I = timeCat(
-                ...e30.source_.map((tn, rn) => [tn.options_?.weight || fraction$1(1), p[rn]])
-              ), I.__weight = se, I._steps = se, R.length && (I._steps = I._steps.mul(lcm(...R.map((tn) => fraction$1(tn._steps)))));
+                ...e30.source_.map((le, rn) => [le.options_?.weight || fraction$1(1), p[rn]])
+              ), I.__weight = se, I._steps = se, R.length && (I._steps = I._steps.mul(lcm(...R.map((le) => fraction$1(le._steps)))));
             } else
               I = sequence(...p), I._steps = p.length;
             e30.arguments_._steps && (I.__steps_source = true);
@@ -8745,7 +8753,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const o = +t[0], l = t[1], d = (Math.abs(o) - 1) % 7, p = TYPES$1[d];
     if (p === "M" && l === "P")
       return NoInterval$1;
-    const b = p === "M" ? "majorable" : "perfectable", R = "" + o + l, I = o < 0 ? -1 : 1, z = o === 8 || o === -8 ? o : I * (d + 1), se = qToAlt$1(b, l), tn = Math.floor((Math.abs(o) - 1) / 7), rn = I * (SIZES$2[d] + se + 12 * tn), nn = (I * (SIZES$2[d] + se) % 12 + 12) % 12, an = coordinates$1({ step: d, alt: se, oct: tn, dir: I });
+    const b = p === "M" ? "majorable" : "perfectable", R = "" + o + l, I = o < 0 ? -1 : 1, z = o === 8 || o === -8 ? o : I * (d + 1), se = qToAlt$1(b, l), le = Math.floor((Math.abs(o) - 1) / 7), rn = I * (SIZES$2[d] + se + 12 * le), tn = (I * (SIZES$2[d] + se) % 12 + 12) % 12, an = coordinates$1({ step: d, alt: se, oct: le, dir: I });
     return {
       empty: false,
       name: R,
@@ -8757,9 +8765,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       type: b,
       simple: z,
       semitones: rn,
-      chroma: nn,
+      chroma: tn,
       coord: an,
-      oct: tn
+      oct: le
     };
   }
   function coordToInterval$1(e30, t) {
@@ -8797,17 +8805,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const t = tokenizeNote$1(e30);
     if (t[0] === "" || t[3] !== "")
       return NoNote$1;
-    const o = t[0], l = t[1], d = t[2], p = (o.charCodeAt(0) + 3) % 7, b = accToAlt$1(l), R = d.length ? +d : void 0, I = coordinates$1({ step: p, alt: b, oct: R }), z = o + l + d, se = o + l, tn = (SEMI$1[p] + b + 120) % 12, rn = R === void 0 ? mod$1(SEMI$1[p] + b, 12) - 12 * 99 : SEMI$1[p] + b + 12 * (R + 1), nn = rn >= 0 && rn <= 127 ? rn : null, an = R === void 0 ? null : Math.pow(2, (rn - 69) / 12) * 440;
+    const o = t[0], l = t[1], d = t[2], p = (o.charCodeAt(0) + 3) % 7, b = accToAlt$1(l), R = d.length ? +d : void 0, I = coordinates$1({ step: p, alt: b, oct: R }), z = o + l + d, se = o + l, le = (SEMI$1[p] + b + 120) % 12, rn = R === void 0 ? mod$1(SEMI$1[p] + b, 12) - 12 * 99 : SEMI$1[p] + b + 12 * (R + 1), tn = rn >= 0 && rn <= 127 ? rn : null, an = R === void 0 ? null : Math.pow(2, (rn - 69) / 12) * 440;
     return {
       empty: false,
       acc: l,
       alt: b,
-      chroma: tn,
+      chroma: le,
       coord: I,
       freq: an,
       height: rn,
       letter: o,
-      midi: nn,
+      midi: tn,
       name: z,
       oct: R,
       pc: se,
@@ -9035,10 +9043,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       intervals: e30,
       aliases: t
     };
-    dictionary$2.push(d), d.name && (index$5[d.name] = d), index$5[d.setNum] = d, index$5[d.chroma] = d, d.aliases.forEach((p) => addAlias$2(d, p));
+    dictionary$2.push(d), d.name && (index$6[d.name] = d), index$6[d.setNum] = d, index$6[d.chroma] = d, d.aliases.forEach((p) => addAlias$2(d, p));
   }
   function addAlias$2(e30, t) {
-    index$5[t] = e30;
+    index$6[t] = e30;
   }
   function getQuality$1(e30) {
     const t = (o) => e30.indexOf(o) !== -1;
@@ -9061,11 +9069,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return b.forEach((I, z) => {
       const se = o.assumePerfectFifth && withPerfectFifth(I);
       all$3().filter((rn) => o.assumePerfectFifth && hasAnyThirdAndPerfectFifthAndAnySeventh(rn) ? rn.chroma === se : rn.chroma === I).forEach((rn) => {
-        const nn = rn.aliases[0], an = p(z);
+        const tn = rn.aliases[0], an = p(z);
         z !== d ? R.push({
           weight: 0.5 * t,
-          name: `${an}${nn}/${l}`
-        }) : R.push({ weight: 1 * t, name: `${an}${nn}` });
+          name: `${an}${tn}/${l}`
+        }) : R.push({ weight: 1 * t, name: `${an}${tn}` });
       });
     }), R;
   }
@@ -9107,7 +9115,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const o = +t[0], l = t[1], d = (Math.abs(o) - 1) % 7, p = TYPES[d];
     if (p === "M" && l === "P")
       return NoInterval;
-    const b = p === "M" ? "majorable" : "perfectable", R = "" + o + l, I = o < 0 ? -1 : 1, z = o === 8 || o === -8 ? o : I * (d + 1), se = qToAlt(b, l), tn = Math.floor((Math.abs(o) - 1) / 7), rn = I * (SIZES[d] + se + 12 * tn), nn = (I * (SIZES[d] + se) % 12 + 12) % 12, an = coordinates({ step: d, alt: se, oct: tn, dir: I });
+    const b = p === "M" ? "majorable" : "perfectable", R = "" + o + l, I = o < 0 ? -1 : 1, z = o === 8 || o === -8 ? o : I * (d + 1), se = qToAlt(b, l), le = Math.floor((Math.abs(o) - 1) / 7), rn = I * (SIZES[d] + se + 12 * le), tn = (I * (SIZES[d] + se) % 12 + 12) % 12, an = coordinates({ step: d, alt: se, oct: le, dir: I });
     return {
       empty: false,
       name: R,
@@ -9119,9 +9127,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       type: b,
       simple: z,
       semitones: rn,
-      chroma: nn,
+      chroma: tn,
       coord: an,
-      oct: tn
+      oct: le
     };
   }
   function coordToInterval(e30, t) {
@@ -9159,17 +9167,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const t = tokenizeNote(e30);
     if (t[0] === "" || t[3] !== "")
       return NoNote;
-    const o = t[0], l = t[1], d = t[2], p = (o.charCodeAt(0) + 3) % 7, b = accToAlt(l), R = d.length ? +d : void 0, I = coordinates({ step: p, alt: b, oct: R }), z = o + l + d, se = o + l, tn = (SEMI[p] + b + 120) % 12, rn = R === void 0 ? mod(SEMI[p] + b, 12) - 12 * 99 : SEMI[p] + b + 12 * (R + 1), nn = rn >= 0 && rn <= 127 ? rn : null, an = R === void 0 ? null : Math.pow(2, (rn - 69) / 12) * 440;
+    const o = t[0], l = t[1], d = t[2], p = (o.charCodeAt(0) + 3) % 7, b = accToAlt(l), R = d.length ? +d : void 0, I = coordinates({ step: p, alt: b, oct: R }), z = o + l + d, se = o + l, le = (SEMI[p] + b + 120) % 12, rn = R === void 0 ? mod(SEMI[p] + b, 12) - 12 * 99 : SEMI[p] + b + 12 * (R + 1), tn = rn >= 0 && rn <= 127 ? rn : null, an = R === void 0 ? null : Math.pow(2, (rn - 69) / 12) * 440;
     return {
       empty: false,
       acc: l,
       alt: b,
-      chroma: tn,
+      chroma: le,
       coord: I,
       freq: an,
       height: rn,
       letter: o,
-      midi: nn,
+      midi: tn,
       name: z,
       oct: R,
       pc: se,
@@ -9212,7 +9220,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     };
   }
   function get$a(e30) {
-    return index$4[e30] || NoChordType;
+    return index$5[e30] || NoChordType;
   }
   function names$8() {
     return dictionary$1.map((e30) => e30.name).filter((e30) => e30);
@@ -9221,13 +9229,13 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return dictionary$1.map((e30) => e30.aliases[0]).filter((e30) => e30);
   }
   function keys$1() {
-    return Object.keys(index$4);
+    return Object.keys(index$5);
   }
   function all$2() {
     return dictionary$1.slice();
   }
   function removeAll$1() {
-    dictionary$1 = [], index$4 = {};
+    dictionary$1 = [], index$5 = {};
   }
   function add$4(e30, t, o) {
     const l = getQuality(e30), d = {
@@ -9237,10 +9245,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       intervals: e30,
       aliases: t
     };
-    dictionary$1.push(d), d.name && (index$4[d.name] = d), index$4[d.setNum] = d, index$4[d.chroma] = d, d.aliases.forEach((p) => addAlias$1(d, p));
+    dictionary$1.push(d), d.name && (index$5[d.name] = d), index$5[d.setNum] = d, index$5[d.chroma] = d, d.aliases.forEach((p) => addAlias$1(d, p));
   }
   function addAlias$1(e30, t) {
-    index$4[t] = e30;
+    index$5[t] = e30;
   }
   function getQuality(e30) {
     const t = (o) => e30.indexOf(o) !== -1;
@@ -9250,23 +9258,23 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return dictionary.map((e30) => e30.name);
   }
   function get$9(e30) {
-    return index$3[e30] || NoScaleType;
+    return index$4[e30] || NoScaleType;
   }
   function all$1() {
     return dictionary.slice();
   }
   function keys() {
-    return Object.keys(index$3);
+    return Object.keys(index$4);
   }
   function removeAll() {
-    dictionary = [], index$3 = {};
+    dictionary = [], index$4 = {};
   }
   function add$3(e30, t, o = []) {
     const l = { ...get$b(e30), name: t, intervals: e30, aliases: o };
-    return dictionary.push(l), index$3[l.name] = l, index$3[l.setNum] = l, index$3[l.chroma] = l, l.aliases.forEach((d) => addAlias(l, d)), l;
+    return dictionary.push(l), index$4[l.name] = l, index$4[l.setNum] = l, index$4[l.chroma] = l, l.aliases.forEach((d) => addAlias(l, d)), l;
   }
   function addAlias(e30, t) {
-    index$3[t] = e30;
+    index$4[t] = e30;
   }
   function tokenize$3(e30) {
     const [t, o, l, d] = tokenizeNote(e30);
@@ -9291,15 +9299,15 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       return NoChord;
     const I = Array.from(l.intervals);
     for (let rn = 1; rn < R; rn++) {
-      const nn = I[0][0], an = I[0][1], on = parseInt(nn, 10) + 7;
+      const tn = I[0][0], an = I[0][1], on = parseInt(tn, 10) + 7;
       I.push(`${on}${an}`), I.shift();
     }
     const z = d.empty ? [] : I.map((rn) => transpose$3(d, rn));
     e30 = l.aliases.indexOf(e30) !== -1 ? e30 : l.aliases[0];
-    const se = `${d.empty ? "" : d.pc}${e30}${p.empty || R <= 1 ? "" : "/" + p.pc}`, tn = `${t ? d.pc + " " : ""}${l.name}${R > 1 && o ? " over " + p.pc : ""}`;
+    const se = `${d.empty ? "" : d.pc}${e30}${p.empty || R <= 1 ? "" : "/" + p.pc}`, le = `${t ? d.pc + " " : ""}${l.name}${R > 1 && o ? " over " + p.pc : ""}`;
     return {
       ...l,
-      name: tn,
+      name: le,
       symbol: se,
       type: l.name,
       root: p.name,
@@ -9543,22 +9551,22 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   }
   function keyScale(e30, t, o, l, d) {
     return (p) => {
-      const b = e30.map((nn) => get$4(nn).interval || ""), R = b.map((nn) => transpose$1(p, nn)), I = mapScaleToType(R, o), z = R.map((nn) => transpose$1(nn, "5P")).map(
-        (nn) => (
+      const b = e30.map((tn) => get$4(tn).interval || ""), R = b.map((tn) => transpose$1(p, tn)), I = mapScaleToType(R, o), z = R.map((tn) => transpose$1(tn, "5P")).map(
+        (tn) => (
           // A secondary dominant is a V chord which:
           // 1. is not diatonic to the key,
           // 2. it must have a diatonic root.
-          R.includes(nn) && !I.includes(nn + "7") ? nn + "7" : ""
+          R.includes(tn) && !I.includes(tn + "7") ? tn + "7" : ""
         )
       ), se = supertonics(
         z,
         t
-      ), tn = z.map((nn) => {
-        if (!nn) return "";
-        const an = nn.slice(0, -1);
+      ), le = z.map((tn) => {
+        if (!tn) return "";
+        const an = tn.slice(0, -1);
         return transpose$1(an, "5d") + "7";
       }), rn = supertonics(
-        tn,
+        le,
         t
       );
       return {
@@ -9572,7 +9580,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         chordScales: mapScaleToType(R, d, " "),
         secondaryDominants: z,
         secondaryDominantSupertonics: se,
-        substituteDominants: tn,
+        substituteDominants: le,
         substituteDominantSupertonics: rn,
         // @deprecated use secondaryDominantsSupertonic
         secondaryDominantsMinorRelative: se,
@@ -9622,7 +9630,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return coordToInterval$1([l + t, d, p]).name;
   }
   function get$2(e30) {
-    return typeof e30 == "string" ? index$2[e30.toLowerCase()] || NoMode : e30 && e30.name ? get$2(e30.name) : NoMode;
+    return typeof e30 == "string" ? index$3[e30.toLowerCase()] || NoMode : e30 && e30.name ? get$2(e30.name) : NoMode;
   }
   function all() {
     return modes.slice();
@@ -9844,8 +9852,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     let z = b;
     if (o) {
       o = x2midi(o, 3);
-      const rn = midi2chroma(o), nn = _mod$2(rn - R, 12), an = nearestNumberIndex(nn, I, l);
-      e30 = e30 + an, z = o - nn;
+      const rn = midi2chroma(o), tn = _mod$2(rn - R, 12), an = nearestNumberIndex(tn, I, l);
+      e30 = e30 + an, z = o - tn;
     }
     const se = Math.floor(e30 / I.length) * 12;
     return e30 = _mod$2(e30, I.length), I[e30] + z + se;
@@ -9853,17 +9861,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function renderVoicing({ chord: e30, dictionary: t, offset: o = 0, n: l, mode: d = "below", anchor: p = "c5", octaves: b = 1 }) {
     const [R, I] = tokenizeChord$1(e30), z = pc2chroma(R);
     p = x2midi(p?.note || p, 4);
-    const se = midi2chroma(p), tn = t[I].map(
+    const se = midi2chroma(p), le = t[I].map(
       (yn) => (typeof yn == "string" ? yn.split(" ") : yn).map(step2semitones)
     );
-    let rn, nn, an = tn.map((yn, Gn) => {
-      const vn = modeTarget[d](yn), Fn = _mod$2(se - vn - z, 12);
-      return (rn === void 0 || Fn < rn) && (rn = Fn, nn = Gn), Fn;
+    let rn, tn, an = le.map((yn, Gn) => {
+      const Sn = modeTarget[d](yn), En = _mod$2(se - Sn - z, 12);
+      return (rn === void 0 || En < rn) && (rn = En, tn = Gn), En;
     });
-    d === "root" && (nn = 0);
-    const on = Math.ceil(o / tn.length) * 12, ln = _mod$2(nn + o, tn.length), pn = tn[ln], gn = modeTarget[d](pn), Mn = p - an[ln] + on, _n = pn.map((yn) => Mn - gn + yn);
-    let hn = _n.map((yn) => midi2note(yn));
-    return d === "duck" && (hn = hn.filter((yn, Gn) => _n[Gn] !== p)), l !== void 0 ? [scaleStep$1(hn, l, b)] : hn;
+    d === "root" && (tn = 0);
+    const on = Math.ceil(o / le.length) * 12, ln = _mod$2(tn + o, le.length), pn = le[ln], _n = modeTarget[d](pn), Mn = p - an[ln] + on, mn = pn.map((yn) => Mn - _n + yn);
+    let hn = mn.map((yn) => midi2note(yn));
+    return d === "duck" && (hn = hn.filter((yn, Gn) => mn[Gn] !== p)), l !== void 0 ? [scaleStep$1(hn, l, b)] : hn;
   }
   function getScale(e30) {
     e30 = e30.replaceAll(":", " ");
@@ -9885,7 +9893,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   }
   function scaleOffset(e30, t, o) {
     let { notes: l } = getScale(e30);
-    if (l = l.map((tn) => note_default.get(tn).pc), t = Number(t), isNaN(t))
+    if (l = l.map((le) => note_default.get(le).pc), t = Number(t), isNaN(t))
       throw new Error(`scale offset "${t}" not a number`);
     const { pc: d, oct: p = 3 } = note_default.get(o), b = l.indexOf(d);
     if (b === -1)
@@ -9894,8 +9902,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const se = Math.sign(t);
     for (; Math.abs(R - b) < Math.abs(t); ) {
       R += se;
-      const tn = _mod$2(R, l.length);
-      se < 0 && z[0] === "C" && (I += se), z = l[tn], se > 0 && z[0] === "C" && (I += se);
+      const le = _mod$2(R, l.length);
+      se < 0 && z[0] === "C" && (I += se), z = l[le], se > 0 && z[0] === "C" && (I += se);
     }
     return z + I;
   }
@@ -9915,10 +9923,10 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function _getNearestScaleNote(e30, t, o = true) {
     let l = typeof t == "string" ? noteToMidi$1(t) : t;
     if (scaleToMidisAndNotes[e30] === void 0) {
-      const { intervals: tn, tonic: rn } = getScale(e30), { pc: nn } = note_default.get(rn), on = tn.concat("8P").map((pn) => note_default.transpose(nn + "0", pn)), ln = on.map(noteToMidi$1);
+      const { intervals: le, tonic: rn } = getScale(e30), { pc: tn } = note_default.get(rn), on = le.concat("8P").map((pn) => note_default.transpose(tn + "0", pn)), ln = on.map(noteToMidi$1);
       scaleToMidisAndNotes[e30] = [ln, on];
     }
-    const [d, p] = scaleToMidisAndNotes[e30], b = d[0], R = Math.floor((l - b) / 12), I = d.map((tn) => tn + 12 * R), z = nearestNumberIndex(l, I, o), se = p[z];
+    const [d, p] = scaleToMidisAndNotes[e30], b = d[0], R = Math.floor((l - b) / 12), I = d.map((le) => le + 12 * R), z = nearestNumberIndex(l, I, o), se = p[z];
     return note_default.transpose(se, interval_default.fromSemitones(12 * R));
   }
   function requireGetBestVoicing() {
@@ -9950,19 +9958,19 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         return [];
       var se = p[z].map(function(rn) {
         return rn.split(" ");
-      }), tn = e30.Range.chromatic(b);
-      return se.reduce(function(rn, nn) {
-        var an = nn.map(function(gn) {
-          return e30.Interval.substract(gn, nn[0]);
-        }), on = e30.Note.transpose(I, nn[0]), ln = tn.filter(function(gn) {
-          return e30.Note.chroma(gn) === e30.Note.chroma(on);
-        }).filter(function(gn) {
-          return e30.Note.midi(e30.Note.transpose(gn, an[an.length - 1])) <= e30.Note.midi(b[1]);
-        }).map(function(gn) {
-          return e30.Note.enharmonic(gn, on);
-        }), pn = ln.map(function(gn) {
+      }), le = e30.Range.chromatic(b);
+      return se.reduce(function(rn, tn) {
+        var an = tn.map(function(_n) {
+          return e30.Interval.substract(_n, tn[0]);
+        }), on = e30.Note.transpose(I, tn[0]), ln = le.filter(function(_n) {
+          return e30.Note.chroma(_n) === e30.Note.chroma(on);
+        }).filter(function(_n) {
+          return e30.Note.midi(e30.Note.transpose(_n, an[an.length - 1])) <= e30.Note.midi(b[1]);
+        }).map(function(_n) {
+          return e30.Note.enharmonic(_n, on);
+        }), pn = ln.map(function(_n) {
           return an.map(function(Mn) {
-            return e30.Note.transpose(gn, Mn);
+            return e30.Note.transpose(_n, Mn);
           });
         });
         return rn.concat(pn);
@@ -9976,7 +9984,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         return t = Object.assign || function(R) {
           for (var I, z = 1, se = arguments.length; z < se; z++) {
             I = arguments[z];
-            for (var tn in I) Object.prototype.hasOwnProperty.call(I, tn) && (R[tn] = I[tn]);
+            for (var le in I) Object.prototype.hasOwnProperty.call(I, le) && (R[le] = I[le]);
           }
           return R;
         }, t.apply(this, arguments);
@@ -9984,8 +9992,8 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         var z = {};
         for (var se in R) Object.prototype.hasOwnProperty.call(R, se) && I.indexOf(se) < 0 && (z[se] = R[se]);
         if (R != null && typeof Object.getOwnPropertySymbols == "function")
-          for (var tn = 0, se = Object.getOwnPropertySymbols(R); tn < se.length; tn++)
-            I.indexOf(se[tn]) < 0 && Object.prototype.propertyIsEnumerable.call(R, se[tn]) && (z[se[tn]] = R[se[tn]]);
+          for (var le = 0, se = Object.getOwnPropertySymbols(R); le < se.length; le++)
+            I.indexOf(se[le]) < 0 && Object.prototype.propertyIsEnumerable.call(R, se[le]) && (z[se[le]] = R[se[le]]);
         return z;
       };
       e30.__esModule = true, e30.dictionaryVoicing = e30.dictionaryVoicingFinder = e30.triads = e30.guidetones = e30.lefthand = void 0;
@@ -10104,16 +10112,212 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function clearHydra() {
     hydra && hydra.hush(), globalThis.s0?.clear(), document.getElementById("hydra-canvas")?.remove(), globalThis.speed = speed, globalThis.shape = shape;
   }
+  function getMidiDeviceNamesString(e30) {
+    return e30.map((t) => `'${t.name}'`).join(" | ");
+  }
+  function getDevice(e30, t) {
+    if (typeof e30 == "number")
+      return t[e30];
+    const o = (p) => t.find((b) => b.name.includes(p));
+    if (typeof e30 == "string")
+      return o(e30);
+    const d = o("IAC") ?? t[0];
+    if (!d)
+      throw t.length ? new Error(`\u{1F50C} Default MIDI device not found. Use one of ${getMidiDeviceNamesString(t)}`) : new Error("\u{1F50C} No MIDI devices found. Connect a device or enable IAC Driver.");
+    return d;
+  }
+  function supportsMidi() {
+    return typeof navigator.requestMIDIAccess == "function";
+  }
+  function enableWebMidi(e30 = {}) {
+    const { onReady: t, onConnected: o, onDisconnected: l, onEnabled: d } = e30;
+    if (!WebMidi.enabled) {
+      if (!supportsMidi())
+        throw new Error("Your Browser does not support WebMIDI.");
+      return WebMidi.addListener("connected", () => {
+        o?.(WebMidi);
+      }), WebMidi.addListener("enabled", () => {
+        d?.(WebMidi);
+      }), WebMidi.addListener("disconnected", (p) => {
+        l?.(WebMidi, p);
+      }), new Promise((p, b) => {
+        if (WebMidi.enabled) {
+          p(WebMidi);
+          return;
+        }
+        WebMidi.enable(
+          (R) => {
+            R && b(R), t?.(WebMidi), p(WebMidi);
+          },
+          { sysex: true }
+        );
+      });
+    }
+  }
+  function unifyMapping(e30) {
+    return Object.fromEntries(
+      Object.entries(e30).map(([t, o]) => (typeof o == "number" && (o = { ccn: o }), [getControlName(t), o]))
+    );
+  }
+  function githubPath(e30, t = "") {
+    if (!e30.startsWith("github:"))
+      throw new Error('expected "github:" at the start of pseudoUrl');
+    let [o, l] = e30.split("github:");
+    return l = l.endsWith("/") ? l.slice(0, -1) : l, l.split("/").length === 2 && (l += "/main"), `https://raw.githubusercontent.com/${l}/${t}`;
+  }
+  function defaultmidimap(e30) {
+    midicontrolMap.set("default", unifyMapping(e30));
+  }
+  async function midimaps(e30) {
+    typeof e30 == "string" && (e30.startsWith("github:") && (e30 = githubPath(e30, "midimap.json")), loadCache[e30] || (loadCache[e30] = fetch(e30).then((t) => t.json())), e30 = await loadCache[e30]), typeof e30 == "object" && Object.entries(e30).forEach(([t, o]) => midicontrolMap.set(t, unifyMapping(o)));
+  }
+  function normalize(e30 = 0, t = 0, o = 1, l = 1) {
+    if (t === o)
+      throw new Error("min and max cannot be the same value");
+    let d = (e30 - t) / (o - t);
+    return d = Math.min(1, Math.max(0, d)), Math.pow(d, l);
+  }
+  function mapCC(e30, t) {
+    return Object.keys(t).filter((o) => !!e30[getControlName(o)]).map((o) => {
+      const { ccn: l, min: d = 0, max: p = 1, exp: b = 1 } = e30[o], R = normalize(t[o], d, p, b);
+      return { ccn: l, ccv: R };
+    });
+  }
+  function sendCC(e30, t, o, l, d) {
+    if (typeof t != "number" || t < 0 || t > 1)
+      throw new Error("expected ccv to be a number between 0 and 1");
+    if (!["string", "number"].includes(typeof e30))
+      throw new Error("expected ccn to be a number or a string");
+    const p = Math.round(t * 127);
+    scheduleAtTime(() => {
+      o.sendControlChange(e30, p, l);
+    }, d);
+  }
+  function sendProgramChange(e30, t, o, l) {
+    if (typeof e30 != "number" || e30 < 0 || e30 > 127)
+      throw new Error("expected progNum (program change) to be a number between 0 and 127");
+    scheduleAtTime(() => {
+      t.sendProgramChange(e30, o);
+    }, l);
+  }
+  function sendSysex(e30, t, o, l) {
+    if (Array.isArray(e30)) {
+      if (!e30.every((d) => Number.isInteger(d) && d >= 0 && d <= 255))
+        throw new Error("all sysexid bytes must be integers between 0 and 255");
+    } else if (!Number.isInteger(e30) || e30 < 0 || e30 > 255)
+      throw new Error("A:sysexid must be an number between 0 and 255 or an array of such integers");
+    if (!Array.isArray(t))
+      throw new Error("expected sysex to be an array of numbers (0-255)");
+    if (!t.every((d) => Number.isInteger(d) && d >= 0 && d <= 255))
+      throw new Error("all sysex bytes must be integers between 0 and 255");
+    scheduleAtTime(() => {
+      o.sendSysex(e30, t);
+    }, l);
+  }
+  function sendNRPN(e30, t, o, l, d) {
+    if (Array.isArray(e30)) {
+      if (!e30.every((p) => Number.isInteger(p) && p >= 0 && p <= 255))
+        throw new Error("all nrpnn bytes must be integers between 0 and 255");
+    } else if (!Number.isInteger(t) || t < 0 || t > 255)
+      throw new Error("A:sysexid must be an number between 0 and 255 or an array of such integers");
+    scheduleAtTime(() => {
+      o.sendNRPN(e30, t, l);
+    }, d);
+  }
+  function sendPitchBend(e30, t, o, l) {
+    if (typeof e30 != "number" || e30 < -1 || e30 > 1)
+      throw new Error("expected midibend to be a number between -1 and 1");
+    scheduleAtTime(() => {
+      t.sendPitchBend(e30, o);
+    }, l);
+  }
+  function sendAftertouch(e30, t, o, l) {
+    if (typeof e30 != "number" || e30 < 0 || e30 > 1)
+      throw new Error("expected miditouch to be a number between 0 and 1");
+    scheduleAtTime(() => {
+      t.sendChannelAftertouch(e30, o);
+    }, l);
+  }
+  function sendNote(e30, t, o, l, d, p) {
+    if (e30 == null || e30 === "")
+      throw new Error("note cannot be null or empty");
+    if (t != null && (typeof t != "number" || t < 0 || t > 1))
+      throw new Error("velocity must be a number between 0 and 1");
+    if (o != null && (typeof o != "number" || o < 0))
+      throw new Error("duration must be a positive number");
+    const b = typeof e30 == "number" ? e30 : noteToMidi$1(e30), R = new Note(b, { attack: t, duration: o });
+    scheduleAtTime(() => {
+      l.playNote(R, d);
+    }, p);
+  }
+  async function _initializeInput(e30) {
+    if (isPattern(e30))
+      throw new Error(
+        `[midi] Midi input cannot be a pattern. Make sure to pass device name with single quotes. Example: midin('${WebMidi.outputs?.[0]?.name || "IAC Driver Bus 1"}')`
+      );
+    const t = await enableWebMidi(), o = midiInputs[e30] || new MidiInput(e30);
+    if (midiInputs[e30] = o, t) {
+      const l = o.initialDevice, d = WebMidi.inputs.filter((p) => p.name !== l.name);
+      logger$2(
+        l ? `[midi] Midi enabled! Using "${l.name}". ${d?.length ? `Also available: ${getMidiDeviceNamesString(d)}` : ""}` : `[midi] Midi enabled! Waiting for device "${e30}"... Currently connected devices: ${getMidiDeviceNamesString(WebMidi.inputs)}`
+      );
+    }
+    return o;
+  }
+  async function midin(e30) {
+    const t = await _initializeInput(e30);
+    return t.createCC.bind(t);
+  }
+  function _triggerKeyboard(e30, t, o, l) {
+    const d = getPattern(), p = getTriggerFunc();
+    if (!d || !p)
+      return false;
+    const b = o + l, R = 1e-6, z = d.queryArc(b - R, b + R, { _cps: t }).filter((le) => le.value?.midikey?.startsWith(`${e30}_`)), se = getAudioContext().currentTime;
+    return z.length ? (z.forEach((le) => {
+      if (!le.hasOnset())
+        return;
+      const rn = se + (le.whole.begin - o) / t, tn = le.duration / t;
+      p(le, rn - se, tn, t, rn);
+    }), true) : false;
+  }
+  async function midikeys(e30) {
+    const o = (await _initializeInput(e30)).initialDevice;
+    if (!o)
+      throw new Error(
+        `[midi] Midi device "${e30}" not found.. connected devices: ${getMidiDeviceNamesString(WebMidi.inputs)}`
+      );
+    return kHaps[e30] || (kHaps[e30] = []), kListeners[e30] && o.removeListener("midimessage", kListeners[e30]), kListeners[e30] = (d) => {
+      const { dataBytes: p, message: b } = d, R = b.command === 9;
+      let I = b.command === 8;
+      if (!getIsStarted() || !R && !I)
+        return;
+      const [le, rn] = p;
+      I ||= R && rn === 0;
+      const tn = `${e30}_${le}`, an = getCps() ?? 0.5, on = !!(getPattern() && getTriggerFunc()), ln = on ? 0.01 : 0.06, pn = getTime(), _n = pn + ln * an, Mn = new TimeSpan(_n, _n);
+      let mn = { midikey: tn };
+      I || (mn = { ...mn, note: Math.round(le), velocity: rn / 127 }, kHaps[e30].push(new Hap(Mn, Mn, mn, {})), !I && on && _triggerKeyboard(e30, an, pn, ln * an) && (kHaps[e30] = []));
+    }, o.addListener("midimessage", kListeners[e30]), (d = 0.5) => {
+      const p = reify(d), b = (R) => {
+        const I = kHaps[e30].flatMap((z) => p.query(R.setSpan(z.wholeOrPart())).map((le) => {
+          const rn = le.value ?? 0.5, tn = new TimeSpan(z.whole.begin, z.whole.begin.add(rn)), an = new TimeSpan(z.part.begin, z.part.begin.add(rn)), on = z.combineContext(le);
+          return new Hap(tn, an, z.value, on);
+        }));
+        return R.controls.cyclist && (kHaps[e30] = []), I;
+      };
+      return new Pattern$1(b);
+    };
+  }
   async function defaultPrebake() {
     const e30 = evalScope(
       evalScope,
       Promise.resolve().then(() => strudel),
-      Promise.resolve().then(() => index$8),
-      Promise.resolve().then(() => index$7),
-      Promise.resolve().then(() => index$1),
       Promise.resolve().then(() => index$9),
-      Promise.resolve().then(() => hydra$1),
+      Promise.resolve().then(() => index$8),
+      Promise.resolve().then(() => index$2),
       Promise.resolve().then(() => index$a),
+      Promise.resolve().then(() => hydra$1),
+      Promise.resolve().then(() => index$b),
+      Promise.resolve().then(() => index$1),
       { hush, evaluate }
     );
     await Promise.all([e30, registerSynthSounds(), registerSoundfonts()]);
@@ -10216,32 +10420,32 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     } = t;
     o && console.log("compile", e30);
     const z = ue(e30);
-    let se = [], tn = (an) => z[an].type !== p ? b(an) : typeof z[an].value == "string" ? `"${z[an].value}"` : z[an].value;
+    let se = [], le = (an) => z[an].type !== p ? b(an) : typeof z[an].value == "string" ? `"${z[an].value}"` : z[an].value;
     const rn = [];
     for (let an in z) {
-      const on = z[an], ln = z[an].ins.map((_n) => tn(z.indexOf(_n))), pn = rn.length;
-      let gn = y.get(on.type);
-      gn || (console.warn(
+      const on = z[an], ln = z[an].ins.map((mn) => le(z.indexOf(mn))), pn = rn.length;
+      let _n = y.get(on.type);
+      _n || (console.warn(
         `unhandled node type "${z[an].type}". falling back to "${d}"`
-      ), gn = y.get(d));
+      ), _n = y.get(d));
       const Mn = {
         vars: ln,
         node: on,
         nodes: z,
         id: an,
         ugenIndex: pn,
-        ugen: gn.ugen,
-        name: tn(an),
+        ugen: _n.ugen,
+        name: le(an),
         lang: l,
         getRegister: b,
         getOutput: R,
         getSource: I
       };
-      gn.compile && se.push(gn.compile(Mn)), gn.ugen && rn.push({ type: gn.ugen, inputs: ln });
+      _n.compile && se.push(_n.compile(Mn)), _n.ugen && rn.push({ type: _n.ugen, inputs: ln });
     }
-    const nn = se.join(`
+    const tn = se.join(`
 `);
-    return o && (console.log("compiled code:"), console.log(nn)), { src: nn, ugens: rn, registers: z.length };
+    return o && (console.log("compiled code:"), console.log(tn)), { src: tn, ugens: rn, registers: z.length };
   }
   function ue(e30) {
     const t = [], o = /* @__PURE__ */ new Set();
@@ -10278,11 +10482,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     if (e30.length < 1)
       return;
     e30[0];
-    const l = 3, d = 32, p = e30.map((rn) => rn.length).reduce((rn, nn) => rn + nn, 0), b = d / 8, R = o * b, I = 44, z = new ArrayBuffer(I + p * b), se = new DataView(z);
+    const l = 3, d = 32, p = e30.map((rn) => rn.length).reduce((rn, tn) => rn + tn, 0), b = d / 8, R = o * b, I = 44, z = new ArrayBuffer(I + p * b), se = new DataView(z);
     V(se, 0, "RIFF"), se.setUint32(4, 36 + p * b, true), V(se, 8, "WAVE"), V(se, 12, "fmt "), se.setUint32(16, 16, true), se.setUint16(20, l, true), se.setUint16(22, o, true), se.setUint32(24, t, true), se.setUint32(28, t * R, true), se.setUint16(32, R, true), se.setUint16(34, d, true), V(se, 36, "data"), se.setUint32(40, p * b, true);
-    let tn = 44;
+    let le = 44;
     for (const rn of e30)
-      ge(se, tn, rn), tn += rn.length * b;
+      ge(se, le, rn), le += rn.length * b;
     return z;
   }
   function V(e30, t, o) {
@@ -10297,7 +10501,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const l = new Blob([e30], { type: o }), d = document.createElement("a");
     d.href = window.URL.createObjectURL(l), d.download = t, d.click();
   }
-  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$2, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$1, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$a, latestColor, lastFrames, index$9, gm, defaultSoundfontUrl, soundfontUrl, loadCache, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$8, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$7, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$6, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$5, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$4, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$3, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$2, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$1, latestOptions, hydra, H$1, hydra$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
+  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
     "../strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
@@ -10358,20 +10562,20 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           else if (e30 > 0) {
             let p = 1, b = 0, R = 1, I = 1, z = 1, se = 1e7;
             for (e30 >= 1 && (p = 10 ** Math.floor(1 + Math.log10(e30)), e30 /= p); R <= se && z <= se; ) {
-              let tn = (b + I) / (R + z);
-              if (e30 === tn) {
+              let le = (b + I) / (R + z);
+              if (e30 === le) {
                 R + z <= se ? (o = b + I, l = R + z) : z > R ? (o = I, l = z) : (o = b, l = R);
                 break;
               } else
-                e30 > tn ? (b += I, R += z) : (I += b, z += R), R > se ? (o = I, l = z) : (o = b, l = R);
+                e30 > le ? (b += I, R += z) : (I += b, z += R), R > se ? (o = I, l = z) : (o = b, l = R);
             }
             o = BigInt(o) * BigInt(p), l = BigInt(l);
           }
         } else if (typeof e30 == "string") {
-          let p = 0, b = C_ZERO, R = C_ZERO, I = C_ZERO, z = C_ONE, se = C_ONE, tn = e30.replace(/_/g, "").match(/\d+|./g);
-          if (tn === null)
+          let p = 0, b = C_ZERO, R = C_ZERO, I = C_ZERO, z = C_ONE, se = C_ONE, le = e30.replace(/_/g, "").match(/\d+|./g);
+          if (le === null)
             throw InvalidParameter();
-          if (tn[p] === "-" ? (d = -C_ONE, p++) : tn[p] === "+" && p++, tn.length === p + 1 ? R = assign(tn[p++], d) : tn[p + 1] === "." || tn[p] === "." ? (tn[p] !== "." && (b = assign(tn[p++], d)), p++, (p + 1 === tn.length || tn[p + 1] === "(" && tn[p + 3] === ")" || tn[p + 1] === "'" && tn[p + 3] === "'") && (R = assign(tn[p], d), z = C_TEN ** BigInt(tn[p].length), p++), (tn[p] === "(" && tn[p + 2] === ")" || tn[p] === "'" && tn[p + 2] === "'") && (I = assign(tn[p + 1], d), se = C_TEN ** BigInt(tn[p + 1].length) - C_ONE, p += 3)) : tn[p + 1] === "/" || tn[p + 1] === ":" ? (R = assign(tn[p], d), z = assign(tn[p + 2], C_ONE), p += 3) : tn[p + 3] === "/" && tn[p + 1] === " " && (b = assign(tn[p], d), R = assign(tn[p + 2], d), z = assign(tn[p + 4], C_ONE), p += 5), tn.length <= p)
+          if (le[p] === "-" ? (d = -C_ONE, p++) : le[p] === "+" && p++, le.length === p + 1 ? R = assign(le[p++], d) : le[p + 1] === "." || le[p] === "." ? (le[p] !== "." && (b = assign(le[p++], d)), p++, (p + 1 === le.length || le[p + 1] === "(" && le[p + 3] === ")" || le[p + 1] === "'" && le[p + 3] === "'") && (R = assign(le[p], d), z = C_TEN ** BigInt(le[p].length), p++), (le[p] === "(" && le[p + 2] === ")" || le[p] === "'" && le[p + 2] === "'") && (I = assign(le[p + 1], d), se = C_TEN ** BigInt(le[p + 1].length) - C_ONE, p += 3)) : le[p + 1] === "/" || le[p + 1] === ":" ? (R = assign(le[p], d), z = assign(le[p + 2], C_ONE), p += 3) : le[p + 3] === "/" && le[p + 1] === " " && (b = assign(le[p], d), R = assign(le[p + 2], d), z = assign(le[p + 4], C_ONE), p += 5), le.length <= p)
             l = z * se, d = /* void */
             o = I + l * b + se * R;
           else
@@ -10553,17 +10757,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             z !== "1" && (o[z] = true);
           let R = null, I = null;
           for (const z in o) {
-            const se = l[z] || C_ZERO, tn = p[z] || C_ZERO;
+            const se = l[z] || C_ZERO, le = p[z] || C_ZERO;
             if (se === C_ZERO) {
-              if (tn !== C_ZERO)
+              if (le !== C_ZERO)
                 return null;
               continue;
             }
-            let rn = tn, nn = se;
-            const an = gcd$1(rn, nn);
-            if (rn /= an, nn /= an, R === null && I === null)
-              R = rn, I = nn;
-            else if (rn * I !== R * nn)
+            let rn = le, tn = se;
+            const an = gcd$1(rn, tn);
+            if (rn /= an, tn /= an, R === null && I === null)
+              R = rn, I = tn;
+            else if (rn * I !== R * tn)
               return null;
           }
           return R !== null && I !== null ? newFraction(R, I) : null;
@@ -11274,11 +11478,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         appWhole(t, o) {
           const l = this, d = function(p) {
             const b = l.query(p), R = o.query(p), I = function(z, se) {
-              const tn = z.part.intersection(se.part);
-              if (tn != null)
+              const le = z.part.intersection(se.part);
+              if (le != null)
                 return new Hap(
                   t(z.whole, se.whole),
-                  tn,
+                  le,
                   z.value(se.value),
                   se.combineContext(z)
                 );
@@ -11326,9 +11530,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             for (const R of o.query(p)) {
               const I = t.query(p.setSpan(R.wholeOrPart()));
               for (const z of I) {
-                const se = R.whole, tn = R.part.intersection(z.part);
-                if (tn) {
-                  const rn = R.value(z.value), nn = z.combineContext(R), an = new Hap(se, tn, rn, nn);
+                const se = R.whole, le = R.part.intersection(z.part);
+                if (le) {
+                  const rn = R.value(z.value), tn = z.combineContext(R), an = new Hap(se, le, rn, tn);
                   b.push(an);
                 }
               }
@@ -11352,9 +11556,9 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             for (const R of t.query(p)) {
               const I = o.query(p.setSpan(R.wholeOrPart()));
               for (const z of I) {
-                const se = R.whole, tn = z.part.intersection(R.part);
-                if (tn) {
-                  const rn = z.value(R.value), nn = R.combineContext(z), an = new Hap(se, tn, rn, nn);
+                const se = R.whole, le = z.part.intersection(R.part);
+                if (le) {
+                  const rn = z.value(R.value), tn = R.combineContext(z), an = new Hap(se, le, rn, tn);
                   b.push(an);
                 }
               }
@@ -11427,17 +11631,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             const d = t.discreteOnly().query(l);
             function p(R) {
               const z = R.value._focusSpan(R.wholeOrPart()).query(l.setSpan(R.part));
-              function se(tn, rn) {
-                let nn;
-                if (rn.whole && tn.whole && (nn = rn.whole.intersection(tn.whole), !nn))
+              function se(le, rn) {
+                let tn;
+                if (rn.whole && le.whole && (tn = rn.whole.intersection(le.whole), !tn))
                   return;
-                const an = rn.part.intersection(tn.part);
+                const an = rn.part.intersection(le.part);
                 if (!an)
                   return;
-                const on = rn.combineContext(tn);
-                return new Hap(nn, an, rn.value, on);
+                const on = rn.combineContext(le);
+                return new Hap(tn, an, rn.value, on);
               }
-              return z.map((tn) => se(R, tn));
+              return z.map((le) => se(R, le));
             }
             return flatten(d.map(p)).filter((R) => R);
           }
@@ -12174,11 +12378,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           if (!(b >= 1))
             return new TimeSpan(p.add(b), p.add(R));
         }, l = function(d) {
-          const p = d.part.begin, b = d.part.end, R = p.sam(), I = p.sub(R).div(e30).min(1), z = b.sub(R).div(e30).min(1), se = new TimeSpan(R.add(I), R.add(z)), tn = d.whole ? new TimeSpan(
+          const p = d.part.begin, b = d.part.end, R = p.sam(), I = p.sub(R).div(e30).min(1), z = b.sub(R).div(e30).min(1), se = new TimeSpan(R.add(I), R.add(z)), le = d.whole ? new TimeSpan(
             se.begin.sub(p.sub(d.whole.begin).div(e30)),
             se.end.add(d.whole.end.sub(b).div(e30))
           ) : void 0;
-          return new Hap(tn, se, d.value, d.context);
+          return new Hap(le, se, d.value, d.context);
         };
         return t.withQuerySpanMaybe(o).withHap(l).splitQueries();
       }));
@@ -12294,7 +12498,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         function(e30) {
           const t = function(o) {
             const l = o.span, d = l.begin.sam(), p = l.begin.nextSam(), b = function(I) {
-              const z = I.withTime((tn) => d.add(p.sub(tn))), se = z.begin;
+              const z = I.withTime((le) => d.add(p.sub(le))), se = z.begin;
               return z.begin = z.end, z.end = se, z;
             };
             return e30.query(o.setSpan(b(l))).map((I) => I.withSpan(b));
@@ -12714,20 +12918,20 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return I;
         }, p = zipWith(
           ([R, I], [z, se]) => {
-            const tn = o.mul(z - R).add(R), rn = tn.add(l);
-            return new TimeSpan(tn, rn);
+            const le = o.mul(z - R).add(R), rn = le.add(l);
+            return new TimeSpan(le, rn);
           },
           d(e30),
           d(t)
         );
         function b(R) {
           const I = R.span.begin.sam(), z = R.span.cycleArc(), se = [];
-          for (const tn of p) {
-            const rn = tn.intersection(z);
+          for (const le of p) {
+            const rn = le.intersection(z);
             rn !== void 0 && se.push(
               new Hap(
-                tn.withTime((nn) => nn.add(I)),
-                rn.withTime((nn) => nn.add(I)),
+                le.withTime((tn) => tn.add(I)),
+                rn.withTime((tn) => tn.add(I)),
                 true
               )
             );
@@ -13270,14 +13474,14 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         d = d.fmap((b) => (R) => ({ v: b, id: R })).appLeft(reify(o));
         for (const [b, R] of Object.entries(t)) {
           const I = getMainSubcontrolName(e30, b), z = reify(R);
-          d = d.fmap(({ v: se, id: tn }) => (rn) => {
+          d = d.fmap(({ v: se, id: le }) => (rn) => {
             if (p === void 0) {
               let an = getControlName(Object.keys(se).at(-1));
               l.includes(an) && (an = `${an}_${[...se[an].__ids].at(-1)}`), p = an;
             }
             se[e30] ??= { __ids: /* @__PURE__ */ new Set() };
-            const nn = se[e30];
-            return tn ??= nn.__ids.size, nn[tn] ??= { control: p }, nn.__ids.add(tn), rn === void 0 ? { v: se, id: tn } : (I === "control" || I === "subControl" ? nn[tn][I] = getControlName(rn) : nn[tn][I] = rn, { v: se, id: tn });
+            const tn = se[e30];
+            return le ??= tn.__ids.size, tn[le] ??= { control: p }, tn.__ids.add(le), rn === void 0 ? { v: se, id: le } : (I === "control" || I === "subControl" ? tn[le][I] = getControlName(rn) : tn[le][I] = rn, { v: se, id: le });
           }).appLeft(z);
         }
         return d.fmap(({ v: b }) => b);
@@ -13859,21 +14063,21 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           this.started = false, this.beforeStart = z, this.cps = 0.5, this.num_ticks_since_cps_change = 0, this.lastTick = 0, this.lastBegin = 0, this.lastEnd = 0, this.getTime = p, this.num_cycles_at_cps_change = 0, this.seconds_at_cps_change, this.onToggle = l, this.latency = b, this.clock = createClock(
             p,
             // called slightly before each cycle
-            (se, tn, rn, nn) => {
+            (se, le, rn, tn) => {
               this.num_ticks_since_cps_change === 0 && (this.num_cycles_at_cps_change = this.lastEnd, this.seconds_at_cps_change = se), this.num_ticks_since_cps_change++;
-              const on = this.num_ticks_since_cps_change * tn * this.cps;
+              const on = this.num_ticks_since_cps_change * le * this.cps;
               try {
                 const ln = this.lastEnd;
                 this.lastBegin = ln;
                 const pn = this.num_cycles_at_cps_change + on;
-                if (this.lastEnd = pn, this.lastTick = se, se < nn) {
+                if (this.lastEnd = pn, this.lastTick = se, se < tn) {
                   console.log("skip query: too late");
                   return;
                 }
                 this.pattern.queryArc(ln, pn, { _cps: this.cps, cyclist: "cyclist" }).forEach((Mn) => {
                   if (Mn.hasOnset()) {
-                    const _n = (Mn.whole.begin - this.num_cycles_at_cps_change) / this.cps + this.seconds_at_cps_change + b, hn = Mn.duration / this.cps, yn = _n - se;
-                    o?.(Mn, yn, hn, this.cps, _n), Mn.value.cps !== void 0 && this.cps != Mn.value.cps && (this.cps = Mn.value.cps, this.num_ticks_since_cps_change = 0);
+                    const mn = (Mn.whole.begin - this.num_cycles_at_cps_change) / this.cps + this.seconds_at_cps_change + b, hn = Mn.duration / this.cps, yn = mn - se;
+                    o?.(Mn, yn, hn, this.cps, mn), Mn.value.cps !== void 0 && this.cps != Mn.value.cps && (this.cps = Mn.value.cps, this.num_ticks_since_cps_change = 0);
                   }
                 });
               } catch (ln) {
@@ -13940,11 +14144,11 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
               else if (I in timelines)
                 z = timelines[I];
               else {
-                const tn = R.wholeOrPart();
-                !d || l.span.begin.lt(tn.midpoint()) ? z = tn.begin : z = tn.end;
+                const le = R.wholeOrPart();
+                !d || l.span.begin.lt(le.midpoint()) ? z = le.begin : z = le.end;
               }
               d && (timelines[I] = z, I !== 0 && delete timelines[-I]);
-              const se = t.late(z).query(l.setSpan(R.part)).map((tn) => tn.setContext(tn.combineContext(R)));
+              const se = t.late(z).query(l.setSpan(R.part)).map((le) => le.setContext(le.combineContext(R)));
               b.push(...se);
             }
             return b;
@@ -14011,17 +14215,17 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
             __TRUSSAL_BUNDLE_URL
           )), this.worker.port.start(), this.channel = new BroadcastChannel("strudeltick");
           const d = (b) => {
-            const { cps: R, begin: I, end: z, cycle: se, time: tn } = b;
+            const { cps: R, begin: I, end: z, cycle: se, time: le } = b;
             this.cps = R, this.cycle = se;
-            const rn = this.collator.calculateOffset(tn) + tn;
+            const rn = this.collator.calculateOffset(le) + le;
             p(I, z, rn), this.time_at_last_tick_message = rn;
           }, p = (b, R, I) => {
             if (this.started === false)
               return;
             this.pattern.queryArc(b, R, { _cps: this.cps, cyclist: "neocyclist" }).forEach((se) => {
               if (se.hasOnset()) {
-                const rn = cycleToSeconds$1(se.whole.begin - this.cycle, this.cps) + I + this.latency, nn = cycleToSeconds$1(se.duration, this.cps);
-                t?.(se, 0, nn, this.cps, rn);
+                const rn = cycleToSeconds$1(se.whole.begin - this.cycle, this.cps) + I + this.latency, tn = cycleToSeconds$1(se.duration, this.cps);
+                t?.(se, 0, tn, this.cps, rn);
               }
             });
           };
@@ -14204,7 +14408,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           d = d.add(R[1]), l.push(d);
         const p = sequenceP(l), b = function(R) {
           const I = d.mul(R);
-          return p.fmap((z) => (se) => o[z.findIndex((tn) => tn > se, z)]).appLeft(I);
+          return p.fmap((z) => (se) => o[z.findIndex((le) => le > se, z)]).appLeft(I);
         };
         return e30.bind(b);
       };
@@ -15330,11 +15534,11 @@ Please check with "npm ls @strudel/core".`
         t = nanFallback(t), o = nanFallback(o), l = nanFallback(l), d = nanFallback(d);
         const se = z === "exponential" ? "exponentialRampToValueAtTime" : "linearRampToValueAtTime";
         z === "exponential" && (p = p === 0 ? 1e-3 : p, b = b === 0 ? 1e-3 : b);
-        const tn = b - p, rn = p + l * tn, nn = I - R, an = (on) => {
+        const le = b - p, rn = p + l * le, tn = I - R, an = (on) => {
           let ln;
           return t > on ? ln = on * getSlope(p, b, 0, t) + p : ln = (on - t) * getSlope(b, rn, 0, o) + b, z === "exponential" && (ln = ln || 1e-3), ln;
         };
-        e30.setValueAtTime(p, R), t > nn ? e30[se](an(nn), I) : t + o > nn ? (e30[se](an(t), R + t), e30[se](an(nn), I)) : (e30[se](an(t), R + t), e30[se](an(t + o), R + t + o), e30.setValueAtTime(rn, I)), e30[se](p, I + d);
+        e30.setValueAtTime(p, R), t > tn ? e30[se](an(tn), I) : t + o > tn ? (e30[se](an(t), R + t), e30[se](an(tn), I)) : (e30[se](an(t), R + t), e30[se](an(t + o), R + t + o), e30.setValueAtTime(rn, I)), e30[se](p, I + d);
       };
       getADSRValues = (e30, t = "linear", o) => {
         const [b, R, I, z] = e30;
@@ -15370,8 +15574,8 @@ Please check with "npm ls @strudel/core".`
         return _soft(l, t);
       };
       _diode = (e30, t, o = false) => {
-        const l = 1 + 2 * t, p = 0.07 * __squash(Math.log1p(t)), b = _soft(e30 + p, 2 * t), R = _soft(o ? p : -e30 + p, 2 * t), I = b - R, z = 1 / Math.cosh(l * p), se = z * z, tn = Math.max(1e-8, (o ? 1 : 2) * l * se);
-        return _soft(I / tn, t);
+        const l = 1 + 2 * t, p = 0.07 * __squash(Math.log1p(t)), b = _soft(e30 + p, 2 * t), R = _soft(o ? p : -e30 + p, 2 * t), I = b - R, z = 1 / Math.cosh(l * p), se = z * z, le = Math.max(1e-8, (o ? 1 : 2) * l * se);
+        return _soft(I / le, t);
       };
       _asym = (e30, t) => _diode(e30, t, true);
       _chebyshev = (e30, t) => {
@@ -15435,11 +15639,11 @@ Please check with "npm ls @strudel/core".`
       };
       reverbGen = {};
       reverbGen.generateReverb = function(e30, t) {
-        for (var o = e30.audioContext || new AudioContext(), l = o.sampleRate, d = e30.numChannels || 2, p = e30.decayTime * 1.5, b = Math.round(e30.decayTime * l), R = Math.round(p * l), I = Math.round((e30.fadeInTime || 0) * l), z = Math.pow(1 / 1e3, 1 / b), se = o.createBuffer(d, R, l), tn = 0; tn < d; tn++) {
-          for (var rn = se.getChannelData(tn), nn = 0; nn < R; nn++)
-            rn[nn] = randomSample() * Math.pow(z, nn);
-          for (var nn = 0; nn < I; nn++)
-            rn[nn] *= nn / I;
+        for (var o = e30.audioContext || new AudioContext(), l = o.sampleRate, d = e30.numChannels || 2, p = e30.decayTime * 1.5, b = Math.round(e30.decayTime * l), R = Math.round(p * l), I = Math.round((e30.fadeInTime || 0) * l), z = Math.pow(1 / 1e3, 1 / b), se = o.createBuffer(d, R, l), le = 0; le < d; le++) {
+          for (var rn = se.getChannelData(le), tn = 0; tn < R; tn++)
+            rn[tn] = randomSample() * Math.pow(z, tn);
+          for (var tn = 0; tn < I; tn++)
+            rn[tn] *= tn / I;
         }
         applyGradualLowpass(se, e30.lpFreqStart || 0, e30.lpFreqEnd || 0, e30.decayTime, t);
       };
@@ -15477,22 +15681,22 @@ Please check with "npm ls @strudel/core".`
         for (let R = 0; R < t.numberOfChannels; R++) {
           let I = t.getChannelData(R), z = b.getChannelData(R);
           for (let se = 0; se < p; se++) {
-            let tn = (d + se * Math.abs(o)) % I.length;
-            o < 1 && (tn = tn * -1), z[se] = I.at(tn) || 0;
+            let le = (d + se * Math.abs(o)) % I.length;
+            o < 1 && (le = le * -1), z[se] = I.at(le) || 0;
           }
         }
         return b;
       }, BaseAudioContext.prototype.createReverb = function(e30, t, o, l, d, p, b) {
         const R = this.createConvolver();
-        return R.generate = (I = 2, z = 0.1, se = 15e3, tn = 1e3, rn, nn, an) => {
-          R.duration = I, R.fade = z, R.lp = se, R.dim = tn, R.ir = rn, R.irspeed = nn, R.irbegin = an, rn ? R.buffer = this.adjustLength(I, rn, nn, an) : reverbGen.generateReverb(
+        return R.generate = (I = 2, z = 0.1, se = 15e3, le = 1e3, rn, tn, an) => {
+          R.duration = I, R.fade = z, R.lp = se, R.dim = le, R.ir = rn, R.irspeed = tn, R.irbegin = an, rn ? R.buffer = this.adjustLength(I, rn, tn, an) : reverbGen.generateReverb(
             {
               audioContext: this,
               numChannels: 2,
               decayTime: I,
               fadeInTime: z,
               lpFreqStart: se,
-              lpFreqEnd: tn
+              lpFreqEnd: le
             },
             (on) => {
               R.buffer = on;
@@ -15813,30 +16017,30 @@ Please check with "npm ls @strudel/core".`
           subControl: I,
           fxi: z = "main",
           depth: se = 1,
-          depthabs: tn,
+          depthabs: le,
           retrig: rn = 0,
-          ...nn
+          ...tn
         } = t, { targetParams: an, paramName: on } = getTargetParamsForControl(R, o[z], I);
         if (!an.length) return;
         let ln = an[0].value;
         ln = ln === 0 ? 1 : ln;
-        const { min: pn, max: gn } = getRangeForParam(on, ln), Mn = tn ?? se * ln, _n = {
-          ...nn,
+        const { min: pn, max: _n } = getRangeForParam(on, ln), Mn = le ?? se * ln, mn = {
+          ...tn,
           frequency: d !== void 0 ? d * p : l,
           time: rn > 0.5 ? 0 : b / p,
           depth: Mn,
           min: pn,
-          max: gn
-        }, hn = getLfo(getAudioContext(), _n);
+          max: _n
+        }, hn = getLfo(getAudioContext(), mn);
         return o.main[`lfo_${e30}`] = [hn], an.forEach((yn) => hn.connect(yn)), hn;
       };
       connectEnvelope = (e30, t, o) => {
-        const { control: l, subControl: d, acurve: p, dcurve: b, rcurve: R, depth: I = 1, depthabs: z, fxi: se = "main", ...tn } = t, { targetParams: rn, paramName: nn } = getTargetParamsForControl(l, o[se], d);
+        const { control: l, subControl: d, acurve: p, dcurve: b, rcurve: R, depth: I = 1, depthabs: z, fxi: se = "main", ...le } = t, { targetParams: rn, paramName: tn } = getTargetParamsForControl(l, o[se], d);
         if (!rn.length) return;
         let an = rn[0].value;
         an = an === 0 ? 1 : an;
-        const { min: on, max: ln } = getRangeForParam(nn, an), pn = z ?? I * an, gn = getEnvelope(getAudioContext(), {
-          ...tn,
+        const { min: on, max: ln } = getRangeForParam(tn, an), pn = z ?? I * an, _n = getEnvelope(getAudioContext(), {
+          ...le,
           depth: pn,
           min: on,
           max: ln,
@@ -15844,22 +16048,22 @@ Please check with "npm ls @strudel/core".`
           decayCurve: b,
           releaseCurve: R
         });
-        return o.main[`env_${e30}`] = [gn], rn.forEach((Mn) => gn.connect(Mn)), gn;
+        return o.main[`env_${e30}`] = [_n], rn.forEach((Mn) => _n.connect(Mn)), _n;
       };
       connectBusModulator = (e30, t, o) => {
         const l = getAudioContext(), { control: d, subControl: p, depth: b = 1, depthabs: R, fxi: I = "main" } = e30, { targetParams: z, paramName: se } = getTargetParamsForControl(d, t[I], p);
         if (!z.length) return { toCleanup: [] };
-        const tn = o.getBus(e30.bus), rn = new ConstantSourceNode(l, { offset: e30.dc ?? 0 });
+        const le = o.getBus(e30.bus), rn = new ConstantSourceNode(l, { offset: e30.dc ?? 0 });
         rn.start(e30.begin);
-        const nn = rn.connect(gainNode(1));
-        tn.connect(nn);
+        const tn = rn.connect(gainNode(1));
+        le.connect(tn);
         let an = z[0].value;
         an = an === 0 ? 1 : an;
-        const { min: on, max: ln } = getRangeForParam(se, an), pn = R ?? b * an, gn = gainNode(Math.sign(pn) * Math.abs(pn) / 0.3), Mn = nn.connect(gn), _n = [];
+        const { min: on, max: ln } = getRangeForParam(se, an), pn = R ?? b * an, _n = gainNode(Math.sign(pn) * Math.abs(pn) / 0.3), Mn = tn.connect(_n), mn = [];
         let hn = Mn;
         if (on !== void 0 && ln !== void 0) {
           const yn = clampWithWaveShaper(Mn, on, ln);
-          hn = yn.modulator, _n.push(...yn.toCleanup);
+          hn = yn.modulator, mn.push(...yn.toCleanup);
         }
         return webAudioTimeout(
           l,
@@ -15868,10 +16072,10 @@ Please check with "npm ls @strudel/core".`
           },
           0,
           e30.begin
-        ), _n.push(rn, nn, gn), { modulator: hn, toCleanup: _n };
+        ), mn.push(rn, tn, _n), { modulator: hn, toCleanup: mn };
       };
       bufferCache$1 = {};
-      loadCache$2 = {};
+      loadCache$3 = {};
       getCachedBuffer = (e30) => bufferCache$1[e30];
       getDuration = (e30, t = 0) => getSampleBufferSource({ s: e30, n: t }, soundMap$1.get(e30)[e30].data.samples).then((o) => o.bufferDuration);
       getDur = getDuration;
@@ -15886,30 +16090,30 @@ Please check with "npm ls @strudel/core".`
         e30.speed < 0 && (l = reverseBuffer(l));
         const b = getAudioContext().createBufferSource();
         b.buffer = l, b.playbackRate.value = d;
-        const { loopBegin: R = 0, loopEnd: I = 1, begin: z = 0, end: se = 1 } = e30, tn = b.buffer.duration, rn = z * tn;
-        e30.loop && (b.loop = true, b.loopStart = R * tn, b.loopEnd = I * tn);
-        const an = tn / b.playbackRate.value, on = (se - z) * an;
-        return { bufferSource: b, offset: rn, bufferDuration: tn, playbackDuration: an, sliceDuration: on };
+        const { loopBegin: R = 0, loopEnd: I = 1, begin: z = 0, end: se = 1 } = e30, le = b.buffer.duration, rn = z * le;
+        e30.loop && (b.loop = true, b.loopStart = R * le, b.loopEnd = I * le);
+        const an = le / b.playbackRate.value, on = (se - z) * an;
+        return { bufferSource: b, offset: rn, bufferDuration: le, playbackDuration: an, sliceDuration: on };
       };
       loadBuffer$1 = (e30, t, o, l = 0) => {
         const d = o ? `sound "${o}:${l}"` : "sample";
-        if (e30 = e30.replace("#", "%23"), !loadCache$2[e30]) {
+        if (e30 = e30.replace("#", "%23"), !loadCache$3[e30]) {
           logger$1(`[sampler] load ${d}..`, "load-sample", { url: e30 });
           const p = Date.now();
-          loadCache$2[e30] = fetch(e30).then((b) => b.arrayBuffer()).then(async (b) => {
+          loadCache$3[e30] = fetch(e30).then((b) => b.arrayBuffer()).then(async (b) => {
             const R = Date.now() - p, I = humanFileSize$1(b.byteLength);
             logger$1(`[sampler] load ${d}... done! loaded ${I} in ${R}ms`, "loaded-sample", { url: e30 });
             const z = await t.decodeAudioData(b);
             return bufferCache$1[e30] = z, z;
           });
         }
-        return loadCache$2[e30];
+        return loadCache$3[e30];
       };
       getLoadedBuffer = (e30) => bufferCache$1[e30];
       processSampleMap = (e30, t, o = e30._base || "") => Object.entries(e30).forEach(([l, d]) => {
         if (typeof d == "string" && (d = [d]), typeof d != "object")
           throw new Error("wrong sample map format for " + l);
-        o = d._base || o, o = resolveSpecialPaths(o), o.startsWith("github:") && (o = githubPath$2(o, ""));
+        o = d._base || o, o = resolveSpecialPaths(o), o.startsWith("github:") && (o = githubPath$3(o, ""));
         const p = (b) => o + b;
         Array.isArray(d) ? d = d.map(p) : d = Object.fromEntries(
           Object.entries(d).map(([b, R]) => [b, (typeof R == "string" ? [R] : R).map(p)])
@@ -15968,8 +16172,8 @@ Please check with "npm ls @strudel/core".`
             () => {
               const I = this.audioContext.currentTime, z = R.value;
               R.cancelScheduledValues(I), R.setValueAtTime(z, I);
-              const se = Math.max(t, I), tn = clamp(1 - Math.sqrt(d), 0.01, z);
-              R.exponentialRampToValueAtTime(tn, se + p), R.exponentialRampToValueAtTime(1, se + p + b);
+              const se = Math.max(t, I), le = clamp(1 - Math.sqrt(d), 0.01, z);
+              R.exponentialRampToValueAtTime(le, se + p), R.exponentialRampToValueAtTime(1, se + p + b);
             },
             0,
             t - 0.01
@@ -16023,14 +16227,14 @@ Please check with "npm ls @strudel/core".`
         }
         duck(t, o, l = 0, d = 0.1, p = 1) {
           const b = [t].flat(), R = [l].flat(), I = [d].flat(), z = [p].flat();
-          b.forEach((se, tn) => {
+          b.forEach((se, le) => {
             const rn = this.nodes[se];
             if (rn == null) {
               errorLogger(new Error(`duck target orbit ${se} does not exist`), "superdough");
               return;
             }
-            const nn = R[tn] ?? R[0], an = Math.max(I[tn] ?? I[0], 2e-3), on = z[tn] ?? z[0];
-            rn.duck(o, nn, an, on);
+            const tn = R[le] ?? R[0], an = Math.max(I[le] ?? I[0], 2e-3), on = z[le] ?? z[0];
+            rn.duck(o, tn, an, on);
           });
         }
         getOrbit(t, o) {
@@ -16065,28 +16269,28 @@ Please check with "npm ls @strudel/core".`
         FLIP: 21
       });
       seenKeys = /* @__PURE__ */ new Set();
-      loadCache$1 = {};
+      loadCache$2 = {};
       loadBuffer = (e30, t) => {
-        if (e30 = e30.replace("#", "%23"), !loadCache$1[e30]) {
+        if (e30 = e30.replace("#", "%23"), !loadCache$2[e30]) {
           logger$1(`[wavetable] load table ${t}..`, "load-table", { url: e30 });
           const o = Date.now();
-          loadCache$1[e30] = fetch(e30).then((l) => l.arrayBuffer()).then(async (l) => {
+          loadCache$2[e30] = fetch(e30).then((l) => l.arrayBuffer()).then(async (l) => {
             const d = Date.now() - o, p = humanFileSize(l.byteLength);
             return logger$1(`[wavetable] load table ${t}... done! loaded ${p} in ${d}ms`, "loaded-table", { url: e30 }), await decodeAtNativeRate(l);
           });
         }
-        return loadCache$1[e30];
+        return loadCache$2[e30];
       };
       _processTables = (e30, t, o, l = {}) => (t = e30._base || t, Object.entries(e30).forEach(([d, p]) => {
         if (d === "_base") return false;
         if (typeof p == "string" && (p = [p]), typeof p != "object")
           throw new Error("wrong json format for " + d);
         let b = t;
-        b.startsWith("github:") && (b = githubPath$1(b, "")), p = p.map((R) => b + R).filter((R) => R.toLowerCase().endsWith(".wav") ? true : (logger$1(`[wavetable] skipping ${R} -- wavetables must be ".wav" format`), false)), p.length && registerWaveTable(d, p, { baseUrl: t, frameLen: o });
+        b.startsWith("github:") && (b = githubPath$2(b, "")), p = p.map((R) => b + R).filter((R) => R.toLowerCase().endsWith(".wav") ? true : (logger$1(`[wavetable] skipping ${R} -- wavetables must be ".wav" format`), false)), p.length && registerWaveTable(d, p, { baseUrl: t, frameLen: o });
       }));
       tables = async (e30, t, o, l = {}) => {
         if (o !== void 0) return _processTables(o, e30, t);
-        e30.startsWith("github:") && (e30 = githubPath$1(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432");
+        e30.startsWith("github:") && (e30 = githubPath$2(e30, "strudel.json")), e30.startsWith("local:") && (e30 = "http://localhost:5432");
         const d = getBaseURL(e30);
         if (typeof fetch == "function" && !(typeof fetch > "u"))
           return fetch(e30).then((p) => p.json()).then((p) => _processTables(p, d, t, l)).catch((p) => {
@@ -16179,123 +16383,123 @@ Please check with "npm ls @strudel/core".`
         let {
           s: z = getDefaultValue("s"),
           bank: se,
-          source: tn,
+          source: le,
           postgain: rn = getDefaultValue("postgain"),
-          duckorbit: nn,
+          duckorbit: tn,
           duckonset: an,
           duckattack: on,
           duckdepth: ln,
           djf: pn,
-          release: gn = getDefaultValue("release"),
+          release: _n = getDefaultValue("release"),
           dry: Mn,
-          delay: _n = getDefaultValue("delay"),
+          delay: mn = getDefaultValue("delay"),
           delayfeedback: hn = getDefaultValue("delayfeedback"),
           delaysync: yn = getDefaultValue("delaysync"),
           delaytime: Gn,
-          orbit: vn = getDefaultValue("orbit"),
-          bus: Fn,
-          busgain: Sn = getDefaultValue("busgain"),
-          room: kn,
-          roomfade: wn,
-          roomlp: Ln,
-          roomdim: Nn,
+          orbit: Sn = getDefaultValue("orbit"),
+          bus: En,
+          busgain: vn = getDefaultValue("busgain"),
+          room: Nn,
+          roomfade: xn,
+          roomlp: Rn,
+          roomdim: Xn,
           roomsize: $n,
           ir: Bn,
           irspeed: Wn,
-          irbegin: In,
-          i: cs = getDefaultValue("i"),
-          analyze: _s,
+          irbegin: Vn,
+          i: ls = getDefaultValue("i"),
+          analyze: ms,
           // analyser wet
-          fft: vs = getDefaultValue("fft"),
+          fft: Gs = getDefaultValue("fft"),
           // fftSize 0 - 10
-          FX: Zn = [],
-          FXrelease: bs
+          FX: Tn = [],
+          FXrelease: ys
         } = e30;
         Gn = Gn ?? cycleToSeconds(yn, l);
-        const Ls = mapChannelNumbers(
-          multiChannelOrbits && vn > 0 ? [vn * 2 - 1, vn * 2] : getDefaultValue("channels")
-        ), Ss = e30.channels != null ? mapChannelNumbers(e30.channels) : Ls, es = R.getOrbit(vn, Ss);
-        nn != null && R.duck(nn, t, an, on, ln), rn = applyGainCurve(rn), _n = applyGainCurve(_n), Sn = applyGainCurve(Sn);
-        const gs = t + o, us = Math.max(gn, bs ?? 0), ps = gs + us, Ds = Math.round(Math.random() * 1e6);
-        for (let Rn = 0; Rn <= activeSoundSources.size - maxPolyphony; Rn++) {
-          const xn = activeSoundSources.entries().next(), Yn = xn.value[1].deref(), Tn = xn.value[0], ns = t + 0.25;
-          Yn?.node?.gain?.linearRampToValueAtTime(0, ns), Yn?.stop?.(ns), activeSoundSources.delete(Tn);
+        const Fs = mapChannelNumbers(
+          multiChannelOrbits && Sn > 0 ? [Sn * 2 - 1, Sn * 2] : getDefaultValue("channels")
+        ), Ss = e30.channels != null ? mapChannelNumbers(e30.channels) : Fs, _i = R.getOrbit(Sn, Ss);
+        tn != null && R.duck(tn, t, an, on, ln), rn = applyGainCurve(rn), mn = applyGainCurve(mn), vn = applyGainCurve(vn);
+        const _s = t + o, os = Math.max(_n, ys ?? 0), fs = _s + os, Rs = Math.round(Math.random() * 1e6);
+        for (let Dn = 0; Dn <= activeSoundSources.size - maxPolyphony; Dn++) {
+          const wn = activeSoundSources.entries().next(), Hn = wn.value[1].deref(), Zn = wn.value[0], ts = t + 0.25;
+          Hn?.node?.gain?.linearRampToValueAtTime(0, ts), Hn?.stop?.(ts), activeSoundSources.delete(Zn);
         }
         if (["-", "~", "_"].includes(z))
           return;
         se && z && (z = `${se}_${z}`, e30.s = z);
-        const On = new Chain();
-        let Dn;
-        if (tn)
-          Dn = tn(t, e30, o, l), p.main.source = [Dn];
+        const Yn = new Chain();
+        let Ln;
+        if (le)
+          Ln = le(t, e30, o, l), p.main.source = [Ln];
         else if (getSound(z)) {
-          const { onTrigger: Rn } = getSound(z), Yn = await Rn(t, e30, () => webAudioTimeout(
+          const { onTrigger: Dn } = getSound(z), Hn = await Dn(t, e30, () => webAudioTimeout(
             b,
             () => {
-              On.releaseNodes(), activeSoundSources.delete(Ds);
+              Yn.releaseNodes(), activeSoundSources.delete(Rs);
             },
             0,
-            ps
+            fs
           ), l);
-          Yn && (Dn = Yn.node, activeSoundSources.set(Ds, new WeakRef(Yn)), p.main = { ...p.main, ...Yn.nodes });
+          Hn && (Ln = Hn.node, activeSoundSources.set(Rs, new WeakRef(Hn)), p.main = { ...p.main, ...Hn.nodes });
         } else
           throw new Error(`sound ${z} not found! Is it loaded?`);
-        if (!Dn)
+        if (!Ln)
           return;
         if (b.currentTime > t) {
           logger$1("[webaudio] skip hap: still loading", b.currentTime - t);
           return;
         }
-        On.connect(Dn), Zn = [...Zn, e30];
-        for (let [Rn, xn] of Object.entries(Zn)) {
-          const Yn = Rn == Zn.length - 1 ? "main" : Rn;
-          p[Yn] ??= {};
-          const Tn = p[Yn];
+        Yn.connect(Ln), Tn = [...Tn, e30];
+        for (let [Dn, wn] of Object.entries(Tn)) {
+          const Hn = Dn == Tn.length - 1 ? "main" : Dn;
+          p[Hn] ??= {};
+          const Zn = p[Hn];
           let {
-            gain: ns = getDefaultValue("gain"),
-            velocity: hs = getDefaultValue("velocity"),
-            shapevol: Es = getDefaultValue("shapevol"),
-            distorttype: Rs = getDefaultValue("distorttype"),
-            distortvol: ms = getDefaultValue("distortvol"),
-            tremolodepth: xs = getDefaultValue("tremolodepth"),
-            phaserdepth: Ns = getDefaultValue("phaserdepth"),
-            delay: ss = getDefaultValue("delay"),
+            gain: ts = getDefaultValue("gain"),
+            velocity: ps = getDefaultValue("velocity"),
+            shapevol: xs = getDefaultValue("shapevol"),
+            distorttype: Ls = getDefaultValue("distorttype"),
+            distortvol: hs = getDefaultValue("distortvol"),
+            tremolodepth: Es = getDefaultValue("tremolodepth"),
+            phaserdepth: Ts = getDefaultValue("phaserdepth"),
+            delay: ns = getDefaultValue("delay"),
             delayfeedback: is = getDefaultValue("delayfeedback"),
             delaysync: zn = getDefaultValue("delaysync"),
-            delaytime: Ms,
-            i: ys = getDefaultValue("i")
-          } = xn;
-          if (ns = applyGainCurve(nanFallback(ns, 1)), Es = applyGainCurve(Es), ms = applyGainCurve(ms), hs = applyGainCurve(hs), xs = applyGainCurve(xs), ns *= hs, Ms = Ms ?? cycleToSeconds(zn, l), xn.workletSrc !== void 0) {
+            delaytime: Cs,
+            i: gs = getDefaultValue("i")
+          } = wn;
+          if (ts = applyGainCurve(nanFallback(ts, 1)), xs = applyGainCurve(xs), hs = applyGainCurve(hs), ps = applyGainCurve(ps), Es = applyGainCurve(Es), ts *= ps, Cs = Cs ?? cycleToSeconds(zn, l), wn.workletSrc !== void 0) {
             const Kn = getWorklet(b, "generic-processor", {}, { outputChannelCount: [2] });
-            On.connect(Kn);
-            const Qn = xn.workletSrc.replace(/\bpat\[(\d+)\]/g, (fs, ks) => xn.workletInputs[ks]).replaceAll("sFreq", getFrequencyFromValue(e30)).replaceAll("sGate", `cc('strudel-gate-${Ds}')`), { src: Gs, ugens: Cs, registers: rs } = compileKabel(Qn);
-            Kn.port.postMessage({ src: Gs, schema: { ugens: Cs, registers: rs }, start: t, gateEnd: gs, end: ps });
+            Yn.connect(Kn);
+            const Qn = wn.workletSrc.replace(/\bpat\[(\d+)\]/g, (cs, Ds) => wn.workletInputs[Ds]).replaceAll("sFreq", getFrequencyFromValue(e30)).replaceAll("sGate", `cc('strudel-gate-${Rs}')`), { src: Ms, ugens: bs, registers: ss } = compileKabel(Qn);
+            Kn.port.postMessage({ src: Ms, schema: { ugens: bs, registers: ss }, start: t, gateEnd: _s, end: fs });
           }
-          if (xn.stretch !== void 0) {
-            const Kn = getWorklet(b, "phase-vocoder-processor", { pitchFactor: xn.stretch });
-            On.connect(Kn), Tn.stretch = [Kn];
+          if (wn.stretch !== void 0) {
+            const Kn = getWorklet(b, "phase-vocoder-processor", { pitchFactor: wn.stretch });
+            Yn.connect(Kn), Zn.stretch = [Kn];
           }
-          if (xn.transient !== void 0) {
+          if (wn.transient !== void 0) {
             const Kn = getWorklet(
               b,
               "transient-processor",
               {},
               {
                 processorOptions: {
-                  attack: xn.transient,
-                  sustain: xn.transsustain,
+                  attack: wn.transient,
+                  sustain: wn.transsustain,
                   begin: t,
-                  end: ps
+                  end: fs
                 }
               }
             );
-            On.connect(Kn), Tn.transient = Kn;
+            Yn.connect(Kn), Zn.transient = Kn;
           }
-          const Hs = gainNode(ns);
-          Tn.gain = [Hs], On.connect(Hs);
-          const Ys = getFilterType(e30.ftype), Fs = (Kn) => createFilter(b, t, gs, Kn, l, d);
-          if (xn.cutoff !== void 0) {
-            const Qn = pickAndRename(xn, {
+          const Us = gainNode(ts);
+          Zn.gain = [Us], Yn.connect(Us);
+          const Os = getFilterType(e30.ftype), Ps = (Kn) => createFilter(b, t, _s, Kn, l, d);
+          if (wn.cutoff !== void 0) {
+            const Qn = pickAndRename(wn, {
               frequency: "cutoff",
               q: "resonance",
               attack: "lpattack",
@@ -16315,14 +16519,14 @@ Please check with "npm ls @strudel/core".`
               skew: "lpskew"
             });
             Qn.type = "lowpass";
-            const { filter: Gs, lfo: Cs } = Fs(Qn);
-            if (Tn.lpf = [Gs], Tn.lpf_lfo = [Cs], On.connect(Gs), Cs && On.audioNodes.push(Cs), Ys === "24db") {
-              const { filter: rs, lfo: fs } = Fs(Qn);
-              Tn.lpf.push(rs), Tn.lpf_lfo.push(fs), On.connect(rs), fs && On.audioNodes.push(fs);
+            const { filter: Ms, lfo: bs } = Ps(Qn);
+            if (Zn.lpf = [Ms], Zn.lpf_lfo = [bs], Yn.connect(Ms), bs && Yn.audioNodes.push(bs), Os === "24db") {
+              const { filter: ss, lfo: cs } = Ps(Qn);
+              Zn.lpf.push(ss), Zn.lpf_lfo.push(cs), Yn.connect(ss), cs && Yn.audioNodes.push(cs);
             }
           }
-          if (xn.hcutoff !== void 0) {
-            const Qn = pickAndRename(xn, {
+          if (wn.hcutoff !== void 0) {
+            const Qn = pickAndRename(wn, {
               frequency: "hcutoff",
               q: "hresonance",
               attack: "hpattack",
@@ -16342,14 +16546,14 @@ Please check with "npm ls @strudel/core".`
               skew: "hpskew"
             });
             Qn.type = "highpass";
-            const { filter: Gs, lfo: Cs } = Fs(Qn);
-            if (Tn.hpf = [Gs], Tn.hpf_lfo = [Cs], Cs && On.audioNodes.push(Cs), On.connect(Gs), Ys === "24db") {
-              const { filter: rs, lfo: fs } = Fs(Qn);
-              Tn.hpf.push(rs), Tn.hpf_lfo.push(fs), On.connect(rs), fs && On.audioNodes.push(fs);
+            const { filter: Ms, lfo: bs } = Ps(Qn);
+            if (Zn.hpf = [Ms], Zn.hpf_lfo = [bs], bs && Yn.audioNodes.push(bs), Yn.connect(Ms), Os === "24db") {
+              const { filter: ss, lfo: cs } = Ps(Qn);
+              Zn.hpf.push(ss), Zn.hpf_lfo.push(cs), Yn.connect(ss), cs && Yn.audioNodes.push(cs);
             }
           }
-          if (xn.bandf !== void 0) {
-            const Qn = pickAndRename(xn, {
+          if (wn.bandf !== void 0) {
+            const Qn = pickAndRename(wn, {
               frequency: "bandf",
               q: "bandq",
               attack: "bpattack",
@@ -16369,180 +16573,180 @@ Please check with "npm ls @strudel/core".`
               skew: "bpskew"
             });
             Qn.type = "bandpass";
-            const { filter: Gs, lfo: Cs } = Fs(Qn);
-            if (Tn.bpf = [Gs], Tn.bpf_lfo = [Cs], On.connect(Gs), Cs && On.audioNodes.push(Cs), Ys === "24db") {
-              const { filter: rs, lfo: fs } = Fs(Qn);
-              Tn.bpf.push(rs), Tn.bpf_lfo.push(fs), On.connect(rs), fs && On.audioNodes.push(fs);
+            const { filter: Ms, lfo: bs } = Ps(Qn);
+            if (Zn.bpf = [Ms], Zn.bpf_lfo = [bs], Yn.connect(Ms), bs && Yn.audioNodes.push(bs), Os === "24db") {
+              const { filter: ss, lfo: cs } = Ps(Qn);
+              Zn.bpf.push(ss), Zn.bpf_lfo.push(cs), Yn.connect(ss), cs && Yn.audioNodes.push(cs);
             }
           }
-          if (xn.vowel !== void 0) {
-            const Kn = b.createVowelFilter(xn.vowel);
-            Tn.vowel = Kn.filters, On.connect(Kn);
+          if (wn.vowel !== void 0) {
+            const Kn = b.createVowelFilter(wn.vowel);
+            Zn.vowel = Kn.filters, Yn.connect(Kn);
           }
-          if (xn.coarse !== void 0) {
-            const Kn = getWorklet(b, "coarse-processor", { coarse: xn.coarse });
-            Tn.coarse = [Kn], On.connect(Kn);
+          if (wn.coarse !== void 0) {
+            const Kn = getWorklet(b, "coarse-processor", { coarse: wn.coarse });
+            Zn.coarse = [Kn], Yn.connect(Kn);
           }
-          if (xn.crush !== void 0) {
-            const Kn = getWorklet(b, "crush-processor", { crush: xn.crush });
-            Tn.crush = [Kn], On.connect(Kn);
+          if (wn.crush !== void 0) {
+            const Kn = getWorklet(b, "crush-processor", { crush: wn.crush });
+            Zn.crush = [Kn], Yn.connect(Kn);
           }
-          if (xn.shape !== void 0) {
-            const Kn = getWorklet(b, "shape-processor", { shape: xn.shape, postgain: Es });
-            Tn.shape = [Kn], On.connect(Kn);
+          if (wn.shape !== void 0) {
+            const Kn = getWorklet(b, "shape-processor", { shape: wn.shape, postgain: xs });
+            Zn.shape = [Kn], Yn.connect(Kn);
           }
-          if (xn.distort !== void 0) {
-            const Kn = getDistortion(xn.distort, ms, Rs);
-            Tn.distort = [Kn], On.connect(Kn);
+          if (wn.distort !== void 0) {
+            const Kn = getDistortion(wn.distort, hs, Ls);
+            Zn.distort = [Kn], Yn.connect(Kn);
           }
-          let Ws = xn.tremolo;
-          if (xn.tremolosync != null && (Ws = l * xn.tremolosync), Ws !== void 0) {
-            const Kn = Math.max(1 - xs, 0), Qn = new GainNode(b, { gain: Kn }), Gs = d / l, Cs = getLfo(b, {
-              skew: xn.tremoloskew ?? (xn.tremoloshape != null ? 0.5 : 1),
-              frequency: Ws,
-              depth: xs,
-              time: Gs,
+          let zs = wn.tremolo;
+          if (wn.tremolosync != null && (zs = l * wn.tremolosync), zs !== void 0) {
+            const Kn = Math.max(1 - Es, 0), Qn = new GainNode(b, { gain: Kn }), Ms = d / l, bs = getLfo(b, {
+              skew: wn.tremoloskew ?? (wn.tremoloshape != null ? 0.5 : 1),
+              frequency: zs,
+              depth: Es,
+              time: Ms,
               dcoffset: 0,
-              shape: xn.tremoloshape,
-              phaseoffset: xn.tremolophase,
+              shape: wn.tremoloshape,
+              phaseoffset: wn.tremolophase,
               min: 0,
               max: 1,
               curve: 1.5,
               begin: t,
-              end: ps
+              end: fs
             });
-            Tn.tremolo = [Cs], Tn.tremolo_gain = [Qn], Cs.connect(Qn.gain), On.audioNodes.push(Cs), On.connect(Qn);
+            Zn.tremolo = [bs], Zn.tremolo_gain = [Qn], bs.connect(Qn.gain), Yn.audioNodes.push(bs), Yn.connect(Qn);
           }
-          if (xn.compressor !== void 0) {
+          if (wn.compressor !== void 0) {
             const Kn = getCompressor(
               b,
-              xn.compressor,
-              xn.compressorRatio,
-              xn.compressorKnee,
-              xn.compressorAttack,
-              xn.compressorRelease
+              wn.compressor,
+              wn.compressorRatio,
+              wn.compressorKnee,
+              wn.compressorAttack,
+              wn.compressorRelease
             );
-            Tn.compressor = [Kn], On.connect(Kn);
+            Zn.compressor = [Kn], Yn.connect(Kn);
           }
-          if (xn.pan !== void 0) {
+          if (wn.pan !== void 0) {
             const Kn = b.createStereoPanner();
-            Tn.pan = [Kn], Kn.pan.value = 2 * xn.pan - 1, On.connect(Kn);
+            Zn.pan = [Kn], Kn.pan.value = 2 * wn.pan - 1, Yn.connect(Kn);
           }
-          if (xn.phaserrate !== void 0 && Ns > 0) {
+          if (wn.phaserrate !== void 0 && Ts > 0) {
             const { filterChain: Kn, lfo: Qn } = getPhaser(
               t,
-              ps,
-              xn.phaserrate,
-              Ns,
-              xn.phasercenter,
-              xn.phasersweep
+              fs,
+              wn.phaserrate,
+              Ts,
+              wn.phasercenter,
+              wn.phasersweep
             );
-            Tn.phaser = [...Kn], Tn.phaser_lfo = [Qn], Kn.forEach((Gs) => On.connect(Gs)), On.audioNodes.push(Qn);
+            Zn.phaser = [...Kn], Zn.phaser_lfo = [Qn], Kn.forEach((Ms) => Yn.connect(Ms)), Yn.audioNodes.push(Qn);
           }
-          if (Yn !== "main" && ss > 0 && Ms > 0 && is > 0) {
+          if (Hn !== "main" && ns > 0 && Cs > 0 && is > 0) {
             const Kn = gainNode(1);
             is = clamp(is, 0, 0.98);
-            const Qn = b.createFeedbackDelay(1, Ms, is), Gs = gainNode(ss), Cs = gainNode(xn.dry ?? 1), rs = new GainNode(b, { gain: 1, channelCount: 2, channelCountMode: "explicit" });
-            On.connect(Kn).connect(Cs, Qn).connectOne(1, Gs).connect(rs), On.audioNodes.push(Qn.feedbackGain, Qn.delayGain), Tn.delay = [Qn], Tn.delay_mix = [Gs];
+            const Qn = b.createFeedbackDelay(1, Cs, is), Ms = gainNode(ns), bs = gainNode(wn.dry ?? 1), ss = new GainNode(b, { gain: 1, channelCount: 2, channelCountMode: "explicit" });
+            Yn.connect(Kn).connect(bs, Qn).connectOne(1, Ms).connect(ss), Yn.audioNodes.push(Qn.feedbackGain, Qn.delayGain), Zn.delay = [Qn], Zn.delay_mix = [Ms];
           }
-          if (Yn !== "main" && xn.room > 0) {
+          if (Hn !== "main" && wn.room > 0) {
             let Kn;
-            if (xn.ir !== void 0) {
-              let ks, Xs = getSound(xn.ir);
-              Array.isArray(Xs) ? ks = Xs.data.samples[xn.i % Xs.data.samples.length] : typeof Xs == "object" && (ks = Object.values(Xs.data.samples).flat()[ys % Object.values(Xs.data.samples).length]), Kn = await loadBuffer$1(ks, b, xn.ir, 0);
+            if (wn.ir !== void 0) {
+              let Ds, Ns = getSound(wn.ir);
+              Array.isArray(Ns) ? Ds = Ns.data.samples[wn.i % Ns.data.samples.length] : typeof Ns == "object" && (Ds = Object.values(Ns.data.samples).flat()[gs % Object.values(Ns.data.samples).length]), Kn = await loadBuffer$1(Ds, b, wn.ir, 0);
             }
-            const Qn = gainNode(1), Gs = b.createReverb(
-              xn.roomsize,
-              xn.roomfade,
-              xn.roomlp,
-              xn.roomdim,
+            const Qn = gainNode(1), Ms = b.createReverb(
+              wn.roomsize,
+              wn.roomfade,
+              wn.roomlp,
+              wn.roomdim,
               Kn,
-              xn.irspeed,
-              xn.irbegin
-            ), Cs = gainNode(xn.room), rs = gainNode(xn.dry ?? 1), fs = new GainNode(b, { gain: 1, channelCount: 2, channelCountMode: "explicit" });
-            On.connect(Qn).connect(rs, Gs).connectOne(1, Cs).connect(fs), Tn.room = [Gs], Tn.room_mix = [Cs];
+              wn.irspeed,
+              wn.irbegin
+            ), bs = gainNode(wn.room), ss = gainNode(wn.dry ?? 1), cs = new GainNode(b, { gain: 1, channelCount: 2, channelCountMode: "explicit" });
+            Yn.connect(Qn).connect(ss, Ms).connectOne(1, bs).connect(cs), Zn.room = [Ms], Zn.room_mix = [bs];
           }
         }
-        if (bs !== void 0 && bs > gn) {
-          const Rn = gainNode(1);
-          Rn.gain.setValueAtTime(1, gs + gn), Rn.gain.linearRampToValueAtTime(0, ps), On.connect(Rn);
+        if (ys !== void 0 && ys > _n) {
+          const Dn = gainNode(1);
+          Dn.gain.setValueAtTime(1, _s + _n), Dn.gain.linearRampToValueAtTime(0, fs), Yn.connect(Dn);
         }
         const Jn = new GainNode(b, { gain: rn });
-        if (p.main.post = [Jn], On.connect(Jn), _n > 0 && Gn > 0 && hn > 0) {
-          const Rn = es.getDelay(Gn, hn, t);
-          p.main.delay = [Rn];
-          const xn = es.sendDelay(Jn, _n);
-          p.main.delay_mix = [xn], On.audioNodes.push(xn);
+        if (p.main.post = [Jn], Yn.connect(Jn), mn > 0 && Gn > 0 && hn > 0) {
+          const Dn = _i.getDelay(Gn, hn, t);
+          p.main.delay = [Dn];
+          const wn = _i.sendDelay(Jn, mn);
+          p.main.delay_mix = [wn], Yn.audioNodes.push(wn);
         }
-        if (kn > 0) {
-          let Rn;
+        if (Nn > 0) {
+          let Dn;
           if (Bn !== void 0) {
-            let Tn, ns = getSound(Bn);
-            Array.isArray(ns) ? Tn = ns.data.samples[cs % ns.data.samples.length] : typeof ns == "object" && (Tn = Object.values(ns.data.samples).flat()[cs % Object.values(ns.data.samples).length]), Rn = await loadBuffer$1(Tn, b, Bn, 0);
+            let Zn, ts = getSound(Bn);
+            Array.isArray(ts) ? Zn = ts.data.samples[ls % ts.data.samples.length] : typeof ts == "object" && (Zn = Object.values(ts.data.samples).flat()[ls % Object.values(ts.data.samples).length]), Dn = await loadBuffer$1(Zn, b, Bn, 0);
           }
-          const xn = es.getReverb($n, wn, Ln, Nn, Rn, Wn, In);
-          p.main.room = [xn];
-          const Yn = es.sendReverb(Jn, kn);
-          p.main.room_mix = [Yn], On.audioNodes.push(Yn);
+          const wn = _i.getReverb($n, xn, Rn, Xn, Dn, Wn, Vn);
+          p.main.room = [wn];
+          const Hn = _i.sendReverb(Jn, Nn);
+          p.main.room_mix = [Hn], Yn.audioNodes.push(Hn);
         }
-        if (Fn != null) {
-          const Rn = R.getBus(Fn), xn = effectSend(Jn, Rn, Sn);
-          On.audioNodes.push(xn);
+        if (En != null) {
+          const Dn = R.getBus(En), wn = effectSend(Jn, Dn, vn);
+          Yn.audioNodes.push(wn);
         }
         if (pn != null) {
-          const Rn = es.getDjf(pn, t);
-          p.main.djf = [Rn];
+          const Dn = _i.getDjf(pn, t);
+          p.main.djf = [Dn];
         }
-        if (_s && !(b instanceof OfflineAudioContext)) {
-          const Rn = getAnalyserById(_s, 2 ** (vs + 5)), xn = effectSend(Jn, Rn, 1);
-          On.audioNodes.push(xn);
+        if (ms && !(b instanceof OfflineAudioContext)) {
+          const Dn = getAnalyserById(ms, 2 ** (Gs + 5)), wn = effectSend(Jn, Dn, 1);
+          Yn.audioNodes.push(wn);
         }
         if (Mn != null) {
           Mn = applyGainCurve(Mn);
-          const Rn = new GainNode(b, { gain: Mn });
-          On.connect(Rn), es.connectToOutput(Rn);
+          const Dn = new GainNode(b, { gain: Mn });
+          Yn.connect(Dn), _i.connectToOutput(Dn);
         } else
-          es.connectToOutput(Jn);
-        Zn.forEach((Rn, xn) => {
-          const Yn = xn === Zn.length - 1 ? "main" : xn;
-          if (Rn.lfo)
-            for (const Tn of Rn.lfo.__ids) {
-              const ns = Rn.lfo[Tn];
-              ns.fxi ??= Yn;
-              const hs = connectLFO(
-                Tn,
+          _i.connectToOutput(Jn);
+        Tn.forEach((Dn, wn) => {
+          const Hn = wn === Tn.length - 1 ? "main" : wn;
+          if (Dn.lfo)
+            for (const Zn of Dn.lfo.__ids) {
+              const ts = Dn.lfo[Zn];
+              ts.fxi ??= Hn;
+              const ps = connectLFO(
+                Zn,
                 {
-                  ...ns,
+                  ...ts,
                   cps: l,
                   cycle: d,
                   begin: t,
-                  end: ps
+                  end: fs
                 },
                 p
               );
-              hs && On.audioNodes.push(hs);
+              ps && Yn.audioNodes.push(ps);
             }
-          if (Rn.env)
-            for (const Tn of Rn.env.__ids) {
-              const ns = Rn.env[Tn];
-              ns.fxi ??= Yn;
-              const hs = connectEnvelope(
-                Tn,
+          if (Dn.env)
+            for (const Zn of Dn.env.__ids) {
+              const ts = Dn.env[Zn];
+              ts.fxi ??= Hn;
+              const ps = connectEnvelope(
+                Zn,
                 {
-                  ...ns,
+                  ...ts,
                   begin: t,
-                  end: ps
+                  end: fs
                 },
                 p
               );
-              hs && On.audioNodes.push(hs);
+              ps && Yn.audioNodes.push(ps);
             }
-          if (Rn.bmod)
-            for (const Tn of Rn.bmod.__ids) {
-              const ns = Rn.bmod[Tn];
-              ns.fxi ??= Yn;
-              const { toCleanup: hs } = connectBusModulator({ ...ns, begin: t, end: ps }, p, controller);
-              On.audioNodes.push(...hs);
+          if (Dn.bmod)
+            for (const Zn of Dn.bmod.__ids) {
+              const ts = Dn.bmod[Zn];
+              ts.fxi ??= Hn;
+              const { toCleanup: ps } = connectBusModulator({ ...ts, begin: t, end: fs }, p, controller);
+              Yn.audioNodes.push(...ps);
             }
         });
       };
@@ -16569,24 +16773,24 @@ Please check with "npm ls @strudel/core".`
           sustain: I = 0.8,
           release: z = 0.1,
           curve: se = 1,
-          slide: tn = 0,
+          slide: le = 0,
           deltaSlide: rn = 0,
-          pitchJump: nn = 0,
+          pitchJump: tn = 0,
           pitchJumpTime: an = 0,
           lfo: on = 0,
           znoise: ln = 0,
           zmod: pn = 0,
-          zcrush: gn = 0,
+          zcrush: _n = 0,
           zdelay: Mn = 0,
-          tremolo: _n = 0,
+          tremolo: mn = 0,
           duration: hn = 0.2,
           zzfx: yn
         } = e30;
         const Gn = Math.max(hn - b - R, 0);
         typeof l == "string" && (l = noteToMidi(l)), !d && typeof l == "number" && (d = midiToFreq$1(l)), o = o.replace("z_", "");
-        const vn = ["sine", "triangle", "sawtooth", "tan", "noise"].indexOf(o) || 0;
+        const Sn = ["sine", "triangle", "sawtooth", "tan", "noise"].indexOf(o) || 0;
         se = o === "square" ? 0 : se;
-        const Sn = (
+        const vn = (
           /* ZZFX. */
           buildSamples(...yn || [
             0.25,
@@ -16596,27 +16800,27 @@ Please check with "npm ls @strudel/core".`
             b,
             Gn,
             z,
-            vn,
+            Sn,
             se,
-            tn,
+            le,
             rn,
-            nn,
+            tn,
             an,
             on,
             ln,
             pn,
-            gn,
+            _n,
             Mn,
             I,
             // sustain volume!
             R,
-            _n
+            mn
           ])
-        ), kn = getAudioContext(), wn = kn.createBuffer(1, Sn.length, kn.sampleRate);
-        wn.getChannelData(0).set(Sn);
-        const Ln = getAudioContext().createBufferSource();
-        return Ln.buffer = wn, Ln.start(t), {
-          node: Ln
+        ), Nn = getAudioContext(), xn = Nn.createBuffer(1, vn.length, Nn.sampleRate);
+        xn.getChannelData(0).set(vn);
+        const Rn = getAudioContext().createBufferSource();
+        return Rn.buffer = xn, Rn.start(t), {
+          node: Rn
         };
       };
       stop = () => {
@@ -16640,10 +16844,10 @@ Please check with "npm ls @strudel/core".`
             console.log(`load ${b} from ${I}`);
             const z = fetchSample(I);
             loadedSounds.set(b, z), z.then(
-              ({ channels: se, sampleRate: tn }) => doughWorklet.port.postMessage({
+              ({ channels: se, sampleRate: le }) => doughWorklet.port.postMessage({
                 sample: b,
                 channels: se,
-                sampleRate: tn
+                sampleRate: le
               })
             );
           }
@@ -16685,9 +16889,9 @@ Please check with "npm ls @strudel/core".`
         let R;
         const I = () => {
           const z = getTime(), se = z + d;
-          memory[o] = memory[o].filter((nn) => nn.isInNearPast(l, z));
-          let tn = Math.max(R || se, se - 1 / 10);
-          const rn = this.queryArc(tn, se).filter((nn) => nn.hasOnset());
+          memory[o] = memory[o].filter((tn) => tn.isInNearPast(l, z));
+          let le = Math.max(R || se, se - 1 / 10);
+          const rn = this.queryArc(le, se).filter((tn) => tn.hasOnset());
           memory[o] = memory[o].concat(rn), R = se, e30(memory[o], z, se, this), animationFrames[o] = requestAnimationFrame(I);
         };
         return animationFrames[o] = requestAnimationFrame(I), this;
@@ -16795,14 +16999,14 @@ Please check with "npm ls @strudel/core".`
         const R = (I) => {
           let z;
           I = Math.round(I), z = this.slow(1e3).queryArc(I, I), l.fillStyle = clearColor, l.fillRect(0, 0, d, p), z.forEach((se) => {
-            let { x: tn, y: rn, w: nn, h: an, s: on, r: ln, angle: pn = 0, fill: gn = "darkseagreen" } = se.value;
-            if (nn *= d, an *= p, ln !== void 0 && pn !== void 0) {
-              const _n = pn * 2 * Math.PI, [hn, yn] = [(d - nn) / 2, (p - an) / 2];
-              tn = hn + Math.cos(_n) * ln * hn, rn = yn + Math.sin(_n) * ln * yn;
+            let { x: le, y: rn, w: tn, h: an, s: on, r: ln, angle: pn = 0, fill: _n = "darkseagreen" } = se.value;
+            if (tn *= d, an *= p, ln !== void 0 && pn !== void 0) {
+              const mn = pn * 2 * Math.PI, [hn, yn] = [(d - tn) / 2, (p - an) / 2];
+              le = hn + Math.cos(mn) * ln * hn, rn = yn + Math.sin(mn) * ln * yn;
             } else
-              tn *= d - nn, rn *= p - an;
-            const Mn = { ...se.value, x: tn, y: rn, w: nn, h: an };
-            l.fillStyle = gn, on === "rect" ? l.fillRect(tn, rn, nn, an) : on === "ellipse" && (l.beginPath(), l.ellipse(tn + nn / 2, rn + an / 2, nn / 2, an / 2, 0, 0, 2 * Math.PI), l.fill()), e30 && e30(l, Mn, se);
+              le *= d - tn, rn *= p - an;
+            const Mn = { ...se.value, x: le, y: rn, w: tn, h: an };
+            l.fillStyle = _n, on === "rect" ? l.fillRect(le, rn, tn, an) : on === "ellipse" && (l.beginPath(), l.ellipse(le + tn / 2, rn + an / 2, tn / 2, an / 2, 0, 0, 2 * Math.PI), l.fill()), e30 && e30(l, Mn, se);
           }), window.frame = requestAnimationFrame(R);
         };
         return window.frame = requestAnimationFrame(R), silence;
@@ -16984,14 +17188,14 @@ Please check with "npm ls @strudel/core".`
       };
       Pattern$1.prototype.pianoroll = function(e30 = {}) {
         let { cycles: t = 4, playhead: o = 0.5, overscan: l = 0, hideNegative: d = false, ctx: p = getDrawContext(), id: b = 1 } = e30, R = -t * o, I = t * (1 - o);
-        const z = (se, tn) => (!d || se.whole.begin >= 0) && se.isWithinTime(tn + R, tn + I);
+        const z = (se, le) => (!d || se.whole.begin >= 0) && se.isWithinTime(le + R, le + I);
         return this.draw(
-          (se, tn) => {
+          (se, le) => {
             __pianoroll({
               ...e30,
-              time: tn,
+              time: le,
               ctx: p,
-              haps: se.filter((rn) => z(rn, tn))
+              haps: se.filter((rn) => z(rn, le))
             });
           },
           {
@@ -17044,7 +17248,7 @@ Please check with "npm ls @strudel/core".`
       Pattern$1.prototype._pitchwheel = function(e30) {
         return this.pitchwheel(e30);
       };
-      index$a = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$b = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         Drawer,
         Framer,
@@ -17111,7 +17315,7 @@ Please check with "npm ls @strudel/core".`
       Pattern$1.prototype.scope = Pattern$1.prototype.tscope;
       Pattern$1.prototype._spectrum = Pattern$1.prototype.spectrum;
       lastFrames = /* @__PURE__ */ new Map();
-      index$9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$a = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         DEFAULT_MAX_POLYPHONY,
         Warpmode,
@@ -19039,7 +19243,7 @@ Please check with "npm ls @strudel/core".`
       };
       defaultSoundfontUrl = "https://felixroos.github.io/webaudiofontdata/sound";
       soundfontUrl = defaultSoundfontUrl;
-      loadCache = {};
+      loadCache$1 = {};
       bufferCache = {};
       instruments = [
         // Acoustic Grand Piano: Piano
@@ -21083,9 +21287,9 @@ Please check with "npm ls @strudel/core".`
       typeof AudioParam < "u" && (AudioParam.prototype.dahdsr = function(e30, t, o, l, d, p, b, R, I) {
         d = Math.max(G(d, 4), 1e-3), b = Math.max(G(b, 4), 1e-3), I = G(I, 4), t = Math.max(t, 1e-3);
         let z = e30;
-        return this.setValueAtTime(t, z), this.setValueAtTime(t, z += l), this.exponentialRampToValueAtTime(o, z += d), this.setValueAtTime(o, z += p), this.exponentialRampToValueAtTime(Math.max(R * o, 1e-3), z += b), (se, tn) => {
+        return this.setValueAtTime(t, z), this.setValueAtTime(t, z += l), this.exponentialRampToValueAtTime(o, z += d), this.setValueAtTime(o, z += p), this.exponentialRampToValueAtTime(Math.max(R * o, 1e-3), z += b), (se, le) => {
           this.cancelAndHoldAtTime(se);
-          const rn = Math.max(tn ?? t, 1e-3);
+          const rn = Math.max(le ?? t, 1e-3);
           this.exponentialRampToValueAtTime(rn, se + I);
         };
       });
@@ -21156,11 +21360,11 @@ Please check with "npm ls @strudel/core".`
         Object.entries(SoundFont2Exports.DEFAULT_GENERATOR_VALUES).map(([e30, t]) => [T$1[e30], t])
       );
       D$1 = (e30, t, o, l, d) => {
-        var p, b, R, I, z, se, tn;
+        var p, b, R, I, z, se, le;
         const rn = SoundFont2Exports.DEFAULT_GENERATOR_VALUES[e30];
         if (typeof rn != "number")
           throw new Error(`no default value found for generator with index ${e30}`);
-        const nn = t.generators[e30], an = (b = (p = o.globalZone) == null ? void 0 : p.generators) == null ? void 0 : b[e30], on = (R = l?.generators) == null ? void 0 : R[e30], ln = (z = (I = d.globalZone) == null ? void 0 : I.generators) == null ? void 0 : z[e30], pn = nn && "value" in nn ? nn.value : void 0, gn = an && "value" in an ? an.value : void 0, Mn = on && "value" in on ? on.value : void 0, _n = ln && "value" in ln ? ln.value : void 0, hn = (se = pn ?? gn) != null ? se : rn, yn = (tn = Mn ?? _n) != null ? tn : 0;
+        const tn = t.generators[e30], an = (b = (p = o.globalZone) == null ? void 0 : p.generators) == null ? void 0 : b[e30], on = (R = l?.generators) == null ? void 0 : R[e30], ln = (z = (I = d.globalZone) == null ? void 0 : I.generators) == null ? void 0 : z[e30], pn = tn && "value" in tn ? tn.value : void 0, _n = an && "value" in an ? an.value : void 0, Mn = on && "value" in on ? on.value : void 0, mn = ln && "value" in ln ? ln.value : void 0, hn = (se = pn ?? _n) != null ? se : rn, yn = (le = Mn ?? mn) != null ? le : 0;
         return hn + yn;
       };
       J$1 = (e30) => SoundFont2Exports.DEFAULT_GENERATOR_VALUES[e30] !== void 0;
@@ -22390,7 +22594,7 @@ Please check with "npm ls @strudel/core".`
           R && (p = types$1.logicalAND.binop);
           var I = this.value;
           this.next();
-          var z = this.start, se = this.startLoc, tn = this.parseExprOp(this.parseMaybeUnary(null, false, false, d), z, se, p, d), rn = this.buildBinary(t, o, e30, tn, I, b || R);
+          var z = this.start, se = this.startLoc, le = this.parseExprOp(this.parseMaybeUnary(null, false, false, d), z, se, p, d), rn = this.buildBinary(t, o, e30, le, I, b || R);
           return (b && this.type === types$1.coalesce || R && (this.type === types$1.logicalOR || this.type === types$1.logicalAND)) && this.raiseRecoverable(this.start, "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses"), this.parseExprOp(rn, t, o, l, d);
         }
         return e30;
@@ -22459,12 +22663,12 @@ Please check with "npm ls @strudel/core".`
           var se = this.startNodeAt(t, o);
           se.object = e30, z ? (se.property = this.parseExpression(), this.expect(types$1.bracketR)) : this.type === types$1.privateId && e30.type !== "Super" ? se.property = this.parsePrivateIdent() : se.property = this.parseIdent(this.options.allowReserved !== "never"), se.computed = !!z, R && (se.optional = I), e30 = this.finishNode(se, "MemberExpression");
         } else if (!l && this.eat(types$1.parenL)) {
-          var tn = new DestructuringErrors(), rn = this.yieldPos, nn = this.awaitPos, an = this.awaitIdentPos;
+          var le = new DestructuringErrors(), rn = this.yieldPos, tn = this.awaitPos, an = this.awaitIdentPos;
           this.yieldPos = 0, this.awaitPos = 0, this.awaitIdentPos = 0;
-          var on = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false, tn);
+          var on = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false, le);
           if (d && !I && this.shouldParseAsyncArrow())
-            return this.checkPatternErrors(tn, false), this.checkYieldAwaitInDefaultParams(), this.awaitIdentPos > 0 && this.raise(this.awaitIdentPos, "Cannot use 'await' as identifier inside an async function"), this.yieldPos = rn, this.awaitPos = nn, this.awaitIdentPos = an, this.parseSubscriptAsyncArrow(t, o, on, b);
-          this.checkExpressionErrors(tn, true), this.yieldPos = rn || this.yieldPos, this.awaitPos = nn || this.awaitPos, this.awaitIdentPos = an || this.awaitIdentPos;
+            return this.checkPatternErrors(le, false), this.checkYieldAwaitInDefaultParams(), this.awaitIdentPos > 0 && this.raise(this.awaitIdentPos, "Cannot use 'await' as identifier inside an async function"), this.yieldPos = rn, this.awaitPos = tn, this.awaitIdentPos = an, this.parseSubscriptAsyncArrow(t, o, on, b);
+          this.checkExpressionErrors(le, true), this.yieldPos = rn || this.yieldPos, this.awaitPos = tn || this.awaitPos, this.awaitIdentPos = an || this.awaitIdentPos;
           var ln = this.startNodeAt(t, o);
           ln.callee = e30, ln.arguments = on, R && (ln.optional = I), e30 = this.finishNode(ln, "CallExpression");
         } else if (this.type === types$1.backQuote) {
@@ -22504,8 +22708,8 @@ Please check with "npm ls @strudel/core".`
           case types$1._false:
             return l = this.startNode(), l.value = this.type === types$1._null ? null : this.type === types$1._true, l.raw = this.type.keyword, this.next(), this.finishNode(l, "Literal");
           case types$1.parenL:
-            var se = this.start, tn = this.parseParenAndDistinguishExpression(d, t);
-            return e30 && (e30.parenthesizedAssign < 0 && !this.isSimpleAssignTarget(tn) && (e30.parenthesizedAssign = se), e30.parenthesizedBind < 0 && (e30.parenthesizedBind = se)), tn;
+            var se = this.start, le = this.parseParenAndDistinguishExpression(d, t);
+            return e30 && (e30.parenthesizedAssign < 0 && !this.isSimpleAssignTarget(le) && (e30.parenthesizedAssign = se), e30.parenthesizedBind < 0 && (e30.parenthesizedBind = se)), le;
           case types$1.bracketL:
             return l = this.startNode(), this.next(), l.elements = this.parseExprList(types$1.bracketR, true, true, e30), this.finishNode(l, "ArrayExpression");
           case types$1.braceL:
@@ -22567,7 +22771,7 @@ Please check with "npm ls @strudel/core".`
         var o = this.start, l = this.startLoc, d, p = this.options.ecmaVersion >= 8;
         if (this.options.ecmaVersion >= 6) {
           this.next();
-          var b = this.start, R = this.startLoc, I = [], z = true, se = false, tn = new DestructuringErrors(), rn = this.yieldPos, nn = this.awaitPos, an;
+          var b = this.start, R = this.startLoc, I = [], z = true, se = false, le = new DestructuringErrors(), rn = this.yieldPos, tn = this.awaitPos, an;
           for (this.yieldPos = 0, this.awaitPos = 0; this.type !== types$1.parenR; )
             if (z ? z = false : this.expect(types$1.comma), p && this.afterTrailingComma(types$1.parenR, true)) {
               se = true;
@@ -22579,11 +22783,11 @@ Please check with "npm ls @strudel/core".`
               );
               break;
             } else
-              I.push(this.parseMaybeAssign(false, tn, this.parseParenItem));
+              I.push(this.parseMaybeAssign(false, le, this.parseParenItem));
           var on = this.lastTokEnd, ln = this.lastTokEndLoc;
           if (this.expect(types$1.parenR), e30 && this.shouldParseArrow(I) && this.eat(types$1.arrow))
-            return this.checkPatternErrors(tn, false), this.checkYieldAwaitInDefaultParams(), this.yieldPos = rn, this.awaitPos = nn, this.parseParenArrowList(o, l, I, t);
-          (!I.length || se) && this.unexpected(this.lastTokStart), an && this.unexpected(an), this.checkExpressionErrors(tn, true), this.yieldPos = rn || this.yieldPos, this.awaitPos = nn || this.awaitPos, I.length > 1 ? (d = this.startNodeAt(b, R), d.expressions = I, this.finishNodeAt(d, "SequenceExpression", on, ln)) : d = I[0];
+            return this.checkPatternErrors(le, false), this.checkYieldAwaitInDefaultParams(), this.yieldPos = rn, this.awaitPos = tn, this.parseParenArrowList(o, l, I, t);
+          (!I.length || se) && this.unexpected(this.lastTokStart), an && this.unexpected(an), this.checkExpressionErrors(le, true), this.yieldPos = rn || this.yieldPos, this.awaitPos = tn || this.awaitPos, I.length > 1 ? (d = this.startNodeAt(b, R), d.expressions = I, this.finishNodeAt(d, "SequenceExpression", on, ln)) : d = I[0];
         } else
           d = this.parseParenExpression();
         if (this.options.preserveParens) {
@@ -23966,14 +24170,14 @@ Please check with "npm ls @strudel/core".`
       };
       pp.readInt = function(e30, t, o) {
         for (var l = this.options.ecmaVersion >= 12 && t === void 0, d = o && this.input.charCodeAt(this.pos) === 48, p = this.pos, b = 0, R = 0, I = 0, z = t ?? 1 / 0; I < z; ++I, ++this.pos) {
-          var se = this.input.charCodeAt(this.pos), tn = void 0;
+          var se = this.input.charCodeAt(this.pos), le = void 0;
           if (l && se === 95) {
             d && this.raiseRecoverable(this.pos, "Numeric separator is not allowed in legacy octal numeric literals"), R === 95 && this.raiseRecoverable(this.pos, "Numeric separator must be exactly one underscore"), I === 0 && this.raiseRecoverable(this.pos, "Numeric separator is not allowed at the first of digits"), R = se;
             continue;
           }
-          if (se >= 97 ? tn = se - 97 + 10 : se >= 65 ? tn = se - 65 + 10 : se >= 48 && se <= 57 ? tn = se - 48 : tn = 1 / 0, tn >= e30)
+          if (se >= 97 ? le = se - 97 + 10 : se >= 65 ? le = se - 65 + 10 : se >= 48 && se <= 57 ? le = se - 48 : le = 1 / 0, le >= e30)
             break;
-          R = se, b = b * e30 + tn;
+          R = se, b = b * e30 + le;
         }
         return l && R === 95 && this.raiseRecoverable(this.pos - 1, "Numeric separator is not allowed at the last of digits"), this.pos === p || t != null && this.pos - p !== t ? null : b;
       };
@@ -24346,10 +24550,10 @@ Please check with "npm ls @strudel/core".`
                 ...I,
                 ...b
               ];
-              let nn = t.callee;
-              return nn.type === "ChainExpression" && (nn = nn.expression), nn.type === "MemberExpression" ? this.replace({
+              let tn = t.callee;
+              return tn.type === "ChainExpression" && (tn = tn.expression), tn.type === "MemberExpression" ? this.replace({
                 type: "CallExpression",
-                callee: workletMemberAst(nn.object),
+                callee: workletMemberAst(tn.object),
                 arguments: rn,
                 optional: false
               }) : this.replace({
@@ -24364,10 +24568,10 @@ Please check with "npm ls @strudel/core".`
               { type: "Literal", value: genExprSource(p) },
               ...b
             ];
-            let tn = t.callee;
-            return tn.type === "ChainExpression" && (tn = tn.expression), tn.type === "MemberExpression" ? this.replace({
+            let le = t.callee;
+            return le.type === "ChainExpression" && (le = le.expression), le.type === "MemberExpression" ? this.replace({
               type: "CallExpression",
-              callee: workletMemberAst(tn.object),
+              callee: workletMemberAst(le.object),
               arguments: se,
               optional: false
             }) : this.replace({
@@ -24392,12 +24596,12 @@ Please check with "npm ls @strudel/core".`
             }
           var d = this.location.start, p = this.location.source && typeof this.location.source.offset == "function" ? this.location.source.offset(d) : d, b = this.location.source + ":" + p.line + ":" + p.column;
           if (o) {
-            var R = this.location.end, I = peg$padEnd("", p.line.toString().length, " "), z = o[d.line - 1], se = d.line === R.line ? R.column : z.length + 1, tn = se - d.column || 1;
+            var R = this.location.end, I = peg$padEnd("", p.line.toString().length, " "), z = o[d.line - 1], se = d.line === R.line ? R.column : z.length + 1, le = se - d.column || 1;
             t += `
  --> ` + b + `
 ` + I + ` |
 ` + p.line + " | " + z + `
-` + I + " | " + peg$padEnd("", d.column - 1, " ") + peg$padEnd("", tn, "^");
+` + I + " | " + peg$padEnd("", d.column - 1, " ") + peg$padEnd("", le, "^");
           } else
             t += `
  at ` + b;
@@ -24410,8 +24614,8 @@ Please check with "npm ls @strudel/core".`
             return '"' + d(z.text) + '"';
           },
           class: function(z) {
-            var se = z.parts.map(function(tn) {
-              return Array.isArray(tn) ? p(tn[0]) + "-" + p(tn[1]) : p(tn);
+            var se = z.parts.map(function(le) {
+              return Array.isArray(le) ? p(le[0]) + "-" + p(le[1]) : p(le);
             });
             return "[" + (z.inverted ? "^" : "") + se.join("") + "]";
           },
@@ -24446,10 +24650,10 @@ Please check with "npm ls @strudel/core".`
           return o[z.type](z);
         }
         function R(z) {
-          var se = z.map(b), tn, rn;
+          var se = z.map(b), le, rn;
           if (se.sort(), se.length > 0) {
-            for (tn = 1, rn = 1; tn < se.length; tn++)
-              se[tn - 1] !== se[tn] && (se[rn] = se[tn], rn++);
+            for (le = 1, rn = 1; le < se.length; le++)
+              se[le - 1] !== se[le] && (se[rn] = se[le], rn++);
             se.length = rn;
           }
           switch (se.length) {
@@ -24476,10 +24680,10 @@ Please check with "npm ls @strudel/core".`
           for (const I of b)
             switch (I.type_) {
               case "stretch": {
-                const z = ["fast", "slow"], { type: se, amount: tn } = I.arguments_;
+                const z = ["fast", "slow"], { type: se, amount: le } = I.arguments_;
                 if (!z.includes(se))
                   throw new Error(`mini: stretch: type must be one of ${z.join("|")} but got ${se}`);
-                o = reify(o)[se](t(tn));
+                o = reify(o)[se](t(le));
                 break;
               }
               case "replicate": {
@@ -24497,17 +24701,17 @@ Please check with "npm ls @strudel/core".`
               }
               case "tail": {
                 const z = t(I.arguments_.element);
-                o = o.fmap((se) => (tn) => Array.isArray(se) ? [...se, tn] : [se, tn]).appLeft(z);
+                o = o.fmap((se) => (le) => Array.isArray(se) ? [...se, le] : [se, le]).appLeft(z);
                 break;
               }
               case "range": {
                 const z = t(I.arguments_.element);
                 o = reify(o);
-                const se = (rn, nn, an = 1) => Array.from(
-                  { length: Math.abs(nn - rn) / an + 1 },
-                  (on, ln) => rn < nn ? rn + ln * an : rn - ln * an
+                const se = (rn, tn, an = 1) => Array.from(
+                  { length: Math.abs(tn - rn) / an + 1 },
+                  (on, ln) => rn < tn ? rn + ln * an : rn - ln * an
                 );
-                o = ((rn, nn) => rn.squeezeBind((an) => nn.bind((on) => fastcat(...se(an, on)))))(o, z);
+                o = ((rn, tn) => rn.squeezeBind((an) => tn.bind((on) => fastcat(...se(an, on)))))(o, z);
                 break;
               }
               default:
@@ -24556,7 +24760,7 @@ Please check with "npm ls @strudel/core".`
         const t = mini2ast(e30);
         return patternifyAST(t, e30);
       };
-      index$8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         StartRules: peg$allowedStartRules,
         SyntaxError: peg$SyntaxError,
@@ -24577,12 +24781,12 @@ Please check with "npm ls @strudel/core".`
           enter: function(t, o, l, d) {
             if (!isLanguageLiteral(t)) return;
             e30.miniLocations ??= [];
-            const { options: p, miniLocations: b } = e30, { emitMiniLocations: R } = p, { name: I } = t.tag, z = getLanguages().get(I), se = t.quasi.quasis[0].value.raw, tn = t.quasi.start + 1;
+            const { options: p, miniLocations: b } = e30, { emitMiniLocations: R } = p, { name: I } = t.tag, z = getLanguages().get(I), se = t.quasi.quasis[0].value.raw, le = t.quasi.start + 1;
             if (R) {
-              const rn = z.getLocations(se, tn);
+              const rn = z.getLocations(se, le);
               b.push(...rn);
             }
-            return this.skip(), this.replace(languageWithLocation(I, se, tn));
+            return this.skip(), this.replace(languageWithLocation(I, se, le));
           }
         })
       };
@@ -24608,8 +24812,8 @@ Please check with "npm ls @strudel/core".`
             const { options: p, input: b, miniDisableRanges: R, miniLocations: I } = e30, { emitMiniLocations: z } = p;
             if (isMiniDisabled(t.start, R))
               return;
-            const { quasis: se } = t, { raw: tn } = se[0].value;
-            return this.skip(), z && collectMiniLocations(tn, t, I, b), this.replace(miniWithLocation(tn, t));
+            const { quasis: se } = t, { raw: le } = se[0].value;
+            return this.skip(), z && collectMiniLocations(le, t, I, b), this.replace(miniWithLocation(le, t));
           }
         })
       };
@@ -24651,7 +24855,7 @@ Please check with "npm ls @strudel/core".`
           enter: function(t, o, l, d) {
             if (!isWidgetMethod(t)) return;
             e30.widgets ??= [];
-            const { widgets: p, options: b } = e30, { emitWidgets: R } = b, I = t.callee.property.name, z = p.filter((tn) => tn.type === I).length, se = {
+            const { widgets: p, options: b } = e30, { emitWidgets: R } = b, I = t.callee.property.name, z = p.filter((le) => le.type === I).length, se = {
               from: t.start,
               to: t.end,
               index: z,
@@ -24667,9 +24871,9 @@ Please check with "npm ls @strudel/core".`
           enter: function(t, o, l, d) {
             if (!isSliderFunction(t)) return;
             e30.widgets ??= [], e30.sliders ??= [];
-            const { options: p, widgets: b, sliders: R, nodeOffset: I } = e30, { emitWidgets: z } = p, se = t.arguments[0].start + I, tn = t.arguments[0].end + I, rn = `${se}:${tn}`, nn = {
+            const { options: p, widgets: b, sliders: R, nodeOffset: I } = e30, { emitWidgets: z } = p, se = t.arguments[0].start + I, le = t.arguments[0].end + I, rn = `${se}:${le}`, tn = {
               from: se,
-              to: tn,
+              to: le,
               id: rn,
               value: t.arguments[0].raw,
               // don't use value!
@@ -24678,7 +24882,7 @@ Please check with "npm ls @strudel/core".`
               step: t.arguments[3]?.value,
               type: "slider"
             };
-            return z && b.push(nn), R.push(nn), this.replace(sliderWithLocation(t, I));
+            return z && b.push(tn), R.push(tn), this.replace(sliderWithLocation(t, I));
           }
         })
       };
@@ -25005,8 +25209,8 @@ Please check with "npm ls @strudel/core".`
             const p = typeof d == "object", b = p ? d.n : d;
             if (p && delete d.n, isNote(b))
               return pure(b);
-            const R = (typeof b == "string" ? parseInt(b, 10) : Number.isInteger(b) ? b : Math.round(b)) + 1, [I, z] = l.octdeg(R), se = l.octdegfreq(I, z), tn = l.octdegmidi(I, z), rn = l.scale.edivisions, nn = l.base_freq, an = l.scale.divisions, on = l.intervals.intLabels;
-            return d = pure(p ? { ...d, degree: z, degreeIndexes: an, intLabels: on, root: nn, freq: se, edo: rn } : tn), d;
+            const R = (typeof b == "string" ? parseInt(b, 10) : Number.isInteger(b) ? b : Math.round(b)) + 1, [I, z] = l.octdeg(R), se = l.octdegfreq(I, z), le = l.octdegmidi(I, z), rn = l.scale.edivisions, tn = l.base_freq, an = l.scale.divisions, on = l.intervals.intLabels;
+            return d = pure(p ? { ...d, degree: z, degreeIndexes: an, intLabels: on, root: tn, freq: se, edo: rn } : le), d;
           }).outerJoin().withHap((d) => d.setContext({ ...d.context, scaleDefinition: e30 }));
         },
         true,
@@ -25014,7 +25218,7 @@ Please check with "npm ls @strudel/core".`
         // preserve tactus
       );
       packageName$1 = "@strudel/edo";
-      index$7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         edoScale,
         packageName: packageName$1
@@ -25079,7 +25283,7 @@ Please check with "npm ls @strudel/core".`
         transpose: transpose$4,
         distance: distance$4
       };
-      index$6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         compact: compact$1,
         permutations: permutations$1,
@@ -25283,7 +25487,7 @@ Please check with "npm ls @strudel/core".`
         ...EmptyPcset
       });
       dictionary$2 = [];
-      index$5 = {};
+      index$6 = {};
       data_default$3.forEach(
         ([e30, t, o]) => add$5(e30.split(" "), o.split(" "), t)
       );
@@ -25502,7 +25706,7 @@ Please check with "npm ls @strudel/core".`
         aliases: []
       };
       dictionary$1 = [];
-      index$4 = {};
+      index$5 = {};
       chordType = deprecate("ChordType.chordType", "ChordType.get", get$a);
       entries$2 = deprecate("ChordType.entries", "ChordType.all", all$2);
       data_default$2.forEach(
@@ -25670,7 +25874,7 @@ Please check with "npm ls @strudel/core".`
         aliases: []
       };
       dictionary = [];
-      index$3 = {};
+      index$4 = {};
       scaleType = get$9;
       entries$1 = all$1;
       data_default$1.forEach(
@@ -25972,10 +26176,10 @@ Please check with "npm ls @strudel/core".`
         aliases: []
       };
       modes = MODES.map(toMode);
-      index$2 = {};
+      index$3 = {};
       modes.forEach((e30) => {
-        index$2[e30.name] = e30, e30.aliases.forEach((t) => {
-          index$2[t] = e30;
+        index$3[e30.name] = e30, e30.aliases.forEach((t) => {
+          index$3[t] = e30;
         });
       });
       mode = get$2;
@@ -26047,7 +26251,7 @@ Please check with "npm ls @strudel/core".`
       dist$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         AbcNotation: abc_notation_default,
-        Array: index$6,
+        Array: index$7,
         Chord: chord_default,
         ChordDictionary,
         ChordType: chord_type_default,
@@ -26169,18 +26373,18 @@ Please check with "npm ls @strudel/core".`
                 `[tonal] Invalid value format for 'scale'. Value must contain n, note, or value but received keys [${Object.keys(d).join(", ")}]`,
                 "error"
               ), l;
-            let tn;
+            let le;
             if (isNote(se))
-              tn = _getNearestScaleNote(e30, se), l.value = { ...z, note: tn };
+              le = _getNearestScaleNote(e30, se), l.value = { ...z, note: le };
             else
               try {
-                const [rn, nn] = _convertStepToNumberAndOffset(se);
-                z.anchor ? tn = stepInNamedScale(rn, e30, z.anchor) : tn = scaleStep(rn, e30), nn != 0 && (tn = note_default.transpose(tn, interval_default.fromSemitones(nn)));
+                const [rn, tn] = _convertStepToNumberAndOffset(se);
+                z.anchor ? le = stepInNamedScale(rn, e30, z.anchor) : le = scaleStep(rn, e30), tn != 0 && (le = note_default.transpose(le, interval_default.fromSemitones(tn)));
               } catch (rn) {
                 errorLogger$1(rn, "tonal");
                 return;
               }
-            return l.value = p ? { ...z, note: tn } : tn, l.setContext({ ...l.context, scale: e30 });
+            return l.value = p ? { ...z, note: le } : le, l.setContext({ ...l.context, scale: e30 });
           }), removeUndefineds(o)));
         },
         true,
@@ -26840,7 +27044,7 @@ Please check with "npm ls @strudel/core".`
       registerVoicings("ireal", simple);
       registerVoicings("ireal-ext", complex);
       packageName = "@strudel/tonal";
-      index$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+      index$2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
         __proto__: null,
         addVoicings,
         complex,
@@ -26868,6 +27072,7228 @@ Please check with "npm ls @strudel/core".`
         H: H$1,
         clearHydra,
         initHydra
+      }, Symbol.toStringTag, { value: "Module" }));
+      EventEmitter = class _EventEmitter {
+        /**
+         * Creates a new `EventEmitter`object.
+         *
+         * @param {boolean} [eventsSuspended=false] Whether the `EventEmitter` is initially in a suspended
+         * state (i.e. not executing callbacks).
+         */
+        constructor(t = false) {
+          this.eventMap = {}, this.eventsSuspended = t == true;
+        }
+        /**
+         * The callback function is executed when the associated event is triggered via [`emit()`](#emit).
+         * The [`emit()`](#emit) method relays all additional arguments it received to the callback
+         * functions. Since [`emit()`](#emit) can be passed a variable number of arguments, it is up to
+         * the developer to make sure the arguments match those of the associated callback. In addition,
+         * the callback also separately receives all the arguments present in the listener's
+         * [`arguments`](Listener#arguments) property. This makes it easy to pass data from where the
+         * listener is added to where the listener is executed.
+         *
+         * @callback EventEmitter~callback
+         * @param {...*} [args] A variable number of arguments matching the ones (if any) that were passed
+         * to the [`emit()`](#emit) method (except, the first one) followed by the arguments found in the
+         * listener's [`arguments`](Listener#arguments) array.
+         */
+        /**
+         * Adds a listener for the specified event. It returns the [`Listener`]{@link Listener} object
+         * that was created and attached to the event.
+         *
+         * To attach a global listener that will be triggered for any events, use
+         * [`EventEmitter.ANY_EVENT`]{@link #ANY_EVENT} as the first parameter. Note that a global
+         * listener will also be triggered by non-registered events.
+         *
+         * @param {string|Symbol} event The event to listen to.
+         * @param {EventEmitter~callback} callback The callback function to execute when the event occurs.
+         * @param {Object} [options={}]
+         * @param {Object} [options.context=this] The value of `this` in the callback function.
+         * @param {boolean} [options.prepend=false] Whether the listener should be added at the beginning
+         * of the listeners array and thus executed first.
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the listener
+         * automatically expires.
+         * @param {number} [options.remaining=Infinity] The number of times after which the callback
+         * should automatically be removed.
+         * @param {array} [options.arguments] An array of arguments which will be passed separately to the
+         * callback function. This array is stored in the [`arguments`]{@link Listener#arguments}
+         * property of the [`Listener`]{@link Listener} object and can be retrieved or modified as
+         * desired.
+         *
+         * @returns {Listener} The newly created [`Listener`]{@link Listener} object.
+         *
+         * @throws {TypeError} The `event` parameter must be a string or
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}.
+         * @throws {TypeError} The `callback` parameter must be a function.
+         */
+        addListener(t, o, l = {}) {
+          if (typeof t == "string" && t.length < 1 || t instanceof String && t.length < 1 || typeof t != "string" && !(t instanceof String) && t !== _EventEmitter.ANY_EVENT)
+            throw new TypeError("The 'event' parameter must be a string or EventEmitter.ANY_EVENT.");
+          if (typeof o != "function") throw new TypeError("The callback must be a function.");
+          const d = new Listener(t, this, o, l);
+          return this.eventMap[t] || (this.eventMap[t] = []), l.prepend ? this.eventMap[t].unshift(d) : this.eventMap[t].push(d), d;
+        }
+        /**
+         * Adds a one-time listener for the specified event. The listener will be executed once and then
+         * destroyed. It returns the [`Listener`]{@link Listener} object that was created and attached
+         * to the event.
+         *
+         * To attach a global listener that will be triggered for any events, use
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} as the first parameter. Note that a
+         * global listener will also be triggered by non-registered events.
+         *
+         * @param {string|Symbol} event The event to listen to
+         * @param {EventEmitter~callback} callback The callback function to execute when the event occurs
+         * @param {Object} [options={}]
+         * @param {Object} [options.context=this] The context to invoke the callback function in.
+         * @param {boolean} [options.prepend=false] Whether the listener should be added at the beginning
+         * of the listeners array and thus executed first.
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the listener
+         * automatically expires.
+         * @param {array} [options.arguments] An array of arguments which will be passed separately to the
+         * callback function. This array is stored in the [`arguments`]{@link Listener#arguments}
+         * property of the [`Listener`]{@link Listener} object and can be retrieved or modified as
+         * desired.
+         *
+         * @returns {Listener} The newly created [`Listener`]{@link Listener} object.
+         *
+         * @throws {TypeError} The `event` parameter must be a string or
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}.
+         * @throws {TypeError} The `callback` parameter must be a function.
+         */
+        addOneTimeListener(t, o, l = {}) {
+          l.remaining = 1, this.addListener(t, o, l);
+        }
+        /**
+         * Identifier to use when adding or removing a listener that should be triggered when any events
+         * occur.
+         *
+         * @type {Symbol}
+         */
+        static get ANY_EVENT() {
+          return Symbol.for("Any event");
+        }
+        /**
+         * Returns `true` if the specified event has at least one registered listener. If no event is
+         * specified, the method returns `true` if any event has at least one listener registered (this
+         * includes global listeners registered to
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}).
+         *
+         * Note: to specifically check for global listeners added with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}, use
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} as the parameter.
+         *
+         * @param {string|Symbol} [event=(any event)] The event to check
+         * @param {function|Listener} [callback=(any callback)] The actual function that was added to the
+         * event or the {@link Listener} object returned by `addListener()`.
+         * @returns {boolean}
+         */
+        hasListener(t, o) {
+          return t === void 0 ? this.eventMap[_EventEmitter.ANY_EVENT] && this.eventMap[_EventEmitter.ANY_EVENT].length > 0 ? true : Object.entries(this.eventMap).some(([, l]) => l.length > 0) : this.eventMap[t] && this.eventMap[t].length > 0 ? o instanceof Listener ? this.eventMap[t].filter((d) => d === o).length > 0 : typeof o == "function" ? this.eventMap[t].filter((d) => d.callback === o).length > 0 : o == null : false;
+        }
+        /**
+         * An array of all the unique event names for which the emitter has at least one registered
+         * listener.
+         *
+         * Note: this excludes global events registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} because they are not tied to a
+         * specific event.
+         *
+         * @type {string[]}
+         * @readonly
+         */
+        get eventNames() {
+          return Object.keys(this.eventMap);
+        }
+        /**
+         * Returns an array of all the [`Listener`]{@link Listener} objects that have been registered for
+         * a specific event.
+         *
+         * Please note that global events (those added with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}) are not returned for "regular"
+         * events. To get the list of global listeners, specifically use
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} as the parameter.
+         *
+         * @param {string|Symbol} event The event to get listeners for.
+         * @returns {Listener[]} An array of [`Listener`]{@link Listener} objects.
+         */
+        getListeners(t) {
+          return this.eventMap[t] || [];
+        }
+        /**
+         * Suspends execution of all callbacks functions registered for the specified event type.
+         *
+         * You can suspend execution of callbacks registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} by passing
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} to `suspendEvent()`. Beware that this
+         * will not suspend all callbacks but only those registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}. While this may seem counter-intuitive
+         * at first glance, it allows the selective suspension of global listeners while leaving other
+         * listeners alone. If you truly want to suspends all callbacks for a specific
+         * [`EventEmitter`]{@link EventEmitter}, simply set its `eventsSuspended` property to `true`.
+         *
+         * @param {string|Symbol} event The event name (or `EventEmitter.ANY_EVENT`) for which to suspend
+         * execution of all callback functions.
+         */
+        suspendEvent(t) {
+          this.getListeners(t).forEach((o) => {
+            o.suspended = true;
+          });
+        }
+        /**
+         * Resumes execution of all suspended callback functions registered for the specified event type.
+         *
+         * You can resume execution of callbacks registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} by passing
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} to `unsuspendEvent()`. Beware that
+         * this will not resume all callbacks but only those registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}. While this may seem
+         * counter-intuitive, it allows the selective unsuspension of global listeners while leaving other
+         * callbacks alone.
+         *
+         * @param {string|Symbol} event The event name (or `EventEmitter.ANY_EVENT`) for which to resume
+         * execution of all callback functions.
+         */
+        unsuspendEvent(t) {
+          this.getListeners(t).forEach((o) => {
+            o.suspended = false;
+          });
+        }
+        /**
+         * Returns the number of listeners registered for a specific event.
+         *
+         * Please note that global events (those added with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}) do not count towards the remaining
+         * number for a "regular" event. To get the number of global listeners, specifically use
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} as the parameter.
+         *
+         * @param {string|Symbol} event The event which is usually a string but can also be the special
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} symbol.
+         * @returns {number} An integer representing the number of listeners registered for the specified
+         * event.
+         */
+        getListenerCount(t) {
+          return this.getListeners(t).length;
+        }
+        /**
+         * Executes the callback function of all the [`Listener`]{@link Listener} objects registered for
+         * a given event. The callback functions are passed the additional arguments passed to `emit()`
+         * (if any) followed by the arguments present in the [`arguments`](Listener#arguments) property of
+         * the [`Listener`](Listener) object (if any).
+         *
+         * If the [`eventsSuspended`]{@link #eventsSuspended} property is `true` or the
+         * [`Listener.suspended`]{@link Listener#suspended} property is `true`, the callback functions
+         * will not be executed.
+         *
+         * This function returns an array containing the return values of each of the callbacks.
+         *
+         * It should be noted that the regular listeners are triggered first followed by the global
+         * listeners (those added with [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}).
+         *
+         * @param {string} event The event
+         * @param {...*} args Arbitrary number of arguments to pass along to the callback functions
+         *
+         * @returns {Array} An array containing the return value of each of the executed listener
+         * functions.
+         *
+         * @throws {TypeError} The `event` parameter must be a string.
+         */
+        emit(t, ...o) {
+          if (typeof t != "string" && !(t instanceof String))
+            throw new TypeError("The 'event' parameter must be a string.");
+          if (this.eventsSuspended) return;
+          let l = [], d = this.eventMap[_EventEmitter.ANY_EVENT] || [];
+          return this.eventMap[t] && (d = d.concat(this.eventMap[t])), d.forEach((p) => {
+            if (p.suspended) return;
+            let b = [...o];
+            Array.isArray(p.arguments) && (b = b.concat(p.arguments)), p.remaining > 0 && (l.push(p.callback.apply(p.context, b)), p.count++), --p.remaining < 1 && p.remove();
+          }), l;
+        }
+        /**
+         * Removes all the listeners that were added to the object upon which the method is called and
+         * that match the specified criterias. If no parameters are passed, all listeners added to this
+         * object will be removed. If only the `event` parameter is passed, all listeners for that event
+         * will be removed from that object. You can remove global listeners by using
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} as the first parameter.
+         *
+         * To use more granular options, you must at least define the `event`. Then, you can specify the
+         * callback to match or one or more of the additional options.
+         *
+         * @param {string} [event] The event name.
+         * @param {EventEmitter~callback} [callback] Only remove the listeners that match this exact
+         * callback function.
+         * @param {Object} [options]
+         * @param {*} [options.context] Only remove the listeners that have this exact context.
+         * @param {number} [options.remaining] Only remove the listener if it has exactly that many
+         * remaining times to be executed.
+         */
+        removeListener(t, o, l = {}) {
+          if (t === void 0) {
+            this.eventMap = {};
+            return;
+          } else if (!this.eventMap[t])
+            return;
+          let d = this.eventMap[t].filter((p) => o && p.callback !== o || l.remaining && l.remaining !== p.remaining || l.context && l.context !== p.context);
+          d.length ? this.eventMap[t] = d : delete this.eventMap[t];
+        }
+        /**
+         * The `waitFor()` method is an async function which returns a promise. The promise is fulfilled
+         * when the specified event occurs. The event can be a regular event or
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} (if you want to resolve as soon as any
+         * event is emitted).
+         *
+         * If the `duration` option is set, the promise will only be fulfilled if the event is emitted
+         * within the specified duration. If the event has not been fulfilled after the specified
+         * duration, the promise is rejected. This makes it super easy to wait for an event and timeout
+         * after a certain time if the event is not triggered.
+         *
+         * @param {string|Symbol} event The event to wait for
+         * @param {Object} [options={}]
+         * @param {number} [options.duration=Infinity] The number of milliseconds to wait before the
+         * promise is automatically rejected.
+         */
+        async waitFor(t, o = {}) {
+          return o.duration = parseInt(o.duration), (isNaN(o.duration) || o.duration <= 0) && (o.duration = 1 / 0), new Promise((l, d) => {
+            let p, b = this.addListener(t, () => {
+              clearTimeout(p), l();
+            }, { remaining: 1 });
+            o.duration !== 1 / 0 && (p = setTimeout(() => {
+              b.remove(), d("The duration expired before the event was emitted.");
+            }, o.duration));
+          });
+        }
+        /**
+         * The number of unique events that have registered listeners.
+         *
+         * Note: this excludes global events registered with
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT} because they are not tied to a
+         * specific event.
+         *
+         * @type {number}
+         * @readonly
+         */
+        get eventCount() {
+          return Object.keys(this.eventMap).length;
+        }
+      };
+      Listener = class {
+        /**
+         * Creates a new `Listener` object
+         *
+         * @param {string|Symbol} event The event being listened to
+         * @param {EventEmitter} target The [`EventEmitter`]{@link EventEmitter} object that the listener
+         * is attached to.
+         * @param {EventEmitter~callback} callback The function to call when the listener is triggered
+         * @param {Object} [options={}]
+         * @param {Object} [options.context=target] The context to invoke the listener in (a.k.a. the
+         * value of `this` inside the callback function).
+         * @param {number} [options.remaining=Infinity] The remaining number of times after which the
+         * callback should automatically be removed.
+         * @param {array} [options.arguments] An array of arguments that will be passed separately to the
+         * callback function upon execution. The array is stored in the [`arguments`]{@link #arguments}
+         * property and can be retrieved or modified as desired.
+         *
+         * @throws {TypeError} The `event` parameter must be a string or
+         * [`EventEmitter.ANY_EVENT`]{@link EventEmitter#ANY_EVENT}.
+         * @throws {ReferenceError} The `target` parameter is mandatory.
+         * @throws {TypeError} The `callback` must be a function.
+         */
+        constructor(t, o, l, d = {}) {
+          if (typeof t != "string" && !(t instanceof String) && t !== EventEmitter.ANY_EVENT)
+            throw new TypeError("The 'event' parameter must be a string or EventEmitter.ANY_EVENT.");
+          if (!o)
+            throw new ReferenceError("The 'target' parameter is mandatory.");
+          if (typeof l != "function")
+            throw new TypeError("The 'callback' must be a function.");
+          d.arguments !== void 0 && !Array.isArray(d.arguments) && (d.arguments = [d.arguments]), d = Object.assign({
+            context: o,
+            remaining: 1 / 0,
+            arguments: void 0,
+            duration: 1 / 0
+          }, d), d.duration !== 1 / 0 && setTimeout(() => this.remove(), d.duration), this.arguments = d.arguments, this.callback = l, this.context = d.context, this.count = 0, this.event = t, this.remaining = parseInt(d.remaining) >= 1 ? parseInt(d.remaining) : 1 / 0, this.suspended = false, this.target = o;
+        }
+        /**
+         * Removes the listener from its target.
+         */
+        remove() {
+          this.target.removeListener(
+            this.event,
+            this.callback,
+            { context: this.context, remaining: this.remaining }
+          );
+        }
+      };
+      Enumerations = class _Enumerations {
+        /**
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @deprecated since 3.1 (use Enumerations.CHANNEL_MESSAGES instead)
+         * @private
+         * @static
+         */
+        static get MIDI_CHANNEL_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_CHANNEL_MESSAGES enum has been deprecated. Use the Enumerations.CHANNEL_MESSAGES enum instead."
+          ), _Enumerations.CHANNEL_MESSAGES;
+        }
+        /**
+         * Enumeration of all MIDI channel message names and their associated 4-bit numerical value:
+         *
+         * | Message Name        | Hexadecimal | Decimal |
+         * |---------------------|-------------|---------|
+         * | `noteoff`           | 0x8         | 8       |
+         * | `noteon`            | 0x9         | 9       |
+         * | `keyaftertouch`     | 0xA         | 10      |
+         * | `controlchange`     | 0xB         | 11      |
+         * | `programchange`     | 0xC         | 12      |
+         * | `channelaftertouch` | 0xD         | 13      |
+         * | `pitchbend`         | 0xE         | 14      |
+         *
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @since 3.1
+         * @static
+         */
+        static get CHANNEL_MESSAGES() {
+          return {
+            noteoff: 8,
+            // 8
+            noteon: 9,
+            // 9
+            keyaftertouch: 10,
+            // 10
+            controlchange: 11,
+            // 11
+            programchange: 12,
+            // 12
+            channelaftertouch: 13,
+            // 13
+            pitchbend: 14
+            // 14
+          };
+        }
+        /**
+         * A simple array of the 16 valid MIDI channel numbers (`1` to `16`):
+         *
+         * @type {number[]}
+         * @readonly
+         * @since 3.1
+         * @static
+         */
+        static get CHANNEL_NUMBERS() {
+          return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        }
+        /**
+         * @type {number[]}
+         * @readonly
+         * @deprecated since 3.1 (use Enumerations.CHANNEL_NUMBERS instead)
+         * @private
+         * @static
+         */
+        static get MIDI_CHANNEL_NUMBERS() {
+          return this.validation && console.warn(
+            "The MIDI_CHANNEL_NUMBERS array has been deprecated. Use the Enumerations.CHANNEL_NUMBERS array instead."
+          ), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        }
+        /**
+         * Enumeration of all MIDI channel mode message names and their associated numerical value:
+         *
+         *
+         * | Message Name          | Hexadecimal | Decimal |
+         * |-----------------------|-------------|---------|
+         * | `allsoundoff`         | 0x78        | 120     |
+         * | `resetallcontrollers` | 0x79        | 121     |
+         * | `localcontrol`        | 0x7A        | 122     |
+         * | `allnotesoff`         | 0x7B        | 123     |
+         * | `omnimodeoff`         | 0x7C        | 124     |
+         * | `omnimodeon`          | 0x7D        | 125     |
+         * | `monomodeon`          | 0x7E        | 126     |
+         * | `polymodeon`          | 0x7F        | 127     |
+         *
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @since 3.1
+         * @static
+         */
+        static get CHANNEL_MODE_MESSAGES() {
+          return {
+            allsoundoff: 120,
+            resetallcontrollers: 121,
+            localcontrol: 122,
+            allnotesoff: 123,
+            omnimodeoff: 124,
+            omnimodeon: 125,
+            monomodeon: 126,
+            polymodeon: 127
+          };
+        }
+        /**
+         * @enum {Object.<string, number>}
+         * @deprecated since 3.1 (use Enumerations.CHANNEL_MODE_MESSAGES instead)
+         * @private
+         * @readonly
+         * @static
+         */
+        static get MIDI_CHANNEL_MODE_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_CHANNEL_MODE_MESSAGES enum has been deprecated. Use the Enumerations.CHANNEL_MODE_MESSAGES enum instead."
+          ), _Enumerations.CHANNEL_MODE_MESSAGES;
+        }
+        /**
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @static
+         * @private
+         * @deprecated since version 3.0.26 (use `CONTROL_CHANGE_MESSAGES` instead)
+         */
+        static get MIDI_CONTROL_CHANGE_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_CONTROL_CHANGE_MESSAGES enum has been deprecated. Use the Enumerations.CONTROL_CHANGE_MESSAGES array instead."
+          ), {
+            bankselectcoarse: 0,
+            modulationwheelcoarse: 1,
+            breathcontrollercoarse: 2,
+            controller3: 3,
+            footcontrollercoarse: 4,
+            portamentotimecoarse: 5,
+            dataentrycoarse: 6,
+            volumecoarse: 7,
+            balancecoarse: 8,
+            controller9: 9,
+            pancoarse: 10,
+            expressioncoarse: 11,
+            effectcontrol1coarse: 12,
+            effectcontrol2coarse: 13,
+            controller14: 14,
+            controller15: 15,
+            generalpurposeslider1: 16,
+            generalpurposeslider2: 17,
+            generalpurposeslider3: 18,
+            generalpurposeslider4: 19,
+            controller20: 20,
+            controller21: 21,
+            controller22: 22,
+            controller23: 23,
+            controller24: 24,
+            controller25: 25,
+            controller26: 26,
+            controller27: 27,
+            controller28: 28,
+            controller29: 29,
+            controller30: 30,
+            controller31: 31,
+            bankselectfine: 32,
+            modulationwheelfine: 33,
+            breathcontrollerfine: 34,
+            controller35: 35,
+            footcontrollerfine: 36,
+            portamentotimefine: 37,
+            dataentryfine: 38,
+            volumefine: 39,
+            balancefine: 40,
+            controller41: 41,
+            panfine: 42,
+            expressionfine: 43,
+            effectcontrol1fine: 44,
+            effectcontrol2fine: 45,
+            controller46: 46,
+            controller47: 47,
+            controller48: 48,
+            controller49: 49,
+            controller50: 50,
+            controller51: 51,
+            controller52: 52,
+            controller53: 53,
+            controller54: 54,
+            controller55: 55,
+            controller56: 56,
+            controller57: 57,
+            controller58: 58,
+            controller59: 59,
+            controller60: 60,
+            controller61: 61,
+            controller62: 62,
+            controller63: 63,
+            holdpedal: 64,
+            portamento: 65,
+            sustenutopedal: 66,
+            softpedal: 67,
+            legatopedal: 68,
+            hold2pedal: 69,
+            soundvariation: 70,
+            resonance: 71,
+            soundreleasetime: 72,
+            soundattacktime: 73,
+            brightness: 74,
+            soundcontrol6: 75,
+            soundcontrol7: 76,
+            soundcontrol8: 77,
+            soundcontrol9: 78,
+            soundcontrol10: 79,
+            generalpurposebutton1: 80,
+            generalpurposebutton2: 81,
+            generalpurposebutton3: 82,
+            generalpurposebutton4: 83,
+            controller84: 84,
+            controller85: 85,
+            controller86: 86,
+            controller87: 87,
+            controller88: 88,
+            controller89: 89,
+            controller90: 90,
+            reverblevel: 91,
+            tremololevel: 92,
+            choruslevel: 93,
+            celestelevel: 94,
+            phaserlevel: 95,
+            databuttonincrement: 96,
+            databuttondecrement: 97,
+            nonregisteredparametercoarse: 98,
+            nonregisteredparameterfine: 99,
+            registeredparametercoarse: 100,
+            registeredparameterfine: 101,
+            controller102: 102,
+            controller103: 103,
+            controller104: 104,
+            controller105: 105,
+            controller106: 106,
+            controller107: 107,
+            controller108: 108,
+            controller109: 109,
+            controller110: 110,
+            controller111: 111,
+            controller112: 112,
+            controller113: 113,
+            controller114: 114,
+            controller115: 115,
+            controller116: 116,
+            controller117: 117,
+            controller118: 118,
+            controller119: 119,
+            allsoundoff: 120,
+            resetallcontrollers: 121,
+            localcontrol: 122,
+            allnotesoff: 123,
+            omnimodeoff: 124,
+            omnimodeon: 125,
+            monomodeon: 126,
+            polymodeon: 127
+          };
+        }
+        /**
+         * An array of objects, ordered by control number, describing control change messages. Each object
+         * in the array has 3 properties with some objects having a fourth one (`position`) :
+         *
+         *  * `number`: MIDI control number (0-127);
+         *  * `name`: name of emitted event (eg: `bankselectcoarse`, `choruslevel`, etc) that can be
+         *  listened to;
+         *  * `description`: user-friendly description of the controller's purpose;
+         *  * `position` (optional): whether this controller's value should be considered an `msb` or
+         *  `lsb`
+         *
+         * Not all controllers have a predefined function. For those that don't, `name` is the word
+         * "controller" followed by the number (e.g. `controller112`).
+         *
+         * | Event name                     | Control Number |
+         * |--------------------------------|----------------|
+         * | `bankselectcoarse`             | 0              |
+         * | `modulationwheelcoarse`        | 1              |
+         * | `breathcontrollercoarse`       | 2              |
+         * | `controller3`                  | 3              |
+         * | `footcontrollercoarse`         | 4              |
+         * | `portamentotimecoarse`         | 5              |
+         * | `dataentrycoarse`              | 6              |
+         * | `volumecoarse`                 | 7              |
+         * | `balancecoarse`                | 8              |
+         * | `controller9`                  | 9              |
+         * | `pancoarse`                    | 10             |
+         * | `expressioncoarse`             | 11             |
+         * | `effectcontrol1coarse`         | 12             |
+         * | `effectcontrol2coarse`         | 13             |
+         * | `controller14`                 | 14             |
+         * | `controller15`                 | 15             |
+         * | `generalpurposecontroller1`    | 16             |
+         * | `generalpurposecontroller2`    | 17             |
+         * | `generalpurposecontroller3`    | 18             |
+         * | `generalpurposecontroller4`    | 19             |
+         * | `controller20`                 | 20             |
+         * | `controller21`                 | 21             |
+         * | `controller22`                 | 22             |
+         * | `controller23`                 | 23             |
+         * | `controller24`                 | 24             |
+         * | `controller25`                 | 25             |
+         * | `controller26`                 | 26             |
+         * | `controller27`                 | 27             |
+         * | `controller28`                 | 28             |
+         * | `controller29`                 | 29             |
+         * | `controller30`                 | 30             |
+         * | `controller31`                 | 31             |
+         * | `bankselectfine`               | 32             |
+         * | `modulationwheelfine`          | 33             |
+         * | `breathcontrollerfine`         | 34             |
+         * | `controller35`                 | 35             |
+         * | `footcontrollerfine`           | 36             |
+         * | `portamentotimefine`           | 37             |
+         * | `dataentryfine`                | 38             |
+         * | `channelvolumefine`            | 39             |
+         * | `balancefine`                  | 40             |
+         * | `controller41`                 | 41             |
+         * | `panfine`                      | 42             |
+         * | `expressionfine`               | 43             |
+         * | `effectcontrol1fine`           | 44             |
+         * | `effectcontrol2fine`           | 45             |
+         * | `controller46`                 | 46             |
+         * | `controller47`                 | 47             |
+         * | `controller48`                 | 48             |
+         * | `controller49`                 | 49             |
+         * | `controller50`                 | 50             |
+         * | `controller51`                 | 51             |
+         * | `controller52`                 | 52             |
+         * | `controller53`                 | 53             |
+         * | `controller54`                 | 54             |
+         * | `controller55`                 | 55             |
+         * | `controller56`                 | 56             |
+         * | `controller57`                 | 57             |
+         * | `controller58`                 | 58             |
+         * | `controller59`                 | 59             |
+         * | `controller60`                 | 60             |
+         * | `controller61`                 | 61             |
+         * | `controller62`                 | 62             |
+         * | `controller63`                 | 63             |
+         * | `damperpedal`                  | 64             |
+         * | `portamento`                   | 65             |
+         * | `sostenuto`                    | 66             |
+         * | `softpedal`                    | 67             |
+         * | `legatopedal`                  | 68             |
+         * | `hold2`                        | 69             |
+         * | `soundvariation`               | 70             |
+         * | `resonance`                    | 71             |
+         * | `releasetime`                  | 72             |
+         * | `attacktime`                   | 73             |
+         * | `brightness`                   | 74             |
+         * | `decaytime`                    | 75             |
+         * | `vibratorate`                  | 76             |
+         * | `vibratodepth`                 | 77             |
+         * | `vibratodelay`                 | 78             |
+         * | `controller79`                 | 79             |
+         * | `generalpurposecontroller5`    | 80             |
+         * | `generalpurposecontroller6`    | 81             |
+         * | `generalpurposecontroller7`    | 82             |
+         * | `generalpurposecontroller8`    | 83             |
+         * | `portamentocontrol`            | 84             |
+         * | `controller85`                 | 85             |
+         * | `controller86`                 | 86             |
+         * | `controller87`                 | 87             |
+         * | `highresolutionvelocityprefix` | 88             |
+         * | `controller89`                 | 89             |
+         * | `controller90`                 | 90             |
+         * | `effect1depth`                 | 91             |
+         * | `effect2depth`                 | 92             |
+         * | `effect3depth`                 | 93             |
+         * | `effect4depth`                 | 94             |
+         * | `effect5depth`                 | 95             |
+         * | `dataincrement`                | 96             |
+         * | `datadecrement`                | 97             |
+         * | `nonregisteredparameterfine`   | 98             |
+         * | `nonregisteredparametercoarse` | 99             |
+         * | `nonregisteredparameterfine`   | 100            |
+         * | `registeredparametercoarse`    | 101            |
+         * | `controller102`                | 102            |
+         * | `controller103`                | 103            |
+         * | `controller104`                | 104            |
+         * | `controller105`                | 105            |
+         * | `controller106`                | 106            |
+         * | `controller107`                | 107            |
+         * | `controller108`                | 108            |
+         * | `controller109`                | 109            |
+         * | `controller110`                | 110            |
+         * | `controller111`                | 111            |
+         * | `controller112`                | 112            |
+         * | `controller113`                | 113            |
+         * | `controller114`                | 114            |
+         * | `controller115`                | 115            |
+         * | `controller116`                | 116            |
+         * | `controller117`                | 117            |
+         * | `controller118`                | 118            |
+         * | `controller119`                | 119            |
+         * | `allsoundoff`                  | 120            |
+         * | `resetallcontrollers`          | 121            |
+         * | `localcontrol`                 | 122            |
+         * | `allnotesoff`                  | 123            |
+         * | `omnimodeoff`                  | 124            |
+         * | `omnimodeon`                   | 125            |
+         * | `monomodeon`                   | 126            |
+         * | `polymodeon`                   | 127            |
+         *
+         * @type {object[]}
+         * @readonly
+         * @static
+         * @since 3.1
+         */
+        static get CONTROL_CHANGE_MESSAGES() {
+          return [
+            {
+              number: 0,
+              name: "bankselectcoarse",
+              description: "Bank Select (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 1,
+              name: "modulationwheelcoarse",
+              description: "Modulation Wheel (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 2,
+              name: "breathcontrollercoarse",
+              description: "Breath Controller (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 3,
+              name: "controller3",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 4,
+              name: "footcontrollercoarse",
+              description: "Foot Controller (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 5,
+              name: "portamentotimecoarse",
+              description: "Portamento Time (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 6,
+              name: "dataentrycoarse",
+              description: "Data Entry (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 7,
+              name: "volumecoarse",
+              description: "Channel Volume (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 8,
+              name: "balancecoarse",
+              description: "Balance (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 9,
+              name: "controller9",
+              description: "Controller 9 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 10,
+              name: "pancoarse",
+              description: "Pan (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 11,
+              name: "expressioncoarse",
+              description: "Expression Controller (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 12,
+              name: "effectcontrol1coarse",
+              description: "Effect Control 1 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 13,
+              name: "effectcontrol2coarse",
+              description: "Effect Control 2 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 14,
+              name: "controller14",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 15,
+              name: "controller15",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 16,
+              name: "generalpurposecontroller1",
+              description: "General Purpose Controller 1 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 17,
+              name: "generalpurposecontroller2",
+              description: "General Purpose Controller 2 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 18,
+              name: "generalpurposecontroller3",
+              description: "General Purpose Controller 3 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 19,
+              name: "generalpurposecontroller4",
+              description: "General Purpose Controller 4 (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 20,
+              name: "controller20",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 21,
+              name: "controller21",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 22,
+              name: "controller22",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 23,
+              name: "controller23",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 24,
+              name: "controller24",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 25,
+              name: "controller25",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 26,
+              name: "controller26",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 27,
+              name: "controller27",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 28,
+              name: "controller28",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 29,
+              name: "controller29",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 30,
+              name: "controller30",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 31,
+              name: "controller31",
+              description: "Undefined",
+              position: "msb"
+            },
+            {
+              number: 32,
+              name: "bankselectfine",
+              description: "Bank Select (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 33,
+              name: "modulationwheelfine",
+              description: "Modulation Wheel (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 34,
+              name: "breathcontrollerfine",
+              description: "Breath Controller (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 35,
+              name: "controller35",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 36,
+              name: "footcontrollerfine",
+              description: "Foot Controller (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 37,
+              name: "portamentotimefine",
+              description: "Portamento Time (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 38,
+              name: "dataentryfine",
+              description: "Data Entry (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 39,
+              name: "channelvolumefine",
+              description: "Channel Volume (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 40,
+              name: "balancefine",
+              description: "Balance (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 41,
+              name: "controller41",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 42,
+              name: "panfine",
+              description: "Pan (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 43,
+              name: "expressionfine",
+              description: "Expression Controller (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 44,
+              name: "effectcontrol1fine",
+              description: "Effect control 1 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 45,
+              name: "effectcontrol2fine",
+              description: "Effect control 2 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 46,
+              name: "controller46",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 47,
+              name: "controller47",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 48,
+              name: "controller48",
+              description: "General Purpose Controller 1 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 49,
+              name: "controller49",
+              description: "General Purpose Controller 2 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 50,
+              name: "controller50",
+              description: "General Purpose Controller 3 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 51,
+              name: "controller51",
+              description: "General Purpose Controller 4 (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 52,
+              name: "controller52",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 53,
+              name: "controller53",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 54,
+              name: "controller54",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 55,
+              name: "controller55",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 56,
+              name: "controller56",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 57,
+              name: "controller57",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 58,
+              name: "controller58",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 59,
+              name: "controller59",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 60,
+              name: "controller60",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 61,
+              name: "controller61",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 62,
+              name: "controller62",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 63,
+              name: "controller63",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 64,
+              name: "damperpedal",
+              description: "Damper Pedal On/Off"
+            },
+            {
+              number: 65,
+              name: "portamento",
+              description: "Portamento On/Off"
+            },
+            {
+              number: 66,
+              name: "sostenuto",
+              description: "Sostenuto On/Off"
+            },
+            {
+              number: 67,
+              name: "softpedal",
+              description: "Soft Pedal On/Off"
+            },
+            {
+              number: 68,
+              name: "legatopedal",
+              description: "Legato Pedal On/Off"
+            },
+            {
+              number: 69,
+              name: "hold2",
+              description: "Hold 2 On/Off"
+            },
+            {
+              number: 70,
+              name: "soundvariation",
+              description: "Sound Variation",
+              position: "lsb"
+            },
+            {
+              number: 71,
+              name: "resonance",
+              description: "Resonance",
+              position: "lsb"
+            },
+            {
+              number: 72,
+              name: "releasetime",
+              description: "Release Time",
+              position: "lsb"
+            },
+            {
+              number: 73,
+              name: "attacktime",
+              description: "Attack Time",
+              position: "lsb"
+            },
+            {
+              number: 74,
+              name: "brightness",
+              description: "Brightness",
+              position: "lsb"
+            },
+            {
+              number: 75,
+              name: "decaytime",
+              description: "Decay Time",
+              position: "lsb"
+            },
+            {
+              number: 76,
+              name: "vibratorate",
+              description: "Vibrato Rate",
+              position: "lsb"
+            },
+            {
+              number: 77,
+              name: "vibratodepth",
+              description: "Vibrato Depth",
+              position: "lsb"
+            },
+            {
+              number: 78,
+              name: "vibratodelay",
+              description: "Vibrato Delay",
+              position: "lsb"
+            },
+            {
+              number: 79,
+              name: "controller79",
+              description: "Undefined",
+              position: "lsb"
+            },
+            {
+              number: 80,
+              name: "generalpurposecontroller5",
+              description: "General Purpose Controller 5",
+              position: "lsb"
+            },
+            {
+              number: 81,
+              name: "generalpurposecontroller6",
+              description: "General Purpose Controller 6",
+              position: "lsb"
+            },
+            {
+              number: 82,
+              name: "generalpurposecontroller7",
+              description: "General Purpose Controller 7",
+              position: "lsb"
+            },
+            {
+              number: 83,
+              name: "generalpurposecontroller8",
+              description: "General Purpose Controller 8",
+              position: "lsb"
+            },
+            {
+              number: 84,
+              name: "portamentocontrol",
+              description: "Portamento Control",
+              position: "lsb"
+            },
+            {
+              number: 85,
+              name: "controller85",
+              description: "Undefined"
+            },
+            {
+              number: 86,
+              name: "controller86",
+              description: "Undefined"
+            },
+            {
+              number: 87,
+              name: "controller87",
+              description: "Undefined"
+            },
+            {
+              number: 88,
+              name: "highresolutionvelocityprefix",
+              description: "High Resolution Velocity Prefix",
+              position: "lsb"
+            },
+            {
+              number: 89,
+              name: "controller89",
+              description: "Undefined"
+            },
+            {
+              number: 90,
+              name: "controller90",
+              description: "Undefined"
+            },
+            {
+              number: 91,
+              name: "effect1depth",
+              description: "Effects 1 Depth (Reverb Send Level)"
+            },
+            {
+              number: 92,
+              name: "effect2depth",
+              description: "Effects 2 Depth"
+            },
+            {
+              number: 93,
+              name: "effect3depth",
+              description: "Effects 3 Depth (Chorus Send Level)"
+            },
+            {
+              number: 94,
+              name: "effect4depth",
+              description: "Effects 4 Depth"
+            },
+            {
+              number: 95,
+              name: "effect5depth",
+              description: "Effects 5 Depth"
+            },
+            {
+              number: 96,
+              name: "dataincrement",
+              description: "Data Increment"
+            },
+            {
+              number: 97,
+              name: "datadecrement",
+              description: "Data Decrement"
+            },
+            {
+              number: 98,
+              name: "nonregisteredparameterfine",
+              description: "Non-Registered Parameter Number (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 99,
+              name: "nonregisteredparametercoarse",
+              description: "Non-Registered Parameter Number (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 100,
+              name: "registeredparameterfine",
+              description: "Registered Parameter Number (Fine)",
+              position: "lsb"
+            },
+            {
+              number: 101,
+              name: "registeredparametercoarse",
+              description: "Registered Parameter Number (Coarse)",
+              position: "msb"
+            },
+            {
+              number: 102,
+              name: "controller102",
+              description: "Undefined"
+            },
+            {
+              number: 103,
+              name: "controller103",
+              description: "Undefined"
+            },
+            {
+              number: 104,
+              name: "controller104",
+              description: "Undefined"
+            },
+            {
+              number: 105,
+              name: "controller105",
+              description: "Undefined"
+            },
+            {
+              number: 106,
+              name: "controller106",
+              description: "Undefined"
+            },
+            {
+              number: 107,
+              name: "controller107",
+              description: "Undefined"
+            },
+            {
+              number: 108,
+              name: "controller108",
+              description: "Undefined"
+            },
+            {
+              number: 109,
+              name: "controller109",
+              description: "Undefined"
+            },
+            {
+              number: 110,
+              name: "controller110",
+              description: "Undefined"
+            },
+            {
+              number: 111,
+              name: "controller111",
+              description: "Undefined"
+            },
+            {
+              number: 112,
+              name: "controller112",
+              description: "Undefined"
+            },
+            {
+              number: 113,
+              name: "controller113",
+              description: "Undefined"
+            },
+            {
+              number: 114,
+              name: "controller114",
+              description: "Undefined"
+            },
+            {
+              number: 115,
+              name: "controller115",
+              description: "Undefined"
+            },
+            {
+              number: 116,
+              name: "controller116",
+              description: "Undefined"
+            },
+            {
+              number: 117,
+              name: "controller117",
+              description: "Undefined"
+            },
+            {
+              number: 118,
+              name: "controller118",
+              description: "Undefined"
+            },
+            {
+              number: 119,
+              name: "controller119",
+              description: "Undefined"
+            },
+            {
+              number: 120,
+              name: "allsoundoff",
+              description: "All Sound Off"
+            },
+            {
+              number: 121,
+              name: "resetallcontrollers",
+              description: "Reset All Controllers"
+            },
+            {
+              number: 122,
+              name: "localcontrol",
+              description: "Local Control On/Off"
+            },
+            {
+              number: 123,
+              name: "allnotesoff",
+              description: "All Notes Off"
+            },
+            {
+              number: 124,
+              name: "omnimodeoff",
+              description: "Omni Mode Off"
+            },
+            {
+              number: 125,
+              name: "omnimodeon",
+              description: "Omni Mode On"
+            },
+            {
+              number: 126,
+              name: "monomodeon",
+              description: "Mono Mode On"
+            },
+            {
+              number: 127,
+              name: "polymodeon",
+              description: "Poly Mode On"
+            }
+          ];
+        }
+        /**
+         * Enumeration of all MIDI registered parameters and their associated pair of numerical values.
+         * MIDI registered parameters extend the original list of control change messages. Currently,
+         * there are only a limited number of them:
+         *
+         *
+         * | Control Function             | [LSB, MSB]   |
+         * |------------------------------|--------------|
+         * | `pitchbendrange`             | [0x00, 0x00] |
+         * | `channelfinetuning`          | [0x00, 0x01] |
+         * | `channelcoarsetuning`        | [0x00, 0x02] |
+         * | `tuningprogram`              | [0x00, 0x03] |
+         * | `tuningbank`                 | [0x00, 0x04] |
+         * | `modulationrange`            | [0x00, 0x05] |
+         * | `azimuthangle`               | [0x3D, 0x00] |
+         * | `elevationangle`             | [0x3D, 0x01] |
+         * | `gain`                       | [0x3D, 0x02] |
+         * | `distanceratio`              | [0x3D, 0x03] |
+         * | `maximumdistance`            | [0x3D, 0x04] |
+         * | `maximumdistancegain`        | [0x3D, 0x05] |
+         * | `referencedistanceratio`     | [0x3D, 0x06] |
+         * | `panspreadangle`             | [0x3D, 0x07] |
+         * | `rollangle`                  | [0x3D, 0x08] |
+         *
+         * @enum {Object.<string, number[]>}
+         * @readonly
+         * @since 3.1
+         * @static
+         */
+        static get REGISTERED_PARAMETERS() {
+          return {
+            pitchbendrange: [0, 0],
+            channelfinetuning: [0, 1],
+            channelcoarsetuning: [0, 2],
+            tuningprogram: [0, 3],
+            tuningbank: [0, 4],
+            modulationrange: [0, 5],
+            azimuthangle: [61, 0],
+            elevationangle: [61, 1],
+            gain: [61, 2],
+            distanceratio: [61, 3],
+            maximumdistance: [61, 4],
+            maximumdistancegain: [61, 5],
+            referencedistanceratio: [61, 6],
+            panspreadangle: [61, 7],
+            rollangle: [61, 8]
+          };
+        }
+        /**
+         * @enum {Object.<string, number[]>}
+         * @readonly
+         * @deprecated since 3.1 (use Enumerations.REGISTERED_PARAMETERS instead)
+         * @private
+         * @static
+         */
+        static get MIDI_REGISTERED_PARAMETERS() {
+          return this.validation && console.warn(
+            "The MIDI_REGISTERED_PARAMETERS enum has been deprecated. Use the Enumerations.REGISTERED_PARAMETERS enum instead."
+          ), _Enumerations.MIDI_REGISTERED_PARAMETERS;
+        }
+        /**
+         * Enumeration of all valid MIDI system messages and matching numerical values. This library also
+         * uses two additional custom messages.
+         *
+         * **System Common Messages**
+         *
+         * | Function               | Hexadecimal | Decimal |
+         * |------------------------|-------------|---------|
+         * | `sysex`                | 0xF0        |  240    |
+         * | `timecode`             | 0xF1        |  241    |
+         * | `songposition`         | 0xF2        |  242    |
+         * | `songselect`           | 0xF3        |  243    |
+         * | `tunerequest`          | 0xF6        |  246    |
+         * | `sysexend`             | 0xF7        |  247    |
+         *
+         * The `sysexend` message is never actually received. It simply ends a sysex stream.
+         *
+         * **System Real-Time Messages**
+         *
+         * | Function               | Hexadecimal | Decimal |
+         * |------------------------|-------------|---------|
+         * | `clock`                | 0xF8        |  248    |
+         * | `start`                | 0xFA        |  250    |
+         * | `continue`             | 0xFB        |  251    |
+         * | `stop`                 | 0xFC        |  252    |
+         * | `activesensing`        | 0xFE        |  254    |
+         * | `reset`                | 0xFF        |  255    |
+         *
+         * Values 249 and 253 are relayed by the
+         * [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API) but they do not
+         * serve any specific purpose. The
+         * [MIDI 1.0 spec](https://www.midi.org/specifications/item/table-1-summary-of-midi-message)
+         * simply states that they are undefined/reserved.
+         *
+         * **Custom Messages**
+         *
+         * These two messages are mostly for internal use. They are not MIDI messages and cannot be sent
+         * or forwarded.
+         *
+         * | Function               | Hexadecimal | Decimal |
+         * |------------------------|-------------|---------|
+         * | `midimessage`          |             |  0      |
+         * | `unknownsystemmessage` |             |  -1     |
+         *
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @since 3.1
+         * @static
+         */
+        static get SYSTEM_MESSAGES() {
+          return {
+            // System common messages
+            sysex: 240,
+            // 240
+            timecode: 241,
+            // 241
+            songposition: 242,
+            // 242
+            songselect: 243,
+            // 243
+            tunerequest: 246,
+            // 246
+            tuningrequest: 246,
+            // for backwards-compatibility (deprecated in version 3.0)
+            sysexend: 247,
+            // 247 (never actually received - simply ends a sysex)
+            // System real-time messages
+            clock: 248,
+            // 248
+            start: 250,
+            // 250
+            continue: 251,
+            // 251
+            stop: 252,
+            // 252
+            activesensing: 254,
+            // 254
+            reset: 255,
+            // 255
+            // Custom WebMidi.js messages
+            midimessage: 0,
+            unknownsystemmessage: -1
+          };
+        }
+        /**
+         * @enum {Object.<string, number>}
+         * @readonly
+         * @deprecated since 3.1 (use Enumerations.SYSTEM_MESSAGES instead)
+         * @private
+         * @static
+         */
+        static get MIDI_SYSTEM_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_SYSTEM_MESSAGES enum has been deprecated. Use the Enumerations.SYSTEM_MESSAGES enum instead."
+          ), _Enumerations.SYSTEM_MESSAGES;
+        }
+        /**
+         * Array of channel-specific event names that can be listened for. This includes channel mode
+         * events and RPN/NRPN events.
+         *
+         * @type {string[]}
+         * @readonly
+         */
+        static get CHANNEL_EVENTS() {
+          return [
+            // MIDI channel message events
+            "noteoff",
+            "controlchange",
+            "noteon",
+            "keyaftertouch",
+            "programchange",
+            "channelaftertouch",
+            "pitchbend",
+            // MIDI channel mode events
+            "allnotesoff",
+            "allsoundoff",
+            "localcontrol",
+            "monomode",
+            "omnimode",
+            "resetallcontrollers",
+            // RPN/NRPN events
+            "nrpn",
+            "nrpn-dataentrycoarse",
+            "nrpn-dataentryfine",
+            "nrpn-dataincrement",
+            "nrpn-datadecrement",
+            "rpn",
+            "rpn-dataentrycoarse",
+            "rpn-dataentryfine",
+            "rpn-dataincrement",
+            "rpn-datadecrement",
+            // Legacy (remove in v4)
+            "nrpn-databuttonincrement",
+            "nrpn-databuttondecrement",
+            "rpn-databuttonincrement",
+            "rpn-databuttondecrement"
+          ];
+        }
+      };
+      Note = class {
+        /**
+         * Creates a `Note` object.
+         *
+         * @param value {string|number} The value used to create the note. If an identifier string is used,
+         * it must start with the note letter, optionally followed by an accidental and followed by the
+         * octave number (`"C3"`, `"G#4"`, `"F-1"`, `"Db7"`, etc.). If a number is used, it must be an
+         * integer between 0 and 127. In this case, middle C is considered to be C4 (note number 60).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the note should be
+         * explicitly stopped.
+         *
+         * @param {number} [options.attack=0.5] The note's attack velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawAttack` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.release=0.5] The note's release velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawRelease` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawAttack=64] The note's attack velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawRelease=64] The note's release velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @throws {Error} Invalid note identifier
+         * @throws {RangeError} Invalid name value
+         * @throws {RangeError} Invalid accidental value
+         * @throws {RangeError} Invalid octave value
+         * @throws {RangeError} Invalid duration value
+         * @throws {RangeError} Invalid attack value
+         * @throws {RangeError} Invalid release value
+         */
+        constructor(t, o = {}) {
+          this.duration = wm.defaults.note.duration, this.attack = wm.defaults.note.attack, this.release = wm.defaults.note.release, o.duration != null && (this.duration = o.duration), o.attack != null && (this.attack = o.attack), o.rawAttack != null && (this.attack = Utilities.from7bitToFloat(o.rawAttack)), o.release != null && (this.release = o.release), o.rawRelease != null && (this.release = Utilities.from7bitToFloat(o.rawRelease)), Number.isInteger(t) ? this.identifier = Utilities.toNoteIdentifier(t) : this.identifier = t;
+        }
+        /**
+         * The name, optional accidental and octave of the note, as a string.
+         * @type {string}
+         * @since 3.0.0
+         */
+        get identifier() {
+          return this._name + (this._accidental || "") + this._octave;
+        }
+        set identifier(t) {
+          const o = Utilities.getNoteDetails(t);
+          if (wm.validation && !t)
+            throw new Error("Invalid note identifier");
+          this._name = o.name, this._accidental = o.accidental, this._octave = o.octave;
+        }
+        /**
+         * The name (letter) of the note. If you need the full name with octave and accidental, you can
+         * use the [`identifier`]{@link Note#identifier} property instead.
+         * @type {string}
+         * @since 3.0.0
+         */
+        get name() {
+          return this._name;
+        }
+        set name(t) {
+          if (wm.validation && (t = t.toUpperCase(), !["C", "D", "E", "F", "G", "A", "B"].includes(t)))
+            throw new Error("Invalid name value");
+          this._name = t;
+        }
+        /**
+         * The accidental (#, ##, b or bb) of the note.
+         * @type {string}
+         * @since 3.0.0
+         */
+        get accidental() {
+          return this._accidental;
+        }
+        set accidental(t) {
+          if (wm.validation && (t = t.toLowerCase(), !["#", "##", "b", "bb"].includes(t)))
+            throw new Error("Invalid accidental value");
+          this._accidental = t;
+        }
+        /**
+         * The octave of the note.
+         * @type {number}
+         * @since 3.0.0
+         */
+        get octave() {
+          return this._octave;
+        }
+        set octave(t) {
+          if (wm.validation && (t = parseInt(t), isNaN(t)))
+            throw new Error("Invalid octave value");
+          this._octave = t;
+        }
+        /**
+         * The duration of the note as a positive decimal number representing the number of milliseconds
+         * that the note should play for.
+         *
+         * @type {number}
+         * @since 3.0.0
+         */
+        get duration() {
+          return this._duration;
+        }
+        set duration(t) {
+          if (wm.validation && (t = parseFloat(t), isNaN(t) || t === null || t < 0))
+            throw new RangeError("Invalid duration value.");
+          this._duration = t;
+        }
+        /**
+         * The attack velocity of the note as an integer between 0 and 1.
+         * @type {number}
+         * @since 3.0.0
+         */
+        get attack() {
+          return this._attack;
+        }
+        set attack(t) {
+          if (wm.validation && (t = parseFloat(t), isNaN(t) || !(t >= 0 && t <= 1)))
+            throw new RangeError("Invalid attack value.");
+          this._attack = t;
+        }
+        /**
+         * The release velocity of the note as an integer between 0 and 1.
+         * @type {number}
+         * @since 3.0.0
+         */
+        get release() {
+          return this._release;
+        }
+        set release(t) {
+          if (wm.validation && (t = parseFloat(t), isNaN(t) || !(t >= 0 && t <= 1)))
+            throw new RangeError("Invalid release value.");
+          this._release = t;
+        }
+        /**
+         * The attack velocity of the note as a positive integer between 0 and 127.
+         * @type {number}
+         * @since 3.0.0
+         */
+        get rawAttack() {
+          return Utilities.fromFloatTo7Bit(this._attack);
+        }
+        set rawAttack(t) {
+          this._attack = Utilities.from7bitToFloat(t);
+        }
+        /**
+         * The release velocity of the note as a positive integer between 0 and 127.
+         * @type {number}
+         * @since 3.0.0
+         */
+        get rawRelease() {
+          return Utilities.fromFloatTo7Bit(this._release);
+        }
+        set rawRelease(t) {
+          this._release = Utilities.from7bitToFloat(t);
+        }
+        /**
+         * The MIDI number of the note (`0` - `127`). This number is derived from the note identifier
+         * using C4 as a reference for middle C.
+         *
+         * @type {number}
+         * @readonly
+         * @since 3.0.0
+         */
+        get number() {
+          return Utilities.toNoteNumber(this.identifier);
+        }
+        /**
+         * Returns a MIDI note number offset by octave and/or semitone. If the calculated value is less
+         * than 0, 0 will be returned. If the calculated value is more than 127, 127 will be returned. If
+         * an invalid value is supplied, 0 will be used.
+         *
+         * @param [octaveOffset] {number} An integer to offset the note number by octave.
+         * @param [semitoneOffset] {number} An integer to offset the note number by semitone.
+         * @returns {number} An integer between 0 and 127
+         */
+        getOffsetNumber(t = 0, o = 0) {
+          return wm.validation && (t = parseInt(t) || 0, o = parseInt(o) || 0), Math.min(Math.max(this.number + t * 12 + o, 0), 127);
+        }
+      };
+      Utilities = class {
+        /**
+         * Returns a MIDI note number matching the identifier passed in the form of a string. The
+         * identifier must include the octave number. The identifier also optionally include a sharp (#),
+         * a double sharp (##), a flat (b) or a double flat (bb) symbol. For example, these are all valid
+         * identifiers: C5, G4, D#-1, F0, Gb7, Eb-1, Abb4, B##6, etc.
+         *
+         * When converting note identifiers to numbers, C4 is considered to be middle C (MIDI note number
+         * 60) as per the scientific pitch notation standard.
+         *
+         * The resulting note number can be offset by using the `octaveOffset` parameter.
+         *
+         * @param identifier {string} The identifier in the form of a letter, followed by an optional "#",
+         * "##", "b" or "bb" followed by the octave number. For exemple: C5, G4, D#-1, F0, Gb7, Eb-1,
+         * Abb4, B##6, etc.
+         *
+         * @param {number} [octaveOffset=0] A integer to offset the octave by.
+         *
+         * @returns {number} The MIDI note number (an integer between 0 and 127).
+         *
+         * @throws RangeError Invalid 'octaveOffset' value
+         *
+         * @throws TypeError Invalid note identifier
+         *
+         * @license Apache-2.0
+         * @since 3.0.0
+         * @static
+         */
+        static toNoteNumber(t, o = 0) {
+          if (o = o == null ? 0 : parseInt(o), isNaN(o)) throw new RangeError("Invalid 'octaveOffset' value");
+          typeof t != "string" && (t = "");
+          const l = this.getNoteDetails(t);
+          if (!l) throw new TypeError("Invalid note identifier");
+          const d = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+          let p = (l.octave + 1 + o) * 12;
+          if (p += d[l.name], l.accidental && (l.accidental.startsWith("b") ? p -= l.accidental.length : p += l.accidental.length), p < 0 || p > 127) throw new RangeError("Invalid octaveOffset value");
+          return p;
+        }
+        /**
+         * Given a proper note identifier (`C#4`, `Gb-1`, etc.) or a valid MIDI note number (0-127), this
+         * method returns an object containing broken down details about the specified note (uppercase
+         * letter, accidental and octave).
+         *
+         * When a number is specified, the translation to note is done using a value of 60 for middle C
+         * (C4 = middle C).
+         *
+         * @param value {string|number} A note identifier A  atring ("C#4", "Gb-1", etc.) or a MIDI note
+         * number (0-127).
+         *
+         * @returns {{accidental: string, identifier: string, name: string, octave: number }}
+         *
+         * @throws TypeError Invalid note identifier
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static getNoteDetails(t) {
+          Number.isInteger(t) && (t = this.toNoteIdentifier(t));
+          const o = t.match(/^([CDEFGAB])(#{0,2}|b{0,2})(-?\d+)$/i);
+          if (!o) throw new TypeError("Invalid note identifier");
+          const l = o[1].toUpperCase(), d = parseInt(o[3]);
+          let p = o[2].toLowerCase();
+          return p = p === "" ? void 0 : p, {
+            accidental: p,
+            identifier: l + (p || "") + d,
+            name: l,
+            octave: d
+          };
+        }
+        /**
+         * Returns a sanitized array of valid MIDI channel numbers (1-16). The parameter should be a
+         * single integer or an array of integers.
+         *
+         * For backwards-compatibility, passing `undefined` as a parameter to this method results in all
+         * channels being returned (1-16). Otherwise, parameters that cannot successfully be parsed to
+         * integers between 1 and 16 are silently ignored.
+         *
+         * @param [channel] {number|number[]} An integer or an array of integers to parse as channel
+         * numbers.
+         *
+         * @returns {number[]} An array of 0 or more valid MIDI channel numbers.
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static sanitizeChannels(t) {
+          let o;
+          if (wm.validation) {
+            if (t === "all")
+              o = ["all"];
+            else if (t === "none")
+              return [];
+          }
+          return Array.isArray(t) ? o = t : o = [t], o.indexOf("all") > -1 && (o = Enumerations.MIDI_CHANNEL_NUMBERS), o.map(function(l) {
+            return parseInt(l);
+          }).filter(function(l) {
+            return l >= 1 && l <= 16;
+          });
+        }
+        /**
+         * Returns a valid timestamp, relative to the navigation start of the document, derived from the
+         * `time` parameter. If the parameter is a string starting with the "+" sign and followed by a
+         * number, the resulting timestamp will be the sum of the current timestamp plus that number. If
+         * the parameter is a positive number, it will be returned as is. Otherwise, false will be
+         * returned.
+         *
+         * @param [time] {number|string} The time string (e.g. `"+2000"`) or number to parse
+         * @return {number|false} A positive number or `false` (if the time cannot be converted)
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static toTimestamp(t) {
+          let o = false;
+          const l = parseFloat(t);
+          return isNaN(l) ? false : (typeof t == "string" && t.substring(0, 1) === "+" ? l >= 0 && (o = wm.time + l) : l >= 0 && (o = l), o);
+        }
+        /**
+         * Returns a valid MIDI note number (0-127) given the specified input. The input usually is a
+         * string containing a note identifier (`"C3"`, `"F#4"`, `"D-2"`, `"G8"`, etc.). If an integer
+         * between 0 and 127 is passed, it will simply be returned as is (for convenience). Other strings
+         * will be parsed for integer value, if possible.
+         *
+         * If the input is an identifier, the resulting note number is offset by the `octaveOffset`
+         * parameter. For example, if you pass in "C4" (note number 60) and the `octaveOffset` value is
+         * -2, the resulting MIDI note number will be 36.
+         *
+         * @param input {string|number} A string or number to extract the MIDI note number from.
+         * @param octaveOffset {number} An integer to offset the octave by
+         *
+         * @returns {number|false} A valid MIDI note number (0-127) or `false` if the input could not
+         * successfully be parsed to a note number.
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static guessNoteNumber(t, o) {
+          o = parseInt(o) || 0;
+          let l = false;
+          if (Number.isInteger(t) && t >= 0 && t <= 127)
+            l = parseInt(t);
+          else if (parseInt(t) >= 0 && parseInt(t) <= 127)
+            l = parseInt(t);
+          else if (typeof t == "string" || t instanceof String)
+            try {
+              l = this.toNoteNumber(t.trim(), o);
+            } catch {
+              return false;
+            }
+          return l;
+        }
+        /**
+         * Returns an identifier string representing a note name (with optional accidental) followed by an
+         * octave number. The octave can be offset by using the `octaveOffset` parameter.
+         *
+         * @param {number} number The MIDI note number to convert to a note identifier
+         * @param {number} octaveOffset An offset to apply to the resulting octave
+         *
+         * @returns {string}
+         *
+         * @throws RangeError Invalid note number
+         * @throws RangeError Invalid octaveOffset value
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static toNoteIdentifier(t, o) {
+          if (t = parseInt(t), isNaN(t) || t < 0 || t > 127) throw new RangeError("Invalid note number");
+          if (o = o == null ? 0 : parseInt(o), isNaN(o)) throw new RangeError("Invalid octaveOffset value");
+          const l = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], d = Math.floor(t / 12 - 1) + o;
+          return l[t % 12] + d.toString();
+        }
+        /**
+         * Converts the `input` parameter to a valid [`Note`]{@link Note} object. The input usually is an
+         * unsigned integer (0-127) or a note identifier (`"C4"`, `"G#5"`, etc.). If the input is a
+         * [`Note`]{@link Note} object, it will be returned as is.
+         *
+         * If the input is a note number or identifier, it is possible to specify options by providing the
+         * `options` parameter.
+         *
+         * @param [input] {number|string|Note}
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the note should
+         * be explicitly stopped.
+         *
+         * @param {number} [options.attack=0.5] The note's attack velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawAttack` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.release=0.5] The note's release velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawRelease` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawAttack=64] The note's attack velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawRelease=64] The note's release velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @param {number} [options.octaveOffset=0] An integer to offset the octave by. **This is only
+         * used when the input value is a note identifier.**
+         *
+         * @returns {Note}
+         *
+         * @throws TypeError The input could not be parsed to a note
+         *
+         * @since version 3.0.0
+         * @static
+         */
+        static buildNote(t, o = {}) {
+          if (o.octaveOffset = parseInt(o.octaveOffset) || 0, t instanceof Note) return t;
+          let l = this.guessNoteNumber(t, o.octaveOffset);
+          if (l === false)
+            throw new TypeError(`The input could not be parsed as a note (${t})`);
+          return o.octaveOffset = void 0, new Note(l, o);
+        }
+        /**
+         * Converts an input value, which can be an unsigned integer (0-127), a note identifier, a
+         * [`Note`]{@link Note}  object or an array of the previous types, to an array of
+         * [`Note`]{@link Note}  objects.
+         *
+         * [`Note`]{@link Note}  objects are returned as is. For note numbers and identifiers, a
+         * [`Note`]{@link Note} object is created with the options specified. An error will be thrown when
+         * encountering invalid input.
+         *
+         * Note: if both the `attack` and `rawAttack` options are specified, the later has priority. The
+         * same goes for `release` and `rawRelease`.
+         *
+         * @param [notes] {number|string|Note|number[]|string[]|Note[]}
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the note should
+         * be explicitly stopped.
+         *
+         * @param {number} [options.attack=0.5] The note's attack velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawAttack` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.release=0.5] The note's release velocity as a float between 0 and 1. If
+         * you wish to use an integer between 0 and 127, use the `rawRelease` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawAttack=64] The note's attack velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `attack` and `rawAttack` are specified, the latter has precedence.
+         *
+         * @param {number} [options.rawRelease=64] The note's release velocity as an integer between 0 and
+         * 127. If you wish to use a float between 0 and 1, use the `release` option instead. If both
+         * `release` and `rawRelease` are specified, the latter has precedence.
+         *
+         * @param {number} [options.octaveOffset=0] An integer to offset the octave by. **This is only
+         * used when the input value is a note identifier.**
+         *
+         * @returns {Note[]}
+         *
+         * @throws TypeError An element could not be parsed as a note.
+         *
+         * @since 3.0.0
+         * @static
+         */
+        static buildNoteArray(t, o = {}) {
+          let l = [];
+          return Array.isArray(t) || (t = [t]), t.forEach((d) => {
+            l.push(this.buildNote(d, o));
+          }), l;
+        }
+        /**
+         * Returns a number between 0 and 1 representing the ratio of the input value divided by 127 (7
+         * bit). The returned value is restricted between 0 and 1 even if the input is greater than 127 or
+         * smaller than 0.
+         *
+         * Passing `Infinity` will return `1` and passing `-Infinity` will return `0`. Otherwise, when the
+         * input value cannot be converted to an integer, the method returns 0.
+         *
+         * @param value {number} A positive integer between 0 and 127 (inclusive)
+         * @returns {number} A number between 0 and 1 (inclusive)
+         * @static
+         */
+        static from7bitToFloat(t) {
+          return t === 1 / 0 && (t = 127), t = parseInt(t) || 0, Math.min(Math.max(t / 127, 0), 1);
+        }
+        /**
+         * Returns an integer between 0 and 127 which is the result of multiplying the input value by
+         * 127. The input value should be a number between 0 and 1 (inclusively). The returned value is
+         * restricted between 0 and 127 even if the input is greater than 1 or smaller than 0.
+         *
+         * Passing `Infinity` will return `127` and passing `-Infinity` will return `0`. Otherwise, when
+         * the input value cannot be converted to a number, the method returns 0.
+         *
+         * @param value {number} A positive float between 0 and 1 (inclusive)
+         * @returns {number} A number between 0 and 127 (inclusive)
+         * @static
+         */
+        static fromFloatTo7Bit(t) {
+          return t === 1 / 0 && (t = 1), t = parseFloat(t) || 0, Math.min(Math.max(Math.round(t * 127), 0), 127);
+        }
+        /**
+         * Combines and converts MSB and LSB values (0-127) to a float between 0 and 1. The returned value
+         * is within between 0 and 1 even if the result is greater than 1 or smaller than 0.
+         *
+         * @param msb {number} The most significant byte as a integer between 0 and 127.
+         * @param [lsb=0] {number} The least significant byte as a integer between 0 and 127.
+         * @returns {number} A float between 0 and 1.
+         */
+        static fromMsbLsbToFloat(t, o = 0) {
+          wm.validation && (t = Math.min(Math.max(parseInt(t) || 0, 0), 127), o = Math.min(Math.max(parseInt(o) || 0, 0), 127));
+          const l = ((t << 7) + o) / 16383;
+          return Math.min(Math.max(l, 0), 1);
+        }
+        /**
+         * Extracts 7bit MSB and LSB values from the supplied float.
+         *
+         * @param value {number} A float between 0 and 1
+         * @returns {{lsb: number, msb: number}}
+         */
+        static fromFloatToMsbLsb(t) {
+          wm.validation && (t = Math.min(Math.max(parseFloat(t) || 0, 0), 1));
+          const o = Math.round(t * 16383);
+          return {
+            msb: o >> 7,
+            lsb: o & 127
+          };
+        }
+        /**
+         * Returns the supplied MIDI note number offset by the requested octave and semitone values. If
+         * the calculated value is less than 0, 0 will be returned. If the calculated value is more than
+         * 127, 127 will be returned. If an invalid offset value is supplied, 0 will be used.
+         *
+         * @param number {number} The MIDI note to offset as an integer between 0 and 127.
+         * @param octaveOffset {number} An integer to offset the note by (in octave)
+         * @param octaveOffset {number} An integer to offset the note by (in semitones)
+         * @returns {number} An integer between 0 and 127
+         *
+         * @throws {Error} Invalid note number
+         * @static
+         */
+        static offsetNumber(t, o = 0, l = 0) {
+          if (wm.validation) {
+            if (t = parseInt(t), isNaN(t)) throw new Error("Invalid note number");
+            o = parseInt(o) || 0, l = parseInt(l) || 0;
+          }
+          return Math.min(Math.max(t + o * 12 + l, 0), 127);
+        }
+        /**
+         * Returns the name of the first property of the supplied object whose value is equal to the one
+         * supplied. If nothing is found, `undefined` is returned.
+         *
+         * @param object {object} The object to look for the property in.
+         * @param value {*} Any value that can be expected to be found in the object's properties.
+         * @returns {string|undefined} The name of the matching property or `undefined` if nothing is
+         * found.
+         * @static
+         */
+        static getPropertyByValue(t, o) {
+          return Object.keys(t).find((l) => t[l] === o);
+        }
+        /**
+         * Returns the name of a control change message matching the specified number (0-127). Some valid
+         * control change numbers do not have a specific name or purpose assigned in the MIDI
+         * [spec](https://midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2).
+         * In these cases, the method returns `controllerXXX` (where XXX is the number).
+         *
+         * @param {number} number An integer (0-127) representing the control change message
+         * @returns {string|undefined} The matching control change name or `undefined` if no match was
+         * found.
+         *
+         * @static
+         */
+        static getCcNameByNumber(t) {
+          if (!(wm.validation && (t = parseInt(t), !(t >= 0 && t <= 127))))
+            return Enumerations.CONTROL_CHANGE_MESSAGES[t].name;
+        }
+        /**
+         * Returns the number of a control change message matching the specified name.
+         *
+         * @param {string} name A string representing the control change message
+         * @returns {string|undefined} The matching control change number or `undefined` if no match was
+         * found.
+         *
+         * @since 3.1
+         * @static
+         */
+        static getCcNumberByName(t) {
+          let o = Enumerations.CONTROL_CHANGE_MESSAGES.find((l) => l.name === t);
+          return o ? o.number : Enumerations.MIDI_CONTROL_CHANGE_MESSAGES[t];
+        }
+        /**
+         * Returns the channel mode name matching the specified number. If no match is found, the function
+         * returns `false`.
+         *
+         * @param {number} number An integer representing the channel mode message (120-127)
+         * @returns {string|false} The name of the matching channel mode or `false` if no match could be
+         * found.
+         *
+         * @since 2.0.0
+         */
+        static getChannelModeByNumber(t) {
+          if (!(t >= 120 && t <= 127)) return false;
+          for (let o in Enumerations.CHANNEL_MODE_MESSAGES)
+            if (Enumerations.CHANNEL_MODE_MESSAGES.hasOwnProperty(o) && t === Enumerations.CHANNEL_MODE_MESSAGES[o])
+              return o;
+          return false;
+        }
+        /**
+         * Indicates whether the execution environment is Node.js (`true`) or not (`false`)
+         * @type {boolean}
+         */
+        static get isNode() {
+          return typeof process < "u" && process.versions != null && process.versions.node != null;
+        }
+        /**
+         * Indicates whether the execution environment is a browser (`true`) or not (`false`)
+         * @type {boolean}
+         */
+        static get isBrowser() {
+          return typeof window < "u" && typeof window.document < "u";
+        }
+      };
+      OutputChannel = class extends EventEmitter {
+        /**
+         * Creates an `OutputChannel` object.
+         *
+         * @param {Output} output The [`Output`](Output) this channel belongs to.
+         * @param {number} number The MIDI channel number (`1` - `16`).
+         */
+        constructor(t, o) {
+          super(), this._output = t, this._number = o, this._octaveOffset = 0;
+        }
+        /**
+         * Unlinks the MIDI subsystem, removes all listeners attached to the channel and nulls the channel
+         * number. This method is mostly for internal use. It has not been prefixed with an underscore
+         * since it is called by other objects such as the `Output` object.
+         *
+         * @private
+         */
+        destroy() {
+          this._output = null, this._number = null, this._octaveOffset = 0, this.removeListener();
+        }
+        /**
+         * Sends a MIDI message on the MIDI output port. If no time is specified, the message will be
+         * sent immediately. The message should be an array of 8-bit unsigned integers (`0` - `225`),
+         * a
+         * [`Uint8Array`]{@link https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array}
+         * object or a [`Message`](Message) object.
+         *
+         * It is usually not necessary to use this method directly as you can use one of the simpler
+         * helper methods such as [`playNote()`](#playNote), [`stopNote()`](#stopNote),
+         * [`sendControlChange()`](#sendControlChange), etc.
+         *
+         * Details on the format of MIDI messages are available in the summary of
+         * [MIDI messages]{@link https://www.midi.org/specifications-old/item/table-1-summary-of-midi-message}
+         * from the MIDI Manufacturers Association.
+         *
+         * @param message {number[]|Uint8Array|Message} A `Message` object, an array of 8-bit unsigned
+         * integers or a `Uint8Array` object (not available in Node.js) containing the message bytes.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The first byte (status) must be an integer between 128 and 255.
+         *
+         * @throws {RangeError} Data bytes must be integers between 0 and 255.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        send(t, o = { time: 0 }) {
+          return this.output.send(t, o), this;
+        }
+        /**
+         * Sends a MIDI **key aftertouch** message at the scheduled time. This is a key-specific
+         * aftertouch. For a channel-wide aftertouch message, use
+         * [`sendChannelAftertouch()`]{@link #sendChannelAftertouch}.
+         *
+         * @param target {number|Note|string|number[]|Note[]|string[]} The note(s) for which you are sending
+         * an aftertouch value. The notes can be specified by using a MIDI note number (`0` - `127`), a
+         * [`Note`](Note) object, a note identifier (e.g. `C3`, `G#4`, `F-1`, `Db7`) or an array of the
+         * previous types. When using a note identifier, octave range must be between `-1` and `9`. The
+         * lowest note is `C-1` (MIDI note number `0`) and the highest note is `G9` (MIDI note number
+         * `127`).
+         *
+         * When using a note identifier, the octave value will be offset by the local
+         * [`octaveOffset`](#octaveOffset) and by
+         * [`Output.octaveOffset`](Output#octaveOffset) and [`WebMidi.octaveOffset`](WebMidi#octaveOffset)
+         * (if those values are not `0`). When using a key number, `octaveOffset` values are ignored.
+         *
+         * @param [pressure=0.5] {number} The pressure level (between `0` and `1`). An invalid pressure
+         * value will silently trigger the default behaviour. If the `rawValue` option is set to `true`,
+         * the pressure is defined by using an integer between `0` and `127`.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered a float between `0` and `1.0` (default) or a raw integer between `0` and `127`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @return {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         *
+         * @throws RangeError Invalid key aftertouch value.
+         */
+        sendKeyAftertouch(t, o, l = {}) {
+          if (wm.validation) {
+            if (l.useRawValue && (l.rawValue = l.useRawValue), isNaN(parseFloat(o)))
+              throw new RangeError("Invalid key aftertouch value.");
+            if (l.rawValue) {
+              if (!(o >= 0 && o <= 127 && Number.isInteger(o)))
+                throw new RangeError("Key aftertouch raw value must be an integer between 0 and 127.");
+            } else if (!(o >= 0 && o <= 1))
+              throw new RangeError("Key aftertouch value must be a float between 0 and 1.");
+          }
+          l.rawValue || (o = Utilities.fromFloatTo7Bit(o));
+          const d = wm.octaveOffset + this.output.octaveOffset + this.octaveOffset;
+          return Array.isArray(t) || (t = [t]), Utilities.buildNoteArray(t).forEach((p) => {
+            this.send(
+              [
+                (Enumerations.CHANNEL_MESSAGES.keyaftertouch << 4) + (this.number - 1),
+                p.getOffsetNumber(d),
+                o
+              ],
+              { time: Utilities.toTimestamp(l.time) }
+            );
+          }), this;
+        }
+        /**
+         * Sends a MIDI **control change** message to the channel at the scheduled time. The control
+         * change message to send can be specified numerically (`0` to `127`) or by using one of the
+         * following common names:
+         *
+         * | Number | Name                          |
+         * |--------|-------------------------------|
+         * | 0      |`bankselectcoarse`             |
+         * | 1      |`modulationwheelcoarse`        |
+         * | 2      |`breathcontrollercoarse`       |
+         * | 4      |`footcontrollercoarse`         |
+         * | 5      |`portamentotimecoarse`         |
+         * | 6      |`dataentrycoarse`              |
+         * | 7      |`volumecoarse`                 |
+         * | 8      |`balancecoarse`                |
+         * | 10     |`pancoarse`                    |
+         * | 11     |`expressioncoarse`             |
+         * | 12     |`effectcontrol1coarse`         |
+         * | 13     |`effectcontrol2coarse`         |
+         * | 18     |`generalpurposeslider3`        |
+         * | 19     |`generalpurposeslider4`        |
+         * | 32     |`bankselectfine`               |
+         * | 33     |`modulationwheelfine`          |
+         * | 34     |`breathcontrollerfine`         |
+         * | 36     |`footcontrollerfine`           |
+         * | 37     |`portamentotimefine`           |
+         * | 38     |`dataentryfine`                |
+         * | 39     |`volumefine`                   |
+         * | 40     |`balancefine`                  |
+         * | 42     |`panfine`                      |
+         * | 43     |`expressionfine`               |
+         * | 44     |`effectcontrol1fine`           |
+         * | 45     |`effectcontrol2fine`           |
+         * | 64     |`holdpedal`                    |
+         * | 65     |`portamento`                   |
+         * | 66     |`sustenutopedal`               |
+         * | 67     |`softpedal`                    |
+         * | 68     |`legatopedal`                  |
+         * | 69     |`hold2pedal`                   |
+         * | 70     |`soundvariation`               |
+         * | 71     |`resonance`                    |
+         * | 72     |`soundreleasetime`             |
+         * | 73     |`soundattacktime`              |
+         * | 74     |`brightness`                   |
+         * | 75     |`soundcontrol6`                |
+         * | 76     |`soundcontrol7`                |
+         * | 77     |`soundcontrol8`                |
+         * | 78     |`soundcontrol9`                |
+         * | 79     |`soundcontrol10`               |
+         * | 80     |`generalpurposebutton1`        |
+         * | 81     |`generalpurposebutton2`        |
+         * | 82     |`generalpurposebutton3`        |
+         * | 83     |`generalpurposebutton4`        |
+         * | 91     |`reverblevel`                  |
+         * | 92     |`tremololevel`                 |
+         * | 93     |`choruslevel`                  |
+         * | 94     |`celestelevel`                 |
+         * | 95     |`phaserlevel`                  |
+         * | 96     |`dataincrement`                |
+         * | 97     |`datadecrement`                |
+         * | 98     |`nonregisteredparametercoarse` |
+         * | 99     |`nonregisteredparameterfine`   |
+         * | 100    |`registeredparametercoarse`    |
+         * | 101    |`registeredparameterfine`      |
+         * | 120    |`allsoundoff`                  |
+         * | 121    |`resetallcontrollers`          |
+         * | 122    |`localcontrol`                 |
+         * | 123    |`allnotesoff`                  |
+         * | 124    |`omnimodeoff`                  |
+         * | 125    |`omnimodeon`                   |
+         * | 126    |`monomodeon`                   |
+         * | 127    |`polymodeon`                   |
+         *
+         * As you can see above, not all control change message have a matching name. This does not mean
+         * you cannot use the others. It simply means you will need to use their number
+         * (`0` to `127`) instead of their name. While you can still use them, numbers `120` to `127` are
+         * usually reserved for *channel mode* messages. See
+         * [`sendChannelMode()`]{@link OutputChannel#sendChannelMode} method for more info.
+         *
+         * To view a detailed list of all available **control change** messages, please consult "Table 3 -
+         * Control Change Messages" from the [MIDI Messages](
+         * https://www.midi.org/specifications/item/table-3-control-change-messages-data-bytes-2)
+         * specification.
+         *
+         * **Note**: messages #0-31 (MSB) are paired with messages #32-63 (LSB). For example, message #1
+         * (`modulationwheelcoarse`) can be accompanied by a second control change message for
+         * `modulationwheelfine` to achieve a greater level of precision. if you want to specify both MSB
+         * and LSB for messages between `0` and `31`, you can do so by passing a 2-value array as the
+         * second parameter.
+         *
+         * @param {number|string} controller The MIDI controller name or number (`0` - `127`).
+         *
+         * @param {number|number[]} value The value to send (0-127). You can also use a two-position array
+         * for controllers 0 to 31. In this scenario, the first value will be sent as usual and the second
+         * value will be sent to the matching LSB controller (which is obtained by adding 32 to the first
+         * controller)
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} Controller numbers must be between 0 and 127.
+         * @throws {RangeError} Invalid controller name.
+         * @throws {TypeError} The value array must have a length of 2.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         *
+         * @license Apache-2.0
+         * @since 3.0.0
+         */
+        sendControlChange(t, o, l = {}) {
+          if (typeof t == "string" && (t = Utilities.getCcNumberByName(t)), Array.isArray(o) || (o = [o]), wm.validation) {
+            if (t === void 0)
+              throw new TypeError(
+                "Control change must be identified with a valid name or an integer between 0 and 127."
+              );
+            if (!Number.isInteger(t) || !(t >= 0 && t <= 127))
+              throw new TypeError("Control change number must be an integer between 0 and 127.");
+            if (o = o.map((d) => {
+              const p = Math.min(Math.max(parseInt(d), 0), 127);
+              if (isNaN(p)) throw new TypeError("Values must be integers between 0 and 127");
+              return p;
+            }), o.length === 2 && t >= 32)
+              throw new TypeError("To use a value array, the controller must be between 0 and 31");
+          }
+          return o.forEach((d, p) => {
+            this.send(
+              [
+                (Enumerations.CHANNEL_MESSAGES.controlchange << 4) + (this.number - 1),
+                t + p * 32,
+                o[p]
+              ],
+              { time: Utilities.toTimestamp(l.time) }
+            );
+          }), this;
+        }
+        /**
+         * Selects a MIDI non-registered parameter so it is affected by upcoming data entry, data
+         * increment and data decrement messages.
+         *
+         * @param parameter {number[]} A two-position array specifying the two control bytes that identify
+         * the registered parameter. The NRPN MSB (99 or 0x63) is a position 0. The NRPN LSB (98 or 0x62)
+         * is at position 1.
+         *
+         * @private
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time] If `time` is a string prefixed with `"+"` and followed by
+         * a number, the message will be delayed by that many milliseconds. If the value is a number, the
+         * operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        _selectNonRegisteredParameter(t, o = {}) {
+          return this.sendControlChange(99, t[0], o), this.sendControlChange(98, t[1], o), this;
+        }
+        /**
+         * Deselects the currently active MIDI registered parameter so it is no longer affected by data
+         * entry, data increment and data decrement messages.
+         *
+         * Current best practice recommends doing that after each call to
+         * [_setCurrentParameter()]{@link #_setCurrentParameter}.
+         *
+         * @private
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time] If `time` is a string prefixed with `"+"` and followed by
+         * a number, the message will be delayed by that many milliseconds. If the value is a number, the
+         * operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        _deselectRegisteredParameter(t = {}) {
+          return this.sendControlChange(101, 127, t), this.sendControlChange(100, 127, t), this;
+        }
+        /**
+         * Deselects the currently active MIDI non-registered parameter so it is no longer affected by
+         * data entry, data increment and data decrement messages.
+         *
+         * @private
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time] If `time` is a string prefixed with `"+"` and followed by
+         * a number, the message will be delayed by that many milliseconds. If the value is a number, the
+         * operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        _deselectNonRegisteredParameter(t = {}) {
+          return this.sendControlChange(101, 127, t), this.sendControlChange(100, 127, t), this;
+        }
+        /**
+         * Selects a MIDI registered parameter so it is affected by upcoming data entry, data increment
+         * and data decrement messages.
+         *
+         * @private
+         *
+         * @param parameter {number[]} A two-position array of integers specifying the two control bytes
+         * (0x65, 0x64) that identify the registered parameter. The integers must be between 0 and 127.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time] If `time` is a string prefixed with `"+"` and followed by
+         * a number, the message will be delayed by that many milliseconds. If the value is a number, the
+         * operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        _selectRegisteredParameter(t, o = {}) {
+          return this.sendControlChange(101, t[0], o), this.sendControlChange(100, t[1], o), this;
+        }
+        /**
+         * Sets the value of the currently selected MIDI registered parameter.
+         *
+         * @private
+         *
+         * @param data {number|number[]}
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time] If `time` is a string prefixed with `"+"` and followed by
+         * a number, the message will be delayed by that many milliseconds. If the value is a number, the
+         * operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        _setCurrentParameter(t, o = {}) {
+          return t = [].concat(t), this.sendControlChange(6, t[0], o), t.length < 2 ? this : (this.sendControlChange(38, t[1], o), this);
+        }
+        /**
+         * Decrements the specified MIDI registered parameter by 1. Here is the full list of parameter
+         * names that can be used with this function:
+         *
+         *  * Pitchbend Range (0x00, 0x00): `"pitchbendrange"`
+         *  * Channel Fine Tuning (0x00, 0x01): `"channelfinetuning"`
+         *  * Channel Coarse Tuning (0x00, 0x02): `"channelcoarsetuning"`
+         *  * Tuning Program (0x00, 0x03): `"tuningprogram"`
+         *  * Tuning Bank (0x00, 0x04): `"tuningbank"`
+         *  * Modulation Range (0x00, 0x05): `"modulationrange"`
+         *  * Azimuth Angle (0x3D, 0x00): `"azimuthangle"`
+         *  * Elevation Angle (0x3D, 0x01): `"elevationangle"`
+         *  * Gain (0x3D, 0x02): `"gain"`
+         *  * Distance Ratio (0x3D, 0x03): `"distanceratio"`
+         *  * Maximum Distance (0x3D, 0x04): `"maximumdistance"`
+         *  * Maximum Distance Gain (0x3D, 0x05): `"maximumdistancegain"`
+         *  * Reference Distance Ratio (0x3D, 0x06): `"referencedistanceratio"`
+         *  * Pan Spread Angle (0x3D, 0x07): `"panspreadangle"`
+         *  * Roll Angle (0x3D, 0x08): `"rollangle"`
+         *
+         * @param parameter {String|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (0x65, 0x64) that identify the registered
+         * parameter.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws TypeError The specified registered parameter is invalid.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendRpnDecrement(t, o = {}) {
+          if (Array.isArray(t) || (t = Enumerations.REGISTERED_PARAMETERS[t]), wm.validation) {
+            if (t === void 0)
+              throw new TypeError("The specified registered parameter is invalid.");
+            let l = false;
+            if (Object.getOwnPropertyNames(Enumerations.REGISTERED_PARAMETERS).forEach((d) => {
+              Enumerations.REGISTERED_PARAMETERS[d][0] === t[0] && Enumerations.REGISTERED_PARAMETERS[d][1] === t[1] && (l = true);
+            }), !l) throw new TypeError("The specified registered parameter is invalid.");
+          }
+          return this._selectRegisteredParameter(t, o), this.sendControlChange(97, 0, o), this._deselectRegisteredParameter(o), this;
+        }
+        /**
+         * Increments the specified MIDI registered parameter by 1. Here is the full list of parameter
+         * names that can be used with this function:
+         *
+         *  * Pitchbend Range (0x00, 0x00): `"pitchbendrange"`
+         *  * Channel Fine Tuning (0x00, 0x01): `"channelfinetuning"`
+         *  * Channel Coarse Tuning (0x00, 0x02): `"channelcoarsetuning"`
+         *  * Tuning Program (0x00, 0x03): `"tuningprogram"`
+         *  * Tuning Bank (0x00, 0x04): `"tuningbank"`
+         *  * Modulation Range (0x00, 0x05): `"modulationrange"`
+         *  * Azimuth Angle (0x3D, 0x00): `"azimuthangle"`
+         *  * Elevation Angle (0x3D, 0x01): `"elevationangle"`
+         *  * Gain (0x3D, 0x02): `"gain"`
+         *  * Distance Ratio (0x3D, 0x03): `"distanceratio"`
+         *  * Maximum Distance (0x3D, 0x04): `"maximumdistance"`
+         *  * Maximum Distance Gain (0x3D, 0x05): `"maximumdistancegain"`
+         *  * Reference Distance Ratio (0x3D, 0x06): `"referencedistanceratio"`
+         *  * Pan Spread Angle (0x3D, 0x07): `"panspreadangle"`
+         *  * Roll Angle (0x3D, 0x08): `"rollangle"`
+         *
+         * @param parameter {String|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (0x65, 0x64) that identify the registered
+         * parameter.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws TypeError The specified registered parameter is invalid.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendRpnIncrement(t, o = {}) {
+          if (Array.isArray(t) || (t = Enumerations.REGISTERED_PARAMETERS[t]), wm.validation) {
+            if (t === void 0)
+              throw new TypeError("The specified registered parameter is invalid.");
+            let l = false;
+            if (Object.getOwnPropertyNames(Enumerations.REGISTERED_PARAMETERS).forEach((d) => {
+              Enumerations.REGISTERED_PARAMETERS[d][0] === t[0] && Enumerations.REGISTERED_PARAMETERS[d][1] === t[1] && (l = true);
+            }), !l) throw new TypeError("The specified registered parameter is invalid.");
+          }
+          return this._selectRegisteredParameter(t, o), this.sendControlChange(96, 0, o), this._deselectRegisteredParameter(o), this;
+        }
+        /**
+         * Plays a note or an array of notes on the channel. The first parameter is the note to play. It
+         * can be a single value or an array of the following valid values:
+         *
+         *  - A [`Note`]{@link Note} object
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note name, followed by the octave (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *
+         * The `playNote()` method sends a **note on** MIDI message for all specified notes. If a
+         * `duration` is set in the `options` parameter or in the [`Note`]{@link Note} object's
+         * [`duration`]{@link Note#duration} property, it will also schedule a **note off** message
+         * to end the note after said duration. If no `duration` is set, the note will simply play until
+         * a matching **note off** message is sent with [`stopNote()`]{@link OutputChannel#stopNote} or
+         * [`sendNoteOff()`]{@link OutputChannel#sendNoteOff}.
+         *
+         *  The execution of the **note on** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * When using [`Note`]{@link Note} objects, the durations and velocities defined in the
+         * [`Note`]{@link Note} objects have precedence over the ones specified via the method's `options`
+         * parameter.
+         *
+         * **Note**: per the MIDI standard, a **note on** message with an attack velocity of `0` is
+         * functionally equivalent to a **note off** message.
+         *
+         * @param note {number|string|Note|number[]|string[]|Note[]} The note(s) to play. The notes can be
+         * specified by using a MIDI note number (`0` - `127`), a note identifier (e.g. `C3`, `G#4`,
+         * `F-1`, `Db7`), a [`Note`]{@link Note} object or an array of the previous types. When using a
+         * note identifier, the octave range must be between `-1` and `9`. The lowest note is `C-1` (MIDI
+         * note number `0`) and the highest note is `G9` (MIDI note number `127`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number} [options.duration] A positive decimal number larger than `0` representing the
+         * number of milliseconds to wait before sending a **note off** message. If invalid or left
+         * undefined, only a **note on** message will be sent.
+         *
+         * @param {number} [options.attack=0.5] The velocity at which to play the note (between `0` and
+         * `1`). If the `rawAttack` option is also defined, it will have priority. An invalid velocity
+         * value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawAttack=64] The attack velocity at which to play the note (between
+         * `0` and `127`). This has priority over the `attack` property. An invalid velocity value will
+         * silently trigger the default of 64.
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note (between `0`
+         * and `1`). If the `rawRelease` option is also defined, it will have priority. An invalid
+         * velocity value will silently trigger the default of `0.5`. This is only used with the
+         * **note off** event triggered when `options.duration` is set.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note (between `0`
+         * and `127`). This has priority over the `release` property. An invalid velocity value will
+         * silently trigger the default of 64. This is only used with the **note off** event triggered
+         * when `options.duration` is set.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        playNote(t, o = {}) {
+          this.sendNoteOn(t, o);
+          const l = Array.isArray(t) ? t : [t];
+          for (let d of l)
+            if (parseInt(d.duration) > 0) {
+              const p = {
+                time: (Utilities.toTimestamp(o.time) || wm.time) + parseInt(d.duration),
+                release: d.release,
+                rawRelease: d.rawRelease
+              };
+              this.sendNoteOff(d, p);
+            } else if (parseInt(o.duration) > 0) {
+              const p = {
+                time: (Utilities.toTimestamp(o.time) || wm.time) + parseInt(o.duration),
+                release: o.release,
+                rawRelease: o.rawRelease
+              };
+              this.sendNoteOff(d, p);
+            }
+          return this;
+        }
+        /**
+         * Sends a **note off** message for the specified notes on the channel. The first parameter is the
+         * note. It can be a single value or an array of the following valid values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note name, followed by the octave (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`]{@link Note} object
+         *
+         * The execution of the **note off** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * When using [`Note`]{@link Note} objects, the release velocity defined in the
+         * [`Note`]{@link Note} objects has precedence over the one specified via the method's `options`
+         * parameter.
+         *
+         * @param note {number|string|Note|number[]|string[]|Note[]} The note(s) to stop. The notes can be
+         * specified by using a MIDI note number (0-127), a note identifier (e.g. C3, G#4, F-1, Db7), a
+         * [`Note`]{@link Note} object or an array of the previous types. When using a note name, octave
+         * range must be between -1 and 9. The lowest note is C-1 (MIDI note number 0) and the highest
+         * note is G9 (MIDI note number 127).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note
+         * (between `0` and `1`).  If the `rawRelease` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note
+         * (between `0` and `127`). If the `release` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `64`.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendNoteOff(t, o = {}) {
+          if (wm.validation) {
+            if (o.rawRelease != null && !(o.rawRelease >= 0 && o.rawRelease <= 127))
+              throw new RangeError("The 'rawRelease' option must be an integer between 0 and 127");
+            if (o.release != null && !(o.release >= 0 && o.release <= 1))
+              throw new RangeError("The 'release' option must be an number between 0 and 1");
+            o.rawVelocity && (o.rawRelease = o.velocity, console.warn("The 'rawVelocity' option is deprecated. Use 'rawRelease' instead.")), o.velocity && (o.release = o.velocity, console.warn("The 'velocity' option is deprecated. Use 'attack' instead."));
+          }
+          let l = 64;
+          o.rawRelease != null ? l = o.rawRelease : isNaN(o.release) || (l = Math.round(o.release * 127));
+          const d = wm.octaveOffset + this.output.octaveOffset + this.octaveOffset;
+          return Utilities.buildNoteArray(t, { rawRelease: parseInt(l) }).forEach((p) => {
+            this.send(
+              [
+                (Enumerations.CHANNEL_MESSAGES.noteoff << 4) + (this.number - 1),
+                p.getOffsetNumber(d),
+                p.rawRelease
+              ],
+              { time: Utilities.toTimestamp(o.time) }
+            );
+          }), this;
+        }
+        /**
+         * Sends a **note off** message for the specified MIDI note number. The first parameter is the
+         * note to stop. It can be a single value or an array of the following valid values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`](Note) object
+         *
+         * The execution of the **note off** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * @param note {number|Note|string|number[]|Note[]|string[]} The note(s) to stop. The notes can be
+         * specified by using a MIDI note number (`0` - `127`), a note identifier (e.g. `C3`, `G#4`, `F-1`,
+         * `Db7`) or an array of the previous types. When using a note identifier, octave range must be
+         * between `-1` and `9`. The lowest note is `C-1` (MIDI note number `0`) and the highest note is
+         * `G9` (MIDI note number `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note
+         * (between `0` and `1`).  If the `rawRelease` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note
+         * (between `0` and `127`). If the `release` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `64`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        stopNote(t, o = {}) {
+          return this.sendNoteOff(t, o);
+        }
+        /**
+         * Sends a **note on** message for the specified note(s) on the channel. The first parameter is
+         * the note. It can be a single value or an array of the following valid values:
+         *
+         *  - A [`Note`]{@link Note} object
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *
+         *  When passing a [`Note`]{@link Note}object or a note name, the `octaveOffset` will be applied.
+         *  This is not the case when using a note number. In this case, we assume you know exactly which
+         *  MIDI note number should be sent out.
+         *
+         * The execution of the **note on** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * When using [`Note`]{@link Note} objects, the attack velocity defined in the
+         * [`Note`]{@link Note} objects has precedence over the one specified via the method's `options`
+         * parameter. Also, the `duration` is ignored. If you want to also send a **note off** message,
+         * use the [`playNote()`]{@link #playNote} method instead.
+         *
+         * **Note**: As per the MIDI standard, a **note on** message with an attack velocity of `0` is
+         * functionally equivalent to a **note off** message.
+         *
+         * @param note {number|string|Note|number[]|string[]|Note[]} The note(s) to play. The notes can be
+         * specified by using a MIDI note number (0-127), a note identifier (e.g. C3, G#4, F-1, Db7), a
+         * [`Note`]{@link Note} object or an array of the previous types.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @param {number} [options.attack=0.5] The velocity at which to play the note (between `0` and
+         * `1`).  If the `rawAttack` option is also defined, `rawAttack` will have priority. An invalid
+         * velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawAttack=64] The velocity at which to release the note (between `0`
+         * and `127`). If the `attack` option is also defined, `rawAttack` will have priority. An invalid
+         * velocity value will silently trigger the default of `64`.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendNoteOn(t, o = {}) {
+          if (wm.validation) {
+            if (o.rawAttack != null && !(o.rawAttack >= 0 && o.rawAttack <= 127))
+              throw new RangeError("The 'rawAttack' option must be an integer between 0 and 127");
+            if (o.attack != null && !(o.attack >= 0 && o.attack <= 1))
+              throw new RangeError("The 'attack' option must be an number between 0 and 1");
+            o.rawVelocity && (o.rawAttack = o.velocity, o.rawRelease = o.release, console.warn("The 'rawVelocity' option is deprecated. Use 'rawAttack' or 'rawRelease'.")), o.velocity && (o.attack = o.velocity, console.warn("The 'velocity' option is deprecated. Use 'attack' instead."));
+          }
+          let l = 64;
+          o.rawAttack != null ? l = o.rawAttack : isNaN(o.attack) || (l = Math.round(o.attack * 127));
+          const d = wm.octaveOffset + this.output.octaveOffset + this.octaveOffset;
+          return Utilities.buildNoteArray(t, { rawAttack: l }).forEach((p) => {
+            this.send(
+              [
+                (Enumerations.CHANNEL_MESSAGES.noteon << 4) + (this.number - 1),
+                p.getOffsetNumber(d),
+                p.rawAttack
+              ],
+              { time: Utilities.toTimestamp(o.time) }
+            );
+          }), this;
+        }
+        /**
+         * Sends a MIDI **channel mode** message. The channel mode message to send can be specified
+         * numerically or by using one of the following common names:
+         *
+         * |  Type                |Number| Shortcut Method                                               |
+         * | ---------------------|------|-------------------------------------------------------------- |
+         * | `allsoundoff`        | 120  | [`sendAllSoundOff()`]{@link #sendAllSoundOff}                 |
+         * | `resetallcontrollers`| 121  | [`sendResetAllControllers()`]{@link #sendResetAllControllers} |
+         * | `localcontrol`       | 122  | [`sendLocalControl()`]{@link #sendLocalControl}               |
+         * | `allnotesoff`        | 123  | [`sendAllNotesOff()`]{@link #sendAllNotesOff}                 |
+         * | `omnimodeoff`        | 124  | [`sendOmniMode(false)`]{@link #sendOmniMode}                  |
+         * | `omnimodeon`         | 125  | [`sendOmniMode(true)`]{@link #sendOmniMode}                   |
+         * | `monomodeon`         | 126  | [`sendPolyphonicMode("mono")`]{@link #sendPolyphonicMode}     |
+         * | `polymodeon`         | 127  | [`sendPolyphonicMode("poly")`]{@link #sendPolyphonicMode}     |
+         *
+         * **Note**: as you can see above, to make it easier, all channel mode messages also have a matching
+         * helper method.
+         *
+         * It should be noted that, per the MIDI specification, only `localcontrol` and `monomodeon` may
+         * require a value that's not zero. For that reason, the `value` parameter is optional and
+         * defaults to 0.
+         *
+         * @param {number|string} command The numerical identifier of the channel mode message (integer
+         * between `120` and `127`) or its name as a string.
+         *
+         * @param {number} [value=0] The value to send (integer between `0` - `127`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendChannelMode(t, o = 0, l = {}) {
+          if (typeof t == "string" && (t = Enumerations.CHANNEL_MODE_MESSAGES[t]), wm.validation) {
+            if (t === void 0)
+              throw new TypeError("Invalid channel mode message name or number.");
+            if (isNaN(t) || !(t >= 120 && t <= 127))
+              throw new TypeError("Invalid channel mode message number.");
+            if (isNaN(parseInt(o)) || o < 0 || o > 127)
+              throw new RangeError("Value must be an integer between 0 and 127.");
+          }
+          return this.send(
+            [
+              (Enumerations.CHANNEL_MESSAGES.controlchange << 4) + (this.number - 1),
+              t,
+              o
+            ],
+            { time: Utilities.toTimestamp(l.time) }
+          ), this;
+        }
+        /**
+         * Sets OMNI mode to `"on"` or `"off"`. MIDI's OMNI mode causes the instrument to respond to
+         * messages from all channels.
+         *
+         * It should be noted that support for OMNI mode is not as common as it used to be.
+         *
+         * @param [state=true] {boolean} Whether to activate OMNI mode (`true`) or not (`false`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {TypeError} Invalid channel mode message name.
+         * @throws {RangeError} Channel mode controller numbers must be between 120 and 127.
+         * @throws {RangeError} Value must be an integer between 0 and 127.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendOmniMode(t, o = {}) {
+          return t === void 0 || t ? this.sendChannelMode("omnimodeon", 0, o) : this.sendChannelMode("omnimodeoff", 0, o), this;
+        }
+        /**
+         * Sends a MIDI **channel aftertouch** message. For key-specific aftertouch, you should instead
+         * use [`sendKeyAftertouch()`]{@link #sendKeyAftertouch}.
+         *
+         * @param [pressure] {number} The pressure level (between `0` and `1`). If the `rawValue` option
+         * is set to `true`, the pressure can be defined by using an integer between `0` and `127`.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered a float between `0` and `1.0` (default) or a raw integer between `0` and `127`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         *
+         * @throws RangeError Invalid channel aftertouch value.
+         */
+        sendChannelAftertouch(t, o = {}) {
+          if (wm.validation) {
+            if (isNaN(parseFloat(t)))
+              throw new RangeError("Invalid channel aftertouch value.");
+            if (o.rawValue) {
+              if (!(t >= 0 && t <= 127 && Number.isInteger(t)))
+                throw new RangeError(
+                  "Channel aftertouch raw value must be an integer between 0 and 127."
+                );
+            } else if (!(t >= 0 && t <= 1))
+              throw new RangeError("Channel aftertouch value must be a float between 0 and 1.");
+          }
+          return o.rawValue || (t = Utilities.fromFloatTo7Bit(t)), this.send(
+            [
+              (Enumerations.CHANNEL_MESSAGES.channelaftertouch << 4) + (this.number - 1),
+              Math.round(t)
+            ],
+            { time: Utilities.toTimestamp(o.time) }
+          ), this;
+        }
+        /**
+         * Sends a **master tuning** message. The value is decimal and must be larger than -65 semitones
+         * and smaller than 64 semitones.
+         *
+         * Because of the way the MIDI specification works, the decimal portion of the value will be
+         * encoded with a resolution of 14bit. The integer portion must be between -64 and 63
+         * inclusively. This function actually generates two MIDI messages: a **Master Coarse Tuning** and
+         * a **Master Fine Tuning** RPN messages.
+         *
+         * @param [value=0.0] {number} The desired decimal adjustment value in semitones (-65 < x < 64)
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The value must be a decimal number between larger than -65 and smaller
+         * than 64.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendMasterTuning(t, o = {}) {
+          if (t = parseFloat(t) || 0, wm.validation && !(t > -65 && t < 64))
+            throw new RangeError(
+              "The value must be a decimal number larger than -65 and smaller than 64."
+            );
+          let l = Math.floor(t) + 64, d = t - Math.floor(t);
+          d = Math.round((d + 1) / 2 * 16383);
+          let p = d >> 7 & 127, b = d & 127;
+          return this.sendRpnValue("channelcoarsetuning", l, o), this.sendRpnValue("channelfinetuning", [p, b], o), this;
+        }
+        /**
+         * Sends a **modulation depth range** message to adjust the depth of the modulation wheel's range.
+         * The range can be specified with the `semitones` parameter, the `cents` parameter or by
+         * specifying both parameters at the same time.
+         *
+         * @param {number} semitones The desired adjustment value in semitones (integer between 0 and
+         * 127).
+         *
+         * @param {number} [cents=0] The desired adjustment value in cents (integer between 0 and 127).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendModulationRange(t, o, l = {}) {
+          if (wm.validation) {
+            if (!Number.isInteger(t) || !(t >= 0 && t <= 127))
+              throw new RangeError("The semitones value must be an integer between 0 and 127.");
+            if (o != null && (!Number.isInteger(o) || !(o >= 0 && o <= 127)))
+              throw new RangeError("If specified, the cents value must be an integer between 0 and 127.");
+          }
+          return o >= 0 && o <= 127 || (o = 0), this.sendRpnValue("modulationrange", [t, o], l), this;
+        }
+        /**
+         * Sets a non-registered parameter (NRPN) to the specified value. The NRPN is selected by passing
+         * in a two-position array specifying the values of the two control bytes. The value is specified
+         * by passing in a single integer (most cases) or an array of two integers.
+         *
+         * NRPNs are not standardized in any way. Each manufacturer is free to implement them any way
+         * they see fit. For example, according to the Roland GS specification, you can control the
+         * **vibrato rate** using NRPN (1, 8). Therefore, to set the **vibrato rate** value to **123** you
+         * would use:
+         *
+         * ```js
+         * WebMidi.outputs[0].channels[0].sendNrpnValue([1, 8], 123);
+         * ```
+         *
+         * In some rarer cases, you need to send two values with your NRPN messages. In such cases, you
+         * would use a 2-position array. For example, for its **ClockBPM** parameter (2, 63), Novation
+         * uses a 14-bit value that combines an MSB and an LSB (7-bit values). So, for example, if the
+         * value to send was 10, you could use:
+         *
+         * ```js
+         * WebMidi.outputs[0].channels[0].sendNrpnValue([2, 63], [0, 10]);
+         * ```
+         *
+         * For further implementation details, refer to the manufacturer's documentation.
+         *
+         * @param nrpn {number[]} A two-position array specifying the two control bytes (0x63,
+         * 0x62) that identify the non-registered parameter.
+         *
+         * @param [data=[]] {number|number[]} An integer or an array of integers with a length of 1 or 2
+         * specifying the desired data.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The control value must be between 0 and 127.
+         * @throws {RangeError} The msb value must be between 0 and 127
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendNrpnValue(t, o, l = {}) {
+          if (o = [].concat(o), wm.validation) {
+            if (!Array.isArray(t) || !Number.isInteger(t[0]) || !Number.isInteger(t[1]))
+              throw new TypeError("The specified NRPN is invalid.");
+            if (!(t[0] >= 0 && t[0] <= 127))
+              throw new RangeError("The first byte of the NRPN must be between 0 and 127.");
+            if (!(t[1] >= 0 && t[1] <= 127))
+              throw new RangeError("The second byte of the NRPN must be between 0 and 127.");
+            o.forEach((d) => {
+              if (!(d >= 0 && d <= 127))
+                throw new RangeError("The data bytes of the NRPN must be between 0 and 127.");
+            });
+          }
+          return this._selectNonRegisteredParameter(t, l), this._setCurrentParameter(o, l), this._deselectNonRegisteredParameter(l), this;
+        }
+        /**
+         * Sends a MIDI **pitch bend** message at the scheduled time. The resulting bend is relative to
+         * the pitch bend range that has been defined. The range can be set with
+         * [`sendPitchBendRange()`]{@link #sendPitchBendRange}. So, for example, if the pitch
+         * bend range has been set to 12 semitones, using a bend value of -1 will bend the note 1 octave
+         * below its nominal value.
+         *
+         * @param {number|number[]} [value] The intensity of the bend (between -1.0 and 1.0). A value of
+         * zero means no bend. If the `rawValue` option is set to `true`, the intensity of the bend can be
+         * defined by either using a single integer between 0 and 127 (MSB) or an array of two integers
+         * between 0 and 127 representing, respectively, the MSB (most significant byte) and the LSB
+         * (least significant byte). The MSB is expressed in semitones with `64` meaning no bend. A value
+         * lower than `64` bends downwards while a value higher than `64` bends upwards. The LSB is
+         * expressed in cents (1/100 of a semitone). An LSB of `64` also means no bend.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered as a float between -1.0 and 1.0 (default) or as raw integer between 0 and 127 (or
+         * an array of 2 integers if using both MSB and LSB).
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendPitchBend(t, o = {}) {
+          if (wm.validation)
+            if (o.rawValue && Array.isArray(t)) {
+              if (!(t[0] >= 0 && t[0] <= 127))
+                throw new RangeError("The pitch bend MSB must be an integer between 0 and 127.");
+              if (!(t[1] >= 0 && t[1] <= 127))
+                throw new RangeError("The pitch bend LSB must be an integer between 0 and 127.");
+            } else if (o.rawValue && !Array.isArray(t)) {
+              if (!(t >= 0 && t <= 127))
+                throw new RangeError("The pitch bend MSB must be an integer between 0 and 127.");
+            } else {
+              if (isNaN(t) || t === null)
+                throw new RangeError("Invalid pitch bend value.");
+              if (!(t >= -1 && t <= 1))
+                throw new RangeError("The pitch bend value must be a float between -1 and 1.");
+            }
+          let l = 0, d = 0;
+          if (o.rawValue && Array.isArray(t))
+            l = t[0], d = t[1];
+          else if (o.rawValue && !Array.isArray(t))
+            l = t;
+          else {
+            const p = Utilities.fromFloatToMsbLsb((t + 1) / 2);
+            l = p.msb, d = p.lsb;
+          }
+          return this.send(
+            [
+              (Enumerations.CHANNEL_MESSAGES.pitchbend << 4) + (this.number - 1),
+              d,
+              l
+            ],
+            { time: Utilities.toTimestamp(o.time) }
+          ), this;
+        }
+        /**
+         * Sends a **pitch bend range** message at the scheduled time to adjust the range used by the
+         * pitch bend lever. The range is specified by using the `semitones` and `cents` parameters. For
+         * example, setting the `semitones` parameter to `12` means that the pitch bend range will be 12
+         * semitones above and below the nominal pitch.
+         *
+         * @param semitones {number} The desired adjustment value in semitones (between 0 and 127). While
+         * nothing imposes that in the specification, it is very common for manufacturers to limit the
+         * range to 2 octaves (-12 semitones to 12 semitones).
+         *
+         * @param [cents=0] {number} The desired adjustment value in cents (integer between 0-127).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The semitones value must be an integer between 0 and 127.
+         * @throws {RangeError} The cents value must be an integer between 0 and 127.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendPitchBendRange(t, o, l = {}) {
+          if (wm.validation) {
+            if (!Number.isInteger(t) || !(t >= 0 && t <= 127))
+              throw new RangeError("The semitones value must be an integer between 0 and 127.");
+            if (!Number.isInteger(o) || !(o >= 0 && o <= 127))
+              throw new RangeError("The cents value must be an integer between 0 and 127.");
+          }
+          return this.sendRpnValue("pitchbendrange", [t, o], l), this;
+        }
+        /**
+         * Sends a MIDI **program change** message at the scheduled time.
+         *
+         * @param [program=1] {number} The MIDI patch (program) number (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {TypeError} Failed to execute 'send' on 'MIDIOutput': The value at index 1 is greater
+         * than 0xFF.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         *
+         */
+        sendProgramChange(t, o = {}) {
+          if (t = parseInt(t) || 0, wm.validation && !(t >= 0 && t <= 127))
+            throw new RangeError("The program number must be between 0 and 127.");
+          return this.send(
+            [
+              (Enumerations.CHANNEL_MESSAGES.programchange << 4) + (this.number - 1),
+              t
+            ],
+            { time: Utilities.toTimestamp(o.time) }
+          ), this;
+        }
+        /**
+         * Sets the specified MIDI registered parameter to the desired value. The value is defined with
+         * up to two bytes of data (msb, lsb) that each can go from 0 to 127.
+         *
+         * MIDI
+         * [registered parameters](https://www.midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2)
+         * extend the original list of control change messages. The MIDI 1.0 specification lists only a
+         * limited number of them:
+         *
+         * | Numbers      | Function                 |
+         * |--------------|--------------------------|
+         * | (0x00, 0x00) | `pitchbendrange`         |
+         * | (0x00, 0x01) | `channelfinetuning`      |
+         * | (0x00, 0x02) | `channelcoarsetuning`    |
+         * | (0x00, 0x03) | `tuningprogram`          |
+         * | (0x00, 0x04) | `tuningbank`             |
+         * | (0x00, 0x05) | `modulationrange`        |
+         * | (0x3D, 0x00) | `azimuthangle`           |
+         * | (0x3D, 0x01) | `elevationangle`         |
+         * | (0x3D, 0x02) | `gain`                   |
+         * | (0x3D, 0x03) | `distanceratio`          |
+         * | (0x3D, 0x04) | `maximumdistance`        |
+         * | (0x3D, 0x05) | `maximumdistancegain`    |
+         * | (0x3D, 0x06) | `referencedistanceratio` |
+         * | (0x3D, 0x07) | `panspreadangle`         |
+         * | (0x3D, 0x08) | `rollangle`              |
+         *
+         * Note that the **Tuning Program** and **Tuning Bank** parameters are part of the *MIDI Tuning
+         * Standard*, which is not widely implemented.
+         *
+         * @param rpn {string|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (e.g. `[0x65, 0x64]`) that identify the
+         * registered parameter.
+         *
+         * @param [data=[]] {number|number[]} An single integer or an array of integers with a maximum
+         * length of 2 specifying the desired data.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendRpnValue(t, o, l = {}) {
+          if (Array.isArray(t) || (t = Enumerations.REGISTERED_PARAMETERS[t]), wm.validation) {
+            if (!Number.isInteger(t[0]) || !Number.isInteger(t[1]))
+              throw new TypeError("The specified NRPN is invalid.");
+            if (!(t[0] >= 0 && t[0] <= 127))
+              throw new RangeError("The first byte of the RPN must be between 0 and 127.");
+            if (!(t[1] >= 0 && t[1] <= 127))
+              throw new RangeError("The second byte of the RPN must be between 0 and 127.");
+            [].concat(o).forEach((d) => {
+              if (!(d >= 0 && d <= 127))
+                throw new RangeError("The data bytes of the RPN must be between 0 and 127.");
+            });
+          }
+          return this._selectRegisteredParameter(t, l), this._setCurrentParameter(o, l), this._deselectRegisteredParameter(l), this;
+        }
+        /**
+         * Sets the MIDI tuning bank to use. Note that the **Tuning Bank** parameter is part of the
+         * *MIDI Tuning Standard*, which is not widely implemented.
+         *
+         * @param value {number} The desired tuning bank (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The bank value must be between 0 and 127.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendTuningBank(t, o = {}) {
+          if (wm.validation && (!Number.isInteger(t) || !(t >= 0 && t <= 127)))
+            throw new RangeError("The tuning bank number must be between 0 and 127.");
+          return this.sendRpnValue("tuningbank", t, o), this;
+        }
+        /**
+         * Sets the MIDI tuning program to use. Note that the **Tuning Program** parameter is part of the
+         * *MIDI Tuning Standard*, which is not widely implemented.
+         *
+         * @param value {number} The desired tuning program (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The program value must be between 0 and 127.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendTuningProgram(t, o = {}) {
+          if (wm.validation && (!Number.isInteger(t) || !(t >= 0 && t <= 127)))
+            throw new RangeError("The tuning program number must be between 0 and 127.");
+          return this.sendRpnValue("tuningprogram", t, o), this;
+        }
+        /**
+         * Turns local control on or off. Local control is usually enabled by default. If you disable it,
+         * the instrument will no longer trigger its own sounds. It will only send the MIDI messages to
+         * its out port.
+         *
+         * @param [state=false] {boolean} Whether to activate local control (`true`) or disable it
+         * (`false`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendLocalControl(t, o = {}) {
+          return t ? this.sendChannelMode("localcontrol", 127, o) : this.sendChannelMode("localcontrol", 0, o);
+        }
+        /**
+         * Sends an **all notes off** channel mode message. This will make all currently playing notes
+         * fade out just as if their key had been released. This is different from the
+         * [`sendAllSoundOff()`]{@link #sendAllSoundOff} method which mutes all sounds immediately.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendAllNotesOff(t = {}) {
+          return this.sendChannelMode("allnotesoff", 0, t);
+        }
+        /**
+         * Sends an **all sound off** channel mode message. This will silence all sounds playing on that
+         * channel but will not prevent new sounds from being triggered.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendAllSoundOff(t = {}) {
+          return this.sendChannelMode("allsoundoff", 0, t);
+        }
+        /**
+         * Sends a **reset all controllers** channel mode message. This resets all controllers, such as
+         * the pitch bend, to their default value.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendResetAllControllers(t = {}) {
+          return this.sendChannelMode("resetallcontrollers", 0, t);
+        }
+        /**
+         * Sets the polyphonic mode. In `"poly"` mode (usually the default), multiple notes can be played
+         * and heard at the same time. In `"mono"` mode, only one note will be heard at once even if
+         * multiple notes are being played.
+         *
+         * @param {string} [mode=poly] The mode to use: `"mono"` or `"poly"`.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {OutputChannel} Returns the `OutputChannel` object so methods can be chained.
+         */
+        sendPolyphonicMode(t, o = {}) {
+          return t === "mono" ? this.sendChannelMode("monomodeon", 0, o) : this.sendChannelMode("polymodeon", 0, o);
+        }
+        /**
+         * An integer to offset the reported octave of outgoing note-specific messages (`noteon`,
+         * `noteoff` and `keyaftertouch`). By default, middle C (MIDI note number 60) is placed on the 4th
+         * octave (C4).
+         *
+         * Note that this value is combined with the global offset value defined in
+         * [`WebMidi.octaveOffset`](WebMidi#octaveOffset) and with the parent value defined in
+         * [`Output.octaveOffset`]{@link Output#octaveOffset}.
+         *
+         * @type {number}
+         *
+         * @since 3.0
+         */
+        get octaveOffset() {
+          return this._octaveOffset;
+        }
+        set octaveOffset(t) {
+          if (this.validation && (t = parseInt(t), isNaN(t)))
+            throw new TypeError("The 'octaveOffset' property must be an integer.");
+          this._octaveOffset = t;
+        }
+        /**
+         * The parent [`Output`]{@link Output} this channel belongs to.
+         * @type {Output}
+         * @since 3.0
+         */
+        get output() {
+          return this._output;
+        }
+        /**
+         * This channel's MIDI number (`1` - `16`).
+         * @type {number}
+         * @since 3.0
+         */
+        get number() {
+          return this._number;
+        }
+      };
+      Output = class extends EventEmitter {
+        /**
+         * Creates an `Output` object.
+         *
+         * @param {MIDIOutput} midiOutput [`MIDIOutput`](https://developer.mozilla.org/en-US/docs/Web/API/MIDIOutput)
+         * object as provided by the MIDI subsystem.
+         */
+        constructor(t) {
+          super(), this._midiOutput = t, this._octaveOffset = 0, this.channels = [];
+          for (let o = 1; o <= 16; o++) this.channels[o] = new OutputChannel(this, o);
+          this._midiOutput.onstatechange = this._onStateChange.bind(this);
+        }
+        /**
+         * Destroys the `Output`. All listeners are removed, all channels are destroyed and the MIDI
+         * subsystem is unlinked.
+         * @returns {Promise<void>}
+         */
+        async destroy() {
+          this.removeListener(), this.channels.forEach((t) => t.destroy()), this.channels = [], this._midiOutput && (this._midiOutput.onstatechange = null), await this.close(), this._midiOutput = null;
+        }
+        /**
+         * @private
+         */
+        _onStateChange(t) {
+          let o = {
+            timestamp: wm.time
+          };
+          t.port.connection === "open" ? (o.type = "opened", o.target = this, o.port = o.target, this.emit("opened", o)) : t.port.connection === "closed" && t.port.state === "connected" ? (o.type = "closed", o.target = this, o.port = o.target, this.emit("closed", o)) : t.port.connection === "closed" && t.port.state === "disconnected" ? (o.type = "disconnected", o.port = {
+            connection: t.port.connection,
+            id: t.port.id,
+            manufacturer: t.port.manufacturer,
+            name: t.port.name,
+            state: t.port.state,
+            type: t.port.type
+          }, this.emit("disconnected", o)) : t.port.connection === "pending" && t.port.state === "disconnected" || console.warn("This statechange event was not caught:", t.port.connection, t.port.state);
+        }
+        /**
+         * Opens the output for usage. When the library is enabled, all ports are automatically opened.
+         * This method is only useful for ports that have been manually closed.
+         *
+         * @returns {Promise<Output>} The promise is fulfilled with the `Output` object.
+         */
+        async open() {
+          try {
+            return await this._midiOutput.open(), Promise.resolve(this);
+          } catch (t) {
+            return Promise.reject(t);
+          }
+        }
+        /**
+         * Closes the output connection. When an output is closed, it cannot be used to send MIDI messages
+         * until the output is opened again by calling [`open()`]{@link #open}. You can check
+         * the connection status by looking at the [`connection`]{@link #connection} property.
+         *
+         * @returns {Promise<void>}
+         */
+        async close() {
+          this._midiOutput ? await this._midiOutput.close() : await Promise.resolve();
+        }
+        /**
+         * Sends a MIDI message on the MIDI output port. If no time is specified, the message will be
+         * sent immediately. The message should be an array of 8 bit unsigned integers (0-225), a
+         * [`Uint8Array`]{@link https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array}
+         * object or a [`Message`](Message) object.
+         *
+         * It is usually not necessary to use this method directly as you can use one of the simpler
+         * helper methods such as [`playNote()`](#playNote), [`stopNote()`](#stopNote),
+         * [`sendControlChange()`](#sendControlChange), etc.
+         *
+         * Details on the format of MIDI messages are available in the summary of
+         * [MIDI messages]{@link https://www.midi.org/specifications-old/item/table-1-summary-of-midi-message}
+         * from the MIDI Manufacturers Association.
+         *
+         * @param message {number[]|Uint8Array|Message} An array of 8bit unsigned integers, a `Uint8Array`
+         * object (not available in Node.js) containing the message bytes or a `Message` object.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The first byte (status) must be an integer between 128 and 255.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @license Apache-2.0
+         */
+        send(t, o = { time: 0 }, l = 0) {
+          if (t instanceof Message && (t = Utilities.isNode ? t.data : t.rawData), t instanceof Uint8Array && Utilities.isNode && (t = Array.from(t)), wm.validation) {
+            if (!Array.isArray(t) && !(t instanceof Uint8Array) && (t = [t], Array.isArray(o) && (t = t.concat(o)), o = isNaN(l) ? { time: 0 } : { time: l }), !(parseInt(t[0]) >= 128 && parseInt(t[0]) <= 255))
+              throw new RangeError("The first byte (status) must be an integer between 128 and 255.");
+            t.slice(1).forEach((d) => {
+              if (d = parseInt(d), !(d >= 0 && d <= 255))
+                throw new RangeError("Data bytes must be integers between 0 and 255.");
+            }), o || (o = { time: 0 });
+          }
+          return this._midiOutput.send(t, Utilities.toTimestamp(o.time)), this;
+        }
+        /**
+         * Sends a MIDI [**system exclusive**]{@link
+          * https://www.midi.org/specifications-old/item/table-4-universal-system-exclusive-messages}
+         * (*sysex*) message. There are two categories of system exclusive messages: manufacturer-specific
+         * messages and universal messages. Universal messages are further divided into three subtypes:
+         *
+         *   * Universal non-commercial (for research and testing): `0x7D`
+         *   * Universal non-realtime: `0x7E`
+         *   * Universal realtime: `0x7F`
+         *
+         * The method's first parameter (`identification`) identifies the type of message. If the value of
+         * `identification` is `0x7D` (125), `0x7E` (126) or `0x7F` (127), the message will be identified
+         * as a **universal non-commercial**, **universal non-realtime** or **universal realtime** message
+         * (respectively).
+         *
+         * If the `identification` value is an array or an integer between 0 and 124, it will be used to
+         * identify the manufacturer targeted by the message. The *MIDI Manufacturers Association*
+         * maintains a full list of
+         * [Manufacturer ID Numbers](https://www.midi.org/specifications-old/item/manufacturer-id-numbers).
+         *
+         * The `data` parameter should only contain the data of the message. When sending out the actual
+         * MIDI message, WEBMIDI.js will automatically prepend the data with the **sysex byte** (`0xF0`)
+         * and the identification byte(s). It will also automatically terminate the message with the
+         * **sysex end byte** (`0xF7`).
+         *
+         * To use the `sendSysex()` method, system exclusive message support must have been enabled. To
+         * do so, you must set the `sysex` option to `true` when calling
+         * [`WebMidi.enable()`]{@link WebMidi#enable}:
+         *
+         * ```js
+         * WebMidi.enable({sysex: true})
+         *   .then(() => console.log("System exclusive messages are enabled");
+         * ```
+         *
+         * ##### Examples of manufacturer-specific system exclusive messages
+         *
+         * If you want to send a sysex message to a Korg device connected to the first output, you would
+         * use the following code:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendSysex(0x42, [0x1, 0x2, 0x3, 0x4, 0x5]);
+         * ```
+         * In this case `0x42` is the ID of the manufacturer (Korg) and `[0x1, 0x2, 0x3, 0x4, 0x5]` is the
+         * data being sent.
+         *
+         * The parameters can be specified using any number notation (decimal, hex, binary, etc.).
+         * Therefore, the code above is equivalent to this code:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendSysex(66, [1, 2, 3, 4, 5]);
+         * ```
+         *
+         * Some manufacturers are identified using 3 bytes. In this case, you would use a 3-position array
+         * as the first parameter. For example, to send the same sysex message to a
+         * *Native Instruments* device:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendSysex([0x00, 0x21, 0x09], [0x1, 0x2, 0x3, 0x4, 0x5]);
+         * ```
+         *
+         * There is no limit for the length of the data array. However, it is generally suggested to keep
+         * system exclusive messages to 64Kb or less.
+         *
+         * ##### Example of universal system exclusive message
+         *
+         * If you want to send a universal sysex message, simply assign the correct identification number
+         * in the first parameter. Number `0x7D` (125) is for non-commercial, `0x7E` (126) is for
+         * non-realtime and `0x7F` (127) is for realtime.
+         *
+         * So, for example, if you wanted to send an identity request non-realtime message (`0x7E`), you
+         * could use the following:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendSysex(0x7E, [0x7F, 0x06, 0x01]);
+         * ```
+         *
+         * For more details on the format of universal messages, consult the list of
+         * [universal sysex messages](https://www.midi.org/specifications-old/item/table-4-universal-system-exclusive-messages).
+         *
+         * @param {number|number[]} identification An unsigned integer or an array of three unsigned
+         * integers between `0` and `127` that either identify the manufacturer or sets the message to be
+         * a **universal non-commercial message** (`0x7D`), a **universal non-realtime message** (`0x7E`)
+         * or a **universal realtime message** (`0x7F`). The *MIDI Manufacturers Association* maintains a
+         * full list of
+         * [Manufacturer ID Numbers](https://www.midi.org/specifications-old/item/manufacturer-id-numbers).
+         *
+         * @param {number[]|Uint8Array} [data] A `Uint8Array` or an array of unsigned integers between `0`
+         * and `127`. This is the data you wish to transfer.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {DOMException} Failed to execute 'send' on 'MIDIOutput': System exclusive message is
+         * not allowed.
+         *
+         * @throws {TypeError} Failed to execute 'send' on 'MIDIOutput': The value at index x is greater
+         * than 0xFF.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendSysex(t, o = [], l = {}) {
+          if (t = [].concat(t), o instanceof Uint8Array) {
+            const d = new Uint8Array(1 + t.length + o.length + 1);
+            d[0] = Enumerations.SYSTEM_MESSAGES.sysex, d.set(Uint8Array.from(t), 1), d.set(o, 1 + t.length), d[d.length - 1] = Enumerations.SYSTEM_MESSAGES.sysexend, this.send(d, { time: l.time });
+          } else {
+            const d = t.concat(o, Enumerations.SYSTEM_MESSAGES.sysexend);
+            this.send([Enumerations.SYSTEM_MESSAGES.sysex].concat(d), { time: l.time });
+          }
+          return this;
+        }
+        /**
+         * Clears all MIDI messages that have been queued and scheduled but not yet sent.
+         *
+         * **Warning**: this method is defined in the
+         * [Web MIDI API specification](https://www.w3.org/TR/webmidi/#MIDIOutput) but has not been
+         * implemented by all browsers yet. You can follow
+         * [this issue](https://github.com/djipco/webmidi/issues/52) for more info.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        clear() {
+          return this._midiOutput.clear ? this._midiOutput.clear() : wm.validation && console.warn(
+            "The 'clear()' method has not yet been implemented in your environment."
+          ), this;
+        }
+        /**
+         * Sends a MIDI **timecode quarter frame** message. Please note that no processing is being done
+         * on the data. It is up to the developer to format the data according to the
+         * [MIDI Timecode](https://en.wikipedia.org/wiki/MIDI_timecode) format.
+         *
+         * @param value {number} The quarter frame message content (integer between 0 and 127).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendTimecodeQuarterFrame(t, o = {}) {
+          if (wm.validation && (t = parseInt(t), isNaN(t) || !(t >= 0 && t <= 127)))
+            throw new RangeError("The value must be an integer between 0 and 127.");
+          return this.send(
+            [
+              Enumerations.SYSTEM_MESSAGES.timecode,
+              t
+            ],
+            { time: o.time }
+          ), this;
+        }
+        /**
+         * Sends a **song position** MIDI message. The value is expressed in MIDI beats (between `0` and
+         * `16383`) which are 16th note. Position `0` is always the start of the song.
+         *
+         * @param {number} [value=0] The MIDI beat to cue to (integer between `0` and `16383`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendSongPosition(t = 0, o = {}) {
+          t = Math.floor(t) || 0;
+          var l = t >> 7 & 127, d = t & 127;
+          return this.send(
+            [
+              Enumerations.SYSTEM_MESSAGES.songposition,
+              l,
+              d
+            ],
+            { time: o.time }
+          ), this;
+        }
+        /**
+         * Sends a **song select** MIDI message.
+         *
+         * @param {number} [value=0] The number of the song to select (integer between `0` and `127`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws The song number must be between 0 and 127.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendSongSelect(t = 0, o = {}) {
+          if (wm.validation && (t = parseInt(t), isNaN(t) || !(t >= 0 && t <= 127)))
+            throw new RangeError("The program value must be between 0 and 127");
+          return this.send(
+            [
+              Enumerations.SYSTEM_MESSAGES.songselect,
+              t
+            ],
+            { time: o.time }
+          ), this;
+        }
+        /**
+         * Sends a MIDI **tune request** real-time message.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendTuneRequest(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.tunerequest],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends a MIDI **clock** real-time message. According to the standard, there are 24 MIDI clocks
+         * for every quarter note.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendClock(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.clock],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends a **start** real-time message. A MIDI Start message starts the playback of the current
+         * song at beat 0. To start playback elsewhere in the song, use the
+         * [`sendContinue()`]{@link #sendContinue} method.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendStart(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.start],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends a **continue** real-time message. This resumes song playback where it was previously
+         * stopped or where it was last cued with a song position message. To start playback from the
+         * start, use the [`sendStart()`]{@link Output#sendStart}` method.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendContinue(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.continue],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends a **stop** real-time message. This tells the device connected to this output to stop
+         * playback immediately (or at the scheduled time, if specified).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendStop(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.stop],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends an **active sensing** real-time message. This tells the device connected to this port
+         * that the connection is still good. Active sensing messages are often sent every 300 ms if there
+         * was no other activity on the MIDI port.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendActiveSensing(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.activesensing],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * Sends a **reset** real-time message. This tells the device connected to this output that it
+         * should reset itself to a default state.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendReset(t = {}) {
+          return this.send(
+            [Enumerations.SYSTEM_MESSAGES.reset],
+            { time: t.time }
+          ), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        sendTuningRequest(t = {}) {
+          return wm.validation && console.warn(
+            "The sendTuningRequest() method has been deprecated. Use sendTuningRequest() instead."
+          ), this.sendTuneRequest(t);
+        }
+        /**
+         * Sends a MIDI **key aftertouch** message to the specified channel(s) at the scheduled time. This
+         * is a key-specific aftertouch. For a channel-wide aftertouch message, use
+         * [`setChannelAftertouch()`]{@link #setChannelAftertouch}.
+         *
+         * @param note {number|Note|string|number[]|Note[]|string[]} The note(s) for which you are sending
+         * an aftertouch value. The notes can be specified by using a MIDI note number (`0` - `127`), a
+         * [`Note`](Note) object, a note identifier (e.g. `C3`, `G#4`, `F-1`, `Db7`) or an array of the
+         * previous types. When using a note identifier, octave range must be between `-1` and `9`. The
+         * lowest note is `C-1` (MIDI note number `0`) and the highest note is `G9` (MIDI note number
+         * `127`).
+         *
+         * @param [pressure=0.5] {number} The pressure level (between 0 and 1). An invalid pressure value
+         * will silently trigger the default behaviour. If the `rawValue` option is set to `true`, the
+         * pressure can be defined by using an integer between 0 and 127.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered a float between `0` and `1.0` (default) or a raw integer between `0` and `127`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendKeyAftertouch(t, o, l = {}) {
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].sendKeyAftertouch(t, o, l);
+          }), this;
+        }
+        /**
+         * Sends a MIDI **control change** message to the specified channel(s) at the scheduled time. The
+         * control change message to send can be specified numerically (0-127) or by using one of the
+         * following common names:
+         *
+         * | Number | Name                          |
+         * |--------|-------------------------------|
+         * | 0      |`bankselectcoarse`             |
+         * | 1      |`modulationwheelcoarse`        |
+         * | 2      |`breathcontrollercoarse`       |
+         * | 4      |`footcontrollercoarse`         |
+         * | 5      |`portamentotimecoarse`         |
+         * | 6      |`dataentrycoarse`              |
+         * | 7      |`volumecoarse`                 |
+         * | 8      |`balancecoarse`                |
+         * | 10     |`pancoarse`                    |
+         * | 11     |`expressioncoarse`             |
+         * | 12     |`effectcontrol1coarse`         |
+         * | 13     |`effectcontrol2coarse`         |
+         * | 18     |`generalpurposeslider3`        |
+         * | 19     |`generalpurposeslider4`        |
+         * | 32     |`bankselectfine`               |
+         * | 33     |`modulationwheelfine`          |
+         * | 34     |`breathcontrollerfine`         |
+         * | 36     |`footcontrollerfine`           |
+         * | 37     |`portamentotimefine`           |
+         * | 38     |`dataentryfine`                |
+         * | 39     |`volumefine`                   |
+         * | 40     |`balancefine`                  |
+         * | 42     |`panfine`                      |
+         * | 43     |`expressionfine`               |
+         * | 44     |`effectcontrol1fine`           |
+         * | 45     |`effectcontrol2fine`           |
+         * | 64     |`holdpedal`                    |
+         * | 65     |`portamento`                   |
+         * | 66     |`sustenutopedal`               |
+         * | 67     |`softpedal`                    |
+         * | 68     |`legatopedal`                  |
+         * | 69     |`hold2pedal`                   |
+         * | 70     |`soundvariation`               |
+         * | 71     |`resonance`                    |
+         * | 72     |`soundreleasetime`             |
+         * | 73     |`soundattacktime`              |
+         * | 74     |`brightness`                   |
+         * | 75     |`soundcontrol6`                |
+         * | 76     |`soundcontrol7`                |
+         * | 77     |`soundcontrol8`                |
+         * | 78     |`soundcontrol9`                |
+         * | 79     |`soundcontrol10`               |
+         * | 80     |`generalpurposebutton1`        |
+         * | 81     |`generalpurposebutton2`        |
+         * | 82     |`generalpurposebutton3`        |
+         * | 83     |`generalpurposebutton4`        |
+         * | 91     |`reverblevel`                  |
+         * | 92     |`tremololevel`                 |
+         * | 93     |`choruslevel`                  |
+         * | 94     |`celestelevel`                 |
+         * | 95     |`phaserlevel`                  |
+         * | 96     |`dataincrement`                |
+         * | 97     |`datadecrement`                |
+         * | 98     |`nonregisteredparametercoarse` |
+         * | 99     |`nonregisteredparameterfine`   |
+         * | 100    |`registeredparametercoarse`    |
+         * | 101    |`registeredparameterfine`      |
+         * | 120    |`allsoundoff`                  |
+         * | 121    |`resetallcontrollers`          |
+         * | 122    |`localcontrol`                 |
+         * | 123    |`allnotesoff`                  |
+         * | 124    |`omnimodeoff`                  |
+         * | 125    |`omnimodeon`                   |
+         * | 126    |`monomodeon`                   |
+         * | 127    |`polymodeon`                   |
+         *
+         * Note: as you can see above, not all control change message have a matching name. This does not
+         * mean you cannot use the others. It simply means you will need to use their number (`0` - `127`)
+         * instead of their name. While you can still use them, numbers `120` to `127` are usually
+         * reserved for *channel mode* messages. See [`sendChannelMode()`]{@link #sendChannelMode} method
+         * for more info.
+         *
+         * To view a list of all available **control change** messages, please consult [Table 3 - Control
+         * Change Messages](https://www.midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2)
+         * from the MIDI specification.
+         *
+         * @param controller {number|string} The MIDI controller name or number (0-127).
+         *
+         * @param [value=0] {number} The value to send (0-127).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} Controller numbers must be between 0 and 127.
+         * @throws {RangeError} Invalid controller name.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendControlChange(t, o, l = {}, d = {}) {
+          if (wm.validation && (Array.isArray(l) || Number.isInteger(l) || l === "all")) {
+            const p = l;
+            l = d, l.channels = p, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((p) => {
+            this.channels[p].sendControlChange(t, o, l);
+          }), this;
+        }
+        /**
+         * Sends a **pitch bend range** message to the specified channel(s) at the scheduled time so that
+         * they adjust the range used by their pitch bend lever. The range is specified by using the
+         * `semitones` and `cents` parameters. For example, setting the `semitones` parameter to `12`
+         * means that the pitch bend range will be 12 semitones above and below the nominal pitch.
+         *
+         * @param {number} [semitones=0] The desired adjustment value in semitones (between `0` and `127`).
+         * While nothing imposes that in the specification, it is very common for manufacturers to limit
+         * the range to 2 octaves (-12 semitones to 12 semitones).
+         *
+         * @param {number} [cents=0] The desired adjustment value in cents (integer between `0` and
+         * `127`).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The msb value must be between 0 and 127.
+         * @throws {RangeError} The lsb value must be between 0 and 127.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendPitchBendRange(t = 0, o = 0, l = {}) {
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].sendPitchBendRange(t, o, l);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setPitchBendRange(t = 0, o = 0, l = "all", d = {}) {
+          return wm.validation && (console.warn(
+            "The setPitchBendRange() method is deprecated. Use sendPitchBendRange() instead."
+          ), d.channels = l, d.channels === "all" && (d.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendPitchBendRange(t, o, d);
+        }
+        /**
+         * Sets the specified MIDI registered parameter to the desired value. The value is defined with
+         * up to two bytes of data (msb, lsb) that each can go from `0` to `127`.
+         *
+         * MIDI
+         * [registered parameters](https://www.midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2)
+         * extend the original list of control change messages. The MIDI 1.0 specification lists only a
+         * limited number of them:
+         *
+         * | Numbers      | Function                 |
+         * |--------------|--------------------------|
+         * | (0x00, 0x00) | `pitchbendrange`         |
+         * | (0x00, 0x01) | `channelfinetuning`      |
+         * | (0x00, 0x02) | `channelcoarsetuning`    |
+         * | (0x00, 0x03) | `tuningprogram`          |
+         * | (0x00, 0x04) | `tuningbank`             |
+         * | (0x00, 0x05) | `modulationrange`        |
+         * | (0x3D, 0x00) | `azimuthangle`           |
+         * | (0x3D, 0x01) | `elevationangle`         |
+         * | (0x3D, 0x02) | `gain`                   |
+         * | (0x3D, 0x03) | `distanceratio`          |
+         * | (0x3D, 0x04) | `maximumdistance`        |
+         * | (0x3D, 0x05) | `maximumdistancegain`    |
+         * | (0x3D, 0x06) | `referencedistanceratio` |
+         * | (0x3D, 0x07) | `panspreadangle`         |
+         * | (0x3D, 0x08) | `rollangle`              |
+         *
+         * Note that the `tuningprogram` and `tuningbank` parameters are part of the *MIDI Tuning
+         * Standard*, which is not widely implemented.
+         *
+         * @param parameter {string|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (e.g. `[0x65, 0x64]`) that identify the
+         * registered parameter.
+         *
+         * @param [data=[]] {number|number[]} A single integer or an array of integers with a maximum
+         * length of 2 specifying the desired data.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendRpnValue(t, o, l = {}) {
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].sendRpnValue(t, o, l);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setRegisteredParameter(t, o = [], l = "all", d = {}) {
+          return wm.validation && (console.warn(
+            "The setRegisteredParameter() method is deprecated. Use sendRpnValue() instead."
+          ), d.channels = l, d.channels === "all" && (d.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendRpnValue(t, o, d);
+        }
+        /**
+         * Sends a MIDI **channel aftertouch** message to the specified channel(s). For key-specific
+         * aftertouch, you should instead use [`setKeyAftertouch()`]{@link #setKeyAftertouch}.
+         *
+         * @param [pressure=0.5] {number} The pressure level (between `0` and `1`). An invalid pressure
+         * value will silently trigger the default behaviour. If the `rawValue` option is set to `true`,
+         * the pressure can be defined by using an integer between `0` and `127`.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered a float between `0` and `1.0` (default) or a raw integer between `0` and `127`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         * @since 3.0.0
+         */
+        sendChannelAftertouch(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendChannelAftertouch(t, o);
+          }), this;
+        }
+        /**
+         * Sends a MIDI **pitch bend** message to the specified channel(s) at the scheduled time.
+         *
+         * The resulting bend is relative to the pitch bend range that has been defined. The range can be
+         * set with [`sendPitchBendRange()`]{@link #sendPitchBendRange}. So, for example, if the pitch
+         * bend range has been set to 12 semitones, using a bend value of `-1` will bend the note 1 octave
+         * below its nominal value.
+         *
+         * @param {number|number[]} value The intensity of the bend (between `-1.0` and `1.0`). A value of
+         * `0` means no bend. If an invalid value is specified, the nearest valid value will be used
+         * instead. If the `rawValue` option is set to `true`, the intensity of the bend can be defined by
+         * either using a single integer between `0` and `127` (MSB) or an array of two integers between
+         * `0` and `127` representing, respectively, the MSB (most significant byte) and the LSB (least
+         * significant byte). The MSB is expressed in semitones with `64` meaning no bend. A value lower
+         * than `64` bends downwards while a value higher than `64` bends upwards. The LSB is expressed
+         * in cents (1/100 of a semitone). An LSB of `64` also means no bend.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {boolean} [options.rawValue=false] A boolean indicating whether the value should be
+         * considered as a float between `-1.0` and `1.0` (default) or as raw integer between `0` and
+         * 127` (or an array of 2 integers if using both MSB and LSB).
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendPitchBend(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendPitchBend(t, o);
+          }), this;
+        }
+        /**
+         * Sends a MIDI **program change** message to the specified channel(s) at the scheduled time.
+         *
+         * @param {number} [program=0] The MIDI patch (program) number (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {TypeError} Failed to execute 'send' on 'MIDIOutput': The value at index 1 is greater
+         * than 0xFF.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendProgramChange(t = 0, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendProgramChange(t, o);
+          }), this;
+        }
+        /**
+         * Sends a **modulation depth range** message to the specified channel(s) so that they adjust the
+         * depth of their modulation wheel's range. The range can be specified with the `semitones`
+         * parameter, the `cents` parameter or by specifying both parameters at the same time.
+         *
+         * @param [semitones=0] {number} The desired adjustment value in semitones (integer between
+         * 0 and 127).
+         *
+         * @param [cents=0] {number} The desired adjustment value in cents (integer between 0 and 127).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The msb value must be between 0 and 127
+         * @throws {RangeError} The lsb value must be between 0 and 127
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendModulationRange(t, o, l = {}) {
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].sendModulationRange(t, o, l);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setModulationRange(t = 0, o = 0, l = "all", d = {}) {
+          return wm.validation && (console.warn(
+            "The setModulationRange() method is deprecated. Use sendModulationRange() instead."
+          ), d.channels = l, d.channels === "all" && (d.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendModulationRange(t, o, d);
+        }
+        /**
+         * Sends a master tuning message to the specified channel(s). The value is decimal and must be
+         * larger than `-65` semitones and smaller than `64` semitones.
+         *
+         * Because of the way the MIDI specification works, the decimal portion of the value will be
+         * encoded with a resolution of 14bit. The integer portion must be between -64 and 63
+         * inclusively. This function actually generates two MIDI messages: a **Master Coarse Tuning** and
+         * a **Master Fine Tuning** RPN messages.
+         *
+         * @param [value=0.0] {number} The desired decimal adjustment value in semitones (-65 < x < 64)
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The value must be a decimal number between larger than -65 and smaller
+         * than 64.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendMasterTuning(t, o = {}) {
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((l) => {
+            this.channels[l].sendMasterTuning(t, o);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setMasterTuning(t, o = {}, l = {}) {
+          return wm.validation && (console.warn(
+            "The setMasterTuning() method is deprecated. Use sendMasterTuning() instead."
+          ), l.channels = o, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendMasterTuning(t, l);
+        }
+        /**
+         * Sets the MIDI tuning program to use. Note that the **Tuning Program** parameter is part of the
+         * *MIDI Tuning Standard*, which is not widely implemented.
+         *
+         * @param value {number} The desired tuning program (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The program value must be between 0 and 127.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendTuningProgram(t, o = {}) {
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((l) => {
+            this.channels[l].sendTuningProgram(t, o);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setTuningProgram(t, o = "all", l = {}) {
+          return wm.validation && (console.warn(
+            "The setTuningProgram() method is deprecated. Use sendTuningProgram() instead."
+          ), l.channels = o, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendTuningProgram(t, l);
+        }
+        /**
+         * Sets the MIDI tuning bank to use. Note that the **Tuning Bank** parameter is part of the
+         * *MIDI Tuning Standard*, which is not widely implemented.
+         *
+         * @param {number} [value=0] The desired tuning bank (integer between `0` and `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The bank value must be between 0 and 127.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendTuningBank(t = 0, o = {}) {
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((l) => {
+            this.channels[l].sendTuningBank(t, o);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setTuningBank(t, o = "all", l = {}) {
+          return wm.validation && (console.warn(
+            "The setTuningBank() method is deprecated. Use sendTuningBank() instead."
+          ), l.channels = o, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendTuningBank(t, l);
+        }
+        /**
+         * Sends a MIDI **channel mode** message to the specified channel(s). The channel mode message to
+         * send can be specified numerically or by using one of the following common names:
+         *
+         * |  Type                |Number| Shortcut Method                                               |
+         * | ---------------------|------|-------------------------------------------------------------- |
+         * | `allsoundoff`        | 120  | [`sendAllSoundOff()`]{@link #sendAllSoundOff}                 |
+         * | `resetallcontrollers`| 121  | [`sendResetAllControllers()`]{@link #sendResetAllControllers} |
+         * | `localcontrol`       | 122  | [`sendLocalControl()`]{@link #sendLocalControl}               |
+         * | `allnotesoff`        | 123  | [`sendAllNotesOff()`]{@link #sendAllNotesOff}                 |
+         * | `omnimodeoff`        | 124  | [`sendOmniMode(false)`]{@link #sendOmniMode}                  |
+         * | `omnimodeon`         | 125  | [`sendOmniMode(true)`]{@link #sendOmniMode}                   |
+         * | `monomodeon`         | 126  | [`sendPolyphonicMode("mono")`]{@link #sendPolyphonicMode}     |
+         * | `polymodeon`         | 127  | [`sendPolyphonicMode("poly")`]{@link #sendPolyphonicMode}     |
+         *
+         * Note: as you can see above, to make it easier, all channel mode messages also have a matching
+         * helper method.
+         *
+         * It should also be noted that, per the MIDI specification, only `localcontrol` and `monomodeon`
+         * may require a value that's not zero. For that reason, the `value` parameter is optional and
+         * defaults to 0.
+         *
+         * @param {number|string} command The numerical identifier of the channel mode message (integer
+         * between 120-127) or its name as a string.
+         *
+         * @param {number} [value=0] The value to send (integer between 0-127).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {TypeError} Invalid channel mode message name.
+         * @throws {RangeError} Channel mode controller numbers must be between 120 and 127.
+         * @throws {RangeError} Value must be an integer between 0 and 127.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         */
+        sendChannelMode(t, o = 0, l = {}, d = {}) {
+          if (wm.validation && (Array.isArray(l) || Number.isInteger(l) || l === "all")) {
+            const p = l;
+            l = d, l.channels = p, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((p) => {
+            this.channels[p].sendChannelMode(t, o, l);
+          }), this;
+        }
+        /**
+         * Sends an **all sound off** channel mode message. This will silence all sounds playing on that
+         * channel but will not prevent new sounds from being triggered.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output}
+         *
+         * @since 3.0.0
+         */
+        sendAllSoundOff(t = {}) {
+          return t.channels == null && (t.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(t.channels).forEach((o) => {
+            this.channels[o].sendAllSoundOff(t);
+          }), this;
+        }
+        /**
+         * Sends an **all notes off** channel mode message. This will make all currently playing notes
+         * fade out just as if their key had been released. This is different from the
+         * [`sendAllSoundOff()`]{@link #sendAllSoundOff} method which mutes all sounds immediately.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output}
+         *
+         * @since 3.0.0
+         */
+        sendAllNotesOff(t = {}) {
+          return t.channels == null && (t.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(t.channels).forEach((o) => {
+            this.channels[o].sendAllNotesOff(t);
+          }), this;
+        }
+        /**
+         * Sends a **reset all controllers** channel mode message. This resets all controllers, such as
+         * the pitch bend, to their default value.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output}
+         */
+        sendResetAllControllers(t = {}, o = {}) {
+          if (wm.validation && (Array.isArray(t) || Number.isInteger(t) || t === "all")) {
+            const l = t;
+            t = o, t.channels = l, t.channels === "all" && (t.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return t.channels == null && (t.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(t.channels).forEach((l) => {
+            this.channels[l].sendResetAllControllers(t);
+          }), this;
+        }
+        /**
+         * Sets the polyphonic mode. In `poly` mode (usually the default), multiple notes can be played
+         * and heard at the same time. In `mono` mode, only one note will be heard at once even if
+         * multiple notes are being played.
+         *
+         * @param mode {string} The mode to use: `mono` or `poly`.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendPolyphonicMode(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendPolyphonicMode(t, o);
+          }), this;
+        }
+        /**
+         * Turns local control on or off. Local control is usually enabled by default. If you disable it,
+         * the instrument will no longer trigger its own sounds. It will only send the MIDI messages to
+         * its out port.
+         *
+         * @param [state=false] {boolean} Whether to activate local control (`true`) or disable it
+         * (`false`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendLocalControl(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendLocalControl(t, o);
+          }), this;
+        }
+        /**
+         * Sets OMNI mode to **on** or **off** for the specified channel(s). MIDI's OMNI mode causes the
+         * instrument to respond to messages from all channels.
+         *
+         * It should be noted that support for OMNI mode is not as common as it used to be.
+         *
+         * @param [state] {boolean} Whether to activate OMNI mode (`true`) or not (`false`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {TypeError} Invalid channel mode message name.
+         * @throws {RangeError} Channel mode controller numbers must be between 120 and 127.
+         * @throws {RangeError} Value must be an integer between 0 and 127.
+         *
+         * @return {Output} Returns the `Output` object so methods can be chained.
+         *
+         * @since 3.0.0
+         */
+        sendOmniMode(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendOmniMode(t, o);
+          }), this;
+        }
+        /**
+         * Sets a non-registered parameter to the specified value. The NRPN is selected by passing a
+         * two-position array specifying the values of the two control bytes. The value is specified by
+         * passing a single integer (most cases) or an array of two integers.
+         *
+         * NRPNs are not standardized in any way. Each manufacturer is free to implement them any way
+         * they see fit. For example, according to the Roland GS specification, you can control the
+         * **vibrato rate** using NRPN (`1`, `8`). Therefore, to set the **vibrato rate** value to `123`
+         * you would use:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendNrpnValue([1, 8], 123);
+         * ```
+         *
+         * You probably want to should select a channel so the message is not sent to all channels. For
+         * instance, to send to channel `1` of the first output port, you would use:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendNrpnValue([1, 8], 123, 1);
+         * ```
+         *
+         * In some rarer cases, you need to send two values with your NRPN messages. In such cases, you
+         * would use a 2-position array. For example, for its **ClockBPM** parameter (`2`, `63`), Novation
+         * uses a 14-bit value that combines an MSB and an LSB (7-bit values). So, for example, if the
+         * value to send was `10`, you could use:
+         *
+         * ```js
+         * WebMidi.outputs[0].sendNrpnValue([2, 63], [0, 10], 1);
+         * ```
+         *
+         * For further implementation details, refer to the manufacturer's documentation.
+         *
+         * @param parameter {number[]} A two-position array specifying the two control bytes (`0x63`,
+         * `0x62`) that identify the non-registered parameter.
+         *
+         * @param [data=[]] {number|number[]} An integer or an array of integers with a length of 1 or 2
+         * specifying the desired data.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws {RangeError} The control value must be between 0 and 127.
+         * @throws {RangeError} The msb value must be between 0 and 127
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendNrpnValue(t, o, l = {}) {
+          return l.channels == null && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].sendNrpnValue(t, o, l);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        setNonRegisteredParameter(t, o = [], l = "all", d = {}) {
+          return wm.validation && (console.warn(
+            "The setNonRegisteredParameter() method is deprecated. Use sendNrpnValue() instead."
+          ), d.channels = l, d.channels === "all" && (d.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendNrpnValue(t, o, d);
+        }
+        /**
+         * Increments the specified MIDI registered parameter by 1. Here is the full list of parameter
+         * names that can be used with this method:
+         *
+         *  * Pitchbend Range (0x00, 0x00): `"pitchbendrange"`
+         *  * Channel Fine Tuning (0x00, 0x01): `"channelfinetuning"`
+         *  * Channel Coarse Tuning (0x00, 0x02): `"channelcoarsetuning"`
+         *  * Tuning Program (0x00, 0x03): `"tuningprogram"`
+         *  * Tuning Bank (0x00, 0x04): `"tuningbank"`
+         *  * Modulation Range (0x00, 0x05): `"modulationrange"`
+         *  * Azimuth Angle (0x3D, 0x00): `"azimuthangle"`
+         *  * Elevation Angle (0x3D, 0x01): `"elevationangle"`
+         *  * Gain (0x3D, 0x02): `"gain"`
+         *  * Distance Ratio (0x3D, 0x03): `"distanceratio"`
+         *  * Maximum Distance (0x3D, 0x04): `"maximumdistance"`
+         *  * Maximum Distance Gain (0x3D, 0x05): `"maximumdistancegain"`
+         *  * Reference Distance Ratio (0x3D, 0x06): `"referencedistanceratio"`
+         *  * Pan Spread Angle (0x3D, 0x07): `"panspreadangle"`
+         *  * Roll Angle (0x3D, 0x08): `"rollangle"`
+         *
+         * @param parameter {String|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (0x65, 0x64) that identify the registered
+         * parameter.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendRpnIncrement(t, o = {}) {
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((l) => {
+            this.channels[l].sendRpnIncrement(t, o);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        incrementRegisteredParameter(t, o = "all", l = {}) {
+          return wm.validation && (console.warn(
+            "The incrementRegisteredParameter() method is deprecated. Use sendRpnIncrement() instead."
+          ), l.channels = o, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendRpnIncrement(t, l);
+        }
+        /**
+         * Decrements the specified MIDI registered parameter by 1. Here is the full list of parameter
+         * names that can be used with this method:
+         *
+         *  * Pitchbend Range (0x00, 0x00): `"pitchbendrange"`
+         *  * Channel Fine Tuning (0x00, 0x01): `"channelfinetuning"`
+         *  * Channel Coarse Tuning (0x00, 0x02): `"channelcoarsetuning"`
+         *  * Tuning Program (0x00, 0x03): `"tuningprogram"`
+         *  * Tuning Bank (0x00, 0x04): `"tuningbank"`
+         *  * Modulation Range (0x00, 0x05): `"modulationrange"`
+         *  * Azimuth Angle (0x3D, 0x00): `"azimuthangle"`
+         *  * Elevation Angle (0x3D, 0x01): `"elevationangle"`
+         *  * Gain (0x3D, 0x02): `"gain"`
+         *  * Distance Ratio (0x3D, 0x03): `"distanceratio"`
+         *  * Maximum Distance (0x3D, 0x04): `"maximumdistance"`
+         *  * Maximum Distance Gain (0x3D, 0x05): `"maximumdistancegain"`
+         *  * Reference Distance Ratio (0x3D, 0x06): `"referencedistanceratio"`
+         *  * Pan Spread Angle (0x3D, 0x07): `"panspreadangle"`
+         *  * Roll Angle (0x3D, 0x08): `"rollangle"`
+         *
+         * @param parameter {String|number[]} A string identifying the parameter's name (see above) or a
+         * two-position array specifying the two control bytes (0x65, 0x64) that identify the registered
+         * parameter.
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @throws TypeError The specified parameter is not available.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendRpnDecrement(t, o = {}) {
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((l) => {
+            this.channels[l].sendRpnDecrement(t, o);
+          }), this;
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0
+         */
+        decrementRegisteredParameter(t, o = "all", l = {}) {
+          return wm.validation && (console.warn(
+            "The decrementRegisteredParameter() method is deprecated. Use sendRpnDecrement() instead."
+          ), l.channels = o, l.channels === "all" && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS)), this.sendRpnDecrement(t, l);
+        }
+        /**
+         * Sends a **note off** message for the specified MIDI note number on the specified channel(s).
+         * The first parameter is the note to stop. It can be a single value or an array of the following
+         * valid values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`](Note) object
+         *
+         * The execution of the **note off** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * @param note {number|Note|string|number[]|Note[]|string[]} The note(s) to stop. The notes can be
+         * specified by using a MIDI note number (`0` - `127`), a note identifier (e.g. `C3`, `G#4`,
+         * `F-1`, `Db7`) or an array of the previous types. When using a note identifier, octave range
+         * must be between `-1` and `9`. The lowest note is `C-1` (MIDI note number `0`) and the highest
+         * note is `G9` (MIDI note number `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note
+         * (between `0` and `1`).  If the `rawRelease` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note
+         * (between `0` and `127`). If the `release` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `64`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendNoteOff(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendNoteOff(t, o);
+          }), this;
+        }
+        /**
+         * Sends a **note off** message for the specified MIDI note number on the specified channel(s).
+         * The first parameter is the note to stop. It can be a single value or an array of the following
+         * valid values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`](Note) object
+         *
+         * The execution of the **note off** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * @param note {number|Note|string|number[]|Note[]|string[]} The note(s) to stop. The notes can be
+         * specified by using a MIDI note number (`0` - `127`), a note identifier (e.g. `C3`, `G#4`, `F-1`,
+         * `Db7`) or an array of the previous types. When using a note identifier, octave range must be
+         * between `-1` and `9`. The lowest note is `C-1` (MIDI note number `0`) and the highest note is
+         * `G9` (MIDI note number `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note
+         * (between `0` and `1`).  If the `rawRelease` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note
+         * (between `0` and `127`). If the `release` option is also defined, `rawRelease` will have
+         * priority. An invalid velocity value will silently trigger the default of `64`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        stopNote(t, o) {
+          return this.sendNoteOff(t, o);
+        }
+        /**
+         * Plays a note or an array of notes on one or more channels of this output. If you intend to play
+         * notes on a single channel, you should probably use
+         * [`OutputChannel.playNote()`](OutputChannel#playNote) instead.
+         *
+         * The first parameter is the note to play. It can be a single value or an array of the following
+         * valid values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`]{@link Note} object
+         *
+         * The `playNote()` method sends a **note on** MIDI message for all specified notes on all
+         * specified channels. If no channel is specified, it will send to all channels. If a `duration`
+         * is set in the `options` parameter or in the [`Note`]{@link Note} object's
+         * [`duration`]{@link Note#duration} property, it will also schedule a **note off** message to end
+         * the note after said duration. If no `duration` is set, the note will simply play until a
+         * matching **note off** message is sent with [`stopNote()`]{@link #stopNote}.
+         *
+         * The execution of the **note on** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * When using [`Note`]{@link Note} objects, the durations and velocities defined in the
+         * [`Note`]{@link Note} objects have precedence over the ones specified via the method's `options`
+         * parameter.
+         *
+         * **Note**: As per the MIDI standard, a **note on** message with an attack velocity of `0` is
+         * functionally equivalent to a **note off** message.
+         *
+         * @param note {number|string|Note|number[]|string[]|Note[]} The note(s) to play. The notes can be
+         * specified by using a MIDI note number (0-127), a note identifier (e.g. C3, G#4, F-1, Db7), a
+         * [`Note`]{@link Note} object or an array of the previous types. When using a note identifier,
+         * octave range must be between -1 and 9. The lowest note is C-1 (MIDI note number `0`) and the
+         * highest note is G9 (MIDI note number `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number} [options.duration=undefined] The number of milliseconds after which a
+         * **note off** message will be scheduled. If left undefined, only a **note on** message is sent.
+         *
+         * @param {number} [options.attack=0.5] The velocity at which to play the note (between `0` and
+         * `1`). If the `rawAttack` option is also defined, it will have priority. An invalid velocity
+         * value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawAttack=64] The attack velocity at which to play the note (between
+         * `0` and `127`). This has priority over the `attack` property. An invalid velocity value will
+         * silently trigger the default of 64.
+         *
+         * @param {number} [options.release=0.5] The velocity at which to release the note (between `0`
+         * and `1`). If the `rawRelease` option is also defined, it will have priority. An invalid
+         * velocity value will silently trigger the default of `0.5`. This is only used with the
+         * **note off** event triggered when `options.duration` is set.
+         *
+         * @param {number} [options.rawRelease=64] The velocity at which to release the note (between `0`
+         * and `127`). This has priority over the `release` property. An invalid velocity value will
+         * silently trigger the default of 64. This is only used with the **note off** event triggered
+         * when `options.duration` is set.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        playNote(t, o = {}, l = {}) {
+          if (wm.validation && (o.rawVelocity && console.warn("The 'rawVelocity' option is deprecated. Use 'rawAttack' instead."), o.velocity && console.warn("The 'velocity' option is deprecated. Use 'velocity' instead."), Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].playNote(t, o);
+          }), this;
+        }
+        /**
+         * Sends a **note on** message for the specified MIDI note number on the specified channel(s). The
+         * first parameter is the number. It can be a single value or an array of the following valid
+         * values:
+         *
+         *  - A MIDI note number (integer between `0` and `127`)
+         *  - A note identifier (e.g. `"C3"`, `"G#4"`, `"F-1"`, `"Db7"`)
+         *  - A [`Note`](Note) object
+         *
+         *  The execution of the **note on** command can be delayed by using the `time` property of the
+         * `options` parameter.
+         *
+         * **Note**: As per the MIDI standard, a **note on** message with an attack velocity of `0` is
+         * functionally equivalent to a **note off** message.
+         *
+         * @param note {number|Note|string|number[]|Note[]|string[]} The note(s) to stop. The notes can be
+         * specified by using a MIDI note number (`0` - `127`), a note identifier (e.g. `C3`, `G#4`, `F-1`,
+         * `Db7`) or an array of the previous types. When using a note identifier, octave range must be
+         * between `-1` and `9`. The lowest note is `C-1` (MIDI note number `0`) and the highest note is
+         * `G9` (MIDI note number `127`).
+         *
+         * @param {Object} [options={}]
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * The MIDI channel number (between `1` and `16`) or an array of channel numbers to use. If no
+         * channel is specified, all channels will be used.
+         *
+         * @param {number} [options.attack=0.5] The velocity at which to play the note (between `0` and
+         * `1`).  If the `rawAttack` option is also defined, `rawAttack` will have priority. An invalid
+         * velocity value will silently trigger the default of `0.5`.
+         *
+         * @param {number} [options.rawAttack=64] The velocity at which to release the note (between `0`
+         * and `127`). If the `attack` option is also defined, `rawAttack` will have priority. An invalid
+         * velocity value will silently trigger the default of `64`.
+         *
+         * @param {number|string} [options.time=(now)] If `time` is a string prefixed with `"+"` and
+         * followed by a number, the message will be delayed by that many milliseconds. If the value is a
+         * positive number
+         * ([`DOMHighResTimeStamp`]{@link https://developer.mozilla.org/docs/Web/API/DOMHighResTimeStamp}),
+         * the operation will be scheduled for that time. The current time can be retrieved with
+         * [`WebMidi.time`]{@link WebMidi#time}. If `options.time` is omitted, or in the past, the
+         * operation will be carried out as soon as possible.
+         *
+         * @returns {Output} Returns the `Output` object so methods can be chained.
+         */
+        sendNoteOn(t, o = {}, l = {}) {
+          if (wm.validation && (Array.isArray(o) || Number.isInteger(o) || o === "all")) {
+            const d = o;
+            o = l, o.channels = d, o.channels === "all" && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+          }
+          return o.channels == null && (o.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(o.channels).forEach((d) => {
+            this.channels[d].sendNoteOn(t, o);
+          }), this;
+        }
+        /**
+         * Name of the MIDI output.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get name() {
+          return this._midiOutput.name;
+        }
+        /**
+         * ID string of the MIDI output. The ID is host-specific. Do not expect the same ID on different
+         * platforms. For example, Google Chrome and the Jazz-Plugin report completely different IDs for
+         * the same port.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get id() {
+          return this._midiOutput.id;
+        }
+        /**
+         * Output port's connection state: `pending`, `open` or `closed`.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get connection() {
+          return this._midiOutput.connection;
+        }
+        /**
+         * Name of the manufacturer of the device that makes this output port available.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get manufacturer() {
+          return this._midiOutput.manufacturer;
+        }
+        /**
+         * State of the output port: `connected` or `disconnected`.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get state() {
+          return this._midiOutput.state;
+        }
+        /**
+         * Type of the output port (it will always be: `output`).
+         *
+         * @type {string}
+         * @readonly
+         */
+        get type() {
+          return this._midiOutput.type;
+        }
+        /**
+         * An integer to offset the octave of outgoing notes. By default, middle C (MIDI note number 60)
+         * is placed on the 4th octave (C4).
+         *
+         * Note that this value is combined with the global offset value defined in
+         * [`WebMidi.octaveOffset`](WebMidi#octaveOffset) (if any).
+         *
+         * @type {number}
+         *
+         * @since 3.0
+         */
+        get octaveOffset() {
+          return this._octaveOffset;
+        }
+        set octaveOffset(t) {
+          if (this.validation && (t = parseInt(t), isNaN(t)))
+            throw new TypeError("The 'octaveOffset' property must be an integer.");
+          this._octaveOffset = t;
+        }
+      };
+      Forwarder = class {
+        /**
+         * Creates a `Forwarder` object.
+         *
+         * @param {Output|Output[]} [destinations=\[\]] An [`Output`](Output) object, or an array of such
+         * objects, to forward the message to.
+         *
+         * @param {object} [options={}]
+         * @param {string|string[]} [options.types=(all messages)] A MIDI message type or an array of such
+         * types (`"noteon"`, `"controlchange"`, etc.), that the specified message must match in order to
+         * be forwarded. If this option is not specified, all types of messages will be forwarded. Valid
+         * messages are the ones found in either
+         * [`SYSTEM_MESSAGES`](Enumerations#SYSTEM_MESSAGES)
+         * or [`CHANNEL_MESSAGES`](Enumerations#CHANNEL_MESSAGES).
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * A MIDI channel number or an array of channel numbers that the message must match in order to be
+         * forwarded. By default all MIDI channels are included (`1` to `16`).
+         */
+        constructor(t = [], o = {}) {
+          this.destinations = [], this.types = [
+            ...Object.keys(Enumerations.SYSTEM_MESSAGES),
+            ...Object.keys(Enumerations.CHANNEL_MESSAGES)
+          ], this.channels = Enumerations.MIDI_CHANNEL_NUMBERS, this.suspended = false, Array.isArray(t) || (t = [t]), o.types && !Array.isArray(o.types) && (o.types = [o.types]), o.channels && !Array.isArray(o.channels) && (o.channels = [o.channels]), wm.validation && (t.forEach((l) => {
+            if (!(l instanceof Output))
+              throw new TypeError("Destinations must be of type 'Output'.");
+          }), o.types !== void 0 && o.types.forEach((l) => {
+            if (!Enumerations.SYSTEM_MESSAGES.hasOwnProperty(l) && !Enumerations.CHANNEL_MESSAGES.hasOwnProperty(l))
+              throw new TypeError("Type must be a valid message type.");
+          }), o.channels !== void 0 && o.channels.forEach((l) => {
+            if (!Enumerations.MIDI_CHANNEL_NUMBERS.includes(l))
+              throw new TypeError("MIDI channel must be between 1 and 16.");
+          })), this.destinations = t, o.types && (this.types = o.types), o.channels && (this.channels = o.channels);
+        }
+        /**
+         * Sends the specified message to the forwarder's destination(s) if it matches the specified
+         * type(s) and channel(s).
+         *
+         * @param {Message} message The [`Message`](Message) object to forward.
+         */
+        forward(t) {
+          this.suspended || this.types.includes(t.type) && (t.channel && !this.channels.includes(t.channel) || this.destinations.forEach((o) => {
+            wm.validation && !(o instanceof Output) || o.send(t);
+          }));
+        }
+      };
+      InputChannel = class extends EventEmitter {
+        /**
+         * Creates an `InputChannel` object.
+         *
+         * @param {Input} input The [`Input`](Input) object this channel belongs to.
+         * @param {number} number The channel's MIDI number (1-16).
+         */
+        constructor(t, o) {
+          super(), this._input = t, this._number = o, this._octaveOffset = 0, this._nrpnBuffer = [], this._rpnBuffer = [], this.parameterNumberEventsEnabled = true, this.notesState = new Array(128).fill(false);
+        }
+        /**
+         * Destroys the `InputChannel` by removing all listeners and severing the link with the MIDI
+         * subsystem's input.
+         */
+        destroy() {
+          this._input = null, this._number = null, this._octaveOffset = 0, this._nrpnBuffer = [], this.notesState = new Array(128).fill(false), this.parameterNumberEventsEnabled = false, this.removeListener();
+        }
+        /**
+         * @param e MIDIMessageEvent
+         * @private
+         */
+        _processMidiMessageEvent(t) {
+          const o = Object.assign({}, t);
+          o.port = this.input, o.target = this, o.type = "midimessage", this.emit(o.type, o), this._parseEventForStandardMessages(o);
+        }
+        /**
+         * Parses incoming channel events and emit standard MIDI message events (noteon, noteoff, etc.)
+         * @param e Event
+         * @private
+         */
+        _parseEventForStandardMessages(t) {
+          const o = Object.assign({}, t);
+          o.type = o.message.type || "unknownmessage";
+          const l = t.message.dataBytes[0], d = t.message.dataBytes[1];
+          if (o.type === "noteoff" || o.type === "noteon" && d === 0)
+            this.notesState[l] = false, o.type = "noteoff", o.note = new Note(
+              Utilities.offsetNumber(
+                l,
+                this.octaveOffset + this.input.octaveOffset + wm.octaveOffset
+              ),
+              {
+                rawAttack: 0,
+                rawRelease: d
+              }
+            ), o.value = Utilities.from7bitToFloat(d), o.rawValue = d, o.velocity = o.note.release, o.rawVelocity = o.note.rawRelease;
+          else if (o.type === "noteon")
+            this.notesState[l] = true, o.note = new Note(
+              Utilities.offsetNumber(
+                l,
+                this.octaveOffset + this.input.octaveOffset + wm.octaveOffset
+              ),
+              { rawAttack: d }
+            ), o.value = Utilities.from7bitToFloat(d), o.rawValue = d, o.velocity = o.note.attack, o.rawVelocity = o.note.rawAttack;
+          else if (o.type === "keyaftertouch")
+            o.note = new Note(
+              Utilities.offsetNumber(
+                l,
+                this.octaveOffset + this.input.octaveOffset + wm.octaveOffset
+              )
+            ), o.value = Utilities.from7bitToFloat(d), o.rawValue = d, o.identifier = o.note.identifier, o.key = o.note.number, o.rawKey = l;
+          else if (o.type === "controlchange") {
+            o.controller = {
+              number: l,
+              name: Enumerations.CONTROL_CHANGE_MESSAGES[l].name,
+              description: Enumerations.CONTROL_CHANGE_MESSAGES[l].description,
+              position: Enumerations.CONTROL_CHANGE_MESSAGES[l].position
+            }, o.subtype = o.controller.name || "controller" + l, o.value = Utilities.from7bitToFloat(d), o.rawValue = d;
+            const p = Object.assign({}, o);
+            p.type = `${o.type}-controller${l}`, delete p.subtype, this.emit(p.type, p);
+            const b = Object.assign({}, o);
+            b.type = `${o.type}-` + Enumerations.CONTROL_CHANGE_MESSAGES[l].name, delete b.subtype, b.type.indexOf("controller") !== 0 && this.emit(b.type, b), o.message.dataBytes[0] >= 120 && this._parseChannelModeMessage(o), this.parameterNumberEventsEnabled && this._isRpnOrNrpnController(o.message.dataBytes[0]) && this._parseEventForParameterNumber(o);
+          } else o.type === "programchange" ? (o.value = l, o.rawValue = o.value) : o.type === "channelaftertouch" ? (o.value = Utilities.from7bitToFloat(l), o.rawValue = l) : o.type === "pitchbend" ? (o.value = ((d << 7) + l - 8192) / 8192, o.rawValue = (d << 7) + l) : o.type = "unknownmessage";
+          this.emit(o.type, o);
+        }
+        /**
+         * @param e {Object}
+         * @private
+         */
+        _parseChannelModeMessage(t) {
+          const o = Object.assign({}, t);
+          o.type = o.controller.name, o.type === "localcontrol" && (o.value = o.message.data[2] === 127, o.rawValue = o.message.data[2]), o.type === "omnimodeon" ? (o.type = "omnimode", o.value = true, o.rawValue = o.message.data[2]) : o.type === "omnimodeoff" && (o.type = "omnimode", o.value = false, o.rawValue = o.message.data[2]), o.type === "monomodeon" ? (o.type = "monomode", o.value = true, o.rawValue = o.message.data[2]) : o.type === "polymodeon" && (o.type = "monomode", o.value = false, o.rawValue = o.message.data[2]), this.emit(o.type, o);
+        }
+        /**
+         * Parses inbound events to identify RPN/NRPN sequences.
+         * @param e Event
+         * @private
+         */
+        _parseEventForParameterNumber(t) {
+          const o = t.message.dataBytes[0], l = t.message.dataBytes[1];
+          o === 99 || o === 101 ? (this._nrpnBuffer = [], this._rpnBuffer = [], o === 99 ? this._nrpnBuffer = [t.message] : l !== 127 && (this._rpnBuffer = [t.message])) : o === 98 || o === 100 ? o === 98 ? (this._rpnBuffer = [], this._nrpnBuffer.length === 1 ? this._nrpnBuffer.push(t.message) : this._nrpnBuffer = []) : (this._nrpnBuffer = [], this._rpnBuffer.length === 1 && l !== 127 ? this._rpnBuffer.push(t.message) : this._rpnBuffer = []) : (o === 6 || o === 38 || o === 96 || o === 97) && (this._rpnBuffer.length === 2 ? this._dispatchParameterNumberEvent(
+            "rpn",
+            this._rpnBuffer[0].dataBytes[1],
+            this._rpnBuffer[1].dataBytes[1],
+            t
+          ) : this._nrpnBuffer.length === 2 ? this._dispatchParameterNumberEvent(
+            "nrpn",
+            this._nrpnBuffer[0].dataBytes[1],
+            this._nrpnBuffer[1].dataBytes[1],
+            t
+          ) : (this._nrpnBuffer = [], this._rpnBuffer = []));
+        }
+        /**
+         * Indicates whether the specified controller can be part of an RPN or NRPN sequence
+         * @param controller
+         * @returns {boolean}
+         * @private
+         */
+        _isRpnOrNrpnController(t) {
+          return t === 6 || t === 38 || t === 96 || t === 97 || t === 98 || t === 99 || t === 100 || t === 101;
+        }
+        /**
+         * @private
+         */
+        _dispatchParameterNumberEvent(t, o, l, d) {
+          t = t === "nrpn" ? "nrpn" : "rpn";
+          const p = {
+            target: d.target,
+            timestamp: d.timestamp,
+            message: d.message,
+            parameterMsb: o,
+            parameterLsb: l,
+            value: Utilities.from7bitToFloat(d.message.dataBytes[1]),
+            rawValue: d.message.dataBytes[1]
+          };
+          t === "rpn" ? p.parameter = Object.keys(Enumerations.REGISTERED_PARAMETERS).find((I) => Enumerations.REGISTERED_PARAMETERS[I][0] === o && Enumerations.REGISTERED_PARAMETERS[I][1] === l) : p.parameter = (o << 7) + l;
+          const b = Enumerations.CONTROL_CHANGE_MESSAGES[d.message.dataBytes[0]].name;
+          p.type = `${t}-${b}`, this.emit(p.type, p);
+          const R = Object.assign({}, p);
+          R.type === "nrpn-dataincrement" ? R.type = "nrpn-databuttonincrement" : R.type === "nrpn-datadecrement" ? R.type = "nrpn-databuttondecrement" : R.type === "rpn-dataincrement" ? R.type = "rpn-databuttonincrement" : R.type === "rpn-datadecrement" && (R.type = "rpn-databuttondecrement"), this.emit(R.type, R), p.type = t, p.subtype = b, this.emit(p.type, p);
+        }
+        /**
+         * @deprecated since version 3.
+         * @private
+         */
+        getChannelModeByNumber(t) {
+          return wm.validation && (console.warn(
+            "The 'getChannelModeByNumber()' method has been moved to the 'Utilities' class."
+          ), t = Math.floor(t)), Utilities.getChannelModeByNumber(t);
+        }
+        /**
+         * @deprecated since version 3.
+         * @private
+         */
+        getCcNameByNumber(t) {
+          if (wm.validation && (console.warn(
+            "The 'getCcNameByNumber()' method has been moved to the 'Utilities' class."
+          ), t = parseInt(t), !(t >= 0 && t <= 127)))
+            throw new RangeError("Invalid control change number.");
+          return Utilities.getCcNameByNumber(t);
+        }
+        /**
+         * Returns the playing status of the specified note (`true` if the note is currently playing,
+         * `false` if it is not). The `note` parameter can be an unsigned integer (0-127), a note
+         * identifier (`"C4"`, `"G#5"`, etc.) or a [`Note`]{@link Note} object.
+         *
+         * IF the note is specified using an integer (0-127), no octave offset will be applied.
+         *
+         * @param {number|string|Note} note The note to get the state for. The
+         * [`octaveOffset`](#octaveOffset) (channel, input and global) will be factored in for note
+         * identifiers and [`Note`]{@link Note} objects.
+         * @returns {boolean}
+         * @since version 3.0.0
+         */
+        getNoteState(t) {
+          t instanceof Note && (t = t.identifier);
+          const o = Utilities.guessNoteNumber(
+            t,
+            wm.octaveOffset + this.input.octaveOffset + this.octaveOffset
+          );
+          return this.notesState[o];
+        }
+        /**
+         * An integer to offset the reported octave of incoming note-specific messages (`noteon`,
+         * `noteoff` and `keyaftertouch`). By default, middle C (MIDI note number 60) is placed on the 4th
+         * octave (C4).
+         *
+         * If, for example, `octaveOffset` is set to 2, MIDI note number 60 will be reported as C6. If
+         * `octaveOffset` is set to -1, MIDI note number 60 will be reported as C3.
+         *
+         * Note that this value is combined with the global offset value defined by
+         * [`WebMidi.octaveOffset`](WebMidi#octaveOffset) object and with the value defined on the parent
+         * input object with [`Input.octaveOffset`](Input#octaveOffset).
+         *
+         * @type {number}
+         *
+         * @since 3.0
+         */
+        get octaveOffset() {
+          return this._octaveOffset;
+        }
+        set octaveOffset(t) {
+          if (this.validation && (t = parseInt(t), isNaN(t)))
+            throw new TypeError("The 'octaveOffset' property must be an integer.");
+          this._octaveOffset = t;
+        }
+        /**
+         * The [`Input`](Input) this channel belongs to.
+         * @type {Input}
+         * @since 3.0
+         */
+        get input() {
+          return this._input;
+        }
+        /**
+         * This channel's MIDI number (1-16).
+         * @type {number}
+         * @since 3.0
+         */
+        get number() {
+          return this._number;
+        }
+        /**
+         * Whether RPN/NRPN events are parsed and dispatched.
+         * @type {boolean}
+         * @since 3.0
+         * @deprecated Use parameterNumberEventsEnabled instead.
+         * @private
+         */
+        get nrpnEventsEnabled() {
+          return this.parameterNumberEventsEnabled;
+        }
+        set nrpnEventsEnabled(t) {
+          this.validation && (t = !!t), this.parameterNumberEventsEnabled = t;
+        }
+      };
+      Message = class {
+        /**
+         * Creates a new `Message` object from raw MIDI data.
+         *
+         * @param {Uint8Array} data The raw data of the MIDI message as a
+         * [`Uint8Array`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array)
+         * of integers between `0` and `255`.
+         */
+        constructor(t) {
+          this.rawData = t, this.data = Array.from(this.rawData), this.statusByte = this.rawData[0], this.rawDataBytes = this.rawData.slice(1), this.dataBytes = this.data.slice(1), this.isChannelMessage = false, this.isSystemMessage = false, this.command = void 0, this.channel = void 0, this.manufacturerId = void 0, this.type = void 0, this.statusByte < 240 ? (this.isChannelMessage = true, this.command = this.statusByte >> 4, this.channel = (this.statusByte & 15) + 1) : (this.isSystemMessage = true, this.command = this.statusByte), this.isChannelMessage ? this.type = Utilities.getPropertyByValue(Enumerations.CHANNEL_MESSAGES, this.command) : this.isSystemMessage && (this.type = Utilities.getPropertyByValue(Enumerations.SYSTEM_MESSAGES, this.command)), this.statusByte === Enumerations.SYSTEM_MESSAGES.sysex && (this.dataBytes[0] === 0 ? (this.manufacturerId = this.dataBytes.slice(0, 3), this.dataBytes = this.dataBytes.slice(3, this.rawDataBytes.length - 1), this.rawDataBytes = this.rawDataBytes.slice(3, this.rawDataBytes.length - 1)) : (this.manufacturerId = [this.dataBytes[0]], this.dataBytes = this.dataBytes.slice(1, this.dataBytes.length - 1), this.rawDataBytes = this.rawDataBytes.slice(1, this.rawDataBytes.length - 1)));
+        }
+      };
+      Input = class extends EventEmitter {
+        /**
+         * Creates an `Input` object.
+         *
+         * @param {MIDIInput} midiInput [`MIDIInput`](https://developer.mozilla.org/en-US/docs/Web/API/MIDIInput)
+         * object as provided by the MIDI subsystem (Web MIDI API).
+         */
+        constructor(t) {
+          super(), this._midiInput = t, this._octaveOffset = 0, this.channels = [];
+          for (let o = 1; o <= 16; o++) this.channels[o] = new InputChannel(this, o);
+          this._forwarders = [], this._midiInput.onstatechange = this._onStateChange.bind(this), this._midiInput.onmidimessage = this._onMidiMessage.bind(this);
+        }
+        /**
+         * Destroys the `Input` by removing all listeners, emptying the [`channels`](#channels) array and
+         * unlinking the MIDI subsystem. This is mostly for internal use.
+         *
+         * @returns {Promise<void>}
+         */
+        async destroy() {
+          this.removeListener(), this.channels.forEach((t) => t.destroy()), this.channels = [], this._forwarders = [], this._midiInput && (this._midiInput.onstatechange = null, this._midiInput.onmidimessage = null), await this.close(), this._midiInput = null;
+        }
+        /**
+         * Executed when a `"statechange"` event occurs.
+         *
+         * @param e
+         * @private
+         */
+        _onStateChange(t) {
+          let o = {
+            timestamp: wm.time,
+            target: this,
+            port: this
+            // for consistency
+          };
+          t.port.connection === "open" ? (o.type = "opened", this.emit("opened", o)) : t.port.connection === "closed" && t.port.state === "connected" ? (o.type = "closed", this.emit("closed", o)) : t.port.connection === "closed" && t.port.state === "disconnected" ? (o.type = "disconnected", o.port = {
+            connection: t.port.connection,
+            id: t.port.id,
+            manufacturer: t.port.manufacturer,
+            name: t.port.name,
+            state: t.port.state,
+            type: t.port.type
+          }, this.emit("disconnected", o)) : t.port.connection === "pending" && t.port.state === "disconnected" || console.warn("This statechange event was not caught: ", t.port.connection, t.port.state);
+        }
+        /**
+         * Executed when a `"midimessage"` event is received
+         * @param e
+         * @private
+         */
+        _onMidiMessage(t) {
+          const o = new Message(t.data), l = {
+            port: this,
+            target: this,
+            message: o,
+            timestamp: t.timeStamp,
+            type: "midimessage",
+            data: o.data,
+            // @deprecated (will be removed in v4)
+            rawData: o.data,
+            // @deprecated (will be removed in v4)
+            statusByte: o.data[0],
+            // @deprecated (will be removed in v4)
+            dataBytes: o.dataBytes
+            // @deprecated (will be removed in v4)
+          };
+          this.emit("midimessage", l), o.isSystemMessage ? this._parseEvent(l) : o.isChannelMessage && this.channels[o.channel]._processMidiMessageEvent(l), this._forwarders.forEach((d) => d.forward(o));
+        }
+        /**
+         * @private
+         */
+        _parseEvent(t) {
+          const o = Object.assign({}, t);
+          o.type = o.message.type || "unknownmidimessage", o.type === "songselect" && (o.song = t.data[1] + 1, o.value = t.data[1], o.rawValue = o.value), this.emit(o.type, o);
+        }
+        /**
+         * Opens the input for usage. This is usually unnecessary as the port is opened automatically when
+         * WebMidi is enabled.
+         *
+         * @returns {Promise<Input>} The promise is fulfilled with the `Input` object.
+         */
+        async open() {
+          try {
+            await this._midiInput.open();
+          } catch (t) {
+            return Promise.reject(t);
+          }
+          return Promise.resolve(this);
+        }
+        /**
+         * Closes the input. When an input is closed, it cannot be used to listen to MIDI messages until
+         * the input is opened again by calling [`Input.open()`](Input#open).
+         *
+         * **Note**: if what you want to do is stop events from being dispatched, you should use
+         * [`eventsSuspended`](#eventsSuspended) instead.
+         *
+         * @returns {Promise<Input>} The promise is fulfilled with the `Input` object
+         */
+        async close() {
+          if (!this._midiInput) return Promise.resolve(this);
+          try {
+            await this._midiInput.close();
+          } catch (t) {
+            return Promise.reject(t);
+          }
+          return Promise.resolve(this);
+        }
+        /**
+         * @private
+         * @deprecated since v3.0.0 (moved to 'Utilities' class)
+         */
+        getChannelModeByNumber() {
+          wm.validation && console.warn(
+            "The 'getChannelModeByNumber()' method has been moved to the 'Utilities' class."
+          );
+        }
+        /**
+         * Adds an event listener that will trigger a function callback when the specified event is
+         * dispatched. The event usually is **input-wide** but can also be **channel-specific**.
+         *
+         * Input-wide events do not target a specific MIDI channel so it makes sense to listen for them
+         * at the `Input` level and not at the [`InputChannel`](InputChannel) level. Channel-specific
+         * events target a specific channel. Usually, in this case, you would add the listener to the
+         * [`InputChannel`](InputChannel) object. However, as a convenience, you can also listen to
+         * channel-specific events directly on an `Input`. This allows you to react to a channel-specific
+         * event no matter which channel it actually came through.
+         *
+         * When listening for an event, you simply need to specify the event name and the function to
+         * execute:
+         *
+         * ```javascript
+         * const listener = WebMidi.inputs[0].addListener("midimessage", e => {
+         *   console.log(e);
+         * });
+         * ```
+         *
+         * Calling the function with an input-wide event (such as
+         * [`"midimessage"`]{@link #event:midimessage}), will return the [`Listener`](Listener) object
+         * that was created.
+         *
+         * If you call the function with a channel-specific event (such as
+         * [`"noteon"`]{@link InputChannel#event:noteon}), it will return an array of all
+         * [`Listener`](Listener) objects that were created (one for each channel):
+         *
+         * ```javascript
+         * const listeners = WebMidi.inputs[0].addListener("noteon", someFunction);
+         * ```
+         *
+         * You can also specify which channels you want to add the listener to:
+         *
+         * ```javascript
+         * const listeners = WebMidi.inputs[0].addListener("noteon", someFunction, {channels: [1, 2, 3]});
+         * ```
+         *
+         * In this case, `listeners` is an array containing 3 [`Listener`](Listener) objects. The order of
+         * the listeners in the array follows the order the channels were specified in.
+         *
+         * Note that, when adding channel-specific listeners, it is the [`InputChannel`](InputChannel)
+         * instance that actually gets a listener added and not the `Input` instance. You can check that
+         * by calling [`InputChannel.hasListener()`](InputChannel#hasListener()).
+         *
+         * There are 8 families of events you can listen to:
+         *
+         * 1. **MIDI System Common** Events (input-wide)
+         *
+         *    * [`songposition`]{@link Input#event:songposition}
+         *    * [`songselect`]{@link Input#event:songselect}
+         *    * [`sysex`]{@link Input#event:sysex}
+         *    * [`timecode`]{@link Input#event:timecode}
+         *    * [`tunerequest`]{@link Input#event:tunerequest}
+         *
+         * 2. **MIDI System Real-Time** Events (input-wide)
+         *
+         *    * [`clock`]{@link Input#event:clock}
+         *    * [`start`]{@link Input#event:start}
+         *    * [`continue`]{@link Input#event:continue}
+         *    * [`stop`]{@link Input#event:stop}
+         *    * [`activesensing`]{@link Input#event:activesensing}
+         *    * [`reset`]{@link Input#event:reset}
+         *
+         * 3. **State Change** Events (input-wide)
+         *
+         *    * [`opened`]{@link Input#event:opened}
+         *    * [`closed`]{@link Input#event:closed}
+         *    * [`disconnected`]{@link Input#event:disconnected}
+         *
+         * 4. **Catch-All** Events (input-wide)
+         *
+         *    * [`midimessage`]{@link Input#event:midimessage}
+         *    * [`unknownmidimessage`]{@link Input#event:unknownmidimessage}
+         *
+         * 5. **Channel Voice** Events (channel-specific)
+         *
+         *    * [`channelaftertouch`]{@link InputChannel#event:channelaftertouch}
+         *    * [`controlchange`]{@link InputChannel#event:controlchange}
+         *      * [`controlchange-controller0`]{@link InputChannel#event:controlchange-controller0}
+         *      * [`controlchange-controller1`]{@link InputChannel#event:controlchange-controller1}
+         *      * [`controlchange-controller2`]{@link InputChannel#event:controlchange-controller2}
+         *      * (...)
+         *      * [`controlchange-controller127`]{@link InputChannel#event:controlchange-controller127}
+         *    * [`keyaftertouch`]{@link InputChannel#event:keyaftertouch}
+         *    * [`noteoff`]{@link InputChannel#event:noteoff}
+         *    * [`noteon`]{@link InputChannel#event:noteon}
+         *    * [`pitchbend`]{@link InputChannel#event:pitchbend}
+         *    * [`programchange`]{@link InputChannel#event:programchange}
+         *
+         *    Note: you can listen for a specific control change message by using an event name like this:
+         *    `controlchange-controller23`, `controlchange-controller99`, `controlchange-controller122`,
+         *    etc.
+         *
+         * 6. **Channel Mode** Events (channel-specific)
+         *
+         *    * [`allnotesoff`]{@link InputChannel#event:allnotesoff}
+         *    * [`allsoundoff`]{@link InputChannel#event:allsoundoff}
+         *    * [`localcontrol`]{@link InputChannel#event:localcontrol}
+         *    * [`monomode`]{@link InputChannel#event:monomode}
+         *    * [`omnimode`]{@link InputChannel#event:omnimode}
+         *    * [`resetallcontrollers`]{@link InputChannel#event:resetallcontrollers}
+         *
+         * 7. **NRPN** Events (channel-specific)
+         *
+         *    * [`nrpn`]{@link InputChannel#event:nrpn}
+         *    * [`nrpn-dataentrycoarse`]{@link InputChannel#event:nrpn-dataentrycoarse}
+         *    * [`nrpn-dataentryfine`]{@link InputChannel#event:nrpn-dataentryfine}
+         *    * [`nrpn-dataincrement`]{@link InputChannel#event:nrpn-dataincrement}
+         *    * [`nrpn-datadecrement`]{@link InputChannel#event:nrpn-datadecrement}
+         *
+         * 8. **RPN** Events (channel-specific)
+         *
+         *    * [`rpn`]{@link InputChannel#event:rpn}
+         *    * [`rpn-dataentrycoarse`]{@link InputChannel#event:rpn-dataentrycoarse}
+         *    * [`rpn-dataentryfine`]{@link InputChannel#event:rpn-dataentryfine}
+         *    * [`rpn-dataincrement`]{@link InputChannel#event:rpn-dataincrement}
+         *    * [`rpn-datadecrement`]{@link InputChannel#event:rpn-datadecrement}
+         *
+         * @param event {string | EventEmitter.ANY_EVENT} The type of the event.
+         *
+         * @param listener {function} A callback function to execute when the specified event is detected.
+         * This function will receive an event parameter object. For details on this object's properties,
+         * check out the documentation for the various events (links above).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {array} [options.arguments] An array of arguments which will be passed separately to the
+         * callback function. This array is stored in the [`arguments`](Listener#arguments) property of
+         * the [`Listener`](Listener) object and can be retrieved or modified as desired.
+         *
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * An integer between 1 and 16 or an array of such integers representing the MIDI channel(s) to
+         * listen on. If no channel is specified, all channels will be used. This parameter is ignored for
+         * input-wide events.
+         *
+         * @param {object} [options.context=this] The value of `this` in the callback function.
+         *
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the listener
+         * automatically expires.
+         *
+         * @param {boolean} [options.prepend=false] Whether the listener should be added at the beginning
+         * of the listeners array and thus be triggered before others.
+         *
+         * @param {number} [options.remaining=Infinity] The number of times after which the callback
+         * should automatically be removed.
+         *
+         * @returns {Listener|Listener[]} If the event is input-wide, a single [`Listener`](Listener)
+         * object is returned. If the event is channel-specific, an array of all the
+         * [`Listener`](Listener) objects is returned (one for each channel).
+         */
+        addListener(t, o, l = {}) {
+          if (wm.validation && typeof l == "function") {
+            let d = o != null ? [].concat(o) : void 0;
+            o = l, l = { channels: d };
+          }
+          if (Enumerations.CHANNEL_EVENTS.includes(t)) {
+            l.channels === void 0 && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS);
+            let d = [];
+            return Utilities.sanitizeChannels(l.channels).forEach((p) => {
+              d.push(this.channels[p].addListener(t, o, l));
+            }), d;
+          } else
+            return super.addListener(t, o, l);
+        }
+        /**
+         * Adds a one-time event listener that will trigger a function callback when the specified event
+         * happens. The event can be **channel-bound** or **input-wide**. Channel-bound events are
+         * dispatched by [`InputChannel`]{@link InputChannel} objects and are tied to a specific MIDI
+         * channel while input-wide events are dispatched by the `Input` object itself and are not tied
+         * to a specific channel.
+         *
+         * Calling the function with an input-wide event (such as
+         * [`"midimessage"`]{@link #event:midimessage}), will return the [`Listener`](Listener) object
+         * that was created.
+         *
+         * If you call the function with a channel-specific event (such as
+         * [`"noteon"`]{@link InputChannel#event:noteon}), it will return an array of all
+         * [`Listener`](Listener) objects that were created (one for each channel):
+         *
+         * ```javascript
+         * const listeners = WebMidi.inputs[0].addOneTimeListener("noteon", someFunction);
+         * ```
+         *
+         * You can also specify which channels you want to add the listener to:
+         *
+         * ```javascript
+         * const listeners = WebMidi.inputs[0].addOneTimeListener("noteon", someFunction, {channels: [1, 2, 3]});
+         * ```
+         *
+         * In this case, the `listeners` variable contains an array of 3 [`Listener`](Listener) objects.
+         *
+         * The code above will add a listener for the `"noteon"` event and call `someFunction` when the
+         * event is triggered on MIDI channels `1`, `2` or `3`.
+         *
+         * Note that, when adding events to channels, it is the [`InputChannel`](InputChannel) instance
+         * that actually gets a listener added and not the `Input` instance.
+         *
+         * Note: if you want to add a listener to a single MIDI channel you should probably do so directly
+         * on the [`InputChannel`](InputChannel) object itself.
+         *
+         * There are 8 families of events you can listen to:
+         *
+         * 1. **MIDI System Common** Events (input-wide)
+         *
+         *    * [`songposition`]{@link Input#event:songposition}
+         *    * [`songselect`]{@link Input#event:songselect}
+         *    * [`sysex`]{@link Input#event:sysex}
+         *    * [`timecode`]{@link Input#event:timecode}
+         *    * [`tunerequest`]{@link Input#event:tunerequest}
+         *
+         * 2. **MIDI System Real-Time** Events (input-wide)
+         *
+         *    * [`clock`]{@link Input#event:clock}
+         *    * [`start`]{@link Input#event:start}
+         *    * [`continue`]{@link Input#event:continue}
+         *    * [`stop`]{@link Input#event:stop}
+         *    * [`activesensing`]{@link Input#event:activesensing}
+         *    * [`reset`]{@link Input#event:reset}
+         *
+         * 3. **State Change** Events (input-wide)
+         *
+         *    * [`opened`]{@link Input#event:opened}
+         *    * [`closed`]{@link Input#event:closed}
+         *    * [`disconnected`]{@link Input#event:disconnected}
+         *
+         * 4. **Catch-All** Events (input-wide)
+         *
+         *    * [`midimessage`]{@link Input#event:midimessage}
+         *    * [`unknownmidimessage`]{@link Input#event:unknownmidimessage}
+         *
+         * 5. **Channel Voice** Events (channel-specific)
+         *
+         *    * [`channelaftertouch`]{@link InputChannel#event:channelaftertouch}
+         *    * [`controlchange`]{@link InputChannel#event:controlchange}
+         *      * [`controlchange-controller0`]{@link InputChannel#event:controlchange-controller0}
+         *      * [`controlchange-controller1`]{@link InputChannel#event:controlchange-controller1}
+         *      * [`controlchange-controller2`]{@link InputChannel#event:controlchange-controller2}
+         *      * (...)
+         *      * [`controlchange-controller127`]{@link InputChannel#event:controlchange-controller127}
+         *    * [`keyaftertouch`]{@link InputChannel#event:keyaftertouch}
+         *    * [`noteoff`]{@link InputChannel#event:noteoff}
+         *    * [`noteon`]{@link InputChannel#event:noteon}
+         *    * [`pitchbend`]{@link InputChannel#event:pitchbend}
+         *    * [`programchange`]{@link InputChannel#event:programchange}
+         *
+         *    Note: you can listen for a specific control change message by using an event name like this:
+         *    `controlchange-controller23`, `controlchange-controller99`, `controlchange-controller122`,
+         *    etc.
+         *
+         * 6. **Channel Mode** Events (channel-specific)
+         *
+         *    * [`allnotesoff`]{@link InputChannel#event:allnotesoff}
+         *    * [`allsoundoff`]{@link InputChannel#event:allsoundoff}
+         *    * [`localcontrol`]{@link InputChannel#event:localcontrol}
+         *    * [`monomode`]{@link InputChannel#event:monomode}
+         *    * [`omnimode`]{@link InputChannel#event:omnimode}
+         *    * [`resetallcontrollers`]{@link InputChannel#event:resetallcontrollers}
+         *
+         * 7. **NRPN** Events (channel-specific)
+         *
+         *    * [`nrpn`]{@link InputChannel#event:nrpn}
+         *    * [`nrpn-dataentrycoarse`]{@link InputChannel#event:nrpn-dataentrycoarse}
+         *    * [`nrpn-dataentryfine`]{@link InputChannel#event:nrpn-dataentryfine}
+         *    * [`nrpn-dataincrement`]{@link InputChannel#event:nrpn-dataincrement}
+         *    * [`nrpn-datadecrement`]{@link InputChannel#event:nrpn-datadecrement}
+         *
+         * 8. **RPN** Events (channel-specific)
+         *
+         *    * [`rpn`]{@link InputChannel#event:rpn}
+         *    * [`rpn-dataentrycoarse`]{@link InputChannel#event:rpn-dataentrycoarse}
+         *    * [`rpn-dataentryfine`]{@link InputChannel#event:rpn-dataentryfine}
+         *    * [`rpn-dataincrement`]{@link InputChannel#event:rpn-dataincrement}
+         *    * [`rpn-datadecrement`]{@link InputChannel#event:rpn-datadecrement}
+         *
+         * @param event {string} The type of the event.
+         *
+         * @param listener {function} A callback function to execute when the specified event is detected.
+         * This function will receive an event parameter object. For details on this object's properties,
+         * check out the documentation for the various events (links above).
+         *
+         * @param {object} [options={}]
+         *
+         * @param {array} [options.arguments] An array of arguments which will be passed separately to the
+         * callback function. This array is stored in the [`arguments`](Listener#arguments) property of
+         * the [`Listener`](Listener) object and can be retrieved or modified as desired.
+         *
+         * @param {number|number[]} [options.channels]  An integer between 1 and 16 or an array of
+         * such integers representing the MIDI channel(s) to listen on. This parameter is ignored for
+         * input-wide events.
+         *
+         * @param {object} [options.context=this] The value of `this` in the callback function.
+         *
+         * @param {number} [options.duration=Infinity] The number of milliseconds before the listener
+         * automatically expires.
+         *
+         * @param {boolean} [options.prepend=false] Whether the listener should be added at the beginning
+         * of the listeners array and thus be triggered before others.
+         *
+         * @returns {Listener[]} An array of all [`Listener`](Listener) objects that were created.
+         */
+        addOneTimeListener(t, o, l = {}) {
+          return l.remaining = 1, this.addListener(t, o, l);
+        }
+        /**
+         * This is an alias to the [Input.addListener()]{@link Input#addListener} method.
+         * @since 2.0.0
+         * @deprecated since v3.0
+         * @private
+         */
+        on(t, o, l, d) {
+          return this.addListener(t, o, l, d);
+        }
+        /**
+         * Checks if the specified event type is already defined to trigger the specified callback
+         * function. For channel-specific events, the function will return `true` only if all channels
+         * have the listener defined.
+         *
+         * @param event {string|Symbol} The type of the event.
+         *
+         * @param listener {function} The callback function to check for.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels]  An integer between 1 and 16 or an array of such
+         * integers representing the MIDI channel(s) to check. This parameter is ignored for input-wide
+         * events.
+         *
+         * @returns {boolean} Boolean value indicating whether or not the `Input` or
+         * [`InputChannel`](InputChannel) already has this listener defined.
+         */
+        hasListener(t, o, l = {}) {
+          if (wm.validation && typeof l == "function") {
+            let d = [].concat(o);
+            o = l, l = { channels: d };
+          }
+          return Enumerations.CHANNEL_EVENTS.includes(t) ? (l.channels === void 0 && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), Utilities.sanitizeChannels(l.channels).every((d) => this.channels[d].hasListener(t, o))) : super.hasListener(t, o);
+        }
+        /**
+         * Removes the specified event listener. If no listener is specified, all listeners matching the
+         * specified event will be removed. If the event is channel-specific, the listener will be removed
+         * from all [`InputChannel`]{@link InputChannel} objects belonging to that channel. If no event is
+         * specified, all listeners for the `Input` as well as all listeners for all
+         * [`InputChannel`]{@link InputChannel} objects belonging to the `Input` will be removed.
+         *
+         * By default, channel-specific listeners will be removed from all
+         * [`InputChannel`]{@link InputChannel} objects unless the `options.channel` narrows it down.
+         *
+         * @param [type] {string} The type of the event.
+         *
+         * @param [listener] {function} The callback function to check for.
+         *
+         * @param {object} [options={}]
+         *
+         * @param {number|number[]} [options.channels]  An integer between 1 and 16 or an array of
+         * such integers representing the MIDI channel(s) to match. This parameter is ignored for
+         * input-wide events.
+         *
+         * @param {*} [options.context] Only remove the listeners that have this exact context.
+         *
+         * @param {number} [options.remaining] Only remove the listener if it has exactly that many
+         * remaining times to be executed.
+         */
+        removeListener(t, o, l = {}) {
+          if (wm.validation && typeof l == "function") {
+            let d = [].concat(o);
+            o = l, l = { channels: d };
+          }
+          if (l.channels === void 0 && (l.channels = Enumerations.MIDI_CHANNEL_NUMBERS), t == null)
+            return Utilities.sanitizeChannels(l.channels).forEach((d) => {
+              this.channels[d] && this.channels[d].removeListener();
+            }), super.removeListener();
+          Enumerations.CHANNEL_EVENTS.includes(t) ? Utilities.sanitizeChannels(l.channels).forEach((d) => {
+            this.channels[d].removeListener(t, o, l);
+          }) : super.removeListener(t, o, l);
+        }
+        /**
+         * Adds a forwarder that will forward all incoming MIDI messages matching the criteria to the
+         * specified [`Output`](Output) destination(s). This is akin to the hardware MIDI THRU port, with
+         * the added benefit of being able to filter which data is forwarded.
+         *
+         * @param {Output|Output[]} output An [`Output`](Output) object, or an array of such
+         * objects, to forward messages to.
+         * @param {object} [options={}]
+         * @param {string|string[]} [options.types=(all messages)] A message type, or an array of such
+         * types (`noteon`, `controlchange`, etc.), that the message type must match in order to be
+         * forwarded. If this option is not specified, all types of messages will be forwarded. Valid
+         * messages are the ones found in either
+         * [`SYSTEM_MESSAGES`](Enumerations#SYSTEM_MESSAGES) or
+         * [`CHANNEL_MESSAGES`](Enumerations#CHANNEL_MESSAGES).
+         * @param {number|number[]} [options.channels=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]]
+         * A MIDI channel number or an array of channel numbers that the message must match in order to be
+         * forwarded. By default all MIDI channels are included (`1` to `16`).
+         *
+         * @returns {Forwarder} The [`Forwarder`](Forwarder) object created to handle the forwarding. This
+         * is useful if you wish to manipulate or remove the [`Forwarder`](Forwarder) later on.
+         */
+        addForwarder(t, o = {}) {
+          let l;
+          return t instanceof Forwarder ? l = t : l = new Forwarder(t, o), this._forwarders.push(l), l;
+        }
+        /**
+         * Removes the specified [`Forwarder`](Forwarder) object from the input.
+         *
+         * @param {Forwarder} forwarder The [`Forwarder`](Forwarder) to remove (the
+         * [`Forwarder`](Forwarder) object is returned when calling `addForwarder()`.
+         */
+        removeForwarder(t) {
+          this._forwarders = this._forwarders.filter((o) => o !== t);
+        }
+        /**
+         * Checks whether the specified [`Forwarder`](Forwarder) object has already been attached to this
+         * input.
+         *
+         * @param {Forwarder} forwarder The [`Forwarder`](Forwarder) to check for (the
+         * [`Forwarder`](Forwarder) object is returned when calling [`addForwarder()`](#addForwarder).
+         * @returns {boolean}
+         */
+        hasForwarder(t) {
+          return this._forwarders.includes(t);
+        }
+        /**
+         * Name of the MIDI input.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get name() {
+          return this._midiInput.name;
+        }
+        /**
+         * ID string of the MIDI port. The ID is host-specific. Do not expect the same ID on different
+         * platforms. For example, Google Chrome and the Jazz-Plugin report completely different IDs for
+         * the same port.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get id() {
+          return this._midiInput.id;
+        }
+        /**
+         * Input port's connection state: `pending`, `open` or `closed`.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get connection() {
+          return this._midiInput.connection;
+        }
+        /**
+         * Name of the manufacturer of the device that makes this input port available.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get manufacturer() {
+          return this._midiInput.manufacturer;
+        }
+        /**
+         * An integer to offset the reported octave of incoming notes. By default, middle C (MIDI note
+         * number 60) is placed on the 4th octave (C4).
+         *
+         * If, for example, `octaveOffset` is set to 2, MIDI note number 60 will be reported as C6. If
+         * `octaveOffset` is set to -1, MIDI note number 60 will be reported as C3.
+         *
+         * Note that this value is combined with the global offset value defined in the
+         * [`WebMidi.octaveOffset`](WebMidi#octaveOffset) property (if any).
+         *
+         * @type {number}
+         *
+         * @since 3.0
+         */
+        get octaveOffset() {
+          return this._octaveOffset;
+        }
+        set octaveOffset(t) {
+          if (this.validation && (t = parseInt(t), isNaN(t)))
+            throw new TypeError("The 'octaveOffset' property must be an integer.");
+          this._octaveOffset = t;
+        }
+        /**
+         * State of the input port: `connected` or `disconnected`.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get state() {
+          return this._midiInput.state;
+        }
+        /**
+         * The port type. In the case of the `Input` object, this is always: `input`.
+         *
+         * @type {string}
+         * @readonly
+         */
+        get type() {
+          return this._midiInput.type;
+        }
+        /**
+         * @type {boolean}
+         * @private
+         * @deprecated since v3.0.0 (moved to 'InputChannel' class)
+         */
+        get nrpnEventsEnabled() {
+          return wm.validation && console.warn("The 'nrpnEventsEnabled' property has been moved to the 'InputChannel' class."), false;
+        }
+      };
+      WebMidi$1 = class extends EventEmitter {
+        /**
+         * The WebMidi class is a singleton and you cannot instantiate it directly. It has already been
+         * instantiated for you.
+         */
+        constructor() {
+          super(), this.defaults = {
+            note: {
+              attack: Utilities.from7bitToFloat(64),
+              release: Utilities.from7bitToFloat(64),
+              duration: 1 / 0
+            }
+          }, this.interface = null, this.validation = true, this._inputs = [], this._disconnectedInputs = [], this._outputs = [], this._disconnectedOutputs = [], this._stateChangeQueue = [], this._octaveOffset = 0;
+        }
+        /**
+         * Checks if the Web MIDI API is available in the current environment and then tries to connect to
+         * the host's MIDI subsystem. This is an asynchronous operation and it causes a security prompt to
+         * be displayed to the user.
+         *
+         * To enable the use of MIDI system exclusive messages, the `sysex` option should be set to
+         * `true`. However, under some environments (e.g. Jazz-Plugin), the `sysex` option is ignored
+         * and system exclusive messages are always enabled. You can check the
+         * [`sysexEnabled`](#sysexEnabled) property to confirm.
+         *
+         * To enable access to software synthesizers available on the host, you would set the `software`
+         * option to `true`. However, this option is only there to future-proof the library as support for
+         * software synths has not yet been implemented in any browser (as of September 2021).
+         *
+         * By the way, if you call the [`enable()`](#enable) method while WebMidi.js is already enabled,
+         * the callback function will be executed (if any), the promise will resolve but the events
+         * ([`"midiaccessgranted"`](#event:midiaccessgranted), [`"connected"`](#event:connected) and
+         * [`"enabled"`](#event:enabled)) will not be fired.
+         *
+         * There are 3 ways to execute code after `WebMidi` has been enabled:
+         *
+         * - Pass a callback function in the `options`
+         * - Listen to the [`"enabled"`](#event:enabled) event
+         * - Wait for the promise to resolve
+         *
+         * In order, this is what happens towards the end of the enabling process:
+         *
+         * 1. [`"midiaccessgranted"`](#event:midiaccessgranted) event is triggered once the user has
+         * granted access to use MIDI.
+         * 2. [`"connected"`](#event:connected) events are triggered (for each available input and output)
+         * 3. [`"enabled"`](#event:enabled) event is triggered when WebMidi.js is fully ready
+         * 4. specified callback (if any) is executed
+         * 5. promise is resolved and fulfilled with the `WebMidi` object.
+         *
+         * **Important note**: starting with Chrome v77, a page using Web MIDI API must be hosted on a
+         * secure origin (`https://`, `localhost` or `file:///`) and the user will always be prompted to
+         * authorize the operation (no matter if the `sysex` option is `true` or not).
+         *
+         * ##### Example
+         * ```js
+         * // Enabling WebMidi and using the promise
+         * WebMidi.enable().then(() => {
+         *   console.log("WebMidi.js has been enabled!");
+         * })
+         * ```
+         *
+         * @param [options] {object}
+         *
+         * @param [options.callback] {function} A function to execute once the operation completes. This
+         * function will receive an `Error` object if enabling the Web MIDI API failed.
+         *
+         * @param [options.sysex=false] {boolean} Whether to enable MIDI system exclusive messages or not.
+         *
+         * @param [options.validation=true] {boolean} Whether to enable library-wide validation of method
+         * arguments and setter values. This is an advanced setting that should be used carefully. Setting
+         * [`validation`](#validation) to `false` improves performance but should only be done once the
+         * project has been thoroughly tested with [`validation`](#validation)  turned on.
+         *
+         * @param [options.software=false] {boolean} Whether to request access to software synthesizers on
+         * the host system. This is part of the spec but has not yet been implemented by most browsers as
+         * of April 2020.
+         *
+         * @param [options.requestMIDIAccessFunction] {function} A custom function to use to return
+         * the MIDIAccess object. This is useful if you want to use a polyfill for the Web MIDI API
+         * or if you want to use a custom implementation of the Web MIDI API - probably for testing
+         * purposes.
+         *
+         * @async
+         *
+         * @returns {Promise.<WebMidi>} The promise is fulfilled with the `WebMidi` object for
+         * chainability
+         *
+         * @throws {Error} The Web MIDI API is not supported in your environment.
+         * @throws {Error} Jazz-Plugin must be installed to use WebMIDIAPIShim.
+         */
+        async enable(t = {}, o = false) {
+          if (Utilities.isNode)
+            try {
+              window.navigator;
+            } catch {
+              let R = await Object.getPrototypeOf(async function() {
+              }).constructor(`
+        let jzz = await import("jzz");
+        return jzz.default;
+        `)();
+              global.navigator || (global.navigator = {}), Object.assign(global.navigator, R);
+            }
+          if (this.validation = t.validation !== false, this.validation && (typeof t == "function" && (t = { callback: t, sysex: o }), o && (t.sysex = true)), this.enabled)
+            return typeof t.callback == "function" && t.callback(), Promise.resolve();
+          const l = {
+            timestamp: this.time,
+            target: this,
+            type: "error",
+            error: void 0
+          }, d = {
+            timestamp: this.time,
+            target: this,
+            type: "midiaccessgranted"
+          }, p = {
+            timestamp: this.time,
+            target: this,
+            type: "enabled"
+          };
+          try {
+            typeof t.requestMIDIAccessFunction == "function" ? this.interface = await t.requestMIDIAccessFunction(
+              { sysex: t.sysex, software: t.software }
+            ) : this.interface = await navigator.requestMIDIAccess(
+              { sysex: t.sysex, software: t.software }
+            );
+          } catch (b) {
+            return l.error = b, this.emit("error", l), typeof t.callback == "function" && t.callback(b), Promise.reject(b);
+          }
+          this.emit("midiaccessgranted", d), this.interface.onstatechange = this._onInterfaceStateChange.bind(this);
+          try {
+            await this._updateInputsAndOutputs();
+          } catch (b) {
+            return l.error = b, this.emit("error", l), typeof t.callback == "function" && t.callback(b), Promise.reject(b);
+          }
+          return this.emit("enabled", p), typeof t.callback == "function" && t.callback(), Promise.resolve(this);
+        }
+        /**
+         * Completely disables **WebMidi.js** by unlinking the MIDI subsystem's interface and closing all
+         * [`Input`](Input) and [`Output`](Output) objects that may have been opened. This also means that
+         * listeners added to [`Input`](Input) objects, [`Output`](Output) objects or to `WebMidi` itself
+         * are also destroyed.
+         *
+         * @async
+         * @returns {Promise<Array>}
+         *
+         * @throws {Error} The Web MIDI API is not supported by your environment.
+         *
+         * @since 2.0.0
+         */
+        async disable() {
+          return this.interface && (this.interface.onstatechange = void 0), this._destroyInputsAndOutputs().then(() => {
+            navigator && typeof navigator.close == "function" && navigator.close(), this.interface = null;
+            let t = {
+              timestamp: this.time,
+              target: this,
+              type: "disabled"
+            };
+            this.emit("disabled", t), this.removeListener();
+          });
+        }
+        /**
+         * Returns the [`Input`](Input) object that matches the specified ID string or `false` if no
+         * matching input is found. As per the Web MIDI API specification, IDs are strings (not integers).
+         *
+         * Please note that IDs change from one host to another. For example, Chrome does not use the same
+         * kind of IDs as Jazz-Plugin.
+         *
+         * @param id {string} The ID string of the input. IDs can be viewed by looking at the
+         * [`WebMidi.inputs`](WebMidi#inputs) array. Even though they sometimes look like integers, IDs
+         * are strings.
+         * @param [options] {object}
+         * @param [options.disconnected] {boolean} Whether to retrieve a disconnected input
+         *
+         * @returns {Input} An [`Input`](Input) object matching the specified ID string or `undefined`
+         * if no matching input can be found.
+         *
+         * @throws {Error} WebMidi is not enabled.
+         *
+         * @since 2.0.0
+         */
+        getInputById(t, o = { disconnected: false }) {
+          if (this.validation) {
+            if (!this.enabled) throw new Error("WebMidi is not enabled.");
+            if (!t) return;
+          }
+          if (o.disconnected) {
+            for (let l = 0; l < this._disconnectedInputs.length; l++)
+              if (this._disconnectedInputs[l].id === t.toString()) return this._disconnectedInputs[l];
+          } else
+            for (let l = 0; l < this.inputs.length; l++)
+              if (this.inputs[l].id === t.toString()) return this.inputs[l];
+        }
+        /**
+         * Returns the first [`Input`](Input) object whose name **contains** the specified string. Note
+         * that the port names change from one environment to another. For example, Chrome does not report
+         * input names in the same way as the Jazz-Plugin does.
+         *
+         * @param name {string} The non-empty string to look for within the name of MIDI inputs (such as
+         * those visible in the [inputs](WebMidi#inputs) array).
+         *
+         * @returns {Input} The [`Input`](Input) that was found or `undefined` if no input contained the
+         * specified name.
+         * @param [options] {object}
+         * @param [options.disconnected] {boolean} Whether to retrieve a disconnected input
+         *
+         * @throws {Error} WebMidi is not enabled.
+         *
+         * @since 2.0.0
+         */
+        getInputByName(t, o = { disconnected: false }) {
+          if (this.validation) {
+            if (!this.enabled) throw new Error("WebMidi is not enabled.");
+            if (!t) return;
+            t = t.toString();
+          }
+          if (o.disconnected) {
+            for (let l = 0; l < this._disconnectedInputs.length; l++)
+              if (~this._disconnectedInputs[l].name.indexOf(t)) return this._disconnectedInputs[l];
+          } else
+            for (let l = 0; l < this.inputs.length; l++)
+              if (~this.inputs[l].name.indexOf(t)) return this.inputs[l];
+        }
+        /**
+         * Returns the first [`Output`](Output) object whose name **contains** the specified string. Note
+         * that the port names change from one environment to another. For example, Chrome does not report
+         * input names in the same way as the Jazz-Plugin does.
+         *
+         * @param name {string} The non-empty string to look for within the name of MIDI inputs (such as
+         * those visible in the [`outputs`](#outputs) array).
+         * @param [options] {object}
+         * @param [options.disconnected] {boolean} Whether to retrieve a disconnected output
+         *
+         * @returns {Output} The [`Output`](Output) that was found or `undefined` if no output matched
+         * the specified name.
+         *
+         * @throws {Error} WebMidi is not enabled.
+         *
+         * @since 2.0.0
+         */
+        getOutputByName(t, o = { disconnected: false }) {
+          if (this.validation) {
+            if (!this.enabled) throw new Error("WebMidi is not enabled.");
+            if (!t) return;
+            t = t.toString();
+          }
+          if (o.disconnected) {
+            for (let l = 0; l < this._disconnectedOutputs.length; l++)
+              if (~this._disconnectedOutputs[l].name.indexOf(t)) return this._disconnectedOutputs[l];
+          } else
+            for (let l = 0; l < this.outputs.length; l++)
+              if (~this.outputs[l].name.indexOf(t)) return this.outputs[l];
+        }
+        /**
+         * Returns the [`Output`](Output) object that matches the specified ID string or `false` if no
+         * matching output is found. As per the Web MIDI API specification, IDs are strings (not
+         * integers).
+         *
+         * Please note that IDs change from one host to another. For example, Chrome does not use the same
+         * kind of IDs as Jazz-Plugin.
+         *
+         * @param id {string} The ID string of the port. IDs can be viewed by looking at the
+         * [`WebMidi.outputs`](WebMidi#outputs) array.
+         * @param [options] {object}
+         * @param [options.disconnected] {boolean} Whether to retrieve a disconnected output
+         *
+         * @returns {Output} An [`Output`](Output) object matching the specified ID string. If no
+         * matching output can be found, the method returns `undefined`.
+         *
+         * @throws {Error} WebMidi is not enabled.
+         *
+         * @since 2.0.0
+         */
+        getOutputById(t, o = { disconnected: false }) {
+          if (this.validation) {
+            if (!this.enabled) throw new Error("WebMidi is not enabled.");
+            if (!t) return;
+          }
+          if (o.disconnected) {
+            for (let l = 0; l < this._disconnectedOutputs.length; l++)
+              if (this._disconnectedOutputs[l].id === t.toString()) return this._disconnectedOutputs[l];
+          } else
+            for (let l = 0; l < this.outputs.length; l++)
+              if (this.outputs[l].id === t.toString()) return this.outputs[l];
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0.0, use Utilities.toNoteNumber() instead.
+         */
+        noteNameToNumber(t) {
+          return this.validation && console.warn(
+            "The noteNameToNumber() method is deprecated. Use Utilities.toNoteNumber() instead."
+          ), Utilities.toNoteNumber(t, this.octaveOffset);
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0, use Utilities.getNoteDetails() instead.
+         */
+        getOctave(t) {
+          return this.validation && (console.warn("The getOctave()is deprecated. Use Utilities.getNoteDetails() instead"), t = parseInt(t)), !isNaN(t) && t >= 0 && t <= 127 ? Utilities.getNoteDetails(Utilities.offsetNumber(t, this.octaveOffset)).octave : false;
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0, use Utilities.sanitizeChannels() instead.
+         */
+        sanitizeChannels(t) {
+          return this.validation && console.warn("The sanitizeChannels() method has been moved to the utilities class."), Utilities.sanitizeChannels(t);
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0.0, use Utilities.sanitizeChannels() instead.
+         */
+        toMIDIChannels(t) {
+          return this.validation && console.warn(
+            "The toMIDIChannels() method has been deprecated. Use Utilities.sanitizeChannels() instead."
+          ), Utilities.sanitizeChannels(t);
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0.0, use Utilities.guessNoteNumber() instead.
+         */
+        guessNoteNumber(t) {
+          return this.validation && console.warn(
+            "The guessNoteNumber() method has been deprecated. Use Utilities.guessNoteNumber() instead."
+          ), Utilities.guessNoteNumber(t, this.octaveOffset);
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0.0, use Utilities.buildNoteArray() instead.
+         */
+        getValidNoteArray(t, o = {}) {
+          return this.validation && console.warn(
+            "The getValidNoteArray() method has been moved to the Utilities.buildNoteArray()"
+          ), Utilities.buildNoteArray(t, o);
+        }
+        /**
+         * @private
+         * @deprecated since version 3.0.0, use Utilities.toTimestamp() instead.
+         */
+        convertToTimestamp(t) {
+          return this.validation && console.warn(
+            "The convertToTimestamp() method has been moved to Utilities.toTimestamp()."
+          ), Utilities.toTimestamp(t);
+        }
+        /**
+         * @return {Promise<void>}
+         * @private
+         */
+        async _destroyInputsAndOutputs() {
+          let t = [];
+          return this.inputs.forEach((o) => t.push(o.destroy())), this.outputs.forEach((o) => t.push(o.destroy())), Promise.all(t).then(() => {
+            this._inputs = [], this._outputs = [];
+          });
+        }
+        /**
+         * @private
+         */
+        _onInterfaceStateChange(t) {
+          this._updateInputsAndOutputs();
+          let o = {
+            timestamp: t.timeStamp,
+            type: t.port.state,
+            target: this
+          };
+          if (t.port.state === "connected" && t.port.connection === "open") {
+            t.port.type === "output" ? o.port = this.getOutputById(t.port.id) : t.port.type === "input" && (o.port = this.getInputById(t.port.id)), this.emit(t.port.state, o);
+            const l = Object.assign({}, o);
+            l.type = "portschanged", this.emit(l.type, l);
+          } else if (t.port.state === "disconnected" && t.port.connection === "pending") {
+            t.port.type === "input" ? o.port = this.getInputById(t.port.id, { disconnected: true }) : t.port.type === "output" && (o.port = this.getOutputById(t.port.id, { disconnected: true })), this.emit(t.port.state, o);
+            const l = Object.assign({}, o);
+            l.type = "portschanged", this.emit(l.type, l);
+          }
+        }
+        /**
+         * @private
+         */
+        async _updateInputsAndOutputs() {
+          return Promise.all([
+            this._updateInputs(),
+            this._updateOutputs()
+          ]);
+        }
+        /**
+         * @private
+         */
+        async _updateInputs() {
+          if (!this.interface) return;
+          for (let o = this._inputs.length - 1; o >= 0; o--) {
+            const l = this._inputs[o];
+            Array.from(this.interface.inputs.values()).find((p) => p === l._midiInput) || (this._disconnectedInputs.push(l), this._inputs.splice(o, 1));
+          }
+          let t = [];
+          return this.interface.inputs.forEach((o) => {
+            if (!this._inputs.find((l) => l._midiInput === o)) {
+              let l = this._disconnectedInputs.find((d) => d._midiInput === o);
+              l || (l = new Input(o)), this._inputs.push(l), t.push(l.open());
+            }
+          }), Promise.all(t);
+        }
+        /**
+         * @private
+         */
+        async _updateOutputs() {
+          if (!this.interface) return;
+          for (let o = this._outputs.length - 1; o >= 0; o--) {
+            const l = this._outputs[o];
+            Array.from(this.interface.outputs.values()).find((p) => p === l._midiOutput) || (this._disconnectedOutputs.push(l), this._outputs.splice(o, 1));
+          }
+          let t = [];
+          return this.interface.outputs.forEach((o) => {
+            if (!this._outputs.find((l) => l._midiOutput === o)) {
+              let l = this._disconnectedOutputs.find((d) => d._midiOutput === o);
+              l || (l = new Output(o)), this._outputs.push(l), t.push(l.open());
+            }
+          }), Promise.all(t);
+        }
+        // injectPluginMarkup(parent) {
+        //
+        //   // Silently ignore on Node.js
+        //   if (Utilities.isNode) return;
+        //
+        //   // Default to <body> if no parent is specified
+        //   if (!(parent instanceof Element) && !(parent instanceof HTMLDocument)) {
+        //     parent = document.body;
+        //   }
+        //
+        //   // IE10 needs this:
+        //   // <meta http-equiv="X-UA-Compatible" content="requiresActiveX=true"/>
+        //
+        //   // Create markup and add to parent
+        //   const obj = document.createElement("object");
+        //   obj.classid = "CLSID:1ACE1618-1C7D-4561-AEE1-34842AA85E90"; // IE
+        //   if (!obj.isJazz) obj.type = "audio/x-jazz";                 // Standards-compliant
+        //   obj.style.visibility = "hidden";
+        //   obj.style.width = obj.style.height = "0px";
+        //   parent.appendChild(obj);
+        //
+        // }
+        /**
+         * Indicates whether access to the host's MIDI subsystem is active or not.
+         *
+         * @readonly
+         * @type {boolean}
+         */
+        get enabled() {
+          return this.interface !== null;
+        }
+        /**
+         * An array of all currently available MIDI inputs.
+         *
+         * @readonly
+         * @type {Input[]}
+         */
+        get inputs() {
+          return this._inputs;
+        }
+        /**
+         * @private
+         * @deprecated
+         */
+        get isNode() {
+          return this.validation && console.warn("WebMidi.isNode has been deprecated. Use Utilities.isNode instead."), Utilities.isNode;
+        }
+        /**
+         * @private
+         * @deprecated
+         */
+        get isBrowser() {
+          return this.validation && console.warn("WebMidi.isBrowser has been deprecated. Use Utilities.isBrowser instead."), Utilities.isBrowser;
+        }
+        /**
+         * An integer to offset the octave of notes received from external devices or sent to external
+         * devices.
+         *
+         * When a MIDI message comes in on an input channel the reported note name will be offset. For
+         * example, if the `octaveOffset` is set to `-1` and a [`"noteon"`](InputChannel#event:noteon)
+         * message with MIDI number 60 comes in, the note will be reported as C3 (instead of C4).
+         *
+         * By the same token, when [`OutputChannel.playNote()`](OutputChannel#playNote) is called, the
+         * MIDI note number being sent will be offset. If `octaveOffset` is set to `-1`, the MIDI note
+         * number sent will be 72 (instead of 60).
+         *
+         * @type {number}
+         *
+         * @since 2.1
+         */
+        get octaveOffset() {
+          return this._octaveOffset;
+        }
+        set octaveOffset(t) {
+          if (this.validation && (t = parseInt(t), isNaN(t)))
+            throw new TypeError("The 'octaveOffset' property must be an integer.");
+          this._octaveOffset = t;
+        }
+        /**
+         * An array of all currently available MIDI outputs as [`Output`](Output) objects.
+         *
+         * @readonly
+         * @type {Output[]}
+         */
+        get outputs() {
+          return this._outputs;
+        }
+        /**
+         * Indicates whether the environment provides support for the Web MIDI API or not.
+         *
+         * **Note**: in environments that do not offer built-in MIDI support, this will report `true` if
+         * the
+         * [`navigator.requestMIDIAccess`](https://developer.mozilla.org/en-US/docs/Web/API/MIDIAccess)
+         * function is available. For example, if you have installed WebMIDIAPIShim.js but no plugin, this
+         * property will be `true` even though actual support might not be there.
+         *
+         * @readonly
+         * @type {boolean}
+         */
+        get supported() {
+          return typeof navigator < "u" && !!navigator.requestMIDIAccess;
+        }
+        /**
+         * Indicates whether MIDI system exclusive messages have been activated when WebMidi.js was
+         * enabled via the [`enable()`](#enable) method.
+         *
+         * @readonly
+         * @type boolean
+         */
+        get sysexEnabled() {
+          return !!(this.interface && this.interface.sysexEnabled);
+        }
+        /**
+         * The elapsed time, in milliseconds, since the time
+         * [origin](https://developer.mozilla.org/en-US/docs/Web/API/DOMHighResTimeStamp#The_time_origin).
+         * Said simply, it is the number of milliseconds that passed since the page was loaded. Being a
+         * floating-point number, it has sub-millisecond accuracy. According to the
+         * [documentation](https://developer.mozilla.org/en-US/docs/Web/API/DOMHighResTimeStamp), the
+         * time should be accurate to 5 µs (microseconds). However, due to various constraints, the
+         * browser might only be accurate to one millisecond.
+         *
+         * Note: `WebMidi.time` is simply an alias to `performance.now()`.
+         *
+         * @type {DOMHighResTimeStamp}
+         * @readonly
+         */
+        get time() {
+          return performance.now();
+        }
+        /**
+         * The version of the library as a [semver](https://semver.org/) string.
+         *
+         * @readonly
+         * @type string
+         */
+        get version() {
+          return "3.1.12";
+        }
+        /**
+         * The flavour of the library. Can be one of:
+         *
+         * * `esm`: ECMAScript Module
+         * * `cjs`: CommonJS Module
+         * * `iife`: Immediately-Invoked Function Expression
+         *
+         * @readonly
+         * @type string
+         * @since 3.0.25
+         */
+        get flavour() {
+          return "esm";
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0. Use Enumerations.CHANNEL_EVENTS instead.
+         */
+        get CHANNEL_EVENTS() {
+          return this.validation && console.warn(
+            "The CHANNEL_EVENTS enum has been moved to Enumerations.CHANNEL_EVENTS."
+          ), Enumerations.CHANNEL_EVENTS;
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0. Use Enumerations.SYSTEM_MESSAGES instead.
+         */
+        get MIDI_SYSTEM_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_SYSTEM_MESSAGES enum has been moved to Enumerations.SYSTEM_MESSAGES."
+          ), Enumerations.SYSTEM_MESSAGES;
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0. Use Enumerations.CHANNEL_MODE_MESSAGES instead
+         */
+        get MIDI_CHANNEL_MODE_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_CHANNEL_MODE_MESSAGES enum has been moved to Enumerations.CHANNEL_MODE_MESSAGES."
+          ), Enumerations.CHANNEL_MODE_MESSAGES;
+        }
+        /**
+         * @private
+         * @deprecated since 3.0.0. Use Enumerations.CONTROL_CHANGE_MESSAGES instead.
+         */
+        get MIDI_CONTROL_CHANGE_MESSAGES() {
+          return this.validation && console.warn(
+            "The MIDI_CONTROL_CHANGE_MESSAGES enum has been replaced by the Enumerations.CONTROL_CHANGE_MESSAGES array."
+          ), Enumerations.MIDI_CONTROL_CHANGE_MESSAGES;
+        }
+        /**
+         * @deprecated since 3.0.0. Use Enumerations.REGISTERED_PARAMETERS instead.
+         * @private
+         */
+        get MIDI_REGISTERED_PARAMETER() {
+          return this.validation && console.warn(
+            "The MIDI_REGISTERED_PARAMETER enum has been moved to Enumerations.REGISTERED_PARAMETERS."
+          ), Enumerations.REGISTERED_PARAMETERS;
+        }
+        /**
+         * @deprecated since 3.0.0.
+         * @private
+         */
+        get NOTES() {
+          return this.validation && console.warn("The NOTES enum has been deprecated."), ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        }
+      };
+      wm = new WebMidi$1();
+      wm.constructor = null;
+      _WebMidi = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+        __proto__: null,
+        Enumerations,
+        Forwarder,
+        Input,
+        InputChannel,
+        Message,
+        Note,
+        Output,
+        OutputChannel,
+        Utilities,
+        WebMidi: wm
+      }, Symbol.toStringTag, { value: "Module" }));
+      MidiInput = class {
+        /**
+         *
+         * @param {string | number} input MIDI device name or index defaulting to 0
+         */
+        constructor(t) {
+          this.input = t, this.stateKey = typeof t == "string" ? t : void 0, this._refs = {}, this._refsByChan = {}, this._loadAllStates(), this.initialDevice = this._startDeviceListener();
+        }
+        /**
+         * Implementation for the cc() factory function tied to this specific input.
+         * @param {number} cc MIDI CC number
+         * @param {number | undefined} chan MIDI channel (1-16) or undefined for all channels
+         */
+        createCC(t, o) {
+          const l = o === void 0 ? this._refs : this._refsByChan[o];
+          if (!(t in l)) {
+            const d = this._loadState(o);
+            l[t] = d[t] || 0;
+          }
+          return ref$1(() => l[t]);
+        }
+        _startDeviceListener() {
+          const t = getDevice(this.input, wm.inputs);
+          return (async () => {
+            const o = this._onMidiMessage.bind(this);
+            let l = t;
+            for (; ; ) {
+              l || (l = await this._waitForDevice()), await new Promise((d) => setTimeout(d, 2e3));
+              try {
+                this._sendAllStates(l);
+              } catch (d) {
+                console.error("midiin: failed to send last state on connect:", l.name, d);
+              }
+              l.addListener("midimessage", o), await this._waitForDeviceDisconnect(l), l.removeListener("midimessage", o), l = null;
+            }
+          })(), t;
+        }
+        // Returns a promise that resolves when the specified device is connected
+        _waitForDevice() {
+          return new Promise((t) => {
+            const o = () => {
+              const l = getDevice(this.input, wm.inputs);
+              l && (logger$2(`[midi] device reconnected: ${l.name}`), wm.removeListener("connected", o), t(l));
+            };
+            wm.addListener("connected", o);
+          });
+        }
+        // Returns a promise that resolves when the specified device is disconnected
+        _waitForDeviceDisconnect(t) {
+          return new Promise((o) => {
+            const l = (d) => {
+              d.port.name === t.name && (logger$2(`[midi] device disconnected: ${t.name}`), wm.removeListener("disconnected", l), o());
+            };
+            wm.addListener("disconnected", l);
+          });
+        }
+        _onMidiMessage(t) {
+          const o = t.dataBytes[0], l = t.dataBytes[1], d = t.message.channel, p = l / 127;
+          this._refs[o] = p, this._refsByChan[d] ??= {}, this._refsByChan[d][o] = p, this._saveState(void 0, o, p), this._saveState(d, o, p);
+        }
+        _loadAllStates() {
+          Object.assign(this._refs, this._loadState(void 0));
+          for (let t = 1; t <= 16; t++)
+            this._refsByChan[t] ??= {}, Object.assign(this._refsByChan[t], this._loadState(t));
+        }
+        _loadState(t) {
+          if (!this.stateKey)
+            return {};
+          const o = localStorage.getItem(
+            `strudel-midin-${this.stateKey}-chan${t !== void 0 ? t : "all"}`
+          );
+          if (!o)
+            return {};
+          try {
+            return JSON.parse(o);
+          } catch (l) {
+            return console.warn(
+              `Failed to parse MIDI state from localStorage for input "${this.stateKey}" and channel "${t}"`,
+              o,
+              l
+            ), {};
+          }
+        }
+        _saveState(t, o, l) {
+          if (!this.stateKey)
+            return;
+          const d = this._loadState(t);
+          d[o] = l, localStorage.setItem(
+            `strudel-midin-${this.stateKey}-chan${t !== void 0 ? t : "all"}`,
+            JSON.stringify(d)
+          );
+        }
+        // Send CC values back to device to restore encoders and motorized sliders
+        _sendAllStates(t) {
+          const o = wm.outputs.find((l) => l.name === t.name);
+          if (o)
+            for (const [l, d] of Object.entries(this._refsByChan)) {
+              const p = Number(l);
+              for (const [b, R] of Object.entries(d)) {
+                const I = Number(b), z = Math.round(R * 127);
+                o.sendControlChange(I, z, p);
+              }
+            }
+        }
+      };
+      ({ WebMidi } = _WebMidi);
+      typeof window < "u" && window.addEventListener("message", (e30) => {
+        WebMidi?.enabled && e30.data === "strudel-stop" && WebMidi.outputs.forEach((t) => t.sendStop());
+      });
+      midicontrolMap = /* @__PURE__ */ new Map();
+      loadCache = {};
+      midisoundMap = /* @__PURE__ */ new Map();
+      Pattern$1.prototype.midi = function(e30, t = {}) {
+        if (isPattern(e30))
+          throw new Error(
+            `.midi does not accept Pattern input for midiport. Make sure to pass device name with single quotes. Example: .midi('${WebMidi.outputs?.[0]?.name || "IAC Driver Bus 1"}')`
+          );
+        if (typeof e30 == "object") {
+          const { port: l, isController: d = false, ...p } = e30;
+          t = {
+            isController: d,
+            ...p,
+            ...t
+            // Keep any options passed separately
+          }, e30 = l;
+        }
+        let o = {
+          // Default configuration values
+          isController: false,
+          // Disable sending notes for midi controllers
+          noteOffsetMs: 10,
+          // Default note-off offset to prevent glitching in ms
+          midichannel: 1,
+          // Default MIDI channel
+          velocity: 0.9,
+          // Default velocity
+          gain: 1,
+          // Default gain
+          midimap: "default",
+          // Default MIDI map
+          midiport: e30,
+          // Store the port in the config
+          ...t
+          // Override defaults with provided options
+        };
+        return enableWebMidi({
+          onEnabled: ({ outputs: l }) => {
+            const d = getDevice(o.midiport, l), p = l.filter((b) => b.name !== d.name);
+            logger$2(
+              `Midi enabled! Using "${d.name}". ${p?.length ? `Also available: ${getMidiDeviceNamesString(p)}` : ""}`
+            );
+          },
+          onDisconnected: ({ outputs: l }) => logger$2(`Midi device disconnected! Available: ${getMidiDeviceNamesString(l)}`)
+        }), this.onTrigger((l, d, p, b) => {
+          if (!WebMidi.enabled) {
+            logger$2("Midi not enabled");
+            return;
+          }
+          l.ensureObjectValue();
+          let {
+            note: R,
+            nrpnn: I,
+            nrpv: z,
+            ccn: se,
+            ccv: le,
+            midichan: rn = o.midichannel,
+            midicmd: tn,
+            midibend: an,
+            miditouch: on,
+            polyTouch: ln,
+            gain: pn = o.gain,
+            velocity: _n = o.velocity,
+            progNum: Mn,
+            sysexid: mn,
+            sysexdata: hn,
+            midimap: yn = o.midimap,
+            midiport: Gn = o.midiport
+          } = l.value;
+          const Sn = getDevice(Gn, WebMidi.outputs);
+          if (!Sn) {
+            logger$2(
+              `[midi] midiport "${Gn}" not found! available: ${WebMidi.outputs.map((En) => `'${En.name}'`).join(", ")}`
+            );
+            return;
+          }
+          if (_n = pn * _n, midicontrolMap.has(yn) ? mapCC(midicontrolMap.get(yn), l.value).forEach(({ ccn: vn, ccv: Nn }) => sendCC(vn, Nn, Sn, rn, b)) : yn !== "default" && logger$2(`[midi] midimap "${yn}" not found! Available maps: ${[...midicontrolMap.keys()].join(", ")}`), R !== void 0 && !o.isController) {
+            const En = l.duration.valueOf() / p * 1e3 - o.noteOffsetMs;
+            sendNote(R, _n, En, Sn, rn, b);
+          }
+          if (Mn !== void 0 && sendProgramChange(Mn, Sn, rn, b), mn !== void 0 && hn !== void 0 && sendSysex(mn, hn, Sn, b), le !== void 0 && se !== void 0 && sendCC(se, le, Sn, rn, b), I !== void 0 && z !== void 0 && sendNRPN(I, z, Sn, rn, b), an !== void 0 && sendPitchBend(an, Sn, rn, b), on !== void 0 && sendAftertouch(on, Sn, rn, b), l.whole.begin + 0 === 0 && scheduleAtTime(() => {
+            Sn.sendStart();
+          }, b), ["clock", "midiClock"].includes(tn))
+            scheduleAtTime(() => {
+              Sn.sendClock();
+            }, b);
+          else if (["start"].includes(tn))
+            scheduleAtTime(() => {
+              Sn.sendStart();
+            }, b);
+          else if (["stop"].includes(tn))
+            scheduleAtTime(() => {
+              Sn.sendStop();
+            }, b);
+          else if (["continue"].includes(tn))
+            scheduleAtTime(() => {
+              Sn.sendContinue();
+            }, b);
+          else if (Array.isArray(tn)) {
+            if (tn[0] === "progNum")
+              sendProgramChange(tn[1], Sn, rn, b);
+            else if (tn[0] === "cc")
+              tn.length === 2 && sendCC(tn[0], tn[1] / 127, Sn, rn, b);
+            else if (tn[0] === "sysex" && tn.length === 3) {
+              const [En, vn, Nn] = tn;
+              sendSysex(vn, Nn, Sn, b);
+            }
+          }
+        });
+      };
+      midiInputs = {};
+      kHaps = {};
+      kListeners = {};
+      index$1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+        __proto__: null,
+        WebMidi,
+        defaultmidimap,
+        enableWebMidi,
+        midicontrolMap,
+        midikeys,
+        midimaps,
+        midin,
+        midisoundMap
       }, Symbol.toStringTag, { value: "Module" }));
       window.initStrudel = initStrudel;
       Pattern$1.prototype.play = function() {
@@ -29573,6 +36999,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var reverbBuffer = null;
   var masterStrudelGain = null;
   var bootPromise = null;
+  var strudelFx = null;
   var chains = /* @__PURE__ */ new Map();
   var remoteSources = /* @__PURE__ */ new Map();
   var pendingCaptures = /* @__PURE__ */ new Set();
@@ -29625,23 +37052,61 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return reverbBuffer;
   }
+  function makeDistortionCurve(amount) {
+    const n2 = 512;
+    const curve2 = new Float32Array(n2);
+    for (let i = 0; i < n2; i++) {
+      const x2 = i * 2 / n2 - 1;
+      if (amount < 1e-3) {
+        curve2[i] = x2;
+        continue;
+      }
+      const k2 = amount * 24 + 1e-3;
+      curve2[i] = (Math.PI + k2) * x2 / (Math.PI + k2 * Math.abs(x2));
+    }
+    return curve2;
+  }
+  function updateStrudelFx(effects, rtt, jitter) {
+    if (!strudelFx || !audioCtx) return;
+    const e30 = effects || {};
+    const r2 = rtt || 0;
+    const j2 = jitter || 0;
+    const now = audioCtx.currentTime;
+    if (e30.distortion) {
+      const base = 0.2;
+      const extra = Math.max(0, Math.min(0.8, (r2 - 5) / 55 + j2 / 6));
+      strudelFx.distWS.curve = makeDistortionCurve(base + extra);
+    } else {
+      strudelFx.distWS.curve = null;
+    }
+    const targetNoise = e30.noise ? 0.12 : 0;
+    strudelFx.noiseGain.gain.cancelScheduledValues(now);
+    strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
+    if (e30.noise) {
+      const targetFreq = j2 < 1 ? 2e4 : j2 < 3 ? 200 : 1200;
+      strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
+      strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
+    }
+    if (strudelFx.convGain) {
+      const targetRev = e30.reverb ? 1.8 : 0;
+      strudelFx.convGain.gain.cancelScheduledValues(now);
+      strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
+    }
+  }
   function computeEffectParams(effects, metrics) {
     const rtt = metrics && typeof metrics.rtt === "number" ? metrics.rtt : 0;
     const jitter = metrics && typeof metrics.jitter === "number" ? metrics.jitter : 0;
     let glitchIntensity = 0;
     if (effects && effects.distortion) {
-      const cleanThreshold = 5;
-      const maxGlitchThreshold = 70;
-      glitchIntensity = Math.max(0, Math.min(
-        1,
-        (rtt - cleanThreshold) / (maxGlitchThreshold - cleanThreshold) + jitter / 15
-      ));
+      const base = 0.05;
+      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+      glitchIntensity = base + extra;
     }
     let noiseType = 0;
     if (effects && effects.noise) {
-      if (jitter > 0.5 && jitter < 1.5) noiseType = 1;
-      else if (jitter >= 1.5 && jitter < 3) noiseType = 2;
-      else if (jitter >= 3) noiseType = 3;
+      if (jitter < 1) noiseType = 1;
+      else if (jitter < 3) noiseType = 2;
+      else noiseType = 3;
     }
     return { glitchIntensity, noiseType, reverb: !!(effects && effects.reverb) };
   }
@@ -29652,6 +37117,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (glitch) glitch.setValueAtTime(params.glitchIntensity, now);
     const noise2 = chain.worklet.parameters.get("noiseType");
     if (noise2) noise2.setValueAtTime(params.noiseType, now);
+    const noiseAmt = chain.worklet.parameters.get("noiseAmount");
+    if (noiseAmt) {
+      const target = params.noiseType > 0 ? 1 : 0;
+      noiseAmt.cancelScheduledValues(now);
+      noiseAmt.linearRampToValueAtTime(target, now + 0.8);
+    }
     if (chain.reverbOn === params.reverb) return;
     chain.reverbOn = params.reverb;
     try {
@@ -29793,6 +37264,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
       captureJitsiAudio();
     }
+    if (payload.isLocal) {
+      updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
+    }
   });
   subscribeParticipants((event, payload) => {
     if (event === "leave" && payload && payload.id) {
@@ -29838,13 +37312,45 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
   async function ensureMasterStrudelInput() {
     await bootAudioEngine();
+    await loadReverbBuffer();
     if (!masterStrudelGain) {
       masterStrudelGain = audioCtx.createGain();
       masterStrudelGain.channelCount = 2;
       masterStrudelGain.channelCountMode = "explicit";
       Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
       masterStrudelGain.gain.value = 1;
-      masterStrudelGain.connect(realDestination);
+      const distWS = audioCtx.createWaveShaper();
+      distWS.oversample = "4x";
+      distWS.curve = null;
+      masterStrudelGain.connect(distWS);
+      distWS.connect(realDestination);
+      let convolver = null, convGain = null;
+      if (reverbBuffer) {
+        convolver = audioCtx.createConvolver();
+        convolver.buffer = reverbBuffer;
+        convGain = audioCtx.createGain();
+        convGain.gain.value = 0;
+        masterStrudelGain.connect(convolver);
+        convolver.connect(convGain);
+        convGain.connect(realDestination);
+      }
+      const bufLen = Math.floor(audioCtx.sampleRate * 2);
+      const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseSrc = audioCtx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = "lowpass";
+      noiseFilter.frequency.value = 2e4;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0;
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(realDestination);
+      noiseSrc.start();
+      strudelFx = { distWS, noiseFilter, noiseGain, convGain };
     }
     return { audioCtx, masterStrudelGain, realDestination };
   }
@@ -30203,6 +37709,349 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     onDone?.(records.length);
   }
 
+  // src/hydra-video.js
+  var MODE_SPLIT = "split";
+  var MODE_DIRECT = "direct";
+  var _mode = MODE_SPLIT;
+  var _videoEl = null;
+  var _stream = null;
+  var _running = false;
+  var _rafId = null;
+  var _panelOpen = false;
+  var _lastSyncedVideoEl = void 0;
+  window._hvBlendAmt = 0.5;
+  window._hvR = 1;
+  window._hvG = 1;
+  window._hvB = 1;
+  var _hpCutoff = 0;
+  var _noiseAmt = 0;
+  var _stretchAmt = 0;
+  var _noiseOverlays = /* @__PURE__ */ new Map();
+  var PANEL_ID = "trussal-hv-panel";
+  var TOGGLE_ID = "trussal-hv-toggle";
+  var VIDEO_ID = "trussal-hv-video";
+  var STYLE_ID = "trussal-hv-style";
+  function setVideoStream(stream) {
+    if (!stream) {
+      if (_videoEl) _videoEl.srcObject = null;
+      _videoEl = null;
+      return;
+    }
+    _ensurePanel();
+    const vid = document.getElementById(VIDEO_ID);
+    if (vid) {
+      vid.srcObject = stream;
+      vid.play().catch(() => {
+      });
+      _videoEl = vid;
+      _syncHydraSource();
+    }
+  }
+  function _syncHydraSource() {
+    if (typeof globalThis.s0 === "undefined") {
+      _lastSyncedVideoEl = void 0;
+      return;
+    }
+    const target = _mode === MODE_DIRECT && _videoEl?.srcObject ? _videoEl : null;
+    if (target === _lastSyncedVideoEl) return;
+    try {
+      if (target) {
+        globalThis.s0.init({ src: target });
+      } else {
+        globalThis.s0.clear?.();
+      }
+      _lastSyncedVideoEl = target;
+    } catch (e30) {
+      console.warn("[hydra-video] s0 sync failed", e30);
+      _lastSyncedVideoEl = void 0;
+    }
+  }
+  function resetHydraSync() {
+    _lastSyncedVideoEl = void 0;
+  }
+  function setMode(mode2) {
+    _mode = mode2 === MODE_DIRECT ? MODE_DIRECT : MODE_SPLIT;
+    _syncHydraSource();
+    _updatePanelStatus();
+    document.dispatchEvent(new CustomEvent("trussal-hydra-mode-change", { detail: { mode: _mode } }));
+    _autoStartVideo();
+  }
+  function getMode() {
+    return _mode;
+  }
+  async function _autoStartVideo() {
+    if (!_panelOpen) {
+      _panelOpen = true;
+      _ensurePanel();
+      const panel = document.getElementById(PANEL_ID);
+      if (panel) panel.style.display = "flex";
+      const toggleBtn = document.getElementById(TOGGLE_ID);
+      if (toggleBtn) toggleBtn.classList.add("on");
+    }
+    if (!_videoEl?.srcObject) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+        _stream = stream;
+        setVideoStream(stream);
+      } catch (e30) {
+        console.warn("[hydra-video] auto-start camera failed", e30);
+      }
+    }
+  }
+  function _updateParams(effects, rtt, jitter) {
+    const r2 = rtt || 0;
+    const j2 = jitter || 0;
+    _hpCutoff = 0;
+    if (effects?.distortion) {
+      const base = 0.1;
+      const extra = Math.max(0, Math.min(1 - base, (r2 - 5) / 55 + j2 / 6));
+      _hpCutoff = base + extra;
+    }
+    _noiseAmt = 0;
+    if (effects?.noise) {
+      _noiseAmt = Math.max(0.15, Math.min(1, 0.15 + j2 / 4 + r2 / 150));
+    }
+    const prevStretch = _stretchAmt;
+    _stretchAmt = 0;
+    if (effects?.reverb) {
+      _stretchAmt = Math.max(0.04, Math.min(0.35, 0.04 + j2 / 8 + r2 / 300));
+    }
+    if (_stretchAmt !== prevStretch) {
+      const bd = document.getElementById("trussal-hv-backdrop");
+      if (bd) bd.classList.toggle("visible", _stretchAmt > 0);
+    }
+    const ratio2 = j2 > 0 && r2 > 0 ? Math.min(1, j2 / r2) : 0;
+    window._hvR = 0.9 + ratio2 * 0.6;
+    window._hvG = 1 - ratio2 * 0.15;
+    window._hvB = 1.2 - ratio2 * 0.7;
+    window._hvBlendAmt = 0.5;
+  }
+  function _scheduleFrame() {
+    if (!_running) return;
+    _rafId = requestAnimationFrame(_frame);
+  }
+  function _frame() {
+    _applyEffects();
+    if (_running) _rafId = requestAnimationFrame(_frame);
+  }
+  function _effectTargets() {
+    const out = [];
+    const hydraCanvas = document.getElementById("hydra-canvas");
+    if (hydraCanvas) out.push({ el: hydraCanvas, key: "hydra" });
+    if (_videoEl && _mode === MODE_SPLIT && _videoEl.srcObject) {
+      out.push({ el: _videoEl, key: "video" });
+    }
+    return out;
+  }
+  function _applyEffects() {
+    const t = performance.now() / 1e3;
+    const targets = _effectTargets();
+    for (const { el } of targets) {
+      let filter2 = "";
+      if (_hpCutoff > 0) {
+        const contrast = (1 + _hpCutoff * 5).toFixed(2);
+        const brightness = (1 - _hpCutoff * 0.3).toFixed(2);
+        const saturate = (1 - _hpCutoff * 0.5).toFixed(2);
+        filter2 = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
+      }
+      el.style.filter = filter2;
+      if (_stretchAmt > 0) {
+        const sy = (1 + _stretchAmt * Math.sin(t * Math.PI)).toFixed(4);
+        const sx = (1 + _stretchAmt * 0.5 * Math.sin(t * Math.PI * 1.41)).toFixed(4);
+        el.style.transform = `scaleY(${sy}) scaleX(${sx})`;
+        el.style.transformOrigin = "center center";
+      } else {
+        el.style.transform = "";
+      }
+    }
+    for (const { el, key } of targets) {
+      _updateNoiseOverlay(key, el);
+    }
+    const activeKeys = new Set(targets.map((t2) => t2.key));
+    for (const [k2] of _noiseOverlays) {
+      if (!activeKeys.has(k2)) _removeNoiseOverlay(k2);
+    }
+    _syncHydraSource();
+  }
+  function _updateNoiseOverlay(key, targetEl) {
+    if (!targetEl || _noiseAmt <= 0) {
+      _removeNoiseOverlay(key);
+      return;
+    }
+    let ov = _noiseOverlays.get(key);
+    if (!ov) {
+      ov = document.createElement("canvas");
+      ov.style.cssText = "position:fixed;pointer-events:none;z-index:9999998;mix-blend-mode:screen;";
+      document.body.appendChild(ov);
+      _noiseOverlays.set(key, ov);
+    }
+    const rect = targetEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const scale2 = 0.25;
+    const w2 = Math.max(1, Math.round(rect.width * scale2));
+    const h2 = Math.max(1, Math.round(rect.height * scale2));
+    if (ov.width !== w2 || ov.height !== h2) {
+      ov.width = w2;
+      ov.height = h2;
+    }
+    ov.style.left = rect.left + "px";
+    ov.style.top = rect.top + "px";
+    ov.style.width = rect.width + "px";
+    ov.style.height = rect.height + "px";
+    const ctx = ov.getContext("2d");
+    const data3 = ctx.createImageData(w2, h2);
+    const buf = data3.data;
+    const amt = _noiseAmt;
+    for (let i = 0; i < buf.length; i += 4) {
+      if (Math.random() < amt) {
+        buf[i] = Math.random() * 255 | 0;
+        buf[i + 1] = Math.random() * 255 | 0;
+        buf[i + 2] = Math.random() * 255 | 0;
+        buf[i + 3] = amt * 180 | 0;
+      }
+    }
+    ctx.putImageData(data3, 0, 0);
+  }
+  function _removeNoiseOverlay(key) {
+    const ov = _noiseOverlays.get(key);
+    if (ov) {
+      ov.remove();
+      _noiseOverlays.delete(key);
+    }
+  }
+  function _injectStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const s2 = document.createElement("style");
+    s2.id = STYLE_ID;
+    s2.textContent = `
+    #${PANEL_ID} {
+      position:fixed; top:64px; right:16px; z-index:1000000;
+      background:rgba(8,14,12,0.96); color:#d6f5e2;
+      border:1px solid rgba(255,255,255,0.15); border-radius:10px;
+      font-family:sans-serif; font-size:12px;
+      padding:10px 12px; width:300px;
+      display:none; flex-direction:column; gap:8px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
+    }
+    #${PANEL_ID} video {
+      width:100%; border-radius:4px; display:block; transform:scaleX(-1);
+      background:#050f0a;
+    }
+    #${PANEL_ID} .hv-mode-row { display:flex; gap:6px; }
+    #${PANEL_ID} .hv-mode-btn {
+      flex:1; padding:3px 0; border-radius:4px;
+      border:1px solid rgba(255,255,255,0.15);
+      background:rgba(255,255,255,0.04); color:#7aa68a;
+      font-size:11px; cursor:pointer; text-align:center;
+      transition:background 0.15s, color 0.15s;
+    }
+    #${PANEL_ID} .hv-mode-btn.on {
+      background:rgba(31,244,102,0.15); color:#1ff466;
+      border-color:rgba(31,244,102,0.4);
+    }
+    #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
+    #${PANEL_ID} .hv-title { font-weight:600; color:#1ff466; }
+    #${PANEL_ID} .hv-collapse-btn {
+      background:none; border:none; color:#5d7264; cursor:pointer;
+      font-size:13px; line-height:1; padding:0 2px; transition:color 0.15s;
+    }
+    #${PANEL_ID} .hv-collapse-btn:hover { color:#d6f5e2; }
+    #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+    #${PANEL_ID} .hv-body.collapsed { display:none; }
+    #${PANEL_ID} .hv-status { font-size:10px; color:#5d7264; line-height:1.5; }
+
+    #trussal-hv-backdrop {
+      position:fixed; inset:0; z-index:99; background:#000;
+      opacity:0; transition:opacity 0.4s; pointer-events:none;
+    }
+    #trussal-hv-backdrop.visible { opacity:1; }
+
+    #${TOGGLE_ID} {
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
+      transition:color 0.15s, background 0.15s, border-color 0.15s;
+      line-height:1; display:flex; align-items:center; gap:4px;
+      font-size:11px; font-family:sans-serif; white-space:nowrap;
+    }
+    #${TOGGLE_ID}:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
+    #${TOGGLE_ID}.on { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+  `;
+    document.head.appendChild(s2);
+  }
+  function _ensurePanel() {
+    if (document.getElementById(PANEL_ID)) return;
+    _injectStyles();
+    if (!document.getElementById("trussal-hv-backdrop")) {
+      const bd = document.createElement("div");
+      bd.id = "trussal-hv-backdrop";
+      document.body.appendChild(bd);
+    }
+    const panel = document.createElement("div");
+    panel.id = PANEL_ID;
+    panel.innerHTML = `
+    <div class="hv-header">
+      <div class="hv-title">hydra video</div>
+      <button class="hv-collapse-btn ts-dwell-btn" title="Collapse panel" aria-label="Collapse">\u25BC</button>
+    </div>
+    <div class="hv-body">
+      <video id="${VIDEO_ID}" muted playsinline></video>
+      <div class="hv-status" id="trussal-hv-status"></div>
+    </div>
+  `;
+    document.body.appendChild(panel);
+    panel.querySelector(".hv-collapse-btn").addEventListener("click", () => {
+      const body = panel.querySelector(".hv-body");
+      const btn = panel.querySelector(".hv-collapse-btn");
+      const collapsed = body.classList.toggle("collapsed");
+      btn.textContent = collapsed ? "\u25B6" : "\u25BC";
+      btn.title = collapsed ? "Expand panel" : "Collapse panel";
+    });
+    _updatePanelStatus();
+  }
+  function _updatePanelStatus() {
+    const el = document.getElementById("trussal-hv-status");
+    if (!el) return;
+    el.textContent = _mode === MODE_DIRECT ? "video \u2192 hydra s0\nuse src(s0).out() in code" : "split: camera shown above";
+  }
+  function injectHydraVideoToggle(headerEl) {
+    if (document.getElementById(TOGGLE_ID)) return;
+    _injectStyles();
+    const btn = document.createElement("button");
+    btn.id = TOGGLE_ID;
+    btn.title = "Toggle Hydra video panel";
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+      fill="currentColor" width="13" height="13" aria-hidden="true">
+    <path d="M4.5 4.5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h8.25a3 3 0 0 0
+      3-3v-9a3 3 0 0 0-3-3H4.5ZM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945
+      2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06Z"/>
+  </svg>Video`;
+    btn.addEventListener("click", async () => {
+      _panelOpen = !_panelOpen;
+      btn.classList.toggle("on", _panelOpen);
+      _ensurePanel();
+      const panel = document.getElementById(PANEL_ID);
+      if (panel) panel.style.display = _panelOpen ? "flex" : "none";
+      if (_panelOpen && !_videoEl?.srcObject) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+          _stream = stream;
+          setVideoStream(stream);
+        } catch (e30) {
+          console.warn("[hydra-video] camera open failed", e30);
+        }
+      }
+    });
+    const closeBtn = headerEl.querySelector(".ts-close");
+    headerEl.insertBefore(btn, closeBtn);
+  }
+  subscribePeerState((event, payload) => {
+    if (event !== "peer-upsert") return;
+    if (!payload?.isLocal) return;
+    _updateParams(payload.effects, payload.rtt, payload.jitter);
+  });
+  _running = true;
+  _scheduleFrame();
+
   // src/strudel.js
   var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4 minor')
   .s("gm_lead_6_voice")
@@ -30217,23 +38066,34 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var lastEvaluated = null;
   var anyPlaying = false;
   var runPrebake = null;
+  var sliderValues = {};
+  var activeSliders = {};
+  var _sliderRef = null;
+  function sliderWithID(id2, value2, min, max, step) {
+    if (min == null) min = 0;
+    if (max == null) max = 1;
+    const floatVal = parseFloat(value2);
+    if (!(id2 in sliderValues)) sliderValues[id2] = floatVal;
+    activeSliders[id2] = { min, max, step: step != null ? step : (max - min) / 100, defaultValue: floatVal };
+    return _sliderRef(() => sliderValues[id2]);
+  }
+  function updateSliderValue(id2, value2) {
+    sliderValues[id2] = parseFloat(value2);
+  }
   function computePeerStrudelParams(peer) {
     const rtt = typeof peer.rtt === "number" ? peer.rtt : 0;
     const jitter = typeof peer.jitter === "number" ? peer.jitter : 0;
     let glitchIntensity = 0;
     if (peer.effects && peer.effects.distortion) {
-      const cleanThreshold = 5;
-      const maxGlitchThreshold = 70;
-      glitchIntensity = Math.max(0, Math.min(
-        1,
-        (rtt - cleanThreshold) / (maxGlitchThreshold - cleanThreshold) + jitter / 15
-      ));
+      const base = 0.15;
+      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+      glitchIntensity = base + extra;
     }
     let crushBits = 0;
     if (peer.effects && peer.effects.noise) {
-      if (jitter > 0.5 && jitter < 1.5) crushBits = 6;
-      else if (jitter >= 1.5 && jitter < 3) crushBits = 4;
-      else if (jitter >= 3) crushBits = 3;
+      if (jitter < 1) crushBits = 8;
+      else if (jitter < 3) crushBits = 5;
+      else crushBits = 2;
     }
     return {
       glitchIntensity,
@@ -30248,6 +38108,28 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (params.reverb) chain += `.room(2)`;
     return chain;
   }
+  function splitDeclAndExpr(code2) {
+    const lines = code2.split("\n");
+    const DECL = /^\s*(let|const|var|function\b|class\b)/;
+    let lastDeclLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (DECL.test(lines[i])) lastDeclLine = i;
+    }
+    if (lastDeclLine === -1) return null;
+    let exprStart = -1;
+    for (let i = lastDeclLine + 1; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        exprStart = i;
+        break;
+      }
+    }
+    if (exprStart === -1) return null;
+    return {
+      preamble: lines.slice(0, exprStart).join("\n").trim(),
+      expr: lines.slice(exprStart).join("\n").trim()
+    };
+  }
+  var DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
   function buildStrudelVoice(code2, fx) {
     const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code2);
     if (hasLabels) {
@@ -30264,9 +38146,19 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           (_3, label2, expr) => `${label2}(${expr.trim()})${fx}`
         );
       }
-      if (unlabeled) return `$: (${unlabeled})${fx}
+      if (unlabeled) {
+        if (DECL_RE.test(unlabeled)) return `${unlabeled}
 ${labeled}`;
+        return `$: (${unlabeled})${fx}
+${labeled}`;
+      }
       return labeled;
+    }
+    if (DECL_RE.test(code2)) {
+      const split = splitDeclAndExpr(code2);
+      if (split) return `${split.preamble}
+$: (${split.expr})${fx}`;
+      return code2;
     }
     return `$: (${code2})${fx}`;
   }
@@ -30276,7 +38168,7 @@ ${labeled}`;
     code2 = code2.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
     if (!code2) return null;
     const params = computePeerStrudelParams(peer);
-    const fx = effectChainFor(params);
+    const fx = peer.isLocal ? "" : effectChainFor(params);
     if (/^\s*await\s+initHydra\s*\(/.test(code2)) {
       const blankMatch = code2.match(/\n\n+/);
       if (!blankMatch) {
@@ -30438,6 +38330,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
         }
       };
       await initStrudel2({ audioContext: audioCtx2, prebake: runPrebake });
+      _sliderRef = mod2.ref;
+      await mod2.evalScope({ sliderWithID });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -30451,7 +38345,21 @@ ${buildStrudelVoice(strudelCode, fx)}`;
   }
   async function rebuildAndEvaluate() {
     const blocks = getAllPeers().map(buildPeerBlock).filter(Boolean);
-    const next = blocks.length === 0 ? null : blocks.join("\n");
+    const rawJoined = blocks.join("\n");
+    let next = blocks.length === 0 ? null : rawJoined;
+    if (next && getMode() === MODE_DIRECT) {
+      if (!next.includes("initHydra")) {
+        next = `await initHydra()
+
+${next}`;
+      }
+      const blankIdx = next.indexOf("\n\n");
+      if (blankIdx !== -1) {
+        const preamble = next.slice(0, blankIdx).replace(/\.out\s*\(\s*o0\s*\)/g, ".out(o1)").replace(/\.out\s*\(\s*\)/g, ".out(o1)");
+        next = preamble + next.slice(blankIdx);
+      }
+      next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR,()=>window._hvG,()=>window._hvB).out(o0)";
+    }
     if (next === lastEvaluated) return;
     lastEvaluated = next;
     const { evaluate: evaluate3, hush: hush2 } = await loadStrudel();
@@ -30463,9 +38371,14 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       }
       return;
     }
+    activeSliders = {};
     try {
       await evaluate3(next);
       anyPlaying = true;
+      resetHydraSync();
+      document.dispatchEvent(new CustomEvent("trussal-sliders-updated", {
+        detail: Object.entries(activeSliders).map(([id2, cfg]) => ({ id: id2, value: sliderValues[id2], ...cfg }))
+      }));
     } catch (e30) {
       console.warn("[strudel] evaluate failed", e30, "\nprogram:", next);
     }
@@ -30486,6 +38399,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
     }
     anyPlaying = false;
     lastEvaluated = null;
+    activeSliders = {};
+    document.dispatchEvent(new CustomEvent("trussal-sliders-updated", { detail: [] }));
   }
   async function refreshLocalSamples() {
     const mod2 = strudelMod;
@@ -30509,18 +38424,23 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       if (strudelBoot) rebuildAndEvaluate();
     }
   });
+  document.addEventListener("trussal-hydra-mode-change", () => {
+    if (strudelBoot) rebuildAndEvaluate();
+  });
 
   // src/facial-gesture.js
   var WASM_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
   var MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+  var GESTURE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
   var MP_ESM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm";
-  var BLINK_THRESHOLD = 0.8;
   var WINK_THRESHOLD = 0.6;
+  var SMILE_THRESHOLD = 0.7;
+  var SMILE_ASYMMETRY_MAX = 0.2;
+  var HEAD_YAW_THRESHOLD = 0.25;
+  var THUMBS_UP_THRESHOLD = 0.6;
   var BROW_INNER_THRESHOLD = 0.6;
   var BROW_OUTER_THRESHOLD = 0.45;
-  var JAW_OPEN_THRESHOLD = 0.5;
   var HEAD_TILT_THRESHOLD = 0.3;
-  var COOLDOWN_MS = 1500;
   var EMA_ALPHA = 0.15;
   var LATCH_RESET = 0.4;
   var DWELL_MS = 1e3;
@@ -30531,6 +38451,7 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       jawOpen: 0,
       browInnerUp: 0,
       headTilt: 0,
+      headYaw: 0,
       mouthSmileLeft: 0,
       mouthSmileRight: 0,
       eyeBlinkLeft: 0,
@@ -30649,16 +38570,17 @@ ${code2}${BTN_MARKER}`;
     };
   }
   var _headTiltDelta = 2;
-  var handleMouthOpen = makeGestureHandler("mouthOpen", cycleHiHat);
+  var handleBrowRaise = makeGestureHandler("browRaise", cycleHiHat);
   var handleHeadTiltLeft = makeGestureHandler("headTiltLeft", (c2) => shiftTranspose(c2, -_headTiltDelta));
   var handleHeadTiltRight = makeGestureHandler("headTiltRight", (c2) => shiftTranspose(c2, _headTiltDelta));
   var _enabled = false;
   var _landmarker = null;
+  var _gestureRecognizer = null;
   var _mpClasses = null;
   var _drawingUtils = null;
-  var _stream = null;
-  var _rafId = null;
-  var _videoEl = null;
+  var _stream2 = null;
+  var _rafId2 = null;
+  var _videoEl2 = null;
   var _canvasEl = null;
   var _cursorEl = null;
   var _progressRing = null;
@@ -30669,6 +38591,7 @@ ${code2}${BTN_MARKER}`;
     jawOpen: 0,
     browInnerUp: 0,
     headTilt: 0,
+    headYaw: 0,
     mouthSmileLeft: 0,
     mouthSmileRight: 0,
     eyeBlinkLeft: 0,
@@ -30676,19 +38599,18 @@ ${code2}${BTN_MARKER}`;
     cursorX: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
     cursorY: typeof window !== "undefined" ? window.innerHeight / 2 : 0
   };
-  var _latch = { mouthOpen: false, headLeft: false, headRight: false, leftWink: false };
-  var _lastFired = { play: 0, stop: 0 };
-  var _dwell = { code: null, el: null, startMs: 0, fired: false };
+  var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
+  var _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
   var _regexTrigger = "mouthOpen";
   var _regexPattern = "";
   var _regexReplacement = "";
   function _flash(gesture) {
     if (!_flashEl) return;
     const labels = {
-      play: "\u25B6 play",
-      stop: "\u25A0 stop",
-      eval: "\u21BA eval (left blink)",
-      mouthOpen: "\u25C9 mouth \u2192 drum density",
+      play: "\u25B6 play (smile)",
+      stop: "\u25A0 stop (thumbs up)",
+      eval: "\u21BA update (left blink)",
+      drumDensity: "\u25CE drum density (brow raise)",
       headTiltLeft: `\u2190 tilt left \u2192 \u2212${_headTiltDelta}st`,
       headTiltRight: `\u2192 tilt right \u2192 +${_headTiltDelta}st`
     };
@@ -30705,7 +38627,7 @@ ${code2}${BTN_MARKER}`;
     _statusEl.textContent = s2;
     _statusEl.style.color = cols[s2] ?? "#7aa68a";
   }
-  function _processResult(result) {
+  function _processResult(result, gestureResult) {
     const blendshapes = result.faceBlendshapes?.[0]?.categories;
     const landmarks = result.faceLandmarks?.[0];
     if (!blendshapes) return;
@@ -30719,8 +38641,11 @@ ${code2}${BTN_MARKER}`;
     _ema.eyeBlinkRight = lerp(_ema.eyeBlinkRight, score("eyeBlinkRight"));
     if (landmarks && landmarks.length > 263) {
       const eyeDistX = Math.abs(landmarks[263].x - landmarks[33].x) || 0.1;
+      const eyeCenterX = (landmarks[33].x + landmarks[263].x) / 2;
       const tiltRaw = (landmarks[33].y - landmarks[263].y) / eyeDistX;
+      const yawRaw = (landmarks[4].x - eyeCenterX) / eyeDistX;
       _ema.headTilt = lerp(_ema.headTilt, Math.max(-1, Math.min(1, tiltRaw)));
+      _ema.headYaw = lerp(_ema.headYaw, Math.max(-1, Math.min(1, yawRaw)));
     }
     if (landmarks && landmarks.length > 10) {
       const lm = landmarks[10];
@@ -30728,45 +38653,55 @@ ${code2}${BTN_MARKER}`;
       _ema.cursorY = lerp(_ema.cursorY, lm.y * window.innerHeight);
     }
     Object.assign(window.faceCtx, _ema);
-    _processGestures(blendshapes);
+    _processGestures(blendshapes, gestureResult);
   }
-  function _processGestures(blendshapes) {
+  function _processGestures(blendshapes, gestureResult) {
     const score = (name3) => blendshapes.find((c2) => c2.categoryName === name3)?.score ?? 0;
     const eyeBlinkL = score("eyeBlinkLeft");
     const eyeBlinkR = score("eyeBlinkRight");
+    const mouthSmileL = score("mouthSmileLeft");
+    const mouthSmileR = score("mouthSmileRight");
     const browInnerUp = score("browInnerUp");
     const browOuterL = score("browOuterUpLeft");
     const browOuterR = score("browOuterUpRight");
-    const jawOpen = score("jawOpen");
-    const now = Date.now();
-    const isBlink = eyeBlinkL > BLINK_THRESHOLD && eyeBlinkR > BLINK_THRESHOLD;
-    const isLeftWink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
-    const isBrowRaise = browInnerUp > BROW_INNER_THRESHOLD && (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) && eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
-    if (isBlink && now - _lastFired.play > COOLDOWN_MS) {
-      _lastFired.play = now;
-      _latch.leftWink = false;
+    const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
+    const isSmile = mouthSmileL > SMILE_THRESHOLD && mouthSmileR > SMILE_THRESHOLD && Math.abs(mouthSmileL - mouthSmileR) < SMILE_ASYMMETRY_MAX && Math.abs(_ema.headYaw) < HEAD_YAW_THRESHOLD;
+    if (isSmile && !_latch.smile) {
+      _latch.smile = true;
       _flash("play");
       bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {
       });
-    } else if (isLeftWink && !_latch.leftWink) {
-      _latch.leftWink = true;
-      _flash("eval");
-      evaluate2();
-    } else if (isBrowRaise && now - _lastFired.stop > COOLDOWN_MS) {
-      _lastFired.stop = now;
+    }
+    if (_latch.smile && mouthSmileL < SMILE_THRESHOLD * LATCH_RESET && mouthSmileR < SMILE_THRESHOLD * LATCH_RESET) {
+      _latch.smile = false;
+    }
+    const topGesture = gestureResult?.gestures?.[0]?.[0];
+    const isThumbsUp = topGesture?.categoryName === "Thumb_Up" && topGesture.score > THUMBS_UP_THRESHOLD;
+    if (isThumbsUp && !_latch.thumbsUp) {
+      _latch.thumbsUp = true;
       _flash("stop");
       stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {
       });
     }
-    if (_latch.leftWink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
-      _latch.leftWink = false;
+    if (_latch.thumbsUp && !isThumbsUp) {
+      _latch.thumbsUp = false;
     }
-    if (!_latch.mouthOpen && jawOpen > JAW_OPEN_THRESHOLD) {
-      _latch.mouthOpen = true;
-      _flash("mouthOpen");
-      handleMouthOpen();
-    } else if (_latch.mouthOpen && jawOpen < JAW_OPEN_THRESHOLD * LATCH_RESET) {
-      _latch.mouthOpen = false;
+    if (isLeftBlink && !_latch.leftBlink) {
+      _latch.leftBlink = true;
+      _flash("eval");
+      evaluate2();
+    }
+    if (_latch.leftBlink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
+      _latch.leftBlink = false;
+    }
+    const isBrowRaise = browInnerUp > BROW_INNER_THRESHOLD && (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) && eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
+    if (isBrowRaise && !_latch.browRaise) {
+      _latch.browRaise = true;
+      _flash("drumDensity");
+      handleBrowRaise();
+    }
+    if (_latch.browRaise && !(browInnerUp > BROW_INNER_THRESHOLD * LATCH_RESET)) {
+      _latch.browRaise = false;
     }
     const headTilt = _ema.headTilt;
     if (!_latch.headLeft && headTilt < -HEAD_TILT_THRESHOLD) {
@@ -30785,9 +38720,9 @@ ${code2}${BTN_MARKER}`;
     }
   }
   function _drawLandmarks(result) {
-    if (!_canvasEl || !_mpClasses || !_videoEl) return;
-    if (_canvasEl.width !== _videoEl.videoWidth) _canvasEl.width = _videoEl.videoWidth || 320;
-    if (_canvasEl.height !== _videoEl.videoHeight) _canvasEl.height = _videoEl.videoHeight || 240;
+    if (!_canvasEl || !_mpClasses || !_videoEl2) return;
+    if (_canvasEl.width !== _videoEl2.videoWidth) _canvasEl.width = _videoEl2.videoWidth || 320;
+    if (_canvasEl.height !== _videoEl2.videoHeight) _canvasEl.height = _videoEl2.videoHeight || 240;
     const ctx = _canvasEl.getContext("2d");
     if (!_drawingUtils) _drawingUtils = new _mpClasses.DrawingUtils(ctx);
     ctx.clearRect(0, 0, _canvasEl.width, _canvasEl.height);
@@ -30805,12 +38740,14 @@ ${code2}${BTN_MARKER}`;
     }
   }
   function _detectionLoop() {
-    if (!_videoEl || !_landmarker || _videoEl.readyState < 2) {
-      _rafId = requestAnimationFrame(_detectionLoop);
+    if (!_videoEl2 || !_landmarker || _videoEl2.readyState < 2) {
+      _rafId2 = requestAnimationFrame(_detectionLoop);
       return;
     }
-    const result = _landmarker.detectForVideo(_videoEl, performance.now());
-    _processResult(result);
+    const ts = performance.now();
+    const result = _landmarker.detectForVideo(_videoEl2, ts);
+    const gestureResult = _gestureRecognizer?.recognizeForVideo(_videoEl2, ts);
+    _processResult(result, gestureResult);
     _drawLandmarks(result);
     if (_cursorEl) {
       _cursorEl.style.left = `${_ema.cursorX}px`;
@@ -30819,77 +38756,119 @@ ${code2}${BTN_MARKER}`;
     }
     const cx = _ema.cursorX;
     const cy = _ema.cursorY;
-    let hoveredCode = null;
+    let hoveredKey = null;
+    let hoveredType = null;
     let hoveredEl = null;
-    for (const btn of document.querySelectorAll(".strudel-head-btn")) {
+    for (const btn of document.querySelectorAll(".strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn")) {
       const r2 = btn.getBoundingClientRect();
       if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
-        hoveredCode = btn.dataset.strudelCode;
+        if (btn.classList.contains("ts-fx-dwell-btn")) {
+          hoveredKey = btn.dataset.fx;
+          hoveredType = "fx";
+        } else if (btn.classList.contains("ts-dwell-btn")) {
+          hoveredKey = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
+          hoveredType = "action";
+        } else {
+          hoveredKey = btn.dataset.strudelCode;
+          hoveredType = "strudel";
+        }
         hoveredEl = btn;
         break;
       }
     }
     const now = performance.now();
-    if (hoveredCode !== _dwell.code) {
-      if (_dwell.el) _dwell.el.classList.remove("strudel-dwell-hover");
-      _dwell.code = hoveredCode;
+    if (hoveredKey !== _dwell.key || hoveredType !== _dwell.type) {
+      if (_dwell.el) {
+        _dwell.el.classList.remove("strudel-dwell-hover");
+        if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
+      }
+      _dwell.key = hoveredKey;
+      _dwell.type = hoveredType;
       _dwell.el = hoveredEl;
-      _dwell.startMs = hoveredCode ? now : 0;
+      _dwell.startMs = hoveredKey ? now : 0;
       _dwell.fired = false;
       if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
     }
-    if (hoveredCode && !_dwell.fired) {
+    if (hoveredKey && !_dwell.fired) {
       const progress = Math.min((now - _dwell.startMs) / DWELL_MS, 1);
-      if (_dwell.el) _dwell.el.classList.add("strudel-dwell-hover");
+      if (_dwell.el) {
+        _dwell.el.classList.add("strudel-dwell-hover");
+        if (_dwell.type === "action") _dwell.el.style.setProperty("--dwell-prog", progress.toFixed(3));
+      }
       if (_progressRing) _progressRing.style.strokeDashoffset = (RING_C * (1 - progress)).toFixed(2);
       if (progress >= 1) {
         _dwell.fired = true;
         if (_dwell.el) {
           _dwell.el.classList.remove("strudel-dwell-hover");
           _dwell.el.classList.add("strudel-btn-active");
+          if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
           setTimeout(() => _dwell.el?.classList.remove("strudel-btn-active"), 600);
         }
         if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
-        toggleButtonCode(hoveredCode);
+        if (_dwell.type === "fx") {
+          _toggleFxEffect(_dwell.key);
+        } else if (_dwell.type === "action") {
+          if (_dwell.el) _dwell.el.click();
+        } else {
+          toggleButtonCode(_dwell.key);
+        }
       }
     }
-    _rafId = requestAnimationFrame(_detectionLoop);
+    _rafId2 = requestAnimationFrame(_detectionLoop);
+  }
+  function _toggleFxEffect(fxName) {
+    const peer = getLocalPeer();
+    if (!peer) return;
+    const e30 = peer.effects || {};
+    sendLocalEffects({ distortion: !!e30.distortion, noise: !!e30.noise, reverb: !!e30.reverb, [fxName]: !e30[fxName] });
   }
   async function _startCamera() {
     _setStatus("loading");
     try {
-      const { FaceLandmarker, FilesetResolver, DrawingUtils } = await import(MP_ESM);
+      const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
       _mpClasses = { FaceLandmarker, DrawingUtils };
       const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
-      _landmarker = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-        outputFaceBlendshapes: true,
-        runningMode: "VIDEO",
-        numFaces: 1
-      });
-      _stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-      _videoEl.srcObject = _stream;
-      await _videoEl.play();
+      [_landmarker, _gestureRecognizer] = await Promise.all([
+        FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+          outputFaceBlendshapes: true,
+          runningMode: "VIDEO",
+          numFaces: 1
+        }),
+        GestureRecognizer.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: "GPU" },
+          runningMode: "VIDEO",
+          numHands: 1
+        })
+      ]);
+      _stream2 = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      _videoEl2.srcObject = _stream2;
+      await _videoEl2.play();
+      setVideoStream(_stream2);
       _setStatus("ready");
-      _rafId = requestAnimationFrame(_detectionLoop);
+      _rafId2 = requestAnimationFrame(_detectionLoop);
     } catch (e30) {
       console.error("[facial-gesture]", e30);
       _setStatus("error");
     }
   }
   function _stopCamera() {
-    cancelAnimationFrame(_rafId);
-    _rafId = null;
-    _stream?.getTracks().forEach((t) => t.stop());
-    _stream = null;
+    cancelAnimationFrame(_rafId2);
+    _rafId2 = null;
+    setVideoStream(null);
+    _stream2?.getTracks().forEach((t) => t.stop());
+    _stream2 = null;
     _landmarker?.close();
     _landmarker = null;
+    _gestureRecognizer?.close();
+    _gestureRecognizer = null;
     _mpClasses = null;
     _drawingUtils = null;
     Object.assign(_ema, {
       jawOpen: 0,
       browInnerUp: 0,
       headTilt: 0,
+      headYaw: 0,
       mouthSmileLeft: 0,
       mouthSmileRight: 0,
       eyeBlinkLeft: 0,
@@ -30897,7 +38876,7 @@ ${code2}${BTN_MARKER}`;
       cursorX: window.innerWidth / 2,
       cursorY: window.innerHeight / 2
     });
-    Object.assign(_latch, { mouthOpen: false, headLeft: false, headRight: false, leftWink: false });
+    Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false });
     if (_cursorEl) _cursorEl.style.display = "none";
     _setStatus("idle");
   }
@@ -30931,7 +38910,7 @@ ${code2}${BTN_MARKER}`;
   var FG_STYLE_ID = "trussal-fg-style";
   var FG_PANEL_ID = "trussal-fg-panel";
   var FG_CURSOR_ID = "trussal-fg-cursor";
-  function _injectStyles() {
+  function _injectStyles2() {
     if (document.getElementById(FG_STYLE_ID)) return;
     const s2 = document.createElement("style");
     s2.id = FG_STYLE_ID;
@@ -31008,12 +38987,39 @@ ${code2}${BTN_MARKER}`;
     }
     #trussal-fg-toggle:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
     #trussal-fg-toggle.on    { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+
+    .ts-dwell-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #7aa68a;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 10px;
+      line-height: 1.5;
+      font-family: sans-serif;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .ts-dwell-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    .ts-dwell-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-dwell-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell-prog, 0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
   `;
     document.head.appendChild(s2);
   }
   function _ensureDOM() {
     if (document.getElementById(FG_PANEL_ID)) return;
-    _injectStyles();
+    _injectStyles2();
     initStrudelButton();
     const cursor = document.createElement("div");
     cursor.id = FG_CURSOR_ID;
@@ -31037,70 +39043,83 @@ ${code2}${BTN_MARKER}`;
     panel.innerHTML = `
     <div class="fg-row fg-drag-handle">
       <span class="fg-title">facial control</span>
+      <button class="ts-dwell-btn" id="trussal-fg-collapse" title="Collapse / expand panel">\u25BC</button>
       <span id="trussal-fg-status" style="font-size:11px;">idle</span>
     </div>
-    <div class="fg-video-wrap">
-      <video id="trussal-fg-video" muted playsinline></video>
-      <canvas id="trussal-fg-canvas"></canvas>
-    </div>
-    <div class="fg-flash" id="trussal-fg-flash"></div>
-    <div class="fg-hints">
-      blink left eye \u2192 eval code<br>
-      blink both eyes \u2192 play<br>
-      raise eyebrows \u2192 stop<br>
-      open mouth \u2192 drum density<br>
-      tilt head \u2192 transpose \xB1<span id="trussal-fg-tilt-label">2</span>st<br>
-      head cursor dwell 1s \u2192 toggle voice
-    </div>
-    <div class="fg-btns" id="trussal-fg-btns"></div>
-
-    <div class="fg-section">
-      <div class="fg-section-title">head tilt amount</div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
-        <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+    <div id="trussal-fg-body">
+      <div class="fg-video-wrap">
+        <video id="trussal-fg-video" muted playsinline></video>
+        <canvas id="trussal-fg-canvas"></canvas>
       </div>
-    </div>
-
-    <div class="fg-section">
-      <div class="fg-section-title">regex mutator</div>
-      <select id="trussal-fg-trigger">
-        <option value="mouthOpen">mouth open</option>
-        <option value="headTiltLeft">head tilt left</option>
-        <option value="headTiltRight">head tilt right</option>
-      </select>
-      <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
-      <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-      <div style="font-size:9px;color:#5d7264;line-height:1.5;">
-        or annotate code:<br>
-        <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
+      <div class="fg-flash" id="trussal-fg-flash"></div>
+      <div class="fg-hints">
+        smile \u2192 play<br>
+        thumbs up \u2192 stop<br>
+        left blink \u2192 update code<br>
+        raise eyebrows \u2192 drum density<br>
+        tilt head \u2192 transpose \xB1<span id="trussal-fg-tilt-label">2</span>st<br>
+        head cursor dwell 1s \u2192 toggle voice
       </div>
-    </div>
+      <div class="fg-btns" id="trussal-fg-btns"></div>
 
-    <div class="fg-section">
-      <div class="fg-section-title">StrudelButton</div>
-      <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-        write in code:<br>
-        <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
-        dwell with head cursor (1 s) to append/toggle that voice.
+      <div class="fg-section">
+        <div class="fg-section-title">head tilt amount</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
+          <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+        </div>
       </div>
-    </div>
 
-    <div class="fg-section">
-      <div class="fg-section-title">window.faceCtx</div>
-      <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-      <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-        jawOpen, browInnerUp, headTilt,<br>
-        eyeBlinkL/R, mouthSmileL/R,<br>
-        cursorX, cursorY
+      <div class="fg-section">
+        <div class="fg-section-title">regex mutator</div>
+        <select id="trussal-fg-trigger">
+          <option value="mouthOpen">mouth open</option>
+          <option value="headTiltLeft">head tilt left</option>
+          <option value="headTiltRight">head tilt right</option>
+        </select>
+        <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
+        <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
+        <div style="font-size:9px;color:#5d7264;line-height:1.5;">
+          or annotate code:<br>
+          <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
+        </div>
+      </div>
+
+      <div class="fg-section">
+        <div class="fg-section-title">StrudelButton</div>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          write in code:<br>
+          <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
+          dwell with head cursor (1 s) to append/toggle that voice.
+        </div>
+      </div>
+
+      <div class="fg-section">
+        <div class="fg-section-title">window.faceCtx</div>
+        <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          jawOpen, browInnerUp, headTilt,<br>
+          eyeBlinkL/R, mouthSmileL/R,<br>
+          cursorX, cursorY
+        </div>
       </div>
     </div>
   `;
     document.body.appendChild(panel);
-    _videoEl = panel.querySelector("#trussal-fg-video");
+    _videoEl2 = panel.querySelector("#trussal-fg-video");
     _canvasEl = panel.querySelector("#trussal-fg-canvas");
     _statusEl = panel.querySelector("#trussal-fg-status");
     _flashEl = panel.querySelector("#trussal-fg-flash");
+    const fgCollapseBtn = panel.querySelector("#trussal-fg-collapse");
+    if (fgCollapseBtn) {
+      fgCollapseBtn.addEventListener("click", () => {
+        const body = panel.querySelector("#trussal-fg-body");
+        if (!body) return;
+        const collapsed = body.style.display === "none";
+        body.style.display = collapsed ? "" : "none";
+        fgCollapseBtn.textContent = collapsed ? "\u25BC" : "\u25B2";
+      });
+    }
     panel.querySelector("#trussal-fg-trigger").addEventListener("change", (e30) => {
       _regexTrigger = e30.target.value;
     });
@@ -31180,10 +39199,750 @@ ${code2}${BTN_MARKER}`;
     });
   }
 
+  // src/on-screen-keyboard.js
+  var KBD_STYLE_ID = "trussal-kbd-style";
+  var KBD_PANEL_ID = "trussal-kbd-panel";
+  var KBD_BTN_ID = "trussal-kbd-btn";
+  var DWELL_MS2 = 1e3;
+  var TrieNode = class {
+    constructor() {
+      this.ch = {};
+      this.end = false;
+      this.w = 0;
+    }
+  };
+  var Trie = class {
+    constructor() {
+      this.root = new TrieNode();
+    }
+    insert(word, weight) {
+      let n2 = this.root;
+      for (const c2 of word) {
+        if (!n2.ch[c2]) n2.ch[c2] = new TrieNode();
+        n2 = n2.ch[c2];
+      }
+      n2.end = true;
+      n2.w = Math.max(n2.w, weight || 1);
+    }
+    predict(prefix, limit) {
+      limit = limit || 5;
+      if (!prefix) return [];
+      let n2 = this.root;
+      for (const c2 of prefix) {
+        if (!n2.ch[c2]) return [];
+        n2 = n2.ch[c2];
+      }
+      const out = [];
+      (function dfs(node, s2) {
+        if (out.length >= limit * 4) return;
+        if (node.end) out.push({ s: s2, w: node.w });
+        for (const c2 in node.ch) dfs(node.ch[c2], s2 + c2);
+      })(n2, prefix);
+      return out.sort((a2, b) => b.w - a2.w).slice(0, limit).map((x2) => x2.s);
+    }
+  };
+  var TRIE = new Trie();
+  [
+    ["note", 10],
+    ["n", 9],
+    ["s", 10],
+    ["sound", 7],
+    ["stack", 9],
+    ["cat", 7],
+    ["seq", 6],
+    ["chord", 7],
+    ["scale", 6],
+    ["arp", 5],
+    ["gain", 9],
+    ["cutoff", 7],
+    ["resonance", 5],
+    ["pan", 6],
+    ["room", 6],
+    ["size", 5],
+    ["delay", 7],
+    ["orbit", 5],
+    ["slow", 8],
+    ["fast", 8],
+    ["rev", 7],
+    ["jux", 6],
+    ["add", 7],
+    ["transpose", 6],
+    ["speed", 5],
+    ["every", 8],
+    ["sometimes", 7],
+    ["often", 6],
+    ["rarely", 5],
+    ["degradeBy", 5],
+    ["struct", 5],
+    ["euclid", 6],
+    ["crush", 4],
+    ["shape", 5],
+    ["coarse", 4],
+    ["vowel", 5],
+    ["hcutoff", 4],
+    ["begin", 5],
+    ["end", 5],
+    ["loop", 5],
+    ["pitch", 5],
+    ["silence", 5],
+    ["rest", 5],
+    ["bd", 8],
+    ["sd", 8],
+    ["hh", 9],
+    ["cp", 7],
+    ["bass", 7],
+    ["piano", 6],
+    ["violin", 5],
+    ["tabla", 4],
+    ["crow", 4],
+    ["jazz", 4],
+    ["psr", 3],
+    ["osc", 8],
+    ["noise", 7],
+    ["voronoi", 6],
+    ["solid", 6],
+    ["gradient", 5],
+    ["out", 8],
+    ["color", 7],
+    ["colorama", 5],
+    ["rotate", 6],
+    ["pixelate", 5],
+    ["kaleid", 5],
+    ["invert", 6],
+    ["contrast", 5],
+    ["brightness", 5],
+    ["saturate", 5],
+    ["hue", 5],
+    ["modulate", 6],
+    ["blend", 6],
+    ["diff", 5],
+    ["mult", 5],
+    ["luma", 5],
+    ["thresh", 4],
+    ["mask", 4],
+    ["modulateScale", 3],
+    ["modulateRotate", 3]
+  ].forEach(([w2, wt2]) => TRIE.insert(w2, wt2));
+  var ROWS = [
+    [
+      { l: "`", k: "`", s: "~" },
+      { l: "1", k: "1", s: "!" },
+      { l: "2", k: "2", s: "@" },
+      { l: "3", k: "3", s: "#" },
+      { l: "4", k: "4", s: "$" },
+      { l: "5", k: "5", s: "%" },
+      { l: "6", k: "6", s: "^" },
+      { l: "7", k: "7", s: "&" },
+      { l: "8", k: "8", s: "*" },
+      { l: "9", k: "9", s: "(" },
+      { l: "0", k: "0", s: ")" },
+      { l: "-", k: "-", s: "_" },
+      { l: "=", k: "=", s: "+" },
+      { l: "\u232B", k: "Backspace", w: 1.5 }
+    ],
+    [
+      { l: "\u21E5", k: "Tab", w: 1.5 },
+      { l: "q", k: "q", s: "Q" },
+      { l: "w", k: "w", s: "W" },
+      { l: "e", k: "e", s: "E" },
+      { l: "r", k: "r", s: "R" },
+      { l: "t", k: "t", s: "T" },
+      { l: "y", k: "y", s: "Y" },
+      { l: "u", k: "u", s: "U" },
+      { l: "i", k: "i", s: "I" },
+      { l: "o", k: "o", s: "O" },
+      { l: "p", k: "p", s: "P" },
+      { l: "[", k: "[", s: "{" },
+      { l: "]", k: "]", s: "}" },
+      { l: "\\", k: "\\", s: "|" }
+    ],
+    [
+      { l: "\u21EA", k: "CapsLock", w: 1.5 },
+      { l: "a", k: "a", s: "A" },
+      { l: "s", k: "s", s: "S" },
+      { l: "d", k: "d", s: "D" },
+      { l: "f", k: "f", s: "F" },
+      { l: "g", k: "g", s: "G" },
+      { l: "h", k: "h", s: "H" },
+      { l: "j", k: "j", s: "J" },
+      { l: "k", k: "k", s: "K" },
+      { l: "l", k: "l", s: "L" },
+      { l: ";", k: ";", s: ":" },
+      { l: "'", k: "'", s: '"' },
+      { l: "\u21B5", k: "Enter", w: 2 }
+    ],
+    [
+      { l: "\u21E7", k: "ShiftLeft", w: 2.25 },
+      { l: "z", k: "z", s: "Z" },
+      { l: "x", k: "x", s: "X" },
+      { l: "c", k: "c", s: "C" },
+      { l: "v", k: "v", s: "V" },
+      { l: "b", k: "b", s: "B" },
+      { l: "n", k: "n", s: "N" },
+      { l: "m", k: "m", s: "M" },
+      { l: ",", k: ",", s: "<" },
+      { l: ".", k: ".", s: ">" },
+      { l: "/", k: "/", s: "?" },
+      { l: "\u21E7", k: "ShiftRight", w: 2.25 }
+    ],
+    [
+      { l: "\u2190", k: "ArrowLeft", w: 1.5 },
+      { l: "\u2191", k: "ArrowUp", w: 1.5 },
+      { l: "\u2193", k: "ArrowDown", w: 1.5 },
+      { l: "space", k: " ", w: 6.5 },
+      { l: "\u2192", k: "ArrowRight", w: 1.5 },
+      { l: "\u21B5eval", k: "Eval", w: 2 }
+    ]
+  ];
+  var _shift = false;
+  var _caps = false;
+  var _visible = false;
+  var _collapsed = false;
+  var _lastTA = null;
+  var _dwellEl = null;
+  var _dwellStart = 0;
+  var _dwellFired = false;
+  var _rafId3 = null;
+  document.addEventListener("focusin", (e30) => {
+    if (e30.target?.classList?.contains("ts-code")) _lastTA = e30.target;
+  });
+  function _esc(s2) {
+    return String(s2).replace(
+      /[&<>"']/g,
+      (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
+    );
+  }
+  function _getTA() {
+    return _lastTA || document.querySelector("#trussal-studio-overlay .ts-code");
+  }
+  function _wordPrefix() {
+    const ta = _getTA();
+    if (!ta) return "";
+    const m2 = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+    return m2 ? m2[0] : "";
+  }
+  function _updatePredictions() {
+    const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
+    if (!row) return;
+    const prefix = _wordPrefix();
+    const preds = prefix.length >= 1 ? TRIE.predict(prefix) : [];
+    if (!preds.length) {
+      row.innerHTML = "";
+      return;
+    }
+    row.innerHTML = preds.map(
+      (p) => `<button class="ts-kbd-pred-btn" data-completion="${_esc(p)}">${_esc(p)}</button>`
+    ).join("");
+    row.querySelectorAll(".ts-kbd-pred-btn").forEach((btn) => {
+      btn.addEventListener("mousedown", (e30) => e30.preventDefault());
+      btn.addEventListener("click", () => _insertCompletion(btn.dataset.completion));
+    });
+  }
+  function _insertCompletion(word) {
+    const ta = _getTA();
+    if (!ta) return;
+    const pos = ta.selectionStart ?? ta.value.length;
+    const before = ta.value.slice(0, pos);
+    const m2 = before.match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+    const start = pos - (m2 ? m2[0].length : 0);
+    ta.value = ta.value.slice(0, start) + word + ta.value.slice(pos);
+    ta.setSelectionRange(start + word.length, start + word.length);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    _updatePredictions();
+  }
+  function _renderModState() {
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel) return;
+    const upper = _shift || _caps;
+    panel.querySelectorAll(".ts-kbd-key[data-lower]").forEach((el) => {
+      el.querySelector(".ts-kbd-label").textContent = upper ? el.dataset.shiftedLabel : el.dataset.lower;
+    });
+    panel.querySelectorAll('.ts-kbd-key[data-k="ShiftLeft"],.ts-kbd-key[data-k="ShiftRight"]').forEach((el) => {
+      el.classList.toggle("ts-kbd-mod-on", _shift);
+    });
+    panel.querySelectorAll('.ts-kbd-key[data-k="CapsLock"]').forEach((el) => {
+      el.classList.toggle("ts-kbd-mod-on", _caps);
+    });
+  }
+  function _activateKeyDef(kd) {
+    const upper = _shift || _caps;
+    _typeKey(upper && kd.s ? kd.s : kd.k);
+  }
+  function _typeKey(key) {
+    if (key === "CapsLock") {
+      _caps = !_caps;
+      _renderModState();
+      return;
+    }
+    if (key === "ShiftLeft" || key === "ShiftRight") {
+      _shift = !_shift;
+      _renderModState();
+      return;
+    }
+    if (key === "Eval") {
+      const ta2 = _getTA();
+      document.dispatchEvent(new CustomEvent("trussal-kbd-eval", {
+        detail: { code: ta2 ? ta2.value : "" }
+      }));
+      return;
+    }
+    const ta = _getTA();
+    if (!ta) return;
+    const s2 = ta.selectionStart ?? ta.value.length;
+    const e30 = ta.selectionEnd ?? ta.value.length;
+    const val2 = ta.value;
+    if (key === "Backspace") {
+      if (s2 !== e30) {
+        ta.value = val2.slice(0, s2) + val2.slice(e30);
+        ta.setSelectionRange(s2, s2);
+      } else if (s2 > 0) {
+        ta.value = val2.slice(0, s2 - 1) + val2.slice(s2);
+        ta.setSelectionRange(s2 - 1, s2 - 1);
+      }
+    } else if (key === "Enter") {
+      ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
+      ta.setSelectionRange(s2 + 1, s2 + 1);
+    } else if (key === "Tab") {
+      ta.value = val2.slice(0, s2) + "  " + val2.slice(e30);
+      ta.setSelectionRange(s2 + 2, s2 + 2);
+    } else if (key === "ArrowLeft") {
+      const p = Math.max(0, s2 - 1);
+      ta.setSelectionRange(p, p);
+    } else if (key === "ArrowRight") {
+      const p = Math.min(val2.length, e30 + 1);
+      ta.setSelectionRange(p, p);
+    } else if (key === "ArrowUp" || key === "ArrowDown") {
+      _moveLine(ta, key === "ArrowUp" ? -1 : 1);
+    } else if (key.length === 1) {
+      ta.value = val2.slice(0, s2) + key + val2.slice(e30);
+      ta.setSelectionRange(s2 + 1, s2 + 1);
+      if (_shift) {
+        _shift = false;
+        _renderModState();
+      }
+    }
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    _updatePredictions();
+  }
+  function _moveLine(ta, dir) {
+    const val2 = ta.value;
+    const pos = ta.selectionStart ?? val2.length;
+    const lineStart = val2.lastIndexOf("\n", pos - 1) + 1;
+    const col = pos - lineStart;
+    if (dir === -1) {
+      if (lineStart === 0) return;
+      const prevEnd = lineStart - 1;
+      const prevStart = val2.lastIndexOf("\n", prevEnd - 1) + 1;
+      ta.setSelectionRange(
+        prevStart + Math.min(col, prevEnd - prevStart),
+        prevStart + Math.min(col, prevEnd - prevStart)
+      );
+    } else {
+      const lineEnd = val2.indexOf("\n", pos);
+      if (lineEnd === -1) return;
+      const nextStart = lineEnd + 1;
+      const nextEnd = val2.indexOf("\n", nextStart);
+      const nextLen = (nextEnd === -1 ? val2.length : nextEnd) - nextStart;
+      ta.setSelectionRange(
+        nextStart + Math.min(col, nextLen),
+        nextStart + Math.min(col, nextLen)
+      );
+    }
+  }
+  function _setCollapsed(val2) {
+    _collapsed = val2;
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel) return;
+    const body = panel.querySelector(".ts-kbd-body");
+    const btn = panel.querySelector(".ts-kbd-collapse-btn");
+    if (body) body.style.display = _collapsed ? "none" : "flex";
+    if (btn) btn.textContent = _collapsed ? "\u25B2" : "\u25BC";
+  }
+  function _makeDraggable(panel, handle) {
+    handle.style.cursor = "grab";
+    handle.addEventListener("mousedown", (e30) => {
+      if (e30.target.closest("button")) return;
+      e30.preventDefault();
+      handle.style.cursor = "grabbing";
+      const rect = panel.getBoundingClientRect();
+      const startX = e30.clientX;
+      const startY = e30.clientY;
+      panel.style.bottom = "";
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      const origL = rect.left;
+      const origT = rect.top;
+      function onMove(ev) {
+        panel.style.left = `${origL + ev.clientX - startX}px`;
+        panel.style.top = `${origT + ev.clientY - startY}px`;
+      }
+      function onUp() {
+        handle.style.cursor = "grab";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      }
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+  }
+  function _injectStyles3() {
+    if (document.getElementById(KBD_STYLE_ID)) return;
+    const s2 = document.createElement("style");
+    s2.id = KBD_STYLE_ID;
+    s2.textContent = `
+    #${KBD_PANEL_ID} {
+      position: fixed;
+      bottom: 60px; left: 10px;
+      width: min(840px, calc(100vw - 20px));
+      z-index: 1000001;
+      background: rgba(5, 10, 8, 0.97);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      display: none;
+      flex-direction: column;
+      user-select: none;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    .ts-kbd-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      cursor: grab;
+    }
+    .ts-kbd-header:active { cursor: grabbing; }
+    .ts-kbd-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #7aa68a;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+    }
+    .ts-kbd-collapse-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #7aa68a;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 10px;
+      line-height: 1.5;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s;
+    }
+    .ts-kbd-collapse-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    .ts-kbd-collapse-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-kbd-collapse-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
+    .ts-kbd-body {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 8px;
+    }
+    .ts-kbd-pred-row {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      min-height: 24px;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+    .ts-kbd-pred-btn {
+      flex: 0 0 auto;
+      padding: 1px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(31,244,102,0.35);
+      background: rgba(31,244,102,0.08);
+      color: #1ff466;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.08s;
+    }
+    .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
+      background: rgba(31,244,102,0.2);
+    }
+    .ts-kbd-pred-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.4);
+      pointer-events: none;
+    }
+    .ts-kbd-row {
+      display: flex;
+      gap: 3px;
+    }
+    .ts-kbd-key {
+      min-height: 38px;
+      padding: 0 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: #d6f5e2;
+      font-size: 12px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.05s;
+    }
+    .ts-kbd-key:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.22);
+    }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
+    .ts-kbd-key.ts-kbd-mod-on {
+      background: rgba(31,244,102,0.15);
+      border-color: rgba(31,244,102,0.4);
+      color: #1ff466;
+    }
+    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3) !important; }
+    .ts-kbd-key[data-k="Eval"] {
+      background: rgba(31,244,102,0.1);
+      border-color: rgba(31,244,102,0.35);
+      color: #1ff466;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .ts-kbd-key[data-k="Eval"]:hover { background: rgba(31,244,102,0.22); }
+    .ts-kbd-key::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.3);
+      pointer-events: none;
+    }
+    .ts-kbd-label { pointer-events: none; font-size: 11px; }
+    #${KBD_BTN_ID} {
+      position: fixed;
+      bottom: 80px; left: 20px;
+      z-index: 9999;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      border: 1px solid rgba(31,244,102,0.4);
+      background: rgba(31,244,102,0.12);
+      color: #1ff466;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      display: none;
+      font-family: sans-serif;
+      transition: background 0.1s;
+    }
+    #${KBD_BTN_ID}:hover { background: rgba(31,244,102,0.22); }
+    #${KBD_BTN_ID}.on    { background: rgba(31,244,102,0.28); }
+  `;
+    document.head.appendChild(s2);
+  }
+  function _buildPanel() {
+    const panel = document.createElement("div");
+    panel.id = KBD_PANEL_ID;
+    const header = document.createElement("div");
+    header.className = "ts-kbd-header";
+    const title = document.createElement("span");
+    title.className = "ts-kbd-title";
+    title.textContent = "\u2328 keyboard";
+    const collapseBtn = document.createElement("button");
+    collapseBtn.className = "ts-kbd-collapse-btn";
+    collapseBtn.type = "button";
+    collapseBtn.title = "Collapse / expand keyboard";
+    collapseBtn.textContent = "\u25BC";
+    collapseBtn.addEventListener("mousedown", (e30) => e30.preventDefault());
+    collapseBtn.addEventListener("click", () => _setCollapsed(!_collapsed));
+    header.appendChild(title);
+    header.appendChild(collapseBtn);
+    panel.appendChild(header);
+    const body = document.createElement("div");
+    body.className = "ts-kbd-body";
+    const predRow = document.createElement("div");
+    predRow.className = "ts-kbd-pred-row";
+    body.appendChild(predRow);
+    ROWS.forEach((row, ri2) => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "ts-kbd-row";
+      row.forEach((kd, ki2) => {
+        const btn = document.createElement("button");
+        btn.className = "ts-kbd-key";
+        btn.type = "button";
+        btn.dataset.k = kd.k;
+        btn.dataset.row = ri2;
+        btn.dataset.key = ki2;
+        btn.style.flex = String(kd.w || 1);
+        if (kd.s) {
+          btn.dataset.lower = kd.l;
+          btn.dataset.shiftedLabel = kd.s;
+        }
+        const label2 = document.createElement("span");
+        label2.className = "ts-kbd-label";
+        label2.textContent = kd.l;
+        btn.appendChild(label2);
+        btn.addEventListener("mousedown", (e30) => e30.preventDefault());
+        btn.addEventListener("click", () => {
+          _activateKeyDef(kd);
+          _flash2(btn);
+        });
+        rowEl.appendChild(btn);
+      });
+      body.appendChild(rowEl);
+    });
+    panel.appendChild(body);
+    document.body.appendChild(panel);
+    _makeDraggable(panel, header);
+  }
+  function _flash2(el) {
+    el.classList.add("ts-kbd-flash");
+    setTimeout(() => el.classList.remove("ts-kbd-flash"), 150);
+  }
+  function _ensureDOM2() {
+    if (document.getElementById(KBD_PANEL_ID)) return;
+    _injectStyles3();
+    _buildPanel();
+  }
+  function _ensureToggleBtn() {
+    let btn = document.getElementById(KBD_BTN_ID);
+    if (btn) return btn;
+    if (!document.body) return null;
+    _injectStyles3();
+    btn = document.createElement("button");
+    btn.id = KBD_BTN_ID;
+    btn.type = "button";
+    btn.title = "Toggle on-screen keyboard";
+    btn.textContent = "\u2328";
+    btn.addEventListener("click", () => {
+      _ensureDOM2();
+      _visible = !_visible;
+      btn.classList.toggle("on", _visible);
+      const panel = document.getElementById(KBD_PANEL_ID);
+      if (panel) panel.style.display = _visible ? "flex" : "none";
+      if (_visible) _startDwellLoop();
+      else _stopDwellLoop();
+    });
+    document.body.appendChild(btn);
+    return btn;
+  }
+  function _startDwellLoop() {
+    if (_rafId3) return;
+    _rafId3 = requestAnimationFrame(_dwellTick);
+  }
+  function _stopDwellLoop() {
+    if (_rafId3) {
+      cancelAnimationFrame(_rafId3);
+      _rafId3 = null;
+    }
+    if (_dwellEl) {
+      _dwellEl.style.setProperty("--dwell", "0");
+      _dwellEl.classList.remove("ts-kbd-dwelling");
+      _dwellEl = null;
+    }
+  }
+  function _dwellTick() {
+    if (!_visible) {
+      _rafId3 = null;
+      return;
+    }
+    _rafId3 = requestAnimationFrame(_dwellTick);
+    const ctx = window.faceCtx;
+    if (!ctx || ctx.cursorX === window.innerWidth / 2 && ctx.cursorY === window.innerHeight / 2) return;
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel || panel.style.display === "none") return;
+    const cx = ctx.cursorX;
+    const cy = ctx.cursorY;
+    let hoveredEl = null;
+    for (const el of panel.querySelectorAll(".ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn")) {
+      const r2 = el.getBoundingClientRect();
+      if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
+        hoveredEl = el;
+        break;
+      }
+    }
+    const now = performance.now();
+    if (hoveredEl !== _dwellEl) {
+      if (_dwellEl) {
+        _dwellEl.style.setProperty("--dwell", "0");
+        _dwellEl.classList.remove("ts-kbd-dwelling");
+      }
+      _dwellEl = hoveredEl;
+      _dwellStart = hoveredEl ? now : 0;
+      _dwellFired = false;
+    }
+    if (hoveredEl && !_dwellFired) {
+      const p = Math.min((now - _dwellStart) / DWELL_MS2, 1);
+      hoveredEl.style.setProperty("--dwell", p.toFixed(3));
+      hoveredEl.classList.toggle("ts-kbd-dwelling", p > 0.05);
+      if (p >= 1) {
+        _dwellFired = true;
+        hoveredEl.style.setProperty("--dwell", "0");
+        hoveredEl.classList.remove("ts-kbd-dwelling");
+        _activateDwelled(hoveredEl);
+      }
+    }
+  }
+  function _activateDwelled(el) {
+    _flash2(el);
+    if (el.classList.contains("ts-kbd-collapse-btn")) {
+      _setCollapsed(!_collapsed);
+      return;
+    }
+    if (el.classList.contains("ts-kbd-pred-btn")) {
+      _insertCompletion(el.dataset.completion);
+      return;
+    }
+    const ri2 = parseInt(el.dataset.row);
+    const ki2 = parseInt(el.dataset.key);
+    if (!isNaN(ri2) && !isNaN(ki2)) _activateKeyDef(ROWS[ri2][ki2]);
+  }
+  function _inMeeting() {
+    if (document.getElementById("trussal-welcome-overlay")) return false;
+    if (document.querySelector('.prejoin-screen,.premeeting-screen,[class*="premeeting"],[class*="prejoin"]')) return false;
+    const lv = document.getElementById("largeVideoContainer");
+    if (!lv) return false;
+    const r2 = lv.getBoundingClientRect();
+    return r2.width > 0 && r2.height > 0;
+  }
+  function tickKbdUi() {
+    const inMeeting = _inMeeting();
+    const btn = _ensureToggleBtn();
+    if (!btn) return;
+    if (!inMeeting) {
+      btn.style.display = "none";
+      if (_visible) {
+        _visible = false;
+        btn.classList.remove("on");
+        const panel = document.getElementById(KBD_PANEL_ID);
+        if (panel) panel.style.display = "none";
+        _stopDwellLoop();
+      }
+      return;
+    }
+    btn.style.display = "block";
+  }
+
   // src/studio.js
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
-  var STYLE_ID = "trussal-studio-style";
+  var STYLE_ID2 = "trussal-studio-style";
   var STORAGE_KEY = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var initedRoom = null;
@@ -31191,6 +39950,7 @@ ${code2}${BTN_MARKER}`;
   var lastStatus = "Idle";
   var routedSet = /* @__PURE__ */ new Set();
   var sampleBanks = [];
+  var currentSliders = [];
   async function refreshSampleBanks() {
     sampleBanks = await getSampleBanks().catch(() => []);
     renderAll();
@@ -31229,9 +39989,9 @@ ${code2}${BTN_MARKER}`;
     return String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
   }
   function injectStyles() {
-    if (document.getElementById(STYLE_ID)) return;
+    if (document.getElementById(STYLE_ID2)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID;
+    style.id = STYLE_ID2;
     style.textContent = `
     #${OVERLAY_ID} {
       position: fixed; right: 16px; bottom: 88px;
@@ -31252,6 +40012,7 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
     #${OVERLAY_ID} .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
     #${OVERLAY_ID} .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+    #${OVERLAY_ID} .ts-collapse-btn { margin-left: auto; }
     #${OVERLAY_ID} .ts-strip {
       display:flex; gap:8px; padding: 10px 12px;
       overflow-x:auto; overflow-y:hidden;
@@ -31334,8 +40095,25 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
     #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
     #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-fx { display:flex; gap:10px; flex-wrap:wrap; font-size: 12px; color: #b9d1c1; }
-    #${OVERLAY_ID} .ts-fx label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+    #${OVERLAY_ID} .ts-fx-btn {
+      padding:3px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+      font-size:11px; cursor:pointer;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
+    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    #${OVERLAY_ID} .ts-hv-mode-btn {
+      padding:2px 8px; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.12); background:transparent; color:#5d7264;
+      font-size:10px; cursor:pointer;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-hv-mode-btn:hover { color:#d6f5e2; }
+    #${OVERLAY_ID} .ts-hv-mode-btn.on { color:#7dcfff; border-color:rgba(125,207,255,0.4); background:rgba(125,207,255,0.08); }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
@@ -31394,6 +40172,22 @@ ${code2}${BTN_MARKER}`;
     }
     #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
 
+    #${OVERLAY_ID} .ts-sliders {
+      display: flex; flex-wrap: wrap; gap: 10px 16px;
+    }
+    #${OVERLAY_ID} .ts-slider-row {
+      display: flex; flex-direction: column; gap: 3px;
+      min-width: 100px; flex: 1 1 100px;
+    }
+    #${OVERLAY_ID} .ts-slider-label {
+      font-size: 10px; font-family: monospace; color: #7aa68a;
+      display: flex; justify-content: space-between; gap: 6px;
+    }
+    #${OVERLAY_ID} .ts-slider-input {
+      width: 100%; cursor: pointer; accent-color: #1ff466;
+      height: 16px;
+    }
+
     #hydra-canvas {
       z-index: 100;
     }
@@ -31451,12 +40245,18 @@ ${code2}${BTN_MARKER}`;
   }
   function effectsBlock(peer, isLocal) {
     const e30 = peer.effects || {};
+    const hvMode = getMode();
     if (isLocal) {
       return `
       <div class="ts-fx">
-        <label><input type="checkbox" data-fx="distortion" ${e30.distortion ? "checked" : ""}/> Distortion</label>
-        <label><input type="checkbox" data-fx="noise"      ${e30.noise ? "checked" : ""}/> Noise</label>
-        <label><input type="checkbox" data-fx="reverb"     ${e30.reverb ? "checked" : ""}/> Reverb</label>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e30.distortion ? " on" : ""}" data-fx="distortion">Distortion</button>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e30.noise ? " on" : ""}" data-fx="noise">Noise</button>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e30.reverb ? " on" : ""}" data-fx="reverb">Reverb</button>
+      </div>
+      <div class="ts-fx" style="margin-top:4px;">
+        <span style="font-size:10px;color:#5d7264;">video mode:</span>
+        <button class="ts-hv-mode-btn${hvMode === MODE_SPLIT ? " on" : ""}" data-hv-mode="${MODE_SPLIT}">split</button>
+        <button class="ts-hv-mode-btn${hvMode === MODE_DIRECT ? " on" : ""}" data-hv-mode="${MODE_DIRECT}">\u2192 s0</button>
       </div>`;
     }
     return `
@@ -31477,6 +40277,8 @@ ${code2}${BTN_MARKER}`;
       routedTxt = `<b>routed</b> \xB7 ${escapeHtml(extLabel)}${propagating ? " \xB7 <b>\u2192 room</b>" : ""}`;
     } else if (routed) {
       routedTxt = "<b>routed</b>";
+    } else if (peer.isLocal) {
+      routedTxt = peer.playing ? "<b>instrument \u25B6</b>" : "not playing";
     } else {
       routedTxt = "no live audio";
     }
@@ -31505,8 +40307,8 @@ ${code2}${BTN_MARKER}`;
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
         <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load audio files from disk into Strudel">\u2B06 Samples</button>
-        <input type="file" class="ts-samples-input" accept="audio/*" multiple style="display:none">
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">\u2B06 Samples</button>
+        <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
       </div>` : `<div class="ts-section-controls"><span class="ts-readonly-badge">READ ONLY</span></div>`;
     const playing = peer.playing ? "Playing" : "Idle";
@@ -31538,6 +40340,7 @@ ${code2}${BTN_MARKER}`;
       </div>
       ${sampleBanksRow}
       ${codeBlock}
+      ${isLocal ? '<div class="ts-sliders"></div>' : ""}
       ${isLocal ? '<div class="ts-voice-btns"></div>' : ""}
     </div>
 
@@ -31567,12 +40370,19 @@ ${code2}${BTN_MARKER}`;
         }
       });
     }
-    container.querySelectorAll('input[type="checkbox"][data-fx]').forEach((cb) => {
-      cb.addEventListener("change", () => {
-        sendLocalEffects({
-          distortion: !!container.querySelector('input[data-fx="distortion"]').checked,
-          noise: !!container.querySelector('input[data-fx="noise"]').checked,
-          reverb: !!container.querySelector('input[data-fx="reverb"]').checked
+    container.querySelectorAll(".ts-fx-dwell-btn[data-fx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const peer2 = getPeerByJitsiId(selectedJitsiId);
+        const e30 = peer2?.effects || {};
+        const fx = btn.dataset.fx;
+        sendLocalEffects({ distortion: !!e30.distortion, noise: !!e30.noise, reverb: !!e30.reverb, [fx]: !e30[fx] });
+      });
+    });
+    container.querySelectorAll(".ts-hv-mode-btn[data-hv-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setMode(btn.dataset.hvMode);
+        container.querySelectorAll(".ts-hv-mode-btn").forEach((b) => {
+          b.classList.toggle("on", b.dataset.hvMode === getMode());
         });
       });
     });
@@ -31724,6 +40534,33 @@ ${voiceCode}${BTN_MARKER2}`);
       });
     });
   }
+  function renderSliders(container, sliders) {
+    const area = container.querySelector(".ts-sliders");
+    if (!area) return;
+    if (!sliders || !sliders.length) {
+      area.innerHTML = "";
+      return;
+    }
+    area.innerHTML = sliders.map((s2, i) => `
+    <div class="ts-slider-row" data-slider-id="${escapeHtml(String(s2.id))}">
+      <div class="ts-slider-label">
+        <span>slider ${i + 1}</span>
+        <span class="ts-slider-val">${Number(s2.value).toFixed(3)}</span>
+      </div>
+      <input class="ts-slider-input" type="range"
+        min="${s2.min}" max="${s2.max}" step="${s2.step}" value="${s2.value}">
+    </div>`).join("");
+    area.querySelectorAll(".ts-slider-row").forEach((row) => {
+      const id2 = row.dataset.sliderId;
+      const input = row.querySelector("input");
+      const valEl = row.querySelector(".ts-slider-val");
+      input.addEventListener("input", () => {
+        const v2 = parseFloat(input.value);
+        updateSliderValue(id2, v2);
+        if (valEl) valEl.textContent = v2.toFixed(3);
+      });
+    });
+  }
   function setStatus(text) {
     lastStatus = text;
     const statusEl = document.querySelector(`#${OVERLAY_ID} .ts-status`);
@@ -31741,33 +40578,39 @@ ${voiceCode}${BTN_MARKER2}`);
       const detail = overlay.querySelector(".ts-detail");
       if (strip) renderStrip(strip);
       if (detail) {
+        const existingCodeEl = detail.querySelector("textarea.ts-code");
         const active = document.activeElement;
-        const isCodeFocused = active && active.classList && active.classList.contains("ts-code");
-        const codeValue = isCodeFocused ? active.value : null;
+        const isCodeFocused = active && active === existingCodeEl;
+        const codeValue = existingCodeEl ? existingCodeEl.value : null;
         const selStart = isCodeFocused ? active.selectionStart : null;
         const selEnd = isCodeFocused ? active.selectionEnd : null;
         const scrollTop = isCodeFocused ? active.scrollTop : null;
         renderDetail(detail);
         refreshFacialGestureButtons();
-        if (isCodeFocused) {
-          const next = detail.querySelector(".ts-code");
-          if (next) {
-            if (codeValue != null) next.value = codeValue;
-            next.focus();
+        const nextCodeEl = detail.querySelector(".ts-code");
+        if (nextCodeEl && codeValue != null) {
+          nextCodeEl.value = codeValue;
+          if (isCodeFocused) {
+            nextCodeEl.focus();
             if (selStart != null && selEnd != null) {
               try {
-                next.setSelectionRange(selStart, selEnd);
+                nextCodeEl.setSelectionRange(selStart, selEnd);
               } catch (e30) {
               }
             }
-            if (scrollTop != null) next.scrollTop = scrollTop;
+            if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
           }
         }
-        const codeEl = detail.querySelector(".ts-code");
-        if (codeEl) renderVoiceButtons(detail, codeEl.value);
+        if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
+        renderSliders(detail, currentSliders);
       }
     });
   }
+  document.addEventListener("trussal-sliders-updated", (e30) => {
+    currentSliders = e30.detail || [];
+    const detail = document.querySelector(`#${OVERLAY_ID} .ts-detail`);
+    if (detail) renderSliders(detail, currentSliders);
+  });
   function ensureOverlay() {
     let overlay = document.getElementById(OVERLAY_ID);
     if (overlay) return overlay;
@@ -31779,6 +40622,7 @@ ${voiceCode}${BTN_MARKER2}`);
     overlay.innerHTML = `
     <div class="ts-header">
       <div class="ts-title">Trussal Studio <small>each participant owns their own instrument</small></div>
+      <button class="ts-dwell-btn ts-collapse-btn" id="trussal-studio-collapse" type="button" title="Collapse / expand panel">\u25BC</button>
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
@@ -31788,7 +40632,20 @@ ${voiceCode}${BTN_MARKER2}`);
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
     });
+    const studioCollapseBtn = overlay.querySelector("#trussal-studio-collapse");
+    if (studioCollapseBtn) {
+      studioCollapseBtn.addEventListener("click", () => {
+        const strip = overlay.querySelector(".ts-strip");
+        const detail = overlay.querySelector(".ts-detail");
+        if (!strip || !detail) return;
+        const collapsed = strip.style.display === "none";
+        strip.style.display = collapsed ? "" : "none";
+        detail.style.display = collapsed ? "" : "none";
+        studioCollapseBtn.textContent = collapsed ? "\u25BC" : "\u25B2";
+      });
+    }
     injectFacialGestureToggle(overlay.querySelector(".ts-header"));
+    injectHydraVideoToggle(overlay.querySelector(".ts-header"));
     refreshSampleBanks();
     const localPeer2 = getLocalPeer();
     if (localPeer2.jitsiId && !localPeer2.pattern) {
@@ -31840,8 +40697,13 @@ ${voiceCode}${BTN_MARKER2}`);
     }
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
+    tickKbdUi();
     bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }
+  document.addEventListener("trussal-kbd-eval", (e30) => {
+    const code2 = e30.detail?.code;
+    onEvalAndPlay(typeof code2 === "string" ? code2 : getLocalPeer()?.pattern ?? "");
+  });
   document.addEventListener("trussal-eval", () => {
     const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
     if (codeEl) {
@@ -31875,3 +40737,271 @@ ${voiceCode}${BTN_MARKER2}`);
   renderPrejoinScreen();
   renderNoAudioToast();
 })();
+/**
+ * The `Enumerations` class contains enumerations and arrays of elements used throughout the
+ * library. All its properties are static and should be referenced using the class name. For
+ * example: `Enumerations.CHANNEL_MESSAGES`.
+ *
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `Note` class represents a single musical note such as `"D3"`, `"G#4"`, `"F-1"`, `"Gb7"`, etc.
+ *
+ * `Note` objects can be played back on a single channel by calling
+ * [`OutputChannel.playNote()`]{@link OutputChannel#playNote} or, on multiple channels of the same
+ * output, by calling [`Output.playNote()`]{@link Output#playNote}.
+ *
+ * The note has [`attack`](#attack) and [`release`](#release) velocities set at `0.5` by default.
+ * These can be changed by passing in the appropriate option. It is also possible to set a
+ * system-wide default for attack and release velocities by using the
+ * [`WebMidi.defaults`](WebMidi#defaults) property.
+ *
+ * If you prefer to work with raw MIDI values (`0` to `127`), you can use [`rawAttack`](#rawAttack) and
+ * [`rawRelease`](#rawRelease) to both get and set the values.
+ *
+ * The note may have a [`duration`](#duration). If it does, playback will be automatically stopped
+ * when the duration has elapsed by sending a `"noteoff"` event. By default, the duration is set to
+ * `Infinity`. In this case, it will never stop playing unless explicitly stopped by calling a
+ * method such as [`OutputChannel.stopNote()`]{@link OutputChannel#stopNote},
+ * [`Output.stopNote()`]{@link Output#stopNote} or similar.
+ *
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `Utilities` class contains general-purpose utility methods. All methods are static and
+ * should be called using the class name. For example: `Utilities.getNoteDetails("C4")`.
+ *
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `OutputChannel` class represents a single output MIDI channel. `OutputChannel` objects are
+ * provided by an [`Output`](Output) port which, itself, is made available by a device. The
+ * `OutputChannel` object is derived from the host's MIDI subsystem and should not be instantiated
+ * directly.
+ *
+ * All 16 `OutputChannel` objects can be found inside the parent output's
+ * [`channels`]{@link Output#channels} property.
+ *
+ * @param {Output} output The [`Output`](Output) this channel belongs to.
+ * @param {number} number The MIDI channel number (`1` - `16`).
+ *
+ * @extends EventEmitter
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `Output` class represents a single MIDI output port (not to be confused with a MIDI channel).
+ * A port is made available by a MIDI device. A MIDI device can advertise several input and output
+ * ports. Each port has 16 MIDI channels which can be accessed via the [`channels`](#channels)
+ * property.
+ *
+ * The `Output` object is automatically instantiated by the library according to the host's MIDI
+ * subsystem and should not be directly instantiated.
+ *
+ * You can access all available `Output` objects by referring to the
+ * [`WebMidi.outputs`](WebMidi#outputs) array or by using methods such as
+ * [`WebMidi.getOutputByName()`](WebMidi#getOutputByName) or
+ * [`WebMidi.getOutputById()`](WebMidi#getOutputById).
+ *
+ * @fires Output#opened
+ * @fires Output#disconnected
+ * @fires Output#closed
+ *
+ * @extends EventEmitter
+ * @license Apache-2.0
+ */
+/**
+ * The `Forwarder` class allows the forwarding of MIDI messages to predetermined outputs. When you
+ * call its [`forward()`](#forward) method, it will send the specified [`Message`](Message) object
+ * to all the outputs listed in its [`destinations`](#destinations) property.
+ *
+ * If specific channels or message types have been defined in the [`channels`](#channels) or
+ * [`types`](#types) properties, only messages matching the channels/types will be forwarded.
+ *
+ * While it can be manually instantiated, you are more likely to come across a `Forwarder` object as
+ * the return value of the [`Input.addForwarder()`](Input#addForwarder) method.
+ *
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `InputChannel` class represents a single MIDI input channel (1-16) from a single input
+ * device. This object is derived from the host's MIDI subsystem and should not be instantiated
+ * directly.
+ *
+ * All 16 `InputChannel` objects can be found inside the input's [`channels`](Input#channels)
+ * property.
+ *
+ * @fires InputChannel#midimessage
+ * @fires InputChannel#unknownmessage
+ *
+ * @fires InputChannel#noteoff
+ * @fires InputChannel#noteon
+ * @fires InputChannel#keyaftertouch
+ * @fires InputChannel#programchange
+ * @fires InputChannel#channelaftertouch
+ * @fires InputChannel#pitchbend
+ *
+ * @fires InputChannel#allnotesoff
+ * @fires InputChannel#allsoundoff
+ * @fires InputChannel#localcontrol
+ * @fires InputChannel#monomode
+ * @fires InputChannel#omnimode
+ * @fires InputChannel#resetallcontrollers
+ *
+ * @fires InputChannel#event:nrpn
+ * @fires InputChannel#event:nrpn-dataentrycoarse
+ * @fires InputChannel#event:nrpn-dataentryfine
+ * @fires InputChannel#event:nrpn-dataincrement
+ * @fires InputChannel#event:nrpn-datadecrement
+ * @fires InputChannel#event:rpn
+ * @fires InputChannel#event:rpn-dataentrycoarse
+ * @fires InputChannel#event:rpn-dataentryfine
+ * @fires InputChannel#event:rpn-dataincrement
+ * @fires InputChannel#event:rpn-datadecrement
+ *
+ * @fires InputChannel#controlchange
+ * @fires InputChannel#event:controlchange-controllerxxx
+ * @fires InputChannel#event:controlchange-bankselectcoarse
+ * @fires InputChannel#event:controlchange-modulationwheelcoarse
+ * @fires InputChannel#event:controlchange-breathcontrollercoarse
+ * @fires InputChannel#event:controlchange-footcontrollercoarse
+ * @fires InputChannel#event:controlchange-portamentotimecoarse
+ * @fires InputChannel#event:controlchange-dataentrycoarse
+ * @fires InputChannel#event:controlchange-volumecoarse
+ * @fires InputChannel#event:controlchange-balancecoarse
+ * @fires InputChannel#event:controlchange-pancoarse
+ * @fires InputChannel#event:controlchange-expressioncoarse
+ * @fires InputChannel#event:controlchange-effectcontrol1coarse
+ * @fires InputChannel#event:controlchange-effectcontrol2coarse
+ * @fires InputChannel#event:controlchange-generalpurposecontroller1
+ * @fires InputChannel#event:controlchange-generalpurposecontroller2
+ * @fires InputChannel#event:controlchange-generalpurposecontroller3
+ * @fires InputChannel#event:controlchange-generalpurposecontroller4
+ * @fires InputChannel#event:controlchange-bankselectfine
+ * @fires InputChannel#event:controlchange-modulationwheelfine
+ * @fires InputChannel#event:controlchange-breathcontrollerfine
+ * @fires InputChannel#event:controlchange-footcontrollerfine
+ * @fires InputChannel#event:controlchange-portamentotimefine
+ * @fires InputChannel#event:controlchange-dataentryfine
+ * @fires InputChannel#event:controlchange-channelvolumefine
+ * @fires InputChannel#event:controlchange-balancefine
+ * @fires InputChannel#event:controlchange-panfine
+ * @fires InputChannel#event:controlchange-expressionfine
+ * @fires InputChannel#event:controlchange-effectcontrol1fine
+ * @fires InputChannel#event:controlchange-effectcontrol2fine
+ * @fires InputChannel#event:controlchange-damperpedal
+ * @fires InputChannel#event:controlchange-portamento
+ * @fires InputChannel#event:controlchange-sostenuto
+ * @fires InputChannel#event:controlchange-softpedal
+ * @fires InputChannel#event:controlchange-legatopedal
+ * @fires InputChannel#event:controlchange-hold2
+ * @fires InputChannel#event:controlchange-soundvariation
+ * @fires InputChannel#event:controlchange-resonance
+ * @fires InputChannel#event:controlchange-releasetime
+ * @fires InputChannel#event:controlchange-attacktime
+ * @fires InputChannel#event:controlchange-brightness
+ * @fires InputChannel#event:controlchange-decaytime
+ * @fires InputChannel#event:controlchange-vibratorate
+ * @fires InputChannel#event:controlchange-vibratodepth
+ * @fires InputChannel#event:controlchange-vibratodelay
+ * @fires InputChannel#event:controlchange-generalpurposecontroller5
+ * @fires InputChannel#event:controlchange-generalpurposecontroller6
+ * @fires InputChannel#event:controlchange-generalpurposecontroller7
+ * @fires InputChannel#event:controlchange-generalpurposecontroller8
+ * @fires InputChannel#event:controlchange-portamentocontrol
+ * @fires InputChannel#event:controlchange-highresolutionvelocityprefix
+ * @fires InputChannel#event:controlchange-effect1depth
+ * @fires InputChannel#event:controlchange-effect2depth
+ * @fires InputChannel#event:controlchange-effect3depth
+ * @fires InputChannel#event:controlchange-effect4depth
+ * @fires InputChannel#event:controlchange-effect5depth
+ * @fires InputChannel#event:controlchange-dataincrement
+ * @fires InputChannel#event:controlchange-datadecrement
+ * @fires InputChannel#event:controlchange-nonregisteredparameterfine
+ * @fires InputChannel#event:controlchange-nonregisteredparametercoarse
+ * @fires InputChannel#event:controlchange-registeredparameterfine
+ * @fires InputChannel#event:controlchange-registeredparametercoarse
+ * @fires InputChannel#event:controlchange-allsoundoff
+ * @fires InputChannel#event:controlchange-resetallcontrollers
+ * @fires InputChannel#event:controlchange-localcontrol
+ * @fires InputChannel#event:controlchange-allnotesoff
+ * @fires InputChannel#event:controlchange-omnimodeoff
+ * @fires InputChannel#event:controlchange-omnimodeon
+ * @fires InputChannel#event:controlchange-monomodeon
+ * @fires InputChannel#event:controlchange-polymodeon
+ * @fires InputChannel#event:
+ *
+ * @extends EventEmitter
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `Message` class represents a single MIDI message. It has several properties that make it
+ * easy to make sense of the binary data it contains.
+ *
+ * @license Apache-2.0
+ * @since 3.0.0
+ */
+/**
+ * The `Input` class represents a single MIDI input port. This object is automatically instantiated
+ * by the library according to the host's MIDI subsystem and does not need to be directly
+ * instantiated. Instead, you can access all `Input` objects by referring to the
+ * [`WebMidi.inputs`](WebMidi#inputs) array. You can also retrieve inputs by using methods such as
+ * [`WebMidi.getInputByName()`](WebMidi#getInputByName) and
+ * [`WebMidi.getInputById()`](WebMidi#getInputById).
+ *
+ * Note that a single MIDI device may expose several inputs and/or outputs.
+ *
+ * **Important**: the `Input` class does not directly fire channel-specific MIDI messages
+ * (such as [`noteon`](InputChannel#event:noteon) or
+ * [`controlchange`](InputChannel#event:controlchange), etc.). The [`InputChannel`](InputChannel)
+ * object does that. However, you can still use the
+ * [`Input.addListener()`](#addListener) method to listen to channel-specific events on multiple
+ * [`InputChannel`](InputChannel) objects at once.
+ *
+ * @fires Input#opened
+ * @fires Input#disconnected
+ * @fires Input#closed
+ * @fires Input#midimessage
+ *
+ * @fires Input#sysex
+ * @fires Input#timecode
+ * @fires Input#songposition
+ * @fires Input#songselect
+ * @fires Input#tunerequest
+ * @fires Input#clock
+ * @fires Input#start
+ * @fires Input#continue
+ * @fires Input#stop
+ * @fires Input#activesensing
+ * @fires Input#reset
+ *
+ * @fires Input#unknownmidimessage
+ *
+ * @extends EventEmitter
+ * @license Apache-2.0
+ */
+/**
+ * The `WebMidi` object makes it easier to work with the low-level Web MIDI API. Basically, it
+ * simplifies sending outgoing MIDI messages and reacting to incoming MIDI messages.
+ *
+ * When using the WebMidi.js library, you should know that the `WebMidi` class has already been
+ * instantiated. You cannot instantiate it yourself. If you use the **IIFE** version, you should
+ * simply use the global object called `WebMidi`. If you use the **CJS** (CommonJS) or **ESM** (ES6
+ * module) version, you get an already-instantiated object when you import the module.
+ *
+ * @fires WebMidi#connected
+ * @fires WebMidi#disabled
+ * @fires WebMidi#disconnected
+ * @fires WebMidi#enabled
+ * @fires WebMidi#error
+ * @fires WebMidi#midiaccessgranted
+ * @fires WebMidi#portschanged
+ *
+ * @extends EventEmitter
+ * @license Apache-2.0
+ */

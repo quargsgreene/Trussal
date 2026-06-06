@@ -17,16 +17,24 @@ class LatencyProcessor extends AudioWorkletProcessor {
           minValue: 0,
           maxValue: 3,
           automationRate: 'k-rate'
+        },
+        {
+          // Continuous 0-1 gain for noise — ramp this for smooth fade-in/out gradient
+          name: 'noiseAmount',
+          defaultValue: 0,
+          minValue: 0,
+          maxValue: 1,
+          automationRate: 'k-rate'
         }
       ];
     }
-  
+
     constructor() {
       super();
-      this._debugCount = 0;  
+      this._debugCount = 0;
       // state for brown noise
       this._brownLast = 0.0;
-  
+
       // state for pink noise
       this._b0 = 0.0;
       this._b1 = 0.0;
@@ -35,19 +43,19 @@ class LatencyProcessor extends AudioWorkletProcessor {
       this._b4 = 0.0;
       this._b5 = 0.0;
       this._b6 = 0.0;
-  
+
     }
-  
+
     _white() {
       // simple white noise in [-1, 1]
       return Math.random() * 2 - 1;
     }
-  
+
     _brown(white) {
       this._brownLast = (this._brownLast + 0.02 * white) / 1.02;
       return this._brownLast * 0.35; // roughly compensate gain
     }
-  
+
     _pink(white) {
       // classic 7-tap pink noise filter
       this._b0 = 0.99886 * this._b0 + white * 0.0555179;
@@ -68,33 +76,34 @@ class LatencyProcessor extends AudioWorkletProcessor {
       this._b6 = white * 0.115926;
       return out * 0.11; // roughly compensate gain
     }
-  
+
     process(inputs, outputs, parameters) {
       const input = inputs[0] || [];
       const output = outputs[0];
-  
+
       if (!output) {
         return true;
       }
-  
-      const glitchArray = parameters.glitchIntensity;
-      const noiseArray = parameters.noiseType;
+
+      const glitchArray     = parameters.glitchIntensity;
+      const noiseArray      = parameters.noiseType;
+      const noiseAmtArray   = parameters.noiseAmount;
+
       if (glitchArray > 0.01 && this._debugCount < 5) {
-      this.port.postMessage({ type: 'distortion-debug', intensity: glitchArray });
-      this._debugCount++;
-    }
+        this.port.postMessage({ type: 'distortion-debug', intensity: glitchArray });
+        this._debugCount++;
+      }
+
       for (let ch = 0; ch < output.length; ch++) {
         const inChan = input[ch] || new Float32Array(output[ch].length);
         const outChan = output[ch];
-  
+
         for (let i = 0; i < outChan.length; i++) {
           const x = inChan[i] || 0;
 
-          const intensity =
-            glitchArray.length > 1 ? glitchArray[i] : glitchArray[0];
-          const noiseType =
-            noiseArray.length > 1 ? noiseArray[i] : noiseArray[0];
-// latency-worklet.js (inside process(), replacing your distortion block)
+          const intensity  = glitchArray.length  > 1 ? glitchArray[i]   : glitchArray[0];
+          const noiseType  = noiseArray.length    > 1 ? noiseArray[i]    : noiseArray[0];
+          const noiseAmt   = noiseAmtArray.length > 1 ? noiseAmtArray[i] : noiseAmtArray[0];
 
           let y = x;
 
@@ -122,31 +131,31 @@ class LatencyProcessor extends AudioWorkletProcessor {
             y = Math.tanh(z * 3);
           }
 
-
-          // 2) Noise (only if noiseType > 0)
+          // 2) Noise — scaled by noiseAmount for smooth gradient fade-in/out
           let noise = 0;
-          if (noiseType >= 1) {
+          if (noiseType >= 1 && noiseAmt > 0.001) {
             const w = this._white();
+            let rawNoise;
             if (noiseType < 1.5) {
               // white
-              noise = w * 0.3;
+              rawNoise = w * 0.3;
             } else if (noiseType < 2.5) {
               // brown
-              noise = this._brown(w) * 2.5;
+              rawNoise = this._brown(w) * 2.5;
             } else {
               // pink
-              noise = this._pink(w) * 2.5;
+              rawNoise = this._pink(w) * 2.5;
             }
+            noise = rawNoise * noiseAmt;
           }
 
           const sample = Math.max(-1, Math.min(1, y + noise));
           outChan[i] = sample;
         }
       }
-  
+
       return true;
     }
   }
 
 registerProcessor('latency-processor-v2', LatencyProcessor);
-
