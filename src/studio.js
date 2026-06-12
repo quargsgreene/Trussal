@@ -18,10 +18,13 @@ import {
   getLocalPeer,
   sendLocalPattern,
   sendLocalEffects,
-  sendLocalPlaying
+  sendLocalPlaying,
 } from './peer-state.js';
-import { bootStrudelOnUserGesture, stopStrudel, DEFAULT_PATTERN } from './strudel.js';
+import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
+import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
+import { injectHydraVideoToggle, MODE_SPLIT, MODE_DIRECT, setMode as setHydraVideoMode, getMode as getHydraVideoMode } from './hydra-video.js';
+import { tickKbdUi } from './on-screen-keyboard.js';
 import {
   bootAudioEngine,
   subscribeAudioRouting,
@@ -45,6 +48,13 @@ let initedRoom = null;
 let codeDebounce = null;
 let lastStatus = 'Idle';
 let routedSet = new Set();
+let sampleBanks = []; // [{name, count}] — kept in sync after every load/delete
+let currentSliders = []; // most recent slider configs from strudel eval
+
+async function refreshSampleBanks() {
+  sampleBanks = await getSampleBanks().catch(() => []);
+  renderAll();
+}
 
 function isInMeeting() {
   const body = document.body;
@@ -106,6 +116,7 @@ function injectStyles() {
     #${OVERLAY_ID} .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
     #${OVERLAY_ID} .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
     #${OVERLAY_ID} .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+    #${OVERLAY_ID} .ts-collapse-btn { margin-left: auto; }
     #${OVERLAY_ID} .ts-strip {
       display:flex; gap:8px; padding: 10px 12px;
       overflow-x:auto; overflow-y:hidden;
@@ -188,8 +199,25 @@ function injectStyles() {
     #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
     #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
     #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-fx { display:flex; gap:10px; flex-wrap:wrap; font-size: 12px; color: #b9d1c1; }
-    #${OVERLAY_ID} .ts-fx label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+    #${OVERLAY_ID} .ts-fx-btn {
+      padding:3px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+      font-size:11px; cursor:pointer;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
+    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    #${OVERLAY_ID} .ts-hv-mode-btn {
+      padding:2px 8px; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.12); background:transparent; color:#5d7264;
+      font-size:10px; cursor:pointer;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-hv-mode-btn:hover { color:#d6f5e2; }
+    #${OVERLAY_ID} .ts-hv-mode-btn.on { color:#7dcfff; border-color:rgba(125,207,255,0.4); background:rgba(125,207,255,0.08); }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
@@ -203,6 +231,13 @@ function injectStyles() {
       white-space: pre-wrap; overflow:auto;
     }
     #${OVERLAY_ID} .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+    @keyframes ts-eval-pulse {
+      0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
+      100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+    }
+    #${OVERLAY_ID} .ts-code.ts-eval-flash {
+      animation: ts-eval-pulse 0.55s ease-out forwards;
+    }
     #${OVERLAY_ID} .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} select.ts-select {
       background: #050f0a; color: #d6f5e2;
@@ -224,6 +259,42 @@ function injectStyles() {
     }
     #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
     #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+
+    #${OVERLAY_ID} .ts-sample-banks {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-bank {
+      padding: 1px 7px; border-radius: 3px;
+      background: rgba(31,244,102,0.1); color: #1ff466;
+      border: 1px solid rgba(31,244,102,0.25);
+      white-space: nowrap;
+    }
+    #${OVERLAY_ID} .ts-sample-banks-del {
+      margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
+      background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+
+    #${OVERLAY_ID} .ts-sliders {
+      display: flex; flex-wrap: wrap; gap: 10px 16px;
+    }
+    #${OVERLAY_ID} .ts-slider-row {
+      display: flex; flex-direction: column; gap: 3px;
+      min-width: 100px; flex: 1 1 100px;
+    }
+    #${OVERLAY_ID} .ts-slider-label {
+      font-size: 10px; font-family: monospace; color: #7aa68a;
+      display: flex; justify-content: space-between; gap: 6px;
+    }
+    #${OVERLAY_ID} .ts-slider-input {
+      width: 100%; cursor: pointer; accent-color: #1ff466;
+      height: 16px;
+    }
+
+    #hydra-canvas {
+      z-index: 100;
+    }
 
     #${BUTTON_ID} {
       position: fixed; bottom: 80px; right: 20px;
@@ -282,12 +353,18 @@ function renderStrip(container) {
 
 function effectsBlock(peer, isLocal) {
   const e = peer.effects || {};
+  const hvMode = getHydraVideoMode();
   if (isLocal) {
     return `
       <div class="ts-fx">
-        <label><input type="checkbox" data-fx="distortion" ${e.distortion ? 'checked' : ''}/> Distortion</label>
-        <label><input type="checkbox" data-fx="noise"      ${e.noise      ? 'checked' : ''}/> Noise</label>
-        <label><input type="checkbox" data-fx="reverb"     ${e.reverb     ? 'checked' : ''}/> Reverb</label>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e.distortion ? ' on' : ''}" data-fx="distortion">Distortion</button>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e.noise      ? ' on' : ''}" data-fx="noise">Noise</button>
+        <button class="ts-fx-btn ts-fx-dwell-btn${e.reverb     ? ' on' : ''}" data-fx="reverb">Reverb</button>
+      </div>
+      <div class="ts-fx" style="margin-top:4px;">
+        <span style="font-size:10px;color:#5d7264;">video mode:</span>
+        <button class="ts-hv-mode-btn${hvMode === MODE_SPLIT  ? ' on' : ''}" data-hv-mode="${MODE_SPLIT}">split</button>
+        <button class="ts-hv-mode-btn${hvMode === MODE_DIRECT ? ' on' : ''}" data-hv-mode="${MODE_DIRECT}">→ s0</button>
       </div>`;
   }
   return `
@@ -309,6 +386,10 @@ function metricsLine(peer) {
     routedTxt = `<b>routed</b> · ${escapeHtml(extLabel)}${propagating ? ' · <b>→ room</b>' : ''}`;
   } else if (routed) {
     routedTxt = '<b>routed</b>';
+  } else if (peer.isLocal) {
+    // Local Strudel audio bypasses the worklet chain (goes directly to master
+    // gain), so it never lands in audioRouted. Show play state instead.
+    routedTxt = peer.playing ? '<b>instrument ▶</b>' : 'not playing';
   } else {
     routedTxt = 'no live audio';
   }
@@ -347,12 +428,20 @@ function renderDetail(container) {
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">▶ Play</button>
         <button class="ts-btn stop" data-action="stop">■ Stop</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">⬆ Samples</button>
+        <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop</span>
       </div>`
     : `<div class="ts-section-controls"><span class="ts-readonly-badge">READ ONLY</span></div>`;
 
   const playing = peer.playing ? 'Playing' : 'Idle';
   const status = isLocal ? lastStatus : playing;
+
+  const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
+    <div class="ts-sample-banks">
+      ${sampleBanks.map(b => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join('')}
+      <button class="ts-sample-banks-del" data-action="delete-samples">× delete all user samples</button>
+    </div>` : '';
 
   container.innerHTML = `
     <div class="ts-detail-header">
@@ -374,7 +463,9 @@ function renderDetail(container) {
         <div class="ts-section-title">Strudel</div>
         ${strudelControls}
       </div>
+      ${sampleBanksRow}
       ${codeBlock}
+      ${isLocal ? '<div class="ts-sliders"></div>' : ''}
       ${isLocal ? '<div class="ts-voice-btns"></div>' : ''}
     </div>
 
@@ -389,7 +480,6 @@ function renderDetail(container) {
       clearTimeout(codeDebounce);
       codeDebounce = setTimeout(() => {
         try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
-        sendLocalPattern(codeEl.value);
       }, 200);
       renderVoiceButtons(container, codeEl.value);
     });
@@ -404,12 +494,20 @@ function renderDetail(container) {
       }
     });
   }
-  container.querySelectorAll('input[type="checkbox"][data-fx]').forEach(cb => {
-    cb.addEventListener('change', () => {
-      sendLocalEffects({
-        distortion: !!container.querySelector('input[data-fx="distortion"]').checked,
-        noise:      !!container.querySelector('input[data-fx="noise"]').checked,
-        reverb:     !!container.querySelector('input[data-fx="reverb"]').checked
+  container.querySelectorAll('.ts-fx-dwell-btn[data-fx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const peer = getPeerByJitsiId(selectedJitsiId);
+      const e = peer?.effects || {};
+      const fx = btn.dataset.fx;
+      sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fx]: !e[fx] });
+    });
+  });
+  container.querySelectorAll('.ts-hv-mode-btn[data-hv-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setHydraVideoMode(btn.dataset.hvMode);
+      // Re-render to reflect new mode button state without full renderAll.
+      container.querySelectorAll('.ts-hv-mode-btn').forEach(b => {
+        b.classList.toggle('on', b.dataset.hvMode === getHydraVideoMode());
       });
     });
   });
@@ -422,6 +520,37 @@ function renderDetail(container) {
   if (stopBtn) stopBtn.addEventListener('click', onStopClick);
   const captureBtnEl = container.querySelector('[data-action="capture"]');
   if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
+
+  const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
+  const samplesInput = container.querySelector('.ts-samples-input');
+  if (loadSamplesBtn && samplesInput) {
+    loadSamplesBtn.addEventListener('click', () => samplesInput.click());
+    samplesInput.addEventListener('change', async () => {
+      const files = samplesInput.files;
+      if (!files || !files.length) return;
+      setStatus('Loading samples…');
+      await uploadSamplesToDB(files, async (count) => {
+        if (count === 0) { setStatus('No audio files found'); return; }
+        await refreshLocalSamples();
+        await refreshSampleBanks();
+        setStatus(`Loaded ${count} sample${count === 1 ? '' : 's'} — use s("foldername") in patterns`);
+      });
+      samplesInput.value = '';
+    });
+  }
+
+  const deleteBtn = container.querySelector('[data-action="delete-samples"]');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!window.confirm('Delete all imported user samples?')) return;
+      setStatus('Deleting samples…');
+      await clearSamplesDB();
+      sampleBanks = [];
+      await rebakeStrudel();
+      setStatus('User samples deleted');
+      renderAll();
+    });
+  }
 }
 
 async function onEvalAndPlay(code) {
@@ -432,6 +561,7 @@ async function onEvalAndPlay(code) {
     await bootStrudelOnUserGesture();
     sendLocalPlaying(true);
     setStatus('Playing');
+    document.dispatchEvent(new CustomEvent('trussal-eval'));
   } catch (e) {
     console.error('[studio] play failed', e);
     setStatus('Error: ' + (e && e.message ? e.message : e));
@@ -540,6 +670,31 @@ function renderVoiceButtons(container, code) {
   });
 }
 
+function renderSliders(container, sliders) {
+  const area = container.querySelector('.ts-sliders');
+  if (!area) return;
+  if (!sliders || !sliders.length) { area.innerHTML = ''; return; }
+  area.innerHTML = sliders.map((s, i) => `
+    <div class="ts-slider-row" data-slider-id="${escapeHtml(String(s.id))}">
+      <div class="ts-slider-label">
+        <span>slider ${i + 1}</span>
+        <span class="ts-slider-val">${Number(s.value).toFixed(3)}</span>
+      </div>
+      <input class="ts-slider-input" type="range"
+        min="${s.min}" max="${s.max}" step="${s.step}" value="${s.value}">
+    </div>`).join('');
+  area.querySelectorAll('.ts-slider-row').forEach(row => {
+    const id = row.dataset.sliderId;
+    const input = row.querySelector('input');
+    const valEl = row.querySelector('.ts-slider-val');
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      updateSliderValue(id, v);
+      if (valEl) valEl.textContent = v.toFixed(3);
+    });
+  });
+}
+
 function setStatus(text) {
   lastStatus = text;
   const statusEl = document.querySelector(`#${OVERLAY_ID} .ts-status`);
@@ -558,9 +713,10 @@ function renderAll() {
     const detail = overlay.querySelector('.ts-detail');
     if (strip) renderStrip(strip);
     if (detail) {
+      const existingCodeEl = detail.querySelector('textarea.ts-code');
       const active = document.activeElement;
-      const isCodeFocused = active && active.classList && active.classList.contains('ts-code');
-      const codeValue = isCodeFocused ? active.value : null;
+      const isCodeFocused = active && active === existingCodeEl;
+      const codeValue = existingCodeEl ? existingCodeEl.value : null;
       const selStart = isCodeFocused ? active.selectionStart : null;
       const selEnd   = isCodeFocused ? active.selectionEnd   : null;
       const scrollTop = isCodeFocused ? active.scrollTop : null;
@@ -568,23 +724,29 @@ function renderAll() {
       renderDetail(detail);
       refreshFacialGestureButtons();
 
-      if (isCodeFocused) {
-        const next = detail.querySelector('.ts-code');
-        if (next) {
-          if (codeValue != null) next.value = codeValue;
-          next.focus();
+      const nextCodeEl = detail.querySelector('.ts-code');
+      if (nextCodeEl && codeValue != null) {
+        nextCodeEl.value = codeValue;
+        if (isCodeFocused) {
+          nextCodeEl.focus();
           if (selStart != null && selEnd != null) {
-            try { next.setSelectionRange(selStart, selEnd); } catch (e) {}
+            try { nextCodeEl.setSelectionRange(selStart, selEnd); } catch (e) {}
           }
-          if (scrollTop != null) next.scrollTop = scrollTop;
+          if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
         }
       }
 
-      const codeEl = detail.querySelector('.ts-code');
-      if (codeEl) renderVoiceButtons(detail, codeEl.value);
+      if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
+      renderSliders(detail, currentSliders);
     }
   });
 }
+
+document.addEventListener('trussal-sliders-updated', (e) => {
+  currentSliders = e.detail || [];
+  const detail = document.querySelector(`#${OVERLAY_ID} .ts-detail`);
+  if (detail) renderSliders(detail, currentSliders);
+});
 
 function ensureOverlay() {
   let overlay = document.getElementById(OVERLAY_ID);
@@ -598,6 +760,7 @@ function ensureOverlay() {
   overlay.innerHTML = `
     <div class="ts-header">
       <div class="ts-title">Trussal Studio <small>each participant owns their own instrument</small></div>
+      <button class="ts-dwell-btn ts-collapse-btn" id="trussal-studio-collapse" type="button" title="Collapse / expand panel">▼</button>
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
@@ -609,7 +772,23 @@ function ensureOverlay() {
     overlay.style.display = 'none';
   });
 
+  const studioCollapseBtn = overlay.querySelector('#trussal-studio-collapse');
+  if (studioCollapseBtn) {
+    studioCollapseBtn.addEventListener('click', () => {
+      const strip  = overlay.querySelector('.ts-strip');
+      const detail = overlay.querySelector('.ts-detail');
+      if (!strip || !detail) return;
+      const collapsed = strip.style.display === 'none';
+      strip.style.display  = collapsed ? '' : 'none';
+      detail.style.display = collapsed ? '' : 'none';
+      studioCollapseBtn.textContent = collapsed ? '▼' : '▲';
+    });
+  }
+
   injectFacialGestureToggle(overlay.querySelector('.ts-header'));
+  injectHydraVideoToggle(overlay.querySelector('.ts-header'));
+
+  refreshSampleBanks();
 
   const localPeer = getLocalPeer();
   if (localPeer.jitsiId && !localPeer.pattern) {
@@ -665,8 +844,25 @@ function tickUi() {
   const btn = ensureToggle();
   if (btn) btn.style.display = 'block';
 
+  tickKbdUi();
   bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
 }
+
+// Keyboard module requests eval via this event.
+document.addEventListener('trussal-kbd-eval', (e) => {
+  const code = e.detail?.code;
+  onEvalAndPlay(typeof code === 'string' ? code : (getLocalPeer()?.pattern ?? ''));
+});
+
+// Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
+document.addEventListener('trussal-eval', () => {
+  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+  if (codeEl) {
+    codeEl.classList.remove('ts-eval-flash');
+    void codeEl.offsetWidth; // force reflow so the animation restarts each time
+    codeEl.classList.add('ts-eval-flash');
+  }
+});
 
 subscribeParticipants((event, payload) => {
   if (event === 'local' && payload && !selectedJitsiId) selectedJitsiId = payload.id;

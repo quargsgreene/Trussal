@@ -20,6 +20,11 @@ let reverbBuffer = null;
 let masterStrudelGain = null;
 let bootPromise = null;
 
+// WebAudio effect chain applied to the local peer's Strudel master output.
+// These run post-mix on the combined instrument bus, guaranteeing audible
+// effects regardless of whether the Strudel evaluate() succeeds.
+let strudelFx = null; // { distWS, noiseGain, noiseFilter, convGain } | null
+
 const chains = new Map();           // jitsiId -> chain
 const remoteSources = new Map();    // jitsiId -> { tag, source, label }
 const pendingCaptures = new Set();  // jitsiIds currently being wired (prevents concurrent duplicates)
@@ -79,22 +84,77 @@ async function loadReverbBuffer() {
   return reverbBuffer;
 }
 
+// Tanh-based soft-clip curve for the WaveShaperNode.
+function makeDistortionCurve(amount) {
+  const n = 512;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    if (amount < 0.001) { curve[i] = x; continue; }
+    const k = amount * 24 + 0.001;
+    curve[i] = (Math.PI + k) * x / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
+}
+
+// Apply or update the Strudel WebAudio effect chain.  Called whenever the
+// local peer's effects or metrics change so the master bus always reflects
+// the current toggle state regardless of Strudel evaluate() success.
+function updateStrudelFx(effects, rtt, jitter) {
+  if (!strudelFx || !audioCtx) return;
+  const e   = effects || {};
+  const r   = rtt    || 0;
+  const j   = jitter || 0;
+  const now = audioCtx.currentTime;
+
+  // Distortion — WaveShaperNode curve; null = identity (bypass).
+  if (e.distortion) {
+    const base  = 0.2;
+    const extra = Math.max(0, Math.min(0.8, (r - 5) / 55 + j / 6));
+    strudelFx.distWS.curve = makeDistortionCurve(base + extra);
+  } else {
+    strudelFx.distWS.curve = null;
+  }
+
+  // Noise — ramp GainNode for smooth gradient fade-in/out.
+  const targetNoise = e.noise ? 0.12 : 0;
+  strudelFx.noiseGain.gain.cancelScheduledValues(now);
+  strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
+  if (e.noise) {
+    // Filter colour: white (flat) → brown (200 Hz) → pink (1 kHz) by jitter.
+    const targetFreq = j < 1 ? 20000 : j < 3 ? 200 : 1200;
+    strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
+    strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
+  }
+
+  // Reverb — ramp wet gain.
+  if (strudelFx.convGain) {
+    const targetRev = e.reverb ? 1.8 : 0;
+    strudelFx.convGain.gain.cancelScheduledValues(now);
+    strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
+  }
+}
+
 function computeEffectParams(effects, metrics) {
-  const rtt = metrics && typeof metrics.rtt === 'number' ? metrics.rtt : 0;
+  const rtt    = metrics && typeof metrics.rtt    === 'number' ? metrics.rtt    : 0;
   const jitter = metrics && typeof metrics.jitter === 'number' ? metrics.jitter : 0;
+
+  // Base 0.05 (drive ≈5.5) when on; network conditions push it toward 1.0
+  // (drive ≈91) for clearly audible differences across the latency range.
   let glitchIntensity = 0;
   if (effects && effects.distortion) {
-    const cleanThreshold = 5;
-    const maxGlitchThreshold = 70;
-    glitchIntensity = Math.max(0, Math.min(1,
-      (rtt - cleanThreshold) / (maxGlitchThreshold - cleanThreshold) + (jitter / 15)
-    ));
+    const base  = 0.05;
+    const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+    glitchIntensity = base + extra;
   }
+
+  // Always apply noise when on; jitter selects the colour so the progression
+  // sounds clearly distinct: white (quiet) → brown (warm, loud) → pink (loud).
   let noiseType = 0;
   if (effects && effects.noise) {
-    if (jitter > 0.5 && jitter < 1.5) noiseType = 1;
-    else if (jitter >= 1.5 && jitter < 3) noiseType = 2;
-    else if (jitter >= 3) noiseType = 3;
+    if      (jitter < 1) noiseType = 1;   // white
+    else if (jitter < 3) noiseType = 2;   // brown
+    else                 noiseType = 3;   // pink
   }
   return { glitchIntensity, noiseType, reverb: !!(effects && effects.reverb) };
 }
@@ -106,6 +166,13 @@ function applyParams(chain, params) {
   if (glitch) glitch.setValueAtTime(params.glitchIntensity, now);
   const noise = chain.worklet.parameters.get('noiseType');
   if (noise) noise.setValueAtTime(params.noiseType, now);
+  // Ramp noiseAmount for gradient fade-in/out (worklet scales noise by this).
+  const noiseAmt = chain.worklet.parameters.get('noiseAmount');
+  if (noiseAmt) {
+    const target = params.noiseType > 0 ? 1 : 0;
+    noiseAmt.cancelScheduledValues(now);
+    noiseAmt.linearRampToValueAtTime(target, now + 0.8);
+  }
 
   // Reverb toggle: limiter feeds either dry to realDestination or wet via the
   // convolver (whose output we already wired to realDestination).
@@ -261,6 +328,9 @@ subscribePeerState((event, payload) => {
   } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
     captureJitsiAudio();
   }
+  if (payload.isLocal) {
+    updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
+  }
 });
 
 // React to participants: drop chains for peers who left.
@@ -306,13 +376,57 @@ export async function bootAudioEngine() {
 // front of realDestination for Strudel-only volume control.
 export async function ensureMasterStrudelInput() {
   await bootAudioEngine();
+  await loadReverbBuffer();
   if (!masterStrudelGain) {
     masterStrudelGain = audioCtx.createGain();
     masterStrudelGain.channelCount = 2;
     masterStrudelGain.channelCountMode = 'explicit';
     Object.defineProperty(masterStrudelGain, 'maxChannelCount', { value: 2, configurable: true });
     masterStrudelGain.gain.value = 1.0;
-    masterStrudelGain.connect(realDestination);
+
+    // Build the Strudel-output effect chain:
+    //   masterStrudelGain → distWS → realDestination  (dry + distortion)
+    //                              → convolver → convGain → realDestination  (reverb wet)
+    //   noiseSource → noiseFilter → noiseGain → realDestination
+
+    const distWS = audioCtx.createWaveShaper();
+    distWS.oversample = '4x';
+    distWS.curve = null; // identity (off) by default
+
+    masterStrudelGain.connect(distWS);
+    distWS.connect(realDestination);
+
+    // Reverb wet path
+    let convolver = null, convGain = null;
+    if (reverbBuffer) {
+      convolver = audioCtx.createConvolver();
+      convolver.buffer = reverbBuffer;
+      convGain = audioCtx.createGain();
+      convGain.gain.value = 0; // off until reverb toggled
+      masterStrudelGain.connect(convolver);
+      convolver.connect(convGain);
+      convGain.connect(realDestination);
+    }
+
+    // Noise source (2-second white-noise loop)
+    const bufLen = Math.floor(audioCtx.sampleRate * 2);
+    const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const nd = noiseBuf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+    const noiseSrc = audioCtx.createBufferSource();
+    noiseSrc.buffer = noiseBuf;
+    noiseSrc.loop = true;
+    const noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = 20000; // flat (white) by default
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.value = 0; // silent until noise toggled
+    noiseSrc.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(realDestination);
+    noiseSrc.start();
+
+    strudelFx = { distWS, noiseFilter, noiseGain, convGain };
   }
   return { audioCtx, masterStrudelGain, realDestination };
 }

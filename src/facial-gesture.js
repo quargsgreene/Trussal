@@ -12,17 +12,25 @@ window.StrudelButton — custom element registered so the transpiler's *name: co
                    shorthand doesn't throw during eval.
 */
 
-import { getLocalPeer, sendLocalPattern, sendLocalPlaying } from './peer-state.js';
+import { getLocalPeer, sendLocalPattern, sendLocalPlaying, sendLocalEffects } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel } from './strudel.js';
+import { setVideoStream } from './hydra-video.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const GESTURE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task';
 const MP_ESM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm';
 
 // Detection thresholds — identical to strudel-fork's useFacialGestures.jsx.
 const BLINK_THRESHOLD      = 0.8;
+const WINK_THRESHOLD       = 0.6;  // single-eye blink threshold; both eyes must differ to qualify
+const SMILE_THRESHOLD      = 0.7;  // bilateral smile → play
+const SMILE_ASYMMETRY_MAX  = 0.2;  // max difference between left/right smile scores; perspective artifacts are asymmetric
+const HEAD_YAW_THRESHOLD   = 0.25; // suppress smile when head is turned sideways beyond this fraction of eye width
+const THUMBS_UP_THRESHOLD  = 0.6;  // GestureRecognizer confidence for Thumb_Up → stop
 const BROW_INNER_THRESHOLD = 0.6;
 const BROW_OUTER_THRESHOLD = 0.45;
 const JAW_OPEN_THRESHOLD   = 0.5;
@@ -41,7 +49,7 @@ const RING_C = 2 * Math.PI * RING_R;
 // ---------------------------------------------------------------------------
 if (typeof window !== 'undefined') {
   window.faceCtx = window.faceCtx || {
-    jawOpen: 0, browInnerUp: 0, headTilt: 0,
+    jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
     mouthSmileLeft: 0, mouthSmileRight: 0,
     eyeBlinkLeft: 0, eyeBlinkRight: 0,
     cursorX: window.innerWidth  / 2,
@@ -80,8 +88,13 @@ function setCode(code) {
 
 async function evaluate() {
   try {
+    // Sync the current textarea code into localPeer.pattern so rebuildAndEvaluate
+    // picks up changes made since the last explicit eval (typing is no longer
+    // auto-synced).
+    sendLocalPattern(getCode());
     await bootStrudelOnUserGesture();
     sendLocalPlaying(true);
+    document.dispatchEvent(new CustomEvent('trussal-eval'));
   } catch (e) {
     console.warn('[facial-gesture] evaluate failed', e);
   }
@@ -112,7 +125,8 @@ function shiftTranspose(code, delta) {
     return code.replace(/\.transpose\((-?\d+)\)/, (_, n) => `.transpose(${+n + delta})`);
   if (/\.add\((-?\d+)\)/.test(code))
     return code.replace(/\.add\((-?\d+)\)/, (_, n) => `.add(${+n + delta})`);
-  return code;
+  // No existing transpose — append one after the last non-whitespace character.
+  return code.replace(/(\S)\s*$/, `$1.transpose(${delta})`);
 }
 
 function parseMediapipeConfigs(code) {
@@ -161,16 +175,19 @@ function makeGestureHandler(triggerName, defaultMutator) {
   };
 }
 
-const handleMouthOpen    = makeGestureHandler('mouthOpen',    cycleHiHat);
-const handleHeadTiltLeft = makeGestureHandler('headTiltLeft',  (c) => shiftTranspose(c, -2));
-const handleHeadTiltRight= makeGestureHandler('headTiltRight', (c) => shiftTranspose(c,  2));
+let _headTiltDelta = 2; // semitones per tilt; user-adjustable from the panel
+
+const handleBrowRaise    = makeGestureHandler('browRaise',    cycleHiHat);
+const handleHeadTiltLeft = makeGestureHandler('headTiltLeft',  (c) => shiftTranspose(c, -_headTiltDelta));
+const handleHeadTiltRight= makeGestureHandler('headTiltRight', (c) => shiftTranspose(c,  _headTiltDelta));
 
 // ---------------------------------------------------------------------------
 // MediaPipe detection state.
 // ---------------------------------------------------------------------------
-let _enabled       = false;
-let _landmarker    = null;
-let _mpClasses     = null;
+let _enabled           = false;
+let _landmarker        = null;
+let _gestureRecognizer = null;
+let _mpClasses         = null;
 let _drawingUtils  = null;
 let _stream        = null;
 let _rafId         = null;
@@ -184,15 +201,16 @@ let _flashEl       = null;
 let _flashTimeout  = null;
 
 const _ema = {
-  jawOpen: 0, browInnerUp: 0, headTilt: 0,
+  jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
   mouthSmileLeft: 0, mouthSmileRight: 0,
   eyeBlinkLeft: 0, eyeBlinkRight: 0,
   cursorX: typeof window !== 'undefined' ? window.innerWidth  / 2 : 0,
   cursorY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
 };
-const _latch      = { mouthOpen: false, headLeft: false, headRight: false };
+const _latch      = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
 const _lastFired  = { play: 0, stop: 0 };
-const _dwell      = { code: null, el: null, startMs: 0, fired: false };
+// _dwell.type: 'strudel' | 'fx' | null.  key is strudelCode or fx name.
+const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false };
 
 // Regex mutator UI state — mirrors FacialGestureControl.jsx's useState for
 // triggerGesture / regex / replacement.
@@ -203,11 +221,12 @@ let _regexReplacement  = '';
 function _flash(gesture) {
   if (!_flashEl) return;
   const labels = {
-    play:          '▶ play',
-    stop:          '■ stop',
-    mouthOpen:     '◉ mouth → drum density',
-    headTiltLeft:  '← tilt left → transpose −2',
-    headTiltRight: '→ tilt right → transpose +2',
+    play:          '▶ play (smile)',
+    stop:          '■ stop (thumbs up)',
+    eval:          '↺ update (left blink)',
+    drumDensity:   '◎ drum density (brow raise)',
+    headTiltLeft:  `← tilt left → −${_headTiltDelta}st`,
+    headTiltRight: `→ tilt right → +${_headTiltDelta}st`,
   };
   _flashEl.textContent = labels[gesture] ?? gesture;
   _flashEl.style.opacity = '1';
@@ -222,7 +241,7 @@ function _setStatus(s) {
   _statusEl.style.color = cols[s] ?? '#7aa68a';
 }
 
-function _processResult(result) {
+function _processResult(result, gestureResult) {
   const blendshapes = result.faceBlendshapes?.[0]?.categories;
   const landmarks   = result.faceLandmarks?.[0];
   if (!blendshapes) return;
@@ -238,9 +257,14 @@ function _processResult(result) {
   _ema.eyeBlinkRight  = lerp(_ema.eyeBlinkRight,  score('eyeBlinkRight'));
 
   if (landmarks && landmarks.length > 263) {
-    const eyeDistX = Math.abs(landmarks[263].x - landmarks[33].x) || 0.1;
-    const tiltRaw  = (landmarks[33].y - landmarks[263].y) / eyeDistX;
-    _ema.headTilt  = lerp(_ema.headTilt, Math.max(-1, Math.min(1, tiltRaw)));
+    const eyeDistX   = Math.abs(landmarks[263].x - landmarks[33].x) || 0.1;
+    const eyeCenterX = (landmarks[33].x + landmarks[263].x) / 2;
+    // tilt: vertical difference between eye corners (head roll)
+    const tiltRaw    = (landmarks[33].y - landmarks[263].y) / eyeDistX;
+    // yaw: nose tip (landmark 4) offset from eye midpoint, normalized by eye width
+    const yawRaw     = (landmarks[4].x - eyeCenterX) / eyeDistX;
+    _ema.headTilt    = lerp(_ema.headTilt, Math.max(-1, Math.min(1, tiltRaw)));
+    _ema.headYaw     = lerp(_ema.headYaw,  Math.max(-1, Math.min(1, yawRaw)));
   }
   if (landmarks && landmarks.length > 10) {
     const lm = landmarks[10];
@@ -249,39 +273,74 @@ function _processResult(result) {
   }
 
   Object.assign(window.faceCtx, _ema);
-  _processGestures(blendshapes);
+  _processGestures(blendshapes, gestureResult);
 }
 
-function _processGestures(blendshapes) {
-  const score       = (name) => blendshapes.find((c) => c.categoryName === name)?.score ?? 0;
-  const eyeBlinkL   = score('eyeBlinkLeft');
-  const eyeBlinkR   = score('eyeBlinkRight');
-  const browInnerUp = score('browInnerUp');
-  const browOuterL  = score('browOuterUpLeft');
-  const browOuterR  = score('browOuterUpRight');
-  const jawOpen     = score('jawOpen');
-  const now         = Date.now();
+function _processGestures(blendshapes, gestureResult) {
+  const score        = (name) => blendshapes.find((c) => c.categoryName === name)?.score ?? 0;
+  const eyeBlinkL    = score('eyeBlinkLeft');
+  const eyeBlinkR    = score('eyeBlinkRight');
+  const mouthSmileL  = score('mouthSmileLeft');
+  const mouthSmileR  = score('mouthSmileRight');
+  const browInnerUp  = score('browInnerUp');
+  const browOuterL   = score('browOuterUpLeft');
+  const browOuterR   = score('browOuterUpRight');
 
-  const isBlink = eyeBlinkL > BLINK_THRESHOLD && eyeBlinkR > BLINK_THRESHOLD;
+  // Left blink: left eye clearly closed, right clearly open.
+  // The < 0.3 guard ensures double-blink never fires this. Right blink is unmapped.
+  const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
+
+  // play — bilateral smile, guarded against head-turn false positives:
+  // • both sides must exceed threshold (real smile)
+  // • left/right scores must agree within SMILE_ASYMMETRY_MAX (perspective artifacts are lopsided)
+  // • head yaw must be small (turning to move the cursor lifts mouth corners via foreshortening)
+  const isSmile = mouthSmileL > SMILE_THRESHOLD &&
+                  mouthSmileR > SMILE_THRESHOLD &&
+                  Math.abs(mouthSmileL - mouthSmileR) < SMILE_ASYMMETRY_MAX &&
+                  Math.abs(_ema.headYaw) < HEAD_YAW_THRESHOLD;
+  if (isSmile && !_latch.smile) {
+    _latch.smile = true;
+    _flash('play');
+    bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {});
+  }
+  if (_latch.smile && mouthSmileL < SMILE_THRESHOLD * LATCH_RESET && mouthSmileR < SMILE_THRESHOLD * LATCH_RESET) {
+    _latch.smile = false;
+  }
+
+  // stop — thumbs up hand gesture (GestureRecognizer)
+  const topGesture   = gestureResult?.gestures?.[0]?.[0];
+  const isThumbsUp   = topGesture?.categoryName === 'Thumb_Up' && topGesture.score > THUMBS_UP_THRESHOLD;
+  if (isThumbsUp && !_latch.thumbsUp) {
+    _latch.thumbsUp = true;
+    _flash('stop');
+    stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {});
+  }
+  if (_latch.thumbsUp && !isThumbsUp) {
+    _latch.thumbsUp = false;
+  }
+
+  // update/eval — left blink only (right blink and double-blink are unmapped)
+  if (isLeftBlink && !_latch.leftBlink) {
+    _latch.leftBlink = true;
+    _flash('eval');
+    evaluate();
+  }
+  if (_latch.leftBlink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
+    _latch.leftBlink = false;
+  }
+
+  // drum density — brow raise: inner brow up + at least one outer brow, eyes open
   const isBrowRaise =
     browInnerUp > BROW_INNER_THRESHOLD &&
     (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) &&
     eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
-
-  if (isBlink && now - _lastFired.play > COOLDOWN_MS) {
-    _lastFired.play = now;
-    _flash('play');
-    bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {});
-  } else if (isBrowRaise && now - _lastFired.stop > COOLDOWN_MS) {
-    _lastFired.stop = now;
-    _flash('stop');
-    stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {});
+  if (isBrowRaise && !_latch.browRaise) {
+    _latch.browRaise = true;
+    _flash('drumDensity');
+    handleBrowRaise();
   }
-
-  if (!_latch.mouthOpen && jawOpen > JAW_OPEN_THRESHOLD) {
-    _latch.mouthOpen = true; _flash('mouthOpen'); handleMouthOpen();
-  } else if (_latch.mouthOpen && jawOpen < JAW_OPEN_THRESHOLD * LATCH_RESET) {
-    _latch.mouthOpen = false;
+  if (_latch.browRaise && !(browInnerUp > BROW_INNER_THRESHOLD * LATCH_RESET)) {
+    _latch.browRaise = false;
   }
 
   const headTilt = _ema.headTilt;
@@ -324,8 +383,10 @@ function _detectionLoop() {
     return;
   }
 
-  const result = _landmarker.detectForVideo(_videoEl, performance.now());
-  _processResult(result);
+  const ts            = performance.now();
+  const result        = _landmarker.detectForVideo(_videoEl, ts);
+  const gestureResult = _gestureRecognizer?.recognizeForVideo(_videoEl, ts);
+  _processResult(result, gestureResult);
   _drawLandmarks(result);
 
   // Move head cursor.
@@ -335,67 +396,106 @@ function _detectionLoop() {
     _cursorEl.style.display = 'block';
   }
 
-  // Dwell detection over .strudel-head-btn elements rendered by refreshFacialGestureButtons().
+  // Dwell detection over .strudel-head-btn, .ts-fx-dwell-btn, and .ts-dwell-btn elements.
   const cx = _ema.cursorX;
   const cy = _ema.cursorY;
-  let hoveredCode = null;
+  let hoveredKey  = null;
+  let hoveredType = null;
   let hoveredEl   = null;
-  for (const btn of document.querySelectorAll('.strudel-head-btn')) {
+  for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn')) {
     const r = btn.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-      hoveredCode = btn.dataset.strudelCode;
-      hoveredEl   = btn;
+      if (btn.classList.contains('ts-fx-dwell-btn')) {
+        hoveredKey  = btn.dataset.fx;
+        hoveredType = 'fx';
+      } else if (btn.classList.contains('ts-dwell-btn')) {
+        hoveredKey  = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
+        hoveredType = 'action';
+      } else {
+        hoveredKey  = btn.dataset.strudelCode;
+        hoveredType = 'strudel';
+      }
+      hoveredEl = btn;
       break;
     }
   }
 
   const now = performance.now();
-  if (hoveredCode !== _dwell.code) {
-    if (_dwell.el) _dwell.el.classList.remove('strudel-dwell-hover');
-    _dwell.code    = hoveredCode;
+  if (hoveredKey !== _dwell.key || hoveredType !== _dwell.type) {
+    if (_dwell.el) {
+      _dwell.el.classList.remove('strudel-dwell-hover');
+      if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
+    }
+    _dwell.key     = hoveredKey;
+    _dwell.type    = hoveredType;
     _dwell.el      = hoveredEl;
-    _dwell.startMs = hoveredCode ? now : 0;
+    _dwell.startMs = hoveredKey ? now : 0;
     _dwell.fired   = false;
     if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
   }
 
-  if (hoveredCode && !_dwell.fired) {
+  if (hoveredKey && !_dwell.fired) {
     const progress = Math.min((now - _dwell.startMs) / DWELL_MS, 1);
-    if (_dwell.el) _dwell.el.classList.add('strudel-dwell-hover');
+    if (_dwell.el) {
+      _dwell.el.classList.add('strudel-dwell-hover');
+      if (_dwell.type === 'action') _dwell.el.style.setProperty('--dwell-prog', progress.toFixed(3));
+    }
     if (_progressRing) _progressRing.style.strokeDashoffset = (RING_C * (1 - progress)).toFixed(2);
     if (progress >= 1) {
       _dwell.fired = true;
       if (_dwell.el) {
         _dwell.el.classList.remove('strudel-dwell-hover');
         _dwell.el.classList.add('strudel-btn-active');
+        if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
         setTimeout(() => _dwell.el?.classList.remove('strudel-btn-active'), 600);
       }
       if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
-      toggleButtonCode(hoveredCode);
+      if (_dwell.type === 'fx') {
+        _toggleFxEffect(_dwell.key);
+      } else if (_dwell.type === 'action') {
+        if (_dwell.el) _dwell.el.click();
+      } else {
+        toggleButtonCode(_dwell.key);
+      }
     }
   }
 
   _rafId = requestAnimationFrame(_detectionLoop);
 }
 
+function _toggleFxEffect(fxName) {
+  const peer = getLocalPeer();
+  if (!peer) return;
+  const e = peer.effects || {};
+  sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fxName]: !e[fxName] });
+}
+
 async function _startCamera() {
   _setStatus('loading');
   try {
-    const { FaceLandmarker, FilesetResolver, DrawingUtils } = await import(MP_ESM);
+    const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
     _mpClasses = { FaceLandmarker, DrawingUtils };
 
     const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
-    _landmarker  = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-      outputFaceBlendshapes: true,
-      runningMode: 'VIDEO',
-      numFaces: 1,
-    });
+    [_landmarker, _gestureRecognizer] = await Promise.all([
+      FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+        outputFaceBlendshapes: true,
+        runningMode: 'VIDEO',
+        numFaces: 1,
+      }),
+      GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: 'GPU' },
+        runningMode: 'VIDEO',
+        numHands: 1,
+      }),
+    ]);
 
     _stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
     _videoEl.srcObject = _stream;
     await _videoEl.play();
 
+    setVideoStream(_stream); // share with hydra-video
     _setStatus('ready');
     _rafId = requestAnimationFrame(_detectionLoop);
   } catch (e) {
@@ -406,17 +506,19 @@ async function _startCamera() {
 
 function _stopCamera() {
   cancelAnimationFrame(_rafId);  _rafId = null;
+  setVideoStream(null); // detach from hydra-video before stopping tracks
   _stream?.getTracks().forEach((t) => t.stop());  _stream = null;
-  _landmarker?.close();  _landmarker = null;
+  _landmarker?.close();        _landmarker        = null;
+  _gestureRecognizer?.close(); _gestureRecognizer = null;
   _mpClasses    = null;
   _drawingUtils = null;
   Object.assign(_ema, {
-    jawOpen: 0, browInnerUp: 0, headTilt: 0,
+    jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
     mouthSmileLeft: 0, mouthSmileRight: 0,
     eyeBlinkLeft: 0, eyeBlinkRight: 0,
     cursorX: window.innerWidth / 2, cursorY: window.innerHeight / 2,
   });
-  Object.assign(_latch, { mouthOpen: false, headLeft: false, headRight: false });
+  Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false });
   if (_cursorEl) _cursorEl.style.display = 'none';
   _setStatus('idle');
 }
@@ -515,13 +617,16 @@ function _injectStyles() {
       display: flex; flex-direction: column; gap: 4px;
     }
     #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#d6f5e2; font-size:11px; }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] {
-      width: 100%; background:#050f0a; color:#d6f5e2;
+    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
+      background:#050f0a; color:#d6f5e2;
       border:1px solid rgba(255,255,255,0.15); border-radius:4px;
       padding:3px 6px; font-size:11px; box-sizing:border-box;
     }
+    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
+    #${FG_PANEL_ID} input[type="number"] { width:52px; font-family:monospace; text-align:center; }
     #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
-    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus {
+    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
+    #${FG_PANEL_ID} input[type="number"]:focus {
       outline:1px solid rgba(31,244,102,0.4);
     }
 
@@ -534,6 +639,33 @@ function _injectStyles() {
     }
     #trussal-fg-toggle:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
     #trussal-fg-toggle.on    { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+
+    .ts-dwell-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #7aa68a;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 10px;
+      line-height: 1.5;
+      font-family: sans-serif;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .ts-dwell-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    .ts-dwell-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-dwell-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell-prog, 0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
   `;
   document.head.appendChild(s);
 }
@@ -568,53 +700,65 @@ function _ensureDOM() {
   panel.innerHTML = `
     <div class="fg-row fg-drag-handle">
       <span class="fg-title">facial control</span>
+      <button class="ts-dwell-btn" id="trussal-fg-collapse" title="Collapse / expand panel">▼</button>
       <span id="trussal-fg-status" style="font-size:11px;">idle</span>
     </div>
-    <div class="fg-video-wrap">
-      <video id="trussal-fg-video" muted playsinline></video>
-      <canvas id="trussal-fg-canvas"></canvas>
-    </div>
-    <div class="fg-flash" id="trussal-fg-flash"></div>
-    <div class="fg-hints">
-      blink both eyes → play<br>
-      raise eyebrows → stop<br>
-      open mouth → drum density<br>
-      tilt head → transpose ±2<br>
-      head cursor dwell 1s → toggle voice
-    </div>
-    <div class="fg-btns" id="trussal-fg-btns"></div>
-
-    <div class="fg-section">
-      <div class="fg-section-title">regex mutator</div>
-      <select id="trussal-fg-trigger">
-        <option value="mouthOpen">mouth open</option>
-        <option value="headTiltLeft">head tilt left</option>
-        <option value="headTiltRight">head tilt right</option>
-      </select>
-      <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
-      <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-      <div style="font-size:9px;color:#5d7264;line-height:1.5;">
-        or annotate code:<br>
-        <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
+    <div id="trussal-fg-body">
+      <div class="fg-video-wrap">
+        <video id="trussal-fg-video" muted playsinline></video>
+        <canvas id="trussal-fg-canvas"></canvas>
       </div>
-    </div>
-
-    <div class="fg-section">
-      <div class="fg-section-title">StrudelButton</div>
-      <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-        write in code:<br>
-        <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
-        dwell with head cursor (1 s) to append/toggle that voice.
+      <div class="fg-flash" id="trussal-fg-flash"></div>
+      <div class="fg-hints">
+        smile → play<br>
+        thumbs up → stop<br>
+        left blink → update code<br>
+        raise eyebrows → drum density<br>
+        tilt head → transpose ±<span id="trussal-fg-tilt-label">2</span>st<br>
+        head cursor dwell 1s → toggle voice
       </div>
-    </div>
+      <div class="fg-btns" id="trussal-fg-btns"></div>
 
-    <div class="fg-section">
-      <div class="fg-section-title">window.faceCtx</div>
-      <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-      <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-        jawOpen, browInnerUp, headTilt,<br>
-        eyeBlinkL/R, mouthSmileL/R,<br>
-        cursorX, cursorY
+      <div class="fg-section">
+        <div class="fg-section-title">head tilt amount</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
+          <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+        </div>
+      </div>
+
+      <div class="fg-section">
+        <div class="fg-section-title">regex mutator</div>
+        <select id="trussal-fg-trigger">
+          <option value="mouthOpen">mouth open</option>
+          <option value="headTiltLeft">head tilt left</option>
+          <option value="headTiltRight">head tilt right</option>
+        </select>
+        <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
+        <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
+        <div style="font-size:9px;color:#5d7264;line-height:1.5;">
+          or annotate code:<br>
+          <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
+        </div>
+      </div>
+
+      <div class="fg-section">
+        <div class="fg-section-title">StrudelButton</div>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          write in code:<br>
+          <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
+          dwell with head cursor (1 s) to append/toggle that voice.
+        </div>
+      </div>
+
+      <div class="fg-section">
+        <div class="fg-section-title">window.faceCtx</div>
+        <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          jawOpen, browInnerUp, headTilt,<br>
+          eyeBlinkL/R, mouthSmileL/R,<br>
+          cursorX, cursorY
+        </div>
       </div>
     </div>
   `;
@@ -624,6 +768,17 @@ function _ensureDOM() {
   _statusEl  = panel.querySelector('#trussal-fg-status');
   _flashEl   = panel.querySelector('#trussal-fg-flash');
 
+  const fgCollapseBtn = panel.querySelector('#trussal-fg-collapse');
+  if (fgCollapseBtn) {
+    fgCollapseBtn.addEventListener('click', () => {
+      const body = panel.querySelector('#trussal-fg-body');
+      if (!body) return;
+      const collapsed = body.style.display === 'none';
+      body.style.display    = collapsed ? '' : 'none';
+      fgCollapseBtn.textContent = collapsed ? '▼' : '▲';
+    });
+  }
+
   panel.querySelector('#trussal-fg-trigger').addEventListener('change', (e) => {
     _regexTrigger = e.target.value;
   });
@@ -632,6 +787,14 @@ function _ensureDOM() {
   });
   panel.querySelector('#trussal-fg-replacement').addEventListener('input', (e) => {
     _regexReplacement = e.target.value;
+  });
+  panel.querySelector('#trussal-fg-tilt-delta').addEventListener('input', (e) => {
+    const v = parseInt(e.target.value, 10);
+    if (!isNaN(v) && v >= 1) {
+      _headTiltDelta = v;
+      const lbl = document.getElementById('trussal-fg-tilt-label');
+      if (lbl) lbl.textContent = v;
+    }
   });
 
   _makePanelDraggable(panel);

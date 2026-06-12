@@ -11,6 +11,8 @@
 import { getStrudelAudioContext } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
+import { registerSamplesFromDB } from './user-samples.js';
+import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4 minor')
   .s("gm_lead_6_voice")
@@ -25,26 +27,51 @@ let strudelMod = null;
 let strudelBoot = null;
 let lastEvaluated = null;
 let anyPlaying = false;
+let runPrebake = null; // set once the module is loaded; reusable for rebake-after-delete
 
-// Effect-parameter calculation must mirror latency-instrument.js so the audible
-// mix matches the per-peer mic chain settings.
+// Slider state — keyed by the position-based id injected by the transpiler.
+let sliderValues = {};   // id → current float value
+let activeSliders = {};  // id → {min, max, step, defaultValue} populated during each eval
+let _sliderRef = null;   // core's ref() function, set after Strudel loads
+
+// Transpiler rewrites slider(start, min, max, step) → sliderWithID(id, start, min, max, step).
+// This implementation stores the value reactively so patterns update without re-evaluation.
+function sliderWithID(id, value, min, max, step) {
+  if (min == null) min = 0;
+  if (max == null) max = 1;
+  const floatVal = parseFloat(value);
+  if (!(id in sliderValues)) sliderValues[id] = floatVal;
+  activeSliders[id] = { min, max, step: step != null ? step : (max - min) / 100, defaultValue: floatVal };
+  return _sliderRef(() => sliderValues[id]);
+}
+
+export function updateSliderValue(id, value) {
+  sliderValues[id] = parseFloat(value);
+}
+
+// Effect-parameter calculation mirrors latency-instrument.js so the Strudel
+// instrument mix always has audible effects when toggled on. Network conditions
+// modulate intensity beyond the base level for clearly perceptible differences.
 function computePeerStrudelParams(peer) {
-  const rtt = typeof peer.rtt === 'number' ? peer.rtt : 0;
+  const rtt    = typeof peer.rtt    === 'number' ? peer.rtt    : 0;
   const jitter = typeof peer.jitter === 'number' ? peer.jitter : 0;
+
   let glitchIntensity = 0;
   if (peer.effects && peer.effects.distortion) {
-    const cleanThreshold = 5;
-    const maxGlitchThreshold = 70;
-    glitchIntensity = Math.max(0, Math.min(1,
-      (rtt - cleanThreshold) / (maxGlitchThreshold - cleanThreshold) + (jitter / 15)
-    ));
+    const base  = 0.15;
+    const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+    glitchIntensity = base + extra;
   }
+
+  // Always apply crush when noise is on; jitter determines severity.
+  // Lower bit-depth = harsher; 8-bit gives mild grit, 2-bit gives lo-fi crunch.
   let crushBits = 0;
   if (peer.effects && peer.effects.noise) {
-    if (jitter > 0.5 && jitter < 1.5) crushBits = 6;
-    else if (jitter >= 1.5 && jitter < 3) crushBits = 4;
-    else if (jitter >= 3) crushBits = 3;
+    if      (jitter < 1) crushBits = 8;
+    else if (jitter < 3) crushBits = 5;
+    else                 crushBits = 2;
   }
+
   return {
     glitchIntensity,
     crushBits,
@@ -61,36 +88,37 @@ function effectChainFor(params) {
   return chain;
 }
 
-// Builds the code block for one peer's contribution to the combined program.
-// Returns a string of strudel statements (may be multi-line) or null if nothing
-// to contribute.
-//
-// We use strudel's $: anonymous-voice syntax rather than wrapping in (...) so
-// that the transpiler can handle labeled statements (name: expr → expr.p('name'))
-// and *name: code declarations without a SyntaxError.
-function buildPeerBlock(peer) {
-  let code = (peer.pattern || '').replace(/[\s;]+$/g, '');
-  if (!code || !peer.playing) return null;
+// Split code that has top-level declarations from its trailing expression.
+// Finds the last declaration line then returns everything before as preamble
+// and everything after (first non-blank line onward) as the expression.
+function splitDeclAndExpr(code) {
+  const lines = code.split('\n');
+  const DECL = /^\s*(let|const|var|function\b|class\b)/;
+  let lastDeclLine = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (DECL.test(lines[i])) lastDeclLine = i;
+  }
+  if (lastDeclLine === -1) return null;
+  let exprStart = -1;
+  for (let i = lastDeclLine + 1; i < lines.length; i++) {
+    if (lines[i].trim()) { exprStart = i; break; }
+  }
+  if (exprStart === -1) return null;
+  return {
+    preamble: lines.slice(0, exprStart).join('\n').trim(),
+    expr:     lines.slice(exprStart).join('\n').trim(),
+  };
+}
 
-  // Strip *name: code lines — these are button widget declarations, not patterns.
-  // They generate StrudelButton instances for the facial-gesture dwell UI but
-  // produce no audio on their own.
-  code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
-  if (!code) return null;
+const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
 
-  const params = computePeerStrudelParams(peer);
-  const fx = effectChainFor(params);
-
+// Build a labeled Strudel voice string from code that is known to be a Strudel
+// pattern (no hydra preamble).  Used by buildPeerBlock for both the plain case
+// and the post-preamble section of a hydra peer.
+function buildStrudelVoice(code, fx) {
   // Detect labeled-statement syntax ("name: expr" / "$: expr").
-  // These are multi-voice patterns handled natively by strudel's transpiler
-  // (label → .p('name')), so we include them as raw statements.
-  // When effects are active, inject them inline on single-line voices.
   const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code);
   if (hasLabels) {
-    // Split into the unlabeled block (before the first label) and the labeled block.
-    // The unlabeled block is the user's main expression; without this split it would
-    // silently fall out of pPatterns when strudel's applyPatternTransforms only stacks
-    // registered (.p()) voices.
     const firstLabelPos = code.search(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
     let unlabeled = '';
     let labeled = code;
@@ -105,14 +133,70 @@ function buildPeerBlock(peer) {
       );
     }
     if (unlabeled) {
+      // Declarations are statements — wrapping them in $: (...) is a SyntaxError.
+      // Emit at top level so they are in scope for the labeled voices below.
+      if (DECL_RE.test(unlabeled)) return `${unlabeled}\n${labeled}`;
       return `$: (${unlabeled})${fx}\n${labeled}`;
     }
     return labeled;
   }
 
+  // If code has top-level variable/function declarations, split preamble from
+  // the trailing expression and label only the expression.  Wrapping a declaration
+  // inside $: (...) produces a SyntaxError in acorn because declarations are
+  // statements, not expressions.
+  if (DECL_RE.test(code)) {
+    const split = splitDeclAndExpr(code);
+    if (split) return `${split.preamble}\n$: (${split.expr})${fx}`;
+    // Declarations only, no trailing expression — emit as-is (nothing plays).
+    return code;
+  }
+
+  return `$: (${code})${fx}`;
+}
+
+// Builds the code block for one peer's contribution to the combined program.
+// Returns a string of strudel statements (may be multi-line) or null if nothing
+// to contribute.
+//
+// We use strudel's $: anonymous-voice syntax rather than wrapping in (...) so
+// that the transpiler can handle labeled statements (name: expr → expr.p('name'))
+// and *name: code declarations without a SyntaxError.
+//
+// Hydra support: if the code starts with `await initHydra()`, the lines up to
+// the first blank line are treated as a raw imperative preamble (hydra setup).
+// Everything after the blank line is processed as a Strudel pattern voice.
+// Users can write hydra-only blocks (no strudel voice after the blank line).
+function buildPeerBlock(peer) {
+  let code = (peer.pattern || '').replace(/[\s;]+$/g, '');
+  if (!code || !peer.playing) return null;
+
+  // Strip *name: code lines — these are button widget declarations, not patterns.
+  code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
+  if (!code) return null;
+
+  const params = computePeerStrudelParams(peer);
+  // Local peer audio effects are applied via the WebAudio strudelFx chain,
+  // so skip the Strudel-native DSP wrapper to avoid double-processing.
+  const fx = peer.isLocal ? '' : effectChainFor(params);
+
+  // Detect hydra preamble: code that begins with `await initHydra(...)`.
+  // Split at the first blank line: preamble above, strudel code below.
+  if (/^\s*await\s+initHydra\s*\(/.test(code)) {
+    const blankMatch = code.match(/\n\n+/);
+    if (!blankMatch) {
+      // Entire block is the hydra preamble — no Strudel pattern voice.
+      return code;
+    }
+    const preamble    = code.slice(0, blankMatch.index).trim();
+    const strudelCode = code.slice(blankMatch.index).trim();
+    if (!strudelCode) return preamble;
+    return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
+  }
+
   // Simple expression pattern: wrap as an anonymous $: voice so multiple peers
   // are collected into pPatterns and stacked by applyPatternTransforms.
-  return `$: (${code})${fx}`;
+  return buildStrudelVoice(code, fx);
 }
 
 async function loadStrudel() {
@@ -138,78 +222,81 @@ async function ensureStrudel() {
     });
 
     const mod = await loadStrudel();
-    const { initStrudel, initAudio, samples, registerSynthSounds, registerZZFXSounds, registerSoundfonts, aliasBank } = mod;
-    await initStrudel({
-      audioContext: audioCtx,
-      prebake: async () => {
-        const safe = (p) => Promise.resolve(p).catch((e) => console.warn('[strudel] prebake item failed', e));
-        await Promise.all([
-          safe(typeof registerSynthSounds === 'function' && registerSynthSounds()),
-          safe(typeof registerZZFXSounds === 'function' && registerZZFXSounds()),
-          safe(typeof registerSoundfonts === 'function' && registerSoundfonts()),
-          safe(samples(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
-          safe(samples(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
-          safe(samples(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: 'drum-machines' })),
-          safe(samples(`${baseCDN}/uzu-drumkit.json`, `${baseCDN}/uzu-drumkit/`, { prebake: true, tag: 'drum-machines' })),
-          safe(samples(`${baseCDN}/uzu-wavetables.json`, `${baseCDN}/uzu-wavetables/`, { prebake: true })),
-          safe(samples(`${baseCDN}/mridangam.json`, `${baseCDN}/mrid/`, { prebake: true, tag: 'drum-machines' })),
-          safe(samples(
-            {
-              casio: ['casio/high.wav', 'casio/low.wav', 'casio/noise.wav'],
-              crow: ['crow/000_crow.wav', 'crow/001_crow2.wav', 'crow/002_crow3.wav', 'crow/003_crow4.wav'],
-              insect: [
-                'insect/000_everglades_conehead.wav',
-                'insect/001_robust_shieldback.wav',
-                'insect/002_seashore_meadow_katydid.wav',
-              ],
-              wind: [
-                'wind/000_wind1.wav', 'wind/001_wind10.wav', 'wind/002_wind2.wav', 'wind/003_wind3.wav',
-                'wind/004_wind4.wav', 'wind/005_wind5.wav', 'wind/006_wind6.wav', 'wind/007_wind7.wav',
-                'wind/008_wind8.wav', 'wind/009_wind9.wav',
-              ],
-              jazz: [
-                'jazz/000_BD.wav', 'jazz/001_CB.wav', 'jazz/002_FX.wav', 'jazz/003_HH.wav',
-                'jazz/004_OH.wav', 'jazz/005_P1.wav', 'jazz/006_P2.wav', 'jazz/007_SN.wav',
-              ],
-              metal: [
-                'metal/000_0.wav', 'metal/001_1.wav', 'metal/002_2.wav', 'metal/003_3.wav',
-                'metal/004_4.wav', 'metal/005_5.wav', 'metal/006_6.wav', 'metal/007_7.wav',
-                'metal/008_8.wav', 'metal/009_9.wav',
-              ],
-              east: [
-                'east/000_nipon_wood_block.wav', 'east/001_ohkawa_mute.wav', 'east/002_ohkawa_open.wav',
-                'east/003_shime_hi.wav', 'east/004_shime_hi_2.wav', 'east/005_shime_mute.wav',
-                'east/006_taiko_1.wav', 'east/007_taiko_2.wav', 'east/008_taiko_3.wav',
-              ],
-              space: [
-                'space/000_0.wav', 'space/001_1.wav', 'space/002_11.wav', 'space/003_12.wav',
-                'space/004_13.wav', 'space/005_14.wav', 'space/006_15.wav', 'space/007_16.wav',
-                'space/008_17.wav', 'space/009_18.wav', 'space/010_2.wav', 'space/011_3.wav',
-                'space/012_4.wav', 'space/013_5.wav', 'space/014_6.wav', 'space/015_7.wav',
-                'space/016_8.wav', 'space/017_9.wav',
-              ],
-              numbers: [
-                'numbers/0.wav', 'numbers/1.wav', 'numbers/2.wav', 'numbers/3.wav',
-                'numbers/4.wav', 'numbers/5.wav', 'numbers/6.wav', 'numbers/7.wav', 'numbers/8.wav',
-              ],
-              num: [
-                'num/00.wav', 'num/01.wav', 'num/02.wav', 'num/03.wav', 'num/04.wav',
-                'num/05.wav', 'num/06.wav', 'num/07.wav', 'num/08.wav', 'num/09.wav',
-                'num/10.wav', 'num/11.wav', 'num/12.wav', 'num/13.wav', 'num/14.wav',
-                'num/15.wav', 'num/16.wav', 'num/17.wav', 'num/18.wav', 'num/19.wav', 'num/20.wav',
-              ],
-            },
-            `${baseCDN}/Dirt-Samples/`,
-            { prebake: true },
-          )),
-        ]);
-        if (typeof aliasBank === 'function') {
-          safe(aliasBank(`${baseCDN}/tidal-drum-machines-alias.json`));
-        }
+    const { initStrudel, initAudio, samples, registerSynthSounds, registerZZFXSounds, registerSoundfonts, aliasBank, registerSampleSource } = mod;
+
+    runPrebake = async () => {
+      const safe = (p) => Promise.resolve(p).catch((e) => console.warn('[strudel] prebake item failed', e));
+      await Promise.all([
+        safe(typeof registerSynthSounds === 'function' && registerSynthSounds()),
+        safe(typeof registerZZFXSounds === 'function' && registerZZFXSounds()),
+        safe(typeof registerSoundfonts === 'function' && registerSoundfonts()),
+        safe(typeof registerSampleSource === 'function' && registerSamplesFromDB(registerSampleSource)),
+        safe(samples(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
+        safe(samples(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
+        safe(samples(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: 'drum-machines' })),
+        safe(samples(`${baseCDN}/uzu-drumkit.json`, `${baseCDN}/uzu-drumkit/`, { prebake: true, tag: 'drum-machines' })),
+        safe(samples(`${baseCDN}/uzu-wavetables.json`, `${baseCDN}/uzu-wavetables/`, { prebake: true })),
+        safe(samples(`${baseCDN}/mridangam.json`, `${baseCDN}/mrid/`, { prebake: true, tag: 'drum-machines' })),
+        safe(samples(
+          {
+            casio: ['casio/high.wav', 'casio/low.wav', 'casio/noise.wav'],
+            crow: ['crow/000_crow.wav', 'crow/001_crow2.wav', 'crow/002_crow3.wav', 'crow/003_crow4.wav'],
+            insect: [
+              'insect/000_everglades_conehead.wav',
+              'insect/001_robust_shieldback.wav',
+              'insect/002_seashore_meadow_katydid.wav',
+            ],
+            wind: [
+              'wind/000_wind1.wav', 'wind/001_wind10.wav', 'wind/002_wind2.wav', 'wind/003_wind3.wav',
+              'wind/004_wind4.wav', 'wind/005_wind5.wav', 'wind/006_wind6.wav', 'wind/007_wind7.wav',
+              'wind/008_wind8.wav', 'wind/009_wind9.wav',
+            ],
+            jazz: [
+              'jazz/000_BD.wav', 'jazz/001_CB.wav', 'jazz/002_FX.wav', 'jazz/003_HH.wav',
+              'jazz/004_OH.wav', 'jazz/005_P1.wav', 'jazz/006_P2.wav', 'jazz/007_SN.wav',
+            ],
+            metal: [
+              'metal/000_0.wav', 'metal/001_1.wav', 'metal/002_2.wav', 'metal/003_3.wav',
+              'metal/004_4.wav', 'metal/005_5.wav', 'metal/006_6.wav', 'metal/007_7.wav',
+              'metal/008_8.wav', 'metal/009_9.wav',
+            ],
+            east: [
+              'east/000_nipon_wood_block.wav', 'east/001_ohkawa_mute.wav', 'east/002_ohkawa_open.wav',
+              'east/003_shime_hi.wav', 'east/004_shime_hi_2.wav', 'east/005_shime_mute.wav',
+              'east/006_taiko_1.wav', 'east/007_taiko_2.wav', 'east/008_taiko_3.wav',
+            ],
+            space: [
+              'space/000_0.wav', 'space/001_1.wav', 'space/002_11.wav', 'space/003_12.wav',
+              'space/004_13.wav', 'space/005_14.wav', 'space/006_15.wav', 'space/007_16.wav',
+              'space/008_17.wav', 'space/009_18.wav', 'space/010_2.wav', 'space/011_3.wav',
+              'space/012_4.wav', 'space/013_5.wav', 'space/014_6.wav', 'space/015_7.wav',
+              'space/016_8.wav', 'space/017_9.wav',
+            ],
+            numbers: [
+              'numbers/0.wav', 'numbers/1.wav', 'numbers/2.wav', 'numbers/3.wav',
+              'numbers/4.wav', 'numbers/5.wav', 'numbers/6.wav', 'numbers/7.wav', 'numbers/8.wav',
+            ],
+            num: [
+              'num/00.wav', 'num/01.wav', 'num/02.wav', 'num/03.wav', 'num/04.wav',
+              'num/05.wav', 'num/06.wav', 'num/07.wav', 'num/08.wav', 'num/09.wav',
+              'num/10.wav', 'num/11.wav', 'num/12.wav', 'num/13.wav', 'num/14.wav',
+              'num/15.wav', 'num/16.wav', 'num/17.wav', 'num/18.wav', 'num/19.wav', 'num/20.wav',
+            ],
+          },
+          `${baseCDN}/Dirt-Samples/`,
+          { prebake: true },
+        )),
+      ]);
+      if (typeof aliasBank === 'function') {
+        safe(aliasBank(`${baseCDN}/tidal-drum-machines-alias.json`));
       }
-    });
+    };
+
+    await initStrudel({ audioContext: audioCtx, prebake: runPrebake });
+    _sliderRef = mod.ref;
+    await mod.evalScope({ sliderWithID });
     if (typeof initAudio === 'function') {
-      try { await initAudio({}); } catch (e) { console.warn('[strudel] initAudio failed', e); }
+      try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
     return audioCtx;
   })();
@@ -221,11 +308,32 @@ async function rebuildAndEvaluate() {
     .map(buildPeerBlock)
     .filter(Boolean);
 
-  // Combine all peer blocks as a multi-statement program.  strudel's transpiler
-  // converts $: and name: statements to .p() calls that accumulate in pPatterns;
-  // applyPatternTransforms then stacks them automatically — no explicit stack()
-  // wrapper needed.
-  const next = blocks.length === 0 ? null : blocks.join('\n');
+  const rawJoined = blocks.join('\n');
+
+  let next = blocks.length === 0 ? null : rawJoined;
+
+  if (next && getHydraVideoMode() === MODE_DIRECT) {
+    // Ensure initHydra() is present so s0/o0/o1 are available in the eval ctx.
+    if (!next.includes('initHydra')) {
+      next = `await initHydra()\n\n${next}`;
+    }
+
+    // Redirect the user's Hydra .out() calls in the preamble to .out(o1) so
+    // their visuals land in o1 rather than o0.  The blend step below reads o1
+    // (previous frame) and composites it with the live camera (s0) into o0.
+    const blankIdx = next.indexOf('\n\n');
+    if (blankIdx !== -1) {
+      const preamble = next.slice(0, blankIdx)
+        .replace(/\.out\s*\(\s*o0\s*\)/g, '.out(o1)')
+        .replace(/\.out\s*\(\s*\)/g,      '.out(o1)');
+      next = preamble + next.slice(blankIdx);
+    }
+
+    // Blend user visuals (o1) with camera (s0); color tint driven by jitter/rtt
+    // via window globals updated by hydra-video.js on each peer-state event.
+    next += '\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt)'
+         +  '.color(()=>window._hvR,()=>window._hvG,()=>window._hvB).out(o0)';
+  }
 
   if (next === lastEvaluated) return;
   lastEvaluated = next;
@@ -237,9 +345,16 @@ async function rebuildAndEvaluate() {
     return;
   }
 
+  activeSliders = {};
   try {
     await evaluate(next);
     anyPlaying = true;
+    // Tell hydra-video.js the Hydra synth was (re)created so s0 is re-synced
+    // on the next frame rather than relying on the stale pre-eval reference.
+    resetHydraSync();
+    document.dispatchEvent(new CustomEvent('trussal-sliders-updated', {
+      detail: Object.entries(activeSliders).map(([id, cfg]) => ({ id, value: sliderValues[id], ...cfg }))
+    }));
   } catch (e) {
     console.warn('[strudel] evaluate failed', e, '\nprogram:', next);
   }
@@ -260,13 +375,37 @@ export async function syncStrudelFromPeers() {
 
 export async function stopStrudel() {
   if (!strudelBoot) return;
-  const { hush } = await loadStrudel();
+  const { hush, clearHydra } = await loadStrudel();
   try { hush(); } catch (e) { /* ignore */ }
+  try { if (typeof clearHydra === 'function') clearHydra(); } catch (e) { /* ignore */ }
   anyPlaying = false;
   lastEvaluated = null;
+  activeSliders = {};
+  document.dispatchEvent(new CustomEvent('trussal-sliders-updated', { detail: [] }));
 }
 
 export function isStrudelPlaying() { return anyPlaying; }
+
+// Re-register local IDB samples with the already-loaded Strudel module.
+// Call this after uploading new samples so they become available immediately
+// without requiring a full page reload.
+export async function refreshLocalSamples() {
+  const mod = strudelMod;
+  if (!mod || typeof mod.registerSampleSource !== 'function') return;
+  await registerSamplesFromDB(mod.registerSampleSource).catch(e =>
+    console.warn('[strudel] refreshLocalSamples failed', e)
+  );
+}
+
+// Clear the in-memory sound registry and re-run the full prebake.
+// Call this after deleting all user samples from IDB so built-in sounds are
+// restored and the deleted user sounds are no longer accessible in patterns.
+export async function rebakeStrudel() {
+  const mod = strudelMod;
+  if (!mod || !runPrebake) return;
+  if (typeof mod.resetLoadedSounds === 'function') mod.resetLoadedSounds();
+  await runPrebake().catch(e => console.warn('[strudel] rebake failed', e));
+}
 
 // React to roster changes — re-stack whenever someone's pattern, effects, or
 // play state moves.
@@ -279,4 +418,10 @@ subscribeParticipants((event) => {
   if (event === 'leave') {
     if (strudelBoot) rebuildAndEvaluate();
   }
+});
+
+// When the hydra video mode changes, re-evaluate so initHydra() is injected or
+// removed from the program as needed.
+document.addEventListener('trussal-hydra-mode-change', () => {
+  if (strudelBoot) rebuildAndEvaluate();
 });

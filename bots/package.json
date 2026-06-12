@@ -1,0 +1,17 @@
+{
+  "name": "trussal-bots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "strudel-bot": "node strudel-bot.js",
+    "jitsi-bot": "node jitsi-bot.js",
+    "install-chrome": "curl -sL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb && dpkg-deb --extract /tmp/chrome.deb chrome/",
+    "install-chrome-deps": "sudo apt-get install -y libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libasound2t64 libcairo2 libpango-1.0-0 libxdamage1 libatspi2.0-0t64 libgbm1 libnss3 libxss1 libxrandr2 libxcomposite1 libxcursor1 libxi6",
+    "setup": "npm run install-chrome && npm run install-chrome-deps"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.0.0",
+    "ws": "^8.18.0"
+  }
+}
