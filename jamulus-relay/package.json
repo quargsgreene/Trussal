@@ -1,0 +1,12 @@
+{
+  "name": "jamulus-relay-server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

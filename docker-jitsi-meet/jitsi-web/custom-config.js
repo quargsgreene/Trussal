@@ -36244,302 +36244,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
-  // src/jamulus.js
-  var JAMULUS_ROOM_MAP = {
-    "0": { host: "jamulus.trussal.com", port: 22e3 },
-    "1": { host: "jamulus.trussal.com", port: 22001 },
-    "2": { host: "jamulus.trussal.com", port: 22002 },
-    "3": { host: "jamulus.trussal.com", port: 22003 },
-    "4": { host: "jamulus.trussal.com", port: 22004 },
-    "5": { host: "jamulus.trussal.com", port: 22005 },
-    "6": { host: "jamulus.trussal.com", port: 22006 },
-    "7": { host: "jamulus.trussal.com", port: 22007 },
-    "8": { host: "jamulus.trussal.com", port: 22008 },
-    "9": { host: "jamulus.trussal.com", port: 22009 },
-    "10": { host: "jamulus.trussal.com", port: 22010 }
-  };
-  function addJamulusWelcomePanel() {
-    const body = document.body;
-    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
-      return;
-    }
-    if (document.getElementById("jamulus-welcome-panel")) return;
-    const container = document.querySelector("#welcome_page .welcome-page-content") || document.querySelector(".welcome-page-content");
-    if (!container) return;
-    const panel = document.createElement("div");
-    panel.id = "jamulus-welcome-panel";
-    panel.className = "jamulus-panel";
-    const items = Object.entries(JAMULUS_ROOM_MAP).map(
-      ([room2, info]) => `<li><strong>${room2}</strong> \u2192 ${info.host}:${info.port}</li>`
-    ).join("");
-    panel.innerHTML = `
-      <h3>Jamulus rooms</h3>
-      <p>These meeting links have dedicated Jamulus servers:</p>
-      <ul>${items}</ul>
-    `;
-    container.prepend(panel);
-  }
-  function startJamulusBannerPolling() {
-    attachJamulusBanner();
-    setInterval(attachJamulusBanner, 3e3);
-  }
-  function attachJamulusBanner() {
-    const room2 = getRoomNameFromUrl();
-    if (!room2) return;
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    const entry = mapping[room2];
-    if (!entry) return;
-    if (document.getElementById("jamulus-info-banner")) return;
-    const banner = document.createElement("div");
-    banner.id = "jamulus-info-banner";
-    banner.textContent = `Jamulus: ${entry.host}:${entry.port} (for low-latency audio)`;
-    Object.assign(banner.style, {
-      position: "absolute",
-      bottom: "10px",
-      right: "10px",
-      zIndex: 9999,
-      background: "rgba(0, 0, 0, 0.7)",
-      color: "#fff",
-      padding: "8px 12px",
-      borderRadius: "4px",
-      fontFamily: "sans-serif",
-      fontSize: "12px"
-    });
-    document.body.appendChild(banner);
-  }
-  function startJamulusWelcomePanel() {
-    addJamulusWelcomePanel();
-  }
-  function getRoomNameFromUrl() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const roomName = parts.length ? parts[parts.length - 1] : null;
-    return roomName;
-  }
-  function renderJamulusWelcomePanelAndBanner() {
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    if (!Object.keys(mapping).length) {
-      return;
-    }
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startJamulusWelcomePanel();
-      startJamulusBannerPolling();
-    } else {
-      window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
-      window.addEventListener("DOMContentLoaded", startJamulusBannerPolling);
-    }
-  }
-
-  // src/welcome-page.js
-  function renderTrussalWelcomeOverlay() {
-    console.log("[Trussal] renderTrussalWelcomeOverlay() called");
-    const body = document.body;
-    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
-      console.log("[Trussal] not on welcome page or body missing, aborting");
-      return;
-    }
-    if (document.getElementById("trussal-welcome-overlay")) {
-      return;
-    }
-    const overlay = document.createElement("div");
-    overlay.id = "trussal-welcome-overlay";
-    overlay.innerHTML = `
-      <div style="
-        position: fixed;
-        left: 50%;
-        top: 40%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.75);
-        padding: 1.5rem 2rem;
-        border-radius: 1rem;
-        max-width: 480px;
-        width: 90%;
-        z-index: 9999;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-      ">
-        <form class="trussal-room-form"
-              style="display:flex;flex-direction:column;gap:0.75rem;">
-          <label for="trussal-room-input"
-                 style="color:#ffffff;font-size:1rem;">
-            Choose a room:
-          </label>
-          <input id="trussal-room-input"
-                 type="number"
-                 min="0"
-                 max="10"
-                 required
-                 placeholder="0"
-                 style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid rgba(255,255,255,0.4);
-                        background:rgba(0,0,0,0.35);
-                        color:#ffffff;"/>
-          <button type="submit"
-                  style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:none;background:#0f5132;color:#ffffff;
-                         font-weight:600;cursor:pointer;">
-            Join session
-          </button>
-          <div id="trussal-room-error"
-               style="display:none;color:#ffb3b3;font-size:0.85rem;"></div>
-        </form>
-      </div>
-    `;
-    body.appendChild(overlay);
-    console.log("[Trussal] custom welcome overlay injected");
-    const form = overlay.querySelector("form");
-    const input = overlay.querySelector("#trussal-room-input");
-    const error = overlay.querySelector("#trussal-room-error");
-    form.addEventListener("submit", function(e30) {
-      e30.preventDefault();
-      const value2 = input.value.trim();
-      const n2 = Number(value2);
-      if (!Number.isInteger(n2) || n2 < 0 || n2 > 10) {
-        error.textContent = "Please enter a whole number between 0 and 10.";
-        error.style.display = "block";
-        return;
-      }
-      error.style.display = "none";
-      const roomName = String(n2);
-      const url2 = window.location.origin + "/" + encodeURIComponent(roomName);
-      console.log("[Trussal] navigating to room", roomName, "\u2192", url2);
-      window.location.href = url2;
-    });
-  }
-  function startWelcomeOverlayPoll() {
-    let tries = 0;
-    const maxTries = 40;
-    const timer = setInterval(function() {
-      renderTrussalWelcomeOverlay();
-      tries += 1;
-      if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
-        clearInterval(timer);
-        console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
-      }
-    }, 250);
-  }
-  function patchPrejoinButton() {
-    const candidates = Array.from(
-      document.querySelectorAll('button, [role="button"]')
-    );
-    let allCandidates = Array.from(
-      document.querySelectorAll("h1")
-    );
-    allCandidates.push(...candidates);
-    for (const el of allCandidates) {
-      if (el.dataset.trussalJoinPatched === "1") continue;
-      const text = (el.textContent || "").trim();
-      const aria = (el.getAttribute("aria-label") || "").trim();
-      if (text === "Join meeting" || aria === "Join meeting") {
-        const newLabel = "Join session";
-        el.textContent = newLabel;
-        el.setAttribute("aria-label", newLabel);
-        el.dataset.trussalJoinPatched = "1";
-      }
-    }
-  }
-  function startPrejoinRender() {
-    patchPrejoinButton();
-    const obs = new MutationObserver(patchPrejoinButton);
-    obs.observe(document.documentElement || document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-  function replaceRecentListText() {
-    const OLD_TEXT = "Your recent list is currently empty. Chat with your team and you will find all your recent meetings here.";
-    const NEW_TEXT = "At the moment, your recent list is empty. Organize some sound and your recent sessions will appear here.";
-    const body = document.body;
-    if (!body || !body.classList.contains("welcome-page")) {
-      return;
-    }
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
-    let node;
-    while (node = walker.nextNode()) {
-      if (node.nodeValue && node.nodeValue.includes(OLD_TEXT)) {
-        node.nodeValue = node.nodeValue.replace(OLD_TEXT, NEW_TEXT);
-      }
-    }
-  }
-  function startRecentListTextRender() {
-    replaceRecentListText();
-    const target = document.documentElement || document.body;
-    if (!target) return;
-    const obs = new MutationObserver(replaceRecentListText);
-    obs.observe(target, { childList: true, subtree: true });
-  }
-  function renderPrejoinScreen() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startPrejoinRender();
-    } else {
-      window.addEventListener("DOMContentLoaded", startPrejoinRender);
-    }
-  }
-  function renderRecentListText() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startRecentListTextRender();
-    } else {
-      window.addEventListener("DOMContentLoaded", startRecentListTextRender);
-    }
-  }
-  function renderWelcomeOverlay() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startWelcomeOverlayPoll();
-    } else {
-      window.addEventListener("DOMContentLoaded", startWelcomeOverlayPoll);
-    }
-  }
-  function hideStartMeetingButton() {
-    if (!document.body.classList.contains("welcome-page")) return;
-    const buttons = Array.from(document.querySelectorAll("button"));
-    for (const btn of buttons) {
-      const txt = (btn.textContent || "").trim().toLowerCase();
-      if (txt === "start meeting") {
-        btn.style.display = "none";
-        btn.disabled = true;
-        btn.dataset.trussalHidden = "1";
-      }
-    }
-  }
-  function renderHideStartMeetingButton() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      hideStartMeetingButton();
-    } else {
-      window.addEventListener("DOMContentLoaded", hideStartMeetingButton);
-    }
-    const obs = new MutationObserver(hideStartMeetingButton);
-    obs.observe(document.documentElement || document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-
-  // src/meeting.js
-  function removeNoAudioToast() {
-    const TITLE_SNIPPET = "You joined with no audio output";
-    const candidates = document.querySelectorAll(
-      '.notification, [class*="notification"], [role="alert"]'
-    );
-    candidates.forEach((el) => {
-      if (el.dataset.trussalToastKilled === "1") return;
-      const txt = (el.textContent || "").trim();
-      if (txt.includes(TITLE_SNIPPET)) {
-        el.dataset.trussalToastKilled = "1";
-        el.remove();
-      }
-    });
-  }
-  function startNoAudioToastRender() {
-    removeNoAudioToast();
-    const obs = new MutationObserver(removeNoAudioToast);
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-  function renderNoAudioToast() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startNoAudioToastRender();
-    } else {
-      window.addEventListener("DOMContentLoaded", startNoAudioToastRender);
-    }
-  }
-
   // src/participants.js
   var subscribers = /* @__PURE__ */ new Set();
   var local = null;
@@ -37004,8 +36708,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var remoteSources = /* @__PURE__ */ new Map();
   var pendingCaptures = /* @__PURE__ */ new Set();
   var externalSources = /* @__PURE__ */ new Map();
+  var externalNodes = /* @__PURE__ */ new Map();
   var audioRouted = /* @__PURE__ */ new Set();
   var routingSubscribers = /* @__PURE__ */ new Set();
+  var jamulusMode = false;
+  var jamulasMutedTags = /* @__PURE__ */ new Set();
   var audioTagObserver = null;
   function notifyRoutingChange() {
     routingSubscribers.forEach((fn) => {
@@ -37024,11 +36731,36 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return () => routingSubscribers.delete(fn);
   }
+  function applyJamulusMuteToAllTags() {
+    document.querySelectorAll("audio").forEach((tag) => {
+      if (!tag.srcObject) return;
+      if (tag.id === "userAudio") return;
+      const jitsiId = getParticipantIdForAudioTag(tag);
+      if (jitsiId && remoteSources.has(jitsiId)) return;
+      if (jamulasMutedTags.has(tag)) return;
+      tag.muted = true;
+      tag.volume = 0;
+      jamulasMutedTags.add(tag);
+    });
+  }
+  function setJamulusMode(enabled) {
+    if (enabled === jamulusMode) return;
+    jamulusMode = enabled;
+    if (enabled) {
+      applyJamulusMuteToAllTags();
+    } else {
+      for (const tag of jamulasMutedTags) {
+        tag.muted = false;
+        tag.volume = 1;
+      }
+      jamulasMutedTags.clear();
+    }
+  }
   function ensureAudioContext() {
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return Promise.reject(new Error("WebAudio not supported"));
     if (!audioCtx) {
-      audioCtx = new Ctor();
+      audioCtx = new Ctor({ sampleRate: 48e3 });
       realDestination = audioCtx.destination;
     }
     if (!audioCtx.audioWorklet) return Promise.reject(new Error("AudioWorklet not supported"));
@@ -37251,7 +36983,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
   function startAudioTagsObserver() {
     if (audioTagObserver) return;
-    audioTagObserver = new MutationObserver(() => captureJitsiAudio());
+    audioTagObserver = new MutationObserver(() => {
+      captureJitsiAudio();
+      if (jamulusMode) applyJamulusMuteToAllTags();
+    });
     audioTagObserver.observe(document.body, { childList: true, subtree: true });
     captureJitsiAudio();
   }
@@ -37578,6 +37313,43 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function isPropagatingToRoom() {
     return !!jitsiMixState;
   }
+  async function attachNodeToChain(jitsiId, node, label2 = "relay") {
+    if (!jitsiId || !node) return;
+    await bootAudioEngine();
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return;
+    const existing = externalNodes.get(jitsiId);
+    if (existing) {
+      try {
+        existing.node.disconnect(chain.input);
+      } catch (_3) {
+      }
+    }
+    node.connect(chain.input);
+    externalNodes.set(jitsiId, { node, label: label2 });
+    audioRouted.add(jitsiId);
+    console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
+    notifyRoutingChange();
+  }
+  function detachNodeFromChain(jitsiId) {
+    const entry = externalNodes.get(jitsiId);
+    if (!entry) return;
+    const chain = chains.get(jitsiId);
+    if (chain) {
+      try {
+        entry.node.disconnect(chain.input);
+      } catch (_3) {
+      }
+    }
+    externalNodes.delete(jitsiId);
+    if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
+      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+    }
+    console.log("[latency] detached WebAudio node \u2190", jitsiId);
+  }
+  function getExternalNodeLabel(jitsiId) {
+    return externalNodes.get(jitsiId)?.label ?? null;
+  }
   async function listAudioInputDevices() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
     let devices = await navigator.mediaDevices.enumerateDevices();
@@ -37593,6 +37365,399 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       }
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
+  }
+
+  // src/jamulus.js
+  var JAMULUS_ROOM_MAP = {
+    "0": { host: "jamulus.trussal.com", port: 22e3 },
+    "1": { host: "jamulus.trussal.com", port: 22001 },
+    "2": { host: "jamulus.trussal.com", port: 22002 },
+    "3": { host: "jamulus.trussal.com", port: 22003 },
+    "4": { host: "jamulus.trussal.com", port: 22004 },
+    "5": { host: "jamulus.trussal.com", port: 22005 },
+    "6": { host: "jamulus.trussal.com", port: 22006 },
+    "7": { host: "jamulus.trussal.com", port: 22007 },
+    "8": { host: "jamulus.trussal.com", port: 22008 },
+    "9": { host: "jamulus.trussal.com", port: 22009 },
+    "10": { host: "jamulus.trussal.com", port: 22010 }
+  };
+  function addJamulusWelcomePanel() {
+    const body = document.body;
+    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
+      return;
+    }
+    if (document.getElementById("jamulus-welcome-panel")) return;
+    const container = document.querySelector("#welcome_page .welcome-page-content") || document.querySelector(".welcome-page-content");
+    if (!container) return;
+    const panel = document.createElement("div");
+    panel.id = "jamulus-welcome-panel";
+    panel.className = "jamulus-panel";
+    const items = Object.entries(JAMULUS_ROOM_MAP).map(
+      ([room2, info]) => `<li><strong>${room2}</strong> \u2192 ${info.host}:${info.port}</li>`
+    ).join("");
+    panel.innerHTML = `
+      <h3>Jamulus rooms</h3>
+      <p>These meeting links have dedicated Jamulus servers:</p>
+      <ul>${items}</ul>
+    `;
+    container.prepend(panel);
+  }
+  function startJamulusBannerPolling() {
+    attachJamulusBanner();
+    setInterval(attachJamulusBanner, 3e3);
+  }
+  function attachJamulusBanner() {
+    const room2 = getRoomNameFromUrl();
+    if (!room2) return;
+    const mapping = window.JAMULUS_ROOM_MAP || {};
+    const entry = mapping[room2];
+    if (!entry) return;
+    if (document.getElementById("jamulus-info-banner")) return;
+    const banner = document.createElement("div");
+    banner.id = "jamulus-info-banner";
+    banner.textContent = `Jamulus: ${entry.host}:${entry.port} (for low-latency audio)`;
+    Object.assign(banner.style, {
+      position: "absolute",
+      bottom: "10px",
+      right: "10px",
+      zIndex: 9999,
+      background: "rgba(0, 0, 0, 0.7)",
+      color: "#fff",
+      padding: "8px 12px",
+      borderRadius: "4px",
+      fontFamily: "sans-serif",
+      fontSize: "12px"
+    });
+    document.body.appendChild(banner);
+  }
+  function startJamulusWelcomePanel() {
+    addJamulusWelcomePanel();
+  }
+  function getRoomNameFromUrl() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const roomName = parts.length ? parts[parts.length - 1] : null;
+    return roomName;
+  }
+  function renderJamulusWelcomePanelAndBanner() {
+    const mapping = window.JAMULUS_ROOM_MAP || {};
+    if (!Object.keys(mapping).length) {
+      return;
+    }
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startJamulusWelcomePanel();
+      startJamulusBannerPolling();
+    } else {
+      window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
+      window.addEventListener("DOMContentLoaded", startJamulusBannerPolling);
+    }
+  }
+  var _relayWs = null;
+  var _relayWorklet = null;
+  var _relayWorkletLoaded = false;
+  async function ensureRelayWorklet(audioCtx2) {
+    if (!_relayWorkletLoaded) {
+      await audioCtx2.audioWorklet.addModule("/jamulus-relay-player.js");
+      _relayWorkletLoaded = true;
+    }
+    return new AudioWorkletNode(audioCtx2, "jamulus-relay-processor", {
+      numberOfOutputs: 1,
+      outputChannelCount: [2]
+    });
+  }
+  async function connectJamulusRelay() {
+    if (_relayWs) return;
+    const local2 = getLocalPeer();
+    if (!local2 || !local2.jitsiId) throw new Error("No local peer identity yet");
+    const room2 = getRoomNameFromUrl();
+    if (!room2) throw new Error("Not in a Jitsi room");
+    const { audioCtx: audioCtx2 } = await bootAudioEngine();
+    if (audioCtx2.state === "suspended") await audioCtx2.resume();
+    const loc = window.location;
+    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+    const url2 = `${proto}//${loc.host}/jamulus-audio?room=${encodeURIComponent(room2)}`;
+    const ws3 = new WebSocket(url2);
+    ws3.binaryType = "arraybuffer";
+    _relayWs = ws3;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("relay connect timeout")), 2e4);
+      const onMsg = (evt) => {
+        if (typeof evt.data !== "string") return;
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "relay-ready") {
+          clearTimeout(timeout);
+          ws3.removeEventListener("message", onMsg);
+          resolve();
+        } else if (msg.type === "error") {
+          clearTimeout(timeout);
+          ws3.removeEventListener("message", onMsg);
+          reject(new Error(msg.message || "relay error"));
+        }
+      };
+      ws3.addEventListener("message", onMsg);
+      ws3.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error("WebSocket error"));
+      };
+      ws3.onclose = () => {
+        clearTimeout(timeout);
+        reject(new Error("WebSocket closed"));
+      };
+    });
+    const worklet2 = await ensureRelayWorklet(audioCtx2);
+    _relayWorklet = worklet2;
+    ws3.onmessage = (evt) => {
+      if (typeof evt.data === "string") {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "relay-stopped") disconnectJamulusRelay();
+        return;
+      }
+      worklet2.port.postMessage(evt.data, [evt.data]);
+    };
+    ws3.onclose = () => {
+      console.log("[jamulus] relay WebSocket closed");
+      disconnectJamulusRelay();
+    };
+    await attachNodeToChain(local2.jitsiId, worklet2, "Jamulus relay");
+    setJamulusMode(true);
+    console.log("[jamulus] relay connected, room", room2);
+  }
+  function disconnectJamulusRelay() {
+    if (_relayWs) {
+      _relayWs.onmessage = null;
+      _relayWs.onclose = null;
+      try {
+        _relayWs.close();
+      } catch (_3) {
+      }
+      _relayWs = null;
+    }
+    if (_relayWorklet) {
+      try {
+        _relayWorklet.disconnect();
+      } catch (_3) {
+      }
+      _relayWorklet = null;
+    }
+    const local2 = getLocalPeer();
+    if (local2 && local2.jitsiId) {
+      detachNodeFromChain(local2.jitsiId);
+      setJamulusMode(false);
+    }
+    console.log("[jamulus] relay disconnected");
+  }
+  function isRelayConnected() {
+    return !!_relayWs && _relayWs.readyState === WebSocket.OPEN;
+  }
+
+  // src/welcome-page.js
+  function renderTrussalWelcomeOverlay() {
+    console.log("[Trussal] renderTrussalWelcomeOverlay() called");
+    const body = document.body;
+    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
+      console.log("[Trussal] not on welcome page or body missing, aborting");
+      return;
+    }
+    if (document.getElementById("trussal-welcome-overlay")) {
+      return;
+    }
+    const overlay = document.createElement("div");
+    overlay.id = "trussal-welcome-overlay";
+    overlay.innerHTML = `
+      <div style="
+        position: fixed;
+        left: 50%;
+        top: 40%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.75);
+        padding: 1.5rem 2rem;
+        border-radius: 1rem;
+        max-width: 480px;
+        width: 90%;
+        z-index: 9999;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      ">
+        <form class="trussal-room-form"
+              style="display:flex;flex-direction:column;gap:0.75rem;">
+          <label for="trussal-room-input"
+                 style="color:#ffffff;font-size:1rem;">
+            Choose a room:
+          </label>
+          <input id="trussal-room-input"
+                 type="number"
+                 min="0"
+                 max="10"
+                 required
+                 placeholder="0"
+                 style="padding:0.5rem 0.75rem;border-radius:0.5rem;
+                        border:1px solid rgba(255,255,255,0.4);
+                        background:rgba(0,0,0,0.35);
+                        color:#ffffff;"/>
+          <button type="submit"
+                  style="padding:0.6rem 0.9rem;border-radius:0.5rem;
+                         border:none;background:#0f5132;color:#ffffff;
+                         font-weight:600;cursor:pointer;">
+            Join session
+          </button>
+          <div id="trussal-room-error"
+               style="display:none;color:#ffb3b3;font-size:0.85rem;"></div>
+        </form>
+      </div>
+    `;
+    body.appendChild(overlay);
+    console.log("[Trussal] custom welcome overlay injected");
+    const form = overlay.querySelector("form");
+    const input = overlay.querySelector("#trussal-room-input");
+    const error = overlay.querySelector("#trussal-room-error");
+    form.addEventListener("submit", function(e30) {
+      e30.preventDefault();
+      const value2 = input.value.trim();
+      const n2 = Number(value2);
+      if (!Number.isInteger(n2) || n2 < 0 || n2 > 10) {
+        error.textContent = "Please enter a whole number between 0 and 10.";
+        error.style.display = "block";
+        return;
+      }
+      error.style.display = "none";
+      const roomName = String(n2);
+      const url2 = window.location.origin + "/" + encodeURIComponent(roomName);
+      console.log("[Trussal] navigating to room", roomName, "\u2192", url2);
+      window.location.href = url2;
+    });
+  }
+  function startWelcomeOverlayPoll() {
+    let tries = 0;
+    const maxTries = 40;
+    const timer = setInterval(function() {
+      renderTrussalWelcomeOverlay();
+      tries += 1;
+      if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
+        clearInterval(timer);
+        console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
+      }
+    }, 250);
+  }
+  function patchPrejoinButton() {
+    const candidates = Array.from(
+      document.querySelectorAll('button, [role="button"]')
+    );
+    let allCandidates = Array.from(
+      document.querySelectorAll("h1")
+    );
+    allCandidates.push(...candidates);
+    for (const el of allCandidates) {
+      if (el.dataset.trussalJoinPatched === "1") continue;
+      const text = (el.textContent || "").trim();
+      const aria = (el.getAttribute("aria-label") || "").trim();
+      if (text === "Join meeting" || aria === "Join meeting") {
+        const newLabel = "Join session";
+        el.textContent = newLabel;
+        el.setAttribute("aria-label", newLabel);
+        el.dataset.trussalJoinPatched = "1";
+      }
+    }
+  }
+  function startPrejoinRender() {
+    patchPrejoinButton();
+    const obs = new MutationObserver(patchPrejoinButton);
+    obs.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+  function replaceRecentListText() {
+    const OLD_TEXT = "Your recent list is currently empty. Chat with your team and you will find all your recent meetings here.";
+    const NEW_TEXT = "At the moment, your recent list is empty. Organize some sound and your recent sessions will appear here.";
+    const body = document.body;
+    if (!body || !body.classList.contains("welcome-page")) {
+      return;
+    }
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.nodeValue && node.nodeValue.includes(OLD_TEXT)) {
+        node.nodeValue = node.nodeValue.replace(OLD_TEXT, NEW_TEXT);
+      }
+    }
+  }
+  function startRecentListTextRender() {
+    replaceRecentListText();
+    const target = document.documentElement || document.body;
+    if (!target) return;
+    const obs = new MutationObserver(replaceRecentListText);
+    obs.observe(target, { childList: true, subtree: true });
+  }
+  function renderPrejoinScreen() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startPrejoinRender();
+    } else {
+      window.addEventListener("DOMContentLoaded", startPrejoinRender);
+    }
+  }
+  function renderRecentListText() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startRecentListTextRender();
+    } else {
+      window.addEventListener("DOMContentLoaded", startRecentListTextRender);
+    }
+  }
+  function renderWelcomeOverlay() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startWelcomeOverlayPoll();
+    } else {
+      window.addEventListener("DOMContentLoaded", startWelcomeOverlayPoll);
+    }
+  }
+  function hideStartMeetingButton() {
+    if (!document.body.classList.contains("welcome-page")) return;
+    const buttons = Array.from(document.querySelectorAll("button"));
+    for (const btn of buttons) {
+      const txt = (btn.textContent || "").trim().toLowerCase();
+      if (txt === "start meeting") {
+        btn.style.display = "none";
+        btn.disabled = true;
+        btn.dataset.trussalHidden = "1";
+      }
+    }
+  }
+  function renderHideStartMeetingButton() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      hideStartMeetingButton();
+    } else {
+      window.addEventListener("DOMContentLoaded", hideStartMeetingButton);
+    }
+    const obs = new MutationObserver(hideStartMeetingButton);
+    obs.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  // src/meeting.js
+  function removeNoAudioToast() {
+    const TITLE_SNIPPET = "You joined with no audio output";
+    const candidates = document.querySelectorAll(
+      '.notification, [class*="notification"], [role="alert"]'
+    );
+    candidates.forEach((el) => {
+      if (el.dataset.trussalToastKilled === "1") return;
+      const txt = (el.textContent || "").trim();
+      if (txt.includes(TITLE_SNIPPET)) {
+        el.dataset.trussalToastKilled = "1";
+        el.remove();
+      }
+    });
+  }
+  function startNoAudioToastRender() {
+    removeNoAudioToast();
+    const obs = new MutationObserver(removeNoAudioToast);
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+  function renderNoAudioToast() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startNoAudioToastRender();
+    } else {
+      window.addEventListener("DOMContentLoaded", startNoAudioToastRender);
+    }
   }
 
   // src/user-samples.js
@@ -40269,7 +40434,7 @@ ${code2}${BTN_MARKER}`;
   function metricsLine(peer) {
     const rtt = typeof peer.rtt === "number" ? `${peer.rtt.toFixed(0)}ms` : "\u2013";
     const jitter = typeof peer.jitter === "number" ? peer.jitter.toFixed(2) : "\u2013";
-    const extLabel = getExternalStreamLabel(peer.jitsiId);
+    const extLabel = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
     const routed = routedSet.has(peer.jitsiId);
     const propagating = peer.isLocal && isPropagatingToRoom();
     let routedTxt;
@@ -40301,7 +40466,10 @@ ${code2}${BTN_MARKER}`;
     const color2 = chipColor(peer.jitsiId, isLocal);
     container.style.setProperty("--ts-detail-color", color2);
     const extLabel = getExternalStreamLabel(peer.jitsiId);
-    const captureBtn = isLocal ? `<button class="ts-btn ghost${extLabel ? " on" : ""}" data-action="capture">${extLabel ? "\u23CF Detach input" : "\u{1F399} Capture extra input"}</button>` : "";
+    const nodeLabel = getExternalNodeLabel(peer.jitsiId);
+    const relayOn = isLocal && isRelayConnected();
+    const captureBtn = isLocal ? `<button class="ts-btn ghost${extLabel ? " on" : ""}" data-action="capture">${extLabel ? "\u23CF Detach Jamulus" : "\u{1F399} Route Jamulus audio"}</button>
+       <button class="ts-btn ghost${relayOn ? " on" : ""}" data-action="relay">${relayOn ? "\u23CF Disconnect relay" : "\u{1F4E1} Jamulus relay"}</button>` : "";
     const codeBlock = isLocal ? `<textarea class="ts-code" spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<pre class="ts-pre">${escapeHtml(peer.pattern || "/* (no pattern yet) */")}</pre>`;
     const strudelControls = isLocal ? `
       <div class="ts-section-controls">
@@ -40395,6 +40563,8 @@ ${code2}${BTN_MARKER}`;
     if (stopBtn) stopBtn.addEventListener("click", onStopClick);
     const captureBtnEl = container.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
+    const relayBtnEl = container.querySelector('[data-action="relay"]');
+    if (relayBtnEl) relayBtnEl.addEventListener("click", onRelayClick);
     const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
     const samplesInput = container.querySelector(".ts-samples-input");
     if (loadSamplesBtn && samplesInput) {
@@ -40457,6 +40627,7 @@ ${code2}${BTN_MARKER}`;
     if (getExternalStreamLabel(local2.jitsiId)) {
       await stopPropagatingExternalStream();
       detachExternalStreamForPeer(local2.jitsiId);
+      setJamulusMode(false);
       setStatus("Input detached");
       renderAll();
       return;
@@ -40493,11 +40664,30 @@ ${code2}${BTN_MARKER}`;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       await attachExternalStreamForPeer(local2.jitsiId, stream, label2);
       const propagated = await propagateExternalStreamToRoom(stream);
+      setJamulusMode(true);
       setStatus(propagated ? `Capturing ${label2} \u2192 room` : `Capturing ${label2} (local only \u2014 no Jitsi mic hook)`);
       renderAll();
     } catch (e30) {
       console.error("[studio] capture failed", e30);
       setStatus("Capture failed: " + (e30 && e30.message ? e30.message : e30));
+    }
+  }
+  async function onRelayClick() {
+    if (isRelayConnected()) {
+      disconnectJamulusRelay();
+      setStatus("Relay disconnected");
+      renderAll();
+      return;
+    }
+    try {
+      setStatus("Connecting to Jamulus relay\u2026");
+      await connectJamulusRelay();
+      setStatus("Relay connected \u2014 Jamulus audio through effects chain");
+      renderAll();
+    } catch (e30) {
+      console.error("[studio] relay connect failed", e30);
+      setStatus("Relay failed: " + (e30 && e30.message ? e30.message : e30));
+      renderAll();
     }
   }
   var BTN_MARKER2 = " // strudel-btn";

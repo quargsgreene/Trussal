@@ -13,7 +13,8 @@ COPY title.html /usr/share/jitsi-meet/title.html
 # CSS overrides (already working for you)
 COPY custom.css /tmp/custom.css
 RUN cat /tmp/custom.css >> /usr/share/jitsi-meet/css/all.css
-COPY latency-worklet-v2.js /usr/share/jitsi-meet/latency-worklet-v2.js
+COPY latency-worklet-v2.js     /usr/share/jitsi-meet/latency-worklet-v2.js
+COPY jamulus-relay-player.js   /usr/share/jitsi-meet/jamulus-relay-player.js
 COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js
 COPY assets /usr/share/jitsi-meet/assets

@@ -18,7 +18,7 @@ services:
       - PROXIED=false
       - UPDATE_CRON=@every 5m
 
-  # Frontend
+  # Peer-state signalling sidecar
   latency:
     build:
       context: ../latency-instrument
@@ -26,7 +26,21 @@ services:
     ports:
       - 8081
     networks:
-      meet.jitsi: 
+      meet.jitsi:
+
+  # Jamulus audio relay — one headless Jamulus client per active room,
+  # streams raw PCM to browsers over WebSocket at /jamulus-audio.
+  jamulus-relay:
+    build:
+      context: ../jamulus-relay
+    restart: unless-stopped
+    ports:
+      - 8082
+    networks:
+      meet.jitsi:
+    environment:
+      - JAMULUS_HOST=${JAMULUS_HOST:-jamulus.trussal.com}
+      - JAMULUS_BASE_PORT=${JAMULUS_BASE_PORT:-22000}
   web:
     build:
       context: ./jitsi-web
@@ -41,6 +55,7 @@ services:
       - ${CONFIG}/web/load-test:/usr/share/jitsi-meet/load-test:Z
       - ${CONFIG}/web/nginx/custom-routes.conf:/config/nginx-custom/custom-routes.conf:ro
       - ../latency-instrument/ws-route.conf:/config/nginx-custom/ws-route.conf:ro
+      - ../jamulus-relay/jamulus-relay-route.conf:/config/nginx-custom/jamulus-relay-route.conf:ro
       - ./trussal-impulse.wav:/usr/share/jitsi-meet/trussal-impulse.wav
       - ../src:/usr/share/jitsi-meet/css/src:ro
       - ${CONFIG}/web/letsencrypt:/etc/acme.sh

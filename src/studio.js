@@ -5,7 +5,7 @@
 // chip with effect indicators, play state, and an "audio routed" dot — making
 // it obvious that each person owns their own chain and editor.
 
-import { getRoomNameFromUrl } from './jamulus.js';
+import { getRoomNameFromUrl, connectJamulusRelay, disconnectJamulusRelay, isRelayConnected } from './jamulus.js';
 import {
   subscribeParticipants,
   getLocalParticipant,
@@ -32,10 +32,13 @@ import {
   attachExternalStreamForPeer,
   detachExternalStreamForPeer,
   getExternalStreamLabel,
+  getExternalNodeLabel,
   listAudioInputDevices,
   propagateExternalStreamToRoom,
   stopPropagatingExternalStream,
-  isPropagatingToRoom
+  isPropagatingToRoom,
+  setJamulusMode,
+  isJamulusMode,
 } from './latency-instrument.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
@@ -378,7 +381,7 @@ function effectsBlock(peer, isLocal) {
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
   const jitter = typeof peer.jitter === 'number' ? peer.jitter.toFixed(2) : '–';
-  const extLabel = getExternalStreamLabel(peer.jitsiId);
+  const extLabel  = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
   const routed = routedSet.has(peer.jitsiId);
   const propagating = peer.isLocal && isPropagatingToRoom();
   let routedTxt;
@@ -414,9 +417,12 @@ function renderDetail(container) {
   const color = chipColor(peer.jitsiId, isLocal);
   container.style.setProperty('--ts-detail-color', color);
 
-  const extLabel = getExternalStreamLabel(peer.jitsiId);
+  const extLabel   = getExternalStreamLabel(peer.jitsiId);
+  const nodeLabel  = getExternalNodeLabel(peer.jitsiId);
+  const relayOn    = isLocal && isRelayConnected();
   const captureBtn = isLocal
-    ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach input' : '🎙 Capture extra input'}</button>`
+    ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach Jamulus' : '🎙 Route Jamulus audio'}</button>
+       <button class="ts-btn ghost${relayOn ? ' on' : ''}" data-action="relay">${relayOn ? '⏏ Disconnect relay' : '📡 Jamulus relay'}</button>`
     : '';
 
   const codeBlock = isLocal
@@ -520,6 +526,8 @@ function renderDetail(container) {
   if (stopBtn) stopBtn.addEventListener('click', onStopClick);
   const captureBtnEl = container.querySelector('[data-action="capture"]');
   if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
+  const relayBtnEl = container.querySelector('[data-action="relay"]');
+  if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
 
   const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
   const samplesInput = container.querySelector('.ts-samples-input');
@@ -594,6 +602,7 @@ async function onCaptureClick() {
     // Jitsi never sees a stopped track on the wire.
     await stopPropagatingExternalStream();
     detachExternalStreamForPeer(local.jitsiId);
+    setJamulusMode(false);
     setStatus('Input detached');
     renderAll();
     return;
@@ -629,11 +638,31 @@ async function onCaptureClick() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     await attachExternalStreamForPeer(local.jitsiId, stream, label);
     const propagated = await propagateExternalStreamToRoom(stream);
+    setJamulusMode(true);
     setStatus(propagated ? `Capturing ${label} → room` : `Capturing ${label} (local only — no Jitsi mic hook)`);
     renderAll();
   } catch (e) {
     console.error('[studio] capture failed', e);
     setStatus('Capture failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+async function onRelayClick() {
+  if (isRelayConnected()) {
+    disconnectJamulusRelay();
+    setStatus('Relay disconnected');
+    renderAll();
+    return;
+  }
+  try {
+    setStatus('Connecting to Jamulus relay…');
+    await connectJamulusRelay();
+    setStatus('Relay connected — Jamulus audio through effects chain');
+    renderAll();
+  } catch (e) {
+    console.error('[studio] relay connect failed', e);
+    setStatus('Relay failed: ' + (e && e.message ? e.message : e));
+    renderAll();
   }
 }
 

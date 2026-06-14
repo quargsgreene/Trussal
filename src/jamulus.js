@@ -1,3 +1,6 @@
+import { bootAudioEngine, attachNodeToChain, detachNodeFromChain, setJamulusMode } from './latency-instrument.js';
+import { getLocalPeer } from './peer-state.js';
+
 export const JAMULUS_ROOM_MAP = {
   "0":  { host: "jamulus.trussal.com", port: 22000 },
   "1":  { host: "jamulus.trussal.com", port: 22001 },
@@ -103,4 +106,113 @@ export function renderJamulusWelcomePanelAndBanner() {
     window.addEventListener('DOMContentLoaded', startJamulusWelcomePanel);
     window.addEventListener('DOMContentLoaded', startJamulusBannerPolling);
   }
+}
+
+// ---- Jamulus relay client ---------------------------------------------------
+//
+// Connects to the server-side relay at /jamulus-audio, feeds the incoming PCM
+// stream into an AudioWorklet ring-buffer player, and routes that node directly
+// into the local peer's Trussal effects chain (worklet → limiter → reverb).
+// Mutes all Jitsi peer audio via setJamulusMode so the relay is the sole source.
+
+let _relayWs        = null;
+let _relayWorklet   = null;
+let _relayWorkletLoaded = false;
+
+async function ensureRelayWorklet(audioCtx) {
+  if (!_relayWorkletLoaded) {
+    await audioCtx.audioWorklet.addModule('/jamulus-relay-player.js');
+    _relayWorkletLoaded = true;
+  }
+  return new AudioWorkletNode(audioCtx, 'jamulus-relay-processor', {
+    numberOfOutputs:    1,
+    outputChannelCount: [2],
+  });
+}
+
+export async function connectJamulusRelay() {
+  if (_relayWs) return; // already connected
+
+  const local = getLocalPeer();
+  if (!local || !local.jitsiId) throw new Error('No local peer identity yet');
+
+  const room = getRoomNameFromUrl();
+  if (!room) throw new Error('Not in a Jitsi room');
+
+  const { audioCtx } = await bootAudioEngine();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  const loc   = window.location;
+  const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url   = `${proto}//${loc.host}/jamulus-audio?room=${encodeURIComponent(room)}`;
+
+  const ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+  _relayWs = ws;
+
+  // Wait for the relay-ready handshake before creating the worklet.
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('relay connect timeout')), 20_000);
+    const onMsg = (evt) => {
+      if (typeof evt.data !== 'string') return;
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'relay-ready') {
+        clearTimeout(timeout);
+        ws.removeEventListener('message', onMsg);
+        resolve();
+      } else if (msg.type === 'error') {
+        clearTimeout(timeout);
+        ws.removeEventListener('message', onMsg);
+        reject(new Error(msg.message || 'relay error'));
+      }
+    };
+    ws.addEventListener('message', onMsg);
+    ws.onerror = () => { clearTimeout(timeout); reject(new Error('WebSocket error')); };
+    ws.onclose = () => { clearTimeout(timeout); reject(new Error('WebSocket closed')); };
+  });
+
+  const worklet = await ensureRelayWorklet(audioCtx);
+  _relayWorklet = worklet;
+
+  // Route incoming PCM chunks into the worklet ring buffer.
+  ws.onmessage = (evt) => {
+    if (typeof evt.data === 'string') {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'relay-stopped') disconnectJamulusRelay();
+      return;
+    }
+    worklet.port.postMessage(evt.data, [evt.data]);
+  };
+  ws.onclose = () => {
+    console.log('[jamulus] relay WebSocket closed');
+    disconnectJamulusRelay();
+  };
+
+  // Wire worklet into the effects chain for the local peer.
+  await attachNodeToChain(local.jitsiId, worklet, 'Jamulus relay');
+  setJamulusMode(true);
+  console.log('[jamulus] relay connected, room', room);
+}
+
+export function disconnectJamulusRelay() {
+  if (_relayWs) {
+    _relayWs.onmessage = null;
+    _relayWs.onclose   = null;
+    try { _relayWs.close(); } catch (_) {}
+    _relayWs = null;
+  }
+  if (_relayWorklet) {
+    try { _relayWorklet.disconnect(); } catch (_) {}
+    _relayWorklet = null;
+  }
+  const local = getLocalPeer();
+  if (local && local.jitsiId) {
+    detachNodeFromChain(local.jitsiId);
+    setJamulusMode(false);
+  }
+  console.log('[jamulus] relay disconnected');
+}
+
+export function isRelayConnected() {
+  return !!_relayWs && _relayWs.readyState === WebSocket.OPEN;
 }

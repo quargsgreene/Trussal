@@ -29,8 +29,15 @@ const chains = new Map();           // jitsiId -> chain
 const remoteSources = new Map();    // jitsiId -> { tag, source, label }
 const pendingCaptures = new Set();  // jitsiIds currently being wired (prevents concurrent duplicates)
 const externalSources = new Map();  // jitsiId -> { source, stream }
+const externalNodes = new Map();    // jitsiId -> { node, label }  (WebAudio node, no MediaStream)
 const audioRouted = new Set();      // jitsiIds whose chain has any live source
 const routingSubscribers = new Set();
+
+// Jamulus mode: aggregate Jamulus audio is routed through the local peer's
+// effects chain; all other Jitsi peer audio tags are silenced so the Jamulus
+// mix is the sole audio source.
+let jamulusMode = false;
+const jamulasMutedTags = new Set(); // tags we silenced on mode entry
 let audioTagObserver = null;
 
 function notifyRoutingChange() {
@@ -53,11 +60,43 @@ export function isAudioRoutedFor(jitsiId) {
   return audioRouted.has(jitsiId);
 }
 
+function applyJamulusMuteToAllTags() {
+  document.querySelectorAll('audio').forEach(tag => {
+    if (!tag.srcObject) return;
+    if (tag.id === 'userAudio') return;
+    // Skip tags already silenced by captureJitsiAudio — they're in remoteSources.
+    const jitsiId = getParticipantIdForAudioTag(tag);
+    if (jitsiId && remoteSources.has(jitsiId)) return;
+    if (jamulasMutedTags.has(tag)) return;
+    tag.muted = true;
+    tag.volume = 0;
+    jamulasMutedTags.add(tag);
+  });
+}
+
+export function setJamulusMode(enabled) {
+  if (enabled === jamulusMode) return;
+  jamulusMode = enabled;
+  if (enabled) {
+    applyJamulusMuteToAllTags();
+  } else {
+    for (const tag of jamulasMutedTags) {
+      tag.muted = false;
+      tag.volume = 1;
+    }
+    jamulasMutedTags.clear();
+  }
+}
+
+export function isJamulusMode() { return jamulusMode; }
+
 function ensureAudioContext() {
   const Ctor = window.AudioContext || window.webkitAudioContext;
   if (!Ctor) return Promise.reject(new Error('WebAudio not supported'));
   if (!audioCtx) {
-    audioCtx = new Ctor();
+    // 48 kHz matches the Jamulus relay PCM stream and WebRTC Opus codec rate,
+    // avoiding pitch-shift when relay audio flows through the effects chain.
+    audioCtx = new Ctor({ sampleRate: 48000 });
     realDestination = audioCtx.destination;
   }
   if (!audioCtx.audioWorklet) return Promise.reject(new Error('AudioWorklet not supported'));
@@ -311,7 +350,10 @@ function captureJitsiAudio() {
 
 function startAudioTagsObserver() {
   if (audioTagObserver) return;
-  audioTagObserver = new MutationObserver(() => captureJitsiAudio());
+  audioTagObserver = new MutationObserver(() => {
+    captureJitsiAudio();
+    if (jamulusMode) applyJamulusMuteToAllTags();
+  });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
   captureJitsiAudio();
 }
@@ -642,6 +684,43 @@ export async function stopPropagatingExternalStream() {
 
 export function isPropagatingToRoom() {
   return !!jitsiMixState;
+}
+
+// Attach a pre-built WebAudio node directly to a peer's effects chain.
+// Used by the Jamulus relay to avoid the MediaStream round-trip: the relay
+// AudioWorklet output connects straight into the chain input node.
+export async function attachNodeToChain(jitsiId, node, label = 'relay') {
+  if (!jitsiId || !node) return;
+  await bootAudioEngine();
+  const chain = await ensureChain(jitsiId);
+  if (!chain) return;
+  const existing = externalNodes.get(jitsiId);
+  if (existing) {
+    try { existing.node.disconnect(chain.input); } catch (_) {}
+  }
+  node.connect(chain.input);
+  externalNodes.set(jitsiId, { node, label });
+  audioRouted.add(jitsiId);
+  console.log('[latency] attached WebAudio node →', jitsiId, label);
+  notifyRoutingChange();
+}
+
+export function detachNodeFromChain(jitsiId) {
+  const entry = externalNodes.get(jitsiId);
+  if (!entry) return;
+  const chain = chains.get(jitsiId);
+  if (chain) {
+    try { entry.node.disconnect(chain.input); } catch (_) {}
+  }
+  externalNodes.delete(jitsiId);
+  if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
+    if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+  }
+  console.log('[latency] detached WebAudio node ←', jitsiId);
+}
+
+export function getExternalNodeLabel(jitsiId) {
+  return externalNodes.get(jitsiId)?.label ?? null;
 }
 
 export async function listAudioInputDevices() {

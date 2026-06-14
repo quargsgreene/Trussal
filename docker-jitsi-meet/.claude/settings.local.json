@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/trussal-video/Trussal/**)",
+      "Bash(npm run *)",
+      "Bash(grep -v \"^$\")"
+    ]
+  }
+}
