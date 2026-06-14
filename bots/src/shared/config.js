@@ -1,0 +1,77 @@
+/**
+ * Single source of truth for runtime configuration.
+ *
+ * Every knob the admin page exposes (bot count, stratification roles, fps
+ * floor, memory ceiling) lives here with its default, so the config API,
+ * conductor, and bots can never disagree about defaults. mergeConfig rejects
+ * unknown keys to catch typos at the API boundary instead of silently
+ * ignoring an operator's setting.
+ */
+
+export const STRATIFICATION_ROLES = Object.freeze({
+  FREQUENCY_BANDS: 'frequencyBands',
+  STAGGERED_ROUND: 'staggeredRound',
+  UNISON: 'unison',
+  STEREO_TILES: 'stereoTiles',
+});
+
+export const defaultConfig = Object.freeze({
+  // Network endpoints (spec)
+  jitsiUrl: 'http://localhost/0',
+  jamulusServer: 'trussal.duckdns.org:22000',
+
+  // Bandwidth guards for self-hosted Jitsi on a home network. Bots are
+  // senders: they never need to watch each other, so channelLastN=0 cuts
+  // the n×(n-1) download fan-out to zero; the bridge only fans out to
+  // human viewers. Send side is capped at 360p / ~800 kbps / 15 fps.
+  jitsiChannelLastN: 0,
+  jitsiVideoHeight: 360,
+  jitsiStartBitrateKbps: 800,
+  captureFps: 15,
+
+  // Fleet
+  maxBots: 10,           // hard ceiling from the spec; health policy scales DOWN from this
+  sessionSeed: 1,        // drives deterministic dog-breed names & random script gen
+
+  // Stratification roles: non mutually exclusive (spec), so a set of flags
+  roles: Object.freeze({
+    frequencyBands: false,
+    staggeredRound: false,
+    unison: true,
+    stereoTiles: false,
+  }),
+  staggerSubdivisions: 1, // subdivisions of WCL used by role 2
+
+  // Health policy thresholds (user-adjustable from the admin page)
+  fpsMin: 15,             // below this, fleet scales down
+  memLimitMb: 900,        // per-bot RSS ceiling before fleet scales down
+  percentileCutoff: 95,   // latency/RAM outlier replacement threshold
+  // Absolute floors for percentile replacement: in any fleet with spread,
+  // SOMEONE always sits at p95, so without floors the policy perpetually
+  // executes the relatively-worst healthy bot. A bot must be ≥p95 AND
+  // objectively bad to be replaced.
+  replaceLatencyFloorMs: 150,
+  replaceRamFloorMb: 400,
+
+  // Conductor internals
+  metricsIntervalMs: 2000,
+  healthTickMs: 5000,
+  conductorPort: 7700,    // bots POST metrics here
+  adminPort: 7777,        // admin page, bound 0.0.0.0 so it is reachable outside the VM
+});
+
+export function mergeConfig(overrides = {}, base = defaultConfig) {
+  const out = { ...base, roles: { ...base.roles } };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!(key in base)) throw new TypeError(`unknown config key: ${key}`);
+    if (key === 'roles') {
+      for (const [role, on] of Object.entries(value)) {
+        if (!(role in base.roles)) throw new TypeError(`unknown role: ${role}`);
+        out.roles[role] = Boolean(on);
+      }
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}

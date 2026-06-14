@@ -1,0 +1,113 @@
+/**
+ * The Bot: one headless Chromium joining Jitsi with a Hydra camera and
+ * playing varied Strudel audio out through the ALSA loopback.
+ *
+ * Dependency injection: the Puppeteer launcher is a constructor option so
+ * unit tests drive the full lifecycle with fakes (no Chromium on the test
+ * host), and the container entrypoint passes the real puppeteer-core. Same
+ * reason `puppeteer-core` is only imported lazily in index.js, never here.
+ */
+
+import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
+import {
+  pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
+} from './page-scripts.js';
+
+export class Bot {
+  /**
+   * @param {object} cfg  { botId, name, jitsiUrl, script: {strudel, hydra, entryDelayMs}, executablePath? }
+   * @param {object} deps { launcher } — anything with launch(opts) → browser
+   */
+  constructor(cfg, { launcher } = {}) {
+    if (!launcher) throw new TypeError('a puppeteer-compatible launcher is required');
+    this.cfg = cfg;
+    this.launcher = launcher;
+    this.browser = null;
+    this.page = null;
+  }
+
+  async start() {
+    const { botId, name, jitsiUrl, script, executablePath, bandwidth = {} } = this.cfg;
+
+    this.browser = await this.launcher.launch({
+      headless: true,
+      executablePath,
+      args: chromiumArgs(),
+    });
+    this.page = await this.browser.newPage();
+    await this.page.setUserAgent(spoofedUserAgent(botId));
+
+    // Must be installed before navigation: Jitsi enumerates devices on load.
+    await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
+    await this.page.evaluateOnNewDocument(pageFpsSampler);
+
+    // networkidle2 instead of domcontentloaded: Jitsi keeps performing
+    // client-side navigations while joining, and each one destroys the
+    // page's execution context.
+    await this.page.goto(jitsiRoomUrl(jitsiUrl, name, bandwidth), {
+      waitUntil: 'networkidle2',
+      timeout: 60000,
+    });
+    // Belt and braces: wait until Jitsi's app object exists (i.e. the SPA
+    // has settled). Optional — older/customized Jitsi builds may differ.
+    if (this.page.waitForFunction) {
+      await this.page
+        .waitForFunction(() => globalThis.APP !== undefined, { timeout: 30000 })
+        .catch(() => {});
+    }
+
+    // Staggered-round entry (role 2): wait this bot's WCL-subdivision offset
+    // before making any sound or visuals.
+    if (script.entryDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, script.entryDelayMs));
+    }
+    await this.#bootStrudel(script);
+  }
+
+  /**
+   * Inject the Strudel REPL, retrying once if a late Jitsi navigation
+   * destroys the execution context between our readiness check and the
+   * evaluate call.
+   */
+  async #bootStrudel(script, attempt = 0) {
+    try {
+      await this.page.evaluate(pageStrudelBoot, {
+        strudel: script.strudel,
+        hydra: script.hydra,
+      });
+    } catch (err) {
+      if (attempt === 0 && /context was destroyed/i.test(String(err.message))) {
+        await new Promise((r) => setTimeout(r, 3000));
+        return this.#bootStrudel(script, 1);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * One metrics sample for the conductor: RAM from CDP, fps + runtime eval
+   * errors from the page, latency measured by the caller's HTTP reporter
+   * (round-trip of the previous POST).
+   */
+  async sampleMetrics() {
+    const [cdp, page] = await Promise.all([
+      this.page.metrics(),
+      this.page.evaluate(pageReadSamples),
+    ]);
+    return {
+      botId: this.cfg.botId,
+      name: this.cfg.name,
+      ramBytes: cdp.JSHeapUsedSize ?? 0,
+      fps: page?.fps ?? 0,
+      errors: page?.errors ?? [],
+      diag: page?.diag ?? null,
+      at: Date.now(),
+    };
+  }
+
+  async stop() {
+    if (this.browser) await this.browser.close();
+    this.browser = null;
+    this.page = null;
+  }
+}

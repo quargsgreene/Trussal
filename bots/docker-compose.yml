@@ -1,0 +1,48 @@
+# Trussal bots deployment.
+#
+# Only the conductor is a compose service: bot containers are created and
+# destroyed dynamically by the conductor through the docker socket (the
+# replace/scale-down policies need per-bot lifecycle control that a static
+# compose service list can't express). The `bot-image` service exists solely
+# so `docker compose build` produces the trussal-bot image the conductor
+# launches; it never runs.
+#
+# Networking: bot containers run with --network host (set in the conductor's
+# docker runner), because the spec pins the Jitsi room to http://localhost/0
+# — inside a bridge-networked container "localhost" would be the container
+# itself, not the VM where Jitsi listens. Consequently bots reach the
+# conductor at localhost:7700, which is why 7700 is published below.
+#
+# Host prerequisites (once per boot):
+#   sudo modprobe snd-aloop enable=1,1 index=10,11 pcm_substreams=8,8
+# Two loopback cards × 8 substreams cover 10 bots; each bot claims its own
+# subdevice (hw:Loopback,0,BOT_ID%8), generated in the entrypoint.
+
+services:
+  conductor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.conductor
+    container_name: trussal-conductor
+    ports:
+      - "7777:7777"   # admin page — reachable from outside the VM (spec)
+      - "7700:7700"   # assignments/metrics — bots are host-networked, so they connect via localhost:7700
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      MAX_BOTS: "10"
+      SESSION_SEED: "1"
+      CONDUCTOR_URL: "http://localhost:7700"
+      # Your Jitsi instance (room "0" per the spec). Override here — bots
+      # join JITSI_URL directly; bandwidth guards keep 10 bots gentle on a
+      # self-hosted bridge (see README "Home-network load").
+      JITSI_URL: "${JITSI_URL:-http://localhost/0}"
+      JAMULUS_SERVER: "${JAMULUS_SERVER:-trussal.duckdns.org:22000}"
+    restart: unless-stopped
+
+  bot-image:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bot
+    image: trussal-bot
+    profiles: [build-only]   # never started by compose; conductor runs these

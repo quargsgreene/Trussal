@@ -1,0 +1,152 @@
+<!doctype html>
+<!--
+  Admin page. Deliberately unstyled (spec): native elements only — a range
+  slider for bot count, plain checkboxes for the four non-mutually-exclusive
+  stratification roles, number inputs for the user-determined fps/memory
+  thresholds, a file input for the master-script JSON, and one native
+  <dialog> per bot as the expand/collapse code-inspector modal.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trussal Bots — Conductor Admin</title>
+</head>
+<body>
+  <h1>Trussal Bots</h1>
+
+  <form id="config-form">
+    <fieldset>
+      <legend>Fleet</legend>
+      <label>
+        Number of bots:
+        <input type="range" name="maxBots" min="1" max="10" step="1" value="10">
+        <output id="maxBotsValue">10</output>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Role stratification (non mutually exclusive)</legend>
+      <label><input type="checkbox" name="frequencyBands"> Evenly spaced frequency bands (sound + visual)</label><br>
+      <label><input type="checkbox" name="staggeredRound"> Staggered round entry (worst-case-latency subdivisions)</label><br>
+      <label><input type="checkbox" name="unison" checked> Perfect unison</label><br>
+      <label><input type="checkbox" name="stereoTiles"> Evenly divided stereo image + Hydra tiles</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Health thresholds</legend>
+      <label>Minimum fps cutoff: <input type="number" name="fpsMin" min="1" max="60" value="15"></label><br>
+      <label>Memory threshold (MB): <input type="number" name="memLimitMb" min="100" max="4000" value="900"></label>
+    </fieldset>
+
+    <button type="submit">Apply</button>
+    <span id="config-status"></span>
+  </form>
+
+  <hr>
+
+  <form id="script-form">
+    <fieldset>
+      <legend>Master script (JSON with "strudel" and "hydra" fields)</legend>
+      <input type="file" name="masterScript" accept="application/json">
+      <button type="submit">Upload &amp; validate</button>
+      <span id="script-status"></span>
+    </fieldset>
+  </form>
+
+  <hr>
+
+  <h2>Bots</h2>
+  <p>Open a bot to inspect the exact code it is running.</p>
+  <div id="bots"></div>
+
+  <script>
+    const form = document.getElementById('config-form');
+    const slider = form.elements.maxBots;
+    slider.addEventListener('input', () => {
+      document.getElementById('maxBotsValue').textContent = slider.value;
+    });
+
+    // Populate controls from the live config so the page never lies.
+    async function loadConfig() {
+      const cfg = await (await fetch('/api/config')).json();
+      slider.value = cfg.maxBots;
+      document.getElementById('maxBotsValue').textContent = cfg.maxBots;
+      for (const role of Object.keys(cfg.roles)) {
+        if (form.elements[role]) form.elements[role].checked = cfg.roles[role];
+      }
+      form.elements.fpsMin.value = cfg.fpsMin;
+      form.elements.memLimitMb.value = cfg.memLimitMb;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        maxBots: Number(slider.value),
+        fpsMin: Number(form.elements.fpsMin.value),
+        memLimitMb: Number(form.elements.memLimitMb.value),
+        roles: {
+          frequencyBands: form.elements.frequencyBands.checked,
+          staggeredRound: form.elements.staggeredRound.checked,
+          unison: form.elements.unison.checked,
+          stereoTiles: form.elements.stereoTiles.checked,
+        },
+      };
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      document.getElementById('config-status').textContent =
+        res.ok ? 'applied' : `error: ${(await res.json()).error}`;
+      renderBots();
+    });
+
+    document.getElementById('script-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = document.getElementById('script-status');
+      const file = e.target.elements.masterScript.files[0];
+      if (!file) { status.textContent = 'choose a file first'; return; }
+      let json;
+      try { json = JSON.parse(await file.text()); }
+      catch { status.textContent = 'error: file is not valid JSON'; return; }
+      const res = await fetch('/api/master-script', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(json),
+      });
+      status.textContent = res.ok ? 'validated & distributed' : `error: ${(await res.json()).error}`;
+      renderBots();
+    });
+
+    // Per-bot inspector: a button per bot opens a native <dialog> modal with
+    // the exact strudel/hydra code that bot is running (from conductor state).
+    async function renderBots() {
+      const bots = await (await fetch('/api/bots')).json();
+      const container = document.getElementById('bots');
+      container.replaceChildren();
+      for (const bot of bots) {
+        const open = document.createElement('button');
+        open.textContent = `Bot ${bot.botId} — ${bot.name}`;
+
+        const dialog = document.createElement('dialog');
+        const title = document.createElement('h3');
+        title.textContent = `Bot ${bot.botId} — ${bot.name} (entry delay ${bot.script.entryDelayMs} ms)`;
+        const pre = document.createElement('pre');
+        pre.textContent = `// hydra\n${bot.script.hydra}\n\n// strudel\n${bot.script.strudel}`;
+        const close = document.createElement('button');
+        close.textContent = 'Close';
+        close.addEventListener('click', () => dialog.close());
+        dialog.append(title, pre, close);
+
+        open.addEventListener('click', () => dialog.showModal());
+        const row = document.createElement('p');
+        row.append(open, dialog);
+        container.append(row);
+      }
+    }
+
+    loadConfig().then(renderBots);
+    setInterval(renderBots, 10000); // pick up replacements/rescales
+  </script>
+</body>
+</html>
