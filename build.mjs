@@ -5,7 +5,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STRUDEL_FORK_WEB = resolve(__dirname, '../strudel-fork/packages/web');
+const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
 const STRUDEL_ASSETS_SRC = join(STRUDEL_FORK_WEB, 'dist/assets');
 const STRUDEL_ASSETS_DEST = 'dist/assets';
 
@@ -32,7 +32,7 @@ await esbuild.build({
 	// into strudel-fork's pnpm workspace and encounter ?audioworklet imports.
 	alias: {
 		'@strudel/web': join(STRUDEL_FORK_WEB, 'dist/index.mjs'),
-		'@strudel/soundfonts': resolve(__dirname, '../strudel-fork/packages/soundfonts/dist/index.mjs'),
+		'@strudel/soundfonts': resolve(__dirname, 'strudel-fork/packages/soundfonts/dist/index.mjs'),
 		'@strudel/core': resolve(__dirname, 'node_modules/@strudel/core/dist/index.mjs'),
 		'@strudel/webaudio': resolve(__dirname, 'node_modules/@strudel/webaudio/dist/index.mjs'),
 	},
