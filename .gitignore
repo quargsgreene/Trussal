@@ -30,6 +30,9 @@ jamulus/*.log
 node_modules/
 dist/
 build/
+# Un-ignore vendored strudel-fork built outputs so Trussal builds work after clone
+!strudel-fork/**/dist/
+!strudel-fork/**/dist/**
 lib/
 out/
 .next/
@@ -118,6 +121,7 @@ temp/
 
 # --- Binaries / artifacts ---
 *.wasm
+!strudel-fork/**/*.wasm
 *.exe
 *.dll
 *.so
