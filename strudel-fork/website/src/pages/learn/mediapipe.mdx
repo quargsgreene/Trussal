@@ -1,0 +1,183 @@
+---
+title: MediaPipe Face Control
+layout: ../../layouts/MainLayout.astro
+---
+
+import { MiniRepl } from '../../docs/MiniRepl';
+
+# MediaPipe Face Control
+
+Strudel can use your webcam and [MediaPipe FaceLandmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) to give you hands-free control over the REPL and your patterns.
+
+Click the **camera icon** in the header toolbar to enable it. Your browser will ask for webcam permission the first time. MediaPipe loads from a CDN on first use — allow a few seconds for the model to initialise.
+
+---
+
+## Gesture controls
+
+Once the camera is active you will see a small live video feed in the bottom-right overlay.  Five gestures are recognised:
+
+| Gesture | Action |
+|---|---|
+| Blink both eyes firmly | **Play** (if stopped) |
+| Raise both eyebrows | **Stop** |
+| Open mouth wide | Macro A — cycle hi-hat density |
+| Tilt head left | Macro B− — shift transpose −2 semitones |
+| Tilt head right | Macro B+ — shift transpose +2 semitones |
+
+**Play / Stop** use a cooldown timer (1.5 s) so one blink triggers at most one action.
+
+**Macro A / B** use a *rising-edge latch*: the action fires once when you cross the threshold, and will not fire again until the gesture fully returns to a resting position.  This prevents a single held gesture from spamming edits.
+
+---
+
+## Continuous face values — `window.faceCtx`
+
+Every animation frame the camera loop writes EMA-smoothed (exponential moving average) values to a global object you can read from inside any Strudel pattern callback:
+
+```
+window.faceCtx.jawOpen         // 0–1  how wide the mouth is open
+window.faceCtx.browInnerUp     // 0–1  inner-eyebrow raise
+window.faceCtx.headTilt        // −1–1 head roll (negative = left, positive = right)
+window.faceCtx.eyeBlinkLeft    // 0–1  left-eye closure
+window.faceCtx.eyeBlinkRight   // 0–1  right-eye closure
+window.faceCtx.mouthSmileLeft  // 0–1  left-side smile
+window.faceCtx.mouthSmileRight // 0–1  right-side smile
+window.faceCtx.cursorX         // viewport pixels — head-cursor X position
+window.faceCtx.cursorY         // viewport pixels — head-cursor Y position
+```
+
+The values exist and are zeroed from page load, so reading them before the camera is enabled is always safe (no `undefined` or `null`).
+
+Because these values are written in the browser's animation frame — *not* on the audio clock thread — reading them inside pattern callbacks does not interrupt or affect audio timing.
+
+### Example — jaw controls gain
+
+```javascript
+$: s("bd sd hh cp")
+  .gain(() => window.faceCtx.jawOpen)
+```
+
+Open your mouth to bring the drums up; close it to silence them.
+
+### Example — eyebrow controls filter cutoff
+
+```javascript
+$: s("supersaw")
+  .note("c3")
+  .lpf(() => 200 + window.faceCtx.browInnerUp * 4000)
+```
+
+### Example — head tilt controls pan
+
+```javascript
+$: s("tabla")
+  .note("<c3 e3 g3>")
+  .pan(() => 0.5 + window.faceCtx.headTilt * 0.5)
+```
+
+Tilt your head left to push the sound left; right to push it right.
+
+---
+
+## Custom regex mutator
+
+The floating overlay includes a **regex mutator** panel.  Choose which gesture triggers it, type a regular expression and replacement string, and that transformation is applied to the full editor buffer and immediately re-evaluated when the gesture fires.
+
+If the regex does not match the current code nothing happens — the audio clock is never touched unnecessarily.
+
+---
+
+## In-code configuration — `@mediapipe` annotations
+
+You can also bind regex mutations directly in your Strudel code using comment annotations, without touching the UI.  Place a block comment anywhere in the editor:
+
+```javascript
+/* @mediapipe {
+  "trigger": "mouthOpen",
+  "action": "regex-swap",
+  "regex": "bd",
+  "replacement": "sd"
+} */
+```
+
+Supported `trigger` values: `"mouthOpen"`, `"headTiltLeft"`, `"headTiltRight"`.
+
+The `action` must be `"regex-swap"` and the `regex` field is a JavaScript regular expression string (use `\\` for literal backslashes).  The `replacement` field follows the same substitution syntax as `String.prototype.replace`.
+
+Multiple `@mediapipe` blocks can coexist in one file.  All blocks matching the current trigger fire on the same gesture event.
+
+### Example — mouth swaps snare for bass drum
+
+```javascript
+$: s("bd sd hh hh")
+
+/* @mediapipe {
+  "trigger": "mouthOpen",
+  "action": "regex-swap",
+  "regex": "\\bsd\\b",
+  "replacement": "bd"
+} */
+```
+
+---
+
+## Inline `StrudelButton` widgets
+
+Put an asterisk before a voice name to declare a button:
+
+```javascript
+*bass: note("<c2 f2 g2 bb2>").s('bass').dec(0.3).gain(0.8)
+```
+
+Press **Update** (`Ctrl+Enter`) and a small labelled button widget appears inline at the end of that line.  The voice name (`bass`) becomes the button label and the code after the colon is what gets toggled.
+
+> **Note:** The `*name:` syntax is shorthand — the transpiler rewrites it to `new StrudelButton('name: code')` before evaluation.  The explicit form is still accepted and useful when you want to embed a button inside a larger expression.
+
+### Head-cursor dwell interaction
+
+When the camera is active, a **head cursor** tracks the middle of your forehead.  Move your head so the cursor hovers over a button widget and hold still.  A yellow progress ring fills over one second.  When it completes:
+
+- **First dwell** — `name: code` is appended to the bottom of the editor and the pattern re-evaluates.
+- **Second dwell** — the appended line is commented out and the pattern re-evaluates.
+- **Third dwell** — the comment is removed and the code becomes active again.
+
+The toggle cycles indefinitely.  You must **leave the button and return** to trigger a second toggle — the latch prevents multiple triggers from a single held hover.
+
+### Example — toggle a bass line on and off without touching the keyboard
+
+```javascript
+// Main rhythm always plays:
+$: s("bd sd hh*2 cp").bank("tr909")
+
+// Hover the head cursor over this button to add or remove a bass line:
+*bass: note("<c2 f2 g2 bb2>").s('bass').dec(0.3).gain(0.8)
+```
+
+When the button fires, the following line is appended at the bottom of the editor:
+
+```javascript
+bass: note("<c2 f2 g2 bb2>").s('bass').dec(0.3).gain(0.8) // strudel-btn
+```
+
+### Toggled code format
+
+Appended button code is tagged with a `// strudel-btn` comment marker so it can be found and toggled later.  You can see and edit these lines directly in the editor.
+
+---
+
+## Macro preset behaviour
+
+When no `@mediapipe` annotation and no custom UI regex match the current gesture, the hardcoded presets run:
+
+**Macro A (mouth open)** — cycles the first `hh` occurrence in the code through the sequence `hh → hh*2 → hh*4 → hh*8 → hh …`.
+
+**Macro B (head tilt)** — increments or decrements the numeric argument of the first `.transpose(N)` or `.add(N)` found in the code.  If neither exists the code is left unchanged.
+
+---
+
+## Browser support
+
+MediaPipe FaceLandmarker requires a reasonably modern browser.  Chrome and Firefox on desktop are well-tested.  Safari does not support customised built-in elements (`StrudelButton` degrades gracefully — the widget still renders, but the custom-element registration is skipped).
+
+The webcam stream and model weights are processed locally in the browser.  No video data is sent to any server.

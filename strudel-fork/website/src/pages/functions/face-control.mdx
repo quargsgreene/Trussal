@@ -1,0 +1,231 @@
+---
+title: Face Control API
+layout: ../../layouts/MainLayout.astro
+---
+
+import { MiniRepl } from '../../docs/MiniRepl';
+
+# Face Control API
+
+This page is the reference for everything the MediaPipe face control integration exposes to **pattern code**.
+For a narrative introduction and setup instructions, see [Face Control](/learn/mediapipe).
+
+---
+
+## `window.faceCtx`
+
+A global object updated every animation frame (~60 fps) by the MediaPipe detection loop.
+All values are EMA-smoothed to prevent jitter.  The object is initialised to zeros at page load,
+so reading any property before the camera is enabled always returns a `number`, never `undefined`.
+
+Because these values are written in the browser's animation frame — not on the audio clock thread —
+reading them inside pattern callbacks is safe and does not affect audio timing.
+
+### Properties
+
+| Property | Type | Range | Description |
+|---|---|---|---|
+| `jawOpen` | `number` | 0 – 1 | How wide the mouth is open. 0 = closed, 1 = fully open. |
+| `browInnerUp` | `number` | 0 – 1 | Inner eyebrow raise. 0 = rest, 1 = maximum raise. |
+| `headTilt` | `number` | −1 – 1 | Head roll. Negative = tilt left, positive = tilt right. |
+| `eyeBlinkLeft` | `number` | 0 – 1 | Left-eye closure (from the performer's perspective). |
+| `eyeBlinkRight` | `number` | 0 – 1 | Right-eye closure. |
+| `mouthSmileLeft` | `number` | 0 – 1 | Left-side smile depth. |
+| `mouthSmileRight` | `number` | 0 – 1 | Right-side smile depth. |
+| `cursorX` | `number` | 0 – `window.innerWidth` | Head-cursor X position in viewport pixels. Derived from the forehead landmark, mirrored to match the flipped video display. |
+| `cursorY` | `number` | 0 – `window.innerHeight` | Head-cursor Y position in viewport pixels. |
+
+### Usage in patterns
+
+Any pattern callback that receives a query time can read `window.faceCtx` to produce a time-varying value:
+
+```javascript
+// jaw controls gain
+$: s("bd sd hh cp")
+  .gain(() => window.faceCtx.jawOpen)
+
+// inner eyebrow raise sweeps the low-pass filter
+$: note("c3").s("supersaw")
+  .lpf(() => 300 + window.faceCtx.browInnerUp * 5000)
+
+// head tilt pans the stereo field
+$: s("tabla").note("<c3 e3 g3>")
+  .pan(() => 0.5 + window.faceCtx.headTilt * 0.45)
+
+// blink depth modulates reverb send
+$: s("piano").note("c4 e4 g4")
+  .room(() => window.faceCtx.eyeBlinkLeft)
+
+// smile drives distortion
+$: s("sawtooth").note("a2")
+  .distort(() => (window.faceCtx.mouthSmileLeft + window.faceCtx.mouthSmileRight) / 2)
+```
+
+`cursorX` and `cursorY` are available for spatial mappings:
+
+```javascript
+// cursor X position controls cutoff frequency
+$: s("supersaw").note("c3")
+  .lpf(() => 200 + (window.faceCtx.cursorX / window.innerWidth) * 8000)
+```
+
+---
+
+## `StrudelButton` — inline toggle buttons
+
+An inline button widget that can be toggled by dwelling the head cursor over it.
+
+### Syntax
+
+**Shorthand (preferred):**
+
+```javascript
+*voiceName: <pattern code>
+```
+
+The transpiler rewrites `*name: code` to `new StrudelButton('name: code')` before evaluation, so the line is valid JavaScript and no special import is needed.
+
+**Explicit form (still supported):**
+
+```javascript
+new StrudelButton("name: code")
+```
+
+### Widget behaviour
+
+The `strudelButtonPlugin` CodeMirror extension scans the document for both `*name: code` lines and `new StrudelButton(...)` expressions and renders an inline `<button>` widget at the end of each.  The button label shows the first 22 characters of the stored code string.
+
+The widget renders as soon as the document is loaded or updated — it does **not** require the pattern to be running or the camera to be active.
+
+### Dwell interaction
+
+When the camera is active, hovering the head cursor over a `StrudelButton` widget for **1 second** toggles the button's code at the bottom of the editor:
+
+| Dwell count | Editor state |
+|---|---|
+| 1st | `name: code` appended as an active pattern line |
+| 2nd | Appended line commented out |
+| 3rd | Comment removed — line active again |
+
+This three-state toggle repeats indefinitely.
+
+### Appended line format
+
+Each appended line is tagged with a trailing `// strudel-btn` comment:
+
+```
+bass: note("<c2 f2 g2 bb2>").s('bass') // strudel-btn
+```
+
+You can edit this line directly. Do not remove the `// strudel-btn` marker if you want subsequent dwells to find and toggle it.
+
+### Example
+
+```javascript
+// Fixed rhythm always playing:
+$: s("bd sd hh*2 cp").bank("tr909")
+
+// Hover the head cursor to toggle a bass layer on and off:
+*bass: note('<c2 f2 g2 bb2>').s('bass').dec(0.3)
+```
+
+---
+
+## `@mediapipe` annotation
+
+A structured comment syntax for binding regex code mutations to discrete face gestures,
+written directly in the editor alongside your pattern code.
+
+### Syntax
+
+```javascript
+/* @mediapipe {
+  "trigger":     "<gesture-name>",
+  "action":      "regex-swap",
+  "regex":       "<js-regex-string>",
+  "replacement": "<replacement-string>"
+} */
+```
+
+The comment must use block-comment syntax (`/* … */`).  The body must be valid JSON.
+Multiple `@mediapipe` blocks may appear in a single file.
+
+### Properties
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `trigger` | `string` | yes | Which gesture fires this binding. See Trigger values below. |
+| `action` | `string` | yes | Must be `"regex-swap"`. |
+| `regex` | `string` | yes | A JavaScript regular expression string. Passed to `new RegExp(regex, 'g')`. Use `\\` for literal backslashes. |
+| `replacement` | `string` | no | Replacement string. Follows `String.prototype.replace` substitution syntax (`$1`, `$&`, etc.). Defaults to `""` (deletion) if omitted. |
+
+### Trigger values
+
+| Value | Gesture |
+|---|---|
+| `"mouthOpen"` | Jaw open past threshold (~50 % of maximum), rising-edge latch |
+| `"headTiltLeft"` | Head rolled to the left past threshold, rising-edge latch |
+| `"headTiltRight"` | Head rolled to the right past threshold, rising-edge latch |
+
+### Execution order
+
+When a gesture fires, the system:
+1. Collects all `@mediapipe` blocks with a matching `trigger`.
+2. Runs each regex replacement against the current editor buffer in document order.
+3. Runs the custom UI regex mutator if it is bound to the same trigger.
+4. Falls back to the hardcoded macro preset if neither step produced a change.
+
+Only the final mutated code is written back to the editor; `evaluate()` is called at most once.
+
+### Example
+
+```javascript
+$: s("bd sd hh hh")
+
+/* @mediapipe {
+  "trigger":     "mouthOpen",
+  "action":      "regex-swap",
+  "regex":       "\\bhh\\*?\\d*",
+  "replacement": "hh*4"
+} */
+
+/* @mediapipe {
+  "trigger":     "headTiltRight",
+  "action":      "regex-swap",
+  "regex":       "\\.transpose\\((-?\\d+)\\)",
+  "replacement": ".transpose(4)"
+} */
+```
+
+---
+
+## Gesture event model
+
+### Continuous metrics (all properties)
+
+Updated via an exponential moving average with α = 0.15:
+
+```
+smoothed = smoothed + 0.15 × (raw − smoothed)
+```
+
+This corresponds to a time constant of roughly 6 frames (~100 ms at 60 fps).
+Higher-frequency facial movement is attenuated; slow, intentional movement passes through.
+
+### Discrete gestures
+
+| Gesture | Type | Mechanism |
+|---|---|---|
+| Blink (play) | Cooldown | Fires at most once per 1500 ms |
+| Eyebrow raise (stop) | Cooldown | Fires at most once per 1500 ms |
+| Mouth open | Rising-edge latch | Fires on threshold crossing; re-arms when value drops below 40 % of threshold |
+| Head tilt left | Rising-edge latch | Same latch behaviour |
+| Head tilt right | Rising-edge latch | Same latch behaviour |
+
+**Blink threshold:** `eyeBlinkLeft > 0.8 AND eyeBlinkRight > 0.8`
+
+**Eyebrow threshold:** `browInnerUp > 0.6 AND (browOuterUpLeft > 0.45 OR browOuterUpRight > 0.45)`, with eyes clearly open (`eyeBlinkLeft < 0.3 AND eyeBlinkRight < 0.3`)
+
+**Jaw open threshold:** `jawOpen > 0.5`
+
+**Head tilt threshold:** normalised eye-corner Δy / inter-eye distance `> 0.3` (roughly 17 °)

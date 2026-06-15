@@ -1,0 +1,312 @@
+---
+title: MediaPipe Integration
+layout: ../../layouts/MainLayout.astro
+---
+
+# MediaPipe Integration — Technical Reference
+
+This page documents the internal architecture and developer-facing API of the MediaPipe face control integration.
+For pattern-author usage, see [Face Control API](/functions/face-control).
+For a narrative introduction, see [Face Control](/learn/mediapipe).
+
+---
+
+## Package locations
+
+| File | Role |
+|---|---|
+| `website/src/repl/useFacialGestures.jsx` | React hook — MediaPipe init, RAF detection loop, EMA, gesture dispatch |
+| `website/src/repl/components/FacialGestureControl.jsx` | React component — UI overlay, head cursor, dwell engine, regex mutator |
+| `website/src/repl/strudelButton.mjs` | `StrudelButton` global class definition |
+| `packages/codemirror/strudel-button.mjs` | CodeMirror ViewPlugin and theme for inline button widgets |
+
+---
+
+## `useFacialGestures(options)`
+
+A React hook that initialises MediaPipe FaceLandmarker, runs the webcam detection loop, publishes
+continuous values to `window.faceCtx`, and dispatches discrete gesture callbacks.
+
+```typescript
+useFacialGestures(options: {
+  enabled:          boolean,
+  onPlay?:          () => void,
+  onStop?:          () => void,
+  onMouthOpen?:     () => void,
+  onHeadTiltLeft?:  () => void,
+  onHeadTiltRight?: () => void,
+}): {
+  videoRef:        React.RefObject<HTMLVideoElement>,
+  canvasRef:       React.RefObject<HTMLCanvasElement>,
+  status:          'idle' | 'loading' | 'ready' | 'error',
+  detectedGesture: 'play' | 'stop' | 'mouthOpen' | 'headTiltLeft' | 'headTiltRight' | null,
+}
+```
+
+### Options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | yes | When `true`, the hook opens the webcam and starts the detection loop. Toggling to `false` stops the stream, closes the landmarker, and resets all state. |
+| `onPlay` | `() => void` | no | Called when the blink gesture is detected (cooldown-gated). |
+| `onStop` | `() => void` | no | Called when the eyebrow-raise gesture is detected (cooldown-gated). |
+| `onMouthOpen` | `() => void` | no | Called on the rising edge of a jaw-open event (latch-gated). |
+| `onHeadTiltLeft` | `() => void` | no | Called on the rising edge of a left-tilt event (latch-gated). |
+| `onHeadTiltRight` | `() => void` | no | Called on the rising edge of a right-tilt event (latch-gated). |
+
+All callbacks are stored in refs internally; passing a new function reference on re-render does not restart the detection loop.
+
+### Return values
+
+| Value | Type | Description |
+|---|---|---|
+| `videoRef` | `RefObject<HTMLVideoElement>` | Attach to a `<video>` element to display the webcam feed. |
+| `canvasRef` | `RefObject<HTMLCanvasElement>` | Attach to a `<canvas>` element to receive face-landmark overlay drawing. |
+| `status` | `string` | Lifecycle state of the detection loop. |
+| `detectedGesture` | `string \| null` | Set to the most recently fired gesture name for 800 ms, then cleared. Useful for flashing UI feedback. |
+
+### Lifecycle
+
+```
+enabled=false  →  status='idle'
+enabled=true   →  status='loading'  (MediaPipe WASM + model downloading)
+               →  status='ready'    (loop running)
+               →  status='error'    (camera permission denied or model load failure)
+enabled=false  →  stream stopped, landmarker closed, EMA/latch state reset, status='idle'
+```
+
+### Internal constants
+
+| Constant | Value | Description |
+|---|---|---|
+| `EMA_ALPHA` | `0.15` | Smoothing factor applied to all face metrics each frame |
+| `BLINK_THRESHOLD` | `0.8` | Eye blink score required to trigger play |
+| `BROW_INNER_THRESHOLD` | `0.6` | `browInnerUp` score for stop gesture |
+| `BROW_OUTER_THRESHOLD` | `0.45` | `browOuterUp` score required on at least one side |
+| `JAW_OPEN_THRESHOLD` | `0.5` | `jawOpen` score for mouth-open gesture |
+| `HEAD_TILT_THRESHOLD` | `0.3` | Normalised eye-corner Δy / inter-eye distance for tilt gesture |
+| `COOLDOWN_MS` | `1500` | Minimum ms between two blink or brow-raise triggers |
+| `LATCH_RESET` | `0.4` | Fraction of threshold the value must drop below to re-arm a latch |
+
+### MediaPipe model
+
+```
+WASM:  https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm
+Model: https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
+
+Loaded dynamically on first enable. Keep the `@mediapipe/tasks-vision` version in `website/package.json`
+in sync with the CDN path.
+
+### Head cursor landmark
+
+The head cursor uses **landmark index 10** (top-centre of the forehead in MediaPipe's 478-point mesh).
+The x coordinate is flipped (`cursorX = (1 − landmark.x) × window.innerWidth`) to match the
+`scaleX(-1)` mirror applied to the video display element.
+
+Eye tilt uses landmark indices **33** (left outer corner) and **263** (right outer corner), with the
+Δy normalised by the horizontal inter-eye distance so the reading is stable across varying camera distances.
+
+---
+
+## `FacialGestureControl` component
+
+```typescript
+<FacialGestureControl
+  started:          boolean,
+  handleTogglePlay: () => void,
+/>
+```
+
+| Prop | Type | Description |
+|---|---|---|
+| `started` | `boolean` | Whether the REPL is currently playing. Used to guard play/stop callbacks. |
+| `handleTogglePlay` | `() => void` | Called to toggle REPL playback. |
+
+The component reads `window.strudelMirror` directly for code mutation and evaluation.
+It does not require `editorRef` or `handleEvaluate` to be threaded through props.
+
+### Internal RAF loop (dwell engine)
+
+When `enabled`, a second `requestAnimationFrame` loop runs independently of the MediaPipe loop:
+
+1. Reads `window.faceCtx.cursorX` and `window.faceCtx.cursorY`.
+2. Moves the cursor `<div>` via direct style mutation (no React state, no re-render).
+3. Queries all `.strudel-head-btn` elements in the DOM and checks each against the cursor's bounding rect.
+4. Manages the dwell state machine (see below).
+
+The cursor element and the SVG progress ring are both accessed via React refs and updated imperatively.
+
+### Dwell state machine
+
+State is held in `dwellRef.current`:
+
+```typescript
+{
+  code:    string | null,   // dataset.strudelCode of the hovered button, or null
+  el:      Element | null,  // the hovered button DOM element
+  startMs: number,          // performance.now() when hover began
+  fired:   boolean,         // true after the dwell completes; prevents re-fire while still hovering
+}
+```
+
+Transitions:
+
+```
+cursor enters button  →  code/el/startMs set, fired=false
+cursor leaves button  →  state reset, progress ring reset to 0
+dwell ≥ DWELL_MS      →  toggleButtonCode(code) called, fired=true
+cursor re-enters      →  startMs reset, fired=false (new dwell can begin)
+```
+
+`DWELL_MS = 1000` ms.
+
+### `toggleButtonCode(code)`
+
+Searches the current editor buffer for lines in these three states and advances to the next:
+
+```
+State       Line format
+─────────   ──────────────────────────────────────────────
+not found   (nothing)                  → append `\n${code} // strudel-btn`
+active      `${code} // strudel-btn`  → replace with `// ${code} // strudel-btn`
+commented   `// ${code} // strudel-btn` → replace with `${code} // strudel-btn`
+```
+
+After mutation, `mirror.setCode(next)` and `mirror.evaluate()` are called unconditionally.
+
+### `@mediapipe` annotation parsing
+
+`parseMediapipeConfigs(code: string): object[]`
+
+Extracts all `/* @mediapipe { … } */` blocks from `code` using:
+
+```
+/\/\*\s*@mediapipe\s+(\{[\s\S]*?\})\s*\*\//g
+```
+
+Each captured JSON body is parsed with `JSON.parse`. Malformed blocks are silently skipped.
+
+### Mutation execution priority
+
+When a gesture fires, handlers run in this order:
+1. All `@mediapipe` annotation blocks matching the trigger (from the live editor code at moment of gesture).
+2. The custom UI regex mutator, if its trigger matches and the regex field is non-empty.
+3. The hardcoded macro preset, only if neither of the above produced a code change.
+
+`mutateAndEvaluate(fn)` calls `mirror.evaluate()` only when `fn(code) !== code`.
+
+---
+
+## `initStrudelButton()`
+
+```typescript
+import { initStrudelButton } from 'website/src/repl/strudelButton.mjs';
+initStrudelButton(): void
+```
+
+Idempotent.  On the first call:
+
+1. Defines `class StrudelButton extends HTMLButtonElement`.
+2. Calls `customElements.define('strudel-button', StrudelButton, { extends: 'button' })`.
+3. Assigns `globalThis.StrudelButton = StrudelButton`.
+
+Subsequent calls are no-ops.  The `customElements.define` call is wrapped in a `try/catch`
+to handle Safari (which does not support customised built-in elements) and hot-reload
+double-registration gracefully.
+
+`FacialGestureControl` calls `initStrudelButton()` unconditionally on mount (not gated on
+`enabled`), so `globalThis.StrudelButton` is always available when the REPL loads — evaluation
+of `*name:` shorthand lines does not require the camera to be active.
+
+---
+
+## `strudelButtonPlugin` (CodeMirror)
+
+```typescript
+import { strudelButtonPlugin, strudelButtonTheme } from '@strudel/codemirror';
+```
+
+### `strudelButtonPlugin`
+
+A `ViewPlugin` that runs `buildDecorations` on every `docChanged` or `viewportChanged` update.  It scans the raw document string with **two** regexes:
+
+| Regex constant | Pattern | Matches |
+|---|---|---|
+| `BUTTON_RE` | `/new\s+StrudelButton\((['"\`])([\s\S]*?)\1\)/g` | Explicit `new StrudelButton(...)` form |
+| `STARRED_VOICE_RE` | `/^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg` | Shorthand `*name: code` lines |
+
+For `BUTTON_RE` matches the stored code is `m[2]` (content between quotes).  For `STARRED_VOICE_RE` matches the stored code is `"${name}: ${expr}"` so that dwell-toggle appends a properly-labelled voice declaration.
+
+Each match produces one `Decoration.widget` placed at the character position immediately after the match end.  The widget renders a `<button class="cm-strudel-btn strudel-head-btn">` element with `data-strudel-code` set to the stored code.
+
+Decorations are sorted by position (guaranteed by the left-to-right scan) and passed to `Decoration.set(..., true)`.
+
+### `strudelButtonTheme`
+
+An `EditorView.baseTheme` providing three CSS classes:
+
+| Class | When applied | Visual |
+|---|---|---|
+| `.cm-strudel-btn` | Always (base style) | Inline monospace button, `#7dcfff` text, `#4a5568` border |
+| `.strudel-dwell-hover` | Added by the dwell RAF while cursor is over the button | `#ffcc00` text and border |
+| `.strudel-btn-active` | Added for 600 ms after a successful dwell | `#68d391` (green) text and border |
+
+Both exports are registered in `initEditor` in `packages/codemirror/codemirror.mjs`.
+
+---
+
+## `*name: code` transpiler pre-processing
+
+The `*name: code` shorthand is not valid JavaScript (`*` is not a valid statement prefix), so it must be rewritten before Acorn parses the code.
+
+`transpiler()` in `packages/transpiler/transpiler.mjs` applies a regex substitution **before** calling `parse()`:
+
+```
+/^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg
+```
+
+Each match is replaced with:
+
+```javascript
+new StrudelButton('name: escaped_expr')
+```
+
+Single quotes are used deliberately — the mini-notation plugin (`plugin-mini.mjs`) only processes double-quoted string literals, so using single quotes prevents the button code from being misinterpreted as a mini pattern.  Single quotes in the expression are escaped with `\'`.
+
+### Mini-location position adjustment
+
+Because the replacement string is longer than the original `*name: code` line, character positions reported by subsequent mini-notation parsing would be relative to the longer pre-processed source, not the original editor text.  The transpiler tracks each replacement as `{ afterPos, delta }` and applies an inverse shift to all `miniLocations` entries before returning:
+
+```
+if (miniLocation.from >= afterPos) miniLocation.from -= delta
+```
+
+This keeps mini-notation highlighting accurate regardless of where `*name:` button declarations appear in the file.
+
+---
+
+## Data flow diagram
+
+```
+Camera → MediaPipe FaceLandmarker
+         │
+         ├─ blendshapes ──► EMA smoothing ──► window.faceCtx ──► pattern callbacks
+         │                                                    └──► cursor RAF reads cursorX/Y
+         ├─ landmarks[10] ─► cursorX/Y ────► window.faceCtx
+         ├─ landmarks[33,263] ─► headTilt ─► window.faceCtx
+         │
+         └─ processGestures()
+               │
+               ├─ blink ──────────────────────────────────────────► onPlay()
+               ├─ browRaise ──────────────────────────────────────► onStop()
+               ├─ jawOpen   (rising-edge latch) ──► onMouthOpen() ──► @mediapipe / regex / macro
+               ├─ tiltLeft  (rising-edge latch) ──► onHeadTiltLeft()
+               └─ tiltRight (rising-edge latch) ──► onHeadTiltRight()
+
+Cursor RAF (FacialGestureControl)
+    reads window.faceCtx.cursorX/Y
+    ──► moves cursor <div>
+    ──► dwell detection over .strudel-head-btn elements
+              └─ dwell ≥ 1000 ms ──► toggleButtonCode() ──► mirror.setCode() ──► mirror.evaluate()
+```
