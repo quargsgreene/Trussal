@@ -21,7 +21,9 @@ npm run deploy:local
 # Full redeploy: build, deploy:local, then rebuild + restart Docker services
 ./run.sh
 
-# Build the local strudel-fork packages (only needed when strudel-fork changes)
+# Rebuild vendored strudel-fork packages (only needed when strudel-fork source changes;
+# dist files are committed so a normal clone + `npm run build` does not need this)
+# Requires pnpm@8 (fetched automatically via npm exec) and Node >=18
 npm run build:strudel-fork
 
 # Clean dist/
@@ -39,7 +41,7 @@ Set `JAMULUS_HOST` in the environment (or `docker-jitsi-meet/.env`) before build
 ## Architecture
 
 ### Build pipeline
-`src/index.js` → esbuild → `dist/custom-config.js`. The build aliases `@strudel/web` and `@strudel/soundfonts` to a local fork at `../strudel-fork/` and copies Strudel's SharedWorker asset files into `dist/assets/`. `@strudel/core` and `@strudel/webaudio` are pinned to the repo's own `node_modules` to avoid esbuild walking into the pnpm workspace.
+`src/index.js` → esbuild → `dist/custom-config.js`. The build aliases `@strudel/web` and `@strudel/soundfonts` to the vendored fork at `strudel-fork/` and copies Strudel's SharedWorker asset files into `dist/assets/`. `@strudel/core` and `@strudel/webaudio` are pinned to the repo's own `node_modules` to avoid esbuild walking into the pnpm workspace.
 
 ### Deployment
 `dist/custom-config.js` is volume-mounted into the Jitsi `web` Docker container and served as `/custom-config.js`. A second container (`latency`) runs the Node.js WebSocket sidecar from `latency-instrument/`.
