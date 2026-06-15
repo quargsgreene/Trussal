@@ -30,9 +30,14 @@ export class Bot {
     const { botId, name, jitsiUrl, script, executablePath, bandwidth = {} } = this.cfg;
 
     this.browser = await this.launcher.launch({
-      headless: true,
+      // headless: false — Xvfb is already running per bot (entrypoint sets
+      // DISPLAY=:9N). headless:'new' routes Web Audio to a null Ozone sink;
+      // non-headless X11 mode falls through to ALSA, which is the path to
+      // the loopback → JACK → Jamulus chain.
+      headless: false,
       executablePath,
       args: chromiumArgs(),
+      ignoreDefaultArgs: ['--mute-audio'],
     });
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(spoofedUserAgent(botId));
