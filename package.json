@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "deploy:local": "npm run build && sudo cp dist/custom-config.js /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web && sudo mkdir -p /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets && sudo cp -r dist/assets/. /home/trussal-video/Trussal/docker-jitsi-meet/jitsi-web/assets/",
+    "deploy:local": "npm run build && cp dist/custom-config.js docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
     "clean": "rm -rf dist",
     "build:strudel-fork": "cd strudel-fork && npm exec --package=pnpm@8 --yes -- pnpm install && npm exec --package=pnpm@8 --yes -- pnpm --filter @strudel/web build && npm exec --package=pnpm@8 --yes -- pnpm --filter @strudel/soundfonts build"
