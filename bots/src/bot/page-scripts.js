@@ -61,31 +61,41 @@ export function pageAudioBridge() {
   window.addEventListener('error', (e) => push('onerror: ' + (e.message || e)));
   window.addEventListener('unhandledrejection', (e) => push('reject: ' + ((e.reason && e.reason.stack) || e.reason)));
 
-  // Build the shared context and tap eagerly (autoplay-policy flag lets it
-  // start without a gesture). Strudel's later `new AudioContext()` returns
-  // this same instance, so its output lands on our fan.
-  const shared = new Native();
-  const hardware = shared.destination; // real device → ALSA loopback → Jamulus
-  const tap = shared.createMediaStreamDestination(); // → Jitsi mic track
-  const fan = shared.createGain();
-  fan.connect(hardware);
-  fan.connect(tap);
-  Object.defineProperty(shared, 'destination', {
-    configurable: true,
-    get: () => fan,
-  });
-  // Diagnostic: measure the live signal reaching our fan (= what Strudel sends
-  // to shared.destination). If this stays at 0 while the pattern plays, Strudel
-  // is rendering into a different AudioContext than the one feeding the tap.
-  const analyser = shared.createAnalyser();
-  analyser.fftSize = 2048;
-  fan.connect(analyser);
-  window.__trussalTapAnalyser = analyser;
-  window.__trussalMicStream = tap.stream;
-  window.__trussalAudioCtx = shared;
-  window.__trussalHardware = hardware; // real AudioDestinationNode, for diag
+  // Build the shared context + tap LAZILY, on the first `new AudioContext()`,
+  // rather than eagerly here. This function runs at document-start (before the
+  // page navigates), and a context built then binds to the pre-navigation
+  // origin: superdough's later `audioWorklet.addModule(<CDN url>)` silently
+  // fails on it, leaving every synth/sample mute with no thrown error.
+  // Deferring construction to the first real consumer builds the context
+  // post-navigation, so worklet loading — and thus sound — works. Strudel,
+  // Jitsi, and the gUM fallback all funnel through `new AudioContext()`, so
+  // whoever asks first creates the one shared instance and its output lands on
+  // our fan (→ hardware/Jamulus + the Jitsi tap).
+  let shared = null;
+  function build(args) {
+    const ctx = new Native(...args);
+    const hardware = ctx.destination; // real device → ALSA loopback → Jamulus
+    const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
+    const fan = ctx.createGain();
+    fan.connect(hardware);
+    fan.connect(tap);
+    Object.defineProperty(ctx, 'destination', {
+      configurable: true,
+      get: () => fan,
+    });
+    // Diagnostic: measure the live signal reaching our fan (= what Strudel
+    // sends to ctx.destination). 0 while playing ⇒ no audio reaches the tap.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    fan.connect(analyser);
+    window.__trussalTapAnalyser = analyser;
+    window.__trussalMicStream = tap.stream;
+    window.__trussalAudioCtx = ctx;
+    window.__trussalHardware = hardware; // real AudioDestinationNode, for diag
+    return ctx;
+  }
 
-  function Wrapped() { return shared; }
+  function Wrapped(...args) { if (!shared) shared = build(args); return shared; }
   Wrapped.prototype = Native.prototype;
   Wrapped.__trussalWrapped = true;
   window.AudioContext = Wrapped;
