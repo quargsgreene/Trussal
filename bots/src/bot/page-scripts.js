@@ -49,6 +49,18 @@ export function pageAudioBridge() {
   const Native = window.AudioContext || window.webkitAudioContext;
   if (!Native || Native.__trussalWrapped) return;
 
+  // Diagnostic: capture console errors/warnings + uncaught errors so Strudel/
+  // superdough audio-init failures (worklet load, channel config, missing
+  // sounds) surface in the metrics diag instead of being swallowed in-page.
+  const conBuf = (window.__trussalConsole = window.__trussalConsole || []);
+  const push = (m) => { conBuf.push(String(m).slice(0, 300)); if (conBuf.length > 60) conBuf.shift(); };
+  for (const level of ['error', 'warn']) {
+    const orig = console[level] && console[level].bind(console);
+    if (orig) console[level] = (...a) => { try { push(level + ': ' + a.map((x) => (x && x.stack) || String(x)).join(' ')); } catch (e) {} return orig(...a); };
+  }
+  window.addEventListener('error', (e) => push('onerror: ' + (e.message || e)));
+  window.addEventListener('unhandledrejection', (e) => push('reject: ' + ((e.reason && e.reason.stack) || e.reason)));
+
   // Build the shared context and tap eagerly (autoplay-policy flag lets it
   // start without a gesture). Strudel's later `new AudioContext()` returns
   // this same instance, so its output lands on our fan.
@@ -71,6 +83,7 @@ export function pageAudioBridge() {
   window.__trussalTapAnalyser = analyser;
   window.__trussalMicStream = tap.stream;
   window.__trussalAudioCtx = shared;
+  window.__trussalHardware = hardware; // real AudioDestinationNode, for diag
 
   function Wrapped() { return shared; }
   Wrapped.prototype = Native.prototype;
@@ -334,6 +347,21 @@ export function pageReadSamples() {
           out.strudelCtx = info;
           out.wrapInstalled = Boolean(window.AudioContext && window.AudioContext.__trussalWrapped);
         } catch (e) { out.strudelCtxErr = String(e); }
+        // Diagnostic: is the destination Strudel sees a real AudioDestinationNode
+        // (has maxChannelCount) or our GainNode fan (undefined → may break init)?
+        try {
+          const shared = window.__trussalAudioCtx;
+          const seen = shared && shared.destination;
+          const hw = window.__trussalHardware;
+          out.destInfo = {
+            seenCtor: seen && seen.constructor && seen.constructor.name,
+            seenMaxCC: seen && seen.maxChannelCount,
+            seenCC: seen && seen.channelCount,
+            hwCtor: hw && hw.constructor && hw.constructor.name,
+            hwMaxCC: hw && hw.maxChannelCount,
+          };
+        } catch (e) { out.destErr = String(e); }
+        out.console = (window.__trussalConsole || []).slice(-30);
         out.gumCalls = window.__trussalGumCalls || [];
         out.log = window.__trussalAudioLog || [];
         return out;
