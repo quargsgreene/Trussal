@@ -62,6 +62,13 @@ export function pageAudioBridge() {
     configurable: true,
     get: () => fan,
   });
+  // Diagnostic: measure the live signal reaching our fan (= what Strudel sends
+  // to shared.destination). If this stays at 0 while the pattern plays, Strudel
+  // is rendering into a different AudioContext than the one feeding the tap.
+  const analyser = shared.createAnalyser();
+  analyser.fftSize = 2048;
+  fan.connect(analyser);
+  window.__trussalTapAnalyser = analyser;
   window.__trussalMicStream = tap.stream;
   window.__trussalAudioCtx = shared;
 
@@ -295,6 +302,38 @@ export function pageReadSamples() {
             out.jitsiAudioTrack = null;
           }
         } catch (e) { out.jitsiErr = String(e); }
+        // Diagnostic: live RMS of what reaches our shared-context destination.
+        try {
+          const an = window.__trussalTapAnalyser;
+          if (an) {
+            const buf = new Float32Array(an.fftSize);
+            an.getFloatTimeDomainData(buf);
+            let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+            out.fanRms = Math.sqrt(s / buf.length);
+          } else { out.fanRms = 'no-analyser'; }
+        } catch (e) { out.fanRmsErr = String(e); }
+        // Diagnostic: identify the AudioContext Strudel actually renders into,
+        // and whether it is the same object whose destination feeds our tap.
+        try {
+          const shared = window.__trussalAudioCtx;
+          const editor = document.querySelector('strudel-editor');
+          const repl = editor && editor.editor && editor.editor.repl;
+          const sched = repl && repl.scheduler;
+          const cand = {
+            'window.getAudioContext()': typeof window.getAudioContext === 'function' ? window.getAudioContext() : undefined,
+            'editor.editor.audioContext': editor && editor.editor && editor.editor.audioContext,
+            'repl.audioContext': repl && repl.audioContext,
+            'sched.audioContext': sched && sched.audioContext,
+            'sched.worker && sched.getAudioContext': sched && typeof sched.getAudioContext === 'function' ? sched.getAudioContext() : undefined,
+          };
+          const info = {};
+          for (const k of Object.keys(cand)) {
+            const v = cand[k];
+            if (v) info[k] = { ctor: v.constructor && v.constructor.name, isShared: v === shared, sameDest: shared && v.destination === shared.destination, state: v.state };
+          }
+          out.strudelCtx = info;
+          out.wrapInstalled = Boolean(window.AudioContext && window.AudioContext.__trussalWrapped);
+        } catch (e) { out.strudelCtxErr = String(e); }
         out.gumCalls = window.__trussalGumCalls || [];
         out.log = window.__trussalAudioLog || [];
         return out;
