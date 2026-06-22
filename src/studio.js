@@ -587,12 +587,16 @@ async function onStopClick() {
 }
 
 // Capture an external audio input (e.g. a virtual device that loopback-carries
-// Jamulus output) and route it through TWO places at once:
-//   1. The local user's effects chain → self-monitoring through the local
-//      speakers.
-//   2. The outgoing Jitsi mic via an audio mixing effect → every other peer
-//      receives it as part of our mic stream and renders it through OUR
-//      per-peer chain on their side, so the room hears the processed signal.
+// Jamulus output) and propagate it to the room: the stream is mixed into the
+// outgoing Jitsi mic via an audio mixing effect, so every other peer receives
+// it as part of our mic stream and renders it through OUR per-peer chain on
+// their side — the room hears the processed signal.
+//
+// We deliberately do NOT monitor the captured stream through the local speakers
+// (monitorLocally: false). The capture device is almost always a monitor/loopback
+// of the same output the browser plays to, so self-monitoring would re-emit the
+// signal into the very device we're capturing and howl ("nothing but feedback").
+// The local user already hears Jamulus natively, so local playback is redundant.
 async function onCaptureClick() {
   const local = getLocalPeer();
   if (!local || !local.jitsiId) return;
@@ -636,7 +640,7 @@ async function onCaptureClick() {
     };
     if (deviceId) audioConstraints.deviceId = { exact: deviceId };
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    await attachExternalStreamForPeer(local.jitsiId, stream, label);
+    await attachExternalStreamForPeer(local.jitsiId, stream, label, { monitorLocally: false });
     const propagated = await propagateExternalStreamToRoom(stream);
     setJamulusMode(true);
     setStatus(propagated ? `Capturing ${label} → room` : `Capturing ${label} (local only — no Jitsi mic hook)`);

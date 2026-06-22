@@ -234,8 +234,21 @@ async function buildChain(jitsiId) {
   input.channelCountMode = 'explicit';
   Object.defineProperty(input, 'maxChannelCount', { value: 2, configurable: true });
 
+  // Keep a stereo bus through the effect node so the stereo Opus path
+  // (ENABLE_STEREO) isn't flattened. Configure the channels explicitly rather
+  // than relying on AudioWorkletNode's implicit channelCountMode default, which
+  // is browser-dependent; with `channelCount: 1` the node could down-mix to
+  // mono. The processor already iterates every channel, so it applies the
+  // distortion/noise to L and R independently. Mono sources (a DI, or a peer
+  // sending mono) are up-mixed to dual-mono here, which is the correct centered
+  // result.
   const worklet = new AudioWorkletNode(audioCtx, 'latency-processor-v2', {
-    numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    channelCount: 2,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
   });
   const limiter = audioCtx.createDynamicsCompressor();
   limiter.threshold.value = -1.0;
@@ -386,7 +399,7 @@ subscribeParticipants((event, payload) => {
     }
     const ext = externalSources.get(payload.id);
     if (ext) {
-      try { ext.source.disconnect(); } catch (e) {}
+      try { ext.source && ext.source.disconnect(); } catch (e) {}
       try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
       externalSources.delete(payload.id);
     }
@@ -483,21 +496,34 @@ export async function getStrudelAudioContext() {
 // UI to bring in a system-level audio input (e.g. a virtual device that
 // loopback-carries Jamulus output) so it flows through the same worklet +
 // reverb path as remote Jitsi audio.
-export async function attachExternalStreamForPeer(jitsiId, stream, label = 'external') {
+//
+// monitorLocally controls whether the stream is also played out of THIS
+// browser's speakers (source → chain → realDestination). For a peer's incoming
+// audio that is the whole point, but for the LOCAL user capturing their own
+// Jamulus/system output it must be false: the capture device is typically a
+// monitor/loopback of the same output realDestination feeds, so playing it back
+// re-emits the captured signal into the very device we're capturing — it gets
+// re-captured, re-emitted, and howls ("nothing but feedback"). The local user
+// already hears Jamulus natively, so we only propagate the stream to the room
+// (see propagateExternalStreamToRoom) rather than monitoring it here.
+export async function attachExternalStreamForPeer(jitsiId, stream, label = 'external', { monitorLocally = true } = {}) {
   if (!jitsiId || !stream) return null;
   await bootAudioEngine();
   const chain = await ensureChain(jitsiId);
   if (!chain) return null;
   const existing = externalSources.get(jitsiId);
   if (existing) {
-    try { existing.source.disconnect(); } catch (e) {}
+    try { existing.source && existing.source.disconnect(); } catch (e) {}
     try { existing.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
   }
-  const source = audioCtx.createMediaStreamSource(stream);
-  source.connect(chain.input);
+  let source = null;
+  if (monitorLocally) {
+    source = audioCtx.createMediaStreamSource(stream);
+    source.connect(chain.input);
+  }
   externalSources.set(jitsiId, { source, stream, label });
   audioRouted.add(jitsiId);
-  console.log('[latency] attached external stream →', jitsiId, label, 'tracks:', stream.getAudioTracks().map(t => t.label));
+  console.log('[latency] attached external stream →', jitsiId, label, monitorLocally ? '(monitored)' : '(room only)', 'tracks:', stream.getAudioTracks().map(t => t.label));
   notifyRoutingChange();
   return source;
 }
@@ -505,7 +531,7 @@ export async function attachExternalStreamForPeer(jitsiId, stream, label = 'exte
 export function detachExternalStreamForPeer(jitsiId) {
   const ext = externalSources.get(jitsiId);
   if (!ext) return;
-  try { ext.source.disconnect(); } catch (e) {}
+  try { ext.source && ext.source.disconnect(); } catch (e) {}
   try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
   externalSources.delete(jitsiId);
   if (!remoteSources.has(jitsiId)) {
