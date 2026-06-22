@@ -10,7 +10,8 @@
 
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
-  pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
+  pageAudioBridge, pageGumOverride, pageStrudelBoot, pageEnsureAudioPublished,
+  pageFpsSampler, pageReadSamples,
 } from './page-scripts.js';
 
 export class Bot {
@@ -70,6 +71,9 @@ export class Bot {
       await new Promise((r) => setTimeout(r, script.entryDelayMs));
     }
     await this.#bootStrudel(script);
+    // startWithAudioMuted=false alone doesn't reliably give a headless bot a
+    // published audio track; explicitly publish the Strudel tap as the mic.
+    await this.page.evaluate(pageEnsureAudioPublished).catch(() => {});
   }
 
   /**

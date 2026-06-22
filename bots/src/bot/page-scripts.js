@@ -63,6 +63,7 @@ export function pageAudioBridge() {
     get: () => fan,
   });
   window.__trussalMicStream = tap.stream;
+  window.__trussalAudioCtx = shared;
 
   function Wrapped() { return shared; }
   Wrapped.prototype = Native.prototype;
@@ -107,7 +108,10 @@ export function pageGumOverride(captureFps = 15) {
     return dst.stream.getAudioTracks()[0];
   }
 
+  window.__trussalGumCalls = window.__trussalGumCalls || [];
   navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
+    const rec = { audio: !!constraints.audio, video: !!constraints.video, usedTap: false };
+    window.__trussalGumCalls.push(rec);
     const stream = new MediaStream();
     if (constraints.video) {
       const canvas = await waitForCanvas();
@@ -118,10 +122,63 @@ export function pageGumOverride(captureFps = 15) {
     if (constraints.audio) {
       const mic = window.__trussalMicStream;
       const tapTrack = mic && mic.getAudioTracks()[0];
+      if (tapTrack) rec.usedTap = true;
       stream.addTrack(tapTrack || silentAudioTrack());
     }
     return stream.getTracks().length ? stream : realGUM(constraints);
   };
+}
+
+/**
+ * After the bot has joined, make sure its Strudel-tap audio is actually
+ * published as a live, unmuted local track. Setting startWithAudioMuted=false
+ * is not enough on its own — lib-jitsi-meet does not always create an initial
+ * audio track headlessly — so we drive the jitsi-meet API directly: ask it to
+ * unmute (which acquires a track via our gUM → tap), and if that leaves no
+ * track, create one explicitly and hand it to the conference. Every step is
+ * logged to window.__trussalAudioLog for the metrics diag.
+ */
+export async function pageEnsureAudioPublished() {
+  const log = (m) => { (window.__trussalAudioLog = window.__trussalAudioLog || []).push(String(m)); };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const APP = globalThis.APP;
+    const conf = APP && APP.conference;
+    if (!conf) { log('no APP.conference'); return; }
+    const room = () => conf._room || conf.room;
+    const localTrack = () => { try { const r = room(); return r && r.getLocalAudioTrack && r.getLocalAudioTrack(); } catch (e) { return null; } };
+
+    log('api muteAudio=' + typeof conf.muteAudio
+      + ' useAudioStream=' + typeof conf.useAudioStream
+      + ' JMJS=' + Boolean(window.JitsiMeetJS)
+      + ' store=' + Boolean(APP.store));
+
+    // 1) Ask jitsi-meet to unmute; if it had no/muted track this triggers a
+    //    gUM (→ our tap) and publishes it.
+    if (typeof conf.muteAudio === 'function') {
+      try { await conf.muteAudio(false); log('muteAudio(false) called'); } catch (e) { log('muteAudio err ' + e); }
+      await sleep(1500);
+      log('after muteAudio track=' + Boolean(localTrack()));
+    }
+
+    // 2) Fallback: explicitly create the audio track and attach it.
+    //    createLocalTracks(['audio']) runs through our gUM override → tap.
+    if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+      try {
+        const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
+        const at = tracks && tracks[0];
+        log('createLocalTracks -> ' + Boolean(at));
+        if (at) {
+          if (typeof conf.useAudioStream === 'function') { await conf.useAudioStream(at); log('useAudioStream ok'); }
+          else { const r = room(); if (r && r.addTrack) { await r.addTrack(at); log('addTrack ok'); } else log('no attach api'); }
+        }
+      } catch (e) { log('createLocalTracks err ' + e); }
+      await sleep(1000);
+      log('after create track=' + Boolean(localTrack()));
+    }
+    const lt = localTrack();
+    log('final track=' + Boolean(lt) + ' muted=' + (lt && lt.isMuted ? lt.isMuted() : 'n/a'));
+  } catch (e) { log('ensure fatal ' + e); }
 }
 
 /**
@@ -212,6 +269,36 @@ export function pageReadSamples() {
       schedulerStarted: Boolean(repl && repl.scheduler && repl.scheduler.started),
       jitsiJoined: Boolean(globalThis.APP && globalThis.APP.conference
         && globalThis.APP.conference.isJoined && globalThis.APP.conference.isJoined()),
+      audio: (() => {
+        const out = {};
+        try {
+          const ctx = window.__trussalAudioCtx;
+          out.ctxState = ctx ? ctx.state : 'no-ctx';
+          const mic = window.__trussalMicStream;
+          const t = mic && mic.getAudioTracks()[0];
+          out.tap = t ? { readyState: t.readyState, enabled: t.enabled, muted: t.muted } : null;
+        } catch (e) { out.tapErr = String(e); }
+        try {
+          const conf = globalThis.APP && globalThis.APP.conference;
+          out.localAudioMuted = conf && conf.isLocalAudioMuted ? conf.isLocalAudioMuted() : 'no-api';
+          // Probe lib-jitsi-meet for an actual published local audio track.
+          const room = conf && (conf._room || conf.room);
+          const lat = room && room.getLocalAudioTrack && room.getLocalAudioTrack();
+          if (lat) {
+            const mt = lat.getTrack && lat.getTrack();
+            out.jitsiAudioTrack = {
+              muted: lat.isMuted ? lat.isMuted() : null,
+              readyState: mt ? mt.readyState : null,
+              enabled: mt ? mt.enabled : null,
+            };
+          } else {
+            out.jitsiAudioTrack = null;
+          }
+        } catch (e) { out.jitsiErr = String(e); }
+        out.gumCalls = window.__trussalGumCalls || [];
+        out.log = window.__trussalAudioLog || [];
+        return out;
+      })(),
     },
   };
 }

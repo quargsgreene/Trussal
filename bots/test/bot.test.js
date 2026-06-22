@@ -141,6 +141,10 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
   const gumIdx = calls.evalOnNewDoc.findIndex((s) => /navigator\.mediaDevices\.getUserMedia\s*=/.test(s));
   assert.ok(bridgeIdx !== -1 && gumIdx !== -1, 'both audio bridge and gUM override installed');
   assert.ok(bridgeIdx < gumIdx, 'audio bridge must precede the gUM override so the mic stream exists');
+  // The unmute URL flag alone doesn't reliably publish a headless track, so the
+  // bot must also drive pageEnsureAudioPublished after joining.
+  const ensureIdx = calls.evaluate.findIndex((s) => /__trussalAudioLog/.test(s));
+  assert.ok(ensureIdx !== -1, 'bot publishes an unmuted audio track after joining');
 
   const m = await bot.sampleMetrics();
   assert.equal(typeof m.ramBytes, 'number');
