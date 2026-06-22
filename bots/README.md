@@ -91,10 +91,11 @@ conductor env (`JITSI_CHANNEL_LAST_N`, `JITSI_VIDEO_HEIGHT`, `JITSI_START_BITRAT
 - **Bots** run host-networked containers (the spec's `http://localhost/0` must resolve to
   the VM). Chromium launches with the four spec-required flags plus
   `--use-fake-device-for-media-stream`; a `getUserMedia` override hands Jitsi a video track
-  captured from the Hydra canvas. Jitsi audio is muted at join — Strudel's WebAudio and an
-  ffmpeg pink-noise bed (band-limited to the bot's frequency band, gain-staged
-  `0.7/√N`) play onto the bot's own ALSA loopback subdevice, where a per-container
-  `jackd` bridges into the Jamulus client. Each bot is named after a dog breed,
+  captured from the Hydra canvas and an audio track tapped from Strudel's WebAudio output.
+  The bot joins unmuted, so Jitsi carries the music directly to listeners. The same tap is
+  also fanned out to the bot's own ALSA loopback subdevice, where — alongside an ffmpeg
+  pink-noise bed (band-limited to the bot's frequency band, gain-staged `0.7/√N`) — a
+  per-container `jackd` bridges into the Jamulus client. Each bot is named after a dog breed,
   deterministic per `(botId, sessionSeed)`.
 
 ## Develop

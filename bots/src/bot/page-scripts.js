@@ -15,9 +15,14 @@
  * Jitsi a video track captured from the Hydra canvas (canvas.captureStream),
  * which is what the spec's --use-fake-device-for-media-stream flow needs to
  * show "the running Hydra pattern" as the bot's camera. The Strudel REPL is
- * then booted in the same page, so its WebAudio output goes to the page's
- * default audio device — the ALSA loopback — and on to Jamulus, never into
- * Jitsi (whose audio is muted at join).
+ * then booted in the same page.
+ *
+ * Audio takes two paths from one source. pageAudioBridge taps Strudel's
+ * WebAudio output and fans it out to BOTH (a) the page's default device — the
+ * ALSA loopback → Jamulus, the original path — and (b) a MediaStreamDestination
+ * that the getUserMedia override hands Jitsi as the bot's "microphone". So the
+ * same music reaches Jamulus listeners and, now that the bot joins unmuted,
+ * Jitsi listeners too.
  *
  * Note: the admin page's per-bot code-inspector modal does NOT live here —
  * it is operator-facing UI served by the config API (admin.html), backed by
@@ -25,10 +30,53 @@
  */
 
 /**
+ * Audio tap, installed via evaluateOnNewDocument so it exists before Strudel
+ * (or anything) creates an AudioContext. WebAudio nodes can't cross contexts
+ * and a MediaStreamDestination needs a context, so we wrap the AudioContext
+ * constructor: every `new AudioContext()` returns one shared instance whose
+ * `.destination` is rerouted through a fan-out gain. The fan feeds both the
+ * real hardware output (the ALSA loopback → Jamulus path) and a
+ * MediaStreamDestination exposed as window.__trussalMicStream, which the
+ * getUserMedia override publishes to Jitsi. The stream is live from page load,
+ * so Jitsi's early gUM call gets a real track that starts carrying audio the
+ * moment Strudel begins playing into the shared context.
+ *
+ * Only Strudel's WebAudio reaches the tap — Jitsi plays remote participants
+ * through <audio> elements, not this context, so there is no echo back into
+ * the conference.
+ */
+export function pageAudioBridge() {
+  const Native = window.AudioContext || window.webkitAudioContext;
+  if (!Native || Native.__trussalWrapped) return;
+
+  // Build the shared context and tap eagerly (autoplay-policy flag lets it
+  // start without a gesture). Strudel's later `new AudioContext()` returns
+  // this same instance, so its output lands on our fan.
+  const shared = new Native();
+  const hardware = shared.destination; // real device → ALSA loopback → Jamulus
+  const tap = shared.createMediaStreamDestination(); // → Jitsi mic track
+  const fan = shared.createGain();
+  fan.connect(hardware);
+  fan.connect(tap);
+  Object.defineProperty(shared, 'destination', {
+    configurable: true,
+    get: () => fan,
+  });
+  window.__trussalMicStream = tap.stream;
+
+  function Wrapped() { return shared; }
+  Wrapped.prototype = Native.prototype;
+  Wrapped.__trussalWrapped = true;
+  window.AudioContext = Wrapped;
+  window.webkitAudioContext = Wrapped;
+}
+
+/**
  * getUserMedia override, installed via evaluateOnNewDocument so it exists
  * before Jitsi's first device enumeration. Video requests resolve to the
  * Hydra canvas stream (polling until initHydra() has created the canvas);
- * audio requests get a silent track since Jitsi audio is muted anyway.
+ * audio requests resolve to the Strudel tap from pageAudioBridge (falling
+ * back to silence if the bridge is unavailable).
  */
 export function pageGumOverride(captureFps = 15) {
   const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -67,7 +115,11 @@ export function pageGumOverride(captureFps = 15) {
       // vs 30 with little visual loss for slow-evolving Hydra patterns.
       for (const t of canvas.captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
     }
-    if (constraints.audio) stream.addTrack(silentAudioTrack());
+    if (constraints.audio) {
+      const mic = window.__trussalMicStream;
+      const tapTrack = mic && mic.getAudioTracks()[0];
+      stream.addTrack(tapTrack || silentAudioTrack());
+    }
     return stream.getTracks().length ? stream : realGUM(constraints);
   };
 }

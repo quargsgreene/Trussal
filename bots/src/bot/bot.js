@@ -10,7 +10,7 @@
 
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
-  pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
+  pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
 } from './page-scripts.js';
 
 export class Bot {
@@ -43,6 +43,9 @@ export class Bot {
     await this.page.setUserAgent(spoofedUserAgent(botId));
 
     // Must be installed before navigation: Jitsi enumerates devices on load.
+    // pageAudioBridge first — it creates window.__trussalMicStream, which the
+    // getUserMedia override hands Jitsi as the bot's microphone.
+    await this.page.evaluateOnNewDocument(pageAudioBridge);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
     await this.page.evaluateOnNewDocument(pageFpsSampler);
 

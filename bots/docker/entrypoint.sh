@@ -8,7 +8,8 @@
 #    pcm_substreams=8,8); bot N claims card 10 sub N, or card 11 sub N-8.
 #    Default playback = the loopback, so Chromium's Strudel audio and the
 #    ffmpeg bed land on the cable with no per-app config; Jamulus captures
-#    the other end — the only path audio leaves a bot (Jitsi stays muted).
+#    the other end. (Strudel audio also leaves the bot a second way: the page
+#    taps it into the bot's now-unmuted Jitsi mic — see page-scripts.js.)
 # 2. Xvfb before Chromium — with --enable-webgl/--ignore-gpu-blocklist,
 #    Chromium aborts without a display even when headless.
 # 3. exec the Node driver last, which spawns Chromium, ffmpeg and Jamulus so

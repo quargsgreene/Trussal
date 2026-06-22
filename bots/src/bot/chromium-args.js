@@ -53,8 +53,13 @@ export function spoofedUserAgent(botId) {
  * Jitsi room URL with hash-config overrides — the URL fragment is Jitsi
  * Meet's supported mechanism for per-participant config without touching the
  * server:
- *  - startWithAudioMuted: spec — Jitsi audio stays muted, sound goes via
- *    Jamulus only.
+ *  - startWithAudioMuted=false: the bot publishes audio at join. Its
+ *    "microphone" is Strudel's WebAudio output (see pageAudioBridge), so
+ *    Jitsi carries the music directly to listeners.
+ *  - disableAP / stereo: Jitsi's mic pipeline is tuned for speech — the
+ *    audio processor (AGC/AEC/noise suppression/high-pass) would gate and
+ *    mangle music, and the default mono Opus would collapse the stereo
+ *    field. disableAP=true sends the tap untouched; stereo=true preserves it.
  *  - prejoinConfig.enabled=false: a bot cannot click "Join meeting".
  *  - displayName: the dog-breed identity.
  *  - channelLastN / resolution / startBitrate: bandwidth guards for a
@@ -67,7 +72,9 @@ export function jitsiRoomUrl(baseUrl, displayName, {
   startBitrateKbps = 800,
 } = {}) {
   const params = [
-    'config.startWithAudioMuted=true',
+    'config.startWithAudioMuted=false',
+    'config.disableAP=true',
+    'config.stereo=true',
     'config.prejoinConfig.enabled=false',
     'config.startWithVideoMuted=false',
     `config.channelLastN=${channelLastN}`,

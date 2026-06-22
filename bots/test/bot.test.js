@@ -5,7 +5,7 @@ import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromiu
 import { ffmpegBedArgs } from '../src/bot/ffmpeg-bed.js';
 import { jamulusArgs } from '../src/bot/jamulus.js';
 import {
-  pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
+  pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
 } from '../src/bot/page-scripts.js';
 import { Bot } from '../src/bot/bot.js';
 
@@ -33,10 +33,12 @@ test('spoofedUserAgent is deterministic per bot and looks like a real browser', 
   assert.ok(uas.size > 1, 'fleet does not share a single UA');
 });
 
-test('jitsiRoomUrl joins the spec room with audio muted and the breed display name', () => {
+test('jitsiRoomUrl joins unmuted with music-friendly audio config and the breed display name', () => {
   const url = jitsiRoomUrl('http://localhost/0', 'Bloodhound');
   assert.ok(url.startsWith('http://localhost/0#'));
-  assert.match(url, /config\.startWithAudioMuted=true/);
+  assert.match(url, /config\.startWithAudioMuted=false/, 'bot publishes its Strudel audio at join');
+  assert.match(url, /config\.disableAP=true/, 'speech audio processing would mangle music');
+  assert.match(url, /config\.stereo=true/, 'preserve the stereo field for music');
   assert.match(url, /userInfo\.displayName="Bloodhound"/);
   assert.match(url, /config\.prejoinConfig\.enabled=false/, 'bots must not stop at the prejoin screen');
 });
@@ -86,6 +88,18 @@ test('pageGumOverride swaps video tracks for the hydra canvas captureStream', ()
   assert.match(js, /canvas/i);
 });
 
+test('pageGumOverride publishes the Strudel audio tap as the bot microphone', () => {
+  const js = String(pageGumOverride);
+  assert.match(js, /__trussalMicStream/, 'audio requests resolve to the bridge tap');
+});
+
+test('pageAudioBridge fans the shared AudioContext destination to hardware and a Jitsi tap', () => {
+  const js = String(pageAudioBridge);
+  assert.match(js, /createMediaStreamDestination/, 'creates the Jitsi mic track source');
+  assert.match(js, /window\.__trussalMicStream/, 'exposes the tap stream to the gUM override');
+  assert.match(js, /Object\.defineProperty\([^)]*destination/, 'reroutes audioContext.destination');
+});
+
 test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports eval errors', () => {
   const js = String(pageStrudelBoot);
   assert.match(js, /strudel-editor/);
@@ -123,6 +137,10 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
   assert.equal(calls.goto.length, 1);
   assert.match(calls.goto[0], /displayName="Harrier"/);
   assert.ok(calls.evalOnNewDoc.length >= 1, 'getUserMedia override installed before navigation');
+  const bridgeIdx = calls.evalOnNewDoc.findIndex((s) => /__trussalMicStream\s*=/.test(s));
+  const gumIdx = calls.evalOnNewDoc.findIndex((s) => /navigator\.mediaDevices\.getUserMedia\s*=/.test(s));
+  assert.ok(bridgeIdx !== -1 && gumIdx !== -1, 'both audio bridge and gUM override installed');
+  assert.ok(bridgeIdx < gumIdx, 'audio bridge must precede the gUM override so the mic stream exists');
 
   const m = await bot.sampleMetrics();
   assert.equal(typeof m.ramBytes, 'number');
