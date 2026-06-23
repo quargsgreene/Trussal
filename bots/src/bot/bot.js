@@ -10,8 +10,8 @@
 
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
-  pageAudioBridge, pageGumOverride, pageStrudelBoot, pageEnsureAudioPublished,
-  pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
+  pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
+  pageEnsureAudioPublished, pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
 } from './page-scripts.js';
 
 export class Bot {
@@ -47,6 +47,8 @@ export class Bot {
     // pageAudioBridge first — it creates window.__trussalMicStream, which the
     // getUserMedia override hands Jitsi as the bot's microphone.
     await this.page.evaluateOnNewDocument(pageAudioBridge);
+    // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
+    await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
     await this.page.evaluateOnNewDocument(pageFpsSampler);
 

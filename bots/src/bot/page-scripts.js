@@ -110,6 +110,29 @@ export function pageAudioBridge() {
 }
 
 /**
+ * Force `preserveDrawingBuffer: true` on every WebGL context, installed via
+ * evaluateOnNewDocument so it is in place before Strudel's initHydra() creates
+ * the Hydra canvas. Hydra builds its WebGL context with the default
+ * preserveDrawingBuffer: false, and captureStream() of such a canvas yields
+ * black/empty frames (the drawing buffer is cleared after each composite) — so
+ * the bot published a live video track that carried no frames. Preserving the
+ * buffer makes the canvas capturable.
+ */
+export function pageForcePreserveDrawingBuffer() {
+  const proto = HTMLCanvasElement.prototype;
+  const orig = proto.getContext;
+  if (!orig || orig.__trussalWrapped) return;
+  const wrapped = function (type, attrs) {
+    if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
+      return orig.call(this, type, Object.assign({}, attrs, { preserveDrawingBuffer: true }));
+    }
+    return orig.call(this, type, attrs);
+  };
+  wrapped.__trussalWrapped = true;
+  proto.getContext = wrapped;
+}
+
+/**
  * getUserMedia override, installed via evaluateOnNewDocument so it exists
  * before Jitsi's first device enumeration. Video requests resolve to the
  * Hydra canvas stream (polling until initHydra() has created the canvas);
