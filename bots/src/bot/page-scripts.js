@@ -49,18 +49,6 @@ export function pageAudioBridge() {
   const Native = window.AudioContext || window.webkitAudioContext;
   if (!Native || Native.__trussalWrapped) return;
 
-  // Diagnostic: capture console errors/warnings + uncaught errors so Strudel/
-  // superdough audio-init failures (worklet load, channel config, missing
-  // sounds) surface in the metrics diag instead of being swallowed in-page.
-  const conBuf = (window.__trussalConsole = window.__trussalConsole || []);
-  const push = (m) => { conBuf.push(String(m).slice(0, 300)); if (conBuf.length > 60) conBuf.shift(); };
-  for (const level of ['error', 'warn']) {
-    const orig = console[level] && console[level].bind(console);
-    if (orig) console[level] = (...a) => { try { push(level + ': ' + a.map((x) => (x && x.stack) || String(x)).join(' ')); } catch (e) {} return orig(...a); };
-  }
-  window.addEventListener('error', (e) => push('onerror: ' + (e.message || e)));
-  window.addEventListener('unhandledrejection', (e) => push('reject: ' + ((e.reason && e.reason.stack) || e.reason)));
-
   // Build the shared context + tap LAZILY, on the first `new AudioContext()`,
   // rather than eagerly here. This function runs at document-start (before the
   // page navigates), and a context built then binds to the pre-navigation
@@ -90,15 +78,7 @@ export function pageAudioBridge() {
       configurable: true,
       get: () => fan,
     });
-    // Diagnostic: measure the live signal reaching our fan (= what Strudel
-    // sends to ctx.destination). 0 while playing ⇒ no audio reaches the tap.
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    fan.connect(analyser);
-    window.__trussalTapAnalyser = analyser;
     window.__trussalMicStream = tap.stream;
-    window.__trussalAudioCtx = ctx;
-    window.__trussalHardware = hardware; // real AudioDestinationNode, for diag
     return ctx;
   }
 
@@ -168,25 +148,17 @@ export function pageGumOverride(captureFps = 15) {
     return dst.stream.getAudioTracks()[0];
   }
 
-  window.__trussalGumCalls = window.__trussalGumCalls || [];
   navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
-    const rec = { audio: !!constraints.audio, video: !!constraints.video, usedTap: false };
-    window.__trussalGumCalls.push(rec);
     const stream = new MediaStream();
     if (constraints.video) {
       const canvas = await waitForCanvas();
       // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
       // vs 30 with little visual loss for slow-evolving Hydra patterns.
-      const cs = canvas.captureStream(captureFps);
-      const vts = cs.getVideoTracks();
-      rec.canvas = { id: canvas.id, cls: String(canvas.className), w: canvas.width, h: canvas.height };
-      rec.vsettings = vts[0] && vts[0].getSettings ? vts[0].getSettings() : null;
-      for (const t of vts) stream.addTrack(t);
+      for (const t of canvas.captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
     }
     if (constraints.audio) {
       const mic = window.__trussalMicStream;
       const tapTrack = mic && mic.getAudioTracks()[0];
-      if (tapTrack) rec.usedTap = true;
       stream.addTrack(tapTrack || silentAudioTrack());
     }
     return stream.getTracks().length ? stream : realGUM(constraints);
@@ -199,30 +171,22 @@ export function pageGumOverride(captureFps = 15) {
  * is not enough on its own — lib-jitsi-meet does not always create an initial
  * audio track headlessly — so we drive the jitsi-meet API directly: ask it to
  * unmute (which acquires a track via our gUM → tap), and if that leaves no
- * track, create one explicitly and hand it to the conference. Every step is
- * logged to window.__trussalAudioLog for the metrics diag.
+ * track, create one explicitly and hand it to the conference.
  */
 export async function pageEnsureAudioPublished() {
-  const log = (m) => { (window.__trussalAudioLog = window.__trussalAudioLog || []).push(String(m)); };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     const APP = globalThis.APP;
     const conf = APP && APP.conference;
-    if (!conf) { log('no APP.conference'); return; }
+    if (!conf) return;
     const room = () => conf._room || conf.room;
     const localTrack = () => { try { const r = room(); return r && r.getLocalAudioTrack && r.getLocalAudioTrack(); } catch (e) { return null; } };
-
-    log('api muteAudio=' + typeof conf.muteAudio
-      + ' useAudioStream=' + typeof conf.useAudioStream
-      + ' JMJS=' + Boolean(window.JitsiMeetJS)
-      + ' store=' + Boolean(APP.store));
 
     // 1) Ask jitsi-meet to unmute; if it had no/muted track this triggers a
     //    gUM (→ our tap) and publishes it.
     if (typeof conf.muteAudio === 'function') {
-      try { await conf.muteAudio(false); log('muteAudio(false) called'); } catch (e) { log('muteAudio err ' + e); }
+      try { await conf.muteAudio(false); } catch (e) {}
       await sleep(1500);
-      log('after muteAudio track=' + Boolean(localTrack()));
     }
 
     // 2) Fallback: explicitly create the audio track and attach it.
@@ -231,18 +195,13 @@ export async function pageEnsureAudioPublished() {
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
         const at = tracks && tracks[0];
-        log('createLocalTracks -> ' + Boolean(at));
         if (at) {
-          if (typeof conf.useAudioStream === 'function') { await conf.useAudioStream(at); log('useAudioStream ok'); }
-          else { const r = room(); if (r && r.addTrack) { await r.addTrack(at); log('addTrack ok'); } else log('no attach api'); }
+          if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
+          else { const r = room(); if (r && r.addTrack) await r.addTrack(at); }
         }
-      } catch (e) { log('createLocalTracks err ' + e); }
-      await sleep(1000);
-      log('after create track=' + Boolean(localTrack()));
+      } catch (e) {}
     }
-    const lt = localTrack();
-    log('final track=' + Boolean(lt) + ' muted=' + (lt && lt.isMuted ? lt.isMuted() : 'n/a'));
-  } catch (e) { log('ensure fatal ' + e); }
+  } catch (e) {}
 }
 
 /**
@@ -252,28 +211,22 @@ export async function pageEnsureAudioPublished() {
  * (gUM is only ever called for audio), so the Hydra canvas stream from the gUM
  * override is never published and the bot's tile stays blank. Drive jitsi-meet
  * directly: ask it to unmute video (which triggers a gUM → our canvas override),
- * falling back to creating the track explicitly. Logged to window.__trussalVideoLog.
+ * falling back to creating the track explicitly.
  */
 export async function pageEnsureVideoPublished() {
-  const log = (m) => { (window.__trussalVideoLog = window.__trussalVideoLog || []).push(String(m)); };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     const APP = globalThis.APP;
     const conf = APP && APP.conference;
-    if (!conf) { log('no APP.conference'); return; }
+    if (!conf) return;
     const room = () => conf._room || conf.room;
     const localTrack = () => { try { const r = room(); return r && r.getLocalVideoTrack && r.getLocalVideoTrack(); } catch (e) { return null; } };
-
-    log('api muteVideo=' + typeof conf.muteVideo
-      + ' useVideoStream=' + typeof conf.useVideoStream
-      + ' JMJS=' + Boolean(window.JitsiMeetJS));
 
     // 1) Ask jitsi-meet to unmute video; if it had no/muted track this triggers
     //    a gUM (→ our Hydra canvas stream) and publishes it.
     if (typeof conf.muteVideo === 'function') {
-      try { await conf.muteVideo(false); log('muteVideo(false) called'); } catch (e) { log('muteVideo err ' + e); }
+      try { await conf.muteVideo(false); } catch (e) {}
       await sleep(1500);
-      log('after muteVideo track=' + Boolean(localTrack()));
     }
 
     // 2) Fallback: explicitly create the video track and attach it.
@@ -282,51 +235,13 @@ export async function pageEnsureVideoPublished() {
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['video'] });
         const vt = tracks && tracks[0];
-        log('createLocalTracks -> ' + Boolean(vt));
         if (vt) {
-          if (typeof conf.useVideoStream === 'function') { await conf.useVideoStream(vt); log('useVideoStream ok'); }
-          else { const r = room(); if (r && r.addTrack) { await r.addTrack(vt); log('addTrack ok'); } else log('no attach api'); }
+          if (typeof conf.useVideoStream === 'function') await conf.useVideoStream(vt);
+          else { const r = room(); if (r && r.addTrack) await r.addTrack(vt); }
         }
-      } catch (e) { log('createLocalTracks err ' + e); }
-      await sleep(1000);
-      log('after create track=' + Boolean(localTrack()));
+      } catch (e) {}
     }
-    const lt = localTrack();
-    log('final track=' + Boolean(lt) + ' muted=' + (lt && lt.isMuted ? lt.isMuted() : 'n/a'));
-
-    // Diagnostic: sample outbound RTP so we can see whether the browser is
-    // actually encoding+sending video frames (vs. having a live track that
-    // produces nothing, vs. having no video sender at all).
-    const findPC = () => {
-      try {
-        const r = room();
-        const rtc = r && r.rtc;
-        const pcs = rtc && (rtc.peerConnections || rtc._peerConnections);
-        let tpc = null;
-        if (pcs && pcs.values) { for (const v of pcs.values()) { tpc = v; break; } }
-        tpc = tpc || (r && r.jvbJingleSession && r.jvbJingleSession.peerconnection);
-        return tpc && (tpc.peerconnection || tpc.pc || tpc);
-      } catch (e) { return null; }
-    };
-    setInterval(async () => {
-      try {
-        const pc = findPC();
-        if (!pc || !pc.getStats) { window.__trussalVideoStats = { pc: false }; return; }
-        const stats = await pc.getStats();
-        const o = { pc: true, senders: 0 };
-        stats.forEach((s) => {
-          if (s.type === 'outbound-rtp' && (s.kind === 'video' || s.mediaType === 'video')) {
-            o.senders++;
-            o.vid = { framesEncoded: s.framesEncoded, framesSent: s.framesSent, bytesSent: s.bytesSent, w: s.frameWidth, h: s.frameHeight, qual: s.qualityLimitationReason, active: s.active };
-          }
-          if (s.type === 'outbound-rtp' && (s.kind === 'audio' || s.mediaType === 'audio')) {
-            o.aud = { bytesSent: s.bytesSent, packetsSent: s.packetsSent };
-          }
-        });
-        window.__trussalVideoStats = o;
-      } catch (e) { window.__trussalVideoStats = { err: String(e) }; }
-    }, 3000);
-  } catch (e) { log('ensure fatal ' + e); }
+  } catch (e) {}
 }
 
 /**
@@ -417,105 +332,6 @@ export function pageReadSamples() {
       schedulerStarted: Boolean(repl && repl.scheduler && repl.scheduler.started),
       jitsiJoined: Boolean(globalThis.APP && globalThis.APP.conference
         && globalThis.APP.conference.isJoined && globalThis.APP.conference.isJoined()),
-      audio: (() => {
-        const out = {};
-        try {
-          const ctx = window.__trussalAudioCtx;
-          out.ctxState = ctx ? ctx.state : 'no-ctx';
-          const mic = window.__trussalMicStream;
-          const t = mic && mic.getAudioTracks()[0];
-          out.tap = t ? { readyState: t.readyState, enabled: t.enabled, muted: t.muted } : null;
-        } catch (e) { out.tapErr = String(e); }
-        try {
-          const conf = globalThis.APP && globalThis.APP.conference;
-          out.localAudioMuted = conf && conf.isLocalAudioMuted ? conf.isLocalAudioMuted() : 'no-api';
-          // Probe lib-jitsi-meet for an actual published local audio track.
-          const room = conf && (conf._room || conf.room);
-          const lat = room && room.getLocalAudioTrack && room.getLocalAudioTrack();
-          if (lat) {
-            const mt = lat.getTrack && lat.getTrack();
-            out.jitsiAudioTrack = {
-              muted: lat.isMuted ? lat.isMuted() : null,
-              readyState: mt ? mt.readyState : null,
-              enabled: mt ? mt.enabled : null,
-            };
-          } else {
-            out.jitsiAudioTrack = null;
-          }
-          // Probe lib-jitsi-meet for a published local video track (Hydra cam).
-          const lvt = room && room.getLocalVideoTrack && room.getLocalVideoTrack();
-          if (lvt) {
-            const vt = lvt.getTrack && lvt.getTrack();
-            out.jitsiVideoTrack = {
-              muted: lvt.isMuted ? lvt.isMuted() : null,
-              readyState: vt ? vt.readyState : null,
-              enabled: vt ? vt.enabled : null,
-            };
-          } else {
-            out.jitsiVideoTrack = null;
-          }
-        } catch (e) { out.jitsiErr = String(e); }
-        // Diagnostic: live RMS of what reaches our shared-context destination.
-        try {
-          const an = window.__trussalTapAnalyser;
-          if (an) {
-            const buf = new Float32Array(an.fftSize);
-            an.getFloatTimeDomainData(buf);
-            let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
-            out.fanRms = Math.sqrt(s / buf.length);
-          } else { out.fanRms = 'no-analyser'; }
-        } catch (e) { out.fanRmsErr = String(e); }
-        // Diagnostic: identify the AudioContext Strudel actually renders into,
-        // and whether it is the same object whose destination feeds our tap.
-        try {
-          const shared = window.__trussalAudioCtx;
-          const editor = document.querySelector('strudel-editor');
-          const repl = editor && editor.editor && editor.editor.repl;
-          const sched = repl && repl.scheduler;
-          const cand = {
-            'window.getAudioContext()': typeof window.getAudioContext === 'function' ? window.getAudioContext() : undefined,
-            'editor.editor.audioContext': editor && editor.editor && editor.editor.audioContext,
-            'repl.audioContext': repl && repl.audioContext,
-            'sched.audioContext': sched && sched.audioContext,
-            'sched.worker && sched.getAudioContext': sched && typeof sched.getAudioContext === 'function' ? sched.getAudioContext() : undefined,
-          };
-          const info = {};
-          for (const k of Object.keys(cand)) {
-            const v = cand[k];
-            if (v) info[k] = { ctor: v.constructor && v.constructor.name, isShared: v === shared, sameDest: shared && v.destination === shared.destination, state: v.state };
-          }
-          out.strudelCtx = info;
-          out.wrapInstalled = Boolean(window.AudioContext && window.AudioContext.__trussalWrapped);
-        } catch (e) { out.strudelCtxErr = String(e); }
-        // Diagnostic: is the destination Strudel sees a real AudioDestinationNode
-        // (has maxChannelCount) or our GainNode fan (undefined → may break init)?
-        try {
-          const shared = window.__trussalAudioCtx;
-          const seen = shared && shared.destination;
-          const hw = window.__trussalHardware;
-          out.destInfo = {
-            seenCtor: seen && seen.constructor && seen.constructor.name,
-            seenMaxCC: seen && seen.maxChannelCount,
-            seenCC: seen && seen.channelCount,
-            hwCtor: hw && hw.constructor && hw.constructor.name,
-            hwMaxCC: hw && hw.maxChannelCount,
-          };
-        } catch (e) { out.destErr = String(e); }
-        out.console = (window.__trussalConsole || []).slice(-30);
-        out.gumCalls = window.__trussalGumCalls || [];
-        out.log = window.__trussalAudioLog || [];
-        out.videoLog = window.__trussalVideoLog || [];
-        // Diagnostic: enumerate canvases so we can tell which one the gUM
-        // override captured and whether it's the animated Hydra output.
-        try {
-          out.canvasList = [...document.querySelectorAll('canvas')].map((c) => ({
-            id: c.id, cls: String(c.className), w: c.width, h: c.height,
-            vis: !!(c.offsetWidth || c.offsetHeight || c.getClientRects().length),
-          }));
-        } catch (e) { out.canvasErr = String(e); }
-        out.videoStats = window.__trussalVideoStats || null;
-        return out;
-      })(),
     },
   };
 }

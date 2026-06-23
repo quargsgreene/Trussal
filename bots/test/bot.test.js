@@ -143,10 +143,10 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
   assert.ok(bridgeIdx < gumIdx, 'audio bridge must precede the gUM override so the mic stream exists');
   // The unmute URL flag alone doesn't reliably publish a headless track, so the
   // bot must also drive pageEnsureAudioPublished after joining.
-  const ensureIdx = calls.evaluate.findIndex((s) => /__trussalAudioLog/.test(s));
+  const ensureIdx = calls.evaluate.findIndex((s) => /muteAudio\(false\)/.test(s));
   assert.ok(ensureIdx !== -1, 'bot publishes an unmuted audio track after joining');
   // ...and explicitly publishes the Hydra canvas as its video track.
-  const videoIdx = calls.evaluate.findIndex((s) => /__trussalVideoLog/.test(s));
+  const videoIdx = calls.evaluate.findIndex((s) => /muteVideo\(false\)/.test(s));
   assert.ok(videoIdx !== -1, 'bot publishes a Hydra video track after joining');
 
   const m = await bot.sampleMetrics();
