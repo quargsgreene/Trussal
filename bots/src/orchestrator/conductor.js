@@ -81,7 +81,14 @@ export class Conductor {
   #variationFor(botId) {
     const m = this.metrics.get(botId);
     const latencies = [...this.metrics.values()].map((x) => x.latencyMs).filter((x) => x >= 0);
-    return variationFor(botId, this.master, {
+    // varyHydra: give each bot its own Hydra visual instead of the shared
+    // master's. Seeded per bot (sessionSeed + botId) so it is deterministic —
+    // a replaced bot reproduces the same visual. Strudel stays the shared
+    // master; only the hydra source/mods differ per bot.
+    const master = this.cfg.varyHydra
+      ? { strudel: this.master.strudel, hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra }
+      : this.master;
+    return variationFor(botId, master, {
       botCount: Math.max(1, this.bots.size || this.cfg.maxBots),
       roles: this.cfg.roles,
       wclMs: latencies.length ? worstCaseLatency(latencies) : 0,

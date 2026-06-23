@@ -38,6 +38,9 @@ services:
       # self-hosted bridge (see README "Home-network load").
       JITSI_URL: "${JITSI_URL:-http://localhost/0}"
       JAMULUS_SERVER: "${JAMULUS_SERVER:-trussal.duckdns.org:22000}"
+      # When true, each bot renders its own Hydra visual instead of the shared
+      # master. Also toggleable at runtime from the admin page.
+      VARY_HYDRA: "${VARY_HYDRA:-false}"
     restart: unless-stopped
 
   bot-image:

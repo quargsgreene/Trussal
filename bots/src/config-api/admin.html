@@ -33,6 +33,11 @@
     </fieldset>
 
     <fieldset>
+      <legend>Visuals</legend>
+      <label><input type="checkbox" name="varyHydra"> Vary Hydra code per bot (each bot gets its own visual)</label>
+    </fieldset>
+
+    <fieldset>
       <legend>Health thresholds</legend>
       <label>Minimum fps cutoff: <input type="number" name="fpsMin" min="1" max="60" value="15"></label><br>
       <label>Memory threshold (MB): <input type="number" name="memLimitMb" min="100" max="4000" value="900"></label>
@@ -76,6 +81,7 @@
       }
       form.elements.fpsMin.value = cfg.fpsMin;
       form.elements.memLimitMb.value = cfg.memLimitMb;
+      form.elements.varyHydra.checked = cfg.varyHydra;
     }
 
     form.addEventListener('submit', async (e) => {
@@ -84,6 +90,7 @@
         maxBots: Number(slider.value),
         fpsMin: Number(form.elements.fpsMin.value),
         memLimitMb: Number(form.elements.memLimitMb.value),
+        varyHydra: form.elements.varyHydra.checked,
         roles: {
           frequencyBands: form.elements.frequencyBands.checked,
           staggeredRound: form.elements.staggeredRound.checked,

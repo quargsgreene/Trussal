@@ -115,6 +115,22 @@ test('Conductor: starts maxBots bots with unique scripts, serves assignments ove
   }
 });
 
+test('Conductor: varyHydra gives each bot its own Hydra; off shares the master', async () => {
+  const off = new Conductor(mergeConfig({ maxBots: 3, conductorPort: 0 }), { runner: makeFakeRunner() });
+  await off.start();
+  try {
+    const hydras = off.listBots().map((b) => b.script.hydra);
+    assert.equal(new Set(hydras).size, 1, 'varyHydra off → all bots share the master hydra');
+  } finally { await off.stop(); }
+
+  const on = new Conductor(mergeConfig({ maxBots: 3, conductorPort: 0, varyHydra: true }), { runner: makeFakeRunner() });
+  await on.start();
+  try {
+    const hydras = on.listBots().map((b) => b.script.hydra);
+    assert.ok(new Set(hydras).size > 1, 'varyHydra on → bots get distinct hydra');
+  } finally { await on.stop(); }
+});
+
 test('Conductor: accepts metrics POSTs and replaces a bot that reports an eval error', async () => {
   const runner = makeFakeRunner();
   const conductor = new Conductor(

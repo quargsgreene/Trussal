@@ -32,6 +32,8 @@ export const defaultConfig = Object.freeze({
   // Fleet
   maxBots: 10,           // hard ceiling from the spec; health policy scales DOWN from this
   sessionSeed: 1,        // drives deterministic dog-breed names & random script gen
+  varyHydra: false,      // when true, each bot gets its own Hydra visual (deterministic
+                         // per bot) instead of all sharing the master script's hydra
 
   // Stratification roles: non mutually exclusive (spec), so a set of flags
   roles: Object.freeze({

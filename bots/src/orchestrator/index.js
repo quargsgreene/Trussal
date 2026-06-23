@@ -15,6 +15,7 @@ const cfg = mergeConfig({
   ...(process.env.SESSION_SEED ? { sessionSeed: Number(process.env.SESSION_SEED) } : {}),
   ...(process.env.JITSI_URL ? { jitsiUrl: process.env.JITSI_URL } : {}),
   ...(process.env.JAMULUS_SERVER ? { jamulusServer: process.env.JAMULUS_SERVER } : {}),
+  ...(process.env.VARY_HYDRA ? { varyHydra: process.env.VARY_HYDRA === 'true' } : {}),
 });
 
 const runner = makeDockerRunner({
