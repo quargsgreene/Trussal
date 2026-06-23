@@ -37,7 +37,9 @@ function publicView(record) {
     effects: record.effects,
     playing: record.playing,
     rtt: record.rtt,
-    jitter: record.jitter
+    jitter: record.jitter,
+    isBot: record.isBot,
+    muted: record.muted
   };
 }
 
@@ -76,7 +78,9 @@ wss.on('connection', (ws, req) => {
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
-    jitter: null
+    jitter: null,
+    isBot: false,
+    muted: false
   };
 
   console.log(`[latency] connection room=${roomName} peerId=${peerId}`);
@@ -94,6 +98,7 @@ wss.on('connection', (ws, req) => {
       case 'hello': {
         record.jitsiId = typeof msg.jitsiId === 'string' ? msg.jitsiId : null;
         record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
+        record.isBot = !!msg.isBot;
 
         const room = getRoom(roomName);
 
@@ -147,6 +152,28 @@ wss.on('connection', (ws, req) => {
         record.playing = msg.type === 'play';
         const room = rooms.get(roomName);
         if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { playing: record.playing } });
+        break;
+      }
+
+      case 'remote-control': {
+        // Operator-driven control of another peer (the studio editing/muting a
+        // bot's tile). Only bots can be driven remotely — humans own their own
+        // state and are never overridden. The action is relayed to the target's
+        // socket (so it re-evaluates / mutes) and the resulting state change is
+        // broadcast so every studio reflects it.
+        const room = rooms.get(roomName);
+        if (!room) break;
+        const target = room.get(msg.targetPeerId);
+        if (!target || !target.isBot) break;
+        if (msg.action === 'pattern' && typeof msg.code === 'string') {
+          target.pattern = msg.code;
+          send(target.ws, { type: 'remote-control', action: 'pattern', code: target.pattern });
+          broadcast(room, target.peerId, { type: 'peer-update', peerId: target.peerId, patch: { pattern: target.pattern } });
+        } else if (msg.action === 'mute') {
+          target.muted = !!msg.muted;
+          send(target.ws, { type: 'remote-control', action: 'mute', muted: target.muted });
+          broadcast(room, target.peerId, { type: 'peer-update', peerId: target.peerId, patch: { muted: target.muted } });
+        }
         break;
       }
 

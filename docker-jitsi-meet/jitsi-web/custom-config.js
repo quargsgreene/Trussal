@@ -36373,11 +36373,14 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var subscribers2 = /* @__PURE__ */ new Set();
   var peersByPeerId = /* @__PURE__ */ new Map();
   var peerIdByJitsiId = /* @__PURE__ */ new Map();
+  var LOCAL_IS_BOT = !!(typeof window !== "undefined" && window.__trussalIsBot);
   var localPeer = {
     peerId: null,
     jitsiId: null,
     displayName: null,
     isLocal: true,
+    isBot: LOCAL_IS_BOT,
+    muted: false,
     pattern: "",
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
@@ -36437,7 +36440,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     ws.send(JSON.stringify({
       type: "hello",
       jitsiId: local2.id,
-      displayName: local2.displayName
+      displayName: local2.displayName,
+      isBot: LOCAL_IS_BOT
     }));
     helloSent = true;
     flushPending();
@@ -36536,6 +36540,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       reverb: !!patch.effects.reverb
     };
     if (typeof patch.playing === "boolean") peer.playing = patch.playing;
+    if (typeof patch.muted === "boolean") peer.muted = patch.muted;
     if (typeof patch.rtt === "number" || patch.rtt === null) peer.rtt = patch.rtt;
     if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
   }
@@ -36544,6 +36549,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       peerId,
       jitsiId: null,
       displayName: null,
+      isBot: false,
+      muted: false,
       pattern: "",
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
@@ -36555,6 +36562,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
     if (record.jitsiId !== void 0) existing.jitsiId = record.jitsiId;
     if (record.displayName !== void 0) existing.displayName = record.displayName;
+    if (record.isBot !== void 0) existing.isBot = !!record.isBot;
     applyPatch(existing, record);
     peersByPeerId.set(existing.peerId, existing);
     if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
@@ -36594,6 +36602,18 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         if (!peer) break;
         applyPatch(peer, msg.patch);
         emit2("peer-upsert", peer);
+        break;
+      }
+      case "remote-control": {
+        if (msg.action === "pattern" && typeof msg.code === "string") {
+          localPeer.pattern = msg.code;
+          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: msg.code } }));
+          emit2("peer-upsert", localPeer);
+        } else if (msg.action === "mute") {
+          localPeer.muted = !!msg.muted;
+          document.dispatchEvent(new CustomEvent("trussal-remote-mute", { detail: { muted: localPeer.muted } }));
+          emit2("peer-upsert", localPeer);
+        }
         break;
       }
       case "pong": {
@@ -36694,6 +36714,20 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     localPeer.playing = !!playing;
     safeSend({ type: playing ? "play" : "stop" });
     emit2("peer-upsert", localPeer);
+  }
+  function sendRemotePattern(targetPeerId, code2) {
+    if (!targetPeerId) return;
+    const c2 = typeof code2 === "string" ? code2 : "";
+    safeSend({ type: "remote-control", targetPeerId, action: "pattern", code: c2 });
+    const peer = peersByPeerId.get(targetPeerId);
+    if (peer) {
+      peer.pattern = c2;
+      emit2("peer-upsert", peer);
+    }
+  }
+  function sendRemoteMute(targetPeerId, muted) {
+    if (!targetPeerId) return;
+    safeSend({ type: "remote-control", targetPeerId, action: "mute", muted: !!muted });
   }
 
   // src/latency-instrument.js
@@ -38401,6 +38435,7 @@ $: (${split.expr})${fx}`;
     return `$: (${code2})${fx}`;
   }
   function buildPeerBlock(peer) {
+    if (peer.isBot) return null;
     let code2 = (peer.pattern || "").replace(/[\s;]+$/g, "");
     if (!code2 || !peer.playing) return null;
     code2 = code2.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
@@ -40309,6 +40344,13 @@ ${code2}${BTN_MARKER}`;
       font-size: 10px; padding: 2px 6px; border-radius: 3px;
       background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
     }
+    #${OVERLAY_ID} .ts-bot-badge {
+      font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
+      background: rgba(125,207,255,0.15); color: #7dcfff;
+    }
+    #${OVERLAY_ID} .ts-btn.eval { background: #1ff466; color: #050f0a; }
+    #${OVERLAY_ID} .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+    #${OVERLAY_ID} .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
     #${OVERLAY_ID} .ts-section {
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
@@ -40543,7 +40585,9 @@ ${code2}${BTN_MARKER}`;
     const relayOn = isLocal && isRelayConnected();
     const captureBtn = isLocal ? `<button class="ts-btn ghost${extLabel ? " on" : ""}" data-action="capture">${extLabel ? "\u23CF Detach Jamulus" : "\u{1F399} Route Jamulus audio"}</button>
        <button class="ts-btn ghost${relayOn ? " on" : ""}" data-action="relay">${relayOn ? "\u23CF Disconnect relay" : "\u{1F4E1} Jamulus relay"}</button>` : "";
-    const codeBlock = isLocal ? `<textarea class="ts-code" spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<pre class="ts-pre">${escapeHtml(peer.pattern || "/* (no pattern yet) */")}</pre>`;
+    const peerKeyAttr = ` data-peer-key="${escapeHtml(String(peer.jitsiId || ""))}"`;
+    const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
+    const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
     const strudelControls = isLocal ? `
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
@@ -40551,9 +40595,14 @@ ${code2}${BTN_MARKER}`;
         <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">\u2B06 Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
-      </div>` : `<div class="ts-section-controls"><span class="ts-readonly-badge">READ ONLY</span></div>`;
+      </div>` : `
+      <div class="ts-section-controls">
+        <button class="ts-btn eval" data-action="remote-eval">\u25B6 Eval</button>
+        ${muteBtn}
+        <span class="ts-shortcuts">Ctrl+Enter to send</span>
+      </div>`;
     const playing = peer.playing ? "Playing" : "Idle";
-    const status = isLocal ? lastStatus : playing;
+    const status = isLocal ? lastStatus : peer.muted ? "Muted" : playing;
     const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
     <div class="ts-sample-banks">
       ${sampleBanks.map((b) => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join("")}
@@ -40562,7 +40611,7 @@ ${code2}${BTN_MARKER}`;
     container.innerHTML = `
     <div class="ts-detail-header">
       <div class="ts-detail-name">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
-      ${isLocal ? "" : '<span class="ts-readonly-badge">READ ONLY</span>'}
+      ${!isLocal && peer.isBot ? '<span class="ts-bot-badge">BOT</span>' : ""}
     </div>
 
     <div class="ts-section">
@@ -40587,7 +40636,27 @@ ${code2}${BTN_MARKER}`;
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
-    if (!isLocal) return;
+    if (!isLocal) {
+      const targetPeerId = peer.peerId;
+      const remoteCodeEl = container.querySelector(".ts-code");
+      const sendRemoteEval = () => {
+        if (remoteCodeEl) sendRemotePattern(targetPeerId, remoteCodeEl.value);
+      };
+      if (remoteCodeEl) {
+        remoteCodeEl.addEventListener("keydown", (e30) => {
+          const meta = e30.ctrlKey || e30.metaKey;
+          if (meta && e30.key === "Enter") {
+            e30.preventDefault();
+            sendRemoteEval();
+          }
+        });
+      }
+      const remoteEvalBtn = container.querySelector('[data-action="remote-eval"]');
+      if (remoteEvalBtn) remoteEvalBtn.addEventListener("click", sendRemoteEval);
+      const muteBtnEl = container.querySelector('[data-action="mute"]');
+      if (muteBtnEl) muteBtnEl.addEventListener("click", () => sendRemoteMute(targetPeerId, !peer.muted));
+      return;
+    }
     const codeEl = container.querySelector(".ts-code");
     if (codeEl) {
       codeEl.addEventListener("input", () => {
@@ -40845,13 +40914,16 @@ ${voiceCode}${BTN_MARKER2}`);
         const active = document.activeElement;
         const isCodeFocused = active && active === existingCodeEl;
         const codeValue = existingCodeEl ? existingCodeEl.value : null;
+        const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
+        const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === "1" || isCodeFocused);
         const selStart = isCodeFocused ? active.selectionStart : null;
         const selEnd = isCodeFocused ? active.selectionEnd : null;
         const scrollTop = isCodeFocused ? active.scrollTop : null;
         renderDetail(detail);
         refreshFacialGestureButtons();
         const nextCodeEl = detail.querySelector(".ts-code");
-        if (nextCodeEl && codeValue != null) {
+        const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
+        if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
           nextCodeEl.value = codeValue;
           if (isCodeFocused) {
             nextCodeEl.focus();
@@ -40993,6 +41065,10 @@ ${voiceCode}${BTN_MARKER2}`);
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+  window.__trussalAnnounceLocalPattern = (code2) => {
+    sendLocalPattern(typeof code2 === "string" ? code2 : "");
+    sendLocalPlaying(true);
+  };
   renderAudioConfigCheck();
   renderJamulusWelcomePanelAndBanner();
   renderRecentListText();

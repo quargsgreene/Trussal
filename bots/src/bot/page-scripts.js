@@ -79,6 +79,10 @@ export function pageAudioBridge() {
       get: () => fan,
     });
     window.__trussalMicStream = tap.stream;
+    // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
+    // so zeroing its gain is a complete mute of the bot from both paths. Exposed
+    // for the studio's per-bot mute (driven via the peer-state bus → page event).
+    window.__trussalFanGain = fan;
     return ctx;
   }
 
@@ -87,6 +91,53 @@ export function pageAudioBridge() {
   Wrapped.__trussalWrapped = true;
   window.AudioContext = Wrapped;
   window.webkitAudioContext = Wrapped;
+}
+
+/**
+ * Mark this page as a bot before the Trussal bundle loads, so peer-state.js
+ * announces isBot:true in its hello. That lets the studio show + drive + mute
+ * the bot's tile, and lets every client's combined-Strudel mix skip the bot
+ * (its audio arrives via Jitsi, not the mix). Must run at document-start.
+ */
+export function pageMarkBot() {
+  window.__trussalIsBot = true;
+}
+
+/**
+ * React to operator control from the studio (relayed over the peer-state bus,
+ * surfaced by peer-state.js as DOM events):
+ *   - trussal-remote-pattern: re-evaluate the bot's Strudel REPL with the edited
+ *     pattern, recombined with the bot's original Hydra preamble.
+ *   - trussal-remote-mute: zero/restore the shared audio fan gain, muting the
+ *     bot on both the Jitsi and Jamulus paths at once.
+ * Installed at document-start; it reads the editor/fan globals lazily at event
+ * time, so ordering against pageStrudelBoot / pageAudioBridge doesn't matter.
+ */
+export function pageRemoteControl() {
+  document.addEventListener('trussal-remote-pattern', async (e) => {
+    const strudel = e && e.detail && e.detail.code;
+    if (typeof strudel !== 'string') return;
+    const editor = window.__trussalStrudelEditor;
+    const ed = editor && editor.editor;
+    const hydra = window.__trussalHydra || '';
+    const code = hydra ? `${hydra};\n${strudel}` : strudel;
+    try {
+      if (ed && typeof ed.setCode === 'function') {
+        ed.setCode(code);
+        if (typeof ed.evaluate === 'function') await ed.evaluate();
+      } else if (editor && typeof editor.setAttribute === 'function') {
+        editor.setAttribute('code', code);
+        if (ed && typeof ed.evaluate === 'function') await ed.evaluate();
+      }
+    } catch (err) {
+      if (window.__trussalReportError) window.__trussalReportError(err);
+    }
+  });
+  document.addEventListener('trussal-remote-mute', (e) => {
+    const muted = !!(e && e.detail && e.detail.muted);
+    const fan = window.__trussalFanGain;
+    if (fan && fan.gain) { try { fan.gain.value = muted ? 0 : 1; } catch (_) {} }
+  });
 }
 
 /**
@@ -276,6 +327,10 @@ export async function pageStrudelBoot({ strudel, hydra }) {
     editor.style.left = '-10000px'; // present in DOM (required to run), invisible to the video feed
     editor.setAttribute('code', code);
     document.body.appendChild(editor);
+    // Expose the editor + the Hydra preamble so pageRemoteControl can re-evaluate
+    // the REPL with an operator's edited pattern (recombined with this Hydra).
+    window.__trussalStrudelEditor = editor;
+    window.__trussalHydra = hydra;
     await customElements.whenDefined('strudel-editor');
     // Poll until the web component has mounted its editor object — a fixed
     // sleep races the CDN load and leaves the REPL showing "no pattern yet".
@@ -297,6 +352,16 @@ export async function pageStrudelBoot({ strudel, hydra }) {
     const repl = editor.editor && editor.editor.repl;
     if (!(repl && repl.scheduler && repl.scheduler.started)) {
       throw new Error('pattern did not start after evaluation (likely a runtime eval error)');
+    }
+    // Publish the (editable) Strudel pattern onto the Trussal peer-state bus so
+    // it shows in every studio. The bundle exposes this once it has connected;
+    // poll briefly since the Trussal app boots independently of this REPL.
+    const announceDeadline = Date.now() + 10000;
+    while (typeof window.__trussalAnnounceLocalPattern !== 'function' && Date.now() < announceDeadline) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (typeof window.__trussalAnnounceLocalPattern === 'function') {
+      try { window.__trussalAnnounceLocalPattern(strudel); } catch (_) {}
     }
   } catch (e) {
     window.__trussalReportError(e);

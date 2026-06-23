@@ -20,11 +20,17 @@ const peerIdByJitsiId = new Map();
 // The local peer is tracked separately because the server never echoes our own
 // state back to us. Stays in sync with what we broadcast so the studio UI and
 // the Strudel stack treat the local user identically to remote peers.
+// Bots set this global (before the bundle loads) so they announce themselves as
+// bots and the room can drive/mute them from the studio without hijacking humans.
+const LOCAL_IS_BOT = !!(typeof window !== 'undefined' && window.__trussalIsBot);
+
 const localPeer = {
   peerId: null,
   jitsiId: null,
   displayName: null,
   isLocal: true,
+  isBot: LOCAL_IS_BOT,
+  muted: false,
   pattern: '',
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
@@ -79,7 +85,8 @@ function sendHelloIfReady() {
   ws.send(JSON.stringify({
     type: 'hello',
     jitsiId: local.id,
-    displayName: local.displayName
+    displayName: local.displayName,
+    isBot: LOCAL_IS_BOT
   }));
   helloSent = true;
   flushPending();
@@ -164,6 +171,7 @@ function applyPatch(peer, patch) {
     reverb: !!patch.effects.reverb
   };
   if (typeof patch.playing === 'boolean') peer.playing = patch.playing;
+  if (typeof patch.muted === 'boolean') peer.muted = patch.muted;
   if (typeof patch.rtt === 'number' || patch.rtt === null) peer.rtt = patch.rtt;
   if (typeof patch.jitter === 'number' || patch.jitter === null) peer.jitter = patch.jitter;
 }
@@ -173,6 +181,8 @@ function defaultPeer(peerId) {
     peerId,
     jitsiId: null,
     displayName: null,
+    isBot: false,
+    muted: false,
     pattern: '',
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
@@ -185,6 +195,7 @@ function upsertPeer(record) {
   const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
   if (record.jitsiId !== undefined) existing.jitsiId = record.jitsiId;
   if (record.displayName !== undefined) existing.displayName = record.displayName;
+  if (record.isBot !== undefined) existing.isBot = !!record.isBot;
   applyPatch(existing, record);
   peersByPeerId.set(existing.peerId, existing);
   if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
@@ -229,6 +240,22 @@ function handleMessage(msg) {
       if (!peer) break;
       applyPatch(peer, msg.patch);
       emit('peer-upsert', peer);
+      break;
+    }
+
+    case 'remote-control': {
+      // We are the target of an operator action (only bots receive these — the
+      // server gates on isBot). Reflect it on our local record and surface it as
+      // a DOM event so the bot page can re-evaluate its Strudel / mute its audio.
+      if (msg.action === 'pattern' && typeof msg.code === 'string') {
+        localPeer.pattern = msg.code;
+        document.dispatchEvent(new CustomEvent('trussal-remote-pattern', { detail: { code: msg.code } }));
+        emit('peer-upsert', localPeer);
+      } else if (msg.action === 'mute') {
+        localPeer.muted = !!msg.muted;
+        document.dispatchEvent(new CustomEvent('trussal-remote-mute', { detail: { muted: localPeer.muted } }));
+        emit('peer-upsert', localPeer);
+      }
       break;
     }
 
@@ -343,4 +370,25 @@ export function sendLocalPlaying(playing) {
   localPeer.playing = !!playing;
   safeSend({ type: playing ? 'play' : 'stop' });
   emit('peer-upsert', localPeer);
+}
+
+// Operator → another peer. The server applies these only to bot targets, then
+// relays the action to the bot and broadcasts the resulting state to everyone.
+export function sendRemotePattern(targetPeerId, code) {
+  if (!targetPeerId) return;
+  const c = typeof code === 'string' ? code : '';
+  safeSend({ type: 'remote-control', targetPeerId, action: 'pattern', code: c });
+  // Optimistically reflect the edit on the local cache + UI. Without this the
+  // editor snaps back to the old pattern on the next (frequent, metrics-driven)
+  // re-render, before the server's confirming peer-update round-trips back.
+  const peer = peersByPeerId.get(targetPeerId);
+  if (peer) {
+    peer.pattern = c;
+    emit('peer-upsert', peer);
+  }
+}
+
+export function sendRemoteMute(targetPeerId, muted) {
+  if (!targetPeerId) return;
+  safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
 }

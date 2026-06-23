@@ -19,6 +19,8 @@ import {
   sendLocalPattern,
   sendLocalEffects,
   sendLocalPlaying,
+  sendRemotePattern,
+  sendRemoteMute,
 } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
 import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
@@ -178,6 +180,13 @@ function injectStyles() {
       font-size: 10px; padding: 2px 6px; border-radius: 3px;
       background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
     }
+    #${OVERLAY_ID} .ts-bot-badge {
+      font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
+      background: rgba(125,207,255,0.15); color: #7dcfff;
+    }
+    #${OVERLAY_ID} .ts-btn.eval { background: #1ff466; color: #050f0a; }
+    #${OVERLAY_ID} .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+    #${OVERLAY_ID} .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
     #${OVERLAY_ID} .ts-section {
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
@@ -425,10 +434,19 @@ function renderDetail(container) {
        <button class="ts-btn ghost${relayOn ? ' on' : ''}" data-action="relay">${relayOn ? '⏏ Disconnect relay' : '📡 Jamulus relay'}</button>`
     : '';
 
+  // Remote tiles are editable too: an operator can drive a participant's pattern
+  // from here. The server only applies edits/mutes to bots (humans own their own
+  // state), so for a human peer the textarea is a no-op scratchpad.
+  // data-peer-key (the stable jitsiId, set for both local and remote) lets the
+  // re-render guard tell whether the same peer's editor is still on screen.
+  const peerKeyAttr = ` data-peer-key="${escapeHtml(String(peer.jitsiId || ''))}"`;
   const codeBlock = isLocal
-    ? `<textarea class="ts-code" spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
-    : `<pre class="ts-pre">${escapeHtml(peer.pattern || '/* (no pattern yet) */')}</pre>`;
+    ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
+    : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
 
+  const muteBtn = (!isLocal && peer.isBot)
+    ? `<button class="ts-btn mute${peer.muted ? ' on' : ''}" data-action="mute">${peer.muted ? '🔇 Muted' : '🔈 Mute'}</button>`
+    : '';
   const strudelControls = isLocal
     ? `
       <div class="ts-section-controls">
@@ -438,10 +456,15 @@ function renderDetail(container) {
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop</span>
       </div>`
-    : `<div class="ts-section-controls"><span class="ts-readonly-badge">READ ONLY</span></div>`;
+    : `
+      <div class="ts-section-controls">
+        <button class="ts-btn eval" data-action="remote-eval">▶ Eval</button>
+        ${muteBtn}
+        <span class="ts-shortcuts">Ctrl+Enter to send</span>
+      </div>`;
 
   const playing = peer.playing ? 'Playing' : 'Idle';
-  const status = isLocal ? lastStatus : playing;
+  const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : playing);
 
   const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
     <div class="ts-sample-banks">
@@ -452,7 +475,7 @@ function renderDetail(container) {
   container.innerHTML = `
     <div class="ts-detail-header">
       <div class="ts-detail-name">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
-      ${isLocal ? '' : '<span class="ts-readonly-badge">READ ONLY</span>'}
+      ${(!isLocal && peer.isBot) ? '<span class="ts-bot-badge">BOT</span>' : ''}
     </div>
 
     <div class="ts-section">
@@ -478,7 +501,25 @@ function renderDetail(container) {
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
 
-  if (!isLocal) return;
+  if (!isLocal) {
+    // Remote tile: editing drives the participant (bots only, enforced server-side).
+    const targetPeerId = peer.peerId;
+    const remoteCodeEl = container.querySelector('.ts-code');
+    const sendRemoteEval = () => {
+      if (remoteCodeEl) sendRemotePattern(targetPeerId, remoteCodeEl.value);
+    };
+    if (remoteCodeEl) {
+      remoteCodeEl.addEventListener('keydown', (e) => {
+        const meta = e.ctrlKey || e.metaKey;
+        if (meta && e.key === 'Enter') { e.preventDefault(); sendRemoteEval(); }
+      });
+    }
+    const remoteEvalBtn = container.querySelector('[data-action="remote-eval"]');
+    if (remoteEvalBtn) remoteEvalBtn.addEventListener('click', sendRemoteEval);
+    const muteBtnEl = container.querySelector('[data-action="mute"]');
+    if (muteBtnEl) muteBtnEl.addEventListener('click', () => sendRemoteMute(targetPeerId, !peer.muted));
+    return;
+  }
 
   const codeEl = container.querySelector('.ts-code');
   if (codeEl) {
@@ -750,6 +791,11 @@ function renderAll() {
       const active = document.activeElement;
       const isCodeFocused = active && active === existingCodeEl;
       const codeValue = existingCodeEl ? existingCodeEl.value : null;
+      const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
+      // Local edits are kept across re-renders (they only hit the bus on eval);
+      // a remote tile only keeps its text while actively focused, so it otherwise
+      // refreshes to the live pattern when another operator/the bot changes it.
+      const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === '1' || isCodeFocused);
       const selStart = isCodeFocused ? active.selectionStart : null;
       const selEnd   = isCodeFocused ? active.selectionEnd   : null;
       const scrollTop = isCodeFocused ? active.scrollTop : null;
@@ -758,7 +804,10 @@ function renderAll() {
       refreshFacialGestureButtons();
 
       const nextCodeEl = detail.querySelector('.ts-code');
-      if (nextCodeEl && codeValue != null) {
+      // Only carry the old text over when it's the same peer's editor — switching
+      // selected tiles must show the newly-selected peer's pattern, not the old one.
+      const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
+      if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
         nextCodeEl.value = codeValue;
         if (isCodeFocused) {
           nextCodeEl.focus();

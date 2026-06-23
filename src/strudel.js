@@ -168,6 +168,12 @@ function buildStrudelVoice(code, fx) {
 // Everything after the blank line is processed as a Strudel pattern voice.
 // Users can write hydra-only blocks (no strudel voice after the blank line).
 function buildPeerBlock(peer) {
+  // Bots play their own Strudel inside their headless browser and reach the room
+  // through their Jitsi mic / Jamulus, so their pattern is shown in the studio
+  // for display + remote editing only — never folded into each viewer's combined
+  // mix, which would play it a second time on top of the bot's incoming audio.
+  if (peer.isBot) return null;
+
   let code = (peer.pattern || '').replace(/[\s;]+$/g, '');
   if (!code || !peer.playing) return null;
 
