@@ -66,6 +66,18 @@ test('effectsChain derives delay/feedback from own latency and jitter', () => {
   assert.ok(wild.feedback <= 0.85, 'feedback capped below self-oscillation');
 });
 
+test('effectsChain bakes audible distortion/bitcrush that intensify with a worse link', () => {
+  const lan = effectsChain({ latencyMs: 3, jitterMs: 1 });
+  assert.ok(lan.distortion >= 0.8, 'distortion audible even at LAN latency');
+  assert.ok(lan.crushBits > 4 && lan.crushBits <= 7, 'gentle crush on a calm link');
+  const wan = effectsChain({ latencyMs: 120, jitterMs: 30 });
+  assert.ok(wan.distortion > lan.distortion, 'more latency → more distortion');
+  assert.ok(wan.crushBits < lan.crushBits, 'more jitter → heavier crush (fewer bits)');
+  const extreme = effectsChain({ latencyMs: 5000, jitterMs: 5000 });
+  assert.ok(extreme.distortion <= 2.8, 'distortion capped');
+  assert.ok(extreme.crushBits >= 4, 'crush floored at 4 bits');
+});
+
 test('config merge: overrides apply, unknown keys/roles rejected', () => {
   const cfg = mergeConfig({ maxBots: 6, roles: { frequencyBands: true } });
   assert.equal(cfg.maxBots, 6);

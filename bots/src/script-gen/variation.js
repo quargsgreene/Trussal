@@ -91,6 +91,10 @@ export function variationFor(botId, master, opts) {
   // Universal stages: own-link fx chain, then gain staging last so nothing
   // after it can push the level back up.
   const fx = effectsChain({ latencyMs, jitterMs });
+  // Network-damage tone, baked in at the source so it is heard over any path
+  // (Jamulus or Jitsi) with no double-processing: latency drives distortion,
+  // jitter drives bitcrush, then the latency echo, then gain staging last.
+  strudelChain.push(`.distort(${fx.distortion}).crush(${fx.crushBits})`);
   strudelChain.push(
     `.delay(.4).delaytime(${fx.delaySeconds}).delayfeedback(${round2(fx.feedback)})`,
   );

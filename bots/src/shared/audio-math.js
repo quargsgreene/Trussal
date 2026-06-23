@@ -47,6 +47,26 @@ const BASE_FEEDBACK = 0.2;
 const FEEDBACK_PER_JITTER_MS = 0.005;
 const MAX_FEEDBACK = 0.85;
 
+/**
+ * Distortion + bitcrush ("network damage") calibration. The delay above turns
+ * latency into the literal echo of the link, but on a LAN that delay is sub-10ms
+ * and inaudible, so the network character also needs a tone that is present at
+ * any latency and intensifies with a worse link:
+ *
+ * - BASE_DISTORT 0.8 (drive ≈ moderate grit) is audible even at ~0 latency so a
+ *   LAN bot still clearly reads as "processed"; latency adds up to +2.0 of drive.
+ * - BASE_CRUSH 7 bits is a gentle lo-fi crunch; jitter pulls it down toward
+ *   MIN_CRUSH 4 (heavy) so an unstable link sounds quantised/broken.
+ */
+const BASE_DISTORT = 0.8;
+const DISTORT_PER_LATENCY_MS = 1 / 30;
+const MAX_DISTORT_EXTRA = 2.0;
+const BASE_CRUSH = 7;
+const CRUSH_PER_JITTER_MS = 0.5;
+const MIN_CRUSH = 4;
+
+const round2 = (x) => Math.round(x * 100) / 100;
+
 export function effectsChain({ latencyMs, jitterMs }) {
   if (!(latencyMs >= 0) || !(jitterMs >= 0)) {
     throw new RangeError('latencyMs and jitterMs must be non-negative numbers');
@@ -54,5 +74,7 @@ export function effectsChain({ latencyMs, jitterMs }) {
   return {
     delaySeconds: latencyMs / 1000,
     feedback: Math.min(MAX_FEEDBACK, BASE_FEEDBACK + jitterMs * FEEDBACK_PER_JITTER_MS),
+    distortion: round2(BASE_DISTORT + Math.min(MAX_DISTORT_EXTRA, latencyMs * DISTORT_PER_LATENCY_MS)),
+    crushBits: round2(Math.max(MIN_CRUSH, BASE_CRUSH - jitterMs * CRUSH_PER_JITTER_MS)),
   };
 }
