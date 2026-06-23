@@ -293,6 +293,39 @@ export async function pageEnsureVideoPublished() {
     }
     const lt = localTrack();
     log('final track=' + Boolean(lt) + ' muted=' + (lt && lt.isMuted ? lt.isMuted() : 'n/a'));
+
+    // Diagnostic: sample outbound RTP so we can see whether the browser is
+    // actually encoding+sending video frames (vs. having a live track that
+    // produces nothing, vs. having no video sender at all).
+    const findPC = () => {
+      try {
+        const r = room();
+        const rtc = r && r.rtc;
+        const pcs = rtc && (rtc.peerConnections || rtc._peerConnections);
+        let tpc = null;
+        if (pcs && pcs.values) { for (const v of pcs.values()) { tpc = v; break; } }
+        tpc = tpc || (r && r.jvbJingleSession && r.jvbJingleSession.peerconnection);
+        return tpc && (tpc.peerconnection || tpc.pc || tpc);
+      } catch (e) { return null; }
+    };
+    setInterval(async () => {
+      try {
+        const pc = findPC();
+        if (!pc || !pc.getStats) { window.__trussalVideoStats = { pc: false }; return; }
+        const stats = await pc.getStats();
+        const o = { pc: true, senders: 0 };
+        stats.forEach((s) => {
+          if (s.type === 'outbound-rtp' && (s.kind === 'video' || s.mediaType === 'video')) {
+            o.senders++;
+            o.vid = { framesEncoded: s.framesEncoded, framesSent: s.framesSent, bytesSent: s.bytesSent, w: s.frameWidth, h: s.frameHeight, qual: s.qualityLimitationReason, active: s.active };
+          }
+          if (s.type === 'outbound-rtp' && (s.kind === 'audio' || s.mediaType === 'audio')) {
+            o.aud = { bytesSent: s.bytesSent, packetsSent: s.packetsSent };
+          }
+        });
+        window.__trussalVideoStats = o;
+      } catch (e) { window.__trussalVideoStats = { err: String(e) }; }
+    }, 3000);
   } catch (e) { log('ensure fatal ' + e); }
 }
 
@@ -480,6 +513,7 @@ export function pageReadSamples() {
             vis: !!(c.offsetWidth || c.offsetHeight || c.getClientRects().length),
           }));
         } catch (e) { out.canvasErr = String(e); }
+        out.videoStats = window.__trussalVideoStats || null;
         return out;
       })(),
     },
