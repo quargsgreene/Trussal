@@ -148,9 +148,6 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
   // ...and explicitly publishes the Hydra canvas as its video track.
   const videoIdx = calls.evaluate.findIndex((s) => /__trussalVideoLog/.test(s));
   assert.ok(videoIdx !== -1, 'bot publishes a Hydra video track after joining');
-  // ...and registers on the peer-state bus so its audio gets the latency chain.
-  const peerIdx = calls.evaluate.findIndex((s) => /__trussalPeerLog/.test(s) && /type: 'hello'/.test(s));
-  assert.ok(peerIdx !== -1, 'bot registers on the peer-state bus after joining');
 
   const m = await bot.sampleMetrics();
   assert.equal(typeof m.ramBytes, 'number');

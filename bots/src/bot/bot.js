@@ -11,8 +11,7 @@
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
-  pageEnsureAudioPublished, pageEnsureVideoPublished, pagePeerStateRegister,
-  pageFpsSampler, pageReadSamples,
+  pageEnsureAudioPublished, pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
 } from './page-scripts.js';
 
 export class Bot {
@@ -80,9 +79,6 @@ export class Bot {
     // Likewise, jitsi-meet never requests the camera headlessly, so explicitly
     // publish the Hydra canvas stream as the bot's video.
     await this.page.evaluate(pageEnsureVideoPublished).catch(() => {});
-    // Announce the bot on the peer-state bus (identity + effects + metrics) so
-    // human clients route its Jitsi audio through the per-peer latency chain.
-    await this.page.evaluate(pagePeerStateRegister).catch(() => {});
   }
 
   /**
