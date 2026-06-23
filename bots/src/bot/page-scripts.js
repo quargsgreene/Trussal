@@ -154,7 +154,11 @@ export function pageGumOverride(captureFps = 15) {
       const canvas = await waitForCanvas();
       // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
       // vs 30 with little visual loss for slow-evolving Hydra patterns.
-      for (const t of canvas.captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
+      const cs = canvas.captureStream(captureFps);
+      const vts = cs.getVideoTracks();
+      rec.canvas = { id: canvas.id, cls: String(canvas.className), w: canvas.width, h: canvas.height };
+      rec.vsettings = vts[0] && vts[0].getSettings ? vts[0].getSettings() : null;
+      for (const t of vts) stream.addTrack(t);
     }
     if (constraints.audio) {
       const mic = window.__trussalMicStream;
@@ -445,6 +449,14 @@ export function pageReadSamples() {
         out.gumCalls = window.__trussalGumCalls || [];
         out.log = window.__trussalAudioLog || [];
         out.videoLog = window.__trussalVideoLog || [];
+        // Diagnostic: enumerate canvases so we can tell which one the gUM
+        // override captured and whether it's the animated Hydra output.
+        try {
+          out.canvasList = [...document.querySelectorAll('canvas')].map((c) => ({
+            id: c.id, cls: String(c.className), w: c.width, h: c.height,
+            vis: !!(c.offsetWidth || c.offsetHeight || c.getClientRects().length),
+          }));
+        } catch (e) { out.canvasErr = String(e); }
         return out;
       })(),
     },
