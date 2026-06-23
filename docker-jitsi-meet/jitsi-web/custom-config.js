@@ -10,7 +10,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       __defProp(target, name3, { get: all2[name3], enumerable: true });
   };
 
-  // ../strudel-fork/packages/web/dist/index.mjs
+  // strudel-fork/packages/web/dist/index.mjs
   var dist_exports = {};
   __export(dist_exports, {
     ClockCollator: () => ClockCollator,
@@ -10503,7 +10503,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   }
   var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
-    "../strudel-fork/packages/web/dist/index.mjs"() {
+    "strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
       debounce = 1e3;
       logger$2.key = logKey;
@@ -36877,7 +36877,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const worklet2 = new AudioWorkletNode(audioCtx, "latency-processor-v2", {
       numberOfInputs: 1,
       numberOfOutputs: 1,
-      channelCount: 1
+      outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers"
     });
     const limiter = audioCtx.createDynamicsCompressor();
     limiter.threshold.value = -1;
@@ -37020,7 +37023,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       const ext = externalSources.get(payload.id);
       if (ext) {
         try {
-          ext.source.disconnect();
+          ext.source && ext.source.disconnect();
         } catch (e30) {
         }
         try {
@@ -37093,7 +37096,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const { audioCtx: ctx, masterStrudelGain: out, realDestination: rd } = await ensureMasterStrudelInput();
     return { audioCtx: ctx, destinationNode: out, realDestination: rd };
   }
-  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external") {
+  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external", { monitorLocally = true } = {}) {
     if (!jitsiId || !stream) return null;
     await bootAudioEngine();
     const chain = await ensureChain(jitsiId);
@@ -37101,7 +37104,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const existing = externalSources.get(jitsiId);
     if (existing) {
       try {
-        existing.source.disconnect();
+        existing.source && existing.source.disconnect();
       } catch (e30) {
       }
       try {
@@ -37109,11 +37112,14 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       } catch (e30) {
       }
     }
-    const source2 = audioCtx.createMediaStreamSource(stream);
-    source2.connect(chain.input);
+    let source2 = null;
+    if (monitorLocally) {
+      source2 = audioCtx.createMediaStreamSource(stream);
+      source2.connect(chain.input);
+    }
     externalSources.set(jitsiId, { source: source2, stream, label: label2 });
     audioRouted.add(jitsiId);
-    console.log("[latency] attached external stream \u2192", jitsiId, label2, "tracks:", stream.getAudioTracks().map((t) => t.label));
+    console.log("[latency] attached external stream \u2192", jitsiId, label2, monitorLocally ? "(monitored)" : "(room only)", "tracks:", stream.getAudioTracks().map((t) => t.label));
     notifyRoutingChange();
     return source2;
   }
@@ -37121,7 +37127,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const ext = externalSources.get(jitsiId);
     if (!ext) return;
     try {
-      ext.source.disconnect();
+      ext.source && ext.source.disconnect();
     } catch (e30) {
     }
     try {
@@ -37758,6 +37764,73 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     } else {
       window.addEventListener("DOMContentLoaded", startNoAudioToastRender);
     }
+  }
+
+  // src/audio-config-check.js
+  var EXPECTED = [
+    {
+      ok: (c2) => c2.disableAP === true,
+      key: "config.disableAP === true",
+      env: "ENABLE_AUDIO_PROCESSING=false",
+      why: "echo cancellation / noise suppression / AGC mangle instruments"
+    },
+    {
+      ok: (c2) => !!c2.audioQuality && c2.audioQuality.stereo === true,
+      key: "config.audioQuality.stereo === true",
+      env: "ENABLE_STEREO=true",
+      why: "mono collapses stereo instrument feeds"
+    },
+    {
+      ok: (c2) => !!c2.audioQuality && Number(c2.audioQuality.opusMaxAverageBitrate) >= 256e3,
+      key: "config.audioQuality.opusMaxAverageBitrate >= 256000",
+      env: "AUDIO_QUALITY_OPUS_BITRATE=510000",
+      why: "default speech bitrate is too low for music"
+    },
+    {
+      ok: (c2) => c2.enableNoAudioDetection === false,
+      key: "config.enableNoAudioDetection === false",
+      env: "ENABLE_NO_AUDIO_DETECTION=false",
+      why: 'false "is your mic working?" prompts on quiet instruments'
+    },
+    {
+      ok: (c2) => c2.enableNoisyMicDetection === false,
+      key: "config.enableNoisyMicDetection === false",
+      env: "ENABLE_NOISY_MIC_DETECTION=false",
+      why: 'flags instruments as a "noisy" microphone'
+    }
+  ];
+  function runCheck() {
+    const c2 = window.config;
+    if (!c2 || typeof c2 !== "object") return false;
+    const failures = EXPECTED.filter((e30) => {
+      try {
+        return !e30.ok(c2);
+      } catch (_3) {
+        return true;
+      }
+    });
+    if (!failures.length) {
+      console.info("[trussal] music-mode audio config OK");
+      return true;
+    }
+    console.warn(
+      "[trussal] Jitsi is NOT in music/instrument mode \u2014 config.js looks stale or unset.\nInstruments will be degraded (speech DSP, mono, low bitrate). Set these in\ndocker-jitsi-meet/.env and recreate the web container:\n" + failures.map((f2) => `  \u2022 ${f2.env}  (${f2.why})
+      missing: ${f2.key}`).join("\n")
+    );
+    return true;
+  }
+  function renderAudioConfigCheck() {
+    window.trussalAudioConfigCheck = runCheck;
+    let tries = 0;
+    const tick2 = () => {
+      if (runCheck()) return;
+      if (++tries > 10) {
+        console.warn("[trussal] audio config guard: window.config never appeared");
+        return;
+      }
+      setTimeout(tick2, 500);
+    };
+    tick2();
   }
 
   // src/user-samples.js
@@ -40662,7 +40735,7 @@ ${code2}${BTN_MARKER}`;
       };
       if (deviceId) audioConstraints.deviceId = { exact: deviceId };
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-      await attachExternalStreamForPeer(local2.jitsiId, stream, label2);
+      await attachExternalStreamForPeer(local2.jitsiId, stream, label2, { monitorLocally: false });
       const propagated = await propagateExternalStreamToRoom(stream);
       setJamulusMode(true);
       setStatus(propagated ? `Capturing ${label2} \u2192 room` : `Capturing ${label2} (local only \u2014 no Jitsi mic hook)`);
@@ -40920,6 +40993,7 @@ ${voiceCode}${BTN_MARKER2}`);
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+  renderAudioConfigCheck();
   renderJamulusWelcomePanelAndBanner();
   renderRecentListText();
   renderWelcomeOverlay();
