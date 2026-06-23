@@ -56,26 +56,16 @@ test('gainForBotCount stages gain down as the fleet grows, never clipping', () =
   assert.ok(10 * g10 ** 2 <= g1 ** 2 * 1.0001);
 });
 
-test('effectsChain derives delay/feedback from own latency and jitter', () => {
-  const fx = effectsChain({ latencyMs: 250, jitterMs: 40 });
-  assert.equal(fx.delaySeconds, 0.25);
-  assert.ok(fx.feedback > 0 && fx.feedback < 0.95, 'feedback stays stable');
-  const calm = effectsChain({ latencyMs: 250, jitterMs: 0 });
-  assert.ok(fx.feedback > calm.feedback, 'more jitter → more feedback');
-  const wild = effectsChain({ latencyMs: 250, jitterMs: 10000 });
-  assert.ok(wild.feedback <= 0.85, 'feedback capped below self-oscillation');
-});
-
-test('effectsChain bakes audible distortion/bitcrush that intensify with a worse link', () => {
+test('effectsChain maps latency to an audible echo and jitter to feedback', () => {
   const lan = effectsChain({ latencyMs: 3, jitterMs: 1 });
-  assert.ok(lan.distortion >= 0.8, 'distortion audible even at LAN latency');
-  assert.ok(lan.crushBits > 4 && lan.crushBits <= 7, 'gentle crush on a calm link');
-  const wan = effectsChain({ latencyMs: 120, jitterMs: 30 });
-  assert.ok(wan.distortion > lan.distortion, 'more latency → more distortion');
-  assert.ok(wan.crushBits < lan.crushBits, 'more jitter → heavier crush (fewer bits)');
-  const extreme = effectsChain({ latencyMs: 5000, jitterMs: 5000 });
-  assert.ok(extreme.distortion <= 2.8, 'distortion capped');
-  assert.ok(extreme.crushBits >= 4, 'crush floored at 4 bits');
+  assert.ok(lan.delaySeconds >= 0.08, 'sub-10ms LAN latency still yields an audible slap echo');
+  const wan = effectsChain({ latencyMs: 60, jitterMs: 40 });
+  assert.ok(wan.delaySeconds > lan.delaySeconds, 'more latency → longer echo');
+  assert.ok(wan.delaySeconds <= 0.5, 'echo capped before it smears');
+  const calm = effectsChain({ latencyMs: 60, jitterMs: 0 });
+  assert.ok(wan.feedback > calm.feedback, 'more jitter → more feedback');
+  const wild = effectsChain({ latencyMs: 60, jitterMs: 10000 });
+  assert.ok(wild.feedback <= 0.85, 'feedback capped below self-oscillation');
 });
 
 test('config merge: overrides apply, unknown keys/roles rejected', () => {

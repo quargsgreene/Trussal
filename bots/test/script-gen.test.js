@@ -73,7 +73,7 @@ test('unison role leaves pattern untransformed except gain staging + fx chain', 
   const v = variationFor(2, master, { ...baseOpts, roles: { unison: true } });
   assert.ok(v.strudel.includes(master.strudel), 'master code embedded');
   assert.match(v.strudel, /\.gain\(/, 'gain staging always applied');
-  assert.match(v.strudel, /\.delaytime\(0\.05\)/, 'fx chain uses own latency');
+  assert.match(v.strudel, /\.delaytime\(0\.38\)/, 'fx chain maps own latency to an audible echo');
   assert.equal(v.entryDelayMs, 0);
   assert.doesNotMatch(v.strudel, /\.hpf\(|\.pan\(|\.late\(/);
 });

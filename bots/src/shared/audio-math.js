@@ -48,33 +48,28 @@ const FEEDBACK_PER_JITTER_MS = 0.005;
 const MAX_FEEDBACK = 0.85;
 
 /**
- * Distortion + bitcrush ("network damage") calibration. The delay above turns
- * latency into the literal echo of the link, but on a LAN that delay is sub-10ms
- * and inaudible, so the network character also needs a tone that is present at
- * any latency and intensifies with a worse link:
+ * Audible-echo calibration. The literal network latency (latencyMs/1000) is
+ * sub-10 ms on a LAN, so the "echo the network creates" is imperceptible. Map
+ * it onto a perceptible slap-echo range instead: a floor so every bot reads as
+ * networked, lengthening with the link and capped before it smears
+ * (3 ms → ~0.10 s, 7 ms → ~0.12 s, ≥ 70 ms pins MAX_DELAY_S).
  *
- * - BASE_DISTORT 0.8 (drive ≈ moderate grit) is audible even at ~0 latency so a
- *   LAN bot still clearly reads as "processed"; latency adds up to +2.0 of drive.
- * - BASE_CRUSH 7 bits is a gentle lo-fi crunch; jitter pulls it down toward
- *   MIN_CRUSH 4 (heavy) so an unstable link sounds quantised/broken.
+ * Worklet "damage" effects (.crush/.coarse/.shape, and .distort) are NOT used:
+ * superdough builds them as AudioWorkletNodes and headless Chromium's worklet
+ * path silently drops the audio, muting the bots entirely. The native DelayNode
+ * echo (+ jitter-driven feedback) is the audible, headless-safe latency tell.
  */
-const BASE_DISTORT = 0.8;
-const DISTORT_PER_LATENCY_MS = 1 / 30;
-const MAX_DISTORT_EXTRA = 2.0;
-const BASE_CRUSH = 7;
-const CRUSH_PER_JITTER_MS = 0.5;
-const MIN_CRUSH = 4;
-
-const round2 = (x) => Math.round(x * 100) / 100;
+const BASE_DELAY_S = 0.08;
+const DELAY_PER_LATENCY_MS = 0.006;
+const MAX_DELAY_S = 0.5;
 
 export function effectsChain({ latencyMs, jitterMs }) {
   if (!(latencyMs >= 0) || !(jitterMs >= 0)) {
     throw new RangeError('latencyMs and jitterMs must be non-negative numbers');
   }
+  const delayS = Math.min(MAX_DELAY_S, BASE_DELAY_S + latencyMs * DELAY_PER_LATENCY_MS);
   return {
-    delaySeconds: latencyMs / 1000,
+    delaySeconds: Math.round(delayS * 1000) / 1000,
     feedback: Math.min(MAX_FEEDBACK, BASE_FEEDBACK + jitterMs * FEEDBACK_PER_JITTER_MS),
-    distortion: round2(BASE_DISTORT + Math.min(MAX_DISTORT_EXTRA, latencyMs * DISTORT_PER_LATENCY_MS)),
-    crushBits: round2(Math.max(MIN_CRUSH, BASE_CRUSH - jitterMs * CRUSH_PER_JITTER_MS)),
   };
 }

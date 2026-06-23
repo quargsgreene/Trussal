@@ -91,10 +91,10 @@ export function variationFor(botId, master, opts) {
   // Universal stages: own-link fx chain, then gain staging last so nothing
   // after it can push the level back up.
   const fx = effectsChain({ latencyMs, jitterMs });
-  // Network-damage tone, baked in at the source so it is heard over any path
-  // (Jamulus or Jitsi) with no double-processing: latency drives distortion,
-  // jitter drives bitcrush, then the latency echo, then gain staging last.
-  strudelChain.push(`.distort(${fx.distortion}).crush(${fx.crushBits})`);
+  // Latency-as-echo, baked in at the source so it is heard over any path
+  // (Jamulus or Jitsi) with no double-processing: latency sets the echo time,
+  // jitter the feedback. Worklet effects (distort/crush) mute headless bots, so
+  // the native delay is the audible latency tell. Gain staging stays last.
   strudelChain.push(
     `.delay(.4).delaytime(${fx.delaySeconds}).delayfeedback(${round2(fx.feedback)})`,
   );
