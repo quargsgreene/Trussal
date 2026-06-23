@@ -26,9 +26,13 @@ const MELODIES = [
   'n("0 2 4 [6 7]").scale("D:dorian").s("sine")',
 ];
 
+// Headless-safe only. superdough builds reverb (.room) and the "damage"
+// effects (.shape/.crush/.distort) as AudioWorkletNodes, and headless
+// Chromium's worklet path fails to start: the scheduler never runs, the bot
+// reports an eval error, and the conductor replaces it — so the bot's video
+// tile drops out (see shouldReplace in ../orchestrator/health.js and the same
+// note in ../shared/audio-math.js). Keep only native-node effects here.
 const FX = [
-  '.room(.3)',
-  '.shape(.2)',
   '.vowel("<a e i o>")',
   '.cutoff(sine.range(300, 2000).slow(4))',
 ];
