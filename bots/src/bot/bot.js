@@ -11,7 +11,7 @@
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageEnsureAudioPublished,
-  pageFpsSampler, pageReadSamples,
+  pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
 } from './page-scripts.js';
 
 export class Bot {
@@ -74,6 +74,9 @@ export class Bot {
     // startWithAudioMuted=false alone doesn't reliably give a headless bot a
     // published audio track; explicitly publish the Strudel tap as the mic.
     await this.page.evaluate(pageEnsureAudioPublished).catch(() => {});
+    // Likewise, jitsi-meet never requests the camera headlessly, so explicitly
+    // publish the Hydra canvas stream as the bot's video.
+    await this.page.evaluate(pageEnsureVideoPublished).catch(() => {});
   }
 
   /**

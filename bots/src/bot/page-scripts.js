@@ -219,6 +219,57 @@ export async function pageEnsureAudioPublished() {
 }
 
 /**
+ * After the bot has joined, make sure its Hydra canvas is actually published as
+ * a live video track (the bot's "camera"). Like audio, startWithVideoMuted=false
+ * is not enough headlessly — lib-jitsi-meet never requests the camera on its own
+ * (gUM is only ever called for audio), so the Hydra canvas stream from the gUM
+ * override is never published and the bot's tile stays blank. Drive jitsi-meet
+ * directly: ask it to unmute video (which triggers a gUM → our canvas override),
+ * falling back to creating the track explicitly. Logged to window.__trussalVideoLog.
+ */
+export async function pageEnsureVideoPublished() {
+  const log = (m) => { (window.__trussalVideoLog = window.__trussalVideoLog || []).push(String(m)); };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const APP = globalThis.APP;
+    const conf = APP && APP.conference;
+    if (!conf) { log('no APP.conference'); return; }
+    const room = () => conf._room || conf.room;
+    const localTrack = () => { try { const r = room(); return r && r.getLocalVideoTrack && r.getLocalVideoTrack(); } catch (e) { return null; } };
+
+    log('api muteVideo=' + typeof conf.muteVideo
+      + ' useVideoStream=' + typeof conf.useVideoStream
+      + ' JMJS=' + Boolean(window.JitsiMeetJS));
+
+    // 1) Ask jitsi-meet to unmute video; if it had no/muted track this triggers
+    //    a gUM (→ our Hydra canvas stream) and publishes it.
+    if (typeof conf.muteVideo === 'function') {
+      try { await conf.muteVideo(false); log('muteVideo(false) called'); } catch (e) { log('muteVideo err ' + e); }
+      await sleep(1500);
+      log('after muteVideo track=' + Boolean(localTrack()));
+    }
+
+    // 2) Fallback: explicitly create the video track and attach it.
+    //    createLocalTracks(['video']) runs through our gUM override → canvas.
+    if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+      try {
+        const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['video'] });
+        const vt = tracks && tracks[0];
+        log('createLocalTracks -> ' + Boolean(vt));
+        if (vt) {
+          if (typeof conf.useVideoStream === 'function') { await conf.useVideoStream(vt); log('useVideoStream ok'); }
+          else { const r = room(); if (r && r.addTrack) { await r.addTrack(vt); log('addTrack ok'); } else log('no attach api'); }
+        }
+      } catch (e) { log('createLocalTracks err ' + e); }
+      await sleep(1000);
+      log('after create track=' + Boolean(localTrack()));
+    }
+    const lt = localTrack();
+    log('final track=' + Boolean(lt) + ' muted=' + (lt && lt.isMuted ? lt.isMuted() : 'n/a'));
+  } catch (e) { log('ensure fatal ' + e); }
+}
+
+/**
  * Boots the Strudel REPL (web build from the CDN) inside the current page
  * and evaluates the bot's varied code (passed as the argument — Puppeteer
  * delivers it structurally). Runtime evaluation errors are pushed to
@@ -331,6 +382,18 @@ export function pageReadSamples() {
           } else {
             out.jitsiAudioTrack = null;
           }
+          // Probe lib-jitsi-meet for a published local video track (Hydra cam).
+          const lvt = room && room.getLocalVideoTrack && room.getLocalVideoTrack();
+          if (lvt) {
+            const vt = lvt.getTrack && lvt.getTrack();
+            out.jitsiVideoTrack = {
+              muted: lvt.isMuted ? lvt.isMuted() : null,
+              readyState: vt ? vt.readyState : null,
+              enabled: vt ? vt.enabled : null,
+            };
+          } else {
+            out.jitsiVideoTrack = null;
+          }
         } catch (e) { out.jitsiErr = String(e); }
         // Diagnostic: live RMS of what reaches our shared-context destination.
         try {
@@ -381,6 +444,7 @@ export function pageReadSamples() {
         out.console = (window.__trussalConsole || []).slice(-30);
         out.gumCalls = window.__trussalGumCalls || [];
         out.log = window.__trussalAudioLog || [];
+        out.videoLog = window.__trussalVideoLog || [];
         return out;
       })(),
     },
