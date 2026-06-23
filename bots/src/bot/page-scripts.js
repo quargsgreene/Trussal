@@ -79,6 +79,13 @@ export function pageAudioBridge() {
     const fan = ctx.createGain();
     fan.connect(hardware);
     fan.connect(tap);
+    // superdough's multi-channel output controller reads
+    // `audioContext.destination.maxChannelCount` and derives its channel
+    // routing (ChannelMerger size, `ch % destination.channelCount`) from it.
+    // Our fan is a GainNode and has no maxChannelCount, so that math collapsed
+    // to NaN and silently routed every voice nowhere — no error, just silence.
+    // Expose the real device's value so the routing resolves to stereo.
+    fan.maxChannelCount = hardware.maxChannelCount || 2;
     Object.defineProperty(ctx, 'destination', {
       configurable: true,
       get: () => fan,
