@@ -103,11 +103,11 @@ body, body * {
 }
 
 
-div
+body.welcome-page div
 {
 
   background: #000 url("../images/welcome-background.png")
-              center center / cover no-repeat !important;	
+              center center / cover no-repeat !important;
 
 }
 
@@ -174,4 +174,20 @@ body.welcome-page #trussal-room-field::placeholder {
 /* Make sure each video container can hold absolutely-positioned children */
 .trussal-video-host {
   position: relative !important;
+}
+
+/* Trussal: the global `body *` / `div` theme rules above paint green (and the
+   welcome background) over the in-call video tiles, so the grid showed solid
+   green panels instead of camera/Hydra video. Force every conference video
+   surface and its tile wrappers transparent so the actual video shows. Higher
+   specificity + !important beats the `body *` rule. */
+#videospace .videocontainer,
+#videospace .videocontainer *,
+.tile-view .videocontainer,
+.tile-view .videocontainer *,
+#largeVideoContainer, #largeVideoWrapper, #largeVideoBackgroundContainer,
+#largeVideo, #videospace video, #videospace canvas, video {
+  background: transparent !important;
+  background-image: none !important;
+  background-color: transparent !important;
 }
