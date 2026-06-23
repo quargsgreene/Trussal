@@ -330,6 +330,74 @@ export async function pageEnsureVideoPublished() {
 }
 
 /**
+ * Register the bot on the Trussal peer-state bus so human clients apply the
+ * per-peer latency effects chain to the bot's Jitsi audio.
+ *
+ * The bot's Strudel audio reaches the room as a Jitsi <audio> track, but
+ * latency-instrument.js only routes a remote tag through its effects chain when
+ * the tag's jitsiId is a known peer on the bus (getPeerByJitsiId), and it
+ * derives the distortion/noise amounts from that peer's broadcast rtt/jitter +
+ * effect toggles. The fleet bot boots Strudel in-page and never joins the bus,
+ * so its audio played dry. Here we open the same WebSocket the browser client
+ * uses (peer-state.js) and announce the bot's Jitsi identity, effect toggles,
+ * and ping-measured metrics.
+ *
+ * Deliberately NO pattern / play is sent: strudel.js re-synthesises every
+ * PLAYING peer's pattern locally on each client, so a pattern here would make
+ * every browser also render the bot's Strudel on top of the audio it already
+ * sends over Jitsi — doubling it. Sending only identity + effects + metrics
+ * gets the effects chain applied to the existing <audio> track and nothing else.
+ */
+export function pagePeerStateRegister() {
+  const log = (m) => { (window.__trussalPeerLog = window.__trussalPeerLog || []).push(String(m)); };
+  try {
+    const conf = globalThis.APP && globalThis.APP.conference;
+    const room = (() => { const p = window.location.pathname.split('/').filter(Boolean); return p.length ? p[p.length - 1] : null; })();
+    const jitsiId = conf && (
+      (conf.getMyUserId && conf.getMyUserId())
+      || (conf.myUserId && conf.myUserId())
+      || ((conf._room || conf.room) && (conf._room || conf.room).myUserId && (conf._room || conf.room).myUserId())
+    );
+    if (!jitsiId || !room) { log('missing jitsiId=' + jitsiId + ' room=' + room); return; }
+    const displayName = (conf.getLocalDisplayName && conf.getLocalDisplayName()) || 'bot';
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/ws?room=${encodeURIComponent(room)}&role=player`;
+    // Latency aesthetic: distortion makes rtt audible, noise makes jitter audible.
+    const effects = { distortion: true, noise: true, reverb: false };
+
+    let ws = null, pingTimer = null, reconnectTimer = null;
+    const rttSamples = [];
+    const send = (m) => { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); } catch (e) {} };
+    const schedule = () => { if (reconnectTimer) return; reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 2000); };
+    function connect() {
+      try { ws = new WebSocket(url); } catch (e) { log('ctor ' + e); schedule(); return; }
+      ws.onopen = () => {
+        log('open ' + url);
+        send({ type: 'hello', jitsiId, displayName });
+        send({ type: 'effects', state: effects });
+        if (pingTimer) clearInterval(pingTimer);
+        pingTimer = setInterval(() => send({ type: 'ping', sentAt: Date.now() }), 2000);
+      };
+      ws.onmessage = (ev) => {
+        let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type !== 'pong') return;
+        const rtt = (typeof msg.clientSentAt === 'number') ? Date.now() - msg.clientSentAt : msg.rtt;
+        if (typeof rtt !== 'number' || !isFinite(rtt) || rtt < 0) return;
+        rttSamples.push(rtt); if (rttSamples.length > 5) rttSamples.shift();
+        const mean = rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length;
+        const jitter = Math.sqrt(rttSamples.map((x) => (x - mean) ** 2).reduce((a, b) => a + b, 0) / rttSamples.length);
+        send({ type: 'metrics', rtt, jitter });
+        window.__trussalPeerMetrics = { rtt, jitter };
+      };
+      ws.onclose = () => { if (pingTimer) { clearInterval(pingTimer); pingTimer = null; } ws = null; schedule(); };
+      ws.onerror = () => { try { ws && ws.close(); } catch (e) {} };
+    }
+    connect();
+    log('registering jitsiId=' + jitsiId + ' room=' + room);
+  } catch (e) { log('fatal ' + e); }
+}
+
+/**
  * Boots the Strudel REPL (web build from the CDN) inside the current page
  * and evaluates the bot's varied code (passed as the argument — Puppeteer
  * delivers it structurally). Runtime evaluation errors are pushed to
@@ -505,6 +573,8 @@ export function pageReadSamples() {
         out.gumCalls = window.__trussalGumCalls || [];
         out.log = window.__trussalAudioLog || [];
         out.videoLog = window.__trussalVideoLog || [];
+        out.peerLog = window.__trussalPeerLog || [];
+        out.peerMetrics = window.__trussalPeerMetrics || null;
         // Diagnostic: enumerate canvases so we can tell which one the gUM
         // override captured and whether it's the animated Hydra output.
         try {
