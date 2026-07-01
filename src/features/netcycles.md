@@ -1,0 +1,363 @@
+# Net Cycles
+
+Status: The conductor (`bots/src/orchestrator/conductor.js`) currently orchestrates the client-side bot fleet with respect to the end user.
+
+ The conductor implements a custom Conductor data type whose constructor stores a map object containing all individual bot fleet assignments. Conductor objects currently stops and starts bots, assigns each bot Strudel and Hydra scripts, and performs CRUD uperations upon global configuration  according to health standards dictated by median frames per second, VM RAM usage, and median latency. 
+
+ Furthermore, the conductor presently establishes its own HTTP server, and routes the bot fleet to the appropriate Jitsi meeting room.
+
+ To be updated as this feature's implementation changes.
+
+## Scope
+
+The Net Cycles feature (`net-cycles`) holds primary bot and end user audiovisual signal orchestration responsibilities. In addition to receiving the transfer of all of the conductor's responsibilities without duplication, and replacing the conductor completely, the Net Cycles editor allows each user to edit and update a metaprogramming script shared among all meeting participants that dictates how the audiovisual output of the user and accompanying bots, which consists of the first stored multimedia buffer in each performer's respective multimedia buffer queues, are scheduled and transformed according to Jitsi's RTCStatsReport, which is displayed to the user by the Network Metrics service.
+
+The metaprogramming script executes metapatterns that dictate when each performer's (whether user or bot) individual scripts will execute as determined by the minimum number of beats that exceed a positive real multiple of the worst case latency, where the multiplying factor is chosen by the user, and the execution pattern stipulated by the users.
+
+Users may also chain multiple audiovisual network modulated effects, and update bot orchestration configuration. The existing MediaPipe functionality shall be extended to allow the head cursor and user mapped facial gestures to update and reevaluate the metaprogramming script.
+
+By default, each room entrant is not a bot, but users can each connect a cluster of bots on their own behalf to execute scripts and pass along transmitted audio to peers.
+
+## User Story Map
+
+The further down the task is within a given epic's bullet points, the lower the priority. For now, ignore tasks lower than level three within an epic's bullet points.
+- Persona:
+    - End user:
+        - Features:
+            - Join room
+                - Steps:
+                    - Enter lobby
+                    - Select meeting room from lobby
+                    - Join room from prejoin screen hyperlinked by lobby room selection
+            - Modify OS audio input
+                - Steps:
+                    - Configure local machine audio and video I/O settings and permissions
+                    - Allow Jitsi to use user's audio input and video source
+            - Update personal Hydra-integrated Strudel script via keyboard input
+                - Steps:
+                    - Open personal Trussal studio dashboard and focus the Strudel editor
+                    - Update code
+                    - Load and delete samples
+            - Update personal Hydra-integrated Strudel script via MediaPipe landmark and gesture detection integration
+                - Steps: 
+                    - Enable MediaPipe landmark detection
+                    - Focusing, running and deleting code injected by StrudelButton objects and user-defined regular expressions using the head cursor
+                    - Stop, start, and apply personal metapatterns using choice of supported facial gestures
+            - Update global metaprogramming script via keyboard input
+                - Steps:
+                    - Focus the global Net Cycles editor in order to update the global metaprogramming script
+                    - Using correct Net Cycles syntax, update the metaprogramming script
+            - Update global metaprogramming script via MediaPipe landmark and gesture detection
+                - Steps:
+                    - Focusing, running and deleting code injected by NetCyclesButton objects and user-defined regular expressions using the head cursor integration
+            - Adjust room settings
+                - Steps:
+                    - Adjusting standard Jitsi room settings
+            - Toggle video and audio on and off both locally and globally
+                - Steps:
+                    - Toggle audio and video via standard Jitsi room settings and global personal mix
+            - Toggle personal bot cluster video and audio
+                - Steps:
+                    - Focus a subset of bots in personal cluster fleet
+                    - Turn off their display or mute its audio optionally according to certain condition(s)
+                    - Mute all bot audio and/or video at once
+            - Remove bots
+                - Steps:
+                    - Focus on a subset of bots in personal cluster fleet
+                    - Remove selection optionally according to certain condidion(s) from meeting room
+                    - Remove all bots at once
+            - Allow or disallow bots in cluser to read or update metaprogramming script
+                - Steps:
+                    - Focus on a subset of bots in personal cluster fleet
+                    - Give edit and/or read permissions to selection optionally according to certain conditions(s)
+                    - Allow or disallow edit and/or read permissions for all bots
+            - Expose network performance metrics and frequency response over time
+                - Steps:
+                    - Allow reading from network metrics
+            - Write to artificial network modulation
+                - Steps:
+                    - Move artificial latency, jitter, RTT, packet loss percentage induction sliders
+            - Allow or disallow bots in cluser to write to artificial network modulation
+                - Steps:
+                    - Focus on a subset of bots in personal cluster fleet
+                    - Give artificial network write permissions optionally according to certain conditions(s)
+                    - Allow or disallow artificial network write permissions for all bots
+            - Leave meeting room
+                - Steps:
+                    - Leave Jitsi meeting room as a standard Jitsi user would
+                    - Upon leaving a room, all remaining bots also leave the room after a maximum time threshold according to currently set global metaprogramming configuration
+    - Bot:
+        - Features:
+            - Join room
+                - Steps:
+                    - Join as Puppeteer instance 
+            - Update personal Hydra-integrated Strudel script via simulated keyboard and originating user input
+                - Steps:
+                    - Update current code editor with latest MCP-generated buffer updates depending on order in update queue
+            - Update global metaprogramming script if allowed by user
+                - Steps:
+                    - Update current Net Cycles code with latest MCP-generated buffer updates depending on order in update cycle buffer queue
+            - Expose network performance metrics and frequency response over time
+                - Steps:
+                    - Allow reading from network metrics
+            - Write to artificial network modulation
+                - Steps:
+                    - Move artificial latency, jitter, RTT, packet loss percentage induction sliders according to originating user permissions
+            - Leave meeting room
+                - Steps:
+                    - Destroy all Puppeteer instances after meeting ends according to standard XMPP constraints
+                    - Track how long it has been since origin user has left and terminate according to bot persistence settings when meeting is still running
+
+## Proposed File Tree
+
+Below is the directory structure supporting O2lite bridging and Strudel AI control, without eliminating any functionality that already exist. Assume other directories and files still exist, other than the replacement of the conductor, and move latency instrument effects to the Metaprogrammer. Add any needed files to faciliatate the above-described MediaPipe integration.
+
+```text
+├── src/
+│   ├── audio-net/
+│   │   ├── o2lite_driver.js        # Core library handling O2lite serialization
+│   │   ├── MetaprogrammerCrdtSync.js # Allow editing by all meeting participants
+│   │   ├── Metaprogrammer.js       # Runs the metaprogrammer and creates scheduling rule patterns
+│   │   ├── MetaprogrammerParser.js # Parses metaprogrammer syntax
+│   │   ├── UserBotOrchestration.js # Allows users to eliminate, filter, and select bots in their own cluster
+│   │   ├── ClockSync.js            # Critical for O2: syncs local audio time with network time
+│   │   ├── observability/
+│   │   │   ├── SpectrumAnalysis.js # Get frequency response over time
+│   │   │   ├── NetStats.js         # Store network metrics
+│   │   ├── network-modulation/
+│   │       ├── IncreaseJitter.js   # Increase above minimum Worst-Case Jitter (WCJ)
+│   │       ├── IncreaseLatency.js  # Increase above minimum Worst-Case Latency (WCL)
+│   │       ├── IncreaseRTT.js      # Increase above minimunm Worst-Case RTT (WCRTT)
+│   │       ├── IncreasePacketLoss.js # Increase above minimum Wost-Case Packet Loss (WCPL)
+│   │       └── WorstCaseCalculationUtils.js # Calculate and set all Worst-Case Network Metrics
+│   │   │            
+│   │   └── av-effects/
+│   │       ├── ReverbBlur.js
+│   │       ├── BitcrushPixelate.js
+│   │       ├── Noise.js
+│   │       ├── QuantizeAudio.js
+│   │       └── EchoAfterImage.js
+│   ├── bridges/
+│   │   └── XMPPtoO2Mapper.js       # Maps XMPP JIDs to O2 Service Names
+│   └── mcp-agent/
+│       ├── tools/
+│       │   ├── instrument_defs.json # Defines valid Strudel instruments for the AI
+│       │   └── theory_utils.js      # Helpers for the AI (scales, chord progressions)
+│       └── server.js                # The MCP server exposing Strudel control to Claude
+├── public/
+│   └── lib/
+│       └── o2lite-web.js           # The browser-compatible O2lite client
+├── components/
+│   ├──MetaprogrammerEditor.jsx
+│   ├──MetaprogrammerCycleHighlighter.jsx # Highlights which user's buffer is currently playing
+│   └──BotClusterVideo.jsx         # Make the video cluster of bots attached to each user smaller and surround user
+└── server/
+    └── O2Relay.js                  # WebSocket relay for O2lite clients
+```
+
+### Key Differences in this Spec
+*   **`ClockSync.js` is mandatory:** unlike XMPP chat which is asynchronous, O2lite requires tight time synchronization to ensure music plays in time across the network. Your spec must account for this file/module.
+*   **`instrument_defs.json`:** The AI (Claude) doesn't inherently know which synths your Strudel instance has loaded. You need a definition file to strictly type the inputs (e.g., allowing "piano", "sawtooth" but rejecting "random_noise"). Have instrument_defs.json default to currently available instrument definitions if none are provided by the user.
+
+
+## Data Flow
++-------------------------------------------------------------------+
+       |                                                                   |
+       |                        [video? audio?]                            |
+       |                                                                   |
+       v                                                                   |
+ +---------------------------------------+                                 |
+ |        Network Metrics Service        |                                 |
+ |---------------------------------------|                                 |
+ | src/audio-net/observability/          |                                 |
+ | ├── NetStats.js                       |                                 |
+ | └── SpectrumAnalysis.js               |                                 |
+ +---------------------------------------+                                 |
+       |                                                                   |
+       | [RTCStatsReport]                                                  |
+       v                                                                   |
+ +---------------------------------------+                                 |
+ |       Network Modulator Service       |                                 |
+ |---------------------------------------|                                 |
+ | src/audio-net/network-modulation/     |                                 |
+ | ├── IncreaseJitter.js                 |                                 |
+ | ├── IncreaseLatency.js                |                                 |
+ | ├── IncreaseRTT.js                    |                                 |
+ | ├── IncreasePacketLoss.js             |                                 |
+ | └── WorstCaseCalculationUtils.js      |                                 |
+ +---------------------------------------+                                 |
+       |                                 \                                 |
+       | [Effects Parameters]             \ [Conductor parameters]         |
+       v                                   v                               |
+ +---------------------------------------+ +-----------------------------+ |
+ |            Effects Service            | |        Fleet Service        | |
+ |---------------------------------------| |-----------------------------| |
+ | src/audio-net/av-effects/             | | src/audio-net/              | |
+ | ├── ReverbBlur.js                     |<------[AV]-- UserBotOrchestr..| |
+ | ├── BitcrushPixelate.js               | | src/mcp-agent/              | |
+ | ├── Noise.js                          | | ├── server.js               | |
+ | ├── QuantizeAudio.js                  | | └── tools/* | |
+ | └── EchoAfterImage.js                 | | components/                 | |
+ +---------------------------------------+ | └── BotClusterVideo.jsx     | |
+       |                 ^                 +-----------------------------+ |
+       |                 |                               ^                 |
+       | [processed AV]  | [AV]                          | [AV]            |
+       v                 |                               |                 |
+ +-----------------------+                               |                 |
+ |      Jitsi Server     |                               |                 |
+ |-----------------------|                               |                 |
+ | bridges/              |                               |                 |
+ | └── XMPPtoO2Mapper.js |                               |                 |
+ +-----------------------+                               |                 |
+       |                 |                               |                 |
+       |                 +-------------------------------+                 |
+       |                                 |                                 |
+       v                                 |                                 |
+ +-----------------------------------------------------------------------+ |
+ |                              Performers                               | |
+ |-----------------------------------------------------------------------| |
+ | src/audio-net/                                                        | |
+ | ├── Metaprogrammer.js                                                 | |
+ | ├── MetaprogrammerCrdtSync.js                                         | |
+ | ├── MetaprogrammerParser.js                                           | |
+ | ├── ClockSync.js                                                      | |
+ | └── o2lite_driver.js                                                  | |
+ | components/                                                           | |
+ | ├── MetaprogrammerEditor.jsx                                          | |
+ | └── MetaprogrammerCycleHighlighter.jsx                                | |
+ | public/lib/                                                           | |
+ | └── o2lite-web.js                                                     | |
+ +-----------------------------------------------------------------------+ |
+       |                                                                   |
+       +-------------------------------------------------------------------+
+
+## Metaprogramming Syntax
+The NetCycles metaprogramming language foundationally uses the Mondo pattern language syntax (https://strudel.cc/learn/mondo-notation/).
+
+## Metaprogramming Semantics
+Each Jitsi room participant is assigned a sequential identifying index upon first joining the room that is immutable for the duration of the meeting. 
+
+Examples:
+
+- Good:
+    First person to join -> 0
+    Second person to join -> 1
+- Bad:
+    First person to join -> 10432
+    Second person to join -> 09454
+
+### Bot cluster room indices
+Each bot in a given participant's bot cluster is assigned the particpants index concatenated with a sequence of ordered letters to indicate to indicate its uniqueness in the cluster. The length of the letter sequence increases only when all 26 English letters have been exhausted for a given position in a sequence. Then, one more letter is appended to the sequence starting with 'a'.
+
+Examples:
+
+- Good:
+    First person's first bot -> 0a
+    Second person's 28th bot -> 0zb
+- Bad:
+    First person's first bot -> 0z
+    Second person's 28th bot -> 0zz
+
+- Also bad bot index names:
+    0bcd
+    9fae
+
+### Scheduling
+A minimal valid NetCycles program consists of a scheduling sequence of the audiovisual buffers of all room participants' outputs. As soon as a meeting starts, this is auto-populated and a new AudioContext is instantiated. Each entering participant is automatically added to the end of the sequence array, and each leaving participant is removed from it. Multiple bots may be appended at once. Each user, including bots may rearrange the buffer sequence.
+
+The length of each cycle is defined according to a multiple of the worst-case latency, worst-case jitter, or length computed by the worst-case percentage of packet loss.
+
+
+Examples:
+
+```
+$ participants <0 1 3 5 2a 1zzzv 9 1>*2
+# cycles wcl*3 // This is a comment. 
+
+```
+```
+$ participants <0 1 2 3>
+# cycles wcl // Default if not specified
+# tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm, default is 120 bpm if not specified. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
+
+ // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats that is greater than wcl. This is the order in which inputs are established via the Web Audio API.
+```
+
+```
+$ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
+# cycles wcl
+# tempo 120 bpm
+
+// This is how the default program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. Tempo defaults to 120 bpm.
+```
+
+Overarching cyclic timing modes cannot be chained together.
+Below is an example of an invalid program.
+
+```
+$ participants [0 2 ~ 3 1]
+# cycles wcl
+# cycles wcj
+```
+
+The infix operators @, !, ?, .., |, %, /, *, and : each apply as usual. The , (stack) operator, as well as the semantics of the `jux` and `superimpose` functions result in the stacked elements receiving an offset of one cycle according to the current cyclic timing mode
+
+The `ply`,`chop`, and `shuffle`, `degrade`, `hush`, `undegrade`, `undegradeBy`, and `degradeBy` functions function as in Strudel in that they split and/or omit each buffer into the specified subdivision and/or probability.
+
+Otherwise, Strudel functions cannot be executed in the NetCycles editor. No Hydra functions can be executed within the NetCycles metaprogramming editor.
+
+### Valid Chainable Functions
+There exist audiovisual analogs to Strudel functions whose parameters are automatically modulated according to network conditions in addition to user input, which do not align with Strudel's preexisting semantic framework when executed within the NetCycles editor.
+
+These include the functions `room`, `crush`,  and `echo`. Additionally, there exist syntactically modified versions of the `pink`, `brown`, and `white` synth settings. More analogues will exist in later versions/
+
+Examples:
+
+- Good:
+```
+$ participants [0 1 _ 4? 10 2a - 2za ~]
+# cycles wcj*3
+# tempo 90/4 cpm
+# room 2.5
+# brown
+```
+
+- Bad:
+```
+$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exactly as mondo notation repeats or lengthens an element in the sequence.
+# cycles wcj*3
+# tempo 90/4 cpm
+# room (pink # range 0 1)
+```
+
+### Supported Audiovisual Functions
+Upon addition of a supported function via valid syntax in the NetCycles editor, it is added as a node within the preexisting Web Audio API graph after all other effects, as well as a corresponding visual effects chain.
+
+#### room
+- Description
+The room function is a Schroeder reverb, with a delay line legnthened by multiples of wcl, a lowpass filter with a dynamic lowpass filter cutoff frequency cascaded at the end of the filter chain according to wcrtt.
+- Parameters
+wcl_factor: A positive real number which multiplies the effect of delay line length changes. Defaults to 1.
+wcrtt_factor: A positive real number which determines the cutoff frequencie with respect to rtt. Defaults to 1. Cutoff is determined by the formula cutoff = wcrtt * wcrtt_factor * 100 Hz, where wcrtt is in ms. This also applies a lowpass filter to the Hydra signal.
+- Return value
+An object containing the updated patterns, modified audio sample buffers, and modified pixel buffers.
+- Examples
+```
+$ participants [0 2 1 4 3]
+# room 2 3
+
+#### echo
+- Description
+This is a simple echo effect with a delay by a dynamic number of samples with respect to wcj, as well as a feedback gain factor mediated by wcpl. 
+- Parameters
+n_samples_factor: A positive real number that is a multiple number of samples after whilayer_opacity: ch the repeat of the audio or visual signal is recommenced, which is defined by n_samples = n_samples_factor * wcj * 100. Default is 1.
+magnitude_feedback_factor: A positive real number that multiplies the amount of feedback determined by the wcpl percentage expressed as a real number between 0 and 1, magnitude_feedback = max(magnitude_feedback_factor/wcp, 1). Visually, this magnitude feedback factor modulates the brightness of the synthesized video output. Default is 0.1.
+- Return value
+
+#### crush
+- Description
+#### pink
+
+#### brown
+
+#### white
