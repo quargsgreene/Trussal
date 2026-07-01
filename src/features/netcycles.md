@@ -16,7 +16,7 @@ The metaprogramming script executes metapatterns that dictate when each performe
 
 Users may also chain multiple audiovisual network modulated effects, and update bot orchestration configuration. The existing MediaPipe functionality shall be extended to allow the head cursor and user mapped facial gestures to update and reevaluate the metaprogramming script.
 
-By default, each room entrant is not a bot, but users can each connect a cluster of bots on their own behalf to execute scripts and pass along transmitted audio to peers.
+By default, each room entrant is not a bot, but users can each connect and disconnect a cluster of bots on their own behalf to execute scripts and pass along transmitted audio to peers via the Trussal studio UI by specifying a number of bots to join the room, which may be interrupted by preexisting health measures.
 
 ## User Story Map
 
@@ -132,11 +132,11 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │   │       └── WorstCaseCalculationUtils.js # Calculate and set all Worst-Case Network Metrics
 │   │   │            
 │   │   └── av-effects/
-│   │       ├── ReverbBlur.js
-│   │       ├── BitcrushPixelate.js
+│   │       ├── Room.js
+│   │       ├── Crush.js
 │   │       ├── Noise.js
-│   │       ├── QuantizeAudio.js
-│   │       └── EchoAfterImage.js
+│   │       ├── Grid.js
+│   │       └── Echo.js
 │   ├── bridges/
 │   │   └── XMPPtoO2Mapper.js       # Maps XMPP JIDs to O2 Service Names
 │   └── mcp-agent/
@@ -159,6 +159,14 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 *   **`ClockSync.js` is mandatory:** unlike XMPP chat which is asynchronous, O2lite requires tight time synchronization to ensure music plays in time across the network. Your spec must account for this file/module.
 *   **`instrument_defs.json`:** The AI (Claude) doesn't inherently know which synths your Strudel instance has loaded. You need a definition file to strictly type the inputs (e.g., allowing "piano", "sawtooth" but rejecting "random_noise"). Have instrument_defs.json default to currently available instrument definitions if none are provided by the user.
 
+### AV Buffer Object
+AV is an object with audio and video samples, as well as the corresponding o2lite messages and XMPP stanzas requisite to transmit and receive each participant's code and performance status.
+
+## Mix Output
+By highlighting different participants within Trussal Studio, one can hear the entire master bus, one's own ipsilateral mix, or any contralateral mix of one's choosing.
+
+## Room Health
+All prior conductor health functionality persists (i.e. removing bots to avoid server overload) with the added functionality that it also by default adjusts the decoupling of timing between audio and visual buffers for each user (with a default of one cycle length) according to network conditions, prevents deadlock, and further compresses any output signal according to current server load globally, and locally according to a client's CPU, RAM, and GPU usage, possibly also scaling down MediaPipe landmark density.
 
 ## Data Flow
 +-------------------------------------------------------------------+
@@ -193,11 +201,11 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
  |            Effects Service            | |        Fleet Service        | |
  |---------------------------------------| |-----------------------------| |
  | src/audio-net/av-effects/             | | src/audio-net/              | |
- | ├── ReverbBlur.js                     |<------[AV]-- UserBotOrchestr..| |
- | ├── BitcrushPixelate.js               | | src/mcp-agent/              | |
+ | ├── Room.js                           |<------[AV]-- UserBotOrchestr..| |
+ | ├── Crush.js                          | | src/mcp-agent/              | |
  | ├── Noise.js                          | | ├── server.js               | |
- | ├── QuantizeAudio.js                  | | └── tools/* | |
- | └── EchoAfterImage.js                 | | components/                 | |
+ | ├── Grid .js                          | | └── tools/* | |
+ | └── Echo.js                           | | components/                 | |
  +---------------------------------------+ | └── BotClusterVideo.jsx     | |
        |                 ^                 +-----------------------------+ |
        |                 |                               ^                 |
@@ -246,7 +254,7 @@ Examples:
     First person to join -> 10432
     Second person to join -> 09454
 
-### Bot cluster room indices
+### Bot Cluster Room Indices
 Each bot in a given participant's bot cluster is assigned the particpants index concatenated with a sequence of ordered letters to indicate to indicate its uniqueness in the cluster. The length of the letter sequence increases only when all 26 English letters have been exhausted for a given position in a sequence. Then, one more letter is appended to the sequence starting with 'a'.
 
 Examples:
@@ -257,7 +265,7 @@ Examples:
 - Bad:
     First person's first bot -> 0z
     Second person's 28th bot -> 0zz
-
+ QuantizeAudio
 - Also bad bot index names:
     0bcd
     9fae
@@ -306,10 +314,13 @@ The `ply`,`chop`, and `shuffle`, `degrade`, `hush`, `undegrade`, `undegradeBy`, 
 
 Otherwise, Strudel functions cannot be executed in the NetCycles editor. No Hydra functions can be executed within the NetCycles metaprogramming editor.
 
+### AV Buffer Object Sequencing
+Each individual participant automatically enqueues AV buffer objects at intervals specified by the cyclic timing mode, which may or may not be empty, and which varies in size both according to this setting, and health monitor memory constraints. When a participant updates code in their own Trussal Studio Strudel-Hydra editor, if it is valid, it is additionally enqueued at the next scheduled interval. When the metapattern reaches a particular participant's buffer queue, a single buffer is dequeued and streamed.
+
 ### Valid Chainable Functions
 There exist audiovisual analogs to Strudel functions whose parameters are automatically modulated according to network conditions in addition to user input, which do not align with Strudel's preexisting semantic framework when executed within the NetCycles editor.
 
-These include the functions `room`, `crush`,  and `echo`. Additionally, there exist syntactically modified versions of the `pink`, `brown`, and `white` synth settings. More analogues will exist in later versions/
+These include the functions `room`, `crush`,  and `echo`. More analogs will exist in later versions.
 
 Examples:
 
@@ -319,7 +330,7 @@ $ participants [0 1 _ 4? 10 2a - 2za ~]
 # cycles wcj*3
 # tempo 90/4 cpm
 # room 2.5
-# brown
+# noise
 ```
 
 - Bad:
@@ -331,33 +342,85 @@ $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exa
 ```
 
 ### Supported Audiovisual Functions
-Upon addition of a supported function via valid syntax in the NetCycles editor, it is added as a node within the preexisting Web Audio API graph after all other effects, as well as a corresponding visual effects chain.
+Upon addition of a supported function via valid syntax in the NetCycles editor, it is added as a node within the preexisting Web Audio API graph after all other effects, as well as a corresponding visual effects chain that modifies the output of the Hydra WebGL shaders.
 
 #### room
 - Description
 The room function is a Schroeder reverb, with a delay line legnthened by multiples of wcl, a lowpass filter with a dynamic lowpass filter cutoff frequency cascaded at the end of the filter chain according to wcrtt.
+- Input
+AV buffer object
 - Parameters
 wcl_factor: A positive real number which multiplies the effect of delay line length changes. Defaults to 1.
 wcrtt_factor: A positive real number which determines the cutoff frequencie with respect to rtt. Defaults to 1. Cutoff is determined by the formula cutoff = wcrtt * wcrtt_factor * 100 Hz, where wcrtt is in ms. This also applies a lowpass filter to the Hydra signal.
 - Return value
-An object containing the updated patterns, modified audio sample buffers, and modified pixel buffers.
-- Examples
+Updated AV buffer object
+- Example:
 ```
 $ participants [0 2 1 4 3]
 # room 2 3
+```
 
 #### echo
 - Description
 This is a simple echo effect with a delay by a dynamic number of samples with respect to wcj, as well as a feedback gain factor mediated by wcpl. 
+- Input
+AV buffer object
 - Parameters
 n_samples_factor: A positive real number that is a multiple number of samples after whilayer_opacity: ch the repeat of the audio or visual signal is recommenced, which is defined by n_samples = n_samples_factor * wcj * 100. Default is 1.
 magnitude_feedback_factor: A positive real number that multiplies the amount of feedback determined by the wcpl percentage expressed as a real number between 0 and 1, magnitude_feedback = max(magnitude_feedback_factor/wcp, 1). Visually, this magnitude feedback factor modulates the brightness of the synthesized video output. Default is 0.1.
 - Return value
+Updated AV buffer object
+- Example:
+```
+$ participants [0 2 1 4 3]
+# echo 2.1 9
+# ply 2
+```
 
 #### crush
 - Description
-#### pink
+This effect reduces the bit-depth and sample rate for both the incoming audio and video buffer according to wcpl.
+- Input
+AV buffer object
+- Parameters
+reduction_factor: Bit-depth and sample rate are by default reduced by a factor of 2 per 25% packet loss. This positive real number parameter multiplies this reduction factor.
+An object containing the updated patterns, modified audio sample buffers, and modified pixel buffers.
+- Return value
+Updated AV buffer object
+- Example:
+```
+$ participants [0 2 1 4 3]
+# crush 1.0003
+# chop 2
+```
 
-#### brown
+#### noise
+- Description
+Adds audiovisual noise based on wcpl, adds white noise if wcpl is greater than 0.6, pink noise if wcpl is between 0.3 and 0.59, brown noise if wcpl is between 0.1 and 0.29, and none if wcpl is between 0 and 0.09
+- Input
+AV buffer object
+- Parameters
+None
+- Return value
+Updated AV buffer object
+- Example:
+```
+$ participants [0 2 1 4 3]
+# noise
+```
 
-#### white
+### grid
+- Description
+Approximates physical distances between room participants based on network metrics and marks each participant's video panel with a small grayscale circle in the top lefthand corner, with the longest distances receiving a black circle. Output changes from each room participant's perspective and each participant's own video panel has a white circle from the participant's own broswer perspective. landmarks is set to false by default, which displays a vector the same color as the circle in the direction of greatest change by the average of the landmark displacements within each user's video buffer in the bottom right corner of each user's video panel. When a participant is a bot or not using MediaPipe functionality, this vector is not displayed in the respective video panel.
+- Parameters
+landmarks
+- Return value
+A matrix of distances
+- Example:
+```
+$ participants <0 9 1 4 2>*2
+# grid true
+```
+
+## Artificial Network Modulation
+In addition to upward adjustments from o2lite-estimated wcl, wcj, wcpl, and wcrtt, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the NetCycles metaprogramming editor, is governed by CRDT.
