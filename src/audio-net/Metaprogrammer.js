@@ -34,7 +34,15 @@ import { O2LiteClient } from '../../public/lib/o2lite-web.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from './MetaprogrammerCrdtSync.js';
 import { subscribePeerState, getAllPeers, getLocalPeer, sendCrdtUpdate } from '../peer-state.js';
 import { getRoomNameFromUrl } from '../jamulus.js';
-import { getAudioContext, setChainGate, resetChainGates, attachNodeToChain } from '../latency-instrument.js';
+import {
+  getAudioContext,
+  setChainGate,
+  resetChainGates,
+  attachNodeToChain,
+  insertMasterChain,
+  removeMasterChain
+} from '../latency-instrument.js';
+import { EffectsChainManager } from './av-effects/index.js';
 
 const EPOCH_ADDR = '/nc/epoch';
 const APPLY_ADDR = '/nc/apply';
@@ -45,6 +53,7 @@ let active = false;
 let programText = null;      // current program source (CRDT doc in Phase 6)
 let customProgram = false;   // once a user applies an edit, joins/leaves patch text instead of regenerating
 let scheduler = null;
+let effects = null;
 let o2 = null;
 let clock = null;
 let epoch = null;
@@ -156,9 +165,12 @@ function regenerateOrPatchProgram({ force = false } = {}) {
 }
 
 function pushProgramToScheduler() {
-  if (!scheduler || programText == null) return;
+  if (programText == null) return;
   const { ast, valid } = parseMetaprogram(programText);
-  if (valid) scheduler.setProgram(ast);
+  if (!valid) return;
+  if (scheduler) scheduler.setProgram(ast);
+  // The program's #-chain drives the Effects Service on the master bus.
+  if (effects) effects.setChain(ast.chain, computeWorstCaseMetrics(getAllPeers()));
 }
 
 // Explicit apply from the editor. Valid text lands in the shared doc, in the
@@ -178,6 +190,25 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 }
 
 export function getProgramText() { return programText; }
+
+// Studio effect toggles double as metaprogram shortcuts under Net Cycles:
+// toggling adds/removes the corresponding # line and applies it, so the
+// buttons and the shared editor never disagree.
+const SHORTCUT_LINES = { room: '# room 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
+
+export function hasEffectShortcut(fn) {
+  if (!programText) return false;
+  return new RegExp(`^#\\s*${fn}\\b`, 'm').test(programText);
+}
+
+export function toggleEffectShortcut(fn) {
+  if (!SHORTCUT_LINES[fn]) return false;
+  let text = programText ?? buildDefaultProgram(rosterTokens());
+  const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, 'm');
+  if (lineRe.test(text)) text = text.replace(lineRe, '');
+  else text = `${text.trimEnd()}\n${SHORTCUT_LINES[fn]}\n`;
+  return applyProgramText(text).length === 0;
+}
 
 // --- Queues ---------------------------------------------------------------------
 
@@ -378,7 +409,14 @@ export async function setNetCyclesActive(enable) {
     ensureMetaprogramSync();
     try { await o2.connect(); } catch (e) { console.warn('[metaprogrammer] O2 connect failed (running unsynced)', e); }
     clock.start();
-    regenerateOrPatchProgram();
+    effects = new EffectsChainManager({
+      audioCtx: getAudioContext(),
+      insert: insertMasterChain,
+      remove: removeMasterChain,
+      getPeers: getAllPeers,
+      getLocalJitsiId: () => getLocalPeer().jitsiId
+    });
+    regenerateOrPatchProgram({ force: true });
     // Give /nc/epoch a beat to arrive before declaring our own.
     await new Promise(r => setTimeout(r, 500));
     if (epoch == null) {
@@ -394,6 +432,7 @@ export async function setNetCyclesActive(enable) {
     }
   } else {
     if (scheduler) { scheduler.stop(); scheduler = null; }
+    if (effects) { effects.dispose(); effects = null; }
     if (clock) clock.stop();
     if (epochTimer) { clearInterval(epochTimer); epochTimer = null; }
     epoch = null;
@@ -426,7 +465,11 @@ subscribePeerState((event, peer) => {
         pendingEditorUpdates.set(token, peer.pattern);
       }
     }
-    if (active && scheduler) scheduler.setMetrics(computeWorstCaseMetrics(getAllPeers()));
+    if (active) {
+      const wc = computeWorstCaseMetrics(getAllPeers());
+      if (scheduler) scheduler.setMetrics(wc);
+      if (effects) effects.updateMetrics(wc);
+    }
   } else if (event === 'peer-leave') {
     if (peer.roomIndex != null) {
       const token = String(peer.roomIndex);

@@ -48,7 +48,7 @@ import {
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
-import { isNetCyclesActive, setNetCyclesActive } from './audio-net/Metaprogrammer.js';
+import { isNetCyclesActive, setNetCyclesActive, toggleEffectShortcut } from './audio-net/Metaprogrammer.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 
@@ -624,9 +624,17 @@ function renderDetail(container) {
   }
   container.querySelectorAll('.ts-fx-dwell-btn[data-fx]').forEach(btn => {
     btn.addEventListener('click', () => {
+      const fx = btn.dataset.fx;
+      if (isNetCyclesActive()) {
+        // Under Net Cycles the toggles are shortcuts that edit the shared
+        // metaprogram's effect chain instead of the legacy 3-bool struct.
+        const map = { distortion: 'crush', noise: 'noise', reverb: 'room' };
+        toggleEffectShortcut(map[fx]);
+        renderAll();
+        return;
+      }
       const peer = getPeerByJitsiId(selectedJitsiId);
       const e = peer?.effects || {};
-      const fx = btn.dataset.fx;
       sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fx]: !e[fx] });
     });
   });

@@ -434,6 +434,24 @@ export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
   return true;
 }
 
+// Net Cycles master effects: splice a {input, output} pair between the
+// master bus and the real context destination — "after all other effects".
+// The spectrum analyser's parallel tap on the master bus is unaffected.
+export function insertMasterChain(endpoints) {
+  if (!audioCtx || !realDestination || !endpoints) return false;
+  try { realDestination.disconnect(audioCtx.destination); } catch (e) {}
+  realDestination.connect(endpoints.input);
+  endpoints.output.connect(audioCtx.destination);
+  return true;
+}
+
+export function removeMasterChain(endpoints) {
+  if (!audioCtx || !realDestination || !endpoints) return;
+  try { realDestination.disconnect(endpoints.input); } catch (e) {}
+  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) {}
+  try { realDestination.connect(audioCtx.destination); } catch (e) {}
+}
+
 // Leaving Net Cycles mode: every chain back to unity immediately.
 export function resetChainGates() {
   if (!audioCtx) return;

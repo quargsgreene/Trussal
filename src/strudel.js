@@ -351,8 +351,12 @@ async function rebuildAndEvaluate() {
 
     // Blend user visuals (o1) with camera (s0); color tint driven by jitter/rtt
     // via window globals updated by hydra-video.js on each peer-state event.
+    // Net Cycles echo brightness rides the same tint (window._ncVisual is
+    // written by the Effects Service; identity when no effects are chained).
     next += '\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt)'
-         +  '.color(()=>window._hvR,()=>window._hvG,()=>window._hvB).out(o0)';
+         +  '.color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),'
+         +  '()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),'
+         +  '()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)';
   }
 
   if (next === lastEvaluated) return;
