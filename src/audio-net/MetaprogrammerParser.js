@@ -537,3 +537,32 @@ export function buildDefaultProgram(indices) {
   const list = (indices && indices.length) ? indices.join(' ') : '';
   return `$ participants <${list}>\n# cycles wcl\n# tempo 120 bpm\n`;
 }
+
+// --- Program-text roster edits ----------------------------------------------
+//
+// Joins append to and leaves remove from the scheduling sequence *as text*,
+// preserving whatever else the users wrote (spec: "Each entering participant
+// is automatically added to the end of the sequence array, and each leaving
+// participant is removed from it"). Pure so the CRDT layer can apply the
+// same edits to the shared doc.
+
+export function appendParticipantToProgram(text, token) {
+  const m = text.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);
+  if (!m) return text;
+  if (new RegExp(`(^|[\\s<\\[])${token}($|[\\s\\]>@!?*/,|%:])`).test(m[1] + m[2])) return text;
+  const body = m[1].trimEnd();
+  return text.replace(m[0], `${body} ${token}${m[2]}`);
+}
+
+export function removeParticipantFromProgram(text, token) {
+  const m = text.match(/(\$\s*participants\s*)([<[])([^\]>]*)([\]>])/);
+  if (!m) return text;
+  const cleaned = m[3]
+    .split(/\s+/)
+    .filter(w => {
+      const base = w.match(/^([0-9]+[a-z]*)/);
+      return !(base && base[1] === token);
+    })
+    .join(' ');
+  return text.replace(m[0], `${m[1]}${m[2]}${cleaned}${m[4]}`);
+}

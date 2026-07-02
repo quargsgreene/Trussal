@@ -421,6 +421,29 @@ subscribeParticipants((event, payload) => {
 export function getMasterBus() { return realDestination; }
 export function getAudioContext() { return audioCtx; }
 
+// Net Cycles slot gating: ramp a peer's whole chain (mic + external sources
+// all flow through chain.input) open/closed at an audio-clock time. Short
+// ramp avoids clicks without smearing the slot boundary.
+export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
+  const chain = chains.get(jitsiId);
+  if (!chain || !audioCtx) return false;
+  const t = atAudioTime != null ? Math.max(atAudioTime, audioCtx.currentTime) : audioCtx.currentTime;
+  const g = chain.input.gain;
+  g.cancelScheduledValues(t);
+  g.setTargetAtTime(level, t, rampS);
+  return true;
+}
+
+// Leaving Net Cycles mode: every chain back to unity immediately.
+export function resetChainGates() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for (const chain of chains.values()) {
+    chain.input.gain.cancelScheduledValues(now);
+    chain.input.gain.setTargetAtTime(1, now, 0.03);
+  }
+}
+
 export async function bootAudioEngine() {
   if (bootPromise) return bootPromise;
   bootPromise = (async () => {

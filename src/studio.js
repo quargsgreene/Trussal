@@ -48,6 +48,7 @@ import {
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
+import { isNetCyclesActive, setNetCyclesActive } from './audio-net/Metaprogrammer.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -437,6 +438,9 @@ function networkMetricsBlock() {
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Network Metrics</div>
+        <div class="ts-section-controls">
+          <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? ' on' : ''}" data-action="netcycles">${isNetCyclesActive() ? '◉ Net Cycles on' : '○ Net Cycles'}</button>
+        </div>
       </div>
       <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b> <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <canvas class="ts-spectrum" width="560" height="36"></canvas>
@@ -567,6 +571,14 @@ function renderDetail(container) {
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
+
+  const netCyclesBtn = container.querySelector('[data-action="netcycles"]');
+  if (netCyclesBtn) netCyclesBtn.addEventListener('click', async () => {
+    await bootAudioEngine().catch(() => {});
+    await setNetCyclesActive(!isNetCyclesActive());
+    setStatus(isNetCyclesActive() ? 'Net Cycles: scheduling by metaprogram' : 'Net Cycles off');
+    renderAll();
+  });
 
   if (!isLocal) {
     // Remote tile: editing drives the participant (bots only, enforced server-side).
