@@ -285,4 +285,7 @@ if (require.main === module) {
   console.log('[latency] BOOT: latency WS server starting');
   createLatencyServer({ port: 8081 });
   console.log('[latency] listening on ws://0.0.0.0:8081');
+  const { createO2Relay } = require('./o2-relay.js');
+  createO2Relay({ port: 8082 });
+  console.log('[latency] O2 relay listening on ws://0.0.0.0:8082');
 }
