@@ -21,11 +21,14 @@ function createLatencyServer({ port = 8081, server } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
-  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count> }. Index
-  // counters are the meeting's source of truth: indices are join-ordered,
-  // immutable for the meeting, and never reused after a leave. The meta
-  // record dies with the room (last peer gone = meeting over).
+  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count>, crdtLog }.
+  // Index counters are the meeting's source of truth: indices are
+  // join-ordered, immutable for the meeting, and never reused after a leave.
+  // crdtLog holds the metaprogram doc's update history (opaque base64 Yjs
+  // updates — the relay never interprets them); a client-sent snapshot
+  // subsumes and replaces the log. The meta record dies with the room.
   const roomMeta = new Map();
+  const CRDT_LOG_MAX = 500; // hard cap; clients snapshot long before this
 
   function getRoom(name) {
     let room = rooms.get(name);
@@ -39,7 +42,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
   function getRoomMeta(name) {
     let meta = roomMeta.get(name);
     if (!meta) {
-      meta = { nextIndex: 0, botCounters: new Map() };
+      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [] };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -73,7 +76,9 @@ function createLatencyServer({ port = 8081, server } = {}) {
       packetLoss: record.packetLoss,
       rtcRtt: record.rtcRtt,
       isBot: record.isBot,
-      muted: record.muted
+      muted: record.muted,
+      canEditMetaprogram: record.canEditMetaprogram,
+      canWriteModulation: record.canWriteModulation
     };
   }
 
@@ -117,7 +122,11 @@ function createLatencyServer({ port = 8081, server } = {}) {
       packetLoss: null,
       rtcRtt: null,
       isBot: false,
-      muted: false
+      muted: false,
+      // Metaprogram permissions. Humans always read+edit; bots default to
+      // read-only until their owner grants edit (Phase 8 UI, enforced here).
+      canEditMetaprogram: true,
+      canWriteModulation: true
     };
 
     console.log(`[latency] connection room=${roomName} peerId=${peerId}`);
@@ -136,6 +145,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
           record.jitsiId = typeof msg.jitsiId === 'string' ? msg.jitsiId : null;
           record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
           record.isBot = !!msg.isBot;
+          if (record.isBot) {
+            record.canEditMetaprogram = false;
+            record.canWriteModulation = false;
+          }
 
           const room = getRoom(roomName);
 
@@ -174,7 +187,63 @@ function createLatencyServer({ port = 8081, server } = {}) {
           // `you` carries the client's own assigned index (the server never
           // echoes a peer's own record in later broadcasts).
           send(ws, { type: 'roster', peers: roster, you: publicView(record) });
+          // Late-joiner catch-up: the full metaprogram doc history.
+          const meta = getRoomMeta(roomName);
+          if (meta.crdtLog.length) {
+            send(ws, { type: 'crdt-state', updates: meta.crdtLog.map(e => e.update) });
+          }
           broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
+          break;
+        }
+
+        case 'crdt-update': {
+          // Shared metaprogram doc sync. Updates are opaque base64 Yjs
+          // payloads; the relay fans them out and keeps the log for late
+          // joiners. Bots need edit permission (granted by their owner) —
+          // a denied edit is dropped and logged, never applied.
+          if (typeof msg.update !== 'string' || !msg.update) break;
+          if (record.isBot && !record.canEditMetaprogram) {
+            console.log(`[latency] dropped crdt-update from read-only bot ${record.roomIndex ?? peerId}`);
+            break;
+          }
+          const meta = getRoomMeta(roomName);
+          if (msg.snapshot) {
+            // A full-state snapshot subsumes prior history.
+            meta.crdtLog = [{ update: msg.update }];
+          } else {
+            meta.crdtLog.push({ update: msg.update });
+            if (meta.crdtLog.length > CRDT_LOG_MAX) meta.crdtLog.shift();
+          }
+          const room = rooms.get(roomName);
+          if (room) {
+            broadcast(room, peerId, {
+              type: 'crdt-update',
+              update: msg.update,
+              authorIndex: record.roomIndex,
+              modality: typeof msg.modality === 'string' ? msg.modality : 'keyboard'
+            });
+          }
+          break;
+        }
+
+        case 'bot-permission': {
+          // Owner grants/revokes a bot's metaprogram-edit or modulation-write
+          // rights. Only humans may grant, only bots may be targets.
+          if (record.isBot) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const target = room.get(msg.targetPeerId);
+          if (!target || !target.isBot) break;
+          if (typeof msg.canEditMetaprogram === 'boolean') target.canEditMetaprogram = msg.canEditMetaprogram;
+          if (typeof msg.canWriteModulation === 'boolean') target.canWriteModulation = msg.canWriteModulation;
+          broadcast(room, null, {
+            type: 'peer-update',
+            peerId: target.peerId,
+            patch: {
+              canEditMetaprogram: target.canEditMetaprogram,
+              canWriteModulation: target.canWriteModulation
+            }
+          });
           break;
         }
 

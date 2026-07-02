@@ -49,6 +49,8 @@ import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCas
 import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import { isNetCyclesActive, setNetCyclesActive } from './audio-net/Metaprogrammer.js';
+import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
+import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -925,9 +927,20 @@ function ensureOverlay() {
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
+    <div class="ts-netcycles" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
     <div class="ts-detail"></div>
   `;
   document.body.appendChild(overlay);
+
+  // The Net Cycles card mounts once, outside the re-rendered detail panel,
+  // so the live CRDT-bound textarea survives roster/metrics re-renders.
+  const ncHost = overlay.querySelector('.ts-netcycles');
+  try {
+    mountMetaprogrammerEditor(ncHost);
+    mountMetaprogrammerCycleHighlighter(ncHost);
+  } catch (e) {
+    console.warn('[studio] Net Cycles card mount failed', e);
+  }
 
   overlay.querySelector('.ts-close').addEventListener('click', () => {
     overlay.style.display = 'none';

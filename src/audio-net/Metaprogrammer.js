@@ -31,11 +31,13 @@ import { MetaprogramScheduler, AVBufferQueue } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics } from './network-modulation/WorstCaseCalculationUtils.js';
 import { makeClockSyncOverO2 } from './ClockSync.js';
 import { O2LiteClient } from '../../public/lib/o2lite-web.js';
-import { subscribePeerState, getAllPeers } from '../peer-state.js';
+import { createMetaprogramDoc, connectMetaprogramSync } from './MetaprogrammerCrdtSync.js';
+import { subscribePeerState, getAllPeers, getLocalPeer, sendCrdtUpdate } from '../peer-state.js';
 import { getRoomNameFromUrl } from '../jamulus.js';
 import { getAudioContext, setChainGate, resetChainGates, attachNodeToChain } from '../latency-instrument.js';
 
 const EPOCH_ADDR = '/nc/epoch';
+const APPLY_ADDR = '/nc/apply';
 const EPOCH_REBROADCAST_MS = 10000;
 const QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
 
@@ -90,15 +92,49 @@ function emitSlot(event) {
   });
 }
 
+// --- Shared doc ------------------------------------------------------------------
+
+let crdt = null;
+
+// The metaprogram doc lives for the whole meeting so edits are shared even
+// before Net Cycles playback is switched on.
+export function ensureMetaprogramSync() {
+  if (crdt) return crdt;
+  const handle = createMetaprogramDoc();
+  crdt = connectMetaprogramSync(handle, {
+    subscribe: subscribePeerState,
+    sendUpdate: sendCrdtUpdate
+  });
+  crdt.onRemoteChange((text) => {
+    programText = text;
+    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true } }));
+  });
+  return crdt;
+}
+
+// Roster auto-edits must come from exactly one client or concurrent CRDT
+// inserts duplicate tokens. The leader is the lowest-indexed human present.
+function isRosterEditLeader() {
+  const me = getLocalPeer();
+  if (me.isBot || me.roomIndex == null) return false;
+  const humanIndices = getAllPeers()
+    .filter(p => !p.isBot && p.roomIndex != null && /^\d+$/.test(String(p.roomIndex)))
+    .map(p => parseInt(p.roomIndex, 10));
+  if (!humanIndices.length) return false;
+  return parseInt(me.roomIndex, 10) === Math.min(...humanIndices);
+}
+
 // --- Program text maintenance --------------------------------------------------
 
-function regenerateOrPatchProgram() {
+function regenerateOrPatchProgram({ force = false } = {}) {
   const tokens = rosterTokens();
+  let next;
   if (!customProgram || programText == null) {
-    programText = buildDefaultProgram(tokens);
+    next = buildDefaultProgram(tokens);
   } else {
     // Keep user edits; append newcomers, drop leavers.
-    const { ast } = parseMetaprogram(programText);
+    next = programText;
+    const { ast } = parseMetaprogram(next);
     const inProgram = new Set();
     if (ast.participants) {
       for (const st of ast.participants.stacks) {
@@ -106,12 +142,15 @@ function regenerateOrPatchProgram() {
       }
     }
     for (const tok of tokens) {
-      if (!inProgram.has(tok)) programText = appendParticipantToProgram(programText, tok);
+      if (!inProgram.has(tok)) next = appendParticipantToProgram(next, tok);
     }
     for (const tok of inProgram) {
-      if (!tokens.includes(tok)) programText = removeParticipantFromProgram(programText, tok);
+      if (!tokens.includes(tok)) next = removeParticipantFromProgram(next, tok);
     }
   }
+  if (next === programText && !force) return;
+  programText = next;
+  if (crdt && (force || isRosterEditLeader())) crdt.setText(next, 'roster');
   pushProgramToScheduler();
   document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text: programText } }));
 }
@@ -122,14 +161,18 @@ function pushProgramToScheduler() {
   if (valid) scheduler.setProgram(ast);
 }
 
-// Explicit apply from the editor (Phase 6 UI). Returns parse errors.
-export function applyProgramText(text) {
+// Explicit apply from the editor. Valid text lands in the shared doc, in the
+// local scheduler (next boundary), and — via /nc/apply — in everyone else's
+// scheduler. Returns parse errors for squiggles.
+export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
   if (valid) {
     programText = text;
     customProgram = true;
+    if (crdt) crdt.setText(text, 'apply');
     pushProgramToScheduler();
-    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text } }));
+    if (broadcast && o2) o2.send(APPLY_ADDR, ',s', [text]);
+    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, applied: true } }));
   }
   return errors;
 }
@@ -329,8 +372,10 @@ export async function setNetCyclesActive(enable) {
     if (!o2) {
       o2 = new O2LiteClient({ url: `${proto}//${loc.host}/o2?room=${encodeURIComponent(room)}` });
       o2.method(EPOCH_ADDR, (msg) => adoptEpochIfEarlier(msg.args[0]));
+      o2.method(APPLY_ADDR, (msg) => applyProgramText(msg.args[0], { broadcast: false }));
       clock = makeClockSyncOverO2(o2, localSeconds);
     }
+    ensureMetaprogramSync();
     try { await o2.connect(); } catch (e) { console.warn('[metaprogrammer] O2 connect failed (running unsynced)', e); }
     clock.start();
     regenerateOrPatchProgram();

@@ -42,7 +42,9 @@ const localPeer = {
   rtt: null,
   jitter: null,
   packetLoss: null,
-  rtcRtt: null
+  rtcRtt: null,
+  canEditMetaprogram: !LOCAL_IS_BOT,
+  canWriteModulation: !LOCAL_IS_BOT
 };
 
 let ws = null;
@@ -185,6 +187,8 @@ function applyPatch(peer, patch) {
   if (typeof patch.jitter === 'number' || patch.jitter === null) peer.jitter = patch.jitter;
   if (typeof patch.packetLoss === 'number' || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
   if (typeof patch.rtcRtt === 'number' || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+  if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
+  if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
 }
 
 function defaultPeer(peerId) {
@@ -201,7 +205,9 @@ function defaultPeer(peerId) {
     rtt: null,
     jitter: null,
     packetLoss: null,
-    rtcRtt: null
+    rtcRtt: null,
+    canEditMetaprogram: true,
+    canWriteModulation: true
   };
 }
 
@@ -263,6 +269,19 @@ function handleMessage(msg) {
       emit('peer-upsert', peer);
       break;
     }
+
+    case 'crdt-update':
+      // Shared metaprogram doc sync (Yjs update, base64). Consumed by
+      // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
+      if (typeof msg.update === 'string') {
+        emit('crdt-update', { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality });
+      }
+      break;
+
+    case 'crdt-state':
+      // Late-joiner catch-up: full doc history.
+      if (Array.isArray(msg.updates)) emit('crdt-state', { updates: msg.updates });
+      break;
 
     case 'remote-control': {
       // We are the target of an operator action (only bots receive these — the
@@ -429,4 +448,21 @@ export function sendRemotePattern(targetPeerId, code) {
 export function sendRemoteMute(targetPeerId, muted) {
   if (!targetPeerId) return;
   safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
+}
+
+// Shared metaprogram doc: outbound Yjs update (base64). `snapshot` marks a
+// full-state update that subsumes history server-side; `modality` records
+// how the edit was made (keyboard / head-cursor / gesture / bot / mcp).
+export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard' } = {}) {
+  if (typeof update !== 'string' || !update) return;
+  safeSend({ type: 'crdt-update', update, snapshot, modality });
+}
+
+// Owner-side permission grant for a bot in one's cluster.
+export function sendBotPermission(targetPeerId, perms) {
+  if (!targetPeerId || !perms) return;
+  const msg = { type: 'bot-permission', targetPeerId };
+  if (typeof perms.canEditMetaprogram === 'boolean') msg.canEditMetaprogram = perms.canEditMetaprogram;
+  if (typeof perms.canWriteModulation === 'boolean') msg.canWriteModulation = perms.canWriteModulation;
+  safeSend(msg);
 }
