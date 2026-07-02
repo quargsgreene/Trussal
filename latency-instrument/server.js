@@ -234,11 +234,14 @@ function createLatencyServer({ port = 8081, server } = {}) {
         case 'crdt-update': {
           // Shared metaprogram doc sync. Updates are opaque base64 Yjs
           // payloads; the relay fans them out and keeps the log for late
-          // joiners. Bots need edit permission (granted by their owner) —
-          // a denied edit is dropped and logged, never applied.
+          // joiners. Bots need permission (granted by their owner):
+          // metaprogram edits require canEditMetaprogram, artificial network
+          // modulation writes (channel 'modulation') require
+          // canWriteModulation. Denied updates are dropped and logged.
           if (typeof msg.update !== 'string' || !msg.update) break;
-          if (record.isBot && !record.canEditMetaprogram) {
-            console.log(`[latency] dropped crdt-update from read-only bot ${record.roomIndex ?? peerId}`);
+          const isModulation = msg.channel === 'modulation';
+          if (record.isBot && (isModulation ? !record.canWriteModulation : !record.canEditMetaprogram)) {
+            console.log(`[latency] dropped ${isModulation ? 'modulation' : 'metaprogram'} crdt-update from unpermissioned bot ${record.roomIndex ?? peerId}`);
             break;
           }
           const meta = getRoomMeta(roomName);
@@ -255,6 +258,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
               type: 'crdt-update',
               update: msg.update,
               authorIndex: record.roomIndex,
+              channel: isModulation ? 'modulation' : 'metaprogram',
               modality: typeof msg.modality === 'string' ? msg.modality : 'keyboard'
             });
           }

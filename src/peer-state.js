@@ -458,9 +458,9 @@ export function sendRemoteMute(targetPeerId, muted) {
 // Shared metaprogram doc: outbound Yjs update (base64). `snapshot` marks a
 // full-state update that subsumes history server-side; `modality` records
 // how the edit was made (keyboard / head-cursor / gesture / bot / mcp).
-export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard' } = {}) {
+export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard', channel = 'metaprogram' } = {}) {
   if (typeof update !== 'string' || !update) return;
-  safeSend({ type: 'crdt-update', update, snapshot, modality });
+  safeSend({ type: 'crdt-update', update, snapshot, modality, channel });
 }
 
 // Ask the fleet service for cluster changes on our behalf. The server stamps

@@ -12,11 +12,18 @@
 import * as Y from 'yjs';
 
 export const TEXT_KEY = 'metaprogram';
+export const MODULATION_KEY = 'modulation'; // induced wcl/wcj/wcrtt/wcpl floors
+export const VLANS_KEY = 'vlans';           // vlanName → { members, induced }
 const SNAPSHOT_EVERY = 25;
 
 export function createMetaprogramDoc() {
   const doc = new Y.Doc();
-  return { doc, text: doc.getText(TEXT_KEY) };
+  return {
+    doc,
+    text: doc.getText(TEXT_KEY),
+    modulation: doc.getMap(MODULATION_KEY),
+    vlans: doc.getMap(VLANS_KEY)
+  };
 }
 
 export function encodeUpdateB64(update) {
@@ -71,18 +78,22 @@ export function setDocText(ytext, value, origin = 'local') {
 
 // Binds a doc to the sidecar relay via the peer-state bus. `bus` is injected
 // ({ subscribe, sendUpdate }) so tests can run two providers over a fake bus.
-export function connectMetaprogramSync({ doc, text }, bus, { modality = 'keyboard' } = {}) {
+export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { modality = 'keyboard' } = {}) {
   let localUpdates = 0;
   const listeners = new Set();
   let lastAuthorIndex = null;
 
   const onDocUpdate = (update, origin) => {
     if (origin === 'remote') return; // don't echo remote updates back
+    // Modulation/VLAN transactions declare their channel so the sidecar can
+    // apply the bot canWriteModulation permission separately from
+    // canEditMetaprogram.
+    const channel = origin === 'modulation' ? 'modulation' : 'metaprogram';
     localUpdates++;
     if (localUpdates % SNAPSHOT_EVERY === 0) {
-      bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality });
+      bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality, channel });
     } else {
-      bus.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality });
+      bus.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality, channel });
     }
   };
   doc.on('update', onDocUpdate);
@@ -101,10 +112,55 @@ export function connectMetaprogramSync({ doc, text }, bus, { modality = 'keyboar
   return {
     doc,
     text,
+    modulation,
+    vlans,
     getText: () => text.toString(),
     setText: (value, origin = 'local') => setDocText(text, value, origin),
     onRemoteChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
     getLastAuthorIndex: () => lastAuthorIndex,
+
+    // Artificial network modulation (upward-only floors, shared room-wide).
+    getInduced() {
+      if (!modulation) return {};
+      const out = {};
+      for (const key of ['wcl', 'wcj', 'wcrtt', 'wcpl']) {
+        const v = modulation.get(key);
+        if (typeof v === 'number') out[key] = v;
+      }
+      return out;
+    },
+    setInduced(key, value, origin = 'modulation') {
+      if (!modulation) return;
+      doc.transact(() => modulation.set(key, Number(value) || 0), origin);
+    },
+    onModulationChange(fn) {
+      if (!modulation) return () => {};
+      const h = () => { try { fn(this.getInduced()); } catch (e) {} };
+      modulation.observe(h);
+      return () => modulation.unobserve(h);
+    },
+
+    // VLAN grouping: vlanName → { members: [roomIndex…], induced: {…} }.
+    getVlans() {
+      if (!vlans) return {};
+      const out = {};
+      vlans.forEach((v, k) => { out[k] = v; });
+      return out;
+    },
+    setVlan(name, value, origin = 'modulation') {
+      if (!vlans) return;
+      doc.transact(() => {
+        if (value == null) vlans.delete(name);
+        else vlans.set(name, value);
+      }, origin);
+    },
+    onVlansChange(fn) {
+      if (!vlans) return () => {};
+      const h = () => { try { fn(this.getVlans()); } catch (e) {} };
+      vlans.observe(h);
+      return () => vlans.unobserve(h);
+    },
+
     disconnect() {
       doc.off('update', onDocUpdate);
       unsubscribe();

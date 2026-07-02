@@ -28,7 +28,7 @@ import {
   removeParticipantFromProgram
 } from './MetaprogrammerParser.js';
 import { MetaprogramScheduler, AVBufferQueue } from './MetaprogramScheduler.js';
-import { computeWorstCaseMetrics } from './network-modulation/WorstCaseCalculationUtils.js';
+import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
 import { makeClockSyncOverO2 } from './ClockSync.js';
 import { O2LiteClient } from '../../public/lib/o2lite-web.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from './MetaprogrammerCrdtSync.js';
@@ -118,7 +118,58 @@ export function ensureMetaprogramSync() {
     programText = text;
     document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true } }));
   });
+  // Induced network conditions (and VLAN changes) alter the effective WC
+  // metrics on every client identically — schedulers and effects follow at
+  // the next boundary.
+  crdt.onModulationChange(() => pushEffectiveMetrics());
+  crdt.onVlansChange(() => pushEffectiveMetrics());
   return crdt;
+}
+
+// Effective worst-case metrics: measured roster metrics with the shared
+// induced floors layered on (upward-only).
+export function effectiveWorstCase() {
+  const measured = computeWorstCaseMetrics(getAllPeers());
+  return crdt ? mergeInducedMetrics(measured, crdt.getInduced()) : measured;
+}
+
+function pushEffectiveMetrics() {
+  if (!active) return;
+  const wc = effectiveWorstCase();
+  if (scheduler) scheduler.setMetrics(wc);
+  if (effects) effects.updateMetrics(wc);
+}
+
+// Slider API for the studio (and permitted bots): induce an upward-only
+// floor under one metric. Values are shared via CRDT (channel 'modulation').
+export function setInducedMetric(key, value) {
+  if (!INDUCTIONS[key]) return false;
+  ensureMetaprogramSync().setInduced(key, INDUCTIONS[key].clamp(value));
+  pushEffectiveMetrics();
+  return true;
+}
+
+export function getInducedMetrics() {
+  return crdt ? crdt.getInduced() : {};
+}
+
+// VLAN grouping: place peers into an additional named VLAN with its own
+// local induced conditions. All VLANs mix down to the single master bus;
+// the default is one mutual VLAN (no entries).
+export function setVlan(name, { members = [], induced = {} } = {}) {
+  if (!name) return false;
+  ensureMetaprogramSync().setVlan(name, { members: members.map(String), induced });
+  pushEffectiveMetrics();
+  return true;
+}
+
+export function removeVlan(name) {
+  if (crdt) crdt.setVlan(name, null);
+  pushEffectiveMetrics();
+}
+
+export function getVlans() {
+  return crdt ? crdt.getVlans() : {};
 }
 
 // Roster auto-edits must come from exactly one client or concurrent CRDT
@@ -170,7 +221,7 @@ function pushProgramToScheduler() {
   if (!valid) return;
   if (scheduler) scheduler.setProgram(ast);
   // The program's #-chain drives the Effects Service on the master bus.
-  if (effects) effects.setChain(ast.chain, computeWorstCaseMetrics(getAllPeers()));
+  if (effects) effects.setChain(ast.chain, effectiveWorstCase());
 }
 
 // Explicit apply from the editor. Valid text lands in the shared doc, in the
@@ -385,7 +436,7 @@ function startScheduler() {
     onEvent: onSchedulerEvent
   });
   pushProgramToScheduler();
-  scheduler.setMetrics(computeWorstCaseMetrics(getAllPeers()));
+  scheduler.setMetrics(effectiveWorstCase());
   scheduler.start(epoch);
 }
 
@@ -466,9 +517,7 @@ subscribePeerState((event, peer) => {
       }
     }
     if (active) {
-      const wc = computeWorstCaseMetrics(getAllPeers());
-      if (scheduler) scheduler.setMetrics(wc);
-      if (effects) effects.updateMetrics(wc);
+      pushEffectiveMetrics();
     }
   } else if (event === 'peer-leave') {
     if (peer.roomIndex != null) {

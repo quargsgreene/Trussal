@@ -44,11 +44,20 @@ import {
   isJamulusMode,
   getMasterBus,
   getAudioContext,
+  setMonitorMix,
 } from './latency-instrument.js';
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
-import { isNetCyclesActive, setNetCyclesActive, toggleEffectShortcut } from './audio-net/Metaprogrammer.js';
+import {
+  isNetCyclesActive,
+  setNetCyclesActive,
+  toggleEffectShortcut,
+  setInducedMetric,
+  getInducedMetrics,
+  effectiveWorstCase,
+} from './audio-net/Metaprogrammer.js';
+import { INDUCTIONS } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 import {
@@ -441,22 +450,45 @@ function metricsLine(peer) {
 }
 
 // Room-wide worst-case metrics (identical on every client — the shared basis
-// for Net Cycles cycle lengths) plus the master-bus mini spectrum.
+// for Net Cycles cycle lengths) plus artificial-induction sliders, mix
+// monitoring, and the master-bus mini spectrum.
 function networkMetricsBlock() {
-  const wc = computeWorstCaseMetrics(getAllPeers());
+  const measured = computeWorstCaseMetrics(getAllPeers());
+  const wc = effectiveWorstCase();
+  const induced = getInducedMetrics();
   const ms = (v) => `${v.toFixed(0)}ms`;
+  const sliders = Object.entries(INDUCTIONS).map(([key, mod]) => `
+    <div class="ts-slider-row" data-induce="${key}">
+      <div class="ts-slider-label">
+        <span>${escapeHtml(mod.label)}</span>
+        <span class="ts-slider-val">${(induced[key] ?? 0)}${mod.unit === 'ms' ? 'ms' : ''}</span>
+      </div>
+      <input class="ts-slider-input" type="range" min="${mod.min}" max="${mod.max}" step="${mod.step}" value="${induced[key] ?? 0}">
+    </div>`).join('');
+  const peers = getAllPeers();
+  const mixOptions = [
+    `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
+    `<option value="self"${monitorSelection === 'self' ? ' selected' : ''}>ipsilateral (own mix)</option>`,
+    ...peers.filter(p => !p.isLocal && p.jitsiId).map(p =>
+      `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? ' selected' : ''}>↔ ${escapeHtml(String(p.roomIndex ?? p.displayName ?? 'peer'))}</option>`)
+  ].join('');
   return `
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Network Metrics</div>
         <div class="ts-section-controls">
+          <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
           <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? ' on' : ''}" data-action="netcycles">${isNetCyclesActive() ? '◉ Net Cycles on' : '○ Net Cycles'}</button>
         </div>
       </div>
-      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b> <span title="peers contributing samples">(${wc.sampleCount})</span></div>
+      <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+        · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
+      <div class="ts-sliders">${sliders}</div>
       <canvas class="ts-spectrum" width="560" height="36"></canvas>
     </div>`;
 }
+
+let monitorSelection = 'master';
 
 let lastFleetStatus = '';
 subscribeFleetStatus((status) => {
@@ -655,6 +687,24 @@ function renderDetail(container) {
     await setNetCyclesActive(!isNetCyclesActive());
     setStatus(isNetCyclesActive() ? 'Net Cycles: scheduling by metaprogram' : 'Net Cycles off');
     renderAll();
+  });
+
+  // Artificial network modulation sliders (upward-only, CRDT-shared).
+  container.querySelectorAll('[data-induce]').forEach(row => {
+    const key = row.dataset.induce;
+    const input = row.querySelector('input');
+    const valEl = row.querySelector('.ts-slider-val');
+    input.addEventListener('input', () => {
+      setInducedMetric(key, parseFloat(input.value));
+      if (valEl) valEl.textContent = input.value;
+    });
+  });
+
+  // Mix output monitoring: master / ipsilateral / a contralateral peer.
+  const mixSel = container.querySelector('.ts-monitor-mix');
+  if (mixSel) mixSel.addEventListener('change', () => {
+    monitorSelection = mixSel.value;
+    setMonitorMix(monitorSelection);
   });
 
   if (!isLocal) {

@@ -9,6 +9,11 @@
 // interpolation, the numpy/Excel default) so fleet-side and room-side
 // statistics agree.
 
+import { IncreaseLatency } from './IncreaseLatency.js';
+import { IncreaseJitter } from './IncreaseJitter.js';
+import { IncreaseRTT } from './IncreaseRTT.js';
+import { IncreasePacketLoss } from './IncreasePacketLoss.js';
+
 export function percentile(values, p) {
   if (!Array.isArray(values) || values.length === 0) {
     throw new RangeError('percentile() requires a non-empty array');
@@ -72,4 +77,43 @@ export function computeWorstCaseMetrics(peers) {
     wcpl: worstCase(losses) ?? 0,
     sampleCount: rtts.length
   };
+}
+
+export const INDUCTIONS = Object.freeze({
+  wcl: IncreaseLatency,
+  wcj: IncreaseJitter,
+  wcrtt: IncreaseRTT,
+  wcpl: IncreasePacketLoss
+});
+
+// Layer artificially induced conditions onto measured worst-case values.
+// Strictly upward: effective = max(measured, induced) per metric, so a
+// slider below the network's truth is a no-op. Shared via CRDT, so every
+// client computes identical effective values from identical inputs.
+export function mergeInducedMetrics(measured, induced) {
+  const m = measured || {};
+  const i = induced || {};
+  const out = { ...m };
+  for (const [key, mod] of Object.entries(INDUCTIONS)) {
+    out[key] = mod.applyTo(m[key] || 0, i[key] || 0);
+  }
+  return out;
+}
+
+// Worst-case metrics for one VLAN: computed over its member peers only,
+// merged with the VLAN's own induced conditions. `vlan` is
+// { members: [roomIndex, …], induced: { wcl, … } }.
+export function computeVlanWorstCase(peers, vlan) {
+  const memberSet = new Set((vlan && vlan.members) || []);
+  const members = (peers || []).filter(p => p.roomIndex != null && memberSet.has(String(p.roomIndex)));
+  return mergeInducedMetrics(computeWorstCaseMetrics(members), vlan && vlan.induced);
+}
+
+// Equal-power mix-down gains: all VLANs sum to one master bus without
+// clipping as VLAN count grows. Empty input degenerates to the single
+// mutual VLAN at unity.
+export function vlanMixGains(vlanNames) {
+  const names = (vlanNames && vlanNames.length) ? vlanNames : ['default'];
+  const g = 1 / Math.sqrt(names.length);
+  return Object.fromEntries(names.map(n => [n, g]));
 }
