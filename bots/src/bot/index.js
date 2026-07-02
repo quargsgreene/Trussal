@@ -71,7 +71,8 @@ async function main() {
     startBitrateKbps: Number(env('JITSI_START_BITRATE_KBPS', '800')),
     captureFps: Number(env('CAPTURE_FPS', '15')),
   };
-  const bot = new Bot({ botId, name, jitsiUrl, script, executablePath, bandwidth }, { launcher: puppeteer });
+  const ownerIndex = env('BOT_OWNER_INDEX', '');
+  const bot = new Bot({ botId, name, jitsiUrl, script, executablePath, bandwidth, ownerIndex }, { launcher: puppeteer });
   await bot.start();
 
   let lastLatencyMs = 0;

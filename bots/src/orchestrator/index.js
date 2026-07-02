@@ -1,12 +1,15 @@
 /**
- * Production entrypoint: conductor + admin/config API in one process. They
- * share the Conductor instance directly (the config API mutates session
- * state through conductor.applyConfig / setMasterScript), so there is no
- * second source of truth to drift.
+ * Production entrypoint: fleet service + admin/config API in one process.
+ * The FleetService replaces the conductor as primary orchestrator (per-user
+ * bot clusters driven by in-room requests over the sidecar) while keeping
+ * the conductor's whole external surface — the admin API mutates session
+ * state through fleet.applyConfig / setMasterScript, and /api/bots +
+ * /api/config keep serving the external mcp-observer verbatim.
  */
 
+import WebSocket from 'ws';
 import { mergeConfig } from '../shared/config.js';
-import { Conductor } from './conductor.js';
+import { FleetService, makeWsSidecarConnector } from './fleet-service.js';
 import { makeDockerRunner } from './docker-runner.js';
 import { createAdminServer } from '../config-api/server.js';
 
@@ -16,6 +19,8 @@ const cfg = mergeConfig({
   ...(process.env.JITSI_URL ? { jitsiUrl: process.env.JITSI_URL } : {}),
   ...(process.env.JAMULUS_SERVER ? { jamulusServer: process.env.JAMULUS_SERVER } : {}),
   ...(process.env.VARY_HYDRA ? { varyHydra: process.env.VARY_HYDRA === 'true' } : {}),
+  ...(process.env.SIDECAR_WS_URL ? { sidecarWsUrl: process.env.SIDECAR_WS_URL } : {}),
+  ...(process.env.FLEET_ROOM ? { fleetRoom: process.env.FLEET_ROOM } : {}),
 });
 
 const runner = makeDockerRunner({
@@ -31,18 +36,21 @@ const runner = makeDockerRunner({
   },
 });
 
-const conductor = new Conductor(cfg, { runner });
-await conductor.start();
-console.log(`[conductor] listening on :${conductor.port}, fleet of ${cfg.maxBots}`);
+const fleet = new FleetService(cfg, {
+  runner,
+  connectSidecar: makeWsSidecarConnector(WebSocket),
+});
+await fleet.start();
+console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, room ${cfg.fleetRoom}`);
 
-const admin = createAdminServer(conductor);
+const admin = createAdminServer(fleet);
 admin.listen(cfg.adminPort, '0.0.0.0', () => {
   console.log(`[admin] page on http://0.0.0.0:${cfg.adminPort} (reachable outside the VM)`);
 });
 
 const shutdown = async () => {
   admin.close();
-  await conductor.stop();
+  await fleet.stop();
   process.exit(0);
 };
 process.on('SIGTERM', shutdown);

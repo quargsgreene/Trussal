@@ -270,6 +270,11 @@ function handleMessage(msg) {
       break;
     }
 
+    case 'fleet-status':
+      // Fleet service reporting back (spawn results, ceiling hits, teardown).
+      emit('fleet-status', msg);
+      break;
+
     case 'crdt-update':
       // Shared metaprogram doc sync (Yjs update, base64). Consumed by
       // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
@@ -456,6 +461,15 @@ export function sendRemoteMute(targetPeerId, muted) {
 export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard' } = {}) {
   if (typeof update !== 'string' || !update) return;
   safeSend({ type: 'crdt-update', update, snapshot, modality });
+}
+
+// Ask the fleet service for cluster changes on our behalf. The server stamps
+// the request with our room index; bots cannot send these.
+export function sendFleetRequest(action, { count, targets } = {}) {
+  const msg = { type: 'fleet-request', action };
+  if (typeof count === 'number') msg.count = count;
+  if (targets !== undefined) msg.targets = targets;
+  safeSend(msg);
 }
 
 // Owner-side permission grant for a bot in one's cluster.

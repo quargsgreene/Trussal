@@ -60,6 +60,13 @@ export const defaultConfig = Object.freeze({
   healthTickMs: 5000,
   conductorPort: 7700,    // bots POST metrics here
   adminPort: 7777,        // admin page, bound 0.0.0.0 so it is reachable outside the VM
+
+  // Fleet service (Net Cycles): per-user bot clusters driven by in-room
+  // requests relayed through the latency sidecar.
+  sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on
+  fleetRoom: '0',                          // room whose requests this fleet serves
+  ownerLeaveGraceMs: 60000,                // cluster lives this long after its owner leaves
+  meetingEndGraceMs: 15000,                // all humans gone → teardown (XMPP constraints)
 });
 
 export function mergeConfig(overrides = {}, base = defaultConfig) {

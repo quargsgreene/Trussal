@@ -21,10 +21,10 @@ export function makeDockerRunner({
   const name = (botId) => `trussal-bot-${botId}`;
 
   return {
-    async start(botId) {
+    async start(botId, extraEnv = {}) {
       // Remove any stale container with this name first (replacement path).
       await run('docker', ['rm', '-f', name(botId)]).catch(() => {});
-      const envFlags = Object.entries({ ...env, BOT_ID: String(botId) })
+      const envFlags = Object.entries({ ...env, ...extraEnv, BOT_ID: String(botId) })
         .flatMap(([k, v]) => ['-e', `${k}=${v}`]);
       await run('docker', [
         'run', '-d',

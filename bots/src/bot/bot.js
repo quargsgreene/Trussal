@@ -29,7 +29,7 @@ export class Bot {
   }
 
   async start() {
-    const { botId, name, jitsiUrl, script, executablePath, bandwidth = {} } = this.cfg;
+    const { botId, name, jitsiUrl, script, executablePath, bandwidth = {}, ownerIndex } = this.cfg;
 
     this.browser = await this.launcher.launch({
       // headless: false — Xvfb is already running per bot (entrypoint sets
@@ -47,7 +47,7 @@ export class Bot {
     // Must be installed before navigation: Jitsi enumerates devices on load.
     // pageMarkBot first — it sets window.__trussalIsBot before the Trussal bundle
     // loads, so peer-state announces this peer as a bot (studio can drive/mute it).
-    await this.page.evaluateOnNewDocument(pageMarkBot);
+    await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
     // pageAudioBridge next — it creates window.__trussalMicStream, which the
     // getUserMedia override hands Jitsi as the bot's microphone.
     await this.page.evaluateOnNewDocument(pageAudioBridge);

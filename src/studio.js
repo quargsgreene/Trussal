@@ -51,6 +51,15 @@ import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import { isNetCyclesActive, setNetCyclesActive, toggleEffectShortcut } from './audio-net/Metaprogrammer.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
+import {
+  myClusterBots,
+  spawnBots,
+  removeBots,
+  muteBots,
+  setBotPermissions,
+  subscribeFleetStatus
+} from './audio-net/UserBotOrchestration.js';
+import { startBotClusterVideo } from '../components/BotClusterVideo.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -449,6 +458,71 @@ function networkMetricsBlock() {
     </div>`;
 }
 
+let lastFleetStatus = '';
+subscribeFleetStatus((status) => {
+  if (status.action === 'spawn') {
+    lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` +
+      (status.reason ? ` — ${status.reason}` : '');
+  } else if (status.action === 'remove') {
+    lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
+  } else if (status.action === 'teardown') {
+    lastFleetStatus = `fleet teardown — ${status.reason || ''}`;
+  }
+  renderAll();
+});
+
+function botClusterBlock() {
+  const bots = myClusterBots();
+  const rows = bots.map(b => `
+    <div class="ts-fx" data-bot-index="${escapeHtml(b.roomIndex)}">
+      <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
+      <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || 'bot')}</span>
+      <button class="ts-fx-btn ts-dwell-btn${b.muted ? ' on' : ''}" data-bot-action="mute">${b.muted ? 'unmute' : 'mute'}</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? ' on' : ''}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? ' on' : ''}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
+      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="remove">×</button>
+    </div>`).join('');
+  return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Bot Cluster</div>
+        <div class="ts-section-controls">
+          <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">🔇 all</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">× all</button>
+        </div>
+      </div>
+      ${rows || '<div class="ts-meta">no bots in your cluster</div>'}
+      ${lastFleetStatus ? `<div class="ts-meta">${escapeHtml(lastFleetStatus)}</div>` : ''}
+    </div>`;
+}
+
+function bindBotClusterBlock(container) {
+  const countEl = container.querySelector('.ts-bot-count');
+  container.querySelectorAll('[data-bot-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.botAction;
+      const row = btn.closest('[data-bot-index]');
+      const idx = row ? row.dataset.botIndex : null;
+      if (action === 'spawn') spawnBots(parseInt(countEl && countEl.value, 10) || 1);
+      else if (action === 'remove-all') removeBots('all');
+      else if (action === 'mute-all') muteBots('all', true);
+      else if (action === 'remove' && idx) removeBots([idx]);
+      else if (action === 'mute' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        muteBots([idx], !(bot && bot.muted));
+      } else if (action === 'edit-perm' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
+      } else if (action === 'mod-perm' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
+      }
+    });
+  });
+}
+
 let spectrum = null;
 
 function drawSpectrumFrame(frame) {
@@ -559,6 +633,7 @@ function renderDetail(container) {
     </div>
 
     ${networkMetricsBlock()}
+    ${isLocal ? botClusterBlock() : ''}
 
     <div class="ts-section">
       <div class="ts-section-head">
@@ -647,6 +722,7 @@ function renderDetail(container) {
       });
     });
   });
+  bindBotClusterBlock(container);
   const playBtn = container.querySelector('[data-action="play"]');
   if (playBtn) playBtn.addEventListener('click', () => {
     const code = container.querySelector('.ts-code');
@@ -1028,6 +1104,7 @@ function tickUi() {
 
   tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
+  startBotClusterVideo();
   bootAudioEngine()
     .then(() => ensureSpectrum())
     .catch(e => console.warn('[studio] audio boot deferred', e));

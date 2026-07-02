@@ -122,6 +122,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
       packetLoss: null,
       rtcRtt: null,
       isBot: false,
+      isFleet: false,
       muted: false,
       // Metaprogram permissions. Humans always read+edit; bots default to
       // read-only until their owner grants edit (Phase 8 UI, enforced here).
@@ -145,6 +146,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
           record.jitsiId = typeof msg.jitsiId === 'string' ? msg.jitsiId : null;
           record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
           record.isBot = !!msg.isBot;
+          // The fleet service joins the bus to receive fleet-requests and
+          // roster events, but is not a participant: no index, invisible in
+          // rosters, never announced.
+          record.isFleet = !!msg.isFleet;
           if (record.isBot) {
             record.canEditMetaprogram = false;
             record.canWriteModulation = false;
@@ -170,7 +175,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
             }
           }
 
-          if (record.roomIndex == null) {
+          if (record.roomIndex == null && !record.isFleet) {
             record.roomIndex = assignRoomIndex(roomName, {
               isBot: record.isBot,
               ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
@@ -180,7 +185,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
           // Exclude this peer's own record from the roster (guards against re-hello
           // on the same socket where the record is already present in the room).
           const roster = Array.from(room.values())
-            .filter(r => r.peerId !== peerId)
+            .filter(r => r.peerId !== peerId && !r.isFleet)
             .map(publicView);
           room.set(peerId, record);
 
@@ -192,7 +197,37 @@ function createLatencyServer({ port = 8081, server } = {}) {
           if (meta.crdtLog.length) {
             send(ws, { type: 'crdt-state', updates: meta.crdtLog.map(e => e.update) });
           }
-          broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
+          if (!record.isFleet) {
+            broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
+          }
+          break;
+        }
+
+        case 'fleet-request': {
+          // A human asks their fleet service for cluster changes (spawn N
+          // bots, remove a subset, …). Relayed to the whole room with the
+          // requester's index attached; the fleet service consumes it, other
+          // clients may display it. Bots cannot drive the fleet.
+          if (record.isBot || record.isFleet) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, {
+            type: 'fleet-request',
+            fromIndex: record.roomIndex,
+            action: msg.action,
+            count: msg.count,
+            targets: msg.targets
+          });
+          break;
+        }
+
+        case 'fleet-status': {
+          // Fleet service reports back (spawned counts, ceiling hits, owner
+          // teardown). Broadcast so every studio can surface the reason.
+          if (!record.isFleet) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, { ...msg, type: 'fleet-status' });
           break;
         }
 
@@ -331,10 +366,14 @@ function createLatencyServer({ port = 8081, server } = {}) {
       const room = rooms.get(roomName);
       if (room && room.has(peerId)) {
         room.delete(peerId);
-        broadcast(room, peerId, { type: 'peer-leave', peerId });
+        if (!record.isFleet) broadcast(room, peerId, { type: 'peer-leave', peerId });
         if (room.size === 0) {
           rooms.delete(roomName);
           roomMeta.delete(roomName); // meeting over — counters reset with it
+        } else if (![...room.values()].some(r => !r.isFleet)) {
+          // Only the fleet service is left: the meeting is over even though
+          // the room object survives — reset indices and the shared doc.
+          roomMeta.delete(roomName);
         }
       }
       console.log(`[latency] close room=${roomName} peerId=${peerId}`);
