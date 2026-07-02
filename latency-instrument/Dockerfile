@@ -6,7 +6,7 @@ COPY package*.json ./
 
 RUN npm ci
 
-COPY server.js ./
+COPY server.js room-indices.js ./
 
 EXPOSE 8081
 

@@ -23,9 +23,14 @@ const peerIdByJitsiId = new Map();
 // Bots set this global (before the bundle loads) so they announce themselves as
 // bots and the room can drive/mute them from the studio without hijacking humans.
 const LOCAL_IS_BOT = !!(typeof window !== 'undefined' && window.__trussalIsBot);
+// Bots spawned on a user's behalf carry their owner's room index so the
+// sidecar can assign them a cluster suffix (e.g. owner 1 → bots 1a, 1b, …).
+const LOCAL_OWNER_INDEX = (typeof window !== 'undefined' && typeof window.__trussalBotOwnerIndex === 'string')
+  ? window.__trussalBotOwnerIndex : null;
 
 const localPeer = {
   peerId: null,
+  roomIndex: null,
   jitsiId: null,
   displayName: null,
   isLocal: true,
@@ -84,12 +89,14 @@ function sendHelloIfReady() {
   if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
   const local = getLocalParticipant();
   if (!local) return;
-  ws.send(JSON.stringify({
+  const hello = {
     type: 'hello',
     jitsiId: local.id,
     displayName: local.displayName,
     isBot: LOCAL_IS_BOT
-  }));
+  };
+  if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
+  ws.send(JSON.stringify(hello));
   helloSent = true;
   flushPending();
 }
@@ -183,6 +190,7 @@ function applyPatch(peer, patch) {
 function defaultPeer(peerId) {
   return {
     peerId,
+    roomIndex: null,
     jitsiId: null,
     displayName: null,
     isBot: false,
@@ -199,6 +207,7 @@ function defaultPeer(peerId) {
 
 function upsertPeer(record) {
   const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
+  if (record.roomIndex !== undefined) existing.roomIndex = record.roomIndex;
   if (record.jitsiId !== undefined) existing.jitsiId = record.jitsiId;
   if (record.displayName !== undefined) existing.displayName = record.displayName;
   if (record.isBot !== undefined) existing.isBot = !!record.isBot;
@@ -221,6 +230,12 @@ function handleMessage(msg) {
           const peer = upsertPeer(p);
           emit('peer-upsert', peer);
         }
+      }
+      // `you` carries our own server-assigned room index (immutable for the
+      // meeting) — the server never repeats our record in later broadcasts.
+      if (msg.you && msg.you.roomIndex != null) {
+        localPeer.roomIndex = msg.you.roomIndex;
+        emit('peer-upsert', localPeer);
       }
       break;
 

@@ -15,11 +15,17 @@
 const { WebSocketServer } = require('ws');
 const { randomUUID } = require('crypto');
 const { URL } = require('url');
+const { botSuffix } = require('./room-indices.js');
 
 function createLatencyServer({ port = 8081, server } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
+  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count> }. Index
+  // counters are the meeting's source of truth: indices are join-ordered,
+  // immutable for the meeting, and never reused after a leave. The meta
+  // record dies with the room (last peer gone = meeting over).
+  const roomMeta = new Map();
 
   function getRoom(name) {
     let room = rooms.get(name);
@@ -30,9 +36,33 @@ function createLatencyServer({ port = 8081, server } = {}) {
     return room;
   }
 
+  function getRoomMeta(name) {
+    let meta = roomMeta.get(name);
+    if (!meta) {
+      meta = { nextIndex: 0, botCounters: new Map() };
+      roomMeta.set(name, meta);
+    }
+    return meta;
+  }
+
+  // Sequential identifying index, assigned once at hello. Humans (and bots
+  // that arrive without an owner) get the next integer in join order. Bots
+  // that declare an ownerIndex get `<ownerIndex><suffix>` with the cluster's
+  // next letter suffix (also never reused).
+  function assignRoomIndex(roomName, { isBot, ownerIndex }) {
+    const meta = getRoomMeta(roomName);
+    if (isBot && typeof ownerIndex === 'string' && /^\d+$/.test(ownerIndex)) {
+      const count = meta.botCounters.get(ownerIndex) || 0;
+      meta.botCounters.set(ownerIndex, count + 1);
+      return `${ownerIndex}${botSuffix(count)}`;
+    }
+    return String(meta.nextIndex++);
+  }
+
   function publicView(record) {
     return {
       peerId: record.peerId,
+      roomIndex: record.roomIndex,
       jitsiId: record.jitsiId,
       displayName: record.displayName,
       pattern: record.pattern,
@@ -76,6 +106,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
       peerId,
       ws,
       roomName,
+      roomIndex: null,
       jitsiId: null,
       displayName: null,
       pattern: '',
@@ -111,14 +142,26 @@ function createLatencyServer({ port = 8081, server } = {}) {
           // Evict any stale entry with the same jitsiId (e.g. a lingering connection
           // from a reconnect or a re-hello on the same socket after displayName change).
           // Broadcast peer-leave first so existing peers remove the old entry.
+          // Same jitsiId = same participant session, so the new connection
+          // inherits the stale record's roomIndex (indices are immutable for
+          // the meeting). A genuine rejoin arrives with a fresh Jitsi id and
+          // gets a fresh index below.
           if (record.jitsiId) {
             for (const [stalePeerId, staleRecord] of room.entries()) {
               if (stalePeerId !== peerId && staleRecord.jitsiId === record.jitsiId) {
+                if (record.roomIndex == null) record.roomIndex = staleRecord.roomIndex;
                 room.delete(stalePeerId);
                 broadcast(room, peerId, { type: 'peer-leave', peerId: stalePeerId });
                 break;
               }
             }
+          }
+
+          if (record.roomIndex == null) {
+            record.roomIndex = assignRoomIndex(roomName, {
+              isBot: record.isBot,
+              ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
+            });
           }
 
           // Exclude this peer's own record from the roster (guards against re-hello
@@ -128,7 +171,9 @@ function createLatencyServer({ port = 8081, server } = {}) {
             .map(publicView);
           room.set(peerId, record);
 
-          send(ws, { type: 'roster', peers: roster });
+          // `you` carries the client's own assigned index (the server never
+          // echoes a peer's own record in later broadcasts).
+          send(ws, { type: 'roster', peers: roster, you: publicView(record) });
           broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
           break;
         }
@@ -218,7 +263,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
       if (room && room.has(peerId)) {
         room.delete(peerId);
         broadcast(room, peerId, { type: 'peer-leave', peerId });
-        if (room.size === 0) rooms.delete(roomName);
+        if (room.size === 0) {
+          rooms.delete(roomName);
+          roomMeta.delete(roomName); // meeting over — counters reset with it
+        }
       }
       console.log(`[latency] close room=${roomName} peerId=${peerId}`);
     });

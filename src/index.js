@@ -2,10 +2,15 @@ import { JAMULUS_ROOM_MAP , renderJamulusWelcomePanelAndBanner, getRoomNameFromU
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
-import { sendLocalPattern, sendLocalPlaying } from './peer-state.js';
+import { sendLocalPattern, sendLocalPlaying, subscribePeerState } from './peer-state.js';
+import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import './studio.js';
 
 window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+
+// Keep the XMPP↔O2 mapping current: every peer with a room index gets an O2
+// service name (/perf/<index>) the moment the sidecar announces it.
+subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
 
 // Bots call this from inside their page once their Strudel REPL is running, to
 // publish their pattern onto the peer-state bus so it shows (and can be edited)

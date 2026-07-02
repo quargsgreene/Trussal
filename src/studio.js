@@ -161,6 +161,11 @@ function injectStyles() {
     }
     #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
     #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
+    #${OVERLAY_ID} .ts-idx {
+      margin-left: auto;
+      font-size: 10px; font-family: monospace; padding: 1px 5px;
+      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+    }
     #${OVERLAY_ID} .ts-routed {
       font-size: 10px; padding: 1px 4px; border-radius: 3px;
       background: rgba(255,255,255,0.06); color: #5d7264;
@@ -350,6 +355,7 @@ function renderChip(peer, selected) {
       <div class="ts-chip-row">
         <div class="ts-avatar">${initial(peer.displayName)}</div>
         <div class="ts-name${isLocal ? ' you' : ''}">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
+        <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : '·'}</span>
       </div>
       <div class="ts-indicators">
         <span class="ts-ind${e.distortion ? ' on' : ''}">D</span>
