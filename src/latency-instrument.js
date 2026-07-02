@@ -97,7 +97,13 @@ function ensureAudioContext() {
     // 48 kHz matches the Jamulus relay PCM stream and WebRTC Opus codec rate,
     // avoiding pitch-shift when relay audio flows through the effects chain.
     audioCtx = new Ctor({ sampleRate: 48000 });
-    realDestination = audioCtx.destination;
+    // Master bus: every chain/effect that used to target audioCtx.destination
+    // now converges on this gain node, giving SpectrumAnalysis (and the room
+    // health compressor) one place to tap the full mix.
+    const masterBus = audioCtx.createGain();
+    masterBus.gain.value = 1.0;
+    masterBus.connect(audioCtx.destination);
+    realDestination = masterBus;
   }
   if (!audioCtx.audioWorklet) return Promise.reject(new Error('AudioWorklet not supported'));
 
@@ -409,6 +415,11 @@ subscribeParticipants((event, payload) => {
 });
 
 // ---- Public API ----------------------------------------------------------
+
+// The master-bus gain node all audio flows through (== realDestination once
+// the context exists). Null before the engine boots.
+export function getMasterBus() { return realDestination; }
+export function getAudioContext() { return audioCtx; }
 
 export async function bootAudioEngine() {
   if (bootPromise) return bootPromise;

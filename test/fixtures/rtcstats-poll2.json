@@ -1,0 +1,40 @@
+[
+  {
+    "id": "CPxYz",
+    "type": "candidate-pair",
+    "timestamp": 1751470002000,
+    "state": "succeeded",
+    "nominated": true,
+    "selected": true,
+    "currentRoundTripTime": 0.08
+  },
+  {
+    "id": "RTCInboundRTPAudioStream_1234",
+    "type": "inbound-rtp",
+    "timestamp": 1751470002000,
+    "kind": "audio",
+    "ssrc": 1234,
+    "packetsReceived": 9090,
+    "packetsLost": 110,
+    "jitter": 0.009
+  },
+  {
+    "id": "RTCInboundRTPVideoStream_5678",
+    "type": "inbound-rtp",
+    "timestamp": 1751470002000,
+    "kind": "video",
+    "ssrc": 5678,
+    "packetsReceived": 45400,
+    "packetsLost": 400,
+    "jitter": 0.012
+  },
+  {
+    "id": "RTCRemoteInboundRtpAudioStream_999",
+    "type": "remote-inbound-rtp",
+    "timestamp": 1751470002000,
+    "kind": "audio",
+    "ssrc": 999,
+    "roundTripTime": 0.07,
+    "jitter": 0.005
+  }
+]

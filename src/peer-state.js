@@ -35,7 +35,9 @@ const localPeer = {
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
   rtt: null,
-  jitter: null
+  jitter: null,
+  packetLoss: null,
+  rtcRtt: null
 };
 
 let ws = null;
@@ -174,6 +176,8 @@ function applyPatch(peer, patch) {
   if (typeof patch.muted === 'boolean') peer.muted = patch.muted;
   if (typeof patch.rtt === 'number' || patch.rtt === null) peer.rtt = patch.rtt;
   if (typeof patch.jitter === 'number' || patch.jitter === null) peer.jitter = patch.jitter;
+  if (typeof patch.packetLoss === 'number' || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
+  if (typeof patch.rtcRtt === 'number' || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
 }
 
 function defaultPeer(peerId) {
@@ -187,7 +191,9 @@ function defaultPeer(peerId) {
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
-    jitter: null
+    jitter: null,
+    packetLoss: null,
+    rtcRtt: null
   };
 }
 
@@ -348,7 +354,24 @@ export function getAllPeers() {
 }
 
 export function getMyPeerId() { return myPeerId; }
-export function getLocalMetrics() { return { rtt: localRtt, jitter: localJitter }; }
+export function getLocalMetrics() {
+  return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
+}
+
+// RTCStats-derived sample from NetStats.js. rtt/jitter keep their WS
+// ping/pong semantics (fallback path); packetLoss and rtcRtt ride the same
+// `metrics` broadcast so every browser computes identical worst-case values.
+export function sendLocalNetStats({ rtcRtt = null, packetLoss = null } = {}) {
+  if (typeof rtcRtt === 'number' && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
+  if (typeof packetLoss === 'number' && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
+  const msg = { type: 'metrics' };
+  if (typeof localPeer.rtcRtt === 'number') msg.rtcRtt = localPeer.rtcRtt;
+  if (typeof localPeer.packetLoss === 'number') msg.packetLoss = localPeer.packetLoss;
+  if (msg.rtcRtt === undefined && msg.packetLoss === undefined) return;
+  safeSend(msg);
+  emit('local-metrics', getLocalMetrics());
+  emit('peer-upsert', localPeer);
+}
 
 export function sendLocalPattern(code) {
   localPeer.pattern = typeof code === 'string' ? code : '';

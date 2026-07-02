@@ -21,6 +21,7 @@ import {
   sendLocalPlaying,
   sendRemotePattern,
   sendRemoteMute,
+  sendLocalNetStats,
 } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
 import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
@@ -41,7 +42,12 @@ import {
   isPropagatingToRoom,
   setJamulusMode,
   isJamulusMode,
+  getMasterBus,
+  getAudioContext,
 } from './latency-instrument.js';
+import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
+import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -304,6 +310,12 @@ function injectStyles() {
       height: 16px;
     }
 
+    #${OVERLAY_ID} .ts-spectrum {
+      width: 100%; height: 36px; display: block;
+      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 4px;
+    }
+
     #hydra-canvas {
       z-index: 100;
     }
@@ -390,6 +402,8 @@ function effectsBlock(peer, isLocal) {
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
   const jitter = typeof peer.jitter === 'number' ? peer.jitter.toFixed(2) : '–';
+  const rtcRtt = typeof peer.rtcRtt === 'number' ? `${peer.rtcRtt.toFixed(0)}ms` : '–';
+  const loss = typeof peer.packetLoss === 'number' ? `${(peer.packetLoss * 100).toFixed(1)}%` : '–';
   const extLabel  = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
   const routed = routedSet.has(peer.jitsiId);
   const propagating = peer.isLocal && isPropagatingToRoom();
@@ -405,7 +419,52 @@ function metricsLine(peer) {
   } else {
     routedTxt = 'no live audio';
   }
-  return `<div class="ts-meta">RTT <b>${rtt}</b> · jitter <b>${jitter}</b> · ${routedTxt}</div>`;
+  return `<div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
+}
+
+// Room-wide worst-case metrics (identical on every client — the shared basis
+// for Net Cycles cycle lengths) plus the master-bus mini spectrum.
+function networkMetricsBlock() {
+  const wc = computeWorstCaseMetrics(getAllPeers());
+  const ms = (v) => `${v.toFixed(0)}ms`;
+  return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Network Metrics</div>
+      </div>
+      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b> <span title="peers contributing samples">(${wc.sampleCount})</span></div>
+      <canvas class="ts-spectrum" width="560" height="36"></canvas>
+    </div>`;
+}
+
+let spectrum = null;
+
+function drawSpectrumFrame(frame) {
+  const canvas = document.querySelector(`#${OVERLAY_ID} .ts-spectrum`);
+  if (!canvas || !frame || !frame.bands.length) return;
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  const barW = width / frame.bands.length;
+  ctx.fillStyle = '#1ff466';
+  frame.bands.forEach((v, i) => {
+    const h = (v / 255) * height;
+    ctx.fillRect(i * barW, height - h, Math.max(1, barW - 1), h);
+  });
+}
+
+function ensureSpectrum() {
+  if (spectrum) return;
+  const audioCtx = getAudioContext();
+  const bus = getMasterBus();
+  if (!audioCtx || !bus) return;
+  try {
+    spectrum = createSpectrumAnalysis(audioCtx, bus);
+    spectrum.subscribe(drawSpectrumFrame);
+    spectrum.start();
+  } catch (e) {
+    console.warn('[studio] spectrum init failed', e);
+  }
 }
 
 function renderDetail(container) {
@@ -486,6 +545,8 @@ function renderDetail(container) {
       ${effectsBlock(peer, isLocal)}
       ${metricsLine(peer)}
     </div>
+
+    ${networkMetricsBlock()}
 
     <div class="ts-section">
       <div class="ts-section-head">
@@ -927,7 +988,10 @@ function tickUi() {
   if (btn) btn.style.display = 'block';
 
   tickKbdUi();
-  bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
+  startNetStatsPolling(sendLocalNetStats);
+  bootAudioEngine()
+    .then(() => ensureSpectrum())
+    .catch(e => console.warn('[studio] audio boot deferred', e));
 }
 
 // Keyboard module requests eval via this event.
