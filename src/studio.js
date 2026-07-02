@@ -1160,9 +1160,17 @@ function tickUi() {
     .catch(e => console.warn('[studio] audio boot deferred', e));
 }
 
-// Keyboard module requests eval via this event.
+// Keyboard module requests eval via this event. The Net Cycles editor's
+// Eval applies the shared metaprogram instead of booting Strudel.
 document.addEventListener('trussal-kbd-eval', (e) => {
   const code = e.detail?.code;
+  if (e.detail?.editor === 'netcycles') {
+    import('./audio-net/Metaprogrammer.js').then(m => {
+      const errors = m.applyProgramText(typeof code === 'string' ? code : '');
+      setStatus(errors.length ? `metaprogram: ${errors[0].line}:${errors[0].col} ${errors[0].message}` : 'metaprogram applied');
+    });
+    return;
+  }
   onEvalAndPlay(typeof code === 'string' ? code : (getLocalPeer()?.pattern ?? ''));
 });
 

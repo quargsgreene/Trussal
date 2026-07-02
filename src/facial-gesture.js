@@ -15,6 +15,14 @@ window.StrudelButton — custom element registered so the transpiler's *name: co
 import { getLocalPeer, sendLocalPattern, sendLocalPlaying, sendLocalEffects } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel } from './strudel.js';
 import { setVideoStream } from './hydra-video.js';
+import {
+  trackEditorFocus,
+  readActiveEditor,
+  writeActiveEditor,
+  applyIfNetCycles,
+  applyMetaprogramNow,
+  toggleNetCyclesButtonCode
+} from './editor-router.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -70,23 +78,36 @@ function initStrudelButton() {
   }
   try { customElements.define('strudel-button', StrudelButton, { extends: 'button' }); } catch {}
   globalThis.StrudelButton = StrudelButton;
+
+  // NetCyclesButton — same shape, but its code targets the shared
+  // metaprogram doc: dwell toggles the snippet in the Net Cycles editor and
+  // re-applies the program (see toggleNetCyclesButtonCode).
+  class NetCyclesButton extends HTMLButtonElement {
+    constructor(code) { super(); this._netCyclesCode = code; }
+  }
+  try { customElements.define('net-cycles-button', NetCyclesButton, { extends: 'button' }); } catch {}
+  globalThis.NetCyclesButton = NetCyclesButton;
 }
 
 // ---------------------------------------------------------------------------
-// Editor shim — reads/writes the local peer's pattern through the textarea.
+// Editor shim — resolves to whichever editor is focused: the personal
+// Strudel textarea (pattern → sendLocalPattern) or the global Net Cycles
+// editor (CRDT doc). editor-router.js owns the resolution.
 // ---------------------------------------------------------------------------
+trackEditorFocus();
+
 function getCode() {
-  const ta = document.querySelector('#trussal-studio-overlay .ts-code');
-  return ta ? ta.value : (getLocalPeer()?.pattern ?? '');
+  return readActiveEditor();
 }
 
 function setCode(code) {
-  const ta = document.querySelector('#trussal-studio-overlay .ts-code');
-  if (ta) ta.value = code;
-  sendLocalPattern(code);
+  writeActiveEditor(code, { modality: 'head-cursor' });
 }
 
 async function evaluate() {
+  // Focus in the Net Cycles card → "evaluate" means applying the shared
+  // metaprogram, not booting Strudel.
+  if (applyIfNetCycles()) return;
   try {
     // Sync the current textarea code into localPeer.pattern so rebuildAndEvaluate
     // picks up changes made since the last explicit eval (typing is no longer
@@ -163,6 +184,12 @@ function makeGestureHandler(triggerName, defaultMutator) {
     for (const cfg of configs) {
       if (cfg.trigger === triggerName && cfg.action === 'regex-swap' && cfg.regex) {
         await mutateAndEvaluate((c) => applyRegexMutation(c, cfg.regex, cfg.replacement));
+        ran = true;
+      }
+      // Personal metapattern control by gesture: stop/start/apply the shared
+      // metaprogram via the same latch/cooldown machinery.
+      if (cfg.trigger === triggerName && cfg.action === 'apply-metaprogram') {
+        applyMetaprogramNow();
         ran = true;
       }
     }
@@ -402,12 +429,16 @@ function _detectionLoop() {
   let hoveredKey  = null;
   let hoveredType = null;
   let hoveredEl   = null;
-  for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn')) {
+  for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]')) {
     const r = btn.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       if (btn.classList.contains('ts-fx-dwell-btn')) {
         hoveredKey  = btn.dataset.fx;
         hoveredType = 'fx';
+      } else if (btn.classList.contains('nc-head-btn') || btn._netCyclesCode !== undefined) {
+        // NetCyclesButton: dwell toggles its snippet in the shared metaprogram.
+        hoveredKey  = btn.dataset.netcyclesCode ?? btn._netCyclesCode;
+        hoveredType = 'netcycles';
       } else if (btn.classList.contains('ts-dwell-btn')) {
         hoveredKey  = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
         hoveredType = 'action';
@@ -454,6 +485,8 @@ function _detectionLoop() {
         _toggleFxEffect(_dwell.key);
       } else if (_dwell.type === 'action') {
         if (_dwell.el) _dwell.el.click();
+      } else if (_dwell.type === 'netcycles') {
+        toggleNetCyclesButtonCode(_dwell.key);
       } else {
         toggleButtonCode(_dwell.key);
       }
