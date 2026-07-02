@@ -1,0 +1,15 @@
+{
+  "name": "trussal-mcp-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing Strudel control to Claude: per-bot and metaprogram update queues, instrument whitelist, theory helpers.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.0.0",
+    "ws": "^8.0.0"
+  }
+}

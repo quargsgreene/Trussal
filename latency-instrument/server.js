@@ -99,9 +99,11 @@ function createLatencyServer({ port = 8081, server } = {}) {
 
   wss.on('connection', (ws, req) => {
     let roomName = 'default';
+    let connRole = 'player';
     try {
       const url = new URL(req.url, 'http://localhost');
       roomName = url.searchParams.get('room') || 'default';
+      connRole = url.searchParams.get('role') || 'player';
     } catch (e) {
       console.warn('[latency] bad request url:', req.url);
     }
@@ -146,10 +148,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
           record.jitsiId = typeof msg.jitsiId === 'string' ? msg.jitsiId : null;
           record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
           record.isBot = !!msg.isBot;
-          // The fleet service joins the bus to receive fleet-requests and
-          // roster events, but is not a participant: no index, invisible in
+          // The fleet service and observers (e.g. mcp-observer) join the bus
+          // for events but are not participants: no index, invisible in
           // rosters, never announced.
-          record.isFleet = !!msg.isFleet;
+          record.isFleet = !!msg.isFleet || connRole === 'observer' || connRole === 'fleet';
           if (record.isBot) {
             record.canEditMetaprogram = false;
             record.canWriteModulation = false;
