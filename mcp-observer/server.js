@@ -24,6 +24,7 @@ const VIDEO_VM_SSH   = process.env.VIDEO_VM_SSH;
 const AUDIO_VM_SSH   = process.env.AUDIO_VM_SSH;
 const BOTS_VM_SSH    = process.env.BOTS_VM_SSH;
 const OBSERVE_ROOMS  = (process.env.OBSERVE_ROOMS || '0').split(',').map(r => r.trim());
+const SESSION_LOG_DIR = process.env.SESSION_LOG_DIR || '';
 
 // ─── State ─────────────────────────────────────────────────────────────────
 // roomName → Map<peerId, peerRecord>
@@ -189,6 +190,21 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'get_session_log',
+    description:
+      'Returns events from the Net Cycles research session log (JSONL written by the latency sidecar: ' +
+      'joins/leaves with indices, metrics, CRDT edits with author/modality, fleet actions, scheduler cycle samples, health actions). ' +
+      'Reads SESSION_LOG_DIR; defaults to the newest session file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session: { type: 'string', description: 'Session UUID (default: newest file)' },
+        limit:   { type: 'number', description: 'Max events from the tail (default 100)' },
+        type:    { type: 'string', description: 'Filter by event type (metrics | crdt-update | research-event | …)' },
+      },
+    },
+  },
+  {
     name: 'check_vm_health',
     description:
       'SSHes into a VM and returns service health. ' +
@@ -268,6 +284,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return text(output || '(no output)');
       } catch (e) {
         return err(`SSH to ${vm} VM failed: ${e.message}`);
+      }
+    }
+
+    case 'get_session_log': {
+      if (!SESSION_LOG_DIR) return err('SESSION_LOG_DIR is not configured for the observer.');
+      try {
+        const { readdirSync, readFileSync, statSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        let files = readdirSync(SESSION_LOG_DIR).filter(f => f.endsWith('.jsonl'));
+        if (args?.session) files = files.filter(f => f.includes(args.session));
+        if (!files.length) return err('No session log files found.');
+        files.sort((a, b) => statSync(join(SESSION_LOG_DIR, b)).mtimeMs - statSync(join(SESSION_LOG_DIR, a)).mtimeMs);
+        const lines = readFileSync(join(SESSION_LOG_DIR, files[0]), 'utf8').trim().split('\n');
+        let events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        if (args?.type) events = events.filter(e => e.type === args.type);
+        const limit = args?.limit ?? 100;
+        return text({ file: files[0], totalEvents: events.length, events: events.slice(-limit) });
+      } catch (e) {
+        return err(`session log read failed: ${e.message}`);
       }
     }
 

@@ -1,0 +1,6 @@
+{
+  "name": "trussal-server",
+  "private": true,
+  "type": "commonjs",
+  "description": "Server-side entry points. Implementations live in latency-instrument/ so the sidecar Docker build context (../latency-instrument) contains everything it runs."
+}

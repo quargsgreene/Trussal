@@ -174,8 +174,14 @@ function _typeKey(key) {
 
   if (key === 'Eval') {
     const ta = _getTA();
+    // Eval routes by editor: the shared Net Cycles editor (.nc-code) applies
+    // the metaprogram; the personal editor evals Strudel. studio.js handles
+    // the dispatch either way.
     document.dispatchEvent(new CustomEvent('trussal-kbd-eval', {
-      detail: { code: ta ? ta.value : '' }
+      detail: {
+        code: ta ? ta.value : '',
+        editor: ta && ta.classList.contains('nc-code') ? 'netcycles' : 'strudel'
+      }
     }));
     return;
   }

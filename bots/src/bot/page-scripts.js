@@ -99,8 +99,13 @@ export function pageAudioBridge() {
  * the bot's tile, and lets every client's combined-Strudel mix skip the bot
  * (its audio arrives via Jitsi, not the mix). Must run at document-start.
  */
-export function pageMarkBot() {
+export function pageMarkBot(ownerIndex) {
   window.__trussalIsBot = true;
+  // Owner's room index (Net Cycles): peer-state.js sends it in the hello so
+  // the sidecar assigns this bot a cluster index like 1a, 1b, …
+  if (typeof ownerIndex === 'string' && ownerIndex) {
+    window.__trussalBotOwnerIndex = ownerIndex;
+  }
 }
 
 /**

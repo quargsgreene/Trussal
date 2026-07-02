@@ -10,6 +10,7 @@
 
 import { getStrudelAudioContext } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
+import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { registerSamplesFromDB } from './user-samples.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
@@ -172,9 +173,16 @@ function buildPeerBlock(peer) {
   // through their Jitsi mic / Jamulus, so their pattern is shown in the studio
   // for display + remote editing only — never folded into each viewer's combined
   // mix, which would play it a second time on top of the bot's incoming audio.
+  // Under Net Cycles their incoming audio is slot-gated at the chain instead.
   if (peer.isBot) return null;
 
-  let code = (peer.pattern || '').replace(/[\s;]+$/g, '');
+  // Net Cycles: the pattern that plays is the one the scheduler last dequeued
+  // from this performer's buffer queue, so editor changes land at their next
+  // slot rather than immediately.
+  const netCycles = isNetCyclesActive();
+  const source = netCycles ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
+
+  let code = (source || '').replace(/[\s;]+$/g, '');
   if (!code || !peer.playing) return null;
 
   // Strip *name: code lines — these are button widget declarations, not patterns.
@@ -184,7 +192,10 @@ function buildPeerBlock(peer) {
   const params = computePeerStrudelParams(peer);
   // Local peer audio effects are applied via the WebAudio strudelFx chain,
   // so skip the Strudel-native DSP wrapper to avoid double-processing.
-  const fx = peer.isLocal ? '' : effectChainFor(params);
+  let fx = peer.isLocal ? '' : effectChainFor(params);
+  // Net Cycles slot gate: a reactive gain the scheduler flips per slot —
+  // no re-evaluation needed when a slot opens or closes.
+  if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
 
   // Detect hydra preamble: code that begins with `await initHydra(...)`.
   // Split at the first blank line: preamble above, strudel code below.
@@ -300,7 +311,10 @@ async function ensureStrudel() {
 
     await initStrudel({ audioContext: audioCtx, prebake: runPrebake });
     _sliderRef = mod.ref;
-    await mod.evalScope({ sliderWithID });
+    // _ncGate: reactive per-performer slot gate for Net Cycles (same ref
+    // machinery as sliders — pattern events read the current level live).
+    const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
+    await mod.evalScope({ sliderWithID, _ncGate });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -337,8 +351,12 @@ async function rebuildAndEvaluate() {
 
     // Blend user visuals (o1) with camera (s0); color tint driven by jitter/rtt
     // via window globals updated by hydra-video.js on each peer-state event.
+    // Net Cycles echo brightness rides the same tint (window._ncVisual is
+    // written by the Effects Service; identity when no effects are chained).
     next += '\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt)'
-         +  '.color(()=>window._hvR,()=>window._hvG,()=>window._hvB).out(o0)';
+         +  '.color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),'
+         +  '()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),'
+         +  '()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)';
   }
 
   if (next === lastEvaluated) return;
@@ -429,5 +447,14 @@ subscribeParticipants((event) => {
 // When the hydra video mode changes, re-evaluate so initHydra() is injected or
 // removed from the program as needed.
 document.addEventListener('trussal-hydra-mode-change', () => {
+  if (strudelBoot) rebuildAndEvaluate();
+});
+
+// Net Cycles: rebuild when the mode flips (gates injected/removed) and when
+// the scheduler dequeues a buffer whose pattern differs from the live one.
+document.addEventListener('trussal-netcycles-mode', () => {
+  if (strudelBoot) rebuildAndEvaluate();
+});
+document.addEventListener('trussal-netcycles-apply', () => {
   if (strudelBoot) rebuildAndEvaluate();
 });

@@ -1,0 +1,141 @@
+// Integration: the sidecar assigns sequential, immutable, never-reused room
+// indices at hello, and cluster suffixes for owned bots.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import WebSocket from 'ws';
+
+const require = createRequire(import.meta.url);
+const { createLatencyServer } = require('../latency-instrument/server.js');
+
+function connect(port, room) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?room=${room}&role=player`);
+    const client = { ws, messages: [], waiters: [] };
+    ws.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      client.messages.push(msg);
+      client.waiters = client.waiters.filter(w => {
+        if (w.pred(msg)) { w.resolve(msg); return false; }
+        return true;
+      });
+    });
+    ws.on('open', () => resolve(client));
+    ws.on('error', reject);
+  });
+}
+
+function waitFor(client, pred, ms = 2000) {
+  const hit = client.messages.find(pred);
+  if (hit) return Promise.resolve(hit);
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timed out waiting for message')), ms);
+    client.waiters.push({ pred, resolve: (m) => { clearTimeout(t); resolve(m); } });
+  });
+}
+
+async function hello(client, fields) {
+  client.ws.send(JSON.stringify({ type: 'hello', displayName: 'x', ...fields }));
+  const roster = await waitFor(client, m => m.type === 'roster');
+  return roster.you;
+}
+
+async function withServer(fn) {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  try {
+    await fn(wss.address().port);
+  } finally {
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+}
+
+function closed(client) {
+  return new Promise(r => { client.ws.on('close', r); client.ws.close(); });
+}
+
+test('join order assigns 0,1,2; a rejoiner gets a fresh index (never reused)', async () => {
+  await withServer(async (port) => {
+    const a = await connect(port, 'idx1');
+    const b = await connect(port, 'idx1');
+    const c = await connect(port, 'idx1');
+    assert.equal((await hello(a, { jitsiId: 'ja' })).roomIndex, '0');
+    assert.equal((await hello(b, { jitsiId: 'jb' })).roomIndex, '1');
+    assert.equal((await hello(c, { jitsiId: 'jc' })).roomIndex, '2');
+
+    // b leaves; everyone is told; b rejoins with a fresh Jitsi id.
+    const leavePromise = waitFor(a, m => m.type === 'peer-leave');
+    await closed(b);
+    await leavePromise;
+
+    const b2 = await connect(port, 'idx1');
+    assert.equal((await hello(b2, { jitsiId: 'jb-rejoined' })).roomIndex, '3');
+    a.ws.close(); c.ws.close(); b2.ws.close();
+  });
+});
+
+test('reconnect with the same jitsiId keeps the index (immutable for the meeting)', async () => {
+  await withServer(async (port) => {
+    const keeper = await connect(port, 'idx2'); // keeps the room alive
+    await hello(keeper, { jitsiId: 'keeper' });
+    const a = await connect(port, 'idx2');
+    assert.equal((await hello(a, { jitsiId: 'same-jid' })).roomIndex, '1');
+
+    // New socket, same Jitsi identity (stale-eviction path).
+    const a2 = await connect(port, 'idx2');
+    assert.equal((await hello(a2, { jitsiId: 'same-jid' })).roomIndex, '1');
+    keeper.ws.close(); a.ws.close(); a2.ws.close();
+  });
+});
+
+test('owned bots get cluster suffixes in spawn order; humans interleave untouched', async () => {
+  await withServer(async (port) => {
+    const owner = await connect(port, 'idx3');
+    assert.equal((await hello(owner, { jitsiId: 'h0' })).roomIndex, '0');
+    const owner1 = await connect(port, 'idx3');
+    assert.equal((await hello(owner1, { jitsiId: 'h1' })).roomIndex, '1');
+
+    // Batch append for owner 1: 1a, 1b, 1c.
+    for (const expected of ['1a', '1b', '1c']) {
+      const bot = await connect(port, 'idx3');
+      const you = await hello(bot, { jitsiId: `bot-${expected}`, isBot: true, ownerIndex: '1' });
+      assert.equal(you.roomIndex, expected);
+    }
+
+    // Owner 0 spawns one: independent counter.
+    const bot0 = await connect(port, 'idx3');
+    assert.equal((await hello(bot0, { jitsiId: 'bot-0a', isBot: true, ownerIndex: '0' })).roomIndex, '0a');
+
+    // A bot with no owner is a plain room entrant with the next integer.
+    const stray = await connect(port, 'idx3');
+    assert.equal((await hello(stray, { jitsiId: 'stray', isBot: true })).roomIndex, '2');
+
+    // roster/peer-join broadcasts carry the index.
+    const late = await connect(port, 'idx3');
+    const rosterYou = await hello(late, { jitsiId: 'late' });
+    assert.equal(rosterYou.roomIndex, '3');
+    const roster = late.messages.find(m => m.type === 'roster');
+    const indices = roster.peers.map(p => p.roomIndex).sort();
+    assert.deepEqual(indices, ['0', '0a', '1', '1a', '1b', '1c', '2']);
+  });
+});
+
+test('empty room resets counters (a new meeting starts at 0)', async () => {
+  await withServer(async (port) => {
+    const a = await connect(port, 'idx4');
+    assert.equal((await hello(a, { jitsiId: 'j1' })).roomIndex, '0');
+    await closed(a);
+    // Poll until the server has processed the close and reset the room.
+    let idx = null;
+    for (let i = 0; i < 20; i++) {
+      const b = await connect(port, 'idx4');
+      idx = (await hello(b, { jitsiId: `j2-${i}` })).roomIndex;
+      await closed(b);
+      if (idx === '0') break;
+      await new Promise(r => setTimeout(r, 25));
+    }
+    assert.equal(idx, '0');
+  });
+});

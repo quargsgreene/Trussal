@@ -25,6 +25,7 @@ services:
     restart: unless-stopped
     ports:
       - 8081
+      - 8082
     networks:
       meet.jitsi:
 

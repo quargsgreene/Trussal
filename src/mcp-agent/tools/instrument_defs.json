@@ -1,0 +1,12 @@
+{
+  "comment": "Valid Strudel instruments for AI-composed patterns. This default mirrors what strudel.js actually prebakes (built-in synths, ZZFX, GM soundfonts by prefix, the CDN sample packs, and tidal-drum-machines aliases). Replace or extend by shipping your own instrument_defs.json next to the server; the server rejects any instrument not listed here.",
+  "prefixes": ["gm_"],
+  "instruments": [
+    "sine", "sawtooth", "square", "triangle", "supersaw", "pulse", "white", "pink", "brown",
+    "zzfx",
+    "piano",
+    "casio", "crow", "insect", "wind", "jazz", "metal", "east", "space", "numbers", "num",
+    "bd", "sd", "sn", "hh", "oh", "cp", "cr", "ht", "lt", "mt", "rd", "rim", "perc", "misc", "fx",
+    "mridangam"
+  ]
+}

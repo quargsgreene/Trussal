@@ -1,0 +1,152 @@
+// RTCStatsReport polling for the Network Metrics service.
+//
+// Walks the same lib-jitsi-meet peer-connection map latency-instrument.js
+// uses for mic propagation (conf._room.rtc.peerConnections), calls
+// getStats() on each underlying RTCPeerConnection, and derives the local
+// link's RTT / jitter / packet-loss. The derived sample is broadcast on the
+// peer-state bus (extended `metrics` message) so every browser sees every
+// peer's own network truth; WS ping/pong stays as the fallback when no
+// RTCStats are available (e.g. alone in the room, or before media flows).
+//
+// The stats-report → sample derivation is a pure function so it runs under
+// node:test against captured JSON fixtures. The module deliberately does not
+// import peer-state.js — the poller takes the broadcast function as an
+// argument (studio.js passes sendLocalNetStats) so the pure parts stay
+// importable outside the browser.
+
+const POLL_INTERVAL_MS = 2000;
+
+// Derive one network sample from an RTCStatsReport (as an array of stats
+// entries — `Array.from(report.values())`).
+//
+//   rtcRtt     ms — selected candidate-pair currentRoundTripTime, falling
+//              back to remote-inbound-rtp roundTripTime (both arrive in s).
+//   rtcJitter  ms — worst inbound-rtp jitter (arrives in s).
+//   packetLoss fraction [0,1] — lost / (lost + received) over the delta
+//              since `prevTotals` so it tracks *current* loss, not the
+//              lifetime average. First call (no prev) uses lifetime totals.
+//
+// Returns { sample: { rtcRtt, rtcJitter, packetLoss } | null, totals } where
+// each field may be null when the report had nothing usable for it.
+export function deriveNetSample(statsEntries, prevTotals = null) {
+  const entries = Array.isArray(statsEntries) ? statsEntries : [];
+
+  let rtcRtt = null;
+  let rtcJitter = null;
+  let lost = 0;
+  let received = 0;
+  let sawInbound = false;
+
+  // Selected candidate pair is the authoritative RTT for the media path.
+  const pairs = entries.filter(s => s && s.type === 'candidate-pair');
+  const selected = pairs.find(s => s.selected === true || s.nominated === true) ||
+    pairs.find(s => s.state === 'succeeded');
+  if (selected && typeof selected.currentRoundTripTime === 'number') {
+    rtcRtt = selected.currentRoundTripTime * 1000;
+  }
+
+  for (const s of entries) {
+    if (!s) continue;
+    if (s.type === 'remote-inbound-rtp') {
+      // What the far end measured about our outbound stream.
+      if (rtcRtt == null && typeof s.roundTripTime === 'number') {
+        rtcRtt = s.roundTripTime * 1000;
+      }
+      if (typeof s.jitter === 'number') {
+        rtcJitter = Math.max(rtcJitter ?? 0, s.jitter * 1000);
+      }
+    } else if (s.type === 'inbound-rtp') {
+      sawInbound = true;
+      if (typeof s.jitter === 'number') {
+        rtcJitter = Math.max(rtcJitter ?? 0, s.jitter * 1000);
+      }
+      if (typeof s.packetsLost === 'number') lost += s.packetsLost;
+      if (typeof s.packetsReceived === 'number') received += s.packetsReceived;
+    }
+  }
+
+  const totals = { lost, received };
+  let packetLoss = null;
+  if (sawInbound) {
+    const dLost = prevTotals ? lost - prevTotals.lost : lost;
+    const dReceived = prevTotals ? received - prevTotals.received : received;
+    const denom = dLost + dReceived;
+    if (denom > 0 && dLost >= 0 && dReceived >= 0) {
+      packetLoss = Math.min(1, Math.max(0, dLost / denom));
+    } else if (denom === 0 && prevTotals) {
+      // No packets moved this interval — carry nothing rather than invent 0%.
+      packetLoss = null;
+    } else {
+      packetLoss = 0;
+    }
+  }
+
+  const sample = (rtcRtt != null || rtcJitter != null || packetLoss != null)
+    ? { rtcRtt, rtcJitter, packetLoss }
+    : null;
+  return { sample, totals };
+}
+
+// Merge samples from several peer connections into the single "my link"
+// sample we broadcast: worst RTT/jitter/loss across connections (with the
+// JVB there is normally exactly one).
+export function mergeSamples(samples) {
+  const usable = (samples || []).filter(Boolean);
+  if (usable.length === 0) return null;
+  const pick = (key) => {
+    const vals = usable.map(s => s[key]).filter(v => typeof v === 'number' && isFinite(v));
+    return vals.length ? Math.max(...vals) : null;
+  };
+  return { rtcRtt: pick('rtcRtt'), rtcJitter: pick('rtcJitter'), packetLoss: pick('packetLoss') };
+}
+
+// --- Browser wiring ---------------------------------------------------------
+
+function listPeerConnections() {
+  const out = [];
+  try {
+    const conf = window.APP && window.APP.conference;
+    const pcWrapper = conf?._room?.rtc?.peerConnections;
+    if (pcWrapper) {
+      // peerConnections is a Map in lib-jitsi-meet.
+      const iter = (pcWrapper.values && pcWrapper.values()) || pcWrapper;
+      for (const tpc of iter) {
+        const pc = tpc?.peerconnection;
+        if (pc && typeof pc.getStats === 'function') out.push(pc);
+      }
+    }
+  } catch (e) { /* conference not up yet */ }
+  return out;
+}
+
+let pollTimer = null;
+// Cumulative packet totals per RTCPeerConnection so loss is a delta, not a
+// lifetime average. WeakMap: entries die with their connection.
+const totalsByPc = new WeakMap();
+
+async function pollOnce(send) {
+  const pcs = listPeerConnections();
+  if (pcs.length === 0) return;
+  const samples = [];
+  for (const pc of pcs) {
+    try {
+      const report = await pc.getStats();
+      const entries = [];
+      report.forEach(s => entries.push(s));
+      const { sample, totals } = deriveNetSample(entries, totalsByPc.get(pc) || null);
+      totalsByPc.set(pc, totals);
+      samples.push(sample);
+    } catch (e) { /* connection closed mid-poll */ }
+  }
+  const merged = mergeSamples(samples);
+  if (merged) send(merged);
+}
+
+export function startNetStatsPolling(send) {
+  if (pollTimer || typeof send !== 'function') return;
+  pollTimer = setInterval(() => { pollOnce(send); }, POLL_INTERVAL_MS);
+}
+
+export function stopNetStatsPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}

@@ -21,6 +21,7 @@ import {
   sendLocalPlaying,
   sendRemotePattern,
   sendRemoteMute,
+  sendLocalNetStats,
 } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
 import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
@@ -41,7 +42,34 @@ import {
   isPropagatingToRoom,
   setJamulusMode,
   isJamulusMode,
+  getMasterBus,
+  getAudioContext,
+  setMonitorMix,
 } from './latency-instrument.js';
+import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
+import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
+import {
+  isNetCyclesActive,
+  setNetCyclesActive,
+  toggleEffectShortcut,
+  setInducedMetric,
+  getInducedMetrics,
+  effectiveWorstCase,
+} from './audio-net/Metaprogrammer.js';
+import { INDUCTIONS } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
+import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
+import {
+  myClusterBots,
+  spawnBots,
+  removeBots,
+  muteBots,
+  setBotPermissions,
+  subscribeFleetStatus
+} from './audio-net/UserBotOrchestration.js';
+import { startBotClusterVideo } from '../components/BotClusterVideo.js';
+import { startRoomHealth } from './audio-net/RoomHealthService.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -155,6 +183,11 @@ function injectStyles() {
     }
     #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
     #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
+    #${OVERLAY_ID} .ts-idx {
+      margin-left: auto;
+      font-size: 10px; font-family: monospace; padding: 1px 5px;
+      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+    }
     #${OVERLAY_ID} .ts-routed {
       font-size: 10px; padding: 1px 4px; border-radius: 3px;
       background: rgba(255,255,255,0.06); color: #5d7264;
@@ -304,6 +337,12 @@ function injectStyles() {
       height: 16px;
     }
 
+    #${OVERLAY_ID} .ts-spectrum {
+      width: 100%; height: 36px; display: block;
+      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 4px;
+    }
+
     #hydra-canvas {
       z-index: 100;
     }
@@ -338,6 +377,7 @@ function renderChip(peer, selected) {
       <div class="ts-chip-row">
         <div class="ts-avatar">${initial(peer.displayName)}</div>
         <div class="ts-name${isLocal ? ' you' : ''}">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
+        <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : '·'}</span>
       </div>
       <div class="ts-indicators">
         <span class="ts-ind${e.distortion ? ' on' : ''}">D</span>
@@ -390,6 +430,8 @@ function effectsBlock(peer, isLocal) {
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
   const jitter = typeof peer.jitter === 'number' ? peer.jitter.toFixed(2) : '–';
+  const rtcRtt = typeof peer.rtcRtt === 'number' ? `${peer.rtcRtt.toFixed(0)}ms` : '–';
+  const loss = typeof peer.packetLoss === 'number' ? `${(peer.packetLoss * 100).toFixed(1)}%` : '–';
   const extLabel  = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
   const routed = routedSet.has(peer.jitsiId);
   const propagating = peer.isLocal && isPropagatingToRoom();
@@ -405,7 +447,143 @@ function metricsLine(peer) {
   } else {
     routedTxt = 'no live audio';
   }
-  return `<div class="ts-meta">RTT <b>${rtt}</b> · jitter <b>${jitter}</b> · ${routedTxt}</div>`;
+  return `<div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
+}
+
+// Room-wide worst-case metrics (identical on every client — the shared basis
+// for Net Cycles cycle lengths) plus artificial-induction sliders, mix
+// monitoring, and the master-bus mini spectrum.
+function networkMetricsBlock() {
+  const measured = computeWorstCaseMetrics(getAllPeers());
+  const wc = effectiveWorstCase();
+  const induced = getInducedMetrics();
+  const ms = (v) => `${v.toFixed(0)}ms`;
+  const sliders = Object.entries(INDUCTIONS).map(([key, mod]) => `
+    <div class="ts-slider-row" data-induce="${key}">
+      <div class="ts-slider-label">
+        <span>${escapeHtml(mod.label)}</span>
+        <span class="ts-slider-val">${(induced[key] ?? 0)}${mod.unit === 'ms' ? 'ms' : ''}</span>
+      </div>
+      <input class="ts-slider-input" type="range" min="${mod.min}" max="${mod.max}" step="${mod.step}" value="${induced[key] ?? 0}">
+    </div>`).join('');
+  const peers = getAllPeers();
+  const mixOptions = [
+    `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
+    `<option value="self"${monitorSelection === 'self' ? ' selected' : ''}>ipsilateral (own mix)</option>`,
+    ...peers.filter(p => !p.isLocal && p.jitsiId).map(p =>
+      `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? ' selected' : ''}>↔ ${escapeHtml(String(p.roomIndex ?? p.displayName ?? 'peer'))}</option>`)
+  ].join('');
+  return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Network Metrics</div>
+        <div class="ts-section-controls">
+          <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
+          <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? ' on' : ''}" data-action="netcycles">${isNetCyclesActive() ? '◉ Net Cycles on' : '○ Net Cycles'}</button>
+        </div>
+      </div>
+      <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+        · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
+      <div class="ts-sliders">${sliders}</div>
+      <canvas class="ts-spectrum" width="560" height="36"></canvas>
+    </div>`;
+}
+
+let monitorSelection = 'master';
+
+let lastFleetStatus = '';
+subscribeFleetStatus((status) => {
+  if (status.action === 'spawn') {
+    lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` +
+      (status.reason ? ` — ${status.reason}` : '');
+  } else if (status.action === 'remove') {
+    lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
+  } else if (status.action === 'teardown') {
+    lastFleetStatus = `fleet teardown — ${status.reason || ''}`;
+  }
+  renderAll();
+});
+
+function botClusterBlock() {
+  const bots = myClusterBots();
+  const rows = bots.map(b => `
+    <div class="ts-fx" data-bot-index="${escapeHtml(b.roomIndex)}">
+      <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
+      <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || 'bot')}</span>
+      <button class="ts-fx-btn ts-dwell-btn${b.muted ? ' on' : ''}" data-bot-action="mute">${b.muted ? 'unmute' : 'mute'}</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? ' on' : ''}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? ' on' : ''}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
+      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="remove">×</button>
+    </div>`).join('');
+  return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Bot Cluster</div>
+        <div class="ts-section-controls">
+          <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">🔇 all</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">× all</button>
+        </div>
+      </div>
+      ${rows || '<div class="ts-meta">no bots in your cluster</div>'}
+      ${lastFleetStatus ? `<div class="ts-meta">${escapeHtml(lastFleetStatus)}</div>` : ''}
+    </div>`;
+}
+
+function bindBotClusterBlock(container) {
+  const countEl = container.querySelector('.ts-bot-count');
+  container.querySelectorAll('[data-bot-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.botAction;
+      const row = btn.closest('[data-bot-index]');
+      const idx = row ? row.dataset.botIndex : null;
+      if (action === 'spawn') spawnBots(parseInt(countEl && countEl.value, 10) || 1);
+      else if (action === 'remove-all') removeBots('all');
+      else if (action === 'mute-all') muteBots('all', true);
+      else if (action === 'remove' && idx) removeBots([idx]);
+      else if (action === 'mute' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        muteBots([idx], !(bot && bot.muted));
+      } else if (action === 'edit-perm' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
+      } else if (action === 'mod-perm' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
+      }
+    });
+  });
+}
+
+let spectrum = null;
+
+function drawSpectrumFrame(frame) {
+  const canvas = document.querySelector(`#${OVERLAY_ID} .ts-spectrum`);
+  if (!canvas || !frame || !frame.bands.length) return;
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  ctx.clearRect(0, 0, width, height);
+  const barW = width / frame.bands.length;
+  ctx.fillStyle = '#1ff466';
+  frame.bands.forEach((v, i) => {
+    const h = (v / 255) * height;
+    ctx.fillRect(i * barW, height - h, Math.max(1, barW - 1), h);
+  });
+}
+
+function ensureSpectrum() {
+  if (spectrum) return;
+  const audioCtx = getAudioContext();
+  const bus = getMasterBus();
+  if (!audioCtx || !bus) return;
+  try {
+    spectrum = createSpectrumAnalysis(audioCtx, bus);
+    spectrum.subscribe(drawSpectrumFrame);
+    spectrum.start();
+  } catch (e) {
+    console.warn('[studio] spectrum init failed', e);
+  }
 }
 
 function renderDetail(container) {
@@ -487,6 +665,9 @@ function renderDetail(container) {
       ${metricsLine(peer)}
     </div>
 
+    ${networkMetricsBlock()}
+    ${isLocal ? botClusterBlock() : ''}
+
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Strudel</div>
@@ -500,6 +681,32 @@ function renderDetail(container) {
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
+
+  const netCyclesBtn = container.querySelector('[data-action="netcycles"]');
+  if (netCyclesBtn) netCyclesBtn.addEventListener('click', async () => {
+    await bootAudioEngine().catch(() => {});
+    await setNetCyclesActive(!isNetCyclesActive());
+    setStatus(isNetCyclesActive() ? 'Net Cycles: scheduling by metaprogram' : 'Net Cycles off');
+    renderAll();
+  });
+
+  // Artificial network modulation sliders (upward-only, CRDT-shared).
+  container.querySelectorAll('[data-induce]').forEach(row => {
+    const key = row.dataset.induce;
+    const input = row.querySelector('input');
+    const valEl = row.querySelector('.ts-slider-val');
+    input.addEventListener('input', () => {
+      setInducedMetric(key, parseFloat(input.value));
+      if (valEl) valEl.textContent = input.value;
+    });
+  });
+
+  // Mix output monitoring: master / ipsilateral / a contralateral peer.
+  const mixSel = container.querySelector('.ts-monitor-mix');
+  if (mixSel) mixSel.addEventListener('change', () => {
+    monitorSelection = mixSel.value;
+    setMonitorMix(monitorSelection);
+  });
 
   if (!isLocal) {
     // Remote tile: editing drives the participant (bots only, enforced server-side).
@@ -543,9 +750,17 @@ function renderDetail(container) {
   }
   container.querySelectorAll('.ts-fx-dwell-btn[data-fx]').forEach(btn => {
     btn.addEventListener('click', () => {
+      const fx = btn.dataset.fx;
+      if (isNetCyclesActive()) {
+        // Under Net Cycles the toggles are shortcuts that edit the shared
+        // metaprogram's effect chain instead of the legacy 3-bool struct.
+        const map = { distortion: 'crush', noise: 'noise', reverb: 'room' };
+        toggleEffectShortcut(map[fx]);
+        renderAll();
+        return;
+      }
       const peer = getPeerByJitsiId(selectedJitsiId);
       const e = peer?.effects || {};
-      const fx = btn.dataset.fx;
       sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fx]: !e[fx] });
     });
   });
@@ -558,6 +773,7 @@ function renderDetail(container) {
       });
     });
   });
+  bindBotClusterBlock(container);
   const playBtn = container.querySelector('[data-action="play"]');
   if (playBtn) playBtn.addEventListener('click', () => {
     const code = container.querySelector('.ts-code');
@@ -846,9 +1062,20 @@ function ensureOverlay() {
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
+    <div class="ts-netcycles" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
     <div class="ts-detail"></div>
   `;
   document.body.appendChild(overlay);
+
+  // The Net Cycles card mounts once, outside the re-rendered detail panel,
+  // so the live CRDT-bound textarea survives roster/metrics re-renders.
+  const ncHost = overlay.querySelector('.ts-netcycles');
+  try {
+    mountMetaprogrammerEditor(ncHost);
+    mountMetaprogrammerCycleHighlighter(ncHost);
+  } catch (e) {
+    console.warn('[studio] Net Cycles card mount failed', e);
+  }
 
   overlay.querySelector('.ts-close').addEventListener('click', () => {
     overlay.style.display = 'none';
@@ -927,12 +1154,25 @@ function tickUi() {
   if (btn) btn.style.display = 'block';
 
   tickKbdUi();
-  bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
+  startNetStatsPolling(sendLocalNetStats);
+  startBotClusterVideo();
+  startRoomHealth();
+  bootAudioEngine()
+    .then(() => ensureSpectrum())
+    .catch(e => console.warn('[studio] audio boot deferred', e));
 }
 
-// Keyboard module requests eval via this event.
+// Keyboard module requests eval via this event. The Net Cycles editor's
+// Eval applies the shared metaprogram instead of booting Strudel.
 document.addEventListener('trussal-kbd-eval', (e) => {
   const code = e.detail?.code;
+  if (e.detail?.editor === 'netcycles') {
+    import('./audio-net/Metaprogrammer.js').then(m => {
+      const errors = m.applyProgramText(typeof code === 'string' ? code : '');
+      setStatus(errors.length ? `metaprogram: ${errors[0].line}:${errors[0].col} ${errors[0].message}` : 'metaprogram applied');
+    });
+    return;
+  }
   onEvalAndPlay(typeof code === 'string' ? code : (getLocalPeer()?.pattern ?? ''));
 });
 

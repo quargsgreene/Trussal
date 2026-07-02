@@ -6,8 +6,8 @@ COPY package*.json ./
 
 RUN npm ci
 
-COPY server.js ./
+COPY server.js room-indices.js o2lite-format.js o2-relay.js ./
 
-EXPOSE 8081
+EXPOSE 8081 8082
 
 CMD ["npm", "start"]

@@ -1,0 +1,64 @@
+[
+  {
+    "id": "T01",
+    "type": "transport",
+    "timestamp": 1751470000000,
+    "selectedCandidatePairId": "CPxYz"
+  },
+  {
+    "id": "CPxYz",
+    "type": "candidate-pair",
+    "timestamp": 1751470000000,
+    "state": "succeeded",
+    "nominated": true,
+    "selected": true,
+    "currentRoundTripTime": 0.062,
+    "totalRoundTripTime": 12.4
+  },
+  {
+    "id": "CPother",
+    "type": "candidate-pair",
+    "timestamp": 1751470000000,
+    "state": "failed",
+    "nominated": false,
+    "currentRoundTripTime": 0.9
+  },
+  {
+    "id": "RTCInboundRTPAudioStream_1234",
+    "type": "inbound-rtp",
+    "timestamp": 1751470000000,
+    "kind": "audio",
+    "ssrc": 1234,
+    "packetsReceived": 9000,
+    "packetsLost": 100,
+    "jitter": 0.004
+  },
+  {
+    "id": "RTCInboundRTPVideoStream_5678",
+    "type": "inbound-rtp",
+    "timestamp": 1751470000000,
+    "kind": "video",
+    "ssrc": 5678,
+    "packetsReceived": 45000,
+    "packetsLost": 400,
+    "jitter": 0.011
+  },
+  {
+    "id": "RTCRemoteInboundRtpAudioStream_999",
+    "type": "remote-inbound-rtp",
+    "timestamp": 1751470000000,
+    "kind": "audio",
+    "ssrc": 999,
+    "roundTripTime": 0.058,
+    "jitter": 0.006,
+    "fractionLost": 0.01
+  },
+  {
+    "id": "RTCOutboundRTPAudioStream_999",
+    "type": "outbound-rtp",
+    "timestamp": 1751470000000,
+    "kind": "audio",
+    "ssrc": 999,
+    "packetsSent": 8800
+  }
+]

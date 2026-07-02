@@ -97,7 +97,13 @@ function ensureAudioContext() {
     // 48 kHz matches the Jamulus relay PCM stream and WebRTC Opus codec rate,
     // avoiding pitch-shift when relay audio flows through the effects chain.
     audioCtx = new Ctor({ sampleRate: 48000 });
-    realDestination = audioCtx.destination;
+    // Master bus: every chain/effect that used to target audioCtx.destination
+    // now converges on this gain node, giving SpectrumAnalysis (and the room
+    // health compressor) one place to tap the full mix.
+    const masterBus = audioCtx.createGain();
+    masterBus.gain.value = 1.0;
+    masterBus.connect(audioCtx.destination);
+    realDestination = masterBus;
   }
   if (!audioCtx.audioWorklet) return Promise.reject(new Error('AudioWorklet not supported'));
 
@@ -264,11 +270,18 @@ async function buildChain(jitsiId) {
     reverbGain.connect(realDestination);
   }
 
-  input.connect(worklet);
+  // Monitor gain: mix-output selection (master / ipsilateral / a chosen
+  // contralateral peer) without touching the Net Cycles slot gate on
+  // chain.input.
+  const monitor = audioCtx.createGain();
+  monitor.gain.value = monitorLevelFor(jitsiId);
+
+  input.connect(monitor);
+  monitor.connect(worklet);
   worklet.connect(limiter);
   limiter.connect(realDestination); // dry path by default
 
-  return { jitsiId, input, worklet, limiter, reverb, reverbGain, reverbOn: false };
+  return { jitsiId, input, monitor, worklet, limiter, reverb, reverbGain, reverbOn: false };
 }
 
 async function ensureChain(jitsiId) {
@@ -409,6 +422,83 @@ subscribeParticipants((event, payload) => {
 });
 
 // ---- Public API ----------------------------------------------------------
+
+// The master-bus gain node all audio flows through (== realDestination once
+// the context exists). Null before the engine boots.
+export function getMasterBus() { return realDestination; }
+export function getAudioContext() { return audioCtx; }
+
+// Net Cycles slot gating: ramp a peer's whole chain (mic + external sources
+// all flow through chain.input) open/closed at an audio-clock time. Short
+// ramp avoids clicks without smearing the slot boundary.
+export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
+  const chain = chains.get(jitsiId);
+  if (!chain || !audioCtx) return false;
+  const t = atAudioTime != null ? Math.max(atAudioTime, audioCtx.currentTime) : audioCtx.currentTime;
+  const g = chain.input.gain;
+  g.cancelScheduledValues(t);
+  g.setTargetAtTime(level, t, rampS);
+  return true;
+}
+
+// ---- Mix output monitoring -----------------------------------------------
+//
+// 'master' hears everything (default); 'self' is the ipsilateral mix (own
+// instrument only — every remote chain muted); a jitsiId monitors that
+// peer's contralateral mix (their chain solo, local instrument muted). The
+// remote chain already applies that peer's deterministic effects locally,
+// so soloing it reproduces their processed view.
+
+let monitorMode = 'master';
+
+function monitorLevelFor(jitsiId) {
+  if (monitorMode === 'master') return 1;
+  if (monitorMode === 'self') return 0;
+  return jitsiId === monitorMode ? 1 : 0;
+}
+
+export function setMonitorMix(mode) {
+  monitorMode = mode || 'master';
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for (const chain of chains.values()) {
+    chain.monitor.gain.setTargetAtTime(monitorLevelFor(chain.jitsiId), now, 0.05);
+  }
+  if (masterStrudelGain) {
+    const strudelLevel = (monitorMode === 'master' || monitorMode === 'self') ? 1 : 0;
+    masterStrudelGain.gain.setTargetAtTime(strudelLevel, now, 0.05);
+  }
+}
+
+export function getMonitorMix() { return monitorMode; }
+
+// Net Cycles master effects: splice a {input, output} pair between the
+// master bus and the real context destination — "after all other effects".
+// The spectrum analyser's parallel tap on the master bus is unaffected.
+export function insertMasterChain(endpoints) {
+  if (!audioCtx || !realDestination || !endpoints) return false;
+  try { realDestination.disconnect(audioCtx.destination); } catch (e) {}
+  realDestination.connect(endpoints.input);
+  endpoints.output.connect(audioCtx.destination);
+  return true;
+}
+
+export function removeMasterChain(endpoints) {
+  if (!audioCtx || !realDestination || !endpoints) return;
+  try { realDestination.disconnect(endpoints.input); } catch (e) {}
+  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) {}
+  try { realDestination.connect(audioCtx.destination); } catch (e) {}
+}
+
+// Leaving Net Cycles mode: every chain back to unity immediately.
+export function resetChainGates() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for (const chain of chains.values()) {
+    chain.input.gain.cancelScheduledValues(now);
+    chain.input.gain.setTargetAtTime(1, now, 0.03);
+  }
+}
 
 export async function bootAudioEngine() {
   if (bootPromise) return bootPromise;

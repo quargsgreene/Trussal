@@ -23,9 +23,14 @@ const peerIdByJitsiId = new Map();
 // Bots set this global (before the bundle loads) so they announce themselves as
 // bots and the room can drive/mute them from the studio without hijacking humans.
 const LOCAL_IS_BOT = !!(typeof window !== 'undefined' && window.__trussalIsBot);
+// Bots spawned on a user's behalf carry their owner's room index so the
+// sidecar can assign them a cluster suffix (e.g. owner 1 → bots 1a, 1b, …).
+const LOCAL_OWNER_INDEX = (typeof window !== 'undefined' && typeof window.__trussalBotOwnerIndex === 'string')
+  ? window.__trussalBotOwnerIndex : null;
 
 const localPeer = {
   peerId: null,
+  roomIndex: null,
   jitsiId: null,
   displayName: null,
   isLocal: true,
@@ -35,7 +40,11 @@ const localPeer = {
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
   rtt: null,
-  jitter: null
+  jitter: null,
+  packetLoss: null,
+  rtcRtt: null,
+  canEditMetaprogram: !LOCAL_IS_BOT,
+  canWriteModulation: !LOCAL_IS_BOT
 };
 
 let ws = null;
@@ -82,12 +91,14 @@ function sendHelloIfReady() {
   if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
   const local = getLocalParticipant();
   if (!local) return;
-  ws.send(JSON.stringify({
+  const hello = {
     type: 'hello',
     jitsiId: local.id,
     displayName: local.displayName,
     isBot: LOCAL_IS_BOT
-  }));
+  };
+  if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
+  ws.send(JSON.stringify(hello));
   helloSent = true;
   flushPending();
 }
@@ -174,11 +185,16 @@ function applyPatch(peer, patch) {
   if (typeof patch.muted === 'boolean') peer.muted = patch.muted;
   if (typeof patch.rtt === 'number' || patch.rtt === null) peer.rtt = patch.rtt;
   if (typeof patch.jitter === 'number' || patch.jitter === null) peer.jitter = patch.jitter;
+  if (typeof patch.packetLoss === 'number' || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
+  if (typeof patch.rtcRtt === 'number' || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+  if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
+  if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
 }
 
 function defaultPeer(peerId) {
   return {
     peerId,
+    roomIndex: null,
     jitsiId: null,
     displayName: null,
     isBot: false,
@@ -187,12 +203,17 @@ function defaultPeer(peerId) {
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
-    jitter: null
+    jitter: null,
+    packetLoss: null,
+    rtcRtt: null,
+    canEditMetaprogram: true,
+    canWriteModulation: true
   };
 }
 
 function upsertPeer(record) {
   const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
+  if (record.roomIndex !== undefined) existing.roomIndex = record.roomIndex;
   if (record.jitsiId !== undefined) existing.jitsiId = record.jitsiId;
   if (record.displayName !== undefined) existing.displayName = record.displayName;
   if (record.isBot !== undefined) existing.isBot = !!record.isBot;
@@ -215,6 +236,12 @@ function handleMessage(msg) {
           const peer = upsertPeer(p);
           emit('peer-upsert', peer);
         }
+      }
+      // `you` carries our own server-assigned room index (immutable for the
+      // meeting) — the server never repeats our record in later broadcasts.
+      if (msg.you && msg.you.roomIndex != null) {
+        localPeer.roomIndex = msg.you.roomIndex;
+        emit('peer-upsert', localPeer);
       }
       break;
 
@@ -242,6 +269,24 @@ function handleMessage(msg) {
       emit('peer-upsert', peer);
       break;
     }
+
+    case 'fleet-status':
+      // Fleet service reporting back (spawn results, ceiling hits, teardown).
+      emit('fleet-status', msg);
+      break;
+
+    case 'crdt-update':
+      // Shared metaprogram doc sync (Yjs update, base64). Consumed by
+      // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
+      if (typeof msg.update === 'string') {
+        emit('crdt-update', { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality });
+      }
+      break;
+
+    case 'crdt-state':
+      // Late-joiner catch-up: full doc history.
+      if (Array.isArray(msg.updates)) emit('crdt-state', { updates: msg.updates });
+      break;
 
     case 'remote-control': {
       // We are the target of an operator action (only bots receive these — the
@@ -348,7 +393,24 @@ export function getAllPeers() {
 }
 
 export function getMyPeerId() { return myPeerId; }
-export function getLocalMetrics() { return { rtt: localRtt, jitter: localJitter }; }
+export function getLocalMetrics() {
+  return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
+}
+
+// RTCStats-derived sample from NetStats.js. rtt/jitter keep their WS
+// ping/pong semantics (fallback path); packetLoss and rtcRtt ride the same
+// `metrics` broadcast so every browser computes identical worst-case values.
+export function sendLocalNetStats({ rtcRtt = null, packetLoss = null } = {}) {
+  if (typeof rtcRtt === 'number' && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
+  if (typeof packetLoss === 'number' && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
+  const msg = { type: 'metrics' };
+  if (typeof localPeer.rtcRtt === 'number') msg.rtcRtt = localPeer.rtcRtt;
+  if (typeof localPeer.packetLoss === 'number') msg.packetLoss = localPeer.packetLoss;
+  if (msg.rtcRtt === undefined && msg.packetLoss === undefined) return;
+  safeSend(msg);
+  emit('local-metrics', getLocalMetrics());
+  emit('peer-upsert', localPeer);
+}
 
 export function sendLocalPattern(code) {
   localPeer.pattern = typeof code === 'string' ? code : '';
@@ -391,4 +453,37 @@ export function sendRemotePattern(targetPeerId, code) {
 export function sendRemoteMute(targetPeerId, muted) {
   if (!targetPeerId) return;
   safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
+}
+
+// Shared metaprogram doc: outbound Yjs update (base64). `snapshot` marks a
+// full-state update that subsumes history server-side; `modality` records
+// how the edit was made (keyboard / head-cursor / gesture / bot / mcp).
+export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard', channel = 'metaprogram' } = {}) {
+  if (typeof update !== 'string' || !update) return;
+  safeSend({ type: 'crdt-update', update, snapshot, modality, channel });
+}
+
+// Research telemetry: appended to the server-side session JSONL, never
+// relayed to peers (scheduler cycle boundaries, health actions, …).
+export function sendResearchEvent(kind, data = null) {
+  if (typeof kind !== 'string' || !kind) return;
+  safeSend({ type: 'research-event', kind, data });
+}
+
+// Ask the fleet service for cluster changes on our behalf. The server stamps
+// the request with our room index; bots cannot send these.
+export function sendFleetRequest(action, { count, targets } = {}) {
+  const msg = { type: 'fleet-request', action };
+  if (typeof count === 'number') msg.count = count;
+  if (targets !== undefined) msg.targets = targets;
+  safeSend(msg);
+}
+
+// Owner-side permission grant for a bot in one's cluster.
+export function sendBotPermission(targetPeerId, perms) {
+  if (!targetPeerId || !perms) return;
+  const msg = { type: 'bot-permission', targetPeerId };
+  if (typeof perms.canEditMetaprogram === 'boolean') msg.canEditMetaprogram = perms.canEditMetaprogram;
+  if (typeof perms.canWriteModulation === 'boolean') msg.canWriteModulation = perms.canWriteModulation;
+  safeSend(msg);
 }
