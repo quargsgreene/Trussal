@@ -404,10 +404,24 @@ function _drawLandmarks(result) {
   }
 }
 
+let _densitySkip = 0;
+
 function _detectionLoop() {
   if (!_videoEl || !_landmarker || _videoEl.readyState < 2) {
     _rafId = requestAnimationFrame(_detectionLoop);
     return;
+  }
+
+  // Room-health landmark-density scale-down: under load (RoomHealthService
+  // sets window._ncLandmarkScale to 0.5 / 0.25) run detection on every 2nd /
+  // 4th frame — the cursor EMA smooths over the gaps.
+  const densityScale = (typeof window !== 'undefined' && window._ncLandmarkScale) || 1;
+  if (densityScale < 1) {
+    _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
+    if (_densitySkip !== 0) {
+      _rafId = requestAnimationFrame(_detectionLoop);
+      return;
+    }
   }
 
   const ts            = performance.now();

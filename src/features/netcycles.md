@@ -1,12 +1,29 @@
 # Net Cycles
 
-Status: The conductor (`bots/src/orchestrator/conductor.js`) currently orchestrates the client-side bot fleet with respect to the end user.
+Status: Implemented. The Fleet Service (`bots/src/orchestrator/fleet-service.js`)
+has replaced the conductor as primary orchestrator: fleet membership is
+(ownerIndex → cluster), driven by in-room `fleet-request` messages relayed via
+the latency sidecar, while the conductor's whole external surface persists
+without duplication (`/assignment/:botId` + `POST /metrics` on :7700, the
+admin/config API on :7777 consumed by mcp-observer, and the health policy in
+`health.js` verbatim). `conductor.js` remains only for the legacy
+admin-driven fleet mode and its tests.
 
- The conductor implements a custom Conductor data type whose constructor stores a map object containing all individual bot fleet assignments. Conductor objects currently stops and starts bots, assigns each bot Strudel and Hydra scripts, and performs CRUD uperations upon global configuration  according to health standards dictated by median frames per second, VM RAM usage, and median latency. 
+Room-side, the Metaprogrammer (`src/audio-net/Metaprogrammer.js`) owns AV
+orchestration: the CRDT-shared metaprogram (parsed by
+`MetaprogrammerParser.js`) drives a deterministic scheduler
+(`MetaprogramScheduler.js`) clocked by O2lite ClockSync against the sidecar's
+O2 relay; per-participant AV buffer queues dequeue one buffer per slot
+(pattern updates land at the performer's next slot; empty queues play silence
+and the cycle always advances); slots gate Strudel voices and per-peer chains;
+`#`-chained effects (room/echo/crush/noise/grid) modulate from worst-case
+network metrics merged with CRDT-shared artificial inductions. The sidecar
+(`latency-instrument/server.js`) assigns the sequential room indices and
+cluster suffixes, relays CRDT/permission/fleet traffic, and writes the
+research session JSONL (`research/export.js` rolls it into CSV;
+mcp-observer's `get_session_log` reads it).
 
- Furthermore, the conductor presently establishes its own HTTP server, and routes the bot fleet to the appropriate Jitsi meeting room.
-
- To be updated as this feature's implementation changes.
+To be updated as this feature's implementation changes.
 
 ## Scope
 

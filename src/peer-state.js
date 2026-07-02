@@ -463,6 +463,13 @@ export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard'
   safeSend({ type: 'crdt-update', update, snapshot, modality, channel });
 }
 
+// Research telemetry: appended to the server-side session JSONL, never
+// relayed to peers (scheduler cycle boundaries, health actions, …).
+export function sendResearchEvent(kind, data = null) {
+  if (typeof kind !== 'string' || !kind) return;
+  safeSend({ type: 'research-event', kind, data });
+}
+
 // Ask the fleet service for cluster changes on our behalf. The server stamps
 // the request with our room index; bots cannot send these.
 export function sendFleetRequest(action, { count, targets } = {}) {

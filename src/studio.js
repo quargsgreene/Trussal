@@ -69,6 +69,7 @@ import {
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
 import { startBotClusterVideo } from '../components/BotClusterVideo.js';
+import { startRoomHealth } from './audio-net/RoomHealthService.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -1155,6 +1156,7 @@ function tickUi() {
   tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
   startBotClusterVideo();
+  startRoomHealth();
   bootAudioEngine()
     .then(() => ensureSpectrum())
     .catch(e => console.warn('[studio] audio boot deferred', e));

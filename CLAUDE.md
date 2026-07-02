@@ -9,6 +9,9 @@ Trussal is a networked algorave platform — a customization of Jitsi Meet that 
 ## Commands
 
 ```bash
+# Run the root test suite (node:test — pure Net Cycles modules + sidecar integration)
+npm test
+
 # Build custom-config.js (esbuild, ESM)
 npm run build
 
@@ -64,6 +67,12 @@ Set `JAMULUS_HOST` in the environment (or `docker-jitsi-meet/.env`) before build
 | `welcome-page.js` | Jitsi welcome-page and prejoin-screen customizations |
 | `meeting.js` | In-meeting customizations (e.g. no-audio toast) |
 | `prejoin.js` | Prejoin screen logic |
+| `editor-router.js` | Routes head-cursor/keyboard input to whichever editor is focused (personal Strudel vs shared Net Cycles) |
+| `audio-net/` | Net Cycles: metaprogram parser + deterministic scheduler + AV buffer queues (`Metaprogrammer*.js`, `MetaprogramScheduler.js`), O2lite/ClockSync, CRDT sync (Yjs over the sidecar), worst-case metrics + artificial modulation (`network-modulation/`), RTCStats + spectrum observability (`observability/`), network-modulated effects (`av-effects/`), bot cluster orchestration, room health |
+| `bridges/XMPPtoO2Mapper.js` | jitsiId ↔ room index ↔ O2 service name |
+| `mcp-agent/` | Standalone MCP server (own package.json): AI-composed pattern updates via per-bot ordered queues + metaprogram apply |
+
+Top-level: `components/` (vanilla-DOM Net Cycles editor/highlighter/cluster video), `public/lib/o2lite-web.js` (O2lite WS client), `server/O2Relay.js` (re-export of the sidecar's O2 relay), `research/export.js` (session JSONL → CSV).
 
 ### Key design constraints
 

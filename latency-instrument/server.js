@@ -15,9 +15,11 @@
 const { WebSocketServer } = require('ws');
 const { randomUUID } = require('crypto');
 const { URL } = require('url');
+const { appendFileSync, mkdirSync } = require('fs');
+const { join } = require('path');
 const { botSuffix } = require('./room-indices.js');
 
-function createLatencyServer({ port = 8081, server } = {}) {
+function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
@@ -42,10 +44,26 @@ function createLatencyServer({ port = 8081, server } = {}) {
   function getRoomMeta(name) {
     let meta = roomMeta.get(name);
     if (!meta) {
-      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [] };
+      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [], sessionId: randomUUID() };
       roomMeta.set(name, meta);
     }
     return meta;
+  }
+
+  // Research session log: one timestamped JSONL file per room-session,
+  // written server-side so client clock skew can't corrupt event ordering.
+  // Disabled unless a logDir is configured (production main passes
+  // SESSION_LOG_DIR, tests pass a temp dir).
+  if (logDir) {
+    try { mkdirSync(logDir, { recursive: true }); } catch (e) { /* exists */ }
+  }
+  function logEvent(roomName, type, payload = {}) {
+    if (!logDir) return;
+    const meta = getRoomMeta(roomName);
+    const line = JSON.stringify({ ts: Date.now(), session: meta.sessionId, room: roomName, type, ...payload });
+    try {
+      appendFileSync(join(logDir, `session-${meta.sessionId}.jsonl`), line + '\n');
+    } catch (e) { /* logging must never take the relay down */ }
   }
 
   // Sequential identifying index, assigned once at hello. Humans (and bots
@@ -201,6 +219,9 @@ function createLatencyServer({ port = 8081, server } = {}) {
           }
           if (!record.isFleet) {
             broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
+            logEvent(roomName, 'peer-join', {
+              roomIndex: record.roomIndex, isBot: record.isBot, displayName: record.displayName
+            });
           }
           break;
         }
@@ -220,6 +241,7 @@ function createLatencyServer({ port = 8081, server } = {}) {
             count: msg.count,
             targets: msg.targets
           });
+          logEvent(roomName, 'fleet-request', { fromIndex: record.roomIndex, action: msg.action, count: msg.count });
           break;
         }
 
@@ -230,6 +252,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
           const room = rooms.get(roomName);
           if (!room) break;
           broadcast(room, peerId, { ...msg, type: 'fleet-status' });
+          logEvent(roomName, 'fleet-status', {
+            action: msg.action, ownerIndex: msg.ownerIndex, spawned: msg.spawned,
+            removed: msg.removed, reason: msg.reason
+          });
           break;
         }
 
@@ -264,6 +290,13 @@ function createLatencyServer({ port = 8081, server } = {}) {
               modality: typeof msg.modality === 'string' ? msg.modality : 'keyboard'
             });
           }
+          logEvent(roomName, 'crdt-update', {
+            authorIndex: record.roomIndex,
+            channel: isModulation ? 'modulation' : 'metaprogram',
+            modality: typeof msg.modality === 'string' ? msg.modality : 'keyboard',
+            snapshot: !!msg.snapshot,
+            updateBytes: msg.update.length
+          });
           break;
         }
 
@@ -284,6 +317,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
               canEditMetaprogram: target.canEditMetaprogram,
               canWriteModulation: target.canWriteModulation
             }
+          });
+          logEvent(roomName, 'bot-permission', {
+            fromIndex: record.roomIndex, targetIndex: target.roomIndex,
+            canEditMetaprogram: target.canEditMetaprogram, canWriteModulation: target.canWriteModulation
           });
           break;
         }
@@ -354,6 +391,20 @@ function createLatencyServer({ port = 8081, server } = {}) {
             peerId,
             patch: { rtt: record.rtt, jitter: record.jitter, packetLoss: record.packetLoss, rtcRtt: record.rtcRtt }
           });
+          logEvent(roomName, 'metrics', {
+            roomIndex: record.roomIndex,
+            rtt: record.rtt, jitter: record.jitter, packetLoss: record.packetLoss, rtcRtt: record.rtcRtt
+          });
+          break;
+        }
+
+        case 'research-event': {
+          // Client-side research telemetry (scheduler cycle boundaries,
+          // health actions, …): appended to the session log, never relayed.
+          if (typeof msg.kind !== 'string') break;
+          logEvent(roomName, 'research-event', {
+            kind: msg.kind, fromIndex: record.roomIndex, data: msg.data ?? null
+          });
           break;
         }
 
@@ -372,7 +423,10 @@ function createLatencyServer({ port = 8081, server } = {}) {
       const room = rooms.get(roomName);
       if (room && room.has(peerId)) {
         room.delete(peerId);
-        if (!record.isFleet) broadcast(room, peerId, { type: 'peer-leave', peerId });
+        if (!record.isFleet) {
+          broadcast(room, peerId, { type: 'peer-leave', peerId });
+          logEvent(roomName, 'peer-leave', { roomIndex: record.roomIndex });
+        }
         if (room.size === 0) {
           rooms.delete(roomName);
           roomMeta.delete(roomName); // meeting over — counters reset with it
@@ -397,7 +451,7 @@ module.exports = { createLatencyServer };
 
 if (require.main === module) {
   console.log('[latency] BOOT: latency WS server starting');
-  createLatencyServer({ port: 8081 });
+  createLatencyServer({ port: 8081, logDir: process.env.SESSION_LOG_DIR || './session-logs' });
   console.log('[latency] listening on ws://0.0.0.0:8081');
   const { createO2Relay } = require('./o2-relay.js');
   createO2Relay({ port: 8082 });
