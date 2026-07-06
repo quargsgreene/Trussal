@@ -5,7 +5,13 @@
 #   2. Each VM must have the repo cloned at REPO_PATH and your SSH public key
 #      in authorized_keys.
 #   3. Video VM: user must be in the docker group.
-#   4. Audio VM: user must be able to run sudo systemctl without a password.
+#   4. Audio VM: the Jamulus servers run as SYSTEM units
+#      (/etc/systemd/system/jamulus@<port>.service, User=trussal-audio). The
+#      deploy user needs passwordless sudo (NOPASSWD) for the three commands
+#      `deploy-audio` runs: installing the unit file, `systemctl daemon-reload`,
+#      and `systemctl restart jamulus@*`. NOTE: deploy-audio overwrites the
+#      deployed unit from system/jamulus@.service — edit the unit in the repo,
+#      not on the box, or your change will be reverted on the next deploy.
 #
 # Usage:
 #   make deploy-video   rebuild custom-config.js, push to video VM, restart Jitsi
@@ -29,9 +35,9 @@ deploy-video:
 	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && ./run.sh'
 deploy-audio:
 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
-	  && cp system/jamulus@.service ~/.config/systemd/user/ \
-	  && systemctl --user daemon-reload \
-	  && systemctl --user restart "jamulus@*"'
+	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \
+	  && sudo -n systemctl daemon-reload \
+	  && sudo -n systemctl restart "jamulus@*"'
 
 deploy-bots:
 	ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && git pull --ff-only \
