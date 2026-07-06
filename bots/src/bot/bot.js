@@ -39,7 +39,18 @@ export class Bot {
       headless: false,
       executablePath,
       args: chromiumArgs(),
-      ignoreDefaultArgs: ['--mute-audio'],
+      // Debian ships a rolling Chromium (150+). Puppeteer's stock default-arg
+      // set makes that Chromium abort instantly at startup ("Failed to launch
+      // the browser process: Code: null"), and the pipe transport is unreliable
+      // with it. Supplying ONLY our own args (ignoreDefaultArgs: true) over a
+      // WS port (pipe: false) launches it reliably. Dropping the defaults also
+      // drops --mute-audio (so the bot's mic tap stays audible) and puppeteer's
+      // temp-profile flag, so userDataDir is explicit — the container is
+      // single-bot, so a fixed path is safe.
+      ignoreDefaultArgs: true,
+      pipe: false,
+      userDataDir: '/tmp/chrome-profile',
+      timeout: 60000,
     });
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(spoofedUserAgent(botId));
