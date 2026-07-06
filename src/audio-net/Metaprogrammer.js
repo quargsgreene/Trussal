@@ -530,3 +530,22 @@ subscribePeerState((event, peer) => {
     }
   }
 });
+
+// --- Diagnostics --------------------------------------------------------------------
+// Temporary probe: confirms which bundle is loaded and dumps live Net Cycles
+// state so we can tell a stale cache apart from a real scheduler/gate bug.
+export const NC_BUILD = 'setTimeout-fix+probe-1';
+if (typeof window !== 'undefined') {
+  window.__ncBuild = NC_BUILD;
+  window.__ncDebug = () => ({
+    build: NC_BUILD,
+    active,
+    o2Connected: !!(o2 && o2.ws && o2.ws.readyState === 1),
+    clock: clock ? { exists: true, synced: clock.isSynced(), ...clock.stats() } : { exists: false },
+    epoch,
+    schedulerRunning: !!scheduler,
+    gateLevels: Object.fromEntries(gateLevels),
+    activePatterns: [...activePatterns.keys()],
+    knownTokens: [...knownTokens],
+  });
+}

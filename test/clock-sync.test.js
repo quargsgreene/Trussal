@@ -77,6 +77,31 @@ test('negative RTT replies (clock weirdness) are discarded', () => {
   assert.equal(sync.toNetworkTime(1), null);
 });
 
+test('default timers call the global setTimeout with a valid receiver (regression: browser Illegal invocation)', () => {
+  // Browsers expose setTimeout/clearTimeout as Window methods that throw
+  // "Illegal invocation" unless their receiver is the global (or undefined).
+  // node's timers don't check, so this fakes the browser contract to guard the
+  // ClockSync default path, which invokes the timers as this._setTimeout(...).
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  const scheduled = [];
+  const strict = (impl) => function (...args) {
+    if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+    return impl(...args);
+  };
+  globalThis.setTimeout = strict((fn) => scheduled.push(fn)); // returns 1,2,… (truthy)
+  globalThis.clearTimeout = strict(() => {});
+  try {
+    // No injected timers → uses the constructor defaults (the fixed path).
+    const sync = new ClockSync({ sendCsGet: () => {}, now: () => 0 });
+    assert.doesNotThrow(() => sync.start()); // start → _beginBurst → _fireOne → _schedule
+    assert.doesNotThrow(() => sync.stop());  // stop → _clearTimeout
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    globalThis.clearTimeout = realClearTimeout;
+  }
+});
+
 // --- Integration: two clients through a real in-process relay ---------------
 
 test('two clients over the O2Relay agree on network time within 10 ms under 50 ms asymmetric delay', async () => {

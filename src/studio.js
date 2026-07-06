@@ -954,7 +954,9 @@ function renderVoiceButtons(container, code) {
   area.querySelectorAll('.ts-voice-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       toggleButtonCode(btn.dataset.voiceCode);
-      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+      // Scope to the detail panel's personal editor — a bare `.ts-code` would
+      // match the Net Cycles metaprogram textarea (it mounts first in the DOM).
+      const ta = container.querySelector('.ts-code:not(.nc-code)');
       if (ta) renderVoiceButtons(container, ta.value);
     });
   });
@@ -1177,8 +1179,10 @@ document.addEventListener('trussal-kbd-eval', (e) => {
 });
 
 // Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
+// The `trussal-eval` event is the personal Strudel eval, so exclude the Net
+// Cycles metaprogram textarea (which mounts first and would otherwise match).
 document.addEventListener('trussal-eval', () => {
-  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-detail .ts-code:not(.nc-code)`);
   if (codeEl) {
     codeEl.classList.remove('ts-eval-flash');
     void codeEl.offsetWidth; // force reflow so the animation restarts each time

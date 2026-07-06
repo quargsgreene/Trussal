@@ -22,8 +22,13 @@ export class ClockSync {
     burst = DEFAULT_BURST,
     burstSpacingMs = DEFAULT_BURST_SPACING_MS,
     resyncIntervalMs = DEFAULT_RESYNC_INTERVAL_MS,
-    setTimeoutFn = (typeof setTimeout !== 'undefined' ? setTimeout : null),
-    clearTimeoutFn = (typeof clearTimeout !== 'undefined' ? clearTimeout : null)
+    // Wrap the globals rather than storing bare references: in browsers
+    // setTimeout/clearTimeout are Window methods that throw "Illegal invocation"
+    // unless called with the global as their receiver, and here they'd be
+    // invoked as this._setTimeout(...) with the ClockSync instance as receiver.
+    // (node's timers don't check the receiver, so node:test never hit this.)
+    setTimeoutFn = (typeof setTimeout !== 'undefined' ? (fn, ms) => setTimeout(fn, ms) : null),
+    clearTimeoutFn = (typeof clearTimeout !== 'undefined' ? (id) => clearTimeout(id) : null)
   }) {
     if (typeof sendCsGet !== 'function' || typeof now !== 'function') {
       throw new TypeError('ClockSync needs sendCsGet and now functions');
