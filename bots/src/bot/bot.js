@@ -8,7 +8,7 @@
  * reason `puppeteer-core` is only imported lazily in index.js, never here.
  */
 
-import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
+import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
   pageEnsureAudioPublished, pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
@@ -31,27 +31,10 @@ export class Bot {
   async start() {
     const { botId, name, jitsiUrl, script, executablePath, bandwidth = {}, ownerIndex } = this.cfg;
 
-    this.browser = await this.launcher.launch({
-      // headless: false — Xvfb is already running per bot (entrypoint sets
-      // DISPLAY=:9N). headless:'new' routes Web Audio to a null Ozone sink;
-      // non-headless X11 mode falls through to ALSA, which is the path to
-      // the loopback → JACK → Jamulus chain.
-      headless: false,
-      executablePath,
-      args: chromiumArgs(),
-      // Debian ships a rolling Chromium (150+). Puppeteer's stock default-arg
-      // set makes that Chromium abort instantly at startup ("Failed to launch
-      // the browser process: Code: null"), and the pipe transport is unreliable
-      // with it. Supplying ONLY our own args (ignoreDefaultArgs: true) over a
-      // WS port (pipe: false) launches it reliably. Dropping the defaults also
-      // drops --mute-audio (so the bot's mic tap stays audible) and puppeteer's
-      // temp-profile flag, so userDataDir is explicit — the container is
-      // single-bot, so a fixed path is safe.
-      ignoreDefaultArgs: true,
-      pipe: false,
-      userDataDir: '/tmp/chrome-profile',
-      timeout: 60000,
-    });
+    // Launch config (and the rolling-Chromium-150 workaround) lives in
+    // browserLaunchOptions so the build-time smoke test (docker/verify-launch.mjs)
+    // exercises the exact same config the bot runs with.
+    this.browser = await this.launcher.launch(browserLaunchOptions(executablePath));
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(spoofedUserAgent(botId));
 

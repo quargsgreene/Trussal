@@ -33,6 +33,36 @@ export function chromiumArgs({ width = 1280, height = 720 } = {}) {
 }
 
 /**
+ * Puppeteer launch options for the bot's Chromium. Shared by the runtime bot
+ * (bot.js) and the build-time launch smoke test (docker/verify-launch.mjs), so
+ * the guard always exercises the exact config production uses.
+ *
+ * Debian ships a ROLLING Chromium (150+ as of 2026-07). Puppeteer's stock
+ * default-arg set + pipe transport make that Chromium abort instantly at
+ * startup ("Failed to launch the browser process: Code: null"), so the bot
+ * would spawn and immediately die without ever joining. Supplying ONLY our own
+ * args (ignoreDefaultArgs: true) over a WS port (pipe: false) launches it
+ * reliably; ignoreDefaultArgs also drops --mute-audio (the bot needs audio) and
+ * puppeteer's temp-profile flag, so userDataDir is explicit.
+ *
+ * headless:false because Xvfb is already up per bot — non-headless X11 audio
+ * falls through to ALSA (loopback → JACK → Jamulus); headless:'new' would route
+ * Web Audio to a null sink. extraArgs lets the build smoke test add
+ * --disable-dev-shm-usage for the constrained 64 MB /dev/shm build environment.
+ */
+export function browserLaunchOptions(executablePath, { extraArgs = [], userDataDir = '/tmp/chrome-profile' } = {}) {
+  return {
+    headless: false,
+    executablePath,
+    args: [...chromiumArgs(), ...extraArgs],
+    ignoreDefaultArgs: true,
+    pipe: false,
+    userDataDir,
+    timeout: 60000,
+  };
+}
+
+/**
  * UA spoofing (spec): rotate across a small pool of current real-browser UA
  * strings, deterministic per botId so reconnects look like the same client.
  * None contain "HeadlessChrome", which is the primary headless tell.

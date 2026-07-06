@@ -27,6 +27,17 @@ COPY src ./src
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Launch guard: Debian's Chromium is rolling, so a bump can outpace the pinned
+# puppeteer-core and make Chromium abort at startup — bots would then deploy and
+# silently crash without joining. Fail the BUILD instead. Runs under Xvfb
+# (launch is headless:false) with the exact runtime launch config.
+COPY docker/verify-launch.mjs ./docker/verify-launch.mjs
+RUN Xvfb :99 -screen 0 1280x720x24 -nolisten tcp & \
+    for i in $(seq 1 20); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.25; done; \
+    DISPLAY=:99 node docker/verify-launch.mjs; status=$?; \
+    rm -rf /tmp/verify-profile /tmp/.X99-lock 2>/dev/null || true; \
+    exit $status
+
 # DISPLAY is set per-bot in the entrypoint (host networking shares the
 # abstract socket namespace, so display numbers must be unique).
 # JACK_NO_AUDIO_RESERVATION: jackd2 otherwise insists on D-Bus device
