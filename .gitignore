@@ -34,6 +34,11 @@ build/
 !strudel-fork/**/dist/
 !strudel-fork/**/dist/**
 lib/
+# ...but public/lib/o2lite-web.js is hand-written source (Trussal's O2lite WS
+# client), not a build artifact. Keep it tracked despite the generic lib/ rule
+# above — a parent dir must be re-included before a file inside it can be.
+!public/lib/
+!public/lib/o2lite-web.js
 out/
 .next/
 .nuxt/
