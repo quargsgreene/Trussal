@@ -1,26 +1,19 @@
 [Unit]
-Description=Jamulus server on UDP port %i
-After=network-online.target
-Wants=network-online.target
+Description=Jamulus Server on Port %i
+After=network.target
 
 [Service]
-User=jamulus
-Group=nogroup
-
-ExecStart=/usr/bin/Jamulus \
-  --server \
-  --nogui \
-  --port %i \
-  --serverinfo "Jamulus room on port %i" \
-
-# Basic hardening
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-ProtectHome=true
-
+Type=simple
+User=trussal-audio
+Group=trussal-audio
+# This uses %i to dynamically set the port and recording directory
+ExecStart=/bin/sh -c 'if [ "%i" = "22000" ]; then \
+    exec /usr/bin/jamulus-headless --server --nogui --port %i --directoryaddress localhost --serverinfo "Main Directory;Los Angeles;US" --recording /home/trussal-audio/recordings/%i --numchannels 20; \
+    else \
+    exec /usr/bin/jamulus-headless --server --nogui --port %i --directoryaddress 127.0.0.1:22000 --serverpublicip trussal.duckdns.org --serverinfo "Algorave Room %i;Los Angeles;US" --recording /home/trussal-audio/recordings/%i --numchannels 20; \
+fi'
 Restart=on-failure
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
