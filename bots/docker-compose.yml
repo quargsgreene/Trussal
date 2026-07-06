@@ -41,6 +41,21 @@ services:
       # When true, each bot renders its own Hydra visual instead of the shared
       # master. Also toggleable at runtime from the admin page.
       VARY_HYDRA: "${VARY_HYDRA:-false}"
+      # Fleet service: the peer-state bus the conductor joins to receive Spawn
+      # requests, and the room it serves. The sidecar runs on the VIDEO VM, so
+      # the localhost default is wrong on this VM — set SIDECAR_WS_URL in .env to
+      # the sidecar's reachable URL (wss://<jitsi-host>/ws) and FLEET_ROOM to the
+      # room your humans join. Without this the Spawn button broadcasts into the
+      # void and zero bots appear.
+      SIDECAR_WS_URL: "${SIDECAR_WS_URL:-ws://localhost:8081/ws}"
+      FLEET_ROOM: "${FLEET_ROOM:-0}"
+    # The conductor is bridge-networked. Home LANs often can't hairpin the public
+    # Jitsi hostname, and the sidecar's TLS cert is for that name (not the LAN
+    # IP), so alias the hostname to the video VM's LAN IP: the fleet then reaches
+    # the sidecar by name over the LAN (no hairpin) with a valid cert. Set
+    # SIDECAR_HOST_ALIAS=<jitsi-host>:<video-vm-lan-ip> in .env; default no-ops.
+    extra_hosts:
+      - "${SIDECAR_HOST_ALIAS:-sidecar.invalid:127.0.0.1}"
     restart: unless-stopped
 
   bot-image:
