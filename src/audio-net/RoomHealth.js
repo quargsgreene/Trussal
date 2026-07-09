@@ -16,6 +16,7 @@
 
 // Audio/video decoupling offset in seconds. Baseline one cycle; jitter
 // stretches it (worse timing certainty → wider decoupling) up to two cycles.
+// redundant calculations
 export function avDecouplingSeconds(cycleSeconds, metrics = {}) {
   const base = Math.max(0, cycleSeconds || 0);
   const wcj = Math.max(0, metrics.wcj || 0);
@@ -31,6 +32,7 @@ export function avDecouplingSeconds(cycleSeconds, metrics = {}) {
 //   fps, fpsMin       (local render rate vs. floor)
 // Healthy → transparent (ratio 1); rising pressure drives ratio up to 12:1
 // and threshold down to −30 dB. The binding constraint wins.
+// "pressure" is vague, perhaps keep health measurements in-browser
 export function compressionParams(load = {}) {
   const clamp01 = (x) => Math.max(0, Math.min(1, Number(x) || 0));
   const fpsPressure = load.fps != null && load.fpsMin

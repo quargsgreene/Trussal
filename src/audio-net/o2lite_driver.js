@@ -6,6 +6,8 @@
 // the bundle through this ESM facade. Both sides serialize identically by
 // construction. See that file for the message layout.
 
+// this might not need its own file
+
 export {
   O2L_FLAG_TCP,
   serializeMessage,

@@ -5,6 +5,8 @@
 // chip with effect indicators, play state, and an "audio routed" dot — making
 // it obvious that each person owns their own chain and editor.
 
+//This is almost all of the frontend
+
 import { getRoomNameFromUrl, connectJamulusRelay, disconnectJamulusRelay, isRelayConnected } from './jamulus.js';
 import {
   subscribeParticipants,
@@ -80,11 +82,13 @@ let selectedJitsiId = null;
 let initedRoom = null;
 let codeDebounce = null;
 let lastStatus = 'Idle';
+// seems suspiciously vague
 let routedSet = new Set();
 let sampleBanks = []; // [{name, count}] — kept in sync after every load/delete
 let currentSliders = []; // most recent slider configs from strudel eval
 
 async function refreshSampleBanks() {
+  // weird error handling
   sampleBanks = await getSampleBanks().catch(() => []);
   renderAll();
 }
@@ -98,7 +102,7 @@ function isInMeeting() {
       if (typeof conf.isJoined === 'function') return !!conf.isJoined();
       if (conf._room && typeof conf._room.isJoined === 'function') return !!conf._room.isJoined();
     }
-  } catch (e) { /* fall through */ }
+  } catch (e) { /* fall through */ } // please handle error
   if (body.classList.contains('welcome-page')) return false;
   if (document.querySelector('.prejoin-screen, .premeeting-screen, [class*="premeeting"], [class*="prejoin"]')) return false;
   if (document.getElementById('trussal-welcome-overlay')) return false;
@@ -108,6 +112,7 @@ function isInMeeting() {
   return rect.width > 0 && rect.height > 0;
 }
 
+// this is not grayscale
 function hueFor(jitsiId) {
   if (!jitsiId) return 140;
   let h = 0;
@@ -427,6 +432,7 @@ function effectsBlock(peer, isLocal) {
     </div>`;
 }
 
+// clarify metrics for a single peer, including whether their audio is routed through the chain
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
   const jitter = typeof peer.jitter === 'number' ? peer.jitter.toFixed(2) : '–';

@@ -18,9 +18,12 @@ import {
   parseParticipantToken
 } from '../../latency-instrument/room-indices.js';
 
+// perhaps start with just one for debugging purposes
+
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
+// define constraints for effects and patttern functions
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted.
 const EFFECTS = {
@@ -60,7 +63,10 @@ const PUNCT = new Set(['<', '>', '[', ']', '(', ')', ',', '|']);
 const OPS = new Set(['*', '/', '@', '!', '?', '%', ':']);
 const RESTS = new Set(['~', '_', '-']);
 
+// ingest text from editor and map it to a sequenced collection of tokens, tracking errors with line/col for squiggles. The parser consumes the tokens to build an AST.
+
 function tokenize(text) {
+  // set up containers for errors and tokens to be pushed line by line, column by column. Track the current line and column numbers, as well as the current index in the text. Define a helper function to push tokens into the tokens array with their type, value, line, and column information.
   const tokens = [];
   const errors = [];
   let line = 1, col = 1;
@@ -68,34 +74,43 @@ function tokenize(text) {
   const n = text.length;
   const push = (type, value, l, c) => tokens.push({ type, value, line: l, col: c });
 
+// update line/col as we advance through the textandling newlines, whitespace, comments, sigils, punctuation, operators, rests, numbers, indices, and words. Record any unexpected characters as errors with their line/col information. Finally, push an EOF token and return the tokens and errors
   while (i < n) {
     const ch = text[i];
     const startLine = line, startCol = col;
+    // maybe a helper function shouldn't be redefined every time a loop runs
     const advance = (k = 1) => {
       for (let j = 0; j < k; j++) {
         if (text[i] === '\n') { line++; col = 1; } else { col++; }
         i++;
       }
     };
-
+   // detect comments, new lines, tabs, carriage returns, etc.
     if (ch === '\n') { push('newline', '\n', startLine, startCol); advance(); continue; }
     if (ch === ' ' || ch === '\t' || ch === '\r') { advance(); continue; }
     if (ch === '/' && text[i + 1] === '/') { // comment to end of line
       while (i < n && text[i] !== '\n') advance();
       continue;
     }
+
+    // detect chatacter type
     if (ch === '$' || ch === '#') { push('sigil', ch, startLine, startCol); advance(); continue; }
     if (ch === '.' && text[i + 1] === '.') { push('op', '..', startLine, startCol); advance(2); continue; }
-    if (PUNCT.has(ch)) { push('punct', ch, startLine, startCol); advance(); continue; }
+    if (PUNCT.hashas(ch)) { push('punct', ch, startLine, startCol); advance(); continue; }
     if (OPS.has(ch)) { push('op', ch, startLine, startCol); advance(); continue; }
     if (RESTS.has(ch)) {
       // `-` and `_` are rests only when they stand alone; a `-` glued to a
       // digit would be a negative number, which the language never allows.
       push('rest', ch, startLine, startCol); advance(); continue;
     }
+
+    // detect performer room index within pattern
     if (/[0-9]/.test(ch)) {
       let j = i;
+     
       while (j < n && /[0-9]/.test(text[j])) j++;
+       // condition is never met
+      // there should be no need to check for a decimal point here, float participant indices are not allowed
       if (text[j] === '.' && /[0-9]/.test(text[j + 1] || '')) { // decimal number
         j++;
         while (j < n && /[0-9]/.test(text[j])) j++;
@@ -106,11 +121,14 @@ function tokenize(text) {
       }
       // digits then trailing letters → participant index token (`2a`);
       // plain digits stay ambiguous (participant or number) → 'intlike'.
+      // doesn't handle edge case where letters are out of order, TODO: fix
       let k = j;
       while (k < n && /[a-z]/.test(text[k])) k++;
+      // slices one char and does nothing
       const raw = text.slice(i, k);
       if (k > j) push('index', raw, startLine, startCol);
       else push('intlike', raw, startLine, startCol);
+      // always zero
       advance(k - i);
       continue;
     }
@@ -133,8 +151,7 @@ function tokenize(text) {
 
 class Parser {
   constructor(tokens, errors) {
-    this.tokens = tokens.filter(t => t.type !== 'newline' || true); // keep newlines: statement boundaries
-    this.pos = 0;
+    this.tokens = tokens.filter(t => t.type !== 'newline' || true);
     this.errors = errors;
   }
 
@@ -451,6 +468,7 @@ class Parser {
       if (t.type === 'punct' && t.value === '(') {
         this.error(`'${name}' cannot take pattern arguments — parameters are plain positive numbers`, t);
         // Skip the parenthesized blob.
+        // check indicies and counts
         let depth = 0;
         while (!this.atEof()) {
           const p = this.next();
@@ -546,6 +564,7 @@ export function buildDefaultProgram(indices) {
 // participant is removed from it"). Pure so the CRDT layer can apply the
 // same edits to the shared doc.
 
+// possibly redundant
 export function appendParticipantToProgram(text, token) {
   const m = text.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);
   if (!m) return text;

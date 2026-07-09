@@ -6,6 +6,8 @@
 // (window._ncLandmarkScale — consumed by facial-gesture's detection loop),
 // and exposes the current audio/video decoupling for the video pipeline.
 
+// Figure out why this is aggressively removing bots when there are only a three total room participants
+
 import { compressionParams, landmarkDensityScale, avDecouplingSeconds, healthActions } from './RoomHealth.js';
 import { getAudioContext, getMasterBus } from '../latency-instrument.js';
 import { effectiveWorstCase, subscribeSlotEvents } from './Metaprogrammer.js';
@@ -13,6 +15,7 @@ import { sendResearchEvent } from '../peer-state.js';
 
 const SAMPLE_MS = 5000;
 
+// Do these need to all be global variables?
 let timer = null;
 let compressor = null;
 let frameCount = 0;

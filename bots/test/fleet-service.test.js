@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FleetService, suffixFor } from '../src/orchestrator/fleet-service.js';
+import { FleetService, suffixFor, AGGREGATOR_BOT_ID } from '../src/orchestrator/fleet-service.js';
 import { createAdminServer } from '../src/config-api/server.js';
 import { mergeConfig } from '../src/shared/config.js';
 
@@ -185,6 +185,59 @@ test('admin API verbatim on the fleet: /api/bots and /api/config keep serving mc
     } finally {
       admin.close();
     }
+  });
+});
+
+test('aggregator: spawns once when a human is present, excluded from clusters/ceiling', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h2', roomIndex: '1', isBot: false } });
+
+    const aggStarts = runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID);
+    assert.equal(aggStarts.length, 1, 'exactly one aggregator for the room');
+    assert.deepEqual(aggStarts[0].extraEnv, { BOT_ROLE: 'aggregator' });
+    assert.equal(fleet.aggregatorStatus().running, true);
+
+    // Filling clusters to the ceiling doesn't count or disturb the aggregator.
+    await fleet.spawnCluster('0', 5); // maxBots = 5
+    assert.equal(fleet.listBots().length, 5, 'ceiling intact — aggregator not among clusters');
+    assert.ok(fleet.listBots().every((b) => b.botId !== AGGREGATOR_BOT_ID));
+  });
+});
+
+test('aggregator: torn down when the last human leaves (meeting end)', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    assert.equal(fleet.aggregatorStatus().running, true);
+
+    await fleet.handleBusMessage({ type: 'peer-leave', peerId: 'h' });
+    await new Promise((r) => setTimeout(r, 60)); // meetingEndGraceMs = 30
+    assert.equal(fleet.aggregatorStatus().running, false, 'aggregator leaves with the meeting');
+    assert.ok(runner.calls.stopped.includes(AGGREGATOR_BOT_ID));
+  });
+});
+
+test('aggregator: role-tagged metrics are recorded but kept out of the health map', async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.spawnCluster('1', 1);
+    const [bot] = fleet.listBots();
+    const base = `http://127.0.0.1:${fleet.port}`;
+
+    await fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', fps: 30, ramBytes: 1e6, latencyMs: 5 }),
+    });
+    assert.equal(fleet.aggregatorStatus().metrics.role, 'aggregator');
+    assert.equal(fleet.metrics.has(AGGREGATOR_BOT_ID), false, 'aggregator sample stays out of the health map');
+
+    // A normal player metric still lands in the health map as before.
+    await fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: bot.botId, fps: 30, ramBytes: 1e6, latencyMs: 7 }),
+    });
+    assert.equal(fleet.metrics.get(bot.botId).latencyMs, 7);
   });
 });
 

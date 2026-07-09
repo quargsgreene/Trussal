@@ -17,6 +17,30 @@
 set -euo pipefail
 
 : "${BOT_ID:?BOT_ID env var is required}"
+BOT_ROLE="${BOT_ROLE:-player}"
+
+# Bring up an Xvfb display for this bot. Host networking shares the network
+# namespace, so every bot needs a UNIQUE display number (X11's abstract socket
+# collides otherwise) — derived from BOT_ID.
+start_xvfb() {
+  export DISPLAY=":$((99 + BOT_ID))"
+  Xvfb "$DISPLAY" -screen 0 1280x720x24 -nolisten tcp &
+  XVFB_PID=$!
+  for _ in $(seq 1 50); do
+    if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then break; fi
+    sleep 0.1
+  done
+}
+
+# The aggregator makes no sound of its own: no ALSA loopback, no ffmpeg bed, no
+# jackd/Jamulus (its BOT_ID isn't even a valid loopback subdevice). It only
+# needs a display for Chromium's WebGL — it taps every participant's Jitsi
+# <audio> in-page and will stream the assembled mix back.
+if [ "$BOT_ROLE" = "aggregator" ]; then
+  start_xvfb
+  trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
+  exec node /app/src/bot/index.js
+fi
 
 if [ "$BOT_ID" -lt 8 ]; then CARD=10; SUB="$BOT_ID"; else CARD=11; SUB=$((BOT_ID - 8)); fi
 
@@ -81,18 +105,9 @@ sleep 1
 jackd -d alsa -C "plughw:${CARD},1,${SUB}" -r 48000 -p 256 &
 JACK_PID=$!
 
-# Unique display per bot: containers are host-networked, and X11 listens on
-# an ABSTRACT unix socket that lives in the (shared) network namespace — ten
-# Xvfb instances on :99 collide and nine die with "Cannot establish any
-# listening sockets".
-export DISPLAY=":$((99 + BOT_ID))"
-Xvfb "$DISPLAY" -screen 0 1280x720x24 -nolisten tcp &
-XVFB_PID=$!
-
-for _ in $(seq 1 50); do
-  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then break; fi
-  sleep 0.1
-done
+# Xvfb last (see start_xvfb): with --enable-webgl/--ignore-gpu-blocklist,
+# Chromium aborts without a display even when headless.
+start_xvfb
 
 trap 'kill "$XVFB_PID" "$JACK_PID" "$CLOCK_PID" 2>/dev/null || true' EXIT
 

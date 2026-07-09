@@ -100,13 +100,17 @@ export function jitsiRoomUrl(baseUrl, displayName, {
   channelLastN = 0,
   videoHeight = 360,
   startBitrateKbps = 800,
+  // The aggregator has no Hydra canvas to publish; joining with video unmuted
+  // would make Jitsi request a camera and the gUM override wait forever for a
+  // canvas that never appears, hanging the join. Audio-only bots set this true.
+  videoMuted = false,
 } = {}) {
   const params = [
     'config.startWithAudioMuted=false',
     'config.disableAP=true',
     'config.stereo=true',
     'config.prejoinConfig.enabled=false',
-    'config.startWithVideoMuted=false',
+    `config.startWithVideoMuted=${videoMuted}`,
     `config.channelLastN=${channelLastN}`,
     `config.startBitrate=${startBitrateKbps}`,
     `config.constraints.video.height.ideal=${videoHeight}`,

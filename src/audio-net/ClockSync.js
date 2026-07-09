@@ -11,7 +11,7 @@
 // Dependency-injected (send fn + local clock + timers) so node:test drives
 // it deterministically; makeBrowserClockSync wires the real O2LiteClient.
 
-export const DEFAULT_BURST = 5;
+export const DEFAULT_BURST = 5; // ?
 export const DEFAULT_BURST_SPACING_MS = 100;
 export const DEFAULT_RESYNC_INTERVAL_MS = 10000;
 
@@ -146,6 +146,7 @@ export class ClockSync {
 
 // Browser wiring: one ClockSync per room over the /o2 relay path, clocked by
 // the shared AudioContext.
+// clarify how this data gets passed to 02lite
 export function makeClockSyncOverO2(client, getLocalSeconds) {
   const sync = new ClockSync({
     sendCsGet: (seq, t) => client.sendCsGet(seq, t),

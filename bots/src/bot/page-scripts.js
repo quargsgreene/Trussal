@@ -374,6 +374,90 @@ export async function pageStrudelBoot({ strudel, hydra }) {
 }
 
 /**
+ * Aggregator ingest tap, installed via evaluateOnNewDocument so it is in place
+ * before Jitsi renders any remote participant. Jitsi plays every remote peer's
+ * audio through its own <audio> element (id "remoteAudio_<jitsiId>"); this scans
+ * for those elements and taps each one into a ScriptProcessor, accumulating that
+ * peer's PCM into a page-side store keyed by the peer's jitsiId. The Node side
+ * drains it (via pageDrainParticipantAudio) into the AggregatorBot's
+ * per-participant ring buffers — the "clients -> individual buffer queues" hop.
+ *
+ * Each buffer is identified by the peer's Net Cycles room-index token (0 for the
+ * first human, 0a/0b/… for that human's bots, 1 for the next human, …). The tap
+ * stores under jitsiId and resolves to the token at drain time via
+ * window.__trussalRoomIndexForJitsiId (exposed by the Trussal bundle from the
+ * already-maintained jitsiId↔roomIndex mapper) — so buffers are only ever keyed
+ * by room index, and a peer whose index the sidecar hasn't announced yet is held
+ * (capped) until it resolves.
+ *
+ * Self-contained per the module contract: it touches only page globals and its
+ * own closures. It reuses the shared AudioContext (pageAudioBridge wraps the
+ * constructor so `new AudioContext()` returns one instance), so the tap lives
+ * in the same graph as everything else on the page.
+ */
+export function pageAggregatorCapture() {
+  if (window.__trussalAggCapture) return;
+  const store = new Map();       // jitsiId -> number[] of accumulated mono PCM
+  const tapped = new WeakSet();  // <audio> elements already wired
+  const FRAME = 2048;
+  const MAX_BACKLOG = FRAME * 64; // cap page-side buffering if Node never drains
+
+  function jitsiIdFor(el) {
+    const m = /^remoteAudio_(.+)$/.exec(el.id || '');
+    return m ? m[1] : null;
+  }
+
+  function tap(el) {
+    if (tapped.has(el)) return;
+    const jitsiId = jitsiIdFor(el);
+    if (!jitsiId) return; // only remote participant audio, never the bot's own
+    let ctx;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    let src;
+    // createMediaElementSource throws if the element is already tapped; skip it.
+    try { src = ctx.createMediaElementSource(el); } catch (e) { tapped.add(el); return; }
+    const proc = ctx.createScriptProcessor(FRAME, 1, 1);
+    proc.onaudioprocess = (ev) => {
+      const inp = ev.inputBuffer.getChannelData(0);
+      let arr = store.get(jitsiId);
+      if (!arr) { arr = []; store.set(jitsiId, arr); }
+      if (arr.length < MAX_BACKLOG) for (let i = 0; i < inp.length; i++) arr.push(inp[i]);
+    };
+    // A zero-gain sink keeps the ScriptProcessor pulling without re-emitting the
+    // peer's audio to the device a second time.
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    src.connect(proc);
+    proc.connect(sink);
+    sink.connect(ctx.destination);
+    tapped.add(el);
+  }
+
+  function scan() { for (const el of document.querySelectorAll('audio')) tap(el); }
+  setInterval(scan, 1000); // peers' <audio> elements appear as they join
+  scan();
+
+  window.__trussalAggCapture = {
+    drain() {
+      const resolve = window.__trussalRoomIndexForJitsiId;
+      const out = [];
+      for (const [jitsiId, arr] of store) {
+        if (!arr.length) continue;
+        const token = typeof resolve === 'function' ? resolve(jitsiId) : null;
+        if (token == null) continue; // room index not announced yet — keep buffering
+        out.push({ token: String(token), samples: arr.splice(0) });
+      }
+      return out;
+    },
+  };
+}
+
+/** Drain the accumulated per-participant PCM the aggregator tap has captured. */
+export function pageDrainParticipantAudio() {
+  return (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+}
+
+/**
  * rAF-based fps sampler. window.__trussalFps always holds the frame count
  * of the last full 1 s window; the Node-side metrics loop reads it.
  */

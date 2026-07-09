@@ -31,6 +31,12 @@ import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
 import { shouldReplace, computeMaxBots } from './health.js';
 
+// The single per-room aggregator container runs outside the per-owner cluster
+// id space (never assigned by #nextBotId, never counted against the ceiling).
+// Its high sentinel id keeps its docker name (trussal-bot-99999) clear of any
+// real bot.
+export const AGGREGATOR_BOT_ID = 99999;
+
 export class FleetService {
   constructor(cfg, { runner, connectSidecar }) {
     if (!runner) throw new TypeError('a container runner {start, stop} is required');
@@ -49,6 +55,11 @@ export class FleetService {
     this.presentIndices = new Map(); // roomIndex → { isBot, peerId }
     this.ownerTimers = new Map();    // ownerIndex → teardown timeout
     this.meetingEndTimer = null;
+    // One aggregator per room, spawned when the first human is present and
+    // torn down with the meeting. Tracked separately from `bots` so it never
+    // counts against the ceiling or gets health-replaced.
+    this.aggregatorRunning = false;
+    this.aggregatorMetrics = null;
     this._nextBotId = 0;
     // Never-decreasing per-owner spawn ordinals: mirrors the sidecar's
     // suffix counters exactly (indices are never reused), so clusterIndex
@@ -70,6 +81,7 @@ export class FleetService {
     this.ownerTimers.clear();
     if (this.meetingEndTimer) clearTimeout(this.meetingEndTimer);
     for (const id of [...this.bots.keys()]) await this.#stopBot(id);
+    await this.#stopAggregator();
     if (this.sidecar) { try { this.sidecar.close(); } catch {} this.sidecar = null; }
     if (this.server) await new Promise((r) => this.server.close(r));
   }
@@ -130,6 +142,8 @@ export class FleetService {
       clearTimeout(this.meetingEndTimer);
       this.meetingEndTimer = null;
     }
+    // A human in the room means there is audio to aggregate.
+    if (!peer.isBot) this.#ensureAggregator().catch(() => {});
   }
 
   #untrackPeer(peerId) {
@@ -150,9 +164,10 @@ export class FleetService {
       if (t.unref) t.unref();
       this.ownerTimers.set(ownerIndex, t);
     }
-    // Last human gone → the meeting is over; destroy every Puppeteer instance.
+    // Last human gone → the meeting is over; destroy every Puppeteer instance
+    // (clusters and the aggregator alike).
     const humansLeft = [...this.presentIndices.values()].some((p) => !p.isBot);
-    if (!humansLeft && this.bots.size > 0 && !this.meetingEndTimer) {
+    if (!humansLeft && (this.bots.size > 0 || this.aggregatorRunning) && !this.meetingEndTimer) {
       this.meetingEndTimer = setTimeout(() => {
         this.meetingEndTimer = null;
         this.#teardownAll('meeting ended').catch(() => {});
@@ -229,7 +244,33 @@ export class FleetService {
 
   async #teardownAll(reason) {
     for (const id of [...this.bots.keys()]) await this.#stopBot(id);
+    await this.#stopAggregator();
     this.#busSend({ type: 'fleet-status', action: 'teardown', removed: 'all', reason });
+  }
+
+  // ---------- aggregator (one per room, outside the cluster id space) ----------
+
+  async #ensureAggregator() {
+    if (this.aggregatorRunning) return;
+    this.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
+    try {
+      await this.runner.start(AGGREGATOR_BOT_ID, { BOT_ROLE: 'aggregator' });
+    } catch (err) {
+      this.aggregatorRunning = false;
+      console.error('[fleet] failed to start aggregator:', err.message);
+    }
+  }
+
+  async #stopAggregator() {
+    if (!this.aggregatorRunning) return;
+    this.aggregatorRunning = false;
+    this.aggregatorMetrics = null;
+    await this.runner.stop(AGGREGATOR_BOT_ID);
+  }
+
+  /** Aggregator liveness + latest sample, for observability (not health). */
+  aggregatorStatus() {
+    return { running: this.aggregatorRunning, metrics: this.aggregatorMetrics ?? null };
   }
 
   #nextBotId() {
@@ -384,6 +425,13 @@ export class FleetService {
       req.on('end', () => {
         try {
           const m = JSON.parse(raw);
+          // The aggregator reports too, but it lives outside the fleet: keep its
+          // sample out of the health summary (percentiles/replacement) — just
+          // record it for observability.
+          if (m.role === 'aggregator') {
+            this.aggregatorMetrics = { ...m, receivedAt: Date.now() };
+            return send(200, { ok: true });
+          }
           if (typeof m.botId !== 'number') return send(400, { error: 'botId required' });
           this.metrics.set(m.botId, { ...m, receivedAt: Date.now() });
           return send(200, { ok: true });

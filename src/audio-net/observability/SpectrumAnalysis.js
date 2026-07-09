@@ -7,6 +7,8 @@
 //
 // `downsampleBins` is pure so the band math runs under node:test.
 
+// probably get rid of for now, not very sophisticated and not very useful at the moment, eventually use TDFT to modulate echo
+
 export const DEFAULT_BANDS = 32;
 export const DEFAULT_FRAME_INTERVAL_MS = 250;
 export const DEFAULT_HISTORY = 240; // 60 s of frames at 4 Hz
@@ -15,7 +17,7 @@ export const DEFAULT_HISTORY = 240; // 60 s of frames at 4 Hz
 // averaging each contiguous bin group. Trailing bins that don't fill a whole
 // group still form the final band.
 export function downsampleBins(bins, bands) {
-  const n = bins ? bins.length : 0;
+  const n = bins ? bins.length : 0;of
   if (!n || !Number.isInteger(bands) || bands < 1) return [];
   if (bands >= n) return Array.from(bins);
   const out = new Array(bands);

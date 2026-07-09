@@ -21,6 +21,12 @@ window.__trussalAnnounceLocalPattern = (code) => {
   sendLocalPlaying(true);
 };
 
+// The aggregator bot taps remote participants' <audio> elements (id
+// "remoteAudio_<jitsiId>") and needs to file each one's audio under its Net
+// Cycles room-index token (0, 0a, 1, …). The room mapper above already keeps
+// the jitsiId ↔ roomIndex bijection current, so expose the lookup to the page.
+window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+
 renderAudioConfigCheck();
 renderJamulusWelcomePanelAndBanner();
 renderRecentListText();
