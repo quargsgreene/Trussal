@@ -143,7 +143,7 @@ export class FleetService {
       this.meetingEndTimer = null;
     }
     // A human in the room means there is audio to aggregate.
-    if (!peer.isBot) this.#ensureAggregator().catch(() => {});
+    if (!peer.isBot) this.#ensureAggregator().catch((e) => {console.error('[fleet] failed to start aggregator:', e.message);});
   }
 
   #untrackPeer(peerId) {
