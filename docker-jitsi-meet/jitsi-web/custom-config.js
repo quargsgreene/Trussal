@@ -1435,6 +1435,44 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       if (typeof window !== "undefined") {
         window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
         window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
+        window.__trussalAudioDiag = async () => {
+          const out = {
+            aggregatorJitsiId,
+            // non-null => in aggregator mode
+            strudelOutGain: strudelOut ? strudelOut.gain.value : null,
+            // 0 => local monitor muted
+            ctxState: audioCtx ? audioCtx.state : "no-ctx",
+            sampleRate: audioCtx ? audioCtx.sampleRate : null
+          };
+          if (audioCtx && masterStrudelGain) {
+            const t0 = audioCtx.currentTime;
+            const an = audioCtx.createAnalyser();
+            an.fftSize = 2048;
+            masterStrudelGain.connect(an);
+            const buf = new Float32Array(an.fftSize);
+            let peak = 0, sumSq = 0, n2 = 0;
+            const end2 = performance.now() + 500;
+            while (performance.now() < end2) {
+              await new Promise((r2) => setTimeout(r2, 40));
+              an.getFloatTimeDomainData(buf);
+              for (const v2 of buf) {
+                const a2 = v2 < 0 ? -v2 : v2;
+                if (a2 > peak) peak = a2;
+                sumSq += v2 * v2;
+                n2++;
+              }
+            }
+            try {
+              masterStrudelGain.disconnect(an);
+            } catch (e30) {
+            }
+            out.strudelPeak = +peak.toFixed(5);
+            out.strudelRms = +Math.sqrt(sumSq / (n2 || 1)).toFixed(5);
+            out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3);
+          }
+          console.log("[trussal] audio diag", out);
+          return out;
+        };
       }
     }
   });

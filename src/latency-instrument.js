@@ -941,6 +941,39 @@ export async function unpublishLocalStrudelFromRoom() {
 if (typeof window !== 'undefined') {
   window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
   window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
+
+  // Source-side probe: is the shared AudioContext actually running, and is
+  // Strudel producing signal at masterStrudelGain (the exact node the publish
+  // taps)? Distinguishes "context suspended → everything silent" from "Strudel
+  // plays but the publish tap is broken". Run: await window.__trussalAudioDiag()
+  window.__trussalAudioDiag = async () => {
+    const out = {
+      aggregatorJitsiId,                                   // non-null => in aggregator mode
+      strudelOutGain: strudelOut ? strudelOut.gain.value : null, // 0 => local monitor muted
+      ctxState: audioCtx ? audioCtx.state : 'no-ctx',
+      sampleRate: audioCtx ? audioCtx.sampleRate : null,
+    };
+    if (audioCtx && masterStrudelGain) {
+      const t0 = audioCtx.currentTime;
+      const an = audioCtx.createAnalyser();
+      an.fftSize = 2048;
+      masterStrudelGain.connect(an);                       // tap only; doesn't alter output
+      const buf = new Float32Array(an.fftSize);
+      let peak = 0, sumSq = 0, n = 0;
+      const end = performance.now() + 500;
+      while (performance.now() < end) {
+        await new Promise((r) => setTimeout(r, 40));
+        an.getFloatTimeDomainData(buf);
+        for (const v of buf) { const a = v < 0 ? -v : v; if (a > peak) peak = a; sumSq += v * v; n++; }
+      }
+      try { masterStrudelGain.disconnect(an); } catch (e) {}
+      out.strudelPeak = +peak.toFixed(5);                  // >0 => Strudel IS producing sound
+      out.strudelRms = +Math.sqrt(sumSq / (n || 1)).toFixed(5);
+      out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3); // ~0 => context frozen/suspended
+    }
+    console.log('[trussal] audio diag', out);
+    return out;
+  };
 }
 
 // Attach a pre-built WebAudio node directly to a peer's effects chain.
