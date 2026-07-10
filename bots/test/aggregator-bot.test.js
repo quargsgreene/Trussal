@@ -380,3 +380,96 @@ test('round trip: empty room assembles silence and enqueues nothing (keeps check
 
   await bot.stop();
 });
+
+// --- gain staging (requirement 6) --------------------------------------------
+
+test('computeGainStaging: passes a master within the ceiling through untouched', () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
+  const inp = Float32Array.from([0.5, -0.25, 0.75]);
+  const { gain, samples } = bot.computeGainStaging(inp);
+  assert.equal(gain, 1);
+  assert.equal(samples, inp, 'no scaling -> same buffer, no copy');
+});
+
+test('computeGainStaging: scales a master hotter than the ceiling down to it', () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
+  const { gain, samples } = bot.computeGainStaging([2.0, -1.0, 0.5]); // peak 2.0
+  assert.equal(gain, 0.5, 'gain = ceiling / peak');
+  assert.deepEqual([...samples], [1.0, -0.5, 0.25], 'loudest sample sits exactly at the ceiling');
+});
+
+test('round trip: the assembled master is gain-staged before it is streamed out', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+
+  // One participant whose buffered audio clips (peak 4.0). The master must come
+  // back out scaled so its peak is at the ceiling (1.0), i.e. divided by 4.
+  bot.buffers['0'] = new RingBuffer(1024);
+  bot.buffers['0'].write([4.0, -2.0, 1.0]);
+
+  const a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0');
+  assert.equal(a.gain, 0.25);
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), [1.0, -0.5, 0.25], 'streamed out at the staged level');
+
+  await bot.stop();
+});
+
+// --- assign-once jitsiId -> token mapping (requirement 2) --------------------
+
+test('jitsiId pinning: a source keeps its token/buffer even if the token is re-announced', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+
+  // First capture pins media-stream source "src-1" to room index 0.
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'src-1', token: '0', samples: [0.1] }]);
+  assert.equal(bot.buffers['0'].length, 1);
+  assert.deepEqual(bot._order.order(), ['0']);
+
+  // The SAME source later arrives under a different token: its audio must still
+  // land in its original buffer (0), not spawn a new "9" slot.
+  const summary = await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'src-1', token: '9', samples: [0.2, 0.3] }]);
+  assert.equal(bot.buffers['0'].length, 3, 'routed to the pinned buffer');
+  assert.equal(bot.buffers['9'], undefined, 'no buffer for the re-announced token');
+  assert.deepEqual(bot._order.order(), ['0'], 'ring unchanged');
+  assert.equal(summary['0'].wrote, 2);
+});
+
+// --- bots stream through the aggregator under their cluster tokens (req 5) ---
+
+test('bots participate in the alternation under their cluster tokens', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // A human (0) and two of their bots (0a, 0b). All three are captured from the
+  // room and must each get a turn in join order.
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: new Array(10).fill(0.5) },
+    { jitsiId: 'bot-0a', token: '0a', samples: new Array(10).fill(0.25) },
+    { jitsiId: 'bot-0b', token: '0b', samples: new Array(10).fill(0.125) },
+  ]);
+  assert.deepEqual(bot._order.order(), ['0', '0a', '0b'], 'humans and bots share one join-order ring');
+
+  const streamed = [];
+  for (const t of [0, 1000, 2000]) {
+    clock = t;
+    const a = await bot.readAndAssembleMasterBuffer();
+    await bot.playMasterBufferToClient();
+    streamed.push(a.active);
+  }
+  assert.deepEqual(streamed, ['0', '0a', '0b'], 'each participant (bots included) takes its turn');
+  // Bot 0a's turn streamed bot 0a's audio (0.25) — a bot audible only via the aggregator.
+  assert.deepEqual(calls.enqueued[1], new Array(10).fill(0.25));
+
+  await bot.stop();
+});

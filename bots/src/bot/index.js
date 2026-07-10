@@ -115,6 +115,13 @@ async function aggregatorMain() {
     ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '500')),
     playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '250')),
     slotMs: Number(env('SLOT_MS', '4000')),
+    // Per-participant hold window. HOLD_MS (ms) is the ms-measured knob; when
+    // unset the per-participant buffers fall back to the RING_BUFFER_SIZE sample
+    // count below (default 48000 = 1s @ 48kHz), preserving prior behavior.
+    holdMs: env('HOLD_MS', '') ? Number(env('HOLD_MS', '')) : undefined,
+    sampleRate: Number(env('SAMPLE_RATE', '48000')),
+    // Gain-staging ceiling for the assembled master (full scale = 1.0).
+    gainCeiling: Number(env('GAIN_CEILING', '1.0')),
     // Claim the room's single aggregator slot before joining; a losing bot exits
     // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).
   }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket) }, {}, Number(env('RING_BUFFER_SIZE', '48000')));

@@ -537,7 +537,10 @@ export function pageAggregatorCapture() {
         if (!arr.length) continue;
         const token = typeof resolve === 'function' ? resolve(jitsiId) : null;
         if (token == null) continue; // room index not announced yet — keep buffering
-        out.push({ token: String(token), samples: arr.splice(0) });
+        // Carry the jitsiId (the media-stream source) alongside the resolved
+        // token so the aggregator can pin the source -> token mapping ONCE for
+        // the whole meeting, rather than re-resolving it on every drain.
+        out.push({ jitsiId: String(jitsiId), token: String(token), samples: arr.splice(0) });
       }
       return out;
     },

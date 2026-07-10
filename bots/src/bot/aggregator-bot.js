@@ -6,6 +6,7 @@ import {
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
+import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
 
 // How often the ingest loop drains the page tap into the buffers.
 const DEFAULT_INGEST_INTERVAL_MS = 500;
@@ -14,6 +15,14 @@ const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
 // Round-robin turn length (ms) before the metaprogram schedules slots for real:
 // stream one participant, then the next, so the alternation is audible.
 const DEFAULT_SLOT_MS = 4000;
+// Sample rate the page-side taps run at (the shared AudioContext defaults to
+// 48 kHz on Chrome). Used only to convert a cfg.holdMs hold window into a
+// per-participant RingBuffer capacity in samples.
+const DEFAULT_SAMPLE_RATE = 48000;
+// Master output ceiling for gain staging: the peak amplitude the assembled mix
+// is allowed to reach before it is scaled down. 1.0 is full scale for the
+// float32 (and any fixed bit-depth) sample stream — beyond it the stream clips.
+const DEFAULT_GAIN_CEILING = 1.0;
 // How long to wait for the sidecar to answer an aggregator-claim before giving
 // up and joining anyway: a claim we can't obtain must not strand the (possibly
 // only) aggregator forever if the bus is briefly unreachable at startup.
@@ -23,20 +32,6 @@ const CLAIM_TIMEOUT_MS = 5000;
 // the room's slot. The entrypoint treats this as a clean "nothing to do" exit
 // (code 0), NOT a crash to replace — a losing aggregator is expected to leave.
 export const AGGREGATOR_SLOT_TAKEN = 'AGGREGATOR_SLOT_TAKEN';
-
-// Sort participant tokens into Net Cycles room-index order: 0, 0a, 0b, 1, 2, …
-// (numeric index first, then the per-owner bot suffix). Falls back to a plain
-// string compare for anything that doesn't parse, so the order is always stable.
-function tokenOrder(a, b) {
-    const ma = /^(\d+)([a-z]*)$/.exec(a);
-    const mb = /^(\d+)([a-z]*)$/.exec(b);
-    if (ma && mb) {
-        const na = Number(ma[1]), nb = Number(mb[1]);
-        if (na !== nb) return na - nb;
-        return ma[2] < mb[2] ? -1 : ma[2] > mb[2] ? 1 : 0;
-    }
-    return a < b ? -1 : a > b ? 1 : 0;
-}
 
 /**
  * AggregatorBot — one headless bot that gathers every participant's audio into
@@ -67,7 +62,16 @@ export class AggregatorBot extends Bot {
         super(cfg, { launcher });
         // Individual dimension: token -> RingBuffer. Pre-seedable for tests.
         this.buffers = buffers;
-        this.bufferSize = Math.max(1, Math.floor(bufferSize));
+        // Per-participant hold buffers are MEASURED IN MS (requirement 4): a
+        // participant retains cfg.holdMs of audio while it waits for its turn.
+        // When cfg.holdMs is set we derive the RingBuffer capacity from it and
+        // the sample rate; otherwise the explicit bufferSize (samples) is used
+        // directly so unit tests can pin an exact capacity.
+        this.sampleRate = Math.max(1, Number(cfg.sampleRate ?? DEFAULT_SAMPLE_RATE));
+        this.holdMs = cfg.holdMs != null ? Math.max(1, Number(cfg.holdMs)) : null;
+        this.bufferSize = this.holdMs != null
+            ? Math.max(1, Math.round(this.holdMs * this.sampleRate / 1000))
+            : Math.max(1, Math.floor(bufferSize));
         // Shared dimension: the concatenated master. Larger than one participant
         // buffer because it holds every scheduled slot back to back.
         this.sharedBuffer = new RingBuffer(cfg.sharedBufferSize || this.bufferSize * 8);
@@ -75,6 +79,16 @@ export class AggregatorBot extends Bot {
         // clock so the alternation is testable without real time.
         this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
         this.now = typeof now === 'function' ? now : () => Date.now();
+        // The circular priority queue: the fixed join-order ring, the assign-once
+        // jitsiId -> room-index-token mapping, and the write/turn pointer. Shares
+        // this bot's clock and slot length so serve() rotates in lockstep with the
+        // assembly loop. The per-participant PCM stays in this.buffers; the queue
+        // only decides the order and whose turn it is.
+        this._order = new CircularParticipantQueue({ now: this.now, slotMs: this.slotMs });
+        // Master gain-staging ceiling (requirement 6): the assembled mix is scaled
+        // down so its peak never exceeds this, keeping it inside the stream's
+        // representable range instead of clipping.
+        this.gainCeiling = Math.max(0, Number(cfg.gainCeiling ?? DEFAULT_GAIN_CEILING)) || DEFAULT_GAIN_CEILING;
         // Election gate: only the room's single ACTIVE aggregator ingests and
         // streams. A second aggregator that joins stands down here (publishing
         // nothing), so the two masters never tap and feed back into each other.
@@ -88,9 +102,7 @@ export class AggregatorBot extends Bot {
         // (standalone / unit tests that drive the bot directly).
         this.connectSidecar = typeof connectSidecar === 'function' ? connectSidecar : null;
         this._claimConn = null;
-        // When the current round-robin started (set lazily on the first assemble
-        // that actually has a participant to stream) and which token is streaming.
-        this._playbackStartMs = null;
+        // Which token is currently streaming (the queue owns the turn timing).
         this._activeToken = null;
         // Where a metrics sample goes. Defaults to the console so a bare
         // instance "publishes its own metrics"; tests inject a capturing sink.
@@ -229,9 +241,10 @@ export class AggregatorBot extends Bot {
         // ring overwrites, so a participant whose buffer is never drained can't
         // grow without bound or wedge the writer).
         //
-        // `captures` is [{ token, samples }] where token is the participant's
-        // room index (0, 0a, 1, …); when omitted, drain the latest frames the
-        // page-side tap accumulated from the remote <audio> elements.
+        // `captures` is [{ jitsiId?, token, samples }] where token is the
+        // participant's room index (0, 0a, 1, …) and jitsiId (when the page tap
+        // supplies it) is the media-stream source; when omitted, drain the latest
+        // frames the page-side tap accumulated from the remote <audio> elements.
         //
         // Turn-taking ("wait until it is this participant's turn") is deliberately
         // NOT applied here: the individual buffers are each participant's own
@@ -240,10 +253,22 @@ export class AggregatorBot extends Bot {
         // lives in readAndAssembleMasterBuffer, the next hop.
         const takes = captures ?? await this.#drainPageCaptures();
         // "Reached the aggregator" = a participant actually delivered samples.
-        const arrived = (takes || []).filter((t) => t && t.token != null && t.samples && t.samples.length);
+        // Sort co-arriving participants into room-index order so that any first
+        // seen together enter the join-order ring deterministically (the sidecar
+        // hands out indices in join order, so this IS join order).
+        const arrived = (takes || [])
+            .filter((t) => t && t.token != null && t.samples && t.samples.length)
+            .sort((a, b) => tokenOrder(a.token, b.token));
         const summary = {};
         for (const take of arrived) {
-            const token = String(take.token);
+            // Pin jitsiId -> token ONCE and route by the pinned token, so a
+            // participant's audio always lands in the same buffer/slot for the
+            // whole meeting even if its token were re-announced (requirement 2).
+            // Bots participate exactly like humans here — their audio (only) is
+            // captured from the room and streamed through this aggregator
+            // (requirement 5) under their cluster token (0a, 0b, …).
+            const identity = take.jitsiId != null ? String(take.jitsiId) : String(take.token);
+            const token = this._order.register(identity, String(take.token));
             const samples = take.samples;
             const rb = this.participantBuffer(token);
             const evictedBefore = rb.evicted;
@@ -264,37 +289,63 @@ export class AggregatorBot extends Bot {
     }
 
     async readAndAssembleMasterBuffer() {
-        // Round-robin turn-taking, NO metaprogram yet: rotate the active
-        // participant every slotMs (default 4s) and concatenate only that
-        // participant's audio into the shared master. This is the proof that
-        // audio makes the full round trip — participant -> individual buffer ->
-        // shared master -> back out — before the scheduler decides the slots for
-        // real. interpretAndExecuteMetaprogram will later replace this fixed
-        // rotation with the metaprogram-dictated schedule.
+        // Cyclic fixed-order turn-taking, NO metaprogram yet: the circular queue
+        // rotates the active participant every slotMs (default 4s) through the
+        // fixed JOIN-ORDER ring, and only that participant's audio is concatenated
+        // into the shared master. This is the proof that audio makes the full
+        // round trip — participant -> individual buffer -> shared master -> back
+        // out — before the scheduler decides the slots for real.
+        // interpretAndExecuteMetaprogram will later replace this fixed rotation
+        // with the metaprogram-dictated schedule.
         //
-        // The inactive participants' individual buffers keep filling (and
-        // evicting their oldest) in the meantime; when a participant's turn comes
-        // round we stream whatever it has accumulated. Draining only the ACTIVE
-        // buffer is what makes the alternation audible: at any instant the master
-        // carries exactly one voice.
-        const tokens = Object.keys(this.buffers).sort(tokenOrder);
-        if (!tokens.length) {
+        // The inactive participants' individual buffers keep filling (and evicting
+        // their oldest, ms-bounded) in the meantime; when a participant's turn
+        // comes round we stream whatever it has accumulated. Draining ONLY the
+        // active buffer is what enforces requirement 1: at any instant the master
+        // carries exactly one voice and every other participant streams nothing.
+
+        // Make sure every participant that has a buffer is in the ring. Real
+        // captures register through writeTo…; tests (and any direct seeding) put
+        // RingBuffers straight into this.buffers, so fold those in here in
+        // room-index order (assign-once, so this is a no-op once registered).
+        this.#syncOrderFromBuffers();
+
+        const { token: active, lapped } = this._order.serve();
+        if (!active) {
             // Nothing has reached the bot yet: assemble nothing. The page player
             // emits silence and we keep checking on the next tick.
             this._activeToken = null;
             return { active: null, assembled: 0 };
         }
-        const now = this.now();
-        if (this._playbackStartMs == null) this._playbackStartMs = now;
-        const slot = Math.floor((now - this._playbackStartMs) / this.slotMs);
-        // Guard against a clock that runs backwards yielding a negative index.
-        const active = tokens[((slot % tokens.length) + tokens.length) % tokens.length];
         this._activeToken = active;
         const rb = this.buffers[active];
-        const samples = rb.read(rb.length); // stream everything buffered for them
+        // Draining the active buffer both RELEASES this turn's audio and, relative
+        // to the previous turn, evicts what was released a lap ago — the two
+        // events requirement 4 pairs at a slot: released on its turn, gone (the
+        // buffer emptied) by the time the write pointer reaches this slot again.
+        // `lapped` marks that return-to-position for observability.
+        const held = rb ? rb.read(rb.length) : new Float32Array(0);
+        // Gain-stage the master before it is streamed (requirement 6).
+        const { gain, samples } = this.computeGainStaging(held);
         if (samples.length) this.sharedBuffer.write(samples);
-        console.log(`[aggregator-bot] assembled master from token=${active} samples=${samples.length}`);
-        return { active, assembled: samples.length };
+        console.log(
+            `[aggregator-bot] assembled master from token=${active} samples=${samples.length} ` +
+            `gain=${gain.toFixed(3)}${lapped ? ' (pointer lapped)' : ''}`,
+        );
+        return { active, assembled: samples.length, gain, lapped };
+    }
+
+    /**
+     * Register any token that has a per-participant buffer but is not yet in the
+     * ring, in room-index order. Real captures enter the ring via writeTo…
+     * (keyed by media-stream id); this covers buffers seeded directly (tests /
+     * future direct injection) so the rotation still sees them. Assign-once, so
+     * repeated calls after everyone is registered do no work.
+     */
+    #syncOrderFromBuffers() {
+        for (const token of Object.keys(this.buffers).sort(tokenOrder)) {
+            if (!this._order.hasToken(token)) this._order.register(token, token);
+        }
     }
 
     async playMasterBufferToClient() {
@@ -341,9 +392,28 @@ export class AggregatorBot extends Bot {
         // implement and test audio streaming first
     }
 
-    computeGainStaging() {
-        // compute the gain staging for the audio streams
-        // reduce master gain if max gain exceeds what's allowed by the bit depth of the audio stream
+    computeGainStaging(input) {
+        // Gain staging (requirement 6): keep the assembled master inside the
+        // stream's representable range. Find the peak amplitude; if it exceeds
+        // the ceiling (full scale for the audio's bit depth — beyond it the
+        // stream clips), scale every sample down by ceiling/peak so the loudest
+        // sample sits exactly at the ceiling. A master already within range is
+        // passed through untouched (gain 1). Returns { gain, samples }.
+        const src = input || [];
+        const n = src.length;
+        if (!n) return { gain: 1, samples: src.length ? src : new Float32Array(0) };
+        let peak = 0;
+        for (let i = 0; i < n; i++) {
+            const a = src[i] < 0 ? -src[i] : src[i];
+            if (a > peak) peak = a;
+        }
+        if (peak <= this.gainCeiling || peak === 0) {
+            return { gain: 1, samples: src };
+        }
+        const gain = this.gainCeiling / peak;
+        const out = new Float32Array(n);
+        for (let i = 0; i < n; i++) out[i] = src[i] * gain;
+        return { gain, samples: out };
     }
 
     logIncomingAudio(takes) {
