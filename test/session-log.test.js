@@ -1,6 +1,7 @@
 // Research session log: the sidecar appends one JSONL file per room-session
-// covering joins/leaves, metrics, CRDT edits, and client research events;
-// research/export.js rolls it into CSV.
+// covering joins/leaves, metrics, CRDT edits, and client research events. The
+// standalone CSV roller (research/export.js) was removed in c684814, so this
+// test parses the JSONL stream directly.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,10 +11,18 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import WebSocket from 'ws';
 
-import { jsonlToRows, rowsToCsv } from '../research/export.js';
-
 const require = createRequire(import.meta.url);
 const { createLatencyServer } = require('../latency-instrument/server.js');
+
+// One JSON object per line; a torn final line (partial write) is skipped.
+function jsonlToRows(text) {
+  const rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    try { rows.push(JSON.parse(line)); } catch { /* torn tail line */ }
+  }
+  return rows;
+}
 
 function connect(port, room) {
   return new Promise((resolve, reject) => {
@@ -81,19 +90,4 @@ test('one JSONL file per session captures the event stream in server order', asy
     wss.close();
     for (const c of wss.clients) c.terminate();
   }
-});
-
-test('export.js: JSONL → CSV with the union of columns and JSON-encoded nesting', () => {
-  const rows = jsonlToRows([
-    '{"ts":1,"session":"s","type":"metrics","rtt":40}',
-    '{"ts":2,"session":"s","type":"research-event","kind":"health-actions","data":{"actions":[{"type":"compress-global"}]}}',
-    'not json — torn tail line',
-    ''
-  ].join('\n'));
-  assert.equal(rows.length, 2);
-  const csv = rowsToCsv(rows);
-  const [header, r1, r2] = csv.trim().split('\n');
-  assert.equal(header, 'ts,session,type,rtt,kind,data');
-  assert.equal(r1, '1,s,metrics,40,,');
-  assert.match(r2, /^2,s,research-event,,health-actions,"\{""actions"".*\}"$/);
 });

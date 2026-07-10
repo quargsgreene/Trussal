@@ -72,7 +72,7 @@ Set `JAMULUS_HOST` in the environment (or `docker-jitsi-meet/.env`) before build
 | `bridges/XMPPtoO2Mapper.js` | jitsiId ↔ room index ↔ O2 service name |
 | `mcp-agent/` | Standalone MCP server (own package.json): AI-composed pattern updates via per-bot ordered queues + metaprogram apply |
 
-Top-level: `components/` (vanilla-DOM Net Cycles editor/highlighter/cluster video), `public/lib/o2lite-web.js` (O2lite WS client), `server/O2Relay.js` (re-export of the sidecar's O2 relay), `research/export.js` (session JSONL → CSV).
+Top-level: `components/` (vanilla-DOM Net Cycles editor/highlighter/cluster video), `public/lib/o2lite-web.js` (O2lite WS client), `server/O2Relay.js` (re-export of the sidecar's O2 relay).
 
 ### Key design constraints
 
