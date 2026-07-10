@@ -83,6 +83,20 @@ export function pageAudioBridge() {
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
     window.__trussalFanGain = fan;
+    // Headless bots make no user gesture. A normal bot's AudioContext is resumed
+    // by the studio-toggle click; the aggregator boots no studio and clicks
+    // nothing, so resume here. Even with --autoplay-policy=no-user-gesture-required
+    // this matters: a suspended context runs neither the aggregator's capture
+    // ScriptProcessor (no ingest) nor its playback ScriptProcessor (no output) —
+    // the whole round trip goes silent. A failed resume means exactly that
+    // silence, so log it and throw rather than swallow it: the rejection surfaces
+    // as a page error the bot's error reporting picks up (conductor replace policy).
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch((e) => {
+        console.error('[trussal] AudioContext resume failed', e);
+        throw e;
+      });
+    }
     return ctx;
   }
 
@@ -248,7 +262,33 @@ export async function pageEnsureAudioPublished() {
     const conf = APP && APP.conference;
     if (!conf) return;
     const room = () => conf._room || conf.room;
-    const localTrack = () => { try { const r = room(); return r && r.getLocalAudioTrack && r.getLocalAudioTrack(); } catch (e) { return null; } };
+    const localTrack = () => {
+      try {
+        const r = room();
+        return r && r.getLocalAudioTrack && r.getLocalAudioTrack();
+      } catch (e) {
+        console.error('[trussal] getLocalAudioTrack failed', e);
+        throw e;
+      }
+    };
+
+    // The published track is only ever as live as window.__trussalMicStream (the
+    // fan tap in pageAudioBridge). A normal bot's Strudel boot creates the shared
+    // AudioContext before we get here, so that tap already exists. The aggregator
+    // boots no Strudel, and nothing else has built the context yet at this point,
+    // so the gUM override below would find no tap and fall back to a permanently
+    // silent track — the bot would publish silence forever. Build the shared
+    // context now (pageAudioBridge wraps the constructor, so this creates the fan
+    // + __trussalMicStream). No-op for a normal bot: its context already exists.
+    // A failure here means the bot can only ever publish silence, so log + throw.
+    if (!window.__trussalMicStream) {
+      try {
+        new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.error('[trussal] failed to build shared AudioContext for mic tap', e);
+        throw e;
+      }
+    }
 
     // 1) Ask jitsi-meet to unmute; if it had no/muted track this triggers a
     //    gUM (→ our tap) and publishes it.
@@ -269,7 +309,14 @@ export async function pageEnsureAudioPublished() {
         }
       } catch (e) {}
     }
-  } catch (e) {}
+  } catch (e) {
+    // Don't swallow: the inner steps (getLocalAudioTrack, the shared-context
+    // build) log + throw on failure, and this is where those land. Re-throw so
+    // the failure reaches the caller's .catch instead of dying silently here —
+    // a silently-failed publish is exactly the "bot streams silence" bug.
+    console.error('[trussal] pageEnsureAudioPublished failed', e);
+    throw e;
+  }
 }
 
 /**

@@ -132,7 +132,9 @@ export class AggregatorBot extends Bot {
         // Publish an unmuted audio track immediately so the aggregator holds a
         // live track to carry the assembled master mix (wired up in
         // readAndAssembleMasterBuffer). No video track — see videoMuted above.
-        await this.page.evaluate(pageEnsureAudioPublished).catch(() => {});
+        await this.page.evaluate(pageEnsureAudioPublished).catch((e) => {
+            console.error(`[aggregator-bot] failed to ensure audio is published: ${e.message}`);
+        });
 
         await this.publishMetrics();
         this.startIngestLoop();
@@ -377,8 +379,10 @@ export class AggregatorBot extends Bot {
         if (!this.page || typeof this.page.evaluate !== 'function') return [];
         try {
             const takes = await this.page.evaluate(pageDrainParticipantAudio);
+            console.log(`[aggregator-bot] drained ${takes.length} participant captures from the page`);
             return Array.isArray(takes) ? takes : [];
         } catch (e) {
+            console.error(`[aggregator-bot] failed to drain participant captures: ${e.message}`);
             return [];
         }
     }
@@ -390,6 +394,7 @@ export class AggregatorBot extends Bot {
             // Float32Array does not survive that, so hand the page a plain Array.
             await this.page.evaluate(pageEnqueueMaster, Array.from(samples));
         } catch (e) {
+            console.error(`[aggregator-bot] failed to enqueue master samples: ${e.message}`);
             // A late Jitsi navigation tears down the context; the next tick
             // re-enqueues, so a dropped frame here is self-healing.
         }
