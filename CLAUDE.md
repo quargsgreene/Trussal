@@ -41,6 +41,36 @@ docker compose build --no-cache web && docker compose rm -sf web && docker compo
 
 Set `JAMULUS_HOST` in the environment (or `docker-jitsi-meet/.env`) before building to override the default Jamulus hostname baked into the bundle.
 
+## Git workflow
+
+Work on `main`. **Commit directly to `main` and push to `origin/main` by default** — do not create feature branches. The production deploy targets pull from `origin/main`, so a change is not deployable until it is pushed there. When a bundle (`src/`) change is committed, also commit the regenerated `docker-jitsi-meet/jitsi-web/custom-config.js` (it is tracked); build it with the production host via `JAMULUS_HOST=jamulus.trussal.com npm run deploy:local` so the tracked artifact isn't polluted with the `jamulus.example.com` default.
+
+## Deployment (production, multi-VM)
+
+Trussal runs across three SSH-reachable VMs; addresses live in gitignored `.env.deploy` (the `Makefile` falls back to LAN-IP defaults):
+
+- **video** `trussal-video@192.168.1.254` — Jitsi Docker stack in `~/Trussal/docker-jitsi-meet` (`web`, `jvb`, `jicofo`, `prosody`, and the `latency` sidecar). Serves the bundle. Public name `meet.trussal.com`.
+- **audio** `trussal-audio@192.168.1.120` — Jamulus servers as systemd units (`jamulus@22000`–`22010`, room N → port 22000+N).
+- **bots** `trussal-bot-vm@192.168.1.232` — the conductor + dynamically-spawned `trussal-bot-*` containers (including the aggregator, `trussal-bot-99999`).
+
+**Push to `origin/main` first** — every target does `git pull --ff-only`.
+
+```bash
+make deploy-video   # ssh video: git pull + ./run.sh (full rebuild + stack restart)
+make deploy-bots    # ssh bots:  git pull + rebuild image + up -d conductor
+make deploy-audio   # ssh audio: git pull + reinstall + restart jamulus@* units
+make deploy-all     # all three
+```
+
+Which target to run depends on what changed: `src/` (bundle) or `latency-instrument/server.js` (sidecar) → **video**; `bots/` → **bots**; `system/jamulus@.service` → **audio**.
+
+### Deploy caveats (these have each cost real time)
+
+- **Bundle is a single-file bind mount pinned to the file's INODE at container-create time.** `git pull`/`cp` replace the file (new inode), so the running `web` container keeps serving the OLD bundle. After any bundle change you MUST `docker compose up -d --force-recreate web` to re-bind. **Always verify the SERVED file** (`curl -sk https://localhost/custom-config.js | grep <sym>` and `docker exec <web> grep <sym> /usr/share/jitsi-meet/custom-config.js`), not just the on-disk file. Recreating `web` re-serves nginx/static without dropping the media session, but users must hard-reload for the new bundle.
+- **Surgical video deploy** (lower-risk than `run.sh`, which does a full `docker compose down && up` that drops live meetings): on the video VM after `git pull`, run `npm run deploy:local`, then `cd docker-jitsi-meet && docker compose build latency && docker compose up -d --force-recreate latency` (sidecar) and `docker compose up -d --force-recreate web` (bundle). Recreating `latency` wipes its in-memory roster; clients reconnect within ~15s.
+- **Bots need `--force-recreate conductor`, not plain `up -d`.** Bots and the aggregator are launched by the conductor via `docker run` (not compose), so recreating the conductor respawns the fleet from the freshly built image; plain `up -d` leaves running bots on the old image. Rebuild the image first: `docker compose --profile build-only build`.
+- **Never `git reset --hard` on the video VM.** It carries dirty tracked runtime files the containers mutate (`custom-config/web/config.js`, `custom-config/jvb/jvb.conf`, `custom-config/web/acme.sh/*`). `git pull --ff-only` works as long as the incoming commits don't touch those files; to advance past a conflict, `git checkout -- <the files you deployed> && git pull --ff-only`.
+
 ## Architecture
 
 ### Build pipeline
