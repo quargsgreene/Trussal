@@ -1257,13 +1257,30 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function isPropagatingToRoom() {
     return !!jitsiMixState;
   }
+  function stopStrudelPublishRetry() {
+    if (strudelPublishRetryTimer) {
+      clearInterval(strudelPublishRetryTimer);
+      strudelPublishRetryTimer = null;
+    }
+  }
+  function scheduleStrudelPublishRetry() {
+    if (strudelPublishRetryTimer) return;
+    strudelPublishRetryTimer = setInterval(() => {
+      if (!aggregatorJitsiId || strudelRoomEffect) {
+        stopStrudelPublishRetry();
+        return;
+      }
+      publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish retry failed", e30));
+    }, 1e3);
+  }
   async function publishLocalStrudelToRoom() {
     if (strudelRoomEffect) return true;
     await ensureMasterStrudelInput();
     if (!masterStrudelGain) return false;
     const track = findLocalJitsiAudioTrack();
     if (!track || typeof track.setEffect !== "function") {
-      console.warn("[latency] could not publish local Strudel to room \u2014 no local Jitsi audio track to attach to (enable the mic once)");
+      console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track (mic muted?); will retry when the mic is enabled");
+      scheduleStrudelPublishRetry();
       return false;
     }
     const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
@@ -1278,6 +1295,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return true;
   }
   async function unpublishLocalStrudelFromRoom() {
+    stopStrudelPublishRetry();
     if (!strudelRoomEffect) return;
     const s2 = strudelRoomEffect;
     strudelRoomEffect = null;
@@ -1341,7 +1359,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -1474,6 +1492,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         }
       };
       strudelRoomEffect = null;
+      strudelPublishRetryTimer = null;
       if (typeof window !== "undefined") {
         window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
         window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;

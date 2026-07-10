@@ -946,6 +946,26 @@ class NodeOutputEffect {
 }
 
 let strudelRoomEffect = null; // { track, effect } while publishing, else null
+let strudelPublishRetryTimer = null; // polls for the mic track when it's absent
+
+function stopStrudelPublishRetry() {
+  if (strudelPublishRetryTimer) { clearInterval(strudelPublishRetryTimer); strudelPublishRetryTimer = null; }
+}
+
+// The mic is usually muted at join, so no local Jitsi audio track exists yet when
+// the aggregator is first detected and publishLocalStrudelToRoom is called — it
+// fails and, without this, stays failed even after the user enables the mic
+// (nothing re-fires the publish), so the aggregator taps silence forever. Jitsi
+// tracks are polled here, not evented (matching participants.js), because Jitsi's
+// event API is unstable. Re-attempt every second until the publish takes hold or
+// we leave aggregator mode; the poll is cheap (a track lookup + early return).
+function scheduleStrudelPublishRetry() {
+  if (strudelPublishRetryTimer) return; // already polling
+  strudelPublishRetryTimer = setInterval(() => {
+    if (!aggregatorJitsiId || strudelRoomEffect) { stopStrudelPublishRetry(); return; }
+    publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish retry failed', e));
+  }, 1000);
+}
 
 export async function publishLocalStrudelToRoom() {
   if (strudelRoomEffect) return true; // already publishing
@@ -953,7 +973,8 @@ export async function publishLocalStrudelToRoom() {
   if (!masterStrudelGain) return false;
   const track = findLocalJitsiAudioTrack();
   if (!track || typeof track.setEffect !== 'function') {
-    console.warn('[latency] could not publish local Strudel to room — no local Jitsi audio track to attach to (enable the mic once)');
+    console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track (mic muted?); will retry when the mic is enabled');
+    scheduleStrudelPublishRetry();
     return false;
   }
   const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
@@ -969,6 +990,7 @@ export async function publishLocalStrudelToRoom() {
 }
 
 export async function unpublishLocalStrudelFromRoom() {
+  stopStrudelPublishRetry(); // aggregator gone (or never published) — stop waiting for the mic
   if (!strudelRoomEffect) return;
   const s = strudelRoomEffect;
   strudelRoomEffect = null;
