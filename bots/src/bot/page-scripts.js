@@ -508,12 +508,52 @@ export function pageAggregatorCapture() {
       }
       return out;
     },
+    // Localizes an empty drain: which capture stage produced no samples. Reports
+    // every <audio> element the tap can see (id + whether it's tapped + whether it
+    // actually carries a stream), the per-jitsiId page-side backlog, and how the
+    // jitsiId→room-index resolver maps each backlog key. The Node side logs this
+    // when a drain comes back empty so "drained 0" is never ambiguous:
+    //   - audioCount 0                      -> no remote audio received at all
+    //   - audios present, none tapped       -> tap()/createMediaElementSource failing
+    //   - store has samples, resolved null  -> jitsiId↔roomIndex mapping not ready
+    diag() {
+      const audios = [...document.querySelectorAll('audio')].map((el) => ({
+        id: el.id || '(none)',
+        tapped: tapped.has(el),
+        paused: el.paused,
+        readyState: el.readyState,
+        srcObject: !!el.srcObject,
+      }));
+      const storeSizes = {};
+      for (const [jid, arr] of store) storeSizes[jid] = arr.length;
+      const resolverType = typeof window.__trussalRoomIndexForJitsiId;
+      const resolved = {};
+      if (resolverType === 'function') {
+        for (const jid of store.keys()) {
+          try { resolved[jid] = window.__trussalRoomIndexForJitsiId(jid); }
+          catch (e) { resolved[jid] = `ERR:${e && e.message}`; }
+        }
+      }
+      let participantCount = null;
+      try {
+        const c = globalThis.APP && globalThis.APP.conference;
+        const r = c && (c._room || c.room);
+        if (r && typeof r.getParticipants === 'function') participantCount = r.getParticipants().length;
+        else if (c && typeof c.getParticipants === 'function') participantCount = c.getParticipants().length;
+      } catch (_) {}
+      return { audioCount: audios.length, audios, store: storeSizes, resolverType, resolved, participantCount };
+    },
   };
 }
 
 /** Drain the accumulated per-participant PCM the aggregator tap has captured. */
 export function pageDrainParticipantAudio() {
   return (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+}
+
+/** Snapshot of the capture tap's state, for diagnosing an empty drain. */
+export function pageAggregatorCaptureDiag() {
+  return (window.__trussalAggCapture && window.__trussalAggCapture.diag()) || null;
 }
 
 /**

@@ -2,7 +2,7 @@ import { Bot } from './bot.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
-  pageAggregatorCapture, pageDrainParticipantAudio, pageFpsSampler,
+  pageAggregatorCapture, pageDrainParticipantAudio, pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
@@ -380,6 +380,21 @@ export class AggregatorBot extends Bot {
         try {
             const takes = await this.page.evaluate(pageDrainParticipantAudio);
             console.log(`[aggregator-bot] drained ${takes.length} participant captures from the page`);
+            // Empty drain: dump the capture tap's state so "drained 0" localizes to a
+            // stage (no audio received / tap failing / token unresolved). Throttled to
+            // roughly every 10th empty tick so it's a heartbeat, not a flood. Best-effort
+            // telemetry — log a failure but don't throw, so a diag hiccup can't wedge ingest.
+            if (!takes || !takes.length) {
+                this._emptyDrains = (this._emptyDrains || 0) + 1;
+                if (this._emptyDrains % 10 === 1) {
+                    try {
+                        const diag = await this.page.evaluate(pageAggregatorCaptureDiag);
+                        console.log('[aggregator-bot] capture diag', JSON.stringify(diag));
+                    } catch (e) {
+                        console.error(`[aggregator-bot] capture diag failed: ${e.message}`);
+                    }
+                }
+            }
             return Array.isArray(takes) ? takes : [];
         } catch (e) {
             console.error(`[aggregator-bot] failed to drain participant captures: ${e.message}`);
