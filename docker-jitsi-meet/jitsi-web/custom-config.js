@@ -1242,32 +1242,34 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return !!jitsiMixState;
   }
   async function publishLocalStrudelToRoom() {
-    if (strudelRoomTap) return true;
+    if (strudelRoomEffect) return true;
     await ensureMasterStrudelInput();
     if (!masterStrudelGain) return false;
-    const dest = audioCtx.createMediaStreamDestination();
-    masterStrudelGain.connect(dest);
-    const ok = await propagateExternalStreamToRoom(dest.stream);
-    if (!ok) {
-      try {
-        masterStrudelGain.disconnect(dest);
-      } catch (e30) {
-      }
-      console.warn("[latency] could not publish local Strudel to room \u2014 no outgoing Jitsi audio track (is the mic enabled?)");
+    const track = findLocalJitsiAudioTrack();
+    if (!track || typeof track.setEffect !== "function") {
+      console.warn("[latency] could not publish local Strudel to room \u2014 no local Jitsi audio track to attach to (enable the mic once)");
       return false;
     }
-    strudelRoomTap = dest;
-    console.log("[latency] publishing local Strudel to room for the aggregator to tap");
+    const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
+    try {
+      await track.setEffect(effect);
+    } catch (e30) {
+      console.warn("[latency] publish Strudel setEffect failed", e30);
+      return false;
+    }
+    strudelRoomEffect = { track, effect };
+    console.log("[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap");
     return true;
   }
   async function unpublishLocalStrudelFromRoom() {
-    if (!strudelRoomTap) return;
-    await stopPropagatingExternalStream();
+    if (!strudelRoomEffect) return;
+    const s2 = strudelRoomEffect;
+    strudelRoomEffect = null;
     try {
-      masterStrudelGain && masterStrudelGain.disconnect(strudelRoomTap);
+      if (s2.track && typeof s2.track.setEffect === "function") await s2.track.setEffect(void 0);
     } catch (e30) {
+      console.warn("[latency] stop publishing Strudel failed", e30);
     }
-    strudelRoomTap = null;
     console.log("[latency] stopped publishing local Strudel to room");
   }
   async function attachNodeToChain(jitsiId, node, label2 = "relay") {
@@ -1323,7 +1325,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, strudelRoomTap;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -1431,7 +1433,30 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           }
         }
       };
-      strudelRoomTap = null;
+      NodeOutputEffect = class {
+        constructor(audioCtx2, node) {
+          this._node = node;
+          this._dest = audioCtx2.createMediaStreamDestination();
+        }
+        isEnabled() {
+          return true;
+        }
+        startEffect(_micStream) {
+          try {
+            this._node.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] NodeOutputEffect connect failed", e30);
+          }
+          return this._dest.stream;
+        }
+        stopEffect() {
+          try {
+            this._node.disconnect(this._dest);
+          } catch (e30) {
+          }
+        }
+      };
+      strudelRoomEffect = null;
       if (typeof window !== "undefined") {
         window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
         window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;

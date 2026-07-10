@@ -897,8 +897,22 @@ export function isPropagatingToRoom() {
 // nothing to the master and is heard by no one (their local monitor is muted in
 // aggregator mode). To fix that, while an aggregator is present we tap the
 // Strudel program (masterStrudelGain — full level, upstream of the strudelOut
-// monitor mute) into a MediaStream and push it onto the outgoing Jitsi mic via
-// the same propagation path the studio's device capture uses.
+// monitor mute) directly onto the outgoing Jitsi audio track via a setEffect
+// whose output is ONLY that node.
+//
+// Two things learned the hard way here:
+//  - Connect the node DIRECTLY into the effect's MediaStreamDestination. Routing
+//    it through an intermediate MediaStreamDestination and reading it back with
+//    createMediaStreamSource in the SAME AudioContext hits a Chrome bug that
+//    emits pure silence (Firefox is unaffected) — that was the aggregator's rms=0
+//    on a healthy Strudel signal.
+//  - Publish Strudel ONLY, not mic+Strudel: once the aggregator's master plays
+//    back out the speakers a live mic recaptures it and loops (feedback), and for
+//    a Strudel algorave the mic isn't the source anyway.
+//
+// setEffect (vs a raw sender.replaceTrack) so it survives Jitsi's P2P/JVB flips.
+// It still needs a local audio track to attach to, so the mic must be enabled
+// once — but its audio is replaced by Strudel, so no room noise/voice goes out.
 //
 // Only in aggregator mode, so a normal room still relies on shared re-evaluation
 // and never double-plays a human over both the Strudel-eval and Jitsi-mic paths.
@@ -907,32 +921,56 @@ export function isPropagatingToRoom() {
 // (all playing peers stacked). With one human that IS just their own pattern, so
 // a single stream round-trips correctly; isolating each of several humans to only
 // their own voice is the alternating-streams follow-up.
-let strudelRoomTap = null; // MediaStreamDestination fed from masterStrudelGain
+
+// A jitsi-meet track effect whose output is exactly `node` — the mic input it is
+// handed is ignored. `node` connects straight into the effect's destination (no
+// MediaStream round-trip → no Chrome same-context loopback silence).
+class NodeOutputEffect {
+  constructor(audioCtx, node) {
+    this._node = node;
+    this._dest = audioCtx.createMediaStreamDestination();
+  }
+  isEnabled() { return true; }
+  startEffect(_micStream) {
+    try { this._node.connect(this._dest); }
+    catch (e) { console.warn('[latency] NodeOutputEffect connect failed', e); }
+    return this._dest.stream;
+  }
+  stopEffect() {
+    try { this._node.disconnect(this._dest); } catch (e) {}
+  }
+}
+
+let strudelRoomEffect = null; // { track, effect } while publishing, else null
 
 export async function publishLocalStrudelToRoom() {
-  if (strudelRoomTap) return true; // already publishing
+  if (strudelRoomEffect) return true; // already publishing
   await ensureMasterStrudelInput(); // guarantees masterStrudelGain + audioCtx
   if (!masterStrudelGain) return false;
-  const dest = audioCtx.createMediaStreamDestination();
-  masterStrudelGain.connect(dest);
-  // propagate mixes this onto the outgoing mic; needs an existing outgoing audio
-  // track/sender (i.e. the user's mic must be live). Fails cleanly otherwise.
-  const ok = await propagateExternalStreamToRoom(dest.stream);
-  if (!ok) {
-    try { masterStrudelGain.disconnect(dest); } catch (e) {}
-    console.warn('[latency] could not publish local Strudel to room — no outgoing Jitsi audio track (is the mic enabled?)');
+  const track = findLocalJitsiAudioTrack();
+  if (!track || typeof track.setEffect !== 'function') {
+    console.warn('[latency] could not publish local Strudel to room — no local Jitsi audio track to attach to (enable the mic once)');
     return false;
   }
-  strudelRoomTap = dest;
-  console.log('[latency] publishing local Strudel to room for the aggregator to tap');
+  const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
+  try {
+    await track.setEffect(effect);
+  } catch (e) {
+    console.warn('[latency] publish Strudel setEffect failed', e);
+    return false;
+  }
+  strudelRoomEffect = { track, effect };
+  console.log('[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap');
   return true;
 }
 
 export async function unpublishLocalStrudelFromRoom() {
-  if (!strudelRoomTap) return;
-  await stopPropagatingExternalStream();
-  try { masterStrudelGain && masterStrudelGain.disconnect(strudelRoomTap); } catch (e) {}
-  strudelRoomTap = null;
+  if (!strudelRoomEffect) return;
+  const s = strudelRoomEffect;
+  strudelRoomEffect = null;
+  try {
+    if (s.track && typeof s.track.setEffect === 'function') await s.track.setEffect(undefined);
+  } catch (e) { console.warn('[latency] stop publishing Strudel failed', e); }
   console.log('[latency] stopped publishing local Strudel to room');
 }
 
