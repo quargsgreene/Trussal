@@ -255,6 +255,7 @@ export class AggregatorBot extends Bot {
         const rb = this.buffers[active];
         const samples = rb.read(rb.length); // stream everything buffered for them
         if (samples.length) this.sharedBuffer.write(samples);
+        console.log(`[aggregator-bot] assembled master from token=${active} samples=${samples.length}`);
         return { active, assembled: samples.length };
     }
 
@@ -266,6 +267,7 @@ export class AggregatorBot extends Bot {
         const samples = this.sharedBuffer.read(this.sharedBuffer.length);
         if (!samples.length) return { played: 0 };
         await this.#enqueueMasterSamples(samples);
+        console.log(`[aggregator-bot] played master samples=${samples.length}`);
         return { played: samples.length };
     }
     
