@@ -15,7 +15,6 @@
 
 // Seconds per beat for a tempo directive. cpm/bpm are per-minute, cps per
 // second; the metaprogram grid treats one cycle-unit as one beat.
-// Calculates the length of a beat in seconds given a tempo, defaults to 0.5s (120 bpm) if tempo is missing or invalid.
 export function beatSeconds(tempo) {
   const v = tempo && tempo.value > 0 ? tempo.value : 120;
   switch (tempo && tempo.unit) {
@@ -28,18 +27,13 @@ export function beatSeconds(tempo) {
 
 // WCPL is a fraction, not a duration: map full-scale (100 % loss) to 10 s so
 // heavy loss stretches cycles the way heavy latency does.
-// Converts WCPL (Worst Case Packet Loss) metric to a duration in seconds, using a full-scale mapping of 10 seconds for 100% loss.
-// This might be a bit short
 export const WCPL_FULL_SCALE_S = 10;
 
 // The minimum waiting period the timing mode demands, in seconds.
-// Calculates minimum wait time factors based on network metrics
 export function timingTargetSeconds(cycles, metrics) {
-// pass in cycles and metrics objects
   const m = metrics || {};
   const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
   switch (cycles && cycles.metric) {
-  // possibly redundant metric property
     case 'wcj': return ((m.wcj || 0) / 1000) * factor;
     case 'wcpl': return (m.wcpl || 0) * WCPL_FULL_SCALE_S * factor;
     case 'wcl':
@@ -50,8 +44,6 @@ export function timingTargetSeconds(cycles, metrics) {
 // Smallest whole number of beats strictly exceeding the waiting period —
 // "minimum waiting period prioritized over hitting buffer scheduling
 // deadlines". Never below one beat.
-// Sets cycle length as single beat
-// TODO: Make the cycle closer to the concept of a measure as in Strudel, don't make cycles a single beat
 export function cycleLength({ cycles, tempo, metrics }) {
   const beatS = beatSeconds(tempo);
   const targetS = timingTargetSeconds(cycles, metrics);
@@ -62,7 +54,6 @@ export function cycleLength({ cycles, tempo, metrics }) {
 // --- Deterministic RNG --------------------------------------------------------
 
 // mulberry32 — tiny, good-enough, identical everywhere.
-// What's the point of this? Perhaps implements the '?'  and '|' operators, not sure yet
 export function seededRandom(seed) {
   let a = seed >>> 0;
   return function () {
@@ -74,7 +65,7 @@ export function seededRandom(seed) {
 }
 
 // --- Cycle expansion -----------------------------------------------------------
-// Detect repeats and lengthening
+
 function modValue(el, op, dflt) {
   const m = (el.modifiers || []).find(x => x.op === op);
   return m ? m.value : dflt;
@@ -152,7 +143,6 @@ function subdivideInto(events, elements, start, span, cycle, stack, rng) {
   }
 }
 
-// Maybe this is not needed?
 // Expand one cycle of the participants sequence into slot events with
 // fractional [start, dur) within the cycle. Stacked sequences (`,`) run
 // concurrently, each reading the sequence as of `cycleNumber − cycleOffset`
@@ -195,28 +185,24 @@ export function expandCycle(participants, cycleNumber) {
 // performer who never gets a slot can't grow without bound (deadlock/OOM
 // prevention). dequeue() on empty returns null — the slot plays silence and
 // the cycle advances regardless.
-// clarify if maxBuffers is the max queue length or the max number of buffers in memory, and if maxBytes is the max total size of all buffers in memory. The current implementation seems to treat maxBuffers as the max queue length and maxBytes as the max total size of all buffers in memory.
-// TODO: Implement buffer object
 export class AVBufferQueue {
-  constructor(maxBuffersPerParticipant = 8) {
-    this.maxBuffers = maxBuffersPerParticipant;
+  constructor({ maxBuffers = 8, maxBytes = 32 * 1024 * 1024 } = {}) {
+    this.maxBuffers = maxBuffers;
+    this.maxBytes = maxBytes;
     this._items = [];
     this._bytes = 0;
     this.evicted = 0;
   }
 
-  // stop tracking bytes
-
   get length() { return this._items.length; }
   get bytes() { return this._bytes; }
 
-  // define buffer object, I suspect it was never defined
   enqueue(av) {
     const entry = av || {};
     const bytes = typeof entry.bytes === 'number' && entry.bytes >= 0 ? entry.bytes : 0;
     this._items.push(entry);
     this._bytes += bytes;
-    while (this._items.length > this.maxBuffers || this._items.length > 1) {
+    while (this._items.length > this.maxBuffers || (this._bytes > this.maxBytes && this._items.length > 1)) {
       const dropped = this._items.shift();
       this._bytes -= (typeof dropped.bytes === 'number' ? dropped.bytes : 0);
       this.evicted++;
@@ -273,8 +259,6 @@ export class MetaprogramScheduler {
     this._nextCycleStart = null;
   }
 
-    // is this really needed? It seems like it might be useful for testing or debugging, but not strictly necessary for the scheduler's operation.
-
   setProgram(ast) {
     if (!ast || !ast.participants) return false;
     if (!this._running || this._ast == null) this._ast = ast;
@@ -291,7 +275,6 @@ export class MetaprogramScheduler {
   getProgram() { return this._ast; }
   getCycle() { return this._cycle; }
 
-  // this seems to have nothing to do with the WC cycle length and runs off an arbitrary subdivision
   start(epoch = this._now()) {
     if (this._running) return;
     this._running = true;
@@ -310,8 +293,7 @@ export class MetaprogramScheduler {
   }
 
   // Advance the schedule up to now + lookahead. Safe to call manually (tests)
-  // or from the interval timer
-  // this should be handled by scheduler
+  // or from the interval timer.
   tick() {
     if (!this._running || !this._ast) return;
     const horizon = this._now() + this._lookaheadS;

@@ -5,8 +5,6 @@
 // chip with effect indicators, play state, and an "audio routed" dot — making
 // it obvious that each person owns their own chain and editor.
 
-//This is almost all of the frontend
-
 import { getRoomNameFromUrl, connectJamulusRelay, disconnectJamulusRelay, isRelayConnected } from './jamulus.js';
 import {
   subscribeParticipants,
@@ -82,13 +80,11 @@ let selectedJitsiId = null;
 let initedRoom = null;
 let codeDebounce = null;
 let lastStatus = 'Idle';
-// seems suspiciously vague
 let routedSet = new Set();
 let sampleBanks = []; // [{name, count}] — kept in sync after every load/delete
 let currentSliders = []; // most recent slider configs from strudel eval
 
 async function refreshSampleBanks() {
-  // weird error handling
   sampleBanks = await getSampleBanks().catch(() => []);
   renderAll();
 }
@@ -102,7 +98,7 @@ function isInMeeting() {
       if (typeof conf.isJoined === 'function') return !!conf.isJoined();
       if (conf._room && typeof conf._room.isJoined === 'function') return !!conf._room.isJoined();
     }
-  } catch (e) { /* fall through */ } // please handle error
+  } catch (e) { /* fall through */ }
   if (body.classList.contains('welcome-page')) return false;
   if (document.querySelector('.prejoin-screen, .premeeting-screen, [class*="premeeting"], [class*="prejoin"]')) return false;
   if (document.getElementById('trussal-welcome-overlay')) return false;
@@ -112,7 +108,6 @@ function isInMeeting() {
   return rect.width > 0 && rect.height > 0;
 }
 
-// this is not grayscale
 function hueFor(jitsiId) {
   if (!jitsiId) return 140;
   let h = 0;
@@ -432,7 +427,6 @@ function effectsBlock(peer, isLocal) {
     </div>`;
 }
 
-// clarify metrics for a single peer, including whether their audio is routed through the chain
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
   const jitter = typeof peer.jitter === 'number' ? peer.jitter.toFixed(2) : '–';
@@ -960,9 +954,7 @@ function renderVoiceButtons(container, code) {
   area.querySelectorAll('.ts-voice-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       toggleButtonCode(btn.dataset.voiceCode);
-      // Scope to the detail panel's personal editor — a bare `.ts-code` would
-      // match the Net Cycles metaprogram textarea (it mounts first in the DOM).
-      const ta = container.querySelector('.ts-code:not(.nc-code)');
+      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code`);
       if (ta) renderVoiceButtons(container, ta.value);
     });
   });
@@ -1185,10 +1177,8 @@ document.addEventListener('trussal-kbd-eval', (e) => {
 });
 
 // Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
-// The `trussal-eval` event is the personal Strudel eval, so exclude the Net
-// Cycles metaprogram textarea (which mounts first and would otherwise match).
 document.addEventListener('trussal-eval', () => {
-  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-detail .ts-code:not(.nc-code)`);
+  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
   if (codeEl) {
     codeEl.classList.remove('ts-eval-flash');
     void codeEl.offsetWidth; // force reflow so the animation restarts each time

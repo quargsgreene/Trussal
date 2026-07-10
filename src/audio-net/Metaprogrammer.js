@@ -77,12 +77,11 @@ function localSeconds() {
 }
 
 function peerByToken(token) {
-  const peers = getAllPeers().find(p => p.roomIndex != null && String(p.roomIndex) === token) || null;
-  return peers;
+  return getAllPeers().find(p => p.roomIndex != null && String(p.roomIndex) === token) || null;
 }
 
 function rosterTokens() {
-  const roster = getAllPeers()
+  return getAllPeers()
     .filter(p => p.roomIndex != null)
     .map(p => String(p.roomIndex))
     // Join order == numeric order for humans; bots sort inside their owner's
@@ -94,8 +93,6 @@ function rosterTokens() {
       if (pa[2].length !== pb[2].length) return pa[2].length - pb[2].length;
       return pa[2] < pb[2] ? -1 : pa[2] > pb[2] ? 1 : 0;
     });
-  console.log('[metaprogrammer] roster tokens', roster);
-  return roster;
 }
 
 function emitSlot(event) {
@@ -131,7 +128,6 @@ export function ensureMetaprogramSync() {
 
 // Effective worst-case metrics: measured roster metrics with the shared
 // induced floors layered on (upward-only).
-// might be redundant with the scheduler's own metrics calculation, but the scheduler is a pure module and doesn't know about the CRDT-induced floors.
 export function effectiveWorstCase() {
   const measured = computeWorstCaseMetrics(getAllPeers());
   return crdt ? mergeInducedMetrics(measured, crdt.getInduced()) : measured;
@@ -178,7 +174,6 @@ export function getVlans() {
 
 // Roster auto-edits must come from exactly one client or concurrent CRDT
 // inserts duplicate tokens. The leader is the lowest-indexed human present.
-// this doesn't make sense
 function isRosterEditLeader() {
   const me = getLocalPeer();
   if (me.isBot || me.roomIndex == null) return false;
@@ -250,7 +245,6 @@ export function getProgramText() { return programText; }
 // Studio effect toggles double as metaprogram shortcuts under Net Cycles:
 // toggling adds/removes the corresponding # line and applies it, so the
 // buttons and the shared editor never disagree.
-// TODO: get rid of this and integrate head cursor asterix syntax
 const SHORTCUT_LINES = { room: '# room 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
 
 export function hasEffectShortcut(fn) {
@@ -286,18 +280,15 @@ function enqueueCycleBuffers(cycle) {
     const pendingPattern = pendingEditorUpdates.get(token);
     pendingEditorUpdates.delete(token);
     const audio = captureTakes.get(token) || null;
-    // TODO: there is no video data being captured or enqueued, but the AVBufferQueue is designed to hold both audio and video data. We need to implement video capture and enqueueing as well.
     captureTakes.delete(token);
-    const avBuffer = {
+    queueFor(token).enqueue({
       pattern: pendingPattern ?? null,   // null = empty buffer (no code change)
       audio,
       messages: [],
       status: { playing: !!peer.playing, muted: !!peer.muted },
       bytes: (audio && audio.bytes) || 0,
       cycle
-    }
-    queueFor(token).enqueue(avBuffer);
-    console.log(`[metaprogrammer] enqueued cycle ${cycle} for token ${token}:`, avBuffer);
+    });
   }
 }
 
@@ -404,7 +395,7 @@ export function startLocalCapture(sourceNode, localToken) {
     if (ev.type === 'cycle-start' && recorder === rec && rec.state === 'recording') {
       try { rec.stop(); } catch (e) {}
     }
-  })
+  });
 }
 
 async function replayCapturedAudio(jitsiId, take, ev) {
@@ -539,22 +530,3 @@ subscribePeerState((event, peer) => {
     }
   }
 });
-
-// --- Diagnostics --------------------------------------------------------------------
-// Temporary probe: confirms which bundle is loaded and dumps live Net Cycles
-// state so we can tell a stale cache apart from a real scheduler/gate bug.
-export const NC_BUILD = 'setTimeout-fix+probe-1';
-if (typeof window !== 'undefined') {
-  window.__ncBuild = NC_BUILD;
-  window.__ncDebug = () => ({
-    build: NC_BUILD,
-    active,
-    o2Connected: !!(o2 && o2.ws && o2.ws.readyState === 1),
-    clock: clock ? { exists: true, synced: clock.isSynced(), ...clock.stats() } : { exists: false },
-    epoch,
-    schedulerRunning: !!scheduler,
-    gateLevels: Object.fromEntries(gateLevels),
-    activePatterns: [...activePatterns.keys()],
-    knownTokens: [...knownTokens],
-  });
-}

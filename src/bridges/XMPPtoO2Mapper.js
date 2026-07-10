@@ -5,7 +5,6 @@
 // the latency sidecar (see latency-instrument/room-indices.js) is the stable
 // pivot: this module keeps the jitsiId ↔ roomIndex ↔ service-name bijection
 // current as peers join and leave. Pure module — testable under node:test.
-// not sure if this is necessary
 
 const SERVICE_PREFIX = '/perf/';
 

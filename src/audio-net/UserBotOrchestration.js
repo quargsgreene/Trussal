@@ -7,9 +7,6 @@
 // helpers are pure so conditional focus ("every other bot", "index > 1c")
 // stays unit-testable.
 
-// TODO: Implement master bus bot, where all audio is mixed down and outputted to the local user and everyone remains muted, this bot is the only one unmuted, and with its camera turned on
-// TODO: Master bus bot's video is a rectangular video panel with all bots' video streams tiled together, and the user can select which bot's video to focus on
-
 import {
   getAllPeers,
   getLocalPeer,

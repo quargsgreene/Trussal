@@ -8,7 +8,6 @@
 //
 // The doc/diff helpers are pure (two in-memory docs converge under
 // node:test); only connectMetaprogramSync touches the peer-state bus.
-// perhaps make only human editable for now, eventually have bot cursors update the metaprogram as well
 
 import * as Y from 'yjs';
 
@@ -141,8 +140,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
       return () => modulation.unobserve(h);
     },
 
-    // VLAN grouping: vlanName → { members: [roomIndex…], induced: {…} }. // condition is never met
-    // simplify
+    // VLAN grouping: vlanName → { members: [roomIndex…], induced: {…} }.
     getVlans() {
       if (!vlans) return {};
       const out = {};

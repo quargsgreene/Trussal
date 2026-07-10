@@ -5,7 +5,6 @@
 // network timestamps, so highlights are scheduled with the same
 // network→local conversion the audio gates use — what lights up matches
 // what is audible.
-// Currently does nothing, should be like Strudel's cycle highlighter, but for the networked metaprogrammer. It should show which performer's buffer is playing right now.
 
 import {
   subscribeSlotEvents,

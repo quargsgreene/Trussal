@@ -35,19 +35,16 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
   let rtcJitter = null;
   let lost = 0;
   let received = 0;
-  let sawInbound = false; 
-
-  // verify that these types and property exist on s
+  let sawInbound = false;
 
   // Selected candidate pair is the authoritative RTT for the media path.
   const pairs = entries.filter(s => s && s.type === 'candidate-pair');
   const selected = pairs.find(s => s.selected === true || s.nominated === true) ||
     pairs.find(s => s.state === 'succeeded');
   if (selected && typeof selected.currentRoundTripTime === 'number') {
-    // might be redundant with stats calculation in scheduler
     rtcRtt = selected.currentRoundTripTime * 1000;
   }
-// better variable names
+
   for (const s of entries) {
     if (!s) continue;
     if (s.type === 'remote-inbound-rtp') {
@@ -80,10 +77,8 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
       // No packets moved this interval — carry nothing rather than invent 0%.
       packetLoss = null;
     } else {
-      // possibly redundant condition: first call, no prev, and no packets yet. Treat as 0% loss.
       packetLoss = 0;
     }
-    console.log('[net-stats] deriveNetSample', { lost, received, dLost, dReceived, packetLoss });
   }
 
   const sample = (rtcRtt != null || rtcJitter != null || packetLoss != null)
@@ -102,7 +97,6 @@ export function mergeSamples(samples) {
     const vals = usable.map(s => s[key]).filter(v => typeof v === 'number' && isFinite(v));
     return vals.length ? Math.max(...vals) : null;
   };
-  console.log('[net-stats] mergeSamples', samples, '→', { rtcRtt: pick('rtcRtt'), rtcJitter: pick('rtcJitter'), packetLoss: pick('packetLoss') });
   return { rtcRtt: pick('rtcRtt'), rtcJitter: pick('rtcJitter'), packetLoss: pick('packetLoss') };
 }
 
@@ -121,15 +115,14 @@ function listPeerConnections() {
         if (pc && typeof pc.getStats === 'function') out.push(pc);
       }
     }
-  } catch (e) { /* conference not up yet */ } // TODO: do not swallow error
-  console.log('[net-stats] found', out.length, 'peer connections', out);
+  } catch (e) { /* conference not up yet */ }
   return out;
 }
 
 let pollTimer = null;
 // Cumulative packet totals per RTCPeerConnection so loss is a delta, not a
 // lifetime average. WeakMap: entries die with their connection.
-const totalsByPc = new WeakMap(); 
+const totalsByPc = new WeakMap();
 
 async function pollOnce(send) {
   const pcs = listPeerConnections();
@@ -147,18 +140,13 @@ async function pollOnce(send) {
   }
   const merged = mergeSamples(samples);
   if (merged) send(merged);
-  console.log('[net-stats] poll', samples, '→', merged, 'peer connections from within pollOnce', {length: pcs.length, pc: pcs});
 }
 
 export function startNetStatsPolling(send) {
   if (pollTimer || typeof send !== 'function') return;
   pollTimer = setInterval(() => { pollOnce(send); }, POLL_INTERVAL_MS);
-  console.log('[net-stats] started polling every', POLL_INTERVAL_MS, 'ms');
 }
-
-// clarify when these run
 
 export function stopNetStatsPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  console.log('[net-stats] stopped polling');
 }
