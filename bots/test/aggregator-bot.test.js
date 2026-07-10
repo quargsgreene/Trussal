@@ -28,18 +28,22 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
 function makeFakes({ pageCaptures = [] } = {}) {
-  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], metrics: 0, closed: false };
+  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false };
   const fakePage = {
     setUserAgent: async () => {},
     evaluateOnNewDocument: async (js) => calls.evalOnNewDoc.push(String(js)),
     goto: async (url) => calls.goto.push(url),
     waitForFunction: async () => {},
-    evaluate: async (fn) => {
+    evaluate: async (fn, ...args) => {
       const s = String(fn);
       calls.evaluate.push(s);
-      if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures; // pageDrainParticipantAudio
-      if (/muteAudio|muteVideo/.test(s)) return undefined;                // pageEnsure*Published
-      return { fps: 30, errors: [], diag: {} };                          // pageReadSamples
+      if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
+      if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
+        calls.enqueued.push(args[0]);
+        return (args[0] || []).length;
+      }
+      if (/muteAudio|muteVideo/.test(s)) return undefined;                   // pageEnsure*Published
+      return { fps: 30, errors: [], diag: {} };                             // pageReadSamples
     },
     metrics: async () => { calls.metrics++; return { JSHeapUsedSize: 50e6 }; },
   };
@@ -48,9 +52,10 @@ function makeFakes({ pageCaptures = [] } = {}) {
   return { calls, fakeLauncher };
 }
 
-// ingestIntervalMs: 0 keeps the self-driving loop off by default so tests
-// drive writeTo…/ingestTick deterministically; the loop has its own test.
-const cfg = { botId: 1, name: 'Aggregator', jitsiUrl: 'http://localhost/0', ingestIntervalMs: 0 };
+// ingestIntervalMs/playbackIntervalMs: 0 keeps the self-driving loops off by
+// default so tests drive writeTo…/ingestTick and readAndAssemble…/play…
+// deterministically; each loop has its own test.
+const cfg = { botId: 1, name: 'Aggregator', jitsiUrl: 'http://localhost/0', ingestIntervalMs: 0, playbackIntervalMs: 0 };
 
 // --- start() ------------------------------------------------------------------
 
@@ -68,8 +73,9 @@ test('start(): joins injected browser unmuted, taps participants, no Strudel, pu
   // Hydra canvas the aggregator never creates.
   assert.match(calls.goto[0], /config\.startWithVideoMuted=true/);
 
-  // Ingest tap installed before navigation.
+  // Ingest tap + return-path playback sink installed before navigation.
   assert.ok(calls.evalOnNewDoc.some((s) => /__trussalAggCapture/.test(s)), 'participant-audio tap installed');
+  assert.ok(calls.evalOnNewDoc.some((s) => /__trussalMasterPlayer/.test(s)), 'return-path playback sink installed');
   // Unmutes audio (its published track will carry the master mix)...
   assert.ok(calls.evaluate.some((s) => /muteAudio\(false\)/.test(s)), 'publishes an unmuted audio track');
   // ...but does NOT publish video (no canvas to capture yet).
@@ -183,4 +189,76 @@ test('ingest loop: start() schedules a drain timer, ingestTick drains the page, 
 
   await bot.stop();
   assert.equal(bot._ingestTimer, null, 'stop() cleared the ingest timer');
+});
+
+// --- readAndAssembleMasterBuffer() + playMasterBufferToClient() ---------------
+// The round trip, no metaprogram yet: each participant's audio is arbitrarily
+// queued into its own buffer and alternated 4s at a time back out to the client.
+
+test('round trip: alternates each participant every 4s and streams the active one back out', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0; // injected so the 4s rotation is deterministic without real time
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },                                  // 4s slots; loops stay off
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start(); // installs the page playback sink; timers off (intervals 0)
+
+  // Each participant has its own continuously-buffered audio. A constant level
+  // per participant (all exactly representable in float32) makes the assembled
+  // slice identifiable when it comes back out.
+  bot.buffers['0']  = new RingBuffer(1024); bot.buffers['0'].write(new Array(200).fill(0.5));
+  bot.buffers['0a'] = new RingBuffer(1024); bot.buffers['0a'].write(new Array(200).fill(-0.125));
+  bot.buffers['1']  = new RingBuffer(1024); bot.buffers['1'].write(new Array(200).fill(0.25));
+  // Room-index order is 0, 0a, 1 (numeric index first, then per-owner bot suffix).
+
+  // Slot 0 (t=0): participant 0 is active — only its audio hits the master.
+  clock = 0;
+  let a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0');
+  assert.equal(a.assembled, 200);
+  assert.equal(bot.buffers['0'].length, 0, 'the active participant is drained as it streams');
+  assert.equal(bot.buffers['0a'].length, 200, 'inactive participants keep their audio queued');
+
+  let p = await bot.playMasterBufferToClient();
+  assert.equal(p.played, 200);
+  assert.deepEqual(calls.enqueued.at(-1), new Array(200).fill(0.5), 'participant 0 streamed back out');
+
+  // Slot 1 (t=4s): participant 0a is active.
+  clock = 4000;
+  a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0a');
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(200).fill(-0.125), 'participant 0a streamed back out next');
+
+  // Slot 2 (t=8s): participant 1 is active.
+  clock = 8000;
+  a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '1');
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(200).fill(0.25), 'participant 1 streamed back out next');
+
+  // Slot 3 (t=12s): the rotation wraps back to participant 0 (now empty -> silence).
+  clock = 12000;
+  a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0', 'rotation wraps back round');
+  assert.equal(a.assembled, 0, 'a drained participant contributes silence until it fills again');
+  assert.equal((await bot.playMasterBufferToClient()).played, 0);
+
+  await bot.stop();
+});
+
+test('round trip: empty room assembles silence and enqueues nothing (keeps checking)', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+
+  const a = await bot.readAndAssembleMasterBuffer();
+  assert.deepEqual(a, { active: null, assembled: 0 }, 'no participants -> nothing assembled');
+  const p = await bot.playMasterBufferToClient();
+  assert.equal(p.played, 0);
+  assert.equal(calls.enqueued.length, 0, 'nothing enqueued to the page player');
+
+  await bot.stop();
 });

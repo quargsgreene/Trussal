@@ -23,6 +23,10 @@ const peerIdByJitsiId = new Map();
 // Bots set this global (before the bundle loads) so they announce themselves as
 // bots and the room can drive/mute them from the studio without hijacking humans.
 const LOCAL_IS_BOT = !!(typeof window !== 'undefined' && window.__trussalIsBot);
+// The aggregator bot sets this (before the bundle loads) so it announces itself
+// as the room's audio aggregator. Every other client silences all non-aggregator
+// peers locally so the aggregator's assembled master is the sole audio source.
+const LOCAL_IS_AGGREGATOR = !!(typeof window !== 'undefined' && window.__trussalIsAggregator);
 // Bots spawned on a user's behalf carry their owner's room index so the
 // sidecar can assign them a cluster suffix (e.g. owner 1 → bots 1a, 1b, …).
 const LOCAL_OWNER_INDEX = (typeof window !== 'undefined' && typeof window.__trussalBotOwnerIndex === 'string')
@@ -35,6 +39,7 @@ const localPeer = {
   displayName: null,
   isLocal: true,
   isBot: LOCAL_IS_BOT,
+  isAggregator: LOCAL_IS_AGGREGATOR,
   muted: false,
   pattern: '',
   effects: { distortion: false, noise: false, reverb: false },
@@ -95,7 +100,8 @@ function sendHelloIfReady() {
     type: 'hello',
     jitsiId: local.id,
     displayName: local.displayName,
-    isBot: LOCAL_IS_BOT
+    isBot: LOCAL_IS_BOT,
+    isAggregator: LOCAL_IS_AGGREGATOR
   };
   if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
   ws.send(JSON.stringify(hello));
@@ -198,6 +204,7 @@ function defaultPeer(peerId) {
     jitsiId: null,
     displayName: null,
     isBot: false,
+    isAggregator: false,
     muted: false,
     pattern: '',
     effects: { distortion: false, noise: false, reverb: false },
@@ -217,6 +224,7 @@ function upsertPeer(record) {
   if (record.jitsiId !== undefined) existing.jitsiId = record.jitsiId;
   if (record.displayName !== undefined) existing.displayName = record.displayName;
   if (record.isBot !== undefined) existing.isBot = !!record.isBot;
+  if (record.isAggregator !== undefined) existing.isAggregator = !!record.isAggregator;
   applyPatch(existing, record);
   peersByPeerId.set(existing.peerId, existing);
   if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);

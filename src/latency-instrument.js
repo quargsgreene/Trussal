@@ -11,7 +11,7 @@
 // peer-state bus, so every browser produces the same audio for the same peer.
 
 import { subscribeParticipants, getLocalParticipant, getParticipantIdForAudioTag } from './participants.js';
-import { subscribePeerState, getPeerByJitsiId } from './peer-state.js';
+import { subscribePeerState, getPeerByJitsiId, getAllPeers, getLocalPeer } from './peer-state.js';
 
 let audioCtx = null;
 let realDestination = null;
@@ -24,6 +24,14 @@ let bootPromise = null;
 // These run post-mix on the combined instrument bus, guaranteeing audible
 // effects regardless of whether the Strudel evaluate() succeeds.
 let strudelFx = null; // { distWS, noiseGain, noiseFilter, convGain } | null
+
+// Aggregator mode silences the LOCAL Strudel FX output too, so a listening
+// client hears nothing but the aggregator's master. Every Strudel branch
+// (dry/distortion, reverb, noise) converges on this one gain before
+// realDestination, making it the single choke point aggregator mode toggles —
+// independent of monitor mode (masterStrudelGain) and the effect controllers
+// (noiseGain), which drive their own nodes. Null until the Strudel input boots.
+let strudelOut = null;
 
 const chains = new Map();           // jitsiId -> chain
 const remoteSources = new Map();    // jitsiId -> { tag, source, label }
@@ -39,6 +47,15 @@ const routingSubscribers = new Set();
 let jamulusMode = false;
 const jamulasMutedTags = new Set(); // tags we silenced on mode entry
 let audioTagObserver = null;
+
+// Aggregator mode: when a remote aggregator bot is in the room it gathers every
+// participant's audio and streams back one assembled master. On every OTHER
+// client we then silence all non-aggregator peer chains (via each chain's
+// dedicated `presence` gain) so the aggregator's master is the sole audio the
+// client hears — the participants' raw audio reaches them only through it. Held
+// as the aggregator's jitsiId, or null when no remote aggregator is present
+// (including on the aggregator's own page, where it must hear everyone to tap).
+let aggregatorJitsiId = null;
 
 function notifyRoutingChange() {
   routingSubscribers.forEach(fn => {
@@ -89,6 +106,46 @@ export function setJamulusMode(enabled) {
 }
 
 export function isJamulusMode() { return jamulusMode; }
+
+// Aggregator mode: gain for a peer's chain given the current aggregator. 1 when
+// no aggregator is present (normal mix) or for the aggregator's own chain; 0 for
+// every other peer (silenced — heard only via the aggregator's master).
+function presenceLevelFor(jitsiId) {
+  if (!aggregatorJitsiId) return 1;
+  return jitsiId === aggregatorJitsiId ? 1 : 0;
+}
+
+// Local Strudel FX level: silenced in aggregator mode (hear only the master), 1
+// otherwise. Mirrors presenceLevelFor for the one non-peer local audio source.
+function localStrudelLevel() { return aggregatorJitsiId ? 0 : 1; }
+
+// Set (or clear, with null) the remote aggregator whose master mix is the sole
+// audio source, ramping every existing chain — and the local Strudel output — to
+// its new level.
+export function setAggregatorPeer(jitsiId) {
+  const next = jitsiId || null;
+  if (next === aggregatorJitsiId) return;
+  aggregatorJitsiId = next;
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for (const chain of chains.values()) {
+    if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
+  }
+  if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
+}
+
+export function getAggregatorPeer() { return aggregatorJitsiId; }
+
+// Recompute aggregator mode from the current roster. A remote aggregator peer
+// switches this client into aggregator mode; none (or being the aggregator
+// ourselves — we must hear everyone to tap) leaves the normal mix. Called
+// whenever the roster changes.
+function refreshAggregatorPeer() {
+  const local = getLocalPeer();
+  if (local && local.isAggregator) { setAggregatorPeer(null); return; }
+  const agg = getAllPeers().find(p => p && p.isAggregator && p.jitsiId && !p.isLocal);
+  setAggregatorPeer(agg ? agg.jitsiId : null);
+}
 
 function ensureAudioContext() {
   const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -270,18 +327,26 @@ async function buildChain(jitsiId) {
     reverbGain.connect(realDestination);
   }
 
+  // Presence gain: aggregator-mode solo. Silences this peer locally when a
+  // remote aggregator is the sole audio source, independent of the Net Cycles
+  // slot gate (chain.input) and the monitor-mix gain (chain.monitor), so the
+  // three multiply cleanly. 1 (audible) unless aggregator mode mutes this peer.
+  const presence = audioCtx.createGain();
+  presence.gain.value = presenceLevelFor(jitsiId);
+
   // Monitor gain: mix-output selection (master / ipsilateral / a chosen
   // contralateral peer) without touching the Net Cycles slot gate on
   // chain.input.
   const monitor = audioCtx.createGain();
   monitor.gain.value = monitorLevelFor(jitsiId);
 
-  input.connect(monitor);
+  input.connect(presence);
+  presence.connect(monitor);
   monitor.connect(worklet);
   worklet.connect(limiter);
   limiter.connect(realDestination); // dry path by default
 
-  return { jitsiId, input, monitor, worklet, limiter, reverb, reverbGain, reverbOn: false };
+  return { jitsiId, input, presence, monitor, worklet, limiter, reverb, reverbGain, reverbOn: false };
 }
 
 async function ensureChain(jitsiId) {
@@ -299,6 +364,7 @@ function destroyChain(jitsiId) {
   const chain = chains.get(jitsiId);
   if (!chain) return;
   try { chain.input.disconnect(); } catch (e) {}
+  if (chain.presence) { try { chain.presence.disconnect(); } catch (e) {} }
   try { chain.worklet.disconnect(); } catch (e) {}
   try { chain.limiter.disconnect(); } catch (e) {}
   if (chain.reverb) { try { chain.reverb.disconnect(); } catch (e) {} }
@@ -390,6 +456,9 @@ function startAudioTagsObserver() {
 subscribePeerState((event, payload) => {
   if (event !== 'peer-upsert') return;
   if (!payload.jitsiId) return;
+  // A peer's isAggregator (or a new peer) may change who the aggregator is, or
+  // whether we're now in aggregator mode at all — recompute before routing.
+  refreshAggregatorPeer();
   const chain = chains.get(payload.jitsiId);
   if (chain) {
     applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
@@ -418,6 +487,8 @@ subscribeParticipants((event, payload) => {
     }
     if (audioRouted.delete(payload.id)) notifyRoutingChange();
     destroyChain(payload.id);
+    // The aggregator itself may have just left — fall back to the normal mix.
+    refreshAggregatorPeer();
   }
 });
 
@@ -529,17 +600,25 @@ export async function ensureMasterStrudelInput() {
     Object.defineProperty(masterStrudelGain, 'maxChannelCount', { value: 2, configurable: true });
     masterStrudelGain.gain.value = 1.0;
 
-    // Build the Strudel-output effect chain:
-    //   masterStrudelGain → distWS → realDestination  (dry + distortion)
-    //                              → convolver → convGain → realDestination  (reverb wet)
-    //   noiseSource → noiseFilter → noiseGain → realDestination
+    // Build the Strudel-output effect chain. Every branch converges on
+    // strudelOut (the aggregator-mode choke) before realDestination:
+    //   masterStrudelGain → distWS → strudelOut → realDestination  (dry + distortion)
+    //                              → convolver → convGain → strudelOut  (reverb wet)
+    //   noiseSource → noiseFilter → noiseGain → strudelOut  (noise)
+
+    // strudelOut: single gain for ALL local Strudel FX audio, so aggregator mode
+    // can silence it with one node. Starts muted if a remote aggregator is
+    // already present when Strudel boots.
+    strudelOut = audioCtx.createGain();
+    strudelOut.gain.value = localStrudelLevel();
+    strudelOut.connect(realDestination);
 
     const distWS = audioCtx.createWaveShaper();
     distWS.oversample = '4x';
     distWS.curve = null; // identity (off) by default
 
     masterStrudelGain.connect(distWS);
-    distWS.connect(realDestination);
+    distWS.connect(strudelOut);
 
     // Reverb wet path
     let convolver = null, convGain = null;
@@ -550,7 +629,7 @@ export async function ensureMasterStrudelInput() {
       convGain.gain.value = 0; // off until reverb toggled
       masterStrudelGain.connect(convolver);
       convolver.connect(convGain);
-      convGain.connect(realDestination);
+      convGain.connect(strudelOut);
     }
 
     // Noise source (2-second white-noise loop)
@@ -568,7 +647,7 @@ export async function ensureMasterStrudelInput() {
     noiseGain.gain.value = 0; // silent until noise toggled
     noiseSrc.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
-    noiseGain.connect(realDestination);
+    noiseGain.connect(strudelOut);
     noiseSrc.start();
 
     strudelFx = { distWS, noiseFilter, noiseGain, convGain };

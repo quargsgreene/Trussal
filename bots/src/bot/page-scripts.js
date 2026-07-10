@@ -109,6 +109,18 @@ export function pageMarkBot(ownerIndex) {
 }
 
 /**
+ * Mark this page as the room's audio aggregator before the Trussal bundle
+ * loads, so peer-state.js announces isAggregator:true in its hello. Every OTHER
+ * client then silences all non-aggregator peers locally (latency-instrument),
+ * leaving the aggregator's assembled master mix as the sole audio source. Runs
+ * alongside pageMarkBot (the aggregator is also a bot). Must run at
+ * document-start.
+ */
+export function pageMarkAggregator() {
+  window.__trussalIsAggregator = true;
+}
+
+/**
  * React to operator control from the studio (relayed over the peer-state bus,
  * surfaced by peer-state.js as DOM events):
  *   - trussal-remote-pattern: re-evaluate the bot's Strudel REPL with the edited
@@ -455,6 +467,79 @@ export function pageAggregatorCapture() {
 /** Drain the accumulated per-participant PCM the aggregator tap has captured. */
 export function pageDrainParticipantAudio() {
   return (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+}
+
+/**
+ * Aggregator playback sink — the return leg of the round trip, mirror of
+ * pageAggregatorCapture. The Node side hands assembled master-mix PCM to
+ * enqueue(); a ScriptProcessor streams it out through the SHARED AudioContext's
+ * destination, which pageAudioBridge has rerouted to the fan → the
+ * MediaStreamDestination that is the bot's published "microphone". So the
+ * assembled master reaches every other client. When the queue is starved
+ * (nothing assembled yet) it emits silence, keeping the track live so the bot
+ * can just keep checking for new data.
+ *
+ * Self-contained per the module contract: only page globals and its own
+ * closures. It reuses the one shared AudioContext (pageAudioBridge wraps the
+ * constructor so `new AudioContext()` returns that instance), so its output
+ * lands on the same fan as everything else — no second output device.
+ *
+ * Chunk queue rather than a flat sample array: the audio callback consumes the
+ * head chunk through an offset cursor, so enqueue is O(added) and playback never
+ * pays the O(n) cost of shifting a large sample array every frame. Past
+ * MAX_CHUNKS the oldest chunk is dropped, so a slow Node drain bounds added
+ * latency instead of growing the page heap without limit. enqueue() and the
+ * ScriptProcessor callback both run on the page's main thread (the legacy
+ * ScriptProcessor is not a worklet), so they never touch the queue concurrently.
+ */
+export function pageMasterPlayer() {
+  if (window.__trussalMasterPlayer) return;
+  const FRAME = 2048;
+  const MAX_CHUNKS = 256;
+  const chunks = [];   // Array<Float32Array> waiting to be emitted
+  let head = 0;        // read offset into chunks[0]
+  let ctx = null, proc = null;
+
+  function ensure() {
+    if (ctx) return;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    proc = ctx.createScriptProcessor(FRAME, 1, 1);
+    proc.onaudioprocess = (ev) => {
+      const out = ev.outputBuffer.getChannelData(0);
+      for (let i = 0; i < out.length; i++) {
+        if (!chunks.length) { out[i] = 0; continue; } // starved -> silence
+        out[i] = chunks[0][head++];
+        if (head >= chunks[0].length) { chunks.shift(); head = 0; }
+      }
+    };
+    // fan -> MediaStreamDestination (this bot's mic -> every other client) + hardware
+    proc.connect(ctx.destination);
+  }
+
+  function queued() {
+    let n = -head;
+    for (const c of chunks) n += c.length;
+    return n < 0 ? 0 : n;
+  }
+
+  window.__trussalMasterPlayer = {
+    enqueue(samples) {
+      ensure();
+      if (!samples || !samples.length) return queued();
+      // Overflow: drop the oldest (currently-playing) chunk and reset the
+      // cursor. Only bites when Node has run far ahead of real-time playback.
+      if (chunks.length >= MAX_CHUNKS) { chunks.shift(); head = 0; }
+      chunks.push(Float32Array.from(samples));
+      return queued();
+    },
+    queued,
+  };
+}
+
+/** Push assembled master-mix PCM (a plain Array) into the page playback sink. */
+export function pageEnqueueMaster(samples) {
+  const p = window.__trussalMasterPlayer;
+  return (p && typeof p.enqueue === 'function') ? p.enqueue(samples) : 0;
 }
 
 /**

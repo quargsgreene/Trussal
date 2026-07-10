@@ -111,6 +111,8 @@ async function aggregatorMain() {
     executablePath,
     bandwidth: bandwidthFromEnv(),
     ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '500')),
+    playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '250')),
+    slotMs: Number(env('SLOT_MS', '4000')),
   }, { launcher: puppeteer }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
   await bot.start();
   startMetricsReporting(bot, { role: 'aggregator' });

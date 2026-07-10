@@ -1,14 +1,33 @@
 import { Bot } from './bot.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
-  pageMarkBot, pageAudioBridge, pageGumOverride,
+  pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
   pageAggregatorCapture, pageDrainParticipantAudio, pageFpsSampler,
-  pageEnsureAudioPublished,
+  pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 
 // How often the ingest loop drains the page tap into the buffers.
 const DEFAULT_INGEST_INTERVAL_MS = 500;
+// How often the playback loop assembles the master and streams it back out.
+const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
+// Round-robin turn length (ms) before the metaprogram schedules slots for real:
+// stream one participant, then the next, so the alternation is audible.
+const DEFAULT_SLOT_MS = 4000;
+
+// Sort participant tokens into Net Cycles room-index order: 0, 0a, 0b, 1, 2, …
+// (numeric index first, then the per-owner bot suffix). Falls back to a plain
+// string compare for anything that doesn't parse, so the order is always stable.
+function tokenOrder(a, b) {
+    const ma = /^(\d+)([a-z]*)$/.exec(a);
+    const mb = /^(\d+)([a-z]*)$/.exec(b);
+    if (ma && mb) {
+        const na = Number(ma[1]), nb = Number(mb[1]);
+        if (na !== nb) return na - nb;
+        return ma[2] < mb[2] ? -1 : ma[2] > mb[2] ? 1 : 0;
+    }
+    return a < b ? -1 : a > b ? 1 : 0;
+}
 
 /**
  * AggregatorBot — one headless bot that gathers every participant's audio into
@@ -35,7 +54,7 @@ const DEFAULT_INGEST_INTERVAL_MS = 500;
  */
 export class AggregatorBot extends Bot {
 
-    constructor(cfg, { launcher, reporter, logIngest = true } = {}, buffers = {}, bufferSize = 1024) {
+    constructor(cfg, { launcher, reporter, logIngest = true, now } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
         // Individual dimension: token -> RingBuffer. Pre-seedable for tests.
         this.buffers = buffers;
@@ -43,6 +62,14 @@ export class AggregatorBot extends Bot {
         // Shared dimension: the concatenated master. Larger than one participant
         // buffer because it holds every scheduled slot back to back.
         this.sharedBuffer = new RingBuffer(cfg.sharedBufferSize || this.bufferSize * 8);
+        // Turn length for the pre-metaprogram round-robin, and an injectable
+        // clock so the alternation is testable without real time.
+        this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
+        this.now = typeof now === 'function' ? now : () => Date.now();
+        // When the current round-robin started (set lazily on the first assemble
+        // that actually has a participant to stream) and which token is streaming.
+        this._playbackStartMs = null;
+        this._activeToken = null;
         // Where a metrics sample goes. Defaults to the console so a bare
         // instance "publishes its own metrics"; tests inject a capturing sink.
         this.reporter = reporter || ((tag, data) => console.log(tag, data));
@@ -58,6 +85,7 @@ export class AggregatorBot extends Bot {
         this._setInterval = (typeof setInterval !== 'undefined') ? (fn, ms) => setInterval(fn, ms) : null;
         this._clearInterval = (typeof clearInterval !== 'undefined') ? (id) => clearInterval(id) : null;
         this._ingestTimer = null;
+        this._playbackTimer = null;
     }
 
     async start() {
@@ -75,10 +103,17 @@ export class AggregatorBot extends Bot {
         // (its shared AudioContext is what the capture tap reuses). No
         // preserve-drawing-buffer shim — the aggregator creates no WebGL canvas.
         await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
+        // Announce as the room's aggregator so every other client silences all
+        // non-aggregator peers, leaving this bot's assembled master the only
+        // audio source they hear.
+        await this.page.evaluateOnNewDocument(pageMarkAggregator);
         await this.page.evaluateOnNewDocument(pageAudioBridge);
         await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
         // The ingest tap: accumulates every remote <audio> element's PCM.
         await this.page.evaluateOnNewDocument(pageAggregatorCapture);
+        // The return-path sink: streams the assembled master mix back out through
+        // the bot's published track. Installed before navigation like the tap.
+        await this.page.evaluateOnNewDocument(pageMasterPlayer);
         await this.page.evaluateOnNewDocument(pageFpsSampler);
 
         // Audio-first: join with video muted so Jitsi never requests a camera
@@ -101,6 +136,7 @@ export class AggregatorBot extends Bot {
 
         await this.publishMetrics();
         this.startIngestLoop();
+        this.startPlaybackLoop();
     }
 
     /**
@@ -121,6 +157,25 @@ export class AggregatorBot extends Bot {
         // #drainPageCaptures already swallows page errors; nothing to write when
         // the room is silent.
         await this.writeToIndividualParticipantBufferQueues();
+    }
+
+    /**
+     * Drive the return path on a cadence: every tick assembles the master mix
+     * from the individual buffers and streams it back out to the room. Interval
+     * from cfg.playbackIntervalMs; <= 0 disables the loop (tests call
+     * readAndAssembleMasterBuffer()/playMasterBufferToClient() directly).
+     */
+    startPlaybackLoop() {
+        const ms = Number(this.cfg.playbackIntervalMs ?? DEFAULT_PLAYBACK_INTERVAL_MS);
+        if (!(ms > 0) || !this._setInterval || this._playbackTimer) return;
+        this._playbackTimer = this._setInterval(() => { this.playbackTick(); }, ms);
+        // Don't keep the process alive just for the playback loop.
+        if (this._playbackTimer && this._playbackTimer.unref) this._playbackTimer.unref();
+    }
+
+    async playbackTick() {
+        await this.readAndAssembleMasterBuffer();
+        await this.playMasterBufferToClient();
     }
 
     async interpretAndExecuteMetaprogram() {
@@ -171,12 +226,49 @@ export class AggregatorBot extends Bot {
     }
 
     async readAndAssembleMasterBuffer() {
-        // read the audio and visual streams from the buffers, create a larger concatenated buffer, and push it to the client
-        // implement and test audio streaming first
-        // if nothing yet, play silence and black screen, but keep checking for new data
-        // check gain staging and thread safety
+        // Round-robin turn-taking, NO metaprogram yet: rotate the active
+        // participant every slotMs (default 4s) and concatenate only that
+        // participant's audio into the shared master. This is the proof that
+        // audio makes the full round trip — participant -> individual buffer ->
+        // shared master -> back out — before the scheduler decides the slots for
+        // real. interpretAndExecuteMetaprogram will later replace this fixed
+        // rotation with the metaprogram-dictated schedule.
+        //
+        // The inactive participants' individual buffers keep filling (and
+        // evicting their oldest) in the meantime; when a participant's turn comes
+        // round we stream whatever it has accumulated. Draining only the ACTIVE
+        // buffer is what makes the alternation audible: at any instant the master
+        // carries exactly one voice.
+        const tokens = Object.keys(this.buffers).sort(tokenOrder);
+        if (!tokens.length) {
+            // Nothing has reached the bot yet: assemble nothing. The page player
+            // emits silence and we keep checking on the next tick.
+            this._activeToken = null;
+            return { active: null, assembled: 0 };
+        }
+        const now = this.now();
+        if (this._playbackStartMs == null) this._playbackStartMs = now;
+        const slot = Math.floor((now - this._playbackStartMs) / this.slotMs);
+        // Guard against a clock that runs backwards yielding a negative index.
+        const active = tokens[((slot % tokens.length) + tokens.length) % tokens.length];
+        this._activeToken = active;
+        const rb = this.buffers[active];
+        const samples = rb.read(rb.length); // stream everything buffered for them
+        if (samples.length) this.sharedBuffer.write(samples);
+        return { active, assembled: samples.length };
     }
 
+    async playMasterBufferToClient() {
+        // Drain the shared master and hand it to the page-side player, which
+        // streams it out through the bot's published track to every other client.
+        // An empty master enqueues nothing — the player emits silence and we keep
+        // checking on the next tick.
+        const samples = this.sharedBuffer.read(this.sharedBuffer.length);
+        if (!samples.length) return { played: 0 };
+        await this.#enqueueMasterSamples(samples);
+        return { played: samples.length };
+    }
+    
     async checkHealthAndSync() {
         // check the health of the bot and sync with the client
         // implement and test audio streaming first
@@ -186,6 +278,8 @@ export class AggregatorBot extends Bot {
         // Stop streaming, drop buffered audio, and close the page + browser.
         if (this._ingestTimer && this._clearInterval) this._clearInterval(this._ingestTimer);
         this._ingestTimer = null;
+        if (this._playbackTimer && this._clearInterval) this._clearInterval(this._playbackTimer);
+        this._playbackTimer = null;
         this.sharedBuffer.clear();
         for (const rb of Object.values(this.buffers)) rb.clear();
         await super.stop();
@@ -284,6 +378,18 @@ export class AggregatorBot extends Bot {
             return Array.isArray(takes) ? takes : [];
         } catch (e) {
             return [];
+        }
+    }
+
+    async #enqueueMasterSamples(samples) {
+        if (!this.page || typeof this.page.evaluate !== 'function') return;
+        try {
+            // Puppeteer serializes evaluate() arguments structurally; a
+            // Float32Array does not survive that, so hand the page a plain Array.
+            await this.page.evaluate(pageEnqueueMaster, Array.from(samples));
+        } catch (e) {
+            // A late Jitsi navigation tears down the context; the next tick
+            // re-enqueues, so a dropped frame here is self-healing.
         }
     }
 }

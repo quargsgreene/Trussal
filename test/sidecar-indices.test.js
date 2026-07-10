@@ -122,6 +122,36 @@ test('owned bots get cluster suffixes in spawn order; humans interleave untouche
   });
 });
 
+test('isAggregator propagates through you/peer-join/roster; normal peers stay false', async () => {
+  await withServer(async (port) => {
+    // A normal human joins first.
+    const human = await connect(port, 'agg1');
+    const humanYou = await hello(human, { jitsiId: 'human' });
+    assert.equal(humanYou.isAggregator, false, 'a plain peer is not an aggregator');
+
+    // The aggregator bot joins (also a bot). Its own view reflects the flag,
+    // and the human is told via peer-join.
+    const joinPromise = waitFor(human, m => m.type === 'peer-join');
+    const agg = await connect(port, 'agg1');
+    const aggYou = await hello(agg, { jitsiId: 'agg', isBot: true, isAggregator: true });
+    assert.equal(aggYou.isAggregator, true, 'the aggregator sees isAggregator on its own record');
+
+    const join = await joinPromise;
+    assert.equal(join.peer.jitsiId, 'agg');
+    assert.equal(join.peer.isAggregator, true, 'peers learn the aggregator via peer-join');
+
+    // A late joiner's roster distinguishes the aggregator from the human.
+    const late = await connect(port, 'agg1');
+    await hello(late, { jitsiId: 'late' });
+    const roster = late.messages.find(m => m.type === 'roster');
+    const byJid = Object.fromEntries(roster.peers.map(p => [p.jitsiId, p.isAggregator]));
+    assert.equal(byJid.agg, true, 'roster marks the aggregator');
+    assert.equal(byJid.human, false, 'roster leaves normal peers unmarked');
+
+    human.ws.close(); agg.ws.close(); late.ws.close();
+  });
+});
+
 test('empty room resets counters (a new meeting starts at 0)', async () => {
   await withServer(async (port) => {
     const a = await connect(port, 'idx4');

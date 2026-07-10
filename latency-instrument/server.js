@@ -94,6 +94,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       packetLoss: record.packetLoss,
       rtcRtt: record.rtcRtt,
       isBot: record.isBot,
+      isAggregator: record.isAggregator,
       muted: record.muted,
       canEditMetaprogram: record.canEditMetaprogram,
       canWriteModulation: record.canWriteModulation
@@ -142,6 +143,10 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       packetLoss: null,
       rtcRtt: null,
       isBot: false,
+      // The one bot per room that gathers every participant's audio and streams
+      // back the assembled master. Listening clients silence every OTHER peer so
+      // the aggregator's mix is the sole audio source (see latency-instrument).
+      isAggregator: false,
       isFleet: false,
       muted: false,
       // Metaprogram permissions. Humans always read+edit; bots default to
@@ -166,6 +171,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           record.jitsiId = typeof msg.jitsiId === 'string' ? msg.jitsiId : null;
           record.displayName = typeof msg.displayName === 'string' ? msg.displayName : null;
           record.isBot = !!msg.isBot;
+          record.isAggregator = !!msg.isAggregator;
           // The fleet service and observers (e.g. mcp-observer) join the bus
           // for events but are not participants: no index, invisible in
           // rosters, never announced.
