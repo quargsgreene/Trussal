@@ -1,14 +1,12762 @@
 var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || (typeof location !== 'undefined' ? location.href : '');
 (() => {
+  var __create = Object.create;
   var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getProtoOf = Object.getPrototypeOf;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __esm = (fn, res) => function __init() {
     return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
   };
-  var __export = (target, all2) => {
-    for (var name3 in all2)
-      __defProp(target, name3, { get: all2[name3], enumerable: true });
+  var __commonJS = (cb, mod2) => function __require() {
+    return mod2 || (0, cb[__getOwnPropNames(cb)[0]])((mod2 = { exports: {} }).exports, mod2), mod2.exports;
   };
+  var __export = (target, all3) => {
+    for (var name3 in all3)
+      __defProp(target, name3, { get: all3[name3], enumerable: true });
+  };
+  var __copyProps = (to, from2, except, desc) => {
+    if (from2 && typeof from2 === "object" || typeof from2 === "function") {
+      for (let key of __getOwnPropNames(from2))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from2[key], enumerable: !(desc = __getOwnPropDesc(from2, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toESM = (mod2, isNodeMode, target) => (target = mod2 != null ? __create(__getProtoOf(mod2)) : {}, __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
+    isNodeMode || !mod2 || !mod2.__esModule ? __defProp(target, "default", { value: mod2, enumerable: true }) : target,
+    mod2
+  ));
+
+  // src/participants.js
+  function emit(event, payload) {
+    subscribers.forEach((fn) => {
+      try {
+        fn(event, payload);
+      } catch (e30) {
+        console.warn("[participants] subscriber threw", e30);
+      }
+    });
+  }
+  function readLocal() {
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf || typeof conf.getMyUserId !== "function") return null;
+      const id3 = conf.getMyUserId();
+      if (!id3) return null;
+      let displayName = null;
+      if (typeof conf.getLocalDisplayName === "function") {
+        try {
+          displayName = conf.getLocalDisplayName();
+        } catch (e30) {
+        }
+      }
+      if (!displayName && window.APP.store && typeof window.APP.store.getState === "function") {
+        try {
+          const st2 = window.APP.store.getState();
+          const s2 = st2["features/base/settings"];
+          if (s2 && typeof s2.displayName === "string") displayName = s2.displayName;
+        } catch (e30) {
+        }
+      }
+      return { id: id3, displayName: displayName || "You", isLocal: true };
+    } catch (e30) {
+      return null;
+    }
+  }
+  function readRemotes() {
+    const map3 = /* @__PURE__ */ new Map();
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return map3;
+      const localId = typeof conf.getMyUserId === "function" ? conf.getMyUserId() : null;
+      const members = typeof conf.listMembers === "function" ? conf.listMembers() : [];
+      for (const m2 of members) {
+        const id3 = typeof m2.getId === "function" ? m2.getId() : m2._id;
+        if (!id3) continue;
+        if (localId && id3 === localId) continue;
+        try {
+          if (typeof m2.isHidden === "function" && m2.isHidden()) continue;
+        } catch (e30) {
+        }
+        let displayName = null;
+        try {
+          displayName = typeof m2.getDisplayName === "function" ? m2.getDisplayName() : m2._displayName;
+        } catch (e30) {
+        }
+        map3.set(id3, { id: id3, displayName: displayName || "Participant", isLocal: false });
+      }
+    } catch (e30) {
+    }
+    return map3;
+  }
+  function tick() {
+    const newLocal = readLocal();
+    if (!newLocal) return;
+    if (!local || local.id !== newLocal.id) {
+      local = newLocal;
+      emit("local", local);
+    } else if (local.displayName !== newLocal.displayName) {
+      local = newLocal;
+      emit("local-update", local);
+    }
+    const newRemotes = readRemotes();
+    for (const [id3, p] of newRemotes) {
+      const existing = remotes.get(id3);
+      if (!existing) {
+        remotes.set(id3, p);
+        emit("join", p);
+      } else if (existing.displayName !== p.displayName) {
+        remotes.set(id3, p);
+        emit("update", p);
+      }
+    }
+    for (const id3 of Array.from(remotes.keys())) {
+      if (!newRemotes.has(id3)) {
+        const left2 = remotes.get(id3);
+        remotes.delete(id3);
+        emit("leave", left2);
+      }
+    }
+  }
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(tick, 1e3);
+    tick();
+  }
+  function subscribeParticipants(fn) {
+    subscribers.add(fn);
+    if (local) fn("local", local);
+    for (const r2 of remotes.values()) fn("join", r2);
+    return () => subscribers.delete(fn);
+  }
+  function getLocalParticipant() {
+    return local;
+  }
+  function getParticipantIdForAudioTag(tag) {
+    if (!tag || !tag.id) return null;
+    if (tag.id === "userAudio") return null;
+    const patterns = [
+      /^remoteAudio_(.+)$/,
+      /^audio_(.+)$/,
+      /^(.+)_audio$/
+    ];
+    for (const re2 of patterns) {
+      const m2 = tag.id.match(re2);
+      if (m2) return m2[1];
+    }
+    return null;
+  }
+  var subscribers, local, remotes, pollTimer;
+  var init_participants = __esm({
+    "src/participants.js"() {
+      subscribers = /* @__PURE__ */ new Set();
+      local = null;
+      remotes = /* @__PURE__ */ new Map();
+      pollTimer = null;
+      startPolling();
+    }
+  });
+
+  // src/peer-state.js
+  function emit2(event, payload) {
+    subscribers2.forEach((fn) => {
+      try {
+        fn(event, payload);
+      } catch (e30) {
+        console.warn("[peer-state] subscriber threw", e30);
+      }
+    });
+  }
+  function safeSend(msg) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      pendingSends.push(msg);
+      return;
+    }
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch (e30) {
+      console.warn("[peer-state] send failed", e30);
+    }
+  }
+  function flushPending() {
+    while (pendingSends.length && ws && ws.readyState === WebSocket.OPEN) {
+      const msg = pendingSends.shift();
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch (e30) {
+        pendingSends.unshift(msg);
+        break;
+      }
+    }
+  }
+  function sendHelloIfReady() {
+    if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const local2 = getLocalParticipant();
+    if (!local2) return;
+    const hello = {
+      type: "hello",
+      jitsiId: local2.id,
+      displayName: local2.displayName,
+      isBot: LOCAL_IS_BOT,
+      isAggregator: LOCAL_IS_AGGREGATOR
+    };
+    if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
+    ws.send(JSON.stringify(hello));
+    helloSent = true;
+    flushPending();
+  }
+  function scheduleReconnect() {
+    if (!wantConnection || !currentRoom) return;
+    if (reconnectTimer) return;
+    const delay2 = reconnectDelay;
+    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      openSocket();
+    }, delay2);
+  }
+  function openSocket() {
+    if (!wantConnection || !currentRoom) return;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (ws) {
+      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+      try {
+        ws.close();
+      } catch (e30) {
+      }
+      ws = null;
+    }
+    if (pingTimer) {
+      clearInterval(pingTimer);
+      pingTimer = null;
+    }
+    helloSent = false;
+    peersByPeerId.clear();
+    peerIdByJitsiId.clear();
+    const loc = window.location;
+    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+    const url2 = `${proto}//${loc.host}/ws?room=${encodeURIComponent(currentRoom)}&role=player`;
+    let socket;
+    try {
+      socket = new WebSocket(url2);
+    } catch (e30) {
+      console.warn("[peer-state] WS construct failed", e30);
+      scheduleReconnect();
+      return;
+    }
+    ws = socket;
+    ws.onopen = () => {
+      reconnectDelay = 1e3;
+      lastPongAt = Date.now();
+      sendHelloIfReady();
+      if (pingTimer) clearInterval(pingTimer);
+      pingTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (Date.now() - lastPongAt > PONG_TIMEOUT_MS) {
+          try {
+            ws.close();
+          } catch (e30) {
+          }
+          return;
+        }
+        ws.send(JSON.stringify({ type: "ping", sentAt: Date.now() }));
+      }, 2e3);
+    };
+    ws.onclose = () => {
+      if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
+      ws = null;
+      helloSent = false;
+      scheduleReconnect();
+    };
+    ws.onerror = () => {
+      try {
+        if (ws) ws.close();
+      } catch (e30) {
+      }
+    };
+    ws.onmessage = (evt) => {
+      let msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch (e30) {
+        return;
+      }
+      handleMessage(msg);
+    };
+  }
+  function applyPatch(peer, patch) {
+    if (!patch) return;
+    if (typeof patch.pattern === "string") peer.pattern = patch.pattern;
+    if (patch.effects) peer.effects = {
+      distortion: !!patch.effects.distortion,
+      noise: !!patch.effects.noise,
+      reverb: !!patch.effects.reverb
+    };
+    if (typeof patch.playing === "boolean") peer.playing = patch.playing;
+    if (typeof patch.muted === "boolean") peer.muted = patch.muted;
+    if (typeof patch.rtt === "number" || patch.rtt === null) peer.rtt = patch.rtt;
+    if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
+    if (typeof patch.packetLoss === "number" || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
+    if (typeof patch.rtcRtt === "number" || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+    if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
+    if (typeof patch.canWriteModulation === "boolean") peer.canWriteModulation = patch.canWriteModulation;
+  }
+  function defaultPeer(peerId) {
+    return {
+      peerId,
+      roomIndex: null,
+      jitsiId: null,
+      displayName: null,
+      isBot: false,
+      isAggregator: false,
+      muted: false,
+      pattern: "",
+      effects: { distortion: false, noise: false, reverb: false },
+      playing: false,
+      rtt: null,
+      jitter: null,
+      packetLoss: null,
+      rtcRtt: null,
+      canEditMetaprogram: true,
+      canWriteModulation: true
+    };
+  }
+  function upsertPeer(record) {
+    const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
+    if (record.roomIndex !== void 0) existing.roomIndex = record.roomIndex;
+    if (record.jitsiId !== void 0) existing.jitsiId = record.jitsiId;
+    if (record.displayName !== void 0) existing.displayName = record.displayName;
+    if (record.isBot !== void 0) existing.isBot = !!record.isBot;
+    if (record.isAggregator !== void 0) existing.isAggregator = !!record.isAggregator;
+    applyPatch(existing, record);
+    peersByPeerId.set(existing.peerId, existing);
+    if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
+    return existing;
+  }
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case "welcome":
+        myPeerId = msg.peerId || null;
+        sendHelloIfReady();
+        break;
+      case "roster":
+        if (Array.isArray(msg.peers)) {
+          for (const p of msg.peers) {
+            const peer = upsertPeer(p);
+            emit2("peer-upsert", peer);
+          }
+        }
+        if (msg.you && msg.you.roomIndex != null) {
+          localPeer.roomIndex = msg.you.roomIndex;
+          emit2("peer-upsert", localPeer);
+        }
+        break;
+      case "peer-join": {
+        if (!msg.peer) break;
+        const peer = upsertPeer(msg.peer);
+        emit2("peer-upsert", peer);
+        break;
+      }
+      case "peer-leave": {
+        const peer = peersByPeerId.get(msg.peerId);
+        if (peer) {
+          peersByPeerId.delete(peer.peerId);
+          if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
+          emit2("peer-leave", peer);
+        }
+        break;
+      }
+      case "peer-update": {
+        const peer = peersByPeerId.get(msg.peerId);
+        if (!peer) break;
+        applyPatch(peer, msg.patch);
+        emit2("peer-upsert", peer);
+        break;
+      }
+      case "fleet-status":
+        emit2("fleet-status", msg);
+        break;
+      case "crdt-update":
+        if (typeof msg.update === "string") {
+          emit2("crdt-update", { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality });
+        }
+        break;
+      case "crdt-state":
+        if (Array.isArray(msg.updates)) emit2("crdt-state", { updates: msg.updates });
+        break;
+      case "remote-control": {
+        if (msg.action === "pattern" && typeof msg.code === "string") {
+          localPeer.pattern = msg.code;
+          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: msg.code } }));
+          emit2("peer-upsert", localPeer);
+        } else if (msg.action === "mute") {
+          localPeer.muted = !!msg.muted;
+          document.dispatchEvent(new CustomEvent("trussal-remote-mute", { detail: { muted: localPeer.muted } }));
+          emit2("peer-upsert", localPeer);
+        }
+        break;
+      }
+      case "pong": {
+        lastPongAt = Date.now();
+        const rtt = typeof msg.clientSentAt === "number" ? Date.now() - msg.clientSentAt : msg.rtt;
+        if (typeof rtt !== "number" || !isFinite(rtt) || rtt < 0) break;
+        rttSamples.push(rtt);
+        if (rttSamples.length > 5) rttSamples.shift();
+        const mean = rttSamples.reduce((a2, b) => a2 + b, 0) / rttSamples.length;
+        const variance = rttSamples.map((x2) => (x2 - mean) ** 2).reduce((a2, b) => a2 + b, 0) / rttSamples.length;
+        localRtt = rtt;
+        localJitter = Math.sqrt(variance);
+        localPeer.rtt = localRtt;
+        localPeer.jitter = localJitter;
+        safeSend({ type: "metrics", rtt: localRtt, jitter: localJitter });
+        emit2("local-metrics", { rtt: localRtt, jitter: localJitter });
+        emit2("peer-upsert", localPeer);
+        break;
+      }
+    }
+  }
+  function subscribePeerState(fn) {
+    subscribers2.add(fn);
+    if (localPeer.jitsiId) fn("peer-upsert", localPeer);
+    for (const p of peersByPeerId.values()) fn("peer-upsert", p);
+    if (localRtt != null) fn("local-metrics", { rtt: localRtt, jitter: localJitter });
+    return () => subscribers2.delete(fn);
+  }
+  function getPeerByJitsiId(jitsiId) {
+    if (!jitsiId) return null;
+    if (localPeer.jitsiId === jitsiId) return localPeer;
+    const peerId = peerIdByJitsiId.get(jitsiId);
+    return peerId ? peersByPeerId.get(peerId) || null : null;
+  }
+  function getLocalPeer() {
+    return localPeer;
+  }
+  function getAllPeers() {
+    const all3 = [];
+    const seenJitsiIds = /* @__PURE__ */ new Set();
+    if (localPeer.jitsiId) {
+      all3.push(localPeer);
+      seenJitsiIds.add(localPeer.jitsiId);
+    }
+    for (const p of peersByPeerId.values()) {
+      if (!p.jitsiId || seenJitsiIds.has(p.jitsiId)) continue;
+      seenJitsiIds.add(p.jitsiId);
+      all3.push(p);
+    }
+    return all3;
+  }
+  function getLocalMetrics() {
+    return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
+  }
+  function sendLocalNetStats({ rtcRtt = null, packetLoss = null } = {}) {
+    if (typeof rtcRtt === "number" && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
+    if (typeof packetLoss === "number" && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
+    const msg = { type: "metrics" };
+    if (typeof localPeer.rtcRtt === "number") msg.rtcRtt = localPeer.rtcRtt;
+    if (typeof localPeer.packetLoss === "number") msg.packetLoss = localPeer.packetLoss;
+    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0) return;
+    safeSend(msg);
+    emit2("local-metrics", getLocalMetrics());
+    emit2("peer-upsert", localPeer);
+  }
+  function sendLocalPattern(code2) {
+    localPeer.pattern = typeof code2 === "string" ? code2 : "";
+    safeSend({ type: "pattern", code: localPeer.pattern });
+    emit2("peer-upsert", localPeer);
+  }
+  function sendLocalEffects(effects2) {
+    localPeer.effects = {
+      distortion: !!effects2.distortion,
+      noise: !!effects2.noise,
+      reverb: !!effects2.reverb
+    };
+    safeSend({ type: "effects", state: localPeer.effects });
+    emit2("peer-upsert", localPeer);
+  }
+  function sendLocalPlaying(playing) {
+    localPeer.playing = !!playing;
+    safeSend({ type: playing ? "play" : "stop" });
+    emit2("peer-upsert", localPeer);
+  }
+  function sendRemotePattern(targetPeerId, code2) {
+    if (!targetPeerId) return;
+    const c2 = typeof code2 === "string" ? code2 : "";
+    safeSend({ type: "remote-control", targetPeerId, action: "pattern", code: c2 });
+    const peer = peersByPeerId.get(targetPeerId);
+    if (peer) {
+      peer.pattern = c2;
+      emit2("peer-upsert", peer);
+    }
+  }
+  function sendRemoteMute(targetPeerId, muted) {
+    if (!targetPeerId) return;
+    safeSend({ type: "remote-control", targetPeerId, action: "mute", muted: !!muted });
+  }
+  function sendCrdtUpdate(update, { snapshot = false, modality = "keyboard", channel: channel2 = "metaprogram" } = {}) {
+    if (typeof update !== "string" || !update) return;
+    safeSend({ type: "crdt-update", update, snapshot, modality, channel: channel2 });
+  }
+  function sendResearchEvent(kind, data3 = null) {
+    if (typeof kind !== "string" || !kind) return;
+    safeSend({ type: "research-event", kind, data: data3 });
+  }
+  function sendFleetRequest(action, { count, targets } = {}) {
+    const msg = { type: "fleet-request", action };
+    if (typeof count === "number") msg.count = count;
+    if (targets !== void 0) msg.targets = targets;
+    safeSend(msg);
+  }
+  function sendBotPermission(targetPeerId, perms) {
+    if (!targetPeerId || !perms) return;
+    const msg = { type: "bot-permission", targetPeerId };
+    if (typeof perms.canEditMetaprogram === "boolean") msg.canEditMetaprogram = perms.canEditMetaprogram;
+    if (typeof perms.canWriteModulation === "boolean") msg.canWriteModulation = perms.canWriteModulation;
+    safeSend(msg);
+  }
+  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
+  var init_peer_state = __esm({
+    "src/peer-state.js"() {
+      init_jamulus();
+      init_participants();
+      subscribers2 = /* @__PURE__ */ new Set();
+      peersByPeerId = /* @__PURE__ */ new Map();
+      peerIdByJitsiId = /* @__PURE__ */ new Map();
+      LOCAL_IS_BOT = !!(typeof window !== "undefined" && window.__trussalIsBot);
+      LOCAL_IS_AGGREGATOR = !!(typeof window !== "undefined" && window.__trussalIsAggregator);
+      LOCAL_OWNER_INDEX = typeof window !== "undefined" && typeof window.__trussalBotOwnerIndex === "string" ? window.__trussalBotOwnerIndex : null;
+      localPeer = {
+        peerId: null,
+        roomIndex: null,
+        jitsiId: null,
+        displayName: null,
+        isLocal: true,
+        isBot: LOCAL_IS_BOT,
+        isAggregator: LOCAL_IS_AGGREGATOR,
+        muted: false,
+        pattern: "",
+        effects: { distortion: false, noise: false, reverb: false },
+        playing: false,
+        rtt: null,
+        jitter: null,
+        packetLoss: null,
+        rtcRtt: null,
+        canEditMetaprogram: !LOCAL_IS_BOT,
+        canWriteModulation: !LOCAL_IS_BOT
+      };
+      ws = null;
+      wantConnection = false;
+      myPeerId = null;
+      helloSent = false;
+      pingTimer = null;
+      reconnectTimer = null;
+      reconnectDelay = 1e3;
+      lastPongAt = 0;
+      currentRoom = null;
+      MAX_RECONNECT_DELAY = 15e3;
+      PONG_TIMEOUT_MS = 8e3;
+      rttSamples = [];
+      localRtt = null;
+      localJitter = null;
+      pendingSends = [];
+      subscribeParticipants((event, payload) => {
+        if (event === "local" || event === "local-update") {
+          if (payload && payload.id) {
+            localPeer.jitsiId = payload.id;
+            localPeer.displayName = payload.displayName;
+            emit2("peer-upsert", localPeer);
+          }
+          const room2 = getRoomNameFromUrl();
+          if (!room2) return;
+          if (room2 !== currentRoom) {
+            currentRoom = room2;
+            wantConnection = true;
+            openSocket();
+          } else if (event === "local-update" && ws && ws.readyState === WebSocket.OPEN) {
+            helloSent = false;
+            sendHelloIfReady();
+          } else if (!ws) {
+            wantConnection = true;
+            openSocket();
+          }
+        }
+      });
+      window.addEventListener("online", () => {
+        if (!wantConnection) return;
+        reconnectDelay = 1e3;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        openSocket();
+      });
+    }
+  });
+
+  // src/latency-instrument.js
+  function notifyRoutingChange() {
+    routingSubscribers.forEach((fn) => {
+      try {
+        fn(new Set(audioRouted));
+      } catch (e30) {
+        console.warn("[latency] routing subscriber threw", e30);
+      }
+    });
+  }
+  function subscribeAudioRouting(fn) {
+    routingSubscribers.add(fn);
+    try {
+      fn(new Set(audioRouted));
+    } catch (e30) {
+    }
+    return () => routingSubscribers.delete(fn);
+  }
+  function applyJamulusMuteToAllTags() {
+    document.querySelectorAll("audio").forEach((tag) => {
+      if (!tag.srcObject) return;
+      if (tag.id === "userAudio") return;
+      const jitsiId = getParticipantIdForAudioTag(tag);
+      if (jitsiId && remoteSources.has(jitsiId)) return;
+      if (jamulasMutedTags.has(tag)) return;
+      tag.muted = true;
+      tag.volume = 0;
+      jamulasMutedTags.add(tag);
+    });
+  }
+  function setJamulusMode(enabled) {
+    if (enabled === jamulusMode) return;
+    jamulusMode = enabled;
+    if (enabled) {
+      applyJamulusMuteToAllTags();
+    } else {
+      for (const tag of jamulasMutedTags) {
+        tag.muted = false;
+        tag.volume = 1;
+      }
+      jamulasMutedTags.clear();
+    }
+  }
+  function presenceLevelFor(jitsiId) {
+    if (!aggregatorJitsiId) return 1;
+    return jitsiId === aggregatorJitsiId ? 1 : 0;
+  }
+  function localStrudelLevel() {
+    return aggregatorJitsiId ? 0 : 1;
+  }
+  function setAggregatorPeer(jitsiId) {
+    const next = jitsiId || null;
+    if (next === aggregatorJitsiId) return;
+    aggregatorJitsiId = next;
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const chain of chains.values()) {
+      if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
+    }
+    if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
+  }
+  function refreshAggregatorPeer() {
+    const local2 = getLocalPeer();
+    if (local2 && local2.isAggregator) {
+      setAggregatorPeer(null);
+      return;
+    }
+    const agg = getAllPeers().find((p) => p && p.isAggregator && p.jitsiId && !p.isLocal);
+    setAggregatorPeer(agg ? agg.jitsiId : null);
+  }
+  function ensureAudioContext() {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return Promise.reject(new Error("WebAudio not supported"));
+    if (!audioCtx) {
+      audioCtx = new Ctor({ sampleRate: 48e3 });
+      const masterBus = audioCtx.createGain();
+      masterBus.gain.value = 1;
+      masterBus.connect(audioCtx.destination);
+      realDestination = masterBus;
+    }
+    if (!audioCtx.audioWorklet) return Promise.reject(new Error("AudioWorklet not supported"));
+    if (!workletLoaded) {
+      workletLoaded = audioCtx.audioWorklet.addModule("/latency-worklet-v2.js");
+    }
+    const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
+    return resume.then(() => workletLoaded);
+  }
+  async function loadReverbBuffer() {
+    if (reverbBuffer) return reverbBuffer;
+    try {
+      const resp = await fetch("trussal-impulse.wav");
+      const ct2 = resp.headers.get("content-type");
+      if (ct2 && ct2.includes("text/html")) throw new Error("impulse file returned HTML");
+      const ab = await resp.arrayBuffer();
+      reverbBuffer = await audioCtx.decodeAudioData(ab);
+    } catch (e30) {
+      console.warn("[latency] reverb buffer load failed", e30);
+      reverbBuffer = null;
+    }
+    return reverbBuffer;
+  }
+  function makeDistortionCurve(amount) {
+    const n2 = 512;
+    const curve2 = new Float32Array(n2);
+    for (let i = 0; i < n2; i++) {
+      const x2 = i * 2 / n2 - 1;
+      if (amount < 1e-3) {
+        curve2[i] = x2;
+        continue;
+      }
+      const k2 = amount * 24 + 1e-3;
+      curve2[i] = (Math.PI + k2) * x2 / (Math.PI + k2 * Math.abs(x2));
+    }
+    return curve2;
+  }
+  function updateStrudelFx(effects2, rtt, jitter) {
+    if (!strudelFx || !audioCtx) return;
+    const e30 = effects2 || {};
+    const r2 = rtt || 0;
+    const j2 = jitter || 0;
+    const now = audioCtx.currentTime;
+    if (e30.distortion) {
+      const base = 0.2;
+      const extra = Math.max(0, Math.min(0.8, (r2 - 5) / 55 + j2 / 6));
+      strudelFx.distWS.curve = makeDistortionCurve(base + extra);
+    } else {
+      strudelFx.distWS.curve = null;
+    }
+    const targetNoise = e30.noise ? 0.12 : 0;
+    strudelFx.noiseGain.gain.cancelScheduledValues(now);
+    strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
+    if (e30.noise) {
+      const targetFreq = j2 < 1 ? 2e4 : j2 < 3 ? 200 : 1200;
+      strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
+      strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
+    }
+    if (strudelFx.convGain) {
+      const targetRev = e30.reverb ? 1.8 : 0;
+      strudelFx.convGain.gain.cancelScheduledValues(now);
+      strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
+    }
+  }
+  function computeEffectParams(effects2, metrics) {
+    const rtt = metrics && typeof metrics.rtt === "number" ? metrics.rtt : 0;
+    const jitter = metrics && typeof metrics.jitter === "number" ? metrics.jitter : 0;
+    let glitchIntensity = 0;
+    if (effects2 && effects2.distortion) {
+      const base = 0.05;
+      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+      glitchIntensity = base + extra;
+    }
+    let noiseType = 0;
+    if (effects2 && effects2.noise) {
+      if (jitter < 1) noiseType = 1;
+      else if (jitter < 3) noiseType = 2;
+      else noiseType = 3;
+    }
+    return { glitchIntensity, noiseType, reverb: !!(effects2 && effects2.reverb) };
+  }
+  function applyParams(chain, params2) {
+    if (!chain || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const glitch = chain.worklet.parameters.get("glitchIntensity");
+    if (glitch) glitch.setValueAtTime(params2.glitchIntensity, now);
+    const noise2 = chain.worklet.parameters.get("noiseType");
+    if (noise2) noise2.setValueAtTime(params2.noiseType, now);
+    const noiseAmt = chain.worklet.parameters.get("noiseAmount");
+    if (noiseAmt) {
+      const target = params2.noiseType > 0 ? 1 : 0;
+      noiseAmt.cancelScheduledValues(now);
+      noiseAmt.linearRampToValueAtTime(target, now + 0.8);
+    }
+    if (chain.reverbOn === params2.reverb) return;
+    chain.reverbOn = params2.reverb;
+    try {
+      chain.limiter.disconnect();
+    } catch (e30) {
+    }
+    if (params2.reverb && chain.reverb) {
+      chain.limiter.connect(chain.reverb);
+    } else {
+      chain.limiter.connect(realDestination);
+    }
+  }
+  async function buildChain(jitsiId) {
+    await ensureAudioContext();
+    await loadReverbBuffer();
+    const input = audioCtx.createGain();
+    input.channelCount = 2;
+    input.channelCountMode = "explicit";
+    Object.defineProperty(input, "maxChannelCount", { value: 2, configurable: true });
+    const worklet2 = new AudioWorkletNode(audioCtx, "latency-processor-v2", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers"
+    });
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    let reverb = null;
+    let reverbGain = null;
+    if (reverbBuffer) {
+      reverb = audioCtx.createConvolver();
+      reverb.buffer = reverbBuffer;
+      reverbGain = audioCtx.createGain();
+      reverbGain.gain.value = 1.8;
+      reverb.connect(reverbGain);
+      reverbGain.connect(realDestination);
+    }
+    const presence = audioCtx.createGain();
+    presence.gain.value = presenceLevelFor(jitsiId);
+    const monitor = audioCtx.createGain();
+    monitor.gain.value = monitorLevelFor(jitsiId);
+    input.connect(presence);
+    presence.connect(monitor);
+    monitor.connect(worklet2);
+    worklet2.connect(limiter);
+    limiter.connect(realDestination);
+    return { jitsiId, input, presence, monitor, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
+  }
+  async function ensureChain(jitsiId) {
+    if (!jitsiId) return null;
+    if (chains.has(jitsiId)) return chains.get(jitsiId);
+    const chain = await buildChain(jitsiId);
+    chains.set(jitsiId, chain);
+    const peer = getPeerByJitsiId(jitsiId);
+    if (peer) applyParams(chain, computeEffectParams(peer.effects, { rtt: peer.rtt, jitter: peer.jitter }));
+    return chain;
+  }
+  function destroyChain(jitsiId) {
+    const chain = chains.get(jitsiId);
+    if (!chain) return;
+    try {
+      chain.input.disconnect();
+    } catch (e30) {
+    }
+    if (chain.presence) {
+      try {
+        chain.presence.disconnect();
+      } catch (e30) {
+      }
+    }
+    try {
+      chain.worklet.disconnect();
+    } catch (e30) {
+    }
+    try {
+      chain.limiter.disconnect();
+    } catch (e30) {
+    }
+    if (chain.reverb) {
+      try {
+        chain.reverb.disconnect();
+      } catch (e30) {
+      }
+    }
+    if (chain.reverbGain) {
+      try {
+        chain.reverbGain.disconnect();
+      } catch (e30) {
+      }
+    }
+    chains.delete(jitsiId);
+  }
+  function captureJitsiAudio() {
+    if (!audioCtx) return;
+    const local2 = getLocalParticipant();
+    const localJitsiId = local2 ? local2.id : null;
+    const tags = document.querySelectorAll("audio");
+    tags.forEach(async (tag) => {
+      if (!tag.srcObject) return;
+      if (tag.id === "userAudio") return;
+      const jitsiId = getParticipantIdForAudioTag(tag);
+      if (!jitsiId) {
+        if (!tag.dataset.trussalUnmatched) {
+          console.warn("[latency] unmatched audio tag (no participant id)", { id: tag.id, srcTracks: tag.srcObject.getAudioTracks?.().length });
+          tag.dataset.trussalUnmatched = "1";
+        }
+        return;
+      }
+      if (localJitsiId && jitsiId === localJitsiId) return;
+      try {
+        const conf = window.APP && window.APP.conference;
+        const member = conf && typeof conf.getParticipantById === "function" ? conf.getParticipantById(jitsiId) : null;
+        if (member && typeof member.isHidden === "function" && member.isHidden()) return;
+      } catch (e30) {
+      }
+      if (!getPeerByJitsiId(jitsiId)) return;
+      if (remoteSources.has(jitsiId)) return;
+      if (pendingCaptures.has(jitsiId)) return;
+      pendingCaptures.add(jitsiId);
+      try {
+        const chain = await ensureChain(jitsiId);
+        if (!chain) return;
+        if (remoteSources.has(jitsiId)) return;
+        const source2 = audioCtx.createMediaStreamSource(tag.srcObject);
+        source2.connect(chain.input);
+        tag.muted = true;
+        tag.volume = 0;
+        const trackLabels = (tag.srcObject.getAudioTracks?.() || []).map((t) => t.label || "audio");
+        remoteSources.set(jitsiId, { tag, source: source2, label: trackLabels.join(",") || "mic" });
+        audioRouted.add(jitsiId);
+        console.log("[latency] routed Jitsi audio \u2192", jitsiId, "tracks:", trackLabels);
+        notifyRoutingChange();
+      } catch (e30) {
+        console.warn("[latency] failed to wire audio tag for", jitsiId, e30);
+      } finally {
+        pendingCaptures.delete(jitsiId);
+      }
+    });
+  }
+  function startAudioTagsObserver() {
+    if (audioTagObserver) return;
+    audioTagObserver = new MutationObserver(() => {
+      captureJitsiAudio();
+      if (jamulusMode) applyJamulusMuteToAllTags();
+    });
+    audioTagObserver.observe(document.body, { childList: true, subtree: true });
+    captureJitsiAudio();
+  }
+  function getMasterBus() {
+    return realDestination;
+  }
+  function getAudioContext() {
+    return audioCtx;
+  }
+  function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
+    const chain = chains.get(jitsiId);
+    if (!chain || !audioCtx) return false;
+    const t = atAudioTime != null ? Math.max(atAudioTime, audioCtx.currentTime) : audioCtx.currentTime;
+    const g2 = chain.input.gain;
+    g2.cancelScheduledValues(t);
+    g2.setTargetAtTime(level, t, rampS);
+    return true;
+  }
+  function monitorLevelFor(jitsiId) {
+    if (monitorMode === "master") return 1;
+    if (monitorMode === "self") return 0;
+    return jitsiId === monitorMode ? 1 : 0;
+  }
+  function setMonitorMix(mode2) {
+    monitorMode = mode2 || "master";
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const chain of chains.values()) {
+      chain.monitor.gain.setTargetAtTime(monitorLevelFor(chain.jitsiId), now, 0.05);
+    }
+    if (masterStrudelGain) {
+      const strudelLevel = monitorMode === "master" || monitorMode === "self" ? 1 : 0;
+      masterStrudelGain.gain.setTargetAtTime(strudelLevel, now, 0.05);
+    }
+  }
+  function insertMasterChain(endpoints) {
+    if (!audioCtx || !realDestination || !endpoints) return false;
+    try {
+      realDestination.disconnect(audioCtx.destination);
+    } catch (e30) {
+    }
+    realDestination.connect(endpoints.input);
+    endpoints.output.connect(audioCtx.destination);
+    return true;
+  }
+  function removeMasterChain(endpoints) {
+    if (!audioCtx || !realDestination || !endpoints) return;
+    try {
+      realDestination.disconnect(endpoints.input);
+    } catch (e30) {
+    }
+    try {
+      endpoints.output.disconnect(audioCtx.destination);
+    } catch (e30) {
+    }
+    try {
+      realDestination.connect(audioCtx.destination);
+    } catch (e30) {
+    }
+  }
+  function resetChainGates() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const chain of chains.values()) {
+      chain.input.gain.cancelScheduledValues(now);
+      chain.input.gain.setTargetAtTime(1, now, 0.03);
+    }
+  }
+  async function bootAudioEngine() {
+    if (bootPromise) return bootPromise;
+    bootPromise = (async () => {
+      await ensureAudioContext();
+      await loadReverbBuffer();
+      startAudioTagsObserver();
+      const local2 = getLocalParticipant();
+      if (local2) await ensureChain(local2.id);
+      return { audioCtx, realDestination };
+    })();
+    return bootPromise;
+  }
+  async function ensureMasterStrudelInput() {
+    await bootAudioEngine();
+    await loadReverbBuffer();
+    if (!masterStrudelGain) {
+      masterStrudelGain = audioCtx.createGain();
+      masterStrudelGain.channelCount = 2;
+      masterStrudelGain.channelCountMode = "explicit";
+      Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
+      masterStrudelGain.gain.value = 1;
+      strudelOut = audioCtx.createGain();
+      strudelOut.gain.value = localStrudelLevel();
+      strudelOut.connect(realDestination);
+      const distWS = audioCtx.createWaveShaper();
+      distWS.oversample = "4x";
+      distWS.curve = null;
+      masterStrudelGain.connect(distWS);
+      distWS.connect(strudelOut);
+      let convolver = null, convGain = null;
+      if (reverbBuffer) {
+        convolver = audioCtx.createConvolver();
+        convolver.buffer = reverbBuffer;
+        convGain = audioCtx.createGain();
+        convGain.gain.value = 0;
+        masterStrudelGain.connect(convolver);
+        convolver.connect(convGain);
+        convGain.connect(strudelOut);
+      }
+      const bufLen = Math.floor(audioCtx.sampleRate * 2);
+      const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseSrc = audioCtx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = "lowpass";
+      noiseFilter.frequency.value = 2e4;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0;
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(strudelOut);
+      noiseSrc.start();
+      strudelFx = { distWS, noiseFilter, noiseGain, convGain };
+    }
+    return { audioCtx, masterStrudelGain, realDestination };
+  }
+  async function getStrudelAudioContext() {
+    const { audioCtx: ctx, masterStrudelGain: out, realDestination: rd } = await ensureMasterStrudelInput();
+    return { audioCtx: ctx, destinationNode: out, realDestination: rd };
+  }
+  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external", { monitorLocally = true } = {}) {
+    if (!jitsiId || !stream) return null;
+    await bootAudioEngine();
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return null;
+    const existing = externalSources.get(jitsiId);
+    if (existing) {
+      try {
+        existing.source && existing.source.disconnect();
+      } catch (e30) {
+      }
+      try {
+        existing.stream.getTracks().forEach((t) => t.stop());
+      } catch (e30) {
+      }
+    }
+    let source2 = null;
+    if (monitorLocally) {
+      source2 = audioCtx.createMediaStreamSource(stream);
+      source2.connect(chain.input);
+    }
+    externalSources.set(jitsiId, { source: source2, stream, label: label2 });
+    audioRouted.add(jitsiId);
+    console.log("[latency] attached external stream \u2192", jitsiId, label2, monitorLocally ? "(monitored)" : "(room only)", "tracks:", stream.getAudioTracks().map((t) => t.label));
+    notifyRoutingChange();
+    return source2;
+  }
+  function detachExternalStreamForPeer(jitsiId) {
+    const ext = externalSources.get(jitsiId);
+    if (!ext) return;
+    try {
+      ext.source && ext.source.disconnect();
+    } catch (e30) {
+    }
+    try {
+      ext.stream.getTracks().forEach((t) => t.stop());
+    } catch (e30) {
+    }
+    externalSources.delete(jitsiId);
+    if (!remoteSources.has(jitsiId)) {
+      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+    }
+  }
+  function getExternalStreamLabel(jitsiId) {
+    const ext = externalSources.get(jitsiId);
+    return ext ? ext.label : null;
+  }
+  function findLocalJitsiAudioTrack() {
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return null;
+      if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === "function") return conf.localAudioTrack;
+      if (typeof conf.getLocalAudioTrack === "function") {
+        const t = conf.getLocalAudioTrack();
+        if (t) return t;
+      }
+      if (conf._room && typeof conf._room.getLocalAudioTrack === "function") {
+        const t = conf._room.getLocalAudioTrack();
+        if (t) return t;
+      }
+      if (Array.isArray(conf._localTracks)) {
+        const t = conf._localTracks.find((t2) => t2 && (t2.isAudioTrack?.() || t2.type === "audio"));
+        if (t) return t;
+      }
+    } catch (e30) {
+    }
+    return null;
+  }
+  function findOutgoingAudioSender() {
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return null;
+      const pcWrapper = conf._room?.rtc?.peerConnections;
+      if (pcWrapper) {
+        const iter2 = pcWrapper.values && pcWrapper.values() || pcWrapper;
+        for (const tpc of iter2) {
+          const pc = tpc?.peerconnection;
+          if (pc && pc.getSenders) {
+            const sender = pc.getSenders().find((s2) => s2.track && s2.track.kind === "audio");
+            if (sender) return sender;
+          }
+        }
+      }
+    } catch (e30) {
+    }
+    return null;
+  }
+  async function propagateViaSetEffect(stream) {
+    const track = findLocalJitsiAudioTrack();
+    if (!track || typeof track.setEffect !== "function") return false;
+    const effect = new JitsiMicMixEffect(audioCtx, stream);
+    try {
+      await track.setEffect(effect);
+      jitsiMixState = { track, effect };
+      console.log("[latency] propagation: setEffect on local audio track");
+      return true;
+    } catch (e30) {
+      console.warn("[latency] setEffect failed", e30);
+      return false;
+    }
+  }
+  async function propagateViaReplaceTrack(stream) {
+    const sender = findOutgoingAudioSender();
+    if (!sender || typeof sender.replaceTrack !== "function") return false;
+    const dest = audioCtx.createMediaStreamDestination();
+    let micSource = null;
+    if (sender.track) {
+      try {
+        const micStream = new MediaStream([sender.track]);
+        micSource = audioCtx.createMediaStreamSource(micStream);
+        micSource.connect(dest);
+      } catch (e30) {
+        console.warn("[latency] replaceTrack: cannot tap mic", e30);
+      }
+    }
+    let extSource = null;
+    try {
+      extSource = audioCtx.createMediaStreamSource(stream);
+      extSource.connect(dest);
+    } catch (e30) {
+      console.warn("[latency] replaceTrack: ext source failed", e30);
+    }
+    const mixedTrack = dest.stream.getAudioTracks()[0];
+    if (!mixedTrack) return false;
+    const originalTrack = sender.track;
+    try {
+      await sender.replaceTrack(mixedTrack);
+      jitsiMixState = {
+        replacedSender: sender,
+        originalTrack,
+        mixedTrack,
+        _disposers: [
+          () => {
+            try {
+              micSource && micSource.disconnect();
+            } catch (e30) {
+            }
+          },
+          () => {
+            try {
+              extSource && extSource.disconnect();
+            } catch (e30) {
+            }
+          }
+        ]
+      };
+      console.log("[latency] propagation: replaceTrack on outgoing sender");
+      return true;
+    } catch (e30) {
+      console.warn("[latency] replaceTrack failed", e30);
+      return false;
+    }
+  }
+  async function propagateExternalStreamToRoom(stream) {
+    if (!stream) return false;
+    await bootAudioEngine();
+    if (jitsiMixState) await stopPropagatingExternalStream();
+    if (await propagateViaSetEffect(stream)) return true;
+    if (await propagateViaReplaceTrack(stream)) return true;
+    console.warn("[latency] could not propagate external stream \u2014 no compatible Jitsi audio surface");
+    return false;
+  }
+  async function stopPropagatingExternalStream() {
+    if (!jitsiMixState) return;
+    const s2 = jitsiMixState;
+    jitsiMixState = null;
+    if (s2.track && typeof s2.track.setEffect === "function") {
+      try {
+        await s2.track.setEffect(void 0);
+      } catch (e30) {
+        console.warn("[latency] setEffect undo failed", e30);
+      }
+    } else if (s2.replacedSender) {
+      try {
+        if (s2.originalTrack) await s2.replacedSender.replaceTrack(s2.originalTrack);
+      } catch (e30) {
+        console.warn("[latency] replaceTrack restore failed", e30);
+      }
+      if (Array.isArray(s2._disposers)) s2._disposers.forEach((fn) => fn());
+    }
+    console.log("[latency] external propagation stopped");
+  }
+  function isPropagatingToRoom() {
+    return !!jitsiMixState;
+  }
+  async function attachNodeToChain(jitsiId, node, label2 = "relay") {
+    if (!jitsiId || !node) return;
+    await bootAudioEngine();
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return;
+    const existing = externalNodes.get(jitsiId);
+    if (existing) {
+      try {
+        existing.node.disconnect(chain.input);
+      } catch (_3) {
+      }
+    }
+    node.connect(chain.input);
+    externalNodes.set(jitsiId, { node, label: label2 });
+    audioRouted.add(jitsiId);
+    console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
+    notifyRoutingChange();
+  }
+  function detachNodeFromChain(jitsiId) {
+    const entry = externalNodes.get(jitsiId);
+    if (!entry) return;
+    const chain = chains.get(jitsiId);
+    if (chain) {
+      try {
+        entry.node.disconnect(chain.input);
+      } catch (_3) {
+      }
+    }
+    externalNodes.delete(jitsiId);
+    if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
+      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+    }
+    console.log("[latency] detached WebAudio node \u2190", jitsiId);
+  }
+  function getExternalNodeLabel(jitsiId) {
+    return externalNodes.get(jitsiId)?.label ?? null;
+  }
+  async function listAudioInputDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    let inputs = devices.filter((d) => d.kind === "audioinput");
+    const labelsMissing = inputs.length && inputs.every((d) => !d.label);
+    if (labelsMissing) {
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+        probe.getTracks().forEach((t) => t.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+        inputs = devices.filter((d) => d.kind === "audioinput");
+      } catch (e30) {
+      }
+    }
+    return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
+  }
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect;
+  var init_latency_instrument = __esm({
+    "src/latency-instrument.js"() {
+      init_participants();
+      init_peer_state();
+      audioCtx = null;
+      realDestination = null;
+      workletLoaded = null;
+      reverbBuffer = null;
+      masterStrudelGain = null;
+      bootPromise = null;
+      strudelFx = null;
+      strudelOut = null;
+      chains = /* @__PURE__ */ new Map();
+      remoteSources = /* @__PURE__ */ new Map();
+      pendingCaptures = /* @__PURE__ */ new Set();
+      externalSources = /* @__PURE__ */ new Map();
+      externalNodes = /* @__PURE__ */ new Map();
+      audioRouted = /* @__PURE__ */ new Set();
+      routingSubscribers = /* @__PURE__ */ new Set();
+      jamulusMode = false;
+      jamulasMutedTags = /* @__PURE__ */ new Set();
+      audioTagObserver = null;
+      aggregatorJitsiId = null;
+      subscribePeerState((event, payload) => {
+        if (event !== "peer-upsert") return;
+        if (!payload.jitsiId) return;
+        refreshAggregatorPeer();
+        const chain = chains.get(payload.jitsiId);
+        if (chain) {
+          applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
+        } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
+          captureJitsiAudio();
+        }
+        if (payload.isLocal) {
+          updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
+        }
+      });
+      subscribeParticipants((event, payload) => {
+        if (event === "leave" && payload && payload.id) {
+          const src2 = remoteSources.get(payload.id);
+          if (src2) {
+            try {
+              src2.source.disconnect();
+            } catch (e30) {
+            }
+            if (src2.tag) {
+              src2.tag.muted = false;
+              src2.tag.volume = 1;
+            }
+            remoteSources.delete(payload.id);
+          }
+          const ext = externalSources.get(payload.id);
+          if (ext) {
+            try {
+              ext.source && ext.source.disconnect();
+            } catch (e30) {
+            }
+            try {
+              ext.stream.getTracks().forEach((t) => t.stop());
+            } catch (e30) {
+            }
+            externalSources.delete(payload.id);
+          }
+          if (audioRouted.delete(payload.id)) notifyRoutingChange();
+          destroyChain(payload.id);
+          refreshAggregatorPeer();
+        }
+      });
+      monitorMode = "master";
+      jitsiMixState = null;
+      JitsiMicMixEffect = class {
+        constructor(audioCtx2, externalStream) {
+          this._audioCtx = audioCtx2;
+          this._externalStream = externalStream;
+          this._dest = audioCtx2.createMediaStreamDestination();
+          this._micSource = null;
+          this._extSource = null;
+        }
+        isEnabled() {
+          return true;
+        }
+        startEffect(stream) {
+          try {
+            this._micSource = this._audioCtx.createMediaStreamSource(stream);
+            this._micSource.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] mix effect: mic source failed", e30);
+          }
+          try {
+            this._extSource = this._audioCtx.createMediaStreamSource(this._externalStream);
+            this._extSource.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] mix effect: external source failed", e30);
+          }
+          return this._dest.stream;
+        }
+        stopEffect() {
+          try {
+            if (this._micSource) this._micSource.disconnect();
+          } catch (e30) {
+          }
+          try {
+            if (this._extSource) this._extSource.disconnect();
+          } catch (e30) {
+          }
+        }
+      };
+    }
+  });
+
+  // src/jamulus.js
+  function addJamulusWelcomePanel() {
+    const body = document.body;
+    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
+      return;
+    }
+    if (document.getElementById("jamulus-welcome-panel")) return;
+    const container = document.querySelector("#welcome_page .welcome-page-content") || document.querySelector(".welcome-page-content");
+    if (!container) return;
+    const panel = document.createElement("div");
+    panel.id = "jamulus-welcome-panel";
+    panel.className = "jamulus-panel";
+    const items = Object.entries(JAMULUS_ROOM_MAP).map(
+      ([room2, info]) => `<li><strong>${room2}</strong> \u2192 ${info.host}:${info.port}</li>`
+    ).join("");
+    panel.innerHTML = `
+      <h3>Jamulus rooms</h3>
+      <p>These meeting links have dedicated Jamulus servers:</p>
+      <ul>${items}</ul>
+    `;
+    container.prepend(panel);
+  }
+  function startJamulusBannerPolling() {
+    attachJamulusBanner();
+    setInterval(attachJamulusBanner, 3e3);
+  }
+  function attachJamulusBanner() {
+    const room2 = getRoomNameFromUrl();
+    if (!room2) return;
+    const mapping = window.JAMULUS_ROOM_MAP || {};
+    const entry = mapping[room2];
+    if (!entry) return;
+    if (document.getElementById("jamulus-info-banner")) return;
+    const banner = document.createElement("div");
+    banner.id = "jamulus-info-banner";
+    banner.textContent = `Jamulus: ${entry.host}:${entry.port} (for low-latency audio)`;
+    Object.assign(banner.style, {
+      position: "absolute",
+      bottom: "10px",
+      right: "10px",
+      zIndex: 9999,
+      background: "rgba(0, 0, 0, 0.7)",
+      color: "#fff",
+      padding: "8px 12px",
+      borderRadius: "4px",
+      fontFamily: "sans-serif",
+      fontSize: "12px"
+    });
+    document.body.appendChild(banner);
+  }
+  function startJamulusWelcomePanel() {
+    addJamulusWelcomePanel();
+  }
+  function getRoomNameFromUrl() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const roomName = parts.length ? parts[parts.length - 1] : null;
+    return roomName;
+  }
+  function renderJamulusWelcomePanelAndBanner() {
+    const mapping = window.JAMULUS_ROOM_MAP || {};
+    if (!Object.keys(mapping).length) {
+      return;
+    }
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startJamulusWelcomePanel();
+      startJamulusBannerPolling();
+    } else {
+      window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
+      window.addEventListener("DOMContentLoaded", startJamulusBannerPolling);
+    }
+  }
+  async function ensureRelayWorklet(audioCtx2) {
+    if (!_relayWorkletLoaded) {
+      await audioCtx2.audioWorklet.addModule("/jamulus-relay-player.js");
+      _relayWorkletLoaded = true;
+    }
+    return new AudioWorkletNode(audioCtx2, "jamulus-relay-processor", {
+      numberOfOutputs: 1,
+      outputChannelCount: [2]
+    });
+  }
+  async function connectJamulusRelay() {
+    if (_relayWs) return;
+    const local2 = getLocalPeer();
+    if (!local2 || !local2.jitsiId) throw new Error("No local peer identity yet");
+    const room2 = getRoomNameFromUrl();
+    if (!room2) throw new Error("Not in a Jitsi room");
+    const { audioCtx: audioCtx2 } = await bootAudioEngine();
+    if (audioCtx2.state === "suspended") await audioCtx2.resume();
+    const loc = window.location;
+    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+    const url2 = `${proto}//${loc.host}/jamulus-audio?room=${encodeURIComponent(room2)}`;
+    const ws3 = new WebSocket(url2);
+    ws3.binaryType = "arraybuffer";
+    _relayWs = ws3;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("relay connect timeout")), 2e4);
+      const onMsg = (evt) => {
+        if (typeof evt.data !== "string") return;
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "relay-ready") {
+          clearTimeout(timeout);
+          ws3.removeEventListener("message", onMsg);
+          resolve();
+        } else if (msg.type === "error") {
+          clearTimeout(timeout);
+          ws3.removeEventListener("message", onMsg);
+          reject(new Error(msg.message || "relay error"));
+        }
+      };
+      ws3.addEventListener("message", onMsg);
+      ws3.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error("WebSocket error"));
+      };
+      ws3.onclose = () => {
+        clearTimeout(timeout);
+        reject(new Error("WebSocket closed"));
+      };
+    });
+    const worklet2 = await ensureRelayWorklet(audioCtx2);
+    _relayWorklet = worklet2;
+    ws3.onmessage = (evt) => {
+      if (typeof evt.data === "string") {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "relay-stopped") disconnectJamulusRelay();
+        return;
+      }
+      worklet2.port.postMessage(evt.data, [evt.data]);
+    };
+    ws3.onclose = () => {
+      console.log("[jamulus] relay WebSocket closed");
+      disconnectJamulusRelay();
+    };
+    await attachNodeToChain(local2.jitsiId, worklet2, "Jamulus relay");
+    setJamulusMode(true);
+    console.log("[jamulus] relay connected, room", room2);
+  }
+  function disconnectJamulusRelay() {
+    if (_relayWs) {
+      _relayWs.onmessage = null;
+      _relayWs.onclose = null;
+      try {
+        _relayWs.close();
+      } catch (_3) {
+      }
+      _relayWs = null;
+    }
+    if (_relayWorklet) {
+      try {
+        _relayWorklet.disconnect();
+      } catch (_3) {
+      }
+      _relayWorklet = null;
+    }
+    const local2 = getLocalPeer();
+    if (local2 && local2.jitsiId) {
+      detachNodeFromChain(local2.jitsiId);
+      setJamulusMode(false);
+    }
+    console.log("[jamulus] relay disconnected");
+  }
+  function isRelayConnected() {
+    return !!_relayWs && _relayWs.readyState === WebSocket.OPEN;
+  }
+  var JAMULUS_ROOM_MAP, _relayWs, _relayWorklet, _relayWorkletLoaded;
+  var init_jamulus = __esm({
+    "src/jamulus.js"() {
+      init_latency_instrument();
+      init_peer_state();
+      JAMULUS_ROOM_MAP = {
+        "0": { host: "jamulus.trussal.com", port: 22e3 },
+        "1": { host: "jamulus.trussal.com", port: 22001 },
+        "2": { host: "jamulus.trussal.com", port: 22002 },
+        "3": { host: "jamulus.trussal.com", port: 22003 },
+        "4": { host: "jamulus.trussal.com", port: 22004 },
+        "5": { host: "jamulus.trussal.com", port: 22005 },
+        "6": { host: "jamulus.trussal.com", port: 22006 },
+        "7": { host: "jamulus.trussal.com", port: 22007 },
+        "8": { host: "jamulus.trussal.com", port: 22008 },
+        "9": { host: "jamulus.trussal.com", port: 22009 },
+        "10": { host: "jamulus.trussal.com", port: 22010 }
+      };
+      _relayWs = null;
+      _relayWorklet = null;
+      _relayWorkletLoaded = false;
+    }
+  });
+
+  // latency-instrument/room-indices.js
+  var require_room_indices = __commonJS({
+    "latency-instrument/room-indices.js"(exports, module) {
+      var LETTERS = "abcdefghijklmnopqrstuvwxyz";
+      function botSuffix(ordinal) {
+        if (!Number.isInteger(ordinal) || ordinal < 0) {
+          throw new RangeError("botSuffix() requires a non-negative integer");
+        }
+        const zs = Math.floor(ordinal / 26);
+        const last2 = ordinal % 26;
+        return "z".repeat(zs) + LETTERS[last2];
+      }
+      function suffixToOrdinal(suffix) {
+        if (!isValidBotSuffix(suffix)) return null;
+        const zs = suffix.length - 1;
+        return zs * 26 + LETTERS.indexOf(suffix[suffix.length - 1]);
+      }
+      function isValidBotSuffix(suffix) {
+        return typeof suffix === "string" && /^z*[a-z]$/.test(suffix);
+      }
+      function isValidParticipantToken2(token) {
+        if (typeof token !== "string") return false;
+        const m2 = token.match(/^(\d+)([a-z]*)$/);
+        if (!m2) return false;
+        if (m2[2] === "") return true;
+        return isValidBotSuffix(m2[2]);
+      }
+      function parseParticipantToken2(token) {
+        if (!isValidParticipantToken2(token)) return null;
+        const m2 = token.match(/^(\d+)([a-z]*)$/);
+        const ownerIndex = parseInt(m2[1], 10);
+        if (m2[2] === "") return { ownerIndex, suffix: null, ordinal: null };
+        return { ownerIndex, suffix: m2[2], ordinal: suffixToOrdinal(m2[2]) };
+      }
+      module.exports = {
+        botSuffix,
+        suffixToOrdinal,
+        isValidBotSuffix,
+        isValidParticipantToken: isValidParticipantToken2,
+        parseParticipantToken: parseParticipantToken2
+      };
+    }
+  });
+
+  // src/audio-net/MetaprogrammerParser.js
+  function tokenize(text2) {
+    const tokens = [];
+    const errors = [];
+    let line = 1, col = 1;
+    let i = 0;
+    const n2 = text2.length;
+    const push = (type, value2, l, c2) => tokens.push({ type, value: value2, line: l, col: c2 });
+    while (i < n2) {
+      const ch2 = text2[i];
+      const startLine = line, startCol = col;
+      const advance = (k2 = 1) => {
+        for (let j2 = 0; j2 < k2; j2++) {
+          if (text2[i] === "\n") {
+            line++;
+            col = 1;
+          } else {
+            col++;
+          }
+          i++;
+        }
+      };
+      if (ch2 === "\n") {
+        push("newline", "\n", startLine, startCol);
+        advance();
+        continue;
+      }
+      if (ch2 === " " || ch2 === "	" || ch2 === "\r") {
+        advance();
+        continue;
+      }
+      if (ch2 === "/" && text2[i + 1] === "/") {
+        while (i < n2 && text2[i] !== "\n") advance();
+        continue;
+      }
+      if (ch2 === "$" || ch2 === "#") {
+        push("sigil", ch2, startLine, startCol);
+        advance();
+        continue;
+      }
+      if (ch2 === "." && text2[i + 1] === ".") {
+        push("op", "..", startLine, startCol);
+        advance(2);
+        continue;
+      }
+      if (PUNCT.has(ch2)) {
+        push("punct", ch2, startLine, startCol);
+        advance();
+        continue;
+      }
+      if (OPS.has(ch2)) {
+        push("op", ch2, startLine, startCol);
+        advance();
+        continue;
+      }
+      if (RESTS.has(ch2)) {
+        push("rest", ch2, startLine, startCol);
+        advance();
+        continue;
+      }
+      if (/[0-9]/.test(ch2)) {
+        let j2 = i;
+        while (j2 < n2 && /[0-9]/.test(text2[j2])) j2++;
+        if (text2[j2] === "." && /[0-9]/.test(text2[j2 + 1] || "")) {
+          j2++;
+          while (j2 < n2 && /[0-9]/.test(text2[j2])) j2++;
+          const raw2 = text2.slice(i, j2);
+          push("number", parseFloat(raw2), startLine, startCol);
+          advance(j2 - i);
+          continue;
+        }
+        let k2 = j2;
+        while (k2 < n2 && /[a-z]/.test(text2[k2])) k2++;
+        const raw = text2.slice(i, k2);
+        if (k2 > j2) push("index", raw, startLine, startCol);
+        else push("intlike", raw, startLine, startCol);
+        advance(k2 - i);
+        continue;
+      }
+      if (/[a-zA-Z_]/.test(ch2)) {
+        let j2 = i;
+        while (j2 < n2 && /[a-zA-Z0-9_]/.test(text2[j2])) j2++;
+        push("word", text2.slice(i, j2), startLine, startCol);
+        advance(j2 - i);
+        continue;
+      }
+      errors.push({ message: `unexpected character '${ch2}'`, line: startLine, col: startCol });
+      advance();
+    }
+    push("eof", null, line, col);
+    return { tokens, errors };
+  }
+  function parseMetaprogram(text2) {
+    const { tokens, errors } = tokenize(typeof text2 === "string" ? text2 : "");
+    const parser = new Parser(tokens, errors);
+    const ast2 = parser.parseProgram();
+    errors.sort((a2, b) => a2.line - b.line || a2.col - b.col);
+    return { ast: ast2, errors, valid: errors.length === 0 };
+  }
+  function resolveEffectParams(chainEntry) {
+    const { fn, args: args2 } = chainEntry;
+    switch (fn) {
+      case "room":
+        return { wclFactor: args2[0] ?? 1, wcrttFactor: args2[1] ?? 1 };
+      case "echo":
+        return { nSamplesFactor: args2[0] ?? 1, magnitudeFeedbackFactor: args2[1] ?? 0.1 };
+      case "crush":
+        return { reductionFactor: args2[0] ?? 1 };
+      case "noise":
+        return {};
+      case "grid":
+        return { landmarks: args2[0] ?? false };
+      default:
+        return { args: args2 };
+    }
+  }
+  function buildDefaultProgram(indices) {
+    const list = indices && indices.length ? indices.join(" ") : "";
+    return `$ participants <${list}>
+# cycles wcl
+# tempo 120 bpm
+`;
+  }
+  function appendParticipantToProgram(text2, token) {
+    const m2 = text2.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);
+    if (!m2) return text2;
+    if (new RegExp(`(^|[\\s<\\[])${token}($|[\\s\\]>@!?*/,|%:])`).test(m2[1] + m2[2])) return text2;
+    const body = m2[1].trimEnd();
+    return text2.replace(m2[0], `${body} ${token}${m2[2]}`);
+  }
+  function removeParticipantFromProgram(text2, token) {
+    const m2 = text2.match(/(\$\s*participants\s*)([<[])([^\]>]*)([\]>])/);
+    if (!m2) return text2;
+    const cleaned = m2[3].split(/\s+/).filter((w2) => {
+      const base = w2.match(/^([0-9]+[a-z]*)/);
+      return !(base && base[1] === token);
+    }).join(" ");
+    return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
+  }
+  var import_room_indices, TIMING_METRICS, TEMPO_UNITS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser;
+  var init_MetaprogrammerParser = __esm({
+    "src/audio-net/MetaprogrammerParser.js"() {
+      import_room_indices = __toESM(require_room_indices(), 1);
+      TIMING_METRICS = ["wcl", "wcj", "wcpl"];
+      TEMPO_UNITS = ["bpm", "cps", "cpm"];
+      EFFECTS = {
+        room: { minArgs: 0, maxArgs: 2, kind: "effect" },
+        // wcl_factor=1, wcrtt_factor=1
+        echo: { minArgs: 0, maxArgs: 2, kind: "effect" },
+        // n_samples_factor=1, magnitude_feedback_factor=0.1
+        crush: { minArgs: 0, maxArgs: 1, kind: "effect" },
+        // reduction_factor=1
+        noise: { minArgs: 0, maxArgs: 0, kind: "effect" },
+        grid: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
+        // landmarks=false
+      };
+      PATTERN_FNS = {
+        ply: { minArgs: 1, maxArgs: 1 },
+        chop: { minArgs: 1, maxArgs: 1 },
+        shuffle: { minArgs: 0, maxArgs: 1 },
+        degrade: { minArgs: 0, maxArgs: 0 },
+        degradeBy: { minArgs: 1, maxArgs: 1, probability: true },
+        undegrade: { minArgs: 0, maxArgs: 0 },
+        undegradeBy: { minArgs: 1, maxArgs: 1, probability: true },
+        hush: { minArgs: 0, maxArgs: 0 },
+        // Stack producers: duplicate/superimpose with a one-cycle offset.
+        jux: { minArgs: 0, maxArgs: 0, stacking: true },
+        superimpose: { minArgs: 0, maxArgs: 0, stacking: true, takesSequence: true }
+      };
+      PUNCT = /* @__PURE__ */ new Set(["<", ">", "[", "]", "(", ")", ",", "|"]);
+      OPS = /* @__PURE__ */ new Set(["*", "/", "@", "!", "?", "%", ":"]);
+      RESTS = /* @__PURE__ */ new Set(["~", "_", "-"]);
+      Parser = class {
+        constructor(tokens, errors) {
+          this.tokens = tokens.filter((t) => t.type !== "newline" || true);
+          this.pos = 0;
+          this.errors = errors;
+        }
+        peek(offset2 = 0) {
+          return this.tokens[this.pos + offset2];
+        }
+        next() {
+          return this.tokens[this.pos++];
+        }
+        atEof() {
+          return this.peek().type === "eof";
+        }
+        error(message, tok) {
+          const t = tok || this.peek();
+          this.errors.push({ message, line: t.line, col: t.col });
+        }
+        skipNewlines() {
+          while (this.peek().type === "newline") this.next();
+        }
+        // Consume to the start of the next statement ($ or # at statement level) so
+        // one bad statement doesn't cascade.
+        recover() {
+          while (!this.atEof()) {
+            const t = this.peek();
+            if (t.type === "sigil") return;
+            this.next();
+          }
+        }
+        parseProgram() {
+          const program = { participants: null, cycles: null, tempo: null, chain: [] };
+          this.skipNewlines();
+          while (!this.atEof()) {
+            const t = this.peek();
+            if (t.type !== "sigil") {
+              this.error(`expected '$' or '#' at start of statement, got '${t.value}'`, t);
+              this.next();
+              this.recover();
+              this.skipNewlines();
+              continue;
+            }
+            if (t.value === "$") this.parseDollar(program);
+            else this.parseDirective(program);
+            this.skipNewlines();
+          }
+          if (!program.participants) {
+            this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
+          }
+          if (!program.cycles) program.cycles = { metric: "wcl", factor: 1, defaulted: true };
+          if (!program.tempo) program.tempo = { value: 120, unit: "bpm", defaulted: true };
+          return program;
+        }
+        parseDollar(program) {
+          const sigil = this.next();
+          const name3 = this.peek();
+          if (name3.type !== "word" || name3.value !== "participants") {
+            this.error(`unknown '$' statement '${name3.value}' (only 'participants' exists)`, name3);
+            this.recover();
+            return;
+          }
+          this.next();
+          if (program.participants) {
+            this.error("duplicate '$ participants' statement", sigil);
+            this.recover();
+            return;
+          }
+          const seq2 = this.parseSequenceGroup();
+          if (!seq2) {
+            this.recover();
+            return;
+          }
+          seq2.modifiers = this.parseModifiers();
+          program.participants = seq2;
+        }
+        // <...> (alternate: one element per cycle) or [...] (subdivide the cycle).
+        parseSequenceGroup() {
+          const open = this.peek();
+          if (open.type !== "punct" || open.value !== "<" && open.value !== "[") {
+            this.error(`expected '<' or '[' to open a sequence, got '${open.value ?? "end of input"}'`, open);
+            return null;
+          }
+          this.next();
+          const close = open.value === "<" ? ">" : "]";
+          const mode2 = open.value === "<" ? "alternate" : "subdivide";
+          const stacks = [];
+          let segments = [[]];
+          const finishStack = (tok) => {
+            const runs = segments.map((run2) => run2);
+            if (runs.every((r2) => r2.length === 0)) {
+              this.error("empty sequence element list", tok);
+            }
+            const elements = runs.length === 1 ? runs[0] : [{ type: "choice", options: runs, line: tok.line, col: tok.col }];
+            stacks.push({ elements, cycleOffset: stacks.length });
+            segments = [[]];
+          };
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "eof") {
+              this.error(`unclosed sequence \u2014 expected '${close}'`, t);
+              return null;
+            }
+            if (t.type === "newline") {
+              this.next();
+              continue;
+            }
+            if (t.type === "punct" && t.value === close) {
+              this.next();
+              finishStack(t);
+              break;
+            }
+            if (t.type === "punct" && (t.value === ">" || t.value === "]")) {
+              this.error(`mismatched '${t.value}' \u2014 expected '${close}'`, t);
+              this.next();
+              finishStack(t);
+              break;
+            }
+            if (t.type === "punct" && t.value === ",") {
+              this.next();
+              finishStack(t);
+              continue;
+            }
+            if (t.type === "punct" && t.value === "|") {
+              this.next();
+              segments.push([]);
+              continue;
+            }
+            const el = this.parseElement();
+            if (!el) {
+              this.next();
+              continue;
+            }
+            const run2 = segments[segments.length - 1];
+            if (this.peek().type === "op" && this.peek().value === "..") {
+              const dots = this.next();
+              const hi2 = this.parseElement();
+              if (!el.token || !hi2 || !hi2.token || el.suffix || hi2.suffix || !/^\d+$/.test(el.token) || !/^\d+$/.test(hi2.token)) {
+                this.error("'..' ranges need plain integer participant indices on both sides", dots);
+                continue;
+              }
+              const lo = parseInt(el.token, 10), high = parseInt(hi2.token, 10);
+              if (high < lo) {
+                this.error("'..' range upper bound below lower bound", dots);
+                continue;
+              }
+              for (let v2 = lo; v2 <= high; v2++) {
+                run2.push({ type: "participant", token: String(v2), ownerIndex: v2, suffix: null, modifiers: [], line: el.line, col: el.col });
+              }
+              continue;
+            }
+            el.modifiers = this.parseModifiers();
+            run2.push(el);
+          }
+          return { type: "sequence", mode: mode2, stacks, modifiers: [] };
+        }
+        parseElement() {
+          const t = this.peek();
+          if (t.type === "rest") {
+            this.next();
+            return { type: "rest", token: t.value, modifiers: [], line: t.line, col: t.col };
+          }
+          if (t.type === "punct" && (t.value === "<" || t.value === "[")) {
+            const group = this.parseSequenceGroup();
+            if (!group) return null;
+            return { ...group, line: t.line, col: t.col };
+          }
+          if (t.type === "index" || t.type === "intlike") {
+            this.next();
+            if (!(0, import_room_indices.isValidParticipantToken)(t.value)) {
+              this.error(`invalid participant index '${t.value}' \u2014 bot suffixes are z-prefixed single letters (a, z, za, zb, \u2026)`, t);
+              return null;
+            }
+            const parsed = (0, import_room_indices.parseParticipantToken)(t.value);
+            return {
+              type: "participant",
+              token: t.value,
+              ownerIndex: parsed.ownerIndex,
+              suffix: parsed.suffix,
+              modifiers: [],
+              line: t.line,
+              col: t.col
+            };
+          }
+          this.error(`unexpected '${t.value}' in sequence`, t);
+          return null;
+        }
+        // Postfix element/sequence modifiers: *n /n @n !n %n :n ?[p]
+        parseModifiers() {
+          const mods = [];
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type !== "op") return mods;
+            if (t.value === "..") return mods;
+            this.next();
+            if (t.value === "?") {
+              const p = this.peek();
+              const adjacent = p.line === t.line && p.col === t.col + 1;
+              if (adjacent && (p.type === "number" || p.type === "intlike")) {
+                this.next();
+                const val3 = typeof p.value === "number" ? p.value : parseFloat(p.value);
+                if (!(val3 >= 0 && val3 <= 1)) this.error("'?' probability must be in [0, 1]", p);
+                else mods.push({ op: "?", value: val3 });
+              } else {
+                mods.push({ op: "?", value: null });
+              }
+              continue;
+            }
+            const arg = this.peek();
+            if (arg.type !== "number" && arg.type !== "intlike") {
+              this.error(`operator '${t.value}' needs a numeric argument`, t);
+              continue;
+            }
+            this.next();
+            const val2 = typeof arg.value === "number" ? arg.value : parseFloat(arg.value);
+            if (!(val2 > 0) || !isFinite(val2)) {
+              this.error(`operator '${t.value}' needs a positive number`, arg);
+              continue;
+            }
+            mods.push({ op: t.value, value: val2 });
+          }
+        }
+        parseDirective(program) {
+          const sigil = this.next();
+          const nameTok = this.peek();
+          if (nameTok.type !== "word") {
+            this.error("expected a directive name after '#'", nameTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          const name3 = nameTok.value;
+          if (name3 === "cycles") {
+            this.parseCycles(program, nameTok);
+            return;
+          }
+          if (name3 === "tempo") {
+            this.parseTempo(program, nameTok);
+            return;
+          }
+          if (PATTERN_FNS[name3]) {
+            this.parseChainFn(program, name3, nameTok, PATTERN_FNS[name3]);
+            return;
+          }
+          if (EFFECTS[name3]) {
+            this.parseChainFn(program, name3, nameTok, EFFECTS[name3]);
+            return;
+          }
+          this.error(`'${name3}' is not a NetCycles function \u2014 Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
+          this.recover();
+        }
+        parseCycles(program, nameTok) {
+          const metricTok = this.peek();
+          if (metricTok.type !== "word" || !TIMING_METRICS.includes(metricTok.value)) {
+            this.error(`cycles needs a timing metric (${TIMING_METRICS.join("|")})`, metricTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          let factor = 1;
+          if (this.peek().type === "op" && this.peek().value === "*") {
+            this.next();
+            const f2 = this.peek();
+            const val2 = f2.type === "number" ? f2.value : f2.type === "intlike" ? parseFloat(f2.value) : NaN;
+            if (!(val2 > 0) || !isFinite(val2)) {
+              this.error("cycles factor must be a positive real number", f2);
+            } else {
+              factor = val2;
+            }
+            this.next();
+          }
+          if (program.cycles) {
+            this.error("cyclic timing modes cannot be chained \u2014 exactly one # cycles directive is allowed", nameTok);
+            return;
+          }
+          program.cycles = { metric: metricTok.value, factor };
+        }
+        parseTempo(program, nameTok) {
+          const q2 = this.peek();
+          let value2 = null;
+          if (q2.type === "number" || q2.type === "intlike") {
+            this.next();
+            value2 = typeof q2.value === "number" ? q2.value : parseFloat(q2.value);
+            if (this.peek().type === "op" && this.peek().value === "/") {
+              this.next();
+              const d = this.peek();
+              const den = d.type === "number" ? d.value : d.type === "intlike" ? parseFloat(d.value) : NaN;
+              if (!(den > 0) || !isFinite(den)) {
+                this.error("tempo fraction denominator must be a positive real number", d);
+                value2 = null;
+              } else {
+                value2 = value2 / den;
+              }
+              this.next();
+            }
+          }
+          if (value2 == null || !(value2 > 0) || !isFinite(value2)) {
+            this.error("tempo needs a positive quantity", q2);
+            this.recover();
+            return;
+          }
+          const unitTok = this.peek();
+          if (unitTok.type !== "word" || !TEMPO_UNITS.includes(unitTok.value)) {
+            this.error(`tempo needs a unit (${TEMPO_UNITS.join("|")})`, unitTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          if (program.tempo) {
+            this.error("duplicate # tempo directive", nameTok);
+            return;
+          }
+          program.tempo = { value: value2, unit: unitTok.value };
+        }
+        parseChainFn(program, name3, nameTok, sig) {
+          const args2 = [];
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "punct" && t.value === "(") {
+              this.error(`'${name3}' cannot take pattern arguments \u2014 parameters are plain positive numbers`, t);
+              let depth = 0;
+              while (!this.atEof()) {
+                const p = this.next();
+                if (p.type === "punct" && p.value === "(") depth++;
+                if (p.type === "punct" && p.value === ")") {
+                  depth--;
+                  if (depth === 0) break;
+                }
+              }
+              return;
+            }
+            if (t.type === "number" || t.type === "intlike") {
+              this.next();
+              const val2 = typeof t.value === "number" ? t.value : parseFloat(t.value);
+              args2.push({ value: val2, tok: t });
+              continue;
+            }
+            if (t.type === "word" && (t.value === "true" || t.value === "false")) {
+              this.next();
+              args2.push({ value: t.value === "true", tok: t });
+              continue;
+            }
+            if (sig.takesSequence && t.type === "punct" && (t.value === "<" || t.value === "[")) {
+              const seq2 = this.parseSequenceGroup();
+              if (seq2) args2.push({ value: seq2, tok: t });
+              continue;
+            }
+            break;
+          }
+          const trailing = this.peek();
+          if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
+            this.error(`'${name3}' got an unexpected argument '${trailing.value}'`, trailing);
+            this.recover();
+            return;
+          }
+          if (args2.length < sig.minArgs || args2.length > sig.maxArgs + (sig.takesSequence ? 1 : 0)) {
+            this.error(`'${name3}' takes ${sig.minArgs === sig.maxArgs ? sig.minArgs : `${sig.minArgs}\u2013${sig.maxArgs}`} argument(s), got ${args2.length}`, nameTok);
+            return;
+          }
+          for (const a2 of args2) {
+            if (typeof a2.value === "boolean") {
+              if (!sig.boolArg) this.error(`'${name3}' does not take a boolean argument`, a2.tok);
+            } else if (typeof a2.value === "number") {
+              if (sig.probability) {
+                if (!(a2.value >= 0 && a2.value <= 1)) this.error(`'${name3}' probability must be in [0, 1]`, a2.tok);
+              } else if (!(a2.value > 0) || !isFinite(a2.value)) {
+                this.error(`'${name3}' arguments must be positive real numbers`, a2.tok);
+              }
+            }
+          }
+          program.chain.push({ fn: name3, args: args2.map((a2) => a2.value), line: nameTok.line, col: nameTok.col });
+        }
+      };
+    }
+  });
+
+  // src/audio-net/MetaprogramScheduler.js
+  function beatSeconds(tempo) {
+    const v2 = tempo && tempo.value > 0 ? tempo.value : 120;
+    switch (tempo && tempo.unit) {
+      case "cps":
+        return 1 / v2;
+      case "cpm":
+        return 60 / v2;
+      case "bpm":
+      default:
+        return 60 / v2;
+    }
+  }
+  function timingTargetSeconds(cycles, metrics) {
+    const m2 = metrics || {};
+    const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
+    switch (cycles && cycles.metric) {
+      case "wcj":
+        return (m2.wcj || 0) / 1e3 * factor;
+      case "wcpl":
+        return (m2.wcpl || 0) * WCPL_FULL_SCALE_S * factor;
+      case "wcl":
+      default:
+        return (m2.wcl || 0) / 1e3 * factor;
+    }
+  }
+  function cycleLength({ cycles, tempo, metrics }) {
+    const beatS = beatSeconds(tempo);
+    const targetS = timingTargetSeconds(cycles, metrics);
+    const beats = Math.max(1, Math.floor(targetS / beatS) + 1);
+    return { beats, seconds: beats * beatS, beatSeconds: beatS };
+  }
+  function seededRandom(seed2) {
+    let a2 = seed2 >>> 0;
+    return function() {
+      a2 |= 0;
+      a2 = a2 + 1831565813 | 0;
+      let t = Math.imul(a2 ^ a2 >>> 15, 1 | a2);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function modValue(el, op, dflt) {
+    const m2 = (el.modifiers || []).find((x2) => x2.op === op);
+    return m2 ? m2.value : dflt;
+  }
+  function weightedEntries(elements) {
+    const out = [];
+    for (const el of elements) {
+      const repeats = Math.max(1, Math.round(modValue(el, "!", 1)));
+      const weight = modValue(el, "@", 1);
+      for (let r2 = 0; r2 < repeats; r2++) out.push({ el, weight });
+    }
+    return out;
+  }
+  function resolveEntry(entry, rng) {
+    const el = entry.el;
+    if (el.type === "choice") {
+      const pick2 = el.options[Math.floor(rng() * el.options.length) % el.options.length] || [];
+      return { resolved: { type: "run", elements: pick2 }, weight: entry.weight };
+    }
+    const q2 = (el.modifiers || []).find((m2) => m2.op === "?");
+    if (q2) {
+      const p = q2.value == null ? 0.5 : q2.value;
+      if (rng() < p) return { resolved: { type: "rest" }, weight: entry.weight };
+    }
+    return { resolved: el, weight: entry.weight };
+  }
+  function emitInto(events, resolved, start, span, cycleForNesting, stack2, rng) {
+    if (resolved.type === "participant") {
+      events.push({ token: resolved.token, start, dur: span, stack: stack2 });
+      return;
+    }
+    if (resolved.type === "rest") return;
+    if (resolved.type === "run") {
+      subdivideInto(events, resolved.elements, start, span, cycleForNesting, stack2, rng);
+      return;
+    }
+    if (resolved.type === "sequence") {
+      if (resolved.mode === "subdivide") {
+        const speed2 = Math.max(1, Math.round(modValue(resolved, "*", 1)));
+        for (let r2 = 0; r2 < speed2; r2++) {
+          for (const st2 of resolved.stacks) {
+            subdivideInto(events, st2.elements, start + span / speed2 * r2, span / speed2, cycleForNesting, stack2, rng);
+          }
+        }
+      } else {
+        for (const st2 of resolved.stacks) {
+          const entries2 = weightedEntries(st2.elements);
+          if (!entries2.length) continue;
+          const pick2 = entries2[(cycleForNesting % entries2.length + entries2.length) % entries2.length];
+          const { resolved: r2 } = resolveEntry(pick2, rng);
+          emitInto(events, r2, start, span, cycleForNesting, stack2, rng);
+        }
+      }
+    }
+  }
+  function subdivideInto(events, elements, start, span, cycle, stack2, rng) {
+    const entries2 = weightedEntries(elements);
+    const totalW = entries2.reduce((a2, e30) => a2 + e30.weight, 0);
+    if (!(totalW > 0)) return;
+    let cursor = start;
+    for (const entry of entries2) {
+      const w2 = entry.weight / totalW * span;
+      const { resolved } = resolveEntry(entry, rng);
+      emitInto(events, resolved, cursor, w2, cycle, stack2, rng);
+      cursor += w2;
+    }
+  }
+  function expandCycle(participants, cycleNumber) {
+    const events = [];
+    if (!participants || !Array.isArray(participants.stacks)) return events;
+    const seqSpeed = Math.max(1, Math.round(modValue(participants, "*", 1)));
+    participants.stacks.forEach((stack2, k2) => {
+      const effCycle = cycleNumber - (stack2.cycleOffset || 0);
+      if (effCycle < 0) return;
+      const rng = seededRandom(effCycle * 7919 + k2 * 104729 + 1 >>> 0);
+      if (participants.mode === "subdivide") {
+        for (let r2 = 0; r2 < seqSpeed; r2++) {
+          subdivideInto(events, stack2.elements, r2 / seqSpeed, 1 / seqSpeed, effCycle, k2, rng);
+        }
+      } else {
+        const entries2 = weightedEntries(stack2.elements);
+        if (!entries2.length) return;
+        for (let j2 = 0; j2 < seqSpeed; j2++) {
+          const idx = (effCycle * seqSpeed + j2) % entries2.length;
+          const { resolved } = resolveEntry(entries2[idx], rng);
+          emitInto(events, resolved, j2 / seqSpeed, 1 / seqSpeed, effCycle, k2, rng);
+        }
+      }
+    });
+    events.sort((a2, b) => a2.start - b.start || a2.stack - b.stack);
+    return events;
+  }
+  var WCPL_FULL_SCALE_S, AVBufferQueue, MetaprogramScheduler;
+  var init_MetaprogramScheduler = __esm({
+    "src/audio-net/MetaprogramScheduler.js"() {
+      WCPL_FULL_SCALE_S = 10;
+      AVBufferQueue = class {
+        constructor({ maxBuffers = 8, maxBytes = 32 * 1024 * 1024 } = {}) {
+          this.maxBuffers = maxBuffers;
+          this.maxBytes = maxBytes;
+          this._items = [];
+          this._bytes = 0;
+          this.evicted = 0;
+        }
+        get length() {
+          return this._items.length;
+        }
+        get bytes() {
+          return this._bytes;
+        }
+        enqueue(av) {
+          const entry = av || {};
+          const bytes = typeof entry.bytes === "number" && entry.bytes >= 0 ? entry.bytes : 0;
+          this._items.push(entry);
+          this._bytes += bytes;
+          while (this._items.length > this.maxBuffers || this._bytes > this.maxBytes && this._items.length > 1) {
+            const dropped = this._items.shift();
+            this._bytes -= typeof dropped.bytes === "number" ? dropped.bytes : 0;
+            this.evicted++;
+          }
+          return entry;
+        }
+        dequeue() {
+          const entry = this._items.shift() || null;
+          if (entry) this._bytes -= typeof entry.bytes === "number" ? entry.bytes : 0;
+          return entry;
+        }
+        peek() {
+          return this._items[0] || null;
+        }
+        clear() {
+          this._items = [];
+          this._bytes = 0;
+        }
+      };
+      MetaprogramScheduler = class {
+        constructor({
+          now,
+          // () → seconds (network time)
+          onEvent,
+          // (event) → void
+          lookaheadS = 0.2,
+          tickMs = 50,
+          setIntervalFn = typeof setInterval !== "undefined" ? setInterval : null,
+          clearIntervalFn = typeof clearInterval !== "undefined" ? clearInterval : null
+        }) {
+          if (typeof now !== "function" || typeof onEvent !== "function") {
+            throw new TypeError("MetaprogramScheduler needs now() and onEvent()");
+          }
+          this._now = now;
+          this._emit = onEvent;
+          this._lookaheadS = lookaheadS;
+          this._tickMs = tickMs;
+          this._setInterval = setIntervalFn;
+          this._clearInterval = clearIntervalFn;
+          this._ast = null;
+          this._pendingAst = null;
+          this._metrics = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
+          this._pendingMetrics = null;
+          this._running = false;
+          this._timer = null;
+          this._cycle = 0;
+          this._nextCycleStart = null;
+        }
+        setProgram(ast2) {
+          if (!ast2 || !ast2.participants) return false;
+          if (!this._running || this._ast == null) this._ast = ast2;
+          else this._pendingAst = ast2;
+          return true;
+        }
+        setMetrics(wc) {
+          if (!wc) return;
+          if (!this._running) this._metrics = { ...this._metrics, ...wc };
+          else this._pendingMetrics = { ...this._pendingMetrics || this._metrics, ...wc };
+        }
+        getProgram() {
+          return this._ast;
+        }
+        getCycle() {
+          return this._cycle;
+        }
+        start(epoch2 = this._now()) {
+          if (this._running) return;
+          this._running = true;
+          this._cycle = 0;
+          this._nextCycleStart = epoch2;
+          if (this._setInterval) {
+            this._timer = this._setInterval(() => this.tick(), this._tickMs);
+          }
+          this.tick();
+        }
+        stop() {
+          this._running = false;
+          if (this._timer && this._clearInterval) this._clearInterval(this._timer);
+          this._timer = null;
+        }
+        // Advance the schedule up to now + lookahead. Safe to call manually (tests)
+        // or from the interval timer.
+        tick() {
+          if (!this._running || !this._ast) return;
+          const horizon = this._now() + this._lookaheadS;
+          while (this._nextCycleStart <= horizon) {
+            if (this._pendingAst) {
+              this._ast = this._pendingAst;
+              this._pendingAst = null;
+            }
+            if (this._pendingMetrics) {
+              this._metrics = this._pendingMetrics;
+              this._pendingMetrics = null;
+            }
+            const { beats, seconds: seconds2 } = cycleLength({
+              cycles: this._ast.cycles,
+              tempo: this._ast.tempo,
+              metrics: this._metrics
+            });
+            const t0 = this._nextCycleStart;
+            this._emit({ type: "cycle-start", cycle: this._cycle, t: t0, seconds: seconds2, beats });
+            for (const ev of expandCycle(this._ast.participants, this._cycle)) {
+              const t = t0 + ev.start * seconds2;
+              const dur2 = ev.dur * seconds2;
+              this._emit({ type: "slot-open", token: ev.token, t, dur: dur2, cycle: this._cycle, stack: ev.stack });
+              this._emit({ type: "slot-close", token: ev.token, t: t + dur2, cycle: this._cycle, stack: ev.stack });
+            }
+            this._nextCycleStart = t0 + seconds2;
+            this._cycle++;
+          }
+        }
+      };
+    }
+  });
+
+  // src/audio-net/network-modulation/IncreaseLatency.js
+  var IncreaseLatency;
+  var init_IncreaseLatency = __esm({
+    "src/audio-net/network-modulation/IncreaseLatency.js"() {
+      IncreaseLatency = Object.freeze({
+        key: "wcl",
+        label: "Induce latency",
+        unit: "ms",
+        min: 0,
+        max: 5e3,
+        step: 10,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
+  // src/audio-net/network-modulation/IncreaseJitter.js
+  var IncreaseJitter;
+  var init_IncreaseJitter = __esm({
+    "src/audio-net/network-modulation/IncreaseJitter.js"() {
+      IncreaseJitter = Object.freeze({
+        key: "wcj",
+        label: "Induce jitter",
+        unit: "ms",
+        min: 0,
+        max: 1e3,
+        step: 1,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
+  // src/audio-net/network-modulation/IncreaseRTT.js
+  var IncreaseRTT;
+  var init_IncreaseRTT = __esm({
+    "src/audio-net/network-modulation/IncreaseRTT.js"() {
+      IncreaseRTT = Object.freeze({
+        key: "wcrtt",
+        label: "Induce RTT",
+        unit: "ms",
+        min: 0,
+        max: 1e4,
+        step: 10,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
+  // src/audio-net/network-modulation/IncreasePacketLoss.js
+  var IncreasePacketLoss;
+  var init_IncreasePacketLoss = __esm({
+    "src/audio-net/network-modulation/IncreasePacketLoss.js"() {
+      IncreasePacketLoss = Object.freeze({
+        key: "wcpl",
+        label: "Induce packet loss",
+        unit: "fraction",
+        min: 0,
+        max: 1,
+        step: 0.01,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
+  // src/audio-net/network-modulation/WorstCaseCalculationUtils.js
+  function worstCase(values) {
+    if (!Array.isArray(values)) return null;
+    const finite = values.filter((v2) => typeof v2 === "number" && isFinite(v2));
+    if (finite.length === 0) return null;
+    return Math.max(...finite);
+  }
+  function peerRtt(peer) {
+    if (typeof peer.rtcRtt === "number" && isFinite(peer.rtcRtt)) return peer.rtcRtt;
+    if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
+    return null;
+  }
+  function computeWorstCaseMetrics(peers) {
+    const list = Array.isArray(peers) ? peers : [];
+    const rtts = [];
+    const jitters = [];
+    const losses = [];
+    for (const peer of list) {
+      if (!peer) continue;
+      const rtt = peerRtt(peer);
+      if (rtt != null) rtts.push(rtt);
+      if (typeof peer.jitter === "number" && isFinite(peer.jitter)) jitters.push(peer.jitter);
+      if (typeof peer.packetLoss === "number" && isFinite(peer.packetLoss)) {
+        losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
+      }
+    }
+    const wcrtt = worstCase(rtts) ?? 0;
+    return {
+      wcl: wcrtt / 2,
+      wcj: worstCase(jitters) ?? 0,
+      wcrtt,
+      wcpl: worstCase(losses) ?? 0,
+      sampleCount: rtts.length
+    };
+  }
+  function mergeInducedMetrics(measured, induced) {
+    const m2 = measured || {};
+    const i = induced || {};
+    const out = { ...m2 };
+    for (const [key, mod2] of Object.entries(INDUCTIONS)) {
+      out[key] = mod2.applyTo(m2[key] || 0, i[key] || 0);
+    }
+    return out;
+  }
+  var INDUCTIONS;
+  var init_WorstCaseCalculationUtils = __esm({
+    "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
+      init_IncreaseLatency();
+      init_IncreaseJitter();
+      init_IncreaseRTT();
+      init_IncreasePacketLoss();
+      INDUCTIONS = Object.freeze({
+        wcl: IncreaseLatency,
+        wcj: IncreaseJitter,
+        wcrtt: IncreaseRTT,
+        wcpl: IncreasePacketLoss
+      });
+    }
+  });
+
+  // src/audio-net/ClockSync.js
+  function makeClockSyncOverO2(client, getLocalSeconds) {
+    const sync = new ClockSync({
+      sendCsGet: (seq2, t) => client.sendCsGet(seq2, t),
+      now: getLocalSeconds
+    });
+    client.onCsReply((seq2, clientT, serverT) => sync.handleReply(seq2, clientT, serverT));
+    return sync;
+  }
+  var DEFAULT_BURST, DEFAULT_BURST_SPACING_MS, DEFAULT_RESYNC_INTERVAL_MS, ClockSync;
+  var init_ClockSync = __esm({
+    "src/audio-net/ClockSync.js"() {
+      DEFAULT_BURST = 5;
+      DEFAULT_BURST_SPACING_MS = 100;
+      DEFAULT_RESYNC_INTERVAL_MS = 1e4;
+      ClockSync = class {
+        constructor({
+          sendCsGet,
+          // (seqno, clientTime) → void
+          now,
+          // () → local seconds
+          burst = DEFAULT_BURST,
+          burstSpacingMs = DEFAULT_BURST_SPACING_MS,
+          resyncIntervalMs = DEFAULT_RESYNC_INTERVAL_MS,
+          // Wrap the globals rather than storing bare references: in browsers
+          // setTimeout/clearTimeout are Window methods that throw "Illegal invocation"
+          // unless called with the global as their receiver, and here they'd be
+          // invoked as this._setTimeout(...) with the ClockSync instance as receiver.
+          // (node's timers don't check the receiver, so node:test never hit this.)
+          setTimeoutFn = typeof setTimeout !== "undefined" ? (fn, ms) => setTimeout(fn, ms) : null,
+          clearTimeoutFn = typeof clearTimeout !== "undefined" ? (id3) => clearTimeout(id3) : null
+        }) {
+          if (typeof sendCsGet !== "function" || typeof now !== "function") {
+            throw new TypeError("ClockSync needs sendCsGet and now functions");
+          }
+          this._send = sendCsGet;
+          this._now = now;
+          this._burst = burst;
+          this._burstSpacingMs = burstSpacingMs;
+          this._resyncIntervalMs = resyncIntervalMs;
+          this._setTimeout = setTimeoutFn;
+          this._clearTimeout = clearTimeoutFn;
+          this._seq = 0;
+          this._burstBest = null;
+          this._burstRemaining = 0;
+          this._offset = null;
+          this._drift = 0;
+          this._history = [];
+          this._rounds = 0;
+          this._lastRtt = null;
+          this._timer = null;
+          this._running = false;
+        }
+        start() {
+          if (this._running) return;
+          this._running = true;
+          this._beginBurst();
+        }
+        stop() {
+          this._running = false;
+          if (this._timer && this._clearTimeout) this._clearTimeout(this._timer);
+          this._timer = null;
+        }
+        _schedule(fn, ms) {
+          if (!this._setTimeout) return;
+          this._timer = this._setTimeout(fn, ms);
+        }
+        _beginBurst() {
+          this._burstBest = null;
+          this._burstRemaining = this._burst;
+          this._fireOne();
+        }
+        _fireOne() {
+          if (!this._running) return;
+          this._send(this._seq++, this._now());
+          this._burstRemaining--;
+          if (this._burstRemaining > 0) {
+            this._schedule(() => this._fireOne(), this._burstSpacingMs);
+          } else {
+            this._schedule(() => this._commitBurst(), this._burstSpacingMs * 2);
+          }
+        }
+        // Feed every /_cs/rply here (wire onCsReply to this).
+        handleReply(seqno, clientSentTime, serverTime) {
+          const localT = this._now();
+          const rtt = localT - clientSentTime;
+          if (!(rtt >= 0) || !isFinite(rtt)) return;
+          const offset2 = serverTime + rtt / 2 - localT;
+          if (!this._burstBest || rtt < this._burstBest.rtt) {
+            this._burstBest = { rtt, offset: offset2, localT };
+          }
+          this._lastRtt = rtt;
+        }
+        _commitBurst() {
+          if (this._burstBest) {
+            const { offset: offset2, localT } = this._burstBest;
+            this._offset = offset2;
+            this._rounds++;
+            this._history.push({ localT, offset: offset2 });
+            if (this._history.length > 8) this._history.shift();
+            if (this._history.length >= 2) {
+              const first = this._history[0];
+              const last2 = this._history[this._history.length - 1];
+              const dt2 = last2.localT - first.localT;
+              this._drift = dt2 > 1 ? (last2.offset - first.offset) / dt2 : 0;
+            }
+            this._anchorLocalT = localT;
+          }
+          if (this._running) {
+            this._schedule(() => this._beginBurst(), this._resyncIntervalMs);
+          }
+        }
+        isSynced() {
+          return this._offset != null;
+        }
+        // localTime (audio clock) → network reference time.
+        toNetworkTime(localT) {
+          if (this._offset == null) return null;
+          const dt2 = this._anchorLocalT != null ? localT - this._anchorLocalT : 0;
+          return localT + this._offset + this._drift * dt2;
+        }
+        // network reference time → localTime (audio clock).
+        toAudioTime(networkT) {
+          if (this._offset == null) return null;
+          let localT = networkT - this._offset;
+          const err = this.toNetworkTime(localT) - networkT;
+          return localT - err / (1 + this._drift);
+        }
+        stats() {
+          return { offset: this._offset, drift: this._drift, rounds: this._rounds, lastRtt: this._lastRtt };
+        }
+      };
+    }
+  });
+
+  // latency-instrument/o2lite-format.js
+  var require_o2lite_format = __commonJS({
+    "latency-instrument/o2lite-format.js"(exports, module) {
+      var encoder = new TextEncoder();
+      var decoder = new TextDecoder();
+      var O2L_FLAG_TCP2 = 1;
+      function paddedLength(byteLen) {
+        return byteLen + 1 + 3 & ~3;
+      }
+      function writeCString(view, bytes, offset2, str) {
+        const strBytes = encoder.encode(str);
+        bytes.set(strBytes, offset2);
+        const end2 = offset2 + paddedLength(strBytes.length);
+        bytes.fill(0, offset2 + strBytes.length, end2);
+        return end2;
+      }
+      function readCString(bytes, offset2) {
+        let end2 = offset2;
+        while (end2 < bytes.length && bytes[end2] !== 0) end2++;
+        const str = decoder.decode(bytes.subarray(offset2, end2));
+        return { str, next: offset2 + paddedLength(end2 - offset2) };
+      }
+      function serializeMessage2({ address, typespec = ",", args: args2 = [], timestamp = 0, flags = 0 }) {
+        if (typeof address !== "string" || !address.startsWith("/")) {
+          throw new TypeError("O2 address must start with '/'");
+        }
+        const spec = typespec.startsWith(",") ? typespec : `,${typespec}`;
+        const types2 = spec.slice(1);
+        if (types2.length !== args2.length) {
+          throw new RangeError(`typespec '${spec}' expects ${types2.length} args, got ${args2.length}`);
+        }
+        let size3 = 4 + 8 + paddedLength(encoder.encode(address).length) + paddedLength(encoder.encode(spec).length);
+        const argBytes = [];
+        for (let k2 = 0; k2 < types2.length; k2++) {
+          const t = types2[k2];
+          const a2 = args2[k2];
+          switch (t) {
+            case "i":
+            case "B":
+            case "f":
+              size3 += 4;
+              break;
+            case "d":
+            case "t":
+              size3 += 8;
+              break;
+            case "s": {
+              const b = encoder.encode(String(a2));
+              argBytes[k2] = b;
+              size3 += paddedLength(b.length);
+              break;
+            }
+            case "b": {
+              const b = a2 instanceof Uint8Array ? a2 : new Uint8Array(a2);
+              argBytes[k2] = b;
+              size3 += 4 + (b.length + 3 & ~3);
+              break;
+            }
+            default:
+              throw new TypeError(`unsupported O2lite type '${t}'`);
+          }
+        }
+        const buf = new ArrayBuffer(size3);
+        const view = new DataView(buf);
+        const bytes = new Uint8Array(buf);
+        let o = 0;
+        view.setUint32(o, flags >>> 0, false);
+        o += 4;
+        view.setFloat64(o, timestamp, false);
+        o += 8;
+        o = writeCString(view, bytes, o, address);
+        o = writeCString(view, bytes, o, spec);
+        for (let k2 = 0; k2 < types2.length; k2++) {
+          const t = types2[k2];
+          const a2 = args2[k2];
+          switch (t) {
+            case "i":
+              view.setInt32(o, a2 | 0, false);
+              o += 4;
+              break;
+            case "B":
+              view.setInt32(o, a2 ? 1 : 0, false);
+              o += 4;
+              break;
+            case "f":
+              view.setFloat32(o, a2, false);
+              o += 4;
+              break;
+            case "d":
+            case "t":
+              view.setFloat64(o, a2, false);
+              o += 8;
+              break;
+            case "s": {
+              const b = argBytes[k2];
+              bytes.set(b, o);
+              const end2 = o + paddedLength(b.length);
+              bytes.fill(0, o + b.length, end2);
+              o = end2;
+              break;
+            }
+            case "b": {
+              const b = argBytes[k2];
+              view.setUint32(o, b.length, false);
+              o += 4;
+              bytes.set(b, o);
+              const end2 = o + (b.length + 3 & ~3);
+              bytes.fill(0, o + b.length, end2);
+              o = end2;
+              break;
+            }
+          }
+        }
+        return buf;
+      }
+      function deserializeMessage2(buffer) {
+        const buf = buffer instanceof ArrayBuffer ? buffer : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+        const view = new DataView(buf);
+        const bytes = new Uint8Array(buf);
+        let o = 0;
+        const flags = view.getUint32(o, false);
+        o += 4;
+        const timestamp = view.getFloat64(o, false);
+        o += 8;
+        const addr = readCString(bytes, o);
+        o = addr.next;
+        const spec = readCString(bytes, o);
+        o = spec.next;
+        if (!spec.str.startsWith(",")) {
+          throw new TypeError("malformed O2lite message: typespec missing leading comma");
+        }
+        const types2 = spec.str.slice(1);
+        const args2 = [];
+        for (const t of types2) {
+          switch (t) {
+            case "i":
+              args2.push(view.getInt32(o, false));
+              o += 4;
+              break;
+            case "B":
+              args2.push(view.getInt32(o, false) !== 0);
+              o += 4;
+              break;
+            case "f":
+              args2.push(view.getFloat32(o, false));
+              o += 4;
+              break;
+            case "d":
+            case "t":
+              args2.push(view.getFloat64(o, false));
+              o += 8;
+              break;
+            case "s": {
+              const s2 = readCString(bytes, o);
+              args2.push(s2.str);
+              o = s2.next;
+              break;
+            }
+            case "b": {
+              const len = view.getUint32(o, false);
+              o += 4;
+              args2.push(bytes.slice(o, o + len));
+              o += len + 3 & ~3;
+              break;
+            }
+            default:
+              throw new TypeError(`unsupported O2lite type '${t}'`);
+          }
+        }
+        return { address: addr.str, typespec: spec.str, args: args2, timestamp, flags };
+      }
+      var CS_GET2 = "/_cs/get";
+      var CS_REPLY2 = "/_cs/rply";
+      module.exports = { O2L_FLAG_TCP: O2L_FLAG_TCP2, serializeMessage: serializeMessage2, deserializeMessage: deserializeMessage2, CS_GET: CS_GET2, CS_REPLY: CS_REPLY2 };
+    }
+  });
+
+  // src/audio-net/o2lite_driver.js
+  var import_o2lite_format;
+  var init_o2lite_driver = __esm({
+    "src/audio-net/o2lite_driver.js"() {
+      import_o2lite_format = __toESM(require_o2lite_format(), 1);
+    }
+  });
+
+  // public/lib/o2lite-web.js
+  function addListener(ws3, type, fn) {
+    if (typeof ws3.addEventListener === "function") ws3.addEventListener(type, fn);
+    else if (typeof ws3.on === "function") ws3.on(type, fn);
+  }
+  function removeListener(ws3, type, fn) {
+    if (typeof ws3.removeEventListener === "function") ws3.removeEventListener(type, fn);
+    else if (typeof ws3.off === "function") ws3.off(type, fn);
+  }
+  var WS_OPEN, O2LiteClient;
+  var init_o2lite_web = __esm({
+    "public/lib/o2lite-web.js"() {
+      init_o2lite_driver();
+      WS_OPEN = 1;
+      O2LiteClient = class {
+        constructor({ url: url2, WebSocketImpl } = {}) {
+          if (!url2) throw new TypeError("O2LiteClient needs a url");
+          this.url = url2;
+          this._WS = WebSocketImpl || (typeof WebSocket !== "undefined" ? WebSocket : null);
+          if (!this._WS) throw new TypeError("O2LiteClient: no WebSocket implementation available");
+          this.ws = null;
+          this._methods = [];
+          this._csReplyCbs = [];
+          this._connectPromise = null;
+        }
+        // Resolves once the socket is open. Idempotent: repeated calls share the
+        // first connect's promise.
+        connect() {
+          if (this._connectPromise) return this._connectPromise;
+          this._connectPromise = new Promise((resolve, reject) => {
+            let ws3;
+            try {
+              ws3 = new this._WS(this.url);
+            } catch (e30) {
+              reject(e30);
+              return;
+            }
+            this.ws = ws3;
+            try {
+              ws3.binaryType = "arraybuffer";
+            } catch (e30) {
+            }
+            const onOpen = () => {
+              removeListener(ws3, "error", onError);
+              resolve(this);
+            };
+            const onError = (ev) => {
+              removeListener(ws3, "error", onError);
+              reject(ev && ev.error || new Error("O2LiteClient websocket error"));
+            };
+            addListener(ws3, "open", onOpen);
+            addListener(ws3, "error", onError);
+            addListener(ws3, "message", (ev) => this._onMessage(ev));
+          });
+          return this._connectPromise;
+        }
+        _onMessage(ev) {
+          const data3 = ev && typeof ev === "object" && "data" in ev ? ev.data : ev;
+          let msg;
+          try {
+            msg = (0, import_o2lite_format.deserializeMessage)(data3);
+          } catch (e30) {
+            return;
+          }
+          if (msg.address === import_o2lite_format.CS_REPLY) {
+            const [seq2, clientTime, serverTime] = msg.args;
+            for (const cb of this._csReplyCbs) {
+              try {
+                cb(seq2, clientTime, serverTime);
+              } catch (e30) {
+              }
+            }
+            return;
+          }
+          for (const { path, handler } of this._methods) {
+            if (this._matches(path, msg.address)) {
+              try {
+                handler(msg);
+              } catch (e30) {
+              }
+            }
+          }
+        }
+        // A handler registered at `path` receives an address it equals, or any
+        // address beneath it. '/' is the catch-all.
+        _matches(path, address) {
+          if (path === "/" || path === address) return true;
+          const base = path.endsWith("/") ? path : path + "/";
+          return address.startsWith(base);
+        }
+        method(path, handler) {
+          if (typeof handler !== "function") throw new TypeError("method() needs a handler function");
+          this._methods.push({ path, handler });
+          return this;
+        }
+        onCsReply(cb) {
+          if (typeof cb !== "function") throw new TypeError("onCsReply() needs a function");
+          this._csReplyCbs.push(cb);
+          return this;
+        }
+        // Fan a message out to the room. Silently no-ops until the socket is open —
+        // Net Cycles tolerates running unsynced, so a pre-connect send is dropped
+        // rather than thrown.
+        send(address, typespec = ",", args2 = [], timestamp = 0) {
+          if (!this.ws || this.ws.readyState !== WS_OPEN) return false;
+          this.ws.send((0, import_o2lite_format.serializeMessage)({ address, typespec, args: args2, timestamp }));
+          return true;
+        }
+        // One clock-sync round-trip request. `/_cs/get` is answered by the relay
+        // itself (never fanned out), so it carries no timestamp.
+        sendCsGet(seq2, clientTime) {
+          if (!this.ws || this.ws.readyState !== WS_OPEN) return false;
+          this.ws.send((0, import_o2lite_format.serializeMessage)({ address: import_o2lite_format.CS_GET, typespec: ",it", args: [seq2, clientTime] }));
+          return true;
+        }
+        close() {
+          if (this.ws) {
+            try {
+              this.ws.close();
+            } catch (e30) {
+            }
+          }
+        }
+      };
+    }
+  });
+
+  // node_modules/lib0/map.js
+  var create, copy, setIfUndefined, map, any;
+  var init_map = __esm({
+    "node_modules/lib0/map.js"() {
+      create = () => /* @__PURE__ */ new Map();
+      copy = (m2) => {
+        const r2 = create();
+        m2.forEach((v2, k2) => {
+          r2.set(k2, v2);
+        });
+        return r2;
+      };
+      setIfUndefined = (map3, key, createT) => {
+        let set2 = map3.get(key);
+        if (set2 === void 0) {
+          map3.set(key, set2 = createT());
+        }
+        return set2;
+      };
+      map = (m2, f2) => {
+        const res = [];
+        for (const [key, value2] of m2) {
+          res.push(f2(value2, key));
+        }
+        return res;
+      };
+      any = (m2, f2) => {
+        for (const [key, value2] of m2) {
+          if (f2(value2, key)) {
+            return true;
+          }
+        }
+        return false;
+      };
+    }
+  });
+
+  // node_modules/lib0/set.js
+  var create2;
+  var init_set = __esm({
+    "node_modules/lib0/set.js"() {
+      create2 = () => /* @__PURE__ */ new Set();
+    }
+  });
+
+  // node_modules/lib0/array.js
+  var last, appendTo, from, every, some, unfold, isArray;
+  var init_array = __esm({
+    "node_modules/lib0/array.js"() {
+      last = (arr) => arr[arr.length - 1];
+      appendTo = (dest, src2) => {
+        for (let i = 0; i < src2.length; i++) {
+          dest.push(src2[i]);
+        }
+      };
+      from = Array.from;
+      every = (arr, f2) => {
+        for (let i = 0; i < arr.length; i++) {
+          if (!f2(arr[i], i, arr)) {
+            return false;
+          }
+        }
+        return true;
+      };
+      some = (arr, f2) => {
+        for (let i = 0; i < arr.length; i++) {
+          if (f2(arr[i], i, arr)) {
+            return true;
+          }
+        }
+        return false;
+      };
+      unfold = (len, f2) => {
+        const array = new Array(len);
+        for (let i = 0; i < len; i++) {
+          array[i] = f2(i, array);
+        }
+        return array;
+      };
+      isArray = Array.isArray;
+    }
+  });
+
+  // node_modules/lib0/observable.js
+  var ObservableV2;
+  var init_observable = __esm({
+    "node_modules/lib0/observable.js"() {
+      init_map();
+      init_set();
+      init_array();
+      ObservableV2 = class {
+        constructor() {
+          this._observers = create();
+        }
+        /**
+         * @template {keyof EVENTS & string} NAME
+         * @param {NAME} name
+         * @param {EVENTS[NAME]} f
+         */
+        on(name3, f2) {
+          setIfUndefined(
+            this._observers,
+            /** @type {string} */
+            name3,
+            create2
+          ).add(f2);
+          return f2;
+        }
+        /**
+         * @template {keyof EVENTS & string} NAME
+         * @param {NAME} name
+         * @param {EVENTS[NAME]} f
+         */
+        once(name3, f2) {
+          const _f = (...args2) => {
+            this.off(
+              name3,
+              /** @type {any} */
+              _f
+            );
+            f2(...args2);
+          };
+          this.on(
+            name3,
+            /** @type {any} */
+            _f
+          );
+        }
+        /**
+         * @template {keyof EVENTS & string} NAME
+         * @param {NAME} name
+         * @param {EVENTS[NAME]} f
+         */
+        off(name3, f2) {
+          const observers = this._observers.get(name3);
+          if (observers !== void 0) {
+            observers.delete(f2);
+            if (observers.size === 0) {
+              this._observers.delete(name3);
+            }
+          }
+        }
+        /**
+         * Emit a named event. All registered event listeners that listen to the
+         * specified name will receive the event.
+         *
+         * @todo This should catch exceptions
+         *
+         * @template {keyof EVENTS & string} NAME
+         * @param {NAME} name The event name.
+         * @param {Parameters<EVENTS[NAME]>} args The arguments that are applied to the event listener.
+         */
+        emit(name3, args2) {
+          return from((this._observers.get(name3) || create()).values()).forEach((f2) => f2(...args2));
+        }
+        destroy() {
+          this._observers = create();
+        }
+      };
+    }
+  });
+
+  // node_modules/lib0/math.js
+  var floor, abs, min, max, isNaN2, isNegativeZero;
+  var init_math = __esm({
+    "node_modules/lib0/math.js"() {
+      floor = Math.floor;
+      abs = Math.abs;
+      min = (a2, b) => a2 < b ? a2 : b;
+      max = (a2, b) => a2 > b ? a2 : b;
+      isNaN2 = Number.isNaN;
+      isNegativeZero = (n2) => n2 !== 0 ? n2 < 0 : 1 / n2 < 0;
+    }
+  });
+
+  // node_modules/lib0/binary.js
+  var BIT1, BIT2, BIT3, BIT4, BIT6, BIT7, BIT8, BIT18, BIT19, BIT20, BIT21, BIT22, BIT23, BIT24, BIT25, BIT26, BIT27, BIT28, BIT29, BIT30, BIT31, BIT32, BITS5, BITS6, BITS7, BITS17, BITS18, BITS19, BITS20, BITS21, BITS22, BITS23, BITS24, BITS25, BITS26, BITS27, BITS28, BITS29, BITS30, BITS31;
+  var init_binary = __esm({
+    "node_modules/lib0/binary.js"() {
+      BIT1 = 1;
+      BIT2 = 2;
+      BIT3 = 4;
+      BIT4 = 8;
+      BIT6 = 32;
+      BIT7 = 64;
+      BIT8 = 128;
+      BIT18 = 1 << 17;
+      BIT19 = 1 << 18;
+      BIT20 = 1 << 19;
+      BIT21 = 1 << 20;
+      BIT22 = 1 << 21;
+      BIT23 = 1 << 22;
+      BIT24 = 1 << 23;
+      BIT25 = 1 << 24;
+      BIT26 = 1 << 25;
+      BIT27 = 1 << 26;
+      BIT28 = 1 << 27;
+      BIT29 = 1 << 28;
+      BIT30 = 1 << 29;
+      BIT31 = 1 << 30;
+      BIT32 = 1 << 31;
+      BITS5 = 31;
+      BITS6 = 63;
+      BITS7 = 127;
+      BITS17 = BIT18 - 1;
+      BITS18 = BIT19 - 1;
+      BITS19 = BIT20 - 1;
+      BITS20 = BIT21 - 1;
+      BITS21 = BIT22 - 1;
+      BITS22 = BIT23 - 1;
+      BITS23 = BIT24 - 1;
+      BITS24 = BIT25 - 1;
+      BITS25 = BIT26 - 1;
+      BITS26 = BIT27 - 1;
+      BITS27 = BIT28 - 1;
+      BITS28 = BIT29 - 1;
+      BITS29 = BIT30 - 1;
+      BITS30 = BIT31 - 1;
+      BITS31 = 2147483647;
+    }
+  });
+
+  // node_modules/lib0/number.js
+  var MAX_SAFE_INTEGER, MIN_SAFE_INTEGER, LOWEST_INT32, isInteger, isNaN3, parseInt2;
+  var init_number = __esm({
+    "node_modules/lib0/number.js"() {
+      init_math();
+      MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+      MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER;
+      LOWEST_INT32 = 1 << 31;
+      isInteger = Number.isInteger || ((num2) => typeof num2 === "number" && isFinite(num2) && floor(num2) === num2);
+      isNaN3 = Number.isNaN;
+      parseInt2 = Number.parseInt;
+    }
+  });
+
+  // node_modules/lib0/string.js
+  var fromCharCode, fromCodePoint, MAX_UTF16_CHARACTER, toLowerCase, trimLeftRegex, trimLeft, fromCamelCaseRegex, fromCamelCase, _encodeUtf8Polyfill, utf8TextEncoder, _encodeUtf8Native, encodeUtf8, utf8TextDecoder, repeat;
+  var init_string = __esm({
+    "node_modules/lib0/string.js"() {
+      init_array();
+      fromCharCode = String.fromCharCode;
+      fromCodePoint = String.fromCodePoint;
+      MAX_UTF16_CHARACTER = fromCharCode(65535);
+      toLowerCase = (s2) => s2.toLowerCase();
+      trimLeftRegex = /^\s*/g;
+      trimLeft = (s2) => s2.replace(trimLeftRegex, "");
+      fromCamelCaseRegex = /([A-Z])/g;
+      fromCamelCase = (s2, separator) => trimLeft(s2.replace(fromCamelCaseRegex, (match2) => `${separator}${toLowerCase(match2)}`));
+      _encodeUtf8Polyfill = (str) => {
+        const encodedString = unescape(encodeURIComponent(str));
+        const len = encodedString.length;
+        const buf = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          buf[i] = /** @type {number} */
+          encodedString.codePointAt(i);
+        }
+        return buf;
+      };
+      utf8TextEncoder = /** @type {TextEncoder} */
+      typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+      _encodeUtf8Native = (str) => utf8TextEncoder.encode(str);
+      encodeUtf8 = utf8TextEncoder ? _encodeUtf8Native : _encodeUtf8Polyfill;
+      utf8TextDecoder = typeof TextDecoder === "undefined" ? null : new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+      if (utf8TextDecoder && utf8TextDecoder.decode(new Uint8Array()).length === 1) {
+        utf8TextDecoder = null;
+      }
+      repeat = (source2, n2) => unfold(n2, () => source2).join("");
+    }
+  });
+
+  // node_modules/lib0/encoding.js
+  var Encoder, createEncoder, length, toUint8Array, verifyLen, write, writeUint8, writeVarUint, writeVarInt, _strBuffer, _maxStrBSize, _writeVarStringNative, _writeVarStringPolyfill, writeVarString, writeUint8Array, writeVarUint8Array, writeOnDataView, writeFloat32, writeFloat64, writeBigInt64, floatTestBed, isFloat32, writeAny, RleEncoder, flushUintOptRleEncoder, UintOptRleEncoder, flushIntDiffOptRleEncoder, IntDiffOptRleEncoder, StringEncoder;
+  var init_encoding = __esm({
+    "node_modules/lib0/encoding.js"() {
+      init_math();
+      init_number();
+      init_binary();
+      init_string();
+      init_array();
+      Encoder = class {
+        constructor() {
+          this.cpos = 0;
+          this.cbuf = new Uint8Array(100);
+          this.bufs = [];
+        }
+      };
+      createEncoder = () => new Encoder();
+      length = (encoder) => {
+        let len = encoder.cpos;
+        for (let i = 0; i < encoder.bufs.length; i++) {
+          len += encoder.bufs[i].length;
+        }
+        return len;
+      };
+      toUint8Array = (encoder) => {
+        const uint8arr = new Uint8Array(length(encoder));
+        let curPos = 0;
+        for (let i = 0; i < encoder.bufs.length; i++) {
+          const d = encoder.bufs[i];
+          uint8arr.set(d, curPos);
+          curPos += d.length;
+        }
+        uint8arr.set(new Uint8Array(encoder.cbuf.buffer, 0, encoder.cpos), curPos);
+        return uint8arr;
+      };
+      verifyLen = (encoder, len) => {
+        const bufferLen = encoder.cbuf.length;
+        if (bufferLen - encoder.cpos < len) {
+          encoder.bufs.push(new Uint8Array(encoder.cbuf.buffer, 0, encoder.cpos));
+          encoder.cbuf = new Uint8Array(max(bufferLen, len) * 2);
+          encoder.cpos = 0;
+        }
+      };
+      write = (encoder, num2) => {
+        const bufferLen = encoder.cbuf.length;
+        if (encoder.cpos === bufferLen) {
+          encoder.bufs.push(encoder.cbuf);
+          encoder.cbuf = new Uint8Array(bufferLen * 2);
+          encoder.cpos = 0;
+        }
+        encoder.cbuf[encoder.cpos++] = num2;
+      };
+      writeUint8 = write;
+      writeVarUint = (encoder, num2) => {
+        while (num2 > BITS7) {
+          write(encoder, BIT8 | BITS7 & num2);
+          num2 = floor(num2 / 128);
+        }
+        write(encoder, BITS7 & num2);
+      };
+      writeVarInt = (encoder, num2) => {
+        const isNegative = isNegativeZero(num2);
+        if (isNegative) {
+          num2 = -num2;
+        }
+        write(encoder, (num2 > BITS6 ? BIT8 : 0) | (isNegative ? BIT7 : 0) | BITS6 & num2);
+        num2 = floor(num2 / 64);
+        while (num2 > 0) {
+          write(encoder, (num2 > BITS7 ? BIT8 : 0) | BITS7 & num2);
+          num2 = floor(num2 / 128);
+        }
+      };
+      _strBuffer = new Uint8Array(3e4);
+      _maxStrBSize = _strBuffer.length / 3;
+      _writeVarStringNative = (encoder, str) => {
+        if (str.length < _maxStrBSize) {
+          const written = utf8TextEncoder.encodeInto(str, _strBuffer).written || 0;
+          writeVarUint(encoder, written);
+          for (let i = 0; i < written; i++) {
+            write(encoder, _strBuffer[i]);
+          }
+        } else {
+          writeVarUint8Array(encoder, encodeUtf8(str));
+        }
+      };
+      _writeVarStringPolyfill = (encoder, str) => {
+        const encodedString = unescape(encodeURIComponent(str));
+        const len = encodedString.length;
+        writeVarUint(encoder, len);
+        for (let i = 0; i < len; i++) {
+          write(
+            encoder,
+            /** @type {number} */
+            encodedString.codePointAt(i)
+          );
+        }
+      };
+      writeVarString = utf8TextEncoder && /** @type {any} */
+      utf8TextEncoder.encodeInto ? _writeVarStringNative : _writeVarStringPolyfill;
+      writeUint8Array = (encoder, uint8Array) => {
+        const bufferLen = encoder.cbuf.length;
+        const cpos = encoder.cpos;
+        const leftCopyLen = min(bufferLen - cpos, uint8Array.length);
+        const rightCopyLen = uint8Array.length - leftCopyLen;
+        encoder.cbuf.set(uint8Array.subarray(0, leftCopyLen), cpos);
+        encoder.cpos += leftCopyLen;
+        if (rightCopyLen > 0) {
+          encoder.bufs.push(encoder.cbuf);
+          encoder.cbuf = new Uint8Array(max(bufferLen * 2, rightCopyLen));
+          encoder.cbuf.set(uint8Array.subarray(leftCopyLen));
+          encoder.cpos = rightCopyLen;
+        }
+      };
+      writeVarUint8Array = (encoder, uint8Array) => {
+        writeVarUint(encoder, uint8Array.byteLength);
+        writeUint8Array(encoder, uint8Array);
+      };
+      writeOnDataView = (encoder, len) => {
+        verifyLen(encoder, len);
+        const dview = new DataView(encoder.cbuf.buffer, encoder.cpos, len);
+        encoder.cpos += len;
+        return dview;
+      };
+      writeFloat32 = (encoder, num2) => writeOnDataView(encoder, 4).setFloat32(0, num2, false);
+      writeFloat64 = (encoder, num2) => writeOnDataView(encoder, 8).setFloat64(0, num2, false);
+      writeBigInt64 = (encoder, num2) => (
+        /** @type {any} */
+        writeOnDataView(encoder, 8).setBigInt64(0, num2, false)
+      );
+      floatTestBed = new DataView(new ArrayBuffer(4));
+      isFloat32 = (num2) => {
+        floatTestBed.setFloat32(0, num2);
+        return floatTestBed.getFloat32(0) === num2;
+      };
+      writeAny = (encoder, data3) => {
+        switch (typeof data3) {
+          case "string":
+            write(encoder, 119);
+            writeVarString(encoder, data3);
+            break;
+          case "number":
+            if (isInteger(data3) && abs(data3) <= BITS31) {
+              write(encoder, 125);
+              writeVarInt(encoder, data3);
+            } else if (isFloat32(data3)) {
+              write(encoder, 124);
+              writeFloat32(encoder, data3);
+            } else {
+              write(encoder, 123);
+              writeFloat64(encoder, data3);
+            }
+            break;
+          case "bigint":
+            write(encoder, 122);
+            writeBigInt64(encoder, data3);
+            break;
+          case "object":
+            if (data3 === null) {
+              write(encoder, 126);
+            } else if (isArray(data3)) {
+              write(encoder, 117);
+              writeVarUint(encoder, data3.length);
+              for (let i = 0; i < data3.length; i++) {
+                writeAny(encoder, data3[i]);
+              }
+            } else if (data3 instanceof Uint8Array) {
+              write(encoder, 116);
+              writeVarUint8Array(encoder, data3);
+            } else {
+              write(encoder, 118);
+              const keys3 = Object.keys(data3);
+              writeVarUint(encoder, keys3.length);
+              for (let i = 0; i < keys3.length; i++) {
+                const key = keys3[i];
+                writeVarString(encoder, key);
+                writeAny(encoder, data3[key]);
+              }
+            }
+            break;
+          case "boolean":
+            write(encoder, data3 ? 120 : 121);
+            break;
+          default:
+            write(encoder, 127);
+        }
+      };
+      RleEncoder = class extends Encoder {
+        /**
+         * @param {function(Encoder, T):void} writer
+         */
+        constructor(writer) {
+          super();
+          this.w = writer;
+          this.s = null;
+          this.count = 0;
+        }
+        /**
+         * @param {T} v
+         */
+        write(v2) {
+          if (this.s === v2) {
+            this.count++;
+          } else {
+            if (this.count > 0) {
+              writeVarUint(this, this.count - 1);
+            }
+            this.count = 1;
+            this.w(this, v2);
+            this.s = v2;
+          }
+        }
+      };
+      flushUintOptRleEncoder = (encoder) => {
+        if (encoder.count > 0) {
+          writeVarInt(encoder.encoder, encoder.count === 1 ? encoder.s : -encoder.s);
+          if (encoder.count > 1) {
+            writeVarUint(encoder.encoder, encoder.count - 2);
+          }
+        }
+      };
+      UintOptRleEncoder = class {
+        constructor() {
+          this.encoder = new Encoder();
+          this.s = 0;
+          this.count = 0;
+        }
+        /**
+         * @param {number} v
+         */
+        write(v2) {
+          if (this.s === v2) {
+            this.count++;
+          } else {
+            flushUintOptRleEncoder(this);
+            this.count = 1;
+            this.s = v2;
+          }
+        }
+        /**
+         * Flush the encoded state and transform this to a Uint8Array.
+         *
+         * Note that this should only be called once.
+         */
+        toUint8Array() {
+          flushUintOptRleEncoder(this);
+          return toUint8Array(this.encoder);
+        }
+      };
+      flushIntDiffOptRleEncoder = (encoder) => {
+        if (encoder.count > 0) {
+          const encodedDiff = encoder.diff * 2 + (encoder.count === 1 ? 0 : 1);
+          writeVarInt(encoder.encoder, encodedDiff);
+          if (encoder.count > 1) {
+            writeVarUint(encoder.encoder, encoder.count - 2);
+          }
+        }
+      };
+      IntDiffOptRleEncoder = class {
+        constructor() {
+          this.encoder = new Encoder();
+          this.s = 0;
+          this.count = 0;
+          this.diff = 0;
+        }
+        /**
+         * @param {number} v
+         */
+        write(v2) {
+          if (this.diff === v2 - this.s) {
+            this.s = v2;
+            this.count++;
+          } else {
+            flushIntDiffOptRleEncoder(this);
+            this.count = 1;
+            this.diff = v2 - this.s;
+            this.s = v2;
+          }
+        }
+        /**
+         * Flush the encoded state and transform this to a Uint8Array.
+         *
+         * Note that this should only be called once.
+         */
+        toUint8Array() {
+          flushIntDiffOptRleEncoder(this);
+          return toUint8Array(this.encoder);
+        }
+      };
+      StringEncoder = class {
+        constructor() {
+          this.sarr = [];
+          this.s = "";
+          this.lensE = new UintOptRleEncoder();
+        }
+        /**
+         * @param {string} string
+         */
+        write(string) {
+          this.s += string;
+          if (this.s.length > 19) {
+            this.sarr.push(this.s);
+            this.s = "";
+          }
+          this.lensE.write(string.length);
+        }
+        toUint8Array() {
+          const encoder = new Encoder();
+          this.sarr.push(this.s);
+          this.s = "";
+          writeVarString(encoder, this.sarr.join(""));
+          writeUint8Array(encoder, this.lensE.toUint8Array());
+          return toUint8Array(encoder);
+        }
+      };
+    }
+  });
+
+  // node_modules/lib0/error.js
+  var create3, methodUnimplemented, unexpectedCase;
+  var init_error = __esm({
+    "node_modules/lib0/error.js"() {
+      create3 = (s2) => new Error(s2);
+      methodUnimplemented = () => {
+        throw create3("Method unimplemented");
+      };
+      unexpectedCase = () => {
+        throw create3("Unexpected case");
+      };
+    }
+  });
+
+  // node_modules/lib0/decoding.js
+  var errorUnexpectedEndOfArray, errorIntegerOutOfRange, Decoder, createDecoder, hasContent, readUint8Array, readVarUint8Array, readUint8, readVarUint, readVarInt, _readVarStringPolyfill, _readVarStringNative, readVarString, readFromDataView, readFloat32, readFloat64, readBigInt64, readAnyLookupTable, readAny, RleDecoder, UintOptRleDecoder, IntDiffOptRleDecoder, StringDecoder;
+  var init_decoding = __esm({
+    "node_modules/lib0/decoding.js"() {
+      init_binary();
+      init_math();
+      init_number();
+      init_string();
+      init_error();
+      errorUnexpectedEndOfArray = create3("Unexpected end of array");
+      errorIntegerOutOfRange = create3("Integer out of Range");
+      Decoder = class {
+        /**
+         * @param {Uint8Array<Buf>} uint8Array Binary data to decode
+         */
+        constructor(uint8Array) {
+          this.arr = uint8Array;
+          this.pos = 0;
+        }
+      };
+      createDecoder = (uint8Array) => new Decoder(uint8Array);
+      hasContent = (decoder) => decoder.pos !== decoder.arr.length;
+      readUint8Array = (decoder, len) => {
+        const view = new Uint8Array(decoder.arr.buffer, decoder.pos + decoder.arr.byteOffset, len);
+        decoder.pos += len;
+        return view;
+      };
+      readVarUint8Array = (decoder) => readUint8Array(decoder, readVarUint(decoder));
+      readUint8 = (decoder) => decoder.arr[decoder.pos++];
+      readVarUint = (decoder) => {
+        let num2 = 0;
+        let mult = 1;
+        const len = decoder.arr.length;
+        while (decoder.pos < len) {
+          const r2 = decoder.arr[decoder.pos++];
+          num2 = num2 + (r2 & BITS7) * mult;
+          mult *= 128;
+          if (r2 < BIT8) {
+            return num2;
+          }
+          if (num2 > MAX_SAFE_INTEGER) {
+            throw errorIntegerOutOfRange;
+          }
+        }
+        throw errorUnexpectedEndOfArray;
+      };
+      readVarInt = (decoder) => {
+        let r2 = decoder.arr[decoder.pos++];
+        let num2 = r2 & BITS6;
+        let mult = 64;
+        const sign = (r2 & BIT7) > 0 ? -1 : 1;
+        if ((r2 & BIT8) === 0) {
+          return sign * num2;
+        }
+        const len = decoder.arr.length;
+        while (decoder.pos < len) {
+          r2 = decoder.arr[decoder.pos++];
+          num2 = num2 + (r2 & BITS7) * mult;
+          mult *= 128;
+          if (r2 < BIT8) {
+            return sign * num2;
+          }
+          if (num2 > MAX_SAFE_INTEGER) {
+            throw errorIntegerOutOfRange;
+          }
+        }
+        throw errorUnexpectedEndOfArray;
+      };
+      _readVarStringPolyfill = (decoder) => {
+        let remainingLen = readVarUint(decoder);
+        if (remainingLen === 0) {
+          return "";
+        } else {
+          let encodedString = String.fromCodePoint(readUint8(decoder));
+          if (--remainingLen < 100) {
+            while (remainingLen--) {
+              encodedString += String.fromCodePoint(readUint8(decoder));
+            }
+          } else {
+            while (remainingLen > 0) {
+              const nextLen = remainingLen < 1e4 ? remainingLen : 1e4;
+              const bytes = decoder.arr.subarray(decoder.pos, decoder.pos + nextLen);
+              decoder.pos += nextLen;
+              encodedString += String.fromCodePoint.apply(
+                null,
+                /** @type {any} */
+                bytes
+              );
+              remainingLen -= nextLen;
+            }
+          }
+          return decodeURIComponent(escape(encodedString));
+        }
+      };
+      _readVarStringNative = (decoder) => (
+        /** @type any */
+        utf8TextDecoder.decode(readVarUint8Array(decoder))
+      );
+      readVarString = utf8TextDecoder ? _readVarStringNative : _readVarStringPolyfill;
+      readFromDataView = (decoder, len) => {
+        const dv = new DataView(decoder.arr.buffer, decoder.arr.byteOffset + decoder.pos, len);
+        decoder.pos += len;
+        return dv;
+      };
+      readFloat32 = (decoder) => readFromDataView(decoder, 4).getFloat32(0, false);
+      readFloat64 = (decoder) => readFromDataView(decoder, 8).getFloat64(0, false);
+      readBigInt64 = (decoder) => (
+        /** @type {any} */
+        readFromDataView(decoder, 8).getBigInt64(0, false)
+      );
+      readAnyLookupTable = [
+        (decoder) => void 0,
+        // CASE 127: undefined
+        (decoder) => null,
+        // CASE 126: null
+        readVarInt,
+        // CASE 125: integer
+        readFloat32,
+        // CASE 124: float32
+        readFloat64,
+        // CASE 123: float64
+        readBigInt64,
+        // CASE 122: bigint
+        (decoder) => false,
+        // CASE 121: boolean (false)
+        (decoder) => true,
+        // CASE 120: boolean (true)
+        readVarString,
+        // CASE 119: string
+        (decoder) => {
+          const len = readVarUint(decoder);
+          const obj = {};
+          for (let i = 0; i < len; i++) {
+            const key = readVarString(decoder);
+            obj[key] = readAny(decoder);
+          }
+          return obj;
+        },
+        (decoder) => {
+          const len = readVarUint(decoder);
+          const arr = [];
+          for (let i = 0; i < len; i++) {
+            arr.push(readAny(decoder));
+          }
+          return arr;
+        },
+        readVarUint8Array
+        // CASE 116: Uint8Array
+      ];
+      readAny = (decoder) => readAnyLookupTable[127 - readUint8(decoder)](decoder);
+      RleDecoder = class extends Decoder {
+        /**
+         * @param {Uint8Array} uint8Array
+         * @param {function(Decoder):T} reader
+         */
+        constructor(uint8Array, reader) {
+          super(uint8Array);
+          this.reader = reader;
+          this.s = null;
+          this.count = 0;
+        }
+        read() {
+          if (this.count === 0) {
+            this.s = this.reader(this);
+            if (hasContent(this)) {
+              this.count = readVarUint(this) + 1;
+            } else {
+              this.count = -1;
+            }
+          }
+          this.count--;
+          return (
+            /** @type {T} */
+            this.s
+          );
+        }
+      };
+      UintOptRleDecoder = class extends Decoder {
+        /**
+         * @param {Uint8Array} uint8Array
+         */
+        constructor(uint8Array) {
+          super(uint8Array);
+          this.s = 0;
+          this.count = 0;
+        }
+        read() {
+          if (this.count === 0) {
+            this.s = readVarInt(this);
+            const isNegative = isNegativeZero(this.s);
+            this.count = 1;
+            if (isNegative) {
+              this.s = -this.s;
+              this.count = readVarUint(this) + 2;
+            }
+          }
+          this.count--;
+          return (
+            /** @type {number} */
+            this.s
+          );
+        }
+      };
+      IntDiffOptRleDecoder = class extends Decoder {
+        /**
+         * @param {Uint8Array} uint8Array
+         */
+        constructor(uint8Array) {
+          super(uint8Array);
+          this.s = 0;
+          this.count = 0;
+          this.diff = 0;
+        }
+        /**
+         * @return {number}
+         */
+        read() {
+          if (this.count === 0) {
+            const diff = readVarInt(this);
+            const hasCount = diff & 1;
+            this.diff = floor(diff / 2);
+            this.count = 1;
+            if (hasCount) {
+              this.count = readVarUint(this) + 2;
+            }
+          }
+          this.s += this.diff;
+          this.count--;
+          return this.s;
+        }
+      };
+      StringDecoder = class {
+        /**
+         * @param {Uint8Array} uint8Array
+         */
+        constructor(uint8Array) {
+          this.decoder = new UintOptRleDecoder(uint8Array);
+          this.str = readVarString(this.decoder);
+          this.spos = 0;
+        }
+        /**
+         * @return {string}
+         */
+        read() {
+          const end2 = this.spos + this.decoder.read();
+          const res = this.str.slice(this.spos, end2);
+          this.spos = end2;
+          return res;
+        }
+      };
+    }
+  });
+
+  // node_modules/lib0/webcrypto.js
+  var subtle, getRandomValues;
+  var init_webcrypto = __esm({
+    "node_modules/lib0/webcrypto.js"() {
+      subtle = crypto.subtle;
+      getRandomValues = crypto.getRandomValues.bind(crypto);
+    }
+  });
+
+  // node_modules/lib0/random.js
+  var uint32, uuidv4Template, uuidv4;
+  var init_random = __esm({
+    "node_modules/lib0/random.js"() {
+      init_webcrypto();
+      uint32 = () => getRandomValues(new Uint32Array(1))[0];
+      uuidv4Template = "10000000-1000-4000-8000" + -1e11;
+      uuidv4 = () => uuidv4Template.replace(
+        /[018]/g,
+        /** @param {number} c */
+        (c2) => (c2 ^ uint32() & 15 >> c2 / 4).toString(16)
+      );
+    }
+  });
+
+  // node_modules/lib0/time.js
+  var getUnixTime;
+  var init_time = __esm({
+    "node_modules/lib0/time.js"() {
+      getUnixTime = Date.now;
+    }
+  });
+
+  // node_modules/lib0/promise.js
+  var create4, all;
+  var init_promise = __esm({
+    "node_modules/lib0/promise.js"() {
+      create4 = (f2) => (
+        /** @type {Promise<T>} */
+        new Promise(f2)
+      );
+      all = Promise.all.bind(Promise);
+    }
+  });
+
+  // node_modules/lib0/conditions.js
+  var undefinedToNull;
+  var init_conditions = __esm({
+    "node_modules/lib0/conditions.js"() {
+      undefinedToNull = (v2) => v2 === void 0 ? null : v2;
+    }
+  });
+
+  // node_modules/lib0/storage.js
+  var VarStoragePolyfill, _localStorage, usePolyfill, varStorage;
+  var init_storage = __esm({
+    "node_modules/lib0/storage.js"() {
+      VarStoragePolyfill = class {
+        constructor() {
+          this.map = /* @__PURE__ */ new Map();
+        }
+        /**
+         * @param {string} key
+         * @param {any} newValue
+         */
+        setItem(key, newValue) {
+          this.map.set(key, newValue);
+        }
+        /**
+         * @param {string} key
+         */
+        getItem(key) {
+          return this.map.get(key);
+        }
+      };
+      _localStorage = new VarStoragePolyfill();
+      usePolyfill = true;
+      try {
+        if (typeof localStorage !== "undefined" && localStorage) {
+          _localStorage = localStorage;
+          usePolyfill = false;
+        }
+      } catch (e30) {
+      }
+      varStorage = _localStorage;
+    }
+  });
+
+  // node_modules/lib0/trait/equality.js
+  var EqualityTraitSymbol, equals;
+  var init_equality = __esm({
+    "node_modules/lib0/trait/equality.js"() {
+      EqualityTraitSymbol = Symbol("Equality");
+      equals = (a2, b) => a2 === b || !!a2?.[EqualityTraitSymbol]?.(b) || false;
+    }
+  });
+
+  // node_modules/lib0/object.js
+  var isObject, assign, keys, forEach, size, isEmpty, every2, hasProperty, equalFlat, freeze, deepFreeze;
+  var init_object = __esm({
+    "node_modules/lib0/object.js"() {
+      init_equality();
+      isObject = (o) => typeof o === "object";
+      assign = Object.assign;
+      keys = Object.keys;
+      forEach = (obj, f2) => {
+        for (const key in obj) {
+          f2(obj[key], key);
+        }
+      };
+      size = (obj) => keys(obj).length;
+      isEmpty = (obj) => {
+        for (const _k in obj) {
+          return false;
+        }
+        return true;
+      };
+      every2 = (obj, f2) => {
+        for (const key in obj) {
+          if (!f2(obj[key], key)) {
+            return false;
+          }
+        }
+        return true;
+      };
+      hasProperty = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+      equalFlat = (a2, b) => a2 === b || size(a2) === size(b) && every2(a2, (val2, key) => (val2 !== void 0 || hasProperty(b, key)) && equals(b[key], val2));
+      freeze = Object.freeze;
+      deepFreeze = (o) => {
+        for (const key in o) {
+          const c2 = o[key];
+          if (typeof c2 === "object" || typeof c2 === "function") {
+            deepFreeze(o[key]);
+          }
+        }
+        return freeze(o);
+      };
+    }
+  });
+
+  // node_modules/lib0/function.js
+  var callAll, id, equalityDeep, isOneOf;
+  var init_function = __esm({
+    "node_modules/lib0/function.js"() {
+      init_object();
+      init_equality();
+      callAll = (fs, args2, i = 0) => {
+        try {
+          for (; i < fs.length; i++) {
+            fs[i](...args2);
+          }
+        } finally {
+          if (i < fs.length) {
+            callAll(fs, args2, i + 1);
+          }
+        }
+      };
+      id = (a2) => a2;
+      equalityDeep = (a2, b) => {
+        if (a2 === b) {
+          return true;
+        }
+        if (a2 == null || b == null || a2.constructor !== b.constructor && (a2.constructor || Object) !== (b.constructor || Object)) {
+          return false;
+        }
+        if (a2[EqualityTraitSymbol] != null) {
+          return a2[EqualityTraitSymbol](b);
+        }
+        switch (a2.constructor) {
+          case ArrayBuffer:
+            a2 = new Uint8Array(a2);
+            b = new Uint8Array(b);
+          // eslint-disable-next-line no-fallthrough
+          case Uint8Array: {
+            if (a2.byteLength !== b.byteLength) {
+              return false;
+            }
+            for (let i = 0; i < a2.length; i++) {
+              if (a2[i] !== b[i]) {
+                return false;
+              }
+            }
+            break;
+          }
+          case Set: {
+            if (a2.size !== b.size) {
+              return false;
+            }
+            for (const value2 of a2) {
+              if (!b.has(value2)) {
+                return false;
+              }
+            }
+            break;
+          }
+          case Map: {
+            if (a2.size !== b.size) {
+              return false;
+            }
+            for (const key of a2.keys()) {
+              if (!b.has(key) || !equalityDeep(a2.get(key), b.get(key))) {
+                return false;
+              }
+            }
+            break;
+          }
+          case void 0:
+          case Object:
+            if (size(a2) !== size(b)) {
+              return false;
+            }
+            for (const key in a2) {
+              if (!hasProperty(a2, key) || !equalityDeep(a2[key], b[key])) {
+                return false;
+              }
+            }
+            break;
+          case Array:
+            if (a2.length !== b.length) {
+              return false;
+            }
+            for (let i = 0; i < a2.length; i++) {
+              if (!equalityDeep(a2[i], b[i])) {
+                return false;
+              }
+            }
+            break;
+          default:
+            return false;
+        }
+        return true;
+      };
+      isOneOf = (value2, options) => options.includes(value2);
+    }
+  });
+
+  // node_modules/lib0/environment.js
+  var isNode, isMac, params, args, computeParams, hasParam, getVariable, hasConf, production, forceColor, supportsColor;
+  var init_environment = __esm({
+    "node_modules/lib0/environment.js"() {
+      init_map();
+      init_string();
+      init_conditions();
+      init_storage();
+      init_function();
+      isNode = typeof process !== "undefined" && process.release && /node|io\.js/.test(process.release.name) && Object.prototype.toString.call(typeof process !== "undefined" ? process : 0) === "[object process]";
+      isMac = typeof navigator !== "undefined" ? /Mac/.test(navigator.platform) : false;
+      args = [];
+      computeParams = () => {
+        if (params === void 0) {
+          if (isNode) {
+            params = create();
+            const pargs = process.argv;
+            let currParamName = null;
+            for (let i = 0; i < pargs.length; i++) {
+              const parg = pargs[i];
+              if (parg[0] === "-") {
+                if (currParamName !== null) {
+                  params.set(currParamName, "");
+                }
+                currParamName = parg;
+              } else {
+                if (currParamName !== null) {
+                  params.set(currParamName, parg);
+                  currParamName = null;
+                } else {
+                  args.push(parg);
+                }
+              }
+            }
+            if (currParamName !== null) {
+              params.set(currParamName, "");
+            }
+          } else if (typeof location === "object") {
+            params = create();
+            (location.search || "?").slice(1).split("&").forEach((kv) => {
+              if (kv.length !== 0) {
+                const [key, value2] = kv.split("=");
+                params.set(`--${fromCamelCase(key, "-")}`, value2);
+                params.set(`-${fromCamelCase(key, "-")}`, value2);
+              }
+            });
+          } else {
+            params = create();
+          }
+        }
+        return params;
+      };
+      hasParam = (name3) => computeParams().has(name3);
+      getVariable = (name3) => isNode ? undefinedToNull(process.env[name3.toUpperCase().replaceAll("-", "_")]) : undefinedToNull(varStorage.getItem(name3));
+      hasConf = (name3) => hasParam("--" + name3) || getVariable(name3) !== null;
+      production = hasConf("production");
+      forceColor = isNode && isOneOf(process.env.FORCE_COLOR, ["true", "1", "2"]);
+      supportsColor = forceColor || !hasParam("--no-colors") && // @todo deprecate --no-colors
+      !hasConf("no-color") && (!isNode || process.stdout.isTTY) && (!isNode || hasParam("--color") || getVariable("COLORTERM") !== null || (getVariable("TERM") || "").includes("color"));
+    }
+  });
+
+  // node_modules/lib0/buffer.js
+  var createUint8ArrayFromLen, copyUint8Array;
+  var init_buffer = __esm({
+    "node_modules/lib0/buffer.js"() {
+      createUint8ArrayFromLen = (len) => new Uint8Array(len);
+      copyUint8Array = (uint8Array) => {
+        const newBuf = createUint8ArrayFromLen(uint8Array.byteLength);
+        newBuf.set(uint8Array);
+        return newBuf;
+      };
+    }
+  });
+
+  // node_modules/lib0/pair.js
+  var Pair, create5;
+  var init_pair = __esm({
+    "node_modules/lib0/pair.js"() {
+      Pair = class {
+        /**
+         * @param {L} left
+         * @param {R} right
+         */
+        constructor(left2, right2) {
+          this.left = left2;
+          this.right = right2;
+        }
+      };
+      create5 = (left2, right2) => new Pair(left2, right2);
+    }
+  });
+
+  // node_modules/lib0/prng.js
+  var bool, int53, int32, int31, letter, word, oneOf;
+  var init_prng = __esm({
+    "node_modules/lib0/prng.js"() {
+      init_string();
+      init_math();
+      bool = (gen) => gen.next() >= 0.5;
+      int53 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
+      int32 = (gen, min2, max2) => floor(gen.next() * (max2 + 1 - min2) + min2);
+      int31 = (gen, min2, max2) => int32(gen, min2, max2);
+      letter = (gen) => fromCharCode(int31(gen, 97, 122));
+      word = (gen, minLen = 0, maxLen = 20) => {
+        const len = int31(gen, minLen, maxLen);
+        let str = "";
+        for (let i = 0; i < len; i++) {
+          str += letter(gen);
+        }
+        return str;
+      };
+      oneOf = (gen, array) => array[int31(gen, 0, array.length - 1)];
+    }
+  });
+
+  // node_modules/lib0/schema.js
+  var schemaSymbol, ValidationError, shapeExtends, Schema, $ConstructedBy, $constructedBy, $$constructedBy, $Custom, $custom, $$custom, $Literal, $literal, $$literal, _regexEscape, _schemaStringTemplateToRegex, $StringTemplate, $$stringTemplate, isOptionalSymbol, $Optional, $$optional, $Never, $never, $$never, $Object, $object, $$object, $objectAny, $Record, $record, $$record, $Tuple, $tuple, $$tuple, $Array, $array, $$array, $arrayAny, $InstanceOf, $instanceOf, $$instanceOf, $$schema, $Lambda, $$lambda, $function, $Intersection, $$intersect, $Union, $union, $$union, _t, $any, $$any, $bigint, $$bigint, $symbol, $$symbol, $number, $$number, $string, $$string, $boolean, $$boolean, $undefined, $$undefined, $void, $null, $$null, $uint8Array, $$uint8Array, $primitive, $json, $, assert, PatternMatcher, match, _random, random;
+  var init_schema = __esm({
+    "node_modules/lib0/schema.js"() {
+      init_object();
+      init_array();
+      init_error();
+      init_environment();
+      init_equality();
+      init_function();
+      init_string();
+      init_prng();
+      init_number();
+      schemaSymbol = Symbol("0schema");
+      ValidationError = class {
+        constructor() {
+          this._rerrs = [];
+        }
+        /**
+         * @param {string?} path
+         * @param {string} expected
+         * @param {string} has
+         * @param {string?} message
+         */
+        extend(path, expected, has, message = null) {
+          this._rerrs.push({ path, expected, has, message });
+        }
+        toString() {
+          const s2 = [];
+          for (let i = this._rerrs.length - 1; i > 0; i--) {
+            const r2 = this._rerrs[i];
+            s2.push(repeat(" ", (this._rerrs.length - i) * 2) + `${r2.path != null ? `[${r2.path}] ` : ""}${r2.has} doesn't match ${r2.expected}. ${r2.message}`);
+          }
+          return s2.join("\n");
+        }
+      };
+      shapeExtends = (a2, b) => {
+        if (a2 === b) return true;
+        if (a2 == null || b == null || a2.constructor !== b.constructor) return false;
+        if (a2[EqualityTraitSymbol]) return equals(a2, b);
+        if (isArray(a2)) {
+          return every(
+            a2,
+            (aitem) => some(b, (bitem) => shapeExtends(aitem, bitem))
+          );
+        } else if (isObject(a2)) {
+          return every2(
+            a2,
+            (aitem, akey) => shapeExtends(aitem, b[akey])
+          );
+        }
+        return false;
+      };
+      Schema = class {
+        // this.shape must not be defined on Schema. Otherwise typecheck on metatypes (e.g. $$object) won't work as expected anymore
+        /**
+         * If true, the more things are added to the shape the more objects this schema will accept (e.g.
+         * union). By default, the more objects are added, the the fewer objects this schema will accept.
+         * @protected
+         */
+        static _dilutes = false;
+        /**
+         * @param {Schema<any>} other
+         */
+        extends(other) {
+          let [a2, b] = [
+            /** @type {any} */
+            this.shape,
+            /** @type {any} */
+            other.shape
+          ];
+          if (
+            /** @type {typeof Schema<any>} */
+            this.constructor._dilutes
+          ) [b, a2] = [a2, b];
+          return shapeExtends(a2, b);
+        }
+        /**
+         * Overwrite this when necessary. By default, we only check the `shape` property which every shape
+         * should have.
+         * @param {Schema<any>} other
+         */
+        equals(other) {
+          return this.constructor === other.constructor && equalityDeep(this.shape, other.shape);
+        }
+        [schemaSymbol]() {
+          return true;
+        }
+        /**
+         * @param {object} other
+         */
+        [EqualityTraitSymbol](other) {
+          return this.equals(
+            /** @type {any} */
+            other
+          );
+        }
+        /**
+         * Use `schema.validate(obj)` with a typed parameter that is already of typed to be an instance of
+         * Schema. Validate will check the structure of the parameter and return true iff the instance
+         * really is an instance of Schema.
+         *
+         * @param {T} o
+         * @return {boolean}
+         */
+        validate(o) {
+          return this.check(o);
+        }
+        /* c8 ignore start */
+        /**
+         * Similar to validate, but this method accepts untyped parameters.
+         *
+         * @param {any} _o
+         * @param {ValidationError} [_err]
+         * @return {_o is T}
+         */
+        check(_o, _err) {
+          methodUnimplemented();
+        }
+        /* c8 ignore stop */
+        /**
+         * @type {Schema<T?>}
+         */
+        get nullable() {
+          return $union(this, $null);
+        }
+        /**
+         * @type {$Optional<Schema<T>>}
+         */
+        get optional() {
+          return new $Optional(
+            /** @type {Schema<T>} */
+            this
+          );
+        }
+        /**
+         * Cast a variable to a specific type. Returns the casted value, or throws an exception otherwise.
+         * Use this if you know that the type is of a specific type and you just want to convince the type
+         * system.
+         *
+         * **Do not rely on these error messages!**
+         * Performs an assertion check only if not in a production environment.
+         *
+         * @template OO
+         * @param {OO} o
+         * @return {Extract<OO, T> extends never ? T : (OO extends Array<never> ? T : Extract<OO,T>)}
+         */
+        cast(o) {
+          assert(o, this);
+          return (
+            /** @type {any} */
+            o
+          );
+        }
+        /**
+         * EXPECTO PATRONUM!! 🪄
+         * This function protects against type errors. Though it may not work in the real world.
+         *
+         * "After all this time?"
+         * "Always." - Snape, talking about type safety
+         *
+         * Ensures that a variable is a a specific type. Returns the value, or throws an exception if the assertion check failed.
+         * Use this if you know that the type is of a specific type and you just want to convince the type
+         * system.
+         *
+         * Can be useful when defining lambdas: `s.lambda(s.$number, s.$void).expect((n) => n + 1)`
+         *
+         * **Do not rely on these error messages!**
+         * Performs an assertion check if not in a production environment.
+         *
+         * @param {T} o
+         * @return {o extends T ? T : never}
+         */
+        expect(o) {
+          assert(o, this);
+          return o;
+        }
+      };
+      $ConstructedBy = class extends Schema {
+        /**
+         * @param {C} c
+         * @param {((o:Instance<C>)=>boolean)|null} check
+         */
+        constructor(c2, check) {
+          super();
+          this.shape = c2;
+          this._c = check;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is C extends ((...args:any[]) => infer T) ? T : (C extends (new (...args:any[]) => any) ? InstanceType<C> : never)} o
+         */
+        check(o, err = void 0) {
+          const c2 = o?.constructor === this.shape && (this._c == null || this._c(o));
+          !c2 && err?.extend(null, this.shape.name, o?.constructor.name, o?.constructor !== this.shape ? "Constructor match failed" : "Check failed");
+          return c2;
+        }
+      };
+      $constructedBy = (c2, check = null) => new $ConstructedBy(c2, check);
+      $$constructedBy = $constructedBy($ConstructedBy);
+      $Custom = class extends Schema {
+        /**
+         * @param {(o:any) => boolean} check
+         */
+        constructor(check) {
+          super();
+          this.shape = check;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} err
+         * @return {o is any}
+         */
+        check(o, err) {
+          const c2 = this.shape(o);
+          !c2 && err?.extend(null, "custom prop", o?.constructor.name, "failed to check custom prop");
+          return c2;
+        }
+      };
+      $custom = (check) => new $Custom(check);
+      $$custom = $constructedBy($Custom);
+      $Literal = class extends Schema {
+        /**
+         * @param {Array<T>} literals
+         */
+        constructor(literals) {
+          super();
+          this.shape = literals;
+        }
+        /**
+         *
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is T}
+         */
+        check(o, err) {
+          const c2 = this.shape.some((a2) => a2 === o);
+          !c2 && err?.extend(null, this.shape.join(" | "), o.toString());
+          return c2;
+        }
+      };
+      $literal = (...literals) => new $Literal(literals);
+      $$literal = $constructedBy($Literal);
+      _regexEscape = /** @type {any} */
+      RegExp.escape || /** @type {(str:string) => string} */
+      ((str) => str.replace(/[().|&,$^[\]]/g, (s2) => "\\" + s2));
+      _schemaStringTemplateToRegex = (s2) => {
+        if ($string.check(s2)) {
+          return [_regexEscape(s2)];
+        }
+        if ($$literal.check(s2)) {
+          return (
+            /** @type {Array<string|number>} */
+            s2.shape.map((v2) => v2 + "")
+          );
+        }
+        if ($$number.check(s2)) {
+          return ["[+-]?\\d+.?\\d*"];
+        }
+        if ($$string.check(s2)) {
+          return [".*"];
+        }
+        if ($$union.check(s2)) {
+          return s2.shape.map(_schemaStringTemplateToRegex).flat(1);
+        }
+        unexpectedCase();
+      };
+      $StringTemplate = class extends Schema {
+        /**
+         * @param {T} shape
+         */
+        constructor(shape2) {
+          super();
+          this.shape = shape2;
+          this._r = new RegExp("^" + shape2.map(_schemaStringTemplateToRegex).map((opts) => `(${opts.join("|")})`).join("") + "$");
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is CastStringTemplateArgsToTemplate<T>}
+         */
+        check(o, err) {
+          const c2 = this._r.exec(o) != null;
+          !c2 && err?.extend(null, this._r.toString(), o.toString(), "String doesn't match string template.");
+          return c2;
+        }
+      };
+      $$stringTemplate = $constructedBy($StringTemplate);
+      isOptionalSymbol = Symbol("optional");
+      $Optional = class extends Schema {
+        /**
+         * @param {S} shape
+         */
+        constructor(shape2) {
+          super();
+          this.shape = shape2;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is (Unwrap<S>|undefined)}
+         */
+        check(o, err) {
+          const c2 = o === void 0 || this.shape.check(o);
+          !c2 && err?.extend(null, "undefined (optional)", "()");
+          return c2;
+        }
+        get [isOptionalSymbol]() {
+          return true;
+        }
+      };
+      $$optional = $constructedBy($Optional);
+      $Never = class extends Schema {
+        /**
+         * @param {any} _o
+         * @param {ValidationError} [err]
+         * @return {_o is never}
+         */
+        check(_o, err) {
+          err?.extend(null, "never", typeof _o);
+          return false;
+        }
+      };
+      $never = new $Never();
+      $$never = $constructedBy($Never);
+      $Object = class _$Object extends Schema {
+        /**
+         * @param {S} shape
+         * @param {boolean} partial
+         */
+        constructor(shape2, partial = false) {
+          super();
+          this.shape = shape2;
+          this._isPartial = partial;
+        }
+        static _dilutes = true;
+        /**
+         * @type {Schema<Partial<$ObjectToType<S>>>}
+         */
+        get partial() {
+          return new _$Object(this.shape, true);
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} err
+         * @return {o is $ObjectToType<S>}
+         */
+        check(o, err) {
+          if (o == null) {
+            err?.extend(null, "object", "null");
+            return false;
+          }
+          return every2(this.shape, (vv, vk) => {
+            const c2 = this._isPartial && !hasProperty(o, vk) || vv.check(o[vk], err);
+            !c2 && err?.extend(vk.toString(), vv.toString(), typeof o[vk], "Object property does not match");
+            return c2;
+          });
+        }
+      };
+      $object = (def) => (
+        /** @type {any} */
+        new $Object(def)
+      );
+      $$object = $constructedBy($Object);
+      $objectAny = $custom((o) => o != null && (o.constructor === Object || o.constructor == null));
+      $Record = class extends Schema {
+        /**
+         * @param {Keys} keys
+         * @param {Values} values
+         */
+        constructor(keys3, values) {
+          super();
+          this.shape = {
+            keys: keys3,
+            values
+          };
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} err
+         * @return {o is { [key in Unwrap<Keys>]: Unwrap<Values> }}
+         */
+        check(o, err) {
+          return o != null && every2(o, (vv, vk) => {
+            const ck = this.shape.keys.check(vk, err);
+            !ck && err?.extend(vk + "", "Record", typeof o, ck ? "Key doesn't match schema" : "Value doesn't match value");
+            return ck && this.shape.values.check(vv, err);
+          });
+        }
+      };
+      $record = (keys3, values) => new $Record(keys3, values);
+      $$record = $constructedBy($Record);
+      $Tuple = class extends Schema {
+        /**
+         * @param {S} shape
+         */
+        constructor(shape2) {
+          super();
+          this.shape = shape2;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} err
+         * @return {o is { [K in keyof S]: S[K] extends Schema<infer Type> ? Type : never }}
+         */
+        check(o, err) {
+          return o != null && every2(this.shape, (vv, vk) => {
+            const c2 = (
+              /** @type {Schema<any>} */
+              vv.check(o[vk], err)
+            );
+            !c2 && err?.extend(vk.toString(), "Tuple", typeof vv);
+            return c2;
+          });
+        }
+      };
+      $tuple = (...def) => new $Tuple(def);
+      $$tuple = $constructedBy($Tuple);
+      $Array = class extends Schema {
+        /**
+         * @param {Array<S>} v
+         */
+        constructor(v2) {
+          super();
+          this.shape = v2.length === 1 ? v2[0] : new $Union(v2);
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is Array<S extends Schema<infer T> ? T : never>} o
+         */
+        check(o, err) {
+          const c2 = isArray(o) && every(o, (oi2) => this.shape.check(oi2));
+          !c2 && err?.extend(null, "Array", "");
+          return c2;
+        }
+      };
+      $array = (...def) => new $Array(def);
+      $$array = $constructedBy($Array);
+      $arrayAny = $custom((o) => isArray(o));
+      $InstanceOf = class extends Schema {
+        /**
+         * @param {new (...args:any) => T} constructor
+         * @param {((o:T) => boolean)|null} check
+         */
+        constructor(constructor, check) {
+          super();
+          this.shape = constructor;
+          this._c = check;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} err
+         * @return {o is T}
+         */
+        check(o, err) {
+          const c2 = o instanceof this.shape && (this._c == null || this._c(o));
+          !c2 && err?.extend(null, this.shape.name, o?.constructor.name);
+          return c2;
+        }
+      };
+      $instanceOf = (c2, check = null) => new $InstanceOf(c2, check);
+      $$instanceOf = $constructedBy($InstanceOf);
+      $$schema = $instanceOf(Schema);
+      $Lambda = class extends Schema {
+        /**
+         * @param {Args} args
+         */
+        constructor(args2) {
+          super();
+          this.len = args2.length - 1;
+          this.args = $tuple(...args2.slice(-1));
+          this.res = args2[this.len];
+        }
+        /**
+         * @param {any} f
+         * @param {ValidationError} err
+         * @return {f is _LArgsToLambdaDef<Args>}
+         */
+        check(f2, err) {
+          const c2 = f2.constructor === Function && f2.length <= this.len;
+          !c2 && err?.extend(null, "function", typeof f2);
+          return c2;
+        }
+      };
+      $$lambda = $constructedBy($Lambda);
+      $function = $custom((o) => typeof o === "function");
+      $Intersection = class extends Schema {
+        /**
+         * @param {T} v
+         */
+        constructor(v2) {
+          super();
+          this.shape = v2;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is Intersect<UnwrapArray<T>>}
+         */
+        check(o, err) {
+          const c2 = every(this.shape, (check) => check.check(o, err));
+          !c2 && err?.extend(null, "Intersectinon", typeof o);
+          return c2;
+        }
+      };
+      $$intersect = $constructedBy($Intersection, (o) => o.shape.length > 0);
+      $Union = class extends Schema {
+        static _dilutes = true;
+        /**
+         * @param {Array<Schema<S>>} v
+         */
+        constructor(v2) {
+          super();
+          this.shape = v2;
+        }
+        /**
+         * @param {any} o
+         * @param {ValidationError} [err]
+         * @return {o is S}
+         */
+        check(o, err) {
+          const c2 = some(this.shape, (vv) => vv.check(o, err));
+          err?.extend(null, "Union", typeof o);
+          return c2;
+        }
+      };
+      $union = (...schemas) => schemas.findIndex(($s) => $$union.check($s)) >= 0 ? $union(...schemas.map(($s) => $($s)).map(($s) => $$union.check($s) ? $s.shape : [$s]).flat(1)) : schemas.length === 1 ? schemas[0] : new $Union(schemas);
+      $$union = /** @type {Schema<$Union<any>>} */
+      $constructedBy($Union);
+      _t = () => true;
+      $any = $custom(_t);
+      $$any = /** @type {Schema<Schema<any>>} */
+      $constructedBy($Custom, (o) => o.shape === _t);
+      $bigint = $custom((o) => typeof o === "bigint");
+      $$bigint = /** @type {Schema<Schema<BigInt>>} */
+      $custom((o) => o === $bigint);
+      $symbol = $custom((o) => typeof o === "symbol");
+      $$symbol = /** @type {Schema<Schema<Symbol>>} */
+      $custom((o) => o === $symbol);
+      $number = $custom((o) => typeof o === "number");
+      $$number = /** @type {Schema<Schema<number>>} */
+      $custom((o) => o === $number);
+      $string = $custom((o) => typeof o === "string");
+      $$string = /** @type {Schema<Schema<string>>} */
+      $custom((o) => o === $string);
+      $boolean = $custom((o) => typeof o === "boolean");
+      $$boolean = /** @type {Schema<Schema<Boolean>>} */
+      $custom((o) => o === $boolean);
+      $undefined = $literal(void 0);
+      $$undefined = /** @type {Schema<Schema<undefined>>} */
+      $constructedBy($Literal, (o) => o.shape.length === 1 && o.shape[0] === void 0);
+      $void = $literal(void 0);
+      $null = $literal(null);
+      $$null = /** @type {Schema<Schema<null>>} */
+      $constructedBy($Literal, (o) => o.shape.length === 1 && o.shape[0] === null);
+      $uint8Array = $constructedBy(Uint8Array);
+      $$uint8Array = /** @type {Schema<Schema<Uint8Array>>} */
+      $constructedBy($ConstructedBy, (o) => o.shape === Uint8Array);
+      $primitive = $union($number, $string, $null, $undefined, $bigint, $boolean, $symbol);
+      $json = (() => {
+        const $jsonArr = (
+          /** @type {$Array<$any>} */
+          $array($any)
+        );
+        const $jsonRecord = (
+          /** @type {$Record<$string,$any>} */
+          $record($string, $any)
+        );
+        const $json2 = $union($number, $string, $null, $boolean, $jsonArr, $jsonRecord);
+        $jsonArr.shape = $json2;
+        $jsonRecord.shape.values = $json2;
+        return $json2;
+      })();
+      $ = (o) => {
+        if ($$schema.check(o)) {
+          return (
+            /** @type {any} */
+            o
+          );
+        } else if ($objectAny.check(o)) {
+          const o22 = {};
+          for (const k2 in o) {
+            o22[k2] = $(o[k2]);
+          }
+          return (
+            /** @type {any} */
+            $object(o22)
+          );
+        } else if ($arrayAny.check(o)) {
+          return (
+            /** @type {any} */
+            $union(...o.map($))
+          );
+        } else if ($primitive.check(o)) {
+          return (
+            /** @type {any} */
+            $literal(o)
+          );
+        } else if ($function.check(o)) {
+          return (
+            /** @type {any} */
+            $constructedBy(
+              /** @type {any} */
+              o
+            )
+          );
+        }
+        unexpectedCase();
+      };
+      assert = production ? () => {
+      } : (o, schema) => {
+        const err = new ValidationError();
+        if (!schema.check(o, err)) {
+          throw create3(`Expected value to be of type ${schema.constructor.name}.
+${err.toString()}`);
+        }
+      };
+      PatternMatcher = class {
+        /**
+         * @param {Schema<State>} [$state]
+         */
+        constructor($state) {
+          this.patterns = [];
+          this.$state = $state;
+        }
+        /**
+         * @template P
+         * @template R
+         * @param {P} pattern
+         * @param {(o:NoInfer<Unwrap<ReadSchema<P>>>,s:State)=>R} handler
+         * @return {PatternMatcher<State,Patterns|Pattern<Unwrap<ReadSchema<P>>,R>>}
+         */
+        if(pattern2, handler) {
+          this.patterns.push({ if: $(pattern2), h: handler });
+          return this;
+        }
+        /**
+         * @template R
+         * @param {(o:any,s:State)=>R} h
+         */
+        else(h2) {
+          return this.if($any, h2);
+        }
+        /**
+         * @return {State extends undefined
+         *   ? <In extends Unwrap<Patterns['if']>>(o:In,state?:undefined)=>PatternMatchResult<Patterns,In>
+         *   : <In extends Unwrap<Patterns['if']>>(o:In,state:State)=>PatternMatchResult<Patterns,In>}
+         */
+        done() {
+          return (
+            /** @type {any} */
+            (o, s2) => {
+              for (let i = 0; i < this.patterns.length; i++) {
+                const p = this.patterns[i];
+                if (p.if.check(o)) {
+                  return p.h(o, s2);
+                }
+              }
+              throw create3("Unhandled pattern");
+            }
+          );
+        }
+      };
+      match = (state) => new PatternMatcher(
+        /** @type {any} */
+        state
+      );
+      _random = /** @type {any} */
+      match(
+        /** @type {Schema<prng.PRNG>} */
+        $any
+      ).if($$number, (_o, gen) => int53(gen, MIN_SAFE_INTEGER, MAX_SAFE_INTEGER)).if($$string, (_o, gen) => word(gen)).if($$boolean, (_o, gen) => bool(gen)).if($$bigint, (_o, gen) => BigInt(int53(gen, MIN_SAFE_INTEGER, MAX_SAFE_INTEGER))).if($$union, (o, gen) => random(gen, oneOf(gen, o.shape))).if($$object, (o, gen) => {
+        const res = {};
+        for (const k2 in o.shape) {
+          let prop = o.shape[k2];
+          if ($$optional.check(prop)) {
+            if (bool(gen)) {
+              continue;
+            }
+            prop = prop.shape;
+          }
+          res[k2] = _random(prop, gen);
+        }
+        return res;
+      }).if($$array, (o, gen) => {
+        const arr = [];
+        const n2 = int32(gen, 0, 42);
+        for (let i = 0; i < n2; i++) {
+          arr.push(random(gen, o.shape));
+        }
+        return arr;
+      }).if($$literal, (o, gen) => {
+        return oneOf(gen, o.shape);
+      }).if($$null, (o, gen) => {
+        return null;
+      }).if($$lambda, (o, gen) => {
+        const res = random(gen, o.res);
+        return () => res;
+      }).if($$any, (o, gen) => random(gen, oneOf(gen, [
+        $number,
+        $string,
+        $null,
+        $undefined,
+        $bigint,
+        $boolean,
+        $array($number),
+        $record($union("a", "b", "c"), $number)
+      ]))).if($$record, (o, gen) => {
+        const res = {};
+        const keysN = int53(gen, 0, 3);
+        for (let i = 0; i < keysN; i++) {
+          const key = random(gen, o.shape.keys);
+          const val2 = random(gen, o.shape.values);
+          res[key] = val2;
+        }
+        return res;
+      }).done();
+      random = (gen, schema) => (
+        /** @type {any} */
+        _random($(schema), gen)
+      );
+    }
+  });
+
+  // node_modules/lib0/dom.js
+  var doc, $fragment, domParser, $element, $text, mapToStyleString, ELEMENT_NODE, TEXT_NODE, CDATA_SECTION_NODE, COMMENT_NODE, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, DOCUMENT_FRAGMENT_NODE, $node;
+  var init_dom = __esm({
+    "node_modules/lib0/dom.js"() {
+      init_map();
+      init_schema();
+      doc = /** @type {Document} */
+      typeof document !== "undefined" ? document : {};
+      $fragment = $custom((el) => el.nodeType === DOCUMENT_FRAGMENT_NODE);
+      domParser = /** @type {DOMParser} */
+      typeof DOMParser !== "undefined" ? new DOMParser() : null;
+      $element = $custom((el) => el.nodeType === ELEMENT_NODE);
+      $text = $custom((el) => el.nodeType === TEXT_NODE);
+      mapToStyleString = (m2) => map(m2, (value2, key) => `${key}:${value2};`).join("");
+      ELEMENT_NODE = doc.ELEMENT_NODE;
+      TEXT_NODE = doc.TEXT_NODE;
+      CDATA_SECTION_NODE = doc.CDATA_SECTION_NODE;
+      COMMENT_NODE = doc.COMMENT_NODE;
+      DOCUMENT_NODE = doc.DOCUMENT_NODE;
+      DOCUMENT_TYPE_NODE = doc.DOCUMENT_TYPE_NODE;
+      DOCUMENT_FRAGMENT_NODE = doc.DOCUMENT_FRAGMENT_NODE;
+      $node = $custom((el) => el.nodeType === DOCUMENT_NODE);
+    }
+  });
+
+  // node_modules/lib0/symbol.js
+  var create6;
+  var init_symbol = __esm({
+    "node_modules/lib0/symbol.js"() {
+      create6 = Symbol;
+    }
+  });
+
+  // node_modules/lib0/logging.common.js
+  var BOLD, UNBOLD, BLUE, GREY, GREEN, RED, PURPLE, ORANGE, UNCOLOR, computeNoColorLoggingArgs, lastLoggingTime;
+  var init_logging_common = __esm({
+    "node_modules/lib0/logging.common.js"() {
+      init_symbol();
+      init_time();
+      BOLD = create6();
+      UNBOLD = create6();
+      BLUE = create6();
+      GREY = create6();
+      GREEN = create6();
+      RED = create6();
+      PURPLE = create6();
+      ORANGE = create6();
+      UNCOLOR = create6();
+      computeNoColorLoggingArgs = (args2) => {
+        if (args2.length === 1 && args2[0]?.constructor === Function) {
+          args2 = /** @type {Array<string|Symbol|Object|number>} */
+          /** @type {[function]} */
+          args2[0]();
+        }
+        const strBuilder = [];
+        const logArgs = [];
+        let i = 0;
+        for (; i < args2.length; i++) {
+          const arg = args2[i];
+          if (arg === void 0) {
+            break;
+          } else if (arg.constructor === String || arg.constructor === Number) {
+            strBuilder.push(arg);
+          } else if (arg.constructor === Object) {
+            break;
+          }
+        }
+        if (i > 0) {
+          logArgs.push(strBuilder.join(""));
+        }
+        for (; i < args2.length; i++) {
+          const arg = args2[i];
+          if (!(arg instanceof Symbol)) {
+            logArgs.push(arg);
+          }
+        }
+        return logArgs;
+      };
+      lastLoggingTime = getUnixTime();
+    }
+  });
+
+  // node_modules/lib0/logging.js
+  var _browserStyleMap, computeBrowserLoggingArgs, computeLoggingArgs, print, warn, vconsoles;
+  var init_logging = __esm({
+    "node_modules/lib0/logging.js"() {
+      init_environment();
+      init_set();
+      init_pair();
+      init_dom();
+      init_map();
+      init_logging_common();
+      init_logging_common();
+      _browserStyleMap = {
+        [BOLD]: create5("font-weight", "bold"),
+        [UNBOLD]: create5("font-weight", "normal"),
+        [BLUE]: create5("color", "blue"),
+        [GREEN]: create5("color", "green"),
+        [GREY]: create5("color", "grey"),
+        [RED]: create5("color", "red"),
+        [PURPLE]: create5("color", "purple"),
+        [ORANGE]: create5("color", "orange"),
+        // not well supported in chrome when debugging node with inspector - TODO: deprecate
+        [UNCOLOR]: create5("color", "black")
+      };
+      computeBrowserLoggingArgs = (args2) => {
+        if (args2.length === 1 && args2[0]?.constructor === Function) {
+          args2 = /** @type {Array<string|Symbol|Object|number>} */
+          /** @type {[function]} */
+          args2[0]();
+        }
+        const strBuilder = [];
+        const styles = [];
+        const currentStyle = create();
+        let logArgs = [];
+        let i = 0;
+        for (; i < args2.length; i++) {
+          const arg = args2[i];
+          const style = _browserStyleMap[arg];
+          if (style !== void 0) {
+            currentStyle.set(style.left, style.right);
+          } else {
+            if (arg === void 0) {
+              break;
+            }
+            if (arg.constructor === String || arg.constructor === Number) {
+              const style2 = mapToStyleString(currentStyle);
+              if (i > 0 || style2.length > 0) {
+                strBuilder.push("%c" + arg);
+                styles.push(style2);
+              } else {
+                strBuilder.push(arg);
+              }
+            } else {
+              break;
+            }
+          }
+        }
+        if (i > 0) {
+          logArgs = styles;
+          logArgs.unshift(strBuilder.join(""));
+        }
+        for (; i < args2.length; i++) {
+          const arg = args2[i];
+          if (!(arg instanceof Symbol)) {
+            logArgs.push(arg);
+          }
+        }
+        return logArgs;
+      };
+      computeLoggingArgs = supportsColor ? computeBrowserLoggingArgs : computeNoColorLoggingArgs;
+      print = (...args2) => {
+        console.log(...computeLoggingArgs(args2));
+        vconsoles.forEach((vc) => vc.print(args2));
+      };
+      warn = (...args2) => {
+        console.warn(...computeLoggingArgs(args2));
+        args2.unshift(ORANGE);
+        vconsoles.forEach((vc) => vc.print(args2));
+      };
+      vconsoles = create2();
+    }
+  });
+
+  // node_modules/lib0/iterator.js
+  var createIterator, iteratorFilter, iteratorMap;
+  var init_iterator = __esm({
+    "node_modules/lib0/iterator.js"() {
+      createIterator = (next) => ({
+        /**
+         * @return {IterableIterator<T>}
+         */
+        [Symbol.iterator]() {
+          return this;
+        },
+        // @ts-ignore
+        next
+      });
+      iteratorFilter = (iterator, filter2) => createIterator(() => {
+        let res;
+        do {
+          res = iterator.next();
+        } while (!res.done && !filter2(res.value));
+        return res;
+      });
+      iteratorMap = (iterator, fmap) => createIterator(() => {
+        const { done, value: value2 } = iterator.next();
+        return { done, value: done ? void 0 : fmap(value2) };
+      });
+    }
+  });
+
+  // node_modules/yjs/dist/yjs.mjs
+  function* lazyStructReaderGenerator(decoder) {
+    const numOfStateUpdates = readVarUint(decoder.restDecoder);
+    for (let i = 0; i < numOfStateUpdates; i++) {
+      const numberOfStructs = readVarUint(decoder.restDecoder);
+      const client = decoder.readClient();
+      let clock2 = readVarUint(decoder.restDecoder);
+      for (let i2 = 0; i2 < numberOfStructs; i2++) {
+        const info = decoder.readInfo();
+        if (info === 10) {
+          const len = readVarUint(decoder.restDecoder);
+          yield new Skip(createID(client, clock2), len);
+          clock2 += len;
+        } else if ((BITS5 & info) !== 0) {
+          const cantCopyParentInfo = (info & (BIT7 | BIT8)) === 0;
+          const struct2 = new Item(
+            createID(client, clock2),
+            null,
+            // left
+            (info & BIT8) === BIT8 ? decoder.readLeftID() : null,
+            // origin
+            null,
+            // right
+            (info & BIT7) === BIT7 ? decoder.readRightID() : null,
+            // right origin
+            // @ts-ignore Force writing a string here.
+            cantCopyParentInfo ? decoder.readParentInfo() ? decoder.readString() : decoder.readLeftID() : null,
+            // parent
+            cantCopyParentInfo && (info & BIT6) === BIT6 ? decoder.readString() : null,
+            // parentSub
+            readItemContent(decoder, info)
+            // item content
+          );
+          yield struct2;
+          clock2 += struct2.length;
+        } else {
+          const len = decoder.readLen();
+          yield new GC(createID(client, clock2), len);
+          clock2 += len;
+        }
+      }
+    }
+  }
+  var DeleteItem, DeleteSet, iterateDeletedStructs, findIndexDS, isDeleted, sortAndMergeDeleteSet, mergeDeleteSets, addToDeleteSet, createDeleteSet, createDeleteSetFromStructStore, writeDeleteSet, readDeleteSet, readAndApplyDeleteSet, generateNewClientId, Doc, DSDecoderV1, UpdateDecoderV1, DSDecoderV2, UpdateDecoderV2, DSEncoderV1, UpdateEncoderV1, DSEncoderV2, UpdateEncoderV2, writeStructs, writeClientsStructs, readClientsStructRefs, integrateStructs, writeStructsFromTransaction, readUpdateV2, applyUpdateV2, applyUpdate, writeStateAsUpdate, encodeStateAsUpdateV2, encodeStateAsUpdate, readStateVector, decodeStateVector, EventHandler, createEventHandler, addEventHandlerListener, removeEventHandlerListener, callEventHandlerListeners, ID, compareIDs, createID, findRootTypeKey, Snapshot, createSnapshot, emptySnapshot, isVisible, splitSnapshotAffectedStructs, StructStore, getStateVector, getState, addStruct, findIndexSS, find, getItem, findIndexCleanStart, getItemCleanStart, getItemCleanEnd, replaceStruct, iterateStructs, Transaction, writeUpdateMessageFromTransaction, addChangedTypeToTransaction, tryToMergeWithLefts, tryGcDeleteSet, tryMergeDeleteSet, cleanupTransactions, transact, LazyStructReader, LazyStructWriter, mergeUpdates, sliceStruct, mergeUpdatesV2, diffUpdateV2, flushLazyStructWriter, writeStructToLazyStructWriter, finishLazyStructWriting, convertUpdateFormat, convertUpdateFormatV2ToV1, errorComputeChanges, YEvent, getPathTo, warnPrematureAccess, maxSearchMarker, globalSearchMarkerTimestamp, ArraySearchMarker, refreshMarkerTimestamp, overwriteMarker, markPosition, findMarker, updateMarkerChanges, callTypeObservers, AbstractType, typeListSlice, typeListToArray, typeListForEach, typeListMap, typeListCreateIterator, typeListGet, typeListInsertGenericsAfter, lengthExceeded, typeListInsertGenerics, typeListPushGenerics, typeListDelete, typeMapDelete, typeMapSet, typeMapGet, typeMapGetAll, typeMapHas, typeMapGetAllSnapshot, createMapIterator, YArrayEvent, YArray, readYArray, YMapEvent, YMap, readYMap, equalAttrs, ItemTextListPosition, findNextPosition, findPosition, insertNegatedAttributes, updateCurrentAttributes, minimizeAttributeChanges, insertAttributes, insertText, formatText, cleanupFormattingGap, cleanupContextlessFormattingGap, cleanupYTextFormatting, cleanupYTextAfterTransaction, deleteText, YTextEvent, YText, readYText, YXmlTreeWalker, YXmlFragment, readYXmlFragment, YXmlElement, readYXmlElement, YXmlEvent, YXmlHook, readYXmlHook, YXmlText, readYXmlText, AbstractStruct, structGCRefNumber, GC, ContentBinary, readContentBinary, ContentDeleted, readContentDeleted, createDocFromOpts, ContentDoc, readContentDoc, ContentEmbed, readContentEmbed, ContentFormat, readContentFormat, ContentJSON, readContentJSON, isDevMode, ContentAny, readContentAny, ContentString, readContentString, typeRefs, YArrayRefID, YMapRefID, YTextRefID, YXmlElementRefID, YXmlFragmentRefID, YXmlHookRefID, YXmlTextRefID, ContentType, readContentType, splitItem, Item, readItemContent, contentRefs, structSkipRefNumber, Skip, glo, importIdentifier;
+  var init_yjs = __esm({
+    "node_modules/yjs/dist/yjs.mjs"() {
+      init_observable();
+      init_array();
+      init_math();
+      init_map();
+      init_encoding();
+      init_decoding();
+      init_random();
+      init_promise();
+      init_buffer();
+      init_error();
+      init_binary();
+      init_function();
+      init_function();
+      init_set();
+      init_logging();
+      init_iterator();
+      init_object();
+      init_environment();
+      DeleteItem = class {
+        /**
+         * @param {number} clock
+         * @param {number} len
+         */
+        constructor(clock2, len) {
+          this.clock = clock2;
+          this.len = len;
+        }
+      };
+      DeleteSet = class {
+        constructor() {
+          this.clients = /* @__PURE__ */ new Map();
+        }
+      };
+      iterateDeletedStructs = (transaction, ds2, f2) => ds2.clients.forEach((deletes, clientid) => {
+        const structs = (
+          /** @type {Array<GC|Item>} */
+          transaction.doc.store.clients.get(clientid)
+        );
+        if (structs != null) {
+          const lastStruct = structs[structs.length - 1];
+          const clockState = lastStruct.id.clock + lastStruct.length;
+          for (let i = 0, del = deletes[i]; i < deletes.length && del.clock < clockState; del = deletes[++i]) {
+            iterateStructs(transaction, structs, del.clock, del.len, f2);
+          }
+        }
+      });
+      findIndexDS = (dis, clock2) => {
+        let left2 = 0;
+        let right2 = dis.length - 1;
+        while (left2 <= right2) {
+          const midindex = floor((left2 + right2) / 2);
+          const mid = dis[midindex];
+          const midclock = mid.clock;
+          if (midclock <= clock2) {
+            if (clock2 < midclock + mid.len) {
+              return midindex;
+            }
+            left2 = midindex + 1;
+          } else {
+            right2 = midindex - 1;
+          }
+        }
+        return null;
+      };
+      isDeleted = (ds2, id3) => {
+        const dis = ds2.clients.get(id3.client);
+        return dis !== void 0 && findIndexDS(dis, id3.clock) !== null;
+      };
+      sortAndMergeDeleteSet = (ds2) => {
+        ds2.clients.forEach((dels) => {
+          dels.sort((a2, b) => a2.clock - b.clock);
+          let i, j2;
+          for (i = 1, j2 = 1; i < dels.length; i++) {
+            const left2 = dels[j2 - 1];
+            const right2 = dels[i];
+            if (left2.clock + left2.len >= right2.clock) {
+              dels[j2 - 1] = new DeleteItem(left2.clock, max(left2.len, right2.clock + right2.len - left2.clock));
+            } else {
+              if (j2 < i) {
+                dels[j2] = right2;
+              }
+              j2++;
+            }
+          }
+          dels.length = j2;
+        });
+      };
+      mergeDeleteSets = (dss) => {
+        const merged = new DeleteSet();
+        for (let dssI = 0; dssI < dss.length; dssI++) {
+          dss[dssI].clients.forEach((delsLeft, client) => {
+            if (!merged.clients.has(client)) {
+              const dels = delsLeft.slice();
+              for (let i = dssI + 1; i < dss.length; i++) {
+                appendTo(dels, dss[i].clients.get(client) || []);
+              }
+              merged.clients.set(client, dels);
+            }
+          });
+        }
+        sortAndMergeDeleteSet(merged);
+        return merged;
+      };
+      addToDeleteSet = (ds2, client, clock2, length2) => {
+        setIfUndefined(ds2.clients, client, () => (
+          /** @type {Array<DeleteItem>} */
+          []
+        )).push(new DeleteItem(clock2, length2));
+      };
+      createDeleteSet = () => new DeleteSet();
+      createDeleteSetFromStructStore = (ss) => {
+        const ds2 = createDeleteSet();
+        ss.clients.forEach((structs, client) => {
+          const dsitems = [];
+          for (let i = 0; i < structs.length; i++) {
+            const struct2 = structs[i];
+            if (struct2.deleted) {
+              const clock2 = struct2.id.clock;
+              let len = struct2.length;
+              if (i + 1 < structs.length) {
+                for (let next = structs[i + 1]; i + 1 < structs.length && next.deleted; next = structs[++i + 1]) {
+                  len += next.length;
+                }
+              }
+              dsitems.push(new DeleteItem(clock2, len));
+            }
+          }
+          if (dsitems.length > 0) {
+            ds2.clients.set(client, dsitems);
+          }
+        });
+        return ds2;
+      };
+      writeDeleteSet = (encoder, ds2) => {
+        writeVarUint(encoder.restEncoder, ds2.clients.size);
+        from(ds2.clients.entries()).sort((a2, b) => b[0] - a2[0]).forEach(([client, dsitems]) => {
+          encoder.resetDsCurVal();
+          writeVarUint(encoder.restEncoder, client);
+          const len = dsitems.length;
+          writeVarUint(encoder.restEncoder, len);
+          for (let i = 0; i < len; i++) {
+            const item = dsitems[i];
+            encoder.writeDsClock(item.clock);
+            encoder.writeDsLen(item.len);
+          }
+        });
+      };
+      readDeleteSet = (decoder) => {
+        const ds2 = new DeleteSet();
+        const numClients = readVarUint(decoder.restDecoder);
+        for (let i = 0; i < numClients; i++) {
+          decoder.resetDsCurVal();
+          const client = readVarUint(decoder.restDecoder);
+          const numberOfDeletes = readVarUint(decoder.restDecoder);
+          if (numberOfDeletes > 0) {
+            const dsField = setIfUndefined(ds2.clients, client, () => (
+              /** @type {Array<DeleteItem>} */
+              []
+            ));
+            for (let i2 = 0; i2 < numberOfDeletes; i2++) {
+              dsField.push(new DeleteItem(decoder.readDsClock(), decoder.readDsLen()));
+            }
+          }
+        }
+        return ds2;
+      };
+      readAndApplyDeleteSet = (decoder, transaction, store) => {
+        const unappliedDS = new DeleteSet();
+        const numClients = readVarUint(decoder.restDecoder);
+        for (let i = 0; i < numClients; i++) {
+          decoder.resetDsCurVal();
+          const client = readVarUint(decoder.restDecoder);
+          const numberOfDeletes = readVarUint(decoder.restDecoder);
+          const structs = store.clients.get(client) || [];
+          const state = getState(store, client);
+          for (let i2 = 0; i2 < numberOfDeletes; i2++) {
+            const clock2 = decoder.readDsClock();
+            const clockEnd = clock2 + decoder.readDsLen();
+            if (clock2 < state) {
+              if (state < clockEnd) {
+                addToDeleteSet(unappliedDS, client, state, clockEnd - state);
+              }
+              let index2 = findIndexSS(structs, clock2);
+              let struct2 = structs[index2];
+              if (!struct2.deleted && struct2.id.clock < clock2) {
+                structs.splice(index2 + 1, 0, splitItem(transaction, struct2, clock2 - struct2.id.clock));
+                index2++;
+              }
+              while (index2 < structs.length) {
+                struct2 = structs[index2++];
+                if (struct2.id.clock < clockEnd) {
+                  if (!struct2.deleted) {
+                    if (clockEnd < struct2.id.clock + struct2.length) {
+                      structs.splice(index2, 0, splitItem(transaction, struct2, clockEnd - struct2.id.clock));
+                    }
+                    struct2.delete(transaction);
+                  }
+                } else {
+                  break;
+                }
+              }
+            } else {
+              addToDeleteSet(unappliedDS, client, clock2, clockEnd - clock2);
+            }
+          }
+        }
+        if (unappliedDS.clients.size > 0) {
+          const ds2 = new UpdateEncoderV2();
+          writeVarUint(ds2.restEncoder, 0);
+          writeDeleteSet(ds2, unappliedDS);
+          return ds2.toUint8Array();
+        }
+        return null;
+      };
+      generateNewClientId = uint32;
+      Doc = class _Doc extends ObservableV2 {
+        /**
+         * @param {DocOpts} opts configuration
+         */
+        constructor({ guid = uuidv4(), collectionid = null, gc = true, gcFilter = () => true, meta = null, autoLoad = false, shouldLoad = true } = {}) {
+          super();
+          this.gc = gc;
+          this.gcFilter = gcFilter;
+          this.clientID = generateNewClientId();
+          this.guid = guid;
+          this.collectionid = collectionid;
+          this.share = /* @__PURE__ */ new Map();
+          this.store = new StructStore();
+          this._transaction = null;
+          this._transactionCleanups = [];
+          this.subdocs = /* @__PURE__ */ new Set();
+          this._item = null;
+          this.shouldLoad = shouldLoad;
+          this.autoLoad = autoLoad;
+          this.meta = meta;
+          this.isLoaded = false;
+          this.isSynced = false;
+          this.isDestroyed = false;
+          this.whenLoaded = create4((resolve) => {
+            this.on("load", () => {
+              this.isLoaded = true;
+              resolve(this);
+            });
+          });
+          const provideSyncedPromise = () => create4((resolve) => {
+            const eventHandler = (isSynced) => {
+              if (isSynced === void 0 || isSynced === true) {
+                this.off("sync", eventHandler);
+                resolve();
+              }
+            };
+            this.on("sync", eventHandler);
+          });
+          this.on("sync", (isSynced) => {
+            if (isSynced === false && this.isSynced) {
+              this.whenSynced = provideSyncedPromise();
+            }
+            this.isSynced = isSynced === void 0 || isSynced === true;
+            if (this.isSynced && !this.isLoaded) {
+              this.emit("load", [this]);
+            }
+          });
+          this.whenSynced = provideSyncedPromise();
+        }
+        /**
+         * Notify the parent document that you request to load data into this subdocument (if it is a subdocument).
+         *
+         * `load()` might be used in the future to request any provider to load the most current data.
+         *
+         * It is safe to call `load()` multiple times.
+         */
+        load() {
+          const item = this._item;
+          if (item !== null && !this.shouldLoad) {
+            transact(
+              /** @type {any} */
+              item.parent.doc,
+              (transaction) => {
+                transaction.subdocsLoaded.add(this);
+              },
+              null,
+              true
+            );
+          }
+          this.shouldLoad = true;
+        }
+        getSubdocs() {
+          return this.subdocs;
+        }
+        getSubdocGuids() {
+          return new Set(from(this.subdocs).map((doc2) => doc2.guid));
+        }
+        /**
+         * Changes that happen inside of a transaction are bundled. This means that
+         * the observer fires _after_ the transaction is finished and that all changes
+         * that happened inside of the transaction are sent as one message to the
+         * other peers.
+         *
+         * @template T
+         * @param {function(Transaction):T} f The function that should be executed as a transaction
+         * @param {any} [origin] Origin of who started the transaction. Will be stored on transaction.origin
+         * @return T
+         *
+         * @public
+         */
+        transact(f2, origin = null) {
+          return transact(this, f2, origin);
+        }
+        /**
+         * Define a shared data type.
+         *
+         * Multiple calls of `ydoc.get(name, TypeConstructor)` yield the same result
+         * and do not overwrite each other. I.e.
+         * `ydoc.get(name, Y.Array) === ydoc.get(name, Y.Array)`
+         *
+         * After this method is called, the type is also available on `ydoc.share.get(name)`.
+         *
+         * *Best Practices:*
+         * Define all types right after the Y.Doc instance is created and store them in a separate object.
+         * Also use the typed methods `getText(name)`, `getArray(name)`, ..
+         *
+         * @template {typeof AbstractType<any>} Type
+         * @example
+         *   const ydoc = new Y.Doc(..)
+         *   const appState = {
+         *     document: ydoc.getText('document')
+         *     comments: ydoc.getArray('comments')
+         *   }
+         *
+         * @param {string} name
+         * @param {Type} TypeConstructor The constructor of the type definition. E.g. Y.Text, Y.Array, Y.Map, ...
+         * @return {InstanceType<Type>} The created type. Constructed with TypeConstructor
+         *
+         * @public
+         */
+        get(name3, TypeConstructor = (
+          /** @type {any} */
+          AbstractType
+        )) {
+          const type = setIfUndefined(this.share, name3, () => {
+            const t = new TypeConstructor();
+            t._integrate(this, null);
+            return t;
+          });
+          const Constr = type.constructor;
+          if (TypeConstructor !== AbstractType && Constr !== TypeConstructor) {
+            if (Constr === AbstractType) {
+              const t = new TypeConstructor();
+              t._map = type._map;
+              type._map.forEach(
+                /** @param {Item?} n */
+                (n2) => {
+                  for (; n2 !== null; n2 = n2.left) {
+                    n2.parent = t;
+                  }
+                }
+              );
+              t._start = type._start;
+              for (let n2 = t._start; n2 !== null; n2 = n2.right) {
+                n2.parent = t;
+              }
+              t._length = type._length;
+              this.share.set(name3, t);
+              t._integrate(this, null);
+              return (
+                /** @type {InstanceType<Type>} */
+                t
+              );
+            } else {
+              throw new Error(`Type with the name ${name3} has already been defined with a different constructor`);
+            }
+          }
+          return (
+            /** @type {InstanceType<Type>} */
+            type
+          );
+        }
+        /**
+         * @template T
+         * @param {string} [name]
+         * @return {YArray<T>}
+         *
+         * @public
+         */
+        getArray(name3 = "") {
+          return (
+            /** @type {YArray<T>} */
+            this.get(name3, YArray)
+          );
+        }
+        /**
+         * @param {string} [name]
+         * @return {YText}
+         *
+         * @public
+         */
+        getText(name3 = "") {
+          return this.get(name3, YText);
+        }
+        /**
+         * @template T
+         * @param {string} [name]
+         * @return {YMap<T>}
+         *
+         * @public
+         */
+        getMap(name3 = "") {
+          return (
+            /** @type {YMap<T>} */
+            this.get(name3, YMap)
+          );
+        }
+        /**
+         * @param {string} [name]
+         * @return {YXmlElement}
+         *
+         * @public
+         */
+        getXmlElement(name3 = "") {
+          return (
+            /** @type {YXmlElement<{[key:string]:string}>} */
+            this.get(name3, YXmlElement)
+          );
+        }
+        /**
+         * @param {string} [name]
+         * @return {YXmlFragment}
+         *
+         * @public
+         */
+        getXmlFragment(name3 = "") {
+          return this.get(name3, YXmlFragment);
+        }
+        /**
+         * Converts the entire document into a js object, recursively traversing each yjs type
+         * Doesn't log types that have not been defined (using ydoc.getType(..)).
+         *
+         * @deprecated Do not use this method and rather call toJSON directly on the shared types.
+         *
+         * @return {Object<string, any>}
+         */
+        toJSON() {
+          const doc2 = {};
+          this.share.forEach((value2, key) => {
+            doc2[key] = value2.toJSON();
+          });
+          return doc2;
+        }
+        /**
+         * Emit `destroy` event and unregister all event handlers.
+         */
+        destroy() {
+          this.isDestroyed = true;
+          from(this.subdocs).forEach((subdoc) => subdoc.destroy());
+          const item = this._item;
+          if (item !== null) {
+            this._item = null;
+            const content = (
+              /** @type {ContentDoc} */
+              item.content
+            );
+            content.doc = new _Doc({ guid: this.guid, ...content.opts, shouldLoad: false });
+            content.doc._item = item;
+            transact(
+              /** @type {any} */
+              item.parent.doc,
+              (transaction) => {
+                const doc2 = content.doc;
+                if (!item.deleted) {
+                  transaction.subdocsAdded.add(doc2);
+                }
+                transaction.subdocsRemoved.add(this);
+              },
+              null,
+              true
+            );
+          }
+          this.emit("destroyed", [true]);
+          this.emit("destroy", [this]);
+          super.destroy();
+        }
+      };
+      DSDecoderV1 = class {
+        /**
+         * @param {decoding.Decoder} decoder
+         */
+        constructor(decoder) {
+          this.restDecoder = decoder;
+        }
+        resetDsCurVal() {
+        }
+        /**
+         * @return {number}
+         */
+        readDsClock() {
+          return readVarUint(this.restDecoder);
+        }
+        /**
+         * @return {number}
+         */
+        readDsLen() {
+          return readVarUint(this.restDecoder);
+        }
+      };
+      UpdateDecoderV1 = class extends DSDecoderV1 {
+        /**
+         * @return {ID}
+         */
+        readLeftID() {
+          return createID(readVarUint(this.restDecoder), readVarUint(this.restDecoder));
+        }
+        /**
+         * @return {ID}
+         */
+        readRightID() {
+          return createID(readVarUint(this.restDecoder), readVarUint(this.restDecoder));
+        }
+        /**
+         * Read the next client id.
+         * Use this in favor of readID whenever possible to reduce the number of objects created.
+         */
+        readClient() {
+          return readVarUint(this.restDecoder);
+        }
+        /**
+         * @return {number} info An unsigned 8-bit integer
+         */
+        readInfo() {
+          return readUint8(this.restDecoder);
+        }
+        /**
+         * @return {string}
+         */
+        readString() {
+          return readVarString(this.restDecoder);
+        }
+        /**
+         * @return {boolean} isKey
+         */
+        readParentInfo() {
+          return readVarUint(this.restDecoder) === 1;
+        }
+        /**
+         * @return {number} info An unsigned 8-bit integer
+         */
+        readTypeRef() {
+          return readVarUint(this.restDecoder);
+        }
+        /**
+         * Write len of a struct - well suited for Opt RLE encoder.
+         *
+         * @return {number} len
+         */
+        readLen() {
+          return readVarUint(this.restDecoder);
+        }
+        /**
+         * @return {any}
+         */
+        readAny() {
+          return readAny(this.restDecoder);
+        }
+        /**
+         * @return {Uint8Array}
+         */
+        readBuf() {
+          return copyUint8Array(readVarUint8Array(this.restDecoder));
+        }
+        /**
+         * Legacy implementation uses JSON parse. We use any-decoding in v2.
+         *
+         * @return {any}
+         */
+        readJSON() {
+          return JSON.parse(readVarString(this.restDecoder));
+        }
+        /**
+         * @return {string}
+         */
+        readKey() {
+          return readVarString(this.restDecoder);
+        }
+      };
+      DSDecoderV2 = class {
+        /**
+         * @param {decoding.Decoder} decoder
+         */
+        constructor(decoder) {
+          this.dsCurrVal = 0;
+          this.restDecoder = decoder;
+        }
+        resetDsCurVal() {
+          this.dsCurrVal = 0;
+        }
+        /**
+         * @return {number}
+         */
+        readDsClock() {
+          this.dsCurrVal += readVarUint(this.restDecoder);
+          return this.dsCurrVal;
+        }
+        /**
+         * @return {number}
+         */
+        readDsLen() {
+          const diff = readVarUint(this.restDecoder) + 1;
+          this.dsCurrVal += diff;
+          return diff;
+        }
+      };
+      UpdateDecoderV2 = class extends DSDecoderV2 {
+        /**
+         * @param {decoding.Decoder} decoder
+         */
+        constructor(decoder) {
+          super(decoder);
+          this.keys = [];
+          readVarUint(decoder);
+          this.keyClockDecoder = new IntDiffOptRleDecoder(readVarUint8Array(decoder));
+          this.clientDecoder = new UintOptRleDecoder(readVarUint8Array(decoder));
+          this.leftClockDecoder = new IntDiffOptRleDecoder(readVarUint8Array(decoder));
+          this.rightClockDecoder = new IntDiffOptRleDecoder(readVarUint8Array(decoder));
+          this.infoDecoder = new RleDecoder(readVarUint8Array(decoder), readUint8);
+          this.stringDecoder = new StringDecoder(readVarUint8Array(decoder));
+          this.parentInfoDecoder = new RleDecoder(readVarUint8Array(decoder), readUint8);
+          this.typeRefDecoder = new UintOptRleDecoder(readVarUint8Array(decoder));
+          this.lenDecoder = new UintOptRleDecoder(readVarUint8Array(decoder));
+        }
+        /**
+         * @return {ID}
+         */
+        readLeftID() {
+          return new ID(this.clientDecoder.read(), this.leftClockDecoder.read());
+        }
+        /**
+         * @return {ID}
+         */
+        readRightID() {
+          return new ID(this.clientDecoder.read(), this.rightClockDecoder.read());
+        }
+        /**
+         * Read the next client id.
+         * Use this in favor of readID whenever possible to reduce the number of objects created.
+         */
+        readClient() {
+          return this.clientDecoder.read();
+        }
+        /**
+         * @return {number} info An unsigned 8-bit integer
+         */
+        readInfo() {
+          return (
+            /** @type {number} */
+            this.infoDecoder.read()
+          );
+        }
+        /**
+         * @return {string}
+         */
+        readString() {
+          return this.stringDecoder.read();
+        }
+        /**
+         * @return {boolean}
+         */
+        readParentInfo() {
+          return this.parentInfoDecoder.read() === 1;
+        }
+        /**
+         * @return {number} An unsigned 8-bit integer
+         */
+        readTypeRef() {
+          return this.typeRefDecoder.read();
+        }
+        /**
+         * Write len of a struct - well suited for Opt RLE encoder.
+         *
+         * @return {number}
+         */
+        readLen() {
+          return this.lenDecoder.read();
+        }
+        /**
+         * @return {any}
+         */
+        readAny() {
+          return readAny(this.restDecoder);
+        }
+        /**
+         * @return {Uint8Array}
+         */
+        readBuf() {
+          return readVarUint8Array(this.restDecoder);
+        }
+        /**
+         * This is mainly here for legacy purposes.
+         *
+         * Initial we incoded objects using JSON. Now we use the much faster lib0/any-encoder. This method mainly exists for legacy purposes for the v1 encoder.
+         *
+         * @return {any}
+         */
+        readJSON() {
+          return readAny(this.restDecoder);
+        }
+        /**
+         * @return {string}
+         */
+        readKey() {
+          const keyClock = this.keyClockDecoder.read();
+          if (keyClock < this.keys.length) {
+            return this.keys[keyClock];
+          } else {
+            const key = this.stringDecoder.read();
+            this.keys.push(key);
+            return key;
+          }
+        }
+      };
+      DSEncoderV1 = class {
+        constructor() {
+          this.restEncoder = createEncoder();
+        }
+        toUint8Array() {
+          return toUint8Array(this.restEncoder);
+        }
+        resetDsCurVal() {
+        }
+        /**
+         * @param {number} clock
+         */
+        writeDsClock(clock2) {
+          writeVarUint(this.restEncoder, clock2);
+        }
+        /**
+         * @param {number} len
+         */
+        writeDsLen(len) {
+          writeVarUint(this.restEncoder, len);
+        }
+      };
+      UpdateEncoderV1 = class extends DSEncoderV1 {
+        /**
+         * @param {ID} id
+         */
+        writeLeftID(id3) {
+          writeVarUint(this.restEncoder, id3.client);
+          writeVarUint(this.restEncoder, id3.clock);
+        }
+        /**
+         * @param {ID} id
+         */
+        writeRightID(id3) {
+          writeVarUint(this.restEncoder, id3.client);
+          writeVarUint(this.restEncoder, id3.clock);
+        }
+        /**
+         * Use writeClient and writeClock instead of writeID if possible.
+         * @param {number} client
+         */
+        writeClient(client) {
+          writeVarUint(this.restEncoder, client);
+        }
+        /**
+         * @param {number} info An unsigned 8-bit integer
+         */
+        writeInfo(info) {
+          writeUint8(this.restEncoder, info);
+        }
+        /**
+         * @param {string} s
+         */
+        writeString(s2) {
+          writeVarString(this.restEncoder, s2);
+        }
+        /**
+         * @param {boolean} isYKey
+         */
+        writeParentInfo(isYKey) {
+          writeVarUint(this.restEncoder, isYKey ? 1 : 0);
+        }
+        /**
+         * @param {number} info An unsigned 8-bit integer
+         */
+        writeTypeRef(info) {
+          writeVarUint(this.restEncoder, info);
+        }
+        /**
+         * Write len of a struct - well suited for Opt RLE encoder.
+         *
+         * @param {number} len
+         */
+        writeLen(len) {
+          writeVarUint(this.restEncoder, len);
+        }
+        /**
+         * @param {any} any
+         */
+        writeAny(any2) {
+          writeAny(this.restEncoder, any2);
+        }
+        /**
+         * @param {Uint8Array} buf
+         */
+        writeBuf(buf) {
+          writeVarUint8Array(this.restEncoder, buf);
+        }
+        /**
+         * @param {any} embed
+         */
+        writeJSON(embed) {
+          writeVarString(this.restEncoder, JSON.stringify(embed));
+        }
+        /**
+         * @param {string} key
+         */
+        writeKey(key) {
+          writeVarString(this.restEncoder, key);
+        }
+      };
+      DSEncoderV2 = class {
+        constructor() {
+          this.restEncoder = createEncoder();
+          this.dsCurrVal = 0;
+        }
+        toUint8Array() {
+          return toUint8Array(this.restEncoder);
+        }
+        resetDsCurVal() {
+          this.dsCurrVal = 0;
+        }
+        /**
+         * @param {number} clock
+         */
+        writeDsClock(clock2) {
+          const diff = clock2 - this.dsCurrVal;
+          this.dsCurrVal = clock2;
+          writeVarUint(this.restEncoder, diff);
+        }
+        /**
+         * @param {number} len
+         */
+        writeDsLen(len) {
+          if (len === 0) {
+            unexpectedCase();
+          }
+          writeVarUint(this.restEncoder, len - 1);
+          this.dsCurrVal += len;
+        }
+      };
+      UpdateEncoderV2 = class extends DSEncoderV2 {
+        constructor() {
+          super();
+          this.keyMap = /* @__PURE__ */ new Map();
+          this.keyClock = 0;
+          this.keyClockEncoder = new IntDiffOptRleEncoder();
+          this.clientEncoder = new UintOptRleEncoder();
+          this.leftClockEncoder = new IntDiffOptRleEncoder();
+          this.rightClockEncoder = new IntDiffOptRleEncoder();
+          this.infoEncoder = new RleEncoder(writeUint8);
+          this.stringEncoder = new StringEncoder();
+          this.parentInfoEncoder = new RleEncoder(writeUint8);
+          this.typeRefEncoder = new UintOptRleEncoder();
+          this.lenEncoder = new UintOptRleEncoder();
+        }
+        toUint8Array() {
+          const encoder = createEncoder();
+          writeVarUint(encoder, 0);
+          writeVarUint8Array(encoder, this.keyClockEncoder.toUint8Array());
+          writeVarUint8Array(encoder, this.clientEncoder.toUint8Array());
+          writeVarUint8Array(encoder, this.leftClockEncoder.toUint8Array());
+          writeVarUint8Array(encoder, this.rightClockEncoder.toUint8Array());
+          writeVarUint8Array(encoder, toUint8Array(this.infoEncoder));
+          writeVarUint8Array(encoder, this.stringEncoder.toUint8Array());
+          writeVarUint8Array(encoder, toUint8Array(this.parentInfoEncoder));
+          writeVarUint8Array(encoder, this.typeRefEncoder.toUint8Array());
+          writeVarUint8Array(encoder, this.lenEncoder.toUint8Array());
+          writeUint8Array(encoder, toUint8Array(this.restEncoder));
+          return toUint8Array(encoder);
+        }
+        /**
+         * @param {ID} id
+         */
+        writeLeftID(id3) {
+          this.clientEncoder.write(id3.client);
+          this.leftClockEncoder.write(id3.clock);
+        }
+        /**
+         * @param {ID} id
+         */
+        writeRightID(id3) {
+          this.clientEncoder.write(id3.client);
+          this.rightClockEncoder.write(id3.clock);
+        }
+        /**
+         * @param {number} client
+         */
+        writeClient(client) {
+          this.clientEncoder.write(client);
+        }
+        /**
+         * @param {number} info An unsigned 8-bit integer
+         */
+        writeInfo(info) {
+          this.infoEncoder.write(info);
+        }
+        /**
+         * @param {string} s
+         */
+        writeString(s2) {
+          this.stringEncoder.write(s2);
+        }
+        /**
+         * @param {boolean} isYKey
+         */
+        writeParentInfo(isYKey) {
+          this.parentInfoEncoder.write(isYKey ? 1 : 0);
+        }
+        /**
+         * @param {number} info An unsigned 8-bit integer
+         */
+        writeTypeRef(info) {
+          this.typeRefEncoder.write(info);
+        }
+        /**
+         * Write len of a struct - well suited for Opt RLE encoder.
+         *
+         * @param {number} len
+         */
+        writeLen(len) {
+          this.lenEncoder.write(len);
+        }
+        /**
+         * @param {any} any
+         */
+        writeAny(any2) {
+          writeAny(this.restEncoder, any2);
+        }
+        /**
+         * @param {Uint8Array} buf
+         */
+        writeBuf(buf) {
+          writeVarUint8Array(this.restEncoder, buf);
+        }
+        /**
+         * This is mainly here for legacy purposes.
+         *
+         * Initial we incoded objects using JSON. Now we use the much faster lib0/any-encoder. This method mainly exists for legacy purposes for the v1 encoder.
+         *
+         * @param {any} embed
+         */
+        writeJSON(embed) {
+          writeAny(this.restEncoder, embed);
+        }
+        /**
+         * Property keys are often reused. For example, in y-prosemirror the key `bold` might
+         * occur very often. For a 3d application, the key `position` might occur very often.
+         *
+         * We cache these keys in a Map and refer to them via a unique number.
+         *
+         * @param {string} key
+         */
+        writeKey(key) {
+          const clock2 = this.keyMap.get(key);
+          if (clock2 === void 0) {
+            this.keyClockEncoder.write(this.keyClock++);
+            this.stringEncoder.write(key);
+          } else {
+            this.keyClockEncoder.write(clock2);
+          }
+        }
+      };
+      writeStructs = (encoder, structs, client, clock2) => {
+        clock2 = max(clock2, structs[0].id.clock);
+        const startNewStructs = findIndexSS(structs, clock2);
+        writeVarUint(encoder.restEncoder, structs.length - startNewStructs);
+        encoder.writeClient(client);
+        writeVarUint(encoder.restEncoder, clock2);
+        const firstStruct = structs[startNewStructs];
+        firstStruct.write(encoder, clock2 - firstStruct.id.clock);
+        for (let i = startNewStructs + 1; i < structs.length; i++) {
+          structs[i].write(encoder, 0);
+        }
+      };
+      writeClientsStructs = (encoder, store, _sm) => {
+        const sm = /* @__PURE__ */ new Map();
+        _sm.forEach((clock2, client) => {
+          if (getState(store, client) > clock2) {
+            sm.set(client, clock2);
+          }
+        });
+        getStateVector(store).forEach((_clock, client) => {
+          if (!_sm.has(client)) {
+            sm.set(client, 0);
+          }
+        });
+        writeVarUint(encoder.restEncoder, sm.size);
+        from(sm.entries()).sort((a2, b) => b[0] - a2[0]).forEach(([client, clock2]) => {
+          writeStructs(
+            encoder,
+            /** @type {Array<GC|Item>} */
+            store.clients.get(client),
+            client,
+            clock2
+          );
+        });
+      };
+      readClientsStructRefs = (decoder, doc2) => {
+        const clientRefs = create();
+        const numOfStateUpdates = readVarUint(decoder.restDecoder);
+        for (let i = 0; i < numOfStateUpdates; i++) {
+          const numberOfStructs = readVarUint(decoder.restDecoder);
+          const refs = new Array(numberOfStructs);
+          const client = decoder.readClient();
+          let clock2 = readVarUint(decoder.restDecoder);
+          clientRefs.set(client, { i: 0, refs });
+          for (let i2 = 0; i2 < numberOfStructs; i2++) {
+            const info = decoder.readInfo();
+            switch (BITS5 & info) {
+              case 0: {
+                const len = decoder.readLen();
+                refs[i2] = new GC(createID(client, clock2), len);
+                clock2 += len;
+                break;
+              }
+              case 10: {
+                const len = readVarUint(decoder.restDecoder);
+                refs[i2] = new Skip(createID(client, clock2), len);
+                clock2 += len;
+                break;
+              }
+              default: {
+                const cantCopyParentInfo = (info & (BIT7 | BIT8)) === 0;
+                const struct2 = new Item(
+                  createID(client, clock2),
+                  null,
+                  // left
+                  (info & BIT8) === BIT8 ? decoder.readLeftID() : null,
+                  // origin
+                  null,
+                  // right
+                  (info & BIT7) === BIT7 ? decoder.readRightID() : null,
+                  // right origin
+                  cantCopyParentInfo ? decoder.readParentInfo() ? doc2.get(decoder.readString()) : decoder.readLeftID() : null,
+                  // parent
+                  cantCopyParentInfo && (info & BIT6) === BIT6 ? decoder.readString() : null,
+                  // parentSub
+                  readItemContent(decoder, info)
+                  // item content
+                );
+                refs[i2] = struct2;
+                clock2 += struct2.length;
+              }
+            }
+          }
+        }
+        return clientRefs;
+      };
+      integrateStructs = (transaction, store, clientsStructRefs) => {
+        const stack2 = [];
+        let clientsStructRefsIds = from(clientsStructRefs.keys()).sort((a2, b) => a2 - b);
+        if (clientsStructRefsIds.length === 0) {
+          return null;
+        }
+        const getNextStructTarget = () => {
+          if (clientsStructRefsIds.length === 0) {
+            return null;
+          }
+          let nextStructsTarget = (
+            /** @type {{i:number,refs:Array<GC|Item>}} */
+            clientsStructRefs.get(clientsStructRefsIds[clientsStructRefsIds.length - 1])
+          );
+          while (nextStructsTarget.refs.length === nextStructsTarget.i) {
+            clientsStructRefsIds.pop();
+            if (clientsStructRefsIds.length > 0) {
+              nextStructsTarget = /** @type {{i:number,refs:Array<GC|Item>}} */
+              clientsStructRefs.get(clientsStructRefsIds[clientsStructRefsIds.length - 1]);
+            } else {
+              return null;
+            }
+          }
+          return nextStructsTarget;
+        };
+        let curStructsTarget = getNextStructTarget();
+        if (curStructsTarget === null) {
+          return null;
+        }
+        const restStructs = new StructStore();
+        const missingSV = /* @__PURE__ */ new Map();
+        const updateMissingSv = (client, clock2) => {
+          const mclock = missingSV.get(client);
+          if (mclock == null || mclock > clock2) {
+            missingSV.set(client, clock2);
+          }
+        };
+        let stackHead = (
+          /** @type {any} */
+          curStructsTarget.refs[
+            /** @type {any} */
+            curStructsTarget.i++
+          ]
+        );
+        const state = /* @__PURE__ */ new Map();
+        const addStackToRestSS = () => {
+          for (const item of stack2) {
+            const client = item.id.client;
+            const inapplicableItems = clientsStructRefs.get(client);
+            if (inapplicableItems) {
+              inapplicableItems.i--;
+              restStructs.clients.set(client, inapplicableItems.refs.slice(inapplicableItems.i));
+              clientsStructRefs.delete(client);
+              inapplicableItems.i = 0;
+              inapplicableItems.refs = [];
+            } else {
+              restStructs.clients.set(client, [item]);
+            }
+            clientsStructRefsIds = clientsStructRefsIds.filter((c2) => c2 !== client);
+          }
+          stack2.length = 0;
+        };
+        while (true) {
+          if (stackHead.constructor !== Skip) {
+            const localClock = setIfUndefined(state, stackHead.id.client, () => getState(store, stackHead.id.client));
+            const offset2 = localClock - stackHead.id.clock;
+            if (offset2 < 0) {
+              stack2.push(stackHead);
+              updateMissingSv(stackHead.id.client, stackHead.id.clock - 1);
+              addStackToRestSS();
+            } else {
+              const missing = stackHead.getMissing(transaction, store);
+              if (missing !== null) {
+                stack2.push(stackHead);
+                const structRefs = clientsStructRefs.get(
+                  /** @type {number} */
+                  missing
+                ) || { refs: [], i: 0 };
+                if (structRefs.refs.length === structRefs.i) {
+                  updateMissingSv(
+                    /** @type {number} */
+                    missing,
+                    getState(store, missing)
+                  );
+                  addStackToRestSS();
+                } else {
+                  stackHead = structRefs.refs[structRefs.i++];
+                  continue;
+                }
+              } else if (offset2 === 0 || offset2 < stackHead.length) {
+                stackHead.integrate(transaction, offset2);
+                state.set(stackHead.id.client, stackHead.id.clock + stackHead.length);
+              }
+            }
+          }
+          if (stack2.length > 0) {
+            stackHead = /** @type {GC|Item} */
+            stack2.pop();
+          } else if (curStructsTarget !== null && curStructsTarget.i < curStructsTarget.refs.length) {
+            stackHead = /** @type {GC|Item} */
+            curStructsTarget.refs[curStructsTarget.i++];
+          } else {
+            curStructsTarget = getNextStructTarget();
+            if (curStructsTarget === null) {
+              break;
+            } else {
+              stackHead = /** @type {GC|Item} */
+              curStructsTarget.refs[curStructsTarget.i++];
+            }
+          }
+        }
+        if (restStructs.clients.size > 0) {
+          const encoder = new UpdateEncoderV2();
+          writeClientsStructs(encoder, restStructs, /* @__PURE__ */ new Map());
+          writeVarUint(encoder.restEncoder, 0);
+          return { missing: missingSV, update: encoder.toUint8Array() };
+        }
+        return null;
+      };
+      writeStructsFromTransaction = (encoder, transaction) => writeClientsStructs(encoder, transaction.doc.store, transaction.beforeState);
+      readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = new UpdateDecoderV2(decoder)) => transact(ydoc, (transaction) => {
+        transaction.local = false;
+        let retry = false;
+        const doc2 = transaction.doc;
+        const store = doc2.store;
+        const ss = readClientsStructRefs(structDecoder, doc2);
+        const restStructs = integrateStructs(transaction, store, ss);
+        const pending = store.pendingStructs;
+        if (pending) {
+          for (const [client, clock2] of pending.missing) {
+            if (clock2 < getState(store, client)) {
+              retry = true;
+              break;
+            }
+          }
+          if (restStructs) {
+            for (const [client, clock2] of restStructs.missing) {
+              const mclock = pending.missing.get(client);
+              if (mclock == null || mclock > clock2) {
+                pending.missing.set(client, clock2);
+              }
+            }
+            pending.update = mergeUpdatesV2([pending.update, restStructs.update]);
+          }
+        } else {
+          store.pendingStructs = restStructs;
+        }
+        const dsRest = readAndApplyDeleteSet(structDecoder, transaction, store);
+        if (store.pendingDs) {
+          const pendingDSUpdate = new UpdateDecoderV2(createDecoder(store.pendingDs));
+          readVarUint(pendingDSUpdate.restDecoder);
+          const dsRest2 = readAndApplyDeleteSet(pendingDSUpdate, transaction, store);
+          if (dsRest && dsRest2) {
+            store.pendingDs = mergeUpdatesV2([dsRest, dsRest2]);
+          } else {
+            store.pendingDs = dsRest || dsRest2;
+          }
+        } else {
+          store.pendingDs = dsRest;
+        }
+        if (retry) {
+          const update = (
+            /** @type {{update: Uint8Array}} */
+            store.pendingStructs.update
+          );
+          store.pendingStructs = null;
+          applyUpdateV2(transaction.doc, update);
+        }
+      }, transactionOrigin, false);
+      applyUpdateV2 = (ydoc, update, transactionOrigin, YDecoder = UpdateDecoderV2) => {
+        const decoder = createDecoder(update);
+        readUpdateV2(decoder, ydoc, transactionOrigin, new YDecoder(decoder));
+      };
+      applyUpdate = (ydoc, update, transactionOrigin) => applyUpdateV2(ydoc, update, transactionOrigin, UpdateDecoderV1);
+      writeStateAsUpdate = (encoder, doc2, targetStateVector = /* @__PURE__ */ new Map()) => {
+        writeClientsStructs(encoder, doc2.store, targetStateVector);
+        writeDeleteSet(encoder, createDeleteSetFromStructStore(doc2.store));
+      };
+      encodeStateAsUpdateV2 = (doc2, encodedTargetStateVector = new Uint8Array([0]), encoder = new UpdateEncoderV2()) => {
+        const targetStateVector = decodeStateVector(encodedTargetStateVector);
+        writeStateAsUpdate(encoder, doc2, targetStateVector);
+        const updates = [encoder.toUint8Array()];
+        if (doc2.store.pendingDs) {
+          updates.push(doc2.store.pendingDs);
+        }
+        if (doc2.store.pendingStructs) {
+          updates.push(diffUpdateV2(doc2.store.pendingStructs.update, encodedTargetStateVector));
+        }
+        if (updates.length > 1) {
+          if (encoder.constructor === UpdateEncoderV1) {
+            return mergeUpdates(updates.map((update, i) => i === 0 ? update : convertUpdateFormatV2ToV1(update)));
+          } else if (encoder.constructor === UpdateEncoderV2) {
+            return mergeUpdatesV2(updates);
+          }
+        }
+        return updates[0];
+      };
+      encodeStateAsUpdate = (doc2, encodedTargetStateVector) => encodeStateAsUpdateV2(doc2, encodedTargetStateVector, new UpdateEncoderV1());
+      readStateVector = (decoder) => {
+        const ss = /* @__PURE__ */ new Map();
+        const ssLength = readVarUint(decoder.restDecoder);
+        for (let i = 0; i < ssLength; i++) {
+          const client = readVarUint(decoder.restDecoder);
+          const clock2 = readVarUint(decoder.restDecoder);
+          ss.set(client, clock2);
+        }
+        return ss;
+      };
+      decodeStateVector = (decodedState) => readStateVector(new DSDecoderV1(createDecoder(decodedState)));
+      EventHandler = class {
+        constructor() {
+          this.l = [];
+        }
+      };
+      createEventHandler = () => new EventHandler();
+      addEventHandlerListener = (eventHandler, f2) => eventHandler.l.push(f2);
+      removeEventHandlerListener = (eventHandler, f2) => {
+        const l = eventHandler.l;
+        const len = l.length;
+        eventHandler.l = l.filter((g2) => f2 !== g2);
+        if (len === eventHandler.l.length) {
+          console.error("[yjs] Tried to remove event handler that doesn't exist.");
+        }
+      };
+      callEventHandlerListeners = (eventHandler, arg0, arg1) => callAll(eventHandler.l, [arg0, arg1]);
+      ID = class {
+        /**
+         * @param {number} client client id
+         * @param {number} clock unique per client id, continuous number
+         */
+        constructor(client, clock2) {
+          this.client = client;
+          this.clock = clock2;
+        }
+      };
+      compareIDs = (a2, b) => a2 === b || a2 !== null && b !== null && a2.client === b.client && a2.clock === b.clock;
+      createID = (client, clock2) => new ID(client, clock2);
+      findRootTypeKey = (type) => {
+        for (const [key, value2] of type.doc.share.entries()) {
+          if (value2 === type) {
+            return key;
+          }
+        }
+        throw unexpectedCase();
+      };
+      Snapshot = class {
+        /**
+         * @param {DeleteSet} ds
+         * @param {Map<number,number>} sv state map
+         */
+        constructor(ds2, sv) {
+          this.ds = ds2;
+          this.sv = sv;
+        }
+      };
+      createSnapshot = (ds2, sm) => new Snapshot(ds2, sm);
+      emptySnapshot = createSnapshot(createDeleteSet(), /* @__PURE__ */ new Map());
+      isVisible = (item, snapshot) => snapshot === void 0 ? !item.deleted : snapshot.sv.has(item.id.client) && (snapshot.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot.ds, item.id);
+      splitSnapshotAffectedStructs = (transaction, snapshot) => {
+        const meta = setIfUndefined(transaction.meta, splitSnapshotAffectedStructs, create2);
+        const store = transaction.doc.store;
+        if (!meta.has(snapshot)) {
+          snapshot.sv.forEach((clock2, client) => {
+            if (clock2 < getState(store, client)) {
+              getItemCleanStart(transaction, createID(client, clock2));
+            }
+          });
+          iterateDeletedStructs(transaction, snapshot.ds, (_item) => {
+          });
+          meta.add(snapshot);
+        }
+      };
+      StructStore = class {
+        constructor() {
+          this.clients = /* @__PURE__ */ new Map();
+          this.pendingStructs = null;
+          this.pendingDs = null;
+        }
+      };
+      getStateVector = (store) => {
+        const sm = /* @__PURE__ */ new Map();
+        store.clients.forEach((structs, client) => {
+          const struct2 = structs[structs.length - 1];
+          sm.set(client, struct2.id.clock + struct2.length);
+        });
+        return sm;
+      };
+      getState = (store, client) => {
+        const structs = store.clients.get(client);
+        if (structs === void 0) {
+          return 0;
+        }
+        const lastStruct = structs[structs.length - 1];
+        return lastStruct.id.clock + lastStruct.length;
+      };
+      addStruct = (store, struct2) => {
+        let structs = store.clients.get(struct2.id.client);
+        if (structs === void 0) {
+          structs = [];
+          store.clients.set(struct2.id.client, structs);
+        } else {
+          const lastStruct = structs[structs.length - 1];
+          if (lastStruct.id.clock + lastStruct.length !== struct2.id.clock) {
+            throw unexpectedCase();
+          }
+        }
+        structs.push(struct2);
+      };
+      findIndexSS = (structs, clock2) => {
+        let left2 = 0;
+        let right2 = structs.length - 1;
+        let mid = structs[right2];
+        let midclock = mid.id.clock;
+        if (midclock === clock2) {
+          return right2;
+        }
+        let midindex = floor(clock2 / (midclock + mid.length - 1) * right2);
+        while (left2 <= right2) {
+          mid = structs[midindex];
+          midclock = mid.id.clock;
+          if (midclock <= clock2) {
+            if (clock2 < midclock + mid.length) {
+              return midindex;
+            }
+            left2 = midindex + 1;
+          } else {
+            right2 = midindex - 1;
+          }
+          midindex = floor((left2 + right2) / 2);
+        }
+        throw unexpectedCase();
+      };
+      find = (store, id3) => {
+        const structs = store.clients.get(id3.client);
+        return structs[findIndexSS(structs, id3.clock)];
+      };
+      getItem = /** @type {function(StructStore,ID):Item} */
+      find;
+      findIndexCleanStart = (transaction, structs, clock2) => {
+        const index2 = findIndexSS(structs, clock2);
+        const struct2 = structs[index2];
+        if (struct2.id.clock < clock2 && struct2 instanceof Item) {
+          structs.splice(index2 + 1, 0, splitItem(transaction, struct2, clock2 - struct2.id.clock));
+          return index2 + 1;
+        }
+        return index2;
+      };
+      getItemCleanStart = (transaction, id3) => {
+        const structs = (
+          /** @type {Array<Item>} */
+          transaction.doc.store.clients.get(id3.client)
+        );
+        return structs[findIndexCleanStart(transaction, structs, id3.clock)];
+      };
+      getItemCleanEnd = (transaction, store, id3) => {
+        const structs = store.clients.get(id3.client);
+        const index2 = findIndexSS(structs, id3.clock);
+        const struct2 = structs[index2];
+        if (id3.clock !== struct2.id.clock + struct2.length - 1 && struct2.constructor !== GC) {
+          structs.splice(index2 + 1, 0, splitItem(transaction, struct2, id3.clock - struct2.id.clock + 1));
+        }
+        return struct2;
+      };
+      replaceStruct = (store, struct2, newStruct) => {
+        const structs = (
+          /** @type {Array<GC|Item>} */
+          store.clients.get(struct2.id.client)
+        );
+        structs[findIndexSS(structs, struct2.id.clock)] = newStruct;
+      };
+      iterateStructs = (transaction, structs, clockStart, len, f2) => {
+        if (len === 0) {
+          return;
+        }
+        const clockEnd = clockStart + len;
+        let index2 = findIndexCleanStart(transaction, structs, clockStart);
+        let struct2;
+        do {
+          struct2 = structs[index2++];
+          if (clockEnd < struct2.id.clock + struct2.length) {
+            findIndexCleanStart(transaction, structs, clockEnd);
+          }
+          f2(struct2);
+        } while (index2 < structs.length && structs[index2].id.clock < clockEnd);
+      };
+      Transaction = class {
+        /**
+         * @param {Doc} doc
+         * @param {any} origin
+         * @param {boolean} local
+         */
+        constructor(doc2, origin, local2) {
+          this.doc = doc2;
+          this.deleteSet = new DeleteSet();
+          this.beforeState = getStateVector(doc2.store);
+          this.afterState = /* @__PURE__ */ new Map();
+          this.changed = /* @__PURE__ */ new Map();
+          this.changedParentTypes = /* @__PURE__ */ new Map();
+          this._mergeStructs = [];
+          this.origin = origin;
+          this.meta = /* @__PURE__ */ new Map();
+          this.local = local2;
+          this.subdocsAdded = /* @__PURE__ */ new Set();
+          this.subdocsRemoved = /* @__PURE__ */ new Set();
+          this.subdocsLoaded = /* @__PURE__ */ new Set();
+          this._needFormattingCleanup = false;
+        }
+      };
+      writeUpdateMessageFromTransaction = (encoder, transaction) => {
+        if (transaction.deleteSet.clients.size === 0 && !any(transaction.afterState, (clock2, client) => transaction.beforeState.get(client) !== clock2)) {
+          return false;
+        }
+        sortAndMergeDeleteSet(transaction.deleteSet);
+        writeStructsFromTransaction(encoder, transaction);
+        writeDeleteSet(encoder, transaction.deleteSet);
+        return true;
+      };
+      addChangedTypeToTransaction = (transaction, type, parentSub) => {
+        const item = type._item;
+        if (item === null || item.id.clock < (transaction.beforeState.get(item.id.client) || 0) && !item.deleted) {
+          setIfUndefined(transaction.changed, type, create2).add(parentSub);
+        }
+      };
+      tryToMergeWithLefts = (structs, pos) => {
+        let right2 = structs[pos];
+        let left2 = structs[pos - 1];
+        let i = pos;
+        for (; i > 0; right2 = left2, left2 = structs[--i - 1]) {
+          if (left2.deleted === right2.deleted && left2.constructor === right2.constructor) {
+            if (left2.mergeWith(right2)) {
+              if (right2 instanceof Item && right2.parentSub !== null && /** @type {AbstractType<any>} */
+              right2.parent._map.get(right2.parentSub) === right2) {
+                right2.parent._map.set(
+                  right2.parentSub,
+                  /** @type {Item} */
+                  left2
+                );
+              }
+              continue;
+            }
+          }
+          break;
+        }
+        const merged = pos - i;
+        if (merged) {
+          structs.splice(pos + 1 - merged, merged);
+        }
+        return merged;
+      };
+      tryGcDeleteSet = (ds2, store, gcFilter) => {
+        for (const [client, deleteItems] of ds2.clients.entries()) {
+          const structs = (
+            /** @type {Array<GC|Item>} */
+            store.clients.get(client)
+          );
+          for (let di2 = deleteItems.length - 1; di2 >= 0; di2--) {
+            const deleteItem = deleteItems[di2];
+            const endDeleteItemClock = deleteItem.clock + deleteItem.len;
+            for (let si2 = findIndexSS(structs, deleteItem.clock), struct2 = structs[si2]; si2 < structs.length && struct2.id.clock < endDeleteItemClock; struct2 = structs[++si2]) {
+              const struct3 = structs[si2];
+              if (deleteItem.clock + deleteItem.len <= struct3.id.clock) {
+                break;
+              }
+              if (struct3 instanceof Item && struct3.deleted && !struct3.keep && gcFilter(struct3)) {
+                struct3.gc(store, false);
+              }
+            }
+          }
+        }
+      };
+      tryMergeDeleteSet = (ds2, store) => {
+        ds2.clients.forEach((deleteItems, client) => {
+          const structs = (
+            /** @type {Array<GC|Item>} */
+            store.clients.get(client)
+          );
+          for (let di2 = deleteItems.length - 1; di2 >= 0; di2--) {
+            const deleteItem = deleteItems[di2];
+            const mostRightIndexToCheck = min(structs.length - 1, 1 + findIndexSS(structs, deleteItem.clock + deleteItem.len - 1));
+            for (let si2 = mostRightIndexToCheck, struct2 = structs[si2]; si2 > 0 && struct2.id.clock >= deleteItem.clock; struct2 = structs[si2]) {
+              si2 -= 1 + tryToMergeWithLefts(structs, si2);
+            }
+          }
+        });
+      };
+      cleanupTransactions = (transactionCleanups, i) => {
+        if (i < transactionCleanups.length) {
+          const transaction = transactionCleanups[i];
+          const doc2 = transaction.doc;
+          const store = doc2.store;
+          const ds2 = transaction.deleteSet;
+          const mergeStructs = transaction._mergeStructs;
+          try {
+            sortAndMergeDeleteSet(ds2);
+            transaction.afterState = getStateVector(transaction.doc.store);
+            doc2.emit("beforeObserverCalls", [transaction, doc2]);
+            const fs = [];
+            transaction.changed.forEach(
+              (subs, itemtype) => fs.push(() => {
+                if (itemtype._item === null || !itemtype._item.deleted) {
+                  itemtype._callObserver(transaction, subs);
+                }
+              })
+            );
+            fs.push(() => {
+              transaction.changedParentTypes.forEach((events, type) => {
+                if (type._dEH.l.length > 0 && (type._item === null || !type._item.deleted)) {
+                  events = events.filter(
+                    (event) => event.target._item === null || !event.target._item.deleted
+                  );
+                  events.forEach((event) => {
+                    event.currentTarget = type;
+                    event._path = null;
+                  });
+                  events.sort((event1, event2) => event1.path.length - event2.path.length);
+                  fs.push(() => {
+                    callEventHandlerListeners(type._dEH, events, transaction);
+                  });
+                }
+              });
+              fs.push(() => doc2.emit("afterTransaction", [transaction, doc2]));
+              fs.push(() => {
+                if (transaction._needFormattingCleanup) {
+                  cleanupYTextAfterTransaction(transaction);
+                }
+              });
+            });
+            callAll(fs, []);
+          } finally {
+            if (doc2.gc) {
+              tryGcDeleteSet(ds2, store, doc2.gcFilter);
+            }
+            tryMergeDeleteSet(ds2, store);
+            transaction.afterState.forEach((clock2, client) => {
+              const beforeClock = transaction.beforeState.get(client) || 0;
+              if (beforeClock !== clock2) {
+                const structs = (
+                  /** @type {Array<GC|Item>} */
+                  store.clients.get(client)
+                );
+                const firstChangePos = max(findIndexSS(structs, beforeClock), 1);
+                for (let i2 = structs.length - 1; i2 >= firstChangePos; ) {
+                  i2 -= 1 + tryToMergeWithLefts(structs, i2);
+                }
+              }
+            });
+            for (let i2 = mergeStructs.length - 1; i2 >= 0; i2--) {
+              const { client, clock: clock2 } = mergeStructs[i2].id;
+              const structs = (
+                /** @type {Array<GC|Item>} */
+                store.clients.get(client)
+              );
+              const replacedStructPos = findIndexSS(structs, clock2);
+              if (replacedStructPos + 1 < structs.length) {
+                if (tryToMergeWithLefts(structs, replacedStructPos + 1) > 1) {
+                  continue;
+                }
+              }
+              if (replacedStructPos > 0) {
+                tryToMergeWithLefts(structs, replacedStructPos);
+              }
+            }
+            if (!transaction.local && transaction.afterState.get(doc2.clientID) !== transaction.beforeState.get(doc2.clientID)) {
+              print(ORANGE, BOLD, "[yjs] ", UNBOLD, RED, "Changed the client-id because another client seems to be using it.");
+              doc2.clientID = generateNewClientId();
+            }
+            doc2.emit("afterTransactionCleanup", [transaction, doc2]);
+            if (doc2._observers.has("update")) {
+              const encoder = new UpdateEncoderV1();
+              const hasContent2 = writeUpdateMessageFromTransaction(encoder, transaction);
+              if (hasContent2) {
+                doc2.emit("update", [encoder.toUint8Array(), transaction.origin, doc2, transaction]);
+              }
+            }
+            if (doc2._observers.has("updateV2")) {
+              const encoder = new UpdateEncoderV2();
+              const hasContent2 = writeUpdateMessageFromTransaction(encoder, transaction);
+              if (hasContent2) {
+                doc2.emit("updateV2", [encoder.toUint8Array(), transaction.origin, doc2, transaction]);
+              }
+            }
+            const { subdocsAdded, subdocsLoaded, subdocsRemoved } = transaction;
+            if (subdocsAdded.size > 0 || subdocsRemoved.size > 0 || subdocsLoaded.size > 0) {
+              subdocsAdded.forEach((subdoc) => {
+                subdoc.clientID = doc2.clientID;
+                if (subdoc.collectionid == null) {
+                  subdoc.collectionid = doc2.collectionid;
+                }
+                doc2.subdocs.add(subdoc);
+              });
+              subdocsRemoved.forEach((subdoc) => doc2.subdocs.delete(subdoc));
+              doc2.emit("subdocs", [{ loaded: subdocsLoaded, added: subdocsAdded, removed: subdocsRemoved }, doc2, transaction]);
+              subdocsRemoved.forEach((subdoc) => subdoc.destroy());
+            }
+            if (transactionCleanups.length <= i + 1) {
+              doc2._transactionCleanups = [];
+              doc2.emit("afterAllTransactions", [doc2, transactionCleanups]);
+            } else {
+              cleanupTransactions(transactionCleanups, i + 1);
+            }
+          }
+        }
+      };
+      transact = (doc2, f2, origin = null, local2 = true) => {
+        const transactionCleanups = doc2._transactionCleanups;
+        let initialCall = false;
+        let result = null;
+        if (doc2._transaction === null) {
+          initialCall = true;
+          doc2._transaction = new Transaction(doc2, origin, local2);
+          transactionCleanups.push(doc2._transaction);
+          if (transactionCleanups.length === 1) {
+            doc2.emit("beforeAllTransactions", [doc2]);
+          }
+          doc2.emit("beforeTransaction", [doc2._transaction, doc2]);
+        }
+        try {
+          result = f2(doc2._transaction);
+        } finally {
+          if (initialCall) {
+            const finishCleanup = doc2._transaction === transactionCleanups[0];
+            doc2._transaction = null;
+            if (finishCleanup) {
+              cleanupTransactions(transactionCleanups, 0);
+            }
+          }
+        }
+        return result;
+      };
+      LazyStructReader = class {
+        /**
+         * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
+         * @param {boolean} filterSkips
+         */
+        constructor(decoder, filterSkips) {
+          this.gen = lazyStructReaderGenerator(decoder);
+          this.curr = null;
+          this.done = false;
+          this.filterSkips = filterSkips;
+          this.next();
+        }
+        /**
+         * @return {Item | GC | Skip |null}
+         */
+        next() {
+          do {
+            this.curr = this.gen.next().value || null;
+          } while (this.filterSkips && this.curr !== null && this.curr.constructor === Skip);
+          return this.curr;
+        }
+      };
+      LazyStructWriter = class {
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         */
+        constructor(encoder) {
+          this.currClient = 0;
+          this.startClock = 0;
+          this.written = 0;
+          this.encoder = encoder;
+          this.clientStructs = [];
+        }
+      };
+      mergeUpdates = (updates) => mergeUpdatesV2(updates, UpdateDecoderV1, UpdateEncoderV1);
+      sliceStruct = (left2, diff) => {
+        if (left2.constructor === GC) {
+          const { client, clock: clock2 } = left2.id;
+          return new GC(createID(client, clock2 + diff), left2.length - diff);
+        } else if (left2.constructor === Skip) {
+          const { client, clock: clock2 } = left2.id;
+          return new Skip(createID(client, clock2 + diff), left2.length - diff);
+        } else {
+          const leftItem = (
+            /** @type {Item} */
+            left2
+          );
+          const { client, clock: clock2 } = leftItem.id;
+          return new Item(
+            createID(client, clock2 + diff),
+            null,
+            createID(client, clock2 + diff - 1),
+            null,
+            leftItem.rightOrigin,
+            leftItem.parent,
+            leftItem.parentSub,
+            leftItem.content.splice(diff)
+          );
+        }
+      };
+      mergeUpdatesV2 = (updates, YDecoder = UpdateDecoderV2, YEncoder = UpdateEncoderV2) => {
+        if (updates.length === 1) {
+          return updates[0];
+        }
+        const updateDecoders = updates.map((update) => new YDecoder(createDecoder(update)));
+        let lazyStructDecoders = updateDecoders.map((decoder) => new LazyStructReader(decoder, true));
+        let currWrite = null;
+        const updateEncoder = new YEncoder();
+        const lazyStructEncoder = new LazyStructWriter(updateEncoder);
+        while (true) {
+          lazyStructDecoders = lazyStructDecoders.filter((dec2) => dec2.curr !== null);
+          lazyStructDecoders.sort(
+            /** @type {function(any,any):number} */
+            (dec1, dec2) => {
+              if (dec1.curr.id.client === dec2.curr.id.client) {
+                const clockDiff = dec1.curr.id.clock - dec2.curr.id.clock;
+                if (clockDiff === 0) {
+                  return dec1.curr.constructor === dec2.curr.constructor ? 0 : dec1.curr.constructor === Skip ? 1 : -1;
+                } else {
+                  return clockDiff;
+                }
+              } else {
+                return dec2.curr.id.client - dec1.curr.id.client;
+              }
+            }
+          );
+          if (lazyStructDecoders.length === 0) {
+            break;
+          }
+          const currDecoder = lazyStructDecoders[0];
+          const firstClient = (
+            /** @type {Item | GC} */
+            currDecoder.curr.id.client
+          );
+          if (currWrite !== null) {
+            let curr = (
+              /** @type {Item | GC | null} */
+              currDecoder.curr
+            );
+            let iterated = false;
+            while (curr !== null && curr.id.clock + curr.length <= currWrite.struct.id.clock + currWrite.struct.length && curr.id.client >= currWrite.struct.id.client) {
+              curr = currDecoder.next();
+              iterated = true;
+            }
+            if (curr === null || // current decoder is empty
+            curr.id.client !== firstClient || // check whether there is another decoder that has has updates from `firstClient`
+            iterated && curr.id.clock > currWrite.struct.id.clock + currWrite.struct.length) {
+              continue;
+            }
+            if (firstClient !== currWrite.struct.id.client) {
+              writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset);
+              currWrite = { struct: curr, offset: 0 };
+              currDecoder.next();
+            } else {
+              if (currWrite.struct.id.clock + currWrite.struct.length < curr.id.clock) {
+                if (currWrite.struct.constructor === Skip) {
+                  currWrite.struct.length = curr.id.clock + curr.length - currWrite.struct.id.clock;
+                } else {
+                  writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset);
+                  const diff = curr.id.clock - currWrite.struct.id.clock - currWrite.struct.length;
+                  const struct2 = new Skip(createID(firstClient, currWrite.struct.id.clock + currWrite.struct.length), diff);
+                  currWrite = { struct: struct2, offset: 0 };
+                }
+              } else {
+                const diff = currWrite.struct.id.clock + currWrite.struct.length - curr.id.clock;
+                if (diff > 0) {
+                  if (currWrite.struct.constructor === Skip) {
+                    currWrite.struct.length -= diff;
+                  } else {
+                    curr = sliceStruct(curr, diff);
+                  }
+                }
+                if (!currWrite.struct.mergeWith(
+                  /** @type {any} */
+                  curr
+                )) {
+                  writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset);
+                  currWrite = { struct: curr, offset: 0 };
+                  currDecoder.next();
+                }
+              }
+            }
+          } else {
+            currWrite = { struct: (
+              /** @type {Item | GC} */
+              currDecoder.curr
+            ), offset: 0 };
+            currDecoder.next();
+          }
+          for (let next = currDecoder.curr; next !== null && next.id.client === firstClient && next.id.clock === currWrite.struct.id.clock + currWrite.struct.length && next.constructor !== Skip; next = currDecoder.next()) {
+            writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset);
+            currWrite = { struct: next, offset: 0 };
+          }
+        }
+        if (currWrite !== null) {
+          writeStructToLazyStructWriter(lazyStructEncoder, currWrite.struct, currWrite.offset);
+          currWrite = null;
+        }
+        finishLazyStructWriting(lazyStructEncoder);
+        const dss = updateDecoders.map((decoder) => readDeleteSet(decoder));
+        const ds2 = mergeDeleteSets(dss);
+        writeDeleteSet(updateEncoder, ds2);
+        return updateEncoder.toUint8Array();
+      };
+      diffUpdateV2 = (update, sv, YDecoder = UpdateDecoderV2, YEncoder = UpdateEncoderV2) => {
+        const state = decodeStateVector(sv);
+        const encoder = new YEncoder();
+        const lazyStructWriter = new LazyStructWriter(encoder);
+        const decoder = new YDecoder(createDecoder(update));
+        const reader = new LazyStructReader(decoder, false);
+        while (reader.curr) {
+          const curr = reader.curr;
+          const currClient = curr.id.client;
+          const svClock = state.get(currClient) || 0;
+          if (reader.curr.constructor === Skip) {
+            reader.next();
+            continue;
+          }
+          if (curr.id.clock + curr.length > svClock) {
+            writeStructToLazyStructWriter(lazyStructWriter, curr, max(svClock - curr.id.clock, 0));
+            reader.next();
+            while (reader.curr && reader.curr.id.client === currClient) {
+              writeStructToLazyStructWriter(lazyStructWriter, reader.curr, 0);
+              reader.next();
+            }
+          } else {
+            while (reader.curr && reader.curr.id.client === currClient && reader.curr.id.clock + reader.curr.length <= svClock) {
+              reader.next();
+            }
+          }
+        }
+        finishLazyStructWriting(lazyStructWriter);
+        const ds2 = readDeleteSet(decoder);
+        writeDeleteSet(encoder, ds2);
+        return encoder.toUint8Array();
+      };
+      flushLazyStructWriter = (lazyWriter) => {
+        if (lazyWriter.written > 0) {
+          lazyWriter.clientStructs.push({ written: lazyWriter.written, restEncoder: toUint8Array(lazyWriter.encoder.restEncoder) });
+          lazyWriter.encoder.restEncoder = createEncoder();
+          lazyWriter.written = 0;
+        }
+      };
+      writeStructToLazyStructWriter = (lazyWriter, struct2, offset2) => {
+        if (lazyWriter.written > 0 && lazyWriter.currClient !== struct2.id.client) {
+          flushLazyStructWriter(lazyWriter);
+        }
+        if (lazyWriter.written === 0) {
+          lazyWriter.currClient = struct2.id.client;
+          lazyWriter.encoder.writeClient(struct2.id.client);
+          writeVarUint(lazyWriter.encoder.restEncoder, struct2.id.clock + offset2);
+        }
+        struct2.write(lazyWriter.encoder, offset2);
+        lazyWriter.written++;
+      };
+      finishLazyStructWriting = (lazyWriter) => {
+        flushLazyStructWriter(lazyWriter);
+        const restEncoder = lazyWriter.encoder.restEncoder;
+        writeVarUint(restEncoder, lazyWriter.clientStructs.length);
+        for (let i = 0; i < lazyWriter.clientStructs.length; i++) {
+          const partStructs = lazyWriter.clientStructs[i];
+          writeVarUint(restEncoder, partStructs.written);
+          writeUint8Array(restEncoder, partStructs.restEncoder);
+        }
+      };
+      convertUpdateFormat = (update, blockTransformer, YDecoder, YEncoder) => {
+        const updateDecoder = new YDecoder(createDecoder(update));
+        const lazyDecoder = new LazyStructReader(updateDecoder, false);
+        const updateEncoder = new YEncoder();
+        const lazyWriter = new LazyStructWriter(updateEncoder);
+        for (let curr = lazyDecoder.curr; curr !== null; curr = lazyDecoder.next()) {
+          writeStructToLazyStructWriter(lazyWriter, blockTransformer(curr), 0);
+        }
+        finishLazyStructWriting(lazyWriter);
+        const ds2 = readDeleteSet(updateDecoder);
+        writeDeleteSet(updateEncoder, ds2);
+        return updateEncoder.toUint8Array();
+      };
+      convertUpdateFormatV2ToV1 = (update) => convertUpdateFormat(update, id, UpdateDecoderV2, UpdateEncoderV1);
+      errorComputeChanges = "You must not compute changes after the event-handler fired.";
+      YEvent = class {
+        /**
+         * @param {T} target The changed type.
+         * @param {Transaction} transaction
+         */
+        constructor(target, transaction) {
+          this.target = target;
+          this.currentTarget = target;
+          this.transaction = transaction;
+          this._changes = null;
+          this._keys = null;
+          this._delta = null;
+          this._path = null;
+        }
+        /**
+         * Computes the path from `y` to the changed type.
+         *
+         * @todo v14 should standardize on path: Array<{parent, index}> because that is easier to work with.
+         *
+         * The following property holds:
+         * @example
+         *   let type = y
+         *   event.path.forEach(dir => {
+         *     type = type.get(dir)
+         *   })
+         *   type === event.target // => true
+         */
+        get path() {
+          return this._path || (this._path = getPathTo(this.currentTarget, this.target));
+        }
+        /**
+         * Check if a struct is deleted by this event.
+         *
+         * In contrast to change.deleted, this method also returns true if the struct was added and then deleted.
+         *
+         * @param {AbstractStruct} struct
+         * @return {boolean}
+         */
+        deletes(struct2) {
+          return isDeleted(this.transaction.deleteSet, struct2.id);
+        }
+        /**
+         * @type {Map<string, { action: 'add' | 'update' | 'delete', oldValue: any }>}
+         */
+        get keys() {
+          if (this._keys === null) {
+            if (this.transaction.doc._transactionCleanups.length === 0) {
+              throw create3(errorComputeChanges);
+            }
+            const keys3 = /* @__PURE__ */ new Map();
+            const target = this.target;
+            const changed = (
+              /** @type Set<string|null> */
+              this.transaction.changed.get(target)
+            );
+            changed.forEach((key) => {
+              if (key !== null) {
+                const item = (
+                  /** @type {Item} */
+                  target._map.get(key)
+                );
+                let action;
+                let oldValue;
+                if (this.adds(item)) {
+                  let prev = item.left;
+                  while (prev !== null && this.adds(prev)) {
+                    prev = prev.left;
+                  }
+                  if (this.deletes(item)) {
+                    if (prev !== null && this.deletes(prev)) {
+                      action = "delete";
+                      oldValue = last(prev.content.getContent());
+                    } else {
+                      return;
+                    }
+                  } else {
+                    if (prev !== null && this.deletes(prev)) {
+                      action = "update";
+                      oldValue = last(prev.content.getContent());
+                    } else {
+                      action = "add";
+                      oldValue = void 0;
+                    }
+                  }
+                } else {
+                  if (this.deletes(item)) {
+                    action = "delete";
+                    oldValue = last(
+                      /** @type {Item} */
+                      item.content.getContent()
+                    );
+                  } else {
+                    return;
+                  }
+                }
+                keys3.set(key, { action, oldValue });
+              }
+            });
+            this._keys = keys3;
+          }
+          return this._keys;
+        }
+        /**
+         * This is a computed property. Note that this can only be safely computed during the
+         * event call. Computing this property after other changes happened might result in
+         * unexpected behavior (incorrect computation of deltas). A safe way to collect changes
+         * is to store the `changes` or the `delta` object. Avoid storing the `transaction` object.
+         *
+         * @type {Array<{insert?: string | Array<any> | object | AbstractType<any>, retain?: number, delete?: number, attributes?: Object<string, any>}>}
+         */
+        get delta() {
+          return this.changes.delta;
+        }
+        /**
+         * Check if a struct is added by this event.
+         *
+         * In contrast to change.deleted, this method also returns true if the struct was added and then deleted.
+         *
+         * @param {AbstractStruct} struct
+         * @return {boolean}
+         */
+        adds(struct2) {
+          return struct2.id.clock >= (this.transaction.beforeState.get(struct2.id.client) || 0);
+        }
+        /**
+         * This is a computed property. Note that this can only be safely computed during the
+         * event call. Computing this property after other changes happened might result in
+         * unexpected behavior (incorrect computation of deltas). A safe way to collect changes
+         * is to store the `changes` or the `delta` object. Avoid storing the `transaction` object.
+         *
+         * @type {{added:Set<Item>,deleted:Set<Item>,keys:Map<string,{action:'add'|'update'|'delete',oldValue:any}>,delta:Array<{insert?:Array<any>|string, delete?:number, retain?:number}>}}
+         */
+        get changes() {
+          let changes = this._changes;
+          if (changes === null) {
+            if (this.transaction.doc._transactionCleanups.length === 0) {
+              throw create3(errorComputeChanges);
+            }
+            const target = this.target;
+            const added = create2();
+            const deleted = create2();
+            const delta = [];
+            changes = {
+              added,
+              deleted,
+              delta,
+              keys: this.keys
+            };
+            const changed = (
+              /** @type Set<string|null> */
+              this.transaction.changed.get(target)
+            );
+            if (changed.has(null)) {
+              let lastOp = null;
+              const packOp = () => {
+                if (lastOp) {
+                  delta.push(lastOp);
+                }
+              };
+              for (let item = target._start; item !== null; item = item.right) {
+                if (item.deleted) {
+                  if (this.deletes(item) && !this.adds(item)) {
+                    if (lastOp === null || lastOp.delete === void 0) {
+                      packOp();
+                      lastOp = { delete: 0 };
+                    }
+                    lastOp.delete += item.length;
+                    deleted.add(item);
+                  }
+                } else {
+                  if (this.adds(item)) {
+                    if (lastOp === null || lastOp.insert === void 0) {
+                      packOp();
+                      lastOp = { insert: [] };
+                    }
+                    lastOp.insert = lastOp.insert.concat(item.content.getContent());
+                    added.add(item);
+                  } else {
+                    if (lastOp === null || lastOp.retain === void 0) {
+                      packOp();
+                      lastOp = { retain: 0 };
+                    }
+                    lastOp.retain += item.length;
+                  }
+                }
+              }
+              if (lastOp !== null && lastOp.retain === void 0) {
+                packOp();
+              }
+            }
+            this._changes = changes;
+          }
+          return (
+            /** @type {any} */
+            changes
+          );
+        }
+      };
+      getPathTo = (parent, child) => {
+        const path = [];
+        while (child._item !== null && child !== parent) {
+          if (child._item.parentSub !== null) {
+            path.unshift(child._item.parentSub);
+          } else {
+            let i = 0;
+            let c2 = (
+              /** @type {AbstractType<any>} */
+              child._item.parent._start
+            );
+            while (c2 !== child._item && c2 !== null) {
+              if (!c2.deleted && c2.countable) {
+                i += c2.length;
+              }
+              c2 = c2.right;
+            }
+            path.unshift(i);
+          }
+          child = /** @type {AbstractType<any>} */
+          child._item.parent;
+        }
+        return path;
+      };
+      warnPrematureAccess = () => {
+        warn("Invalid access: Add Yjs type to a document before reading data.");
+      };
+      maxSearchMarker = 80;
+      globalSearchMarkerTimestamp = 0;
+      ArraySearchMarker = class {
+        /**
+         * @param {Item} p
+         * @param {number} index
+         */
+        constructor(p, index2) {
+          p.marker = true;
+          this.p = p;
+          this.index = index2;
+          this.timestamp = globalSearchMarkerTimestamp++;
+        }
+      };
+      refreshMarkerTimestamp = (marker) => {
+        marker.timestamp = globalSearchMarkerTimestamp++;
+      };
+      overwriteMarker = (marker, p, index2) => {
+        marker.p.marker = false;
+        marker.p = p;
+        p.marker = true;
+        marker.index = index2;
+        marker.timestamp = globalSearchMarkerTimestamp++;
+      };
+      markPosition = (searchMarker, p, index2) => {
+        if (searchMarker.length >= maxSearchMarker) {
+          const marker = searchMarker.reduce((a2, b) => a2.timestamp < b.timestamp ? a2 : b);
+          overwriteMarker(marker, p, index2);
+          return marker;
+        } else {
+          const pm2 = new ArraySearchMarker(p, index2);
+          searchMarker.push(pm2);
+          return pm2;
+        }
+      };
+      findMarker = (yarray, index2) => {
+        if (yarray._start === null || index2 === 0 || yarray._searchMarker === null) {
+          return null;
+        }
+        const marker = yarray._searchMarker.length === 0 ? null : yarray._searchMarker.reduce((a2, b) => abs(index2 - a2.index) < abs(index2 - b.index) ? a2 : b);
+        let p = yarray._start;
+        let pindex = 0;
+        if (marker !== null) {
+          p = marker.p;
+          pindex = marker.index;
+          refreshMarkerTimestamp(marker);
+        }
+        while (p.right !== null && pindex < index2) {
+          if (!p.deleted && p.countable) {
+            if (index2 < pindex + p.length) {
+              break;
+            }
+            pindex += p.length;
+          }
+          p = p.right;
+        }
+        while (p.left !== null && pindex > index2) {
+          p = p.left;
+          if (!p.deleted && p.countable) {
+            pindex -= p.length;
+          }
+        }
+        while (p.left !== null && p.left.id.client === p.id.client && p.left.id.clock + p.left.length === p.id.clock) {
+          p = p.left;
+          if (!p.deleted && p.countable) {
+            pindex -= p.length;
+          }
+        }
+        if (marker !== null && abs(marker.index - pindex) < /** @type {YText|YArray<any>} */
+        p.parent.length / maxSearchMarker) {
+          overwriteMarker(marker, p, pindex);
+          return marker;
+        } else {
+          return markPosition(yarray._searchMarker, p, pindex);
+        }
+      };
+      updateMarkerChanges = (searchMarker, index2, len) => {
+        for (let i = searchMarker.length - 1; i >= 0; i--) {
+          const m2 = searchMarker[i];
+          if (len > 0) {
+            let p = m2.p;
+            p.marker = false;
+            while (p && (p.deleted || !p.countable)) {
+              p = p.left;
+              if (p && !p.deleted && p.countable) {
+                m2.index -= p.length;
+              }
+            }
+            if (p === null || p.marker === true) {
+              searchMarker.splice(i, 1);
+              continue;
+            }
+            m2.p = p;
+            p.marker = true;
+          }
+          if (index2 < m2.index || len > 0 && index2 === m2.index) {
+            m2.index = max(index2, m2.index + len);
+          }
+        }
+      };
+      callTypeObservers = (type, transaction, event) => {
+        const changedType = type;
+        const changedParentTypes = transaction.changedParentTypes;
+        while (true) {
+          setIfUndefined(changedParentTypes, type, () => []).push(event);
+          if (type._item === null) {
+            break;
+          }
+          type = /** @type {AbstractType<any>} */
+          type._item.parent;
+        }
+        callEventHandlerListeners(changedType._eH, event, transaction);
+      };
+      AbstractType = class {
+        constructor() {
+          this._item = null;
+          this._map = /* @__PURE__ */ new Map();
+          this._start = null;
+          this.doc = null;
+          this._length = 0;
+          this._eH = createEventHandler();
+          this._dEH = createEventHandler();
+          this._searchMarker = null;
+        }
+        /**
+         * @return {AbstractType<any>|null}
+         */
+        get parent() {
+          return this._item ? (
+            /** @type {AbstractType<any>} */
+            this._item.parent
+          ) : null;
+        }
+        /**
+         * Integrate this type into the Yjs instance.
+         *
+         * * Save this struct in the os
+         * * This type is sent to other client
+         * * Observer functions are fired
+         *
+         * @param {Doc} y The Yjs instance
+         * @param {Item|null} item
+         */
+        _integrate(y2, item) {
+          this.doc = y2;
+          this._item = item;
+        }
+        /**
+         * @return {AbstractType<EventType>}
+         */
+        _copy() {
+          throw methodUnimplemented();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {AbstractType<EventType>}
+         */
+        clone() {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} _encoder
+         */
+        _write(_encoder) {
+        }
+        /**
+         * The first non-deleted item
+         */
+        get _first() {
+          let n2 = this._start;
+          while (n2 !== null && n2.deleted) {
+            n2 = n2.right;
+          }
+          return n2;
+        }
+        /**
+         * Creates YEvent and calls all type observers.
+         * Must be implemented by each type.
+         *
+         * @param {Transaction} transaction
+         * @param {Set<null|string>} _parentSubs Keys changed on this type. `null` if list was modified.
+         */
+        _callObserver(transaction, _parentSubs) {
+          if (!transaction.local && this._searchMarker) {
+            this._searchMarker.length = 0;
+          }
+        }
+        /**
+         * Observe all events that are created on this type.
+         *
+         * @param {function(EventType, Transaction):void} f Observer function
+         */
+        observe(f2) {
+          addEventHandlerListener(this._eH, f2);
+        }
+        /**
+         * Observe all events that are created by this type and its children.
+         *
+         * @param {function(Array<YEvent<any>>,Transaction):void} f Observer function
+         */
+        observeDeep(f2) {
+          addEventHandlerListener(this._dEH, f2);
+        }
+        /**
+         * Unregister an observer function.
+         *
+         * @param {function(EventType,Transaction):void} f Observer function
+         */
+        unobserve(f2) {
+          removeEventHandlerListener(this._eH, f2);
+        }
+        /**
+         * Unregister an observer function.
+         *
+         * @param {function(Array<YEvent<any>>,Transaction):void} f Observer function
+         */
+        unobserveDeep(f2) {
+          removeEventHandlerListener(this._dEH, f2);
+        }
+        /**
+         * @abstract
+         * @return {any}
+         */
+        toJSON() {
+        }
+      };
+      typeListSlice = (type, start, end2) => {
+        type.doc ?? warnPrematureAccess();
+        if (start < 0) {
+          start = type._length + start;
+        }
+        if (end2 < 0) {
+          end2 = type._length + end2;
+        }
+        let len = end2 - start;
+        const cs = [];
+        let n2 = type._start;
+        while (n2 !== null && len > 0) {
+          if (n2.countable && !n2.deleted) {
+            const c2 = n2.content.getContent();
+            if (c2.length <= start) {
+              start -= c2.length;
+            } else {
+              for (let i = start; i < c2.length && len > 0; i++) {
+                cs.push(c2[i]);
+                len--;
+              }
+              start = 0;
+            }
+          }
+          n2 = n2.right;
+        }
+        return cs;
+      };
+      typeListToArray = (type) => {
+        type.doc ?? warnPrematureAccess();
+        const cs = [];
+        let n2 = type._start;
+        while (n2 !== null) {
+          if (n2.countable && !n2.deleted) {
+            const c2 = n2.content.getContent();
+            for (let i = 0; i < c2.length; i++) {
+              cs.push(c2[i]);
+            }
+          }
+          n2 = n2.right;
+        }
+        return cs;
+      };
+      typeListForEach = (type, f2) => {
+        let index2 = 0;
+        let n2 = type._start;
+        type.doc ?? warnPrematureAccess();
+        while (n2 !== null) {
+          if (n2.countable && !n2.deleted) {
+            const c2 = n2.content.getContent();
+            for (let i = 0; i < c2.length; i++) {
+              f2(c2[i], index2++, type);
+            }
+          }
+          n2 = n2.right;
+        }
+      };
+      typeListMap = (type, f2) => {
+        const result = [];
+        typeListForEach(type, (c2, i) => {
+          result.push(f2(c2, i, type));
+        });
+        return result;
+      };
+      typeListCreateIterator = (type) => {
+        let n2 = type._start;
+        let currentContent = null;
+        let currentContentIndex = 0;
+        return {
+          [Symbol.iterator]() {
+            return this;
+          },
+          next: () => {
+            if (currentContent === null) {
+              while (n2 !== null && n2.deleted) {
+                n2 = n2.right;
+              }
+              if (n2 === null) {
+                return {
+                  done: true,
+                  value: void 0
+                };
+              }
+              currentContent = n2.content.getContent();
+              currentContentIndex = 0;
+              n2 = n2.right;
+            }
+            const value2 = currentContent[currentContentIndex++];
+            if (currentContent.length <= currentContentIndex) {
+              currentContent = null;
+            }
+            return {
+              done: false,
+              value: value2
+            };
+          }
+        };
+      };
+      typeListGet = (type, index2) => {
+        type.doc ?? warnPrematureAccess();
+        const marker = findMarker(type, index2);
+        let n2 = type._start;
+        if (marker !== null) {
+          n2 = marker.p;
+          index2 -= marker.index;
+        }
+        for (; n2 !== null; n2 = n2.right) {
+          if (!n2.deleted && n2.countable) {
+            if (index2 < n2.length) {
+              return n2.content.getContent()[index2];
+            }
+            index2 -= n2.length;
+          }
+        }
+      };
+      typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) => {
+        let left2 = referenceItem;
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        const store = doc2.store;
+        const right2 = referenceItem === null ? parent._start : referenceItem.right;
+        let jsonContent = [];
+        const packJsonContent = () => {
+          if (jsonContent.length > 0) {
+            left2 = new Item(createID(ownClientId, getState(store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentAny(jsonContent));
+            left2.integrate(transaction, 0);
+            jsonContent = [];
+          }
+        };
+        content.forEach((c2) => {
+          if (c2 === null) {
+            jsonContent.push(c2);
+          } else {
+            switch (c2.constructor) {
+              case Number:
+              case Object:
+              case Boolean:
+              case Array:
+              case String:
+                jsonContent.push(c2);
+                break;
+              default:
+                packJsonContent();
+                switch (c2.constructor) {
+                  case Uint8Array:
+                  case ArrayBuffer:
+                    left2 = new Item(createID(ownClientId, getState(store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentBinary(new Uint8Array(
+                      /** @type {Uint8Array} */
+                      c2
+                    )));
+                    left2.integrate(transaction, 0);
+                    break;
+                  case Doc:
+                    left2 = new Item(createID(ownClientId, getState(store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentDoc(
+                      /** @type {Doc} */
+                      c2
+                    ));
+                    left2.integrate(transaction, 0);
+                    break;
+                  default:
+                    if (c2 instanceof AbstractType) {
+                      left2 = new Item(createID(ownClientId, getState(store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentType(c2));
+                      left2.integrate(transaction, 0);
+                    } else {
+                      throw new Error("Unexpected content type in insert operation");
+                    }
+                }
+            }
+          }
+        });
+        packJsonContent();
+      };
+      lengthExceeded = () => create3("Length exceeded!");
+      typeListInsertGenerics = (transaction, parent, index2, content) => {
+        if (index2 > parent._length) {
+          throw lengthExceeded();
+        }
+        if (index2 === 0) {
+          if (parent._searchMarker) {
+            updateMarkerChanges(parent._searchMarker, index2, content.length);
+          }
+          return typeListInsertGenericsAfter(transaction, parent, null, content);
+        }
+        const startIndex = index2;
+        const marker = findMarker(parent, index2);
+        let n2 = parent._start;
+        if (marker !== null) {
+          n2 = marker.p;
+          index2 -= marker.index;
+          if (index2 === 0) {
+            n2 = n2.prev;
+            index2 += n2 && n2.countable && !n2.deleted ? n2.length : 0;
+          }
+        }
+        for (; n2 !== null; n2 = n2.right) {
+          if (!n2.deleted && n2.countable) {
+            if (index2 <= n2.length) {
+              if (index2 < n2.length) {
+                getItemCleanStart(transaction, createID(n2.id.client, n2.id.clock + index2));
+              }
+              break;
+            }
+            index2 -= n2.length;
+          }
+        }
+        if (parent._searchMarker) {
+          updateMarkerChanges(parent._searchMarker, startIndex, content.length);
+        }
+        return typeListInsertGenericsAfter(transaction, parent, n2, content);
+      };
+      typeListPushGenerics = (transaction, parent, content) => {
+        const marker = (parent._searchMarker || []).reduce((maxMarker, currMarker) => currMarker.index > maxMarker.index ? currMarker : maxMarker, { index: 0, p: parent._start });
+        let n2 = marker.p;
+        if (n2) {
+          while (n2.right) {
+            n2 = n2.right;
+          }
+        }
+        return typeListInsertGenericsAfter(transaction, parent, n2, content);
+      };
+      typeListDelete = (transaction, parent, index2, length2) => {
+        if (length2 === 0) {
+          return;
+        }
+        const startIndex = index2;
+        const startLength = length2;
+        const marker = findMarker(parent, index2);
+        let n2 = parent._start;
+        if (marker !== null) {
+          n2 = marker.p;
+          index2 -= marker.index;
+        }
+        for (; n2 !== null && index2 > 0; n2 = n2.right) {
+          if (!n2.deleted && n2.countable) {
+            if (index2 < n2.length) {
+              getItemCleanStart(transaction, createID(n2.id.client, n2.id.clock + index2));
+            }
+            index2 -= n2.length;
+          }
+        }
+        while (length2 > 0 && n2 !== null) {
+          if (!n2.deleted) {
+            if (length2 < n2.length) {
+              getItemCleanStart(transaction, createID(n2.id.client, n2.id.clock + length2));
+            }
+            n2.delete(transaction);
+            length2 -= n2.length;
+          }
+          n2 = n2.right;
+        }
+        if (length2 > 0) {
+          throw lengthExceeded();
+        }
+        if (parent._searchMarker) {
+          updateMarkerChanges(
+            parent._searchMarker,
+            startIndex,
+            -startLength + length2
+            /* in case we remove the above exception */
+          );
+        }
+      };
+      typeMapDelete = (transaction, parent, key) => {
+        const c2 = parent._map.get(key);
+        if (c2 !== void 0) {
+          c2.delete(transaction);
+        }
+      };
+      typeMapSet = (transaction, parent, key, value2) => {
+        const left2 = parent._map.get(key) || null;
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        let content;
+        if (value2 == null) {
+          content = new ContentAny([value2]);
+        } else {
+          switch (value2.constructor) {
+            case Number:
+            case Object:
+            case Boolean:
+            case Array:
+            case String:
+            case Date:
+            case BigInt:
+              content = new ContentAny([value2]);
+              break;
+            case Uint8Array:
+              content = new ContentBinary(
+                /** @type {Uint8Array} */
+                value2
+              );
+              break;
+            case Doc:
+              content = new ContentDoc(
+                /** @type {Doc} */
+                value2
+              );
+              break;
+            default:
+              if (value2 instanceof AbstractType) {
+                content = new ContentType(value2);
+              } else {
+                throw new Error("Unexpected content type");
+              }
+          }
+        }
+        new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left2, left2 && left2.lastId, null, null, parent, key, content).integrate(transaction, 0);
+      };
+      typeMapGet = (parent, key) => {
+        parent.doc ?? warnPrematureAccess();
+        const val2 = parent._map.get(key);
+        return val2 !== void 0 && !val2.deleted ? val2.content.getContent()[val2.length - 1] : void 0;
+      };
+      typeMapGetAll = (parent) => {
+        const res = {};
+        parent.doc ?? warnPrematureAccess();
+        parent._map.forEach((value2, key) => {
+          if (!value2.deleted) {
+            res[key] = value2.content.getContent()[value2.length - 1];
+          }
+        });
+        return res;
+      };
+      typeMapHas = (parent, key) => {
+        parent.doc ?? warnPrematureAccess();
+        const val2 = parent._map.get(key);
+        return val2 !== void 0 && !val2.deleted;
+      };
+      typeMapGetAllSnapshot = (parent, snapshot) => {
+        const res = {};
+        parent._map.forEach((value2, key) => {
+          let v2 = value2;
+          while (v2 !== null && (!snapshot.sv.has(v2.id.client) || v2.id.clock >= (snapshot.sv.get(v2.id.client) || 0))) {
+            v2 = v2.left;
+          }
+          if (v2 !== null && isVisible(v2, snapshot)) {
+            res[key] = v2.content.getContent()[v2.length - 1];
+          }
+        });
+        return res;
+      };
+      createMapIterator = (type) => {
+        type.doc ?? warnPrematureAccess();
+        return iteratorFilter(
+          type._map.entries(),
+          /** @param {any} entry */
+          (entry) => !entry[1].deleted
+        );
+      };
+      YArrayEvent = class extends YEvent {
+      };
+      YArray = class _YArray extends AbstractType {
+        constructor() {
+          super();
+          this._prelimContent = [];
+          this._searchMarker = [];
+        }
+        /**
+         * Construct a new YArray containing the specified items.
+         * @template {Object<string,any>|Array<any>|number|null|string|Uint8Array} T
+         * @param {Array<T>} items
+         * @return {YArray<T>}
+         */
+        static from(items) {
+          const a2 = new _YArray();
+          a2.push(items);
+          return a2;
+        }
+        /**
+         * Integrate this type into the Yjs instance.
+         *
+         * * Save this struct in the os
+         * * This type is sent to other client
+         * * Observer functions are fired
+         *
+         * @param {Doc} y The Yjs instance
+         * @param {Item} item
+         */
+        _integrate(y2, item) {
+          super._integrate(y2, item);
+          this.insert(
+            0,
+            /** @type {Array<any>} */
+            this._prelimContent
+          );
+          this._prelimContent = null;
+        }
+        /**
+         * @return {YArray<T>}
+         */
+        _copy() {
+          return new _YArray();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YArray<T>}
+         */
+        clone() {
+          const arr = new _YArray();
+          arr.insert(0, this.toArray().map(
+            (el) => el instanceof AbstractType ? (
+              /** @type {typeof el} */
+              el.clone()
+            ) : el
+          ));
+          return arr;
+        }
+        get length() {
+          this.doc ?? warnPrematureAccess();
+          return this._length;
+        }
+        /**
+         * Creates YArrayEvent and calls observers.
+         *
+         * @param {Transaction} transaction
+         * @param {Set<null|string>} parentSubs Keys changed on this type. `null` if list was modified.
+         */
+        _callObserver(transaction, parentSubs) {
+          super._callObserver(transaction, parentSubs);
+          callTypeObservers(this, transaction, new YArrayEvent(this, transaction));
+        }
+        /**
+         * Inserts new content at an index.
+         *
+         * Important: This function expects an array of content. Not just a content
+         * object. The reason for this "weirdness" is that inserting several elements
+         * is very efficient when it is done as a single operation.
+         *
+         * @example
+         *  // Insert character 'a' at position 0
+         *  yarray.insert(0, ['a'])
+         *  // Insert numbers 1, 2 at position 1
+         *  yarray.insert(1, [1, 2])
+         *
+         * @param {number} index The index to insert content at.
+         * @param {Array<T>} content The array of content
+         */
+        insert(index2, content) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeListInsertGenerics(
+                transaction,
+                this,
+                index2,
+                /** @type {any} */
+                content
+              );
+            });
+          } else {
+            this._prelimContent.splice(index2, 0, ...content);
+          }
+        }
+        /**
+         * Appends content to this YArray.
+         *
+         * @param {Array<T>} content Array of content to append.
+         *
+         * @todo Use the following implementation in all types.
+         */
+        push(content) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeListPushGenerics(
+                transaction,
+                this,
+                /** @type {any} */
+                content
+              );
+            });
+          } else {
+            this._prelimContent.push(...content);
+          }
+        }
+        /**
+         * Prepends content to this YArray.
+         *
+         * @param {Array<T>} content Array of content to prepend.
+         */
+        unshift(content) {
+          this.insert(0, content);
+        }
+        /**
+         * Deletes elements starting from an index.
+         *
+         * @param {number} index Index at which to start deleting elements
+         * @param {number} length The number of elements to remove. Defaults to 1.
+         */
+        delete(index2, length2 = 1) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeListDelete(transaction, this, index2, length2);
+            });
+          } else {
+            this._prelimContent.splice(index2, length2);
+          }
+        }
+        /**
+         * Returns the i-th element from a YArray.
+         *
+         * @param {number} index The index of the element to return from the YArray
+         * @return {T}
+         */
+        get(index2) {
+          return typeListGet(this, index2);
+        }
+        /**
+         * Transforms this YArray to a JavaScript Array.
+         *
+         * @return {Array<T>}
+         */
+        toArray() {
+          return typeListToArray(this);
+        }
+        /**
+         * Returns a portion of this YArray into a JavaScript Array selected
+         * from start to end (end not included).
+         *
+         * @param {number} [start]
+         * @param {number} [end]
+         * @return {Array<T>}
+         */
+        slice(start = 0, end2 = this.length) {
+          return typeListSlice(this, start, end2);
+        }
+        /**
+         * Transforms this Shared Type to a JSON object.
+         *
+         * @return {Array<any>}
+         */
+        toJSON() {
+          return this.map((c2) => c2 instanceof AbstractType ? c2.toJSON() : c2);
+        }
+        /**
+         * Returns an Array with the result of calling a provided function on every
+         * element of this YArray.
+         *
+         * @template M
+         * @param {function(T,number,YArray<T>):M} f Function that produces an element of the new Array
+         * @return {Array<M>} A new array with each element being the result of the
+         *                 callback function
+         */
+        map(f2) {
+          return typeListMap(
+            this,
+            /** @type {any} */
+            f2
+          );
+        }
+        /**
+         * Executes a provided function once on every element of this YArray.
+         *
+         * @param {function(T,number,YArray<T>):void} f A function to execute on every element of this YArray.
+         */
+        forEach(f2) {
+          typeListForEach(this, f2);
+        }
+        /**
+         * @return {IterableIterator<T>}
+         */
+        [Symbol.iterator]() {
+          return typeListCreateIterator(this);
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YArrayRefID);
+        }
+      };
+      readYArray = (_decoder) => new YArray();
+      YMapEvent = class extends YEvent {
+        /**
+         * @param {YMap<T>} ymap The YArray that changed.
+         * @param {Transaction} transaction
+         * @param {Set<any>} subs The keys that changed.
+         */
+        constructor(ymap, transaction, subs) {
+          super(ymap, transaction);
+          this.keysChanged = subs;
+        }
+      };
+      YMap = class _YMap extends AbstractType {
+        /**
+         *
+         * @param {Iterable<readonly [string, any]>=} entries - an optional iterable to initialize the YMap
+         */
+        constructor(entries2) {
+          super();
+          this._prelimContent = null;
+          if (entries2 === void 0) {
+            this._prelimContent = /* @__PURE__ */ new Map();
+          } else {
+            this._prelimContent = new Map(entries2);
+          }
+        }
+        /**
+         * Integrate this type into the Yjs instance.
+         *
+         * * Save this struct in the os
+         * * This type is sent to other client
+         * * Observer functions are fired
+         *
+         * @param {Doc} y The Yjs instance
+         * @param {Item} item
+         */
+        _integrate(y2, item) {
+          super._integrate(y2, item);
+          this._prelimContent.forEach((value2, key) => {
+            this.set(key, value2);
+          });
+          this._prelimContent = null;
+        }
+        /**
+         * @return {YMap<MapType>}
+         */
+        _copy() {
+          return new _YMap();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YMap<MapType>}
+         */
+        clone() {
+          const map3 = new _YMap();
+          this.forEach((value2, key) => {
+            map3.set(key, value2 instanceof AbstractType ? (
+              /** @type {typeof value} */
+              value2.clone()
+            ) : value2);
+          });
+          return map3;
+        }
+        /**
+         * Creates YMapEvent and calls observers.
+         *
+         * @param {Transaction} transaction
+         * @param {Set<null|string>} parentSubs Keys changed on this type. `null` if list was modified.
+         */
+        _callObserver(transaction, parentSubs) {
+          callTypeObservers(this, transaction, new YMapEvent(this, transaction, parentSubs));
+        }
+        /**
+         * Transforms this Shared Type to a JSON object.
+         *
+         * @return {Object<string,any>}
+         */
+        toJSON() {
+          this.doc ?? warnPrematureAccess();
+          const map3 = {};
+          this._map.forEach((item, key) => {
+            if (!item.deleted) {
+              const v2 = item.content.getContent()[item.length - 1];
+              map3[key] = v2 instanceof AbstractType ? v2.toJSON() : v2;
+            }
+          });
+          return map3;
+        }
+        /**
+         * Returns the size of the YMap (count of key/value pairs)
+         *
+         * @return {number}
+         */
+        get size() {
+          return [...createMapIterator(this)].length;
+        }
+        /**
+         * Returns the keys for each element in the YMap Type.
+         *
+         * @return {IterableIterator<string>}
+         */
+        keys() {
+          return iteratorMap(
+            createMapIterator(this),
+            /** @param {any} v */
+            (v2) => v2[0]
+          );
+        }
+        /**
+         * Returns the values for each element in the YMap Type.
+         *
+         * @return {IterableIterator<MapType>}
+         */
+        values() {
+          return iteratorMap(
+            createMapIterator(this),
+            /** @param {any} v */
+            (v2) => v2[1].content.getContent()[v2[1].length - 1]
+          );
+        }
+        /**
+         * Returns an Iterator of [key, value] pairs
+         *
+         * @return {IterableIterator<[string, MapType]>}
+         */
+        entries() {
+          return iteratorMap(
+            createMapIterator(this),
+            /** @param {any} v */
+            (v2) => (
+              /** @type {any} */
+              [v2[0], v2[1].content.getContent()[v2[1].length - 1]]
+            )
+          );
+        }
+        /**
+         * Executes a provided function on once on every key-value pair.
+         *
+         * @param {function(MapType,string,YMap<MapType>):void} f A function to execute on every element of this YArray.
+         */
+        forEach(f2) {
+          this.doc ?? warnPrematureAccess();
+          this._map.forEach((item, key) => {
+            if (!item.deleted) {
+              f2(item.content.getContent()[item.length - 1], key, this);
+            }
+          });
+        }
+        /**
+         * Returns an Iterator of [key, value] pairs
+         *
+         * @return {IterableIterator<[string, MapType]>}
+         */
+        [Symbol.iterator]() {
+          return this.entries();
+        }
+        /**
+         * Remove a specified element from this YMap.
+         *
+         * @param {string} key The key of the element to remove.
+         */
+        delete(key) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapDelete(transaction, this, key);
+            });
+          } else {
+            this._prelimContent.delete(key);
+          }
+        }
+        /**
+         * Adds or updates an element with a specified key and value.
+         * @template {MapType} VAL
+         *
+         * @param {string} key The key of the element to add to this YMap
+         * @param {VAL} value The value of the element to add
+         * @return {VAL}
+         */
+        set(key, value2) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapSet(
+                transaction,
+                this,
+                key,
+                /** @type {any} */
+                value2
+              );
+            });
+          } else {
+            this._prelimContent.set(key, value2);
+          }
+          return value2;
+        }
+        /**
+         * Returns a specified element from this YMap.
+         *
+         * @param {string} key
+         * @return {MapType|undefined}
+         */
+        get(key) {
+          return (
+            /** @type {any} */
+            typeMapGet(this, key)
+          );
+        }
+        /**
+         * Returns a boolean indicating whether the specified key exists or not.
+         *
+         * @param {string} key The key to test.
+         * @return {boolean}
+         */
+        has(key) {
+          return typeMapHas(this, key);
+        }
+        /**
+         * Removes all elements from this YMap.
+         */
+        clear() {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              this.forEach(function(_value, key, map3) {
+                typeMapDelete(transaction, map3, key);
+              });
+            });
+          } else {
+            this._prelimContent.clear();
+          }
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YMapRefID);
+        }
+      };
+      readYMap = (_decoder) => new YMap();
+      equalAttrs = (a2, b) => a2 === b || typeof a2 === "object" && typeof b === "object" && a2 && b && equalFlat(a2, b);
+      ItemTextListPosition = class {
+        /**
+         * @param {Item|null} left
+         * @param {Item|null} right
+         * @param {number} index
+         * @param {Map<string,any>} currentAttributes
+         */
+        constructor(left2, right2, index2, currentAttributes) {
+          this.left = left2;
+          this.right = right2;
+          this.index = index2;
+          this.currentAttributes = currentAttributes;
+        }
+        /**
+         * Only call this if you know that this.right is defined
+         */
+        forward() {
+          if (this.right === null) {
+            unexpectedCase();
+          }
+          switch (this.right.content.constructor) {
+            case ContentFormat:
+              if (!this.right.deleted) {
+                updateCurrentAttributes(
+                  this.currentAttributes,
+                  /** @type {ContentFormat} */
+                  this.right.content
+                );
+              }
+              break;
+            default:
+              if (!this.right.deleted) {
+                this.index += this.right.length;
+              }
+              break;
+          }
+          this.left = this.right;
+          this.right = this.right.right;
+        }
+      };
+      findNextPosition = (transaction, pos, count) => {
+        while (pos.right !== null && count > 0) {
+          switch (pos.right.content.constructor) {
+            case ContentFormat:
+              if (!pos.right.deleted) {
+                updateCurrentAttributes(
+                  pos.currentAttributes,
+                  /** @type {ContentFormat} */
+                  pos.right.content
+                );
+              }
+              break;
+            default:
+              if (!pos.right.deleted) {
+                if (count < pos.right.length) {
+                  getItemCleanStart(transaction, createID(pos.right.id.client, pos.right.id.clock + count));
+                }
+                pos.index += pos.right.length;
+                count -= pos.right.length;
+              }
+              break;
+          }
+          pos.left = pos.right;
+          pos.right = pos.right.right;
+        }
+        return pos;
+      };
+      findPosition = (transaction, parent, index2, useSearchMarker) => {
+        const currentAttributes = /* @__PURE__ */ new Map();
+        const marker = useSearchMarker ? findMarker(parent, index2) : null;
+        if (marker) {
+          const pos = new ItemTextListPosition(marker.p.left, marker.p, marker.index, currentAttributes);
+          return findNextPosition(transaction, pos, index2 - marker.index);
+        } else {
+          const pos = new ItemTextListPosition(null, parent._start, 0, currentAttributes);
+          return findNextPosition(transaction, pos, index2);
+        }
+      };
+      insertNegatedAttributes = (transaction, parent, currPos, negatedAttributes) => {
+        while (currPos.right !== null && (currPos.right.deleted === true || currPos.right.content.constructor === ContentFormat && equalAttrs(
+          negatedAttributes.get(
+            /** @type {ContentFormat} */
+            currPos.right.content.key
+          ),
+          /** @type {ContentFormat} */
+          currPos.right.content.value
+        ))) {
+          if (!currPos.right.deleted) {
+            negatedAttributes.delete(
+              /** @type {ContentFormat} */
+              currPos.right.content.key
+            );
+          }
+          currPos.forward();
+        }
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        negatedAttributes.forEach((val2, key) => {
+          const left2 = currPos.left;
+          const right2 = currPos.right;
+          const nextFormat = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentFormat(key, val2));
+          nextFormat.integrate(transaction, 0);
+          currPos.right = nextFormat;
+          currPos.forward();
+        });
+      };
+      updateCurrentAttributes = (currentAttributes, format) => {
+        const { key, value: value2 } = format;
+        if (value2 === null) {
+          currentAttributes.delete(key);
+        } else {
+          currentAttributes.set(key, value2);
+        }
+      };
+      minimizeAttributeChanges = (currPos, attributes) => {
+        while (true) {
+          if (currPos.right === null) {
+            break;
+          } else if (currPos.right.deleted || currPos.right.content.constructor === ContentFormat && equalAttrs(
+            attributes[
+              /** @type {ContentFormat} */
+              currPos.right.content.key
+            ] ?? null,
+            /** @type {ContentFormat} */
+            currPos.right.content.value
+          )) ;
+          else {
+            break;
+          }
+          currPos.forward();
+        }
+      };
+      insertAttributes = (transaction, parent, currPos, attributes) => {
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        const negatedAttributes = /* @__PURE__ */ new Map();
+        for (const key in attributes) {
+          const val2 = attributes[key];
+          const currentVal = currPos.currentAttributes.get(key) ?? null;
+          if (!equalAttrs(currentVal, val2)) {
+            negatedAttributes.set(key, currentVal);
+            const { left: left2, right: right2 } = currPos;
+            currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, new ContentFormat(key, val2));
+            currPos.right.integrate(transaction, 0);
+            currPos.forward();
+          }
+        }
+        return negatedAttributes;
+      };
+      insertText = (transaction, parent, currPos, text2, attributes) => {
+        currPos.currentAttributes.forEach((_val, key) => {
+          if (attributes[key] === void 0) {
+            attributes[key] = null;
+          }
+        });
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        minimizeAttributeChanges(currPos, attributes);
+        const negatedAttributes = insertAttributes(transaction, parent, currPos, attributes);
+        const content = text2.constructor === String ? new ContentString(
+          /** @type {string} */
+          text2
+        ) : text2 instanceof AbstractType ? new ContentType(text2) : new ContentEmbed(text2);
+        let { left: left2, right: right2, index: index2 } = currPos;
+        if (parent._searchMarker) {
+          updateMarkerChanges(parent._searchMarker, currPos.index, content.getLength());
+        }
+        right2 = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left2, left2 && left2.lastId, right2, right2 && right2.id, parent, null, content);
+        right2.integrate(transaction, 0);
+        currPos.right = right2;
+        currPos.index = index2;
+        currPos.forward();
+        insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
+      };
+      formatText = (transaction, parent, currPos, length2, attributes) => {
+        const doc2 = transaction.doc;
+        const ownClientId = doc2.clientID;
+        minimizeAttributeChanges(currPos, attributes);
+        const negatedAttributes = insertAttributes(transaction, parent, currPos, attributes);
+        iterationLoop: while (currPos.right !== null && (length2 > 0 || negatedAttributes.size > 0 && (currPos.right.deleted || currPos.right.content.constructor === ContentFormat))) {
+          if (!currPos.right.deleted) {
+            switch (currPos.right.content.constructor) {
+              case ContentFormat: {
+                const { key, value: value2 } = (
+                  /** @type {ContentFormat} */
+                  currPos.right.content
+                );
+                const attr = attributes[key];
+                if (attr !== void 0) {
+                  if (equalAttrs(attr, value2)) {
+                    negatedAttributes.delete(key);
+                  } else {
+                    if (length2 === 0) {
+                      break iterationLoop;
+                    }
+                    negatedAttributes.set(key, value2);
+                  }
+                  currPos.right.delete(transaction);
+                } else {
+                  currPos.currentAttributes.set(key, value2);
+                }
+                break;
+              }
+              default:
+                if (length2 < currPos.right.length) {
+                  getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length2));
+                }
+                length2 -= currPos.right.length;
+                break;
+            }
+          }
+          currPos.forward();
+        }
+        if (length2 > 0) {
+          let newlines = "";
+          for (; length2 > 0; length2--) {
+            newlines += "\n";
+          }
+          currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), currPos.left, currPos.left && currPos.left.lastId, currPos.right, currPos.right && currPos.right.id, parent, null, new ContentString(newlines));
+          currPos.right.integrate(transaction, 0);
+          currPos.forward();
+        }
+        insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
+      };
+      cleanupFormattingGap = (transaction, start, curr, startAttributes, currAttributes) => {
+        let end2 = start;
+        const endFormats = create();
+        while (end2 && (!end2.countable || end2.deleted)) {
+          if (!end2.deleted && end2.content.constructor === ContentFormat) {
+            const cf = (
+              /** @type {ContentFormat} */
+              end2.content
+            );
+            endFormats.set(cf.key, cf);
+          }
+          end2 = end2.right;
+        }
+        let cleanups = 0;
+        let reachedCurr = false;
+        while (start !== end2) {
+          if (curr === start) {
+            reachedCurr = true;
+          }
+          if (!start.deleted) {
+            const content = start.content;
+            switch (content.constructor) {
+              case ContentFormat: {
+                const { key, value: value2 } = (
+                  /** @type {ContentFormat} */
+                  content
+                );
+                const startAttrValue = startAttributes.get(key) ?? null;
+                if (endFormats.get(key) !== content || startAttrValue === value2) {
+                  start.delete(transaction);
+                  cleanups++;
+                  if (!reachedCurr && (currAttributes.get(key) ?? null) === value2 && startAttrValue !== value2) {
+                    if (startAttrValue === null) {
+                      currAttributes.delete(key);
+                    } else {
+                      currAttributes.set(key, startAttrValue);
+                    }
+                  }
+                }
+                if (!reachedCurr && !start.deleted) {
+                  updateCurrentAttributes(
+                    currAttributes,
+                    /** @type {ContentFormat} */
+                    content
+                  );
+                }
+                break;
+              }
+            }
+          }
+          start = /** @type {Item} */
+          start.right;
+        }
+        return cleanups;
+      };
+      cleanupContextlessFormattingGap = (transaction, item) => {
+        while (item && item.right && (item.right.deleted || !item.right.countable)) {
+          item = item.right;
+        }
+        const attrs = /* @__PURE__ */ new Set();
+        while (item && (item.deleted || !item.countable)) {
+          if (!item.deleted && item.content.constructor === ContentFormat) {
+            const key = (
+              /** @type {ContentFormat} */
+              item.content.key
+            );
+            if (attrs.has(key)) {
+              item.delete(transaction);
+            } else {
+              attrs.add(key);
+            }
+          }
+          item = item.left;
+        }
+      };
+      cleanupYTextFormatting = (type) => {
+        let res = 0;
+        transact(
+          /** @type {Doc} */
+          type.doc,
+          (transaction) => {
+            let start = (
+              /** @type {Item} */
+              type._start
+            );
+            let end2 = type._start;
+            let startAttributes = create();
+            const currentAttributes = copy(startAttributes);
+            while (end2) {
+              if (end2.deleted === false) {
+                switch (end2.content.constructor) {
+                  case ContentFormat:
+                    updateCurrentAttributes(
+                      currentAttributes,
+                      /** @type {ContentFormat} */
+                      end2.content
+                    );
+                    break;
+                  default:
+                    res += cleanupFormattingGap(transaction, start, end2, startAttributes, currentAttributes);
+                    startAttributes = copy(currentAttributes);
+                    start = end2;
+                    break;
+                }
+              }
+              end2 = end2.right;
+            }
+          }
+        );
+        return res;
+      };
+      cleanupYTextAfterTransaction = (transaction) => {
+        const needFullCleanup = /* @__PURE__ */ new Set();
+        const doc2 = transaction.doc;
+        for (const [client, afterClock] of transaction.afterState.entries()) {
+          const clock2 = transaction.beforeState.get(client) || 0;
+          if (afterClock === clock2) {
+            continue;
+          }
+          iterateStructs(
+            transaction,
+            /** @type {Array<Item|GC>} */
+            doc2.store.clients.get(client),
+            clock2,
+            afterClock,
+            (item) => {
+              if (!item.deleted && /** @type {Item} */
+              item.content.constructor === ContentFormat && item.constructor !== GC) {
+                needFullCleanup.add(
+                  /** @type {any} */
+                  item.parent
+                );
+              }
+            }
+          );
+        }
+        transact(doc2, (t) => {
+          iterateDeletedStructs(transaction, transaction.deleteSet, (item) => {
+            if (item instanceof GC || !/** @type {YText} */
+            item.parent._hasFormatting || needFullCleanup.has(
+              /** @type {YText} */
+              item.parent
+            )) {
+              return;
+            }
+            const parent = (
+              /** @type {YText} */
+              item.parent
+            );
+            if (item.content.constructor === ContentFormat) {
+              needFullCleanup.add(parent);
+            } else {
+              cleanupContextlessFormattingGap(t, item);
+            }
+          });
+          for (const yText of needFullCleanup) {
+            cleanupYTextFormatting(yText);
+          }
+        });
+      };
+      deleteText = (transaction, currPos, length2) => {
+        const startLength = length2;
+        const startAttrs = copy(currPos.currentAttributes);
+        const start = currPos.right;
+        while (length2 > 0 && currPos.right !== null) {
+          if (currPos.right.deleted === false) {
+            switch (currPos.right.content.constructor) {
+              case ContentType:
+              case ContentEmbed:
+              case ContentString:
+                if (length2 < currPos.right.length) {
+                  getItemCleanStart(transaction, createID(currPos.right.id.client, currPos.right.id.clock + length2));
+                }
+                length2 -= currPos.right.length;
+                currPos.right.delete(transaction);
+                break;
+            }
+          }
+          currPos.forward();
+        }
+        if (start) {
+          cleanupFormattingGap(transaction, start, currPos.right, startAttrs, currPos.currentAttributes);
+        }
+        const parent = (
+          /** @type {AbstractType<any>} */
+          /** @type {Item} */
+          (currPos.left || currPos.right).parent
+        );
+        if (parent._searchMarker) {
+          updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length2);
+        }
+        return currPos;
+      };
+      YTextEvent = class extends YEvent {
+        /**
+         * @param {YText} ytext
+         * @param {Transaction} transaction
+         * @param {Set<any>} subs The keys that changed
+         */
+        constructor(ytext, transaction, subs) {
+          super(ytext, transaction);
+          this.childListChanged = false;
+          this.keysChanged = /* @__PURE__ */ new Set();
+          subs.forEach((sub2) => {
+            if (sub2 === null) {
+              this.childListChanged = true;
+            } else {
+              this.keysChanged.add(sub2);
+            }
+          });
+        }
+        /**
+         * @type {{added:Set<Item>,deleted:Set<Item>,keys:Map<string,{action:'add'|'update'|'delete',oldValue:any}>,delta:Array<{insert?:Array<any>|string, delete?:number, retain?:number}>}}
+         */
+        get changes() {
+          if (this._changes === null) {
+            const changes = {
+              keys: this.keys,
+              delta: this.delta,
+              added: /* @__PURE__ */ new Set(),
+              deleted: /* @__PURE__ */ new Set()
+            };
+            this._changes = changes;
+          }
+          return (
+            /** @type {any} */
+            this._changes
+          );
+        }
+        /**
+         * Compute the changes in the delta format.
+         * A {@link https://quilljs.com/docs/delta/|Quill Delta}) that represents the changes on the document.
+         *
+         * @type {Array<{insert?:string|object|AbstractType<any>, delete?:number, retain?:number, attributes?: Object<string,any>}>}
+         *
+         * @public
+         */
+        get delta() {
+          if (this._delta === null) {
+            const y2 = (
+              /** @type {Doc} */
+              this.target.doc
+            );
+            const delta = [];
+            transact(y2, (transaction) => {
+              const currentAttributes = /* @__PURE__ */ new Map();
+              const oldAttributes = /* @__PURE__ */ new Map();
+              let item = this.target._start;
+              let action = null;
+              const attributes = {};
+              let insert = "";
+              let retain = 0;
+              let deleteLen = 0;
+              const addOp = () => {
+                if (action !== null) {
+                  let op = null;
+                  switch (action) {
+                    case "delete":
+                      if (deleteLen > 0) {
+                        op = { delete: deleteLen };
+                      }
+                      deleteLen = 0;
+                      break;
+                    case "insert":
+                      if (typeof insert === "object" || insert.length > 0) {
+                        op = { insert };
+                        if (currentAttributes.size > 0) {
+                          op.attributes = {};
+                          currentAttributes.forEach((value2, key) => {
+                            if (value2 !== null) {
+                              op.attributes[key] = value2;
+                            }
+                          });
+                        }
+                      }
+                      insert = "";
+                      break;
+                    case "retain":
+                      if (retain > 0) {
+                        op = { retain };
+                        if (!isEmpty(attributes)) {
+                          op.attributes = assign({}, attributes);
+                        }
+                      }
+                      retain = 0;
+                      break;
+                  }
+                  if (op) delta.push(op);
+                  action = null;
+                }
+              };
+              while (item !== null) {
+                switch (item.content.constructor) {
+                  case ContentType:
+                  case ContentEmbed:
+                    if (this.adds(item)) {
+                      if (!this.deletes(item)) {
+                        addOp();
+                        action = "insert";
+                        insert = item.content.getContent()[0];
+                        addOp();
+                      }
+                    } else if (this.deletes(item)) {
+                      if (action !== "delete") {
+                        addOp();
+                        action = "delete";
+                      }
+                      deleteLen += 1;
+                    } else if (!item.deleted) {
+                      if (action !== "retain") {
+                        addOp();
+                        action = "retain";
+                      }
+                      retain += 1;
+                    }
+                    break;
+                  case ContentString:
+                    if (this.adds(item)) {
+                      if (!this.deletes(item)) {
+                        if (action !== "insert") {
+                          addOp();
+                          action = "insert";
+                        }
+                        insert += /** @type {ContentString} */
+                        item.content.str;
+                      }
+                    } else if (this.deletes(item)) {
+                      if (action !== "delete") {
+                        addOp();
+                        action = "delete";
+                      }
+                      deleteLen += item.length;
+                    } else if (!item.deleted) {
+                      if (action !== "retain") {
+                        addOp();
+                        action = "retain";
+                      }
+                      retain += item.length;
+                    }
+                    break;
+                  case ContentFormat: {
+                    const { key, value: value2 } = (
+                      /** @type {ContentFormat} */
+                      item.content
+                    );
+                    if (this.adds(item)) {
+                      if (!this.deletes(item)) {
+                        const curVal = currentAttributes.get(key) ?? null;
+                        if (!equalAttrs(curVal, value2)) {
+                          if (action === "retain") {
+                            addOp();
+                          }
+                          if (equalAttrs(value2, oldAttributes.get(key) ?? null)) {
+                            delete attributes[key];
+                          } else {
+                            attributes[key] = value2;
+                          }
+                        } else if (value2 !== null) {
+                          item.delete(transaction);
+                        }
+                      }
+                    } else if (this.deletes(item)) {
+                      oldAttributes.set(key, value2);
+                      const curVal = currentAttributes.get(key) ?? null;
+                      if (!equalAttrs(curVal, value2)) {
+                        if (action === "retain") {
+                          addOp();
+                        }
+                        attributes[key] = curVal;
+                      }
+                    } else if (!item.deleted) {
+                      oldAttributes.set(key, value2);
+                      const attr = attributes[key];
+                      if (attr !== void 0) {
+                        if (!equalAttrs(attr, value2)) {
+                          if (action === "retain") {
+                            addOp();
+                          }
+                          if (value2 === null) {
+                            delete attributes[key];
+                          } else {
+                            attributes[key] = value2;
+                          }
+                        } else if (attr !== null) {
+                          item.delete(transaction);
+                        }
+                      }
+                    }
+                    if (!item.deleted) {
+                      if (action === "insert") {
+                        addOp();
+                      }
+                      updateCurrentAttributes(
+                        currentAttributes,
+                        /** @type {ContentFormat} */
+                        item.content
+                      );
+                    }
+                    break;
+                  }
+                }
+                item = item.right;
+              }
+              addOp();
+              while (delta.length > 0) {
+                const lastOp = delta[delta.length - 1];
+                if (lastOp.retain !== void 0 && lastOp.attributes === void 0) {
+                  delta.pop();
+                } else {
+                  break;
+                }
+              }
+            });
+            this._delta = delta;
+          }
+          return (
+            /** @type {any} */
+            this._delta
+          );
+        }
+      };
+      YText = class _YText extends AbstractType {
+        /**
+         * @param {String} [string] The initial value of the YText.
+         */
+        constructor(string) {
+          super();
+          this._pending = string !== void 0 ? [() => this.insert(0, string)] : [];
+          this._searchMarker = [];
+          this._hasFormatting = false;
+        }
+        /**
+         * Number of characters of this text type.
+         *
+         * @type {number}
+         */
+        get length() {
+          this.doc ?? warnPrematureAccess();
+          return this._length;
+        }
+        /**
+         * @param {Doc} y
+         * @param {Item} item
+         */
+        _integrate(y2, item) {
+          super._integrate(y2, item);
+          try {
+            this._pending.forEach((f2) => f2());
+          } catch (e30) {
+            console.error(e30);
+          }
+          this._pending = null;
+        }
+        _copy() {
+          return new _YText();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YText}
+         */
+        clone() {
+          const text2 = new _YText();
+          text2.applyDelta(this.toDelta());
+          return text2;
+        }
+        /**
+         * Creates YTextEvent and calls observers.
+         *
+         * @param {Transaction} transaction
+         * @param {Set<null|string>} parentSubs Keys changed on this type. `null` if list was modified.
+         */
+        _callObserver(transaction, parentSubs) {
+          super._callObserver(transaction, parentSubs);
+          const event = new YTextEvent(this, transaction, parentSubs);
+          callTypeObservers(this, transaction, event);
+          if (!transaction.local && this._hasFormatting) {
+            transaction._needFormattingCleanup = true;
+          }
+        }
+        /**
+         * Returns the unformatted string representation of this YText type.
+         *
+         * @public
+         */
+        toString() {
+          this.doc ?? warnPrematureAccess();
+          let str = "";
+          let n2 = this._start;
+          while (n2 !== null) {
+            if (!n2.deleted && n2.countable && n2.content.constructor === ContentString) {
+              str += /** @type {ContentString} */
+              n2.content.str;
+            }
+            n2 = n2.right;
+          }
+          return str;
+        }
+        /**
+         * Returns the unformatted string representation of this YText type.
+         *
+         * @return {string}
+         * @public
+         */
+        toJSON() {
+          return this.toString();
+        }
+        /**
+         * Apply a {@link Delta} on this shared YText type.
+         *
+         * @param {Array<any>} delta The changes to apply on this element.
+         * @param {object}  opts
+         * @param {boolean} [opts.sanitize] Sanitize input delta. Removes ending newlines if set to true.
+         *
+         *
+         * @public
+         */
+        applyDelta(delta, { sanitize = true } = {}) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              const currPos = new ItemTextListPosition(null, this._start, 0, /* @__PURE__ */ new Map());
+              for (let i = 0; i < delta.length; i++) {
+                const op = delta[i];
+                if (op.insert !== void 0) {
+                  const ins = !sanitize && typeof op.insert === "string" && i === delta.length - 1 && currPos.right === null && op.insert.slice(-1) === "\n" ? op.insert.slice(0, -1) : op.insert;
+                  if (typeof ins !== "string" || ins.length > 0) {
+                    insertText(transaction, this, currPos, ins, op.attributes || {});
+                  }
+                } else if (op.retain !== void 0) {
+                  formatText(transaction, this, currPos, op.retain, op.attributes || {});
+                } else if (op.delete !== void 0) {
+                  deleteText(transaction, currPos, op.delete);
+                }
+              }
+            });
+          } else {
+            this._pending.push(() => this.applyDelta(delta));
+          }
+        }
+        /**
+         * Returns the Delta representation of this YText type.
+         *
+         * @param {Snapshot} [snapshot]
+         * @param {Snapshot} [prevSnapshot]
+         * @param {function('removed' | 'added', ID):any} [computeYChange]
+         * @return {any} The Delta representation of this type.
+         *
+         * @public
+         */
+        toDelta(snapshot, prevSnapshot, computeYChange) {
+          this.doc ?? warnPrematureAccess();
+          const ops = [];
+          const currentAttributes = /* @__PURE__ */ new Map();
+          const doc2 = (
+            /** @type {Doc} */
+            this.doc
+          );
+          let str = "";
+          let n2 = this._start;
+          function packStr() {
+            if (str.length > 0) {
+              const attributes = {};
+              let addAttributes = false;
+              currentAttributes.forEach((value2, key) => {
+                addAttributes = true;
+                attributes[key] = value2;
+              });
+              const op = { insert: str };
+              if (addAttributes) {
+                op.attributes = attributes;
+              }
+              ops.push(op);
+              str = "";
+            }
+          }
+          const computeDelta = () => {
+            while (n2 !== null) {
+              if (isVisible(n2, snapshot) || prevSnapshot !== void 0 && isVisible(n2, prevSnapshot)) {
+                switch (n2.content.constructor) {
+                  case ContentString: {
+                    const cur = currentAttributes.get("ychange");
+                    if (snapshot !== void 0 && !isVisible(n2, snapshot)) {
+                      if (cur === void 0 || cur.user !== n2.id.client || cur.type !== "removed") {
+                        packStr();
+                        currentAttributes.set("ychange", computeYChange ? computeYChange("removed", n2.id) : { type: "removed" });
+                      }
+                    } else if (prevSnapshot !== void 0 && !isVisible(n2, prevSnapshot)) {
+                      if (cur === void 0 || cur.user !== n2.id.client || cur.type !== "added") {
+                        packStr();
+                        currentAttributes.set("ychange", computeYChange ? computeYChange("added", n2.id) : { type: "added" });
+                      }
+                    } else if (cur !== void 0) {
+                      packStr();
+                      currentAttributes.delete("ychange");
+                    }
+                    str += /** @type {ContentString} */
+                    n2.content.str;
+                    break;
+                  }
+                  case ContentType:
+                  case ContentEmbed: {
+                    packStr();
+                    const op = {
+                      insert: n2.content.getContent()[0]
+                    };
+                    if (currentAttributes.size > 0) {
+                      const attrs = (
+                        /** @type {Object<string,any>} */
+                        {}
+                      );
+                      op.attributes = attrs;
+                      currentAttributes.forEach((value2, key) => {
+                        attrs[key] = value2;
+                      });
+                    }
+                    ops.push(op);
+                    break;
+                  }
+                  case ContentFormat:
+                    if (isVisible(n2, snapshot)) {
+                      packStr();
+                      updateCurrentAttributes(
+                        currentAttributes,
+                        /** @type {ContentFormat} */
+                        n2.content
+                      );
+                    }
+                    break;
+                }
+              }
+              n2 = n2.right;
+            }
+            packStr();
+          };
+          if (snapshot || prevSnapshot) {
+            transact(doc2, (transaction) => {
+              if (snapshot) {
+                splitSnapshotAffectedStructs(transaction, snapshot);
+              }
+              if (prevSnapshot) {
+                splitSnapshotAffectedStructs(transaction, prevSnapshot);
+              }
+              computeDelta();
+            }, "cleanup");
+          } else {
+            computeDelta();
+          }
+          return ops;
+        }
+        /**
+         * Insert text at a given index.
+         *
+         * @param {number} index The index at which to start inserting.
+         * @param {String} text The text to insert at the specified position.
+         * @param {TextAttributes} [attributes] Optionally define some formatting
+         *                                    information to apply on the inserted
+         *                                    Text.
+         * @public
+         */
+        insert(index2, text2, attributes) {
+          if (text2.length <= 0) {
+            return;
+          }
+          const y2 = this.doc;
+          if (y2 !== null) {
+            transact(y2, (transaction) => {
+              const pos = findPosition(transaction, this, index2, !attributes);
+              if (!attributes) {
+                attributes = {};
+                pos.currentAttributes.forEach((v2, k2) => {
+                  attributes[k2] = v2;
+                });
+              }
+              insertText(transaction, this, pos, text2, attributes);
+            });
+          } else {
+            this._pending.push(() => this.insert(index2, text2, attributes));
+          }
+        }
+        /**
+         * Inserts an embed at a index.
+         *
+         * @param {number} index The index to insert the embed at.
+         * @param {Object | AbstractType<any>} embed The Object that represents the embed.
+         * @param {TextAttributes} [attributes] Attribute information to apply on the
+         *                                    embed
+         *
+         * @public
+         */
+        insertEmbed(index2, embed, attributes) {
+          const y2 = this.doc;
+          if (y2 !== null) {
+            transact(y2, (transaction) => {
+              const pos = findPosition(transaction, this, index2, !attributes);
+              insertText(transaction, this, pos, embed, attributes || {});
+            });
+          } else {
+            this._pending.push(() => this.insertEmbed(index2, embed, attributes || {}));
+          }
+        }
+        /**
+         * Deletes text starting from an index.
+         *
+         * @param {number} index Index at which to start deleting.
+         * @param {number} length The number of characters to remove. Defaults to 1.
+         *
+         * @public
+         */
+        delete(index2, length2) {
+          if (length2 === 0) {
+            return;
+          }
+          const y2 = this.doc;
+          if (y2 !== null) {
+            transact(y2, (transaction) => {
+              deleteText(transaction, findPosition(transaction, this, index2, true), length2);
+            });
+          } else {
+            this._pending.push(() => this.delete(index2, length2));
+          }
+        }
+        /**
+         * Assigns properties to a range of text.
+         *
+         * @param {number} index The position where to start formatting.
+         * @param {number} length The amount of characters to assign properties to.
+         * @param {TextAttributes} attributes Attribute information to apply on the
+         *                                    text.
+         *
+         * @public
+         */
+        format(index2, length2, attributes) {
+          if (length2 === 0) {
+            return;
+          }
+          const y2 = this.doc;
+          if (y2 !== null) {
+            transact(y2, (transaction) => {
+              const pos = findPosition(transaction, this, index2, false);
+              if (pos.right === null) {
+                return;
+              }
+              formatText(transaction, this, pos, length2, attributes);
+            });
+          } else {
+            this._pending.push(() => this.format(index2, length2, attributes));
+          }
+        }
+        /**
+         * Removes an attribute.
+         *
+         * @note Xml-Text nodes don't have attributes. You can use this feature to assign properties to complete text-blocks.
+         *
+         * @param {String} attributeName The attribute name that is to be removed.
+         *
+         * @public
+         */
+        removeAttribute(attributeName) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapDelete(transaction, this, attributeName);
+            });
+          } else {
+            this._pending.push(() => this.removeAttribute(attributeName));
+          }
+        }
+        /**
+         * Sets or updates an attribute.
+         *
+         * @note Xml-Text nodes don't have attributes. You can use this feature to assign properties to complete text-blocks.
+         *
+         * @param {String} attributeName The attribute name that is to be set.
+         * @param {any} attributeValue The attribute value that is to be set.
+         *
+         * @public
+         */
+        setAttribute(attributeName, attributeValue) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapSet(transaction, this, attributeName, attributeValue);
+            });
+          } else {
+            this._pending.push(() => this.setAttribute(attributeName, attributeValue));
+          }
+        }
+        /**
+         * Returns an attribute value that belongs to the attribute name.
+         *
+         * @note Xml-Text nodes don't have attributes. You can use this feature to assign properties to complete text-blocks.
+         *
+         * @param {String} attributeName The attribute name that identifies the
+         *                               queried value.
+         * @return {any} The queried attribute value.
+         *
+         * @public
+         */
+        getAttribute(attributeName) {
+          return (
+            /** @type {any} */
+            typeMapGet(this, attributeName)
+          );
+        }
+        /**
+         * Returns all attribute name/value pairs in a JSON Object.
+         *
+         * @note Xml-Text nodes don't have attributes. You can use this feature to assign properties to complete text-blocks.
+         *
+         * @return {Object<string, any>} A JSON Object that describes the attributes.
+         *
+         * @public
+         */
+        getAttributes() {
+          return typeMapGetAll(this);
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YTextRefID);
+        }
+      };
+      readYText = (_decoder) => new YText();
+      YXmlTreeWalker = class {
+        /**
+         * @param {YXmlFragment | YXmlElement} root
+         * @param {function(AbstractType<any>):boolean} [f]
+         */
+        constructor(root, f2 = () => true) {
+          this._filter = f2;
+          this._root = root;
+          this._currentNode = /** @type {Item} */
+          root._start;
+          this._firstCall = true;
+          root.doc ?? warnPrematureAccess();
+        }
+        [Symbol.iterator]() {
+          return this;
+        }
+        /**
+         * Get the next node.
+         *
+         * @return {IteratorResult<YXmlElement|YXmlText|YXmlHook>} The next node.
+         *
+         * @public
+         */
+        next() {
+          let n2 = this._currentNode;
+          let type = n2 && n2.content && /** @type {any} */
+          n2.content.type;
+          if (n2 !== null && (!this._firstCall || n2.deleted || !this._filter(type))) {
+            do {
+              type = /** @type {any} */
+              n2.content.type;
+              if (!n2.deleted && (type.constructor === YXmlElement || type.constructor === YXmlFragment) && type._start !== null) {
+                n2 = type._start;
+              } else {
+                while (n2 !== null) {
+                  const nxt = n2.next;
+                  if (nxt !== null) {
+                    n2 = nxt;
+                    break;
+                  } else if (n2.parent === this._root) {
+                    n2 = null;
+                  } else {
+                    n2 = /** @type {AbstractType<any>} */
+                    n2.parent._item;
+                  }
+                }
+              }
+            } while (n2 !== null && (n2.deleted || !this._filter(
+              /** @type {ContentType} */
+              n2.content.type
+            )));
+          }
+          this._firstCall = false;
+          if (n2 === null) {
+            return { value: void 0, done: true };
+          }
+          this._currentNode = n2;
+          return { value: (
+            /** @type {any} */
+            n2.content.type
+          ), done: false };
+        }
+      };
+      YXmlFragment = class _YXmlFragment extends AbstractType {
+        constructor() {
+          super();
+          this._prelimContent = [];
+        }
+        /**
+         * @type {YXmlElement|YXmlText|null}
+         */
+        get firstChild() {
+          const first = this._first;
+          return first ? first.content.getContent()[0] : null;
+        }
+        /**
+         * Integrate this type into the Yjs instance.
+         *
+         * * Save this struct in the os
+         * * This type is sent to other client
+         * * Observer functions are fired
+         *
+         * @param {Doc} y The Yjs instance
+         * @param {Item} item
+         */
+        _integrate(y2, item) {
+          super._integrate(y2, item);
+          this.insert(
+            0,
+            /** @type {Array<any>} */
+            this._prelimContent
+          );
+          this._prelimContent = null;
+        }
+        _copy() {
+          return new _YXmlFragment();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YXmlFragment}
+         */
+        clone() {
+          const el = new _YXmlFragment();
+          el.insert(0, this.toArray().map((item) => item instanceof AbstractType ? item.clone() : item));
+          return el;
+        }
+        get length() {
+          this.doc ?? warnPrematureAccess();
+          return this._prelimContent === null ? this._length : this._prelimContent.length;
+        }
+        /**
+         * Create a subtree of childNodes.
+         *
+         * @example
+         * const walker = elem.createTreeWalker(dom => dom.nodeName === 'div')
+         * for (let node in walker) {
+         *   // `node` is a div node
+         *   nop(node)
+         * }
+         *
+         * @param {function(AbstractType<any>):boolean} filter Function that is called on each child element and
+         *                          returns a Boolean indicating whether the child
+         *                          is to be included in the subtree.
+         * @return {YXmlTreeWalker} A subtree and a position within it.
+         *
+         * @public
+         */
+        createTreeWalker(filter2) {
+          return new YXmlTreeWalker(this, filter2);
+        }
+        /**
+         * Returns the first YXmlElement that matches the query.
+         * Similar to DOM's {@link querySelector}.
+         *
+         * Query support:
+         *   - tagname
+         * TODO:
+         *   - id
+         *   - attribute
+         *
+         * @param {CSS_Selector} query The query on the children.
+         * @return {YXmlElement|YXmlText|YXmlHook|null} The first element that matches the query or null.
+         *
+         * @public
+         */
+        querySelector(query) {
+          query = query.toUpperCase();
+          const iterator = new YXmlTreeWalker(this, (element2) => element2.nodeName && element2.nodeName.toUpperCase() === query);
+          const next = iterator.next();
+          if (next.done) {
+            return null;
+          } else {
+            return next.value;
+          }
+        }
+        /**
+         * Returns all YXmlElements that match the query.
+         * Similar to Dom's {@link querySelectorAll}.
+         *
+         * @todo Does not yet support all queries. Currently only query by tagName.
+         *
+         * @param {CSS_Selector} query The query on the children
+         * @return {Array<YXmlElement|YXmlText|YXmlHook|null>} The elements that match this query.
+         *
+         * @public
+         */
+        querySelectorAll(query) {
+          query = query.toUpperCase();
+          return from(new YXmlTreeWalker(this, (element2) => element2.nodeName && element2.nodeName.toUpperCase() === query));
+        }
+        /**
+         * Creates YXmlEvent and calls observers.
+         *
+         * @param {Transaction} transaction
+         * @param {Set<null|string>} parentSubs Keys changed on this type. `null` if list was modified.
+         */
+        _callObserver(transaction, parentSubs) {
+          callTypeObservers(this, transaction, new YXmlEvent(this, parentSubs, transaction));
+        }
+        /**
+         * Get the string representation of all the children of this YXmlFragment.
+         *
+         * @return {string} The string representation of all children.
+         */
+        toString() {
+          return typeListMap(this, (xml) => xml.toString()).join("");
+        }
+        /**
+         * @return {string}
+         */
+        toJSON() {
+          return this.toString();
+        }
+        /**
+         * Creates a Dom Element that mirrors this YXmlElement.
+         *
+         * @param {Document} [_document=document] The document object (you must define
+         *                                        this when calling this method in
+         *                                        nodejs)
+         * @param {Object<string, any>} [hooks={}] Optional property to customize how hooks
+         *                                             are presented in the DOM
+         * @param {any} [binding] You should not set this property. This is
+         *                               used if DomBinding wants to create a
+         *                               association to the created DOM type.
+         * @return {Node} The {@link https://developer.mozilla.org/en-US/docs/Web/API/Element|Dom Element}
+         *
+         * @public
+         */
+        toDOM(_document = document, hooks = {}, binding) {
+          const fragment = _document.createDocumentFragment();
+          if (binding !== void 0) {
+            binding._createAssociation(fragment, this);
+          }
+          typeListForEach(this, (xmlType) => {
+            fragment.insertBefore(xmlType.toDOM(_document, hooks, binding), null);
+          });
+          return fragment;
+        }
+        /**
+         * Inserts new content at an index.
+         *
+         * @example
+         *  // Insert character 'a' at position 0
+         *  xml.insert(0, [new Y.XmlText('text')])
+         *
+         * @param {number} index The index to insert content at
+         * @param {Array<YXmlElement|YXmlText>} content The array of content
+         */
+        insert(index2, content) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeListInsertGenerics(transaction, this, index2, content);
+            });
+          } else {
+            this._prelimContent.splice(index2, 0, ...content);
+          }
+        }
+        /**
+         * Inserts new content at an index.
+         *
+         * @example
+         *  // Insert character 'a' at position 0
+         *  xml.insert(0, [new Y.XmlText('text')])
+         *
+         * @param {null|Item|YXmlElement|YXmlText} ref The index to insert content at
+         * @param {Array<YXmlElement|YXmlText>} content The array of content
+         */
+        insertAfter(ref2, content) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              const refItem = ref2 && ref2 instanceof AbstractType ? ref2._item : ref2;
+              typeListInsertGenericsAfter(transaction, this, refItem, content);
+            });
+          } else {
+            const pc = (
+              /** @type {Array<any>} */
+              this._prelimContent
+            );
+            const index2 = ref2 === null ? 0 : pc.findIndex((el) => el === ref2) + 1;
+            if (index2 === 0 && ref2 !== null) {
+              throw create3("Reference item not found");
+            }
+            pc.splice(index2, 0, ...content);
+          }
+        }
+        /**
+         * Deletes elements starting from an index.
+         *
+         * @param {number} index Index at which to start deleting elements
+         * @param {number} [length=1] The number of elements to remove. Defaults to 1.
+         */
+        delete(index2, length2 = 1) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeListDelete(transaction, this, index2, length2);
+            });
+          } else {
+            this._prelimContent.splice(index2, length2);
+          }
+        }
+        /**
+         * Transforms this YArray to a JavaScript Array.
+         *
+         * @return {Array<YXmlElement|YXmlText|YXmlHook>}
+         */
+        toArray() {
+          return typeListToArray(this);
+        }
+        /**
+         * Appends content to this YArray.
+         *
+         * @param {Array<YXmlElement|YXmlText>} content Array of content to append.
+         */
+        push(content) {
+          this.insert(this.length, content);
+        }
+        /**
+         * Prepends content to this YArray.
+         *
+         * @param {Array<YXmlElement|YXmlText>} content Array of content to prepend.
+         */
+        unshift(content) {
+          this.insert(0, content);
+        }
+        /**
+         * Returns the i-th element from a YArray.
+         *
+         * @param {number} index The index of the element to return from the YArray
+         * @return {YXmlElement|YXmlText}
+         */
+        get(index2) {
+          return typeListGet(this, index2);
+        }
+        /**
+         * Returns a portion of this YXmlFragment into a JavaScript Array selected
+         * from start to end (end not included).
+         *
+         * @param {number} [start]
+         * @param {number} [end]
+         * @return {Array<YXmlElement|YXmlText>}
+         */
+        slice(start = 0, end2 = this.length) {
+          return typeListSlice(this, start, end2);
+        }
+        /**
+         * Executes a provided function on once on every child element.
+         *
+         * @param {function(YXmlElement|YXmlText,number, typeof self):void} f A function to execute on every element of this YArray.
+         */
+        forEach(f2) {
+          typeListForEach(this, f2);
+        }
+        /**
+         * Transform the properties of this type to binary and write it to an
+         * BinaryEncoder.
+         *
+         * This is called when this Item is sent to a remote peer.
+         *
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder The encoder to write data to.
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YXmlFragmentRefID);
+        }
+      };
+      readYXmlFragment = (_decoder) => new YXmlFragment();
+      YXmlElement = class _YXmlElement extends YXmlFragment {
+        constructor(nodeName = "UNDEFINED") {
+          super();
+          this.nodeName = nodeName;
+          this._prelimAttrs = /* @__PURE__ */ new Map();
+        }
+        /**
+         * @type {YXmlElement|YXmlText|null}
+         */
+        get nextSibling() {
+          const n2 = this._item ? this._item.next : null;
+          return n2 ? (
+            /** @type {YXmlElement|YXmlText} */
+            /** @type {ContentType} */
+            n2.content.type
+          ) : null;
+        }
+        /**
+         * @type {YXmlElement|YXmlText|null}
+         */
+        get prevSibling() {
+          const n2 = this._item ? this._item.prev : null;
+          return n2 ? (
+            /** @type {YXmlElement|YXmlText} */
+            /** @type {ContentType} */
+            n2.content.type
+          ) : null;
+        }
+        /**
+         * Integrate this type into the Yjs instance.
+         *
+         * * Save this struct in the os
+         * * This type is sent to other client
+         * * Observer functions are fired
+         *
+         * @param {Doc} y The Yjs instance
+         * @param {Item} item
+         */
+        _integrate(y2, item) {
+          super._integrate(y2, item);
+          /** @type {Map<string, any>} */
+          this._prelimAttrs.forEach((value2, key) => {
+            this.setAttribute(key, value2);
+          });
+          this._prelimAttrs = null;
+        }
+        /**
+         * Creates an Item with the same effect as this Item (without position effect)
+         *
+         * @return {YXmlElement}
+         */
+        _copy() {
+          return new _YXmlElement(this.nodeName);
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YXmlElement<KV>}
+         */
+        clone() {
+          const el = new _YXmlElement(this.nodeName);
+          const attrs = this.getAttributes();
+          forEach(attrs, (value2, key) => {
+            el.setAttribute(
+              key,
+              /** @type {any} */
+              value2
+            );
+          });
+          el.insert(0, this.toArray().map((v2) => v2 instanceof AbstractType ? v2.clone() : v2));
+          return el;
+        }
+        /**
+         * Returns the XML serialization of this YXmlElement.
+         * The attributes are ordered by attribute-name, so you can easily use this
+         * method to compare YXmlElements
+         *
+         * @return {string} The string representation of this type.
+         *
+         * @public
+         */
+        toString() {
+          const attrs = this.getAttributes();
+          const stringBuilder = [];
+          const keys3 = [];
+          for (const key in attrs) {
+            keys3.push(key);
+          }
+          keys3.sort();
+          const keysLen = keys3.length;
+          for (let i = 0; i < keysLen; i++) {
+            const key = keys3[i];
+            stringBuilder.push(key + '="' + attrs[key] + '"');
+          }
+          const nodeName = this.nodeName.toLocaleLowerCase();
+          const attrsString = stringBuilder.length > 0 ? " " + stringBuilder.join(" ") : "";
+          return `<${nodeName}${attrsString}>${super.toString()}</${nodeName}>`;
+        }
+        /**
+         * Removes an attribute from this YXmlElement.
+         *
+         * @param {string} attributeName The attribute name that is to be removed.
+         *
+         * @public
+         */
+        removeAttribute(attributeName) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapDelete(transaction, this, attributeName);
+            });
+          } else {
+            this._prelimAttrs.delete(attributeName);
+          }
+        }
+        /**
+         * Sets or updates an attribute.
+         *
+         * @template {keyof KV & string} KEY
+         *
+         * @param {KEY} attributeName The attribute name that is to be set.
+         * @param {KV[KEY]} attributeValue The attribute value that is to be set.
+         *
+         * @public
+         */
+        setAttribute(attributeName, attributeValue) {
+          if (this.doc !== null) {
+            transact(this.doc, (transaction) => {
+              typeMapSet(transaction, this, attributeName, attributeValue);
+            });
+          } else {
+            this._prelimAttrs.set(attributeName, attributeValue);
+          }
+        }
+        /**
+         * Returns an attribute value that belongs to the attribute name.
+         *
+         * @template {keyof KV & string} KEY
+         *
+         * @param {KEY} attributeName The attribute name that identifies the
+         *                               queried value.
+         * @return {KV[KEY]|undefined} The queried attribute value.
+         *
+         * @public
+         */
+        getAttribute(attributeName) {
+          return (
+            /** @type {any} */
+            typeMapGet(this, attributeName)
+          );
+        }
+        /**
+         * Returns whether an attribute exists
+         *
+         * @param {string} attributeName The attribute name to check for existence.
+         * @return {boolean} whether the attribute exists.
+         *
+         * @public
+         */
+        hasAttribute(attributeName) {
+          return (
+            /** @type {any} */
+            typeMapHas(this, attributeName)
+          );
+        }
+        /**
+         * Returns all attribute name/value pairs in a JSON Object.
+         *
+         * @param {Snapshot} [snapshot]
+         * @return {{ [Key in Extract<keyof KV,string>]?: KV[Key]}} A JSON Object that describes the attributes.
+         *
+         * @public
+         */
+        getAttributes(snapshot) {
+          return (
+            /** @type {any} */
+            snapshot ? typeMapGetAllSnapshot(this, snapshot) : typeMapGetAll(this)
+          );
+        }
+        /**
+         * Creates a Dom Element that mirrors this YXmlElement.
+         *
+         * @param {Document} [_document=document] The document object (you must define
+         *                                        this when calling this method in
+         *                                        nodejs)
+         * @param {Object<string, any>} [hooks={}] Optional property to customize how hooks
+         *                                             are presented in the DOM
+         * @param {any} [binding] You should not set this property. This is
+         *                               used if DomBinding wants to create a
+         *                               association to the created DOM type.
+         * @return {Node} The {@link https://developer.mozilla.org/en-US/docs/Web/API/Element|Dom Element}
+         *
+         * @public
+         */
+        toDOM(_document = document, hooks = {}, binding) {
+          const dom = _document.createElement(this.nodeName);
+          const attrs = this.getAttributes();
+          for (const key in attrs) {
+            const value2 = attrs[key];
+            if (typeof value2 === "string") {
+              dom.setAttribute(key, value2);
+            }
+          }
+          typeListForEach(this, (yxml) => {
+            dom.appendChild(yxml.toDOM(_document, hooks, binding));
+          });
+          if (binding !== void 0) {
+            binding._createAssociation(dom, this);
+          }
+          return dom;
+        }
+        /**
+         * Transform the properties of this type to binary and write it to an
+         * BinaryEncoder.
+         *
+         * This is called when this Item is sent to a remote peer.
+         *
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder The encoder to write data to.
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YXmlElementRefID);
+          encoder.writeKey(this.nodeName);
+        }
+      };
+      readYXmlElement = (decoder) => new YXmlElement(decoder.readKey());
+      YXmlEvent = class extends YEvent {
+        /**
+         * @param {YXmlElement|YXmlText|YXmlFragment} target The target on which the event is created.
+         * @param {Set<string|null>} subs The set of changed attributes. `null` is included if the
+         *                   child list changed.
+         * @param {Transaction} transaction The transaction instance with which the
+         *                                  change was created.
+         */
+        constructor(target, subs, transaction) {
+          super(target, transaction);
+          this.childListChanged = false;
+          this.attributesChanged = /* @__PURE__ */ new Set();
+          subs.forEach((sub2) => {
+            if (sub2 === null) {
+              this.childListChanged = true;
+            } else {
+              this.attributesChanged.add(sub2);
+            }
+          });
+        }
+      };
+      YXmlHook = class _YXmlHook extends YMap {
+        /**
+         * @param {string} hookName nodeName of the Dom Node.
+         */
+        constructor(hookName) {
+          super();
+          this.hookName = hookName;
+        }
+        /**
+         * Creates an Item with the same effect as this Item (without position effect)
+         */
+        _copy() {
+          return new _YXmlHook(this.hookName);
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YXmlHook}
+         */
+        clone() {
+          const el = new _YXmlHook(this.hookName);
+          this.forEach((value2, key) => {
+            el.set(key, value2);
+          });
+          return el;
+        }
+        /**
+         * Creates a Dom Element that mirrors this YXmlElement.
+         *
+         * @param {Document} [_document=document] The document object (you must define
+         *                                        this when calling this method in
+         *                                        nodejs)
+         * @param {Object.<string, any>} [hooks] Optional property to customize how hooks
+         *                                             are presented in the DOM
+         * @param {any} [binding] You should not set this property. This is
+         *                               used if DomBinding wants to create a
+         *                               association to the created DOM type
+         * @return {Element} The {@link https://developer.mozilla.org/en-US/docs/Web/API/Element|Dom Element}
+         *
+         * @public
+         */
+        toDOM(_document = document, hooks = {}, binding) {
+          const hook = hooks[this.hookName];
+          let dom;
+          if (hook !== void 0) {
+            dom = hook.createDom(this);
+          } else {
+            dom = document.createElement(this.hookName);
+          }
+          dom.setAttribute("data-yjs-hook", this.hookName);
+          if (binding !== void 0) {
+            binding._createAssociation(dom, this);
+          }
+          return dom;
+        }
+        /**
+         * Transform the properties of this type to binary and write it to an
+         * BinaryEncoder.
+         *
+         * This is called when this Item is sent to a remote peer.
+         *
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder The encoder to write data to.
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YXmlHookRefID);
+          encoder.writeKey(this.hookName);
+        }
+      };
+      readYXmlHook = (decoder) => new YXmlHook(decoder.readKey());
+      YXmlText = class _YXmlText extends YText {
+        /**
+         * @type {YXmlElement|YXmlText|null}
+         */
+        get nextSibling() {
+          const n2 = this._item ? this._item.next : null;
+          return n2 ? (
+            /** @type {YXmlElement|YXmlText} */
+            /** @type {ContentType} */
+            n2.content.type
+          ) : null;
+        }
+        /**
+         * @type {YXmlElement|YXmlText|null}
+         */
+        get prevSibling() {
+          const n2 = this._item ? this._item.prev : null;
+          return n2 ? (
+            /** @type {YXmlElement|YXmlText} */
+            /** @type {ContentType} */
+            n2.content.type
+          ) : null;
+        }
+        _copy() {
+          return new _YXmlText();
+        }
+        /**
+         * Makes a copy of this data type that can be included somewhere else.
+         *
+         * Note that the content is only readable _after_ it has been included somewhere in the Ydoc.
+         *
+         * @return {YXmlText}
+         */
+        clone() {
+          const text2 = new _YXmlText();
+          text2.applyDelta(this.toDelta());
+          return text2;
+        }
+        /**
+         * Creates a Dom Element that mirrors this YXmlText.
+         *
+         * @param {Document} [_document=document] The document object (you must define
+         *                                        this when calling this method in
+         *                                        nodejs)
+         * @param {Object<string, any>} [hooks] Optional property to customize how hooks
+         *                                             are presented in the DOM
+         * @param {any} [binding] You should not set this property. This is
+         *                               used if DomBinding wants to create a
+         *                               association to the created DOM type.
+         * @return {Text} The {@link https://developer.mozilla.org/en-US/docs/Web/API/Element|Dom Element}
+         *
+         * @public
+         */
+        toDOM(_document = document, hooks, binding) {
+          const dom = _document.createTextNode(this.toString());
+          if (binding !== void 0) {
+            binding._createAssociation(dom, this);
+          }
+          return dom;
+        }
+        toString() {
+          return this.toDelta().map((delta) => {
+            const nestedNodes = [];
+            for (const nodeName in delta.attributes) {
+              const attrs = [];
+              for (const key in delta.attributes[nodeName]) {
+                attrs.push({ key, value: delta.attributes[nodeName][key] });
+              }
+              attrs.sort((a2, b) => a2.key < b.key ? -1 : 1);
+              nestedNodes.push({ nodeName, attrs });
+            }
+            nestedNodes.sort((a2, b) => a2.nodeName < b.nodeName ? -1 : 1);
+            let str = "";
+            for (let i = 0; i < nestedNodes.length; i++) {
+              const node = nestedNodes[i];
+              str += `<${node.nodeName}`;
+              for (let j2 = 0; j2 < node.attrs.length; j2++) {
+                const attr = node.attrs[j2];
+                str += ` ${attr.key}="${attr.value}"`;
+              }
+              str += ">";
+            }
+            str += delta.insert;
+            for (let i = nestedNodes.length - 1; i >= 0; i--) {
+              str += `</${nestedNodes[i].nodeName}>`;
+            }
+            return str;
+          }).join("");
+        }
+        /**
+         * @return {string}
+         */
+        toJSON() {
+          return this.toString();
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         */
+        _write(encoder) {
+          encoder.writeTypeRef(YXmlTextRefID);
+        }
+      };
+      readYXmlText = (decoder) => new YXmlText();
+      AbstractStruct = class {
+        /**
+         * @param {ID} id
+         * @param {number} length
+         */
+        constructor(id3, length2) {
+          this.id = id3;
+          this.length = length2;
+        }
+        /**
+         * @type {boolean}
+         */
+        get deleted() {
+          throw methodUnimplemented();
+        }
+        /**
+         * Merge this struct with the item to the right.
+         * This method is already assuming that `this.id.clock + this.length === this.id.clock`.
+         * Also this method does *not* remove right from StructStore!
+         * @param {AbstractStruct} right
+         * @return {boolean} whether this merged with right
+         */
+        mergeWith(right2) {
+          return false;
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder The encoder to write data to.
+         * @param {number} offset
+         * @param {number} encodingRef
+         */
+        write(encoder, offset2, encodingRef) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {number} offset
+         */
+        integrate(transaction, offset2) {
+          throw methodUnimplemented();
+        }
+      };
+      structGCRefNumber = 0;
+      GC = class extends AbstractStruct {
+        get deleted() {
+          return true;
+        }
+        delete() {
+        }
+        /**
+         * @param {GC} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          if (this.constructor !== right2.constructor) {
+            return false;
+          }
+          this.length += right2.length;
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {number} offset
+         */
+        integrate(transaction, offset2) {
+          if (offset2 > 0) {
+            this.id.clock += offset2;
+            this.length -= offset2;
+          }
+          addStruct(transaction.doc.store, this);
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeInfo(structGCRefNumber);
+          encoder.writeLen(this.length - offset2);
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {StructStore} store
+         * @return {null | number}
+         */
+        getMissing(transaction, store) {
+          return null;
+        }
+      };
+      ContentBinary = class _ContentBinary {
+        /**
+         * @param {Uint8Array} content
+         */
+        constructor(content) {
+          this.content = content;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return 1;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [this.content];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentBinary}
+         */
+        copy() {
+          return new _ContentBinary(this.content);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentBinary}
+         */
+        splice(offset2) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {ContentBinary} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          return false;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeBuf(this.content);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 3;
+        }
+      };
+      readContentBinary = (decoder) => new ContentBinary(decoder.readBuf());
+      ContentDeleted = class _ContentDeleted {
+        /**
+         * @param {number} len
+         */
+        constructor(len) {
+          this.len = len;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return this.len;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return false;
+        }
+        /**
+         * @return {ContentDeleted}
+         */
+        copy() {
+          return new _ContentDeleted(this.len);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentDeleted}
+         */
+        splice(offset2) {
+          const right2 = new _ContentDeleted(this.len - offset2);
+          this.len = offset2;
+          return right2;
+        }
+        /**
+         * @param {ContentDeleted} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          this.len += right2.len;
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+          addToDeleteSet(transaction.deleteSet, item.id.client, item.id.clock, this.len);
+          item.markDeleted();
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeLen(this.len - offset2);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 1;
+        }
+      };
+      readContentDeleted = (decoder) => new ContentDeleted(decoder.readLen());
+      createDocFromOpts = (guid, opts) => new Doc({ guid, ...opts, shouldLoad: opts.shouldLoad || opts.autoLoad || false });
+      ContentDoc = class _ContentDoc {
+        /**
+         * @param {Doc} doc
+         */
+        constructor(doc2) {
+          if (doc2._item) {
+            console.error("This document was already integrated as a sub-document. You should create a second instance instead with the same guid.");
+          }
+          this.doc = doc2;
+          const opts = {};
+          this.opts = opts;
+          if (!doc2.gc) {
+            opts.gc = false;
+          }
+          if (doc2.autoLoad) {
+            opts.autoLoad = true;
+          }
+          if (doc2.meta !== null) {
+            opts.meta = doc2.meta;
+          }
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return 1;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [this.doc];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentDoc}
+         */
+        copy() {
+          return new _ContentDoc(createDocFromOpts(this.doc.guid, this.opts));
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentDoc}
+         */
+        splice(offset2) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {ContentDoc} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          return false;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+          this.doc._item = item;
+          transaction.subdocsAdded.add(this.doc);
+          if (this.doc.shouldLoad) {
+            transaction.subdocsLoaded.add(this.doc);
+          }
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+          if (transaction.subdocsAdded.has(this.doc)) {
+            transaction.subdocsAdded.delete(this.doc);
+          } else {
+            transaction.subdocsRemoved.add(this.doc);
+          }
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeString(this.doc.guid);
+          encoder.writeAny(this.opts);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 9;
+        }
+      };
+      readContentDoc = (decoder) => new ContentDoc(createDocFromOpts(decoder.readString(), decoder.readAny()));
+      ContentEmbed = class _ContentEmbed {
+        /**
+         * @param {Object} embed
+         */
+        constructor(embed) {
+          this.embed = embed;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return 1;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [this.embed];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentEmbed}
+         */
+        copy() {
+          return new _ContentEmbed(this.embed);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentEmbed}
+         */
+        splice(offset2) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {ContentEmbed} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          return false;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeJSON(this.embed);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 5;
+        }
+      };
+      readContentEmbed = (decoder) => new ContentEmbed(decoder.readJSON());
+      ContentFormat = class _ContentFormat {
+        /**
+         * @param {string} key
+         * @param {Object} value
+         */
+        constructor(key, value2) {
+          this.key = key;
+          this.value = value2;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return 1;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return false;
+        }
+        /**
+         * @return {ContentFormat}
+         */
+        copy() {
+          return new _ContentFormat(this.key, this.value);
+        }
+        /**
+         * @param {number} _offset
+         * @return {ContentFormat}
+         */
+        splice(_offset) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {ContentFormat} _right
+         * @return {boolean}
+         */
+        mergeWith(_right) {
+          return false;
+        }
+        /**
+         * @param {Transaction} _transaction
+         * @param {Item} item
+         */
+        integrate(_transaction, item) {
+          const p = (
+            /** @type {YText} */
+            item.parent
+          );
+          p._searchMarker = null;
+          p._hasFormatting = true;
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeKey(this.key);
+          encoder.writeJSON(this.value);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 6;
+        }
+      };
+      readContentFormat = (decoder) => new ContentFormat(decoder.readKey(), decoder.readJSON());
+      ContentJSON = class _ContentJSON {
+        /**
+         * @param {Array<any>} arr
+         */
+        constructor(arr) {
+          this.arr = arr;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return this.arr.length;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return this.arr;
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentJSON}
+         */
+        copy() {
+          return new _ContentJSON(this.arr);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentJSON}
+         */
+        splice(offset2) {
+          const right2 = new _ContentJSON(this.arr.slice(offset2));
+          this.arr = this.arr.slice(0, offset2);
+          return right2;
+        }
+        /**
+         * @param {ContentJSON} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          this.arr = this.arr.concat(right2.arr);
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          const len = this.arr.length;
+          encoder.writeLen(len - offset2);
+          for (let i = offset2; i < len; i++) {
+            const c2 = this.arr[i];
+            encoder.writeString(c2 === void 0 ? "undefined" : JSON.stringify(c2));
+          }
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 2;
+        }
+      };
+      readContentJSON = (decoder) => {
+        const len = decoder.readLen();
+        const cs = [];
+        for (let i = 0; i < len; i++) {
+          const c2 = decoder.readString();
+          if (c2 === "undefined") {
+            cs.push(void 0);
+          } else {
+            cs.push(JSON.parse(c2));
+          }
+        }
+        return new ContentJSON(cs);
+      };
+      isDevMode = getVariable("node_env") === "development";
+      ContentAny = class _ContentAny {
+        /**
+         * @param {Array<any>} arr
+         */
+        constructor(arr) {
+          this.arr = arr;
+          isDevMode && deepFreeze(arr);
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return this.arr.length;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return this.arr;
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentAny}
+         */
+        copy() {
+          return new _ContentAny(this.arr);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentAny}
+         */
+        splice(offset2) {
+          const right2 = new _ContentAny(this.arr.slice(offset2));
+          this.arr = this.arr.slice(0, offset2);
+          return right2;
+        }
+        /**
+         * @param {ContentAny} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          this.arr = this.arr.concat(right2.arr);
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          const len = this.arr.length;
+          encoder.writeLen(len - offset2);
+          for (let i = offset2; i < len; i++) {
+            const c2 = this.arr[i];
+            encoder.writeAny(c2);
+          }
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 8;
+        }
+      };
+      readContentAny = (decoder) => {
+        const len = decoder.readLen();
+        const cs = [];
+        for (let i = 0; i < len; i++) {
+          cs.push(decoder.readAny());
+        }
+        return new ContentAny(cs);
+      };
+      ContentString = class _ContentString {
+        /**
+         * @param {string} str
+         */
+        constructor(str) {
+          this.str = str;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return this.str.length;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return this.str.split("");
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentString}
+         */
+        copy() {
+          return new _ContentString(this.str);
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentString}
+         */
+        splice(offset2) {
+          const right2 = new _ContentString(this.str.slice(offset2));
+          this.str = this.str.slice(0, offset2);
+          const firstCharCode = this.str.charCodeAt(offset2 - 1);
+          if (firstCharCode >= 55296 && firstCharCode <= 56319) {
+            this.str = this.str.slice(0, offset2 - 1) + "\uFFFD";
+            right2.str = "\uFFFD" + right2.str.slice(1);
+          }
+          return right2;
+        }
+        /**
+         * @param {ContentString} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          this.str += right2.str;
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeString(offset2 === 0 ? this.str : this.str.slice(offset2));
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 4;
+        }
+      };
+      readContentString = (decoder) => new ContentString(decoder.readString());
+      typeRefs = [
+        readYArray,
+        readYMap,
+        readYText,
+        readYXmlElement,
+        readYXmlFragment,
+        readYXmlHook,
+        readYXmlText
+      ];
+      YArrayRefID = 0;
+      YMapRefID = 1;
+      YTextRefID = 2;
+      YXmlElementRefID = 3;
+      YXmlFragmentRefID = 4;
+      YXmlHookRefID = 5;
+      YXmlTextRefID = 6;
+      ContentType = class _ContentType {
+        /**
+         * @param {AbstractType<any>} type
+         */
+        constructor(type) {
+          this.type = type;
+        }
+        /**
+         * @return {number}
+         */
+        getLength() {
+          return 1;
+        }
+        /**
+         * @return {Array<any>}
+         */
+        getContent() {
+          return [this.type];
+        }
+        /**
+         * @return {boolean}
+         */
+        isCountable() {
+          return true;
+        }
+        /**
+         * @return {ContentType}
+         */
+        copy() {
+          return new _ContentType(this.type._copy());
+        }
+        /**
+         * @param {number} offset
+         * @return {ContentType}
+         */
+        splice(offset2) {
+          throw methodUnimplemented();
+        }
+        /**
+         * @param {ContentType} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          return false;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {Item} item
+         */
+        integrate(transaction, item) {
+          this.type._integrate(transaction.doc, item);
+        }
+        /**
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+          let item = this.type._start;
+          while (item !== null) {
+            if (!item.deleted) {
+              item.delete(transaction);
+            } else if (item.id.clock < (transaction.beforeState.get(item.id.client) || 0)) {
+              transaction._mergeStructs.push(item);
+            }
+            item = item.right;
+          }
+          this.type._map.forEach((item2) => {
+            if (!item2.deleted) {
+              item2.delete(transaction);
+            } else if (item2.id.clock < (transaction.beforeState.get(item2.id.client) || 0)) {
+              transaction._mergeStructs.push(item2);
+            }
+          });
+          transaction.changed.delete(this.type);
+        }
+        /**
+         * @param {StructStore} store
+         */
+        gc(store) {
+          let item = this.type._start;
+          while (item !== null) {
+            item.gc(store, true);
+            item = item.right;
+          }
+          this.type._start = null;
+          this.type._map.forEach(
+            /** @param {Item | null} item */
+            (item2) => {
+              while (item2 !== null) {
+                item2.gc(store, true);
+                item2 = item2.left;
+              }
+            }
+          );
+          this.type._map = /* @__PURE__ */ new Map();
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          this.type._write(encoder);
+        }
+        /**
+         * @return {number}
+         */
+        getRef() {
+          return 7;
+        }
+      };
+      readContentType = (decoder) => new ContentType(typeRefs[decoder.readTypeRef()](decoder));
+      splitItem = (transaction, leftItem, diff) => {
+        const { client, clock: clock2 } = leftItem.id;
+        const rightItem = new Item(
+          createID(client, clock2 + diff),
+          leftItem,
+          createID(client, clock2 + diff - 1),
+          leftItem.right,
+          leftItem.rightOrigin,
+          leftItem.parent,
+          leftItem.parentSub,
+          leftItem.content.splice(diff)
+        );
+        if (leftItem.deleted) {
+          rightItem.markDeleted();
+        }
+        if (leftItem.keep) {
+          rightItem.keep = true;
+        }
+        if (leftItem.redone !== null) {
+          rightItem.redone = createID(leftItem.redone.client, leftItem.redone.clock + diff);
+        }
+        leftItem.right = rightItem;
+        if (rightItem.right !== null) {
+          rightItem.right.left = rightItem;
+        }
+        transaction._mergeStructs.push(rightItem);
+        if (rightItem.parentSub !== null && rightItem.right === null) {
+          rightItem.parent._map.set(rightItem.parentSub, rightItem);
+        }
+        leftItem.length = diff;
+        return rightItem;
+      };
+      Item = class _Item extends AbstractStruct {
+        /**
+         * @param {ID} id
+         * @param {Item | null} left
+         * @param {ID | null} origin
+         * @param {Item | null} right
+         * @param {ID | null} rightOrigin
+         * @param {AbstractType<any>|ID|null} parent Is a type if integrated, is null if it is possible to copy parent from left or right, is ID before integration to search for it.
+         * @param {string | null} parentSub
+         * @param {AbstractContent} content
+         */
+        constructor(id3, left2, origin, right2, rightOrigin, parent, parentSub, content) {
+          super(id3, content.getLength());
+          this.origin = origin;
+          this.left = left2;
+          this.right = right2;
+          this.rightOrigin = rightOrigin;
+          this.parent = parent;
+          this.parentSub = parentSub;
+          this.redone = null;
+          this.content = content;
+          this.info = this.content.isCountable() ? BIT2 : 0;
+        }
+        /**
+         * This is used to mark the item as an indexed fast-search marker
+         *
+         * @type {boolean}
+         */
+        set marker(isMarked) {
+          if ((this.info & BIT4) > 0 !== isMarked) {
+            this.info ^= BIT4;
+          }
+        }
+        get marker() {
+          return (this.info & BIT4) > 0;
+        }
+        /**
+         * If true, do not garbage collect this Item.
+         */
+        get keep() {
+          return (this.info & BIT1) > 0;
+        }
+        set keep(doKeep) {
+          if (this.keep !== doKeep) {
+            this.info ^= BIT1;
+          }
+        }
+        get countable() {
+          return (this.info & BIT2) > 0;
+        }
+        /**
+         * Whether this item was deleted or not.
+         * @type {Boolean}
+         */
+        get deleted() {
+          return (this.info & BIT3) > 0;
+        }
+        set deleted(doDelete) {
+          if (this.deleted !== doDelete) {
+            this.info ^= BIT3;
+          }
+        }
+        markDeleted() {
+          this.info |= BIT3;
+        }
+        /**
+         * Return the creator clientID of the missing op or define missing items and return null.
+         *
+         * @param {Transaction} transaction
+         * @param {StructStore} store
+         * @return {null | number}
+         */
+        getMissing(transaction, store) {
+          if (this.origin && this.origin.client !== this.id.client && this.origin.clock >= getState(store, this.origin.client)) {
+            return this.origin.client;
+          }
+          if (this.rightOrigin && this.rightOrigin.client !== this.id.client && this.rightOrigin.clock >= getState(store, this.rightOrigin.client)) {
+            return this.rightOrigin.client;
+          }
+          if (this.parent && this.parent.constructor === ID && this.id.client !== this.parent.client && this.parent.clock >= getState(store, this.parent.client)) {
+            return this.parent.client;
+          }
+          if (this.origin) {
+            this.left = getItemCleanEnd(transaction, store, this.origin);
+            this.origin = this.left.lastId;
+          }
+          if (this.rightOrigin) {
+            this.right = getItemCleanStart(transaction, this.rightOrigin);
+            this.rightOrigin = this.right.id;
+          }
+          if (this.left && this.left.constructor === GC || this.right && this.right.constructor === GC) {
+            this.parent = null;
+          } else if (!this.parent) {
+            if (this.left && this.left.constructor === _Item) {
+              this.parent = this.left.parent;
+              this.parentSub = this.left.parentSub;
+            } else if (this.right && this.right.constructor === _Item) {
+              this.parent = this.right.parent;
+              this.parentSub = this.right.parentSub;
+            }
+          } else if (this.parent.constructor === ID) {
+            const parentItem = getItem(store, this.parent);
+            if (parentItem.constructor === GC) {
+              this.parent = null;
+            } else {
+              this.parent = /** @type {ContentType} */
+              parentItem.content.type;
+            }
+          }
+          return null;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {number} offset
+         */
+        integrate(transaction, offset2) {
+          if (offset2 > 0) {
+            this.id.clock += offset2;
+            this.left = getItemCleanEnd(transaction, transaction.doc.store, createID(this.id.client, this.id.clock - 1));
+            this.origin = this.left.lastId;
+            this.content = this.content.splice(offset2);
+            this.length -= offset2;
+          }
+          if (this.parent) {
+            if (!this.left && (!this.right || this.right.left !== null) || this.left && this.left.right !== this.right) {
+              let left2 = this.left;
+              let o;
+              if (left2 !== null) {
+                o = left2.right;
+              } else if (this.parentSub !== null) {
+                o = /** @type {AbstractType<any>} */
+                this.parent._map.get(this.parentSub) || null;
+                while (o !== null && o.left !== null) {
+                  o = o.left;
+                }
+              } else {
+                o = /** @type {AbstractType<any>} */
+                this.parent._start;
+              }
+              const conflictingItems = /* @__PURE__ */ new Set();
+              const itemsBeforeOrigin = /* @__PURE__ */ new Set();
+              while (o !== null && o !== this.right) {
+                itemsBeforeOrigin.add(o);
+                conflictingItems.add(o);
+                if (compareIDs(this.origin, o.origin)) {
+                  if (o.id.client < this.id.client) {
+                    left2 = o;
+                    conflictingItems.clear();
+                  } else if (compareIDs(this.rightOrigin, o.rightOrigin)) {
+                    break;
+                  }
+                } else if (o.origin !== null && itemsBeforeOrigin.has(getItem(transaction.doc.store, o.origin))) {
+                  if (!conflictingItems.has(getItem(transaction.doc.store, o.origin))) {
+                    left2 = o;
+                    conflictingItems.clear();
+                  }
+                } else {
+                  break;
+                }
+                o = o.right;
+              }
+              this.left = left2;
+            }
+            if (this.left !== null) {
+              const right2 = this.left.right;
+              this.right = right2;
+              this.left.right = this;
+            } else {
+              let r2;
+              if (this.parentSub !== null) {
+                r2 = /** @type {AbstractType<any>} */
+                this.parent._map.get(this.parentSub) || null;
+                while (r2 !== null && r2.left !== null) {
+                  r2 = r2.left;
+                }
+              } else {
+                r2 = /** @type {AbstractType<any>} */
+                this.parent._start;
+                this.parent._start = this;
+              }
+              this.right = r2;
+            }
+            if (this.right !== null) {
+              this.right.left = this;
+            } else if (this.parentSub !== null) {
+              this.parent._map.set(this.parentSub, this);
+              if (this.left !== null) {
+                this.left.delete(transaction);
+              }
+            }
+            if (this.parentSub === null && this.countable && !this.deleted) {
+              this.parent._length += this.length;
+            }
+            addStruct(transaction.doc.store, this);
+            this.content.integrate(transaction, this);
+            addChangedTypeToTransaction(
+              transaction,
+              /** @type {AbstractType<any>} */
+              this.parent,
+              this.parentSub
+            );
+            if (
+              /** @type {AbstractType<any>} */
+              this.parent._item !== null && /** @type {AbstractType<any>} */
+              this.parent._item.deleted || this.parentSub !== null && this.right !== null
+            ) {
+              this.delete(transaction);
+            }
+          } else {
+            new GC(this.id, this.length).integrate(transaction, 0);
+          }
+        }
+        /**
+         * Returns the next non-deleted item
+         */
+        get next() {
+          let n2 = this.right;
+          while (n2 !== null && n2.deleted) {
+            n2 = n2.right;
+          }
+          return n2;
+        }
+        /**
+         * Returns the previous non-deleted item
+         */
+        get prev() {
+          let n2 = this.left;
+          while (n2 !== null && n2.deleted) {
+            n2 = n2.left;
+          }
+          return n2;
+        }
+        /**
+         * Computes the last content address of this Item.
+         */
+        get lastId() {
+          return this.length === 1 ? this.id : createID(this.id.client, this.id.clock + this.length - 1);
+        }
+        /**
+         * Try to merge two items
+         *
+         * @param {Item} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          if (this.constructor === right2.constructor && compareIDs(right2.origin, this.lastId) && this.right === right2 && compareIDs(this.rightOrigin, right2.rightOrigin) && this.id.client === right2.id.client && this.id.clock + this.length === right2.id.clock && this.deleted === right2.deleted && this.redone === null && right2.redone === null && this.content.constructor === right2.content.constructor && this.content.mergeWith(right2.content)) {
+            const searchMarker = (
+              /** @type {AbstractType<any>} */
+              this.parent._searchMarker
+            );
+            if (searchMarker) {
+              searchMarker.forEach((marker) => {
+                if (marker.p === right2) {
+                  marker.p = this;
+                  if (!this.deleted && this.countable) {
+                    marker.index -= this.length;
+                  }
+                }
+              });
+            }
+            if (right2.keep) {
+              this.keep = true;
+            }
+            this.right = right2.right;
+            if (this.right !== null) {
+              this.right.left = this;
+            }
+            this.length += right2.length;
+            return true;
+          }
+          return false;
+        }
+        /**
+         * Mark this Item as deleted.
+         *
+         * @param {Transaction} transaction
+         */
+        delete(transaction) {
+          if (!this.deleted) {
+            const parent = (
+              /** @type {AbstractType<any>} */
+              this.parent
+            );
+            if (this.countable && this.parentSub === null) {
+              parent._length -= this.length;
+            }
+            this.markDeleted();
+            addToDeleteSet(transaction.deleteSet, this.id.client, this.id.clock, this.length);
+            addChangedTypeToTransaction(transaction, parent, this.parentSub);
+            this.content.delete(transaction);
+          }
+        }
+        /**
+         * @param {StructStore} store
+         * @param {boolean} parentGCd
+         */
+        gc(store, parentGCd) {
+          if (!this.deleted) {
+            throw unexpectedCase();
+          }
+          this.content.gc(store);
+          if (parentGCd) {
+            replaceStruct(store, this, new GC(this.id, this.length));
+          } else {
+            this.content = new ContentDeleted(this.length);
+          }
+        }
+        /**
+         * Transform the properties of this type to binary and write it to an
+         * BinaryEncoder.
+         *
+         * This is called when this Item is sent to a remote peer.
+         *
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder The encoder to write data to.
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          const origin = offset2 > 0 ? createID(this.id.client, this.id.clock + offset2 - 1) : this.origin;
+          const rightOrigin = this.rightOrigin;
+          const parentSub = this.parentSub;
+          const info = this.content.getRef() & BITS5 | (origin === null ? 0 : BIT8) | // origin is defined
+          (rightOrigin === null ? 0 : BIT7) | // right origin is defined
+          (parentSub === null ? 0 : BIT6);
+          encoder.writeInfo(info);
+          if (origin !== null) {
+            encoder.writeLeftID(origin);
+          }
+          if (rightOrigin !== null) {
+            encoder.writeRightID(rightOrigin);
+          }
+          if (origin === null && rightOrigin === null) {
+            const parent = (
+              /** @type {AbstractType<any>} */
+              this.parent
+            );
+            if (parent._item !== void 0) {
+              const parentItem = parent._item;
+              if (parentItem === null) {
+                const ykey = findRootTypeKey(parent);
+                encoder.writeParentInfo(true);
+                encoder.writeString(ykey);
+              } else {
+                encoder.writeParentInfo(false);
+                encoder.writeLeftID(parentItem.id);
+              }
+            } else if (parent.constructor === String) {
+              encoder.writeParentInfo(true);
+              encoder.writeString(parent);
+            } else if (parent.constructor === ID) {
+              encoder.writeParentInfo(false);
+              encoder.writeLeftID(parent);
+            } else {
+              unexpectedCase();
+            }
+            if (parentSub !== null) {
+              encoder.writeString(parentSub);
+            }
+          }
+          this.content.write(encoder, offset2);
+        }
+      };
+      readItemContent = (decoder, info) => contentRefs[info & BITS5](decoder);
+      contentRefs = [
+        () => {
+          unexpectedCase();
+        },
+        // GC is not ItemContent
+        readContentDeleted,
+        // 1
+        readContentJSON,
+        // 2
+        readContentBinary,
+        // 3
+        readContentString,
+        // 4
+        readContentEmbed,
+        // 5
+        readContentFormat,
+        // 6
+        readContentType,
+        // 7
+        readContentAny,
+        // 8
+        readContentDoc,
+        // 9
+        () => {
+          unexpectedCase();
+        }
+        // 10 - Skip is not ItemContent
+      ];
+      structSkipRefNumber = 10;
+      Skip = class extends AbstractStruct {
+        get deleted() {
+          return true;
+        }
+        delete() {
+        }
+        /**
+         * @param {Skip} right
+         * @return {boolean}
+         */
+        mergeWith(right2) {
+          if (this.constructor !== right2.constructor) {
+            return false;
+          }
+          this.length += right2.length;
+          return true;
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {number} offset
+         */
+        integrate(transaction, offset2) {
+          unexpectedCase();
+        }
+        /**
+         * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
+         * @param {number} offset
+         */
+        write(encoder, offset2) {
+          encoder.writeInfo(structSkipRefNumber);
+          writeVarUint(encoder.restEncoder, this.length - offset2);
+        }
+        /**
+         * @param {Transaction} transaction
+         * @param {StructStore} store
+         * @return {null | number}
+         */
+        getMissing(transaction, store) {
+          return null;
+        }
+      };
+      glo = /** @type {any} */
+      typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {};
+      importIdentifier = "__ $YJS$ __";
+      if (glo[importIdentifier] === true) {
+        console.error("Yjs was already imported. This breaks constructor checks and will lead to issues! - https://github.com/yjs/yjs/issues/438");
+      }
+      glo[importIdentifier] = true;
+    }
+  });
+
+  // src/audio-net/MetaprogrammerCrdtSync.js
+  function createMetaprogramDoc() {
+    const doc2 = new Doc();
+    return {
+      doc: doc2,
+      text: doc2.getText(TEXT_KEY),
+      modulation: doc2.getMap(MODULATION_KEY),
+      vlans: doc2.getMap(VLANS_KEY)
+    };
+  }
+  function encodeUpdateB64(update) {
+    let s2 = "";
+    for (const b of update) s2 += String.fromCharCode(b);
+    return btoa(s2);
+  }
+  function decodeUpdateB64(b64) {
+    const s2 = atob(b64);
+    const out = new Uint8Array(s2.length);
+    for (let i = 0; i < s2.length; i++) out[i] = s2.charCodeAt(i);
+    return out;
+  }
+  function encodeFullState(doc2) {
+    return encodeUpdateB64(encodeStateAsUpdate(doc2));
+  }
+  function applyRemoteUpdate(doc2, b64, origin = "remote") {
+    applyUpdate(doc2, decodeUpdateB64(b64), origin);
+  }
+  function applyTextDiff(ytext, nextValue, origin = "local") {
+    const prev = ytext.toString();
+    if (prev === nextValue) return false;
+    let start = 0;
+    const maxStart = Math.min(prev.length, nextValue.length);
+    while (start < maxStart && prev[start] === nextValue[start]) start++;
+    let endPrev = prev.length;
+    let endNext = nextValue.length;
+    while (endPrev > start && endNext > start && prev[endPrev - 1] === nextValue[endNext - 1]) {
+      endPrev--;
+      endNext--;
+    }
+    const doc2 = ytext.doc;
+    doc2.transact(() => {
+      if (endPrev > start) ytext.delete(start, endPrev - start);
+      if (endNext > start) ytext.insert(start, nextValue.slice(start, endNext));
+    }, origin);
+    return true;
+  }
+  function setDocText(ytext, value2, origin = "local") {
+    return applyTextDiff(ytext, value2, origin);
+  }
+  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans }, bus2, { modality = "keyboard" } = {}) {
+    let localUpdates = 0;
+    const listeners = /* @__PURE__ */ new Set();
+    let lastAuthorIndex = null;
+    const onDocUpdate = (update, origin) => {
+      if (origin === "remote") return;
+      const channel2 = origin === "modulation" ? "modulation" : "metaprogram";
+      localUpdates++;
+      if (localUpdates % SNAPSHOT_EVERY === 0) {
+        bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality, channel: channel2 });
+      } else {
+        bus2.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality, channel: channel2 });
+      }
+    };
+    doc2.on("update", onDocUpdate);
+    const unsubscribe = bus2.subscribe((event, payload) => {
+      if (event === "crdt-update" && payload && payload.update) {
+        lastAuthorIndex = payload.authorIndex ?? lastAuthorIndex;
+        applyRemoteUpdate(doc2, payload.update);
+        listeners.forEach((fn) => {
+          try {
+            fn(text2.toString(), payload);
+          } catch (e30) {
+          }
+        });
+      } else if (event === "crdt-state" && payload && Array.isArray(payload.updates)) {
+        for (const u2 of payload.updates) applyRemoteUpdate(doc2, u2);
+        listeners.forEach((fn) => {
+          try {
+            fn(text2.toString(), { catchUp: true });
+          } catch (e30) {
+          }
+        });
+      }
+    });
+    return {
+      doc: doc2,
+      text: text2,
+      modulation,
+      vlans,
+      getText: () => text2.toString(),
+      setText: (value2, origin = "local") => setDocText(text2, value2, origin),
+      onRemoteChange: (fn) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      getLastAuthorIndex: () => lastAuthorIndex,
+      // Artificial network modulation (upward-only floors, shared room-wide).
+      getInduced() {
+        if (!modulation) return {};
+        const out = {};
+        for (const key of ["wcl", "wcj", "wcrtt", "wcpl"]) {
+          const v2 = modulation.get(key);
+          if (typeof v2 === "number") out[key] = v2;
+        }
+        return out;
+      },
+      setInduced(key, value2, origin = "modulation") {
+        if (!modulation) return;
+        doc2.transact(() => modulation.set(key, Number(value2) || 0), origin);
+      },
+      onModulationChange(fn) {
+        if (!modulation) return () => {
+        };
+        const h2 = () => {
+          try {
+            fn(this.getInduced());
+          } catch (e30) {
+          }
+        };
+        modulation.observe(h2);
+        return () => modulation.unobserve(h2);
+      },
+      // VLAN grouping: vlanName → { members: [roomIndex…], induced: {…} }.
+      getVlans() {
+        if (!vlans) return {};
+        const out = {};
+        vlans.forEach((v2, k2) => {
+          out[k2] = v2;
+        });
+        return out;
+      },
+      setVlan(name3, value2, origin = "modulation") {
+        if (!vlans) return;
+        doc2.transact(() => {
+          if (value2 == null) vlans.delete(name3);
+          else vlans.set(name3, value2);
+        }, origin);
+      },
+      onVlansChange(fn) {
+        if (!vlans) return () => {
+        };
+        const h2 = () => {
+          try {
+            fn(this.getVlans());
+          } catch (e30) {
+          }
+        };
+        vlans.observe(h2);
+        return () => vlans.unobserve(h2);
+      },
+      disconnect() {
+        doc2.off("update", onDocUpdate);
+        unsubscribe();
+      }
+    };
+  }
+  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SNAPSHOT_EVERY;
+  var init_MetaprogrammerCrdtSync = __esm({
+    "src/audio-net/MetaprogrammerCrdtSync.js"() {
+      init_yjs();
+      TEXT_KEY = "metaprogram";
+      MODULATION_KEY = "modulation";
+      VLANS_KEY = "vlans";
+      SNAPSHOT_EVERY = 25;
+    }
+  });
+
+  // src/audio-net/av-effects/Room.js
+  function roomParams(metrics, { wclFactor = 1, wcrttFactor = 1 } = {}) {
+    const wcl = Math.max(0, metrics && metrics.wcl || 0);
+    const wcrtt = Math.max(0, metrics && metrics.wcrtt || 0);
+    const stretch2 = 1 + wclFactor * (wcl / 1e3);
+    const combDelaysS = COMB_BASES_S.map((b) => b * stretch2);
+    const rawCutoff = wcrtt * wcrttFactor * 100;
+    const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
+    return {
+      combDelaysS,
+      allpassDelaysS: ALLPASS_BASES_S.slice(),
+      combFeedback: 0.84,
+      cutoffHz,
+      // Hydra counterpart: 1 = no blur, 0 = fully lowpassed image.
+      visualLowpass: cutoffHz / CUTOFF_MAX_HZ
+    };
+  }
+  function createRoomNode(audioCtx2, params2) {
+    const input = audioCtx2.createGain();
+    const output = audioCtx2.createGain();
+    const wet = audioCtx2.createGain();
+    wet.gain.value = 0.5;
+    input.connect(output);
+    const combs = params2.combDelaysS.map((d) => {
+      const delay2 = audioCtx2.createDelay(Math.max(1, d * 2));
+      delay2.delayTime.value = d;
+      const fb = audioCtx2.createGain();
+      fb.gain.value = params2.combFeedback;
+      input.connect(delay2);
+      delay2.connect(fb);
+      fb.connect(delay2);
+      return delay2;
+    });
+    const combSum = audioCtx2.createGain();
+    combSum.gain.value = 1 / combs.length;
+    combs.forEach((c2) => c2.connect(combSum));
+    let head = combSum;
+    const allpasses = params2.allpassDelaysS.map((d) => {
+      const delay2 = audioCtx2.createDelay(1);
+      delay2.delayTime.value = d;
+      const fb = audioCtx2.createGain();
+      fb.gain.value = 0.5;
+      head.connect(delay2);
+      delay2.connect(fb);
+      fb.connect(delay2);
+      return delay2;
+    });
+    head = allpasses.length ? allpasses[allpasses.length - 1] : head;
+    const lp1 = audioCtx2.createBiquadFilter();
+    const lp2 = audioCtx2.createBiquadFilter();
+    lp1.type = lp2.type = "lowpass";
+    lp1.frequency.value = lp2.frequency.value = params2.cutoffHz;
+    head.connect(lp1);
+    lp1.connect(lp2);
+    lp2.connect(wet);
+    wet.connect(output);
+    return {
+      input,
+      output,
+      update(next) {
+        combs.forEach((c2, i) => {
+          c2.delayTime.value = Math.min(next.combDelaysS[i], 1.99);
+        });
+        lp1.frequency.value = next.cutoffHz;
+        lp2.frequency.value = next.cutoffHz;
+      },
+      dispose() {
+        [input, output, wet, combSum, lp1, lp2, ...combs, ...allpasses].forEach((n2) => {
+          try {
+            n2.disconnect();
+          } catch (e30) {
+          }
+        });
+      }
+    };
+  }
+  var COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ;
+  var init_Room = __esm({
+    "src/audio-net/av-effects/Room.js"() {
+      COMB_BASES_S = [0.0297, 0.0371, 0.0411, 0.0437];
+      ALLPASS_BASES_S = [5e-3, 17e-4];
+      CUTOFF_MIN_HZ = 40;
+      CUTOFF_MAX_HZ = 18e3;
+    }
+  });
+
+  // src/audio-net/av-effects/Echo.js
+  function echoFeedback(wcpl, magnitudeFeedbackFactor = 0.1) {
+    const loss = Math.max(FEEDBACK_EPSILON, Math.max(0, wcpl || 0));
+    return Math.min(magnitudeFeedbackFactor / loss, FEEDBACK_CEILING);
+  }
+  function echoParams(metrics, { nSamplesFactor = 1, magnitudeFeedbackFactor = 0.1 } = {}, sampleRate = 48e3) {
+    const wcj = Math.max(0, metrics && metrics.wcj || 0);
+    const nSamples = Math.max(1, Math.round(nSamplesFactor * wcj * 100));
+    const feedback = echoFeedback(metrics && metrics.wcpl, magnitudeFeedbackFactor);
+    return {
+      nSamples,
+      delayS: nSamples / sampleRate,
+      feedback,
+      visualBrightness: feedback
+    };
+  }
+  function createEchoNode(audioCtx2, params2) {
+    const input = audioCtx2.createGain();
+    const output = audioCtx2.createGain();
+    const delay2 = audioCtx2.createDelay(10);
+    delay2.delayTime.value = Math.min(params2.delayS, 9.99);
+    const fb = audioCtx2.createGain();
+    fb.gain.value = params2.feedback;
+    input.connect(output);
+    input.connect(delay2);
+    delay2.connect(fb);
+    fb.connect(delay2);
+    delay2.connect(output);
+    return {
+      input,
+      output,
+      update(next) {
+        delay2.delayTime.value = Math.min(next.delayS, 9.99);
+        fb.gain.value = next.feedback;
+      },
+      dispose() {
+        [input, output, delay2, fb].forEach((n2) => {
+          try {
+            n2.disconnect();
+          } catch (e30) {
+          }
+        });
+      }
+    };
+  }
+  var FEEDBACK_EPSILON, FEEDBACK_CEILING;
+  var init_Echo = __esm({
+    "src/audio-net/av-effects/Echo.js"() {
+      FEEDBACK_EPSILON = 1e-3;
+      FEEDBACK_CEILING = 0.95;
+    }
+  });
+
+  // src/audio-net/av-effects/Crush.js
+  function crushParams(metrics, { reductionFactor = 1 } = {}) {
+    const wcpl = Math.min(1, Math.max(0, metrics && metrics.wcpl || 0));
+    const reduction = Math.max(1, reductionFactor * Math.pow(2, wcpl / 0.25));
+    const bitDepth = Math.min(16, Math.max(1, 16 / reduction));
+    const srDivisor = Math.min(64, Math.max(1, Math.round(reduction)));
+    return { reduction, bitDepth, srDivisor, visualPixelate: srDivisor };
+  }
+  function makeCrushCurve(bitDepth, length2 = 2048) {
+    const steps2 = Math.max(2, Math.round(Math.pow(2, bitDepth)));
+    const curve2 = new Float32Array(length2);
+    for (let i = 0; i < length2; i++) {
+      const x2 = i * 2 / (length2 - 1) - 1;
+      curve2[i] = Math.round((x2 + 1) / 2 * (steps2 - 1)) / (steps2 - 1) * 2 - 1;
+    }
+    return curve2;
+  }
+  function createCrushNode(audioCtx2, params2) {
+    const input = audioCtx2.createGain();
+    const output = audioCtx2.createGain();
+    const shaper = audioCtx2.createWaveShaper();
+    shaper.curve = makeCrushCurve(params2.bitDepth);
+    const lp2 = audioCtx2.createBiquadFilter();
+    lp2.type = "lowpass";
+    lp2.frequency.value = audioCtx2.sampleRate / 2 / params2.srDivisor;
+    input.connect(shaper);
+    shaper.connect(lp2);
+    lp2.connect(output);
+    return {
+      input,
+      output,
+      update(next) {
+        shaper.curve = makeCrushCurve(next.bitDepth);
+        lp2.frequency.value = audioCtx2.sampleRate / 2 / next.srDivisor;
+      },
+      dispose() {
+        [input, output, shaper, lp2].forEach((n2) => {
+          try {
+            n2.disconnect();
+          } catch (e30) {
+          }
+        });
+      }
+    };
+  }
+  var init_Crush = __esm({
+    "src/audio-net/av-effects/Crush.js"() {
+    }
+  });
+
+  // src/audio-net/av-effects/Noise.js
+  function noiseTypeForWcpl(wcpl) {
+    const v2 = Math.min(1, Math.max(0, wcpl || 0));
+    if (v2 > 0.6) return "white";
+    if (v2 >= 0.3) return "pink";
+    if (v2 >= 0.1) return "brown";
+    return "none";
+  }
+  function noiseParams(metrics) {
+    const type = noiseTypeForWcpl(metrics && metrics.wcpl);
+    return {
+      type,
+      gain: type === "none" ? 0 : 0.12,
+      // Hydra counterpart: normalized grain amount.
+      visualNoise: type === "none" ? 0 : type === "brown" ? 0.15 : type === "pink" ? 0.35 : 0.6
+    };
+  }
+  function fillNoise(channel2, type) {
+    if (type === "white") {
+      for (let i = 0; i < channel2.length; i++) channel2[i] = Math.random() * 2 - 1;
+      return channel2;
+    }
+    if (type === "pink") {
+      let b0 = 0, b1 = 0, b2 = 0;
+      for (let i = 0; i < channel2.length; i++) {
+        const w2 = Math.random() * 2 - 1;
+        b0 = 0.99765 * b0 + w2 * 0.099046;
+        b1 = 0.963 * b1 + w2 * 0.2965164;
+        b2 = 0.57 * b2 + w2 * 1.0526913;
+        channel2[i] = (b0 + b1 + b2 + w2 * 0.1848) * 0.2;
+      }
+      return channel2;
+    }
+    let last2 = 0;
+    for (let i = 0; i < channel2.length; i++) {
+      const w2 = Math.random() * 2 - 1;
+      last2 = (last2 + 0.02 * w2) / 1.02;
+      channel2[i] = last2 * 3.5;
+    }
+    return channel2;
+  }
+  function createNoiseNode(audioCtx2, params2) {
+    const input = audioCtx2.createGain();
+    const output = audioCtx2.createGain();
+    input.connect(output);
+    const gain2 = audioCtx2.createGain();
+    gain2.gain.value = params2.gain;
+    gain2.connect(output);
+    let src2 = null;
+    let currentType = "none";
+    const setType = (type) => {
+      if (type === currentType) return;
+      currentType = type;
+      if (src2) {
+        try {
+          src2.stop();
+          src2.disconnect();
+        } catch (e30) {
+        }
+        src2 = null;
+      }
+      if (type === "none") return;
+      const len = Math.floor(audioCtx2.sampleRate * 2);
+      const buf = audioCtx2.createBuffer(1, len, audioCtx2.sampleRate);
+      fillNoise(buf.getChannelData(0), type);
+      src2 = audioCtx2.createBufferSource();
+      src2.buffer = buf;
+      src2.loop = true;
+      src2.connect(gain2);
+      src2.start();
+    };
+    setType(params2.type);
+    return {
+      input,
+      output,
+      update(next) {
+        setType(next.type);
+        gain2.gain.value = next.gain;
+      },
+      dispose() {
+        if (src2) {
+          try {
+            src2.stop();
+          } catch (e30) {
+          }
+        }
+        [input, output, gain2, src2].forEach((n2) => {
+          if (n2) {
+            try {
+              n2.disconnect();
+            } catch (e30) {
+            }
+          }
+        });
+      }
+    };
+  }
+  var init_Noise = __esm({
+    "src/audio-net/av-effects/Noise.js"() {
+    }
+  });
+
+  // src/audio-net/av-effects/Grid.js
+  function peerRttMs(peer) {
+    if (typeof peer.rtcRtt === "number" && isFinite(peer.rtcRtt)) return peer.rtcRtt;
+    if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
+    return 0;
+  }
+  function distanceMatrix(peers) {
+    const list = Array.isArray(peers) ? peers : [];
+    const order = list.map((p) => p.jitsiId);
+    const oneWay = list.map((p) => peerRttMs(p) / 2);
+    const matrix = list.map((_3, i) => list.map((_4, j2) => {
+      if (i === j2) return 0;
+      return (oneWay[i] + oneWay[j2]) * KM_PER_ONE_WAY_MS;
+    }));
+    return { matrix, order };
+  }
+  function shadeForDistance(distKm, maxKm) {
+    if (!(maxKm > 0)) return 1;
+    return Math.min(1, Math.max(0, 1 - distKm / maxKm));
+  }
+  function gridView(peers, localJitsiId) {
+    const { matrix, order } = distanceMatrix(peers);
+    const li2 = order.indexOf(localJitsiId);
+    const row = li2 === -1 ? order.map(() => 0) : matrix[li2];
+    const maxKm = Math.max(...row, 0);
+    return {
+      matrix,
+      order,
+      shades: order.map((jid, j2) => ({
+        jitsiId: jid,
+        distanceKm: row[j2],
+        shade: jid === localJitsiId ? 1 : shadeForDistance(row[j2], maxKm)
+      }))
+    };
+  }
+  function findVideoPanel(jitsiId) {
+    return document.getElementById(`participant_${jitsiId}`) || document.querySelector(`[id="participant_${jitsiId}"], [data-participant-id="${jitsiId}"]`) || null;
+  }
+  function renderGridOverlays(peers, localJitsiId, { landmarks = false, displacement = null } = {}) {
+    const view = gridView(peers, localJitsiId);
+    for (const entry of view.shades) {
+      const panel = findVideoPanel(entry.jitsiId);
+      if (!panel) continue;
+      let mark = panel.querySelector(`.${OVERLAY_CLASS}`);
+      if (!mark) {
+        mark = document.createElement("div");
+        mark.className = OVERLAY_CLASS;
+        mark.style.cssText = "position:absolute;top:4px;left:4px;width:14px;height:14px;border-radius:50%;z-index:20;pointer-events:none;border:1px solid rgba(0,0,0,0.4);";
+        if (getComputedStyle(panel).position === "static") panel.style.position = "relative";
+        panel.appendChild(mark);
+      }
+      const v2 = Math.round(entry.shade * 255);
+      mark.style.background = `rgb(${v2},${v2},${v2})`;
+      mark.title = `\u2248${entry.distanceKm.toFixed(0)} km`;
+      const peer = peers.find((p) => p.jitsiId === entry.jitsiId);
+      const vec = displacement && displacement[entry.jitsiId];
+      let arrow = panel.querySelector(".nc-grid-vec");
+      if (landmarks && vec && peer && !peer.isBot) {
+        if (!arrow) {
+          arrow = document.createElement("div");
+          arrow.className = "nc-grid-vec";
+          arrow.style.cssText = "position:absolute;bottom:4px;right:4px;width:18px;height:18px;z-index:20;pointer-events:none;font-size:14px;line-height:18px;text-align:center;";
+          panel.appendChild(arrow);
+        }
+        const angle2 = Math.atan2(vec.dy || 0, vec.dx || 0);
+        arrow.textContent = "\u2192";
+        arrow.style.color = mark.style.background;
+        arrow.style.transform = `rotate(${angle2}rad)`;
+      } else if (arrow) {
+        arrow.remove();
+      }
+    }
+    return view.matrix;
+  }
+  function clearGridOverlays() {
+    document.querySelectorAll(`.${OVERLAY_CLASS}, .nc-grid-vec`).forEach((el) => el.remove());
+  }
+  var KM_PER_ONE_WAY_MS, OVERLAY_CLASS;
+  var init_Grid = __esm({
+    "src/audio-net/av-effects/Grid.js"() {
+      KM_PER_ONE_WAY_MS = 100;
+      OVERLAY_CLASS = "nc-grid-mark";
+    }
+  });
+
+  // src/audio-net/av-effects/index.js
+  function computeChainParams(chainEntries, metrics, sampleRate = 48e3) {
+    const out = [];
+    for (const entry of chainEntries || []) {
+      const user = resolveEffectParams(entry);
+      switch (entry.fn) {
+        case "room":
+          out.push({ fn: "room", params: roomParams(metrics, user) });
+          break;
+        case "echo":
+          out.push({ fn: "echo", params: echoParams(metrics, user, sampleRate) });
+          break;
+        case "crush":
+          out.push({ fn: "crush", params: crushParams(metrics, user) });
+          break;
+        case "noise":
+          out.push({ fn: "noise", params: noiseParams(metrics) });
+          break;
+        case "grid":
+          out.push({ fn: "grid", params: { landmarks: !!user.landmarks } });
+          break;
+        default:
+          break;
+      }
+    }
+    return out;
+  }
+  function visualStateFor(chainParams) {
+    const state = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+    for (const { fn, params: params2 } of chainParams) {
+      if (fn === "room") state.lowpass = Math.min(state.lowpass, params2.visualLowpass);
+      if (fn === "echo") state.brightness = params2.visualBrightness;
+      if (fn === "crush") state.pixelate = Math.max(state.pixelate, params2.visualPixelate);
+      if (fn === "noise") state.noise = Math.max(state.noise, params2.visualNoise);
+    }
+    return state;
+  }
+  var AUDIO_EFFECTS, EffectsChainManager;
+  var init_av_effects = __esm({
+    "src/audio-net/av-effects/index.js"() {
+      init_Room();
+      init_Echo();
+      init_Crush();
+      init_Noise();
+      init_Grid();
+      init_MetaprogrammerParser();
+      AUDIO_EFFECTS = {
+        room: { params: roomParams, create: createRoomNode },
+        echo: { params: echoParams, create: createEchoNode },
+        crush: { params: crushParams, create: createCrushNode },
+        noise: { params: (m2) => noiseParams(m2), create: createNoiseNode }
+      };
+      EffectsChainManager = class {
+        // insert/remove: latency-instrument's master-chain hooks.
+        constructor({ audioCtx: audioCtx2, insert, remove, getPeers, getLocalJitsiId }) {
+          this._ctx = audioCtx2;
+          this._insert = insert;
+          this._remove = remove;
+          this._getPeers = getPeers || (() => []);
+          this._getLocalJitsiId = getLocalJitsiId || (() => null);
+          this._nodes = [];
+          this._chainEntries = [];
+          this._endpoints = null;
+          this._grid = null;
+          this._gridTimer = null;
+        }
+        setChain(chainEntries, metrics) {
+          this._teardownAudio();
+          this._chainEntries = chainEntries || [];
+          const resolved = computeChainParams(this._chainEntries, metrics, this._ctx ? this._ctx.sampleRate : 48e3);
+          this._grid = null;
+          const audioParams = [];
+          for (const cp of resolved) {
+            if (cp.fn === "grid") this._grid = cp.params;
+            else audioParams.push(cp);
+          }
+          if (this._ctx && audioParams.length) {
+            const input = this._ctx.createGain();
+            const output = this._ctx.createGain();
+            let head = input;
+            for (const cp of audioParams) {
+              const node = AUDIO_EFFECTS[cp.fn].create(this._ctx, cp.params);
+              head.connect(node.input);
+              head = node.output;
+              this._nodes.push({ fn: cp.fn, node });
+            }
+            head.connect(output);
+            this._endpoints = { input, output };
+            if (this._insert) this._insert(this._endpoints);
+          }
+          this._syncGridLoop();
+          this._publishVisual(resolved);
+        }
+        updateMetrics(metrics) {
+          if (!this._chainEntries.length) return;
+          const resolved = computeChainParams(this._chainEntries, metrics, this._ctx ? this._ctx.sampleRate : 48e3);
+          let i = 0;
+          for (const cp of resolved) {
+            if (cp.fn === "grid") {
+              this._grid = cp.params;
+              continue;
+            }
+            const entry = this._nodes[i++];
+            if (entry && entry.fn === cp.fn) entry.node.update(cp.params);
+          }
+          this._publishVisual(resolved);
+        }
+        _publishVisual(resolved) {
+          if (typeof window !== "undefined") window._ncVisual = visualStateFor(resolved);
+        }
+        _syncGridLoop() {
+          if (this._grid && !this._gridTimer && typeof document !== "undefined") {
+            this._gridTimer = setInterval(() => {
+              renderGridOverlays(this._getPeers(), this._getLocalJitsiId(), { landmarks: this._grid.landmarks });
+            }, 1e3);
+          } else if (!this._grid && this._gridTimer) {
+            clearInterval(this._gridTimer);
+            this._gridTimer = null;
+            clearGridOverlays();
+          }
+        }
+        _teardownAudio() {
+          if (this._endpoints && this._remove) this._remove(this._endpoints);
+          for (const { node } of this._nodes) node.dispose();
+          this._nodes = [];
+          this._endpoints = null;
+        }
+        dispose() {
+          this._teardownAudio();
+          this._chainEntries = [];
+          this._grid = null;
+          this._syncGridLoop();
+          if (typeof window !== "undefined") window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+        }
+      };
+    }
+  });
+
+  // src/audio-net/Metaprogrammer.js
+  var Metaprogrammer_exports = {};
+  __export(Metaprogrammer_exports, {
+    applyProgramText: () => applyProgramText,
+    bufferReplayEnabled: () => bufferReplayEnabled,
+    effectiveWorstCase: () => effectiveWorstCase,
+    ensureMetaprogramSync: () => ensureMetaprogramSync,
+    getActivePattern: () => getActivePattern,
+    getGateLevel: () => getGateLevel,
+    getInducedMetrics: () => getInducedMetrics,
+    getProgramText: () => getProgramText,
+    getQueueDepth: () => getQueueDepth,
+    getVlans: () => getVlans,
+    hasEffectShortcut: () => hasEffectShortcut,
+    isNetCyclesActive: () => isNetCyclesActive,
+    removeVlan: () => removeVlan,
+    setBufferReplayEnabled: () => setBufferReplayEnabled,
+    setInducedMetric: () => setInducedMetric,
+    setNetCyclesActive: () => setNetCyclesActive,
+    setVlan: () => setVlan,
+    startLocalCapture: () => startLocalCapture,
+    subscribeSlotEvents: () => subscribeSlotEvents,
+    toggleEffectShortcut: () => toggleEffectShortcut
+  });
+  function localSeconds() {
+    const ctx = getAudioContext();
+    if (ctx) return ctx.currentTime;
+    if (localSecondsFallbackT0 == null) localSecondsFallbackT0 = performance.now();
+    return (performance.now() - localSecondsFallbackT0) / 1e3;
+  }
+  function peerByToken(token) {
+    return getAllPeers().find((p) => p.roomIndex != null && String(p.roomIndex) === token) || null;
+  }
+  function rosterTokens() {
+    return getAllPeers().filter((p) => p.roomIndex != null).map((p) => String(p.roomIndex)).sort((a2, b) => {
+      const pa = a2.match(/^(\d+)([a-z]*)$/), pb = b.match(/^(\d+)([a-z]*)$/);
+      const na = parseInt(pa[1], 10), nb = parseInt(pb[1], 10);
+      if (na !== nb) return na - nb;
+      if (pa[2].length !== pb[2].length) return pa[2].length - pb[2].length;
+      return pa[2] < pb[2] ? -1 : pa[2] > pb[2] ? 1 : 0;
+    });
+  }
+  function emitSlot(event) {
+    slotSubscribers.forEach((fn) => {
+      try {
+        fn(event);
+      } catch (e30) {
+        console.warn("[metaprogrammer] slot subscriber threw", e30);
+      }
+    });
+  }
+  function ensureMetaprogramSync() {
+    if (crdt) return crdt;
+    const handle = createMetaprogramDoc();
+    crdt = connectMetaprogramSync(handle, {
+      subscribe: subscribePeerState,
+      sendUpdate: sendCrdtUpdate
+    });
+    crdt.onRemoteChange((text2) => {
+      programText = text2;
+      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, remote: true } }));
+    });
+    crdt.onModulationChange(() => pushEffectiveMetrics());
+    crdt.onVlansChange(() => pushEffectiveMetrics());
+    return crdt;
+  }
+  function effectiveWorstCase() {
+    const measured = computeWorstCaseMetrics(getAllPeers());
+    return crdt ? mergeInducedMetrics(measured, crdt.getInduced()) : measured;
+  }
+  function pushEffectiveMetrics() {
+    if (!active) return;
+    const wc = effectiveWorstCase();
+    if (scheduler) scheduler.setMetrics(wc);
+    if (effects) effects.updateMetrics(wc);
+  }
+  function setInducedMetric(key, value2) {
+    if (!INDUCTIONS[key]) return false;
+    ensureMetaprogramSync().setInduced(key, INDUCTIONS[key].clamp(value2));
+    pushEffectiveMetrics();
+    return true;
+  }
+  function getInducedMetrics() {
+    return crdt ? crdt.getInduced() : {};
+  }
+  function setVlan(name3, { members = [], induced = {} } = {}) {
+    if (!name3) return false;
+    ensureMetaprogramSync().setVlan(name3, { members: members.map(String), induced });
+    pushEffectiveMetrics();
+    return true;
+  }
+  function removeVlan(name3) {
+    if (crdt) crdt.setVlan(name3, null);
+    pushEffectiveMetrics();
+  }
+  function getVlans() {
+    return crdt ? crdt.getVlans() : {};
+  }
+  function isRosterEditLeader() {
+    const me2 = getLocalPeer();
+    if (me2.isBot || me2.roomIndex == null) return false;
+    const humanIndices = getAllPeers().filter((p) => !p.isBot && p.roomIndex != null && /^\d+$/.test(String(p.roomIndex))).map((p) => parseInt(p.roomIndex, 10));
+    if (!humanIndices.length) return false;
+    return parseInt(me2.roomIndex, 10) === Math.min(...humanIndices);
+  }
+  function regenerateOrPatchProgram({ force = false } = {}) {
+    const tokens = rosterTokens();
+    let next;
+    if (!customProgram || programText == null) {
+      next = buildDefaultProgram(tokens);
+    } else {
+      next = programText;
+      const { ast: ast2 } = parseMetaprogram(next);
+      const inProgram = /* @__PURE__ */ new Set();
+      if (ast2.participants) {
+        for (const st2 of ast2.participants.stacks) {
+          for (const el of st2.elements) if (el.token) inProgram.add(el.token);
+        }
+      }
+      for (const tok of tokens) {
+        if (!inProgram.has(tok)) next = appendParticipantToProgram(next, tok);
+      }
+      for (const tok of inProgram) {
+        if (!tokens.includes(tok)) next = removeParticipantFromProgram(next, tok);
+      }
+    }
+    if (next === programText && !force) return;
+    programText = next;
+    if (crdt && (force || isRosterEditLeader())) crdt.setText(next, "roster");
+    pushProgramToScheduler();
+    document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: programText } }));
+  }
+  function pushProgramToScheduler() {
+    if (programText == null) return;
+    const { ast: ast2, valid } = parseMetaprogram(programText);
+    if (!valid) return;
+    if (scheduler) scheduler.setProgram(ast2);
+    if (effects) effects.setChain(ast2.chain, effectiveWorstCase());
+  }
+  function applyProgramText(text2, { broadcast = true } = {}) {
+    const { errors, valid } = parseMetaprogram(text2);
+    if (valid) {
+      programText = text2;
+      customProgram = true;
+      if (crdt) crdt.setText(text2, "apply");
+      pushProgramToScheduler();
+      if (broadcast && o2) o2.send(APPLY_ADDR, ",s", [text2]);
+      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, applied: true } }));
+    }
+    return errors;
+  }
+  function getProgramText() {
+    return programText;
+  }
+  function hasEffectShortcut(fn) {
+    if (!programText) return false;
+    return new RegExp(`^#\\s*${fn}\\b`, "m").test(programText);
+  }
+  function toggleEffectShortcut(fn) {
+    if (!SHORTCUT_LINES[fn]) return false;
+    let text2 = programText ?? buildDefaultProgram(rosterTokens());
+    const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, "m");
+    if (lineRe.test(text2)) text2 = text2.replace(lineRe, "");
+    else text2 = `${text2.trimEnd()}
+${SHORTCUT_LINES[fn]}
+`;
+    return applyProgramText(text2).length === 0;
+  }
+  function queueFor(token) {
+    let q2 = queues.get(token);
+    if (!q2) {
+      q2 = new AVBufferQueue(QUEUE_LIMITS);
+      queues.set(token, q2);
+    }
+    return q2;
+  }
+  function enqueueCycleBuffers(cycle) {
+    for (const peer of getAllPeers()) {
+      if (peer.roomIndex == null) continue;
+      const token = String(peer.roomIndex);
+      const pendingPattern = pendingEditorUpdates.get(token);
+      pendingEditorUpdates.delete(token);
+      const audio = captureTakes.get(token) || null;
+      captureTakes.delete(token);
+      queueFor(token).enqueue({
+        pattern: pendingPattern ?? null,
+        // null = empty buffer (no code change)
+        audio,
+        messages: [],
+        status: { playing: !!peer.playing, muted: !!peer.muted },
+        bytes: audio && audio.bytes || 0,
+        cycle
+      });
+    }
+  }
+  function getQueueDepth(token) {
+    const q2 = queues.get(token);
+    return q2 ? q2.length : 0;
+  }
+  function getGateLevel(jitsiId) {
+    if (!active) return 1;
+    return gateLevels.get(jitsiId) ?? 0;
+  }
+  function scheduleGate(jitsiId, level, atNetworkT) {
+    const nowNet = clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
+    const delayMs = Math.max(0, (atNetworkT - nowNet) * 1e3);
+    const audioT = clock && clock.isSynced() ? clock.toAudioTime(atNetworkT) : null;
+    setChainGate(jitsiId, level, audioT);
+    const timer3 = setTimeout(() => {
+      slotTimers.delete(timer3);
+      if (!active) return;
+      gateLevels.set(jitsiId, level);
+    }, delayMs);
+    slotTimers.add(timer3);
+  }
+  function onSchedulerEvent(ev) {
+    emitSlot(ev);
+    if (ev.type === "cycle-start") {
+      enqueueCycleBuffers(ev.cycle);
+      return;
+    }
+    const peer = ev.token ? peerByToken(ev.token) : null;
+    if (!peer || !peer.jitsiId) return;
+    if (ev.type === "slot-open") {
+      const av = queueFor(ev.token).dequeue();
+      if (av) {
+        if (typeof av.pattern === "string") {
+          activePatterns.set(peer.jitsiId, av.pattern);
+          document.dispatchEvent(new CustomEvent("trussal-netcycles-apply", {
+            detail: { jitsiId: peer.jitsiId, token: ev.token }
+          }));
+        }
+        if (av.audio) replayCapturedAudio(peer.jitsiId, av.audio, ev);
+      }
+      scheduleGate(peer.jitsiId, 1, ev.t);
+    } else if (ev.type === "slot-close") {
+      scheduleGate(peer.jitsiId, 0, ev.t);
+    }
+  }
+  function getActivePattern(jitsiId) {
+    return activePatterns.has(jitsiId) ? activePatterns.get(jitsiId) : null;
+  }
+  function subscribeSlotEvents(fn) {
+    slotSubscribers.add(fn);
+    return () => slotSubscribers.delete(fn);
+  }
+  function setBufferReplayEnabled(v2) {
+    bufferReplayEnabled = !!v2;
+  }
+  function startLocalCapture(sourceNode2, localToken) {
+    if (!bufferReplayEnabled || recorder || typeof MediaRecorder === "undefined") return;
+    const ctx = getAudioContext();
+    if (!ctx || !sourceNode2) return;
+    const dest = ctx.createMediaStreamDestination();
+    sourceNode2.connect(dest);
+    const chunks = [];
+    const rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus" });
+    rec.ondataavailable = (e30) => {
+      if (e30.data && e30.data.size) chunks.push(e30.data);
+    };
+    rec.onstop = () => {
+      if (chunks.length) {
+        const blob = new Blob(chunks.splice(0), { type: "audio/webm" });
+        captureTakes.set(localToken, { blob, bytes: blob.size });
+      }
+      if (recorder === rec) {
+        try {
+          rec.start();
+        } catch (e30) {
+        }
+      }
+    };
+    rec.start();
+    recorder = rec;
+    subscribeSlotEvents((ev) => {
+      if (ev.type === "cycle-start" && recorder === rec && rec.state === "recording") {
+        try {
+          rec.stop();
+        } catch (e30) {
+        }
+      }
+    });
+  }
+  async function replayCapturedAudio(jitsiId, take2, ev) {
+    const ctx = getAudioContext();
+    if (!ctx || !take2 || !take2.blob) return;
+    try {
+      const buf = await take2.blob.arrayBuffer();
+      const audioBuf = await ctx.decodeAudioData(buf);
+      const src2 = ctx.createBufferSource();
+      src2.buffer = audioBuf;
+      await attachNodeToChain(jitsiId, src2, "nc-replay");
+      const atAudio = clock && clock.isSynced() ? Math.max(clock.toAudioTime(ev.t), ctx.currentTime) : ctx.currentTime;
+      src2.start(atAudio);
+      src2.stop(atAudio + ev.dur);
+    } catch (e30) {
+      console.warn("[metaprogrammer] replay failed", e30);
+    }
+  }
+  function broadcastEpoch() {
+    if (o2 && epoch != null) o2.send(EPOCH_ADDR, ",t", [epoch]);
+  }
+  function adoptEpochIfEarlier(remoteEpoch) {
+    if (epoch != null && remoteEpoch >= epoch - 0.05) return;
+    epoch = remoteEpoch;
+    if (scheduler) {
+      scheduler.stop();
+      startScheduler();
+    }
+  }
+  function startScheduler() {
+    scheduler = new MetaprogramScheduler({
+      now: () => clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds(),
+      onEvent: onSchedulerEvent
+    });
+    pushProgramToScheduler();
+    scheduler.setMetrics(effectiveWorstCase());
+    scheduler.start(epoch);
+  }
+  function isNetCyclesActive() {
+    return active;
+  }
+  async function setNetCyclesActive(enable) {
+    if (enable === active) return;
+    active = !!enable;
+    if (active) {
+      const room2 = getRoomNameFromUrl() || "default";
+      const loc = window.location;
+      const proto = loc.protocol === "https:" ? "wss:" : "ws:";
+      if (!o2) {
+        o2 = new O2LiteClient({ url: `${proto}//${loc.host}/o2?room=${encodeURIComponent(room2)}` });
+        o2.method(EPOCH_ADDR, (msg) => adoptEpochIfEarlier(msg.args[0]));
+        o2.method(APPLY_ADDR, (msg) => applyProgramText(msg.args[0], { broadcast: false }));
+        clock = makeClockSyncOverO2(o2, localSeconds);
+      }
+      ensureMetaprogramSync();
+      try {
+        await o2.connect();
+      } catch (e30) {
+        console.warn("[metaprogrammer] O2 connect failed (running unsynced)", e30);
+      }
+      clock.start();
+      effects = new EffectsChainManager({
+        audioCtx: getAudioContext(),
+        insert: insertMasterChain,
+        remove: removeMasterChain,
+        getPeers: getAllPeers,
+        getLocalJitsiId: () => getLocalPeer().jitsiId
+      });
+      regenerateOrPatchProgram({ force: true });
+      await new Promise((r2) => setTimeout(r2, 500));
+      if (epoch == null) {
+        const nowNet = clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
+        epoch = Math.ceil(nowNet);
+      }
+      startScheduler();
+      broadcastEpoch();
+      if (!epochTimer) epochTimer = setInterval(broadcastEpoch, EPOCH_REBROADCAST_MS);
+      for (const p of getAllPeers()) {
+        if (p.jitsiId) {
+          gateLevels.set(p.jitsiId, 0);
+          setChainGate(p.jitsiId, 0);
+        }
+      }
+    } else {
+      if (scheduler) {
+        scheduler.stop();
+        scheduler = null;
+      }
+      if (effects) {
+        effects.dispose();
+        effects = null;
+      }
+      if (clock) clock.stop();
+      if (epochTimer) {
+        clearInterval(epochTimer);
+        epochTimer = null;
+      }
+      epoch = null;
+      for (const t of slotTimers) clearTimeout(t);
+      slotTimers.clear();
+      gateLevels.clear();
+      activePatterns.clear();
+      queues.clear();
+      pendingEditorUpdates.clear();
+      resetChainGates();
+    }
+    document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
+  }
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, QUEUE_LIMITS, active, programText, customProgram, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder, knownTokens;
+  var init_Metaprogrammer = __esm({
+    "src/audio-net/Metaprogrammer.js"() {
+      init_MetaprogrammerParser();
+      init_MetaprogramScheduler();
+      init_WorstCaseCalculationUtils();
+      init_ClockSync();
+      init_o2lite_web();
+      init_MetaprogrammerCrdtSync();
+      init_peer_state();
+      init_jamulus();
+      init_latency_instrument();
+      init_av_effects();
+      EPOCH_ADDR = "/nc/epoch";
+      APPLY_ADDR = "/nc/apply";
+      EPOCH_REBROADCAST_MS = 1e4;
+      QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
+      active = false;
+      programText = null;
+      customProgram = false;
+      scheduler = null;
+      effects = null;
+      o2 = null;
+      clock = null;
+      epoch = null;
+      epochTimer = null;
+      localSecondsFallbackT0 = null;
+      queues = /* @__PURE__ */ new Map();
+      activePatterns = /* @__PURE__ */ new Map();
+      gateLevels = /* @__PURE__ */ new Map();
+      pendingEditorUpdates = /* @__PURE__ */ new Map();
+      slotSubscribers = /* @__PURE__ */ new Set();
+      slotTimers = /* @__PURE__ */ new Set();
+      crdt = null;
+      SHORTCUT_LINES = { room: "# room 2", echo: "# echo 1 0.1", crush: "# crush 1", noise: "# noise" };
+      bufferReplayEnabled = false;
+      captureTakes = /* @__PURE__ */ new Map();
+      recorder = null;
+      knownTokens = /* @__PURE__ */ new Set();
+      subscribePeerState((event, peer) => {
+        if (!peer) return;
+        if (event === "peer-upsert") {
+          if (peer.roomIndex != null) {
+            const token = String(peer.roomIndex);
+            if (!knownTokens.has(token)) {
+              knownTokens.add(token);
+              if (active) regenerateOrPatchProgram();
+            }
+            if (typeof peer.pattern === "string" && peer.pattern && peer.pattern !== activePatterns.get(peer.jitsiId)) {
+              pendingEditorUpdates.set(token, peer.pattern);
+            }
+          }
+          if (active) {
+            pushEffectiveMetrics();
+          }
+        } else if (event === "peer-leave") {
+          if (peer.roomIndex != null) {
+            const token = String(peer.roomIndex);
+            knownTokens.delete(token);
+            queues.delete(token);
+            pendingEditorUpdates.delete(token);
+            if (peer.jitsiId) {
+              activePatterns.delete(peer.jitsiId);
+              gateLevels.delete(peer.jitsiId);
+            }
+            if (active) regenerateOrPatchProgram();
+          }
+        }
+      });
+    }
+  });
 
   // strudel-fork/packages/web/dist/index.mjs
   var dist_exports = {};
@@ -277,7 +13025,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     euclidrot: () => euclidrot,
     evalScope: () => evalScope,
     evaluate: () => evaluate,
-    every: () => every,
+    every: () => every3,
     expand: () => expand,
     expression: () => expression,
     extend: () => extend,
@@ -298,7 +13046,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     firstOf: () => firstOf,
     fit: () => fit,
     flatten: () => flatten,
-    floor: () => floor,
+    floor: () => floor2,
     flux: () => flux,
     fluxBy: () => fluxBy,
     fluxby: () => fluxby,
@@ -427,7 +13175,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     fractionalArgs: () => fractionalArgs,
     frameRate: () => frameRate,
     frames: () => frames,
-    freeze: () => freeze,
+    freeze: () => freeze2,
     freq: () => freq$1,
     freqToMidi: () => freqToMidi$2,
     fromBipolar: () => fromBipolar,
@@ -447,7 +13195,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getAccidentalsOffset: () => getAccidentalsOffset$1,
     getAnalyserById: () => getAnalyserById,
     getAnalyzerData: () => getAnalyzerData,
-    getAudioContext: () => getAudioContext,
+    getAudioContext: () => getAudioContext2,
     getAudioContextCurrentTime: () => getAudioContextCurrentTime,
     getAudioDevices: () => getAudioDevices,
     getCachedBuffer: () => getCachedBuffer,
@@ -537,7 +13285,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     hurry: () => hurry,
     hush: () => hush,
     i: () => i$1,
-    id: () => id,
+    id: () => id2,
     imag: () => imag,
     inhabit: () => inhabit,
     inhabitmod: () => inhabitmod,
@@ -905,7 +13653,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     sine: () => sine,
     sine2: () => sine2,
     sinefold: () => sinefold,
-    size: () => size,
+    size: () => size2,
     slice: () => slice,
     slide: () => slide,
     slow: () => slow,
@@ -1109,7 +13857,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       })
     ));
   }
-  function assign(e30, t) {
+  function assign2(e30, t) {
     try {
       e30 = BigInt(e30);
     } catch {
@@ -1953,13 +14701,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     typeof o == "number" ? l.voice = d[o % d.length] : typeof o == "string" && (l.voice = d.find((p) => p.name === p)), speechSynthesis.speak(l);
   }
   function getAudioContextCurrentTime() {
-    return getAudioContext().currentTime;
+    return getAudioContext2().currentTime;
   }
   function errorLogger(e30, t = "superdough") {
     logger$1(`[${t}] error: ${e30.message}`);
   }
   function getNoiseBuffer(e30, t) {
-    const o = getAudioContext();
+    const o = getAudioContext2();
     if (noiseCache[e30])
       return noiseCache[e30];
     const l = 2 * o.sampleRate, d = o.createBuffer(1, l, o.sampleRate), p = d.getChannelData(0);
@@ -1981,7 +14729,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return e30 !== "crackle" && (noiseCache[e30] = d), d;
   }
   function getNoiseOscillator(e30 = "white", t, o = 0.02) {
-    const d = getAudioContext().createBufferSource();
+    const d = getAudioContext2().createBufferSource();
     return d.buffer = getNoiseBuffer(e30, o), d.loop = true, d.start(t), {
       node: d,
       stop: (p) => d.stop(p)
@@ -2019,7 +14767,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { transpose: p, url: b, index: R, midi: d, label: I };
   }
   function gainNode(e30) {
-    const t = getAudioContext().createGain();
+    const t = getAudioContext2().createGain();
     return t.gain.value = e30, t;
   }
   function effectSend(e30, t, o) {
@@ -2152,7 +14900,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { filter: hn, lfo: Rn };
   }
   function drywet(e30, t, o = 0) {
-    const l = getAudioContext();
+    const l = getAudioContext2();
     if (!o)
       return e30;
     let d = l.createGain(), p = l.createGain();
@@ -2181,14 +14929,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const { vibmod: l = 0.5, vib: d } = t;
     let p;
     if (d > 0) {
-      p = getAudioContext().createOscillator(), p.frequency.value = d;
-      const b = getAudioContext().createGain();
+      p = getAudioContext2().createOscillator(), p.frequency.value = d;
+      const b = getAudioContext2().createGain();
       return b.gain.value = l * 100, p.connect(b), b.connect(e30), onceEnded(p, () => {
         releaseAudioNode(b), releaseAudioNode(p);
       }), p.start(o), { stop: (R) => p.stop(R), nodes: { vib: [p], vib_gain: [b] } };
     }
   }
-  function scheduleAtTime(e30, t, o = getAudioContext()) {
+  function scheduleAtTime(e30, t, o = getAudioContext2()) {
     const l = o.currentTime;
     webAudioTimeout(o, e30, l, t);
   }
@@ -2199,7 +14947,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), d.start(o), d.stop(l), d;
   }
   function applyFM(e30, t, o) {
-    const l = getAudioContext(), d = [], p = {}, b = {};
+    const l = getAudioContext2(), d = [], p = {}, b = {};
     for (let R = 1; R <= 8; R++)
       for (let I = 0; I <= 8; I++) {
         let z;
@@ -2274,7 +15022,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { transpose: l, url: d, index: p, midi: b, label: R, playbackRate: I };
   }
   function reverseBuffer(e30) {
-    const t = getAudioContext(), o = t.createBuffer(e30.numberOfChannels, e30.length, t.sampleRate);
+    const t = getAudioContext2(), o = t.createBuffer(e30.numberOfChannels, e30.length, t.sampleRate);
     for (let l = 0; l < e30.numberOfChannels; l++)
       o.copyToChannel(e30.getChannelData(l).slice().reverse(), l, l);
     return o;
@@ -2342,7 +15090,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     } = t;
     if (le === 0)
       return;
-    const tn = getAudioContext();
+    const tn = getAudioContext2();
     let [an, on, ln, pn] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
     const { bufferSource: _n, sliceDuration: Mn, offset: mn } = await getSampleBufferSource(t, l, d);
     if (!_n) {
@@ -2441,7 +15189,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     );
   }
   async function onTriggerSynth(e30, t, o, l, d, p) {
-    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext(), [le, rn, tn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
+    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext2(), [le, rn, tn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
     let { warpmode: on } = t;
     typeof on == "string" && (on = Warpmode[on.toUpperCase()] ?? Warpmode.NONE);
     const ln = getFrequencyFromValue(t), { url: pn, label: _n } = getCommonSampleInfo(t, l), Mn = await getPayload(pn, _n, p);
@@ -2624,7 +15372,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function loadWorklets() {
     if (!workletsLoading) {
-      const e30 = getAudioContext(), t = externalWorklets.concat([workletsUrl]);
+      const e30 = getAudioContext2(), t = externalWorklets.concat([workletsUrl]);
       workletsLoading = Promise.all(t.map((o) => e30.audioWorklet.addModule(o))).then(
         () => workletsLoading = void 0
       );
@@ -2644,7 +15392,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     } = e30;
     if (setMaxPolyphony(o), setMultiChannelOrbits(d), resetSeenKeys(), typeof window > "u")
       return;
-    const p = getAudioContext();
+    const p = getAudioContext2();
     if (l != null && l != DEFAULT_AUDIO_DEVICE_NAME)
       try {
         const R = (await getAudioDevices()).get(l), I = (R ?? "").length > 0;
@@ -2673,7 +15421,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     })), audioReady;
   }
   function getSuperdoughAudioController() {
-    return controller == null && (controller = new SuperdoughAudioController(getAudioContext())), controller;
+    return controller == null && (controller = new SuperdoughAudioController(getAudioContext2())), controller;
   }
   function setSuperdoughAudioController(e30) {
     return controller = e30, controller;
@@ -2682,7 +15430,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getSuperdoughAudioController().output.connectToDestination(e30, t);
   }
   function getPhaser(e30, t, o = 1, l = 0.5, d = 1e3, p = 2e3) {
-    const b = getAudioContext(), R = getLfo(b, { frequency: o, depth: p * 2, begin: e30, end: t }), I = 1;
+    const b = getAudioContext2(), R = getLfo(b, { frequency: o, depth: p * 2, begin: e30, end: t }), I = 1;
     let z = 282;
     const se = [];
     for (let le = 0; le < I; le++) {
@@ -2697,8 +15445,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return typeof e30 == "number" ? t[Math.floor(_mod$1(e30, t.length))] : e30;
   }
   function getAnalyserById(e30, t = 1024, o = 0.5) {
-    if (!analysers[e30] || analysers[e30].context != getAudioContext()) {
-      const l = getAudioContext().createAnalyser();
+    if (!analysers[e30] || analysers[e30].context != getAudioContext2()) {
+      const l = getAudioContext2().createAnalyser();
       l.fftSize = t, l.smoothingTimeConstant = o, analysers[e30] = l, analysersData[e30] = new Float32Array(analysers[e30].frequencyBinCount);
     }
     return analysers[e30].fftSize !== t && (analysers[e30].fftSize = t, analysersData[e30] = new Float32Array(analysers[e30].frequencyBinCount)), analysers[e30];
@@ -2753,7 +15501,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), registerSound(
       "sbd",
       (e30, t, o) => {
-        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext(), z = 0.02, se = 1.2, le = 0.025, rn = 1, tn = I.createOscillator();
+        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext2(), z = 0.02, se = 1.2, le = 0.025, rn = 1, tn = I.createOscillator();
         tn.type = "triangle", tn.frequency.value = getFrequencyFromValue(t, 29), tn.detune.setValueAtTime(b * 100, 0), tn.detune.setValueAtTime(b * 100, e30), tn.detune.exponentialRampToValueAtTime(1e-3, e30 + p);
         const an = gainNode(1);
         an.gain.setValueAtTime(1, e30 + z), an.gain.exponentialRampToValueAtTime(1e-3, e30 + z + d), tn.start(e30);
@@ -2780,7 +15528,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "supersaw",
       (e30, t, o) => {
-        const l = getAudioContext();
+        const l = getAudioContext2();
         let { duration: d, n: p, unison: b = 5, spread: R = 0.6, detune: I } = t;
         I = I ?? p ?? 0.18;
         const z = getFrequencyFromValue(t), [se, le, rn, tn] = getADSRValues(
@@ -2842,7 +15590,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           "((t^t/2+t+64)%128*2)",
           "(((t * .25)^(t * .25)/100+(t * .25))%128)*2",
           "((t^t/2+t+64)%7 * 24)"
-        ], { n: d = 0 } = t, p = getFrequencyFromValue(t), { byteBeatExpression: b = l[d % l.length], byteBeatStartTime: R } = t, I = getAudioContext();
+        ], { n: d = 0 } = t, p = getFrequencyFromValue(t), { byteBeatExpression: b = l[d % l.length], byteBeatStartTime: R } = t, I = getAudioContext2();
         let { duration: z } = t;
         const [se, le, rn, tn] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
@@ -2884,7 +15632,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "pulse",
       (e30, t, o) => {
-        const l = getAudioContext();
+        const l = getAudioContext2();
         let { pwrate: d, pwsweep: p } = t;
         p == null && (d != null ? p = 0.3 : p = 0), d == null && p != null && (d = 1);
         let { duration: b, pw: R = 0.5 } = t;
@@ -2932,7 +15680,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "bus",
       (e30, t, o) => {
-        const l = getAudioContext(), [d, p, b, R] = getADSRValues(
+        const l = getAudioContext2(), [d, p, b, R] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 1, 0.01]
@@ -2990,7 +15738,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function waveformN(e30, t, o) {
     e30 = typeof e30 == "object" ? e30 : new Float32Array(e30).fill(1);
-    const d = e30.length, p = new Float32Array(d + 1), b = new Float32Array(d + 1), R = getAudioContext(), I = R.createOscillator(), z = {
+    const d = e30.length, p = new Float32Array(d + 1), b = new Float32Array(d + 1), R = getAudioContext2(), I = R.createOscillator(), z = {
       sawtooth: (le) => [0, -1 / le],
       square: (le) => [0, le % 2 === 0 ? 0 : 1 / le],
       triangle: (le) => [le % 2 === 0 ? 0 : 1 / (le * le), 0],
@@ -3016,12 +15764,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (e30 === "user" && !b && (logger$1(
       "[superdough] Synth 'user' was selected, but partials not specified. Defaulting to triangle. Use pat.partials to setup custom waveform"
     ), e30 = "triangle"), e30 = e30 === "user" && !b ? "triangle" : e30, e30 === "one")
-      return R = new ConstantSourceNode(getAudioContext(), { offset: 1 }), R.start(t), {
+      return R = new ConstantSourceNode(getAudioContext2(), { offset: 1 }), R.start(t), {
         node: R,
         nodes: { source: R },
         stop: (le) => R?.stop(le)
       };
-    !b || b?.length === 0 || e30 === "sine" ? (R = getAudioContext().createOscillator(), R.type = e30 || "triangle") : R = waveformN(b, o.phases, e30), R.frequency.value = getFrequencyFromValue(o);
+    !b || b?.length === 0 || e30 === "sine" ? (R = getAudioContext2().createOscillator(), R.type = e30 || "triangle") : R = waveformN(b, o.phases, e30), R.frequency.value = getFrequencyFromValue(o);
     const I = getVibratoOscillator(R.detune, o, t);
     getPitchEnvelope(R.detune, o, t, t + d);
     const z = applyFM(R.frequency, o, t);
@@ -3039,7 +15787,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     };
   }
   function buildSamples(e30 = 1, t = 0.05, o = 220, l = 0, d = 0, p = 0.1, b = 0, R = 1, I = 0, z = 0, se = 0, le = 0, rn = 0, tn = 0, an = 0, on = 0, ln = 0, pn = 1, _n = 0, Mn = 0) {
-    let mn = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (ls) => ls > 0 ? 1 : -1, Gn = I *= 500 * mn / hn / hn, Sn = o *= (1 + t * 2 * Math.random() - t) * mn / hn, En = [], vn = 0, Nn = 0, xn = 0, Rn = 1, Xn = 0, $n = 0, Bn = 0, Wn, Vn;
+    let mn = Math.PI * 2, hn = getAudioContext2().sampleRate, yn = (ls) => ls > 0 ? 1 : -1, Gn = I *= 500 * mn / hn / hn, Sn = o *= (1 + t * 2 * Math.random() - t) * mn / hn, En = [], vn = 0, Nn = 0, xn = 0, Rn = 1, Xn = 0, $n = 0, Bn = 0, Wn, Vn;
     for (l = l * hn + 9, _n *= hn, d *= hn, p *= hn, ln *= hn, z *= 500 * mn / hn ** 3, an *= mn / hn, se *= mn / hn, le *= hn, rn = rn * hn | 0, Vn = l + _n + d + p + ln | 0; xn < Vn; En[xn++] = Bn)
       ++$n % (on * 100 | 0) || (Bn = b ? b > 1 ? b > 2 ? b > 3 ? Math.sin((vn % mn) ** 3) : Math.max(Math.min(Math.tan(vn), 1), -1) : 1 - (2 * vn / mn % 2 + 2) % 2 : 1 - 4 * Math.abs(Math.round(vn / mn) - vn / mn) : Math.sin(vn), Bn = (rn ? 1 - Mn + Mn * Math.sin(mn * xn / rn) : 1) * yn(Bn) * Math.abs(Bn) ** R * // curve 0=square, 2=pointy
       e30 * 1 * // envelope
@@ -3117,7 +15865,7 @@ registerProcessor('${o}', MyProcessor);
     window.postMessage({ time: l, dough: e30.value, currentTime: t, duration: e30.duration, cps: o });
   }
   function initDoughWorklet() {
-    const e30 = getAudioContext();
+    const e30 = getAudioContext2();
     doughWorklet = getWorklet(
       e30,
       "dough-processor",
@@ -3155,7 +15903,7 @@ registerProcessor('${o}', MyProcessor);
     return [o, o._base || t];
   }
   async function fetchSample(e30) {
-    const t = await fetch(e30).then((l) => l.arrayBuffer()).then((l) => getAudioContext().decodeAudioData(l));
+    const t = await fetch(e30).then((l) => l.arrayBuffer()).then((l) => getAudioContext2().decodeAudioData(l));
     let o = [];
     for (let l = 0; l < t.numberOfChannels; l++)
       o.push(t.getChannelData(l));
@@ -3171,7 +15919,7 @@ registerProcessor('${o}', MyProcessor);
     });
   }
   async function renderPatternAudio(e30, t, o, l, d, p, b, R = void 0) {
-    let I = getAudioContext();
+    let I = getAudioContext2();
     await I.close(), I = new OfflineAudioContext(2, (l - o) / t * d, d), setAudioContext(I), setSuperdoughAudioController(new SuperdoughAudioController(I)), await initAudio({
       maxPolyphony: p,
       multiChannelOrbits: b
@@ -3198,7 +15946,7 @@ registerProcessor('${o}', MyProcessor);
     });
   }
   function webaudioRepl(e30 = {}) {
-    const t = e30.audioContext ?? getAudioContext();
+    const t = e30.audioContext ?? getAudioContext2();
     return setAudioContext(t), e30 = {
       getTime: () => t.currentTime,
       defaultOutput: webaudioOutput,
@@ -3212,14 +15960,14 @@ registerProcessor('${o}', MyProcessor);
   }
   function encodeWAV(e30, t, o, l, d) {
     var p = d / 8, b = l * p, R = new ArrayBuffer(44 + e30.length * p), I = new DataView(R);
-    return writeString(I, 0, "RIFF"), I.setUint32(4, 36 + e30.length * p, true), writeString(I, 8, "WAVE"), writeString(I, 12, "fmt "), I.setUint32(16, 16, true), I.setUint16(20, t, true), I.setUint16(22, l, true), I.setUint32(24, o, true), I.setUint32(28, o * b, true), I.setUint16(32, b, true), I.setUint16(34, d, true), writeString(I, 36, "data"), I.setUint32(40, e30.length * p, true), t === 1 ? floatTo16BitPCM(I, 44, e30) : writeFloat32(I, 44, e30), R;
+    return writeString(I, 0, "RIFF"), I.setUint32(4, 36 + e30.length * p, true), writeString(I, 8, "WAVE"), writeString(I, 12, "fmt "), I.setUint32(16, 16, true), I.setUint16(20, t, true), I.setUint16(22, l, true), I.setUint32(24, o, true), I.setUint32(28, o * b, true), I.setUint16(32, b, true), I.setUint16(34, d, true), writeString(I, 36, "data"), I.setUint32(40, e30.length * p, true), t === 1 ? floatTo16BitPCM(I, 44, e30) : writeFloat322(I, 44, e30), R;
   }
   function interleave(e30, t) {
     for (var o = e30.length + t.length, l = new Float32Array(o), d = 0, p = 0; d < o; )
       l[d++] = e30[p], l[d++] = t[p], p++;
     return l;
   }
-  function writeFloat32(e30, t, o) {
+  function writeFloat322(e30, t, o) {
     for (var l = 0; l < o.length; l++, t += 4)
       e30.setFloat32(t, o[l], true);
   }
@@ -3659,7 +16407,7 @@ registerProcessor('${o}', MyProcessor);
             l.decay,
             l.sustain,
             l.release
-          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), le = t[se], rn = getAudioContext(), tn = await getFontBufferSource(le, l, rn);
+          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), le = t[se], rn = getAudioContext2(), tn = await getFontBufferSource(le, l, rn);
           tn.start(o);
           const an = rn.createGain(), on = tn.connect(an), ln = o + z;
           getParamADSR(on.gain, p, b, R, I, 0, 0.3, o, ln, "linear");
@@ -4970,13 +17718,13 @@ registerProcessor('${o}', MyProcessor);
     for (var o in defaultOptions)
       t[o] = e30 && hasOwn(e30, o) ? e30[o] : defaultOptions[o];
     if (t.ecmaVersion === "latest" ? t.ecmaVersion = 1e8 : t.ecmaVersion == null ? (!warnedAboutEcmaVersion && typeof console == "object" && console.warn && (warnedAboutEcmaVersion = true, console.warn(`Since Acorn 8.0.0, options.ecmaVersion is required.
-Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion = 11) : t.ecmaVersion >= 2015 && (t.ecmaVersion -= 2009), t.allowReserved == null && (t.allowReserved = t.ecmaVersion < 5), (!e30 || e30.allowHashBang == null) && (t.allowHashBang = t.ecmaVersion >= 14), isArray(t.onToken)) {
+Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion = 11) : t.ecmaVersion >= 2015 && (t.ecmaVersion -= 2009), t.allowReserved == null && (t.allowReserved = t.ecmaVersion < 5), (!e30 || e30.allowHashBang == null) && (t.allowHashBang = t.ecmaVersion >= 14), isArray2(t.onToken)) {
       var l = t.onToken;
       t.onToken = function(d) {
         return l.push(d);
       };
     }
-    return isArray(t.onComment) && (t.onComment = pushComment(t, t.onComment)), t;
+    return isArray2(t.onComment) && (t.onComment = pushComment(t, t.onComment)), t;
   }
   function pushComment(e30, t) {
     return function(o, l, d, p, b, R) {
@@ -5080,7 +17828,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return typeof BigInt != "function" ? null : BigInt(e30.replace(/_/g, ""));
   }
   function parse$6(e30, t) {
-    return Parser.parse(e30, t);
+    return Parser2.parse(e30, t);
   }
   function requireEstraverse() {
     return hasRequiredEstraverse || (hasRequiredEstraverse = 1, function(e30) {
@@ -7645,7 +20393,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       })();
     }(escodegen$1)), escodegen$1;
   }
-  function isNode(e30) {
+  function isNode2(e30) {
     return e30 !== null && typeof e30 == "object" && "type" in e30 && typeof e30.type == "string";
   }
   function walk(e30, { enter: t, leave: o }) {
@@ -9263,7 +22011,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function all$1() {
     return dictionary.slice();
   }
-  function keys() {
+  function keys2() {
     return Object.keys(index$4);
   }
   function removeAll() {
@@ -9632,7 +22380,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function get$2(e30) {
     return typeof e30 == "string" ? index$3[e30.toLowerCase()] || NoMode : e30 && e30.name ? get$2(e30.name) : NoMode;
   }
-  function all() {
+  function all2() {
     return modes.slice();
   }
   function names$2() {
@@ -9709,7 +22457,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
   function chromatic(e30, t) {
     return numeric(e30).map((o) => midiToNoteName(o, t));
   }
-  function tokenize(e30) {
+  function tokenize2(e30) {
     if (typeof e30 != "string")
       return ["", ""];
     const t = e30.indexOf(" "), o = note$1(e30.substring(0, t));
@@ -9721,7 +22469,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     return [o.name, l.length ? l : ""];
   }
   function get$1(e30) {
-    const t = Array.isArray(e30) ? e30 : tokenize(e30), o = note$1(t[0]).name, l = get$9(t[1]);
+    const t = Array.isArray(e30) ? e30 : tokenize2(e30), o = note$1(t[0]).name, l = get$9(t[1]);
     if (l.empty)
       return NoScale;
     const d = l.name, p = o ? l.intervals.map((R) => transpose$5(o, R)) : [], b = o ? o + " " + d : d;
@@ -10272,7 +23020,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const d = getPattern(), p = getTriggerFunc();
     if (!d || !p)
       return false;
-    const b = o + l, R = 1e-6, z = d.queryArc(b - R, b + R, { _cps: t }).filter((le) => le.value?.midikey?.startsWith(`${e30}_`)), se = getAudioContext().currentTime;
+    const b = o + l, R = 1e-6, z = d.queryArc(b - R, b + R, { _cps: t }).filter((le) => le.value?.midikey?.startsWith(`${e30}_`)), se = getAudioContext2().currentTime;
     return z.length ? (z.forEach((le) => {
       if (!le.hasOnset())
         return;
@@ -10501,7 +23249,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const l = new Blob([e30], { type: o }), d = document.createElement("a");
     d.href = window.URL.createObjectURL(l), d.download = t, d.click();
   }
-  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
+  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id2, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor2, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every3, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size2, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze2, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext2, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map2, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray2, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser2, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $2, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t2, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
     "strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
@@ -10575,7 +23323,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           let p = 0, b = C_ZERO, R = C_ZERO, I = C_ZERO, z = C_ONE, se = C_ONE, le = e30.replace(/_/g, "").match(/\d+|./g);
           if (le === null)
             throw InvalidParameter();
-          if (le[p] === "-" ? (d = -C_ONE, p++) : le[p] === "+" && p++, le.length === p + 1 ? R = assign(le[p++], d) : le[p + 1] === "." || le[p] === "." ? (le[p] !== "." && (b = assign(le[p++], d)), p++, (p + 1 === le.length || le[p + 1] === "(" && le[p + 3] === ")" || le[p + 1] === "'" && le[p + 3] === "'") && (R = assign(le[p], d), z = C_TEN ** BigInt(le[p].length), p++), (le[p] === "(" && le[p + 2] === ")" || le[p] === "'" && le[p + 2] === "'") && (I = assign(le[p + 1], d), se = C_TEN ** BigInt(le[p + 1].length) - C_ONE, p += 3)) : le[p + 1] === "/" || le[p + 1] === ":" ? (R = assign(le[p], d), z = assign(le[p + 2], C_ONE), p += 3) : le[p + 3] === "/" && le[p + 1] === " " && (b = assign(le[p], d), R = assign(le[p + 2], d), z = assign(le[p + 4], C_ONE), p += 5), le.length <= p)
+          if (le[p] === "-" ? (d = -C_ONE, p++) : le[p] === "+" && p++, le.length === p + 1 ? R = assign2(le[p++], d) : le[p + 1] === "." || le[p] === "." ? (le[p] !== "." && (b = assign2(le[p++], d)), p++, (p + 1 === le.length || le[p + 1] === "(" && le[p + 3] === ")" || le[p + 1] === "'" && le[p + 3] === "'") && (R = assign2(le[p], d), z = C_TEN ** BigInt(le[p].length), p++), (le[p] === "(" && le[p + 2] === ")" || le[p] === "'" && le[p + 2] === "'") && (I = assign2(le[p + 1], d), se = C_TEN ** BigInt(le[p + 1].length) - C_ONE, p += 3)) : le[p + 1] === "/" || le[p + 1] === ":" ? (R = assign2(le[p], d), z = assign2(le[p + 2], C_ONE), p += 3) : le[p + 3] === "/" && le[p + 1] === " " && (b = assign2(le[p], d), R = assign2(le[p + 2], d), z = assign2(le[p + 4], C_ONE), p += 5), le.length <= p)
             l = z * se, d = /* void */
             o = I + l * b + se * R;
           else
@@ -11039,7 +23787,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       compose = (...e30) => pipe(...e30.reverse());
       removeUndefineds = (e30) => e30.filter((t) => t != null);
       flatten = (e30) => [].concat(...e30);
-      id = (e30) => e30;
+      id2 = (e30) => e30;
       constant = (e30, t) => e30;
       listRange = (e30, t) => Array.from({ length: t - e30 + 1 }, (o, l) => l + e30);
       fractionalArgs = (e30) => mapArgs(e30, parseFractional);
@@ -11593,19 +24341,19 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
           return this.bindWhole(o, t);
         }
         join() {
-          return this.bind(id);
+          return this.bind(id2);
         }
         outerBind(t) {
           return this.bindWhole((o) => o, t).setSteps(this._steps);
         }
         outerJoin() {
-          return this.outerBind(id);
+          return this.outerBind(id2);
         }
         innerBind(t) {
           return this.bindWhole((o, l) => l, t);
         }
         innerJoin() {
-          return this.innerBind(id);
+          return this.innerBind(id2);
         }
         // Flatterns patterns of patterns, by retriggering/resetting inner patterns at onsets of outer pattern haps
         resetJoin(t = false) {
@@ -12089,7 +24837,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         //////////////////////////////////////////////////////////////////////
         // methods relating to breaking patterns into subcycles
         // Breaks a pattern into a pattern of patterns, according to the structure of the given binary pattern.
-        unjoin(t, o = id) {
+        unjoin(t, o = id2) {
           return t.withHap(
             (l) => l.withValue((d) => d ? o(this.ribbon(l.whole.begin, l.whole.duration)) : this)
           );
@@ -12340,7 +25088,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       round = register("round", function(e30) {
         return e30.asNumber().fmap((t) => Math.round(t));
       });
-      floor = register("floor", function(e30) {
+      floor2 = register("floor", function(e30) {
         return e30.asNumber().fmap((t) => Math.floor(t));
       });
       log2 = register("log2", (e30) => e30.asNumber().fmap((t) => Math.log2(t)));
@@ -12420,7 +25168,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         const l = Array(e30 - 1).fill(o);
         return l.push(t(o)), slowcatPrime(...l);
       });
-      ({ firstOf, every } = register(["firstOf", "every"], function(e30, t, o) {
+      ({ firstOf, every: every3 } = register(["firstOf", "every"], function(e30, t, o) {
         const l = Array(e30 - 1).fill(o);
         return l.unshift(t(o)), slowcatPrime(...l);
       }));
@@ -13275,7 +26023,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       ({ ir, iresponse } = registerControl(["ir", "i"], "iresponse"));
       ({ irspeed } = registerControl("irspeed"));
       ({ irbegin } = registerControl("irbegin"));
-      ({ roomsize, size, sz, rsize } = registerControl("roomsize", "size", "sz", "rsize"));
+      ({ roomsize, size: size2, sz, rsize } = registerControl("roomsize", "size", "sz", "rsize"));
       ({ shape } = registerControl(["shape", "shapevol"]));
       ({ distort, dist: dist$2 } = registerControl(["distort", "distortvol", "distorttype"], "dist"));
       ({ distortvol } = registerControl("distortvol", "distvol"));
@@ -13312,7 +26060,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       ({ ring } = registerControl("ring"));
       ({ ringf } = registerControl("ringf"));
       ({ ringdf } = registerControl("ringdf"));
-      ({ freeze } = registerControl("freeze"));
+      ({ freeze: freeze2 } = registerControl("freeze"));
       ({ xsdelay } = registerControl("xsdelay"));
       ({ tsdelay } = registerControl("tsdelay"));
       ({ real } = registerControl("real"));
@@ -13739,7 +26487,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         fmwave8,
         frameRate,
         frames,
-        freeze,
+        freeze: freeze2,
         freq: freq$1,
         fshift,
         fshiftnote,
@@ -13906,7 +26654,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         seconds,
         semitone,
         shape,
-        size,
+        size: size2,
         slide,
         smear: smear$1,
         songPtr,
@@ -14294,7 +27042,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       tri2 = fastcat(saw2, isaw2);
       itri = fastcat(isaw, saw);
       itri2 = fastcat(isaw2, saw2);
-      time = signal(id);
+      time = signal(id2);
       _mouseY = 0;
       _mouseX = 0;
       typeof window < "u" && document.addEventListener("mousemove", (e30) => {
@@ -14753,7 +27501,7 @@ Please check with "npm ls @strudel/core".`
         euclidrot,
         evalScope,
         evaluate: evaluate$1,
-        every,
+        every: every3,
         expand,
         expression,
         extend,
@@ -14773,7 +27521,7 @@ Please check with "npm ls @strudel/core".`
         firstOf,
         fit,
         flatten,
-        floor,
+        floor: floor2,
         flux,
         fluxBy,
         fluxby,
@@ -14902,7 +27650,7 @@ Please check with "npm ls @strudel/core".`
         fractionalArgs,
         frameRate,
         frames,
-        freeze,
+        freeze: freeze2,
         freq: freq$1,
         freqToMidi: freqToMidi$2,
         fromBipolar,
@@ -14968,7 +27716,7 @@ Please check with "npm ls @strudel/core".`
         hsla,
         hurry,
         i: i$1,
-        id,
+        id: id2,
         imag,
         inhabit,
         inhabitmod,
@@ -15262,7 +28010,7 @@ Please check with "npm ls @strudel/core".`
         sine,
         sine2,
         sinefold,
-        size,
+        size: size2,
         slice,
         slide,
         slow,
@@ -15441,7 +28189,7 @@ Please check with "npm ls @strudel/core".`
       }
       setDefaultAudioContext = () => (audioContext = new AudioContext(), audioContext);
       setAudioContext = (e30) => (audioContext = e30, audioContext);
-      getAudioContext = () => audioContext || setDefaultAudioContext();
+      getAudioContext2 = () => audioContext || setDefaultAudioContext();
       log = (e30) => console.log(e30);
       logger$1 = (...e30) => log(...e30);
       setLogger = (e30) => {
@@ -15550,7 +28298,7 @@ Please check with "npm ls @strudel/core".`
       wetfade = (e30) => e30 < 0.5 ? 1 : 1 - (e30 - 0.5) / 0.5;
       curves = ["linear", "exponential"];
       mod$2 = (e30, t = "sine") => {
-        const o = getAudioContext();
+        const o = getAudioContext2();
         let l;
         return noises.includes(t) ? (l = o.createBufferSource(), l.buffer = getNoiseBuffer(t, 2), l.loop = true) : (l = o.createOscillator(), l.type = t, l.frequency.value = e30), l.start(), l;
       };
@@ -15610,7 +28358,7 @@ Please check with "npm ls @strudel/core".`
         const o = _algoNames[t % _algoNames.length];
         return distortionAlgorithms[o];
       };
-      getDistortion = (e30, t, o) => getWorklet(getAudioContext(), "distort-processor", { distort: e30, postgain: t }, { processorOptions: { algorithm: o } });
+      getDistortion = (e30, t, o) => getWorklet(getAudioContext2(), "distort-processor", { distort: e30, postgain: t }, { processorOptions: { algorithm: o } });
       getFrequencyFromValue = (e30, t = 36) => {
         let { note: o, freq: l, octave: d = 0 } = e30;
         return o = o || t, typeof o == "string" && (o = noteToMidi(o)), !l && typeof o == "number" && (l = midiToFreq$1(o)), l *= Math.pow(2, d), Number(l);
@@ -15822,7 +28570,7 @@ Please check with "npm ls @strudel/core".`
         };
         return o;
       };
-      map = (e30 = {}) => {
+      map2 = (e30 = {}) => {
         let t = atom(e30);
         return t.setKey = function(o, l) {
           let d = t.value;
@@ -15978,7 +28726,7 @@ Please check with "npm ls @strudel/core".`
       };
       getRangeForParam = (e30, t) => e30 === "frequency" && t >= 30 ? { min: 20 - t, max: 24e3 - t } : { min: void 0, max: void 0 };
       clampWithWaveShaper = (e30, t, o) => {
-        const l = getAudioContext(), d = new Float32Array(256);
+        const l = getAudioContext2(), d = new Float32Array(256);
         for (let R = 0; R < d.length; R++) {
           const I = R / (d.length - 1) * 2 - 1;
           d[R] = clamp(I * o, t, o);
@@ -16031,7 +28779,7 @@ Please check with "npm ls @strudel/core".`
           depth: Mn,
           min: pn,
           max: _n
-        }, hn = getLfo(getAudioContext(), mn);
+        }, hn = getLfo(getAudioContext2(), mn);
         return o.main[`lfo_${e30}`] = [hn], an.forEach((yn) => hn.connect(yn)), hn;
       };
       connectEnvelope = (e30, t, o) => {
@@ -16039,7 +28787,7 @@ Please check with "npm ls @strudel/core".`
         if (!rn.length) return;
         let an = rn[0].value;
         an = an === 0 ? 1 : an;
-        const { min: on, max: ln } = getRangeForParam(tn, an), pn = z ?? I * an, _n = getEnvelope(getAudioContext(), {
+        const { min: on, max: ln } = getRangeForParam(tn, an), pn = z ?? I * an, _n = getEnvelope(getAudioContext2(), {
           ...le,
           depth: pn,
           min: on,
@@ -16051,7 +28799,7 @@ Please check with "npm ls @strudel/core".`
         return o.main[`env_${e30}`] = [_n], rn.forEach((Mn) => _n.connect(Mn)), _n;
       };
       connectBusModulator = (e30, t, o) => {
-        const l = getAudioContext(), { control: d, subControl: p, depth: b = 1, depthabs: R, fxi: I = "main" } = e30, { targetParams: z, paramName: se } = getTargetParamsForControl(d, t[I], p);
+        const l = getAudioContext2(), { control: d, subControl: p, depth: b = 1, depthabs: R, fxi: I = "main" } = e30, { targetParams: z, paramName: se } = getTargetParamsForControl(d, t[I], p);
         if (!z.length) return { toCleanup: [] };
         const le = o.getBus(e30.bus), rn = new ConstantSourceNode(l, { offset: e30.dc ?? 0 });
         rn.start(e30.begin);
@@ -16082,13 +28830,13 @@ Please check with "npm ls @strudel/core".`
       getSampleBuffer = async (e30, t, o) => {
         let { url: l, label: d, playbackRate: p } = getSampleInfo(e30, t);
         o && (l = await o(l));
-        const b = getAudioContext(), R = await loadBuffer$1(l, b, d);
+        const b = getAudioContext2(), R = await loadBuffer$1(l, b, d);
         return e30.unit === "c" && (p = p * R.duration), { buffer: R, playbackRate: p };
       };
       getSampleBufferSource = async (e30, t, o) => {
         let { buffer: l, playbackRate: d } = await getSampleBuffer(e30, t, o);
         e30.speed < 0 && (l = reverseBuffer(l));
-        const b = getAudioContext().createBufferSource();
+        const b = getAudioContext2().createBufferSource();
         b.buffer = l, b.playbackRate.value = d;
         const { loopBegin: R = 0, loopEnd: I = 1, begin: z = 0, end: se = 1 } = e30, le = b.buffer.duration, rn = z * le;
         e30.loop && (b.loop = true, b.loopStart = R * le, b.loopEnd = I * le);
@@ -16301,7 +29049,7 @@ Please check with "npm ls @strudel/core".`
       DEFAULT_AUDIO_DEVICE_NAME = "System Standard";
       maxPolyphony = DEFAULT_MAX_POLYPHONY;
       multiChannelOrbits = false;
-      soundMap$1 = map();
+      soundMap$1 = map2();
       gainCurveFunc = (e30) => e30;
       getAudioDevices = async () => {
         await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -16367,7 +29115,7 @@ Please check with "npm ls @strudel/core".`
         return kabel.evaluate(e30).compile({ log: false });
       };
       superdough = async (e30, t, o, l = 0.5, d = 0.5) => {
-        const p = { main: {} }, b = getAudioContext(), R = getSuperdoughAudioController();
+        const p = { main: {} }, b = getAudioContext2(), R = getSuperdoughAudioController();
         let { stretch: I } = e30;
         if (I != null && (t = t - 0.04), typeof e30 != "object")
           throw new Error(
@@ -16816,9 +29564,9 @@ Please check with "npm ls @strudel/core".`
             R,
             mn
           ])
-        ), Nn = getAudioContext(), xn = Nn.createBuffer(1, vn.length, Nn.sampleRate);
+        ), Nn = getAudioContext2(), xn = Nn.createBuffer(1, vn.length, Nn.sampleRate);
         xn.getChannelData(0).set(vn);
-        const Rn = getAudioContext().createBufferSource();
+        const Rn = getAudioContext2().createBufferSource();
         return Rn.buffer = xn, Rn.start(t), {
           node: Rn
         };
@@ -16830,7 +29578,7 @@ Please check with "npm ls @strudel/core".`
         e30.data === "strudel-stop" ? stop() : e30.data?.dough && worklet?.node.port.postMessage(e30.data);
       });
       dough = async (e30) => {
-        const t = getAudioContext();
+        const t = getAudioContext2();
         stop(), worklet = await dspWorklet(t, e30), worklet.node.connect(t.destination);
       };
       soundMap = /* @__PURE__ */ new Map();
@@ -17350,7 +30098,7 @@ Please check with "npm ls @strudel/core".`
         getADSRValues,
         getAnalyserById,
         getAnalyzerData,
-        getAudioContext,
+        getAudioContext: getAudioContext2,
         getAudioContextCurrentTime,
         getAudioDevices,
         getCachedBuffer,
@@ -21405,7 +34153,7 @@ Please check with "npm ls @strudel/core".`
       };
       Pattern$1.prototype.soundfont = function(e30, t = 0) {
         return this.onTrigger((o, l, d, p) => {
-          const b = getAudioContext(), R = getPlayableNoteValue(o), I = e30.presets[t % e30.presets.length], z = p, se = [b, I, noteToMidi$1(R), z];
+          const b = getAudioContext2(), R = getPlayableNoteValue(o), I = e30.presets[t % e30.presets.length], z = p, se = [b, I, noteToMidi$1(R), z];
           ce$1(...se)(z + o.duration);
         });
       };
@@ -21540,7 +34288,7 @@ Please check with "npm ls @strudel/core".`
       hasOwn = Object.hasOwn || function(e30, t) {
         return hasOwnProperty.call(e30, t);
       };
-      isArray = Array.isArray || function(e30) {
+      isArray2 = Array.isArray || function(e30) {
         return toString.call(e30) === "[object Array]";
       };
       regexpCache = /* @__PURE__ */ Object.create(null);
@@ -21668,7 +34416,7 @@ Please check with "npm ls @strudel/core".`
       BIND_FUNCTION = 3;
       BIND_SIMPLE_CATCH = 4;
       BIND_OUTSIDE = 5;
-      Parser = function e5(t, o, l) {
+      Parser2 = function e5(t, o, l) {
         this.options = t = getOptions(t), this.sourceFile = t.sourceFile, this.keywords = wordsRegexp(keywords$1[t.ecmaVersion >= 6 ? 6 : t.sourceType === "module" ? "5module" : 5]);
         var d = "";
         t.allowReserved !== true && (d = reservedWords[t.ecmaVersion >= 6 ? 6 : t.ecmaVersion === 5 ? 5 : 3], t.sourceType === "module" && (d += " await")), this.reservedWords = wordsRegexp(d);
@@ -21677,7 +34425,7 @@ Please check with "npm ls @strudel/core".`
 `, l - 1) + 1, this.curLine = this.input.slice(0, this.lineStart).split(lineBreak).length) : (this.pos = this.lineStart = 0, this.curLine = 1), this.type = types$1.eof, this.value = null, this.start = this.end = this.pos, this.startLoc = this.endLoc = this.curPosition(), this.lastTokEndLoc = this.lastTokStartLoc = null, this.lastTokStart = this.lastTokEnd = this.pos, this.context = this.initialContext(), this.exprAllowed = true, this.inModule = t.sourceType === "module", this.strict = this.inModule || this.strictDirective(this.pos), this.potentialArrowAt = -1, this.potentialArrowInForAwait = false, this.yieldPos = this.awaitPos = this.awaitIdentPos = 0, this.labels = [], this.undefinedExports = /* @__PURE__ */ Object.create(null), this.pos === 0 && t.allowHashBang && this.input.slice(0, 2) === "#!" && this.skipLineComment(2), this.scopeStack = [], this.enterScope(SCOPE_TOP), this.regexpState = null, this.privateNameStack = [];
       };
       prototypeAccessors = { inFunction: { configurable: true }, inGenerator: { configurable: true }, inAsync: { configurable: true }, canAwait: { configurable: true }, allowSuper: { configurable: true }, allowDirectSuper: { configurable: true }, treatFunctionsAsVar: { configurable: true }, allowNewDotTarget: { configurable: true }, inClassStaticBlock: { configurable: true } };
-      Parser.prototype.parse = function e6() {
+      Parser2.prototype.parse = function e6() {
         var t = this.options.program || this.startNode();
         return this.nextToken(), this.parseTopLevel(t);
       };
@@ -21717,24 +34465,24 @@ Please check with "npm ls @strudel/core".`
       prototypeAccessors.inClassStaticBlock.get = function() {
         return (this.currentVarScope().flags & SCOPE_CLASS_STATIC_BLOCK) > 0;
       };
-      Parser.extend = function e7() {
+      Parser2.extend = function e7() {
         for (var t = [], o = arguments.length; o--; ) t[o] = arguments[o];
         for (var l = this, d = 0; d < t.length; d++)
           l = t[d](l);
         return l;
       };
-      Parser.parse = function e8(t, o) {
+      Parser2.parse = function e8(t, o) {
         return new this(o, t).parse();
       };
-      Parser.parseExpressionAt = function e9(t, o, l) {
+      Parser2.parseExpressionAt = function e9(t, o, l) {
         var d = new this(l, t, o);
         return d.nextToken(), d.parseExpression();
       };
-      Parser.tokenizer = function e10(t, o) {
+      Parser2.tokenizer = function e10(t, o) {
         return new this(o, t);
       };
-      Object.defineProperties(Parser.prototype, prototypeAccessors);
-      pp$9 = Parser.prototype;
+      Object.defineProperties(Parser2.prototype, prototypeAccessors);
+      pp$9 = Parser2.prototype;
       literal = /^(?:'((?:\\[^]|[^'\\])*?)'|"((?:\\[^]|[^"\\])*?)")/;
       pp$9.strictDirective = function(e30) {
         if (this.options.ecmaVersion < 5)
@@ -21808,7 +34556,7 @@ Please check with "npm ls @strudel/core".`
       pp$9.isSimpleAssignTarget = function(e30) {
         return e30.type === "ParenthesizedExpression" ? this.isSimpleAssignTarget(e30.expression) : e30.type === "Identifier" || e30.type === "MemberExpression";
       };
-      pp$8 = Parser.prototype;
+      pp$8 = Parser2.prototype;
       pp$8.parseTopLevel = function(e30) {
         var t = /* @__PURE__ */ Object.create(null);
         for (e30.body || (e30.body = []); this.type !== types$1.eof; ) {
@@ -22272,7 +35020,7 @@ Please check with "npm ls @strudel/core".`
         return this.options.ecmaVersion >= 5 && e30.type === "ExpressionStatement" && e30.expression.type === "Literal" && typeof e30.expression.value == "string" && // Reject parenthesized strings.
         (this.input[e30.start] === '"' || this.input[e30.start] === "'");
       };
-      pp$7 = Parser.prototype;
+      pp$7 = Parser2.prototype;
       pp$7.toAssignable = function(e30, t, o) {
         if (this.options.ecmaVersion >= 6 && e30)
           switch (e30.type) {
@@ -22446,7 +35194,7 @@ Please check with "npm ls @strudel/core".`
         f_expr_gen: new TokContext("function", true, false, null, true),
         f_gen: new TokContext("function", false, false, null, true)
       };
-      pp$6 = Parser.prototype;
+      pp$6 = Parser2.prototype;
       pp$6.initialContext = function() {
         return [types.b_stat];
       };
@@ -22512,7 +35260,7 @@ Please check with "npm ls @strudel/core".`
         var t = false;
         this.options.ecmaVersion >= 6 && e30 !== types$1.dot && (this.value === "of" && !this.exprAllowed || this.value === "yield" && this.inGeneratorContext()) && (t = true), this.exprAllowed = t;
       };
-      pp$5 = Parser.prototype;
+      pp$5 = Parser2.prototype;
       pp$5.checkPropClash = function(e30, t, o) {
         if (!(this.options.ecmaVersion >= 9 && e30.type === "SpreadElement") && !(this.options.ecmaVersion >= 6 && (e30.computed || e30.method || e30.shorthand))) {
           var l = e30.key, d;
@@ -22958,7 +35706,7 @@ Please check with "npm ls @strudel/core".`
         var t = this.startNode();
         return this.next(), t.argument = this.parseMaybeUnary(null, true, false, e30), this.finishNode(t, "AwaitExpression");
       };
-      pp$4 = Parser.prototype;
+      pp$4 = Parser2.prototype;
       pp$4.raise = function(e30, t) {
         var o = getLineInfo(this.input, e30);
         t += " (" + o.line + ":" + o.column + ")";
@@ -22970,7 +35718,7 @@ Please check with "npm ls @strudel/core".`
         if (this.options.locations)
           return new Position(this.curLine, this.pos - this.lineStart);
       };
-      pp$3 = Parser.prototype;
+      pp$3 = Parser2.prototype;
       Scope = function e13(t) {
         this.flags = t, this.var = [], this.lexical = [], this.functions = [], this.inClassFieldInit = false;
       };
@@ -23029,7 +35777,7 @@ Please check with "npm ls @strudel/core".`
       Node = function e14(t, o, l) {
         this.type = "", this.start = o, this.end = 0, t.options.locations && (this.loc = new SourceLocation(t, l)), t.options.directSourceFile && (this.sourceFile = t.options.directSourceFile), t.options.ranges && (this.range = [o, 0]);
       };
-      pp$2 = Parser.prototype;
+      pp$2 = Parser2.prototype;
       pp$2.startNode = function() {
         return new Node(this, this.start, this.startLoc);
       };
@@ -23092,7 +35840,7 @@ Please check with "npm ls @strudel/core".`
         ecmaVersion = list[i];
         buildUnicodeData(ecmaVersion);
       }
-      pp$1 = Parser.prototype;
+      pp$1 = Parser2.prototype;
       BranchID = function e15(t, o) {
         this.parent = t, this.base = o || this;
       };
@@ -23875,7 +36623,7 @@ Please check with "npm ls @strudel/core".`
       Token = function e28(t) {
         this.type = t.type, this.value = t.value, this.start = t.start, this.end = t.end, t.options.locations && (this.loc = new SourceLocation(t, t.startLoc, t.endLoc)), t.options.ranges && (this.range = [t.start, t.end]);
       };
-      pp = Parser.prototype;
+      pp = Parser2.prototype;
       pp.next = function(e30) {
         !e30 && this.type.keyword && this.containsEsc && this.raiseRecoverable(this.start, "Escape sequence in keyword " + this.type.keyword), this.options.onToken && this.options.onToken(new Token(this)), this.lastTokEnd = this.end, this.lastTokStart = this.start, this.lastTokEndLoc = this.endLoc, this.lastTokStartLoc = this.startLoc, this.nextToken();
       };
@@ -24372,8 +37120,8 @@ Please check with "npm ls @strudel/core".`
         return this.keywords.test(e30) && (t = keywords[e30]), this.finishToken(t, e30);
       };
       version$1 = "8.14.0";
-      Parser.acorn = {
-        Parser,
+      Parser2.acorn = {
+        Parser: Parser2,
         version: version$1,
         defaultOptions,
         Position,
@@ -24513,9 +37261,9 @@ Please check with "npm ls @strudel/core".`
                   );
                   for (let I = 0; I < R.length; I += 1) {
                     const z = R[I];
-                    isNode(z) && (this.visit(z, t, p, I) || I--);
+                    isNode2(z) && (this.visit(z, t, p, I) || I--);
                   }
-                } else isNode(b) && this.visit(b, t, p, null);
+                } else isNode2(b) && this.visit(b, t, p, null);
             }
             if (this.leave) {
               const b = this.replacement, R = this.should_remove;
@@ -25886,7 +38634,7 @@ Please check with "npm ls @strudel/core".`
         all: all$1,
         add: add$3,
         removeAll,
-        keys,
+        keys: keys2,
         // deprecated
         entries: entries$1,
         scaleType
@@ -26183,13 +38931,13 @@ Please check with "npm ls @strudel/core".`
         });
       });
       mode = get$2;
-      entries = all;
+      entries = all2;
       triads$1 = chords(MODES.map((e30) => e30[4]));
       seventhChords = chords(MODES.map((e30) => e30[5]));
       mode_default = {
         get: get$2,
         names: names$2,
-        all,
+        all: all2,
         distance,
         relativeTonic,
         notes,
@@ -26227,7 +38975,7 @@ Please check with "npm ls @strudel/core".`
         scaleChords,
         scaleNotes,
         steps,
-        tokenize,
+        tokenize: tokenize2,
         // deprecated
         scale: scale$1
       };
@@ -35091,7 +47839,7 @@ const ${o} = ((${t.value}) & 255) / 127.5 - 1; // bytebeat`
         ],
         compile: ({ vars: [e30 = 0], ...t }) => s[t.lang].defUgen(t, e30)
       });
-      $ = a("impulse", {
+      $2 = a("impulse", {
         ugen: "ImpulseOsc",
         tags: ["regular", "trigger"],
         description: "Regular single sample impulses (0 - 1)",
@@ -35412,7 +48160,7 @@ const ${o} = ((${t.value}) & 255) / 127.5 - 1; // bytebeat`
         ins: [{ name: "in", dynamic: true }],
         compile: ({ vars: e30, name: t, lang: o }) => s[o].def(t, e30.join(" - ") || 0)
       });
-      _t = a("mod", {
+      _t2 = a("mod", {
         tags: ["math"],
         description: "calculates the modulo",
         examples: ["add(x=>x.add(.003).mod(1)).out()"],
@@ -35681,7 +48429,7 @@ const ${o} = ((${t.value}) & 255) / 127.5 - 1; // bytebeat`
         tags: ["fx", "filter"],
         compile: ({ vars: [e30 = 0, t = 1, o = 0], ...l }) => s[l.lang].defUgen(l, e30, t, o)
       });
-      Ni = g("lfnoise", (e30) => O().hold($(e30)), {
+      Ni = g("lfnoise", (e30) => O().hold($2(e30)), {
         ins: [{ name: "freq" }],
         description: "low frequency stepped noise.",
         tags: ["regular", "noise"],
@@ -36000,7 +48748,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         hold: Ut,
         hpf: Vi,
         ifelse: fi,
-        impulse: $,
+        impulse: $2,
         lag: wt,
         lfnoise: Ni,
         log: H,
@@ -36015,7 +48763,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         midivel: Ft,
         min: ai,
         mix: ji,
-        mod: _t,
+        mod: _t2,
         mouseX: $i,
         mouseY: Ai,
         mul: Dt,
@@ -36170,7 +48918,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         hold: Ut,
         hpf: Vi,
         ifelse: fi,
-        impulse: $,
+        impulse: $2,
         lag: wt,
         lfnoise: Ni,
         log: H,
@@ -36185,7 +48933,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         midivel: Ft,
         min: ai,
         mix: ji,
-        mod: _t,
+        mod: _t2,
         module: g,
         mouseX: $i,
         mouseY: Ai,
@@ -36244,1350 +48992,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
-  // src/participants.js
-  var subscribers = /* @__PURE__ */ new Set();
-  var local = null;
-  var remotes = /* @__PURE__ */ new Map();
-  function emit(event, payload) {
-    subscribers.forEach((fn) => {
-      try {
-        fn(event, payload);
-      } catch (e30) {
-        console.warn("[participants] subscriber threw", e30);
-      }
-    });
-  }
-  function readLocal() {
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf || typeof conf.getMyUserId !== "function") return null;
-      const id2 = conf.getMyUserId();
-      if (!id2) return null;
-      let displayName = null;
-      if (typeof conf.getLocalDisplayName === "function") {
-        try {
-          displayName = conf.getLocalDisplayName();
-        } catch (e30) {
-        }
-      }
-      if (!displayName && window.APP.store && typeof window.APP.store.getState === "function") {
-        try {
-          const st2 = window.APP.store.getState();
-          const s2 = st2["features/base/settings"];
-          if (s2 && typeof s2.displayName === "string") displayName = s2.displayName;
-        } catch (e30) {
-        }
-      }
-      return { id: id2, displayName: displayName || "You", isLocal: true };
-    } catch (e30) {
-      return null;
-    }
-  }
-  function readRemotes() {
-    const map2 = /* @__PURE__ */ new Map();
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf) return map2;
-      const localId = typeof conf.getMyUserId === "function" ? conf.getMyUserId() : null;
-      const members = typeof conf.listMembers === "function" ? conf.listMembers() : [];
-      for (const m2 of members) {
-        const id2 = typeof m2.getId === "function" ? m2.getId() : m2._id;
-        if (!id2) continue;
-        if (localId && id2 === localId) continue;
-        try {
-          if (typeof m2.isHidden === "function" && m2.isHidden()) continue;
-        } catch (e30) {
-        }
-        let displayName = null;
-        try {
-          displayName = typeof m2.getDisplayName === "function" ? m2.getDisplayName() : m2._displayName;
-        } catch (e30) {
-        }
-        map2.set(id2, { id: id2, displayName: displayName || "Participant", isLocal: false });
-      }
-    } catch (e30) {
-    }
-    return map2;
-  }
-  function tick() {
-    const newLocal = readLocal();
-    if (!newLocal) return;
-    if (!local || local.id !== newLocal.id) {
-      local = newLocal;
-      emit("local", local);
-    } else if (local.displayName !== newLocal.displayName) {
-      local = newLocal;
-      emit("local-update", local);
-    }
-    const newRemotes = readRemotes();
-    for (const [id2, p] of newRemotes) {
-      const existing = remotes.get(id2);
-      if (!existing) {
-        remotes.set(id2, p);
-        emit("join", p);
-      } else if (existing.displayName !== p.displayName) {
-        remotes.set(id2, p);
-        emit("update", p);
-      }
-    }
-    for (const id2 of Array.from(remotes.keys())) {
-      if (!newRemotes.has(id2)) {
-        const left2 = remotes.get(id2);
-        remotes.delete(id2);
-        emit("leave", left2);
-      }
-    }
-  }
-  var pollTimer = null;
-  function startPolling() {
-    if (pollTimer) return;
-    pollTimer = setInterval(tick, 1e3);
-    tick();
-  }
-  function subscribeParticipants(fn) {
-    subscribers.add(fn);
-    if (local) fn("local", local);
-    for (const r2 of remotes.values()) fn("join", r2);
-    return () => subscribers.delete(fn);
-  }
-  function getLocalParticipant() {
-    return local;
-  }
-  function getParticipantIdForAudioTag(tag) {
-    if (!tag || !tag.id) return null;
-    if (tag.id === "userAudio") return null;
-    const patterns = [
-      /^remoteAudio_(.+)$/,
-      /^audio_(.+)$/,
-      /^(.+)_audio$/
-    ];
-    for (const re2 of patterns) {
-      const m2 = tag.id.match(re2);
-      if (m2) return m2[1];
-    }
-    return null;
-  }
-  startPolling();
-
-  // src/peer-state.js
-  var subscribers2 = /* @__PURE__ */ new Set();
-  var peersByPeerId = /* @__PURE__ */ new Map();
-  var peerIdByJitsiId = /* @__PURE__ */ new Map();
-  var LOCAL_IS_BOT = !!(typeof window !== "undefined" && window.__trussalIsBot);
-  var localPeer = {
-    peerId: null,
-    jitsiId: null,
-    displayName: null,
-    isLocal: true,
-    isBot: LOCAL_IS_BOT,
-    muted: false,
-    pattern: "",
-    effects: { distortion: false, noise: false, reverb: false },
-    playing: false,
-    rtt: null,
-    jitter: null
-  };
-  var ws = null;
-  var wantConnection = false;
-  var myPeerId = null;
-  var helloSent = false;
-  var pingTimer = null;
-  var reconnectTimer = null;
-  var reconnectDelay = 1e3;
-  var lastPongAt = 0;
-  var currentRoom = null;
-  var MAX_RECONNECT_DELAY = 15e3;
-  var PONG_TIMEOUT_MS = 8e3;
-  var rttSamples = [];
-  var localRtt = null;
-  var localJitter = null;
-  var pendingSends = [];
-  function emit2(event, payload) {
-    subscribers2.forEach((fn) => {
-      try {
-        fn(event, payload);
-      } catch (e30) {
-        console.warn("[peer-state] subscriber threw", e30);
-      }
-    });
-  }
-  function safeSend(msg) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      pendingSends.push(msg);
-      return;
-    }
-    try {
-      ws.send(JSON.stringify(msg));
-    } catch (e30) {
-      console.warn("[peer-state] send failed", e30);
-    }
-  }
-  function flushPending() {
-    while (pendingSends.length && ws && ws.readyState === WebSocket.OPEN) {
-      const msg = pendingSends.shift();
-      try {
-        ws.send(JSON.stringify(msg));
-      } catch (e30) {
-        pendingSends.unshift(msg);
-        break;
-      }
-    }
-  }
-  function sendHelloIfReady() {
-    if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
-    const local2 = getLocalParticipant();
-    if (!local2) return;
-    ws.send(JSON.stringify({
-      type: "hello",
-      jitsiId: local2.id,
-      displayName: local2.displayName,
-      isBot: LOCAL_IS_BOT
-    }));
-    helloSent = true;
-    flushPending();
-  }
-  function scheduleReconnect() {
-    if (!wantConnection || !currentRoom) return;
-    if (reconnectTimer) return;
-    const delay2 = reconnectDelay;
-    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      openSocket();
-    }, delay2);
-  }
-  function openSocket() {
-    if (!wantConnection || !currentRoom) return;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    if (ws) {
-      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-      try {
-        ws.close();
-      } catch (e30) {
-      }
-      ws = null;
-    }
-    if (pingTimer) {
-      clearInterval(pingTimer);
-      pingTimer = null;
-    }
-    helloSent = false;
-    peersByPeerId.clear();
-    peerIdByJitsiId.clear();
-    const loc = window.location;
-    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-    const url2 = `${proto}//${loc.host}/ws?room=${encodeURIComponent(currentRoom)}&role=player`;
-    let socket;
-    try {
-      socket = new WebSocket(url2);
-    } catch (e30) {
-      console.warn("[peer-state] WS construct failed", e30);
-      scheduleReconnect();
-      return;
-    }
-    ws = socket;
-    ws.onopen = () => {
-      reconnectDelay = 1e3;
-      lastPongAt = Date.now();
-      sendHelloIfReady();
-      if (pingTimer) clearInterval(pingTimer);
-      pingTimer = setInterval(() => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        if (Date.now() - lastPongAt > PONG_TIMEOUT_MS) {
-          try {
-            ws.close();
-          } catch (e30) {
-          }
-          return;
-        }
-        ws.send(JSON.stringify({ type: "ping", sentAt: Date.now() }));
-      }, 2e3);
-    };
-    ws.onclose = () => {
-      if (pingTimer) {
-        clearInterval(pingTimer);
-        pingTimer = null;
-      }
-      ws = null;
-      helloSent = false;
-      scheduleReconnect();
-    };
-    ws.onerror = () => {
-      try {
-        if (ws) ws.close();
-      } catch (e30) {
-      }
-    };
-    ws.onmessage = (evt) => {
-      let msg;
-      try {
-        msg = JSON.parse(evt.data);
-      } catch (e30) {
-        return;
-      }
-      handleMessage(msg);
-    };
-  }
-  function applyPatch(peer, patch) {
-    if (!patch) return;
-    if (typeof patch.pattern === "string") peer.pattern = patch.pattern;
-    if (patch.effects) peer.effects = {
-      distortion: !!patch.effects.distortion,
-      noise: !!patch.effects.noise,
-      reverb: !!patch.effects.reverb
-    };
-    if (typeof patch.playing === "boolean") peer.playing = patch.playing;
-    if (typeof patch.muted === "boolean") peer.muted = patch.muted;
-    if (typeof patch.rtt === "number" || patch.rtt === null) peer.rtt = patch.rtt;
-    if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
-  }
-  function defaultPeer(peerId) {
-    return {
-      peerId,
-      jitsiId: null,
-      displayName: null,
-      isBot: false,
-      muted: false,
-      pattern: "",
-      effects: { distortion: false, noise: false, reverb: false },
-      playing: false,
-      rtt: null,
-      jitter: null
-    };
-  }
-  function upsertPeer(record) {
-    const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
-    if (record.jitsiId !== void 0) existing.jitsiId = record.jitsiId;
-    if (record.displayName !== void 0) existing.displayName = record.displayName;
-    if (record.isBot !== void 0) existing.isBot = !!record.isBot;
-    applyPatch(existing, record);
-    peersByPeerId.set(existing.peerId, existing);
-    if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
-    return existing;
-  }
-  function handleMessage(msg) {
-    switch (msg.type) {
-      case "welcome":
-        myPeerId = msg.peerId || null;
-        sendHelloIfReady();
-        break;
-      case "roster":
-        if (Array.isArray(msg.peers)) {
-          for (const p of msg.peers) {
-            const peer = upsertPeer(p);
-            emit2("peer-upsert", peer);
-          }
-        }
-        break;
-      case "peer-join": {
-        if (!msg.peer) break;
-        const peer = upsertPeer(msg.peer);
-        emit2("peer-upsert", peer);
-        break;
-      }
-      case "peer-leave": {
-        const peer = peersByPeerId.get(msg.peerId);
-        if (peer) {
-          peersByPeerId.delete(peer.peerId);
-          if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
-          emit2("peer-leave", peer);
-        }
-        break;
-      }
-      case "peer-update": {
-        const peer = peersByPeerId.get(msg.peerId);
-        if (!peer) break;
-        applyPatch(peer, msg.patch);
-        emit2("peer-upsert", peer);
-        break;
-      }
-      case "remote-control": {
-        if (msg.action === "pattern" && typeof msg.code === "string") {
-          localPeer.pattern = msg.code;
-          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: msg.code } }));
-          emit2("peer-upsert", localPeer);
-        } else if (msg.action === "mute") {
-          localPeer.muted = !!msg.muted;
-          document.dispatchEvent(new CustomEvent("trussal-remote-mute", { detail: { muted: localPeer.muted } }));
-          emit2("peer-upsert", localPeer);
-        }
-        break;
-      }
-      case "pong": {
-        lastPongAt = Date.now();
-        const rtt = typeof msg.clientSentAt === "number" ? Date.now() - msg.clientSentAt : msg.rtt;
-        if (typeof rtt !== "number" || !isFinite(rtt) || rtt < 0) break;
-        rttSamples.push(rtt);
-        if (rttSamples.length > 5) rttSamples.shift();
-        const mean = rttSamples.reduce((a2, b) => a2 + b, 0) / rttSamples.length;
-        const variance = rttSamples.map((x2) => (x2 - mean) ** 2).reduce((a2, b) => a2 + b, 0) / rttSamples.length;
-        localRtt = rtt;
-        localJitter = Math.sqrt(variance);
-        localPeer.rtt = localRtt;
-        localPeer.jitter = localJitter;
-        safeSend({ type: "metrics", rtt: localRtt, jitter: localJitter });
-        emit2("local-metrics", { rtt: localRtt, jitter: localJitter });
-        emit2("peer-upsert", localPeer);
-        break;
-      }
-    }
-  }
-  subscribeParticipants((event, payload) => {
-    if (event === "local" || event === "local-update") {
-      if (payload && payload.id) {
-        localPeer.jitsiId = payload.id;
-        localPeer.displayName = payload.displayName;
-        emit2("peer-upsert", localPeer);
-      }
-      const room2 = getRoomNameFromUrl();
-      if (!room2) return;
-      if (room2 !== currentRoom) {
-        currentRoom = room2;
-        wantConnection = true;
-        openSocket();
-      } else if (event === "local-update" && ws && ws.readyState === WebSocket.OPEN) {
-        helloSent = false;
-        sendHelloIfReady();
-      } else if (!ws) {
-        wantConnection = true;
-        openSocket();
-      }
-    }
-  });
-  window.addEventListener("online", () => {
-    if (!wantConnection) return;
-    reconnectDelay = 1e3;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    openSocket();
-  });
-  function subscribePeerState(fn) {
-    subscribers2.add(fn);
-    if (localPeer.jitsiId) fn("peer-upsert", localPeer);
-    for (const p of peersByPeerId.values()) fn("peer-upsert", p);
-    if (localRtt != null) fn("local-metrics", { rtt: localRtt, jitter: localJitter });
-    return () => subscribers2.delete(fn);
-  }
-  function getPeerByJitsiId(jitsiId) {
-    if (!jitsiId) return null;
-    if (localPeer.jitsiId === jitsiId) return localPeer;
-    const peerId = peerIdByJitsiId.get(jitsiId);
-    return peerId ? peersByPeerId.get(peerId) || null : null;
-  }
-  function getLocalPeer() {
-    return localPeer;
-  }
-  function getAllPeers() {
-    const all2 = [];
-    const seenJitsiIds = /* @__PURE__ */ new Set();
-    if (localPeer.jitsiId) {
-      all2.push(localPeer);
-      seenJitsiIds.add(localPeer.jitsiId);
-    }
-    for (const p of peersByPeerId.values()) {
-      if (!p.jitsiId || seenJitsiIds.has(p.jitsiId)) continue;
-      seenJitsiIds.add(p.jitsiId);
-      all2.push(p);
-    }
-    return all2;
-  }
-  function sendLocalPattern(code2) {
-    localPeer.pattern = typeof code2 === "string" ? code2 : "";
-    safeSend({ type: "pattern", code: localPeer.pattern });
-    emit2("peer-upsert", localPeer);
-  }
-  function sendLocalEffects(effects) {
-    localPeer.effects = {
-      distortion: !!effects.distortion,
-      noise: !!effects.noise,
-      reverb: !!effects.reverb
-    };
-    safeSend({ type: "effects", state: localPeer.effects });
-    emit2("peer-upsert", localPeer);
-  }
-  function sendLocalPlaying(playing) {
-    localPeer.playing = !!playing;
-    safeSend({ type: playing ? "play" : "stop" });
-    emit2("peer-upsert", localPeer);
-  }
-  function sendRemotePattern(targetPeerId, code2) {
-    if (!targetPeerId) return;
-    const c2 = typeof code2 === "string" ? code2 : "";
-    safeSend({ type: "remote-control", targetPeerId, action: "pattern", code: c2 });
-    const peer = peersByPeerId.get(targetPeerId);
-    if (peer) {
-      peer.pattern = c2;
-      emit2("peer-upsert", peer);
-    }
-  }
-  function sendRemoteMute(targetPeerId, muted) {
-    if (!targetPeerId) return;
-    safeSend({ type: "remote-control", targetPeerId, action: "mute", muted: !!muted });
-  }
-
-  // src/latency-instrument.js
-  var audioCtx = null;
-  var realDestination = null;
-  var workletLoaded = null;
-  var reverbBuffer = null;
-  var masterStrudelGain = null;
-  var bootPromise = null;
-  var strudelFx = null;
-  var chains = /* @__PURE__ */ new Map();
-  var remoteSources = /* @__PURE__ */ new Map();
-  var pendingCaptures = /* @__PURE__ */ new Set();
-  var externalSources = /* @__PURE__ */ new Map();
-  var externalNodes = /* @__PURE__ */ new Map();
-  var audioRouted = /* @__PURE__ */ new Set();
-  var routingSubscribers = /* @__PURE__ */ new Set();
-  var jamulusMode = false;
-  var jamulasMutedTags = /* @__PURE__ */ new Set();
-  var audioTagObserver = null;
-  function notifyRoutingChange() {
-    routingSubscribers.forEach((fn) => {
-      try {
-        fn(new Set(audioRouted));
-      } catch (e30) {
-        console.warn("[latency] routing subscriber threw", e30);
-      }
-    });
-  }
-  function subscribeAudioRouting(fn) {
-    routingSubscribers.add(fn);
-    try {
-      fn(new Set(audioRouted));
-    } catch (e30) {
-    }
-    return () => routingSubscribers.delete(fn);
-  }
-  function applyJamulusMuteToAllTags() {
-    document.querySelectorAll("audio").forEach((tag) => {
-      if (!tag.srcObject) return;
-      if (tag.id === "userAudio") return;
-      const jitsiId = getParticipantIdForAudioTag(tag);
-      if (jitsiId && remoteSources.has(jitsiId)) return;
-      if (jamulasMutedTags.has(tag)) return;
-      tag.muted = true;
-      tag.volume = 0;
-      jamulasMutedTags.add(tag);
-    });
-  }
-  function setJamulusMode(enabled) {
-    if (enabled === jamulusMode) return;
-    jamulusMode = enabled;
-    if (enabled) {
-      applyJamulusMuteToAllTags();
-    } else {
-      for (const tag of jamulasMutedTags) {
-        tag.muted = false;
-        tag.volume = 1;
-      }
-      jamulasMutedTags.clear();
-    }
-  }
-  function ensureAudioContext() {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return Promise.reject(new Error("WebAudio not supported"));
-    if (!audioCtx) {
-      audioCtx = new Ctor({ sampleRate: 48e3 });
-      realDestination = audioCtx.destination;
-    }
-    if (!audioCtx.audioWorklet) return Promise.reject(new Error("AudioWorklet not supported"));
-    if (!workletLoaded) {
-      workletLoaded = audioCtx.audioWorklet.addModule("/latency-worklet-v2.js");
-    }
-    const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
-    return resume.then(() => workletLoaded);
-  }
-  async function loadReverbBuffer() {
-    if (reverbBuffer) return reverbBuffer;
-    try {
-      const resp = await fetch("trussal-impulse.wav");
-      const ct2 = resp.headers.get("content-type");
-      if (ct2 && ct2.includes("text/html")) throw new Error("impulse file returned HTML");
-      const ab = await resp.arrayBuffer();
-      reverbBuffer = await audioCtx.decodeAudioData(ab);
-    } catch (e30) {
-      console.warn("[latency] reverb buffer load failed", e30);
-      reverbBuffer = null;
-    }
-    return reverbBuffer;
-  }
-  function makeDistortionCurve(amount) {
-    const n2 = 512;
-    const curve2 = new Float32Array(n2);
-    for (let i = 0; i < n2; i++) {
-      const x2 = i * 2 / n2 - 1;
-      if (amount < 1e-3) {
-        curve2[i] = x2;
-        continue;
-      }
-      const k2 = amount * 24 + 1e-3;
-      curve2[i] = (Math.PI + k2) * x2 / (Math.PI + k2 * Math.abs(x2));
-    }
-    return curve2;
-  }
-  function updateStrudelFx(effects, rtt, jitter) {
-    if (!strudelFx || !audioCtx) return;
-    const e30 = effects || {};
-    const r2 = rtt || 0;
-    const j2 = jitter || 0;
-    const now = audioCtx.currentTime;
-    if (e30.distortion) {
-      const base = 0.2;
-      const extra = Math.max(0, Math.min(0.8, (r2 - 5) / 55 + j2 / 6));
-      strudelFx.distWS.curve = makeDistortionCurve(base + extra);
-    } else {
-      strudelFx.distWS.curve = null;
-    }
-    const targetNoise = e30.noise ? 0.12 : 0;
-    strudelFx.noiseGain.gain.cancelScheduledValues(now);
-    strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
-    if (e30.noise) {
-      const targetFreq = j2 < 1 ? 2e4 : j2 < 3 ? 200 : 1200;
-      strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
-      strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
-    }
-    if (strudelFx.convGain) {
-      const targetRev = e30.reverb ? 1.8 : 0;
-      strudelFx.convGain.gain.cancelScheduledValues(now);
-      strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
-    }
-  }
-  function computeEffectParams(effects, metrics) {
-    const rtt = metrics && typeof metrics.rtt === "number" ? metrics.rtt : 0;
-    const jitter = metrics && typeof metrics.jitter === "number" ? metrics.jitter : 0;
-    let glitchIntensity = 0;
-    if (effects && effects.distortion) {
-      const base = 0.05;
-      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
-      glitchIntensity = base + extra;
-    }
-    let noiseType = 0;
-    if (effects && effects.noise) {
-      if (jitter < 1) noiseType = 1;
-      else if (jitter < 3) noiseType = 2;
-      else noiseType = 3;
-    }
-    return { glitchIntensity, noiseType, reverb: !!(effects && effects.reverb) };
-  }
-  function applyParams(chain, params) {
-    if (!chain || !audioCtx) return;
-    const now = audioCtx.currentTime;
-    const glitch = chain.worklet.parameters.get("glitchIntensity");
-    if (glitch) glitch.setValueAtTime(params.glitchIntensity, now);
-    const noise2 = chain.worklet.parameters.get("noiseType");
-    if (noise2) noise2.setValueAtTime(params.noiseType, now);
-    const noiseAmt = chain.worklet.parameters.get("noiseAmount");
-    if (noiseAmt) {
-      const target = params.noiseType > 0 ? 1 : 0;
-      noiseAmt.cancelScheduledValues(now);
-      noiseAmt.linearRampToValueAtTime(target, now + 0.8);
-    }
-    if (chain.reverbOn === params.reverb) return;
-    chain.reverbOn = params.reverb;
-    try {
-      chain.limiter.disconnect();
-    } catch (e30) {
-    }
-    if (params.reverb && chain.reverb) {
-      chain.limiter.connect(chain.reverb);
-    } else {
-      chain.limiter.connect(realDestination);
-    }
-  }
-  async function buildChain(jitsiId) {
-    await ensureAudioContext();
-    await loadReverbBuffer();
-    const input = audioCtx.createGain();
-    input.channelCount = 2;
-    input.channelCountMode = "explicit";
-    Object.defineProperty(input, "maxChannelCount", { value: 2, configurable: true });
-    const worklet2 = new AudioWorkletNode(audioCtx, "latency-processor-v2", {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-      channelCount: 2,
-      channelCountMode: "explicit",
-      channelInterpretation: "speakers"
-    });
-    const limiter = audioCtx.createDynamicsCompressor();
-    limiter.threshold.value = -1;
-    let reverb = null;
-    let reverbGain = null;
-    if (reverbBuffer) {
-      reverb = audioCtx.createConvolver();
-      reverb.buffer = reverbBuffer;
-      reverbGain = audioCtx.createGain();
-      reverbGain.gain.value = 1.8;
-      reverb.connect(reverbGain);
-      reverbGain.connect(realDestination);
-    }
-    input.connect(worklet2);
-    worklet2.connect(limiter);
-    limiter.connect(realDestination);
-    return { jitsiId, input, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
-  }
-  async function ensureChain(jitsiId) {
-    if (!jitsiId) return null;
-    if (chains.has(jitsiId)) return chains.get(jitsiId);
-    const chain = await buildChain(jitsiId);
-    chains.set(jitsiId, chain);
-    const peer = getPeerByJitsiId(jitsiId);
-    if (peer) applyParams(chain, computeEffectParams(peer.effects, { rtt: peer.rtt, jitter: peer.jitter }));
-    return chain;
-  }
-  function destroyChain(jitsiId) {
-    const chain = chains.get(jitsiId);
-    if (!chain) return;
-    try {
-      chain.input.disconnect();
-    } catch (e30) {
-    }
-    try {
-      chain.worklet.disconnect();
-    } catch (e30) {
-    }
-    try {
-      chain.limiter.disconnect();
-    } catch (e30) {
-    }
-    if (chain.reverb) {
-      try {
-        chain.reverb.disconnect();
-      } catch (e30) {
-      }
-    }
-    if (chain.reverbGain) {
-      try {
-        chain.reverbGain.disconnect();
-      } catch (e30) {
-      }
-    }
-    chains.delete(jitsiId);
-  }
-  function captureJitsiAudio() {
-    if (!audioCtx) return;
-    const local2 = getLocalParticipant();
-    const localJitsiId = local2 ? local2.id : null;
-    const tags = document.querySelectorAll("audio");
-    tags.forEach(async (tag) => {
-      if (!tag.srcObject) return;
-      if (tag.id === "userAudio") return;
-      const jitsiId = getParticipantIdForAudioTag(tag);
-      if (!jitsiId) {
-        if (!tag.dataset.trussalUnmatched) {
-          console.warn("[latency] unmatched audio tag (no participant id)", { id: tag.id, srcTracks: tag.srcObject.getAudioTracks?.().length });
-          tag.dataset.trussalUnmatched = "1";
-        }
-        return;
-      }
-      if (localJitsiId && jitsiId === localJitsiId) return;
-      try {
-        const conf = window.APP && window.APP.conference;
-        const member = conf && typeof conf.getParticipantById === "function" ? conf.getParticipantById(jitsiId) : null;
-        if (member && typeof member.isHidden === "function" && member.isHidden()) return;
-      } catch (e30) {
-      }
-      if (!getPeerByJitsiId(jitsiId)) return;
-      if (remoteSources.has(jitsiId)) return;
-      if (pendingCaptures.has(jitsiId)) return;
-      pendingCaptures.add(jitsiId);
-      try {
-        const chain = await ensureChain(jitsiId);
-        if (!chain) return;
-        if (remoteSources.has(jitsiId)) return;
-        const source2 = audioCtx.createMediaStreamSource(tag.srcObject);
-        source2.connect(chain.input);
-        tag.muted = true;
-        tag.volume = 0;
-        const trackLabels = (tag.srcObject.getAudioTracks?.() || []).map((t) => t.label || "audio");
-        remoteSources.set(jitsiId, { tag, source: source2, label: trackLabels.join(",") || "mic" });
-        audioRouted.add(jitsiId);
-        console.log("[latency] routed Jitsi audio \u2192", jitsiId, "tracks:", trackLabels);
-        notifyRoutingChange();
-      } catch (e30) {
-        console.warn("[latency] failed to wire audio tag for", jitsiId, e30);
-      } finally {
-        pendingCaptures.delete(jitsiId);
-      }
-    });
-  }
-  function startAudioTagsObserver() {
-    if (audioTagObserver) return;
-    audioTagObserver = new MutationObserver(() => {
-      captureJitsiAudio();
-      if (jamulusMode) applyJamulusMuteToAllTags();
-    });
-    audioTagObserver.observe(document.body, { childList: true, subtree: true });
-    captureJitsiAudio();
-  }
-  subscribePeerState((event, payload) => {
-    if (event !== "peer-upsert") return;
-    if (!payload.jitsiId) return;
-    const chain = chains.get(payload.jitsiId);
-    if (chain) {
-      applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
-    } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
-      captureJitsiAudio();
-    }
-    if (payload.isLocal) {
-      updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
-    }
-  });
-  subscribeParticipants((event, payload) => {
-    if (event === "leave" && payload && payload.id) {
-      const src2 = remoteSources.get(payload.id);
-      if (src2) {
-        try {
-          src2.source.disconnect();
-        } catch (e30) {
-        }
-        if (src2.tag) {
-          src2.tag.muted = false;
-          src2.tag.volume = 1;
-        }
-        remoteSources.delete(payload.id);
-      }
-      const ext = externalSources.get(payload.id);
-      if (ext) {
-        try {
-          ext.source && ext.source.disconnect();
-        } catch (e30) {
-        }
-        try {
-          ext.stream.getTracks().forEach((t) => t.stop());
-        } catch (e30) {
-        }
-        externalSources.delete(payload.id);
-      }
-      if (audioRouted.delete(payload.id)) notifyRoutingChange();
-      destroyChain(payload.id);
-    }
-  });
-  async function bootAudioEngine() {
-    if (bootPromise) return bootPromise;
-    bootPromise = (async () => {
-      await ensureAudioContext();
-      await loadReverbBuffer();
-      startAudioTagsObserver();
-      const local2 = getLocalParticipant();
-      if (local2) await ensureChain(local2.id);
-      return { audioCtx, realDestination };
-    })();
-    return bootPromise;
-  }
-  async function ensureMasterStrudelInput() {
-    await bootAudioEngine();
-    await loadReverbBuffer();
-    if (!masterStrudelGain) {
-      masterStrudelGain = audioCtx.createGain();
-      masterStrudelGain.channelCount = 2;
-      masterStrudelGain.channelCountMode = "explicit";
-      Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
-      masterStrudelGain.gain.value = 1;
-      const distWS = audioCtx.createWaveShaper();
-      distWS.oversample = "4x";
-      distWS.curve = null;
-      masterStrudelGain.connect(distWS);
-      distWS.connect(realDestination);
-      let convolver = null, convGain = null;
-      if (reverbBuffer) {
-        convolver = audioCtx.createConvolver();
-        convolver.buffer = reverbBuffer;
-        convGain = audioCtx.createGain();
-        convGain.gain.value = 0;
-        masterStrudelGain.connect(convolver);
-        convolver.connect(convGain);
-        convGain.connect(realDestination);
-      }
-      const bufLen = Math.floor(audioCtx.sampleRate * 2);
-      const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
-      const nd = noiseBuf.getChannelData(0);
-      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
-      const noiseSrc = audioCtx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-      noiseSrc.loop = true;
-      const noiseFilter = audioCtx.createBiquadFilter();
-      noiseFilter.type = "lowpass";
-      noiseFilter.frequency.value = 2e4;
-      const noiseGain = audioCtx.createGain();
-      noiseGain.gain.value = 0;
-      noiseSrc.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(realDestination);
-      noiseSrc.start();
-      strudelFx = { distWS, noiseFilter, noiseGain, convGain };
-    }
-    return { audioCtx, masterStrudelGain, realDestination };
-  }
-  async function getStrudelAudioContext() {
-    const { audioCtx: ctx, masterStrudelGain: out, realDestination: rd } = await ensureMasterStrudelInput();
-    return { audioCtx: ctx, destinationNode: out, realDestination: rd };
-  }
-  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external", { monitorLocally = true } = {}) {
-    if (!jitsiId || !stream) return null;
-    await bootAudioEngine();
-    const chain = await ensureChain(jitsiId);
-    if (!chain) return null;
-    const existing = externalSources.get(jitsiId);
-    if (existing) {
-      try {
-        existing.source && existing.source.disconnect();
-      } catch (e30) {
-      }
-      try {
-        existing.stream.getTracks().forEach((t) => t.stop());
-      } catch (e30) {
-      }
-    }
-    let source2 = null;
-    if (monitorLocally) {
-      source2 = audioCtx.createMediaStreamSource(stream);
-      source2.connect(chain.input);
-    }
-    externalSources.set(jitsiId, { source: source2, stream, label: label2 });
-    audioRouted.add(jitsiId);
-    console.log("[latency] attached external stream \u2192", jitsiId, label2, monitorLocally ? "(monitored)" : "(room only)", "tracks:", stream.getAudioTracks().map((t) => t.label));
-    notifyRoutingChange();
-    return source2;
-  }
-  function detachExternalStreamForPeer(jitsiId) {
-    const ext = externalSources.get(jitsiId);
-    if (!ext) return;
-    try {
-      ext.source && ext.source.disconnect();
-    } catch (e30) {
-    }
-    try {
-      ext.stream.getTracks().forEach((t) => t.stop());
-    } catch (e30) {
-    }
-    externalSources.delete(jitsiId);
-    if (!remoteSources.has(jitsiId)) {
-      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
-    }
-  }
-  function getExternalStreamLabel(jitsiId) {
-    const ext = externalSources.get(jitsiId);
-    return ext ? ext.label : null;
-  }
-  var jitsiMixState = null;
-  function findLocalJitsiAudioTrack() {
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf) return null;
-      if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === "function") return conf.localAudioTrack;
-      if (typeof conf.getLocalAudioTrack === "function") {
-        const t = conf.getLocalAudioTrack();
-        if (t) return t;
-      }
-      if (conf._room && typeof conf._room.getLocalAudioTrack === "function") {
-        const t = conf._room.getLocalAudioTrack();
-        if (t) return t;
-      }
-      if (Array.isArray(conf._localTracks)) {
-        const t = conf._localTracks.find((t2) => t2 && (t2.isAudioTrack?.() || t2.type === "audio"));
-        if (t) return t;
-      }
-    } catch (e30) {
-    }
-    return null;
-  }
-  function findOutgoingAudioSender() {
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf) return null;
-      const pcWrapper = conf._room?.rtc?.peerConnections;
-      if (pcWrapper) {
-        const iter2 = pcWrapper.values && pcWrapper.values() || pcWrapper;
-        for (const tpc of iter2) {
-          const pc = tpc?.peerconnection;
-          if (pc && pc.getSenders) {
-            const sender = pc.getSenders().find((s2) => s2.track && s2.track.kind === "audio");
-            if (sender) return sender;
-          }
-        }
-      }
-    } catch (e30) {
-    }
-    return null;
-  }
-  var JitsiMicMixEffect = class {
-    constructor(audioCtx2, externalStream) {
-      this._audioCtx = audioCtx2;
-      this._externalStream = externalStream;
-      this._dest = audioCtx2.createMediaStreamDestination();
-      this._micSource = null;
-      this._extSource = null;
-    }
-    isEnabled() {
-      return true;
-    }
-    startEffect(stream) {
-      try {
-        this._micSource = this._audioCtx.createMediaStreamSource(stream);
-        this._micSource.connect(this._dest);
-      } catch (e30) {
-        console.warn("[latency] mix effect: mic source failed", e30);
-      }
-      try {
-        this._extSource = this._audioCtx.createMediaStreamSource(this._externalStream);
-        this._extSource.connect(this._dest);
-      } catch (e30) {
-        console.warn("[latency] mix effect: external source failed", e30);
-      }
-      return this._dest.stream;
-    }
-    stopEffect() {
-      try {
-        if (this._micSource) this._micSource.disconnect();
-      } catch (e30) {
-      }
-      try {
-        if (this._extSource) this._extSource.disconnect();
-      } catch (e30) {
-      }
-    }
-  };
-  async function propagateViaSetEffect(stream) {
-    const track = findLocalJitsiAudioTrack();
-    if (!track || typeof track.setEffect !== "function") return false;
-    const effect = new JitsiMicMixEffect(audioCtx, stream);
-    try {
-      await track.setEffect(effect);
-      jitsiMixState = { track, effect };
-      console.log("[latency] propagation: setEffect on local audio track");
-      return true;
-    } catch (e30) {
-      console.warn("[latency] setEffect failed", e30);
-      return false;
-    }
-  }
-  async function propagateViaReplaceTrack(stream) {
-    const sender = findOutgoingAudioSender();
-    if (!sender || typeof sender.replaceTrack !== "function") return false;
-    const dest = audioCtx.createMediaStreamDestination();
-    let micSource = null;
-    if (sender.track) {
-      try {
-        const micStream = new MediaStream([sender.track]);
-        micSource = audioCtx.createMediaStreamSource(micStream);
-        micSource.connect(dest);
-      } catch (e30) {
-        console.warn("[latency] replaceTrack: cannot tap mic", e30);
-      }
-    }
-    let extSource = null;
-    try {
-      extSource = audioCtx.createMediaStreamSource(stream);
-      extSource.connect(dest);
-    } catch (e30) {
-      console.warn("[latency] replaceTrack: ext source failed", e30);
-    }
-    const mixedTrack = dest.stream.getAudioTracks()[0];
-    if (!mixedTrack) return false;
-    const originalTrack = sender.track;
-    try {
-      await sender.replaceTrack(mixedTrack);
-      jitsiMixState = {
-        replacedSender: sender,
-        originalTrack,
-        mixedTrack,
-        _disposers: [
-          () => {
-            try {
-              micSource && micSource.disconnect();
-            } catch (e30) {
-            }
-          },
-          () => {
-            try {
-              extSource && extSource.disconnect();
-            } catch (e30) {
-            }
-          }
-        ]
-      };
-      console.log("[latency] propagation: replaceTrack on outgoing sender");
-      return true;
-    } catch (e30) {
-      console.warn("[latency] replaceTrack failed", e30);
-      return false;
-    }
-  }
-  async function propagateExternalStreamToRoom(stream) {
-    if (!stream) return false;
-    await bootAudioEngine();
-    if (jitsiMixState) await stopPropagatingExternalStream();
-    if (await propagateViaSetEffect(stream)) return true;
-    if (await propagateViaReplaceTrack(stream)) return true;
-    console.warn("[latency] could not propagate external stream \u2014 no compatible Jitsi audio surface");
-    return false;
-  }
-  async function stopPropagatingExternalStream() {
-    if (!jitsiMixState) return;
-    const s2 = jitsiMixState;
-    jitsiMixState = null;
-    if (s2.track && typeof s2.track.setEffect === "function") {
-      try {
-        await s2.track.setEffect(void 0);
-      } catch (e30) {
-        console.warn("[latency] setEffect undo failed", e30);
-      }
-    } else if (s2.replacedSender) {
-      try {
-        if (s2.originalTrack) await s2.replacedSender.replaceTrack(s2.originalTrack);
-      } catch (e30) {
-        console.warn("[latency] replaceTrack restore failed", e30);
-      }
-      if (Array.isArray(s2._disposers)) s2._disposers.forEach((fn) => fn());
-    }
-    console.log("[latency] external propagation stopped");
-  }
-  function isPropagatingToRoom() {
-    return !!jitsiMixState;
-  }
-  async function attachNodeToChain(jitsiId, node, label2 = "relay") {
-    if (!jitsiId || !node) return;
-    await bootAudioEngine();
-    const chain = await ensureChain(jitsiId);
-    if (!chain) return;
-    const existing = externalNodes.get(jitsiId);
-    if (existing) {
-      try {
-        existing.node.disconnect(chain.input);
-      } catch (_3) {
-      }
-    }
-    node.connect(chain.input);
-    externalNodes.set(jitsiId, { node, label: label2 });
-    audioRouted.add(jitsiId);
-    console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
-    notifyRoutingChange();
-  }
-  function detachNodeFromChain(jitsiId) {
-    const entry = externalNodes.get(jitsiId);
-    if (!entry) return;
-    const chain = chains.get(jitsiId);
-    if (chain) {
-      try {
-        entry.node.disconnect(chain.input);
-      } catch (_3) {
-      }
-    }
-    externalNodes.delete(jitsiId);
-    if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
-      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
-    }
-    console.log("[latency] detached WebAudio node \u2190", jitsiId);
-  }
-  function getExternalNodeLabel(jitsiId) {
-    return externalNodes.get(jitsiId)?.label ?? null;
-  }
-  async function listAudioInputDevices() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
-    let devices = await navigator.mediaDevices.enumerateDevices();
-    let inputs = devices.filter((d) => d.kind === "audioinput");
-    const labelsMissing = inputs.length && inputs.every((d) => !d.label);
-    if (labelsMissing) {
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-        probe.getTracks().forEach((t) => t.stop());
-        devices = await navigator.mediaDevices.enumerateDevices();
-        inputs = devices.filter((d) => d.kind === "audioinput");
-      } catch (e30) {
-      }
-    }
-    return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
-  }
-
-  // src/jamulus.js
-  var JAMULUS_ROOM_MAP = {
-    "0": { host: "jamulus.trussal.com", port: 22e3 },
-    "1": { host: "jamulus.trussal.com", port: 22001 },
-    "2": { host: "jamulus.trussal.com", port: 22002 },
-    "3": { host: "jamulus.trussal.com", port: 22003 },
-    "4": { host: "jamulus.trussal.com", port: 22004 },
-    "5": { host: "jamulus.trussal.com", port: 22005 },
-    "6": { host: "jamulus.trussal.com", port: 22006 },
-    "7": { host: "jamulus.trussal.com", port: 22007 },
-    "8": { host: "jamulus.trussal.com", port: 22008 },
-    "9": { host: "jamulus.trussal.com", port: 22009 },
-    "10": { host: "jamulus.trussal.com", port: 22010 }
-  };
-  function addJamulusWelcomePanel() {
-    const body = document.body;
-    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
-      return;
-    }
-    if (document.getElementById("jamulus-welcome-panel")) return;
-    const container = document.querySelector("#welcome_page .welcome-page-content") || document.querySelector(".welcome-page-content");
-    if (!container) return;
-    const panel = document.createElement("div");
-    panel.id = "jamulus-welcome-panel";
-    panel.className = "jamulus-panel";
-    const items = Object.entries(JAMULUS_ROOM_MAP).map(
-      ([room2, info]) => `<li><strong>${room2}</strong> \u2192 ${info.host}:${info.port}</li>`
-    ).join("");
-    panel.innerHTML = `
-      <h3>Jamulus rooms</h3>
-      <p>These meeting links have dedicated Jamulus servers:</p>
-      <ul>${items}</ul>
-    `;
-    container.prepend(panel);
-  }
-  function startJamulusBannerPolling() {
-    attachJamulusBanner();
-    setInterval(attachJamulusBanner, 3e3);
-  }
-  function attachJamulusBanner() {
-    const room2 = getRoomNameFromUrl();
-    if (!room2) return;
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    const entry = mapping[room2];
-    if (!entry) return;
-    if (document.getElementById("jamulus-info-banner")) return;
-    const banner = document.createElement("div");
-    banner.id = "jamulus-info-banner";
-    banner.textContent = `Jamulus: ${entry.host}:${entry.port} (for low-latency audio)`;
-    Object.assign(banner.style, {
-      position: "absolute",
-      bottom: "10px",
-      right: "10px",
-      zIndex: 9999,
-      background: "rgba(0, 0, 0, 0.7)",
-      color: "#fff",
-      padding: "8px 12px",
-      borderRadius: "4px",
-      fontFamily: "sans-serif",
-      fontSize: "12px"
-    });
-    document.body.appendChild(banner);
-  }
-  function startJamulusWelcomePanel() {
-    addJamulusWelcomePanel();
-  }
-  function getRoomNameFromUrl() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const roomName = parts.length ? parts[parts.length - 1] : null;
-    return roomName;
-  }
-  function renderJamulusWelcomePanelAndBanner() {
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    if (!Object.keys(mapping).length) {
-      return;
-    }
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startJamulusWelcomePanel();
-      startJamulusBannerPolling();
-    } else {
-      window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
-      window.addEventListener("DOMContentLoaded", startJamulusBannerPolling);
-    }
-  }
-  var _relayWs = null;
-  var _relayWorklet = null;
-  var _relayWorkletLoaded = false;
-  async function ensureRelayWorklet(audioCtx2) {
-    if (!_relayWorkletLoaded) {
-      await audioCtx2.audioWorklet.addModule("/jamulus-relay-player.js");
-      _relayWorkletLoaded = true;
-    }
-    return new AudioWorkletNode(audioCtx2, "jamulus-relay-processor", {
-      numberOfOutputs: 1,
-      outputChannelCount: [2]
-    });
-  }
-  async function connectJamulusRelay() {
-    if (_relayWs) return;
-    const local2 = getLocalPeer();
-    if (!local2 || !local2.jitsiId) throw new Error("No local peer identity yet");
-    const room2 = getRoomNameFromUrl();
-    if (!room2) throw new Error("Not in a Jitsi room");
-    const { audioCtx: audioCtx2 } = await bootAudioEngine();
-    if (audioCtx2.state === "suspended") await audioCtx2.resume();
-    const loc = window.location;
-    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-    const url2 = `${proto}//${loc.host}/jamulus-audio?room=${encodeURIComponent(room2)}`;
-    const ws3 = new WebSocket(url2);
-    ws3.binaryType = "arraybuffer";
-    _relayWs = ws3;
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("relay connect timeout")), 2e4);
-      const onMsg = (evt) => {
-        if (typeof evt.data !== "string") return;
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "relay-ready") {
-          clearTimeout(timeout);
-          ws3.removeEventListener("message", onMsg);
-          resolve();
-        } else if (msg.type === "error") {
-          clearTimeout(timeout);
-          ws3.removeEventListener("message", onMsg);
-          reject(new Error(msg.message || "relay error"));
-        }
-      };
-      ws3.addEventListener("message", onMsg);
-      ws3.onerror = () => {
-        clearTimeout(timeout);
-        reject(new Error("WebSocket error"));
-      };
-      ws3.onclose = () => {
-        clearTimeout(timeout);
-        reject(new Error("WebSocket closed"));
-      };
-    });
-    const worklet2 = await ensureRelayWorklet(audioCtx2);
-    _relayWorklet = worklet2;
-    ws3.onmessage = (evt) => {
-      if (typeof evt.data === "string") {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "relay-stopped") disconnectJamulusRelay();
-        return;
-      }
-      worklet2.port.postMessage(evt.data, [evt.data]);
-    };
-    ws3.onclose = () => {
-      console.log("[jamulus] relay WebSocket closed");
-      disconnectJamulusRelay();
-    };
-    await attachNodeToChain(local2.jitsiId, worklet2, "Jamulus relay");
-    setJamulusMode(true);
-    console.log("[jamulus] relay connected, room", room2);
-  }
-  function disconnectJamulusRelay() {
-    if (_relayWs) {
-      _relayWs.onmessage = null;
-      _relayWs.onclose = null;
-      try {
-        _relayWs.close();
-      } catch (_3) {
-      }
-      _relayWs = null;
-    }
-    if (_relayWorklet) {
-      try {
-        _relayWorklet.disconnect();
-      } catch (_3) {
-      }
-      _relayWorklet = null;
-    }
-    const local2 = getLocalPeer();
-    if (local2 && local2.jitsiId) {
-      detachNodeFromChain(local2.jitsiId);
-      setJamulusMode(false);
-    }
-    console.log("[jamulus] relay disconnected");
-  }
-  function isRelayConnected() {
-    return !!_relayWs && _relayWs.readyState === WebSocket.OPEN;
-  }
+  // src/index.js
+  init_jamulus();
 
   // src/welcome-page.js
   function renderTrussalWelcomeOverlay() {
@@ -37667,11 +49073,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function startWelcomeOverlayPoll() {
     let tries = 0;
     const maxTries = 40;
-    const timer = setInterval(function() {
+    const timer3 = setInterval(function() {
       renderTrussalWelcomeOverlay();
       tries += 1;
       if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
-        clearInterval(timer);
+        clearInterval(timer3);
         console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
       }
     }, 250);
@@ -37686,9 +49092,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     allCandidates.push(...candidates);
     for (const el of allCandidates) {
       if (el.dataset.trussalJoinPatched === "1") continue;
-      const text = (el.textContent || "").trim();
+      const text2 = (el.textContent || "").trim();
       const aria = (el.getAttribute("aria-label") || "").trim();
-      if (text === "Join meeting" || aria === "Join meeting") {
+      if (text2 === "Join meeting" || aria === "Join meeting") {
         const newLabel = "Join session";
         el.textContent = newLabel;
         el.setAttribute("aria-label", newLabel);
@@ -37856,16 +49262,94 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function renderAudioConfigCheck() {
     window.trussalAudioConfigCheck = runCheck;
     let tries = 0;
-    const tick2 = () => {
+    const tick3 = () => {
       if (runCheck()) return;
       if (++tries > 10) {
         console.warn("[trussal] audio config guard: window.config never appeared");
         return;
       }
-      setTimeout(tick2, 500);
+      setTimeout(tick3, 500);
     };
-    tick2();
+    tick3();
   }
+
+  // src/index.js
+  init_peer_state();
+
+  // src/bridges/XMPPtoO2Mapper.js
+  var SERVICE_PREFIX = "/perf/";
+  function serviceNameForIndex(roomIndex) {
+    if (roomIndex == null || !/^\d+[a-z]*$/.test(String(roomIndex))) return null;
+    return `${SERVICE_PREFIX}${roomIndex}`;
+  }
+  function indexForServiceName(serviceName) {
+    if (typeof serviceName !== "string" || !serviceName.startsWith(SERVICE_PREFIX)) return null;
+    const rest = serviceName.slice(SERVICE_PREFIX.length);
+    const idx = rest.split("/")[0];
+    return /^\d+[a-z]*$/.test(idx) ? idx : null;
+  }
+  var XMPPtoO2Mapper = class {
+    constructor() {
+      this._indexByJitsiId = /* @__PURE__ */ new Map();
+      this._jitsiIdByIndex = /* @__PURE__ */ new Map();
+    }
+    register(jitsiId, roomIndex) {
+      if (!jitsiId || roomIndex == null) return false;
+      const idx = String(roomIndex);
+      if (!/^\d+[a-z]*$/.test(idx)) return false;
+      const prevIdx = this._indexByJitsiId.get(jitsiId);
+      if (prevIdx !== void 0 && prevIdx !== idx) this._jitsiIdByIndex.delete(prevIdx);
+      const prevJid = this._jitsiIdByIndex.get(idx);
+      if (prevJid !== void 0 && prevJid !== jitsiId) this._indexByJitsiId.delete(prevJid);
+      this._indexByJitsiId.set(jitsiId, idx);
+      this._jitsiIdByIndex.set(idx, jitsiId);
+      return true;
+    }
+    unregister(jitsiId) {
+      const idx = this._indexByJitsiId.get(jitsiId);
+      if (idx === void 0) return false;
+      this._indexByJitsiId.delete(jitsiId);
+      this._jitsiIdByIndex.delete(idx);
+      return true;
+    }
+    roomIndexFor(jitsiId) {
+      return this._indexByJitsiId.get(jitsiId) ?? null;
+    }
+    jitsiIdForIndex(roomIndex) {
+      return this._jitsiIdByIndex.get(String(roomIndex)) ?? null;
+    }
+    serviceNameFor(jitsiId) {
+      const idx = this.roomIndexFor(jitsiId);
+      return idx == null ? null : serviceNameForIndex(idx);
+    }
+    jitsiIdForService(serviceName) {
+      const idx = indexForServiceName(serviceName);
+      return idx == null ? null : this.jitsiIdForIndex(idx);
+    }
+    size() {
+      return this._indexByJitsiId.size;
+    }
+  };
+  var roomMapper = new XMPPtoO2Mapper();
+  function syncMapperFromPeerEvent(mapper, event, peer) {
+    if (!peer) return;
+    if (event === "peer-upsert" && peer.jitsiId && peer.roomIndex != null) {
+      mapper.register(peer.jitsiId, peer.roomIndex);
+    } else if (event === "peer-leave" && peer.jitsiId) {
+      mapper.unregister(peer.jitsiId);
+    }
+  }
+
+  // src/studio.js
+  init_jamulus();
+  init_participants();
+  init_peer_state();
+
+  // src/strudel.js
+  init_latency_instrument();
+  init_peer_state();
+  init_Metaprogrammer();
+  init_participants();
 
   // src/user-samples.js
   var DB_NAME = "samples";
@@ -37982,6 +49466,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
 
   // src/hydra-video.js
+  init_peer_state();
   var MODE_SPLIT = "split";
   var MODE_DIRECT = "direct";
   var _mode = MODE_SPLIT;
@@ -38070,22 +49555,22 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       }
     }
   }
-  function _updateParams(effects, rtt, jitter) {
+  function _updateParams(effects2, rtt, jitter) {
     const r2 = rtt || 0;
     const j2 = jitter || 0;
     _hpCutoff = 0;
-    if (effects?.distortion) {
+    if (effects2?.distortion) {
       const base = 0.1;
       const extra = Math.max(0, Math.min(1 - base, (r2 - 5) / 55 + j2 / 6));
       _hpCutoff = base + extra;
     }
     _noiseAmt = 0;
-    if (effects?.noise) {
+    if (effects2?.noise) {
       _noiseAmt = Math.max(0.15, Math.min(1, 0.15 + j2 / 4 + r2 / 150));
     }
     const prevStretch = _stretchAmt;
     _stretchAmt = 0;
-    if (effects?.reverb) {
+    if (effects2?.reverb) {
       _stretchAmt = Math.max(0.04, Math.min(0.35, 0.04 + j2 / 8 + r2 / 300));
     }
     if (_stretchAmt !== prevStretch) {
@@ -38341,16 +49826,16 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var sliderValues = {};
   var activeSliders = {};
   var _sliderRef = null;
-  function sliderWithID(id2, value2, min, max, step) {
-    if (min == null) min = 0;
-    if (max == null) max = 1;
+  function sliderWithID(id3, value2, min2, max2, step) {
+    if (min2 == null) min2 = 0;
+    if (max2 == null) max2 = 1;
     const floatVal = parseFloat(value2);
-    if (!(id2 in sliderValues)) sliderValues[id2] = floatVal;
-    activeSliders[id2] = { min, max, step: step != null ? step : (max - min) / 100, defaultValue: floatVal };
-    return _sliderRef(() => sliderValues[id2]);
+    if (!(id3 in sliderValues)) sliderValues[id3] = floatVal;
+    activeSliders[id3] = { min: min2, max: max2, step: step != null ? step : (max2 - min2) / 100, defaultValue: floatVal };
+    return _sliderRef(() => sliderValues[id3]);
   }
-  function updateSliderValue(id2, value2) {
-    sliderValues[id2] = parseFloat(value2);
+  function updateSliderValue(id3, value2) {
+    sliderValues[id3] = parseFloat(value2);
   }
   function computePeerStrudelParams(peer) {
     const rtt = typeof peer.rtt === "number" ? peer.rtt : 0;
@@ -38373,11 +49858,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       reverb: !!(peer.effects && peer.effects.reverb)
     };
   }
-  function effectChainFor(params) {
+  function effectChainFor(params2) {
     let chain = "";
-    if (params.glitchIntensity > 0) chain += `.distort(${params.glitchIntensity.toFixed(3)})`;
-    if (params.crushBits > 0) chain += `.crush(${params.crushBits})`;
-    if (params.reverb) chain += `.room(2)`;
+    if (params2.glitchIntensity > 0) chain += `.distort(${params2.glitchIntensity.toFixed(3)})`;
+    if (params2.crushBits > 0) chain += `.crush(${params2.crushBits})`;
+    if (params2.reverb) chain += `.room(2)`;
     return chain;
   }
   function splitDeclAndExpr(code2) {
@@ -38436,12 +49921,15 @@ $: (${split.expr})${fx}`;
   }
   function buildPeerBlock(peer) {
     if (peer.isBot) return null;
-    let code2 = (peer.pattern || "").replace(/[\s;]+$/g, "");
+    const netCycles = isNetCyclesActive();
+    const source2 = netCycles ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
+    let code2 = (source2 || "").replace(/[\s;]+$/g, "");
     if (!code2 || !peer.playing) return null;
     code2 = code2.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
     if (!code2) return null;
-    const params = computePeerStrudelParams(peer);
-    const fx = peer.isLocal ? "" : effectChainFor(params);
+    const params2 = computePeerStrudelParams(peer);
+    let fx = peer.isLocal ? "" : effectChainFor(params2);
+    if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
     if (/^\s*await\s+initHydra\s*\(/.test(code2)) {
       const blankMatch = code2.match(/\n\n+/);
       if (!blankMatch) {
@@ -38604,7 +50092,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       };
       await initStrudel2({ audioContext: audioCtx2, prebake: runPrebake });
       _sliderRef = mod2.ref;
-      await mod2.evalScope({ sliderWithID });
+      const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
+      await mod2.evalScope({ sliderWithID, _ncGate });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -38631,7 +50120,7 @@ ${next}`;
         const preamble = next.slice(0, blankIdx).replace(/\.out\s*\(\s*o0\s*\)/g, ".out(o1)").replace(/\.out\s*\(\s*\)/g, ".out(o1)");
         next = preamble + next.slice(blankIdx);
       }
-      next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR,()=>window._hvG,()=>window._hvB).out(o0)";
+      next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)";
     }
     if (next === lastEvaluated) return;
     lastEvaluated = next;
@@ -38650,7 +50139,7 @@ ${next}`;
       anyPlaying = true;
       resetHydraSync();
       document.dispatchEvent(new CustomEvent("trussal-sliders-updated", {
-        detail: Object.entries(activeSliders).map(([id2, cfg]) => ({ id: id2, value: sliderValues[id2], ...cfg }))
+        detail: Object.entries(activeSliders).map(([id3, cfg]) => ({ id: id3, value: sliderValues[id3], ...cfg }))
       }));
     } catch (e30) {
       console.warn("[strudel] evaluate failed", e30, "\nprogram:", next);
@@ -38700,6 +50189,95 @@ ${next}`;
   document.addEventListener("trussal-hydra-mode-change", () => {
     if (strudelBoot) rebuildAndEvaluate();
   });
+  document.addEventListener("trussal-netcycles-mode", () => {
+    if (strudelBoot) rebuildAndEvaluate();
+  });
+  document.addEventListener("trussal-netcycles-apply", () => {
+    if (strudelBoot) rebuildAndEvaluate();
+  });
+
+  // src/facial-gesture.js
+  init_peer_state();
+
+  // src/editor-router-core.js
+  function classifyEditor(classNames) {
+    const set2 = new Set(classNames || []);
+    if (set2.has("nc-code")) return "netcycles";
+    if (set2.has("ts-code")) return "strudel";
+    return null;
+  }
+  var NC_BTN_MARKER = " // netcycles-btn";
+  function toggleNetCyclesSnippet(text2, snippet) {
+    const cur = text2 || "";
+    const active2 = `
+${snippet}${NC_BTN_MARKER}`;
+    const commented = `
+// ${snippet}${NC_BTN_MARKER}`;
+    if (cur.includes(commented)) return cur.replace(commented, active2);
+    if (cur.includes(active2)) return cur.replace(active2, commented);
+    return cur + active2;
+  }
+
+  // src/editor-router.js
+  init_Metaprogrammer();
+  init_peer_state();
+  var lastKind = "strudel";
+  var tracking = false;
+  function trackEditorFocus() {
+    if (tracking || typeof document === "undefined") return;
+    tracking = true;
+    document.addEventListener("focusin", (e30) => {
+      const kind = e30.target && e30.target.classList ? classifyEditor(e30.target.classList) : null;
+      if (kind) lastKind = kind;
+    });
+  }
+  function strudelTextarea() {
+    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)");
+  }
+  function netcyclesTextarea() {
+    return document.querySelector("#trussal-studio-overlay .nc-code");
+  }
+  function readActiveEditor() {
+    if (lastKind === "netcycles") {
+      const sync = ensureMetaprogramSync();
+      return sync.getText() || getProgramText() || "";
+    }
+    const ta = strudelTextarea();
+    return ta ? ta.value : getLocalPeer()?.pattern ?? "";
+  }
+  function writeActiveEditor(code2, { modality = "head-cursor" } = {}) {
+    if (lastKind === "netcycles") {
+      const sync = ensureMetaprogramSync();
+      sync.setText(code2, "local");
+      const ta2 = netcyclesTextarea();
+      if (ta2 && ta2.value !== code2) ta2.value = code2;
+      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: code2, modality } }));
+      return;
+    }
+    const ta = strudelTextarea();
+    if (ta) ta.value = code2;
+    sendLocalPattern(code2);
+  }
+  function applyIfNetCycles() {
+    if (lastKind !== "netcycles") return null;
+    const errors = applyProgramText(readActiveEditor());
+    return { kind: "netcycles", errors };
+  }
+  function applyMetaprogramNow() {
+    return applyProgramText(readNetCyclesText());
+  }
+  function toggleNetCyclesButtonCode(snippet) {
+    const next = toggleNetCyclesSnippet(readNetCyclesText(), snippet);
+    const sync = ensureMetaprogramSync();
+    sync.setText(next, "local");
+    const ta = netcyclesTextarea();
+    if (ta) ta.value = next;
+    applyProgramText(next);
+  }
+  function readNetCyclesText() {
+    const sync = ensureMetaprogramSync();
+    return sync.getText() || getProgramText() || "";
+  }
 
   // src/facial-gesture.js
   var WASM_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
@@ -38748,17 +50326,27 @@ ${next}`;
     } catch {
     }
     globalThis.StrudelButton = StrudelButton;
+    class NetCyclesButton extends HTMLButtonElement {
+      constructor(code2) {
+        super();
+        this._netCyclesCode = code2;
+      }
+    }
+    try {
+      customElements.define("net-cycles-button", NetCyclesButton, { extends: "button" });
+    } catch {
+    }
+    globalThis.NetCyclesButton = NetCyclesButton;
   }
+  trackEditorFocus();
   function getCode() {
-    const ta = document.querySelector("#trussal-studio-overlay .ts-code");
-    return ta ? ta.value : getLocalPeer()?.pattern ?? "";
+    return readActiveEditor();
   }
   function setCode(code2) {
-    const ta = document.querySelector("#trussal-studio-overlay .ts-code");
-    if (ta) ta.value = code2;
-    sendLocalPattern(code2);
+    writeActiveEditor(code2, { modality: "head-cursor" });
   }
   async function evaluate2() {
+    if (applyIfNetCycles()) return;
     try {
       sendLocalPattern(getCode());
       await bootStrudelOnUserGesture();
@@ -38804,7 +50392,7 @@ ${next}`;
     }
     return configs;
   }
-  function applyRegexMutation(code2, pattern2, replacement) {
+  function applyRegexMutation2(code2, pattern2, replacement) {
     try {
       return code2.replace(new RegExp(pattern2, "g"), replacement ?? "");
     } catch {
@@ -38813,14 +50401,14 @@ ${next}`;
   }
   function toggleButtonCode(code2) {
     const cur = getCode();
-    const active = `
+    const active2 = `
 ${code2}${BTN_MARKER}`;
     const commented = `
 // ${code2}${BTN_MARKER}`;
     let next;
-    if (cur.includes(commented)) next = cur.replace(commented, active);
-    else if (cur.includes(active)) next = cur.replace(active, commented);
-    else next = cur + active;
+    if (cur.includes(commented)) next = cur.replace(commented, active2);
+    else if (cur.includes(active2)) next = cur.replace(active2, commented);
+    else next = cur + active2;
     setCode(next);
     evaluate2();
   }
@@ -38831,12 +50419,16 @@ ${code2}${BTN_MARKER}`;
       let ran = false;
       for (const cfg of configs) {
         if (cfg.trigger === triggerName && cfg.action === "regex-swap" && cfg.regex) {
-          await mutateAndEvaluate((c2) => applyRegexMutation(c2, cfg.regex, cfg.replacement));
+          await mutateAndEvaluate((c2) => applyRegexMutation2(c2, cfg.regex, cfg.replacement));
+          ran = true;
+        }
+        if (cfg.trigger === triggerName && cfg.action === "apply-metaprogram") {
+          applyMetaprogramNow();
           ran = true;
         }
       }
       if (_regexTrigger === triggerName && _regexPattern) {
-        await mutateAndEvaluate((c2) => applyRegexMutation(c2, _regexPattern, _regexReplacement));
+        await mutateAndEvaluate((c2) => applyRegexMutation2(c2, _regexPattern, _regexReplacement));
         ran = true;
       }
       if (!ran) await mutateAndEvaluate(defaultMutator);
@@ -39012,10 +50604,19 @@ ${code2}${BTN_MARKER}`;
       du.drawConnectors(lm, FL.FACE_LANDMARKS_LIPS, { color: "#E0E060", lineWidth: 1 });
     }
   }
+  var _densitySkip = 0;
   function _detectionLoop() {
     if (!_videoEl2 || !_landmarker || _videoEl2.readyState < 2) {
       _rafId2 = requestAnimationFrame(_detectionLoop);
       return;
+    }
+    const densityScale = typeof window !== "undefined" && window._ncLandmarkScale || 1;
+    if (densityScale < 1) {
+      _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
+      if (_densitySkip !== 0) {
+        _rafId2 = requestAnimationFrame(_detectionLoop);
+        return;
+      }
     }
     const ts = performance.now();
     const result = _landmarker.detectForVideo(_videoEl2, ts);
@@ -39032,12 +50633,15 @@ ${code2}${BTN_MARKER}`;
     let hoveredKey = null;
     let hoveredType = null;
     let hoveredEl = null;
-    for (const btn of document.querySelectorAll(".strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn")) {
+    for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]')) {
       const r2 = btn.getBoundingClientRect();
       if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
         if (btn.classList.contains("ts-fx-dwell-btn")) {
           hoveredKey = btn.dataset.fx;
           hoveredType = "fx";
+        } else if (btn.classList.contains("nc-head-btn") || btn._netCyclesCode !== void 0) {
+          hoveredKey = btn.dataset.netcyclesCode ?? btn._netCyclesCode;
+          hoveredType = "netcycles";
         } else if (btn.classList.contains("ts-dwell-btn")) {
           hoveredKey = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
           hoveredType = "action";
@@ -39082,6 +50686,8 @@ ${code2}${BTN_MARKER}`;
           _toggleFxEffect(_dwell.key);
         } else if (_dwell.type === "action") {
           if (_dwell.el) _dwell.el.click();
+        } else if (_dwell.type === "netcycles") {
+          toggleNetCyclesButtonCode(_dwell.key);
         } else {
           toggleButtonCode(_dwell.key);
         }
@@ -39488,9 +51094,9 @@ ${code2}${BTN_MARKER}`;
     constructor() {
       this.root = new TrieNode();
     }
-    insert(word, weight) {
+    insert(word2, weight) {
       let n2 = this.root;
-      for (const c2 of word) {
+      for (const c2 of word2) {
         if (!n2.ch[c2]) n2.ch[c2] = new TrieNode();
         n2 = n2.ch[c2];
       }
@@ -39711,15 +51317,15 @@ ${code2}${BTN_MARKER}`;
       btn.addEventListener("click", () => _insertCompletion(btn.dataset.completion));
     });
   }
-  function _insertCompletion(word) {
+  function _insertCompletion(word2) {
     const ta = _getTA();
     if (!ta) return;
     const pos = ta.selectionStart ?? ta.value.length;
     const before = ta.value.slice(0, pos);
     const m2 = before.match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
     const start = pos - (m2 ? m2[0].length : 0);
-    ta.value = ta.value.slice(0, start) + word + ta.value.slice(pos);
-    ta.setSelectionRange(start + word.length, start + word.length);
+    ta.value = ta.value.slice(0, start) + word2 + ta.value.slice(pos);
+    ta.setSelectionRange(start + word2.length, start + word2.length);
     ta.dispatchEvent(new Event("input", { bubbles: true }));
     _updatePredictions();
   }
@@ -39755,7 +51361,10 @@ ${code2}${BTN_MARKER}`;
     if (key === "Eval") {
       const ta2 = _getTA();
       document.dispatchEvent(new CustomEvent("trussal-kbd-eval", {
-        detail: { code: ta2 ? ta2.value : "" }
+        detail: {
+          code: ta2 ? ta2.value : "",
+          editor: ta2 && ta2.classList.contains("nc-code") ? "netcycles" : "strudel"
+        }
       }));
       return;
     }
@@ -40213,9 +51822,650 @@ ${code2}${BTN_MARKER}`;
   }
 
   // src/studio.js
+  init_latency_instrument();
+  init_WorstCaseCalculationUtils();
+
+  // src/audio-net/observability/SpectrumAnalysis.js
+  var DEFAULT_BANDS = 32;
+  var DEFAULT_FRAME_INTERVAL_MS = 250;
+  var DEFAULT_HISTORY = 240;
+  function downsampleBins(bins, bands) {
+    const n2 = bins ? bins.length : 0;
+    if (!n2 || !Number.isInteger(bands) || bands < 1) return [];
+    if (bands >= n2) return Array.from(bins);
+    const out = new Array(bands);
+    const per2 = n2 / bands;
+    for (let b = 0; b < bands; b++) {
+      const start = Math.floor(b * per2);
+      const end2 = Math.min(n2, Math.max(start + 1, Math.floor((b + 1) * per2)));
+      let sum = 0;
+      for (let i = start; i < end2; i++) sum += bins[i];
+      out[b] = sum / (end2 - start);
+    }
+    return out;
+  }
+  function createSpectrumAnalysis(audioCtx2, sourceNode2, {
+    bands = DEFAULT_BANDS,
+    intervalMs = DEFAULT_FRAME_INTERVAL_MS,
+    history = DEFAULT_HISTORY,
+    fftSize = 2048
+  } = {}) {
+    const analyser = audioCtx2.createAnalyser();
+    analyser.fftSize = fftSize;
+    analyser.smoothingTimeConstant = 0.6;
+    sourceNode2.connect(analyser);
+    const binBuf = new Uint8Array(analyser.frequencyBinCount);
+    const frames2 = [];
+    const subscribers3 = /* @__PURE__ */ new Set();
+    let timer3 = null;
+    function captureFrame() {
+      analyser.getByteFrequencyData(binBuf);
+      const frame = { t: audioCtx2.currentTime, bands: downsampleBins(binBuf, bands) };
+      frames2.push(frame);
+      if (frames2.length > history) frames2.shift();
+      subscribers3.forEach((fn) => {
+        try {
+          fn(frame);
+        } catch (e30) {
+          console.warn("[spectrum] subscriber threw", e30);
+        }
+      });
+    }
+    return {
+      analyser,
+      start() {
+        if (timer3) return;
+        timer3 = setInterval(captureFrame, intervalMs);
+      },
+      stop() {
+        if (timer3) {
+          clearInterval(timer3);
+          timer3 = null;
+        }
+      },
+      getFrames() {
+        return frames2.slice();
+      },
+      getLatestFrame() {
+        return frames2.length ? frames2[frames2.length - 1] : null;
+      },
+      subscribe(fn) {
+        subscribers3.add(fn);
+        return () => subscribers3.delete(fn);
+      },
+      dispose() {
+        this.stop();
+        try {
+          sourceNode2.disconnect(analyser);
+        } catch (e30) {
+        }
+        subscribers3.clear();
+      }
+    };
+  }
+
+  // src/audio-net/observability/NetStats.js
+  var POLL_INTERVAL_MS = 2e3;
+  function deriveNetSample(statsEntries, prevTotals = null) {
+    const entries2 = Array.isArray(statsEntries) ? statsEntries : [];
+    let rtcRtt = null;
+    let rtcJitter = null;
+    let lost = 0;
+    let received = 0;
+    let sawInbound = false;
+    const pairs2 = entries2.filter((s2) => s2 && s2.type === "candidate-pair");
+    const selected = pairs2.find((s2) => s2.selected === true || s2.nominated === true) || pairs2.find((s2) => s2.state === "succeeded");
+    if (selected && typeof selected.currentRoundTripTime === "number") {
+      rtcRtt = selected.currentRoundTripTime * 1e3;
+    }
+    for (const s2 of entries2) {
+      if (!s2) continue;
+      if (s2.type === "remote-inbound-rtp") {
+        if (rtcRtt == null && typeof s2.roundTripTime === "number") {
+          rtcRtt = s2.roundTripTime * 1e3;
+        }
+        if (typeof s2.jitter === "number") {
+          rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
+        }
+      } else if (s2.type === "inbound-rtp") {
+        sawInbound = true;
+        if (typeof s2.jitter === "number") {
+          rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
+        }
+        if (typeof s2.packetsLost === "number") lost += s2.packetsLost;
+        if (typeof s2.packetsReceived === "number") received += s2.packetsReceived;
+      }
+    }
+    const totals = { lost, received };
+    let packetLoss = null;
+    if (sawInbound) {
+      const dLost = prevTotals ? lost - prevTotals.lost : lost;
+      const dReceived = prevTotals ? received - prevTotals.received : received;
+      const denom2 = dLost + dReceived;
+      if (denom2 > 0 && dLost >= 0 && dReceived >= 0) {
+        packetLoss = Math.min(1, Math.max(0, dLost / denom2));
+      } else if (denom2 === 0 && prevTotals) {
+        packetLoss = null;
+      } else {
+        packetLoss = 0;
+      }
+    }
+    const sample = rtcRtt != null || rtcJitter != null || packetLoss != null ? { rtcRtt, rtcJitter, packetLoss } : null;
+    return { sample, totals };
+  }
+  function mergeSamples(samples2) {
+    const usable = (samples2 || []).filter(Boolean);
+    if (usable.length === 0) return null;
+    const pick2 = (key) => {
+      const vals = usable.map((s2) => s2[key]).filter((v2) => typeof v2 === "number" && isFinite(v2));
+      return vals.length ? Math.max(...vals) : null;
+    };
+    return { rtcRtt: pick2("rtcRtt"), rtcJitter: pick2("rtcJitter"), packetLoss: pick2("packetLoss") };
+  }
+  function listPeerConnections() {
+    const out = [];
+    try {
+      const conf = window.APP && window.APP.conference;
+      const pcWrapper = conf?._room?.rtc?.peerConnections;
+      if (pcWrapper) {
+        const iter2 = pcWrapper.values && pcWrapper.values() || pcWrapper;
+        for (const tpc of iter2) {
+          const pc = tpc?.peerconnection;
+          if (pc && typeof pc.getStats === "function") out.push(pc);
+        }
+      }
+    } catch (e30) {
+    }
+    return out;
+  }
+  var pollTimer2 = null;
+  var totalsByPc = /* @__PURE__ */ new WeakMap();
+  async function pollOnce(send) {
+    const pcs2 = listPeerConnections();
+    if (pcs2.length === 0) return;
+    const samples2 = [];
+    for (const pc of pcs2) {
+      try {
+        const report = await pc.getStats();
+        const entries2 = [];
+        report.forEach((s2) => entries2.push(s2));
+        const { sample, totals } = deriveNetSample(entries2, totalsByPc.get(pc) || null);
+        totalsByPc.set(pc, totals);
+        samples2.push(sample);
+      } catch (e30) {
+      }
+    }
+    const merged = mergeSamples(samples2);
+    if (merged) send(merged);
+  }
+  function startNetStatsPolling(send) {
+    if (pollTimer2 || typeof send !== "function") return;
+    pollTimer2 = setInterval(() => {
+      pollOnce(send);
+    }, POLL_INTERVAL_MS);
+  }
+
+  // src/studio.js
+  init_Metaprogrammer();
+  init_WorstCaseCalculationUtils();
+
+  // components/MetaprogrammerEditor.js
+  init_Metaprogrammer();
+  init_MetaprogrammerParser();
+  init_peer_state();
+  var PARSE_IDLE_MS = 300;
+  function mountMetaprogrammerEditor(container) {
+    if (!container || container.querySelector(".nc-editor")) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "ts-section nc-editor";
+    wrap.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
+      <div class="ts-section-controls">
+        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button">\u25B6 Apply</button>
+        <span class="ts-shortcuts">Ctrl+Enter to apply</span>
+      </div>
+    </div>
+    <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
+    <div class="ts-meta nc-errors" style="color:#ff8a8a;"></div>
+    <div class="ts-meta nc-byline"></div>
+  `;
+    container.appendChild(wrap);
+    const ta = wrap.querySelector(".nc-code");
+    const errorsEl = wrap.querySelector(".nc-errors");
+    const bylineEl = wrap.querySelector(".nc-byline");
+    const applyBtn = wrap.querySelector(".nc-apply");
+    const sync = ensureMetaprogramSync();
+    const readOnly = !!getLocalPeer().isBot && getLocalPeer().canEditMetaprogram === false;
+    if (readOnly) {
+      ta.setAttribute("readonly", "readonly");
+      applyBtn.disabled = true;
+    }
+    ta.value = sync.getText() || getProgramText() || "";
+    let parseTimer = null;
+    function showErrors(text2) {
+      const { errors } = parseMetaprogram(text2);
+      errorsEl.textContent = errors.length ? errors.map((e30) => `${e30.line}:${e30.col} ${e30.message}`).join("  \xB7  ") : "";
+      applyBtn.disabled = readOnly || errors.length > 0;
+      return errors;
+    }
+    function parseOnIdle() {
+      clearTimeout(parseTimer);
+      parseTimer = setTimeout(() => showErrors(ta.value), PARSE_IDLE_MS);
+    }
+    ta.addEventListener("input", () => {
+      if (readOnly) return;
+      sync.setText(ta.value);
+      parseOnIdle();
+    });
+    const refreshFromDoc = () => {
+      const next = sync.getText();
+      if (ta.value === next) return;
+      const hadFocus = document.activeElement === ta;
+      const selStart = ta.selectionStart, selEnd = ta.selectionEnd;
+      ta.value = next;
+      if (hadFocus) {
+        const clamp2 = (n2) => Math.min(n2, next.length);
+        try {
+          ta.setSelectionRange(clamp2(selStart), clamp2(selEnd));
+        } catch (e30) {
+        }
+      }
+      parseOnIdle();
+    };
+    sync.onRemoteChange((_3, payload) => {
+      refreshFromDoc();
+      if (payload && payload.authorIndex != null) {
+        bylineEl.textContent = `last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`;
+      }
+    });
+    document.addEventListener("trussal-netcycles-program", refreshFromDoc);
+    const apply2 = () => {
+      if (readOnly) return;
+      const errors = applyProgramText(ta.value);
+      if (errors.length) showErrors(ta.value);
+      else {
+        errorsEl.textContent = "";
+        bylineEl.textContent = isNetCyclesActive() ? "applied \u2014 takes effect at the next cycle boundary" : "applied \u2014 will run when Net Cycles is switched on";
+      }
+    };
+    applyBtn.addEventListener("click", apply2);
+    ta.addEventListener("keydown", (e30) => {
+      if ((e30.ctrlKey || e30.metaKey) && e30.key === "Enter") {
+        e30.preventDefault();
+        apply2();
+      }
+    });
+    showErrors(ta.value);
+    return wrap;
+  }
+
+  // components/MetaprogrammerCycleHighlighter.js
+  init_Metaprogrammer();
+  init_MetaprogrammerParser();
+  function mountMetaprogrammerCycleHighlighter(container) {
+    if (!container || container.querySelector(".nc-highlighter")) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "ts-section nc-highlighter";
+    wrap.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Cycle</div>
+      <div class="ts-meta nc-cycle-meta">idle</div>
+    </div>
+    <div class="ts-voice-btns nc-slot-chips"></div>
+  `;
+    container.appendChild(wrap);
+    const chipsEl = wrap.querySelector(".nc-slot-chips");
+    const metaEl = wrap.querySelector(".nc-cycle-meta");
+    const timers = /* @__PURE__ */ new Set();
+    function tokensFromProgram() {
+      const text2 = getProgramText();
+      if (!text2) return [];
+      const { ast: ast2 } = parseMetaprogram(text2);
+      const tokens = [];
+      const seen = /* @__PURE__ */ new Set();
+      if (ast2.participants) {
+        const walk2 = (els) => {
+          for (const el of els) {
+            if (el.token && !seen.has(el.token)) {
+              seen.add(el.token);
+              tokens.push(el.token);
+            }
+            if (el.type === "sequence") el.stacks.forEach((s2) => walk2(s2.elements));
+            if (el.type === "choice") el.options.forEach(walk2);
+          }
+        };
+        ast2.participants.stacks.forEach((s2) => walk2(s2.elements));
+      }
+      return tokens;
+    }
+    function renderChips() {
+      chipsEl.innerHTML = tokensFromProgram().map((tok) => `<span class="ts-voice-btn nc-slot-chip" data-token="${tok}">${tok}</span>`).join("");
+    }
+    renderChips();
+    document.addEventListener("trussal-netcycles-program", renderChips);
+    let lastCycleStart = null;
+    subscribeSlotEvents((ev) => {
+      if (!isNetCyclesActive()) return;
+      if (ev.type === "cycle-start") {
+        lastCycleStart = ev;
+        const delay2 = Math.max(0, (ev.t - performanceNowSeconds()) * 1e3);
+        schedule(() => {
+          metaEl.textContent = `cycle ${ev.cycle} \xB7 ${ev.seconds.toFixed(2)} s \xB7 ${ev.beats} beats`;
+        }, delay2, ev);
+        return;
+      }
+      const chip = () => chipsEl.querySelector(`[data-token="${CSS.escape(ev.token)}"]`);
+      if (ev.type === "slot-open") {
+        schedule(() => {
+          const el = chip();
+          if (el) {
+            el.classList.add("on");
+            el.title = `queue depth ${getQueueDepth(ev.token)}`;
+          }
+        }, relDelayMs(ev.t), ev);
+      } else if (ev.type === "slot-close") {
+        schedule(() => {
+          const el = chip();
+          if (el) el.classList.remove("on");
+        }, relDelayMs(ev.t), ev);
+      }
+    });
+    let refNet = null, refWall = null;
+    function performanceNowSeconds() {
+      return performance.now() / 1e3;
+    }
+    function relDelayMs(tNet) {
+      if (refNet == null) {
+        refNet = tNet;
+        refWall = performanceNowSeconds();
+      }
+      return Math.max(0, (tNet - refNet - (performanceNowSeconds() - refWall)) * 1e3);
+    }
+    function schedule(fn, ms, ev) {
+      const t = setTimeout(() => {
+        timers.delete(t);
+        fn();
+      }, ms);
+      timers.add(t);
+    }
+    document.addEventListener("trussal-netcycles-mode", (e30) => {
+      if (!e30.detail.active) {
+        for (const t of timers) clearTimeout(t);
+        timers.clear();
+        refNet = refWall = null;
+        metaEl.textContent = "idle";
+        chipsEl.querySelectorAll(".on").forEach((el) => el.classList.remove("on"));
+      }
+    });
+    return wrap;
+  }
+
+  // src/audio-net/UserBotOrchestration.js
+  init_peer_state();
+  function clusterBotsOf(peers, ownerIndex) {
+    if (ownerIndex == null) return [];
+    const owner = String(ownerIndex);
+    return (peers || []).filter((p) => p.isBot && typeof p.roomIndex === "string" && p.roomIndex.startsWith(owner) && /^[a-z]+$/.test(p.roomIndex.slice(owner.length))).sort((a2, b) => {
+      const sa = a2.roomIndex.slice(owner.length), sb = b.roomIndex.slice(owner.length);
+      return sa.length - sb.length || (sa < sb ? -1 : sa > sb ? 1 : 0);
+    });
+  }
+  function selectBots(bots, selector) {
+    if (selector === "all" || selector == null) return bots.slice();
+    if (typeof selector === "function") return bots.filter(selector);
+    if (Array.isArray(selector)) {
+      const set2 = new Set(selector.map(String));
+      return bots.filter((b) => set2.has(b.roomIndex));
+    }
+    return [];
+  }
+  function myClusterBots() {
+    return clusterBotsOf(getAllPeers(), getLocalPeer().roomIndex);
+  }
+  function spawnBots(count) {
+    const n2 = Math.max(1, Math.floor(count) || 1);
+    sendFleetRequest("spawn", { count: n2 });
+  }
+  function removeBots(selector = "all") {
+    if (selector === "all") {
+      sendFleetRequest("remove", { targets: "all" });
+      return;
+    }
+    const targets = selectBots(myClusterBots(), selector).map((b) => b.roomIndex);
+    if (targets.length) sendFleetRequest("remove", { targets });
+  }
+  function muteBots(selector, muted) {
+    for (const bot of selectBots(myClusterBots(), selector)) {
+      sendRemoteMute(bot.peerId, !!muted);
+    }
+  }
+  function setBotPermissions(selector, perms) {
+    for (const bot of selectBots(myClusterBots(), selector)) {
+      sendBotPermission(bot.peerId, perms);
+    }
+  }
+  var statusSubscribers = /* @__PURE__ */ new Set();
+  subscribePeerState((event, payload) => {
+    if (event !== "fleet-status") return;
+    statusSubscribers.forEach((fn) => {
+      try {
+        fn(payload);
+      } catch (e30) {
+      }
+    });
+  });
+  function subscribeFleetStatus(fn) {
+    statusSubscribers.add(fn);
+    return () => statusSubscribers.delete(fn);
+  }
+
+  // components/BotClusterVideo.js
+  init_peer_state();
+  var STYLE_ID2 = "trussal-bot-cluster-style";
+  var timer = null;
+  function ownerHue(ownerIndex) {
+    let h2 = 0;
+    const s2 = `owner-${ownerIndex}`;
+    for (let i = 0; i < s2.length; i++) h2 = h2 * 31 + s2.charCodeAt(i) >>> 0;
+    return h2 % 360;
+  }
+  function injectStyles() {
+    if (document.getElementById(STYLE_ID2)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID2;
+    style.textContent = `
+    .trussal-cluster-tile {
+      transform: scale(0.62);
+      transform-origin: top left;
+      border-radius: 8px;
+      outline: 2px solid hsl(var(--trussal-owner-hue, 140), 70%, 55%);
+      outline-offset: -2px;
+    }
+    .trussal-cluster-tile::after {
+      content: attr(data-cluster-index);
+      position: absolute; top: 2px; right: 4px;
+      font: 700 10px monospace;
+      color: hsl(var(--trussal-owner-hue, 140), 70%, 65%);
+      z-index: 5;
+    }
+  `;
+    document.head.appendChild(style);
+  }
+  function findTile(jitsiId) {
+    return document.getElementById(`participant_${jitsiId}`) || document.querySelector(`[data-participant-id="${jitsiId}"]`) || null;
+  }
+  function restyle() {
+    const peers = getAllPeers();
+    for (const peer of peers) {
+      if (!peer.isBot || !peer.jitsiId || typeof peer.roomIndex !== "string") continue;
+      const m2 = peer.roomIndex.match(/^(\d+)([a-z]+)$/);
+      if (!m2) continue;
+      const tile = findTile(peer.jitsiId);
+      if (!tile) continue;
+      tile.classList.add("trussal-cluster-tile");
+      tile.style.setProperty("--trussal-owner-hue", String(ownerHue(m2[1])));
+      tile.dataset.clusterIndex = peer.roomIndex;
+      const owner = peers.find((p) => String(p.roomIndex) === m2[1]);
+      const ownerTile = owner && owner.jitsiId ? findTile(owner.jitsiId) : null;
+      if (ownerTile && ownerTile.parentElement && ownerTile.parentElement === tile.parentElement && ownerTile.nextSibling !== tile) {
+        try {
+          ownerTile.parentElement.insertBefore(tile, ownerTile.nextSibling);
+        } catch (e30) {
+        }
+      }
+    }
+  }
+  function startBotClusterVideo() {
+    if (timer) return;
+    injectStyles();
+    timer = setInterval(restyle, 1500);
+  }
+
+  // src/audio-net/RoomHealth.js
+  function avDecouplingSeconds(cycleSeconds, metrics = {}) {
+    const base = Math.max(0, cycleSeconds || 0);
+    const wcj = Math.max(0, metrics.wcj || 0);
+    const stretch2 = Math.min(2, 1 + wcj / 500);
+    return base * stretch2;
+  }
+  function compressionParams(load2 = {}) {
+    const clamp01 = (x2) => Math.max(0, Math.min(1, Number(x2) || 0));
+    const fpsPressure = load2.fps != null && load2.fpsMin ? clamp01(1 - load2.fps / load2.fpsMin) : 0;
+    const pressure = Math.max(
+      clamp01(load2.serverLoad),
+      clamp01(load2.cpuPressure),
+      clamp01(load2.ramPressure),
+      fpsPressure
+    );
+    return {
+      pressure,
+      ratio: 1 + pressure * 11,
+      // 1:1 → 12:1
+      thresholdDb: -1 - pressure * 29,
+      // −1 dB → −30 dB
+      kneeDb: 6,
+      engaged: pressure > 0.05
+    };
+  }
+  function landmarkDensityScale(load2 = {}) {
+    const { pressure } = compressionParams(load2);
+    if (pressure >= 0.66) return 0.25;
+    if (pressure >= 0.33) return 0.5;
+    return 1;
+  }
+  function healthActions(load2 = {}, { cycleSeconds = 0, metrics = {} } = {}) {
+    const comp = compressionParams(load2);
+    const density2 = landmarkDensityScale(load2);
+    const actions = [];
+    if (comp.engaged) {
+      actions.push({
+        type: load2.serverLoad >= Math.max(load2.cpuPressure || 0, load2.ramPressure || 0) ? "compress-global" : "compress-local",
+        ratio: comp.ratio,
+        thresholdDb: comp.thresholdDb
+      });
+    }
+    if (density2 < 1) actions.push({ type: "reduce-landmark-density", scale: density2 });
+    const decouple = avDecouplingSeconds(cycleSeconds, metrics);
+    if (cycleSeconds > 0 && decouple > cycleSeconds) {
+      actions.push({ type: "widen-av-decoupling", seconds: decouple });
+    }
+    return actions;
+  }
+
+  // src/audio-net/RoomHealthService.js
+  init_latency_instrument();
+  init_Metaprogrammer();
+  init_peer_state();
+  var SAMPLE_MS = 5e3;
+  var timer2 = null;
+  var compressor2 = null;
+  var frameCount = 0;
+  var fpsWindowStart = 0;
+  var lastFps = 60;
+  var rafRunning = false;
+  var lastCycleSeconds = 0;
+  var lastActionsJson = "";
+  function sampleFrame(t) {
+    if (!rafRunning) return;
+    frameCount++;
+    if (t - fpsWindowStart >= 1e3) {
+      lastFps = frameCount * 1e3 / (t - fpsWindowStart);
+      frameCount = 0;
+      fpsWindowStart = t;
+    }
+    requestAnimationFrame(sampleFrame);
+  }
+  function localLoad() {
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory || 4;
+    return {
+      fps: lastFps,
+      fpsMin: 24,
+      cpuPressure: cores <= 2 ? 0.4 : 0,
+      ramPressure: mem <= 2 ? 0.4 : 0,
+      serverLoad: 0
+      // fleet-status could feed this later
+    };
+  }
+  function ensureCompressor() {
+    const ctx = getAudioContext();
+    const bus2 = getMasterBus();
+    if (!ctx || !bus2 || compressor2) return;
+    compressor2 = ctx.createDynamicsCompressor();
+    compressor2.ratio.value = 1;
+    compressor2.threshold.value = -1;
+    try {
+      bus2.disconnect(ctx.destination);
+      bus2.connect(compressor2);
+      compressor2.connect(ctx.destination);
+    } catch (e30) {
+      compressor2 = null;
+    }
+  }
+  function tick2() {
+    const load2 = localLoad();
+    const ctx = getAudioContext();
+    ensureCompressor();
+    const comp = compressionParams(load2);
+    if (compressor2 && ctx) {
+      const now = ctx.currentTime;
+      compressor2.ratio.setTargetAtTime(comp.ratio, now, 0.5);
+      compressor2.threshold.setTargetAtTime(comp.thresholdDb, now, 0.5);
+      compressor2.knee.setTargetAtTime(comp.kneeDb, now, 0.5);
+    }
+    window._ncLandmarkScale = landmarkDensityScale(load2);
+    const metrics = effectiveWorstCase();
+    window._ncAvDecouplingS = avDecouplingSeconds(lastCycleSeconds, metrics);
+    const actions = healthActions(load2, { cycleSeconds: lastCycleSeconds, metrics });
+    const json = JSON.stringify(actions);
+    if (json !== lastActionsJson) {
+      lastActionsJson = json;
+      if (actions.length) sendResearchEvent("health-actions", { actions, fps: Math.round(lastFps) });
+    }
+  }
+  function noteCycleSeconds(seconds2) {
+    if (seconds2 > 0) lastCycleSeconds = seconds2;
+  }
+  function startRoomHealth() {
+    if (timer2) return;
+    rafRunning = true;
+    fpsWindowStart = performance.now();
+    requestAnimationFrame(sampleFrame);
+    timer2 = setInterval(tick2, SAMPLE_MS);
+    subscribeSlotEvents((ev) => {
+      if (ev.type !== "cycle-start") return;
+      noteCycleSeconds(ev.seconds);
+      if (ev.cycle % 4 === 0) {
+        sendResearchEvent("cycle-start", { cycle: ev.cycle, seconds: ev.seconds, beats: ev.beats });
+      }
+    });
+  }
+
+  // src/studio.js
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
-  var STYLE_ID2 = "trussal-studio-style";
+  var STYLE_ID3 = "trussal-studio-style";
   var STORAGE_KEY = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var initedRoom = null;
@@ -40261,10 +52511,10 @@ ${code2}${BTN_MARKER}`;
   function escapeHtml(s2) {
     return String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
   }
-  function injectStyles() {
-    if (document.getElementById(STYLE_ID2)) return;
+  function injectStyles2() {
+    if (document.getElementById(STYLE_ID3)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID2;
+    style.id = STYLE_ID3;
     style.textContent = `
     #${OVERLAY_ID} {
       position: fixed; right: 16px; bottom: 88px;
@@ -40319,6 +52569,11 @@ ${code2}${BTN_MARKER}`;
     }
     #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
     #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
+    #${OVERLAY_ID} .ts-idx {
+      margin-left: auto;
+      font-size: 10px; font-family: monospace; padding: 1px 5px;
+      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+    }
     #${OVERLAY_ID} .ts-routed {
       font-size: 10px; padding: 1px 4px; border-radius: 3px;
       background: rgba(255,255,255,0.06); color: #5d7264;
@@ -40468,6 +52723,12 @@ ${code2}${BTN_MARKER}`;
       height: 16px;
     }
 
+    #${OVERLAY_ID} .ts-spectrum {
+      width: 100%; height: 36px; display: block;
+      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 4px;
+    }
+
     #hydra-canvas {
       z-index: 100;
     }
@@ -40500,6 +52761,7 @@ ${code2}${BTN_MARKER}`;
       <div class="ts-chip-row">
         <div class="ts-avatar">${initial(peer.displayName)}</div>
         <div class="ts-name${isLocal ? " you" : ""}">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
+        <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : "\xB7"}</span>
       </div>
       <div class="ts-indicators">
         <span class="ts-ind${e30.distortion ? " on" : ""}">D</span>
@@ -40549,6 +52811,8 @@ ${code2}${BTN_MARKER}`;
   function metricsLine(peer) {
     const rtt = typeof peer.rtt === "number" ? `${peer.rtt.toFixed(0)}ms` : "\u2013";
     const jitter = typeof peer.jitter === "number" ? peer.jitter.toFixed(2) : "\u2013";
+    const rtcRtt = typeof peer.rtcRtt === "number" ? `${peer.rtcRtt.toFixed(0)}ms` : "\u2013";
+    const loss = typeof peer.packetLoss === "number" ? `${(peer.packetLoss * 100).toFixed(1)}%` : "\u2013";
     const extLabel = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
     const routed = routedSet.has(peer.jitsiId);
     const propagating = peer.isLocal && isPropagatingToRoom();
@@ -40562,7 +52826,130 @@ ${code2}${BTN_MARKER}`;
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 ${routedTxt}</div>`;
+    return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
+  }
+  function networkMetricsBlock() {
+    const measured = computeWorstCaseMetrics(getAllPeers());
+    const wc = effectiveWorstCase();
+    const induced = getInducedMetrics();
+    const ms = (v2) => `${v2.toFixed(0)}ms`;
+    const sliders = Object.entries(INDUCTIONS).map(([key, mod2]) => `
+    <div class="ts-slider-row" data-induce="${key}">
+      <div class="ts-slider-label">
+        <span>${escapeHtml(mod2.label)}</span>
+        <span class="ts-slider-val">${induced[key] ?? 0}${mod2.unit === "ms" ? "ms" : ""}</span>
+      </div>
+      <input class="ts-slider-input" type="range" min="${mod2.min}" max="${mod2.max}" step="${mod2.step}" value="${induced[key] ?? 0}">
+    </div>`).join("");
+    const peers = getAllPeers();
+    const mixOptions = [
+      `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
+      `<option value="self"${monitorSelection === "self" ? " selected" : ""}>ipsilateral (own mix)</option>`,
+      ...peers.filter((p) => !p.isLocal && p.jitsiId).map((p) => `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? " selected" : ""}>\u2194 ${escapeHtml(String(p.roomIndex ?? p.displayName ?? "peer"))}</option>`)
+    ].join("");
+    return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Network Metrics</div>
+        <div class="ts-section-controls">
+          <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
+          <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? " on" : ""}" data-action="netcycles">${isNetCyclesActive() ? "\u25C9 Net Cycles on" : "\u25CB Net Cycles"}</button>
+        </div>
+      </div>
+      <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+        \xB7 measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
+      <div class="ts-sliders">${sliders}</div>
+      <canvas class="ts-spectrum" width="560" height="36"></canvas>
+    </div>`;
+  }
+  var monitorSelection = "master";
+  var lastFleetStatus = "";
+  subscribeFleetStatus((status) => {
+    if (status.action === "spawn") {
+      lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.reason ? ` \u2014 ${status.reason}` : "");
+    } else if (status.action === "remove") {
+      lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` \u2014 ${status.reason}` : ""}`;
+    } else if (status.action === "teardown") {
+      lastFleetStatus = `fleet teardown \u2014 ${status.reason || ""}`;
+    }
+    renderAll();
+  });
+  function botClusterBlock() {
+    const bots = myClusterBots();
+    const rows = bots.map((b) => `
+    <div class="ts-fx" data-bot-index="${escapeHtml(b.roomIndex)}">
+      <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
+      <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || "bot")}</span>
+      <button class="ts-fx-btn ts-dwell-btn${b.muted ? " on" : ""}" data-bot-action="mute">${b.muted ? "unmute" : "mute"}</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? " on" : ""}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? " on" : ""}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
+      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="remove">\xD7</button>
+    </div>`).join("");
+    return `
+    <div class="ts-section">
+      <div class="ts-section-head">
+        <div class="ts-section-title">Bot Cluster</div>
+        <div class="ts-section-controls">
+          <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">\u{1F507} all</button>
+          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">\xD7 all</button>
+        </div>
+      </div>
+      ${rows || '<div class="ts-meta">no bots in your cluster</div>'}
+      ${lastFleetStatus ? `<div class="ts-meta">${escapeHtml(lastFleetStatus)}</div>` : ""}
+    </div>`;
+  }
+  function bindBotClusterBlock(container) {
+    const countEl = container.querySelector(".ts-bot-count");
+    container.querySelectorAll("[data-bot-action]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.botAction;
+        const row = btn.closest("[data-bot-index]");
+        const idx = row ? row.dataset.botIndex : null;
+        if (action === "spawn") spawnBots(parseInt(countEl && countEl.value, 10) || 1);
+        else if (action === "remove-all") removeBots("all");
+        else if (action === "mute-all") muteBots("all", true);
+        else if (action === "remove" && idx) removeBots([idx]);
+        else if (action === "mute" && idx) {
+          const bot = myClusterBots().find((b) => b.roomIndex === idx);
+          muteBots([idx], !(bot && bot.muted));
+        } else if (action === "edit-perm" && idx) {
+          const bot = myClusterBots().find((b) => b.roomIndex === idx);
+          setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
+        } else if (action === "mod-perm" && idx) {
+          const bot = myClusterBots().find((b) => b.roomIndex === idx);
+          setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
+        }
+      });
+    });
+  }
+  var spectrum2 = null;
+  function drawSpectrumFrame(frame) {
+    const canvas = document.querySelector(`#${OVERLAY_ID} .ts-spectrum`);
+    if (!canvas || !frame || !frame.bands.length) return;
+    const ctx = canvas.getContext("2d");
+    const { width, height: height2 } = canvas;
+    ctx.clearRect(0, 0, width, height2);
+    const barW = width / frame.bands.length;
+    ctx.fillStyle = "#1ff466";
+    frame.bands.forEach((v2, i) => {
+      const h2 = v2 / 255 * height2;
+      ctx.fillRect(i * barW, height2 - h2, Math.max(1, barW - 1), h2);
+    });
+  }
+  function ensureSpectrum() {
+    if (spectrum2) return;
+    const audioCtx2 = getAudioContext();
+    const bus2 = getMasterBus();
+    if (!audioCtx2 || !bus2) return;
+    try {
+      spectrum2 = createSpectrumAnalysis(audioCtx2, bus2);
+      spectrum2.subscribe(drawSpectrumFrame);
+      spectrum2.start();
+    } catch (e30) {
+      console.warn("[studio] spectrum init failed", e30);
+    }
   }
   function renderDetail(container) {
     let peer = getPeerByJitsiId(selectedJitsiId);
@@ -40623,6 +53010,9 @@ ${code2}${BTN_MARKER}`;
       ${metricsLine(peer)}
     </div>
 
+    ${networkMetricsBlock()}
+    ${isLocal ? botClusterBlock() : ""}
+
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Strudel</div>
@@ -40636,6 +53026,28 @@ ${code2}${BTN_MARKER}`;
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
+    const netCyclesBtn = container.querySelector('[data-action="netcycles"]');
+    if (netCyclesBtn) netCyclesBtn.addEventListener("click", async () => {
+      await bootAudioEngine().catch(() => {
+      });
+      await setNetCyclesActive(!isNetCyclesActive());
+      setStatus(isNetCyclesActive() ? "Net Cycles: scheduling by metaprogram" : "Net Cycles off");
+      renderAll();
+    });
+    container.querySelectorAll("[data-induce]").forEach((row) => {
+      const key = row.dataset.induce;
+      const input = row.querySelector("input");
+      const valEl = row.querySelector(".ts-slider-val");
+      input.addEventListener("input", () => {
+        setInducedMetric(key, parseFloat(input.value));
+        if (valEl) valEl.textContent = input.value;
+      });
+    });
+    const mixSel = container.querySelector(".ts-monitor-mix");
+    if (mixSel) mixSel.addEventListener("change", () => {
+      monitorSelection = mixSel.value;
+      setMonitorMix(monitorSelection);
+    });
     if (!isLocal) {
       const targetPeerId = peer.peerId;
       const remoteCodeEl = container.querySelector(".ts-code");
@@ -40682,9 +53094,15 @@ ${code2}${BTN_MARKER}`;
     }
     container.querySelectorAll(".ts-fx-dwell-btn[data-fx]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        const fx = btn.dataset.fx;
+        if (isNetCyclesActive()) {
+          const map3 = { distortion: "crush", noise: "noise", reverb: "room" };
+          toggleEffectShortcut(map3[fx]);
+          renderAll();
+          return;
+        }
         const peer2 = getPeerByJitsiId(selectedJitsiId);
         const e30 = peer2?.effects || {};
-        const fx = btn.dataset.fx;
         sendLocalEffects({ distortion: !!e30.distortion, noise: !!e30.noise, reverb: !!e30.reverb, [fx]: !e30[fx] });
       });
     });
@@ -40696,6 +53114,7 @@ ${code2}${BTN_MARKER}`;
         });
       });
     });
+    bindBotClusterBlock(container);
     const playBtn = container.querySelector('[data-action="play"]');
     if (playBtn) playBtn.addEventListener("click", () => {
       const code2 = container.querySelector(".ts-code");
@@ -40883,20 +53302,20 @@ ${voiceCode}${BTN_MARKER2}`);
         min="${s2.min}" max="${s2.max}" step="${s2.step}" value="${s2.value}">
     </div>`).join("");
     area.querySelectorAll(".ts-slider-row").forEach((row) => {
-      const id2 = row.dataset.sliderId;
+      const id3 = row.dataset.sliderId;
       const input = row.querySelector("input");
       const valEl = row.querySelector(".ts-slider-val");
       input.addEventListener("input", () => {
         const v2 = parseFloat(input.value);
-        updateSliderValue(id2, v2);
+        updateSliderValue(id3, v2);
         if (valEl) valEl.textContent = v2.toFixed(3);
       });
     });
   }
-  function setStatus(text) {
-    lastStatus = text;
+  function setStatus(text2) {
+    lastStatus = text2;
     const statusEl = document.querySelector(`#${OVERLAY_ID} .ts-status`);
-    if (statusEl) statusEl.textContent = text;
+    if (statusEl) statusEl.textContent = text2;
   }
   var renderQueued = false;
   function renderAll() {
@@ -40911,14 +53330,14 @@ ${voiceCode}${BTN_MARKER2}`);
       if (strip) renderStrip(strip);
       if (detail) {
         const existingCodeEl = detail.querySelector("textarea.ts-code");
-        const active = document.activeElement;
-        const isCodeFocused = active && active === existingCodeEl;
+        const active2 = document.activeElement;
+        const isCodeFocused = active2 && active2 === existingCodeEl;
         const codeValue = existingCodeEl ? existingCodeEl.value : null;
         const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
         const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === "1" || isCodeFocused);
-        const selStart = isCodeFocused ? active.selectionStart : null;
-        const selEnd = isCodeFocused ? active.selectionEnd : null;
-        const scrollTop = isCodeFocused ? active.scrollTop : null;
+        const selStart = isCodeFocused ? active2.selectionStart : null;
+        const selEnd = isCodeFocused ? active2.selectionEnd : null;
+        const scrollTop = isCodeFocused ? active2.scrollTop : null;
         renderDetail(detail);
         refreshFacialGestureButtons();
         const nextCodeEl = detail.querySelector(".ts-code");
@@ -40950,7 +53369,7 @@ ${voiceCode}${BTN_MARKER2}`);
     let overlay = document.getElementById(OVERLAY_ID);
     if (overlay) return overlay;
     if (!document.body) return null;
-    injectStyles();
+    injectStyles2();
     overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
     overlay.style.display = "none";
@@ -40961,9 +53380,17 @@ ${voiceCode}${BTN_MARKER2}`);
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
+    <div class="ts-netcycles" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
+    const ncHost = overlay.querySelector(".ts-netcycles");
+    try {
+      mountMetaprogrammerEditor(ncHost);
+      mountMetaprogrammerCycleHighlighter(ncHost);
+    } catch (e30) {
+      console.warn("[studio] Net Cycles card mount failed", e30);
+    }
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
     });
@@ -40999,7 +53426,7 @@ ${voiceCode}${BTN_MARKER2}`);
     let btn = document.getElementById(BUTTON_ID);
     if (btn) return btn;
     if (!document.body) return null;
-    injectStyles();
+    injectStyles2();
     btn = document.createElement("button");
     btn.id = BUTTON_ID;
     btn.type = "button";
@@ -41033,10 +53460,20 @@ ${voiceCode}${BTN_MARKER2}`);
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
     tickKbdUi();
-    bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
+    startNetStatsPolling(sendLocalNetStats);
+    startBotClusterVideo();
+    startRoomHealth();
+    bootAudioEngine().then(() => ensureSpectrum()).catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }
   document.addEventListener("trussal-kbd-eval", (e30) => {
     const code2 = e30.detail?.code;
+    if (e30.detail?.editor === "netcycles") {
+      Promise.resolve().then(() => (init_Metaprogrammer(), Metaprogrammer_exports)).then((m2) => {
+        const errors = m2.applyProgramText(typeof code2 === "string" ? code2 : "");
+        setStatus(errors.length ? `metaprogram: ${errors[0].line}:${errors[0].col} ${errors[0].message}` : "metaprogram applied");
+      });
+      return;
+    }
     onEvalAndPlay(typeof code2 === "string" ? code2 : getLocalPeer()?.pattern ?? "");
   });
   document.addEventListener("trussal-eval", () => {
@@ -41065,10 +53502,12 @@ ${voiceCode}${BTN_MARKER2}`);
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+  subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
   window.__trussalAnnounceLocalPattern = (code2) => {
     sendLocalPattern(typeof code2 === "string" ? code2 : "");
     sendLocalPlaying(true);
   };
+  window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
   renderAudioConfigCheck();
   renderJamulusWelcomePanelAndBanner();
   renderRecentListText();
