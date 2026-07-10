@@ -478,11 +478,20 @@ export function pageAggregatorCapture() {
     if (tapped.has(el)) return;
     const jitsiId = jitsiIdFor(el);
     if (!jitsiId) return; // only remote participant audio, never the bot's own
+    // Remote Jitsi audio is a WebRTC MediaStream on el.srcObject. Tap the STREAM
+    // (createMediaStreamSource), NOT the element (createMediaElementSource): the
+    // element API yields SILENCE for a WebRTC-backed <audio> in Chrome — which is
+    // exactly why every human client hears these peers but the aggregator captured
+    // rms=0 — and it reroutes the element, colliding with the Trussal bundle's own
+    // tap of the same stream (latency-instrument.js). createMediaStreamSource can
+    // share a stream, so it coexists. Wait until the stream has an audio track; the
+    // 1s rescan retries, so don't mark the element tapped yet if it isn't ready.
+    const stream = el.srcObject;
+    if (!stream || typeof stream.getAudioTracks !== 'function' || !stream.getAudioTracks().length) return;
     let ctx;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
     let src;
-    // createMediaElementSource throws if the element is already tapped; skip it.
-    try { src = ctx.createMediaElementSource(el); } catch (e) { tapped.add(el); return; }
+    try { src = ctx.createMediaStreamSource(stream); } catch (e) { tapped.add(el); return; }
     const proc = ctx.createScriptProcessor(FRAME, 1, 1);
     proc.onaudioprocess = (ev) => {
       const inp = ev.inputBuffer.getChannelData(0);
