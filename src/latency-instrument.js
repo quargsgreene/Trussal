@@ -126,6 +126,13 @@ export function setAggregatorPeer(jitsiId) {
   const next = jitsiId || null;
   if (next === aggregatorJitsiId) return;
   aggregatorJitsiId = next;
+  // Publish this user's Strudel onto the outgoing Jitsi mic while an aggregator
+  // is present (so it can tap it), and stop when it leaves. Async + fire-and-
+  // forget: setAggregatorPeer is sync and called from roster handlers, and the
+  // publish boots the Strudel input engine itself if needed. Done before the
+  // audioCtx guard so it still fires when Strudel hasn't booted yet.
+  if (next) publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish failed', e));
+  else unpublishLocalStrudelFromRoom().catch((e) => console.warn('[latency] strudel unpublish failed', e));
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   for (const chain of chains.values()) {
@@ -879,6 +886,61 @@ export async function stopPropagatingExternalStream() {
 
 export function isPropagatingToRoom() {
   return !!jitsiMixState;
+}
+
+// ---- Local Strudel → room publishing ------------------------------------
+//
+// A human's Strudel normally never leaves their browser: every client reproduces
+// it by re-evaluating the shared pattern (strudel.js), not by streaming audio.
+// That breaks under an aggregator, which assembles the room from each peer's
+// *Jitsi audio track* — so a human who only re-evaluates locally contributes
+// nothing to the master and is heard by no one (their local monitor is muted in
+// aggregator mode). To fix that, while an aggregator is present we tap the
+// Strudel program (masterStrudelGain — full level, upstream of the strudelOut
+// monitor mute) into a MediaStream and push it onto the outgoing Jitsi mic via
+// the same propagation path the studio's device capture uses.
+//
+// Only in aggregator mode, so a normal room still relies on shared re-evaluation
+// and never double-plays a human over both the Strudel-eval and Jitsi-mic paths.
+//
+// NOTE (single-stream milestone): masterStrudelGain carries the COMBINED program
+// (all playing peers stacked). With one human that IS just their own pattern, so
+// a single stream round-trips correctly; isolating each of several humans to only
+// their own voice is the alternating-streams follow-up.
+let strudelRoomTap = null; // MediaStreamDestination fed from masterStrudelGain
+
+export async function publishLocalStrudelToRoom() {
+  if (strudelRoomTap) return true; // already publishing
+  await ensureMasterStrudelInput(); // guarantees masterStrudelGain + audioCtx
+  if (!masterStrudelGain) return false;
+  const dest = audioCtx.createMediaStreamDestination();
+  masterStrudelGain.connect(dest);
+  // propagate mixes this onto the outgoing mic; needs an existing outgoing audio
+  // track/sender (i.e. the user's mic must be live). Fails cleanly otherwise.
+  const ok = await propagateExternalStreamToRoom(dest.stream);
+  if (!ok) {
+    try { masterStrudelGain.disconnect(dest); } catch (e) {}
+    console.warn('[latency] could not publish local Strudel to room — no outgoing Jitsi audio track (is the mic enabled?)');
+    return false;
+  }
+  strudelRoomTap = dest;
+  console.log('[latency] publishing local Strudel to room for the aggregator to tap');
+  return true;
+}
+
+export async function unpublishLocalStrudelFromRoom() {
+  if (!strudelRoomTap) return;
+  await stopPropagatingExternalStream();
+  try { masterStrudelGain && masterStrudelGain.disconnect(strudelRoomTap); } catch (e) {}
+  strudelRoomTap = null;
+  console.log('[latency] stopped publishing local Strudel to room');
+}
+
+// Manual hooks for testing the publish path without depending on aggregator
+// detection (which rides the sometimes-flaky peer-state bus).
+if (typeof window !== 'undefined') {
+  window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
+  window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
 }
 
 // Attach a pre-built WebAudio node directly to a peer's effects chain.

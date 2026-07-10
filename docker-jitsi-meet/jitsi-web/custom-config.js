@@ -658,6 +658,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const next = jitsiId || null;
     if (next === aggregatorJitsiId) return;
     aggregatorJitsiId = next;
+    if (next) publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish failed", e30));
+    else unpublishLocalStrudelFromRoom().catch((e30) => console.warn("[latency] strudel unpublish failed", e30));
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     for (const chain of chains.values()) {
@@ -1239,6 +1241,35 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function isPropagatingToRoom() {
     return !!jitsiMixState;
   }
+  async function publishLocalStrudelToRoom() {
+    if (strudelRoomTap) return true;
+    await ensureMasterStrudelInput();
+    if (!masterStrudelGain) return false;
+    const dest = audioCtx.createMediaStreamDestination();
+    masterStrudelGain.connect(dest);
+    const ok = await propagateExternalStreamToRoom(dest.stream);
+    if (!ok) {
+      try {
+        masterStrudelGain.disconnect(dest);
+      } catch (e30) {
+      }
+      console.warn("[latency] could not publish local Strudel to room \u2014 no outgoing Jitsi audio track (is the mic enabled?)");
+      return false;
+    }
+    strudelRoomTap = dest;
+    console.log("[latency] publishing local Strudel to room for the aggregator to tap");
+    return true;
+  }
+  async function unpublishLocalStrudelFromRoom() {
+    if (!strudelRoomTap) return;
+    await stopPropagatingExternalStream();
+    try {
+      masterStrudelGain && masterStrudelGain.disconnect(strudelRoomTap);
+    } catch (e30) {
+    }
+    strudelRoomTap = null;
+    console.log("[latency] stopped publishing local Strudel to room");
+  }
   async function attachNodeToChain(jitsiId, node, label2 = "relay") {
     if (!jitsiId || !node) return;
     await bootAudioEngine();
@@ -1292,7 +1323,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, strudelRoomTap;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -1400,6 +1431,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           }
         }
       };
+      strudelRoomTap = null;
+      if (typeof window !== "undefined") {
+        window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
+        window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
+      }
     }
   });
 
