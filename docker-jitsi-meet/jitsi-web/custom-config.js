@@ -604,6 +604,27 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/aggregator-election.js
+  function electAggregator(peers) {
+    let best = null;
+    let bestIdx = Infinity;
+    for (const p of peers || []) {
+      if (!p || !p.isAggregator || !p.jitsiId) continue;
+      const raw = p.roomIndex;
+      const parsed = raw === null || raw === void 0 || raw === "" ? NaN : Number(raw);
+      const idx = Number.isFinite(parsed) ? parsed : Infinity;
+      if (best === null || idx < bestIdx || idx === bestIdx && String(p.jitsiId) < String(best.jitsiId)) {
+        best = p;
+        bestIdx = idx;
+      }
+    }
+    return best;
+  }
+  var init_aggregator_election = __esm({
+    "src/aggregator-election.js"() {
+    }
+  });
+
   // src/latency-instrument.js
   function notifyRoutingChange() {
     routingSubscribers.forEach((fn) => {
@@ -668,13 +689,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
   }
   function refreshAggregatorPeer() {
-    const local2 = getLocalPeer();
-    if (local2 && local2.isAggregator) {
-      setAggregatorPeer(null);
-      return;
-    }
-    const agg = getAllPeers().find((p) => p && p.isAggregator && p.jitsiId && !p.isLocal);
-    setAggregatorPeer(agg ? agg.jitsiId : null);
+    const winner = electAggregator(getAllPeers());
+    setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);
   }
   function ensureAudioContext() {
     const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -1330,6 +1346,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     "src/latency-instrument.js"() {
       init_participants();
       init_peer_state();
+      init_aggregator_election();
       audioCtx = null;
       realDestination = null;
       workletLoaded = null;
@@ -49374,6 +49391,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
 
   // src/index.js
   init_peer_state();
+  init_aggregator_election();
 
   // src/bridges/XMPPtoO2Mapper.js
   var SERVICE_PREFIX = "/perf/";
@@ -53607,6 +53625,11 @@ ${voiceCode}${BTN_MARKER2}`);
     sendLocalPlaying(true);
   };
   window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+  window.__trussalIsActiveAggregator = () => {
+    const winner = electAggregator(getAllPeers());
+    const local2 = getLocalPeer();
+    return !!(winner && local2 && local2.isAggregator && winner.jitsiId === local2.jitsiId);
+  };
   renderAudioConfigCheck();
   renderJamulusWelcomePanelAndBanner();
   renderRecentListText();

@@ -3,7 +3,7 @@ import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium
 import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
   pageAggregatorCapture, pageDrainParticipantAudio, pageAggregatorCaptureDiag, pageFpsSampler,
-  pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster,
+  pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 
@@ -14,6 +14,15 @@ const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
 // Round-robin turn length (ms) before the metaprogram schedules slots for real:
 // stream one participant, then the next, so the alternation is audible.
 const DEFAULT_SLOT_MS = 4000;
+// How long to wait for the sidecar to answer an aggregator-claim before giving
+// up and joining anyway: a claim we can't obtain must not strand the (possibly
+// only) aggregator forever if the bus is briefly unreachable at startup.
+const CLAIM_TIMEOUT_MS = 5000;
+
+// err.code set on the throw from start() when another aggregator already holds
+// the room's slot. The entrypoint treats this as a clean "nothing to do" exit
+// (code 0), NOT a crash to replace — a losing aggregator is expected to leave.
+export const AGGREGATOR_SLOT_TAKEN = 'AGGREGATOR_SLOT_TAKEN';
 
 // Sort participant tokens into Net Cycles room-index order: 0, 0a, 0b, 1, 2, …
 // (numeric index first, then the per-owner bot suffix). Falls back to a plain
@@ -54,7 +63,7 @@ function tokenOrder(a, b) {
  */
 export class AggregatorBot extends Bot {
 
-    constructor(cfg, { launcher, reporter, logIngest = true, now } = {}, buffers = {}, bufferSize = 1024) {
+    constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
         // Individual dimension: token -> RingBuffer. Pre-seedable for tests.
         this.buffers = buffers;
@@ -66,6 +75,19 @@ export class AggregatorBot extends Bot {
         // clock so the alternation is testable without real time.
         this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
         this.now = typeof now === 'function' ? now : () => Date.now();
+        // Election gate: only the room's single ACTIVE aggregator ingests and
+        // streams. A second aggregator that joins stands down here (publishing
+        // nothing), so the two masters never tap and feed back into each other.
+        // Defaults to polling the page, which reads the Trussal bundle's election
+        // (window.__trussalIsActiveAggregator); tests inject a predicate.
+        this.isActive = typeof isActive === 'function' ? isActive : () => this.#queryActiveFromPage();
+        // Pre-join gate: how the bot claims the room's single aggregator slot
+        // from the sidecar BEFORE launching its browser. A `(url, {onOpen,
+        // onMessage}) => { send, close }` connector (production injects the
+        // ws-backed one; tests inject a fake). Absent -> the claim is skipped
+        // (standalone / unit tests that drive the bot directly).
+        this.connectSidecar = typeof connectSidecar === 'function' ? connectSidecar : null;
+        this._claimConn = null;
         // When the current round-robin started (set lazily on the first assemble
         // that actually has a participant to stream) and which token is streaming.
         this._playbackStartMs = null;
@@ -93,6 +115,13 @@ export class AggregatorBot extends Bot {
         // publish an initial metrics sample. Mirrors Bot.start() but omits the
         // Strudel boot and adds the participant-audio tap.
         const { botId, name, jitsiUrl, executablePath, bandwidth = {}, ownerIndex } = this.cfg;
+
+        // Claim the room's single aggregator slot BEFORE touching the browser.
+        // If another aggregator already holds it, throw so the container exits
+        // without ever joining Jitsi — a losing aggregator must never be in the
+        // meeting, because two of them mutually mute (see the sidecar's
+        // 'aggregator-claim' handler and electAggregator).
+        await this.#claimAggregatorSlot();
 
         this.browser = await this.launcher.launch(browserLaunchOptions(executablePath));
         this.page = await this.browser.newPage();
@@ -156,6 +185,9 @@ export class AggregatorBot extends Bot {
     }
 
     async ingestTick() {
+        // Stand down unless we're the room's active aggregator (see isActive): a
+        // second aggregator neither taps nor streams, so no feedback loop forms.
+        if (!(await this.isActive())) return;
         // #drainPageCaptures already swallows page errors; nothing to write when
         // the room is silent.
         await this.writeToIndividualParticipantBufferQueues();
@@ -176,6 +208,10 @@ export class AggregatorBot extends Bot {
     }
 
     async playbackTick() {
+        // Only the active aggregator assembles and streams the master; a stood-
+        // down aggregator publishes silence, so it can't feed back into the
+        // active one's mix (which taps every participant, including this bot).
+        if (!(await this.isActive())) return;
         await this.readAndAssembleMasterBuffer();
         await this.playMasterBufferToClient();
     }
@@ -279,7 +315,14 @@ export class AggregatorBot extends Bot {
     }
 
     async stop () {
-        // Stop streaming, drop buffered audio, and close the page + browser.
+        // Stop streaming, drop buffered audio, release the aggregator claim, and
+        // close the page + browser. Releasing the claim (closing the probe) lets
+        // a replacement aggregator take the slot.
+        if (this._claimConn) {
+            try { this._claimConn.close(); }
+            catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
+            this._claimConn = null;
+        }
         if (this._ingestTimer && this._clearInterval) this._clearInterval(this._ingestTimer);
         this._ingestTimer = null;
         if (this._playbackTimer && this._clearInterval) this._clearInterval(this._playbackTimer);
@@ -373,6 +416,84 @@ export class AggregatorBot extends Bot {
         const m = await this.sampleMetrics();
         this.reporter('[aggregator-bot] metrics', m);
         return m;
+    }
+
+    // Sidecar URL for the aggregator claim, derived from the Jitsi room URL so it
+    // targets the SAME room the bundle registers under (the bundle keys the room
+    // on the last path segment and reaches the sidecar at /ws on the page host —
+    // proxied by nginx). Null if no connector is wired or the URL can't be parsed.
+    #sidecarClaimUrl() {
+        if (!this.connectSidecar) return null;
+        try {
+            const u = new URL(this.cfg.jitsiUrl);
+            const room = u.pathname.split('/').filter(Boolean).pop();
+            if (!room) return null;
+            const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${proto}//${u.host}/ws?room=${encodeURIComponent(room)}&role=aggregator-probe`;
+        } catch (e) {
+            console.error(`[aggregator-bot] could not derive sidecar claim URL from ${this.cfg.jitsiUrl}: ${e.message}`);
+            return null;
+        }
+    }
+
+    async #claimAggregatorSlot() {
+        const url = this.#sidecarClaimUrl();
+        if (!url) return; // no connector wired — nothing to gate on (tests/standalone)
+        const granted = await this.#requestAggregatorClaim(url);
+        if (!granted) {
+            // Someone else holds the room's single aggregator slot. Release our
+            // probe and refuse to join — the caller (start) propagates the throw
+            // so the container exits instead of joining the meeting.
+            if (this._claimConn) {
+                try { this._claimConn.close(); }
+                catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
+                this._claimConn = null;
+            }
+            const err = new Error(`[aggregator-bot] room already has an aggregator; refusing to join (${url})`);
+            err.code = AGGREGATOR_SLOT_TAKEN;
+            throw err;
+        }
+        // Granted: keep the probe connection open for our lifetime (closed in
+        // stop()) so nothing else can claim the slot while we are the aggregator.
+    }
+
+    #requestAggregatorClaim(url) {
+        return new Promise((resolve) => {
+            let settled = false;
+            const finish = (granted) => { if (!settled) { settled = true; resolve(granted); } };
+            // Fail OPEN on timeout: if the bus doesn't answer, a lone aggregator
+            // must still come up. The client-side election + stand-down remain as
+            // a backstop if this lets a second one slip through.
+            const timer = setTimeout(() => {
+                console.warn(`[aggregator-bot] aggregator-claim timed out after ${CLAIM_TIMEOUT_MS}ms; proceeding`);
+                finish(true);
+            }, CLAIM_TIMEOUT_MS);
+            this._claimConn = this.connectSidecar(url, {
+                onOpen: (send) => send({ type: 'aggregator-claim' }),
+                onMessage: (msg) => {
+                    if (msg && msg.type === 'aggregator-claim-result') {
+                        clearTimeout(timer);
+                        finish(!!msg.granted);
+                    }
+                },
+            });
+        });
+    }
+
+    async #queryActiveFromPage() {
+        // Ask the page whether this aggregator won the election. No page (tests
+        // that don't inject isActive drive the sub-methods directly) -> assume
+        // active so the round trip still runs.
+        if (!this.page || typeof this.page.evaluate !== 'function') return true;
+        try {
+            return !!(await this.page.evaluate(pageIsActiveAggregator));
+        } catch (e) {
+            // A torn-down page (late Jitsi navigation) can't answer. Assume active
+            // so a lone aggregator keeps streaming through transient page churn;
+            // the next tick re-checks once the election helper is reachable again.
+            console.error(`[aggregator-bot] active-aggregator check failed: ${e.message}`);
+            return true;
+        }
     }
 
     async #drainPageCaptures() {

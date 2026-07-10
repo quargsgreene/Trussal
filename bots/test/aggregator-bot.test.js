@@ -2,7 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { RingBuffer } from '../src/bot/ring-buffer.js';
-import { AggregatorBot } from '../src/bot/aggregator-bot.js';
+import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from '../src/bot/aggregator-bot.js';
+
+// A fake sidecar connector (shape: (url, {onOpen, onMessage}) => {send, close})
+// that answers the aggregator-claim with a fixed verdict. Records the URL it was
+// asked to reach and whether the connection was closed.
+function fakeClaimConnector(granted) {
+  const rec = { url: null, closed: false };
+  const connect = (url, { onOpen, onMessage }) => {
+    rec.url = url;
+    setTimeout(() => {
+      onOpen(() => {}); // bot sends aggregator-claim; we ignore the payload
+      onMessage({ type: 'aggregator-claim-result', granted });
+    }, 0);
+    return { send: () => {}, close: () => { rec.closed = true; } };
+  };
+  return { connect, rec };
+}
 
 // --- RingBuffer ---------------------------------------------------------------
 
@@ -245,6 +261,108 @@ test('round trip: alternates each participant every 4s and streams the active on
   assert.equal(a.active, '0', 'rotation wraps back round');
   assert.equal(a.assembled, 0, 'a drained participant contributes silence until it fills again');
   assert.equal((await bot.playMasterBufferToClient()).played, 0);
+
+  await bot.stop();
+});
+
+// --- pre-join claim gate ------------------------------------------------------
+// The bot claims the room's single aggregator slot from the sidecar BEFORE
+// launching its browser. A losing bot must never join the meeting at all.
+
+test('claim gate: winning the claim lets the bot join (browser launched, slot URL from the room)', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const { connect, rec } = fakeClaimConnector(true);
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false, connectSidecar: connect });
+
+  await bot.start();
+
+  assert.ok(calls.launchOpts, 'browser launched after the claim was granted');
+  assert.equal(calls.goto.length, 1, 'joined the Jitsi room');
+  assert.match(rec.url, /^ws:\/\/localhost\/ws\?room=0&role=aggregator-probe$/, 'claimed the slot for the room derived from jitsiUrl');
+
+  await bot.stop();
+  assert.equal(rec.closed, true, 'stop() releases the claim (closes the probe)');
+});
+
+test('claim gate: losing the claim throws AGGREGATOR_SLOT_TAKEN and never launches the browser', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const { connect, rec } = fakeClaimConnector(false);
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false, connectSidecar: connect });
+
+  await assert.rejects(() => bot.start(), (err) => err.code === AGGREGATOR_SLOT_TAKEN);
+
+  assert.equal(calls.launchOpts, undefined, 'never launched a browser');
+  assert.equal(calls.goto.length, 0, 'never joined the Jitsi room');
+  assert.equal(rec.closed, true, 'released the probe on denial');
+});
+
+test('claim gate: with no connector wired the claim is skipped (unit/standalone path)', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }); // no connectSidecar
+  await bot.start();
+  assert.ok(calls.launchOpts, 'joins without a claim when no sidecar connector is injected');
+  await bot.stop();
+});
+
+// --- single-aggregator election gate -----------------------------------------
+// Only the room's ACTIVE aggregator ingests and streams. A second aggregator
+// stands down so the two masters never tap and feed back into each other (which
+// silences both). isActive is injected here; in production it polls the page's
+// window.__trussalIsActiveAggregator (the bundle's election).
+
+test('election gate: a stood-down aggregator neither drains nor streams', async () => {
+  const { calls, fakeLauncher } = makeFakes({ pageCaptures: [{ token: '0a', samples: [0.2, 0.4] }] });
+  const bot = new AggregatorBot(
+    { ...cfg, ingestIntervalMs: 50, playbackIntervalMs: 50 },
+    { launcher: fakeLauncher, logIngest: false, isActive: async () => false },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // Pre-load a buffer so playback WOULD have something to stream if it ran.
+  bot.buffers['0a'] = new RingBuffer(1024); bot.buffers['0a'].write(new Array(200).fill(0.5));
+
+  await bot.ingestTick();
+  assert.equal(bot.buffers['0a'].length, 200, 'stood-down aggregator does not drain the page tap');
+
+  await bot.playbackTick();
+  assert.equal(calls.enqueued.length, 0, 'stood-down aggregator enqueues no master to the page player');
+  assert.equal(bot.buffers['0a'].length, 200, 'and does not consume the buffered audio');
+
+  await bot.stop();
+});
+
+test('election gate: the active aggregator ingests and streams normally', async () => {
+  const { calls, fakeLauncher } = makeFakes({ pageCaptures: [{ token: '0a', samples: [0.2, 0.4] }] });
+  const bot = new AggregatorBot(
+    cfg,
+    { launcher: fakeLauncher, logIngest: false, isActive: async () => true },
+    {}, 1024,
+  );
+  await bot.start();
+
+  await bot.ingestTick();
+  assert.equal(bot.buffers['0a'].length, 2, 'active aggregator drains the page tap into its buffer');
+
+  await bot.playbackTick();
+  assert.equal(calls.enqueued.length, 1, 'active aggregator streams the assembled master back out');
+
+  await bot.stop();
+});
+
+test('election gate: default isActive polls the page election helper', async () => {
+  // No injected isActive -> the bot asks the page. Assert it evaluates the
+  // election helper (pageIsActiveAggregator, which reads
+  // window.__trussalIsActiveAggregator) before doing ingest work.
+  const { calls, fakeLauncher } = makeFakes({ pageCaptures: [{ token: '0a', samples: [0.1] }] });
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+
+  await bot.playbackTick();
+  assert.ok(
+    calls.evaluate.some((s) => /__trussalIsActiveAggregator/.test(s)),
+    'default gate evaluates the page election helper',
+  );
 
   await bot.stop();
 });

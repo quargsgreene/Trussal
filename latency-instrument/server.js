@@ -44,7 +44,10 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   function getRoomMeta(name) {
     let meta = roomMeta.get(name);
     if (!meta) {
-      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [], sessionId: randomUUID() };
+      // aggregatorClaimPeerId: the connection currently holding the room's
+      // single aggregator slot (see the 'aggregator-claim' handler). A losing
+      // aggregator bot never joins Jitsi, so a room can only ever contain one.
+      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -229,6 +232,35 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
               roomIndex: record.roomIndex, isBot: record.isBot, displayName: record.displayName
             });
           }
+          break;
+        }
+
+        case 'aggregator-claim': {
+          // Pre-join gate for aggregator bots. A room may only ever hold ONE
+          // aggregator: two of them each solo the other and tap + re-emit the
+          // other's master, so both mixes feed back and mute. An aggregator bot
+          // asks for the slot BEFORE it launches its browser; if it loses it
+          // never joins the meeting at all (it exits). Because the relay handles
+          // messages one at a time, this election is race-free — the first claim
+          // to arrive wins even if several bots start together.
+          //
+          // Granted iff no OTHER connection already holds the claim and no
+          // aggregator has already joined (its bundle announced isAggregator in
+          // the roster). The claim is held by this connection — the probe never
+          // sends `hello`, so it is not a roster participant (no ghost) — and is
+          // released when the socket closes (see ws.on('close')). The winner
+          // keeps the probe open for its lifetime so nothing can claim during the
+          // ~seconds between winning and its browser joining.
+          const meta = getRoomMeta(roomName);
+          const existingRoom = rooms.get(roomName);
+          const claimHeldByOther = meta.aggregatorClaimPeerId != null
+            && meta.aggregatorClaimPeerId !== peerId;
+          const aggregatorJoined = existingRoom
+            && [...existingRoom.values()].some(r => r.isAggregator && r.peerId !== peerId);
+          const granted = !claimHeldByOther && !aggregatorJoined;
+          if (granted) meta.aggregatorClaimPeerId = peerId;
+          send(ws, { type: 'aggregator-claim-result', granted });
+          logEvent(roomName, 'aggregator-claim', { peerId, granted });
           break;
         }
 
@@ -426,6 +458,12 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
     });
 
     ws.on('close', () => {
+      // Release the aggregator claim if this socket held it, so a replacement
+      // aggregator can take the slot. Done before the room cleanup below (which
+      // may delete the meta entirely when the room empties).
+      const meta = roomMeta.get(roomName);
+      if (meta && meta.aggregatorClaimPeerId === peerId) meta.aggregatorClaimPeerId = null;
+
       const room = rooms.get(roomName);
       if (room && room.has(peerId)) {
         room.delete(peerId);
@@ -441,6 +479,11 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // the room object survives — reset indices and the shared doc.
           roomMeta.delete(roomName);
         }
+      } else if (!room || room.size === 0) {
+        // A probe-only connection (an aggregator claim that never became a
+        // participant) closing on an empty room: drop the meta it created so an
+        // idle room doesn't leak.
+        roomMeta.delete(roomName);
       }
       console.log(`[latency] close room=${roomName} peerId=${peerId}`);
     });

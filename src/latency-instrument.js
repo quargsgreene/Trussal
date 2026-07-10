@@ -11,7 +11,8 @@
 // peer-state bus, so every browser produces the same audio for the same peer.
 
 import { subscribeParticipants, getLocalParticipant, getParticipantIdForAudioTag } from './participants.js';
-import { subscribePeerState, getPeerByJitsiId, getAllPeers, getLocalPeer } from './peer-state.js';
+import { subscribePeerState, getPeerByJitsiId, getAllPeers } from './peer-state.js';
+import { electAggregator } from './aggregator-election.js';
 
 let audioCtx = null;
 let realDestination = null;
@@ -143,15 +144,18 @@ export function setAggregatorPeer(jitsiId) {
 
 export function getAggregatorPeer() { return aggregatorJitsiId; }
 
-// Recompute aggregator mode from the current roster. A remote aggregator peer
-// switches this client into aggregator mode; none (or being the aggregator
-// ourselves — we must hear everyone to tap) leaves the normal mix. Called
-// whenever the roster changes.
+// Recompute aggregator mode from the current roster. Several peers may announce
+// themselves as aggregators (a spawn race, or a lingering container from a
+// redeploy), but only ONE may be honored — otherwise their masters feed back and
+// both mute. electAggregator deterministically picks the single winner (lowest
+// room index = first to join) so every client agrees on the same one. A remote
+// winner switches this client into aggregator mode; no aggregator, or being the
+// winner ourselves (we must hear everyone to tap), leaves the normal mix. Called
+// whenever the roster changes, so losing the winner promotes the next-lowest
+// aggregator automatically.
 function refreshAggregatorPeer() {
-  const local = getLocalPeer();
-  if (local && local.isAggregator) { setAggregatorPeer(null); return; }
-  const agg = getAllPeers().find(p => p && p.isAggregator && p.jitsiId && !p.isLocal);
-  setAggregatorPeer(agg ? agg.jitsiId : null);
+  const winner = electAggregator(getAllPeers());
+  setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);
 }
 
 function ensureAudioContext() {

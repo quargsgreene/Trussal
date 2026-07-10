@@ -13,8 +13,10 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
+import WebSocket from 'ws';
 import { Bot } from './bot.js';
-import { AggregatorBot } from './aggregator-bot.js';
+import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from './aggregator-bot.js';
+import { makeWsSidecarConnector } from '../orchestrator/fleet-service.js';
 import { ffmpegBedArgs } from './ffmpeg-bed.js';
 import { jamulusArgs, jamulusIniContent } from './jamulus.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
@@ -113,8 +115,22 @@ async function aggregatorMain() {
     ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '500')),
     playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '250')),
     slotMs: Number(env('SLOT_MS', '4000')),
-  }, { launcher: puppeteer }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
-  await bot.start();
+    // Claim the room's single aggregator slot before joining; a losing bot exits
+    // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).
+  }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket) }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
+  try {
+    await bot.start();
+  } catch (err) {
+    if (err && err.code === AGGREGATOR_SLOT_TAKEN) {
+      // Another aggregator already holds the room's slot: this one deliberately
+      // never joins. Exit cleanly so the orchestrator doesn't count it as a
+      // crash to replace.
+      console.log(err.message);
+      await bot.stop().catch((e) => console.error(`[aggregator-bot] cleanup after losing claim failed: ${e.message}`));
+      process.exit(0);
+    }
+    throw err; // a genuine start failure is fatal (handled by main().catch)
+  }
   startMetricsReporting(bot, { role: 'aggregator' });
 
   const shutdown = async () => {

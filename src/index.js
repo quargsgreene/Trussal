@@ -2,7 +2,8 @@ import { JAMULUS_ROOM_MAP , renderJamulusWelcomePanelAndBanner, getRoomNameFromU
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
-import { sendLocalPattern, sendLocalPlaying, subscribePeerState } from './peer-state.js';
+import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer } from './peer-state.js';
+import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import './studio.js';
 
@@ -26,6 +27,19 @@ window.__trussalAnnounceLocalPattern = (code) => {
 // Cycles room-index token (0, 0a, 1, …). The room mapper above already keeps
 // the jitsiId ↔ roomIndex bijection current, so expose the lookup to the page.
 window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+
+// The aggregator bot's page polls this to decide whether IT is the room's ACTIVE
+// aggregator. Only one aggregator may stream at a time (see electAggregator):
+// two active aggregators tap and re-emit each other's master, so both feed back
+// and mute. True iff the local peer is the elected (lowest-room-index) aggregator
+// — so a second aggregator that joins publishes nothing until the first leaves
+// and it is promoted. Every browser client honors the same winner independently
+// (latency-instrument's refreshAggregatorPeer), so bot and clients never disagree.
+window.__trussalIsActiveAggregator = () => {
+  const winner = electAggregator(getAllPeers());
+  const local = getLocalPeer();
+  return !!(winner && local && local.isAggregator && winner.jitsiId === local.jitsiId);
+};
 
 renderAudioConfigCheck();
 renderJamulusWelcomePanelAndBanner();
