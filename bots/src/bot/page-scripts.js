@@ -463,7 +463,15 @@ export function pageAggregatorCapture() {
 
   function jitsiIdFor(el) {
     const m = /^remoteAudio_(.+)$/.exec(el.id || '');
-    return m ? m[1] : null;
+    if (!m) return null;
+    // The element id embeds the endpoint id, but some Jitsi versions — and P2P
+    // mode specifically — append a source/track suffix, e.g.
+    // "remoteAudio_96c42c65-audio-0-3". The room-index mapper
+    // (window.__trussalRoomIndexForJitsiId) is keyed by the BARE endpoint id
+    // ("96c42c65"), so a suffixed key never resolves and the capture is held
+    // forever. Strip a trailing "-audio…/-video…/-a0…/-v0…" source suffix so the
+    // store is keyed by — and resolves against — the endpoint id.
+    return m[1].replace(/-(?:audio|video|a\d|v\d).*$/i, '');
   }
 
   function tap(el) {
