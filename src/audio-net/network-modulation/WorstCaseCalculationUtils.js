@@ -71,7 +71,7 @@ export function computeWorstCaseMetrics(peers) {
   }
   const wcrtt = worstCase(rtts) ?? 0;
   return {
-    wcl: wcrtt / 2,
+    wcl: 1000 * wcrtt, // wcrtt / 2,
     wcj: worstCase(jitters) ?? 0,
     wcrtt,
     wcpl: worstCase(losses) ?? 0,

@@ -93,6 +93,9 @@ docker-save-*.tar
 !.env.example
 !.env.*.example
 .secrets/
+
+# --- Local dev stack (scripts/dev-setup.sh) ---
+docker-jitsi-meet/.jitsi-meet-cfg/
 *.pem
 *.key
 *.crt

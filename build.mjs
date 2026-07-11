@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import esbuild from 'esbuild';
-import { mkdirSync, copyFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
 const STRUDEL_ASSETS_SRC = join(STRUDEL_FORK_WEB, 'dist/assets');
 const STRUDEL_ASSETS_DEST = 'dist/assets';
+
+// Bind-mount dir the Jitsi `web` container serves /custom-config.js + /assets
+// from (see docker-compose.yml). Copying the fresh bundle here is all a running
+// container needs to pick up a rebuild — no image rebuild, no restart.
+const DEPLOY_DIR = resolve(__dirname, 'docker-jitsi-meet/jitsi-web');
+
+const argv = new Set(process.argv.slice(2));
+const WATCH = argv.has('--watch');
+const DEPLOY = argv.has('--deploy'); // also copy into the container bind mount
 
 // Strudel's bundle references a SharedWorker via `new URL("assets/clockworker-*.js", import.meta.url)`,
 // which resolves relative to wherever the bundled custom-config.js is served from.
@@ -23,7 +32,32 @@ function copyStrudelAssets() {
 	}
 }
 
-await esbuild.build({
+// Mirror dist/ into the container's bind-mount dir (same effect as the
+// `deploy:local` npm script, but callable on every incremental rebuild).
+function deployToContainer() {
+	copyFileSync('dist/custom-config.js', join(DEPLOY_DIR, 'custom-config.js'));
+	const assetsDest = join(DEPLOY_DIR, 'assets');
+	mkdirSync(assetsDest, { recursive: true });
+	cpSync('dist/assets', assetsDest, { recursive: true });
+}
+
+// esbuild runs onEnd after every (re)build — including the first — so the copy
+// steps stay in sync in one-shot and --watch modes alike.
+const postBuild = {
+	name: 'trussal-postbuild',
+	setup(build) {
+		build.onEnd((result) => {
+			if (result.errors.length) return; // leave stale output on a failed rebuild
+			copyStrudelAssets();
+			if (DEPLOY) {
+				deployToContainer();
+				console.log(`[build] deployed → docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);
+			}
+		});
+	},
+};
+
+const options = {
 	entryPoints: ['src/index.js'],
 	outfile: 'dist/custom-config.js',
 	bundle: true,
@@ -46,7 +80,14 @@ await esbuild.build({
 	define: {
 		'process.env.JAMULUS_HOST': JSON.stringify(process.env.JAMULUS_HOST || 'jamulus.example.com'),
 		'import.meta.url': '__TRUSSAL_BUNDLE_URL'
-	}
-});
+	},
+	plugins: [postBuild],
+};
 
-copyStrudelAssets();
+if (WATCH) {
+	const ctx = await esbuild.context(options);
+	await ctx.watch();
+	console.log('[build] watching src/ for changes… (Ctrl-C to stop)');
+} else {
+	await esbuild.build(options);
+}

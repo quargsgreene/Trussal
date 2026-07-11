@@ -9,6 +9,9 @@
     "build": "node build.mjs",
     "deploy:local": "npm run build && cp dist/custom-config.js docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
+    "dev": "bash scripts/dev.sh",
+    "dev:setup": "bash scripts/dev-setup.sh",
+    "dev:down": "bash scripts/dev-down.sh",
     "clean": "rm -rf dist",
     "build:strudel-fork": "cd strudel-fork && npm exec --package=pnpm@8 --yes -- pnpm install && npm exec --package=pnpm@8 --yes -- pnpm --filter @strudel/web build && npm exec --package=pnpm@8 --yes -- pnpm --filter @strudel/soundfonts build"
   },
