@@ -73,12 +73,18 @@ export class Bot {
       await new Promise((r) => setTimeout(r, script.entryDelayMs));
     }
     await this.#bootStrudel(script);
-    // startWithAudioMuted=false alone doesn't reliably give a headless bot a
-    // published audio track; explicitly publish the Strudel tap as the mic.
-    await this.page.evaluate(pageEnsureAudioPublished).catch(() => {});
-    // Likewise, jitsi-meet never requests the camera headlessly, so explicitly
-    // publish the Hydra canvas stream as the bot's video.
-    await this.page.evaluate(pageEnsureVideoPublished).catch(() => {});
+    // Publish VIDEO FIRST, AUDIO LAST. Publishing a track renegotiates the peer
+    // connection; when audio was published first and video second, the video
+    // renegotiation dropped the just-published audio sender — "blip then silence",
+    // correlated with the video-tile resize. Doing audio last leaves the audio
+    // sender in the final SDP. (startWith*Muted=false alone publishes neither track
+    // headlessly, so jitsi-meet is driven explicitly for both.)
+    // Don't swallow: a failed publish is exactly the "bot streams silence" bug, so
+    // surface it (pageEnsureAudioPublished also logs+throws internally).
+    await this.page.evaluate(pageEnsureVideoPublished)
+      .catch((e) => console.error('[bot] pageEnsureVideoPublished failed', e));
+    await this.page.evaluate(pageEnsureAudioPublished)
+      .catch((e) => console.error('[bot] pageEnsureAudioPublished failed', e));
   }
 
   /**
