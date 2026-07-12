@@ -593,6 +593,80 @@ export function pageAggregatorCaptureDiag() {
 }
 
 /**
+ * Track→member mapping probe for the capture redesign. The element-id tap keys on
+ * `remoteAudio_<jitsiId>`, but this deployment labels remote audio elements with
+ * generic ids (remoteAudio_remote-audio-N) that collapse to one unresolvable key.
+ * This dumps the AUTHORITATIVE mapping straight from lib-jitsi-meet: every remote
+ * participant's real endpoint id, what the room-index resolver returns for it, and
+ * each of its audio JitsiTracks' underlying MediaStreamTrack/stream id + owner id —
+ * then every <audio> element with the track ids on its srcObject. Correlating an
+ * element's srcObject track ids against a member's track ids tells us whether we
+ * can tap by TRACK IDENTITY (member id resolves to a room index) instead of parsing
+ * element ids. Read-only, defensive across API shapes; throws on unreadable tracks
+ * (a corrupt member must not be silently reported as having none).
+ */
+export function pageAggregatorTrackMapDiag() {
+  const appConference = globalThis.APP && globalThis.APP.conference;
+  const room = appConference && appConference._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
+  const resolverType = typeof window.__trussalRoomIndexForJitsiId;
+  const resolveRoomIndex = (id) => {
+    if (resolverType !== 'function') return undefined;
+    try { return window.__trussalRoomIndexForJitsiId(id); }
+    catch (e) { return `ERR:${e && e.message}`; }
+  };
+
+  // Priority-ordered conference surfaces that can enumerate participants; the
+  // first whose method exists wins, and its `conf` key doubles as the label.
+  const participantSources = [
+    { conf: 'room', ok: room && typeof room.getParticipants === 'function', list: () => room.getParticipants() },
+    { conf: 'wrapper', ok: appConference && typeof appConference.listMembers === 'function', list: () => appConference.listMembers() },
+  ];
+  const source = participantSources.find((candidate) => candidate.ok) || { conf: 'none', list: () => [] };
+  const participants = source.list();
+
+  const members = participants.map((participant) => {
+    const id = typeof participant.getId === 'function' ? participant.getId() : (participant._id || null);
+    let tracks = [];
+    try {
+      if (typeof participant.getTracks === 'function') tracks = participant.getTracks();
+      else if (typeof participant.getTracksByMediaType === 'function') tracks = participant.getTracksByMediaType('audio');
+    } catch (e) {
+      // Corrupted/unreadable tracks are a hard failure for the mapping — surface
+      // it (with the member id) rather than silently reporting a member with none.
+      throw new Error(`track-map: cannot read tracks for member ${id}: ${e && e.message}`);
+    }
+    const audioTracks = tracks
+      .filter((track) => typeof track.getType !== 'function' || track.getType() === 'audio')
+      .map((track) => {
+        const mediaStreamTrack = typeof track.getTrack === 'function' ? track.getTrack() : null;
+        const stream = typeof track.getOriginalStream === 'function' ? track.getOriginalStream() : null;
+        const audioTrackInfo = {
+          ownerId: typeof track.getParticipantId === 'function' ? track.getParticipantId() : null,
+          trackId: mediaStreamTrack ? mediaStreamTrack.id : null,
+          streamId: stream ? stream.id : null,
+          muted: typeof track.isMuted === 'function' ? track.isMuted() : null,
+        };
+        return audioTrackInfo;
+      });
+    const memberEntry = { id, roomIndex: resolveRoomIndex(id), tracks: audioTracks };
+    return memberEntry;
+  });
+
+  const audioElements = [...document.querySelectorAll('audio')]
+    .filter((el) => el.srcObject)
+    .map((el) => {
+      const audioElementEntry = {
+        id: el.id || '(none)',
+        streamId: el.srcObject.id,
+        trackIds: (typeof el.srcObject.getAudioTracks === 'function' ? el.srcObject.getAudioTracks() : []).map((audioTrack) => audioTrack.id),
+      };
+      return audioElementEntry;
+    });
+
+  return { conf: source.conf, resolverType, members, audioElements };
+}
+
+/**
  * Aggregator playback sink — the return leg of the round trip, mirror of
  * pageAggregatorCapture. The Node side hands assembled master-mix PCM to
  * enqueue(); a ScriptProcessor streams it out through the SHARED AudioContext's

@@ -4,7 +4,7 @@ import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
   pageAggregatorCapture, pageDrainParticipantAudio, pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
-  pageReportStudioStatus,
+  pageReportStudioStatus, pageAggregatorTrackMapDiag,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -767,6 +767,16 @@ export class AggregatorBot extends Bot {
                     console.log('[aggregator-bot] capture diag', JSON.stringify(diag));
                 } catch (e) {
                     console.error(`[aggregator-bot] capture diag failed: ${e.message}`);
+                }
+                // Authoritative track→member map (redesign probe): shows whether each
+                // remote audio stream can be tied to a member id that resolves to a
+                // room index, so the tap can key on TRACK IDENTITY instead of the
+                // broken element ids. Surfaces the throw from a corrupt member.
+                try {
+                    const trackMap = await this.page.evaluate(pageAggregatorTrackMapDiag);
+                    console.log('[aggregator-bot] track-map diag', JSON.stringify(trackMap));
+                } catch (e) {
+                    console.error(`[aggregator-bot] track-map diag failed: ${e.message}`);
                 }
             }
             return Array.isArray(takes) ? takes : [];
