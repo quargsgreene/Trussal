@@ -66,7 +66,19 @@ export function pageAudioBridge() {
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
     const fan = ctx.createGain();
     fan.connect(hardware);
-    fan.connect(tap);
+    // FIX (confirmed via the normTap probe): feed the Jitsi tap through an explicit
+    // 2-channel 'speakers' gain, NOT fan→tap directly. superdough's multichannel
+    // output leaves the fan (channelCountMode 'max') with a channel layout the plain
+    // MediaStreamDestination silently drops — the analyser/hardware hear it (fanRms>0)
+    // but the tap captured silence (tapRmsNative==0), while a parallel fan→explicit-
+    // stereo→tap had full audio (normTapRms>0). The explicit 2-ch node down-mixes ALL
+    // channels to clean stereo before the tap captures it.
+    const tapNorm = ctx.createGain();
+    tapNorm.channelCountMode = 'explicit';
+    tapNorm.channelCount = 2;
+    tapNorm.channelInterpretation = 'speakers';
+    fan.connect(tapNorm);
+    tapNorm.connect(tap);
     // superdough's multi-channel output controller reads
     // `audioContext.destination.maxChannelCount` and derives its channel
     // routing (ChannelMerger size, `ch % destination.channelCount`) from it.
