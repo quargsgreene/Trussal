@@ -123,6 +123,26 @@ export function pageAudioBridge() {
       const rms = Math.sqrt(sumSquares(tapBuf) / tapBuf.length);
       if (rms > tapRmsPeak) tapRmsPeak = rms;
     }, 200);
+    // DIAGNOSTIC (artifact-free): meter tap.stream from a SEPARATE native context.
+    // The same-ctx tapMeter above is unreliable (the same-ctx-loopback silence
+    // gotcha), so a cross-context source reads the tap's TRUE output. Native is the
+    // pre-wrap constructor, so this sidesteps the singleton. If this is >0 while the
+    // room hears silence, the break is in the WebRTC encode/publish, not fan→tap.
+    try {
+      const probeCtx = new Native();
+      if (probeCtx.state === 'suspended') probeCtx.resume().catch(() => {});
+      const probeMeter = probeCtx.createAnalyser();
+      probeMeter.fftSize = 2048;
+      probeCtx.createMediaStreamSource(tap.stream).connect(probeMeter);
+      const probeBuf = new Float32Array(probeMeter.fftSize);
+      let tapNativePeak = 0;
+      window.__trussalReadTapRmsNative = () => { const peak = tapNativePeak; tapNativePeak = 0; return peak; };
+      setInterval(() => {
+        probeMeter.getFloatTimeDomainData(probeBuf);
+        const rms = Math.sqrt(sumSquares(probeBuf) / probeBuf.length);
+        if (rms > tapNativePeak) tapNativePeak = rms;
+      }, 200);
+    } catch (e) { console.error('[trussal] native tap meter setup failed', e); }
     // superdough derives its output channel routing from destination.maxChannelCount
     // (the very math the maxChannelCount fix above feeds); a surprising real-device
     // value is a candidate silence cause, so snapshot it for diag alongside fanRms.
@@ -321,11 +341,15 @@ export async function pageEnsureAudioPublished() {
     const APP = globalThis.APP;
     const conf = APP && APP.conference;
     if (!conf) return;
-    const room = () => conf._room || conf.room;
+    // Single accessor for lib-jitsi-meet's live JitsiConference (its own `_room`
+    // field). Isolated here so the external underscore name appears once; every
+    // caller in this function goes through it. (Page fns are injected via
+    // page.evaluate and can't share a module-level helper.)
+    const getConferenceRoom = () => conf._room;
     const localTrack = () => {
       try {
-        const r = room();
-        return r && r.getLocalAudioTrack && r.getLocalAudioTrack();
+        const conferenceRoom = getConferenceRoom();
+        return conferenceRoom && conferenceRoom.getLocalAudioTrack && conferenceRoom.getLocalAudioTrack();
       } catch (e) {
         console.error('[trussal] getLocalAudioTrack failed', e);
         throw e;
@@ -392,7 +416,7 @@ export async function pageEnsureAudioPublished() {
           pub.rebindMethod = 'no-track-created';
         } else {
           if (typeof conf.useAudioStream === 'function') { pub.rebindMethod = 'useAudioStream'; await conf.useAudioStream(at); }
-          else { const r = room(); if (r && r.addTrack) { pub.rebindMethod = 'addTrack'; await r.addTrack(at); } else { pub.rebindMethod = 'no-attach-api'; } }
+          else { const conferenceRoom = getConferenceRoom(); if (conferenceRoom && conferenceRoom.addTrack) { pub.rebindMethod = 'addTrack'; await conferenceRoom.addTrack(at); } else { pub.rebindMethod = 'no-attach-api'; } }
           // Did the swap actually make the tap the published track?
           const after = localTrack();
           const afterMst = after && typeof after.getTrack === 'function' ? after.getTrack() : null;
@@ -407,6 +431,33 @@ export async function pageEnsureAudioPublished() {
         pub.rebindError = String((e && e.message) || e);
         console.error('[trussal] audio rebind failed', e);
       }
+    }
+
+    // DIAGNOSTIC: poll the bot's OWN RTCPeerConnection for the outbound audio
+    // media-source level — the ENCODER's view of the published track, free of any
+    // WebAudio measurement artifact (mirrors NetStats.js peerConnections access).
+    // audioLevel>0 => real audio reaches the encoder; ==0 => the published track is
+    // silent at the source. Poll (not one-shot): the PC/source appears after join.
+    if (!window.__trussalOutboundProbe) {
+      window.__trussalOutboundProbe = true;
+      const readOutbound = async () => {
+        try {
+          const conferenceRoom = getConferenceRoom();
+          const pcMap = conferenceRoom && conferenceRoom.rtc && conferenceRoom.rtc.peerConnections;
+          const peerConnections = [...((pcMap && ((pcMap.values && pcMap.values()) || pcMap)) || [])]
+            .map((tpc) => tpc && tpc.peerconnection)
+            .filter((pc) => pc && typeof pc.getStats === 'function');
+          const reports = await Promise.all(peerConnections.map((pc) => pc.getStats()));
+          const audioSources = reports.flatMap((report) => [...report.values()]
+            .filter((stat) => stat.type === 'media-source' && stat.kind === 'audio')
+            .map((stat) => ({ audioLevel: stat.audioLevel ?? null, totalAudioEnergy: stat.totalAudioEnergy ?? null })));
+          // Last match wins (mirrors the prior overwrite); null-ish when no source yet.
+          window.__trussalOutboundAudio = audioSources.at(-1) || { audioLevel: null, totalAudioEnergy: null, note: 'no audio media-source' };
+        } catch (e) {
+          window.__trussalOutboundAudio = { error: String((e && e.message) || e) };
+        }
+      };
+      setInterval(readOutbound, 1000);
     }
   } catch (e) {
     // Don't swallow: the inner steps (getLocalAudioTrack, the shared-context
@@ -869,6 +920,7 @@ export function pageReadSamples() {
   // routing — the maxChannelCount math is the known silence cause. Null before the
   // shared context exists (e.g. an aggregator that has not built it yet).
   const readTapRms = window.__trussalReadTapRms;
+  const readTapRmsNative = window.__trussalReadTapRmsNative;
   // DIAGNOSTIC: live each tick — is the CURRENTLY published local audio track the
   // fan's tap, or some other (silent) track? Decisive silent-bot signal alongside
   // fanRms/tapRms: publishedIsTap===false while fanRms>0 means the rebind never
@@ -885,8 +937,10 @@ export function pageReadSamples() {
   const audio = {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
     tapRms: typeof readTapRms === 'function' ? readTapRms() : null,
+    tapRmsNative: typeof readTapRmsNative === 'function' ? readTapRmsNative() : null,
     publishedIsTap,
     publishState: window.__trussalAudioPublish ?? null,
+    outboundAudio: window.__trussalOutboundAudio ?? null,
     fanChannelCount: fan ? fan.channelCount : null,
     fanMaxChannelCount: fan ? fan.maxChannelCount : null,
     hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
