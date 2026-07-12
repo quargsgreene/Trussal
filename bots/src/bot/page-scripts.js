@@ -106,6 +106,23 @@ export function pageAudioBridge() {
       const rms = Math.sqrt(sumSquares(meterBuf) / meterBuf.length);
       if (rms > fanRmsPeak) fanRmsPeak = rms;
     }, 200);
+    // DIAGNOSTIC: meter the TAP's OWN stream — the exact MediaStream published as
+    // the bot's mic — independent of the fan meter above. Splits the silent-bot
+    // failure: fanRms>0 & tapRms==0 => the fan→tap link is broken; fanRms>0 &
+    // tapRms>0 but the room hears silence => the published track is NOT this tap
+    // (the rebind never swapped it). Analyser is a passive sink; a MediaStreamSource
+    // on tap.stream drives it (no onward connection needed).
+    const tapMeter = ctx.createAnalyser();
+    tapMeter.fftSize = 2048;
+    ctx.createMediaStreamSource(tap.stream).connect(tapMeter);
+    const tapBuf = new Float32Array(tapMeter.fftSize);
+    let tapRmsPeak = 0;
+    window.__trussalReadTapRms = () => { const peak = tapRmsPeak; tapRmsPeak = 0; return peak; };
+    setInterval(() => {
+      tapMeter.getFloatTimeDomainData(tapBuf);
+      const rms = Math.sqrt(sumSquares(tapBuf) / tapBuf.length);
+      if (rms > tapRmsPeak) tapRmsPeak = rms;
+    }, 200);
     // superdough derives its output channel routing from destination.maxChannelCount
     // (the very math the maxChannelCount fix above feeds); a surprising real-device
     // value is a candidate silence cause, so snapshot it for diag alongside fanRms.
@@ -355,15 +372,41 @@ export async function pageEnsureAudioPublished() {
     const current = localTrack();
     const currentMst = current && typeof current.getTrack === 'function' ? current.getTrack() : null;
     const publishingTap = Boolean(tapTrack && currentMst && currentMst === tapTrack);
+    // DIAGNOSTIC: record the rebind decision + outcome so pageReadSamples can
+    // surface WHY a bot stays silent (published track never becomes the tap).
+    const pub = {
+      hadTapTrack: Boolean(tapTrack),
+      publishingTapBefore: publishingTap,
+      rebindAttempted: false,
+      rebindMethod: null,
+      publishedIsTapAfter: null,
+      rebindError: null,
+    };
+    window.__trussalAudioPublish = pub;
     if (!publishingTap && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+      pub.rebindAttempted = true;
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
         const at = tracks && tracks[0];
-        if (at) {
-          if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
-          else { const r = room(); if (r && r.addTrack) await r.addTrack(at); }
+        if (!at) {
+          pub.rebindMethod = 'no-track-created';
+        } else {
+          if (typeof conf.useAudioStream === 'function') { pub.rebindMethod = 'useAudioStream'; await conf.useAudioStream(at); }
+          else { const r = room(); if (r && r.addTrack) { pub.rebindMethod = 'addTrack'; await r.addTrack(at); } else { pub.rebindMethod = 'no-attach-api'; } }
+          // Did the swap actually make the tap the published track?
+          const after = localTrack();
+          const afterMst = after && typeof after.getTrack === 'function' ? after.getTrack() : null;
+          const newTap = window.__trussalMicStream && window.__trussalMicStream.getAudioTracks()[0];
+          pub.publishedIsTapAfter = Boolean(newTap && afterMst && afterMst === newTap);
         }
-      } catch (e) {}
+      } catch (e) {
+        // Do NOT swallow: an error here is exactly the silent-bot failure. Record +
+        // log so the diag and container logs surface it. DIAGNOSTIC build: log but
+        // don't throw — throwing trips the conductor replace policy and churns the
+        // bot before we can read the diag. Restore log+throw once the cause is fixed.
+        pub.rebindError = String((e && e.message) || e);
+        console.error('[trussal] audio rebind failed', e);
+      }
     }
   } catch (e) {
     // Don't swallow: the inner steps (getLocalAudioTrack, the shared-context
@@ -825,8 +868,25 @@ export function pageReadSamples() {
   // pageAudioBridge). The channel counts diagnose superdough's multichannel
   // routing — the maxChannelCount math is the known silence cause. Null before the
   // shared context exists (e.g. an aggregator that has not built it yet).
+  const readTapRms = window.__trussalReadTapRms;
+  // DIAGNOSTIC: live each tick — is the CURRENTLY published local audio track the
+  // fan's tap, or some other (silent) track? Decisive silent-bot signal alongside
+  // fanRms/tapRms: publishedIsTap===false while fanRms>0 means the rebind never
+  // made the tap the published track.
+  let publishedIsTap = null;
+  try {
+    const conference = globalThis.APP && globalThis.APP.conference;
+    const conferenceRoom = conference && conference._room;
+    const localTrack = conferenceRoom && conferenceRoom.getLocalAudioTrack && conferenceRoom.getLocalAudioTrack();
+    const localTrackMst = localTrack && typeof localTrack.getTrack === 'function' ? localTrack.getTrack() : null;
+    const tapTrack = window.__trussalMicStream && window.__trussalMicStream.getAudioTracks()[0];
+    if (localTrackMst && tapTrack) publishedIsTap = localTrackMst === tapTrack;
+  } catch (e) { publishedIsTap = null; }
   const audio = {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
+    tapRms: typeof readTapRms === 'function' ? readTapRms() : null,
+    publishedIsTap,
+    publishState: window.__trussalAudioPublish ?? null,
     fanChannelCount: fan ? fan.channelCount : null,
     fanMaxChannelCount: fan ? fan.maxChannelCount : null,
     hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
