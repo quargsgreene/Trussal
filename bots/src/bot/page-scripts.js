@@ -63,22 +63,8 @@ export function pageAudioBridge() {
   function build(args) {
     const ctx = new Native(...args);
     const hardware = ctx.destination; // real device → ALSA loopback → Jamulus
-    const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
     const fan = ctx.createGain();
     fan.connect(hardware);
-    // FIX (confirmed via the normTap probe): feed the Jitsi tap through an explicit
-    // 2-channel 'speakers' gain, NOT fan→tap directly. superdough's multichannel
-    // output leaves the fan (channelCountMode 'max') with a channel layout the plain
-    // MediaStreamDestination silently drops — the analyser/hardware hear it (fanRms>0)
-    // but the tap captured silence (tapRmsNative==0), while a parallel fan→explicit-
-    // stereo→tap had full audio (normTapRms>0). The explicit 2-ch node down-mixes ALL
-    // channels to clean stereo before the tap captures it.
-    const tapNorm = ctx.createGain();
-    tapNorm.channelCountMode = 'explicit';
-    tapNorm.channelCount = 2;
-    tapNorm.channelInterpretation = 'speakers';
-    fan.connect(tapNorm);
-    tapNorm.connect(tap);
     // superdough's multi-channel output controller reads
     // `audioContext.destination.maxChannelCount` and derives its channel
     // routing (ChannelMerger size, `ch % destination.channelCount`) from it.
@@ -90,7 +76,31 @@ export function pageAudioBridge() {
       configurable: true,
       get: () => fan,
     });
+    // Publish the fan through an explicit 2-channel 'speakers' gain into a
+    // MediaStreamDestination created HERE (after the fan + destination override) —
+    // constructed identically to the normTap probe, which carried full audio while
+    // UNPUBLISHED. Under test together: (1) whether that construction also works
+    // PUBLISHED (an earlier tap created before the fan stayed silent once published,
+    // while normTap did not — isolating publication vs the tap node), and (2)
+    // contentHint below. The explicit 2-ch node also down-mixes superdough's
+    // multichannel output to clean stereo.
+    const tapNorm = ctx.createGain();
+    tapNorm.channelCountMode = 'explicit';
+    tapNorm.channelCount = 2;
+    tapNorm.channelInterpretation = 'speakers';
+    fan.connect(tapNorm);
+    const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
+    tapNorm.connect(tap);
     window.__trussalMicStream = tap.stream;
+    // contentHint='music' disables WebRTC's speech-oriented send processing (noise
+    // suppression / AGC / Opus DTX) that can gate synthetic, non-voice audio like
+    // superdough's synths to silence once the track is published — while a human
+    // voice (the aggregator's mix) passes. Harmless if that processing isn't the cause.
+    try {
+      tap.stream.getAudioTracks().forEach((audioTrack) => { audioTrack.contentHint = 'music'; });
+    } catch (e) {
+      console.error('[trussal] setting audio contentHint failed', e);
+    }
     // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
