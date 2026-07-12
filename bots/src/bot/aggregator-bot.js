@@ -101,8 +101,8 @@ export class AggregatorBot extends Bot {
     // The aggregator-claim probe connection to the sidecar, held open for our
     // lifetime so nothing else can claim the room's single aggregator slot.
     #claimConn = null;
-    // Throttle counter for the empty-drain capture-diag heartbeat.
-    #emptyDrains = 0;
+    // Throttle counter for the capture-diag heartbeat (every ~10th drain).
+    #drainTicks = 0;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -760,19 +760,21 @@ export class AggregatorBot extends Bot {
         try {
             const takes = await this.page.evaluate(pageDrainParticipantAudio);
             console.log(`[aggregator-bot] drained ${takes.length} participant captures from the page`);
-            // Empty drain: dump the capture tap's state so "drained 0" localizes to a
-            // stage (no audio received / tap failing / token unresolved). Throttled to
-            // roughly every 10th empty tick so it's a heartbeat, not a flood. Best-effort
-            // telemetry — log a failure but don't throw, so a diag hiccup can't wedge ingest.
-            if (!takes.length) {
-                this.#emptyDrains += 1;
-                if (this.#emptyDrains % 10 === 1) {
-                    try {
-                        const diag = await this.page.evaluate(pageAggregatorCaptureDiag);
-                        console.log('[aggregator-bot] capture diag', JSON.stringify(diag));
-                    } catch (e) {
-                        console.error(`[aggregator-bot] capture diag failed: ${e.message}`);
-                    }
+            // Capture-diag heartbeat: dump the tap's audio-element / store / resolver
+            // state every ~10th drain — EMPTY OR NOT — so a multi-participant
+            // subscription problem (only one remote stream reaching the tap) is
+            // visible during an ACTIVE session, not just at startup. Localizes a
+            // fault to a stage: no stream on the element (subscription/bundle) vs a
+            // jitsiId in the store that never resolves to a token (resolver).
+            // Best-effort telemetry — log a failure but never throw, so a diag
+            // hiccup can't wedge ingest.
+            this.#drainTicks += 1;
+            if (this.#drainTicks % 10 === 1) {
+                try {
+                    const diag = await this.page.evaluate(pageAggregatorCaptureDiag);
+                    console.log('[aggregator-bot] capture diag', JSON.stringify(diag));
+                } catch (e) {
+                    console.error(`[aggregator-bot] capture diag failed: ${e.message}`);
                 }
             }
             return Array.isArray(takes) ? takes : [];
