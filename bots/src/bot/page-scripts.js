@@ -101,6 +101,24 @@ export function pageAudioBridge() {
     } catch (e) {
       console.error('[trussal] setting audio contentHint failed', e);
     }
+    // CONFIRMATION PROBE (worklet theory): feed a NATIVE OscillatorNode — not an
+    // AudioWorklet (superdough), not a ScriptProcessor (aggregator) — straight into
+    // the PUBLISHED tap. If the published track then carries audio
+    // (outboundAudio.audioLevel>0 and the 330 Hz tone is audible), a native source
+    // publishes fine, so superdough's AudioWorklet output is specifically what the
+    // published MediaStreamDestination drops. If it stays silent, publication kills
+    // ANY source and the worklet theory is wrong. Diagnostic only — remove after.
+    try {
+      const probeOsc = ctx.createOscillator();
+      probeOsc.frequency.value = 330;
+      const probeOscGain = ctx.createGain();
+      probeOscGain.gain.value = 0.15;
+      probeOsc.connect(probeOscGain);
+      probeOscGain.connect(tap);
+      probeOsc.start();
+    } catch (e) {
+      console.error('[trussal] worklet-theory probe oscillator failed', e);
+    }
     // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
