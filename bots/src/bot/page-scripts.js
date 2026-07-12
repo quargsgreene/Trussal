@@ -118,23 +118,10 @@ export function pageAudioBridge() {
       const rms = Math.sqrt(sumSquares(meterBuf) / meterBuf.length);
       if (rms > fanRmsPeak) fanRmsPeak = rms;
     }, 200);
-    // DIAGNOSTIC: meter the TAP's OWN stream — the exact MediaStream published as
-    // the bot's mic — independent of the fan meter above. Splits the silent-bot
-    // failure: fanRms>0 & tapRms==0 => the fan→tap link is broken; fanRms>0 &
-    // tapRms>0 but the room hears silence => the published track is NOT this tap
-    // (the rebind never swapped it). Analyser is a passive sink; a MediaStreamSource
-    // on tap.stream drives it (no onward connection needed).
-    const tapMeter = ctx.createAnalyser();
-    tapMeter.fftSize = 2048;
-    ctx.createMediaStreamSource(tap.stream).connect(tapMeter);
-    const tapBuf = new Float32Array(tapMeter.fftSize);
-    let tapRmsPeak = 0;
-    window.__trussalReadTapRms = () => { const peak = tapRmsPeak; tapRmsPeak = 0; return peak; };
-    setInterval(() => {
-      tapMeter.getFloatTimeDomainData(tapBuf);
-      const rms = Math.sqrt(sumSquares(tapBuf) / tapBuf.length);
-      if (rms > tapRmsPeak) tapRmsPeak = rms;
-    }, 200);
+    // NOTE: do NOT meter tap.stream with a SAME-ctx createMediaStreamSource — that
+    // loopback silences the tap's actual output (incl. what the encoder sends), not
+    // just its own reading (the same-ctx-loopback gotcha). Use the cross-ctx probe
+    // below instead. (An earlier same-ctx tapRms meter here was silencing the fix.)
     // DIAGNOSTIC (artifact-free): meter tap.stream from a SEPARATE native context.
     // The same-ctx tapMeter above is unreliable (the same-ctx-loopback silence
     // gotcha), so a cross-context source reads the tap's TRUE output. Native is the
@@ -972,7 +959,6 @@ export function pageReadSamples() {
   // pageAudioBridge). The channel counts diagnose superdough's multichannel
   // routing — the maxChannelCount math is the known silence cause. Null before the
   // shared context exists (e.g. an aggregator that has not built it yet).
-  const readTapRms = window.__trussalReadTapRms;
   const readTapRmsNative = window.__trussalReadTapRmsNative;
   // DIAGNOSTIC: live each tick — is the CURRENTLY published local audio track the
   // fan's tap, or some other (silent) track? Decisive silent-bot signal alongside
@@ -989,7 +975,6 @@ export function pageReadSamples() {
   } catch (e) { publishedIsTap = null; }
   const audio = {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
-    tapRms: typeof readTapRms === 'function' ? readTapRms() : null,
     tapRmsNative: typeof readTapRmsNative === 'function' ? readTapRmsNative() : null,
     normTapRms: typeof window.__trussalReadNormTapRms === 'function' ? window.__trussalReadNormTapRms() : null,
     channelDiag: window.__trussalChannelDiag ?? null,
