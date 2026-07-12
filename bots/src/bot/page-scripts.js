@@ -76,21 +76,35 @@ export function pageAudioBridge() {
       configurable: true,
       get: () => fan,
     });
-    // Publish the fan through an explicit 2-channel 'speakers' gain into a
-    // MediaStreamDestination created HERE (after the fan + destination override) —
-    // constructed identically to the normTap probe, which carried full audio while
-    // UNPUBLISHED. Under test together: (1) whether that construction also works
-    // PUBLISHED (an earlier tap created before the fan stayed silent once published,
-    // while normTap did not — isolating publication vs the tap node), and (2)
-    // contentHint below. The explicit 2-ch node also down-mixes superdough's
-    // multichannel output to clean stereo.
-    const tapNorm = ctx.createGain();
-    tapNorm.channelCountMode = 'explicit';
-    tapNorm.channelCount = 2;
-    tapNorm.channelInterpretation = 'speakers';
-    fan.connect(tapNorm);
+    // LAUNDER the fan's output through a ScriptProcessor before the published tap.
+    // superdough's AudioWorklet output does NOT survive publication into a
+    // MediaStreamDestination in headless Chrome — confirmed live: a native
+    // OscillatorNode into the same published tap was audible while superdough was
+    // not, and the UNPUBLISHED normTap fed by the same worklet carried full audio.
+    // A ScriptProcessor re-emits the audio from a main-thread buffer — a native node
+    // output, exactly like the oscillator and the aggregator's pageMasterPlayer — and
+    // the published tap renders that. Its 2 input channels down-mix superdough's
+    // multichannel fan output to clean stereo. (NOTE: outboundAudio.audioLevel and
+    // tapRmsNative read 0 even for audible audio on these tracks — false zeros;
+    // verify by ear or the aggregator's capture peak, not those.)
+    const laundry = ctx.createScriptProcessor(1024, 2, 2);
+    laundry.onaudioprocess = (event) => {
+      const { inputBuffer, outputBuffer } = event;
+      for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+        const source = inputBuffer.getChannelData(Math.min(channel, inputBuffer.numberOfChannels - 1));
+        outputBuffer.getChannelData(channel).set(source);
+      }
+    };
+    fan.connect(laundry);
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
-    tapNorm.connect(tap);
+    laundry.connect(tap);
+    // A ScriptProcessor only fires onaudioprocess while connected (transitively) to a
+    // rendered sink; it feeds tap (a MediaStreamDestination sink), but route it
+    // additionally through a MUTED gain to the hardware destination as insurance.
+    const laundryPull = ctx.createGain();
+    laundryPull.gain.value = 0;
+    laundry.connect(laundryPull);
+    laundryPull.connect(hardware);
     window.__trussalMicStream = tap.stream;
     // contentHint='music' disables WebRTC's speech-oriented send processing (noise
     // suppression / AGC / Opus DTX) that can gate synthetic, non-voice audio like
@@ -100,24 +114,6 @@ export function pageAudioBridge() {
       tap.stream.getAudioTracks().forEach((audioTrack) => { audioTrack.contentHint = 'music'; });
     } catch (e) {
       console.error('[trussal] setting audio contentHint failed', e);
-    }
-    // CONFIRMATION PROBE (worklet theory): feed a NATIVE OscillatorNode — not an
-    // AudioWorklet (superdough), not a ScriptProcessor (aggregator) — straight into
-    // the PUBLISHED tap. If the published track then carries audio
-    // (outboundAudio.audioLevel>0 and the 330 Hz tone is audible), a native source
-    // publishes fine, so superdough's AudioWorklet output is specifically what the
-    // published MediaStreamDestination drops. If it stays silent, publication kills
-    // ANY source and the worklet theory is wrong. Diagnostic only — remove after.
-    try {
-      const probeOsc = ctx.createOscillator();
-      probeOsc.frequency.value = 330;
-      const probeOscGain = ctx.createGain();
-      probeOscGain.gain.value = 0.15;
-      probeOsc.connect(probeOscGain);
-      probeOscGain.connect(tap);
-      probeOsc.start();
-    } catch (e) {
-      console.error('[trussal] worklet-theory probe oscillator failed', e);
     }
     // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
