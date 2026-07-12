@@ -123,6 +123,21 @@ export class Bot {
   }
 
   async stop() {
+    // Leave the Jitsi conference EXPLICITLY before tearing down the browser, so
+    // the XMPP unavailable-presence actually reaches prosody. browser.close()
+    // alone kills Chromium before the page's unload leave can complete its
+    // network round-trip, leaving a ghost session that keeps the room alive
+    // (meetings then can't be ended). Best-effort: a torn-down/absent page just
+    // falls through to the close. Prefer the room's own leave(); fall back to the
+    // meet wrapper's hangup().
+    if (this.page && typeof this.page.evaluate === 'function') {
+      await this.page.evaluate(() => {
+        const conf = window.APP && window.APP.conference;
+        const room = conf && (conf._room || conf.room);
+        if (room && typeof room.leave === 'function') return room.leave();
+        if (conf && typeof conf.hangup === 'function') return conf.hangup();
+      }).catch((e) => console.error(`[bot] conference leave before stop failed: ${e.message}`));
+    }
     if (this.browser) await this.browser.close();
     this.browser = null;
     this.page = null;

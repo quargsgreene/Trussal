@@ -43,6 +43,6 @@ deploy-bots:
 	ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && git pull --ff-only \
 	  && cd bots \
 	  && docker compose --profile build-only build \
-	  && docker compose up -d conductor'
+	  && docker compose up -d --force-recreate conductor'
 
 deploy-all: deploy-video deploy-audio deploy-bots

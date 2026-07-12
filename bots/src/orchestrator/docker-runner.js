@@ -49,6 +49,12 @@ export function makeDockerRunner({
     },
 
     async stop(botId) {
+      // Graceful stop FIRST (SIGTERM + grace), so the bot's own SIGTERM handler
+      // runs bot.stop() -> leave the Jitsi conference + browser.close(). A hard
+      // `rm -f` (SIGKILL) skips that, leaving a ghost XMPP session that keeps the
+      // room alive so meetings can't end. `-t 15` is ample: a conference leave +
+      // browser teardown is a few seconds. Then remove the (now stopped) container.
+      await run('docker', ['stop', '-t', '15', name(botId)]).catch(() => {});
       await run('docker', ['rm', '-f', name(botId)]).catch(() => {});
     },
   };

@@ -77,13 +77,28 @@ export class FleetService {
 
   async stop() {
     clearInterval(this.tick);
-    for (const t of this.ownerTimers.values()) clearTimeout(t);
+    for (const timer of this.ownerTimers.values()) clearTimeout(timer);
     this.ownerTimers.clear();
     if (this.meetingEndTimer) clearTimeout(this.meetingEndTimer);
-    for (const id of [...this.bots.keys()]) await this.#stopBot(id);
-    await this.#stopAggregator();
+    // Stop every bot AND the aggregator in PARALLEL so the whole fleet leaves the
+    // Jitsi room within one graceful-stop window (each runner.stop is ~15s), not N
+    // of them back to back — the conductor's stop_grace_period has to cover this.
+    // allSettled, not all: one bot that fails to stop must NOT abort the teardown
+    // of the rest (that would strand bots in the room). Log every outcome so a
+    // failed leave is visible in the conductor's logs (the observer reads them).
+    const results = await Promise.allSettled([
+      ...[...this.bots.keys()].map((id) => this.#stopBot(id)),
+      this.#stopAggregator(),
+    ]);
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length) {
+      console.error(`[fleet] teardown: ${failures.length}/${results.length} fleet stops failed:`,
+        failures.map((failure) => (failure.reason && failure.reason.message) || failure.reason));
+    } else {
+      console.log(`[fleet] teardown: all ${results.length} fleet members stopped cleanly`);
+    }
     if (this.sidecar) { try { this.sidecar.close(); } catch {} this.sidecar = null; }
-    if (this.server) await new Promise((r) => this.server.close(r));
+    if (this.server) await new Promise((resolve) => this.server.close(resolve));
   }
 
   // ---------- sidecar bus ----------

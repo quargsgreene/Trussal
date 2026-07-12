@@ -57,6 +57,12 @@ services:
     extra_hosts:
       - "${SIDECAR_HOST_ALIAS:-sidecar.invalid:127.0.0.1}"
     restart: unless-stopped
+    # On SIGTERM (a redeploy's --force-recreate, or `compose stop`) the conductor
+    # runs fleet.stop(), which gracefully stops every bot + the aggregator so they
+    # leave the Jitsi room cleanly (no ghost sessions -> meetings actually end).
+    # That teardown must finish before Docker SIGKILLs the conductor: bots are
+    # stopped in parallel (~15s each), so give a wide margin.
+    stop_grace_period: 90s
 
   bot-image:
     build:
