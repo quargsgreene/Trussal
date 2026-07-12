@@ -450,64 +450,58 @@ export async function pageStrudelBoot({ strudel, hydra }) {
 
 /**
  * Aggregator ingest tap, installed via evaluateOnNewDocument so it is in place
- * before Jitsi renders any remote participant. Jitsi plays every remote peer's
- * audio through its own <audio> element (id "remoteAudio_<jitsiId>"); this scans
- * for those elements and taps each one into a ScriptProcessor, accumulating that
- * peer's PCM into a page-side store keyed by the peer's jitsiId. The Node side
- * drains it (via pageDrainParticipantAudio) into the AggregatorBot's
+ * before Jitsi renders any remote participant. It enumerates the conference's
+ * remote participants (APP.conference._room.getParticipants()) and taps each
+ * one's audio JitsiTrack stream into a ScriptProcessor, accumulating that peer's
+ * PCM into a page-side store keyed by the peer's ENDPOINT id (member.getId()).
+ * The Node side drains it (via pageDrainParticipantAudio) into the AggregatorBot's
  * per-participant ring buffers — the "clients -> individual buffer queues" hop.
+ *
+ * Why the member API, not <audio> element ids: this deployment labels remote
+ * audio elements with generic ids (remoteAudio_remote-audio-N) that all collapse
+ * to one unresolvable key, so element-id parsing captured at most one peer. The
+ * lib-jitsi-meet participant/track model is authoritative — a remote audio track's
+ * owner IS the real endpoint id, which the room-index resolver knows.
  *
  * Each buffer is identified by the peer's Net Cycles room-index token (0 for the
  * first human, 0a/0b/… for that human's bots, 1 for the next human, …). The tap
- * stores under jitsiId and resolves to the token at drain time via
- * window.__trussalRoomIndexForJitsiId (exposed by the Trussal bundle from the
- * already-maintained jitsiId↔roomIndex mapper) — so buffers are only ever keyed
- * by room index, and a peer whose index the sidecar hasn't announced yet is held
- * (capped) until it resolves.
+ * stores under the endpoint id and resolves to the token at drain time via
+ * window.__trussalRoomIndexForJitsiId (exposed by the Trussal bundle) — so buffers
+ * are only ever keyed by room index, and a peer whose index the sidecar hasn't
+ * announced yet is held (capped) until it resolves.
  *
  * Self-contained per the module contract: it touches only page globals and its
- * own closures. It reuses the shared AudioContext (pageAudioBridge wraps the
- * constructor so `new AudioContext()` returns one instance), so the tap lives
- * in the same graph as everything else on the page.
+ * own closures. Taps the STREAM (createMediaStreamSource, which can SHARE a
+ * stream), so it coexists with the Trussal bundle's own per-peer tap of the same
+ * stream (latency-instrument.js) rather than colliding with it.
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
-  const store = new Map();       // jitsiId -> number[] of accumulated mono PCM
-  const tapped = new WeakSet();  // <audio> elements already wired
+  const store = new Map();            // endpoint jitsiId -> number[] of accumulated mono PCM
+  const tappedTracks = new WeakSet(); // remote audio JitsiTracks already wired
   const FRAME = 2048;
-  const MAX_BACKLOG = FRAME * 64; // cap page-side buffering if Node never drains
+  const MAX_BACKLOG = FRAME * 64;     // cap page-side buffering if Node never drains
 
-  function jitsiIdFor(el) {
-    const m = /^remoteAudio_(.+)$/.exec(el.id || '');
-    if (!m) return null;
-    // The element id embeds the endpoint id, but some Jitsi versions — and P2P
-    // mode specifically — append a source/track suffix, e.g.
-    // "remoteAudio_96c42c65-audio-0-3". The room-index mapper
-    // (window.__trussalRoomIndexForJitsiId) is keyed by the BARE endpoint id
-    // ("96c42c65"), so a suffixed key never resolves and the capture is held
-    // forever. Strip a trailing "-audio…/-video…/-a0…/-v0…" source suffix so the
-    // store is keyed by — and resolves against — the endpoint id.
-    return m[1].replace(/-(?:audio|video|a\d|v\d).*$/i, '');
-  }
-
-  function tap(el) {
-    if (tapped.has(el)) return;
-    const jitsiId = jitsiIdFor(el);
-    if (!jitsiId) return; // only remote participant audio, never the bot's own
-    // Remote Jitsi audio is a WebRTC MediaStream on el.srcObject. Tap the STREAM
-    // (createMediaStreamSource), NOT the element (createMediaElementSource): the
-    // element API yields SILENCE for a WebRTC-backed <audio> in Chrome — which is
-    // exactly why every human client hears these peers but the aggregator captured
-    // rms=0 — and it reroutes the element, colliding with the Trussal bundle's own
-    // tap of the same stream (latency-instrument.js). createMediaStreamSource can
-    // share a stream, so it coexists. Wait until the stream has an audio track; the
-    // 1s rescan retries, so don't mark the element tapped yet if it isn't ready.
-    const stream = el.srcObject;
-    if (!stream || typeof stream.getAudioTracks !== 'function' || !stream.getAudioTracks().length) return;
-    let ctx;
-    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  function tapTrack(jitsiTrack, jitsiId) {
+    if (tappedTracks.has(jitsiTrack)) return;
+    // The track's MediaStream is the WebRTC audio. Tap the STREAM
+    // (createMediaStreamSource) — the element-source API yields SILENCE for a
+    // WebRTC <audio> in Chrome, and a MediaStreamSource can SHARE a stream, so this
+    // coexists with the Trussal bundle's own per-peer tap (latency-instrument.js).
+    // Prefer the JitsiTrack's own stream; fall back to wrapping its bare
+    // MediaStreamTrack (whichever actually carries the audio track). If neither is
+    // ready yet, return WITHOUT marking tapped so the 1s rescan retries.
+    let stream = jitsiTrack.getOriginalStream();
+    if (!stream || !stream.getAudioTracks().length) {
+      const mediaStreamTrack = jitsiTrack.getTrack();
+      if (mediaStreamTrack) stream = new MediaStream([mediaStreamTrack]);
+    }
+    if (!stream || !stream.getAudioTracks().length) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) throw new Error('aggregator capture: AudioContext is unavailable');
+    const ctx = new AudioContext();
     let src;
-    try { src = ctx.createMediaStreamSource(stream); } catch (e) { tapped.add(el); return; }
+    try { src = ctx.createMediaStreamSource(stream); } catch (e) { tappedTracks.add(jitsiTrack); return; }
     const proc = ctx.createScriptProcessor(FRAME, 1, 1);
     proc.onaudioprocess = (ev) => {
       const inp = ev.inputBuffer.getChannelData(0);
@@ -522,11 +516,27 @@ export function pageAggregatorCapture() {
     src.connect(proc);
     proc.connect(sink);
     sink.connect(ctx.destination);
-    tapped.add(el);
+    tappedTracks.add(jitsiTrack);
   }
 
-  function scan() { for (const el of document.querySelectorAll('audio')) tap(el); }
-  setInterval(scan, 1000); // peers' <audio> elements appear as they join
+  // Enumerate remote participants (the authoritative source — getParticipants()
+  // excludes self) and tap each one's audio tracks, keyed by the member's endpoint
+  // id. The room-not-ready guard returns quietly during startup; once ready the
+  // lib-jitsi-meet accessors are called directly, so an unexpected API shape throws
+  // loudly rather than silently capturing nothing — and a throw here does NOT wedge
+  // the loop (setInterval keeps firing; unresolved/idle members drop out at drain).
+  function scan() {
+    const conf = globalThis.APP && globalThis.APP.conference;
+    const room = conf && conf._room;
+    if (!room || typeof room.getParticipants !== 'function') return; // conference not ready yet
+    room.getParticipants()
+      .filter((participant) => participant.getId())
+      .flatMap((participant) => participant.getTracks()
+        .filter((track) => track.getType() === 'audio')
+        .map((track) => ({ track, jitsiId: participant.getId() })))
+      .forEach(({ track, jitsiId }) => tapTrack(track, jitsiId));
+  }
+  setInterval(scan, 1000); // peers/tracks appear as they join
   scan();
 
   window.__trussalAggCapture = {
@@ -537,29 +547,18 @@ export function pageAggregatorCapture() {
         if (!arr.length) continue;
         const token = typeof resolve === 'function' ? resolve(jitsiId) : null;
         if (token == null) continue; // room index not announced yet — keep buffering
-        // Carry the jitsiId (the media-stream source) alongside the resolved
-        // token so the aggregator can pin the source -> token mapping ONCE for
-        // the whole meeting, rather than re-resolving it on every drain.
+        // Carry the jitsiId (the endpoint id) alongside the resolved token so the
+        // aggregator can pin the source -> token mapping ONCE for the whole meeting,
+        // rather than re-resolving it on every drain.
         out.push({ jitsiId: String(jitsiId), token: String(token), samples: arr.splice(0) });
       }
       return out;
     },
-    // Localizes an empty drain: which capture stage produced no samples. Reports
-    // every <audio> element the tap can see (id + whether it's tapped + whether it
-    // actually carries a stream), the per-jitsiId page-side backlog, and how the
-    // jitsiId→room-index resolver maps each backlog key. The Node side logs this
-    // when a drain comes back empty so "drained 0" is never ambiguous:
-    //   - audioCount 0                      -> no remote audio received at all
-    //   - audios present, none tapped       -> tap()/createMediaElementSource failing
-    //   - store has samples, resolved null  -> jitsiId↔roomIndex mapping not ready
+    // Localizes an empty drain to a stage: participantCount 0 -> no remote peers;
+    // store empty -> no audio tapped from any member (no audio track / capture
+    // failing); store has keys but resolved null -> jitsiId↔roomIndex not announced
+    // yet. Full member/track/element correlation lives in pageAggregatorTrackMapDiag.
     diag() {
-      const audios = [...document.querySelectorAll('audio')].map((el) => ({
-        id: el.id || '(none)',
-        tapped: tapped.has(el),
-        paused: el.paused,
-        readyState: el.readyState,
-        srcObject: !!el.srcObject,
-      }));
       const storeSizes = {};
       for (const [jid, arr] of store) storeSizes[jid] = arr.length;
       const resolverType = typeof window.__trussalRoomIndexForJitsiId;
@@ -571,13 +570,10 @@ export function pageAggregatorCapture() {
         }
       }
       let participantCount = null;
-      try {
-        const c = globalThis.APP && globalThis.APP.conference;
-        const r = c && (c._room || c.room);
-        if (r && typeof r.getParticipants === 'function') participantCount = r.getParticipants().length;
-        else if (c && typeof c.getParticipants === 'function') participantCount = c.getParticipants().length;
-      } catch (_) {}
-      return { audioCount: audios.length, audios, store: storeSizes, resolverType, resolved, participantCount };
+      const conf = globalThis.APP && globalThis.APP.conference;
+      const room = conf && conf._room;
+      if (room && typeof room.getParticipants === 'function') participantCount = room.getParticipants().length;
+      return { store: storeSizes, resolverType, resolved, participantCount };
     },
   };
 }
