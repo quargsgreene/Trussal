@@ -100,6 +100,13 @@ test('pageAudioBridge fans the shared AudioContext destination to hardware and a
   assert.match(js, /Object\.defineProperty\([^)]*destination/, 'reroutes audioContext.destination');
 });
 
+test('pageAudioBridge meters the fan output so silence is diagnosable from metrics', () => {
+  const js = String(pageAudioBridge);
+  assert.match(js, /createAnalyser/, 'taps the fan output with an analyser');
+  assert.match(js, /window\.__trussalReadFanRms/, 'exposes a read-and-reset peak-RMS reader');
+  assert.match(js, /window\.__trussalHardwareMaxChannelCount/, 'snapshots the real device channel count');
+});
+
 test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports eval errors', () => {
   const js = String(pageStrudelBoot);
   assert.match(js, /strudel-editor/);
@@ -111,6 +118,13 @@ test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports ev
 test('pageFpsSampler counts rAF frames; pageReadSamples drains errors', () => {
   assert.match(String(pageFpsSampler), /requestAnimationFrame/);
   assert.match(String(pageReadSamples), /__trussalErrors/);
+});
+
+test('pageReadSamples reports the fan audio level + channel routing in diag', () => {
+  const js = String(pageReadSamples);
+  assert.match(js, /fanRms/, 'surfaces whether the bot is actually audible');
+  assert.match(js, /fanChannelCount/, 'surfaces the fan channel routing');
+  assert.match(js, /hardwareMaxChannelCount/, 'surfaces the device channel count superdough keys off');
 });
 
 test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, reports metrics', async () => {

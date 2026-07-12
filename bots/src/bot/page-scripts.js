@@ -83,6 +83,33 @@ export function pageAudioBridge() {
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
     window.__trussalFanGain = fan;
+    // Output-level meter so metrics can report whether the bot is ACTUALLY making
+    // sound. `schedulerStarted` (in pageReadSamples) only says the pattern loop is
+    // running — it stays true through every silent-routing failure (superdough's
+    // NaN channel math, a suspended context, a wrong-origin worklet), which is
+    // exactly how a bot streams silence with no thrown error. Tap the fan's OUTPUT
+    // (what feeds the Jitsi track AND the ALSA→Jamulus path) with an AnalyserNode:
+    // it is a passive observer, so its own output need not be connected anywhere.
+    const meter = ctx.createAnalyser();
+    meter.fftSize = 2048;
+    fan.connect(meter);
+    // Report the PEAK RMS between reads, not one instantaneous sample: a sparse
+    // pattern is silent between hits, so a single snapshot would false-report
+    // silence. pageReadSamples reads-and-resets this each metrics tick, so a
+    // nonzero value means "sound reached the output at some point this window".
+    const sumSquares = (buf) => buf.reduce((acc, sample) => acc + sample ** 2, 0);
+    const meterBuf = new Float32Array(meter.fftSize);
+    let fanRmsPeak = 0;
+    window.__trussalReadFanRms = () => { const peak = fanRmsPeak; fanRmsPeak = 0; return peak; };
+    setInterval(() => {
+      meter.getFloatTimeDomainData(meterBuf);
+      const rms = Math.sqrt(sumSquares(meterBuf) / meterBuf.length);
+      if (rms > fanRmsPeak) fanRmsPeak = rms;
+    }, 200);
+    // superdough derives its output channel routing from destination.maxChannelCount
+    // (the very math the maxChannelCount fix above feeds); a surprising real-device
+    // value is a candidate silence cause, so snapshot it for diag alongside fanRms.
+    window.__trussalHardwareMaxChannelCount = hardware.maxChannelCount;
     // Headless bots make no user gesture. A normal bot's AudioContext is resumed
     // by the studio-toggle click; the aggregator boots no studio and clicks
     // nothing, so resume here. Even with --autoplay-policy=no-user-gesture-required
@@ -775,15 +802,32 @@ export function pageReadSamples() {
   // its scheduler is actually started (= pattern audibly playing).
   const editor = document.querySelector('strudel-editor');
   const repl = editor && editor.editor && editor.editor.repl;
-  return {
+  const fan = window.__trussalFanGain;
+  const readFanRms = window.__trussalReadFanRms;
+  const jitsiJoined = Boolean(globalThis.APP && globalThis.APP.conference
+    && globalThis.APP.conference.isJoined && globalThis.APP.conference.isJoined());
+  // Whether the bot is genuinely AUDIBLE, not just "playing": fanRms>0 means sound
+  // reached the fan (→ Jitsi track → aggregator) this window; ==0 while
+  // schedulerStarted is true is the silent-bot signature (see the meter in
+  // pageAudioBridge). The channel counts diagnose superdough's multichannel
+  // routing — the maxChannelCount math is the known silence cause. Null before the
+  // shared context exists (e.g. an aggregator that has not built it yet).
+  const audio = {
+    fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
+    fanChannelCount: fan ? fan.channelCount : null,
+    fanMaxChannelCount: fan ? fan.maxChannelCount : null,
+    hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
+  };
+  const samples = {
     fps: window.__trussalFps ?? 0,
     errors: (window.__trussalErrors || []).splice(0),
     diag: {
       canvases: document.querySelectorAll('canvas').length,
       strudelMounted: Boolean(editor && editor.editor),
       schedulerStarted: Boolean(repl && repl.scheduler && repl.scheduler.started),
-      jitsiJoined: Boolean(globalThis.APP && globalThis.APP.conference
-        && globalThis.APP.conference.isJoined && globalThis.APP.conference.isJoined()),
+      jitsiJoined,
+      audio,
     },
   };
+  return samples;
 }
