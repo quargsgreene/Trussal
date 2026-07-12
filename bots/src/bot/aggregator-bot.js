@@ -217,15 +217,7 @@ export class AggregatorBot extends Bot {
         // Audio-first: join with video muted so Jitsi never requests a camera
         // (the gUM override would otherwise wait forever for a Hydra canvas the
         // aggregator never creates, hanging the join).
-        //
-        // The aggregator is the ONE bot that must watch the whole room: it taps
-        // every participant's audio into the per-participant buffers. Ordinary
-        // bots inherit channelLastN=0 ("send, never watch"), which makes the
-        // bridge forward only the DOMINANT SPEAKER's audio — so a stock-config
-        // aggregator only ever sees one stream and the rotation collapses to n=1.
-        // Override to channelLastN: -1 (receive ALL endpoints) so every
-        // participant's audio actually reaches the tap.
-        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: true, channelLastN: -1 }), {
+        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: true }), {
             waitUntil: 'networkidle2',
             timeout: 60000,
         });

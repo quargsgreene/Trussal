@@ -88,10 +88,6 @@ test('start(): joins injected browser unmuted, taps participants, no Strudel, pu
   // Audio-first: joins with video muted so the headless join never blocks on a
   // Hydra canvas the aggregator never creates.
   assert.match(calls.goto[0], /config\.startWithVideoMuted=true/);
-  // Watches the WHOLE room: channelLastN=-1 receives every endpoint's audio, so
-  // the tap sees all participants — not just the dominant speaker (the inherited
-  // channelLastN=0 that collapses the rotation to one stream).
-  assert.match(calls.goto[0], /config\.channelLastN=-1/);
 
   // Ingest tap + return-path playback sink installed before navigation.
   assert.ok(calls.evalOnNewDoc.some((sink) => /__trussalAggCapture/.test(sink)), 'participant-audio tap installed');
@@ -112,21 +108,6 @@ test('start(): joins injected browser unmuted, taps participants, no Strudel, pu
 
   await bot.stop();
   assert.equal(calls.closed, true, 'stop() closes the browser');
-});
-
-test('aggregator watches the whole room: joins with channelLastN=-1 (all endpoints)', async () => {
-  const { calls, fakeLauncher } = makeFakes();
-  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
-  await bot.start();
-
-  // The aggregator taps EVERY participant, so it must receive every endpoint's
-  // audio, not just the dominant speaker. channelLastN=-1 is what guarantees it
-  // sees all participants; the inherited channelLastN=0 would forward only the
-  // loudest one and collapse the rotation to a single stream.
-  assert.match(calls.goto[0], /config\.channelLastN=-1/, 'receives all endpoints');
-  assert.doesNotMatch(calls.goto[0], /config\.channelLastN=0/, 'not the dominant-speaker-only default');
-
-  await bot.stop();
 });
 
 // --- writeToIndividualParticipantBufferQueues() ------------------------------
