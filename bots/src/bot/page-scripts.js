@@ -340,9 +340,22 @@ export async function pageEnsureAudioPublished() {
       await sleep(1500);
     }
 
-    // 2) Fallback: explicitly create the audio track and attach it.
-    //    createLocalTracks(['audio']) runs through our gUM override → tap.
-    if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+    // 2) Make sure the PUBLISHED track is the live fan tap, not a silent
+    //    fallback. Jitsi's join-time gUM can fire before the shared AudioContext
+    //    exists; at that instant window.__trussalMicStream is undefined, so the
+    //    gUM override hands out silentAudioTrack(). That silent track gets
+    //    published and — because a track now EXISTS — the old `!localTrack()`
+    //    guard skipped this step, so the bot streamed silence forever even after
+    //    the fan came alive (fanRms>0, yet JVB discards every packet as silence).
+    //    Rebind whenever the current local track is absent OR is not the tap's
+    //    MediaStreamTrack; createLocalTracks(['audio']) runs through our gUM
+    //    override → the now-live tap. Idempotent: a healthy bot already publishing
+    //    the tap satisfies publishingTap and skips the rebind.
+    const tapTrack = window.__trussalMicStream && window.__trussalMicStream.getAudioTracks()[0];
+    const current = localTrack();
+    const currentMst = current && typeof current.getTrack === 'function' ? current.getTrack() : null;
+    const publishingTap = Boolean(tapTrack && currentMst && currentMst === tapTrack);
+    if (!publishingTap && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
         const at = tracks && tracks[0];
