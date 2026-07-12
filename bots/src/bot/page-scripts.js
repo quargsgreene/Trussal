@@ -63,8 +63,10 @@ export function pageAudioBridge() {
   function build(args) {
     const ctx = new Native(...args);
     const hardware = ctx.destination; // real device → ALSA loopback → Jamulus
+    const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
     const fan = ctx.createGain();
     fan.connect(hardware);
+    fan.connect(tap);
     // superdough's multi-channel output controller reads
     // `audioContext.destination.maxChannelCount` and derives its channel
     // routing (ChannelMerger size, `ch % destination.channelCount`) from it.
@@ -76,63 +78,7 @@ export function pageAudioBridge() {
       configurable: true,
       get: () => fan,
     });
-    // LAUNDER the fan's output through a ScriptProcessor before the published tap.
-    // superdough's AudioWorklet output does NOT survive publication into a
-    // MediaStreamDestination in headless Chrome — confirmed live: a native
-    // OscillatorNode into the same published tap was audible while superdough was
-    // not, and the UNPUBLISHED normTap fed by the same worklet carried full audio.
-    // A ScriptProcessor re-emits the audio from a main-thread buffer — a native node
-    // output, exactly like the oscillator and the aggregator's pageMasterPlayer — and
-    // the published tap renders that. Its 2 input channels down-mix superdough's
-    // multichannel fan output to clean stereo. (NOTE: outboundAudio.audioLevel and
-    // tapRmsNative read 0 even for audible audio on these tracks — false zeros;
-    // verify by ear or the aggregator's capture peak, not those.)
-    const laundry = ctx.createScriptProcessor(1024, 2, 2);
-    // DIAGNOSTIC: does onaudioprocess FIRE (laundryCalls climbing), and does the
-    // worklet audio reach the SP INPUT (laundryInPeak>0)? laundryCalls==0 => the SP
-    // is not pulled; calls>0 & inPeak==0 => worklet output doesn't reach a
-    // ScriptProcessor input (unlike a GainNode); calls>0 & inPeak>0 but the room is
-    // silent => the SP OUTPUT itself doesn't publish.
-    window.__trussalLaundryCalls = 0;
-    window.__trussalLaundryInPeak = 0;
-    laundry.onaudioprocess = (event) => {
-      const { inputBuffer, outputBuffer } = event;
-      let peak = 0;
-      for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
-        const source = inputBuffer.getChannelData(Math.min(channel, inputBuffer.numberOfChannels - 1));
-        for (let i = 0; i < source.length; i++) { const a = Math.abs(source[i]); if (a > peak) peak = a; }
-        outputBuffer.getChannelData(channel).set(source);
-      }
-      window.__trussalLaundryCalls += 1;
-      if (peak > window.__trussalLaundryInPeak) window.__trussalLaundryInPeak = peak;
-    };
-    fan.connect(laundry);
-    const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
-    // Feed the published tap via a GainNode, NOT the ScriptProcessor directly. Both
-    // sources confirmed to publish reach the tap through a GainNode (the native
-    // oscillator was osc→gain→tap; the aggregator is masterSP→fan(gain)→tap), while
-    // the SP wired straight to the tap fired and had the full worklet audio at its
-    // input (laundryCalls>0, laundryInPeak~0.88) yet published silence.
-    const tapGain = ctx.createGain();
-    laundry.connect(tapGain);
-    tapGain.connect(tap);
-    // A ScriptProcessor only fires onaudioprocess while connected (transitively) to a
-    // rendered sink; it feeds tap (a MediaStreamDestination sink), but route it
-    // additionally through a MUTED gain to the hardware destination as insurance.
-    const laundryPull = ctx.createGain();
-    laundryPull.gain.value = 0;
-    laundry.connect(laundryPull);
-    laundryPull.connect(hardware);
     window.__trussalMicStream = tap.stream;
-    // contentHint='music' disables WebRTC's speech-oriented send processing (noise
-    // suppression / AGC / Opus DTX) that can gate synthetic, non-voice audio like
-    // superdough's synths to silence once the track is published — while a human
-    // voice (the aggregator's mix) passes. Harmless if that processing isn't the cause.
-    try {
-      tap.stream.getAudioTracks().forEach((audioTrack) => { audioTrack.contentHint = 'music'; });
-    } catch (e) {
-      console.error('[trussal] setting audio contentHint failed', e);
-    }
     // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
@@ -160,71 +106,6 @@ export function pageAudioBridge() {
       const rms = Math.sqrt(sumSquares(meterBuf) / meterBuf.length);
       if (rms > fanRmsPeak) fanRmsPeak = rms;
     }, 200);
-    // NOTE: do NOT meter tap.stream with a SAME-ctx createMediaStreamSource — that
-    // loopback silences the tap's actual output (incl. what the encoder sends), not
-    // just its own reading (the same-ctx-loopback gotcha). Use the cross-ctx probe
-    // below instead. (An earlier same-ctx tapRms meter here was silencing the fix.)
-    // DIAGNOSTIC (artifact-free): meter tap.stream from a SEPARATE native context.
-    // The same-ctx tapMeter above is unreliable (the same-ctx-loopback silence
-    // gotcha), so a cross-context source reads the tap's TRUE output. Native is the
-    // pre-wrap constructor, so this sidesteps the singleton. If this is >0 while the
-    // room hears silence, the break is in the WebRTC encode/publish, not fan→tap.
-    try {
-      const probeCtx = new Native();
-      if (probeCtx.state === 'suspended') probeCtx.resume().catch(() => {});
-      const probeMeter = probeCtx.createAnalyser();
-      probeMeter.fftSize = 2048;
-      probeCtx.createMediaStreamSource(tap.stream).connect(probeMeter);
-      const probeBuf = new Float32Array(probeMeter.fftSize);
-      let tapNativePeak = 0;
-      window.__trussalReadTapRmsNative = () => { const peak = tapNativePeak; tapNativePeak = 0; return peak; };
-      setInterval(() => {
-        probeMeter.getFloatTimeDomainData(probeBuf);
-        const rms = Math.sqrt(sumSquares(probeBuf) / probeBuf.length);
-        if (rms > tapNativePeak) tapNativePeak = rms;
-      }, 200);
-    } catch (e) { console.error('[trussal] native tap meter setup failed', e); }
-    // CONFIRMATION PROBE (non-intrusive): tests the PROPOSED fix in a parallel,
-    // NON-published path. Hypothesis: superdough emits a channel layout the plain
-    // MediaStreamDestination `tap` drops (the analyser sums it → fanRms>0, but the
-    // tap captures silence → tapRmsNative==0). Feed the fan through an
-    // explicit-stereo gain (speakers down-mix of ALL channels) into a SEPARATE tap
-    // and meter it cross-context. If normTapRms>0 while tapRmsNative==0, the layout
-    // IS the cause and the stereo-normalize fix works — proven without changing the
-    // published path (probeTap is never published, so no test tone leaks).
-    try {
-      const normGain = ctx.createGain();
-      normGain.channelCountMode = 'explicit';
-      normGain.channelCount = 2;
-      normGain.channelInterpretation = 'speakers';
-      const normTap = ctx.createMediaStreamDestination();
-      fan.connect(normGain);
-      normGain.connect(normTap);
-      window.__trussalChannelDiag = {
-        fanChannelCountMode: fan.channelCountMode,
-        fanChannelInterpretation: fan.channelInterpretation,
-        tapChannelCount: tap.channelCount,
-        tapChannelCountMode: tap.channelCountMode,
-        tapChannelInterpretation: tap.channelInterpretation,
-        tapTrackChannels: (() => {
-          try { const s = tap.stream.getAudioTracks()[0].getSettings(); return s && s.channelCount != null ? s.channelCount : null; }
-          catch (e) { return null; }
-        })(),
-      };
-      const normCtx = new Native();
-      if (normCtx.state === 'suspended') normCtx.resume().catch(() => {});
-      const normMeter = normCtx.createAnalyser();
-      normMeter.fftSize = 2048;
-      normCtx.createMediaStreamSource(normTap.stream).connect(normMeter);
-      const normBuf = new Float32Array(normMeter.fftSize);
-      let normPeak = 0;
-      window.__trussalReadNormTapRms = () => { const peak = normPeak; normPeak = 0; return peak; };
-      setInterval(() => {
-        normMeter.getFloatTimeDomainData(normBuf);
-        const rms = Math.sqrt(sumSquares(normBuf) / normBuf.length);
-        if (rms > normPeak) normPeak = rms;
-      }, 200);
-    } catch (e) { console.error('[trussal] norm tap probe setup failed', e); }
     // superdough derives its output channel routing from destination.maxChannelCount
     // (the very math the maxChannelCount fix above feeds); a surprising real-device
     // value is a candidate silence cause, so snapshot it for diag alongside fanRms.
@@ -423,15 +304,11 @@ export async function pageEnsureAudioPublished() {
     const APP = globalThis.APP;
     const conf = APP && APP.conference;
     if (!conf) return;
-    // Single accessor for lib-jitsi-meet's live JitsiConference (its own `_room`
-    // field). Isolated here so the external underscore name appears once; every
-    // caller in this function goes through it. (Page fns are injected via
-    // page.evaluate and can't share a module-level helper.)
-    const getConferenceRoom = () => conf._room;
+    const room = () => conf._room || conf.room;
     const localTrack = () => {
       try {
-        const conferenceRoom = getConferenceRoom();
-        return conferenceRoom && conferenceRoom.getLocalAudioTrack && conferenceRoom.getLocalAudioTrack();
+        const r = room();
+        return r && r.getLocalAudioTrack && r.getLocalAudioTrack();
       } catch (e) {
         console.error('[trussal] getLocalAudioTrack failed', e);
         throw e;
@@ -478,68 +355,15 @@ export async function pageEnsureAudioPublished() {
     const current = localTrack();
     const currentMst = current && typeof current.getTrack === 'function' ? current.getTrack() : null;
     const publishingTap = Boolean(tapTrack && currentMst && currentMst === tapTrack);
-    // DIAGNOSTIC: record the rebind decision + outcome so pageReadSamples can
-    // surface WHY a bot stays silent (published track never becomes the tap).
-    const pub = {
-      hadTapTrack: Boolean(tapTrack),
-      publishingTapBefore: publishingTap,
-      rebindAttempted: false,
-      rebindMethod: null,
-      publishedIsTapAfter: null,
-      rebindError: null,
-    };
-    window.__trussalAudioPublish = pub;
     if (!publishingTap && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
-      pub.rebindAttempted = true;
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
         const at = tracks && tracks[0];
-        if (!at) {
-          pub.rebindMethod = 'no-track-created';
-        } else {
-          if (typeof conf.useAudioStream === 'function') { pub.rebindMethod = 'useAudioStream'; await conf.useAudioStream(at); }
-          else { const conferenceRoom = getConferenceRoom(); if (conferenceRoom && conferenceRoom.addTrack) { pub.rebindMethod = 'addTrack'; await conferenceRoom.addTrack(at); } else { pub.rebindMethod = 'no-attach-api'; } }
-          // Did the swap actually make the tap the published track?
-          const after = localTrack();
-          const afterMst = after && typeof after.getTrack === 'function' ? after.getTrack() : null;
-          const newTap = window.__trussalMicStream && window.__trussalMicStream.getAudioTracks()[0];
-          pub.publishedIsTapAfter = Boolean(newTap && afterMst && afterMst === newTap);
+        if (at) {
+          if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
+          else { const r = room(); if (r && r.addTrack) await r.addTrack(at); }
         }
-      } catch (e) {
-        // Do NOT swallow: an error here is exactly the silent-bot failure. Record +
-        // log so the diag and container logs surface it. DIAGNOSTIC build: log but
-        // don't throw — throwing trips the conductor replace policy and churns the
-        // bot before we can read the diag. Restore log+throw once the cause is fixed.
-        pub.rebindError = String((e && e.message) || e);
-        console.error('[trussal] audio rebind failed', e);
-      }
-    }
-
-    // DIAGNOSTIC: poll the bot's OWN RTCPeerConnection for the outbound audio
-    // media-source level — the ENCODER's view of the published track, free of any
-    // WebAudio measurement artifact (mirrors NetStats.js peerConnections access).
-    // audioLevel>0 => real audio reaches the encoder; ==0 => the published track is
-    // silent at the source. Poll (not one-shot): the PC/source appears after join.
-    if (!window.__trussalOutboundProbe) {
-      window.__trussalOutboundProbe = true;
-      const readOutbound = async () => {
-        try {
-          const conferenceRoom = getConferenceRoom();
-          const pcMap = conferenceRoom && conferenceRoom.rtc && conferenceRoom.rtc.peerConnections;
-          const peerConnections = [...((pcMap && ((pcMap.values && pcMap.values()) || pcMap)) || [])]
-            .map((tpc) => tpc && tpc.peerconnection)
-            .filter((pc) => pc && typeof pc.getStats === 'function');
-          const reports = await Promise.all(peerConnections.map((pc) => pc.getStats()));
-          const audioSources = reports.flatMap((report) => [...report.values()]
-            .filter((stat) => stat.type === 'media-source' && stat.kind === 'audio')
-            .map((stat) => ({ audioLevel: stat.audioLevel ?? null, totalAudioEnergy: stat.totalAudioEnergy ?? null })));
-          // Last match wins (mirrors the prior overwrite); null-ish when no source yet.
-          window.__trussalOutboundAudio = audioSources.at(-1) || { audioLevel: null, totalAudioEnergy: null, note: 'no audio media-source' };
-        } catch (e) {
-          window.__trussalOutboundAudio = { error: String((e && e.message) || e) };
-        }
-      };
-      setInterval(readOutbound, 1000);
+      } catch (e) {}
     }
   } catch (e) {
     // Don't swallow: the inner steps (getLocalAudioTrack, the shared-context
@@ -1001,30 +825,8 @@ export function pageReadSamples() {
   // pageAudioBridge). The channel counts diagnose superdough's multichannel
   // routing — the maxChannelCount math is the known silence cause. Null before the
   // shared context exists (e.g. an aggregator that has not built it yet).
-  const readTapRmsNative = window.__trussalReadTapRmsNative;
-  // DIAGNOSTIC: live each tick — is the CURRENTLY published local audio track the
-  // fan's tap, or some other (silent) track? Decisive silent-bot signal alongside
-  // fanRms/tapRms: publishedIsTap===false while fanRms>0 means the rebind never
-  // made the tap the published track.
-  let publishedIsTap = null;
-  try {
-    const conference = globalThis.APP && globalThis.APP.conference;
-    const conferenceRoom = conference && conference._room;
-    const localTrack = conferenceRoom && conferenceRoom.getLocalAudioTrack && conferenceRoom.getLocalAudioTrack();
-    const localTrackMst = localTrack && typeof localTrack.getTrack === 'function' ? localTrack.getTrack() : null;
-    const tapTrack = window.__trussalMicStream && window.__trussalMicStream.getAudioTracks()[0];
-    if (localTrackMst && tapTrack) publishedIsTap = localTrackMst === tapTrack;
-  } catch (e) { publishedIsTap = null; }
   const audio = {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
-    tapRmsNative: typeof readTapRmsNative === 'function' ? readTapRmsNative() : null,
-    normTapRms: typeof window.__trussalReadNormTapRms === 'function' ? window.__trussalReadNormTapRms() : null,
-    laundryCalls: window.__trussalLaundryCalls ?? null,
-    laundryInPeak: (() => { const peak = window.__trussalLaundryInPeak; if (window.__trussalLaundryInPeak != null) window.__trussalLaundryInPeak = 0; return peak ?? null; })(),
-    channelDiag: window.__trussalChannelDiag ?? null,
-    publishedIsTap,
-    publishState: window.__trussalAudioPublish ?? null,
-    outboundAudio: window.__trussalOutboundAudio ?? null,
     fanChannelCount: fan ? fan.channelCount : null,
     fanMaxChannelCount: fan ? fan.maxChannelCount : null,
     hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
