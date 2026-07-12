@@ -13,6 +13,7 @@
  *    streams.
  */
 
+// A function that optionally takes a width/height object to represent the width and height of the Chromium window, and returns an array of Chromium launch arguments.
 export function chromiumArgs({ width = 1280, height = 720 } = {}) {
   return [
     '--no-sandbox',

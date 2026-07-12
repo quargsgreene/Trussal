@@ -666,6 +666,26 @@ export function pageEnqueueMaster(samples) {
 }
 
 /**
+ * Surface a short aggregator status line in the Trussal studio overlay from the
+ * Node side, as a single find-or-create `.ts-agg-status` child of the peer
+ * detail card (`.ts-detail`): repeated calls only rewrite its text, so it is
+ * never reattached (duplicated). A no-op until the overlay has mounted (the
+ * bare aggregator page never opens the studio). Self-contained per the module
+ * contract — touches only the DOM.
+ */
+export function pageReportStudioStatus(text) {
+  const detail = document.querySelector('.ts-detail');
+  if (!detail) return;
+  let statusEl = detail.querySelector('.ts-agg-status');
+  if (!statusEl) {
+    statusEl = document.createElement('div');
+    statusEl.className = 'ts-agg-status';
+    detail.append(statusEl);
+  }
+  statusEl.textContent = String(text);
+}
+
+/**
  * rAF-based fps sampler. window.__trussalFps always holds the frame count
  * of the last full 1 s window; the Node-side metrics loop reads it.
  */

@@ -65,7 +65,7 @@ export const defaultConfig = Object.freeze({
   // requests relayed through the latency sidecar.
   sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on
   fleetRoom: '0',                          // room whose requests this fleet serves
-  ownerLeaveGraceMs: 60000,                // cluster lives this long after its owner leaves
+  ownerLeaveGraceMs: 120000,               // cluster lives this long (2 min) after its owner leaves, meeting continuing
   meetingEndGraceMs: 15000,                // all humans gone → teardown (XMPP constraints)
 });
 

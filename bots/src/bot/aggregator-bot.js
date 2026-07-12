@@ -4,6 +4,7 @@ import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
   pageAggregatorCapture, pageDrainParticipantAudio, pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
+  pageReportStudioStatus,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -27,6 +28,17 @@ const DEFAULT_GAIN_CEILING = 1.0;
 // up and joining anyway: a claim we can't obtain must not strand the (possibly
 // only) aggregator forever if the bus is briefly unreachable at startup.
 const CLAIM_TIMEOUT_MS = 5000;
+// Election-gate hysteresis window. Once the bot HAS been the active aggregator,
+// a transient "not active" reading (a bot-join storm can momentarily drop it
+// from the page-side election roster) is held for this long before it actually
+// stands down — otherwise a one-tick flap silences the whole room's audio.
+const DEFAULT_ACTIVE_GRACE_MS = 10000;
+
+// Empty master slice. #pendingMaster is ALWAYS a Float32Array (empty means
+// nothing pending), never null, so playMasterBufferToClient can test
+// `!samples.length` without a null guard. Length 0 and never mutated, so a
+// single shared instance is safe to reuse as the "nothing pending" sentinel.
+const EMPTY_MASTER = new Float32Array(0);
 
 // err.code set on the throw from start() when another aggregator already holds
 // the room's slot. The entrypoint treats this as a clean "nothing to do" exit
@@ -42,21 +54,55 @@ export const AGGREGATOR_SLOT_TAKEN = 'AGGREGATOR_SLOT_TAKEN';
  *   clients (bots + humans)
  *     -> individual buffer queues   (one RingBuffer per participant)
  *     -> metaprogram-dictated processing
- *     -> large shared sequential buffer (one RingBuffer, all participants concatenated)
+ *     -> one tick's assembled master slice (the #pendingMaster handoff)
  *     -> back out to the client
  *
- * Two dimensions of ring buffer, both fixed-capacity with oldest-sample
- * eviction:
+ * The per-participant dimension is a fixed-capacity RingBuffer with oldest-
+ * sample eviction:
  *   - this.buffers[token]  each participant's own concatenated audio, keyed by
  *                          Net Cycles room index: 0 for the first human, 0a/0b/…
  *                          for that human's bots, 1 for the next human, and so on
- *   - this.sharedBuffer    all participants concatenated into the master mix
+ * The master is NOT a second ring buffer: readAndAssembleMasterBuffer writes one
+ * playback tick's rate-matched slice into #pendingMaster, and
+ * playMasterBufferToClient drains and clears it within the same tick — nothing
+ * is buffered across ticks, so a RingBuffer there only added latency.
  *
  * Key differences from Bot: joins and unmutes immediately, boots no Strudel
  * (it makes no sound of its own — its published track carries the assembled
  * mix), and taps the room instead of playing into it.
  */
 export class AggregatorBot extends Bot {
+
+    // Single-slot handoff from readAndAssembleMasterBuffer to
+    // playMasterBufferToClient — one tick's assembled master, cleared on read.
+    // Deliberately NOT a jitter buffer: the redundant shared RingBuffer that used
+    // to sit between them (written then fully drained every tick, buffering
+    // nothing across ticks) is gone.
+    #pendingMaster = EMPTY_MASTER;
+    // Monotonic total of master samples streamed to the room (folded into the
+    // shared dimension of the metrics/buffer table in place of the removed shared
+    // RingBuffer's `written`). Only ever grows, so it doubles as a liveness signal
+    // that the aggregator is actually producing output.
+    #masterWritten = 0;
+    // Which token is currently streaming (the queue owns the turn timing).
+    #activeToken = null;
+    // Election-gate hysteresis state (see #isActiveNow): whether we have ever won
+    // the active slot, and when we were last active. Held so a transient miss
+    // can't silence the room mid-stream.
+    #everActive = false;
+    #lastActiveAt = 0;
+    // Playback-loop interval handle and the setInterval/clearInterval wrappers
+    // (see the constructor for why the wrappers exist), kept private. The ingest-
+    // loop handle (this.ingestTimer) is public instead — a test reads it to assert
+    // the loop is scheduled/cleared, so it is not truly private.
+    #playbackTimer = null;
+    #setInterval = null;
+    #clearInterval = null;
+    // The aggregator-claim probe connection to the sidecar, held open for our
+    // lifetime so nothing else can claim the room's single aggregator slot.
+    #claimConn = null;
+    // Throttle counter for the empty-drain capture-diag heartbeat.
+    #emptyDrains = 0;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -72,19 +118,27 @@ export class AggregatorBot extends Bot {
         this.bufferSize = this.holdMs != null
             ? Math.max(1, Math.round(this.holdMs * this.sampleRate / 1000))
             : Math.max(1, Math.floor(bufferSize));
-        // Shared dimension: the concatenated master. Larger than one participant
-        // buffer because it holds every scheduled slot back to back.
-        this.sharedBuffer = new RingBuffer(cfg.sharedBufferSize || this.bufferSize * 8);
         // Turn length for the pre-metaprogram round-robin, and an injectable
         // clock so the alternation is testable without real time.
         this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
         this.now = typeof now === 'function' ? now : () => Date.now();
+        // Rate-match the master drain to real time. Each playback tick releases
+        // at most ONE playback interval's worth of the active participant's audio
+        // (playbackMs * sampleRate) instead of its whole backlog: draining
+        // everything dumped a full hold-window burst at every slot flip, so the
+        // page player queue (the only real-time-paced stage) fell further behind
+        // real time each slot without bound. When the loop is disabled (interval
+        // 0, as in unit tests) fall back to the default cadence so the cap is a
+        // large sane number rather than 0.
+        const playbackMs = Number(cfg.playbackIntervalMs) > 0
+            ? Number(cfg.playbackIntervalMs) : DEFAULT_PLAYBACK_INTERVAL_MS;
+        this.masterSliceSamples = Math.max(1, Math.round(playbackMs * this.sampleRate / 1000));
         // The circular priority queue: the fixed join-order ring, the assign-once
         // jitsiId -> room-index-token mapping, and the write/turn pointer. Shares
         // this bot's clock and slot length so serve() rotates in lockstep with the
         // assembly loop. The per-participant PCM stays in this.buffers; the queue
         // only decides the order and whose turn it is.
-        this._order = new CircularParticipantQueue({ now: this.now, slotMs: this.slotMs });
+        this.order = new CircularParticipantQueue({ now: this.now, slotMs: this.slotMs });
         // Master gain-staging ceiling (requirement 6): the assembled mix is scaled
         // down so its peak never exceeds this, keeping it inside the stream's
         // representable range instead of clipping.
@@ -95,15 +149,18 @@ export class AggregatorBot extends Bot {
         // Defaults to polling the page, which reads the Trussal bundle's election
         // (window.__trussalIsActiveAggregator); tests inject a predicate.
         this.isActive = typeof isActive === 'function' ? isActive : () => this.#queryActiveFromPage();
+        // Election-gate hysteresis (see #isActiveNow): once we HAVE won the slot,
+        // hold it through a transient stand-down rather than silencing the room
+        // on a one-tick miss. A bot that has never been active still stands down
+        // immediately (a genuine second aggregator must not stream). Only a miss
+        // sustained past activeGraceMs actually yields the slot.
+        this.activeGraceMs = Math.max(0, Number(cfg.activeGraceMs ?? DEFAULT_ACTIVE_GRACE_MS));
         // Pre-join gate: how the bot claims the room's single aggregator slot
         // from the sidecar BEFORE launching its browser. A `(url, {onOpen,
         // onMessage}) => { send, close }` connector (production injects the
         // ws-backed one; tests inject a fake). Absent -> the claim is skipped
         // (standalone / unit tests that drive the bot directly).
         this.connectSidecar = typeof connectSidecar === 'function' ? connectSidecar : null;
-        this._claimConn = null;
-        // Which token is currently streaming (the queue owns the turn timing).
-        this._activeToken = null;
         // Where a metrics sample goes. Defaults to the console so a bare
         // instance "publishes its own metrics"; tests inject a capturing sink.
         this.reporter = reporter || ((tag, data) => console.log(tag, data));
@@ -113,13 +170,13 @@ export class AggregatorBot extends Bot {
         this.logIngest = logIngest;
         // Wrap the timer globals rather than storing bare references: in a
         // browser setInterval is a Window method that throws when invoked as
-        // this._setInterval(...) with the instance as receiver (the exact bug
+        // this.#setInterval(...) with the instance as receiver (the exact bug
         // that crashed ClockSync). Node doesn't care, but this keeps the bot
         // safe if it is ever driven page-side.
-        this._setInterval = (typeof setInterval !== 'undefined') ? (fn, ms) => setInterval(fn, ms) : null;
-        this._clearInterval = (typeof clearInterval !== 'undefined') ? (id) => clearInterval(id) : null;
-        this._ingestTimer = null;
-        this._playbackTimer = null;
+        this.#setInterval = (typeof setInterval !== 'undefined') ? (fn, ms) => setInterval(fn, ms) : null;
+        this.#clearInterval = (typeof clearInterval !== 'undefined') ? (id) => clearInterval(id) : null;
+        this.ingestTimer = null;
+        this.#playbackTimer = null;
     }
 
     async start() {
@@ -190,16 +247,16 @@ export class AggregatorBot extends Bot {
      */
     startIngestLoop() {
         const ms = Number(this.cfg.ingestIntervalMs ?? DEFAULT_INGEST_INTERVAL_MS);
-        if (!(ms > 0) || !this._setInterval || this._ingestTimer) return;
-        this._ingestTimer = this._setInterval(() => { this.ingestTick(); }, ms);
+        if (!(ms > 0) || !this.#setInterval || this.ingestTimer) return;
+        this.ingestTimer = this.#setInterval(() => { this.ingestTick(); }, ms);
         // Don't keep the process alive just for the ingest loop.
-        if (this._ingestTimer && this._ingestTimer.unref) this._ingestTimer.unref();
+        if (this.ingestTimer && this.ingestTimer.unref) this.ingestTimer.unref();
     }
 
     async ingestTick() {
-        // Stand down unless we're the room's active aggregator (see isActive): a
-        // second aggregator neither taps nor streams, so no feedback loop forms.
-        if (!(await this.isActive())) return;
+        // Stand down unless we're the room's active aggregator (see #isActiveNow):
+        // a second aggregator neither taps nor streams, so no feedback loop forms.
+        if (!(await this.#isActiveNow())) return;
         // #drainPageCaptures already swallows page errors; nothing to write when
         // the room is silent.
         await this.writeToIndividualParticipantBufferQueues();
@@ -213,19 +270,58 @@ export class AggregatorBot extends Bot {
      */
     startPlaybackLoop() {
         const ms = Number(this.cfg.playbackIntervalMs ?? DEFAULT_PLAYBACK_INTERVAL_MS);
-        if (!(ms > 0) || !this._setInterval || this._playbackTimer) return;
-        this._playbackTimer = this._setInterval(() => { this.playbackTick(); }, ms);
+        if (!(ms > 0) || !this.#setInterval || this.#playbackTimer) return;
+        this.#playbackTimer = this.#setInterval(() => { this.playbackTick(); }, ms);
         // Don't keep the process alive just for the playback loop.
-        if (this._playbackTimer && this._playbackTimer.unref) this._playbackTimer.unref();
+        if (this.#playbackTimer && this.#playbackTimer.unref) this.#playbackTimer.unref();
     }
 
     async playbackTick() {
         // Only the active aggregator assembles and streams the master; a stood-
         // down aggregator publishes silence, so it can't feed back into the
         // active one's mix (which taps every participant, including this bot).
-        if (!(await this.isActive())) return;
+        if (!(await this.#isActiveNow())) return;
         await this.readAndAssembleMasterBuffer();
         await this.playMasterBufferToClient();
+    }
+
+    /**
+     * The election gate WITH hysteresis. Reads the raw predicate (this.isActive,
+     * which fail-actives on its own errors so it never throws) and folds in the
+     * "stay active through a transient miss once we've been active" rule, so a
+     * bot-join storm can't permanently silence the room by flapping the page-side
+     * election for a tick or two. A bot that has never won the slot stands down
+     * immediately (a genuine second aggregator must not stream); an active read
+     * pins #everActive and refreshes the last-active stamp.
+     */
+    async #isActiveNow() {
+        const activeStatus = await this.isActive();
+        const now = this.now();
+        if (activeStatus && !this.#everActive) this.#everActive = true;
+        if (activeStatus) this.#lastActiveAt = now;
+        const lastActiveNow = this.#lastActiveAt - now === 0;              // active this very tick
+        const beforeActiveGraceMs = (now - this.#lastActiveAt) < this.activeGraceMs;
+        // Holding the slot on a false read (ever-active, still inside the grace
+        // window) means the active status is momentarily UNKNOWN — surface it.
+        if (this.#everActive && !lastActiveNow && beforeActiveGraceMs) {
+            await this.#reportStudioStatus('aggregator active status unknown');
+        }
+        // Active right now, OR ever-active and still within the grace window. The
+        // literal `beforeActiveGraceMs && lastActiveNow` would only ever be true
+        // while active this tick — i.e. the non-hysteretic raw gate — so the hold
+        // is expressed with the OR against the grace window instead.
+        return lastActiveNow || (this.#everActive && beforeActiveGraceMs);
+    }
+
+    /**
+     * Surface a short status line in the Trussal studio overlay (the page's
+     * `.ts-agg-status` child of `.ts-detail`) from the Node side. Only ever
+     * reached from #isActiveNow's hysteresis hold — a fallback path — and a
+     * no-op until the overlay has mounted, so it stays best-effort.
+     */
+    async #reportStudioStatus(text) {
+        if (!this.page || typeof this.page.evaluate !== 'function') return;
+        await this.page.evaluate(pageReportStudioStatus, String(text));
     }
 
     async interpretAndExecuteMetaprogram() {
@@ -261,6 +357,19 @@ export class AggregatorBot extends Bot {
             .sort((a, b) => tokenOrder(a.token, b.token));
         const summary = {};
         for (const take of arrived) {
+            // Only accept valid normalized PCM: reject a capture whose samples are
+            // out of range or the wrong type rather than writing NaN / a clipping
+            // value into the participant buffer (and thence the master). Logged and
+            // skipped, NOT thrown — one corrupt frame must not wedge ingest or drop
+            // the valid captures batched alongside it. The participant is not
+            // registered either, so garbage never claims a ring slot.
+            if (!this.isValidSampleBuffer(take.samples)) {
+                console.error(
+                    `[aggregator-bot] rejected invalid samples for token=${take.token}: ` +
+                    `expected finite floats in [-1.0, 1.0]`,
+                );
+                continue;
+            }
             // Pin jitsiId -> token ONCE and route by the pinned token, so a
             // participant's audio always lands in the same buffer/slot for the
             // whole meeting even if its token were re-announced (requirement 2).
@@ -268,7 +377,7 @@ export class AggregatorBot extends Bot {
             // captured from the room and streamed through this aggregator
             // (requirement 5) under their cluster token (0a, 0b, …).
             const identity = take.jitsiId != null ? String(take.jitsiId) : String(take.token);
-            const token = this._order.register(identity, String(take.token));
+            const token = this.order.register(identity, String(take.token));
             const samples = take.samples;
             const rb = this.participantBuffer(token);
             const evictedBefore = rb.evicted;
@@ -310,24 +419,35 @@ export class AggregatorBot extends Bot {
         // room-index order (assign-once, so this is a no-op once registered).
         this.#syncOrderFromBuffers();
 
-        const { token: active, lapped } = this._order.serve();
+        const { token: active, lapped } = this.order.serve();
         if (!active) {
             // Nothing has reached the bot yet: assemble nothing. The page player
             // emits silence and we keep checking on the next tick.
-            this._activeToken = null;
+            this.#activeToken = null;
             return { active: null, assembled: 0 };
         }
-        this._activeToken = active;
-        const rb = this.buffers[active];
-        // Draining the active buffer both RELEASES this turn's audio and, relative
-        // to the previous turn, evicts what was released a lap ago — the two
-        // events requirement 4 pairs at a slot: released on its turn, gone (the
-        // buffer emptied) by the time the write pointer reaches this slot again.
-        // `lapped` marks that return-to-position for observability.
-        const held = rb ? rb.read(rb.length) : new Float32Array(0);
+        this.#activeToken = active;
+        // this.buffers[token] is a RingBuffer (mono Float32 PCM) or undefined when
+        // the active token has no buffer yet — hence the guard below.
+        const currentRingBuffer = this.buffers[active];
+        // Release at most ONE playback interval's worth of the active buffer per
+        // tick (masterSliceSamples), rate-matching the drain to real time: draining
+        // the whole buffer dumped a full hold-window burst at every slot flip, so
+        // the real-time-paced page player fell further behind each slot. Draining
+        // the active buffer RELEASES this turn's audio and, relative to the previous
+        // turn, evicts what was released a lap ago — the two events requirement 4
+        // pairs at a slot: released on its turn, gone by the time the write pointer
+        // reaches this slot again. `lapped` marks that return-to-position.
+        const held = currentRingBuffer
+            ? currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples))
+            : new Float32Array(0);
         // Gain-stage the master before it is streamed (requirement 6).
         const { gain, samples } = this.computeGainStaging(held);
-        if (samples.length) this.sharedBuffer.write(samples);
+        // Single-slot handoff to playMasterBufferToClient (drained + cleared there
+        // within this same playback tick). Always a Float32Array (computeGainStaging
+        // returns one even for an empty slice), so #pendingMaster is never null and
+        // the drain there can test `!samples.length` without a null guard.
+        this.#pendingMaster = samples;
         console.log(
             `[aggregator-bot] assembled master from token=${active} samples=${samples.length} ` +
             `gain=${gain.toFixed(3)}${lapped ? ' (pointer lapped)' : ''}`,
@@ -344,17 +464,20 @@ export class AggregatorBot extends Bot {
      */
     #syncOrderFromBuffers() {
         for (const token of Object.keys(this.buffers).sort(tokenOrder)) {
-            if (!this._order.hasToken(token)) this._order.register(token, token);
+            if (!this.order.hasToken(token)) this.order.register(token, token);
         }
     }
 
     async playMasterBufferToClient() {
-        // Drain the shared master and hand it to the page-side player, which
+        // Drain the single-slot pending master (assembled this tick by
+        // readAndAssembleMasterBuffer) and hand it to the page-side player, which
         // streams it out through the bot's published track to every other client.
-        // An empty master enqueues nothing — the player emits silence and we keep
-        // checking on the next tick.
-        const samples = this.sharedBuffer.read(this.sharedBuffer.length);
+        // Cleared on read so a slot is never re-streamed; an empty/absent slot
+        // enqueues nothing — the player emits silence and we check again next tick.
+        const samples = this.#pendingMaster;
+        this.#pendingMaster = EMPTY_MASTER;
         if (!samples.length) return { played: 0 };
+        this.#masterWritten += samples.length;
         await this.#enqueueMasterSamples(samples);
         console.log(`[aggregator-bot] played master samples=${samples.length}`);
         return { played: samples.length };
@@ -369,16 +492,16 @@ export class AggregatorBot extends Bot {
         // Stop streaming, drop buffered audio, release the aggregator claim, and
         // close the page + browser. Releasing the claim (closing the probe) lets
         // a replacement aggregator take the slot.
-        if (this._claimConn) {
-            try { this._claimConn.close(); }
+        if (this.#claimConn) {
+            try { this.#claimConn.close(); }
             catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
-            this._claimConn = null;
+            this.#claimConn = null;
         }
-        if (this._ingestTimer && this._clearInterval) this._clearInterval(this._ingestTimer);
-        this._ingestTimer = null;
-        if (this._playbackTimer && this._clearInterval) this._clearInterval(this._playbackTimer);
-        this._playbackTimer = null;
-        this.sharedBuffer.clear();
+        if (this.ingestTimer && this.#clearInterval) this.#clearInterval(this.ingestTimer);
+        this.ingestTimer = null;
+        if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
+        this.#playbackTimer = null;
+        this.#pendingMaster = EMPTY_MASTER;
         for (const rb of Object.values(this.buffers)) rb.clear();
         await super.stop();
     }
@@ -416,6 +539,19 @@ export class AggregatorBot extends Bot {
         return { gain, samples: out };
     }
 
+    /**
+     * Whether a capture is valid normalized PCM: an array (or typed array) whose
+     * every sample is a finite number in [-1.0, 1.0] inclusive. Number.isFinite is
+     * the type+finiteness gate — it never coerces, so "0.5", null, and true are
+     * rejected rather than converted — and the Array/ArrayBuffer.isView guard makes
+     * a non-array-like input return false instead of throwing.
+     */
+    isValidSampleBuffer(samples) {
+        return Array.isArray(samples) || ArrayBuffer.isView(samples)
+            ? samples.every(sample => Number.isFinite(sample) && sample >= -1.0 && sample <= 1.0)
+            : false;
+    }
+
     logIncomingAudio(takes) {
         // Print the raw audio that just reached the aggregator, one line per
         // participant: room-index token, sample count, peak/RMS level (so silence
@@ -439,21 +575,23 @@ export class AggregatorBot extends Bot {
     }
 
     logBuffersAndStats() {
-        // Log both buffer dimensions — the shared master plus every participant's
-        // individual buffer — as an array of rows with the debugging/perf columns.
+        // Log both dimensions — the pending master (shared) plus every
+        // participant's individual buffer — as an array of rows with the
+        // debugging/perf columns. Both sources present the same RingBuffer.stats()
+        // shape, so one row builder covers both.
         const timestamp = Date.now();
-        const row = (token, rb) => ({
+        const row = (token, stats) => ({
             timestamp,
             token,
-            bufferSize: rb.capacity,
-            bufferLength: rb.length,
-            bufferBytes: rb.bytes,
-            bufferEvicted: rb.evicted,
-            bufferMaxBuffers: rb.capacity,
-            bufferMaxBytes: rb.capacity * Float32Array.BYTES_PER_ELEMENT,
+            bufferSize: stats.bufferSize,
+            bufferLength: stats.bufferLength,
+            bufferBytes: stats.bufferBytes,
+            bufferEvicted: stats.bufferEvicted,
+            bufferMaxBuffers: stats.bufferMaxBuffers,
+            bufferMaxBytes: stats.bufferMaxBytes,
         });
-        const rows = [row('__shared__', this.sharedBuffer)];
-        for (const [token, rb] of Object.entries(this.buffers)) rows.push(row(token, rb));
+        const rows = [row('__shared__', this.#pendingMasterStats())];
+        for (const [token, rb] of Object.entries(this.buffers)) rows.push(row(token, rb.stats()));
         if (typeof console.table === 'function') console.table(rows);
         else console.log('[aggregator-bot] buffers', rows);
         return rows;
@@ -468,11 +606,54 @@ export class AggregatorBot extends Bot {
         return rb;
     }
 
+    /**
+     * Remove a participant (by the identity it was registered under — its jitsiId,
+     * or its token when no jitsiId was seen) from the rotation: its ring slot and
+     * its per-participant buffer are dropped IMMEDIATELY, so the buffers collection
+     * and the ring compact with no empty gap and the departed participant never
+     * gets another silent turn. A rejoin re-registers as a fresh tail slot (see
+     * CircularParticipantQueue.remove); the departed room index is not recycled.
+     * Returns the removed token, or null if it was not in the ring.
+     */
+    removeParticipant(identity) {
+        const token = this.order.remove(String(identity));
+        if (token === null) return null;
+        // Rebuild buffers without the departed token (filter, not delete).
+        this.buffers = Object.fromEntries(
+            Object.entries(this.buffers).filter(([bufferToken]) => bufferToken !== token),
+        );
+        if (this.#activeToken === token) this.#activeToken = null;
+        return token;
+    }
+
     /** Buffer stats for both dimensions, folded into the metrics sample. */
     bufferStats() {
         const participants = {};
         for (const [token, rb] of Object.entries(this.buffers)) participants[token] = rb.stats();
-        return { shared: this.sharedBuffer.stats(), participants };
+        return { shared: this.#pendingMasterStats(), participants };
+    }
+
+    /**
+     * Stats for the single-slot pending master, shaped like RingBuffer.stats() so
+     * it slots into the shared dimension of the metrics and the buffer table in
+     * place of the removed shared RingBuffer. Capacity is the per-tick slice cap
+     * (masterSliceSamples); the slot never evicts (it is written then drained
+     * within one playback tick), and bufferWritten is the monotonic total of
+     * master samples streamed to the room (#masterWritten).
+     */
+    #pendingMasterStats() {
+        const bytesPerSample = Float32Array.BYTES_PER_ELEMENT;
+        const length = this.#pendingMaster.length;
+        const capacity = this.masterSliceSamples;
+        return {
+            bufferSize: capacity,
+            bufferLength: length,
+            bufferBytes: length * bytesPerSample,
+            bufferEvicted: 0,
+            bufferWritten: this.#masterWritten,
+            bufferMaxBuffers: capacity,
+            bufferMaxBytes: capacity * bytesPerSample,
+        };
     }
 
     /** Base bot metrics plus this aggregator's buffer stats. */
@@ -514,10 +695,10 @@ export class AggregatorBot extends Bot {
             // Someone else holds the room's single aggregator slot. Release our
             // probe and refuse to join — the caller (start) propagates the throw
             // so the container exits instead of joining the meeting.
-            if (this._claimConn) {
-                try { this._claimConn.close(); }
+            if (this.#claimConn) {
+                try { this.#claimConn.close(); }
                 catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
-                this._claimConn = null;
+                this.#claimConn = null;
             }
             const err = new Error(`[aggregator-bot] room already has an aggregator; refusing to join (${url})`);
             err.code = AGGREGATOR_SLOT_TAKEN;
@@ -538,7 +719,7 @@ export class AggregatorBot extends Bot {
                 console.warn(`[aggregator-bot] aggregator-claim timed out after ${CLAIM_TIMEOUT_MS}ms; proceeding`);
                 finish(true);
             }, CLAIM_TIMEOUT_MS);
-            this._claimConn = this.connectSidecar(url, {
+            this.#claimConn = this.connectSidecar(url, {
                 onOpen: (send) => send({ type: 'aggregator-claim' }),
                 onMessage: (msg) => {
                     if (msg && msg.type === 'aggregator-claim-result') {
@@ -575,9 +756,9 @@ export class AggregatorBot extends Bot {
             // stage (no audio received / tap failing / token unresolved). Throttled to
             // roughly every 10th empty tick so it's a heartbeat, not a flood. Best-effort
             // telemetry — log a failure but don't throw, so a diag hiccup can't wedge ingest.
-            if (!takes || !takes.length) {
-                this._emptyDrains = (this._emptyDrains || 0) + 1;
-                if (this._emptyDrains % 10 === 1) {
+            if (!takes.length) {
+                this.#emptyDrains += 1;
+                if (this.#emptyDrains % 10 === 1) {
                     try {
                         const diag = await this.page.evaluate(pageAggregatorCaptureDiag);
                         console.log('[aggregator-bot] capture diag', JSON.stringify(diag));

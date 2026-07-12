@@ -198,13 +198,13 @@ test('ingest loop: start() schedules a drain timer, ingestTick drains the page, 
   const bot = new AggregatorBot({ ...cfg, ingestIntervalMs: 50 }, { launcher: fakeLauncher, logIngest: false });
 
   await bot.start();
-  assert.ok(bot._ingestTimer, 'ingest loop scheduled after start()');
+  assert.ok(bot.ingestTimer, 'ingest loop scheduled after start()');
 
   await bot.ingestTick(); // drive one tick deterministically (no arg -> drains page)
   assert.equal(bot.buffers['0a'].length, 2, 'tick drained the page tap into the participant buffer');
 
   await bot.stop();
-  assert.equal(bot._ingestTimer, null, 'stop() cleared the ingest timer');
+  assert.equal(bot.ingestTimer, null, 'stop() cleared the ingest timer');
 });
 
 // --- readAndAssembleMasterBuffer() + playMasterBufferToClient() ---------------
@@ -428,14 +428,14 @@ test('jitsiId pinning: a source keeps its token/buffer even if the token is re-a
   // First capture pins media-stream source "src-1" to room index 0.
   await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'src-1', token: '0', samples: [0.1] }]);
   assert.equal(bot.buffers['0'].length, 1);
-  assert.deepEqual(bot._order.order(), ['0']);
+  assert.deepEqual(bot.order.order(), ['0']);
 
   // The SAME source later arrives under a different token: its audio must still
   // land in its original buffer (0), not spawn a new "9" slot.
   const summary = await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'src-1', token: '9', samples: [0.2, 0.3] }]);
   assert.equal(bot.buffers['0'].length, 3, 'routed to the pinned buffer');
   assert.equal(bot.buffers['9'], undefined, 'no buffer for the re-announced token');
-  assert.deepEqual(bot._order.order(), ['0'], 'ring unchanged');
+  assert.deepEqual(bot.order.order(), ['0'], 'ring unchanged');
   assert.equal(summary['0'].wrote, 2);
 });
 
@@ -458,11 +458,11 @@ test('bots participate in the alternation under their cluster tokens', async () 
     { jitsiId: 'bot-0a', token: '0a', samples: new Array(10).fill(0.25) },
     { jitsiId: 'bot-0b', token: '0b', samples: new Array(10).fill(0.125) },
   ]);
-  assert.deepEqual(bot._order.order(), ['0', '0a', '0b'], 'humans and bots share one join-order ring');
+  assert.deepEqual(bot.order.order(), ['0', '0a', '0b'], 'humans and bots share one join-order ring');
 
   const streamed = [];
-  for (const t of [0, 1000, 2000]) {
-    clock = t;
+  for (const timestamp of [0, 1000, 2000]) {
+    clock = timestamp;
     const a = await bot.readAndAssembleMasterBuffer();
     await bot.playMasterBufferToClient();
     streamed.push(a.active);
@@ -472,4 +472,299 @@ test('bots participate in the alternation under their cluster tokens', async () 
   assert.deepEqual(calls.enqueued[1], new Array(10).fill(0.25));
 
   await bot.stop();
+});
+
+// --- room-shape scenarios (join order + alternation vs. continuous) ----------
+// These pin the alternation behavior for the room shapes the aggregator has to
+// handle. They drive the existing round trip with an injected clock; leave /
+// rejoin / replace / remove are a separate milestone (the queue is append-only
+// today) and are covered once participant removal lands.
+
+test('two humans: the stream alternates one human per slot (no bots)', async () => {
+  const { fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // Two humans, no bots — each with their own continuously-buffered audio.
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: new Array(50).fill(0.5) },
+    { jitsiId: 'human-1', token: '1', samples: new Array(50).fill(0.25) },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1'], 'two humans in join order');
+
+  const streamed = [];
+  for (const timestamp of [0, 1000, 2000, 3000]) {
+    clock = timestamp;
+    streamed.push((await bot.readAndAssembleMasterBuffer()).active);
+  }
+  // Same alternation as a multi-cluster room: one participant per slot, wrapping.
+  assert.deepEqual(streamed, ['0', '1', '0', '1'], 'audio alternates between the two humans');
+
+  await bot.stop();
+});
+
+test('two human-bot clusters: the stream alternates through all six in join order', async () => {
+  const { fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // Human 0 with bots 0a/0b, and human 1 with bots 1a/1b — two clusters, one ring.
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0',  samples: [0.5] },
+    { jitsiId: 'bot-0a',  token: '0a', samples: [0.4] },
+    { jitsiId: 'bot-0b',  token: '0b', samples: [0.3] },
+    { jitsiId: 'human-1', token: '1',  samples: [0.2] },
+    { jitsiId: 'bot-1a',  token: '1a', samples: [0.15] },
+    { jitsiId: 'bot-1b',  token: '1b', samples: [0.1] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '0a', '0b', '1', '1a', '1b'],
+    'both clusters share one join-order ring');
+
+  const streamed = [];
+  for (let i = 0; i < 6; i++) { clock = i * 1000; streamed.push((await bot.readAndAssembleMasterBuffer()).active); }
+  assert.deepEqual(streamed, ['0', '0a', '0b', '1', '1a', '1b'], 'alternates through every cluster member');
+
+  clock = 6000; // a full lap later the pointer wraps back to the first participant
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0', 'rotation wraps round');
+
+  await bot.stop();
+});
+
+test('large fleet: 1 human + 27 bots each take exactly one turn per lap', async () => {
+  const { fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // Human 0 and 27 of its bots. Suffixes run a..z then aa for the 28th slot; the
+  // assertions read back through bot.order.order() so they hold whatever order the
+  // tokenOrder tiebreak produces for the co-arriving batch.
+  const suffix = (i) => (i < 26 ? String.fromCharCode(97 + i) : 'a' + String.fromCharCode(97 + i - 26));
+  const captures = [{ jitsiId: 'human-0', token: '0', samples: [0.5] }];
+  for (let i = 0; i < 27; i++) captures.push({ jitsiId: `bot-0${suffix(i)}`, token: `0${suffix(i)}`, samples: [0.1] });
+  await bot.writeToIndividualParticipantBufferQueues(captures);
+  assert.equal(bot.order.size, 28, '28 participants in the ring');
+
+  const streamed = [];
+  for (let botIndex = 0; botIndex < 28; botIndex++) { clock = botIndex * 1000; streamed.push((await bot.readAndAssembleMasterBuffer()).active); }
+  assert.deepEqual(streamed, bot.order.order(), 'every participant takes exactly one turn per lap');
+
+  clock = 28000;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, bot.order.order()[0], 'wraps after a full lap');
+
+  await bot.stop();
+});
+
+test('single human, no bots: one continuous stream, never alternating', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // Only one participant: every slot is theirs, so the stream never switches
+  // sources. Fresh audio arrives each tick to model a continuous live capture.
+  const actives = [];
+  for (const timestamp of [0, 1000, 2000, 3000, 4000]) {
+    clock = timestamp;
+    await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: new Array(10).fill(0.5) }]);
+    actives.push((await bot.readAndAssembleMasterBuffer()).active);
+    await bot.playMasterBufferToClient();
+  }
+  assert.deepEqual(actives, ['0', '0', '0', '0', '0'], 'the sole human streams continuously, every slot');
+  assert.equal(bot.order.size, 1, 'the ring never grows a second slot');
+  // Continuous: every tick streamed the fresh audio, so there are no silence gaps.
+  assert.equal(calls.enqueued.length, 5, 'streamed on every tick');
+  assert.ok(calls.enqueued.every((c) => c.length === 10), 'each tick streamed the human\'s audio, not silence');
+
+  await bot.stop();
+});
+
+// --- sample validation: only finite floats in [-1.0, 1.0] are accepted -------
+// A sample is valid normalized PCM iff it is a finite number within full scale.
+// Out-of-range magnitudes and non-number data types are rejected, so corrupt or
+// mis-typed frames never reach a participant buffer or the master mix.
+
+test('isValidSampleBuffer: accepts finite floats in [-1.0, 1.0], including the boundaries', () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
+  assert.equal(bot.isValidSampleBuffer([0, 0.5, -0.5, 0.999]), true);
+  assert.equal(bot.isValidSampleBuffer([-1.0, 1.0]), true, 'full scale is inclusive');
+  assert.equal(bot.isValidSampleBuffer(Float32Array.from([0.25, -0.25])), true, 'a typed array is valid');
+  assert.equal(bot.isValidSampleBuffer([]), true, 'an empty buffer is vacuously valid');
+});
+
+test('isValidSampleBuffer: rejects out-of-range magnitudes', () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
+  assert.equal(bot.isValidSampleBuffer([2.0]), false, 'above full scale');
+  assert.equal(bot.isValidSampleBuffer([-1.5]), false, 'below full scale');
+  assert.equal(bot.isValidSampleBuffer([0.5, 1.0000001]), false, 'one out-of-range sample invalidates the buffer');
+});
+
+test('isValidSampleBuffer: rejects non-number sample types, and returns false (never throws) for non-array-like input', () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false });
+  // Non-number samples (Number.isFinite never coerces these to a number).
+  assert.equal(bot.isValidSampleBuffer([NaN]), false, 'NaN');
+  assert.equal(bot.isValidSampleBuffer([Infinity]), false, '+Infinity');
+  assert.equal(bot.isValidSampleBuffer([-Infinity]), false, '-Infinity');
+  assert.equal(bot.isValidSampleBuffer([0.5, '0.25']), false, 'a numeric string is not a number');
+  assert.equal(bot.isValidSampleBuffer([0.5, null]), false, 'null');
+  assert.equal(bot.isValidSampleBuffer([0.5, true]), false, 'boolean');
+  assert.equal(bot.isValidSampleBuffer([0.5, {}]), false, 'object');
+  // Non-array-like samples: rejected outright, not thrown.
+  assert.equal(bot.isValidSampleBuffer('nope'), false, 'a string is not a sample buffer');
+  assert.equal(bot.isValidSampleBuffer(null), false, 'null buffer');
+  assert.equal(bot.isValidSampleBuffer(undefined), false, 'undefined buffer');
+  assert.equal(bot.isValidSampleBuffer(42), false, 'a bare number is not a buffer');
+  assert.equal(bot.isValidSampleBuffer({ length: 1, 0: 0.5 }), false, 'an array-like object is not accepted');
+});
+
+test('writeToIndividualParticipantBufferQueues: rejects captures whose samples are invalid', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+
+  // The two invalid captures each log a rejection (left visible) and are skipped.
+  const summary = await bot.writeToIndividualParticipantBufferQueues([
+    { token: '0', samples: [0.5, -0.25] }, // valid -> accepted
+    { token: '1', samples: [2.0, 0.1] },   // out of range -> rejected
+    { token: '2', samples: [0.5, 'x'] },   // wrong type -> rejected
+  ]);
+
+  assert.equal(summary['0'].wrote, 2, 'the valid capture is accepted');
+  assert.equal(bot.buffers['0'].length, 2);
+  assert.equal(summary['1'], undefined, 'the out-of-range capture is not accepted');
+  assert.equal(bot.buffers['1'], undefined, 'no buffer for the rejected token');
+  assert.equal(summary['2'], undefined, 'the wrong-type capture is not accepted');
+  assert.equal(bot.buffers['2'], undefined);
+  assert.deepEqual(bot.order.order(), ['0'], 'only the valid participant entered the ring');
+});
+
+// --- leave / rejoin / replace / remove: participant removal ------------------
+// removeParticipant drops a participant's ring slot AND its buffer immediately,
+// compacting the ring so no silent gap is left; a rejoin re-appends at the tail
+// (the queue's invariant), and a departed room index is never recycled.
+
+test('a human leaving removes its buffer and ring slot immediately (no gap)', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1']);
+
+  assert.equal(bot.removeParticipant('human-0'), '0', 'returns the removed token');
+  assert.equal(bot.buffers['0'], undefined, 'the buffers collection shrinks immediately');
+  assert.deepEqual(bot.order.order(), ['1'], 'the ring compacts, no gap');
+  assert.equal(bot.order.size, 1);
+});
+
+test('a bot removed from a cluster leaves the rotation with no gap', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0',  samples: [0.5] },
+    { jitsiId: 'bot-0a',  token: '0a', samples: [0.4] },
+    { jitsiId: 'bot-0b',  token: '0b', samples: [0.3] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '0a', '0b']);
+
+  assert.equal(bot.removeParticipant('bot-0a'), '0a');
+  assert.equal(bot.buffers['0a'], undefined, 'the removed bot\'s buffer is gone');
+  assert.deepEqual(bot.order.order(), ['0', '0b'], 'compacted, no gap');
+});
+
+test('a human that leaves and rejoins is re-appended at the tail (survivors keep their order)', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0',  samples: [0.5] },
+    { jitsiId: 'bot-0a',  token: '0a', samples: [0.4] },
+    { jitsiId: 'human-1', token: '1',  samples: [0.2] },
+    { jitsiId: 'bot-1a',  token: '1a', samples: [0.1] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '0a', '1', '1a']);
+
+  bot.removeParticipant('human-0');
+  assert.deepEqual(bot.order.order(), ['0a', '1', '1a'], 'compacted, no gap where 0 was');
+
+  // The same human rejoins under the same jitsiId/token -> a fresh tail slot.
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: [0.5] }]);
+  assert.deepEqual(bot.order.order(), ['0a', '1', '1a', '0'], 'rejoin re-appends at the tail');
+  assert.equal(bot.buffers['0'].length, 1, 'the rejoiner gets a fresh buffer');
+});
+
+test('two humans leaving and rejoining: each returns at the tail in the order they came back', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0',  samples: [0.5] },
+    { jitsiId: 'bot-0a',  token: '0a', samples: [0.4] },
+    { jitsiId: 'human-1', token: '1',  samples: [0.2] },
+    { jitsiId: 'bot-1a',  token: '1a', samples: [0.1] },
+  ]);
+
+  bot.removeParticipant('human-0');
+  bot.removeParticipant('human-1');
+  assert.deepEqual(bot.order.order(), ['0a', '1a'], 'both humans gone, their bots compacted');
+
+  // human 1 returns first, then human 0 -> tail-appended in return order.
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-1', token: '1', samples: [0.2] }]);
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: [0.5] }]);
+  assert.deepEqual(bot.order.order(), ['0a', '1a', '1', '0'], 'rejoined at the tail, in return order');
+});
+
+test('a bot replaced by a fresh instance re-enters at the tail under the same token', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0',    token: '0',  samples: [0.5] },
+    { jitsiId: 'bot-0a-old', token: '0a', samples: [0.4] },
+    { jitsiId: 'human-1',    token: '1',  samples: [0.2] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '0a', '1']);
+
+  // The bot crashes and is torn down; the fleet spawns a replacement under 0a.
+  bot.removeParticipant('bot-0a-old');
+  assert.deepEqual(bot.order.order(), ['0', '1'], 'the crashed bot is gone, compacted');
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'bot-0a-new', token: '0a', samples: [0.3] }]);
+  assert.deepEqual(bot.order.order(), ['0', '1', '0a'], 'the replacement re-enters at the tail');
+  assert.equal(bot.buffers['0a'].length, 1, 'the replacement gets a fresh buffer');
+});
+
+test('a departed room index is not recycled: a new participant gets a fresh token, not the leaver\'s', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+
+  bot.removeParticipant('human-1');            // room index 1 leaves
+  assert.deepEqual(bot.order.order(), ['0']);
+
+  // The sidecar hands the next joiner a FRESH index (2), never the departed 1
+  // (see the sidecar-level guarantee in test/sidecar-indices.test.js).
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-2', token: '2', samples: [0.1] }]);
+  assert.deepEqual(bot.order.order(), ['0', '2'], 'the new participant takes a fresh index');
+  assert.equal(bot.order.hasToken('1'), false, 'the departed index 1 is not reassigned');
 });
