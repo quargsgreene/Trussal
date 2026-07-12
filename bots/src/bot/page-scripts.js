@@ -108,7 +108,14 @@ export function pageAudioBridge() {
     };
     fan.connect(laundry);
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
-    laundry.connect(tap);
+    // Feed the published tap via a GainNode, NOT the ScriptProcessor directly. Both
+    // sources confirmed to publish reach the tap through a GainNode (the native
+    // oscillator was osc→gain→tap; the aggregator is masterSP→fan(gain)→tap), while
+    // the SP wired straight to the tap fired and had the full worklet audio at its
+    // input (laundryCalls>0, laundryInPeak~0.88) yet published silence.
+    const tapGain = ctx.createGain();
+    laundry.connect(tapGain);
+    tapGain.connect(tap);
     // A ScriptProcessor only fires onaudioprocess while connected (transitively) to a
     // rendered sink; it feeds tap (a MediaStreamDestination sink), but route it
     // additionally through a MUTED gain to the hardware destination as insurance.
