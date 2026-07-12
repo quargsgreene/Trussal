@@ -88,12 +88,23 @@ export function pageAudioBridge() {
     // tapRmsNative read 0 even for audible audio on these tracks — false zeros;
     // verify by ear or the aggregator's capture peak, not those.)
     const laundry = ctx.createScriptProcessor(1024, 2, 2);
+    // DIAGNOSTIC: does onaudioprocess FIRE (laundryCalls climbing), and does the
+    // worklet audio reach the SP INPUT (laundryInPeak>0)? laundryCalls==0 => the SP
+    // is not pulled; calls>0 & inPeak==0 => worklet output doesn't reach a
+    // ScriptProcessor input (unlike a GainNode); calls>0 & inPeak>0 but the room is
+    // silent => the SP OUTPUT itself doesn't publish.
+    window.__trussalLaundryCalls = 0;
+    window.__trussalLaundryInPeak = 0;
     laundry.onaudioprocess = (event) => {
       const { inputBuffer, outputBuffer } = event;
+      let peak = 0;
       for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
         const source = inputBuffer.getChannelData(Math.min(channel, inputBuffer.numberOfChannels - 1));
+        for (let i = 0; i < source.length; i++) { const a = Math.abs(source[i]); if (a > peak) peak = a; }
         outputBuffer.getChannelData(channel).set(source);
       }
+      window.__trussalLaundryCalls += 1;
+      if (peak > window.__trussalLaundryInPeak) window.__trussalLaundryInPeak = peak;
     };
     fan.connect(laundry);
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
@@ -1001,6 +1012,8 @@ export function pageReadSamples() {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
     tapRmsNative: typeof readTapRmsNative === 'function' ? readTapRmsNative() : null,
     normTapRms: typeof window.__trussalReadNormTapRms === 'function' ? window.__trussalReadNormTapRms() : null,
+    laundryCalls: window.__trussalLaundryCalls ?? null,
+    laundryInPeak: (() => { const peak = window.__trussalLaundryInPeak; if (window.__trussalLaundryInPeak != null) window.__trussalLaundryInPeak = 0; return peak ?? null; })(),
     channelDiag: window.__trussalChannelDiag ?? null,
     publishedIsTap,
     publishState: window.__trussalAudioPublish ?? null,
