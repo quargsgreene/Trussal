@@ -143,6 +143,47 @@ export function pageAudioBridge() {
         if (rms > tapNativePeak) tapNativePeak = rms;
       }, 200);
     } catch (e) { console.error('[trussal] native tap meter setup failed', e); }
+    // CONFIRMATION PROBE (non-intrusive): tests the PROPOSED fix in a parallel,
+    // NON-published path. Hypothesis: superdough emits a channel layout the plain
+    // MediaStreamDestination `tap` drops (the analyser sums it → fanRms>0, but the
+    // tap captures silence → tapRmsNative==0). Feed the fan through an
+    // explicit-stereo gain (speakers down-mix of ALL channels) into a SEPARATE tap
+    // and meter it cross-context. If normTapRms>0 while tapRmsNative==0, the layout
+    // IS the cause and the stereo-normalize fix works — proven without changing the
+    // published path (probeTap is never published, so no test tone leaks).
+    try {
+      const normGain = ctx.createGain();
+      normGain.channelCountMode = 'explicit';
+      normGain.channelCount = 2;
+      normGain.channelInterpretation = 'speakers';
+      const normTap = ctx.createMediaStreamDestination();
+      fan.connect(normGain);
+      normGain.connect(normTap);
+      window.__trussalChannelDiag = {
+        fanChannelCountMode: fan.channelCountMode,
+        fanChannelInterpretation: fan.channelInterpretation,
+        tapChannelCount: tap.channelCount,
+        tapChannelCountMode: tap.channelCountMode,
+        tapChannelInterpretation: tap.channelInterpretation,
+        tapTrackChannels: (() => {
+          try { const s = tap.stream.getAudioTracks()[0].getSettings(); return s && s.channelCount != null ? s.channelCount : null; }
+          catch (e) { return null; }
+        })(),
+      };
+      const normCtx = new Native();
+      if (normCtx.state === 'suspended') normCtx.resume().catch(() => {});
+      const normMeter = normCtx.createAnalyser();
+      normMeter.fftSize = 2048;
+      normCtx.createMediaStreamSource(normTap.stream).connect(normMeter);
+      const normBuf = new Float32Array(normMeter.fftSize);
+      let normPeak = 0;
+      window.__trussalReadNormTapRms = () => { const peak = normPeak; normPeak = 0; return peak; };
+      setInterval(() => {
+        normMeter.getFloatTimeDomainData(normBuf);
+        const rms = Math.sqrt(sumSquares(normBuf) / normBuf.length);
+        if (rms > normPeak) normPeak = rms;
+      }, 200);
+    } catch (e) { console.error('[trussal] norm tap probe setup failed', e); }
     // superdough derives its output channel routing from destination.maxChannelCount
     // (the very math the maxChannelCount fix above feeds); a surprising real-device
     // value is a candidate silence cause, so snapshot it for diag alongside fanRms.
@@ -938,6 +979,8 @@ export function pageReadSamples() {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
     tapRms: typeof readTapRms === 'function' ? readTapRms() : null,
     tapRmsNative: typeof readTapRmsNative === 'function' ? readTapRmsNative() : null,
+    normTapRms: typeof window.__trussalReadNormTapRms === 'function' ? window.__trussalReadNormTapRms() : null,
+    channelDiag: window.__trussalChannelDiag ?? null,
     publishedIsTap,
     publishState: window.__trussalAudioPublish ?? null,
     outboundAudio: window.__trussalOutboundAudio ?? null,
