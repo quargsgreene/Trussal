@@ -126,9 +126,7 @@ export class FleetService {
   async handleBusMessage(msg) {
     switch (msg.type) {
       case 'roster':
-        if (Array.isArray(msg.peers)) {
-          for (const p of msg.peers) this.#trackPeer(p);
-        }
+        if (Array.isArray(msg.peers)) this.#reconcileRoster(msg.peers);
         break;
       case 'peer-join':
         if (msg.peer) this.#trackPeer(msg.peer);
@@ -153,12 +151,10 @@ export class FleetService {
       clearTimeout(this.ownerTimers.get(idx));
       this.ownerTimers.delete(idx);
     }
-    if (!peer.isBot && this.meetingEndTimer) {
-      clearTimeout(this.meetingEndTimer);
-      this.meetingEndTimer = null;
-    }
     // A human in the room means there is audio to aggregate.
     if (!peer.isBot) this.#ensureAggregator().catch((e) => {console.error('[fleet] failed to start aggregator:', e.message);});
+    // A present human cancels any pending meeting-end teardown (recomputed here).
+    this.#evaluateMeetingEnd();
   }
 
   #untrackPeer(peerId) {
@@ -180,15 +176,63 @@ export class FleetService {
       this.ownerTimers.set(ownerIndex, t);
     }
     // Last human gone → the meeting is over; destroy every Puppeteer instance
-    // (clusters and the aggregator alike).
-    const humansLeft = [...this.presentIndices.values()].some((p) => !p.isBot);
-    if (!humansLeft && (this.bots.size > 0 || this.aggregatorRunning) && !this.meetingEndTimer) {
-      this.meetingEndTimer = setTimeout(() => {
+    // (clusters and the aggregator alike) after the grace period.
+    this.#evaluateMeetingEnd();
+  }
+
+  // The single decision point for meeting-end teardown. Level-triggered on the
+  // shadow roster so it is safe to call from any path (peer-leave, roster
+  // reconcile, aggregator start): whenever no human remains but the aggregator
+  // or a cluster is still up, arm the teardown; a returning human cancels a
+  // pending one. XMPP constraints forbid leaving instantly, so the actual fleet
+  // leave waits meetingEndGraceMs.
+  #evaluateMeetingEnd() {
+    const humansPresent = [...this.presentIndices.values()].some((p) => !p.isBot);
+    const fleetUp = this.bots.size > 0 || this.aggregatorRunning;
+    const actions = {
+      cancel: () => {                              // a returning human aborts the countdown
+        clearTimeout(this.meetingEndTimer);
         this.meetingEndTimer = null;
-        this.#teardownAll('meeting ended').catch(() => {});
-      }, this.cfg.meetingEndGraceMs);
-      if (this.meetingEndTimer.unref) this.meetingEndTimer.unref();
-    }
+      },
+      arm: () => {                                 // last human gone → start the countdown
+        this.meetingEndTimer = setTimeout(() => {
+          this.meetingEndTimer = null;
+          this.#teardownAll('meeting ended').catch((err) => {
+            console.error('[fleet] meeting-end teardown failed:', err.message);
+          });
+        }, this.cfg.meetingEndGraceMs);
+        if (this.meetingEndTimer.unref) this.meetingEndTimer.unref();
+      },
+      noop: () => {},
+    };
+    const decide = () => {
+      if (humansPresent && this.meetingEndTimer) return 'cancel';
+      if (this.meetingEndTimer && !humansPresent) return 'noop'; // already counting down
+      if (!humansPresent && fleetUp) return 'arm';
+      return 'noop';
+    };
+    actions[decide()]();
+  }
+
+  // Reconcile the shadow roster against the sidecar's authoritative snapshot.
+  // The roster arrives on every hello — so on every bus reconnect too — and is
+  // the ONLY way a departed peer is corrected after a socket blip: peer-leave is
+  // edge-triggered, and a reconnect misses any leaves that happened while we were
+  // down. Without this, a human who left during the outage stays "present"
+  // forever, meeting-end teardown never arms, and the aggregator persists into
+  // the next meeting (blocking a fresh one). Register the peers the roster lists
+  // FIRST so a still-present human is known before we run any departed owner's
+  // leave path (otherwise we'd needlessly arm+cancel the teardown mid-reconcile).
+  #reconcileRoster(peers) {
+    const present = new Set(
+      peers.filter((peer) => peer.roomIndex != null).map((peer) => String(peer.roomIndex)),
+    );
+    const departed = [...this.presentIndices.entries()].filter(([idx]) => !present.has(idx));
+    departed.forEach(([idx]) => this.presentIndices.delete(idx));
+    const departedOwners = departed.filter(([, info]) => !info.isBot).map(([idx]) => idx);
+
+    peers.forEach((peer) => this.#trackPeer(peer));
+    departedOwners.forEach((idx) => this.#onOwnerLeft(idx));
   }
 
   async #handleFleetRequest(msg) {

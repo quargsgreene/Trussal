@@ -217,6 +217,44 @@ test('aggregator: torn down when the last human leaves (meeting end)', async () 
   });
 });
 
+test('roster reconcile heals a missed leave → meeting-end teardown still fires', async () => {
+  await withFleet(async ({ fleet, runner, sent }) => {
+    // Human joins; aggregator spawns.
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    assert.equal(fleet.aggregatorStatus().running, true);
+    // The human left while our bus socket was down, so we never saw peer-leave.
+    // On reconnect the sidecar replays the authoritative roster — now humanless.
+    await fleet.handleBusMessage({ type: 'roster', peers: [] });
+    await new Promise((resolve) => setTimeout(resolve, 60)); // meetingEndGraceMs = 30
+    assert.equal(fleet.aggregatorStatus().running, false, 'reconcile armed the teardown');
+    assert.ok(runner.calls.stopped.includes(AGGREGATOR_BOT_ID));
+    assert.ok(sent.some((status) => status.action === 'teardown' && /meeting ended/.test(status.reason)));
+  });
+});
+
+test('roster reconcile keeps a still-present human → no teardown', async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    // Reconnect roster still lists the human (fresh peerId, same room index).
+    await fleet.handleBusMessage({ type: 'roster', peers: [{ peerId: 'h2', roomIndex: '0', isBot: false }] });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.equal(fleet.aggregatorStatus().running, true, 'human still present → aggregator stays');
+  });
+});
+
+test('roster reconcile drops a departed owner’s cluster while the meeting continues', async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'a', roomIndex: '0', isBot: false } });
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'b', roomIndex: '1', isBot: false } });
+    await fleet.spawnCluster('0', 1); // owner 0 has a bot
+    // Reconnect roster: owner 0 is gone, owner 1 is still here.
+    await fleet.handleBusMessage({ type: 'roster', peers: [{ peerId: 'b', roomIndex: '1', isBot: false }] });
+    await new Promise((resolve) => setTimeout(resolve, 60)); // ownerLeaveGraceMs = 30
+    assert.equal(fleet.listBots().length, 0, 'departed owner’s cluster torn down');
+    assert.equal(fleet.aggregatorStatus().running, true, 'meeting continues — owner 1 present');
+  });
+});
+
 test('aggregator: role-tagged metrics are recorded but kept out of the health map', async () => {
   await withFleet(async ({ fleet }) => {
     await fleet.spawnCluster('1', 1);
