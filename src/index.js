@@ -2,7 +2,7 @@ import { JAMULUS_ROOM_MAP , renderJamulusWelcomePanelAndBanner, getRoomNameFromU
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
-import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer } from './peer-state.js';
+import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import './studio.js';
@@ -27,6 +27,16 @@ window.__trussalAnnounceLocalPattern = (code) => {
 // Cycles room-index token (0, 0a, 1, …). The room mapper above already keeps
 // the jitsiId ↔ roomIndex bijection current, so expose the lookup to the page.
 window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+
+// The aggregator bot's capture tap also needs to know whether a peer is
+// ACTUALLY playing (vs merely present in the Jitsi conference) so a peer who
+// has joined but not yet pressed play — or who has paused — never claims a
+// turn in the rotation: presence alone would otherwise seat them and produce
+// a silent slot exactly like an unremoved departure did before removeParticipant.
+window.__trussalPeerIsPlaying = (jitsiId) => {
+  const peer = getPeerByJitsiId(jitsiId);
+  return !!(peer && peer.playing);
+};
 
 // The aggregator bot's page polls this to decide whether IT is the room's ACTIVE
 // aggregator. Only one aggregator may stream at a time (see electAggregator):

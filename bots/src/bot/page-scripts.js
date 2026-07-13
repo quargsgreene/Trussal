@@ -597,6 +597,14 @@ export async function pageStrudelBoot({ strudel, hydra }) {
  * (via pageDrainParticipantLeaves) and feeds each into
  * AggregatorBot.removeParticipant, which compacts that participant's ring slot
  * so the rotation never leaves a silent gap where they used to be.
+ *
+ * Ring membership is additionally gated on PLAY STATE
+ * (window.__trussalPeerIsPlaying, backed by the peer-state bus's playing
+ * flag): a peer merely present in the conference publishes silence, so scan()
+ * compacts the slot of anyone who stops playing and drain() discards (never
+ * delivers) captures from anyone not playing — a joined-but-not-yet-playing
+ * peer never claims a turn, and a stopped peer's slot closes just like a
+ * departure. Pressing play (re)registers them at the tail of the rotation.
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
@@ -645,12 +653,14 @@ export function pageAggregatorCapture() {
   // Endpoint ids present as of the previous scan, ids that have resolved a
   // room-index token at least once (the prerequisite for the fast resolver-
   // regression check below — an id that has NEVER resolved yet must not be
-  // mistaken for a departure), and the queue of ids that have left since the
-  // last drainLeaves() — the leave-detection state a departed participant's
-  // ring slot needs to be compacted on the Node side (AggregatorBot.
-  // removeParticipant) instead of left as a silent gap.
+  // mistaken for a departure), ids observed PLAYING at least once (the same
+  // prerequisite for the play-state check below), and the queue of ids that
+  // have left since the last drainLeaves() — the leave-detection state a
+  // departed participant's ring slot needs to be compacted on the Node side
+  // (AggregatorBot.removeParticipant) instead of left as a silent gap.
   let lastSeen = new Set();
   const resolvedOnce = new Set();
+  const playingOnce = new Set();
   const leftQueue = [];
 
   function markDeparted(jitsiId) {
@@ -658,6 +668,7 @@ export function pageAggregatorCapture() {
     store.delete(jitsiId);
     lastSeen.delete(jitsiId);
     resolvedOnce.delete(jitsiId);
+    playingOnce.delete(jitsiId);
   }
 
   // Enumerate remote participants (the authoritative source — getParticipants()
@@ -669,17 +680,27 @@ export function pageAggregatorCapture() {
   function scan() {
     const resolve = window.__trussalRoomIndexForJitsiId;
     const resolverReady = typeof resolve === 'function';
+    const isPlaying = window.__trussalPeerIsPlaying;
+    const playingReady = typeof isPlaying === 'function';
 
-    // Fast path: an id that has previously resolved a room-index token but no
-    // longer does has left via the sidecar's peer-leave broadcast (see
+    // Fast path #1: an id that has previously resolved a room-index token but
+    // no longer does has left via the sidecar's peer-leave broadcast (see
     // syncMapperFromPeerEvent in index.js, which unregisters the jitsiId the
     // instant the peer-state WebSocket closes). Checked first and independent
     // of getParticipants() below, since Jitsi's own roster can take many
     // seconds (ICE disconnect timeout) to notice the same departure.
     if (resolverReady) {
-      for (const jitsiId of [...resolvedOnce]) {
-        if (resolve(jitsiId) == null) markDeparted(jitsiId);
-      }
+      [...resolvedOnce].filter((jitsiId) => resolve(jitsiId) == null).forEach(markDeparted);
+    }
+
+    // Fast path #2: an id that WAS playing but has stopped frees its turn
+    // immediately — the same "no dead slot" guarantee a departure gets,
+    // applied to play/stop, so a present-but-silent peer never holds a turn.
+    // The drain() gate below is this check's other half: it keeps a
+    // non-playing peer from re-registering on the Node side the moment its
+    // next (silent) capture batch lands.
+    if (playingReady) {
+      [...playingOnce].filter((jitsiId) => !isPlaying(jitsiId)).forEach(markDeparted);
     }
 
     const conf = globalThis.APP && globalThis.APP.conference;
@@ -694,6 +715,9 @@ export function pageAggregatorCapture() {
     if (resolverReady) {
       [...currentIds].filter((jitsiId) => resolve(jitsiId) != null).forEach((jitsiId) => resolvedOnce.add(jitsiId));
     }
+    if (playingReady) {
+      [...currentIds].filter((jitsiId) => isPlaying(jitsiId)).forEach((jitsiId) => playingOnce.add(jitsiId));
+    }
     participants
       .flatMap((participant) => participant.getTracks()
         .filter((track) => track.getType() === 'audio')
@@ -706,9 +730,18 @@ export function pageAggregatorCapture() {
   window.__trussalAggCapture = {
     drain() {
       const resolve = window.__trussalRoomIndexForJitsiId;
+      const isPlaying = window.__trussalPeerIsPlaying;
+      const playingReady = typeof isPlaying === 'function';
       const out = [];
       for (const [jitsiId, arr] of store) {
         if (!arr.length) continue;
+        // A peer that is not currently PLAYING delivers nothing: its captured
+        // PCM (silence — the published track carries only Strudel output) is
+        // DISCARDED, not held, so a peer who joined but never pressed play
+        // can't register a ring slot on the Node side, a stopped peer can't
+        // re-register the slot scan() just compacted, and pressing play later
+        // streams fresh audio rather than a backlog of stale silence.
+        if (playingReady && !isPlaying(jitsiId)) { arr.length = 0; continue; }
         const token = typeof resolve === 'function' ? resolve(jitsiId) : null;
         if (token == null) continue; // room index not announced yet — keep buffering
         // Carry the jitsiId (the endpoint id) alongside the resolved token so the
