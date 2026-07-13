@@ -587,9 +587,14 @@ export async function pageStrudelBoot({ strudel, hydra }) {
  * stream), so it coexists with the Trussal bundle's own per-peer tap of the same
  * stream (latency-instrument.js) rather than colliding with it.
  *
- * The same room.getParticipants() scan also detects DEPARTURES: an endpoint id
- * present in one scan and missing from the next has left the conference. The
- * Node side drains those (via pageDrainParticipantLeaves) and feeds each into
+ * The same 1s tick also detects DEPARTURES, via two signals (whichever fires
+ * first wins — see scan()): (1) window.__trussalRoomIndexForJitsiId losing a
+ * jitsiId it had previously resolved — driven by the peer-state bus's
+ * peer-leave broadcast, itself a WebSocket close, which fires on an explicit
+ * leave/tab-close far faster than Jitsi's own ICE-timeout-driven participant
+ * list ever does; and (2) the getParticipants() roster diff as a backstop for
+ * an id the resolver never got a token for. The Node side drains the result
+ * (via pageDrainParticipantLeaves) and feeds each into
  * AggregatorBot.removeParticipant, which compacts that participant's ring slot
  * so the rotation never leaves a silent gap where they used to be.
  */
@@ -637,12 +642,23 @@ export function pageAggregatorCapture() {
     tappedTracks.add(jitsiTrack);
   }
 
-  // Endpoint ids present as of the previous scan, and the queue of ids that have
-  // disappeared since the last drainLeaves() — the leave-detection state a
-  // departed-participant's ring slot needs to be compacted on the Node side
-  // (AggregatorBot.removeParticipant) instead of left as a silent gap.
+  // Endpoint ids present as of the previous scan, ids that have resolved a
+  // room-index token at least once (the prerequisite for the fast resolver-
+  // regression check below — an id that has NEVER resolved yet must not be
+  // mistaken for a departure), and the queue of ids that have left since the
+  // last drainLeaves() — the leave-detection state a departed participant's
+  // ring slot needs to be compacted on the Node side (AggregatorBot.
+  // removeParticipant) instead of left as a silent gap.
   let lastSeen = new Set();
+  const resolvedOnce = new Set();
   const leftQueue = [];
+
+  function markDeparted(jitsiId) {
+    leftQueue.push(jitsiId);
+    store.delete(jitsiId);
+    lastSeen.delete(jitsiId);
+    resolvedOnce.delete(jitsiId);
+  }
 
   // Enumerate remote participants (the authoritative source — getParticipants()
   // excludes self) and tap each one's audio tracks, keyed by the member's endpoint
@@ -651,19 +667,33 @@ export function pageAggregatorCapture() {
   // loudly rather than silently capturing nothing — and a throw here does NOT wedge
   // the loop (setInterval keeps firing; unresolved/idle members drop out at drain).
   function scan() {
+    const resolve = window.__trussalRoomIndexForJitsiId;
+    const resolverReady = typeof resolve === 'function';
+
+    // Fast path: an id that has previously resolved a room-index token but no
+    // longer does has left via the sidecar's peer-leave broadcast (see
+    // syncMapperFromPeerEvent in index.js, which unregisters the jitsiId the
+    // instant the peer-state WebSocket closes). Checked first and independent
+    // of getParticipants() below, since Jitsi's own roster can take many
+    // seconds (ICE disconnect timeout) to notice the same departure.
+    if (resolverReady) {
+      for (const jitsiId of [...resolvedOnce]) {
+        if (resolve(jitsiId) == null) markDeparted(jitsiId);
+      }
+    }
+
     const conf = globalThis.APP && globalThis.APP.conference;
     const room = conf && conf._room;
     if (!room || typeof room.getParticipants !== 'function') return; // conference not ready yet
     const participants = room.getParticipants().filter((participant) => participant.getId());
     const currentIds = new Set(participants.map((participant) => participant.getId()));
-    // A participant present last scan but missing now has left the conference:
-    // drop its accumulated (never-to-be-drained) PCM and queue its id so the Node
-    // side can remove its ring slot — the ONLY way a departure is detected, since
-    // this deployment has no reliable member-left event (see the module doc).
-    for (const jitsiId of lastSeen) {
-      if (!currentIds.has(jitsiId)) { leftQueue.push(jitsiId); store.delete(jitsiId); }
-    }
+    // Backstop: catches a departure the resolver never saw resolved in the
+    // first place (e.g. the peer-state mapping never landed for this id).
+    [...lastSeen].filter((jitsiId) => !currentIds.has(jitsiId)).forEach(markDeparted);
     lastSeen = currentIds;
+    if (resolverReady) {
+      [...currentIds].filter((jitsiId) => resolve(jitsiId) != null).forEach((jitsiId) => resolvedOnce.add(jitsiId));
+    }
     participants
       .flatMap((participant) => participant.getTracks()
         .filter((track) => track.getType() === 'audio')
