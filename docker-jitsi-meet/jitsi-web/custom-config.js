@@ -138,9 +138,34 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getLocalParticipant() {
     return local;
   }
+  function ownerIdForAudioSrcObject(srcObject) {
+    try {
+      if (!srcObject || typeof srcObject.getAudioTracks !== "function") return null;
+      const tagTrackIds = new Set(srcObject.getAudioTracks().map((t) => t.id));
+      if (!tagTrackIds.size) return null;
+      const conf = window.APP && window.APP.conference;
+      const room2 = conf && conf._room;
+      if (!room2 || typeof room2.getParticipants !== "function") return null;
+      for (const participant of room2.getParticipants()) {
+        const tracks = typeof participant.getTracks === "function" ? participant.getTracks() : [];
+        for (const track of tracks) {
+          if (typeof track.getType === "function" && track.getType() !== "audio") continue;
+          const mediaStreamTrack = typeof track.getTrack === "function" ? track.getTrack() : null;
+          if (mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id)) return participant.getId();
+        }
+      }
+      return null;
+    } catch (e30) {
+      console.warn("[participants] track-identity tag resolution failed", e30);
+      return null;
+    }
+  }
   function getParticipantIdForAudioTag(tag) {
-    if (!tag || !tag.id) return null;
+    if (!tag) return null;
     if (tag.id === "userAudio") return null;
+    const byTrack = ownerIdForAudioSrcObject(tag.srcObject);
+    if (byTrack) return byTrack;
+    if (!tag.id) return null;
     const patterns = [
       /^remoteAudio_(.+)$/,
       /^audio_(.+)$/,
@@ -2712,7 +2737,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     const wcrtt = worstCase(rtts) ?? 0;
     return {
-      wcl: wcrtt / 2,
+      wcl: 1e3 * wcrtt,
+      // wcrtt / 2,
       wcj: worstCase(jitters) ?? 0,
       wcrtt,
       wcpl: worstCase(losses) ?? 0,

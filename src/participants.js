@@ -104,11 +104,52 @@ export function subscribeParticipants(fn) {
 export function getLocalParticipant() { return local; }
 export function getRemoteParticipants() { return Array.from(remotes.values()); }
 
-// Jitsi tags remote `<audio>` elements with an id that embeds the participant
-// id. The exact prefix has shifted across versions, so try a few shapes.
+// Resolve the owner of a remote audio tag by TRACK IDENTITY: match the tag's
+// srcObject audio track ids against each remote participant's audio
+// JitsiTracks in lib-jitsi-meet (the authoritative participant/track model —
+// a remote audio track's owner IS the endpoint id). This deployment labels
+// remote audio tags with GENERIC ids (remoteAudio_remote-audio-N) that do not
+// embed the endpoint id, so the id-parsing fallback below "matches" but
+// returns a token no roster knows; the tag is then never routed into a
+// per-peer chain and plays natively at full volume — which is exactly how
+// peers stayed audible OUTSIDE the aggregator's master (duplicated audio),
+// and why aggregator-mode solo muting looked flaky. Same redesign as the
+// aggregator bot's capture tap (commit be2e94a), client-side.
+function ownerIdForAudioSrcObject(srcObject) {
+  try {
+    if (!srcObject || typeof srcObject.getAudioTracks !== 'function') return null;
+    const tagTrackIds = new Set(srcObject.getAudioTracks().map((t) => t.id));
+    if (!tagTrackIds.size) return null;
+    const conf = window.APP && window.APP.conference;
+    const room = conf && conf._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
+    if (!room || typeof room.getParticipants !== 'function') return null;
+    for (const participant of room.getParticipants()) {
+      const tracks = typeof participant.getTracks === 'function' ? participant.getTracks() : [];
+      for (const track of tracks) {
+        if (typeof track.getType === 'function' && track.getType() !== 'audio') continue;
+        const mediaStreamTrack = typeof track.getTrack === 'function' ? track.getTrack() : null;
+        if (mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id)) return participant.getId();
+      }
+    }
+    return null;
+  } catch (e) {
+    // Resolution failing must not wedge the caller's tag scan; the element-id
+    // fallback still runs. Log it — a persistent failure means the
+    // lib-jitsi-meet API shape changed and tags are back to native playback.
+    console.warn('[participants] track-identity tag resolution failed', e);
+    return null;
+  }
+}
+
+// Jitsi tags remote `<audio>` elements with an id that (in some versions)
+// embeds the participant id. Track identity is authoritative and tried first;
+// the id patterns remain as fallback for layouts whose ids do embed it.
 export function getParticipantIdForAudioTag(tag) {
-  if (!tag || !tag.id) return null;
-  if (tag.id === 'userAudio') return null;
+  if (!tag) return null;
+  if (tag.id === 'userAudio') return null; // local mic, never a remote owner
+  const byTrack = ownerIdForAudioSrcObject(tag.srcObject);
+  if (byTrack) return byTrack;
+  if (!tag.id) return null;
   const patterns = [
     /^remoteAudio_(.+)$/,
     /^audio_(.+)$/,
