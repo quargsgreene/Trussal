@@ -60,6 +60,14 @@ export class FleetService {
     // counts against the ceiling or gets health-replaced.
     this.aggregatorRunning = false;
     this.aggregatorMetrics = null;
+    // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
+    // teardown queues behind the in-flight stop instead of racing it. Without
+    // this, a rejoin's start() (which force-removes any stale container by
+    // name first) can run concurrently with a still-in-flight graceful stop
+    // and SIGKILL the old aggregator before its Jitsi leave() completes — a
+    // ghost participant that lingers until Jitsi's own presence timeout,
+    // alongside the duplicate that just joined.
+    this.aggregatorQueue = Promise.resolve();
     this._nextBotId = 0;
     // Never-decreasing per-owner spawn ordinals: mirrors the sidecar's
     // suffix counters exactly (indices are never reused), so clusterIndex
@@ -309,22 +317,37 @@ export class FleetService {
 
   // ---------- aggregator (one per room, outside the cluster id space) ----------
 
+  // Chains `op` onto aggregatorQueue so it runs only after every previously
+  // queued start/stop has fully settled — see the aggregatorQueue comment in
+  // the constructor. `op` is used as both the fulfilled and rejected handler
+  // so a failed op (e.g. runner.stop() throwing) doesn't permanently wedge the
+  // queue for whatever's chained after it; the immediate caller still observes
+  // the rejection via the returned promise.
+  #queueAggregatorOp(op) {
+    this.aggregatorQueue = this.aggregatorQueue.then(op, op);
+    return this.aggregatorQueue;
+  }
+
   async #ensureAggregator() {
-    if (this.aggregatorRunning) return;
-    this.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
-    try {
-      await this.runner.start(AGGREGATOR_BOT_ID, { BOT_ROLE: 'aggregator' });
-    } catch (err) {
-      this.aggregatorRunning = false;
-      console.error('[fleet] failed to start aggregator:', err.message);
-    }
+    return this.#queueAggregatorOp(async () => {
+      if (this.aggregatorRunning) return;
+      this.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
+      try {
+        await this.runner.start(AGGREGATOR_BOT_ID, { BOT_ROLE: 'aggregator' });
+      } catch (err) {
+        this.aggregatorRunning = false;
+        console.error('[fleet] failed to start aggregator:', err.message);
+      }
+    });
   }
 
   async #stopAggregator() {
-    if (!this.aggregatorRunning) return;
-    this.aggregatorRunning = false;
-    this.aggregatorMetrics = null;
-    await this.runner.stop(AGGREGATOR_BOT_ID);
+    return this.#queueAggregatorOp(async () => {
+      if (!this.aggregatorRunning) return;
+      this.aggregatorRunning = false;
+      this.aggregatorMetrics = null;
+      await this.runner.stop(AGGREGATOR_BOT_ID);
+    });
   }
 
   /** Aggregator liveness + latest sample, for observability (not health). */

@@ -7,10 +7,32 @@ import { mergeConfig } from '../src/shared/config.js';
 
 function makeFakeRunner() {
   const calls = { started: [], stopped: [] };
+  // Ordered log of op boundaries, so tests can assert a start never begins
+  // before a preceding stop (for the same botId) has fully finished — the
+  // ordering docker-runner.js relies on (start() force-removes any stale
+  // container by name before running a fresh one).
+  const log = [];
+  let stopGate = null; // when set, stop() awaits it before resolving (simulates docker stop -t 15 still in flight)
   return {
-    calls,
-    async start(botId, extraEnv) { calls.started.push({ botId, extraEnv }); },
-    async stop(botId) { calls.stopped.push(botId); },
+    calls, log,
+    // Arms a gate that the NEXT stop() call awaits before resolving (simulates
+    // `docker stop -t 15` still in flight). Returns the function that releases it.
+    holdNextStop() {
+      let release;
+      stopGate = new Promise((resolve) => { release = resolve; });
+      return () => release();
+    },
+    async start(botId, extraEnv) {
+      log.push(`start-begin:${botId}`);
+      calls.started.push({ botId, extraEnv });
+      log.push(`start-end:${botId}`);
+    },
+    async stop(botId) {
+      log.push(`stop-begin:${botId}`);
+      calls.stopped.push(botId);
+      if (stopGate) { const gate = stopGate; stopGate = null; await gate; }
+      log.push(`stop-end:${botId}`);
+    },
   };
 }
 
@@ -214,6 +236,38 @@ test('aggregator: torn down when the last human leaves (meeting end)', async () 
     await new Promise((r) => setTimeout(r, 60)); // meetingEndGraceMs = 30
     assert.equal(fleet.aggregatorStatus().running, false, 'aggregator leaves with the meeting');
     assert.ok(runner.calls.stopped.includes(AGGREGATOR_BOT_ID));
+  });
+});
+
+test('aggregator: a rejoin during in-flight teardown waits for the stop instead of racing it (no ghost)', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    assert.equal(fleet.aggregatorStatus().running, true);
+
+    // Arm the gate before the leave so the meeting-end timer's runner.stop()
+    // call — like a real `docker stop -t 15` — is still in flight when the
+    // rejoin lands.
+    const releaseStop = runner.holdNextStop();
+    await fleet.handleBusMessage({ type: 'peer-leave', peerId: 'h' });
+    await new Promise((r) => setTimeout(r, 60)); // meetingEndGraceMs = 30: teardown fires, stop() blocks on the gate
+
+    // The rejoin lands squarely inside the still-open graceful stop.
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    releaseStop();
+    await new Promise((r) => setTimeout(r, 20)); // let both queued ops drain
+
+    const events = runner.log.filter((e) => e.endsWith(`:${AGGREGATOR_BOT_ID}`));
+    const stopEndIdx = events.indexOf(`stop-end:${AGGREGATOR_BOT_ID}`);
+    const rejoinStartIdx = events.lastIndexOf(`start-begin:${AGGREGATOR_BOT_ID}`);
+    assert.notEqual(stopEndIdx, -1);
+    assert.notEqual(rejoinStartIdx, -1);
+    assert.ok(
+      rejoinStartIdx > stopEndIdx,
+      `rejoin's start (index ${rejoinStartIdx}) must not begin before the in-flight stop finishes ` +
+      `(index ${stopEndIdx}) — starting first races runner.start()'s stale-container removal ` +
+      `against the still-leaving old aggregator and leaves a ghost: ${events.join(', ')}`,
+    );
+    assert.equal(fleet.aggregatorStatus().running, true, 'the rejoin still ends up with a running aggregator');
   });
 });
 
