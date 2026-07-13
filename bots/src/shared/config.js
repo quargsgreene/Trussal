@@ -67,6 +67,15 @@ export const defaultConfig = Object.freeze({
   fleetRoom: '0',                          // room whose requests this fleet serves
   ownerLeaveGraceMs: 120000,               // cluster lives this long (2 min) after its owner leaves, meeting continuing
   meetingEndGraceMs: 15000,                // all humans gone → teardown (XMPP constraints)
+  // The aggregator has no health-replace path (its metrics are deliberately
+  // kept out of the shouldReplace fleet, since it isn't one of `bots`) — if
+  // its container dies on its own (e.g. it lost the sidecar's aggregator-claim
+  // race and self-exited, or crashed), aggregatorRunning would otherwise stay
+  // stuck true forever, since nothing but an explicit #stopAggregator() call
+  // ever clears it. #reapDeadAggregator in fleet-service.js instead treats a
+  // long enough silence on its metrics reports as death and respawns it.
+  aggregatorStartupGraceMs: 15000,         // no metrics expected before this (docker run + Chromium + Jitsi join)
+  aggregatorStaleMs: 8000,                 // silence beyond this, past the startup grace, is treated as dead
 });
 
 export function mergeConfig(overrides = {}, base = defaultConfig) {

@@ -271,6 +271,77 @@ test('aggregator: a rejoin during in-flight teardown waits for the stop instead 
   });
 });
 
+// The aggregator has no health-replace path (its metrics are deliberately
+// kept out of the shouldReplace fleet — see the role-tagged-metrics test
+// below), so nothing but an explicit #stopAggregator() call ever clears
+// aggregatorRunning. If the container dies on its own — e.g. it lost the
+// sidecar's aggregator-claim race on a rejoin and self-exited cleanly — the
+// flag was staying stuck true forever, and every future #ensureAggregator
+// call (a human reusing the same room URL) would silently no-op, even though
+// no aggregator actually existed anymore.
+test('aggregator: a dead aggregator (metrics gone silent) is reaped and respawned while a human is present', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    assert.equal(fleet.aggregatorStatus().running, true);
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1);
+
+    // No metrics ever arrive — models the container self-exiting right after
+    // "starting" from fleet-service's point of view (runner.start() itself
+    // succeeded; the process inside died moments later).
+    await new Promise((r) => setTimeout(r, 70)); // past aggregatorStartupGraceMs(30) + aggregatorStaleMs(30)
+    await fleet.healthTick();
+
+    assert.equal(fleet.aggregatorStatus().running, true, 'reaped, then immediately respawned since the human is still here');
+    const starts = runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID);
+    assert.equal(starts.length, 2, 'the dead aggregator was reaped and a fresh one started in its place');
+    assert.ok(runner.calls.stopped.includes(AGGREGATOR_BOT_ID), 'the dead container is cleaned up too, not just forgotten');
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30 });
+});
+
+test('aggregator: a live aggregator posting metrics on schedule is never reaped', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    const base = `http://127.0.0.1:${fleet.port}`;
+    const postMetrics = () => fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', fps: 30, ramBytes: 1e6, latencyMs: 5 }),
+    });
+
+    await new Promise((r) => setTimeout(r, 40)); // past aggregatorStartupGraceMs(30)
+    await postMetrics();
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus().running, true, 'not reaped — it just reported');
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1, 'never respawned');
+
+    await new Promise((r) => setTimeout(r, 20)); // still within aggregatorStaleMs(30) of the last report
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus().running, true, 'still not reaped — recent enough report');
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1);
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30 });
+});
+
+test('aggregator: a dead aggregator is reaped but NOT respawned once no human is present', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    assert.equal(fleet.aggregatorStatus().running, true);
+
+    await fleet.handleBusMessage({ type: 'peer-leave', peerId: 'h' });
+    // meetingEndGraceMs is set far longer than this test's wait, so the
+    // NORMAL meeting-end teardown (covered elsewhere) cannot be what stops
+    // the aggregator here — only #reapDeadAggregator's own staleness check
+    // can, isolating the "no human present" branch of the reap path itself.
+    await new Promise((r) => setTimeout(r, 70)); // past aggregatorStartupGraceMs(30) + aggregatorStaleMs(30)
+    await fleet.healthTick();
+
+    assert.equal(fleet.aggregatorStatus().running, false, 'reaped');
+    assert.equal(
+      runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1,
+      'not respawned — no human is present to want one',
+    );
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30, meetingEndGraceMs: 5000 });
+});
+
 test('roster reconcile heals a missed leave → meeting-end teardown still fires', async () => {
   await withFleet(async ({ fleet, runner, sent }) => {
     // Human joins; aggregator spawns.

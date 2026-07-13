@@ -60,6 +60,12 @@ export class FleetService {
     // counts against the ceiling or gets health-replaced.
     this.aggregatorRunning = false;
     this.aggregatorMetrics = null;
+    // When the currently-running aggregator was last confirmed alive: set on
+    // a successful start, refreshed by every metrics report. #reapDeadAggregator
+    // reads this to tell "hasn't reported yet, still starting up" (age <
+    // aggregatorStartupGraceMs) apart from "was alive, has gone silent" (no
+    // metrics for aggregatorStaleMs) — see #reapDeadAggregator.
+    this.aggregatorStartedAt = null;
     // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
     // teardown queues behind the in-flight stop instead of racing it. Without
     // this, a rejoin's start() (which force-removes any stale container by
@@ -334,6 +340,7 @@ export class FleetService {
       this.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
       try {
         await this.runner.start(AGGREGATOR_BOT_ID, { BOT_ROLE: 'aggregator' });
+        this.aggregatorStartedAt = Date.now();
       } catch (err) {
         this.aggregatorRunning = false;
         console.error('[fleet] failed to start aggregator:', err.message);
@@ -346,8 +353,36 @@ export class FleetService {
       if (!this.aggregatorRunning) return;
       this.aggregatorRunning = false;
       this.aggregatorMetrics = null;
+      this.aggregatorStartedAt = null;
       await this.runner.stop(AGGREGATOR_BOT_ID);
     });
+  }
+
+  /**
+   * The aggregator has no health-replace path — its metrics are deliberately
+   * excluded from the shouldReplace fleet in the /metrics handler below, since
+   * it isn't one of `bots`. That means if its container dies on its own (lost
+   * the sidecar's aggregator-claim race on a rejoin, crashed, OOM'd — anything
+   * that isn't fleet-service explicitly calling #stopAggregator), NOTHING
+   * would otherwise ever clear aggregatorRunning: every future #ensureAggregator
+   * call (a human rejoining the same room, for instance) would see it still
+   * true and silently no-op forever, even though no aggregator actually
+   * exists. Detect that via metrics silence — the aggregator POSTs on its own
+   * cadence, so a long enough gap past its startup grace period means it's
+   * gone — and reap + immediately respawn if a human is still around to want
+   * one. runner.stop() on an already-dead container is safe (docker-runner's
+   * stop/rm are self-catching), so reaping never fails on the cleanup side.
+   */
+  async #reapDeadAggregator() {
+    if (!this.aggregatorRunning) return;
+    const age = Date.now() - (this.aggregatorStartedAt || 0);
+    if (age < this.cfg.aggregatorStartupGraceMs) return; // hasn't had a chance to report yet
+    const lastAt = this.aggregatorMetrics ? this.aggregatorMetrics.receivedAt : this.aggregatorStartedAt;
+    if (Date.now() - lastAt < this.cfg.aggregatorStaleMs) return; // still reporting on schedule
+    console.warn(`[fleet] aggregator metrics stale for ${Date.now() - lastAt}ms; reaping and respawning`);
+    await this.#stopAggregator();
+    const humansPresent = [...this.presentIndices.values()].some((p) => !p.isBot);
+    if (humansPresent) await this.#ensureAggregator();
   }
 
   /** Aggregator liveness + latest sample, for observability (not health). */
@@ -452,6 +487,10 @@ export class FleetService {
 
   // Public so tests (and operators via a REPL) can force a tick.
   async healthTick() {
+    // Ahead of the player-bot early-return below: a room can hold only the
+    // aggregator (no clusters spawned yet), and this check must still run.
+    await this.#reapDeadAggregator();
+
     const fleet = [...this.metrics.values()];
     if (fleet.length === 0) return;
 
