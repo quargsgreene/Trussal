@@ -16,25 +16,32 @@ import { pageAggregatorCapture } from '../src/bot/page-scripts.js';
  */
 function installTap() {
   const procsByJitsiId = new Map(); // jitsiId -> that peer's ScriptProcessor stand-in
+  const ctxsByJitsiId = new Map();  // jitsiId -> that peer's AudioContext stand-in
+
+  // Every fake node tracks its own disconnect so teardown is observable.
+  const fakeNode = (extra = {}) => ({ connect() {}, disconnected: false, disconnect() { this.disconnected = true; }, ...extra });
 
   // tapTrack creates one AudioContext per tap and calls
   // createMediaStreamSource(stream) before createScriptProcessor(), so the
   // stream's owner id (stamped on the fake stream below) identifies which
   // participant the processor belongs to.
   class FakeAudioContext {
+    constructor() { this.closed = false; }
     createMediaStreamSource(stream) {
       this._ownerId = stream.ownerId;
-      return { connect() {} };
+      ctxsByJitsiId.set(this._ownerId, this);
+      return fakeNode();
     }
     createScriptProcessor() {
-      const proc = { onaudioprocess: null, connect() {} };
+      const proc = fakeNode({ onaudioprocess: null });
       procsByJitsiId.set(this._ownerId, proc);
       return proc;
     }
     createGain() {
-      return { gain: { value: 1 }, connect() {} };
+      return fakeNode({ gain: { value: 1 } });
     }
     get destination() { return {}; }
+    close() { this.closed = true; return Promise.resolve(); }
   }
 
   // Stable participant objects: tapTrack guards re-tapping with a WeakSet on
@@ -79,6 +86,8 @@ function installTap() {
     },
     resolverMap,
     playingSet,
+    procs: procsByJitsiId,
+    ctxs: ctxsByJitsiId,
     // One ScriptProcessor frame from this peer's tap (2048 samples, like the
     // real FRAME size). Works after the participant has been scanned once.
     pushFrame: (jitsiId, sample = 0.1) => {
@@ -94,11 +103,11 @@ function installTap() {
 // The live incident, step for step: on an in-app hangup the Jitsi presence
 // leave lands BEFORE the sidecar peer-leave, so right after the roster
 // backstop queues the departure, the departed peer still reads as playing +
-// resolved — and its tap emits one final tail frame. Delivering that tail
-// re-registered the ring slot the leave had just compacted, permanently
-// (markDeparted had consumed every leave signal). The roster gate must
-// discard it.
-test('hangup race: a departed peer\'s post-leave capture tail is discarded, not delivered', () => {
+// resolved. Originally this meant its tap could still emit one final tail
+// frame that only drain()'s roster gate caught; the roster-diff sweep in
+// scan() now tears the tap down in that same tick, so the tail can no longer
+// be produced at all — a stronger fix at the source, verified below.
+test('hangup race: a departed peer\'s post-leave capture tail can no longer be produced', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
@@ -123,20 +132,16 @@ test('hangup race: a departed peer\'s post-leave capture tail is discarded, not 
   tap.scan();
   assert.deepEqual(tap.cap.drainLeaves(), ['human-b'], 'roster backstop queues the departure');
 
-  // B's ScriptProcessor outlives the WebRTC track and emits one last frame.
-  tap.pushFrame('human-b');
+  // B's tap was torn down in that same scan(), not left to outlive the track:
+  // there is no longer a handler left to emit a stale tail frame.
+  assert.equal(tap.procs.get('human-b').onaudioprocess, null, 'the departed peer\'s tap is gone, not just its ring slot');
+
   tap.pushFrame('human-a');
   assert.deepEqual(
     tap.cap.drain().map((t) => t.jitsiId),
     ['human-a'],
-    'the departed peer\'s tail is discarded — delivered, it would re-register the compacted ring slot',
+    'the other peer is unaffected by B\'s departure',
   );
-
-  // The peer-leave finally lands (playing + resolver shut); still nothing.
-  tap.playingSet.delete('human-b');
-  tap.resolverMap.delete('human-b');
-  tap.pushFrame('human-b');
-  assert.deepEqual(tap.cap.drain(), [], 'nothing further from the departed peer');
 });
 
 // The opposite leave ordering (tab close): the peer-state WS closes
@@ -192,4 +197,31 @@ test('a present peer that stops and resumes playing delivers again (no roster-ga
   const takes = tap.cap.drain();
   assert.equal(takes.length, 1, 'delivers again after play resumes');
   assert.equal(takes[0].jitsiId, 'human-a');
+});
+
+// The resource leak: markDeparted used to only clear the store/bookkeeping
+// Sets, leaving the departed peer's ScriptProcessor+AudioContext CONNECTED —
+// which per spec keeps them alive and running (silently refilling `store`
+// under the departed id) for the rest of the page's life. A departure must
+// tear the tap down: stop delivering frames and disconnect/close the graph.
+test('a departure tears down the peer\'s ScriptProcessor and AudioContext (no leaked tap)', () => {
+  const tap = installTap();
+  tap.addToRoster('human-a');
+  tap.resolverMap.set('human-a', '0');
+  tap.playingSet.add('human-a');
+  tap.scan();
+  tap.pushFrame('human-a');
+  assert.equal(tap.cap.drain().length, 1, 'tap is live while present');
+
+  const proc = tap.procs.get('human-a');
+  const ctx = tap.ctxs.get('human-a');
+  assert.ok(proc && ctx, 'tap resources exist before departure');
+
+  tap.removeFromRoster('human-a');
+  tap.scan(); // roster backstop fires markDeparted
+  assert.deepEqual(tap.cap.drainLeaves(), ['human-a']);
+
+  assert.equal(proc.onaudioprocess, null, 'processor stops delivering frames on departure');
+  assert.equal(proc.disconnected, true, 'processor is disconnected on departure');
+  assert.equal(ctx.closed, true, 'the departed peer\'s AudioContext is closed, not left running forever');
 });

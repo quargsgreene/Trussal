@@ -622,6 +622,26 @@ export function pageAggregatorCapture() {
   const tappedTracks = new WeakSet(); // remote audio JitsiTracks already wired
   const FRAME = 2048;
   const MAX_BACKLOG = FRAME * 64;     // cap page-side buffering if Node never drains
+  // jitsiId -> { ctx, src, proc, sink }, so a departure can tear the tap down.
+  // Without this, an AudioContext has nothing external referencing it once the
+  // JitsiTrack is gone, but its ScriptProcessor graph is still CONNECTED and
+  // therefore stays alive and running per spec — it keeps firing
+  // onaudioprocess (silently refilling `store` under the departed jitsiId, up
+  // to MAX_BACKLOG) and burning CPU for the rest of the page's life.
+  const taps = new Map();
+
+  function teardownTap(jitsiId) {
+    const tap = taps.get(jitsiId);
+    if (!tap) return;
+    taps.delete(jitsiId);
+    const { ctx, src, proc, sink } = tap;
+    proc.onaudioprocess = null; // stop delivering frames before disconnecting
+    try { src.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: src.disconnect failed for ${jitsiId}: ${e.message}`); }
+    try { proc.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: proc.disconnect failed for ${jitsiId}: ${e.message}`); }
+    try { sink.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: sink.disconnect failed for ${jitsiId}: ${e.message}`); }
+    try { Promise.resolve(ctx.close()).catch((e) => console.error(`[trussal] aggregator capture: ctx.close failed for ${jitsiId}: ${e.message}`)); }
+    catch (e) { console.error(`[trussal] aggregator capture: ctx.close threw for ${jitsiId}: ${e.message}`); }
+  }
 
   function tapTrack(jitsiTrack, jitsiId) {
     if (tappedTracks.has(jitsiTrack)) return;
@@ -640,6 +660,10 @@ export function pageAggregatorCapture() {
     if (!stream || !stream.getAudioTracks().length) return;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) throw new Error('aggregator capture: AudioContext is unavailable');
+    // A stale tap under this same jitsiId (e.g. its track was replaced rather
+    // than removed) would otherwise be orphaned the same way a departure
+    // would — tear it down before wiring the replacement.
+    teardownTap(jitsiId);
     const ctx = new AudioContext();
     let src;
     try { src = ctx.createMediaStreamSource(stream); } catch (e) { tappedTracks.add(jitsiTrack); return; }
@@ -657,6 +681,7 @@ export function pageAggregatorCapture() {
     src.connect(proc);
     proc.connect(sink);
     sink.connect(ctx.destination);
+    taps.set(jitsiId, { ctx, src, proc, sink });
     tappedTracks.add(jitsiTrack);
   }
 
@@ -675,6 +700,12 @@ export function pageAggregatorCapture() {
   const playingOnce = new Set();
   const leftQueue = [];
 
+  // NOTE: markDeparted is shared by two DIFFERENT signals and must not tear
+  // down the audio tap itself — see the roster-diff sweep in scan() for that.
+  // The play-state fast path below calls this for a peer who is still fully
+  // present (just not playing); tearing down their AudioContext here would be
+  // permanent, since tapTrack's WeakSet guard means their unchanged JitsiTrack
+  // is never re-tapped, and they'd never be heard from again after resuming.
   function markDeparted(jitsiId) {
     leftQueue.push(jitsiId);
     store.delete(jitsiId);
@@ -724,6 +755,14 @@ export function pageAggregatorCapture() {
     // first place (e.g. the peer-state mapping never landed for this id).
     [...lastSeen].filter((jitsiId) => !currentIds.has(jitsiId)).forEach(markDeparted);
     lastSeen = currentIds;
+    // Tear down any tap whose jitsiId is no longer in the AUTHORITATIVE Jitsi
+    // roster — deliberately independent of markDeparted/the fast paths above,
+    // which free a peer's turn on a mere play/stop or a resolver blip while
+    // they're still actually in the room. currentIds is the same source
+    // tapTrack uses to (re)create a tap, so this is its exact mirror: a peer
+    // absent here has truly left, and their JitsiTrack (and any future
+    // rejoin's tap) will be a fresh object anyway.
+    [...taps.keys()].filter((jitsiId) => !currentIds.has(jitsiId)).forEach(teardownTap);
     if (resolverReady) {
       [...currentIds].filter((jitsiId) => resolve(jitsiId) != null).forEach((jitsiId) => resolvedOnce.add(jitsiId));
     }
