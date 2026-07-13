@@ -6,6 +6,7 @@ import { ffmpegBedArgs } from '../src/bot/ffmpeg-bed.js';
 import { jamulusArgs } from '../src/bot/jamulus.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
+  pageEnsureAudioPublished,
 } from '../src/bot/page-scripts.js';
 import { Bot } from '../src/bot/bot.js';
 
@@ -125,6 +126,30 @@ test('pageReadSamples reports the fan audio level + channel routing in diag', ()
   assert.match(js, /fanRms/, 'surfaces whether the bot is actually audible');
   assert.match(js, /fanChannelCount/, 'surfaces the fan channel routing');
   assert.match(js, /hardwareMaxChannelCount/, 'surfaces the device channel count superdough keys off');
+  assert.match(js, /directTap/, 'surfaces whether the setEffect direct tap is attached');
+});
+
+test('pageEnsureAudioPublished taps Strudel directly onto the track via setEffect', () => {
+  const js = String(pageEnsureAudioPublished);
+  // The publish path proven to carry Strudel audibly (NodeOutputEffect in the
+  // human client): the fan connects straight into the effect's own
+  // MediaStreamDestination, handed to lib-jitsi-meet through setEffect rather
+  // than smuggled in as a gUM microphone.
+  assert.match(js, /setEffect/, 'attaches a track effect');
+  assert.match(js, /startEffect/, 'implements the jitsi effect protocol');
+  assert.match(js, /stopEffect/, 'implements effect teardown');
+  assert.match(js, /fan\.connect\(dest\)/, 'the effect output is the fan, connected directly');
+  assert.match(js, /__trussalDirectTapEffect/, 'records the attach for idempotence + diag');
+});
+
+test('pageEnsureAudioPublished never rebinds away an effect-carrying track', () => {
+  const js = String(pageEnsureAudioPublished);
+  // The rebind (step 2) replaces tracks whose MediaStreamTrack isn't the gUM
+  // tap; a track carrying the direct-tap effect fails that identity check by
+  // design, so the rebind must also treat it as publishing-correctly or every
+  // later call (the aggregator retries) would strip the effect.
+  assert.match(js, /directTapLive/, 'effect-carrying track counts as publishing correctly');
+  assert.match(js, /!publishingTap && !directTapLive/, 'rebind skipped while the direct tap is live');
 });
 
 test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, reports metrics', async () => {

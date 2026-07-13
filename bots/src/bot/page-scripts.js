@@ -24,6 +24,12 @@
  * same music reaches Jamulus listeners and, now that the bot joins unmuted,
  * Jitsi listeners too.
  *
+ * The gUM-handed "microphone" gets the bot a local audio track, but what the
+ * track SENDS is replaced post-join by pageEnsureAudioPublished step 3: a
+ * lib-jitsi-meet track effect whose output is the fan, connected directly
+ * (mirroring the human client's NodeOutputEffect publish). The gUM tap remains
+ * as bootstrap + fallback.
+ *
  * Note: the admin page's per-bot code-inspector modal does NOT live here —
  * it is operator-facing UI served by the config API (admin.html), backed by
  * conductor state via GET /api/bots.
@@ -355,7 +361,14 @@ export async function pageEnsureAudioPublished() {
     const current = localTrack();
     const currentMst = current && typeof current.getTrack === 'function' ? current.getTrack() : null;
     const publishingTap = Boolean(tapTrack && currentMst && currentMst === tapTrack);
-    if (!publishingTap && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+    // A track already carrying the direct-tap effect (step 3) is publishing
+    // correctly even though its MediaStreamTrack is the effect's output, not the
+    // gUM tap — rebinding it would replace the effect-carrying track with a fresh
+    // effect-less one and undo step 3 on every later call (the aggregator retries
+    // this function).
+    const directTapLive = Boolean(window.__trussalDirectTapEffect && current
+      && window.__trussalDirectTapEffect.track === current);
+    if (!publishingTap && !directTapLive && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
         const at = tracks && tracks[0];
@@ -364,6 +377,65 @@ export async function pageEnsureAudioPublished() {
           else { const r = room(); if (r && r.addTrack) await r.addTrack(at); }
         }
       } catch (e) {}
+    }
+
+    // 3) Tap Strudel DIRECTLY onto the published track via lib-jitsi-meet's
+    //    track-effect API — the same mechanism the human client's aggregator-mode
+    //    publish uses (NodeOutputEffect in src/latency-instrument.js), the one
+    //    publish path proven live to carry Strudel audibly. The minimal repro
+    //    behind 12d2e74 showed the raw WebAudio→PeerConnection path carries the
+    //    worklet audio in every bot condition, so the silence lives in how
+    //    lib-jitsi-meet treats a gUM-handed "microphone" track; setEffect hands
+    //    the library a stream through its own supported pipeline instead, and the
+    //    library re-wires the sender itself across P2P/JVB flips and
+    //    renegotiations. The fan is the tap point: all of superdough's output
+    //    lands on it (destination override in pageAudioBridge), it feeds fanRms,
+    //    and zeroing it still mutes this path and Jamulus together.
+    const fan = window.__trussalFanGain;
+    if (!fan) {
+      // The shared-context build above guarantees the fan; missing means
+      // pageAudioBridge never installed — the bot can only publish the raw gUM
+      // track, so surface it.
+      const err = new Error('direct Strudel tap: fan gain missing (pageAudioBridge not installed?)');
+      console.error('[trussal]', err);
+      throw err;
+    }
+    const publishedTrack = localTrack();
+    if (!publishedTrack) {
+      // muteAudio + createLocalTracks both failed to produce a track — that IS
+      // the silent-bot bug, so log it (the aggregator's caller retries).
+      console.error('[trussal] direct Strudel tap: no local audio track to attach to');
+      return;
+    }
+    const attached = window.__trussalDirectTapEffect;
+    if (attached && attached.track === publishedTrack) return; // already live
+    if (typeof publishedTrack.setEffect !== 'function') {
+      console.error('[trussal] direct Strudel tap: local track has no setEffect API');
+      return;
+    }
+    // Re-attaching to a NEW track (post-rebind): drop the old effect's fan
+    // connection so the fan doesn't accumulate dangling destinations.
+    if (attached && attached.effect && typeof attached.effect.stopEffect === 'function') {
+      try { attached.effect.stopEffect(); } catch (_) {}
+    }
+    const dest = fan.context.createMediaStreamDestination();
+    const effect = {
+      isEnabled: () => true,
+      // The mic stream argument is ignored — the effect's output is exactly the
+      // fan (Strudel), mirroring NodeOutputEffect. Duplicate connect() calls
+      // between the same nodes are ignored per the WebAudio spec, so a
+      // stop/start cycle (jitsi mute flips) is safe.
+      startEffect() { fan.connect(dest); return dest.stream; },
+      stopEffect() { try { fan.disconnect(dest); } catch (_) {} },
+    };
+    try {
+      await publishedTrack.setEffect(effect);
+      window.__trussalDirectTapEffect = { track: publishedTrack, effect };
+    } catch (e) {
+      // A failed attach leaves the bot on the gUM tap path — the known-silent
+      // one — so surface it loudly (the outer catch re-throws to the Node side).
+      console.error('[trussal] direct Strudel tap setEffect failed', e);
+      throw e;
     }
   } catch (e) {
     // Don't swallow: the inner steps (getLocalAudioTrack, the shared-context
@@ -410,9 +482,9 @@ export async function pageEnsureVideoPublished() {
           if (typeof conf.useVideoStream === 'function') await conf.useVideoStream(vt);
           else { const r = room(); if (r && r.addTrack) await r.addTrack(vt); }
         }
-      } catch (e) {}
+      } catch (e) {console.error(e)}
     }
-  } catch (e) {}
+  } catch (e) {console.error(e)}
 }
 
 /**
@@ -830,6 +902,9 @@ export function pageReadSamples() {
     fanChannelCount: fan ? fan.channelCount : null,
     fanMaxChannelCount: fan ? fan.maxChannelCount : null,
     hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
+    // Whether the setEffect direct tap (pageEnsureAudioPublished step 3) is
+    // attached — the publish path that bypasses the gUM-handed mic track.
+    directTap: Boolean(window.__trussalDirectTapEffect),
   };
   const samples = {
     fps: window.__trussalFps ?? 0,
