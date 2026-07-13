@@ -76,6 +76,21 @@ export const defaultConfig = Object.freeze({
   // long enough silence on its metrics reports as death and respawns it.
   aggregatorStartupGraceMs: 15000,         // no metrics expected before this (docker run + Chromium + Jitsi join)
   aggregatorStaleMs: 8000,                 // silence beyond this, past the startup grace, is treated as dead
+  // A bot (aggregator OR player) can be perfectly ALIVE — process running,
+  // metrics reporting on schedule — while its Jitsi conference is gone out
+  // from under it (e.g. a moderator's "End meeting for all" destroys the
+  // room; the bot's peer-state WS closes correctly, but nothing tells the
+  // bot's OWN Jitsi session to leave/rejoin). Live-observed: after such a
+  // destroy, a fast-enough human rejoin cancels the meeting-end teardown
+  // (a human is present again) before it can stop+free the orphaned
+  // container, and shouldReplace has no health signal for this at all — so
+  // the orphaned bot/aggregator just sits there, running, useless, forever.
+  // Both #reapDeadAggregator and the player-bot orphan check in healthTick
+  // treat sustained diag.jitsiJoined:false (not a single reading — a normal
+  // ICE reconnect blip can flip this transiently) past this long since it
+  // was last confirmed joined (or since it started, if never yet joined) as
+  // death, and respawn/replace accordingly.
+  jitsiJoinGraceMs: 15000,
 });
 
 export function mergeConfig(overrides = {}, base = defaultConfig) {

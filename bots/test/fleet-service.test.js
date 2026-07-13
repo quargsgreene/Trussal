@@ -342,6 +342,121 @@ test('aggregator: a dead aggregator is reaped but NOT respawned once no human is
   }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30, meetingEndGraceMs: 5000 });
 });
 
+// The live incident this covers: a moderator's "End meeting for all" destroys
+// the room; the aggregator's peer-state WS closes correctly (its process
+// never dies, never stops reporting metrics), but nothing tells its own
+// Jitsi session to leave/rejoin. A human rejoining fast enough (inside
+// meetingEndGraceMs) cancels the normal teardown before it can free the
+// container, leaving it orphaned — alive, healthy by every OTHER signal,
+// permanently useless. aggregatorStaleMs is set effectively unreachable here
+// so only the jitsiJoined-based check can be what reaps it.
+test('aggregator: sustained jitsiJoined:false (conference orphaned) is reaped and respawned, even with metrics still arriving on schedule', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    const base = `http://127.0.0.1:${fleet.port}`;
+    const postMetrics = (jitsiJoined) => fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', fps: 30, ramBytes: 1e6, latencyMs: 5, diag: { jitsiJoined } }),
+    });
+
+    await new Promise((r) => setTimeout(r, 30)); // past aggregatorStartupGraceMs(20)
+    await postMetrics(false);
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus().running, true, 'not yet — jitsiJoinGraceMs(80) hasn\'t elapsed since start');
+
+    await new Promise((r) => setTimeout(r, 60));
+    await postMetrics(false);
+    await fleet.healthTick();
+
+    assert.equal(fleet.aggregatorStatus().running, true, 'reaped, then immediately respawned since the human is still here');
+    assert.equal(
+      runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 2,
+      'the orphaned aggregator was reaped and a fresh one started in its place',
+    );
+  }, { aggregatorStartupGraceMs: 20, aggregatorStaleMs: 10000, jitsiJoinGraceMs: 80 });
+});
+
+test('aggregator: a momentary jitsiJoined:false blip does not trigger a reap', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } });
+    const base = `http://127.0.0.1:${fleet.port}`;
+    const postMetrics = (jitsiJoined) => fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', fps: 30, ramBytes: 1e6, latencyMs: 5, diag: { jitsiJoined } }),
+    });
+
+    await new Promise((r) => setTimeout(r, 25)); // past aggregatorStartupGraceMs(20)
+    await postMetrics(true); // confirmed joined — resets the orphan clock
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus().running, true);
+
+    await new Promise((r) => setTimeout(r, 30)); // a blip: well under jitsiJoinGraceMs(80) since the last confirmed join
+    await postMetrics(false);
+    await fleet.healthTick();
+
+    assert.equal(fleet.aggregatorStatus().running, true, 'a single blip does not reap a healthy aggregator');
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1, 'never respawned');
+  }, { aggregatorStartupGraceMs: 20, aggregatorStaleMs: 10000, jitsiJoinGraceMs: 80 });
+});
+
+// The player-bot counterpart: shouldReplace has no signal for "process fine,
+// Jitsi conference gone" at all (it only looks at errors/latency/ram), so a
+// bot orphaned the same way the aggregator was would otherwise run forever
+// producing sound nobody hears.
+test('player bot: orphaned from its Jitsi conference (sustained jitsiJoined:false) is replaced', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.spawnCluster('1', 1);
+    const [bot] = fleet.listBots();
+    const base = `http://127.0.0.1:${fleet.port}`;
+    const postMetrics = (jitsiJoined) => fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: bot.botId, latencyMs: 5, ramBytes: 1e6, fps: 30, errors: [], diag: { jitsiJoined } }),
+    });
+    runner.calls.started.length = 0; // isolate replacement starts from the initial spawn
+
+    await new Promise((r) => setTimeout(r, 25));
+    await postMetrics(false);
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.length, 0, 'not yet — jitsiJoinGraceMs(80) hasn\'t elapsed since it started');
+
+    await new Promise((r) => setTimeout(r, 60));
+    await postMetrics(false);
+    await fleet.healthTick();
+
+    assert.equal(runner.calls.started.length, 1, 'the orphaned bot was replaced');
+    assert.deepEqual(runner.calls.started[0].extraEnv, { BOT_OWNER_INDEX: '1' });
+    assert.equal(fleet.listBots().length, 1, 'still exactly one bot for owner 1 — same slot, fresh container');
+  }, { jitsiJoinGraceMs: 80 });
+});
+
+test('player bot: a momentary jitsiJoined:false blip does not trigger a replace', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.spawnCluster('1', 1);
+    const [bot] = fleet.listBots();
+    const base = `http://127.0.0.1:${fleet.port}`;
+    const postMetrics = (jitsiJoined) => fetch(`${base}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: bot.botId, latencyMs: 5, ramBytes: 1e6, fps: 30, errors: [], diag: { jitsiJoined } }),
+    });
+    runner.calls.started.length = 0;
+
+    await new Promise((r) => setTimeout(r, 25));
+    await postMetrics(true); // confirmed joined — resets the orphan clock
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.length, 0);
+
+    await new Promise((r) => setTimeout(r, 30)); // a blip: well under jitsiJoinGraceMs(80) since the last confirmed join
+    await postMetrics(false);
+    await fleet.healthTick();
+
+    assert.equal(runner.calls.started.length, 0, 'a single blip does not replace a healthy bot');
+  }, { jitsiJoinGraceMs: 80 });
+});
+
 test('roster reconcile heals a missed leave → meeting-end teardown still fires', async () => {
   await withFleet(async ({ fleet, runner, sent }) => {
     // Human joins; aggregator spawns.

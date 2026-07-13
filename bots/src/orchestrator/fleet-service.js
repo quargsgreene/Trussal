@@ -66,6 +66,16 @@ export class FleetService {
     // aggregatorStartupGraceMs) apart from "was alive, has gone silent" (no
     // metrics for aggregatorStaleMs) — see #reapDeadAggregator.
     this.aggregatorStartedAt = null;
+    // When diag.jitsiJoined was last observed true (defaults to
+    // aggregatorStartedAt via the `||` at the read site, covering "never yet
+    // joined, still within its own startup grace"). Updated on every metrics
+    // arrival that reports joined; a sustained gap since this timestamp — not
+    // a single false reading, which a normal ICE reconnect blip can cause —
+    // means the bot's Jitsi conference is gone even though the process is
+    // alive. See #reapDeadAggregator and the mirrored check in healthTick.
+    this.aggregatorLastJoinedAt = null;
+    // botId → same tracking as aggregatorLastJoinedAt, for player bots.
+    this.botLastJoinedAt = new Map();
     // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
     // teardown queues behind the in-flight stop instead of racing it. Without
     // this, a rejoin's start() (which force-removes any stale container by
@@ -354,6 +364,7 @@ export class FleetService {
       this.aggregatorRunning = false;
       this.aggregatorMetrics = null;
       this.aggregatorStartedAt = null;
+      this.aggregatorLastJoinedAt = null;
       await this.runner.stop(AGGREGATOR_BOT_ID);
     });
   }
@@ -361,15 +372,25 @@ export class FleetService {
   /**
    * The aggregator has no health-replace path — its metrics are deliberately
    * excluded from the shouldReplace fleet in the /metrics handler below, since
-   * it isn't one of `bots`. That means if its container dies on its own (lost
-   * the sidecar's aggregator-claim race on a rejoin, crashed, OOM'd — anything
-   * that isn't fleet-service explicitly calling #stopAggregator), NOTHING
-   * would otherwise ever clear aggregatorRunning: every future #ensureAggregator
-   * call (a human rejoining the same room, for instance) would see it still
-   * true and silently no-op forever, even though no aggregator actually
-   * exists. Detect that via metrics silence — the aggregator POSTs on its own
-   * cadence, so a long enough gap past its startup grace period means it's
-   * gone — and reap + immediately respawn if a human is still around to want
+   * it isn't one of `bots`. That means nothing but an explicit
+   * #stopAggregator() call ever clears aggregatorRunning, so two different
+   * ways the running container can become USELESS both need to be reaped:
+   *
+   *   1. The process itself died (lost the sidecar's aggregator-claim race on
+   *      a rejoin, crashed, OOM'd, …) — detected via metrics silence, since
+   *      the aggregator POSTs on its own cadence and a long enough gap past
+   *      its startup grace period means it's gone.
+   *   2. The process is still very much alive and reporting normally, but its
+   *      Jitsi CONFERENCE is gone out from under it — a moderator's "End
+   *      meeting for all" destroys the room; the aggregator's peer-state WS
+   *      closes correctly, but nothing tells its own Jitsi session to leave
+   *      or rejoin, so it just sits there forever, connected to a dead room.
+   *      Live-observed: a fast-enough human rejoin cancels the meeting-end
+   *      teardown (a human is present again) before it can free the orphaned
+   *      container. Detected via sustained diag.jitsiJoined:false — not a
+   *      single reading, which a normal ICE reconnect blip can also cause.
+   *
+   * Either way: reap + immediately respawn if a human is still around to want
    * one. runner.stop() on an already-dead container is safe (docker-runner's
    * stop/rm are self-catching), so reaping never fails on the cleanup side.
    */
@@ -377,9 +398,20 @@ export class FleetService {
     if (!this.aggregatorRunning) return;
     const age = Date.now() - (this.aggregatorStartedAt || 0);
     if (age < this.cfg.aggregatorStartupGraceMs) return; // hasn't had a chance to report yet
-    const lastAt = this.aggregatorMetrics ? this.aggregatorMetrics.receivedAt : this.aggregatorStartedAt;
-    if (Date.now() - lastAt < this.cfg.aggregatorStaleMs) return; // still reporting on schedule
-    console.warn(`[fleet] aggregator metrics stale for ${Date.now() - lastAt}ms; reaping and respawning`);
+
+    const lastMetricsAt = this.aggregatorMetrics ? this.aggregatorMetrics.receivedAt : this.aggregatorStartedAt;
+    const metricsStaleMs = Date.now() - lastMetricsAt;
+    const metricsStale = metricsStaleMs >= this.cfg.aggregatorStaleMs;
+
+    const lastJoinedAt = this.aggregatorLastJoinedAt || this.aggregatorStartedAt;
+    const orphanedMs = Date.now() - lastJoinedAt;
+    const orphaned = orphanedMs >= this.cfg.jitsiJoinGraceMs;
+
+    if (!metricsStale && !orphaned) return; // alive and either reporting or genuinely still joined
+    const reason = metricsStale
+      ? `metrics stale for ${metricsStaleMs}ms`
+      : `orphaned from its Jitsi conference for ${orphanedMs}ms (room likely destroyed/ended)`;
+    console.warn(`[fleet] aggregator ${reason}; reaping and respawning`);
     await this.#stopAggregator();
     const humansPresent = [...this.presentIndices.values()].some((p) => !p.isBot);
     if (humansPresent) await this.#ensureAggregator();
@@ -420,6 +452,7 @@ export class FleetService {
   async #stopBot(botId) {
     this.bots.delete(botId);
     this.metrics.delete(botId);
+    this.botLastJoinedAt.delete(botId);
     await this.runner.stop(botId);
   }
 
@@ -485,6 +518,21 @@ export class FleetService {
 
   // ---------- health (policy functions preserved verbatim) ----------
 
+  /**
+   * A player bot's counterpart to #reapDeadAggregator's orphan check: alive
+   * and reporting normally (shouldReplace already covers process-level
+   * unhealthiness) but its Jitsi conference is gone, most commonly because
+   * the room was destroyed ("End meeting for all") and a fast rejoin left it
+   * behind. Gated the same way — sustained absence since it was last
+   * confirmed joined (or since it started, if never joined at all, so a bot
+   * still in the middle of its normal startup isn't falsely flagged), not a
+   * single reading.
+   */
+  #isJitsiOrphaned(botRecord, botId) {
+    const lastJoinedAt = this.botLastJoinedAt.get(botId) ?? botRecord.startedAt;
+    return (Date.now() - lastJoinedAt) >= this.cfg.jitsiJoinGraceMs;
+  }
+
   // Public so tests (and operators via a REPL) can force a tick.
   async healthTick() {
     // Ahead of the player-bot early-return below: a room can hold only the
@@ -505,7 +553,9 @@ export class FleetService {
     for (const m of fleet) {
       const existing = this.bots.get(m.botId);
       if (!existing) continue;
-      const verdict = shouldReplace(m, fleet, this.cfg);
+      const verdict = this.#isJitsiOrphaned(existing, m.botId)
+        ? { replace: true, reason: `orphaned from its Jitsi conference (room likely destroyed/ended)` }
+        : shouldReplace(m, fleet, this.cfg);
       if (verdict.replace) {
         console.warn(`[fleet] replacing bot ${m.botId}: ${verdict.reason}`);
         const ownerIndex = existing.ownerIndex;
@@ -551,10 +601,12 @@ export class FleetService {
           // record it for observability.
           if (m.role === 'aggregator') {
             this.aggregatorMetrics = { ...m, receivedAt: Date.now() };
+            if (m.diag && m.diag.jitsiJoined) this.aggregatorLastJoinedAt = Date.now();
             return send(200, { ok: true });
           }
           if (typeof m.botId !== 'number') return send(400, { error: 'botId required' });
           this.metrics.set(m.botId, { ...m, receivedAt: Date.now() });
+          if (m.diag && m.diag.jitsiJoined) this.botLastJoinedAt.set(m.botId, Date.now());
           return send(200, { ok: true });
         } catch {
           return send(400, { error: 'invalid JSON' });
