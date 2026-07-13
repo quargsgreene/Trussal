@@ -702,12 +702,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     aggregatorJitsiId = next;
     if (next) publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish failed", e30));
     else unpublishLocalStrudelFromRoom().catch((e30) => console.warn("[latency] strudel unpublish failed", e30));
+    document.dispatchEvent(new CustomEvent("trussal-aggregator-mode-change"));
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     for (const chain of chains.values()) {
       if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
     }
     if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
+  }
+  function getAggregatorPeer() {
+    return aggregatorJitsiId;
   }
   function refreshAggregatorPeer() {
     const winner = electAggregator(getAllPeers());
@@ -50087,6 +50091,7 @@ $: (${split.expr})${fx}`;
     if (!code2 || !peer.playing) return null;
     code2 = code2.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
     if (!code2) return null;
+    const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
     const params2 = computePeerStrudelParams(peer);
     let fx = peer.isLocal ? "" : effectChainFor(params2);
     if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
@@ -50097,11 +50102,12 @@ $: (${split.expr})${fx}`;
       }
       const preamble = code2.slice(0, blankMatch.index).trim();
       const strudelCode = code2.slice(blankMatch.index).trim();
-      if (!strudelCode) return preamble;
+      if (!strudelCode || remoteVoiceExcluded) return preamble;
       return `${preamble}
 
 ${buildStrudelVoice(strudelCode, fx)}`;
     }
+    if (remoteVoiceExcluded) return null;
     return buildStrudelVoice(code2, fx);
   }
   async function loadStrudel() {
@@ -50347,6 +50353,9 @@ ${next}`;
     }
   });
   document.addEventListener("trussal-hydra-mode-change", () => {
+    if (strudelBoot) rebuildAndEvaluate();
+  });
+  document.addEventListener("trussal-aggregator-mode-change", () => {
     if (strudelBoot) rebuildAndEvaluate();
   });
   document.addEventListener("trussal-netcycles-mode", () => {

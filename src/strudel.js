@@ -2,13 +2,16 @@
 //
 // One Cyclist scheduler per browser. Every browser combines the pattern code
 // from every peer into a single `stack(...)` program and re-evaluates whenever
-// any peer's state changes, so the whole room hears the same mix.
+// any peer's state changes, so the whole room hears the same mix. Exception:
+// in aggregator mode only the LOCAL voice is evaluated (per-human publish
+// isolation — see buildPeerBlock); remote humans are heard through the
+// aggregator's assembled master instead of local re-evaluation.
 //
 // Per-peer effect toggles are translated into Strudel-native operators
 // (distort / crush / room) applied to that peer's portion of the stack — the
 // worklet chain handles mic effects, this handles instrument effects.
 
-import { getStrudelAudioContext } from './latency-instrument.js';
+import { getStrudelAudioContext, getAggregatorPeer } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
@@ -189,6 +192,17 @@ function buildPeerBlock(peer) {
   code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
   if (!code) return null;
 
+  // Per-human publish isolation: while a remote aggregator is present, this
+  // client's masterStrudelGain IS its outgoing Jitsi track (latency-instrument
+  // publishLocalStrudelToRoom), so the program must carry ONLY the local voice —
+  // a remote human folded in here would be baked into our published track, and
+  // the aggregator's one-participant-per-slot master would play the whole room
+  // during our turn. Dropping their audio loses nothing locally: remote humans
+  // reach us through the aggregator's master (their chains and the local
+  // monitor are muted in aggregator mode anyway). Their hydra preamble still
+  // renders below — visuals are per-page and never ride the published track.
+  const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
+
   const params = computePeerStrudelParams(peer);
   // Local peer audio effects are applied via the WebAudio strudelFx chain,
   // so skip the Strudel-native DSP wrapper to avoid double-processing.
@@ -207,9 +221,11 @@ function buildPeerBlock(peer) {
     }
     const preamble    = code.slice(0, blankMatch.index).trim();
     const strudelCode = code.slice(blankMatch.index).trim();
-    if (!strudelCode) return preamble;
+    if (!strudelCode || remoteVoiceExcluded) return preamble;
     return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
   }
+
+  if (remoteVoiceExcluded) return null;
 
   // Simple expression pattern: wrap as an anonymous $: voice so multiple peers
   // are collected into pPatterns and stacked by applyPatternTransforms.
@@ -447,6 +463,13 @@ subscribeParticipants((event) => {
 // When the hydra video mode changes, re-evaluate so initHydra() is injected or
 // removed from the program as needed.
 document.addEventListener('trussal-hydra-mode-change', () => {
+  if (strudelBoot) rebuildAndEvaluate();
+});
+
+// Aggregator mode changes which peers the local program folds in (remote
+// humans' audio voices are excluded while a remote aggregator is present —
+// per-human publish isolation, see buildPeerBlock), so re-stack on every flip.
+document.addEventListener('trussal-aggregator-mode-change', () => {
   if (strudelBoot) rebuildAndEvaluate();
 });
 

@@ -134,6 +134,13 @@ export function setAggregatorPeer(jitsiId) {
   // audioCtx guard so it still fires when Strudel hasn't booted yet.
   if (next) publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish failed', e));
   else unpublishLocalStrudelFromRoom().catch((e) => console.warn('[latency] strudel unpublish failed', e));
+  // The peer set folded into the local Strudel program depends on aggregator
+  // mode (strudel.js drops remote humans' audio voices while one is present, so
+  // the published masterStrudelGain carries only the local voice — per-human
+  // publish isolation). A DOM event rather than a direct call: strudel.js
+  // imports this module, so the reverse import would be a cycle. Dispatched
+  // before the audioCtx guard — the program must re-stack even pre-boot.
+  document.dispatchEvent(new CustomEvent('trussal-aggregator-mode-change'));
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   for (const chain of chains.values()) {
@@ -931,10 +938,12 @@ export function isPropagatingToRoom() {
 // Only in aggregator mode, so a normal room still relies on shared re-evaluation
 // and never double-plays a human over both the Strudel-eval and Jitsi-mic paths.
 //
-// NOTE (single-stream milestone): masterStrudelGain carries the COMBINED program
-// (all playing peers stacked). With one human that IS just their own pattern, so
-// a single stream round-trips correctly; isolating each of several humans to only
-// their own voice is the alternating-streams follow-up.
+// Per-human publish isolation: while an aggregator is present, strudel.js
+// excludes remote humans' audio voices from the locally evaluated program
+// (buildPeerBlock), so masterStrudelGain carries ONLY this human's voice and the
+// published track really is theirs alone — the aggregator's master stays
+// one-participant-per-slot. In a normal room (no aggregator) the node carries
+// the combined program as before, for shared re-evaluation.
 
 // A jitsi-meet track effect whose output is exactly `node` — the mic input it is
 // handed is ignored. `node` connects straight into the effect's destination (no
