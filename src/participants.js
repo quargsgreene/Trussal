@@ -123,15 +123,15 @@ function ownerIdForAudioSrcObject(srcObject) {
     const conf = window.APP && window.APP.conference;
     const room = conf && conf._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
     if (!room || typeof room.getParticipants !== 'function') return null;
-    for (const participant of room.getParticipants()) {
-      const tracks = typeof participant.getTracks === 'function' ? participant.getTracks() : [];
-      for (const track of tracks) {
-        if (typeof track.getType === 'function' && track.getType() !== 'audio') continue;
-        const mediaStreamTrack = typeof track.getTrack === 'function' ? track.getTrack() : null;
-        if (mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id)) return participant.getId();
-      }
-    }
-    return null;
+    const match = room.getParticipants()
+      .flatMap((participant) => (typeof participant.getTracks === 'function' ? participant.getTracks() : [])
+        .filter((track) => typeof track.getType !== 'function' || track.getType() === 'audio')
+        .map((track) => ({
+          participant,
+          mediaStreamTrack: typeof track.getTrack === 'function' ? track.getTrack() : null,
+        })))
+      .find(({ mediaStreamTrack }) => mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id));
+    return match ? match.participant.getId() : null;
   } catch (e) {
     // Resolution failing must not wedge the caller's tag scan; the element-id
     // fallback still runs. Log it — a persistent failure means the

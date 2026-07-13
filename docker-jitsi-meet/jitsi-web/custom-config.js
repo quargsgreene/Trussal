@@ -146,15 +146,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       const conf = window.APP && window.APP.conference;
       const room2 = conf && conf._room;
       if (!room2 || typeof room2.getParticipants !== "function") return null;
-      for (const participant of room2.getParticipants()) {
-        const tracks = typeof participant.getTracks === "function" ? participant.getTracks() : [];
-        for (const track of tracks) {
-          if (typeof track.getType === "function" && track.getType() !== "audio") continue;
-          const mediaStreamTrack = typeof track.getTrack === "function" ? track.getTrack() : null;
-          if (mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id)) return participant.getId();
-        }
-      }
-      return null;
+      const match2 = room2.getParticipants().flatMap((participant) => (typeof participant.getTracks === "function" ? participant.getTracks() : []).filter((track) => typeof track.getType !== "function" || track.getType() === "audio").map((track) => ({
+        participant,
+        mediaStreamTrack: typeof track.getTrack === "function" ? track.getTrack() : null
+      }))).find(({ mediaStreamTrack }) => mediaStreamTrack && tagTrackIds.has(mediaStreamTrack.id));
+      return match2 ? match2.participant.getId() : null;
     } catch (e30) {
       console.warn("[participants] track-identity tag resolution failed", e30);
       return null;
