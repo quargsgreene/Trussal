@@ -389,6 +389,16 @@ function destroyChain(jitsiId) {
 // upstream peer is loopback-routing into their mic — is captured here, which
 // is how Jamulus audio ends up running through the per-peer worklet chain.
 function captureJitsiAudio() {
+  // Bot/aggregator pages publish the shared fan (pageAudioBridge overrides
+  // ctx.destination): routing remote peers into local chains would land their
+  // audio on the fan — realDestination sits on the shared context — and the
+  // page would REPUBLISH everything it hears. Every bot re-broadcasting the
+  // room, the aggregator re-tapping it: instant feedback, heard live
+  // 2026-07-12 the moment track-identity resolution made routing work on bot
+  // pages (generic tag ids had made it a silent no-op there before).
+  // Listener-side routing is for human clients only; bot pages keep native
+  // tag playback, exactly the pre-track-identity behavior.
+  if (window.__trussalIsBot || window.__trussalIsAggregator) return;
   if (!audioCtx) return;
   const local = getLocalParticipant();
   const localJitsiId = local ? local.id : null;
@@ -968,6 +978,13 @@ function scheduleStrudelPublishRetry() {
 }
 
 export async function publishLocalStrudelToRoom() {
+  // A bot's outgoing audio is its own Strudel via the page-side direct tap
+  // (bots/src/bot/page-scripts.js pageEnsureAudioPublished); the bundle's
+  // masterStrudelGain is SILENT on bot pages (their REPL is the CDN
+  // strudel-editor, not strudel.js). Attaching it here on aggregator
+  // detection would hijack the track effect and silence the bot — the likely
+  // mechanism behind the original "a few blips then silence".
+  if (window.__trussalIsBot || window.__trussalIsAggregator) return false;
   if (strudelRoomEffect) return true; // already publishing
   await ensureMasterStrudelInput(); // guarantees masterStrudelGain + audioCtx
   if (!masterStrudelGain) return false;

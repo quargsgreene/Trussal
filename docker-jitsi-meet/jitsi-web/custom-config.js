@@ -910,6 +910,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     chains.delete(jitsiId);
   }
   function captureJitsiAudio() {
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
     if (!audioCtx) return;
     const local2 = getLocalParticipant();
     const localJitsiId = local2 ? local2.id : null;
@@ -1295,6 +1296,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }, 1e3);
   }
   async function publishLocalStrudelToRoom() {
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return false;
     if (strudelRoomEffect) return true;
     await ensureMasterStrudelInput();
     if (!masterStrudelGain) return false;
