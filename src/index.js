@@ -1,6 +1,6 @@
 import { JAMULUS_ROOM_MAP , renderJamulusWelcomePanelAndBanner, getRoomNameFromUrl} from './jamulus.js';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
-import {renderNoAudioToast} from './meeting.js';
+import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
@@ -58,3 +58,4 @@ renderWelcomeOverlay();
 renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();
+renderReturnToLobbyOnMeetingEnd();

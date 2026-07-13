@@ -1,3 +1,5 @@
+import { subscribeParticipants } from './participants.js';
+
 function removeNoAudioToast() {
     const TITLE_SNIPPET = 'You joined with no audio output';
     const candidates = document.querySelectorAll(
@@ -31,4 +33,23 @@ function removeNoAudioToast() {
         window.addEventListener('DOMContentLoaded', startNoAudioToastRender);
       }
   }
+
+// A personal "Leave" and the moderator's "End meeting for all" both funnel
+// through the same Jitsi-level local departure participants.js already
+// detects (readLocal() failing once APP.conference is torn down) — there is
+// no reliable, stable way to tell the two apart from the client's polling
+// vantage point (see CLAUDE.md: Jitsi's internal event API is unstable,
+// which is why this codebase polls instead of listening for it directly).
+// Jitsi's own default post-call screen would otherwise leave the tab
+// stranded there; send it straight back to the Trussal lobby (the
+// welcome-page overlay lives at the site root) so the same room can be
+// rejoined fresh. Bots and the aggregator don't need this — their container
+// is torn down right along with the departure, so there's no page left to
+// navigate.
+export function renderReturnToLobbyOnMeetingEnd() {
+  if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+  subscribeParticipants((event) => {
+    if (event === 'local-leave') window.location.href = `${window.location.origin}/`;
+  });
+}
 

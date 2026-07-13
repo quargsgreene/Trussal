@@ -97,7 +97,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function tick() {
     const newLocal = readLocal();
-    if (!newLocal) return;
+    if (!newLocal) {
+      if (local) {
+        const left2 = local;
+        local = null;
+        emit("local-leave", left2);
+      }
+      return;
+    }
     if (!local || local.id !== newLocal.id) {
       local = newLocal;
       emit("local", local);
@@ -592,6 +599,28 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       localJitter = null;
       pendingSends = [];
       subscribeParticipants((event, payload) => {
+        if (event === "local-leave") {
+          wantConnection = false;
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          if (pingTimer) {
+            clearInterval(pingTimer);
+            pingTimer = null;
+          }
+          if (ws) {
+            ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+            try {
+              ws.close();
+            } catch (e30) {
+            }
+            ws = null;
+          }
+          helloSent = false;
+          localPeer.jitsiId = null;
+          return;
+        }
         if (event === "local" || event === "local-update") {
           if (payload && payload.id) {
             localPeer.jitsiId = payload.id;
@@ -49342,6 +49371,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
 
   // src/meeting.js
+  init_participants();
   function removeNoAudioToast() {
     const TITLE_SNIPPET = "You joined with no audio output";
     const candidates = document.querySelectorAll(
@@ -49367,6 +49397,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     } else {
       window.addEventListener("DOMContentLoaded", startNoAudioToastRender);
     }
+  }
+  function renderReturnToLobbyOnMeetingEnd() {
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+    subscribeParticipants((event) => {
+      if (event === "local-leave") window.location.href = `${window.location.origin}/`;
+    });
   }
 
   // src/audio-config-check.js
@@ -53677,6 +53713,10 @@ ${voiceCode}${BTN_MARKER2}`);
     sendLocalPlaying(true);
   };
   window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+  window.__trussalPeerIsPlaying = (jitsiId) => {
+    const peer = getPeerByJitsiId(jitsiId);
+    return !!(peer && peer.playing);
+  };
   window.__trussalIsActiveAggregator = () => {
     const winner = electAggregator(getAllPeers());
     const local2 = getLocalPeer();
@@ -53689,6 +53729,7 @@ ${voiceCode}${BTN_MARKER2}`);
   renderHideStartMeetingButton();
   renderPrejoinScreen();
   renderNoAudioToast();
+  renderReturnToLobbyOnMeetingEnd();
 })();
 /**
  * The `Enumerations` class contains enumerations and arrays of elements used throughout the
