@@ -622,12 +622,21 @@ export function pageAggregatorCapture() {
   const tappedTracks = new WeakSet(); // remote audio JitsiTracks already wired
   const FRAME = 2048;
   const MAX_BACKLOG = FRAME * 64;     // cap page-side buffering if Node never drains
-  // jitsiId -> { ctx, src, proc, sink }, so a departure can tear the tap down.
-  // Without this, an AudioContext has nothing external referencing it once the
-  // JitsiTrack is gone, but its ScriptProcessor graph is still CONNECTED and
-  // therefore stays alive and running per spec — it keeps firing
-  // onaudioprocess (silently refilling `store` under the departed jitsiId, up
-  // to MAX_BACKLOG) and burning CPU for the rest of the page's life.
+  // jitsiId -> { src, proc, sink }, so a departure can tear the tap down.
+  // Without this, nothing external references a departed peer's
+  // MediaStreamAudioSourceNode/ScriptProcessorNode/GainNode once the
+  // JitsiTrack is gone, but the graph is still CONNECTED and therefore stays
+  // alive and running per spec — it keeps firing onaudioprocess (silently
+  // refilling `store` under the departed jitsiId, up to MAX_BACKLOG) and
+  // burning CPU for the rest of the page's life.
+  //
+  // Deliberately does NOT store/close the AudioContext: pageAudioBridge
+  // wraps window.AudioContext into a page-wide SINGLETON (every `new
+  // AudioContext()` anywhere on the page — including here — returns the same
+  // shared instance, used for the mic stream, pageMasterPlayer's output, and
+  // every OTHER participant's tap too). Closing it for one departed peer
+  // silences the entire page. Only the per-participant NODES are this
+  // participant's own; only they get torn down.
   const taps = new Map();
   // jitsiId -> consecutive scans it has had a tap but was absent from
   // currentIds. Cleared the moment they reappear; see the scan() sweep below.
@@ -640,13 +649,11 @@ export function pageAggregatorCapture() {
     const tap = taps.get(jitsiId);
     if (!tap) return;
     taps.delete(jitsiId);
-    const { ctx, src, proc, sink } = tap;
+    const { src, proc, sink } = tap;
     proc.onaudioprocess = null; // stop delivering frames before disconnecting
     try { src.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: src.disconnect failed for ${jitsiId}: ${e.message}`); }
     try { proc.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: proc.disconnect failed for ${jitsiId}: ${e.message}`); }
     try { sink.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: sink.disconnect failed for ${jitsiId}: ${e.message}`); }
-    try { Promise.resolve(ctx.close()).catch((e) => console.error(`[trussal] aggregator capture: ctx.close failed for ${jitsiId}: ${e.message}`)); }
-    catch (e) { console.error(`[trussal] aggregator capture: ctx.close threw for ${jitsiId}: ${e.message}`); }
   }
 
   function tapTrack(jitsiTrack, jitsiId) {
@@ -687,7 +694,7 @@ export function pageAggregatorCapture() {
     src.connect(proc);
     proc.connect(sink);
     sink.connect(ctx.destination);
-    taps.set(jitsiId, { ctx, src, proc, sink });
+    taps.set(jitsiId, { src, proc, sink });
     tappedTracks.add(jitsiTrack);
   }
 

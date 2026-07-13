@@ -16,20 +16,22 @@ import { pageAggregatorCapture } from '../src/bot/page-scripts.js';
  */
 function installTap() {
   const procsByJitsiId = new Map(); // jitsiId -> that peer's ScriptProcessor stand-in
-  const ctxsByJitsiId = new Map();  // jitsiId -> that peer's AudioContext stand-in
 
   // Every fake node tracks its own disconnect so teardown is observable.
   const fakeNode = (extra = {}) => ({ connect() {}, disconnected: false, disconnect() { this.disconnected = true; }, ...extra });
 
-  // tapTrack creates one AudioContext per tap and calls
-  // createMediaStreamSource(stream) before createScriptProcessor(), so the
-  // stream's owner id (stamped on the fake stream below) identifies which
-  // participant the processor belongs to.
-  class FakeAudioContext {
+  // Models the REAL page's pageAudioBridge, which wraps window.AudioContext so
+  // EVERY `new AudioContext()` call anywhere on the page — including inside
+  // tapTrack — returns the SAME shared singleton (also used for the mic
+  // stream and pageMasterPlayer's output). This is deliberately NOT one fake
+  // context per participant: a live regression closed this shared instance on
+  // one participant's departure and silenced the entire page, which a
+  // per-participant fake context could never have caught.
+  let sharedCtx = null;
+  class RealFakeAudioContext {
     constructor() { this.closed = false; }
     createMediaStreamSource(stream) {
       this._ownerId = stream.ownerId;
-      ctxsByJitsiId.set(this._ownerId, this);
       return fakeNode();
     }
     createScriptProcessor() {
@@ -43,6 +45,11 @@ function installTap() {
     get destination() { return {}; }
     close() { this.closed = true; return Promise.resolve(); }
   }
+  function FakeAudioContext(...args) {
+    if (!sharedCtx) sharedCtx = new RealFakeAudioContext(...args);
+    return sharedCtx;
+  }
+  FakeAudioContext.prototype = RealFakeAudioContext.prototype;
 
   // Stable participant objects: tapTrack guards re-tapping with a WeakSet on
   // the track, so each participant keeps the same track object across scans
@@ -96,7 +103,8 @@ function installTap() {
     resolverMap,
     playingSet,
     procs: procsByJitsiId,
-    ctxs: ctxsByJitsiId,
+    // The one shared AudioContext every participant's tap actually uses.
+    sharedCtx: () => sharedCtx,
     // One ScriptProcessor frame from this peer's tap (2048 samples, like the
     // real FRAME size). Works after the participant has been scanned once.
     pushFrame: (jitsiId, sample = 0.1) => {
@@ -209,14 +217,14 @@ test('a present peer that stops and resumes playing delivers again (no roster-ga
 });
 
 // The resource leak: markDeparted used to only clear the store/bookkeeping
-// Sets, leaving the departed peer's ScriptProcessor+AudioContext CONNECTED —
-// which per spec keeps them alive and running (silently refilling `store`
+// Sets, leaving the departed peer's ScriptProcessor+GainNode+source CONNECTED
+// — which per spec keeps them alive and running (silently refilling `store`
 // under the departed id) for the rest of the page's life. A departure must
-// eventually tear the tap down: stop delivering frames and disconnect/close
-// the graph. Teardown is grace-windowed (TAP_TEARDOWN_GRACE_SCANS consecutive
-// misses), not immediate — see the glitch-tolerance test below for why —
-// so this drives scan() past the window to observe it.
-test('sustained absence eventually tears down the peer\'s ScriptProcessor and AudioContext (no leaked tap)', () => {
+// eventually tear the tap down: stop delivering frames and disconnect the
+// per-participant graph. Teardown is grace-windowed (TAP_TEARDOWN_GRACE_SCANS
+// consecutive misses), not immediate — see the glitch-tolerance test below
+// for why — so this drives scan() past the window to observe it.
+test('sustained absence eventually tears down the peer\'s ScriptProcessor (no leaked tap)', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
@@ -226,8 +234,7 @@ test('sustained absence eventually tears down the peer\'s ScriptProcessor and Au
   assert.equal(tap.cap.drain().length, 1, 'tap is live while present');
 
   const proc = tap.procs.get('human-a');
-  const ctx = tap.ctxs.get('human-a');
-  assert.ok(proc && ctx, 'tap resources exist before departure');
+  assert.ok(proc, 'tap resources exist before departure');
 
   tap.removeFromRoster('human-a');
   tap.scan(); // roster backstop fires markDeparted immediately (bookkeeping only)
@@ -240,7 +247,6 @@ test('sustained absence eventually tears down the peer\'s ScriptProcessor and Au
   tap.scan(); // grace window elapses on this, the third consecutive miss
   assert.equal(proc.onaudioprocess, null, 'processor stops delivering frames once sustained absence is confirmed');
   assert.equal(proc.disconnected, true, 'processor is disconnected on departure');
-  assert.equal(ctx.closed, true, 'the departed peer\'s AudioContext is closed, not left running forever');
 });
 
 // The regression this session found LIVE: a single glitchy
@@ -259,7 +265,6 @@ test('a still-present peer survives a transient roster glitch (tap not torn down
   tap.scan();
 
   const proc = tap.procs.get('human-a');
-  const ctx = tap.ctxs.get('human-a');
 
   // Simulates a burst of joins causing Jitsi's roster to momentarily omit a
   // still-present peer: absent for one scan, then reappears.
@@ -270,7 +275,6 @@ test('a still-present peer survives a transient roster glitch (tap not torn down
   tap.addToRoster('human-a');
   tap.scan();
   assert.notEqual(proc.onaudioprocess, null, 'tap is untouched once the peer reappears');
-  assert.equal(ctx.closed, false, 'never torn down by the transient miss');
 
   // Confirms the miss streak actually reset, not just paused: several more
   // ticks of continuous presence must not accumulate toward teardown.
@@ -281,4 +285,36 @@ test('a still-present peer survives a transient roster glitch (tap not torn down
 
   tap.pushFrame('human-a');
   assert.equal(tap.cap.drain().length, 1, 'audio still flows normally after the glitch');
+});
+
+// The live bug this session actually hit: pageAudioBridge wraps
+// window.AudioContext into a page-wide SINGLETON (mic stream,
+// pageMasterPlayer's output, and every participant's tap all share the same
+// instance). Closing it for one departed peer silences the ENTIRE page, not
+// just that peer — this is why teardownTap must never call ctx.close(), only
+// disconnect the departed peer's OWN nodes.
+test('tearing down a departed peer\'s tap never closes the shared AudioContext, and other peers keep delivering', () => {
+  const tap = installTap();
+  tap.addToRoster('human-a');
+  tap.resolverMap.set('human-a', '0');
+  tap.playingSet.add('human-a');
+  tap.addToRoster('human-b');
+  tap.resolverMap.set('human-b', '3');
+  tap.playingSet.add('human-b');
+  tap.scan();
+  assert.ok(tap.sharedCtx(), 'both taps were built against the shared context');
+
+  tap.removeFromRoster('human-b');
+  tap.scan();
+  tap.scan();
+  tap.scan(); // grace window elapses -> human-b's tap is torn down
+  assert.equal(tap.procs.get('human-b').onaudioprocess, null, 'the departed peer\'s tap is torn down');
+
+  assert.equal(tap.sharedCtx().closed, false, 'the shared AudioContext used by the whole page is NEVER closed');
+  tap.pushFrame('human-a');
+  assert.deepEqual(
+    tap.cap.drain().map((t) => t.jitsiId),
+    ['human-a'],
+    'a still-present peer keeps delivering after another peer\'s departure is torn down',
+  );
 });
