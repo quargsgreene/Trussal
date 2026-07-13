@@ -605,6 +605,16 @@ export async function pageStrudelBoot({ strudel, hydra }) {
  * delivers) captures from anyone not playing — a joined-but-not-yet-playing
  * peer never claims a turn, and a stopped peer's slot closes just like a
  * departure. Pressing play (re)registers them at the tail of the rotation.
+ *
+ * drain() is ALSO gated on current ROSTER MEMBERSHIP (scan()'s lastSeen
+ * snapshot), because the two gates above lag a hangup: the Jitsi presence
+ * leave arrives before the sidecar peer-leave, and in that window the
+ * departed peer's tap emits one final tail frame that would otherwise be
+ * delivered and re-register the slot the leave just compacted — permanently,
+ * since markDeparted has already consumed every leave signal. The roster gate
+ * discards that tail; the playing gate covers the opposite ordering (tab
+ * close: peer-leave instant, Jitsi roster ICE-slow), so between them every
+ * leave sequence is closed.
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
@@ -650,7 +660,9 @@ export function pageAggregatorCapture() {
     tappedTracks.add(jitsiTrack);
   }
 
-  // Endpoint ids present as of the previous scan, ids that have resolved a
+  // Endpoint ids present as of the previous scan (doubles as drain()'s roster
+  // gate: a capture from an id no longer in it is a departed peer's stale
+  // tail and is discarded, never delivered), ids that have resolved a
   // room-index token at least once (the prerequisite for the fast resolver-
   // regression check below — an id that has NEVER resolved yet must not be
   // mistaken for a departure), ids observed PLAYING at least once (the same
@@ -735,6 +747,20 @@ export function pageAggregatorCapture() {
       const out = [];
       for (const [jitsiId, arr] of store) {
         if (!arr.length) continue;
+        // A peer no longer in the Jitsi roster delivers nothing: on an in-app
+        // hangup the Jitsi presence leave lands BEFORE the sidecar peer-leave
+        // (the tab stays open, so the peer-state WS closes ~a second later),
+        // and during that lag the playing/resolver gates below are still open
+        // while this peer's ScriptProcessor emits one last tail frame. That
+        // tail used to re-register the ring slot the leave had just compacted
+        // — permanently, because markDeparted has already consumed every leave
+        // signal, so nothing ever fired again. lastSeen is scan()'s current
+        // roster snapshot; the same scan that detects the departure rebuilds
+        // it without the leaver, so the tail is discarded here instead of
+        // delivered. A present peer is unaffected: scan() re-adds it every
+        // second, and captures only exist for peers a scan has already seen
+        // (tapTrack runs after the roster read).
+        if (!lastSeen.has(jitsiId)) { arr.length = 0; continue; }
         // A peer that is not currently PLAYING delivers nothing: its captured
         // PCM (silence — the published track carries only Strudel output) is
         // DISCARDED, not held, so a peer who joined but never pressed play
