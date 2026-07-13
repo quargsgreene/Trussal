@@ -45,8 +45,12 @@ function installTap() {
   }
 
   // Stable participant objects: tapTrack guards re-tapping with a WeakSet on
-  // the track, so each participant keeps the same track object across scans.
+  // the track, so each participant keeps the same track object across scans
+  // — including across a removeFromRoster/addToRoster pair, which models a
+  // transient room.getParticipants() glitch (the underlying JitsiTrack is
+  // unchanged) rather than an actual leave-and-rejoin (a fresh track object).
   const roster = [];
+  const participantsById = new Map();
   const makeParticipant = (jitsiId) => {
     const track = {
       getType: () => 'audio',
@@ -54,6 +58,11 @@ function installTap() {
       getTrack: () => null,
     };
     return { getId: () => jitsiId, getTracks: () => [track] };
+  };
+  const getOrMakeParticipant = (jitsiId) => {
+    let p = participantsById.get(jitsiId);
+    if (!p) { p = makeParticipant(jitsiId); participantsById.set(jitsiId, p); }
+    return p;
   };
 
   const resolverMap = new Map(); // jitsiId -> room-index token (sidecar view)
@@ -79,7 +88,7 @@ function installTap() {
   return {
     cap: globalThis.window.__trussalAggCapture,
     scan: () => scan(),
-    addToRoster: (jitsiId) => { roster.push(makeParticipant(jitsiId)); },
+    addToRoster: (jitsiId) => { roster.push(getOrMakeParticipant(jitsiId)); },
     removeFromRoster: (jitsiId) => {
       const i = roster.findIndex((p) => p.getId() === jitsiId);
       if (i >= 0) roster.splice(i, 1);
@@ -103,11 +112,12 @@ function installTap() {
 // The live incident, step for step: on an in-app hangup the Jitsi presence
 // leave lands BEFORE the sidecar peer-leave, so right after the roster
 // backstop queues the departure, the departed peer still reads as playing +
-// resolved. Originally this meant its tap could still emit one final tail
-// frame that only drain()'s roster gate caught; the roster-diff sweep in
-// scan() now tears the tap down in that same tick, so the tail can no longer
-// be produced at all — a stronger fix at the source, verified below.
-test('hangup race: a departed peer\'s post-leave capture tail can no longer be produced', () => {
+// resolved — and its tap can still emit one final tail frame (teardownTap is
+// deliberately NOT synchronous with the backstop — see the glitch-tolerance
+// test below for why). drain()'s roster gate (lastSeen) is what discards it;
+// the tap itself is only torn down later, once the absence has been
+// confirmed over several scans.
+test('hangup race: a departed peer\'s post-leave capture tail is discarded, not delivered', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
@@ -132,15 +142,14 @@ test('hangup race: a departed peer\'s post-leave capture tail can no longer be p
   tap.scan();
   assert.deepEqual(tap.cap.drainLeaves(), ['human-b'], 'roster backstop queues the departure');
 
-  // B's tap was torn down in that same scan(), not left to outlive the track:
-  // there is no longer a handler left to emit a stale tail frame.
-  assert.equal(tap.procs.get('human-b').onaudioprocess, null, 'the departed peer\'s tap is gone, not just its ring slot');
-
+  // B's ScriptProcessor outlives the WebRTC track for a bit (teardown is
+  // grace-windowed, not immediate) and emits one last frame.
+  tap.pushFrame('human-b');
   tap.pushFrame('human-a');
   assert.deepEqual(
     tap.cap.drain().map((t) => t.jitsiId),
     ['human-a'],
-    'the other peer is unaffected by B\'s departure',
+    'the departed peer\'s tail is discarded — delivered, it would re-register the compacted ring slot',
   );
 });
 
@@ -203,8 +212,11 @@ test('a present peer that stops and resumes playing delivers again (no roster-ga
 // Sets, leaving the departed peer's ScriptProcessor+AudioContext CONNECTED —
 // which per spec keeps them alive and running (silently refilling `store`
 // under the departed id) for the rest of the page's life. A departure must
-// tear the tap down: stop delivering frames and disconnect/close the graph.
-test('a departure tears down the peer\'s ScriptProcessor and AudioContext (no leaked tap)', () => {
+// eventually tear the tap down: stop delivering frames and disconnect/close
+// the graph. Teardown is grace-windowed (TAP_TEARDOWN_GRACE_SCANS consecutive
+// misses), not immediate — see the glitch-tolerance test below for why —
+// so this drives scan() past the window to observe it.
+test('sustained absence eventually tears down the peer\'s ScriptProcessor and AudioContext (no leaked tap)', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
@@ -218,10 +230,55 @@ test('a departure tears down the peer\'s ScriptProcessor and AudioContext (no le
   assert.ok(proc && ctx, 'tap resources exist before departure');
 
   tap.removeFromRoster('human-a');
-  tap.scan(); // roster backstop fires markDeparted
+  tap.scan(); // roster backstop fires markDeparted immediately (bookkeeping only)
   assert.deepEqual(tap.cap.drainLeaves(), ['human-a']);
+  assert.notEqual(proc.onaudioprocess, null, 'tap is NOT torn down on the first miss');
 
-  assert.equal(proc.onaudioprocess, null, 'processor stops delivering frames on departure');
+  tap.scan(); // still within the grace window
+  assert.notEqual(proc.onaudioprocess, null, 'tap still survives a second consecutive miss');
+
+  tap.scan(); // grace window elapses on this, the third consecutive miss
+  assert.equal(proc.onaudioprocess, null, 'processor stops delivering frames once sustained absence is confirmed');
   assert.equal(proc.disconnected, true, 'processor is disconnected on departure');
   assert.equal(ctx.closed, true, 'the departed peer\'s AudioContext is closed, not left running forever');
+});
+
+// The regression this session found LIVE: a single glitchy
+// room.getParticipants() read (e.g. Jitsi's roster momentarily not listing
+// everyone during a burst of joins — several bots joining at once) must NOT
+// permanently kill a still-present peer's tap. teardownTap is irreversible
+// (tapTrack's WeakSet guard means an unchanged JitsiTrack is never re-tapped),
+// so a one-tick false departure reading would otherwise silence that peer for
+// the rest of the meeting. The peer reappearing before the grace window
+// elapses must reset the miss streak and leave the tap untouched.
+test('a still-present peer survives a transient roster glitch (tap not torn down)', () => {
+  const tap = installTap();
+  tap.addToRoster('human-a');
+  tap.resolverMap.set('human-a', '0');
+  tap.playingSet.add('human-a');
+  tap.scan();
+
+  const proc = tap.procs.get('human-a');
+  const ctx = tap.ctxs.get('human-a');
+
+  // Simulates a burst of joins causing Jitsi's roster to momentarily omit a
+  // still-present peer: absent for one scan, then reappears.
+  tap.removeFromRoster('human-a');
+  tap.scan();
+  assert.notEqual(proc.onaudioprocess, null, 'tap survives the glitch tick');
+
+  tap.addToRoster('human-a');
+  tap.scan();
+  assert.notEqual(proc.onaudioprocess, null, 'tap is untouched once the peer reappears');
+  assert.equal(ctx.closed, false, 'never torn down by the transient miss');
+
+  // Confirms the miss streak actually reset, not just paused: several more
+  // ticks of continuous presence must not accumulate toward teardown.
+  tap.scan();
+  tap.scan();
+  tap.scan();
+  assert.notEqual(proc.onaudioprocess, null, 'still delivering after the peer has been present all along');
+
+  tap.pushFrame('human-a');
+  assert.equal(tap.cap.drain().length, 1, 'audio still flows normally after the glitch');
 });

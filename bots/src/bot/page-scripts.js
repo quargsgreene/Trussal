@@ -629,6 +629,12 @@ export function pageAggregatorCapture() {
   // onaudioprocess (silently refilling `store` under the departed jitsiId, up
   // to MAX_BACKLOG) and burning CPU for the rest of the page's life.
   const taps = new Map();
+  // jitsiId -> consecutive scans it has had a tap but was absent from
+  // currentIds. Cleared the moment they reappear; see the scan() sweep below.
+  const missingTapScans = new Map();
+  // ~3s at the 1s scan cadence — enough to absorb a single glitchy
+  // room.getParticipants() read without leaving a real leak unbounded for long.
+  const TAP_TEARDOWN_GRACE_SCANS = 3;
 
   function teardownTap(jitsiId) {
     const tap = taps.get(jitsiId);
@@ -755,14 +761,25 @@ export function pageAggregatorCapture() {
     // first place (e.g. the peer-state mapping never landed for this id).
     [...lastSeen].filter((jitsiId) => !currentIds.has(jitsiId)).forEach(markDeparted);
     lastSeen = currentIds;
-    // Tear down any tap whose jitsiId is no longer in the AUTHORITATIVE Jitsi
-    // roster — deliberately independent of markDeparted/the fast paths above,
-    // which free a peer's turn on a mere play/stop or a resolver blip while
-    // they're still actually in the room. currentIds is the same source
-    // tapTrack uses to (re)create a tap, so this is its exact mirror: a peer
-    // absent here has truly left, and their JitsiTrack (and any future
-    // rejoin's tap) will be a fresh object anyway.
-    [...taps.keys()].filter((jitsiId) => !currentIds.has(jitsiId)).forEach(teardownTap);
+    // Tear down any tap whose jitsiId has been ABSENT from the authoritative
+    // Jitsi roster for several CONSECUTIVE scans — deliberately independent of
+    // markDeparted/the fast paths above, which free a peer's turn on a mere
+    // play/stop or a resolver blip while they're still actually in the room.
+    // A single-tick absence is NOT trusted on its own: room.getParticipants()
+    // can be transiently incomplete (documented elsewhere in this codebase as
+    // "ICE-slow"), especially around a burst of joins, and teardownTap is
+    // IRREVERSIBLE — tapTrack's WeakSet guard means a still-present peer's
+    // unchanged JitsiTrack is never re-tapped, so one bad sample would
+    // permanently silence them. Requiring a short run of consecutive misses
+    // (missingTapScans) absorbs that glitch while still bounding the leak to a
+    // few seconds instead of "forever".
+    [...taps.keys()].forEach((jitsiId) => {
+      if (currentIds.has(jitsiId)) { missingTapScans.delete(jitsiId); return; }
+      const misses = (missingTapScans.get(jitsiId) || 0) + 1;
+      if (misses < TAP_TEARDOWN_GRACE_SCANS) { missingTapScans.set(jitsiId, misses); return; }
+      missingTapScans.delete(jitsiId);
+      teardownTap(jitsiId);
+    });
     if (resolverReady) {
       [...currentIds].filter((jitsiId) => resolve(jitsiId) != null).forEach((jitsiId) => resolvedOnce.add(jitsiId));
     }
