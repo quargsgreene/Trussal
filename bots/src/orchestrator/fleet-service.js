@@ -161,6 +161,16 @@ export class FleetService {
       case 'fleet-request':
         await this.#handleFleetRequest(msg);
         break;
+      case 'session-reset':
+        // The sidecar broadcasts this when the room becomes fleet-only (every
+        // real participant gone) — the meeting is genuinely over, even if a
+        // human rejoins fast enough to cancel our own meetingEndGraceMs timer
+        // before it fires (see #evaluateMeetingEnd). Without reacting to this
+        // directly, old bot clusters (and the old aggregator) would silently
+        // carry over into whatever reuses this room name next; a new meeting
+        // should start with nothing, and bots should have to be spawned fresh.
+        await this.#teardownAll('session reset — room emptied and reused');
+        break;
       default:
         break;
     }

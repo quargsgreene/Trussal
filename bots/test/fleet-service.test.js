@@ -457,6 +457,38 @@ test('player bot: a momentary jitsiJoined:false blip does not trigger a replace'
   }, { jitsiJoinGraceMs: 80 });
 });
 
+// The exact live report: aggregator now respawns correctly on a fresh join,
+// but bots from the old (destroyed) meeting kept running and even got
+// auto-respawned in place by the orphan-detection fix above — a new meeting
+// should start with NO bots; they must be spawned fresh by the human. The
+// sidecar's session-reset (only-fleet-left) fires for the OLD meeting before
+// the human's fast rejoin lands under a fresh identity, exactly matching what
+// was observed live.
+test('session-reset clears old bots and the old aggregator, even when a fast rejoin already re-registered a human present', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h1', roomIndex: '0', isBot: false } });
+    await fleet.spawnCluster('0', 2);
+    assert.equal(fleet.listBots().length, 2);
+    assert.equal(fleet.aggregatorStatus().running, true);
+    runner.calls.started.length = 0; // isolate what happens after the reset
+
+    // The old meeting ends: human leaves, then — before our own
+    // meetingEndGraceMs timer could fire — the sidecar's session-reset
+    // arrives (the room went fleet-only), and only then does the human's
+    // fast rejoin land under a fresh identity.
+    await fleet.handleBusMessage({ type: 'peer-leave', peerId: 'h1' });
+    await fleet.handleBusMessage({ type: 'session-reset' });
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h2', roomIndex: '0', isBot: false } });
+
+    assert.equal(fleet.listBots().length, 0, 'old bots gone — a new meeting starts with none, must be spawned fresh');
+    assert.equal(fleet.aggregatorStatus().running, true, 'a fresh aggregator DOES spawn for the rejoined human');
+    assert.equal(
+      runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1,
+      'exactly one fresh aggregator start, not a leftover from before the reset',
+    );
+  });
+});
+
 test('roster reconcile heals a missed leave → meeting-end teardown still fires', async () => {
   await withFleet(async ({ fleet, runner, sent }) => {
     // Human joins; aggregator spawns.

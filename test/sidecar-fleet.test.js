@@ -91,3 +91,41 @@ test('fleet relay: invisible fleet, stamped requests, bot requests dropped, stat
     for (const c of wss.clients) c.terminate();
   }
 });
+
+// A fleet's own connection is persistent (opened once, kept alive for the
+// conductor's lifetime), so `room.size === 0` never fires purely from
+// participants leaving — the "only fleet left" branch is what tells a
+// still-connected fleet the meeting is actually over.
+test('session-reset: broadcast only once the room becomes fleet-only, not on every leave', async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+  try {
+    const fleet = await connect(port, 'fleet2');
+    await hello(fleet, { jitsiId: 'fleet-x', isFleet: true });
+
+    const human = await connect(port, 'fleet2');
+    await hello(human, { jitsiId: 'jh' });
+    const bot = await connect(port, 'fleet2');
+    await hello(bot, { jitsiId: 'jb', isBot: true, ownerIndex: '0' });
+
+    human.ws.close();
+    // Wait for the bot to see the human's peer-leave — deterministic proof
+    // the server finished processing the close, unlike a ping/pong on the
+    // fleet's own (different) connection, which has no ordering guarantee
+    // relative to a close handled on another socket.
+    await waitFor(bot, m => m.type === 'peer-leave');
+    assert.ok(
+      !fleet.messages.some(m => m.type === 'session-reset'),
+      'the bot is still there — not fleet-only yet',
+    );
+
+    bot.ws.close();
+    await waitFor(fleet, m => m.type === 'session-reset');
+
+    fleet.ws.close();
+  } finally {
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});

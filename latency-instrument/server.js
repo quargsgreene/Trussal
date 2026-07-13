@@ -478,6 +478,15 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // Only the fleet service is left: the meeting is over even though
           // the room object survives — reset indices and the shared doc.
           roomMeta.delete(roomName);
+          // Tell whoever's left (only fleet connections, by this branch's own
+          // condition) so it can clear its own bot clusters. Without this, a
+          // fleet whose human rejoins fast enough to cancel its own
+          // meetingEndGraceMs teardown never learns the room was actually
+          // fully vacated in between — old bots (and the old aggregator)
+          // would otherwise silently carry over into whatever reuses this
+          // room name next, rather than the fresh start a genuinely new
+          // meeting should be.
+          broadcast(room, null, { type: 'session-reset' });
         }
       } else if (!room || room.size === 0) {
         // A probe-only connection (an aggregator claim that never became a
