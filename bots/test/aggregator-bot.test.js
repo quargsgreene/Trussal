@@ -43,7 +43,7 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
-function makeFakes({ pageCaptures = [] } = {}) {
+function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
   const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false };
   const fakePage = {
     setUserAgent: async () => {},
@@ -53,6 +53,7 @@ function makeFakes({ pageCaptures = [] } = {}) {
     evaluate: async (fn, ...args) => {
       const s = String(fn);
       calls.evaluate.push(s);
+      if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
       if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
       if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
         calls.enqueued.push(args[0]);
@@ -205,6 +206,66 @@ test('ingest loop: start() schedules a drain timer, ingestTick drains the page, 
 
   await bot.stop();
   assert.equal(bot.ingestTimer, null, 'stop() cleared the ingest timer');
+});
+
+// --- ingestTick <-> page-reported leaves (production wiring for removeParticipant) ---
+// removeParticipant/CircularParticipantQueue.remove already compact the ring on
+// their own (see the "leave / rejoin / replace / remove" suite below); these
+// tests pin that ingestTick actually DRIVES that compaction from what the page
+// tap reports left the Jitsi conference, since nothing else in production calls
+// removeParticipant.
+
+test('ingestTick compacts a page-reported departure out of the rotation (no gap)', async () => {
+  const { fakeLauncher } = makeFakes({ pageLeaves: ['human-0'] });
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1']);
+
+  await bot.ingestTick(); // page reports human-0 left this tick
+  assert.deepEqual(bot.order.order(), ['1'], 'the ring compacted, no gap where 0 was');
+  assert.equal(bot.buffers['0'], undefined, 'the departed participant\'s buffer is gone too');
+
+  await bot.stop();
+});
+
+test('ingestTick: after a page-reported departure, a rejoin under a fresh id appends at the tail', async () => {
+  const { fakeLauncher } = makeFakes({ pageLeaves: ['human-0'] });
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+
+  await bot.ingestTick(); // human-0 leaves, ring compacts to ['1']
+  assert.deepEqual(bot.order.order(), ['1']);
+
+  // human-0 rejoins under a fresh Jitsi endpoint id (the sidecar hands the
+  // returning participant back its same persistent room-index token).
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0-rejoin', token: '0', samples: [0.5] }]);
+  assert.deepEqual(bot.order.order(), ['1', '0'], 'the rejoiner lands at the tail, not back in its old slot');
+
+  await bot.stop();
+});
+
+test('ingestTick: a stood-down aggregator does not act on page-reported departures', async () => {
+  const { fakeLauncher } = makeFakes({ pageLeaves: ['human-0'] });
+  const bot = new AggregatorBot(
+    cfg,
+    { launcher: fakeLauncher, logIngest: false, isActive: async () => false },
+    {}, 1024,
+  );
+  await bot.start();
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: [0.5] }]);
+
+  await bot.ingestTick();
+  assert.deepEqual(bot.order.order(), ['0'], 'a stood-down aggregator leaves the ring untouched');
+
+  await bot.stop();
 });
 
 // --- readAndAssembleMasterBuffer() + playMasterBufferToClient() ---------------

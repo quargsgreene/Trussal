@@ -2,7 +2,8 @@ import { Bot } from './bot.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
-  pageAggregatorCapture, pageDrainParticipantAudio, pageAggregatorCaptureDiag, pageFpsSampler,
+  pageAggregatorCapture, pageDrainParticipantAudio, pageDrainParticipantLeaves,
+  pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
   pageReportStudioStatus, pageAggregatorTrackMapDiag,
 } from './page-scripts.js';
@@ -257,9 +258,25 @@ export class AggregatorBot extends Bot {
         // Stand down unless we're the room's active aggregator (see #isActiveNow):
         // a second aggregator neither taps nor streams, so no feedback loop forms.
         if (!(await this.#isActiveNow())) return;
+        // Compact departed participants out of the rotation BEFORE ingesting new
+        // audio, so a slot freed this tick can't briefly reappear as an empty turn.
+        await this.#removeDepartedParticipants();
         // #drainPageCaptures already swallows page errors; nothing to write when
         // the room is silent.
         await this.writeToIndividualParticipantBufferQueues();
+    }
+
+    /**
+     * Remove every participant the page tap has seen leave the Jitsi conference
+     * since the last tick, closing the gap their slot would otherwise leave in
+     * the rotation (see removeParticipant / CircularParticipantQueue.remove). The
+     * page tap is the source of truth for "left" — it diffs successive
+     * room.getParticipants() scans, since this deployment has no reliable
+     * member-left event to listen for directly.
+     */
+    async #removeDepartedParticipants() {
+        const departed = await this.#drainPageLeaves();
+        for (const jitsiId of departed) this.removeParticipant(jitsiId);
     }
 
     /**
@@ -623,6 +640,10 @@ export class AggregatorBot extends Bot {
             Object.entries(this.buffers).filter(([bufferToken]) => bufferToken !== token),
         );
         if (this.#activeToken === token) this.#activeToken = null;
+        console.log(
+            `[aggregator-bot] participant left, ring compacted: identity=${identity} token=${token} ` +
+            `order=${this.order.order().join(',')}`,
+        );
         return token;
     }
 
@@ -782,6 +803,17 @@ export class AggregatorBot extends Bot {
             return Array.isArray(takes) ? takes : [];
         } catch (e) {
             console.error(`[aggregator-bot] failed to drain participant captures: ${e.message}`);
+            return [];
+        }
+    }
+
+    async #drainPageLeaves() {
+        if (!this.page || typeof this.page.evaluate !== 'function') return [];
+        try {
+            const left = await this.page.evaluate(pageDrainParticipantLeaves);
+            return Array.isArray(left) ? left : [];
+        } catch (e) {
+            console.error(`[aggregator-bot] failed to drain participant leaves: ${e.message}`);
             return [];
         }
     }

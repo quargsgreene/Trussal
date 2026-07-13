@@ -586,6 +586,12 @@ export async function pageStrudelBoot({ strudel, hydra }) {
  * own closures. Taps the STREAM (createMediaStreamSource, which can SHARE a
  * stream), so it coexists with the Trussal bundle's own per-peer tap of the same
  * stream (latency-instrument.js) rather than colliding with it.
+ *
+ * The same room.getParticipants() scan also detects DEPARTURES: an endpoint id
+ * present in one scan and missing from the next has left the conference. The
+ * Node side drains those (via pageDrainParticipantLeaves) and feeds each into
+ * AggregatorBot.removeParticipant, which compacts that participant's ring slot
+ * so the rotation never leaves a silent gap where they used to be.
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
@@ -631,6 +637,13 @@ export function pageAggregatorCapture() {
     tappedTracks.add(jitsiTrack);
   }
 
+  // Endpoint ids present as of the previous scan, and the queue of ids that have
+  // disappeared since the last drainLeaves() — the leave-detection state a
+  // departed-participant's ring slot needs to be compacted on the Node side
+  // (AggregatorBot.removeParticipant) instead of left as a silent gap.
+  let lastSeen = new Set();
+  const leftQueue = [];
+
   // Enumerate remote participants (the authoritative source — getParticipants()
   // excludes self) and tap each one's audio tracks, keyed by the member's endpoint
   // id. The room-not-ready guard returns quietly during startup; once ready the
@@ -641,8 +654,17 @@ export function pageAggregatorCapture() {
     const conf = globalThis.APP && globalThis.APP.conference;
     const room = conf && conf._room;
     if (!room || typeof room.getParticipants !== 'function') return; // conference not ready yet
-    room.getParticipants()
-      .filter((participant) => participant.getId())
+    const participants = room.getParticipants().filter((participant) => participant.getId());
+    const currentIds = new Set(participants.map((participant) => participant.getId()));
+    // A participant present last scan but missing now has left the conference:
+    // drop its accumulated (never-to-be-drained) PCM and queue its id so the Node
+    // side can remove its ring slot — the ONLY way a departure is detected, since
+    // this deployment has no reliable member-left event (see the module doc).
+    for (const jitsiId of lastSeen) {
+      if (!currentIds.has(jitsiId)) { leftQueue.push(jitsiId); store.delete(jitsiId); }
+    }
+    lastSeen = currentIds;
+    participants
       .flatMap((participant) => participant.getTracks()
         .filter((track) => track.getType() === 'audio')
         .map((track) => ({ track, jitsiId: participant.getId() })))
@@ -665,6 +687,13 @@ export function pageAggregatorCapture() {
         out.push({ jitsiId: String(jitsiId), token: String(token), samples: arr.splice(0) });
       }
       return out;
+    },
+    // Endpoint ids that have left the conference since the last call (cleared on
+    // read, like drain()). The Node side feeds each into removeParticipant so a
+    // departed participant's slot is compacted out of the rotation immediately
+    // instead of lingering as a silent turn.
+    drainLeaves() {
+      return leftQueue.splice(0);
     },
     // Localizes an empty drain to a stage: participantCount 0 -> no remote peers;
     // store empty -> no audio tapped from any member (no audio track / capture
@@ -693,6 +722,11 @@ export function pageAggregatorCapture() {
 /** Drain the accumulated per-participant PCM the aggregator tap has captured. */
 export function pageDrainParticipantAudio() {
   return (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+}
+
+/** Drain the endpoint ids that have left the conference since the last call. */
+export function pageDrainParticipantLeaves() {
+  return (window.__trussalAggCapture && window.__trussalAggCapture.drainLeaves()) || [];
 }
 
 /** Snapshot of the capture tap's state, for diagnosing an empty drain. */
