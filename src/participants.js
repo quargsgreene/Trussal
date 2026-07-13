@@ -57,7 +57,19 @@ function readRemotes() {
 
 function tick() {
   const newLocal = readLocal();
-  if (!newLocal) return;
+  if (!newLocal) {
+    // We were in a conference and now read as absent (APP.conference torn
+    // down or getMyUserId() gone null): a genuine local departure, e.g. an
+    // in-app hangup that leaves the tab open on a post-call/welcome screen
+    // rather than closing or reloading it. Reset so a same-tab rejoin is
+    // treated as a fresh 'local' join (below) instead of silently ignored.
+    if (local) {
+      const left = local;
+      local = null;
+      emit('local-leave', left);
+    }
+    return;
+  }
 
   if (!local || local.id !== newLocal.id) {
     local = newLocal;

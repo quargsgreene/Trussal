@@ -333,6 +333,29 @@ function handleMessage(msg) {
 }
 
 subscribeParticipants((event, payload) => {
+  if (event === 'local-leave') {
+    // We've left the Jitsi conference but the tab is still open (see
+    // participants.js) — nothing else here reacts to a Jitsi-level departure,
+    // so left unhandled this WS would stay open indefinitely under the old
+    // jitsiId: the sidecar never sees a close (no peer-leave broadcast, so a
+    // departed peer's slot — e.g. the aggregator's rotation — never frees),
+    // and a same-tab rejoin would find `ws` still set and skip re-announcing
+    // (sendHelloIfReady() is a no-op once helloSent), leaving the sidecar
+    // pinned to the stale identity forever. Close explicitly so the server
+    // sees a real disconnect now, and so the next 'local' (rejoin) takes the
+    // `!ws` branch below and opens a fresh connection with a fresh hello.
+    wantConnection = false;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    if (ws) {
+      ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+      try { ws.close(); } catch (e) {}
+      ws = null;
+    }
+    helloSent = false;
+    localPeer.jitsiId = null;
+    return;
+  }
   if (event === 'local' || event === 'local-update') {
     if (payload && payload.id) {
       localPeer.jitsiId = payload.id;
