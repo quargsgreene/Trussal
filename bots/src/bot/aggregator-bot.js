@@ -9,6 +9,11 @@ import {
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
+import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio-net/MetaprogrammerCrdtSync.js';
+import { parseMetaprogram, buildDefaultProgram } from '../../../src/audio-net/MetaprogrammerParser.js';
+import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
+import O2LiteClient from '../../../public/lib/o2lite-web.js';
+import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
 
 // How often the ingest loop drains the page tap into the buffers.
 const DEFAULT_INGEST_INTERVAL_MS = 500;
@@ -34,12 +39,44 @@ const CLAIM_TIMEOUT_MS = 5000;
 // from the page-side election roster) is held for this long before it actually
 // stands down — otherwise a one-tick flap silences the whole room's audio.
 const DEFAULT_ACTIVE_GRACE_MS = 10000;
+// Shared metaprogram O2 addresses — same wire contract as
+// src/audio-net/Metaprogrammer.js so the bot and every browser client agree
+// on one cycle grid and one program text.
+const EPOCH_ADDR = '/nc/epoch';
+const APPLY_ADDR = '/nc/apply';
+// How long to wait for the O2 relay handshake before running unsynced — a
+// hung connection must not stall start() (same fail-open spirit as
+// CLAIM_TIMEOUT_MS).
+const O2_CONNECT_TIMEOUT_MS = 5000;
+
+// Participant tokens in the order they are WRITTEN in the $ participants
+// sequence (depth-first; every branch of a | choice included). This is the
+// metaprogram's participant ordering irrespective of timing mode — <>
+// alternation plays them across consecutive cycles, [] subdivision within one
+// cycle, both in this written order — so it is what the ring adopts.
+function metaprogramTokenSequence(participants) {
+  const out = [];
+  const walk = (elements) => {
+    for (const el of elements || []) {
+      if (!el) continue;
+      if (el.type === 'participant' && el.token != null) out.push(String(el.token));
+      else if (el.type === 'choice') (el.options || []).forEach(walk);
+      else if (el.type === 'sequence') (el.stacks || []).forEach((st) => walk(st.elements));
+      else if (el.type === 'run') walk(el.elements);
+    }
+  };
+  if (participants && Array.isArray(participants.stacks)) {
+    for (const st of participants.stacks) walk(st.elements);
+  }
+  return out;
+}
 
 // Empty master slice. #pendingMaster is ALWAYS a Float32Array (empty means
 // nothing pending), never null, so playMasterBufferToClient can test
 // `!samples.length` without a null guard. Length 0 and never mutated, so a
 // single shared instance is safe to reuse as the "nothing pending" sentinel.
 const EMPTY_MASTER = new Float32Array(0);
+
 
 // err.code set on the throw from start() when another aggregator already holds
 // the room's slot. The entrypoint treats this as a clean "nothing to do" exit
@@ -102,13 +139,20 @@ export class AggregatorBot extends Bot {
     // The aggregator-claim probe connection to the sidecar, held open for our
     // lifetime so nothing else can claim the room's single aggregator slot.
     #claimConn = null;
+    // Second, persistent sidecar connection dedicated to metaprogram sync
+    // (crdt-state/crdt-update). Separate from #claimConn: the claim probe
+    // never sends `hello` so it never joins the room's broadcast set (see
+    // #metaprogramBusUrl for why this one does, with role=fleet).
+    #metaprogramConn = null;
     // Throttle counter for the capture-diag heartbeat (every ~10th drain).
     #drainTicks = 0;
 
-    constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar } = {}, buffers = {}, bufferSize = 1024) {
+    constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
         // Individual dimension: token -> RingBuffer. Pre-seedable for tests.
         this.buffers = buffers;
+        this.metaprogramDoc = null;
+        this.o2 = null;
         // Per-participant hold buffers are MEASURED IN MS (requirement 4): a
         // participant retains cfg.holdMs of audio while it waits for its turn.
         // When cfg.holdMs is set we derive the RingBuffer capacity from it and
@@ -119,10 +163,12 @@ export class AggregatorBot extends Bot {
         this.bufferSize = this.holdMs != null
             ? Math.max(1, Math.round(this.holdMs * this.sampleRate / 1000))
             : Math.max(1, Math.floor(bufferSize));
+        this.epoch = null;
         // Turn length for the pre-metaprogram round-robin, and an injectable
         // clock so the alternation is testable without real time.
         this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
         this.now = typeof now === 'function' ? now : () => Date.now();
+        this.programText = null;
         // Rate-match the master drain to real time. Each playback tick releases
         // at most ONE playback interval's worth of the active participant's audio
         // (playbackMs * sampleRate) instead of its whole backlog: draining
@@ -162,6 +208,11 @@ export class AggregatorBot extends Bot {
         // ws-backed one; tests inject a fake). Absent -> the claim is skipped
         // (standalone / unit tests that drive the bot directly).
         this.connectSidecar = typeof connectSidecar === 'function' ? connectSidecar : null;
+        // WebSocket constructor for O2LiteClient's own transport (distinct from
+        // connectSidecar, which wraps the peer-state protocol, not O2's).
+        // Production passes the `ws` package's WebSocket; absent -> metaprogram
+        // sync is skipped (tests/standalone), matching connectSidecar's pattern.
+        this.webSocketImpl = webSocketImpl || null;
         // Where a metrics sample goes. Defaults to the console so a bare
         // instance "publishes its own metrics"; tests inject a capturing sink.
         this.reporter = reporter || ((tag, data) => console.log(tag, data));
@@ -174,10 +225,12 @@ export class AggregatorBot extends Bot {
         // this.#setInterval(...) with the instance as receiver (the exact bug
         // that crashed ClockSync). Node doesn't care, but this keeps the bot
         // safe if it is ever driven page-side.
+        this.clock = null;
         this.#setInterval = (typeof setInterval !== 'undefined') ? (fn, ms) => setInterval(fn, ms) : null;
         this.#clearInterval = (typeof clearInterval !== 'undefined') ? (id) => clearInterval(id) : null;
         this.ingestTimer = null;
         this.#playbackTimer = null;
+        this.scheduler = null;
     }
 
     async start() {
@@ -238,6 +291,10 @@ export class AggregatorBot extends Bot {
         await this.publishMetrics();
         this.startIngestLoop();
         this.startPlaybackLoop();
+        // Join the room's shared metaprogram AFTER the audio loops are live so
+        // the round trip never waits on the O2/CRDT handshakes (worst case
+        // O2_CONNECT_TIMEOUT_MS + the 500ms epoch grace).
+        await this.interpretAndExecuteMetaprogram();
     }
 
     /**
@@ -341,11 +398,233 @@ export class AggregatorBot extends Bot {
         await this.page.evaluate(pageReportStudioStatus, String(text));
     }
 
+    /**
+     * Wire up the room's shared metaprogram on the Node side (called from
+     * start() once the audio loops are live): O2 (epoch agreement + clock
+     * sync), the CRDT program-text doc, and the pure MetaprogramScheduler —
+     * mirroring src/audio-net/Metaprogrammer.js's setNetCyclesActive()/
+     * startScheduler() (browser side), NOT importing it, since that module is
+     * a per-BROWSER-TAB singleton wired to window/document and the page's own
+     * peer-state connection; the aggregator is its own process and needs its
+     * own CRDT doc replica (createMetaprogramDoc) that converges via update
+     * exchange, not a shared object reference.
+     *
+     * Idempotent, and deliberately does the heavy construction ONCE: after
+     * this returns, a metaprogram edit arrives via crdt.onRemoteChange or the
+     * /nc/apply O2 method and flows through applyProgramText →
+     * #pushProgramToScheduler, which updates the EXISTING scheduler in place
+     * (scheduler.setProgram) and hands the ring its new order/membership
+     * (this.order.applyMetaprogramOrder) rather than rebuilding anything. The
+     * one case that legitimately rebuilds the scheduler is
+     * #adoptEpochIfEarlier, because the epoch defines the cycle grid every
+     * client must share — an ordinary text edit does not touch it.
+     */
     async interpretAndExecuteMetaprogram() {
-        // evaluate the metaprogram and schedule the audio and visual streams to the client
-        // update buffer sizes
-        // implement and test audio streaming first
-        // starts off with  audio and video to the Jitsi roomdefault metaprogram, but listens for updates from the client and re-evaluates the metaprogram when it changes
+        if (this.o2) return; // already wired — updates flow in reactively from here
+
+        if (!this.webSocketImpl) {
+            console.warn('[aggregator-bot] metaprogram sync skipped: no WebSocket implementation wired');
+            return;
+        }
+        const o2Url = this.#o2Url();
+        if (!o2Url) {
+            console.warn('[aggregator-bot] metaprogram sync skipped: no O2 URL derivable from the Jitsi URL');
+            return;
+        }
+        // Kept in a local so the post-await guards can tell whether stop()
+        // tore the subsystem down while we were suspended.
+        const o2 = new O2LiteClient({ url: o2Url, WebSocketImpl: this.webSocketImpl });
+        this.o2 = o2;
+        o2.method(EPOCH_ADDR, (msg) => this.#adoptEpochIfEarlier(msg.args[0]));
+        o2.method(APPLY_ADDR, (msg) => this.applyProgramText(msg.args[0]));
+        this.clock = makeClockSyncOverO2(o2, () => this.#localSeconds());
+        try {
+            await this.#withTimeout(o2.connect(), O2_CONNECT_TIMEOUT_MS, 'O2 connect');
+        } catch (e) {
+            console.warn(`[aggregator-bot] O2 connect failed (running unsynced): ${e.message}`);
+        }
+        if (this.o2 !== o2) return; // stop() ran while connect was in flight
+        this.clock.start();
+
+        const bus = this.#connectMetaprogramBus();
+        if (bus) {
+            const handle = createMetaprogramDoc();
+            this.metaprogramDoc = connectMetaprogramSync(handle, bus);
+            // Fires for both live crdt-update diffs and the crdt-state
+            // late-joiner catch-up, so the room's existing program (if any)
+            // lands here shortly after the hello.
+            this.metaprogramDoc.onRemoteChange((text) => {
+                this.programText = text;
+                this.#pushProgramToScheduler();
+            });
+        }
+
+        // Give /nc/epoch a beat to arrive before declaring our own — lets an
+        // already-running room's epoch win a race against a freshly-joined
+        // aggregator's guess (same grace Metaprogrammer.js gives the browser).
+        await new Promise((r) => setTimeout(r, 500));
+        if (this.o2 !== o2) return; // stop() ran during the grace window
+        if (this.epoch == null) {
+            const nowNet = this.clock.isSynced() ? this.clock.toNetworkTime(this.#localSeconds()) : this.#localSeconds();
+            this.epoch = Math.ceil(nowNet);
+        }
+        // Net Cycles is always on: if no shared program reached us during the
+        // grace (empty room, or nothing in the CRDT catch-up), start under the
+        // default — participant 0 streams continuously — instead of the
+        // join-order rotation. The browser leader seeds the same default into
+        // the shared doc, so a late catch-up converges on identical text.
+        if (this.programText == null) this.applyProgramText(buildDefaultProgram());
+        this.#startScheduler();
+    }
+
+    // Bound an await on external I/O so a hung handshake can't stall start().
+    // Rejection or timeout is the caller's to interpret; the timer is cleared
+    // either way so it never holds the process open.
+    #withTimeout(promise, ms, what) {
+        let timer = null;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    }
+
+    /**
+     * Adopt new program text (an /nc/apply broadcast, or a direct call in
+     * tests): parse, keep only if valid, then push into the scheduler and the
+     * ring. Returns the parse errors (empty array = adopted), like the
+     * browser's applyProgramText.
+     */
+    applyProgramText(text) {
+        const { errors, valid } = parseMetaprogram(text);
+        if (!valid) return errors;
+        this.programText = text;
+        this.#pushProgramToScheduler();
+        return errors;
+    }
+
+    /**
+     * Parse this.programText and push it into the EXISTING scheduler instance
+     * AND into the ring. The scheduler swaps programs at its next cycle
+     * boundary; the ring re-orders immediately — the two re-align at that
+     * boundary via #onSchedulerEvent's cycle-start. CRDT text can be
+     * transiently invalid mid-keystroke; invalid text leaves both untouched
+     * (last valid program stays in force), matching the scheduler's own
+     * keep-last-valid behavior.
+     */
+    #pushProgramToScheduler() {
+        if (this.programText == null) return;
+        const { ast, valid } = parseMetaprogram(this.programText);
+        if (!valid) return;
+        if (this.scheduler) this.scheduler.setProgram(ast);
+        this.#applyOrderFromProgram(ast);
+    }
+
+    /**
+     * The $ participants written order becomes the ring's rotation order and
+     * MEMBERSHIP: unlisted participants wait silent off the ring, departed-
+     * but-listed ghosts keep streaming their held audio (see
+     * CircularParticipantQueue.applyMetaprogramOrder). Tokens the queue
+     * retires — departed ghosts the program no longer lists — lose their
+     * buffers here, completing the "only removed once the metaprogram no
+     * longer includes that participant" rule.
+     */
+    #applyOrderFromProgram(ast) {
+        if (!ast || !ast.participants) return;
+        const retired = this.order.applyMetaprogramOrder(metaprogramTokenSequence(ast.participants));
+        if (!retired.length) return;
+        this.buffers = Object.fromEntries(
+            Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
+        );
+        console.log(`[aggregator-bot] metaprogram dropped departed participant(s), retired: ${retired.join(',')}`);
+    }
+
+    /**
+     * Cross-client agreement: adopt the smaller of our epoch and one just
+     * heard on /nc/epoch. Only this — not a program edit — rebuilds the
+     * scheduler, because the epoch anchors the cycle grid every client's
+     * scheduler must agree on. Non-finite input (a malformed message) is
+     * ignored — NaN would poison every later comparison and silently freeze
+     * the scheduler's tick loop.
+     */
+    #adoptEpochIfEarlier(remoteEpoch) {
+        if (!Number.isFinite(remoteEpoch)) return;
+        if (this.epoch != null && remoteEpoch >= this.epoch - 0.05) return;
+        this.epoch = remoteEpoch;
+        if (this.scheduler) {
+            this.scheduler.stop();
+            this.#startScheduler();
+        }
+    }
+
+    #startScheduler() {
+        this.scheduler = new MetaprogramScheduler({
+            now: () => (this.clock && this.clock.isSynced()
+                ? this.clock.toNetworkTime(this.#localSeconds())
+                : this.#localSeconds()),
+            onEvent: (ev) => this.#onSchedulerEvent(ev),
+        });
+        this.#pushProgramToScheduler();
+        this.scheduler.start(this.epoch);
+    }
+
+    /**
+     * Scheduler events → the ring. At every cycle boundary the ring re-adopts
+     * the program the scheduler is actually playing (setProgram defers swaps
+     * to the boundary, so this is where a mid-cycle edit really lands).
+     * Remaining work: slot-open/slot-close should eventually take over the
+     * TIMING of the rotation too, replacing the fixed slotMs turn length that
+     * readAndAssembleMasterBuffer's this.order.serve() still paces — today
+     * the metaprogram dictates order and membership, the queue dictates pace.
+     */
+    #onSchedulerEvent(ev) {
+        if (ev.type !== 'cycle-start' || !this.scheduler) return;
+        this.#applyOrderFromProgram(this.scheduler.getProgram());
+    }
+
+    // Local seconds for O2/ClockSync/the scheduler. this.now() (injectable,
+    // defaults to Date.now()) is in MS — that's CircularParticipantQueue's
+    // unit — so this just rescales it; it does NOT introduce a second clock.
+    #localSeconds() {
+        return this.now() / 1000;
+    }
+
+    /**
+     * Second, persistent sidecar connection dedicated to metaprogram sync.
+     * Sends `hello` with isFleet so the server (see server.js's `isFleet`
+     * derivation) adds it to the room's broadcast set — which is required to
+     * receive the crdt-state catch-up and any later crdt-update broadcasts —
+     * WITHOUT assigning it a roomIndex or exposing it in any client's roster:
+     * the aggregator's browser page already holds the room's one real
+     * aggregator slot, so this connection must stay invisible as a
+     * participant. Adapts the raw sidecar messages into the
+     * { subscribe, sendUpdate } shape connectMetaprogramSync expects (see
+     * peer-state.js's crdt-update/crdt-state handling for the wire contract
+     * this mirrors).
+     */
+    #connectMetaprogramBus() {
+        if (!this.connectSidecar) return null;
+        const url = this.#metaprogramBusUrl();
+        if (!url) return null;
+        const listeners = new Set();
+        const sidecar = this.connectSidecar(url, {
+            onOpen: (send) => send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` }),
+            onMessage: (msg) => {
+                if (!msg || typeof msg.type !== 'string') return;
+                if (msg.type === 'crdt-update' && msg.update) {
+                    const payload = { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality };
+                    listeners.forEach((fn) => fn('crdt-update', payload));
+                } else if (msg.type === 'crdt-state' && Array.isArray(msg.updates)) {
+                    listeners.forEach((fn) => fn('crdt-state', { updates: msg.updates }));
+                }
+            },
+        });
+        this.#metaprogramConn = sidecar;
+        return {
+            subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+            sendUpdate: (update, { snapshot = false, modality = 'keyboard', channel = 'metaprogram' } = {}) => {
+                sidecar.send({ type: 'crdt-update', update, snapshot, modality, channel });
+            },
+        };
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {
@@ -415,14 +694,18 @@ export class AggregatorBot extends Bot {
     }
 
     async readAndAssembleMasterBuffer() {
-        // Cyclic fixed-order turn-taking, NO metaprogram yet: the circular queue
-        // rotates the active participant every slotMs (default 4s) through the
-        // fixed JOIN-ORDER ring, and only that participant's audio is concatenated
-        // into the shared master. This is the proof that audio makes the full
-        // round trip — participant -> individual buffer -> shared master -> back
-        // out — before the scheduler decides the slots for real.
-        // interpretAndExecuteMetaprogram will later replace this fixed rotation
-        // with the metaprogram-dictated schedule.
+        // Cyclic turn-taking: the circular queue rotates the active participant
+        // every slotMs (default 4s) and only that participant's audio is
+        // concatenated into the shared master. The ring's ORDER and MEMBERSHIP
+        // follow the room's metaprogram (see interpretAndExecuteMetaprogram /
+        // #applyOrderFromProgram: unlisted participants wait silent, departed-
+        // but-listed ghosts keep streaming their held audio), which is always
+        // in force in production — `$ participants <0>` by default. Join-order
+        // rotation remains only as the fallback when metaprogram sync isn't
+        // wired (unit tests / standalone runs). Slot TIMING is
+        // still the queue's fixed slotMs — handing that to the scheduler's
+        // slot-open/slot-close events is the remaining metaprogram work (see
+        // #onSchedulerEvent).
         //
         // The inactive participants' individual buffers keep filling (and evicting
         // their oldest, ms-bounded) in the meantime; when a participant's turn
@@ -514,6 +797,30 @@ export class AggregatorBot extends Bot {
             catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
             this.#claimConn = null;
         }
+        if (this.#metaprogramConn) {
+            try { this.#metaprogramConn.close(); }
+            catch (e) { console.error(`[aggregator-bot] failed to close metaprogram bus connection: ${e.message}`); }
+            this.#metaprogramConn = null;
+        }
+        // Each teardown is guarded like the closes above: a throw from one must
+        // not skip the rest (leaking the audio-loop timers and, worse, the
+        // browser super.stop() closes).
+        try { if (this.scheduler) this.scheduler.stop(); }
+        catch (e) { console.error(`[aggregator-bot] failed to stop metaprogram scheduler: ${e.message}`); }
+        this.scheduler = null;
+        try { if (this.clock) this.clock.stop(); }
+        catch (e) { console.error(`[aggregator-bot] failed to stop clock sync: ${e.message}`); }
+        this.clock = null;
+        try { if (this.o2) this.o2.close(); }
+        catch (e) { console.error(`[aggregator-bot] failed to close O2 client: ${e.message}`); }
+        this.o2 = null;
+        try { if (this.metaprogramDoc) this.metaprogramDoc.disconnect(); }
+        catch (e) { console.error(`[aggregator-bot] failed to disconnect metaprogram doc: ${e.message}`); }
+        this.metaprogramDoc = null;
+        // A re-armed subsystem must negotiate a FRESH epoch: restarting on the
+        // stale one would make the scheduler fast-forward through every cycle
+        // boundary since it (matches the browser's epoch = null on teardown).
+        this.epoch = null;
         if (this.ingestTimer && this.#clearInterval) this.#clearInterval(this.ingestTimer);
         this.ingestTimer = null;
         if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
@@ -624,17 +931,30 @@ export class AggregatorBot extends Bot {
     }
 
     /**
-     * Remove a participant (by the identity it was registered under — its jitsiId,
-     * or its token when no jitsiId was seen) from the rotation: its ring slot and
-     * its per-participant buffer are dropped IMMEDIATELY, so the buffers collection
-     * and the ring compact with no empty gap and the departed participant never
-     * gets another silent turn. A rejoin re-registers as a fresh tail slot (see
-     * CircularParticipantQueue.remove); the departed room index is not recycled.
-     * Returns the removed token, or null if it was not in the ring.
+     * A participant left (by the identity it was registered under — its jitsiId,
+     * or its token when no jitsiId was seen). Mode-aware via
+     * CircularParticipantQueue.depart:
+     *   - join-order mode (or an off-ring pin): ring slot and per-participant
+     *     buffer are dropped IMMEDIATELY, so the buffers collection and the
+     *     ring compact with no empty gap and the departed participant never
+     *     gets another silent turn. A rejoin re-registers as a fresh tail slot;
+     *     the departed room index is not recycled.
+     *   - metaprogram mode: the slot AND buffer are KEPT — the schedule still
+     *     lists this token, so its turns keep streaming the buffer's remaining
+     *     audio; both are retired when a program update drops the token (see
+     *     #applyOrderFromProgram).
+     * Returns the token, or null if the identity was never registered.
      */
     removeParticipant(identity) {
-        const token = this.order.remove(String(identity));
+        const { token, removed } = this.order.depart(String(identity));
         if (token === null) return null;
+        if (!removed) {
+            console.log(
+                `[aggregator-bot] participant left but the metaprogram still lists it, ghost kept: ` +
+                `identity=${identity} token=${token} order=${this.order.order().join(',')}`,
+            );
+            return token;
+        }
         // Rebuild buffers without the departed token (filter, not delete).
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([bufferToken]) => bufferToken !== token),
@@ -690,22 +1010,50 @@ export class AggregatorBot extends Bot {
         return m;
     }
 
-    // Sidecar URL for the aggregator claim, derived from the Jitsi room URL so it
-    // targets the SAME room the bundle registers under (the bundle keys the room
-    // on the last path segment and reaches the sidecar at /ws on the page host —
-    // proxied by nginx). Null if no connector is wired or the URL can't be parsed.
-    #sidecarClaimUrl() {
-        if (!this.connectSidecar) return null;
+    // Room name + ws/wss proto shared by every sidecar/O2 URL this bot derives,
+    // parsed from the Jitsi room URL so each one targets the SAME room the
+    // bundle registers under (the bundle keys the room on the last path
+    // segment). Null if the URL can't be parsed.
+    #roomAndProto() {
         try {
             const u = new URL(this.cfg.jitsiUrl);
             const room = u.pathname.split('/').filter(Boolean).pop();
             if (!room) return null;
             const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-            return `${proto}//${u.host}/ws?room=${encodeURIComponent(room)}&role=aggregator-probe`;
+            return { room, proto, host: u.host };
         } catch (e) {
-            console.error(`[aggregator-bot] could not derive sidecar claim URL from ${this.cfg.jitsiUrl}: ${e.message}`);
+            console.error(`[aggregator-bot] could not derive room/proto from ${this.cfg.jitsiUrl}: ${e.message}`);
             return null;
         }
+    }
+
+    // Sidecar URL for the aggregator claim (the pre-join probe — never sends
+    // `hello`, so it never joins the room's broadcast set). Null if no
+    // connector is wired or the URL can't be parsed.
+    #sidecarClaimUrl() {
+        if (!this.connectSidecar) return null;
+        const parts = this.#roomAndProto();
+        if (!parts) return null;
+        return `${parts.proto}//${parts.host}/ws?room=${encodeURIComponent(parts.room)}&role=aggregator-probe`;
+    }
+
+    // Sidecar URL for the metaprogram sync bus (see #connectMetaprogramBus).
+    // role=fleet joins the room's broadcast set (crdt-state/crdt-update)
+    // without claiming a roomIndex or appearing in any roster.
+    #metaprogramBusUrl() {
+        if (!this.connectSidecar) return null;
+        const parts = this.#roomAndProto();
+        if (!parts) return null;
+        return `${parts.proto}//${parts.host}/ws?room=${encodeURIComponent(parts.room)}&role=fleet`;
+    }
+
+    // O2 relay URL (latency-instrument/o2-relay.js, proxied at /o2) for epoch
+    // agreement + clock sync. Independent of the peer-state sidecar/hello —
+    // the O2 relay only keys on ?room=.
+    #o2Url() {
+        const parts = this.#roomAndProto();
+        if (!parts) return null;
+        return `${parts.proto}//${parts.host}/o2?room=${encodeURIComponent(parts.room)}`;
     }
 
     async #claimAggregatorSlot() {

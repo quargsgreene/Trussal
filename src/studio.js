@@ -51,7 +51,6 @@ import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalys
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import {
   isNetCyclesActive,
-  setNetCyclesActive,
   toggleEffectShortcut,
   setInducedMetric,
   getInducedMetrics,
@@ -479,7 +478,6 @@ function networkMetricsBlock() {
         <div class="ts-section-title">Network Metrics</div>
         <div class="ts-section-controls">
           <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
-          <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? ' on' : ''}" data-action="netcycles">${isNetCyclesActive() ? '◉ Net Cycles on' : '○ Net Cycles'}</button>
         </div>
       </div>
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
@@ -681,14 +679,6 @@ function renderDetail(container) {
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
-
-  const netCyclesBtn = container.querySelector('[data-action="netcycles"]');
-  if (netCyclesBtn) netCyclesBtn.addEventListener('click', async () => {
-    await bootAudioEngine().catch(() => {});
-    await setNetCyclesActive(!isNetCyclesActive());
-    setStatus(isNetCyclesActive() ? 'Net Cycles: scheduling by metaprogram' : 'Net Cycles off');
-    renderAll();
-  });
 
   // Artificial network modulation sliders (upward-only, CRDT-shared).
   container.querySelectorAll('[data-induce]').forEach(row => {

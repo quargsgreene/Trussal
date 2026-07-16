@@ -185,6 +185,8 @@ export function expandCycle(participants, cycleNumber) {
 // performer who never gets a slot can't grow without bound (deadlock/OOM
 // prevention). dequeue() on empty returns null — the slot plays silence and
 // the cycle advances regardless.
+
+//This AVBufferQueue class is not getting used, DO NOT use this or anything for which it is currently a dependency
 export class AVBufferQueue {
   constructor({ maxBuffers = 8, maxBytes = 32 * 1024 * 1024 } = {}) {
     this.maxBuffers = maxBuffers;

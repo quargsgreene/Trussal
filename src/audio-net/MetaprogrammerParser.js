@@ -517,6 +517,10 @@ export function parseMetaprogram(text) {
   return { ast, errors, valid: errors.length === 0 };
 }
 
+// export function getTokens(text) {
+//   const { tokens, _ } = tokenize(typeof text === 'string' ? text: '');
+//   return tokens;
+// }
 // Resolved effect parameter objects for the chain (validation must have
 // passed). Consumed by the Metaprogrammer when instantiating av-effects.
 export function resolveEffectParams(chainEntry) {
@@ -531,20 +535,20 @@ export function resolveEffectParams(chainEntry) {
   }
 }
 
-// The auto-populated default program for a meeting whose participants (in
-// join order) are `indices`, e.g. ['0', '1', '1a'].
-export function buildDefaultProgram(indices) {
-  const list = (indices && indices.length) ? indices.join(' ') : '';
-  return `$ participants <${list}>\n# cycles wcl\n# tempo 120 bpm\n`;
+// The default program every room starts under (Net Cycles is always on):
+// participant 0 — the first to join — streams continuously. Nobody else is
+// listed, so later joiners stay silent until an edit adds them.
+export function buildDefaultProgram() {
+  return `$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------
 //
-// Joins append to and leaves remove from the scheduling sequence *as text*,
-// preserving whatever else the users wrote (spec: "Each entering participant
-// is automatically added to the end of the sequence array, and each leaving
-// participant is removed from it"). Pure so the CRDT layer can apply the
-// same edits to the shared doc.
+// Append to / remove from the scheduling sequence *as text*, preserving
+// whatever else the users wrote. These are deliberate-edit helpers (nothing
+// auto-applies them on join/leave: newcomers wait unlisted and silent, and
+// departed-but-listed participants persist as ghosts until an edit drops
+// them). Pure so the CRDT layer can apply the same edits to the shared doc.
 
 export function appendParticipantToProgram(text, token) {
   const m = text.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);

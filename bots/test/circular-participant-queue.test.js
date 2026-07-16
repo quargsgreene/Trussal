@@ -134,3 +134,119 @@ test('remove() then re-register appends the returning id at the tail (no gap, no
   assert.equal(circularParticipantTestQueue.register('src-0', '0'), '0');
   assert.deepEqual(circularParticipantTestQueue.order(), ['0a', '1', '0'], 'rejoin re-appends at the tail');
 });
+
+// --- Metaprogram ordering ------------------------------------------------------
+
+test('applyMetaprogramOrder makes the ring exactly the listed tokens, in written order', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.register('src-1', '1');
+  circularParticipantTestQueue.register('src-2', '2');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['0', '1', '2']);
+
+  const retired = circularParticipantTestQueue.applyMetaprogramOrder(['2', '0', '3']);
+  assert.deepEqual(retired, [], 'nobody departed, nothing retired');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['2', '0', '3'],
+    'written order, including a placeholder slot for the unseen 3');
+  assert.equal(circularParticipantTestQueue.hasValidMetaprogram(), true);
+  // 1 is present but unlisted: silent off the ring, identity still pinned.
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), ['1']);
+  assert.equal(circularParticipantTestQueue.tokenFor('src-1'), '1', 'the pin persists off the ring');
+});
+
+test('serve() rotates in metaprogram order, placeholder (silent) turns included', () => {
+  let clock = 0;
+  const circularParticipantTestQueue = new CircularParticipantQueue({ now: () => clock, slotMs: 1000 });
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.register('src-1', '1');
+  circularParticipantTestQueue.applyMetaprogramOrder(['1', '0']);
+
+  clock = 0;    assert.equal(circularParticipantTestQueue.serve().token, '1');
+  clock = 1000; assert.equal(circularParticipantTestQueue.serve().token, '0');
+  clock = 2000; assert.equal(circularParticipantTestQueue.serve().token, '1', 'wraps in metaprogram order');
+});
+
+test('captureMetaprogramTokens filters malformed tokens and dedupes keeping written order', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  assert.deepEqual(
+    circularParticipantTestQueue.captureMetaprogramTokens(['2', '0a', '2', 'nope', '', null, '10', '0a']),
+    ['2', '0a', '10'],
+  );
+});
+
+test('a newcomer whose token the metaprogram does not list stays silent until added', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.applyMetaprogramOrder(['0']);
+
+  assert.equal(circularParticipantTestQueue.register('src-9', '9'), '9',
+    'register still returns the token so the bot keeps buffering their audio');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['0'], 'no slot: silent until the program lists 9');
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), ['9']);
+
+  // The program is updated to include them: they fold in at their written spot.
+  circularParticipantTestQueue.applyMetaprogramOrder(['9', '0']);
+  assert.deepEqual(circularParticipantTestQueue.order(), ['9', '0']);
+  assert.equal(circularParticipantTestQueue.jitsiIdFor('9'), 'src-9', 'the off-ring pin carried the real id in');
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), []);
+});
+
+test('depart keeps a listed slot as a ghost; a program update retires it', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.register('src-1', '1');
+  circularParticipantTestQueue.applyMetaprogramOrder(['0', '1']);
+
+  const gone = circularParticipantTestQueue.depart('src-0');
+  assert.deepEqual(gone, { token: '0', removed: false }, 'metaprogram still lists 0 -> ghost kept');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['0', '1'], 'the ghost keeps its turn');
+
+  const retired = circularParticipantTestQueue.applyMetaprogramOrder(['1']);
+  assert.deepEqual(retired, ['0'], 'dropping 0 from the program retires the ghost');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['1']);
+});
+
+test('depart in join-order mode (and for off-ring pins) removes immediately', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.register('src-1', '1');
+  assert.deepEqual(circularParticipantTestQueue.depart('src-0'), { token: '0', removed: true });
+  assert.deepEqual(circularParticipantTestQueue.order(), ['1']);
+
+  // Off-ring pin: departing drops the pin outright (nothing was playing them).
+  circularParticipantTestQueue.applyMetaprogramOrder(['1']);
+  circularParticipantTestQueue.register('src-9', '9');
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), ['9']);
+  assert.deepEqual(circularParticipantTestQueue.depart('src-9'), { token: '9', removed: true });
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), []);
+});
+
+test('a present participant dropped from the program waits off-ring and returns with its identity', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.register('src-1', '1');
+  circularParticipantTestQueue.applyMetaprogramOrder(['0', '1']);
+
+  circularParticipantTestQueue.applyMetaprogramOrder(['0']);
+  assert.deepEqual(circularParticipantTestQueue.order(), ['0']);
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), ['1'], 'present but unlisted -> off the ring, not gone');
+
+  circularParticipantTestQueue.applyMetaprogramOrder(['1', '0']);
+  assert.deepEqual(circularParticipantTestQueue.order(), ['1', '0']);
+  assert.equal(circularParticipantTestQueue.jitsiIdFor('1'), 'src-1', 'same identity folds back in');
+});
+
+test('an empty participants list reverts to join-order mode: ghosts retired, waiters fold back in', () => {
+  const circularParticipantTestQueue = new CircularParticipantQueue();
+  circularParticipantTestQueue.register('src-0', '0');
+  circularParticipantTestQueue.applyMetaprogramOrder(['0', '5']);
+  circularParticipantTestQueue.register('src-2', '2'); // unlisted -> waits off-ring
+  circularParticipantTestQueue.depart('src-0');        // listed -> ghost
+
+  const retired = circularParticipantTestQueue.applyMetaprogramOrder([]);
+  assert.equal(circularParticipantTestQueue.hasValidMetaprogram(), false);
+  assert.deepEqual(retired, ['0'], 'the departed ghost is retired on revert');
+  assert.deepEqual(circularParticipantTestQueue.order(), ['5', '2'],
+    'the unclaimed placeholder survives; the waiter folds back in');
+  assert.deepEqual(circularParticipantTestQueue.waitingTokens(), []);
+});

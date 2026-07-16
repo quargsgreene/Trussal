@@ -1,9 +1,23 @@
 // Metaprogrammer — the Net Cycles eval driver (browser side).
 //
-// Owns the room's metaprogram: auto-populates the default program from the
-// roster (join appends, leave removes), parses edits, and drives the pure
-// MetaprogramScheduler with ClockSync network time. Scheduler slot events
-// become:
+// The shared metaprogram is ALWAYS IN FORCE — there is no on/off button. Its
+// one live capability today is ORDERING when/which participants play: the
+// program text syncs over the CRDT doc to the aggregator bot, whose ring
+// adopts the $ participants membership and written order while keeping the
+// fixed 4s rotation interval (bots/src/bot/aggregator-bot.js). The room
+// starts under the default program — `$ participants <0>`, the first
+// participant to join streaming continuously — seeded into the shared doc
+// once by the roster leader. Membership is edits-only from there: a newcomer
+// stays silent until someone adds their token, and a leaver stays listed
+// (their held audio keeps streaming through the aggregator as a ghost) until
+// someone drops it.
+//
+// Everything below that gates/transforms audio in THIS browser is a further
+// transformational capability being brought up one at a time (to keep
+// confounding variables out of testing the live one), so it stays dormant:
+// setNetCyclesActive(true) arms it, and no UI currently calls it. When armed,
+// this module parses edits and drives the pure MetaprogramScheduler with
+// ClockSync network time. Scheduler slot events become:
 //   - Strudel voice gates: strudel.js wraps every voice in
 //     .gain(_ncGate(jitsiId)) and _ncGate reads getGateLevel() reactively —
 //     outside their slot a performer's instrument is silent.
@@ -23,9 +37,7 @@
 
 import {
   parseMetaprogram,
-  buildDefaultProgram,
-  appendParticipantToProgram,
-  removeParticipantFromProgram
+  buildDefaultProgram
 } from './MetaprogrammerParser.js';
 import { MetaprogramScheduler, AVBufferQueue } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
@@ -51,7 +63,6 @@ const QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
 
 let active = false;
 let programText = null;      // current program source (CRDT doc in Phase 6)
-let customProgram = false;   // once a user applies an edit, joins/leaves patch text instead of regenerating
 let scheduler = null;
 let effects = null;
 let o2 = null;
@@ -78,21 +89,6 @@ function localSeconds() {
 
 function peerByToken(token) {
   return getAllPeers().find(p => p.roomIndex != null && String(p.roomIndex) === token) || null;
-}
-
-function rosterTokens() {
-  return getAllPeers()
-    .filter(p => p.roomIndex != null)
-    .map(p => String(p.roomIndex))
-    // Join order == numeric order for humans; bots sort inside their owner's
-    // cluster by suffix length then lexicographically (a < z < za < zb).
-    .sort((a, b) => {
-      const pa = a.match(/^(\d+)([a-z]*)$/), pb = b.match(/^(\d+)([a-z]*)$/);
-      const na = parseInt(pa[1], 10), nb = parseInt(pb[1], 10);
-      if (na !== nb) return na - nb;
-      if (pa[2].length !== pb[2].length) return pa[2].length - pb[2].length;
-      return pa[2] < pb[2] ? -1 : pa[2] > pb[2] ? 1 : 0;
-    });
 }
 
 function emitSlot(event) {
@@ -172,8 +168,8 @@ export function getVlans() {
   return crdt ? crdt.getVlans() : {};
 }
 
-// Roster auto-edits must come from exactly one client or concurrent CRDT
-// inserts duplicate tokens. The leader is the lowest-indexed human present.
+// The default-program seed must come from exactly one client or concurrent
+// CRDT inserts duplicate it. The leader is the lowest-indexed human present.
 function isRosterEditLeader() {
   const me = getLocalPeer();
   if (me.isBot || me.roomIndex == null) return false;
@@ -186,35 +182,27 @@ function isRosterEditLeader() {
 
 // --- Program text maintenance --------------------------------------------------
 
-function regenerateOrPatchProgram({ force = false } = {}) {
-  const tokens = rosterTokens();
-  let next;
-  if (!customProgram || programText == null) {
-    next = buildDefaultProgram(tokens);
-  } else {
-    // Keep user edits; append newcomers, drop leavers.
-    next = programText;
-    const { ast } = parseMetaprogram(next);
-    const inProgram = new Set();
-    if (ast.participants) {
-      for (const st of ast.participants.stacks) {
-        for (const el of st.elements) if (el.token) inProgram.add(el.token);
-      }
-    }
-    for (const tok of tokens) {
-      if (!inProgram.has(tok)) next = appendParticipantToProgram(next, tok);
-    }
-    for (const tok of inProgram) {
-      if (!tokens.includes(tok)) next = removeParticipantFromProgram(next, tok);
-    }
-  }
-  if (next === programText && !force) return;
-  programText = next;
-  if (crdt && (force || isRosterEditLeader())) crdt.setText(next, 'roster');
+// Seed the room's default program — participant 0 streaming continuously —
+// exactly once: only when the shared doc is still empty (nothing typed or
+// applied anywhere) and only from the leader, so concurrent joins can't
+// double-seed. Membership never auto-follows the roster after this: a
+// newcomer stays unlisted (silent) until an edit adds them, and a leaver
+// stays listed as a ghost until an edit drops them.
+function maybeSeedDefaultProgram() {
+  const sync = ensureMetaprogramSync();
+  const docText = sync.getText();
+  if (docText && docText.trim()) return;
+  if (programText != null && programText.trim()) return;
+  if (!isRosterEditLeader()) return;
+  programText = buildDefaultProgram();
+  sync.setText(programText, 'roster');
   pushProgramToScheduler();
   document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text: programText } }));
 }
 
+// The CircularParticipantQueue lives in the aggregator bot's own process; the
+// bot's #pushProgramToScheduler (bots/src/bot/aggregator-bot.js) receives the
+// same program over CRDT//nc/apply and pushes the ordering into the queue there.
 function pushProgramToScheduler() {
   if (programText == null) return;
   const { ast, valid } = parseMetaprogram(programText);
@@ -231,7 +219,6 @@ export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
   if (valid) {
     programText = text;
-    customProgram = true;
     if (crdt) crdt.setText(text, 'apply');
     pushProgramToScheduler();
     if (broadcast && o2) o2.send(APPLY_ADDR, ',s', [text]);
@@ -254,7 +241,7 @@ export function hasEffectShortcut(fn) {
 
 export function toggleEffectShortcut(fn) {
   if (!SHORTCUT_LINES[fn]) return false;
-  let text = programText ?? buildDefaultProgram(rosterTokens());
+  let text = programText ?? buildDefaultProgram();
   const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, 'm');
   if (lineRe.test(text)) text = text.replace(lineRe, '');
   else text = `${text.trimEnd()}\n${SHORTCUT_LINES[fn]}\n`;
@@ -264,7 +251,9 @@ export function toggleEffectShortcut(fn) {
 // --- Queues ---------------------------------------------------------------------
 
 function queueFor(token) {
+  // DO NOT use this function
   let q = queues.get(token);
+  //AVBuffer
   if (!q) { q = new AVBufferQueue(QUEUE_LIMITS); queues.set(token, q); }
   return q;
 }
@@ -318,7 +307,10 @@ function scheduleGate(jitsiId, level, atNetworkT) {
 }
 
 // --- Slot handling ----------------------------------------------------------------
-
+// The $ participants token-order hookup to the CircularParticipantQueue lives in
+// the aggregator bot (bots/src/bot/aggregator-bot.js #onSchedulerEvent), which
+// runs its own scheduler over the same shared program — not in this browser-side
+// handler, whose job stays gating the local Strudel voices and chains.
 function onSchedulerEvent(ev) {
   emitSlot(ev);
   if (ev.type === 'cycle-start') {
@@ -444,6 +436,12 @@ function startScheduler() {
 
 export function isNetCyclesActive() { return active; }
 
+// Arms the DORMANT browser-side slot machinery: local gates, the effects
+// chain, buffer-queue pattern delay, and this browser's own scheduler. No UI
+// calls this today — the metaprogram's live capability is participant
+// ordering, which flows through the shared doc to the aggregator regardless
+// of `active`. Kept intact (both directions) so each further transformational
+// capability can be switched on and verified one at a time.
 export async function setNetCyclesActive(enable) {
   if (enable === active) return;
   active = !!enable;
@@ -467,13 +465,14 @@ export async function setNetCyclesActive(enable) {
       getPeers: getAllPeers,
       getLocalJitsiId: () => getLocalPeer().jitsiId
     });
-    regenerateOrPatchProgram({ force: true });
-    // Give /nc/epoch a beat to arrive before declaring our own.
+    // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
+    // a beat to arrive before declaring our own epoch / seeding the default.
     await new Promise(r => setTimeout(r, 500));
     if (epoch == null) {
       const nowNet = clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
       epoch = Math.ceil(nowNet);
     }
+    maybeSeedDefaultProgram();
     startScheduler();
     broadcastEpoch();
     if (!epochTimer) epochTimer = setInterval(broadcastEpoch, EPOCH_REBROADCAST_MS);
@@ -500,33 +499,32 @@ export async function setNetCyclesActive(enable) {
 
 // --- Peer-state wiring ---------------------------------------------------------------
 
-const knownTokens = new Set();
+// Joins and leaves never touch the program text: a newcomer's token is simply
+// unlisted (they wait silent) and a leaver's token stays listed (their ghost
+// keeps streaming through the aggregator) until someone edits the program.
+// The upsert hook retries the one-time default seed — the leader's room index
+// arrives here as a peer-upsert, whenever the sidecar assigns it.
 subscribePeerState((event, peer) => {
   if (!peer) return;
   if (event === 'peer-upsert') {
     if (peer.roomIndex != null) {
       const token = String(peer.roomIndex);
-      if (!knownTokens.has(token)) {
-        knownTokens.add(token);
-        if (active) regenerateOrPatchProgram();
-      }
       // Editor updates ride the next cycle-interval buffer.
       if (typeof peer.pattern === 'string' && peer.pattern &&
           peer.pattern !== activePatterns.get(peer.jitsiId)) {
         pendingEditorUpdates.set(token, peer.pattern);
       }
     }
+    maybeSeedDefaultProgram();
     if (active) {
       pushEffectiveMetrics();
     }
   } else if (event === 'peer-leave') {
     if (peer.roomIndex != null) {
       const token = String(peer.roomIndex);
-      knownTokens.delete(token);
       queues.delete(token);
       pendingEditorUpdates.delete(token);
       if (peer.jitsiId) { activePatterns.delete(peer.jitsiId); gateLevels.delete(peer.jitsiId); }
-      if (active) regenerateOrPatchProgram();
     }
   }
 });

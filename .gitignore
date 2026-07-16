@@ -246,3 +246,6 @@ test-results
 
 *.txt
 session-summaries
+overviews
+**/*devibe*
+tech-debt-summaries/

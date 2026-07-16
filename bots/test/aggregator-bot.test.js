@@ -829,3 +829,146 @@ test('a departed room index is not recycled: a new participant gets a fresh toke
   assert.deepEqual(bot.order.order(), ['0', '2'], 'the new participant takes a fresh index');
   assert.equal(bot.order.hasToken('1'), false, 'the departed index 1 is not reassigned');
 });
+
+// --- Metaprogram ordering (interpretAndExecuteMetaprogram's queue hookup) ------
+
+test('applyProgramText re-orders the rotation to the $ participants written order', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+    { jitsiId: 'human-2', token: '2', samples: [0.1] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1', '2'], 'join order before a program lands');
+
+  const errors = bot.applyProgramText('$ participants <2 0 1>');
+  assert.deepEqual(errors, []);
+  assert.deepEqual(bot.order.order(), ['2', '0', '1'], 'the written order takes over');
+});
+
+test('invalid program text is rejected and leaves the rotation untouched', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+  ]);
+  const errors = bot.applyProgramText('$ participants <1 0');
+  assert.ok(errors.length > 0, 'parse errors are surfaced to the caller');
+  assert.deepEqual(bot.order.order(), ['0', '1'], 'rotation unchanged by the invalid text');
+});
+
+test('the master streams participants in the metaprogram order, not join order', async () => {
+  let clock = 0;
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {},
+    1024,
+  );
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2, 0.2] },
+  ]);
+  bot.applyProgramText('$ participants <1 0>');
+
+  clock = 0;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '1', 'the program lists 1 first');
+  clock = 1000;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0');
+  clock = 2000;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '1', 'wraps in program order');
+});
+
+test('a newcomer stays silent until the metaprogram adds them; their audio buffers all along', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+  ]);
+  bot.applyProgramText('$ participants <0>');
+
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-1', token: '1', samples: [0.25, 0.25] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0'], 'the unlisted newcomer gets no slot');
+  assert.deepEqual(bot.order.waitingTokens(), ['1'], 'they wait off the ring');
+  assert.equal(bot.buffers['1'].length, 2, 'but their audio keeps buffering');
+
+  bot.applyProgramText('$ participants <1 0>');
+  assert.deepEqual(bot.order.order(), ['1', '0'], 'added to the program -> they join the rotation');
+  assert.equal(bot.buffers['1'].length, 2, 'their buffered material is ready for their first turn');
+});
+
+test('a departed listed participant keeps its slot and buffer until the program drops it', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+  ]);
+  bot.applyProgramText('$ participants <0 1>');
+
+  bot.removeParticipant('human-0');
+  assert.deepEqual(bot.order.order(), ['0', '1'], 'the metaprogram still lists 0 -> ghost keeps its turn');
+  assert.ok(bot.buffers['0'], 'its most recent queued buffer survives the leave');
+  assert.equal(bot.buffers['0'].length, 2);
+
+  bot.applyProgramText('$ participants <1>');
+  assert.deepEqual(bot.order.order(), ['1'], 'dropping 0 from the program retires the ghost');
+  assert.equal(bot.buffers['0'], undefined, 'and only then is its buffer removed');
+});
+
+test('start() reaches interpretAndExecuteMetaprogram; without a WebSocket impl it skips cleanly', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+  assert.equal(bot.o2, null, 'metaprogram sync skipped: no WebSocket implementation wired');
+  assert.equal(bot.scheduler, null, 'no scheduler without the O2/CRDT wiring');
+  await bot.stop();
+});
+
+// Minimal WebSocket fake for O2LiteClient: fires 'open' asynchronously but
+// stays readyState 0, so the client's send() guard drops every outbound
+// frame (the bot tolerates running unsynced).
+class FakeWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.listeners = new Map();
+    setTimeout(() => (this.listeners.get('open') || []).forEach((fn) => fn()), 0);
+  }
+  addEventListener(type, fn) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(fn);
+  }
+  removeEventListener(type, fn) {
+    const fns = this.listeners.get(type) || [];
+    const i = fns.indexOf(fn);
+    if (i >= 0) fns.splice(i, 1);
+  }
+  send() {}
+  close() {}
+}
+
+test('with no shared program, the metaprogram defaults to participant 0 streaming continuously', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket }, {}, 1024);
+
+  await bot.interpretAndExecuteMetaprogram();
+
+  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n');
+  assert.ok(bot.order.hasValidMetaprogram(), 'the default program puts the ring in metaprogram mode');
+  assert.ok(bot.scheduler, 'the scheduler runs the default program');
+
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0'], 'only participant 0 rotates (continuously)');
+  assert.deepEqual(bot.order.waitingTokens(), ['1'], 'a joiner waits silent until an edit lists them');
+  assert.equal(bot.buffers['1'].length, 1, 'their audio buffers all along');
+
+  await bot.stop();
+});

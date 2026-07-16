@@ -220,11 +220,13 @@ test('errors carry 1-based line/col for editor squiggles', () => {
 
 // --- Defaults / helpers --------------------------------------------------------
 
-test('buildDefaultProgram emits the spec default and round-trips the parser', () => {
-  const text = buildDefaultProgram(['0', '1', '1a', '1b']);
-  assert.equal(text, '$ participants <0 1 1a 1b>\n# cycles wcl\n# tempo 120 bpm\n');
+test('buildDefaultProgram emits the always-on default and round-trips the parser', () => {
+  // Participant 0 — the first to join — streams continuously; nobody else is
+  // listed, so later joiners stay silent until an edit adds them.
+  const text = buildDefaultProgram();
+  assert.equal(text, '$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n');
   const ast = ok(text);
-  assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0', '1', '1a', '1b']);
+  assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
 });
 
 test('comments and blank lines anywhere are ignored', () => {

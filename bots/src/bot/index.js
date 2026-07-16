@@ -124,7 +124,7 @@ async function aggregatorMain() {
     gainCeiling: Number(env('GAIN_CEILING', '1.0')),
     // Claim the room's single aggregator slot before joining; a losing bot exits
     // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).
-  }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket) }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
+  }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket), webSocketImpl: WebSocket }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
   try {
     await bot.start();
   } catch (err) {

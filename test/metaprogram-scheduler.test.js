@@ -13,8 +13,7 @@ import {
 import {
   parseMetaprogram,
   appendParticipantToProgram,
-  removeParticipantFromProgram,
-  buildDefaultProgram
+  removeParticipantFromProgram
 } from '../src/audio-net/MetaprogrammerParser.js';
 
 function astOf(text) {
@@ -216,10 +215,10 @@ test('stop() halts emission; restart resumes from a fresh epoch', () => {
   assert.equal(events.length, n);
 });
 
-// --- Roster-driven program text edits ---------------------------------------------------
+// --- Deliberate program text edits -------------------------------------------------------
 
-test('joins append to the sequence text; leaves remove; user text is preserved', () => {
-  let text = buildDefaultProgram(['0', '1']);
+test('append/remove helpers edit the sequence text; user text is preserved', () => {
+  let text = '$ participants <0 1>\n# cycles wcl\n# tempo 120 bpm\n';
   text = appendParticipantToProgram(text, '2');
   assert.match(text, /\$ participants <0 1 2>/);
   text = appendParticipantToProgram(text, '1a');

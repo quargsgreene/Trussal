@@ -9,8 +9,7 @@
 import {
   ensureMetaprogramSync,
   applyProgramText,
-  getProgramText,
-  isNetCyclesActive
+  getProgramText
 } from '../src/audio-net/Metaprogrammer.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 import { getLocalPeer } from '../src/peer-state.js';
@@ -98,9 +97,7 @@ export function mountMetaprogrammerEditor(container) {
     if (errors.length) showErrors(ta.value);
     else {
       errorsEl.textContent = '';
-      bylineEl.textContent = isNetCyclesActive()
-        ? 'applied — takes effect at the next cycle boundary'
-        : 'applied — will run when Net Cycles is switched on';
+      bylineEl.textContent = 'applied — takes effect at the next cycle boundary';
     }
   };
   applyBtn.addEventListener('click', apply);
