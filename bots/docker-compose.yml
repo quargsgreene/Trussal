@@ -66,7 +66,10 @@ services:
 
   bot-image:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.bot
+      # Repo root, not bots/: the bot imports shared repo trees (src/audio-net,
+      # latency-instrument, public/lib) that must be in the build context. The
+      # root .dockerignore whitelists exactly what the Dockerfile copies.
+      context: ..
+      dockerfile: bots/docker/Dockerfile.bot
     image: trussal-bot
     profiles: [build-only]   # never started by compose; conductor runs these

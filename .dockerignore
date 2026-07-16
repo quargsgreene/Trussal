@@ -1,0 +1,14 @@
+# Build context for bots/docker/Dockerfile.bot, whose context is the repo
+# root (see bots/docker-compose.yml) because the bot image copies shared
+# trees from outside bots/. Whitelist only what that Dockerfile COPYs so the
+# context stays small (.git, dist, strudel-fork, docker-jitsi-meet etc. are
+# all excluded by the leading *).
+*
+!bots
+!src/audio-net
+!latency-instrument
+!public/lib
+bots/node_modules
+bots/chrome
+bots/test
+latency-instrument/node_modules

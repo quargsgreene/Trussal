@@ -39,7 +39,7 @@ start_xvfb() {
 if [ "$BOT_ROLE" = "aggregator" ]; then
   start_xvfb
   trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
-  exec node /app/src/bot/index.js
+  exec node /repo/bots/src/bot/index.js
 fi
 
 if [ "$BOT_ID" -lt 8 ]; then CARD=10; SUB="$BOT_ID"; else CARD=11; SUB=$((BOT_ID - 8)); fi
@@ -111,4 +111,4 @@ start_xvfb
 
 trap 'kill "$XVFB_PID" "$JACK_PID" "$CLOCK_PID" 2>/dev/null || true' EXIT
 
-exec node /app/src/bot/index.js
+exec node /repo/bots/src/bot/index.js
