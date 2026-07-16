@@ -1943,28 +1943,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         return { args: args2 };
     }
   }
-  function buildDefaultProgram(indices) {
-    const list = indices && indices.length ? indices.join(" ") : "";
-    return `$ participants <${list}>
+  function buildDefaultProgram() {
+    return `$ participants <0>
 # cycles wcl
 # tempo 120 bpm
 `;
-  }
-  function appendParticipantToProgram(text2, token) {
-    const m2 = text2.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);
-    if (!m2) return text2;
-    if (new RegExp(`(^|[\\s<\\[])${token}($|[\\s\\]>@!?*/,|%:])`).test(m2[1] + m2[2])) return text2;
-    const body = m2[1].trimEnd();
-    return text2.replace(m2[0], `${body} ${token}${m2[2]}`);
-  }
-  function removeParticipantFromProgram(text2, token) {
-    const m2 = text2.match(/(\$\s*participants\s*)([<[])([^\]>]*)([\]>])/);
-    if (!m2) return text2;
-    const cleaned = m2[3].split(/\s+/).filter((w2) => {
-      const base = w2.match(/^([0-9]+[a-z]*)/);
-      return !(base && base[1] === token);
-    }).join(" ");
-    return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
   }
   var import_room_indices, TIMING_METRICS, TEMPO_UNITS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser;
   var init_MetaprogrammerParser = __esm({
@@ -12522,15 +12505,6 @@ ${err.toString()}`);
   function peerByToken(token) {
     return getAllPeers().find((p) => p.roomIndex != null && String(p.roomIndex) === token) || null;
   }
-  function rosterTokens() {
-    return getAllPeers().filter((p) => p.roomIndex != null).map((p) => String(p.roomIndex)).sort((a2, b) => {
-      const pa = a2.match(/^(\d+)([a-z]*)$/), pb = b.match(/^(\d+)([a-z]*)$/);
-      const na = parseInt(pa[1], 10), nb = parseInt(pb[1], 10);
-      if (na !== nb) return na - nb;
-      if (pa[2].length !== pb[2].length) return pa[2].length - pb[2].length;
-      return pa[2] < pb[2] ? -1 : pa[2] > pb[2] ? 1 : 0;
-    });
-  }
   function emitSlot(event) {
     slotSubscribers.forEach((fn) => {
       try {
@@ -12594,30 +12568,14 @@ ${err.toString()}`);
     if (!humanIndices.length) return false;
     return parseInt(me2.roomIndex, 10) === Math.min(...humanIndices);
   }
-  function regenerateOrPatchProgram({ force = false } = {}) {
-    const tokens = rosterTokens();
-    let next;
-    if (!customProgram || programText == null) {
-      next = buildDefaultProgram(tokens);
-    } else {
-      next = programText;
-      const { ast: ast2 } = parseMetaprogram(next);
-      const inProgram = /* @__PURE__ */ new Set();
-      if (ast2.participants) {
-        for (const st2 of ast2.participants.stacks) {
-          for (const el of st2.elements) if (el.token) inProgram.add(el.token);
-        }
-      }
-      for (const tok of tokens) {
-        if (!inProgram.has(tok)) next = appendParticipantToProgram(next, tok);
-      }
-      for (const tok of inProgram) {
-        if (!tokens.includes(tok)) next = removeParticipantFromProgram(next, tok);
-      }
-    }
-    if (next === programText && !force) return;
-    programText = next;
-    if (crdt && (force || isRosterEditLeader())) crdt.setText(next, "roster");
+  function maybeSeedDefaultProgram() {
+    const sync = ensureMetaprogramSync();
+    const docText = sync.getText();
+    if (docText && docText.trim()) return;
+    if (programText != null && programText.trim()) return;
+    if (!isRosterEditLeader()) return;
+    programText = buildDefaultProgram();
+    sync.setText(programText, "roster");
     pushProgramToScheduler();
     document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: programText } }));
   }
@@ -12632,7 +12590,6 @@ ${err.toString()}`);
     const { errors, valid } = parseMetaprogram(text2);
     if (valid) {
       programText = text2;
-      customProgram = true;
       if (crdt) crdt.setText(text2, "apply");
       pushProgramToScheduler();
       if (broadcast && o2) o2.send(APPLY_ADDR, ",s", [text2]);
@@ -12649,7 +12606,7 @@ ${err.toString()}`);
   }
   function toggleEffectShortcut(fn) {
     if (!SHORTCUT_LINES[fn]) return false;
-    let text2 = programText ?? buildDefaultProgram(rosterTokens());
+    let text2 = programText ?? buildDefaultProgram();
     const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, "m");
     if (lineRe.test(text2)) text2 = text2.replace(lineRe, "");
     else text2 = `${text2.trimEnd()}
@@ -12838,12 +12795,12 @@ ${SHORTCUT_LINES[fn]}
         getPeers: getAllPeers,
         getLocalJitsiId: () => getLocalPeer().jitsiId
       });
-      regenerateOrPatchProgram({ force: true });
       await new Promise((r2) => setTimeout(r2, 500));
       if (epoch == null) {
         const nowNet = clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
         epoch = Math.ceil(nowNet);
       }
+      maybeSeedDefaultProgram();
       startScheduler();
       broadcastEpoch();
       if (!epochTimer) epochTimer = setInterval(broadcastEpoch, EPOCH_REBROADCAST_MS);
@@ -12878,7 +12835,7 @@ ${SHORTCUT_LINES[fn]}
     }
     document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
   }
-  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, QUEUE_LIMITS, active, programText, customProgram, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder, knownTokens;
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
@@ -12897,7 +12854,6 @@ ${SHORTCUT_LINES[fn]}
       QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
       active = false;
       programText = null;
-      customProgram = false;
       scheduler = null;
       effects = null;
       o2 = null;
@@ -12916,34 +12872,28 @@ ${SHORTCUT_LINES[fn]}
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();
       recorder = null;
-      knownTokens = /* @__PURE__ */ new Set();
       subscribePeerState((event, peer) => {
         if (!peer) return;
         if (event === "peer-upsert") {
           if (peer.roomIndex != null) {
             const token = String(peer.roomIndex);
-            if (!knownTokens.has(token)) {
-              knownTokens.add(token);
-              if (active) regenerateOrPatchProgram();
-            }
             if (typeof peer.pattern === "string" && peer.pattern && peer.pattern !== activePatterns.get(peer.jitsiId)) {
               pendingEditorUpdates.set(token, peer.pattern);
             }
           }
+          maybeSeedDefaultProgram();
           if (active) {
             pushEffectiveMetrics();
           }
         } else if (event === "peer-leave") {
           if (peer.roomIndex != null) {
             const token = String(peer.roomIndex);
-            knownTokens.delete(token);
             queues.delete(token);
             pendingEditorUpdates.delete(token);
             if (peer.jitsiId) {
               activePatterns.delete(peer.jitsiId);
               gateLevels.delete(peer.jitsiId);
             }
-            if (active) regenerateOrPatchProgram();
           }
         }
       });
@@ -52291,7 +52241,7 @@ ${code2}${BTN_MARKER}`;
       if (errors.length) showErrors(ta.value);
       else {
         errorsEl.textContent = "";
-        bylineEl.textContent = isNetCyclesActive() ? "applied \u2014 takes effect at the next cycle boundary" : "applied \u2014 will run when Net Cycles is switched on";
+        bylineEl.textContent = "applied \u2014 takes effect at the next cycle boundary";
       }
     };
     applyBtn.addEventListener("click", apply2);
@@ -53058,7 +53008,6 @@ ${code2}${BTN_MARKER}`;
         <div class="ts-section-title">Network Metrics</div>
         <div class="ts-section-controls">
           <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
-          <button class="ts-btn ghost ts-dwell-btn${isNetCyclesActive() ? " on" : ""}" data-action="netcycles">${isNetCyclesActive() ? "\u25C9 Net Cycles on" : "\u25CB Net Cycles"}</button>
         </div>
       </div>
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
@@ -53231,14 +53180,6 @@ ${code2}${BTN_MARKER}`;
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
-    const netCyclesBtn = container.querySelector('[data-action="netcycles"]');
-    if (netCyclesBtn) netCyclesBtn.addEventListener("click", async () => {
-      await bootAudioEngine().catch(() => {
-      });
-      await setNetCyclesActive(!isNetCyclesActive());
-      setStatus(isNetCyclesActive() ? "Net Cycles: scheduling by metaprogram" : "Net Cycles off");
-      renderAll();
-    });
     container.querySelectorAll("[data-induce]").forEach((row) => {
       const key = row.dataset.induce;
       const input = row.querySelector("input");
