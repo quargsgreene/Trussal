@@ -8,6 +8,7 @@ import WebSocket from 'ws';
 
 const require = createRequire(import.meta.url);
 const { createLatencyServer } = require('../latency-instrument/server.js');
+const { AGGREGATOR_ROOM_INDEX } = require('../latency-instrument/room-indices.js');
 
 function connect(port, room) {
   return new Promise((resolve, reject) => {
@@ -149,6 +150,24 @@ test('isAggregator propagates through you/peer-join/roster; normal peers stay fa
     assert.equal(byJid.human, false, 'roster leaves normal peers unmarked');
 
     human.ws.close(); agg.ws.close(); late.ws.close();
+  });
+});
+
+test('the aggregator takes the reserved index and consumes no integer', async () => {
+  await withServer(async (port) => {
+    const human = await connect(port, 'idx6');
+    assert.equal((await hello(human, { jitsiId: 'h0' })).roomIndex, '0');
+
+    const agg = await connect(port, 'idx6');
+    const aggYou = await hello(agg, { jitsiId: 'agg', isBot: true, isAggregator: true });
+    assert.equal(aggYou.roomIndex, AGGREGATOR_ROOM_INDEX, 'aggregator gets the reserved index');
+
+    // The human who joins AFTER the aggregator gets the next integer — the
+    // aggregator did not burn one, so `$ participants <1>` addresses them.
+    const second = await connect(port, 'idx6');
+    assert.equal((await hello(second, { jitsiId: 'h1' })).roomIndex, '1');
+
+    human.ws.close(); agg.ws.close(); second.ws.close();
   });
 });
 

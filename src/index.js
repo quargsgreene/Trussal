@@ -41,9 +41,9 @@ window.__trussalPeerIsPlaying = (jitsiId) => {
 // The aggregator bot's page polls this to decide whether IT is the room's ACTIVE
 // aggregator. Only one aggregator may stream at a time (see electAggregator):
 // two active aggregators tap and re-emit each other's master, so both feed back
-// and mute. True iff the local peer is the elected (lowest-room-index) aggregator
-// — so a second aggregator that joins publishes nothing until the first leaves
-// and it is promoted. Every browser client honors the same winner independently
+// and mute. True iff the local peer is the elected aggregator — so a second
+// aggregator that joins publishes nothing until the first leaves and it is
+// promoted. Every browser client honors the same winner independently
 // (latency-instrument's refreshAggregatorPeer), so bot and clients never disagree.
 window.__trussalIsActiveAggregator = () => {
   const winner = electAggregator(getAllPeers());

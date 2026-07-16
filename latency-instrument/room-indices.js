@@ -14,6 +14,19 @@
 
 const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
 
+// Reserved index for the room's audio aggregator. The aggregator joins the
+// room like any bot but is not a performer: it must not occupy a slot in the
+// human integer sequence (users read `$ participants` integer tokens as
+// "humans in join order" — an aggregator holding one makes that token a
+// permanently-silent placeholder), and it must never be schedulable. `pi` is
+// structurally outside both spaces: it fails the participant-token grammar
+// (`\d+[a-z]*`), so the metaprogram can never list it, and it cannot collide
+// with a cluster token, which always leads with the owner's integer. Being
+// non-numeric it also sorts index-less (Infinity) in the aggregator election,
+// which still wins when it is the room's only aggregator — the sidecar's
+// claim gate guarantees there is at most one.
+const AGGREGATOR_ROOM_INDEX = 'pi';
+
 // 0-based ordinal within a cluster → suffix string.
 function botSuffix(ordinal) {
   if (!Number.isInteger(ordinal) || ordinal < 0) {
@@ -58,6 +71,7 @@ function parseParticipantToken(token) {
 }
 
 module.exports = {
+  AGGREGATOR_ROOM_INDEX,
   botSuffix,
   suffixToOrdinal,
   isValidBotSuffix,

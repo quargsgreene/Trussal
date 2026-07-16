@@ -10,11 +10,13 @@
 // the one winner with no extra coordination. The clients solo only the winner's
 // master; the winning bot streams while every other aggregator bot stands down.
 //
-// The winner is the aggregator with the lowest numeric room index — i.e. the
-// first to join — tie-broken by jitsiId. Room indices are server-assigned and
-// immutable for the meeting, so the choice is stable and identical on every
-// client. When the winner leaves, re-running the election promotes the
-// next-lowest aggregator automatically.
+// Aggregators carry the reserved non-numeric room index (`pi`, see
+// latency-instrument/room-indices.js), so they all sort as index-less
+// (Infinity) and the deterministic jitsiId tiebreak picks the winner. The
+// numeric comparison below still governs any aggregator that somehow holds an
+// integer index (a legacy record), keeping the choice total either way:
+// stable and identical on every client, re-run whenever the roster changes,
+// so losing the winner promotes another announcer automatically.
 //
 // `peers` is any roster array of `{ isAggregator, jitsiId, roomIndex, ... }`
 // records (e.g. peer-state's getAllPeers()). Returns the winning peer object, or

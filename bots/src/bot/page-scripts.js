@@ -171,8 +171,8 @@ export function pageMarkAggregator() {
  * Whether THIS aggregator page is the room's ACTIVE aggregator. Only one
  * aggregator may stream the master at a time — two publishing aggregators tap
  * and re-emit each other's mix, so both feed back and collapse to silence. The
- * Trussal bundle elects a single winner (lowest room index; see
- * aggregator-election.js) and exposes it as window.__trussalIsActiveAggregator;
+ * Trussal bundle elects a single winner (see aggregator-election.js) and
+ * exposes it as window.__trussalIsActiveAggregator;
  * the AggregatorBot polls this to gate its ingest/playback so a second
  * aggregator stands down. Before the bundle has loaded the election isn't known
  * yet — default to active so a lone aggregator (the common case) never waits.

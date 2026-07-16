@@ -17,7 +17,7 @@ const { randomUUID } = require('crypto');
 const { URL } = require('url');
 const { appendFileSync, mkdirSync } = require('fs');
 const { join } = require('path');
-const { botSuffix } = require('./room-indices.js');
+const { botSuffix, AGGREGATOR_ROOM_INDEX } = require('./room-indices.js');
 
 function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
@@ -72,8 +72,12 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   // Sequential identifying index, assigned once at hello. Humans (and bots
   // that arrive without an owner) get the next integer in join order. Bots
   // that declare an ownerIndex get `<ownerIndex><suffix>` with the cluster's
-  // next letter suffix (also never reused).
-  function assignRoomIndex(roomName, { isBot, ownerIndex }) {
+  // next letter suffix (also never reused). The audio aggregator gets the
+  // reserved AGGREGATOR_ROOM_INDEX: it is not a performer, so it must not
+  // consume an integer from the human join-order sequence — `$ participants`
+  // integer tokens must keep addressing humans.
+  function assignRoomIndex(roomName, { isBot, isAggregator, ownerIndex }) {
+    if (isAggregator) return AGGREGATOR_ROOM_INDEX;
     const meta = getRoomMeta(roomName);
     if (isBot && typeof ownerIndex === 'string' && /^\d+$/.test(ownerIndex)) {
       const count = meta.botCounters.get(ownerIndex) || 0;
@@ -207,6 +211,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           if (record.roomIndex == null && !record.isFleet) {
             record.roomIndex = assignRoomIndex(roomName, {
               isBot: record.isBot,
+              isAggregator: record.isAggregator,
               ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
             });
           }

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const {
+  AGGREGATOR_ROOM_INDEX,
   botSuffix,
   suffixToOrdinal,
   isValidBotSuffix,
@@ -57,4 +58,13 @@ test('parseParticipantToken splits owner and ordinal', () => {
 test('botSuffix rejects non-ordinals', () => {
   assert.throws(() => botSuffix(-1), RangeError);
   assert.throws(() => botSuffix(1.5), RangeError);
+});
+
+test('the reserved aggregator index sits outside every participant space', () => {
+  // Not a schedulable token: `$ participants` can never list the aggregator.
+  assert.equal(isValidParticipantToken(AGGREGATOR_ROOM_INDEX), false);
+  // Not a cluster shape either (those always lead with the owner's integer).
+  assert.equal(parseParticipantToken(AGGREGATOR_ROOM_INDEX), null);
+  // Non-numeric, so the election treats it as index-less rather than 0-ish.
+  assert.equal(Number.isFinite(Number(AGGREGATOR_ROOM_INDEX)), false);
 });

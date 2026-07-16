@@ -154,12 +154,11 @@ export function getAggregatorPeer() { return aggregatorJitsiId; }
 // Recompute aggregator mode from the current roster. Several peers may announce
 // themselves as aggregators (a spawn race, or a lingering container from a
 // redeploy), but only ONE may be honored — otherwise their masters feed back and
-// both mute. electAggregator deterministically picks the single winner (lowest
-// room index = first to join) so every client agrees on the same one. A remote
-// winner switches this client into aggregator mode; no aggregator, or being the
-// winner ourselves (we must hear everyone to tap), leaves the normal mix. Called
-// whenever the roster changes, so losing the winner promotes the next-lowest
-// aggregator automatically.
+// both mute. electAggregator deterministically picks the single winner so every
+// client agrees on the same one. A remote winner switches this client into
+// aggregator mode; no aggregator, or being the winner ourselves (we must hear
+// everyone to tap), leaves the normal mix. Called whenever the roster changes,
+// so losing the winner promotes another announcer automatically.
 function refreshAggregatorPeer() {
   const winner = electAggregator(getAllPeers());
   setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);

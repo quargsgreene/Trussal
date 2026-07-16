@@ -53,3 +53,14 @@ test('electAggregator: ignores aggregators without a jitsiId (not yet identified
   const anon = agg('1', null);
   assert.equal(electAggregator([anon, identified]), identified);
 });
+
+test('electAggregator: the reserved pi index wins alone; two pi aggregators tie-break by jitsiId', () => {
+  // The production case: the sidecar assigns every aggregator the reserved
+  // non-numeric index (see latency-instrument/room-indices.js).
+  const sole = agg('pi', 'aggOnly');
+  assert.equal(electAggregator([human('0', 'h0'), sole, human('1', 'h1')]), sole);
+  const a = agg('pi', 'bbb');
+  const b = agg('pi', 'aaa');
+  assert.equal(electAggregator([a, b]), b);
+  assert.equal(electAggregator([b, a]), b);
+});
