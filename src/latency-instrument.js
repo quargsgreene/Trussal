@@ -438,11 +438,32 @@ function captureJitsiAudio() {
     // their audio (which is often an echo of your own voice from the JVB) loop
     // back through your mic uncancelled — persisting even when you mute Jitsi.
     if (!getPeerByJitsiId(jitsiId)) return;
-    if (remoteSources.has(jitsiId)) return;
     // Guard against concurrent async captures for the same jitsiId (MutationObserver
     // can fire multiple times before the first await resolves, which would create
     // duplicate MediaStreamSource nodes on the same chain and cause doubled audio).
     if (pendingCaptures.has(jitsiId)) return;
+    const existing = remoteSources.get(jitsiId);
+    if (existing) {
+      // A wiring is only as live as the MediaStreamTrack it was built from. A
+      // renegotiation (the P2P↔JVB flip at the 3rd join, a device change)
+      // replaces the peer's stream/track under the same jitsiId, leaving the
+      // old MediaStreamSource reading a dead track while the tag sits muted —
+      // that peer is silent forever. In aggregator mode the aggregator is such
+      // a peer and the sole audio source, so one flip used to mute the whole
+      // room (the bots-spawn total-mute). Three independent staleness signals:
+      // the tag left the DOM, the tag's srcObject was swapped, or the wired
+      // track itself ended.
+      const live = existing.tag && existing.tag.isConnected
+        && existing.tag.srcObject === existing.stream
+        && existing.track && existing.track.readyState === 'live';
+      if (live) return; // healthy wiring (on this tag or another) — nothing to do
+      try { existing.source.disconnect(); } catch (e) {}
+      remoteSources.delete(jitsiId);
+      if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
+        if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+      }
+      console.log('[latency] audio wiring for', jitsiId, 'went stale (track replaced) — re-wiring');
+    }
     pendingCaptures.add(jitsiId);
 
     try {
@@ -450,12 +471,15 @@ function captureJitsiAudio() {
       if (!chain) return;
       // Re-check after the async gap — another call may have completed first.
       if (remoteSources.has(jitsiId)) return;
-      const source = audioCtx.createMediaStreamSource(tag.srcObject);
+      const stream = tag.srcObject;
+      if (!stream) return; // swapped away mid-wire; the next pass handles it
+      const source = audioCtx.createMediaStreamSource(stream);
       source.connect(chain.input);
       tag.muted = true;
       tag.volume = 0;
-      const trackLabels = (tag.srcObject.getAudioTracks?.() || []).map(t => t.label || 'audio');
-      remoteSources.set(jitsiId, { tag, source, label: trackLabels.join(',') || 'mic' });
+      const audioTracks = stream.getAudioTracks?.() || [];
+      const trackLabels = audioTracks.map(t => t.label || 'audio');
+      remoteSources.set(jitsiId, { tag, stream, track: audioTracks[0] || null, source, label: trackLabels.join(',') || 'mic' });
       audioRouted.add(jitsiId);
       console.log('[latency] routed Jitsi audio →', jitsiId, 'tracks:', trackLabels);
       notifyRoutingChange();
@@ -474,6 +498,11 @@ function startAudioTagsObserver() {
     if (jamulusMode) applyJamulusMuteToAllTags();
   });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
+  // A renegotiation can swap a tag's srcObject without touching the DOM tree,
+  // so the observer alone never sees it — re-verify every wiring on the same
+  // 1s cadence the rest of the codebase polls Jitsi state at (participants.js,
+  // the aggregator page's capture rescan). Cheap: healthy wirings early-return.
+  setInterval(captureJitsiAudio, 1000);
   captureJitsiAudio();
 }
 
@@ -964,23 +993,37 @@ class NodeOutputEffect {
 }
 
 let strudelRoomEffect = null; // { track, effect } while publishing, else null
-let strudelPublishRetryTimer = null; // polls for the mic track when it's absent
+let strudelPublishRetryTimer = null; // aggregator-mode publish guard interval
 
 function stopStrudelPublishRetry() {
   if (strudelPublishRetryTimer) { clearInterval(strudelPublishRetryTimer); strudelPublishRetryTimer = null; }
 }
 
-// The mic is usually muted at join, so no local Jitsi audio track exists yet when
-// the aggregator is first detected and publishLocalStrudelToRoom is called — it
-// fails and, without this, stays failed even after the user enables the mic
-// (nothing re-fires the publish), so the aggregator taps silence forever. Jitsi
-// tracks are polled here, not evented (matching participants.js), because Jitsi's
-// event API is unstable. Re-attempt every second until the publish takes hold or
-// we leave aggregator mode; the poll is cheap (a track lookup + early return).
-function scheduleStrudelPublishRetry() {
+// Publish guard, running for the whole time an aggregator is present. Two jobs:
+//  - The mic is usually muted at join, so no local Jitsi audio track exists yet
+//    when the aggregator is first detected — the initial publish fails and
+//    nothing else re-fires it when the user enables the mic, so the aggregator
+//    would tap silence forever. Re-attempt every second until it takes hold.
+//  - The publish is only as durable as the JitsiLocalTrack it rides. A
+//    renegotiation (the P2P↔JVB flip when the 3rd participant joins, a device
+//    change) can replace the local track, leaving the effect attached to a dead
+//    object — this human then contributes silence to the master forever. Verify
+//    the published track is still the live one and re-publish when it isn't.
+// Jitsi tracks are polled here, not evented (matching participants.js), because
+// Jitsi's event API is unstable; the poll is cheap (a track lookup + compare).
+function ensureStrudelPublishGuard() {
   if (strudelPublishRetryTimer) return; // already polling
   strudelPublishRetryTimer = setInterval(() => {
-    if (!aggregatorJitsiId || strudelRoomEffect) { stopStrudelPublishRetry(); return; }
+    if (!aggregatorJitsiId) { stopStrudelPublishRetry(); return; }
+    if (strudelRoomEffect) {
+      const current = findLocalJitsiAudioTrack();
+      if (current === strudelRoomEffect.track) return; // still riding the live track
+      // Track replaced (or gone): stopEffect disconnects masterStrudelGain from
+      // the orphaned destination, then fall through to publish on the new track.
+      try { strudelRoomEffect.effect.stopEffect(); } catch (e) {}
+      strudelRoomEffect = null;
+      console.warn('[latency] published Strudel track was replaced (renegotiation?) — re-publishing');
+    }
     publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish retry failed', e));
   }, 1000);
 }
@@ -999,7 +1042,7 @@ export async function publishLocalStrudelToRoom() {
   const track = findLocalJitsiAudioTrack();
   if (!track || typeof track.setEffect !== 'function') {
     console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track (mic muted?); will retry when the mic is enabled');
-    scheduleStrudelPublishRetry();
+    ensureStrudelPublishGuard();
     return false;
   }
   const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
@@ -1007,9 +1050,13 @@ export async function publishLocalStrudelToRoom() {
     await track.setEffect(effect);
   } catch (e) {
     console.warn('[latency] publish Strudel setEffect failed', e);
+    ensureStrudelPublishGuard(); // transient failures retry on the poll
     return false;
   }
   strudelRoomEffect = { track, effect };
+  // Keep the guard running: a renegotiation can replace the track under the
+  // effect at any time while the aggregator is present.
+  ensureStrudelPublishGuard();
   console.log('[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap');
   return true;
 }

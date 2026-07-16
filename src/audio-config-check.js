@@ -42,6 +42,12 @@ const EXPECTED = [
     env: 'ENABLE_NOISY_MIC_DETECTION=false',
     why: 'flags instruments as a "noisy" microphone',
   },
+  {
+    ok: (c) => !!c.p2p && c.p2p.enabled === false,
+    key: 'config.p2p.enabled === false',
+    env: 'ENABLE_P2P=false',
+    why: 'the P2P→JVB switch at the 3rd join renegotiates every track; a human+aggregator room always crosses it (bots-spawn room mute)',
+  },
 ];
 
 function runCheck() {

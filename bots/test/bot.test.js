@@ -152,6 +152,81 @@ test('pageEnsureAudioPublished never rebinds away an effect-carrying track', () 
   assert.match(js, /!publishingTap && !directTapLive/, 'rebind skipped while the direct tap is live');
 });
 
+// Executes pageEnsureAudioPublished outside a browser to pin the watchdog
+// behavior behind the bots-spawn total-mute: a renegotiation (the P2P↔JVB flip
+// when the room crosses 2→3 participants) replaces the published
+// JitsiLocalTrack, the one-shot effect rides the dead old object, and the bot —
+// the aggregator included — streams silence forever. The watchdog must re-attach
+// the direct tap to whatever track is current, exactly once per replacement.
+test('direct-tap watchdog re-attaches the effect when the published track is replaced', async (t) => {
+  const savedWindow = globalThis.window;
+  const savedAPP = globalThis.APP;
+  const savedSetInterval = globalThis.setInterval;
+  t.after(() => {
+    globalThis.window = savedWindow;
+    globalThis.APP = savedAPP;
+    globalThis.setInterval = savedSetInterval;
+  });
+
+  const tapTrack = { id: 'tap' };
+  const fanDisconnects = [];
+  const makeTrack = (name) => ({
+    name,
+    setEffectCalls: [],
+    getTrack: () => tapTrack, // publishingTap=true → step 2 rebind is skipped
+    async setEffect(effect) { this.setEffectCalls.push(effect); },
+  });
+  const track1 = makeTrack('track1');
+  const track2 = makeTrack('track2');
+  let currentTrack = track1;
+
+  globalThis.window = {
+    __trussalMicStream: { getAudioTracks: () => [tapTrack] },
+    __trussalFanGain: {
+      context: { createMediaStreamDestination: () => ({ stream: { id: 'fanStream' } }) },
+      connect() {},
+      disconnect(dest) { fanDisconnects.push(dest); },
+    },
+    // no JitsiMeetJS: the createLocalTracks rebind path stays out of the test
+  };
+  globalThis.APP = {
+    // no muteAudio → step 1 (and its 1.5s sleep) is skipped
+    conference: { _room: { getLocalAudioTrack: () => currentTrack } },
+  };
+  const intervals = [];
+  globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
+
+  await pageEnsureAudioPublished();
+
+  assert.equal(globalThis.window.__trussalDirectTapEffect.track, track1, 'effect attached to the joined track');
+  assert.equal(track1.setEffectCalls.length, 1);
+  assert.ok(globalThis.window.__trussalDirectTapWatchdog, 'watchdog installed');
+  assert.equal(intervals.length, 1, 'exactly one watchdog interval');
+
+  const tick = intervals[0].fn;
+  const settle = () => new Promise((r) => setImmediate(r));
+
+  // Healthy track: a tick must not churn the effect.
+  tick(); await settle();
+  assert.equal(track1.setEffectCalls.length, 1, 'no re-attach while the track is unchanged');
+
+  // Renegotiation replaces the published track.
+  currentTrack = track2;
+  tick(); await settle();
+  assert.equal(globalThis.window.__trussalDirectTapEffect.track, track2, 're-attached to the replacement track');
+  assert.equal(track2.setEffectCalls.length, 1);
+  assert.equal(fanDisconnects.length, 1, "old effect's fan connection dropped (stopEffect)");
+
+  // Stable again: no further churn.
+  tick(); await settle();
+  assert.equal(track2.setEffectCalls.length, 1, 'idempotent once re-attached');
+
+  // Idempotent install: a second pageEnsureAudioPublished call (the aggregator
+  // retries it) must not stack a second watchdog.
+  await pageEnsureAudioPublished();
+  assert.equal(intervals.length, 1, 'watchdog installed once across repeat calls');
+});
+
 test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, reports metrics', async () => {
   const calls = { goto: [], evalOnNewDoc: [], evaluate: [], metrics: 0 };
   const fakePage = {

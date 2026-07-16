@@ -400,40 +400,74 @@ export async function pageEnsureAudioPublished() {
       console.error('[trussal]', err);
       throw err;
     }
+
+    // Attach (or re-attach) the direct tap to whatever track is published.
+    // Resolves true when the given track carries the effect afterwards.
+    async function attachDirectTap(publishedTrack) {
+      const attached = window.__trussalDirectTapEffect;
+      if (attached && attached.track === publishedTrack) return true; // already live
+      if (typeof publishedTrack.setEffect !== 'function') {
+        console.error('[trussal] direct Strudel tap: local track has no setEffect API');
+        return false;
+      }
+      // Re-attaching to a NEW track (post-rebind or post-renegotiation): drop
+      // the old effect's fan connection so the fan doesn't accumulate dangling
+      // destinations.
+      if (attached && attached.effect && typeof attached.effect.stopEffect === 'function') {
+        try { attached.effect.stopEffect(); } catch (_) {}
+      }
+      const dest = fan.context.createMediaStreamDestination();
+      const effect = {
+        isEnabled: () => true,
+        // The mic stream argument is ignored — the effect's output is exactly the
+        // fan (Strudel), mirroring NodeOutputEffect. Duplicate connect() calls
+        // between the same nodes are ignored per the WebAudio spec, so a
+        // stop/start cycle (jitsi mute flips) is safe.
+        startEffect() { fan.connect(dest); return dest.stream; },
+        stopEffect() { try { fan.disconnect(dest); } catch (_) {} },
+      };
+      await publishedTrack.setEffect(effect);
+      window.__trussalDirectTapEffect = { track: publishedTrack, effect };
+      return true;
+    }
+
+    // Watchdog: a renegotiation (the P2P↔JVB flip when the room crosses 2→3
+    // participants, a device change) can replace the published JitsiLocalTrack;
+    // the effect then rides the dead old object and the bot is back on the
+    // known-silent gUM path — for the aggregator that silences the master and
+    // mutes the whole room (its mic tile shows the slash a silent track earns).
+    // Re-assert the tap whenever the current track stops being the one the
+    // effect is attached to. Page-side (not a Node loop) so it works identically
+    // for player bots and the aggregator; installed once, BEFORE the first
+    // attach attempt, so even a throwing first attach self-heals.
+    if (!window.__trussalDirectTapWatchdog) {
+      window.__trussalDirectTapWatchdog = setInterval(() => {
+        if (window.__trussalDirectTapAttaching) return; // re-attach still in flight
+        const current = localTrack();
+        const attached = window.__trussalDirectTapEffect;
+        if (!current || (attached && attached.track === current)) return;
+        console.warn('[trussal] direct Strudel tap: published track changed — re-attaching');
+        window.__trussalDirectTapAttaching = true;
+        attachDirectTap(current)
+          .catch((e) => console.error('[trussal] direct tap re-attach failed', e))
+          .finally(() => { window.__trussalDirectTapAttaching = false; });
+      }, 1000);
+    }
+
     const publishedTrack = localTrack();
     if (!publishedTrack) {
       // muteAudio + createLocalTracks both failed to produce a track — that IS
-      // the silent-bot bug, so log it (the aggregator's caller retries).
+      // the silent-bot bug, so log it (the aggregator's caller retries, and the
+      // watchdog above attaches the tap the moment a track appears).
       console.error('[trussal] direct Strudel tap: no local audio track to attach to');
       return;
     }
-    const attached = window.__trussalDirectTapEffect;
-    if (attached && attached.track === publishedTrack) return; // already live
-    if (typeof publishedTrack.setEffect !== 'function') {
-      console.error('[trussal] direct Strudel tap: local track has no setEffect API');
-      return;
-    }
-    // Re-attaching to a NEW track (post-rebind): drop the old effect's fan
-    // connection so the fan doesn't accumulate dangling destinations.
-    if (attached && attached.effect && typeof attached.effect.stopEffect === 'function') {
-      try { attached.effect.stopEffect(); } catch (_) {}
-    }
-    const dest = fan.context.createMediaStreamDestination();
-    const effect = {
-      isEnabled: () => true,
-      // The mic stream argument is ignored — the effect's output is exactly the
-      // fan (Strudel), mirroring NodeOutputEffect. Duplicate connect() calls
-      // between the same nodes are ignored per the WebAudio spec, so a
-      // stop/start cycle (jitsi mute flips) is safe.
-      startEffect() { fan.connect(dest); return dest.stream; },
-      stopEffect() { try { fan.disconnect(dest); } catch (_) {} },
-    };
     try {
-      await publishedTrack.setEffect(effect);
-      window.__trussalDirectTapEffect = { track: publishedTrack, effect };
+      await attachDirectTap(publishedTrack);
     } catch (e) {
       // A failed attach leaves the bot on the gUM tap path — the known-silent
-      // one — so surface it loudly (the outer catch re-throws to the Node side).
+      // one — so surface it loudly (the outer catch re-throws to the Node side);
+      // the watchdog keeps retrying behind it.
       console.error('[trussal] direct Strudel tap setEffect failed', e);
       throw e;
     }
@@ -1091,6 +1125,9 @@ export function pageReadSamples() {
     // Whether the setEffect direct tap (pageEnsureAudioPublished step 3) is
     // attached — the publish path that bypasses the gUM-handed mic track.
     directTap: Boolean(window.__trussalDirectTapEffect),
+    // Whether the re-attach watchdog is installed (survives track replacement
+    // across renegotiations, e.g. the P2P↔JVB flip).
+    directTapWatchdog: Boolean(window.__trussalDirectTapWatchdog),
   };
   const samples = {
     fps: window.__trussalFps ?? 0,

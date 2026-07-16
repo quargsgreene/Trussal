@@ -967,19 +967,35 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       } catch (e30) {
       }
       if (!getPeerByJitsiId(jitsiId)) return;
-      if (remoteSources.has(jitsiId)) return;
       if (pendingCaptures.has(jitsiId)) return;
+      const existing = remoteSources.get(jitsiId);
+      if (existing) {
+        const live = existing.tag && existing.tag.isConnected && existing.tag.srcObject === existing.stream && existing.track && existing.track.readyState === "live";
+        if (live) return;
+        try {
+          existing.source.disconnect();
+        } catch (e30) {
+        }
+        remoteSources.delete(jitsiId);
+        if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
+          if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+        }
+        console.log("[latency] audio wiring for", jitsiId, "went stale (track replaced) \u2014 re-wiring");
+      }
       pendingCaptures.add(jitsiId);
       try {
         const chain = await ensureChain(jitsiId);
         if (!chain) return;
         if (remoteSources.has(jitsiId)) return;
-        const source2 = audioCtx.createMediaStreamSource(tag.srcObject);
+        const stream = tag.srcObject;
+        if (!stream) return;
+        const source2 = audioCtx.createMediaStreamSource(stream);
         source2.connect(chain.input);
         tag.muted = true;
         tag.volume = 0;
-        const trackLabels = (tag.srcObject.getAudioTracks?.() || []).map((t) => t.label || "audio");
-        remoteSources.set(jitsiId, { tag, source: source2, label: trackLabels.join(",") || "mic" });
+        const audioTracks = stream.getAudioTracks?.() || [];
+        const trackLabels = audioTracks.map((t) => t.label || "audio");
+        remoteSources.set(jitsiId, { tag, stream, track: audioTracks[0] || null, source: source2, label: trackLabels.join(",") || "mic" });
         audioRouted.add(jitsiId);
         console.log("[latency] routed Jitsi audio \u2192", jitsiId, "tracks:", trackLabels);
         notifyRoutingChange();
@@ -997,6 +1013,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       if (jamulusMode) applyJamulusMuteToAllTags();
     });
     audioTagObserver.observe(document.body, { childList: true, subtree: true });
+    setInterval(captureJitsiAudio, 1e3);
     captureJitsiAudio();
   }
   function getMasterBus() {
@@ -1318,12 +1335,22 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       strudelPublishRetryTimer = null;
     }
   }
-  function scheduleStrudelPublishRetry() {
+  function ensureStrudelPublishGuard() {
     if (strudelPublishRetryTimer) return;
     strudelPublishRetryTimer = setInterval(() => {
-      if (!aggregatorJitsiId || strudelRoomEffect) {
+      if (!aggregatorJitsiId) {
         stopStrudelPublishRetry();
         return;
+      }
+      if (strudelRoomEffect) {
+        const current = findLocalJitsiAudioTrack();
+        if (current === strudelRoomEffect.track) return;
+        try {
+          strudelRoomEffect.effect.stopEffect();
+        } catch (e30) {
+        }
+        strudelRoomEffect = null;
+        console.warn("[latency] published Strudel track was replaced (renegotiation?) \u2014 re-publishing");
       }
       publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish retry failed", e30));
     }, 1e3);
@@ -1336,7 +1363,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const track = findLocalJitsiAudioTrack();
     if (!track || typeof track.setEffect !== "function") {
       console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track (mic muted?); will retry when the mic is enabled");
-      scheduleStrudelPublishRetry();
+      ensureStrudelPublishGuard();
       return false;
     }
     const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
@@ -1344,9 +1371,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       await track.setEffect(effect);
     } catch (e30) {
       console.warn("[latency] publish Strudel setEffect failed", e30);
+      ensureStrudelPublishGuard();
       return false;
     }
     strudelRoomEffect = { track, effect };
+    ensureStrudelPublishGuard();
     console.log("[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap");
     return true;
   }
@@ -1787,6 +1816,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   var require_room_indices = __commonJS({
     "latency-instrument/room-indices.js"(exports, module) {
       var LETTERS = "abcdefghijklmnopqrstuvwxyz";
+      var AGGREGATOR_ROOM_INDEX = "pi";
       function botSuffix(ordinal) {
         if (!Number.isInteger(ordinal) || ordinal < 0) {
           throw new RangeError("botSuffix() requires a non-negative integer");
@@ -1818,6 +1848,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         return { ownerIndex, suffix: m2[2], ordinal: suffixToOrdinal(m2[2]) };
       }
       module.exports = {
+        AGGREGATOR_ROOM_INDEX,
         botSuffix,
         suffixToOrdinal,
         isValidBotSuffix,
@@ -49386,6 +49417,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       key: "config.enableNoisyMicDetection === false",
       env: "ENABLE_NOISY_MIC_DETECTION=false",
       why: 'flags instruments as a "noisy" microphone'
+    },
+    {
+      ok: (c2) => !!c2.p2p && c2.p2p.enabled === false,
+      key: "config.p2p.enabled === false",
+      env: "ENABLE_P2P=false",
+      why: "the P2P\u2192JVB switch at the 3rd join renegotiates every track; a human+aggregator room always crosses it (bots-spawn room mute)"
     }
   ];
   function runCheck() {
