@@ -68,6 +68,42 @@ test('alternate <0 1> plays one participant per cycle, round-robin', () => {
   assert.deepEqual(expandCycle(ast.participants, 2).map(e => e.token), ['0']);
 });
 
+test('alternation order: rejoin-suffixed tokens rotate exactly as written', () => {
+  const cases = [
+    ['<0 0a 0b>', ['0', '0a', '0b']],
+    ['<0b 0 0a>', ['0b', '0', '0a']],
+    ['<0a 0b 0>', ['0a', '0b', '0']]
+  ];
+  for (const [seq, order] of cases) {
+    const ast = astOf(`$ participants ${seq}\n`);
+    for (let cycle = 0; cycle < order.length * 2; cycle++) {
+      assert.deepEqual(
+        expandCycle(ast.participants, cycle).map(e => e.token),
+        [order[cycle % order.length]],
+        `${seq} cycle ${cycle}`
+      );
+    }
+  }
+});
+
+test('repeated tokens keep their own slots and play once per occurrence', () => {
+  const cases = [
+    ['<0 0 0a>', ['0', '0', '0a']],
+    ['<0 0b 0a 0b 0b 0a>', ['0', '0b', '0a', '0b', '0b', '0a']],
+    ['<0 0a 0 0b 0a 0b 0>', ['0', '0a', '0', '0b', '0a', '0b', '0']]
+  ];
+  for (const [seq, order] of cases) {
+    const ast = astOf(`$ participants ${seq}\n`);
+    for (let cycle = 0; cycle < order.length * 2; cycle++) {
+      assert.deepEqual(
+        expandCycle(ast.participants, cycle).map(e => e.token),
+        [order[cycle % order.length]],
+        `${seq} cycle ${cycle}`
+      );
+    }
+  }
+});
+
 test('<0 1>*2 plays two half-cycle slots per cycle', () => {
   const ast = astOf('$ participants <0 1>*2\n');
   const evs = expandCycle(ast.participants, 0);
