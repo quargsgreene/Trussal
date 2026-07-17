@@ -87,6 +87,27 @@ export class RingBuffer {
     return out;
   }
 
+  /**
+   * Copy up to `n` samples starting `offset` samples into the readable region,
+   * WRAPPING within it, WITHOUT consuming. Unlike peek() this loops: reading
+   * past the newest sample continues from the oldest, so a fixed buffer can be
+   * streamed round and round. The AggregatorBot uses this to keep replaying a
+   * departed participant's last held audio on the ghost's turns instead of
+   * draining the buffer to silence. Empty when nothing is buffered.
+   */
+  peekAt(offset, n) {
+    const filled = this._filled;
+    if (filled === 0 || n <= 0) return new Float32Array(0);
+    const count = Math.min(n, filled);
+    const start = (((offset % filled) + filled) % filled);
+    const out = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const logical = (start + i) % filled; // wrap within the readable region
+      out[i] = this._buf[(this._read + logical) % this.capacity];
+    }
+    return out;
+  }
+
   clear() {
     this._write = 0;
     this._read = 0;

@@ -41,6 +41,16 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
   assert.equal(rb.written, 6, 'tracks total ever written');
 });
 
+test('RingBuffer.peekAt replays a fixed buffer round and round without consuming it', () => {
+  const rb = new RingBuffer(4);
+  rb.write([1, 2, 3]);
+  assert.deepEqual([...rb.peekAt(0, 2)], [1, 2], 'reads from the offset');
+  assert.deepEqual([...rb.peekAt(2, 3)], [3, 1, 2], 'wraps within the readable region');
+  assert.deepEqual([...rb.peekAt(5, 2)], [3, 1], 'offset wraps modulo the readable length');
+  assert.equal(rb.length, 3, 'peekAt never consumes');
+  assert.deepEqual([...new RingBuffer(4).peekAt(0, 4)], [], 'empty buffer yields nothing');
+});
+
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
 function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
@@ -919,6 +929,43 @@ test('a departed listed participant keeps its slot and buffer until the program 
   bot.applyProgramText('$ participants <1>');
   assert.deepEqual(bot.order.order(), ['1'], 'dropping 0 from the program retires the ghost');
   assert.equal(bot.buffers['0'], undefined, 'and only then is its buffer removed');
+});
+
+test('a departed ghost replays its last buffer every turn instead of a silent gap', async () => {
+  let clock = 0;
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {},
+    1024,
+  );
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+  ]);
+  bot.applyProgramText('$ participants <0 1>');
+  bot.removeParticipant('human-0'); // 0 leaves but stays listed -> ghost
+
+  clock = 0;
+  let r = await bot.readAndAssembleMasterBuffer();
+  assert.equal(r.active, '0', 'the ghost still takes its turn');
+  assert.equal(r.assembled, 2, 'and streams its held audio');
+
+  clock = 1000; // participant 1's turn drains its (live) buffer to empty
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '1');
+
+  // A lap later the ghost is served again: BEFORE the fix its buffer had been
+  // consumed on the first turn, so this turn was a silent gap. It must replay.
+  clock = 2000;
+  r = await bot.readAndAssembleMasterBuffer();
+  assert.equal(r.active, '0', 'the ghost comes round again');
+  assert.equal(r.assembled, 2, 'and replays the same held audio, not silence');
+  assert.equal(bot.buffers['0'].length, 2, 'the ghost buffer is never consumed');
+
+  // Only dropping 0 from the program retires it (buffer gone for good).
+  bot.applyProgramText('$ participants <1>');
+  assert.equal(bot.buffers['0'], undefined, 'the metaprogram dropping 0 finally deletes its buffer');
 });
 
 test('start() reaches interpretAndExecuteMetaprogram; without a WebSocket impl it skips cleanly', async () => {

@@ -80,7 +80,7 @@ test('serve() rotates one slot per slotMs and reports whose turn it is', () => {
 
 test('serve() on an empty ring yields no active participant', () => {
   const circularParticipantTestQueue = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
-  assert.deepEqual(circularParticipantTestQueue.serve(), { token: null, position: null, slot: -1, newTurn: false, lapped: false });
+  assert.deepEqual(circularParticipantTestQueue.serve(), { token: null, position: null, slot: -1, newTurn: false, lapped: false, departed: false });
 });
 
 test('serve() clamps a backward clock so the slot index never regresses', () => {

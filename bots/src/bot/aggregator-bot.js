@@ -124,6 +124,12 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
+    // Per departed-ghost token: how far into its frozen held buffer the replay
+    // has streamed. A ghost's buffer is never written or consumed again, so its
+    // turns loop this offset over the last held audio (peekAt) instead of
+    // draining to silence. Reset at the start of each of the ghost's turns and
+    // dropped when the metaprogram retires the token.
+    #ghostReplayOffset = new Map();
     // Election-gate hysteresis state (see #isActiveNow): whether we have ever won
     // the active slot, and when we were last active. Held so a transient miss
     // can't silence the room mid-stream.
@@ -541,6 +547,7 @@ export class AggregatorBot extends Bot {
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
         );
+        for (const token of retired) this.#ghostReplayOffset.delete(token);
         console.log(`[aggregator-bot] metaprogram dropped departed participant(s), retired: ${retired.join(',')}`);
     }
 
@@ -725,7 +732,7 @@ export class AggregatorBot extends Bot {
         // room-index order (assign-once, so this is a no-op once registered).
         this.#syncOrderFromBuffers();
 
-        const { token: active, lapped } = this.order.serve();
+        const { token: active, lapped, departed, newTurn } = this.order.serve();
         if (!active) {
             // Nothing has reached the bot yet: assemble nothing. The page player
             // emits silence and we keep checking on the next tick.
@@ -739,14 +746,28 @@ export class AggregatorBot extends Bot {
         // Release at most ONE playback interval's worth of the active buffer per
         // tick (masterSliceSamples), rate-matching the drain to real time: draining
         // the whole buffer dumped a full hold-window burst at every slot flip, so
-        // the real-time-paced page player fell further behind each slot. Draining
-        // the active buffer RELEASES this turn's audio and, relative to the previous
-        // turn, evicts what was released a lap ago — the two events requirement 4
-        // pairs at a slot: released on its turn, gone by the time the write pointer
-        // reaches this slot again. `lapped` marks that return-to-position.
-        const held = currentRingBuffer
-            ? currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples))
-            : new Float32Array(0);
+        // the real-time-paced page player fell further behind each slot.
+        //
+        // A live participant's buffer is DRAINED (read): releasing this turn's
+        // audio and, relative to the previous turn, evicting what was released a
+        // lap ago — the two events requirement 4 pairs at a slot: released on its
+        // turn, gone by the time the write pointer reaches this slot again.
+        // `lapped` marks that return-to-position.
+        //
+        // A departed ghost's buffer (metaprogram still lists the token) is instead
+        // REPLAYED non-destructively: no fresh audio is arriving, so consuming it
+        // would leave silent turns once the held audio ran out. peekAt loops the
+        // frozen buffer so the ghost keeps streaming its last held audio every
+        // turn until the program drops the token (which retires the buffer).
+        let held;
+        if (!currentRingBuffer) {
+            held = new Float32Array(0);
+        } else if (departed) {
+            held = this.#replayDepartedGhost(active, currentRingBuffer, newTurn);
+        } else {
+            this.#ghostReplayOffset.delete(active);
+            held = currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples));
+        }
         // Gain-stage the master before it is streamed (requirement 6).
         const { gain, samples } = this.computeGainStaging(held);
         // Single-slot handoff to playMasterBufferToClient (drained + cleared there
@@ -772,6 +793,23 @@ export class AggregatorBot extends Bot {
         for (const token of Object.keys(this.buffers).sort(tokenOrder)) {
             if (!this.order.hasToken(token)) this.order.register(token, token);
         }
+    }
+
+    /**
+     * One playback tick's slice of a departed ghost's held audio, streamed
+     * without consuming the buffer so the same last-scheduled material can play
+     * again on every future turn. The replay offset restarts at the top of each
+     * of the ghost's turns (newTurn) and advances by the slice within the turn;
+     * peekAt loops the frozen buffer so a turn longer than the held audio keeps
+     * streaming rather than falling silent. The buffer is only ever dropped when
+     * the metaprogram retires the token (see #applyOrderFromProgram), so a ghost
+     * never plays a silent turn while it stays listed.
+     */
+    #replayDepartedGhost(token, ringBuffer, newTurn) {
+        const offset = newTurn ? 0 : (this.#ghostReplayOffset.get(token) || 0);
+        const slice = ringBuffer.peekAt(offset, this.masterSliceSamples);
+        this.#ghostReplayOffset.set(token, offset + slice.length);
+        return slice;
     }
 
     async playMasterBufferToClient() {
@@ -832,6 +870,7 @@ export class AggregatorBot extends Bot {
         if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
         this.#playbackTimer = null;
         this.#pendingMaster = EMPTY_MASTER;
+        this.#ghostReplayOffset.clear();
         for (const rb of Object.values(this.buffers)) rb.clear();
         await super.stop();
     }
@@ -946,9 +985,10 @@ export class AggregatorBot extends Bot {
      *     gets another silent turn. A rejoin re-registers as a fresh tail slot;
      *     the departed room index is not recycled.
      *   - metaprogram mode: the slot AND buffer are KEPT — the schedule still
-     *     lists this token, so its turns keep streaming the buffer's remaining
-     *     audio; both are retired when a program update drops the token (see
-     *     #applyOrderFromProgram).
+     *     lists this token, so its turns REPLAY the last held audio buffer
+     *     (readAndAssembleMasterBuffer loops it non-destructively rather than
+     *     draining to silence); both are retired when a program update drops the
+     *     token (see #applyOrderFromProgram).
      * Returns the token, or null if the identity was never registered.
      */
     removeParticipant(identity) {
@@ -965,6 +1005,7 @@ export class AggregatorBot extends Bot {
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([bufferToken]) => bufferToken !== token),
         );
+        this.#ghostReplayOffset.delete(token);
         if (this.#activeToken === token) this.#activeToken = null;
         console.log(
             `[aggregator-bot] participant left, ring compacted: identity=${identity} token=${token} ` +

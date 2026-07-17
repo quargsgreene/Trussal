@@ -393,11 +393,15 @@ export class CircularParticipantQueue {
    *               position after a full lap (>= size turns). That is the
    *               "write pointer reaches the same position again" event: the
    *               audio this slot held a lap ago is now stale.
+   *   - departed: true when this position is a ghost (metaprogram mode: the
+   *               participant left but the program still lists the token). The
+   *               caller replays the ghost's last held audio for the turn
+   *               instead of streaming fresh audio.
    */
   serve() {
     const n = this.#slots.length;
     console.log('CircularParticipantQueue.serve() n=%d', n);
-    if (!n) return { token: null, position: null, slot: -1, newTurn: false, lapped: false };
+    if (!n) return { token: null, position: null, slot: -1, newTurn: false, lapped: false, departed: false };
 
     const now = this.now();
     if (this.#startMs === null) this.#startMs = now;
@@ -406,6 +410,7 @@ export class CircularParticipantQueue {
 
     const position = ((slot % n) + n) % n;
     const token = this.#slots[position].token;
+    const departed = !!this.#slots[position].departed;
     const newTurn = slot !== this.#lastSlot;
 
     let lapped = false;
@@ -415,7 +420,7 @@ export class CircularParticipantQueue {
       this.#servedSlotAt[position] = slot;
       this.#lastSlot = slot;
     }
-    console.log({ token, position, slot, newTurn, lapped });
-    return { token, position, slot, newTurn, lapped };
+    console.log({ token, position, slot, newTurn, lapped, departed });
+    return { token, position, slot, newTurn, lapped, departed };
   }
 }
