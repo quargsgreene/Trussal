@@ -89,11 +89,15 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
     // apply the bot canWriteModulation permission separately from
     // canEditMetaprogram.
     const channel = origin === 'modulation' ? 'modulation' : 'metaprogram';
+    // 'apply' and 'roster' transactions carry their origin as the wire
+    // modality: receivers RUN the program only on those (typing merely syncs
+    // the shared text). Everything else reports how the edit was made.
+    const wireModality = (origin === 'apply' || origin === 'roster') ? origin : modality;
     localUpdates++;
     if (localUpdates % SNAPSHOT_EVERY === 0) {
-      bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality, channel });
+      bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality: wireModality, channel });
     } else {
-      bus.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality, channel });
+      bus.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality: wireModality, channel });
     }
   };
   doc.on('update', onDocUpdate);
@@ -118,6 +122,15 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
     setText: (value, origin = 'local') => setDocText(text, value, origin),
     onRemoteChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
     getLastAuthorIndex: () => lastAuthorIndex,
+
+    // Apply with no text change (typing already synced every keystroke into
+    // the doc, so the ▶ Apply diff is usually empty): broadcast the full doc
+    // state stamped modality 'apply' so every receiver still gets the RUN
+    // signal. A snapshot is a no-op on converged docs and compacts the
+    // sidecar's update log as a side effect.
+    broadcastApplied() {
+      bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality: 'apply', channel: 'metaprogram' });
+    },
 
     // Artificial network modulation (upward-only floors, shared room-wide).
     getInduced() {

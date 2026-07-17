@@ -4,7 +4,10 @@
 // one live capability today is ORDERING when/which participants play: the
 // program text syncs over the CRDT doc to the aggregator bot, whose ring
 // adopts the $ participants membership and written order while keeping the
-// fixed 4s rotation interval (bots/src/bot/aggregator-bot.js). The room
+// fixed 4s rotation interval (bots/src/bot/aggregator-bot.js). Typing only
+// syncs the shared TEXT; the ring (and programText here) adopt a program
+// solely on an explicit apply (▶ Apply / Ctrl+Enter / /nc/apply), the
+// one-time roster seed, or a late joiner's catch-up. The room
 // starts under the default program — `$ participants <0>`, the first
 // participant to join streaming continuously — seeded into the shared doc
 // once by the roster leader. Membership is edits-only from there: a newcomer
@@ -110,9 +113,14 @@ export function ensureMetaprogramSync() {
     subscribe: subscribePeerState,
     sendUpdate: sendCrdtUpdate
   });
-  crdt.onRemoteChange((text) => {
-    programText = text;
-    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true } }));
+  crdt.onRemoteChange((text, payload) => {
+    // Typing elsewhere syncs the shared TEXT only. The RUNNING program
+    // (programText, what shortcuts/armed schedulers baseline against) moves
+    // only on an explicit apply, the roster seed, or the late-join catch-up.
+    const applied = !!payload && (payload.catchUp === true ||
+      payload.modality === 'apply' || payload.modality === 'roster');
+    if (applied) programText = text;
+    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true, applied } }));
   });
   // Induced network conditions (and VLAN changes) alter the effective WC
   // metrics on every client identically — schedulers and effects follow at
@@ -219,7 +227,13 @@ export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
   if (valid) {
     programText = text;
-    if (crdt) crdt.setText(text, 'apply');
+    if (crdt) {
+      // Typing usually synced this exact text already, making the diff empty
+      // — broadcast the apply signal anyway so every receiver (aggregator
+      // included) runs the program now.
+      const changed = crdt.setText(text, 'apply');
+      if (!changed) crdt.broadcastApplied();
+    }
     pushProgramToScheduler();
     if (broadcast && o2) o2.send(APPLY_ADDR, ',s', [text]);
     document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, applied: true } }));

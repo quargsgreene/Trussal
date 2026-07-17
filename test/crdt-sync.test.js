@@ -60,6 +60,36 @@ test('two docs with concurrent divergent edits converge to identical text', () =
   syncA.disconnect(); syncB.disconnect();
 });
 
+test('apply/roster origins ride the wire as their modality; typing stays keyboard; empty-diff apply broadcasts a snapshot', () => {
+  const a = createMetaprogramDoc();
+  const sent = [];
+  const bus = {
+    subscribe: () => () => {},
+    sendUpdate: (update, opts) => sent.push({ update, ...opts })
+  };
+  const sync = connectMetaprogramSync(a, bus);
+
+  sync.setText('$ participants <0>');                    // typing
+  sync.setText('$ participants <0 1>', 'apply');          // explicit apply (real diff)
+  sync.setText('$ participants <0 1>\n# room 2', 'roster'); // roster seed style write
+  assert.deepEqual(sent.map(s => s.modality), ['keyboard', 'apply', 'roster']);
+  assert.ok(sent.every(s => s.channel === 'metaprogram'));
+
+  // Apply with no text change (typing already synced it): setText no-ops,
+  // broadcastApplied still ships the RUN signal as a full-state snapshot.
+  assert.equal(sync.setText(sync.getText(), 'apply'), false);
+  assert.equal(sent.length, 3, 'no-op diff sends nothing by itself');
+  sync.broadcastApplied();
+  assert.equal(sent.length, 4);
+  assert.equal(sent[3].modality, 'apply');
+  assert.equal(sent[3].snapshot, true);
+  // The snapshot reconstructs the full doc for a receiver.
+  const b = createMetaprogramDoc();
+  applyRemoteUpdate(b.doc, sent[3].update);
+  assert.equal(b.text.toString(), sync.getText());
+  sync.disconnect();
+});
+
 test('applyTextDiff produces minimal edits and no-ops on identical text', () => {
   const { text } = createMetaprogramDoc();
   assert.equal(applyTextDiff(text, 'hello world'), true);

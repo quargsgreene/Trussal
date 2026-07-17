@@ -11878,11 +11878,12 @@ ${err.toString()}`);
     const onDocUpdate = (update, origin) => {
       if (origin === "remote") return;
       const channel2 = origin === "modulation" ? "modulation" : "metaprogram";
+      const wireModality = origin === "apply" || origin === "roster" ? origin : modality;
       localUpdates++;
       if (localUpdates % SNAPSHOT_EVERY === 0) {
-        bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality, channel: channel2 });
+        bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: wireModality, channel: channel2 });
       } else {
-        bus2.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality, channel: channel2 });
+        bus2.sendUpdate(encodeUpdateB64(update), { snapshot: false, modality: wireModality, channel: channel2 });
       }
     };
     doc2.on("update", onDocUpdate);
@@ -11918,6 +11919,14 @@ ${err.toString()}`);
         return () => listeners.delete(fn);
       },
       getLastAuthorIndex: () => lastAuthorIndex,
+      // Apply with no text change (typing already synced every keystroke into
+      // the doc, so the ▶ Apply diff is usually empty): broadcast the full doc
+      // state stamped modality 'apply' so every receiver still gets the RUN
+      // signal. A snapshot is a no-op on converged docs and compacts the
+      // sidecar's update log as a side effect.
+      broadcastApplied() {
+        bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: "apply", channel: "metaprogram" });
+      },
       // Artificial network modulation (upward-only floors, shared room-wide).
       getInduced() {
         if (!modulation) return {};
@@ -12552,9 +12561,10 @@ ${err.toString()}`);
       subscribe: subscribePeerState,
       sendUpdate: sendCrdtUpdate
     });
-    crdt.onRemoteChange((text2) => {
-      programText = text2;
-      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, remote: true } }));
+    crdt.onRemoteChange((text2, payload) => {
+      const applied = !!payload && (payload.catchUp === true || payload.modality === "apply" || payload.modality === "roster");
+      if (applied) programText = text2;
+      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, remote: true, applied } }));
     });
     crdt.onModulationChange(() => pushEffectiveMetrics());
     crdt.onVlansChange(() => pushEffectiveMetrics());
@@ -12621,7 +12631,10 @@ ${err.toString()}`);
     const { errors, valid } = parseMetaprogram(text2);
     if (valid) {
       programText = text2;
-      if (crdt) crdt.setText(text2, "apply");
+      if (crdt) {
+        const changed = crdt.setText(text2, "apply");
+        if (!changed) crdt.broadcastApplied();
+      }
       pushProgramToScheduler();
       if (broadcast && o2) o2.send(APPLY_ADDR, ",s", [text2]);
       document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, applied: true } }));
@@ -50448,7 +50461,6 @@ ${snippet}${NC_BTN_MARKER}`;
     }
     const ta = strudelTextarea();
     if (ta) ta.value = code2;
-    sendLocalPattern(code2);
   }
   function applyIfNetCycles() {
     if (lastKind !== "netcycles") return null;

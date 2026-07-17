@@ -452,8 +452,14 @@ export class AggregatorBot extends Bot {
             this.metaprogramDoc = connectMetaprogramSync(handle, bus);
             // Fires for both live crdt-update diffs and the crdt-state
             // late-joiner catch-up, so the room's existing program (if any)
-            // lands here shortly after the hello.
-            this.metaprogramDoc.onRemoteChange((text) => {
+            // lands here shortly after the hello. Keystroke diffs (modality
+            // 'keyboard'/'head-cursor'/…) sync the shared TEXT only; the ring
+            // and scheduler adopt a program solely on an explicit apply, the
+            // roster seed, or the catch-up — half-typed programs never run.
+            this.metaprogramDoc.onRemoteChange((text, payload) => {
+                const applied = !!payload && (payload.catchUp === true ||
+                    payload.modality === 'apply' || payload.modality === 'roster');
+                if (!applied) return;
                 this.programText = text;
                 this.#pushProgramToScheduler();
             });

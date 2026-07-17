@@ -3,8 +3,11 @@
 // One global card: a textarea two-way-bound to the CRDT doc (per-keystroke
 // diffs → Yjs; remote updates → textarea with cursor preservation),
 // parse-on-idle with inline line/col errors, and an explicit Apply that
-// evaluates the program room-wide. Bots get a read-only view (the sidecar
-// drops their updates anyway — this is just honest UI).
+// evaluates the program room-wide. Typing syncs the shared TEXT only —
+// nothing runs until ▶ Apply / Ctrl+Enter stamps an 'apply' update, which is
+// the sole signal the aggregator's ring (and any armed scheduler) acts on.
+// Bots get a read-only view (the sidecar drops their updates anyway — this
+// is just honest UI).
 
 import {
   ensureMetaprogramSync,

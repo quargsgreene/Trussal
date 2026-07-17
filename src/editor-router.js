@@ -1,8 +1,10 @@
 // Editor routing — browser wiring.
 //
 // Tracks the last-focused code editor and routes reads/writes/evaluation:
-//   - 'strudel'   → textarea + sendLocalPattern + Strudel eval (personal)
-//   - 'netcycles' → CRDT doc + applyProgramText (global, shared)
+//   - 'strudel'   → textarea (writes stay local; evaluation broadcasts —
+//                   onEvalAndPlay / evaluate() send the pattern themselves)
+//   - 'netcycles' → CRDT doc (writes sync the shared TEXT) + applyProgramText
+//                   (the explicit RUN signal)
 // Used by facial-gesture.js (head-cursor mutators, gesture regex swaps) and
 // the on-screen keyboard so every input modality works in both editors.
 
@@ -12,7 +14,7 @@ import {
   applyProgramText,
   getProgramText
 } from './audio-net/Metaprogrammer.js';
-import { getLocalPeer, sendLocalPattern } from './peer-state.js';
+import { getLocalPeer } from './peer-state.js';
 
 export { classifyEditor, applyRegexMutation } from './editor-router-core.js';
 
@@ -60,9 +62,10 @@ export function writeActiveEditor(code, { modality = 'head-cursor' } = {}) {
     document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text: code, modality } }));
     return;
   }
+  // Writing is typing, not running: the pattern reaches peers when an
+  // explicit eval (onEvalAndPlay / facial-gesture evaluate) sends it.
   const ta = strudelTextarea();
   if (ta) ta.value = code;
-  sendLocalPattern(code);
 }
 
 // Evaluate whatever the active editor holds. Returns { kind, errors }.
