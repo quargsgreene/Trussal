@@ -2782,8 +2782,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     const wcrtt = worstCase(rtts) ?? 0;
     return {
-      wcl: 1e3 * wcrtt,
-      // wcrtt / 2,
+      wcl: wcrtt / 2 * WCL_SOLO_STRETCH,
       wcj: worstCase(jitters) ?? 0,
       wcrtt,
       wcpl: worstCase(losses) ?? 0,
@@ -2799,13 +2798,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return out;
   }
-  var INDUCTIONS;
+  var WCL_SOLO_STRETCH, INDUCTIONS;
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
       init_IncreaseJitter();
       init_IncreaseRTT();
       init_IncreasePacketLoss();
+      WCL_SOLO_STRETCH = 2e3;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
         wcj: IncreaseJitter,
