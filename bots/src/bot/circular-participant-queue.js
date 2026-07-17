@@ -235,6 +235,28 @@ export class CircularParticipantQueue {
     return { token: this.remove(id), removed: true };
   }
 
+  /**
+   * Reverse a SPURIOUS departure: clear the departed (ghost) flag on every slot
+   * a still-present participant's token holds, because fresh audio just proved
+   * it never really left. depart() is driven by the page's leave detection,
+   * which fires on a transient roster blip (getParticipants() is documented
+   * "ICE-slow") or a play-state flicker as readily as a real leave; without this
+   * the participant would loop its last-scheduled audio forever while its live
+   * audio arrived unheard. A genuine leave delivers no more audio, so it is
+   * never revived and stays a ghost until the program drops it. Returns true iff
+   * a ghost flag was actually cleared.
+   */
+  revive(jitsiId) {
+    const id = String(jitsiId);
+    const token = this.#tokenByJitsiId.get(id);
+    if (token == null) return false;
+    let revived = false;
+    for (const p of (this.#positionsByToken.get(token) || [])) {
+      if (this.#slots[p].departed) { this.#slots[p].departed = false; revived = true; }
+    }
+    return revived;
+  }
+
   // --- Metaprogram ordering ------------------------------------------------------
   //
   // When the room's Net Cycles metaprogram is in force, the $ participants

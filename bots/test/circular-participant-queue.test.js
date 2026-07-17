@@ -279,6 +279,21 @@ test('depart keeps a listed slot as a ghost; a program update retires it', () =>
   assert.deepEqual(circularParticipantTestQueue.order(), ['1']);
 });
 
+test('revive clears the ghost flag for a participant that never really left', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('src-0', '0');
+  q.register('src-1', '1');
+  q.applyMetaprogramOrder(['0', '1']);
+
+  q.depart('src-0'); // spuriously marked departed (roster blip / play flicker)
+  assert.equal(q.serve().departed, true, 'position 0 is a ghost');
+
+  assert.equal(q.revive('src-0'), true, 'fresh audio clears the ghost flag');
+  assert.equal(q.serve().departed, false, 'the slot is live again');
+  assert.equal(q.revive('src-0'), false, 'reviving a non-ghost is a no-op');
+  assert.equal(q.revive('src-unknown'), false, 'reviving an unregistered id is a no-op');
+});
+
 test('depart in join-order mode (and for off-ring pins) removes immediately', () => {
   const circularParticipantTestQueue = new CircularParticipantQueue();
   circularParticipantTestQueue.register('src-0', '0');
