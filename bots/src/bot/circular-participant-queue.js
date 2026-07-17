@@ -10,7 +10,9 @@
  *     token the sidecar handed it (0 for the first human, 0a/0b/… for that
  *     human's bots, 1 for the next human, …) and never change it — even if the
  *     token were later re-announced. So a participant's media-stream source maps
- *     to exactly one slot for the whole meeting (requirement 2).
+ *     to one fixed token for the whole meeting — and thus to whichever ring
+ *     slot(s) that token holds, since the metaprogram may list it more than once
+ *     (requirement 2).
  *
  *  2. The order of the ring. JOIN ORDER by default: room indices are themselves
  *     assigned in join order and are immutable for the meeting (see
@@ -56,16 +58,21 @@ export function tokenOrder(a, b) {
 }
 
 export class CircularParticipantQueue {
-  // The ring itself: one entry per participant, in join order.
-  #slots = [];                  // [{ jitsiId, token }]
-  #indexByJitsiId = new Map();  // media-stream id -> ring index (assign-once)
-  #indexByToken = new Map();    // room-index token -> ring index (one slot/token)
+  // The ring itself: one entry per ring POSITION. A token normally holds a
+  // single position, but the metaprogram may list a token more than once
+  // (`$ participants <0 0 0a>`), so a token can own several positions and play
+  // that many times per lap. The identity maps below are therefore one-to-many
+  // (token -> positions), while each media-stream id still pins to exactly one
+  // token.
+  #slots = [];                  // [{ jitsiId, token, departed? }] — tokens may repeat
+  #positionsByToken = new Map();// room-index token -> [ring indices], >=1 when present
+  #tokenByJitsiId = new Map();  // media-stream id -> token (assign-once identity pin)
   // Write-pointer bookkeeping.
   #startMs = null;              // when the first turn began (lazy)
   #lastSlot = -1;               // monotonic guard against a backward clock
   #servedSlotAt = [];           // per-position: slot index it was last served
   // Metaprogram mode: when non-null, the ring is EXACTLY this token list (the
-  // $ participants written order) — see applyMetaprogramOrder.
+  // $ participants written order, repeats included) — see applyMetaprogramOrder.
   #metaprogramOrder = null;
   // Participants registered while the metaprogram doesn't list their token:
   // jitsiId -> token, identity pinned but SILENT (no ring slot) until a
@@ -87,19 +94,17 @@ export class CircularParticipantQueue {
   /** Pinned token for a media-stream id (in the ring OR waiting off it), or null. */
   tokenFor(jitsiId) {
     const id = String(jitsiId);
-    const i = this.#indexByJitsiId.get(id);
-    if (i != null) return this.#slots[i].token;
-    return this.#offRing.get(id) ?? null;
+    return this.#tokenByJitsiId.get(id) ?? this.#offRing.get(id) ?? null;
   }
 
   /** Media-stream id that first claimed a token, or null. */
   jitsiIdFor(token) {
-    const i = this.#indexByToken.get(String(token));
-    return i == null ? null : this.#slots[i].jitsiId;
+    const positions = this.#positionsByToken.get(String(token));
+    return positions && positions.length ? this.#slots[positions[0]].jitsiId : null;
   }
 
-  hasJitsiId(jitsiId) { return this.#indexByJitsiId.has(String(jitsiId)); }
-  hasToken(token) { return this.#indexByToken.has(String(token)); }
+  hasJitsiId(jitsiId) { return this.#tokenByJitsiId.has(String(jitsiId)); }
+  hasToken(token) { return this.#positionsByToken.has(String(token)); }
 
   /**
    * Pin `jitsiId -> token` the first time either is seen and append a ring slot
@@ -116,28 +121,32 @@ export class CircularParticipantQueue {
     const id = String(jitsiId);
     const tok = String(token);
 
-    const known = this.#indexByJitsiId.get(id);
-    if (known != null) return this.#slots[known].token; // already pinned
+    if (this.#tokenByJitsiId.has(id)) return this.#tokenByJitsiId.get(id); // already pinned
 
     // Pinned while waiting OFF the ring (registered under a metaprogram that
     // doesn't list this token): the mapping persists, still no slot.
     if (this.#offRing.has(id)) return this.#offRing.get(id);
 
-    const byToken = this.#indexByToken.get(tok);
-    if (byToken != null) {
-      // Slot for this token already exists (e.g. seeded by token before the
-      // real jitsiId was known, or a metaprogram placeholder). Bind this id to
-      // it without adding a duplicate.
-      this.#indexByJitsiId.set(id, byToken);
-      const slot = this.#slots[byToken];
-      // Upgrade a token-placeholder identity to the real media-stream id so
-      // jitsiIdFor() reports the source, not the token string.
-      if (slot.jitsiId === tok && id !== tok) slot.jitsiId = id;
-      return slot.token;
+    const positions = this.#positionsByToken.get(tok);
+    if (positions && positions.length) {
+      // Slot(s) for this token already exist (seeded by token before the real
+      // jitsiId was known, a metaprogram placeholder, or several positions when
+      // the token is listed more than once). Bind this id to ALL of them —
+      // every occurrence of the token plays the same participant — without
+      // adding a duplicate. Upgrade each placeholder identity to the real
+      // media-stream id so jitsiIdFor() reports the source, not the token. The
+      // positions don't move, so update the pin in place rather than rebuilding.
+      let upgradedPlaceholder = false;
+      for (const p of positions) {
+        if (this.#slots[p].jitsiId === tok && id !== tok) { this.#slots[p].jitsiId = id; upgradedPlaceholder = true; }
+      }
+      this.#tokenByJitsiId.set(id, tok);
+      if (upgradedPlaceholder) this.#tokenByJitsiId.delete(tok); // drop the placeholder pseudo-id
+      return tok;
     }
 
     // A metaprogram is in force and doesn't list this token (every listed
-    // token already holds a slot, so the byToken path above caught those):
+    // token already holds a slot, so the positions path above caught those):
     // the newcomer waits OFF the ring — identity pinned, its audio keeps
     // buffering bot-side, but SILENT until a program update lists the token
     // (applyMetaprogramOrder then folds the pin into a slot).
@@ -148,18 +157,20 @@ export class CircularParticipantQueue {
       return tok;
     }
 
-    // Fresh participant: append at the tail (join order).
+    // Fresh participant (token not present): append one slot at the tail (join
+    // order). Positions before it are unchanged, so update the maps in place.
     const idx = this.#slots.length;
     this.#slots.push({ jitsiId: id, token: tok });
-    this.#indexByJitsiId.set(id, idx);
-    this.#indexByToken.set(tok, idx);
     this.#servedSlotAt.push(null);
+    this.#positionsByToken.set(tok, [idx]);
+    this.#tokenByJitsiId.set(id, tok);
     return tok;
   }
 
   /**
-   * Remove the slot for a media-stream id, COMPACTING the ring so no empty gap is
-   * left where it was — a departed participant never gets another (silent) turn.
+   * Remove every slot the media-stream id's token holds (a repeated token owns
+   * several), COMPACTING the ring so no empty gap is left where they were — a
+   * departed participant never gets another (silent) turn.
    * Returns the removed token, or null if the id was never registered.
    *
    * The write pointer keeps its monotonic slot counter and simply folds onto the
@@ -177,13 +188,18 @@ export class CircularParticipantQueue {
    * slot seeded by token then bound to a real id) collapses to just the real id.
    */
   remove(jitsiId) {
-    const idOfParticipantToRemove = String(jitsiId);
-    const indexOfParticipantToRemove = this.#indexByJitsiId.get(idOfParticipantToRemove);
-    if (indexOfParticipantToRemove == null) return null;
-    const { token } = this.#slots[indexOfParticipantToRemove];
-    this.#slots.splice(indexOfParticipantToRemove, 1);
-    this.#servedSlotAt.splice(indexOfParticipantToRemove, 1);
-    // Every slot after the removed one shifted down by one — rebuild both maps.
+    const id = String(jitsiId);
+    const token = this.#tokenByJitsiId.get(id);
+    if (token == null) return null;
+    // A token may hold several positions (listed more than once). Splice from
+    // the highest index down so earlier removals don't shift the ones still to
+    // remove.
+    const positions = (this.#positionsByToken.get(token) || []).slice().sort((a, b) => b - a);
+    for (const p of positions) {
+      this.#slots.splice(p, 1);
+      this.#servedSlotAt.splice(p, 1);
+    }
+    // Positions after each removed slot shifted down — rebuild both maps.
     this.#rebuildIndexMaps();
     return token;
   }
@@ -207,13 +223,14 @@ export class CircularParticipantQueue {
       this.#offRing.delete(id);
       return { token, removed: true };
     }
-    const i = this.#indexByJitsiId.get(id);
-    if (i == null) return { token: null, removed: false };
+    const token = this.#tokenByJitsiId.get(id);
+    if (token == null) return { token: null, removed: false };
     if (this.#metaprogramOrder) {
       // In metaprogram mode every ring token is listed (register() sends
-      // unlisted ones off-ring), so the schedule still names this slot.
-      this.#slots[i].departed = true;
-      return { token: this.#slots[i].token, removed: false };
+      // unlisted ones off-ring), so the schedule still names this slot. Mark
+      // every position the token holds (a repeat owns several) as a ghost.
+      for (const p of (this.#positionsByToken.get(token) || [])) this.#slots[p].departed = true;
+      return { token, removed: false };
     }
     return { token: this.remove(id), removed: true };
   }
@@ -232,16 +249,15 @@ export class CircularParticipantQueue {
 
   /**
    * Filter a raw metaprogram token list down to well-formed room-index tokens,
-   * deduplicated keeping first appearance — the sequence's written order.
-   * Pure: no queue state is read or written.
+   * preserving written order AND multiplicity — a token listed N times yields N
+   * entries (`<0 0 0a>` -> ['0','0','0a']), so it takes N ring positions and
+   * plays N times per lap. Pure: no queue state is read or written.
    */
   captureMetaprogramTokens(rawTokens) {
-    const seen = new Set();
     const out = [];
     for (const raw of Array.isArray(rawTokens) ? rawTokens : []) {
       const tok = String(raw);
-      if (!/^\d+[a-z]*$/.test(tok) || seen.has(tok)) continue;
-      seen.add(tok);
+      if (!/^\d+[a-z]*$/.test(tok)) continue;
       out.push(tok);
     }
     return out;
@@ -255,13 +271,15 @@ export class CircularParticipantQueue {
 
   /**
    * Adopt the metaprogram's participant list: the ring becomes exactly
-   * `rawTokens` (filtered/deduped via captureMetaprogramTokens) in written
-   * order. Existing slots carry over with their identity and departed flag;
-   * off-ring participants whose token is now listed fold in; listed tokens
-   * nobody has claimed get placeholder slots. Slots the program no longer
-   * lists either move off-ring (participant still present — their audio keeps
-   * buffering) or, when departed, are RETIRED for good — the returned array
-   * of retired tokens is the caller's cue to drop those buffers.
+   * `rawTokens` (filtered via captureMetaprogramTokens, repeats KEPT) in written
+   * order — a token listed N times takes N ring positions and plays N times per
+   * lap, all backed by the same participant. Existing slots carry their identity
+   * and departed flag over to every occurrence; off-ring participants whose
+   * token is now listed fold in; listed tokens nobody has claimed get
+   * placeholder slots. Tokens the program no longer lists either move off-ring
+   * (participant still present — their audio keeps buffering) or, when departed,
+   * are RETIRED for good — the returned array of retired tokens (each once) is
+   * the caller's cue to drop those buffers.
    *
    * An empty/invalid token list reverts to join-order mode: ghosts are
    * retired, off-ring participants fold back in (tokenOrder), survivors keep
@@ -277,45 +295,68 @@ export class CircularParticipantQueue {
     if (!tokens.length) {
       if (!this.#metaprogramOrder) return retired;
       this.#metaprogramOrder = null;
-      for (let i = this.#slots.length - 1; i >= 0; i--) {
-        if (this.#slots[i].departed) {
-          retired.push(this.#slots[i].token);
-          this.#slots.splice(i, 1);
-          this.#servedSlotAt.splice(i, 1);
-        }
+      // Revert to join-order mode, which holds ONE slot per token: collapse any
+      // repeated token to a single survivor (first seen), retire departed
+      // ghosts (once), then fold the off-ring waiters back in (tokenOrder).
+      const seen = new Set();
+      const survivors = [];
+      for (const slot of this.#slots) {
+        if (seen.has(slot.token)) continue;
+        seen.add(slot.token);
+        if (slot.departed) { retired.push(slot.token); continue; }
+        survivors.push({ jitsiId: slot.jitsiId, token: slot.token });
       }
       const waiting = [...this.#offRing.entries()].sort((a, b) => tokenOrder(a[1], b[1]));
-      for (const [id, tok] of waiting) {
-        this.#slots.push({ jitsiId: id, token: tok });
-        this.#servedSlotAt.push(null);
-      }
+      for (const [id, tok] of waiting) survivors.push({ jitsiId: id, token: tok });
       this.#offRing.clear();
+      this.#slots = survivors;
+      this.#servedSlotAt = survivors.map(() => null);
       this.#rebuildIndexMaps();
       return retired;
     }
 
     this.#metaprogramOrder = tokens;
-    const slotByToken = new Map(this.#slots.map((s) => [s.token, s]));
+    // Identity (jitsiId + departed flag) per DISTINCT token, resolved ONCE so
+    // every occurrence of a repeated token maps to the same participant. Read
+    // from the current ring first (a token's slots share one identity, so the
+    // first is enough), then the off-ring waiters, then a placeholder.
+    const identityByToken = new Map();
+    for (const slot of this.#slots) {
+      if (!identityByToken.has(slot.token)) {
+        identityByToken.set(slot.token, { jitsiId: slot.jitsiId, departed: !!slot.departed });
+      }
+    }
     const waitingIdByToken = new Map([...this.#offRing.entries()].map(([id, tok]) => [tok, id]));
+    const listed = new Set(tokens);
+
     const next = [];
     for (const tok of tokens) {
-      const existing = slotByToken.get(tok);
-      if (existing) { next.push(existing); slotByToken.delete(tok); continue; }
-      const waitingId = waitingIdByToken.get(tok);
-      if (waitingId != null) {
-        this.#offRing.delete(waitingId);
-        next.push({ jitsiId: waitingId, token: tok });
-        continue;
+      let identity = identityByToken.get(tok);
+      if (!identity) {
+        const waitingId = waitingIdByToken.get(tok);
+        if (waitingId != null) {
+          this.#offRing.delete(waitingId);
+          identity = { jitsiId: waitingId, departed: false };
+        } else {
+          // Listed but never seen: a placeholder (silent turns) until audio
+          // arrives and register() binds the real media-stream id to it.
+          identity = { jitsiId: tok, departed: false };
+        }
+        identityByToken.set(tok, identity); // reuse for any further occurrences
       }
-      // Listed but never seen: placeholder slot (silent turns) until audio
-      // arrives and register() binds the real media-stream id to it.
-      next.push({ jitsiId: tok, token: tok });
+      const slot = { jitsiId: identity.jitsiId, token: tok };
+      if (identity.departed) slot.departed = true;
+      next.push(slot);
     }
-    // Slots the program no longer lists: present participants wait off the
-    // ring (their audio keeps buffering); departed ghosts are retired for good.
-    for (const leftover of slotByToken.values()) {
-      if (leftover.departed) retired.push(leftover.token);
-      else this.#offRing.set(leftover.jitsiId, leftover.token);
+    // Distinct current tokens the new program no longer lists (once each):
+    // present participants wait off the ring (audio keeps buffering); departed
+    // ghosts are retired for good.
+    const handled = new Set();
+    for (const slot of this.#slots) {
+      if (listed.has(slot.token) || handled.has(slot.token)) continue;
+      handled.add(slot.token);
+      if (slot.departed) retired.push(slot.token);
+      else this.#offRing.set(slot.jitsiId, slot.token);
     }
     this.#slots = next;
     this.#servedSlotAt = next.map(() => null);
@@ -324,14 +365,18 @@ export class CircularParticipantQueue {
   }
 
   // Rebuild both lookup maps from the slot array (positions changed: a
-  // removal, or a metaprogram re-order). A placeholder alias (a slot seeded
-  // by token then bound to a real id) collapses to just the real id.
+  // removal, a fresh append, or a metaprogram re-order). token -> positions is
+  // one-to-many (a repeated token owns several); jitsiId -> token is the pin. A
+  // placeholder alias (a slot seeded by token then bound to a real id)
+  // collapses to just the real id.
   #rebuildIndexMaps() {
-    this.#indexByJitsiId.clear();
-    this.#indexByToken.clear();
+    this.#positionsByToken = new Map();
+    this.#tokenByJitsiId = new Map();
     this.#slots.forEach((slot, i) => {
-      this.#indexByJitsiId.set(slot.jitsiId, i);
-      this.#indexByToken.set(slot.token, i);
+      let positions = this.#positionsByToken.get(slot.token);
+      if (!positions) { positions = []; this.#positionsByToken.set(slot.token, positions); }
+      positions.push(i);
+      this.#tokenByJitsiId.set(slot.jitsiId, slot.token);
     });
   }
 

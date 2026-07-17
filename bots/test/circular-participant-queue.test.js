@@ -166,12 +166,85 @@ test('serve() rotates in metaprogram order, placeholder (silent) turns included'
   clock = 2000; assert.equal(circularParticipantTestQueue.serve().token, '1', 'wraps in metaprogram order');
 });
 
-test('captureMetaprogramTokens filters malformed tokens and dedupes keeping written order', () => {
+test('captureMetaprogramTokens filters malformed tokens but keeps written order AND repeats', () => {
   const circularParticipantTestQueue = new CircularParticipantQueue();
   assert.deepEqual(
     circularParticipantTestQueue.captureMetaprogramTokens(['2', '0a', '2', 'nope', '', null, '10', '0a']),
-    ['2', '0a', '10'],
+    ['2', '0a', '2', '10', '0a'],
   );
+});
+
+// --- repeated tokens play their written multiplicity ---------------------------
+
+test('a token listed N times holds N ring positions and serves N times per lap', () => {
+  let clock = 0;
+  const q = new CircularParticipantQueue({ now: () => clock, slotMs: 1000 });
+  q.register('src-0', '0');
+  q.register('src-0a', '0a');
+  q.applyMetaprogramOrder(['0', '0', '0a']); // <0 0 0a>: 0 twice, 0a once
+  assert.deepEqual(q.order(), ['0', '0', '0a'], 'both occurrences of 0 keep a slot');
+  assert.equal(q.size, 3);
+
+  // Every 0 slot streams the same participant's audio.
+  assert.equal(q.jitsiIdFor('0'), 'src-0');
+  assert.equal(q.tokenFor('src-0'), '0');
+
+  clock = 0;    assert.equal(q.serve().token, '0');
+  clock = 1000; assert.equal(q.serve().token, '0', 'second consecutive turn is 0 again');
+  clock = 2000; assert.equal(q.serve().token, '0a');
+  clock = 3000; assert.equal(q.serve().token, '0', 'lap wraps to the first 0');
+});
+
+test('interleaved and back-to-back repeats keep their exact written positions', () => {
+  const q = new CircularParticipantQueue();
+  q.register('src-0', '0');
+  q.register('src-0a', '0a');
+  q.register('src-0b', '0b');
+  q.applyMetaprogramOrder(['0', '0a', '0', '0b', '0a', '0b', '0']);
+  assert.deepEqual(q.order(), ['0', '0a', '0', '0b', '0a', '0b', '0']);
+  // 0 appears three times, all bound to the one participant.
+  assert.equal(q.order().filter((t) => t === '0').length, 3);
+  assert.equal(q.jitsiIdFor('0'), 'src-0');
+});
+
+test('a repeated token registered only after the program lists it upgrades every placeholder', () => {
+  const q = new CircularParticipantQueue();
+  q.register('src-0', '0');
+  q.applyMetaprogramOrder(['0', '1', '1']); // 1 listed twice before its audio arrives
+  assert.deepEqual(q.order(), ['0', '1', '1']);
+  assert.equal(q.jitsiIdFor('1'), '1', 'both 1 slots are placeholders until the stream binds');
+
+  assert.equal(q.register('src-1', '1'), '1');
+  assert.equal(q.jitsiIdFor('1'), 'src-1', 'the real id fills every 1 position');
+  assert.equal(q.tokenFor('src-1'), '1');
+  assert.deepEqual(q.order(), ['0', '1', '1'], 'no duplicate slot added');
+});
+
+test('removing a repeated token in join-order mode drops all its positions, then a rejoin re-appends once', () => {
+  const q = new CircularParticipantQueue();
+  q.register('src-0', '0');
+  q.register('src-1', '1');
+  q.applyMetaprogramOrder(['0', '1', '0']); // 0 twice
+  assert.deepEqual(q.order(), ['0', '1', '0']);
+
+  // Revert to join order: repeats collapse to one slot each.
+  q.applyMetaprogramOrder([]);
+  assert.deepEqual(q.order(), ['0', '1'], 'join order holds one slot per token');
+  assert.equal(q.jitsiIdFor('0'), 'src-0');
+});
+
+test('a repeat present does not block adding a genuinely new participant token', () => {
+  const q = new CircularParticipantQueue();
+  q.register('src-0', '0');
+  q.register('src-0a', '0a');
+  q.applyMetaprogramOrder(['0', '0', '0a']);
+  q.register('src-1', '1'); // new participant joins → off-ring while unlisted
+  assert.deepEqual(q.waitingTokens(), ['1']);
+
+  q.applyMetaprogramOrder(['0', '0', '0a', '1']); // add 1 while 0 is still repeated
+  assert.deepEqual(q.order(), ['0', '0', '0a', '1'], '1 folds in; the repeat is untouched');
+  assert.equal(q.jitsiIdFor('1'), 'src-1');
+  assert.deepEqual(q.waitingTokens(), []);
 });
 
 test('a newcomer whose token the metaprogram does not list stays silent until added', () => {
