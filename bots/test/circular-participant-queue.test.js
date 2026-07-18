@@ -271,7 +271,7 @@ test('depart keeps a listed slot as a ghost; a program update retires it', () =>
   circularParticipantTestQueue.applyMetaprogramOrder(['0', '1']);
 
   const gone = circularParticipantTestQueue.depart('src-0');
-  assert.deepEqual(gone, { token: '0', removed: false }, 'metaprogram still lists 0 -> ghost kept');
+  assert.deepEqual(gone, { token: '0', removed: false, reason: 'ghost', hadRingSlot: true }, 'metaprogram still lists 0 -> ghost kept');
   assert.deepEqual(circularParticipantTestQueue.order(), ['0', '1'], 'the ghost keeps its turn');
 
   const retired = circularParticipantTestQueue.applyMetaprogramOrder(['1']);
@@ -304,6 +304,31 @@ test('a routine re-adoption preserves a ghost; a genuine re-apply that still lis
   // A rejoiner on index 0 then upgrades the placeholder to a live participant.
   assert.equal(q.register('src-0-rejoined', '0'), '0');
   assert.equal(q.jitsiIdFor('0'), 'src-0-rejoined', 'the placeholder folds in the rejoiner');
+});
+
+test('knowsToken reports an off-ring token so its live source is not stranded when the program lists it', () => {
+  const q = new CircularParticipantQueue();
+  q.register('src-0', '0');
+  q.applyMetaprogramOrder(['0']);        // metaprogram mode, ring [0]
+  q.register('src-0a', '0a');            // 0a unlisted -> off-ring under its REAL id
+
+  // hasToken is ring-only (false off the ring); knowsToken sees the off-ring pin.
+  assert.equal(q.hasToken('0a'), false);
+  assert.equal(q.knowsToken('0a'), true, 'an off-ring token is already known to the queue');
+
+  // #syncOrderFromBuffers guards on knowsToken. The OLD bug guarded on hasToken,
+  // so it re-registered 0a as register('0a','0a') — a second, pseudo-id off-ring
+  // pin that then shadowed the real source. Emulate the guarded call:
+  if (!q.knowsToken('0a')) q.register('0a', '0a');
+  assert.deepEqual(q.waitingTokens(), ['0a'], 'exactly one off-ring pin (the real source), no pseudo-id duplicate');
+
+  // Listing 0a folds in the REAL media-stream id, not a placeholder.
+  q.applyMetaprogramOrder(['0', '0a']);
+  assert.equal(q.jitsiIdFor('0a'), 'src-0a', 'the ring slot binds the real source');
+  assert.deepEqual(q.waitingTokens(), [], 'nothing stranded off-ring');
+
+  // So its leave GHOSTS (buffer kept) instead of the off-ring drop (buffer lost).
+  assert.deepEqual(q.depart('src-0a'), { token: '0a', removed: false, reason: 'ghost', hadRingSlot: true });
 });
 
 test('a reclaimed ghost (rejoin + revive before re-apply) carries over live, not as a placeholder', () => {
@@ -342,14 +367,14 @@ test('depart in join-order mode (and for off-ring pins) removes immediately', ()
   const circularParticipantTestQueue = new CircularParticipantQueue();
   circularParticipantTestQueue.register('src-0', '0');
   circularParticipantTestQueue.register('src-1', '1');
-  assert.deepEqual(circularParticipantTestQueue.depart('src-0'), { token: '0', removed: true });
+  assert.deepEqual(circularParticipantTestQueue.depart('src-0'), { token: '0', removed: true, reason: 'join-order', hadRingSlot: false });
   assert.deepEqual(circularParticipantTestQueue.order(), ['1']);
 
   // Off-ring pin: departing drops the pin outright (nothing was playing them).
   circularParticipantTestQueue.applyMetaprogramOrder(['1']);
   circularParticipantTestQueue.register('src-9', '9');
   assert.deepEqual(circularParticipantTestQueue.waitingTokens(), ['9']);
-  assert.deepEqual(circularParticipantTestQueue.depart('src-9'), { token: '9', removed: true });
+  assert.deepEqual(circularParticipantTestQueue.depart('src-9'), { token: '9', removed: true, reason: 'off-ring', hadRingSlot: false });
   assert.deepEqual(circularParticipantTestQueue.waitingTokens(), []);
 });
 

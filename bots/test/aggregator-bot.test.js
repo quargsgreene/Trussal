@@ -1040,6 +1040,46 @@ test('a rejoin on the departed index reclaims the slot (Case 3); a later re-appl
   assert.equal(r.assembled, 3, "plays the rejoiner's fresh audio, not a ghost loop");
 });
 
+test('a participant that delivered audio while UNLISTED is not stranded off-ring when later listed; its leave ghosts', async () => {
+  let clock = 0;
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {},
+    1024,
+  );
+  // Program lists only 0. 0a delivers audio while UNLISTED -> parks off-ring.
+  bot.applyProgramText('$ participants <0>');
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'bot-0a', token: '0a', samples: [0.3, 0.3, 0.3] },
+  ]);
+
+  // A playback tick runs #syncOrderFromBuffers. The old bug re-registered 0a's
+  // buffer as a pseudo-id off-ring pin (hasToken was ring-only); knowsToken now
+  // skips it, so there is exactly ONE off-ring pin — 0a's real source.
+  clock = 0;
+  await bot.readAndAssembleMasterBuffer();
+  assert.deepEqual(bot.order.waitingTokens(), ['0a'], 'one off-ring pin (real source), no pseudo-id duplicate');
+
+  // Listing 0a folds the REAL source into the ring (not a silent placeholder).
+  bot.applyProgramText('$ participants <0 0a>');
+  assert.equal(bot.order.jitsiIdFor('0a'), 'bot-0a', 'the ring slot binds 0a\'s real media-stream id');
+  assert.deepEqual(bot.order.waitingTokens(), [], 'nothing stranded off-ring');
+
+  // 0a leaves. Because its live source is in-ring under a listed token, the leave
+  // GHOSTS — the buffer is kept and replays — rather than being dropped silently.
+  bot.removeParticipant('bot-0a');
+  assert.deepEqual(bot.order.order(), ['0', '0a'], 'the metaprogram still lists 0a -> ghost slot kept');
+  assert.ok(bot.buffers['0a'], 'the ghost buffer persists after the leave');
+
+  clock = 1000; // 0a's turn as a ghost: it replays, not silence
+  const r = await bot.readAndAssembleMasterBuffer();
+  assert.equal(r.active, '0a');
+  assert.ok(r.assembled > 0, 'the ghost replays its last audio instead of a silent gap');
+});
+
 test('fresh audio revives a spuriously-departed participant so it plays live, not a stale loop', async () => {
   let clock = 0;
   const { fakeLauncher } = makeFakes();

@@ -107,6 +107,23 @@ export class CircularParticipantQueue {
   hasToken(token) { return this.#positionsByToken.has(String(token)); }
 
   /**
+   * True if the queue already tracks this token ANYWHERE — a ring slot OR an
+   * off-ring pin (a listed-but-unclaimed placeholder, or a present participant
+   * waiting for the program to list them). Distinct from hasToken (ring only):
+   * a caller seeding the ring from buffer tokens (#syncOrderFromBuffers) must
+   * NOT re-register a token that is merely off-ring, because register() would
+   * then park a second, pseudo-id (id===token) pin for it — which later shadows
+   * the real media-stream id when the program lists the token, stranding the
+   * live source off-ring so its leave can never ghost.
+   */
+  knowsToken(token) {
+    const tok = String(token);
+    if (this.#positionsByToken.has(tok)) return true;
+    for (const t of this.#offRing.values()) if (t === tok) return true;
+    return false;
+  }
+
+  /**
    * Pin `jitsiId -> token` the first time either is seen and append a ring slot
    * for it, returning the token to route this participant's audio by. Assign-once
    * on both keys:
@@ -221,18 +238,22 @@ export class CircularParticipantQueue {
     if (this.#offRing.has(id)) {
       const token = this.#offRing.get(id);
       this.#offRing.delete(id);
-      return { token, removed: true };
+      // An off-ring pin departs (removed immediately, buffer dropped). hadRingSlot
+      // reports whether the same token ALSO holds a ring slot: true here is the
+      // stranded-source desync (the schedule lists the token yet its live source
+      // sat off-ring so the leave can't ghost) that knowsToken() now prevents.
+      return { token, removed: true, reason: 'off-ring', hadRingSlot: this.#positionsByToken.has(token) };
     }
     const token = this.#tokenByJitsiId.get(id);
-    if (token == null) return { token: null, removed: false };
+    if (token == null) return { token: null, removed: false, reason: 'unregistered', hadRingSlot: false };
     if (this.#metaprogramOrder) {
       // In metaprogram mode every ring token is listed (register() sends
       // unlisted ones off-ring), so the schedule still names this slot. Mark
       // every position the token holds (a repeat owns several) as a ghost.
       for (const p of (this.#positionsByToken.get(token) || [])) this.#slots[p].departed = true;
-      return { token, removed: false };
+      return { token, removed: false, reason: 'ghost', hadRingSlot: true };
     }
-    return { token: this.remove(id), removed: true };
+    return { token: this.remove(id), removed: true, reason: 'join-order', hadRingSlot: false };
   }
 
   /**

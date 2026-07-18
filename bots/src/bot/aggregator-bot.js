@@ -827,7 +827,15 @@ export class AggregatorBot extends Bot {
      */
     #syncOrderFromBuffers() {
         for (const token of Object.keys(this.buffers).sort(tokenOrder)) {
-            if (!this.order.hasToken(token)) this.order.register(token, token);
+            // knowsToken (not hasToken): skip a token the queue already tracks
+            // OFF the ring too. A real participant whose token the metaprogram
+            // doesn't list yet has a buffer here but no ring slot; re-registering
+            // it as register(token, token) would park a pseudo-id off-ring pin
+            // that later shadows its real media-stream id when the program lists
+            // the token — stranding the live source off-ring so its leave never
+            // ghosts. Only a genuinely unknown buffer (direct test seeding) is
+            // folded into the ring.
+            if (!this.order.knowsToken(token)) this.order.register(token, token);
         }
     }
 
@@ -1058,7 +1066,7 @@ export class AggregatorBot extends Bot {
      * Returns the token, or null if the identity was never registered.
      */
     removeParticipant(identity) {
-        const { token, removed } = this.order.depart(String(identity));
+        const { token, removed, reason, hadRingSlot } = this.order.depart(String(identity));
         if (token === null) return null;
         if (!removed) {
             console.log(
@@ -1074,9 +1082,12 @@ export class AggregatorBot extends Bot {
         this.#ghostReplayOffset.delete(token);
         this.#lastScheduledBuffer.delete(token);
         if (this.#activeToken === token) this.#activeToken = null;
+        // reason distinguishes a real ring compaction (join-order mode) from an
+        // off-ring pin drop; hadRingSlot=true on an off-ring drop would flag the
+        // stranded-source desync knowsToken() now prevents (see #syncOrderFromBuffers).
         console.log(
-            `[aggregator-bot] participant left, ring compacted: identity=${identity} token=${token} ` +
-            `order=${this.order.order().join(',')}`,
+            `[aggregator-bot] participant left (${reason}), buffer dropped: identity=${identity} ` +
+            `token=${token} hadRingSlot=${hadRingSlot} order=${this.order.order().join(',')}`,
         );
         return token;
     }
