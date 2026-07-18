@@ -473,7 +473,9 @@ export class AggregatorBot extends Bot {
                     payload.modality === 'apply' || payload.modality === 'roster');
                 if (!applied) return;
                 this.programText = text;
-                this.#pushProgramToScheduler();
+                // apply/roster/catch-up are all genuine re-applies: end any
+                // departed ghost's grace period (Case 2/3).
+                this.#pushProgramToScheduler({ programUpdate: true });
             });
         }
 
@@ -516,7 +518,8 @@ export class AggregatorBot extends Bot {
         const { errors, valid } = parseMetaprogram(text);
         if (!valid) return errors;
         this.programText = text;
-        this.#pushProgramToScheduler();
+        // A genuine re-apply: ends any departed ghost's grace period (Case 2/3).
+        this.#pushProgramToScheduler({ programUpdate: true });
         return errors;
     }
 
@@ -528,13 +531,19 @@ export class AggregatorBot extends Bot {
      * transiently invalid mid-keystroke; invalid text leaves both untouched
      * (last valid program stays in force), matching the scheduler's own
      * keep-last-valid behavior.
+     *
+     * `programUpdate` marks a genuine re-apply (an ▶ Apply / Ctrl+Enter, the
+     * roster seed, or a catch-up) as opposed to the routine cycle-boundary
+     * re-adoption that #onSchedulerEvent drives. It flows to the ring so a
+     * departed ghost's grace period ends only on a real re-apply, not on every
+     * cycle (see CircularParticipantQueue.applyMetaprogramOrder).
      */
-    #pushProgramToScheduler() {
+    #pushProgramToScheduler({ programUpdate = false } = {}) {
         if (this.programText == null) return;
         const { ast, valid } = parseMetaprogram(this.programText);
         if (!valid) return;
         if (this.scheduler) this.scheduler.setProgram(ast);
-        this.#applyOrderFromProgram(ast);
+        this.#applyOrderFromProgram(ast, { programUpdate });
     }
 
     /**
@@ -542,19 +551,25 @@ export class AggregatorBot extends Bot {
      * MEMBERSHIP: unlisted participants wait silent off the ring, departed-
      * but-listed ghosts keep streaming their held audio (see
      * CircularParticipantQueue.applyMetaprogramOrder). Tokens the queue
-     * retires — departed ghosts the program no longer lists — lose their
-     * buffers here, completing the "only removed once the metaprogram no
-     * longer includes that participant" rule.
+     * retires lose their buffers and replay state here — a departed ghost the
+     * program no longer lists (removed from the ring for good), and, on a
+     * genuine re-apply (`programUpdate`), a departed ghost the program STILL
+     * lists but that nobody rejoined (reset to a silent placeholder). Either
+     * way the leaver's stale audio is dropped; the routine cycle-boundary
+     * re-adoption (programUpdate=false) retires nothing, so the ghost keeps
+     * replaying until the performer actually re-applies.
      */
-    #applyOrderFromProgram(ast) {
+    #applyOrderFromProgram(ast, { programUpdate = false } = {}) {
         if (!ast || !ast.participants) return;
-        const retired = this.order.applyMetaprogramOrder(metaprogramTokenSequence(ast.participants));
+        const retired = this.order.applyMetaprogramOrder(
+            metaprogramTokenSequence(ast.participants), { programUpdate },
+        );
         if (!retired.length) return;
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
         );
         for (const token of retired) { this.#ghostReplayOffset.delete(token); this.#lastScheduledBuffer.delete(token); }
-        console.log(`[aggregator-bot] metaprogram dropped departed participant(s), retired: ${retired.join(',')}`);
+        console.log(`[aggregator-bot] metaprogram retired departed participant(s): ${retired.join(',')}`);
     }
 
     /**
@@ -1035,8 +1050,11 @@ export class AggregatorBot extends Bot {
      *   - metaprogram mode: the slot AND buffer are KEPT — the schedule still
      *     lists this token, so its turns REPLAY the last held audio buffer
      *     (readAndAssembleMasterBuffer loops it non-destructively rather than
-     *     draining to silence); both are retired when a program update drops the
-     *     token (see #applyOrderFromProgram).
+     *     draining to silence) until the metaprogram is next re-applied, which
+     *     ends the grace: dropping the token retires the slot and buffer, a
+     *     re-apply that still lists it but saw no rejoin resets it to a silent
+     *     placeholder and drops the buffer, and a rejoiner reclaiming the slot
+     *     revives it to live (see #applyOrderFromProgram / revive).
      * Returns the token, or null if the identity was never registered.
      */
     removeParticipant(identity) {

@@ -267,7 +267,10 @@ export class CircularParticipantQueue {
   //   - an unlisted participant waits off the ring: pinned, buffering, silent
   //     until a program update lists its token;
   //   - a listed participant that leaves stays as a departed ghost, streaming
-  //     its remaining held audio each turn, until the program drops it.
+  //     its remaining held audio each turn, until the metaprogram is next
+  //     re-applied: an update that still lists the token but saw no rejoin
+  //     resets it to a silent placeholder, one that drops the token retires it,
+  //     and a rejoiner who reclaims the slot un-ghosts it (revive) back to live.
 
   /**
    * Filter a raw metaprogram token list down to well-formed room-index tokens,
@@ -303,6 +306,20 @@ export class CircularParticipantQueue {
    * are RETIRED for good — the returned array of retired tokens (each once) is
    * the caller's cue to drop those buffers.
    *
+   * `programUpdate` decides the fate of a departed ghost whose token IS still
+   * listed — the leaver's grace period. A departed participant keeps its slot
+   * and replays its last held audio for as long as the SAME program stays in
+   * force, which is what the routine cycle-boundary re-adoption
+   * (programUpdate=false, the default) preserves: the ghost's departed flag
+   * carries over every occurrence so serve() keeps replaying it. The moment the
+   * performer re-applies the metaprogram (programUpdate=true — an ▶ Apply /
+   * Ctrl+Enter, roster seed, or catch-up), the grace ends: a still-listed ghost
+   * that nobody has rejoined is RESET to a silent placeholder (departed flag
+   * cleared, identity reset) and its token added to `retired` so the caller
+   * drops the stale audio — the token is thereafter treated exactly like one
+   * listed but never seen. (A ghost whose slot was reclaimed by a rejoiner is
+   * already un-ghosted by revive() before this runs, so it carries over live.)
+   *
    * An empty/invalid token list reverts to join-order mode: ghosts are
    * retired, off-ring participants fold back in (tokenOrder), survivors keep
    * their current arrangement.
@@ -310,7 +327,7 @@ export class CircularParticipantQueue {
    * #servedSlotAt is reset either way, so `lapped` is approximate for the
    * next lap (observability only — same caveat as remove()).
    */
-  applyMetaprogramOrder(rawTokens) {
+  applyMetaprogramOrder(rawTokens, { programUpdate = false } = {}) {
     const tokens = this.captureMetaprogramTokens(rawTokens);
     const retired = [];
 
@@ -365,6 +382,17 @@ export class CircularParticipantQueue {
           identity = { jitsiId: tok, departed: false };
         }
         identityByToken.set(tok, identity); // reuse for any further occurrences
+      }
+      // Genuine re-apply ends a still-listed ghost's grace period: nobody
+      // rejoined (a reclaim would have cleared departed via revive() first), so
+      // reset it to a silent placeholder and retire its stale audio — the token
+      // is now treated exactly like one listed but never seen. Reset the shared
+      // identity once so every further occurrence of a repeated token folds in
+      // as the same placeholder (and the token is retired only once).
+      if (programUpdate && identity.departed) {
+        retired.push(tok);
+        identity = { jitsiId: tok, departed: false };
+        identityByToken.set(tok, identity);
       }
       const slot = { jitsiId: identity.jitsiId, token: tok };
       if (identity.departed) slot.departed = true;

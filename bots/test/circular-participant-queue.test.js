@@ -279,6 +279,50 @@ test('depart keeps a listed slot as a ghost; a program update retires it', () =>
   assert.deepEqual(circularParticipantTestQueue.order(), ['1']);
 });
 
+test('a routine re-adoption preserves a ghost; a genuine re-apply that still lists it resets it to a silent placeholder', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('src-0', '0');
+  q.register('src-1', '1');
+  q.applyMetaprogramOrder(['0', '1']);
+  q.depart('src-0'); // listed -> ghost, replaying its last audio
+
+  // The cycle-boundary re-adoption re-applies the SAME program every cycle
+  // (programUpdate defaults false): the ghost's grace period must hold.
+  let retired = q.applyMetaprogramOrder(['0', '1']);
+  assert.deepEqual(retired, [], 'a routine re-adoption retires nothing');
+  assert.equal(q.serve().departed, true, 'position 0 is still a replaying ghost');
+
+  // A GENUINE re-apply (▶ Apply / Ctrl+Enter) that still lists 0 but saw no
+  // rejoin ends the grace (Case 2): 0 keeps its ring position but becomes a
+  // silent placeholder, and its token is retired so the caller drops the audio.
+  retired = q.applyMetaprogramOrder(['0', '1'], { programUpdate: true });
+  assert.deepEqual(retired, ['0'], 'the still-listed ghost is retired to drop its buffer');
+  assert.deepEqual(q.order(), ['0', '1'], '0 keeps its ring position');
+  assert.equal(q.serve().departed, false, 'now a silent placeholder, not a replaying ghost');
+  assert.equal(q.jitsiIdFor('0'), '0', 'reset to a placeholder identity, ready for a rejoiner');
+
+  // A rejoiner on index 0 then upgrades the placeholder to a live participant.
+  assert.equal(q.register('src-0-rejoined', '0'), '0');
+  assert.equal(q.jitsiIdFor('0'), 'src-0-rejoined', 'the placeholder folds in the rejoiner');
+});
+
+test('a reclaimed ghost (rejoin + revive before re-apply) carries over live, not as a placeholder', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('src-0', '0');
+  q.applyMetaprogramOrder(['0']);
+  q.depart('src-0'); // ghost
+  assert.equal(q.serve().departed, true);
+
+  // A rejoiner reclaims index 0; its fresh audio un-ghosts the slot (revive)
+  // BEFORE the performer re-applies — so the re-apply sees a live slot (Case 3).
+  q.register('src-0b', '0');
+  assert.equal(q.revive('src-0b'), true, 'fresh audio revives the reclaimed slot');
+
+  const retired = q.applyMetaprogramOrder(['0'], { programUpdate: true });
+  assert.deepEqual(retired, [], 'a live (reclaimed) slot is not retired');
+  assert.equal(q.serve().departed, false, 'it stays live through the re-apply');
+});
+
 test('revive clears the ghost flag for a participant that never really left', () => {
   const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
   q.register('src-0', '0');

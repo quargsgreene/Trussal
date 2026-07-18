@@ -965,6 +965,81 @@ test('a departed ghost replays its last scheduled buffer even after its live tur
   assert.equal(bot.buffers['0'], undefined, 'the metaprogram dropping 0 finally deletes its buffer');
 });
 
+test('re-applying a program that still lists a departed participant silences it (Case 2) and drops its buffer', async () => {
+  let clock = 0;
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {},
+    1024,
+  );
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5, 0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+  ]);
+  bot.applyProgramText('$ participants <0 1>');
+
+  // 0 takes a live turn (snapshotting its buffer) and then leaves -> ghost replay.
+  clock = 0;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0');
+  bot.removeParticipant('human-0');
+  clock = 2000; // 0 comes round again as a ghost
+  assert.equal((await bot.readAndAssembleMasterBuffer()).assembled, 3, 'the ghost replays its last audio');
+
+  // The performer re-applies the SAME program; nobody rejoined as 0. Case 2:
+  // 0 is reset to a silent placeholder and its retained audio is dropped —
+  // it is now treated like a token listed but never seen.
+  bot.applyProgramText('$ participants <0 1>');
+  assert.deepEqual(bot.order.order(), ['0', '1'], '0 keeps its ring position — now a silent placeholder');
+  assert.equal(bot.buffers['0'], undefined, 'its stale buffer is dropped on the re-apply');
+
+  clock = 4000; // 0's turn again — silent now, not a replaying ghost
+  const r = await bot.readAndAssembleMasterBuffer();
+  assert.equal(r.active, '0', '0 still takes its placeholder turn');
+  assert.equal(r.assembled, 0, 'but streams silence, not a replay');
+});
+
+test('a rejoin on the departed index reclaims the slot (Case 3); a later re-apply keeps it live', async () => {
+  let clock = 0;
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {},
+    1024,
+  );
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.2] },
+  ]);
+  bot.applyProgramText('$ participants <0 1>');
+  clock = 0;
+  assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0');
+
+  // 0 leaves -> ghost.
+  bot.removeParticipant('human-0');
+  assert.equal(bot.order.serve().departed, true, 'index 0 is a ghost');
+
+  // A DIFFERENT participant rejoins on the same room index (identity-stable
+  // reclaim) and delivers fresh audio: the slot is reclaimed and un-ghosted.
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0-rejoined', token: '0', samples: [0.7, 0.7, 0.7] },
+  ]);
+  assert.equal(bot.order.serve().departed, false, 'fresh audio revived the reclaimed slot');
+
+  // A genuine re-apply that still lists 0 keeps the reclaimed slot LIVE and
+  // does NOT drop its buffer — it is a live participant, not a stale ghost.
+  bot.applyProgramText('$ participants <0 1>');
+  assert.deepEqual(bot.order.order(), ['0', '1']);
+  assert.ok(bot.buffers['0'] && bot.buffers['0'].length > 0, "the rejoiner's live buffer survives the re-apply");
+
+  clock = 2000; // 0's turn: it streams the rejoiner's LIVE audio
+  const r = await bot.readAndAssembleMasterBuffer();
+  assert.equal(r.active, '0');
+  assert.equal(r.assembled, 3, "plays the rejoiner's fresh audio, not a ghost loop");
+});
+
 test('fresh audio revives a spuriously-departed participant so it plays live, not a stale loop', async () => {
   let clock = 0;
   const { fakeLauncher } = makeFakes();
