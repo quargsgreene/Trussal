@@ -92,6 +92,32 @@ function flushPending() {
   }
 }
 
+// A persistent per-browser identity, so a genuine leave→rejoin (which mints a
+// fresh Jitsi endpoint id each time) is recognized by the sidecar and handed
+// back the SAME room index it held before — keeping the returning peer in the
+// aggregator's rotation and the metaprogram's slot (see indexByStableId in
+// latency-instrument/server.js). Persisted in localStorage so it survives the
+// tab close a real rejoin implies; a fresh one per browser keeps it unique.
+// Bots are excluded: their storage is ephemeral (a fresh container each spawn),
+// so a UUID here would never actually recur — they keep the fresh-index path.
+function stableClientId() {
+  try {
+    const KEY = 'trussal:clientId';
+    let id = window.localStorage.getItem(KEY);
+    if (!id) {
+      id = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      window.localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch (e) {
+    // Storage blocked (private mode / disabled) — fall back to the fresh-index
+    // behavior rather than a per-session id that would falsely reclaim.
+    return null;
+  }
+}
+
 function sendHelloIfReady() {
   if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
   const local = getLocalParticipant();
@@ -104,6 +130,10 @@ function sendHelloIfReady() {
     isAggregator: LOCAL_IS_AGGREGATOR
   };
   if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
+  if (!LOCAL_IS_BOT) {
+    const stableId = stableClientId();
+    if (stableId) hello.stableId = stableId;
+  }
   ws.send(JSON.stringify(hello));
   helloSent = true;
   flushPending();

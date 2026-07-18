@@ -17,15 +17,22 @@ const { randomUUID } = require('crypto');
 const { URL } = require('url');
 const { appendFileSync, mkdirSync } = require('fs');
 const { join } = require('path');
-const { botSuffix, AGGREGATOR_ROOM_INDEX } = require('./room-indices.js');
+const { botSuffix, AGGREGATOR_ROOM_INDEX, parseParticipantToken } = require('./room-indices.js');
 
 function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
-  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count>, crdtLog }.
+  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count>,
+  // indexByStableId: Map<stableId, roomIndex>, crdtLog }.
   // Index counters are the meeting's source of truth: indices are
   // join-ordered, immutable for the meeting, and never reused after a leave.
+  // indexByStableId gives a participant identity CONTINUITY across a genuine
+  // rejoin: a returning client arrives with a fresh Jitsi id (so the stale-
+  // eviction path can't recover its index), but carries a persistent stableId,
+  // and is handed back the SAME room index it last held — so the aggregator's
+  // rotation and the metaprogram, both keyed on the immutable index, fold it
+  // back into its old slot instead of stranding it at a new, unlisted one.
   // crdtLog holds the metaprogram doc's update history (opaque base64 Yjs
   // updates — the relay never interprets them); a client-sent snapshot
   // subsumes and replaces the log. The meta record dies with the room.
@@ -47,7 +54,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       // aggregatorClaimPeerId: the connection currently holding the room's
       // single aggregator slot (see the 'aggregator-claim' handler). A losing
       // aggregator bot never joins Jitsi, so a room can only ever contain one.
-      meta = { nextIndex: 0, botCounters: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
+      meta = { nextIndex: 0, botCounters: new Map(), indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -209,11 +216,25 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           }
 
           if (record.roomIndex == null && !record.isFleet) {
-            record.roomIndex = assignRoomIndex(roomName, {
-              isBot: record.isBot,
-              isAggregator: record.isAggregator,
-              ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
-            });
+            const meta = getRoomMeta(roomName);
+            const stableId = typeof msg.stableId === 'string' && msg.stableId ? msg.stableId : null;
+            // Identity-stable reclaim. A genuine rejoin arrives with a fresh
+            // Jitsi id (the stale-eviction path above only recovers an index for
+            // the SAME jitsiId), so without this it would mint a new, unlisted
+            // index and be stranded off the aggregator's rotation. If the client
+            // carries a persistent stableId we hand back the index that identity
+            // last held. The aggregator always takes the reserved 'pi' index, so
+            // it is neither reclaimed nor remembered here.
+            if (!record.isAggregator && stableId && meta.indexByStableId.has(stableId)) {
+              record.roomIndex = meta.indexByStableId.get(stableId);
+            } else {
+              record.roomIndex = assignRoomIndex(roomName, {
+                isBot: record.isBot,
+                isAggregator: record.isAggregator,
+                ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
+              });
+              if (!record.isAggregator && stableId) meta.indexByStableId.set(stableId, record.roomIndex);
+            }
           }
 
           // Exclude this peer's own record from the roster (guards against re-hello
@@ -492,6 +513,23 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // room name next, rather than the fresh start a genuinely new
           // meeting should be.
           broadcast(room, null, { type: 'session-reset' });
+        } else if (meta) {
+          // The room survives with real participants. If the leaver was a
+          // cluster bot AND it was its owner's LAST bot, restart that owner's
+          // suffix counter so the owner's next cluster comes back as 0a,0b
+          // instead of climbing (0c,0d). Safe reuse: no live bot of the owner
+          // remains to collide with, bots author no CRDT state, and their O2
+          // service is gone. Mirrors the fleet's _ownerSpawnCounts reset in
+          // removeCluster so the predicted and assigned suffixes agree.
+          const parsed = parseParticipantToken(String(record.roomIndex));
+          if (parsed && parsed.suffix != null) {
+            const owner = String(parsed.ownerIndex);
+            const ownerHasBotLeft = [...room.values()].some((r) => {
+              const p = parseParticipantToken(String(r.roomIndex));
+              return p && p.suffix != null && String(p.ownerIndex) === owner;
+            });
+            if (!ownerHasBotLeft) meta.botCounters.delete(owner);
+          }
         }
       } else if (!room || room.size === 0) {
         // A probe-only connection (an aggregator claim that never became a

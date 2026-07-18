@@ -323,6 +323,14 @@ export class FleetService {
       ? mine
       : mine.filter((b) => Array.isArray(targets) && targets.includes(b.clusterIndex));
     for (const bot of wanted) await this.#stopBot(bot.botId);
+    // A fully-emptied cluster restarts its suffix sequence. The owner's integer
+    // index is now stable across a rejoin (identity-stable reclaim — see
+    // indexByStableId in latency-instrument/server.js), so a returning owner's
+    // fresh cluster should come back as 0a,0b rather than climbing (0c,0d). A
+    // PARTIAL removal keeps the sequence, so new bots never collide with the
+    // survivors. Mirrors the sidecar's per-owner botCounters reset when an
+    // owner's last bot leaves, keeping the two suffix counters in agreement.
+    if (this.#clusterIds(ownerIndex).length === 0) this._ownerSpawnCounts.delete(ownerIndex);
     const status = {
       type: 'fleet-status',
       action: 'remove',
@@ -338,6 +346,10 @@ export class FleetService {
   async #teardownAll(reason) {
     for (const id of [...this.bots.keys()]) await this.#stopBot(id);
     await this.#stopAggregator();
+    // Meeting over: the sidecar drops the room's meta (every index counter with
+    // it), so clear our mirror too — the next meeting to reuse this name starts
+    // its clusters fresh at 0a rather than continuing a dead meeting's sequence.
+    this._ownerSpawnCounts.clear();
     this.#busSend({ type: 'fleet-status', action: 'teardown', removed: 'all', reason });
   }
 

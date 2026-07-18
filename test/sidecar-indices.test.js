@@ -77,6 +77,69 @@ test('join order assigns 0,1,2; a rejoiner gets a fresh index (never reused)', a
   });
 });
 
+test('a rejoiner carrying its stableId reclaims its old index (identity-stable)', async () => {
+  await withServer(async (port) => {
+    const a = await connect(port, 'sid1');
+    const b = await connect(port, 'sid1');
+    const c = await connect(port, 'sid1');
+    assert.equal((await hello(a, { jitsiId: 'ja', stableId: 'A' })).roomIndex, '0');
+    assert.equal((await hello(b, { jitsiId: 'jb', stableId: 'B' })).roomIndex, '1');
+    assert.equal((await hello(c, { jitsiId: 'jc', stableId: 'C' })).roomIndex, '2');
+
+    // b leaves and rejoins with a FRESH jitsiId (as a genuine rejoin does) but
+    // its persistent stableId.
+    const leavePromise = waitFor(a, m => m.type === 'peer-leave');
+    await closed(b);
+    await leavePromise;
+
+    const b2 = await connect(port, 'sid1');
+    // Reclaims '1', not a fresh '3' — folds straight back into its old slot.
+    assert.equal((await hello(b2, { jitsiId: 'jb-rejoined', stableId: 'B' })).roomIndex, '1');
+
+    // The reclaim consumed no integer: a genuinely new participant still gets '3'.
+    const d = await connect(port, 'sid1');
+    assert.equal((await hello(d, { jitsiId: 'jd', stableId: 'D' })).roomIndex, '3');
+    a.ws.close(); c.ws.close(); b2.ws.close(); d.ws.close();
+  });
+});
+
+test('a rejoiner without a stableId still gets a fresh index (no false reclaim)', async () => {
+  await withServer(async (port) => {
+    const a = await connect(port, 'sid1b');
+    const b = await connect(port, 'sid1b');
+    assert.equal((await hello(a, { jitsiId: 'ja', stableId: 'A' })).roomIndex, '0');
+    assert.equal((await hello(b, { jitsiId: 'jb' })).roomIndex, '1'); // no stableId
+
+    const leavePromise = waitFor(a, m => m.type === 'peer-leave');
+    await closed(b);
+    await leavePromise;
+
+    // b rejoins WITHOUT a stableId (storage blocked): fresh index, never reused.
+    const b2 = await connect(port, 'sid1b');
+    assert.equal((await hello(b2, { jitsiId: 'jb-rejoined' })).roomIndex, '2');
+    a.ws.close(); b2.ws.close();
+  });
+});
+
+test('the aggregator is never reclaimed by stableId (always the reserved index)', async () => {
+  await withServer(async (port) => {
+    const human = await connect(port, 'sid2');
+    assert.equal((await hello(human, { jitsiId: 'h', stableId: 'H' })).roomIndex, '0');
+
+    const agg = await connect(port, 'sid2');
+    assert.equal(
+      (await hello(agg, { jitsiId: 'agg', isBot: true, isAggregator: true, stableId: 'AGG' })).roomIndex,
+      AGGREGATOR_ROOM_INDEX,
+    );
+
+    // The aggregator consumed no integer and was not remembered under 'AGG':
+    // the next human is '1'.
+    const second = await connect(port, 'sid2');
+    assert.equal((await hello(second, { jitsiId: 'h2', stableId: 'H2' })).roomIndex, '1');
+    human.ws.close(); agg.ws.close(); second.ws.close();
+  });
+});
+
 test('reconnect with the same jitsiId keeps the index (immutable for the meeting)', async () => {
   await withServer(async (port) => {
     const keeper = await connect(port, 'idx2'); // keeps the room alive
@@ -120,6 +183,40 @@ test('owned bots get cluster suffixes in spawn order; humans interleave untouche
     const roster = late.messages.find(m => m.type === 'roster');
     const indices = roster.peers.map(p => p.roomIndex).sort();
     assert.deepEqual(indices, ['0', '0a', '1', '1a', '1b', '1c', '2']);
+  });
+});
+
+test("an owner's last bot leaving restarts its cluster suffix; a partial cluster keeps climbing", async () => {
+  await withServer(async (port) => {
+    const owner = await connect(port, 'sidbot'); // stays, so the room/meta survive
+    assert.equal((await hello(owner, { jitsiId: 'h0', stableId: 'H0' })).roomIndex, '0');
+
+    const b1 = await connect(port, 'sidbot');
+    const b1You = await hello(b1, { jitsiId: 'b1', isBot: true, ownerIndex: '0' });
+    assert.equal(b1You.roomIndex, '0a');
+    const b2 = await connect(port, 'sidbot');
+    const b2You = await hello(b2, { jitsiId: 'b2', isBot: true, ownerIndex: '0' });
+    assert.equal(b2You.roomIndex, '0b');
+
+    // One bot leaves — 0b survives, so the sequence is NOT reset (a new bot must
+    // not collide with the survivor).
+    const gone1 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b1You.peerId);
+    await closed(b1);
+    await gone1;
+    const b3 = await connect(port, 'sidbot');
+    const b3You = await hello(b3, { jitsiId: 'b3', isBot: true, ownerIndex: '0' });
+    assert.equal(b3You.roomIndex, '0c', 'a partial cluster keeps climbing past the survivor');
+
+    // Now every one of owner 0's bots leaves (the owner stays) — the counter resets.
+    const gone2 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b2You.peerId);
+    await closed(b2); await gone2;
+    const gone3 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b3You.peerId);
+    await closed(b3); await gone3;
+
+    const b4 = await connect(port, 'sidbot');
+    assert.equal((await hello(b4, { jitsiId: 'b4', isBot: true, ownerIndex: '0' })).roomIndex, '0a',
+      "an emptied cluster restarts at 'a'");
+    owner.ws.close(); b4.ws.close();
   });
 });
 

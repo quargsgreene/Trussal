@@ -223,6 +223,19 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       }
     }
   }
+  function stableClientId() {
+    try {
+      const KEY = "trussal:clientId";
+      let id3 = window.localStorage.getItem(KEY);
+      if (!id3) {
+        id3 = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        window.localStorage.setItem(KEY, id3);
+      }
+      return id3;
+    } catch (e30) {
+      return null;
+    }
+  }
   function sendHelloIfReady() {
     if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
     const local2 = getLocalParticipant();
@@ -235,6 +248,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       isAggregator: LOCAL_IS_AGGREGATOR
     };
     if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
+    if (!LOCAL_IS_BOT) {
+      const stableId = stableClientId();
+      if (stableId) hello.stableId = stableId;
+    }
     ws.send(JSON.stringify(hello));
     helloSent = true;
     flushPending();

@@ -104,6 +104,15 @@ test('cluster ordinals never reuse letters (respawn after removal continues the 
   });
 });
 
+test('a fully-emptied cluster restarts its suffix sequence (1a again after removeCluster all)', async () => {
+  await withFleet(async ({ fleet }) => {
+    await fleet.spawnCluster('1', 2);            // 1a 1b
+    await fleet.removeCluster('1', 'all');       // cluster emptied → ordinal resets
+    await fleet.spawnCluster('1', 2);            // restarts at 1a,1b, not 1c,1d
+    assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1a', '1b']);
+  });
+});
+
 test('owner leaves → cluster torn down after the grace period; return cancels it', async () => {
   await withFleet(async ({ fleet }) => {
     await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'pk', roomIndex: '9', isBot: false } });
