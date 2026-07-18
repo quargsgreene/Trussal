@@ -965,6 +965,52 @@ test('a departed ghost replays its last scheduled buffer even after its live tur
   assert.equal(bot.buffers['0'], undefined, 'the metaprogram dropping 0 finally deletes its buffer');
 });
 
+test('a departed ghost replays a FULL cycle of accumulated audio, not a sub-second fragment looped', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  // sampleRate 4 + playbackIntervalMs 0 (loops off) -> masterSliceSamples 1 (one
+  // sample streamed per tick); slotMs 1000 -> slotSamples 4 (a "cycle" is 4
+  // samples, i.e. 4 ticks); holdMs 500 -> the per-participant RingBuffer holds
+  // only 2 samples at once — HALF a cycle — so a single snapshot could never
+  // retain a whole cycle; only cross-tick accumulation can. Values are exactly
+  // representable in float32 so they survive the Array round-trip unchanged.
+  const bot = new AggregatorBot(
+    { ...cfg, sampleRate: 4, slotMs: 1000, holdMs: 500 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();               // installs the page playback sink (calls.enqueued)
+  assert.equal(bot.masterSliceSamples, 1);
+  assert.equal(bot.slotSamples, 4);
+  bot.applyProgramText('$ participants <0>');   // single listed participant -> ghosts on leave
+
+  const tick = async (t) => { clock = t; await bot.readAndAssembleMasterBuffer(); await bot.playMasterBufferToClient(); return calls.enqueued.at(-1); };
+  const feed = (samples) => bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'h0', token: '0', samples }]);
+
+  // Live turn (slot 0), streaming four distinct samples one per tick while the
+  // 2-sample buffer is refilled between ticks — no instant ever holds > 2 samples.
+  await feed([0.5, 0.25]);
+  assert.deepEqual(await tick(0), [0.5]);
+  await feed([0.125]);
+  assert.deepEqual(await tick(1), [0.25]);
+  await feed([0.0625]);
+  assert.deepEqual(await tick(2), [0.125]);
+  assert.deepEqual(await tick(3), [0.0625]);
+  assert.equal(bot.buffers['0'].length, 0, 'the live turn drained the buffer');
+
+  // 0 leaves; still listed -> ghost. Its retained window is the WHOLE cycle.
+  bot.removeParticipant('h0');
+
+  // Over the ghost's next turn (slot 1) it replays all four samples IN ORDER —
+  // the full cycle — instead of looping the ~half-cycle a snapshot would hold
+  // (which would give 0.5,0.25,0.5,0.25).
+  const g = [await tick(1000), await tick(1001), await tick(1002), await tick(1003)].flat();
+  assert.deepEqual(g, [0.5, 0.25, 0.125, 0.0625], 'ghost replays a full cycle end-to-end');
+
+  // Only at the NEXT turn does it loop back to the top of the cycle.
+  assert.deepEqual(await tick(2000), [0.5], 'a new turn restarts the cycle from the start');
+});
+
 test('re-applying a program that still lists a departed participant silences it (Case 2) and drops its buffer', async () => {
   let clock = 0;
   const { fakeLauncher } = makeFakes();

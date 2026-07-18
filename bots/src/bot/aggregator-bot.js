@@ -124,13 +124,15 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
-    // Per token: a frozen copy of the audio a participant last had SCHEDULED for
-    // a turn — snapshotted (peek, non-consuming) at the start of each of their
-    // turns, BEFORE the live drain (read) consumes it. This is what a departed
-    // ghost replays: the live RingBuffer is drained to empty by the participant's
-    // own last turn, so it can't be the replay source; this retained snapshot is.
-    // Frozen for a ghost (they get no more turns to refresh it) and dropped when
-    // the metaprogram retires the token.
+    // Per token: a rolling copy of the audio a participant most recently STREAMED,
+    // accumulated a slice at a time as each live turn plays and capped at one full
+    // turn/cycle (this.slotSamples, ~4s) — see #retainScheduled. This is what a
+    // departed ghost replays: the live RingBuffer only holds ~holdMs (<1s) and is
+    // drained by the participant's own turns, so it can't be the replay source;
+    // this retained window is, and holding a whole cycle lets the ghost's turn play
+    // a full cycle of distinct audio instead of looping a sub-second fragment.
+    // Frozen once the participant becomes a ghost (no more live turns refresh it)
+    // and dropped when it is revived or the metaprogram retires the token.
     #lastScheduledBuffer = new Map();
     // Per departed-ghost token: how far into #lastScheduledBuffer the replay has
     // streamed, so its turns loop that frozen audio rather than falling silent.
@@ -192,6 +194,14 @@ export class AggregatorBot extends Bot {
         const playbackMs = Number(cfg.playbackIntervalMs) > 0
             ? Number(cfg.playbackIntervalMs) : DEFAULT_PLAYBACK_INTERVAL_MS;
         this.masterSliceSamples = Math.max(1, Math.round(playbackMs * this.sampleRate / 1000));
+        // How much of a participant's most-recently-STREAMED audio to retain for a
+        // ghost replay: one full turn (slotMs — the ~4s "cycle" a turn lasts), so a
+        // departed ghost's turn replays a whole cycle of distinct audio rather than
+        // looping a sub-second fragment. The retained window rolls as the live turn
+        // streams (accumulated a masterSliceSamples slice at a time) and is capped
+        // here; the ghost loops back to the start only if less than this was ever
+        // captured (see #retainScheduled / #replayDepartedGhost).
+        this.slotSamples = Math.max(1, Math.round(this.slotMs * this.sampleRate / 1000));
         // The circular priority queue: the fixed join-order ring, the assign-once
         // jitsiId -> room-index-token mapping, and the write/turn pointer. Shares
         // this bot's clock and slot length so serve() rotates in lockstep with the
@@ -782,15 +792,17 @@ export class AggregatorBot extends Bot {
         // audio and, relative to the previous turn, evicting what was released a
         // lap ago — the two events requirement 4 pairs at a slot: released on its
         // turn, gone by the time the write pointer reaches this slot again.
-        // `lapped` marks that return-to-position. At the START of each live turn
-        // its buffer is first snapshotted (peek, non-consuming) into
-        // #lastScheduledBuffer, so a later departure has the audio to replay even
-        // though the drain below is about to consume it.
+        // `lapped` marks that return-to-position. Each live tick's released slice
+        // is also accumulated into #lastScheduledBuffer (#retainScheduled, capped
+        // at one full turn/cycle), so a later departure has up to a whole cycle of
+        // the participant's most recent audio to replay — not just the sub-second
+        // snapshot the RingBuffer could hold at any instant.
         //
         // A departed ghost (metaprogram still lists the token) gets no fresh audio
         // and its live buffer was already drained to empty by its final turn, so
-        // it instead REPLAYS #lastScheduledBuffer on a loop — its last scheduled
-        // audio — every turn until the program drops the token (which retires it).
+        // it instead REPLAYS #lastScheduledBuffer — its retained last cycle —
+        // playing it straight through each turn (looping back only if less than a
+        // full cycle was captured) until the program drops the token (retires it).
         let held;
         if (departed) {
             held = this.#replayDepartedGhost(active, newTurn);
@@ -798,11 +810,8 @@ export class AggregatorBot extends Bot {
             held = new Float32Array(0);
         } else {
             this.#ghostReplayOffset.delete(active);
-            if (newTurn) {
-                const snapshot = currentRingBuffer.peek();
-                if (snapshot.length) this.#lastScheduledBuffer.set(active, snapshot);
-            }
             held = currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples));
+            this.#retainScheduled(active, held);
         }
         // Gain-stage the master before it is streamed (requirement 6).
         const { gain, samples } = this.computeGainStaging(held);
@@ -840,18 +849,45 @@ export class AggregatorBot extends Bot {
     }
 
     /**
-     * One playback tick's slice of a departed ghost's last scheduled audio,
-     * looped so its turn plays that material instead of a silent gap. The source
-     * is #lastScheduledBuffer — the snapshot taken at the start of the
-     * participant's final live turn, BEFORE the drain consumed it (the live
-     * RingBuffer is empty by now, so it can't be the source). A ghost that left
-     * before ever taking a turn has no snapshot; fall back to whatever is still
-     * buffered, freezing that once so later turns replay the same thing. The
-     * offset restarts at the top of each of the ghost's turns (newTurn) and
-     * advances by the slice within the turn, wrapping so a turn longer than the
-     * held audio keeps streaming. All of it is dropped only when the metaprogram
-     * retires the token (see #applyOrderFromProgram), so a listed ghost never
-     * plays silence.
+     * Append this live tick's just-streamed slice to the token's rolling
+     * last-cycle window (#lastScheduledBuffer), keeping only the most recent
+     * this.slotSamples — one full turn/cycle. Across a live turn the per-tick
+     * slices accumulate into a whole cycle of the participant's actual streamed
+     * audio, so a later departure replays a full cycle of distinct material
+     * rather than the sub-second fragment a single RingBuffer snapshot held.
+     * Empty slices (a silent or starved tick) are ignored so they neither grow
+     * nor roll material out of the window.
+     */
+    #retainScheduled(token, slice) {
+        if (!slice || !slice.length) return;
+        const prev = this.#lastScheduledBuffer.get(token);
+        let next;
+        if (!prev || !prev.length) {
+            next = slice;
+        } else {
+            next = new Float32Array(prev.length + slice.length);
+            next.set(prev, 0);
+            next.set(slice, prev.length);
+        }
+        // Cap at one cycle, keeping the MOST RECENT samples (drop from the front).
+        if (next.length > this.slotSamples) next = next.slice(next.length - this.slotSamples);
+        this.#lastScheduledBuffer.set(token, next);
+    }
+
+    /**
+     * One playback tick's slice of a departed ghost's retained last cycle, played
+     * straight through so its turn carries that material instead of a silent gap.
+     * The source is #lastScheduledBuffer — up to a full turn/cycle of the audio
+     * the participant most recently streamed, accumulated by #retainScheduled
+     * while it was live (the live RingBuffer holds <1s and was drained by its own
+     * turns, so it can't be the source). A ghost that left before streaming any
+     * has no retained window; fall back to whatever is still buffered, freezing
+     * that once so later turns replay the same thing. The offset restarts at the
+     * top of each of the ghost's turns (newTurn) and advances by the slice within
+     * the turn; #loopSlice wraps only when the turn outruns the retained audio, so
+     * a full cycle plays once end-to-end and a shorter capture loops. All of it is
+     * dropped only when the metaprogram retires the token (see
+     * #applyOrderFromProgram), so a listed ghost never plays silence.
      */
     #replayDepartedGhost(token, newTurn) {
         let source = this.#lastScheduledBuffer.get(token);
