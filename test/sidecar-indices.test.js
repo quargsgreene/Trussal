@@ -103,6 +103,30 @@ test('a rejoiner carrying its stableId reclaims its old index (identity-stable)'
   });
 });
 
+test('two live peers sharing a stableId do not collide (incognito tabs share localStorage)', async () => {
+  await withServer(async (port) => {
+    const a = await connect(port, 'sidshare');
+    const aYou = await hello(a, { jitsiId: 'ja', stableId: 'SHARED' });
+    assert.equal(aYou.roomIndex, '0');
+
+    // A second peer with the SAME stableId while the first is still present must
+    // get a FRESH index, not reclaim the occupied '0'.
+    const b = await connect(port, 'sidshare');
+    assert.equal((await hello(b, { jitsiId: 'jb', stableId: 'SHARED' })).roomIndex, '1',
+      'a shared stableId must not reclaim an index a live peer still holds');
+
+    // The original holder keeps the reclaim: it leaves, freeing '0', then a later
+    // SHARED hello lands back on '0'.
+    const gone = waitFor(b, m => m.type === 'peer-leave' && m.peerId === aYou.peerId);
+    await closed(a);
+    await gone;
+    const a2 = await connect(port, 'sidshare');
+    assert.equal((await hello(a2, { jitsiId: 'ja2', stableId: 'SHARED' })).roomIndex, '0',
+      'once free, the remembered index is reclaimable again');
+    b.ws.close(); a2.ws.close();
+  });
+});
+
 test('a rejoiner without a stableId still gets a fresh index (no false reclaim)', async () => {
   await withServer(async (port) => {
     const a = await connect(port, 'sid1b');

@@ -223,17 +223,30 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
             // the SAME jitsiId), so without this it would mint a new, unlisted
             // index and be stranded off the aggregator's rotation. If the client
             // carries a persistent stableId we hand back the index that identity
-            // last held. The aggregator always takes the reserved 'pi' index, so
-            // it is neither reclaimed nor remembered here.
-            if (!record.isAggregator && stableId && meta.indexByStableId.has(stableId)) {
-              record.roomIndex = meta.indexByStableId.get(stableId);
+            // last held — but ONLY when it is currently FREE. Two LIVE participants
+            // can share a stableId (incognito tabs in one browser share
+            // localStorage, so they send the same client id); the later one must
+            // NOT collide onto the occupied index — it falls through to a fresh
+            // one, and the remembered mapping stays with the original holder for
+            // its own rejoin. The aggregator always takes the reserved 'pi' index,
+            // so it is neither reclaimed nor remembered here.
+            const claimed = (!record.isAggregator && stableId) ? meta.indexByStableId.get(stableId) : undefined;
+            const claimedHeld = claimed != null
+              && [...room.values()].some(r => r.peerId !== peerId && String(r.roomIndex) === String(claimed));
+            if (claimed != null && !claimedHeld) {
+              record.roomIndex = claimed;
             } else {
               record.roomIndex = assignRoomIndex(roomName, {
                 isBot: record.isBot,
                 isAggregator: record.isAggregator,
                 ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
               });
-              if (!record.isAggregator && stableId) meta.indexByStableId.set(stableId, record.roomIndex);
+              // Remember a fresh assignment only when nothing is stored yet for
+              // this stableId — never clobber the original holder's index with a
+              // colliding second participant's fresh one.
+              if (!record.isAggregator && stableId && !meta.indexByStableId.has(stableId)) {
+                meta.indexByStableId.set(stableId, record.roomIndex);
+              }
             }
           }
 
