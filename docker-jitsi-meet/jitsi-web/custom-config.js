@@ -49743,34 +49743,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function resetHydraSync() {
     _lastSyncedVideoEl = void 0;
   }
-  function setMode(mode2) {
-    _mode = mode2 === MODE_DIRECT ? MODE_DIRECT : MODE_SPLIT;
-    _syncHydraSource();
-    _updatePanelStatus();
-    document.dispatchEvent(new CustomEvent("trussal-hydra-mode-change", { detail: { mode: _mode } }));
-    _autoStartVideo();
-  }
   function getMode() {
     return _mode;
-  }
-  async function _autoStartVideo() {
-    if (!_panelOpen) {
-      _panelOpen = true;
-      _ensurePanel();
-      const panel = document.getElementById(PANEL_ID);
-      if (panel) panel.style.display = "flex";
-      const toggleBtn = document.getElementById(TOGGLE_ID);
-      if (toggleBtn) toggleBtn.classList.add("on");
-    }
-    if (!_videoEl?.srcObject) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-        _stream = stream;
-        setVideoStream(stream);
-      } catch (e30) {
-        console.warn("[hydra-video] auto-start camera failed", e30);
-      }
-    }
   }
   function _updateParams(effects2, rtt, jitter) {
     const r2 = rtt || 0;
@@ -52725,13 +52699,6 @@ ${code2}${BTN_MARKER}`;
       background: rgba(255,255,255,0.06); color: #5d7264;
     }
     #${OVERLAY_ID} .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-indicators { display:flex; gap:4px; font-family: monospace; font-size: 10px; align-items:center; }
-    #${OVERLAY_ID} .ts-ind {
-      padding: 1px 5px; border-radius: 3px;
-      background: rgba(255,255,255,0.05); color: #5d7264;
-      letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-ind.on { background: rgba(31,244,102,0.2); color: #1ff466; }
     #${OVERLAY_ID} .ts-play { font-size: 10px; color: #5d7264; }
     #${OVERLAY_ID} .ts-play.on { color: #1ff466; }
 
@@ -52776,6 +52743,7 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
     #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
     #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
+    /* .ts-fx / .ts-fx-btn outlived the effects block \u2014 the bot cluster block styles its rows with them. */
     #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
     #${OVERLAY_ID} .ts-fx-btn {
       padding:3px 10px; border-radius:999px;
@@ -52787,14 +52755,6 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
     #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
     #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-    #${OVERLAY_ID} .ts-hv-mode-btn {
-      padding:2px 8px; border-radius:999px;
-      border:1px solid rgba(255,255,255,0.12); background:transparent; color:#5d7264;
-      font-size:10px; cursor:pointer;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-hv-mode-btn:hover { color:#d6f5e2; }
-    #${OVERLAY_ID} .ts-hv-mode-btn.on { color:#7dcfff; border-color:rgba(125,207,255,0.4); background:rgba(125,207,255,0.08); }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
@@ -52903,13 +52863,6 @@ ${code2}${BTN_MARKER}`;
         <div class="ts-name${isLocal ? " you" : ""}">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
         <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : "\xB7"}</span>
       </div>
-      <div class="ts-indicators">
-        <span class="ts-ind${e30.distortion ? " on" : ""}">D</span>
-        <span class="ts-ind${e30.noise ? " on" : ""}">N</span>
-        <span class="ts-ind${e30.reverb ? " on" : ""}">R</span>
-        <span class="ts-play${peer.playing ? " on" : ""}">${peer.playing ? "\u25B6" : "\u25A0"}</span>
-        <span class="ts-routed${routed ? " on" : ""}" title="${routed ? "Audio routed through chain" : "No live audio source"}">\u{1F399}</span>
-      </div>
     </button>
   `;
   }
@@ -52924,29 +52877,6 @@ ${code2}${BTN_MARKER}`;
         renderAll();
       });
     });
-  }
-  function effectsBlock(peer, isLocal) {
-    const e30 = peer.effects || {};
-    const hvMode = getMode();
-    if (isLocal) {
-      return `
-      <div class="ts-fx">
-        <button class="ts-fx-btn ts-fx-dwell-btn${e30.distortion ? " on" : ""}" data-fx="distortion">Distortion</button>
-        <button class="ts-fx-btn ts-fx-dwell-btn${e30.noise ? " on" : ""}" data-fx="noise">Noise</button>
-        <button class="ts-fx-btn ts-fx-dwell-btn${e30.reverb ? " on" : ""}" data-fx="reverb">Reverb</button>
-      </div>
-      <div class="ts-fx" style="margin-top:4px;">
-        <span style="font-size:10px;color:#5d7264;">video mode:</span>
-        <button class="ts-hv-mode-btn${hvMode === MODE_SPLIT ? " on" : ""}" data-hv-mode="${MODE_SPLIT}">split</button>
-        <button class="ts-hv-mode-btn${hvMode === MODE_DIRECT ? " on" : ""}" data-hv-mode="${MODE_DIRECT}">\u2192 s0</button>
-      </div>`;
-    }
-    return `
-    <div class="ts-fx">
-      <span class="ts-ind${e30.distortion ? " on" : ""}">Distortion</span>
-      <span class="ts-ind${e30.noise ? " on" : ""}">Noise</span>
-      <span class="ts-ind${e30.reverb ? " on" : ""}">Reverb</span>
-    </div>`;
   }
   function metricsLine(peer) {
     const rtt = typeof peer.rtt === "number" ? `${peer.rtt.toFixed(0)}ms` : "\u2013";
@@ -53118,7 +53048,6 @@ ${code2}${BTN_MARKER}`;
         <div class="ts-section-title">Latency Effects</div>
         <div class="ts-section-controls">${captureBtn}</div>
       </div>
-      ${effectsBlock(peer, isLocal)}
       ${metricsLine(peer)}
     </div>
 
@@ -53196,28 +53125,6 @@ ${code2}${BTN_MARKER}`;
         }
       });
     }
-    container.querySelectorAll(".ts-fx-dwell-btn[data-fx]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const fx = btn.dataset.fx;
-        if (isNetCyclesActive()) {
-          const map3 = { distortion: "crush", noise: "noise", reverb: "room" };
-          toggleEffectShortcut(map3[fx]);
-          renderAll();
-          return;
-        }
-        const peer2 = getPeerByJitsiId(selectedJitsiId);
-        const e30 = peer2?.effects || {};
-        sendLocalEffects({ distortion: !!e30.distortion, noise: !!e30.noise, reverb: !!e30.reverb, [fx]: !e30[fx] });
-      });
-    });
-    container.querySelectorAll(".ts-hv-mode-btn[data-hv-mode]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        setMode(btn.dataset.hvMode);
-        container.querySelectorAll(".ts-hv-mode-btn").forEach((b) => {
-          b.classList.toggle("on", b.dataset.hvMode === getMode());
-        });
-      });
-    });
     bindBotClusterBlock(container);
     const playBtn = container.querySelector('[data-action="play"]');
     if (playBtn) playBtn.addEventListener("click", () => {

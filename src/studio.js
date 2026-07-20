@@ -17,7 +17,6 @@ import {
   getPeerByJitsiId,
   getLocalPeer,
   sendLocalPattern,
-  sendLocalEffects,
   sendLocalPlaying,
   sendRemotePattern,
   sendRemoteMute,
@@ -26,7 +25,7 @@ import {
 import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
 import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
-import { injectHydraVideoToggle, MODE_SPLIT, MODE_DIRECT, setMode as setHydraVideoMode, getMode as getHydraVideoMode } from './hydra-video.js';
+import { injectHydraVideoToggle } from './hydra-video.js';
 import { tickKbdUi } from './on-screen-keyboard.js';
 import {
   bootAudioEngine,
@@ -47,8 +46,6 @@ import {
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import {
-  isNetCyclesActive,
-  toggleEffectShortcut,
   setInducedMetric,
   getInducedMetrics,
   effectiveWorstCase,
@@ -190,13 +187,6 @@ function injectStyles() {
       background: rgba(255,255,255,0.06); color: #5d7264;
     }
     #${OVERLAY_ID} .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-indicators { display:flex; gap:4px; font-family: monospace; font-size: 10px; align-items:center; }
-    #${OVERLAY_ID} .ts-ind {
-      padding: 1px 5px; border-radius: 3px;
-      background: rgba(255,255,255,0.05); color: #5d7264;
-      letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-ind.on { background: rgba(31,244,102,0.2); color: #1ff466; }
     #${OVERLAY_ID} .ts-play { font-size: 10px; color: #5d7264; }
     #${OVERLAY_ID} .ts-play.on { color: #1ff466; }
 
@@ -241,25 +231,18 @@ function injectStyles() {
     #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
     #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
     #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    // #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
-    // #${OVERLAY_ID} .ts-fx-btn {
-    //   padding:3px 10px; border-radius:999px;
-    //   border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
-    //   font-size:11px; cursor:pointer;
-    //   transition:border-color 0.15s, color 0.15s, background 0.15s;
-    // }
-    // #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-    // #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-    // #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    // #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-    // #${OVERLAY_ID} .ts-hv-mode-btn {
-    //   padding:2px 8px; border-radius:999px;
-    //   border:1px solid rgba(255,255,255,0.12); background:transparent; color:#5d7264;
-    //   font-size:10px; cursor:pointer;
-    //   transition:border-color 0.15s, color 0.15s, background 0.15s;
-    // }
-    // #${OVERLAY_ID} .ts-hv-mode-btn:hover { color:#d6f5e2; }
-    // #${OVERLAY_ID} .ts-hv-mode-btn.on { color:#7dcfff; border-color:rgba(125,207,255,0.4); background:rgba(125,207,255,0.08); }
+    /* .ts-fx / .ts-fx-btn outlived the effects block — the bot cluster block styles its rows with them. */
+    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+    #${OVERLAY_ID} .ts-fx-btn {
+      padding:3px 10px; border-radius:999px;
+      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+      font-size:11px; cursor:pointer;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
+    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
+    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
@@ -386,30 +369,6 @@ function renderStrip(container) {
     });
   });
 }
-
-// function effectsBlock(peer, isLocal) {
-//   const e = peer.effects || {};
-//   const hvMode = getHydraVideoMode();
-//   if (isLocal) {
-//     return `
-//       <div class="ts-fx">
-//         <button class="ts-fx-btn ts-fx-dwell-btn${e.distortion ? ' on' : ''}" data-fx="distortion">Distortion</button>
-//         <button class="ts-fx-btn ts-fx-dwell-btn${e.noise      ? ' on' : ''}" data-fx="noise">Noise</button>
-//         <button class="ts-fx-btn ts-fx-dwell-btn${e.reverb     ? ' on' : ''}" data-fx="reverb">Reverb</button>
-//       </div>
-//       <div class="ts-fx" style="margin-top:4px;">
-//         <span style="font-size:10px;color:#5d7264;">video mode:</span>
-//         <button class="ts-hv-mode-btn${hvMode === MODE_SPLIT  ? ' on' : ''}" data-hv-mode="${MODE_SPLIT}">split</button>
-//         <button class="ts-hv-mode-btn${hvMode === MODE_DIRECT ? ' on' : ''}" data-hv-mode="${MODE_DIRECT}">→ s0</button>
-//       </div>`;
-//   }
-//   return `
-//     <div class="ts-fx">
-//       <span class="ts-ind${e.distortion ? ' on' : ''}">Distortion</span>
-//       <span class="ts-ind${e.noise ? ' on' : ''}">Noise</span>
-//       <span class="ts-ind${e.reverb ? ' on' : ''}">Reverb</span>
-//     </div>`;
-// }
 
 function metricsLine(peer) {
   const rtt = typeof peer.rtt === 'number' ? `${peer.rtt.toFixed(0)}ms` : '–';
@@ -614,7 +573,6 @@ function renderDetail(container) {
         <div class="ts-section-title">Latency Effects</div>
         <div class="ts-section-controls">${captureBtn}</div>
       </div>
-      // ${effectsBlock(peer, isLocal)}
       ${metricsLine(peer)}
     </div>
 
@@ -693,31 +651,6 @@ function renderDetail(container) {
       }
     });
   }
-  container.querySelectorAll('.ts-fx-dwell-btn[data-fx]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const fx = btn.dataset.fx;
-      if (isNetCyclesActive()) {
-        // Under Net Cycles the toggles are shortcuts that edit the shared
-        // metaprogram's effect chain instead of the legacy 3-bool struct.
-        const map = { distortion: 'crush', noise: 'noise', reverb: 'room' };
-        toggleEffectShortcut(map[fx]);
-        renderAll();
-        return;
-      }
-      const peer = getPeerByJitsiId(selectedJitsiId);
-      const e = peer?.effects || {};
-      sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fx]: !e[fx] });
-    });
-  });
-  container.querySelectorAll('.ts-hv-mode-btn[data-hv-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      setHydraVideoMode(btn.dataset.hvMode);
-      // Re-render to reflect new mode button state without full renderAll.
-      container.querySelectorAll('.ts-hv-mode-btn').forEach(b => {
-        b.classList.toggle('on', b.dataset.hvMode === getHydraVideoMode());
-      });
-    });
-  });
   bindBotClusterBlock(container);
   const playBtn = container.querySelector('[data-action="play"]');
   if (playBtn) playBtn.addEventListener('click', () => {
