@@ -518,11 +518,11 @@ function renderDetail(container) {
 
   const extLabel   = getExternalStreamLabel(peer.jitsiId);
   const nodeLabel  = getExternalNodeLabel(peer.jitsiId);
-  const relayOn    = isLocal && isRelayConnected();
-  const captureBtn = isLocal
-    ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach Jamulus' : '🎙 Route Jamulus audio'}</button>
-       <button class="ts-btn ghost${relayOn ? ' on' : ''}" data-action="relay">${relayOn ? '⏏ Disconnect relay' : '📡 Jamulus relay'}</button>`
-    : '';
+  // const relayOn    = isLocal && isRelayConnected();
+  // const captureBtn = isLocal
+  //   ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach Jamulus' : '🎙 Route Jamulus audio'}</button>
+  //      <button class="ts-btn ghost${relayOn ? ' on' : ''}" data-action="relay">${relayOn ? '⏏ Disconnect relay' : '📡 Jamulus relay'}</button>`
+  //   : '';
 
   // Remote tiles are editable too: an operator can drive a participant's pattern
   // from here. The server only applies edits/mutes to bots (humans own their own
@@ -661,8 +661,8 @@ function renderDetail(container) {
   if (stopBtn) stopBtn.addEventListener('click', onStopClick);
   const captureBtnEl = container.querySelector('[data-action="capture"]');
   if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
-  const relayBtnEl = container.querySelector('[data-action="relay"]');
-  if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
+  // const relayBtnEl = container.querySelector('[data-action="relay"]');
+  // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
 
   const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
   const samplesInput = container.querySelector('.ts-samples-input');
@@ -786,24 +786,24 @@ async function onCaptureClick() {
   }
 }
 
-async function onRelayClick() {
-  if (isRelayConnected()) {
-    disconnectJamulusRelay();
-    setStatus('Relay disconnected');
-    renderAll();
-    return;
-  }
-  try {
-    setStatus('Connecting to Jamulus relay…');
-    await connectJamulusRelay();
-    setStatus('Relay connected — Jamulus audio through effects chain');
-    renderAll();
-  } catch (e) {
-    console.error('[studio] relay connect failed', e);
-    setStatus('Relay failed: ' + (e && e.message ? e.message : e));
-    renderAll();
-  }
-}
+// async function onRelayClick() {
+//   if (isRelayConnected()) {
+//     disconnectJamulusRelay();
+//     setStatus('Relay disconnected');
+//     renderAll();
+//     return;
+//   }
+//   try {
+//     setStatus('Connecting to Jamulus relay…');
+//     await connectJamulusRelay();
+//     setStatus('Relay connected — Jamulus audio through effects chain');
+//     renderAll();
+//   } catch (e) {
+//     console.error('[studio] relay connect failed', e);
+//     setStatus('Relay failed: ' + (e && e.message ? e.message : e));
+//     renderAll();
+//   }
+// }
 
 const BTN_MARKER = ' // strudel-btn';
 
