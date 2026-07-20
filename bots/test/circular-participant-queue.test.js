@@ -348,6 +348,40 @@ test('a reclaimed ghost (rejoin + revive before re-apply) carries over live, not
   assert.equal(q.serve().departed, false, 'it stays live through the re-apply');
 });
 
+// Requirement 5, gap-refill flavour: a bot suffix is reused (a departed bot frees
+// '1b'; the next spawn takes it), so a NEW container arrives under the same token
+// '1b' with a fresh media-stream id — mechanically identical to a rejoining human
+// reclaiming its index. Both of requirement 5's branches:
+test('a reused bot suffix still listed in the program revives its ghost on new audio', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('bot-1a', '1a');
+  q.register('bot-1b', '1b');
+  q.applyMetaprogramOrder(['1a', '1b']);
+  q.depart('bot-1b');                    // still listed -> ghost, buffer kept
+  // The gap-refill bot (fresh media-stream id, same token) delivers audio: the
+  // ghost buffer then updates live rather than replaying forever.
+  q.register('bot-1b-refill', '1b');
+  assert.equal(q.revive('bot-1b-refill'), true, 'the reused suffix un-ghosts on new audio');
+});
+
+test('a reused bot suffix removed from the program is added back as a fresh join', () => {
+  const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
+  q.register('bot-1a', '1a');
+  q.register('bot-1b', '1b');
+  q.applyMetaprogramOrder(['1a', '1b']);
+  q.depart('bot-1b');                    // ghost
+  // The program drops 1b via a genuine re-apply: the ghost is RETIRED (buffer
+  // cleared), so the token carries no stale state.
+  const retired = q.applyMetaprogramOrder(['1a'], { programUpdate: true });
+  assert.deepEqual(retired, ['1b'], 'dropping the departed ghost retires it');
+  // The reused suffix now arrives fresh; unlisted, it waits off the ring exactly
+  // like any never-before-seen participant until the program lists it again.
+  q.register('bot-1b-again', '1b');
+  assert.deepEqual(q.waitingTokens(), ['1b'], 'the reused suffix waits off-ring, a fresh join');
+  q.applyMetaprogramOrder(['1a', '1b']);
+  assert.equal(q.jitsiIdFor('1b'), 'bot-1b-again', 'relisting folds in the fresh source');
+});
+
 test('revive clears the ghost flag for a participant that never really left', () => {
   const q = new CircularParticipantQueue({ now: () => 0, slotMs: 1000 });
   q.register('src-0', '0');

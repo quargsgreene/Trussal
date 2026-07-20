@@ -23,10 +23,11 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
-  // roomName -> { nextIndex, botCounters: Map<ownerIndex, count>,
-  // indexByStableId: Map<stableId, roomIndex>, crdtLog }.
-  // Index counters are the meeting's source of truth: indices are
-  // join-ordered, immutable for the meeting, and never reused after a leave.
+  // roomName -> { nextIndex, indexByStableId: Map<stableId, roomIndex>, crdtLog }.
+  // nextIndex is the meeting's source of truth for HUMAN indices: join-ordered,
+  // immutable for the meeting, and never reused after a leave. Bot cluster
+  // suffixes are NOT counted here — they gap-refill from the live roster (see
+  // lowestFreeBotOrdinal), so a departed bot's suffix is reused by the next spawn.
   // indexByStableId gives a participant identity CONTINUITY across a genuine
   // rejoin: a returning client arrives with a fresh Jitsi id (so the stale-
   // eviction path can't recover its index), but carries a persistent stableId,
@@ -54,7 +55,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       // aggregatorClaimPeerId: the connection currently holding the room's
       // single aggregator slot (see the 'aggregator-claim' handler). A losing
       // aggregator bot never joins Jitsi, so a room can only ever contain one.
-      meta = { nextIndex: 0, botCounters: new Map(), indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
+      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -76,20 +77,40 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
     } catch (e) { /* logging must never take the relay down */ }
   }
 
+  // Lowest cluster ordinal not currently held by a LIVE bot of this owner. Bot
+  // suffixes are gap-refilled (unlike human integer indices, which are join-
+  // ordered and never reused): a departed bot frees its suffix, and the next
+  // spawn for that owner takes the lowest free one (0a,0b,0c; 0b leaves; the
+  // next spawn is 0b again, not 0d). Derived from the live roster, so it needs
+  // no counter to reset when a cluster empties — an owner with no live bots
+  // yields ordinal 0 ('a'). The record being assigned is not yet in the room
+  // (room.set happens after assignRoomIndex), so it never counts itself.
+  function lowestFreeBotOrdinal(roomName, ownerIndex) {
+    const room = getRoom(roomName);
+    const used = new Set();
+    for (const r of room.values()) {
+      const parsed = parseParticipantToken(String(r.roomIndex));
+      if (parsed && parsed.suffix != null && String(parsed.ownerIndex) === String(ownerIndex)) {
+        used.add(parsed.ordinal);
+      }
+    }
+    let ordinal = 0;
+    while (used.has(ordinal)) ordinal++;
+    return ordinal;
+  }
+
   // Sequential identifying index, assigned once at hello. Humans (and bots
-  // that arrive without an owner) get the next integer in join order. Bots
-  // that declare an ownerIndex get `<ownerIndex><suffix>` with the cluster's
-  // next letter suffix (also never reused). The audio aggregator gets the
-  // reserved AGGREGATOR_ROOM_INDEX: it is not a performer, so it must not
-  // consume an integer from the human join-order sequence — `$ participants`
-  // integer tokens must keep addressing humans.
+  // that arrive without an owner) get the next integer in join order (immutable,
+  // never reused). Bots that declare an ownerIndex get `<ownerIndex><suffix>`
+  // with the cluster's lowest FREE suffix (gap-refilled — see lowestFreeBotOrdinal).
+  // The audio aggregator gets the reserved AGGREGATOR_ROOM_INDEX: it is not a
+  // performer, so it must not consume an integer from the human join-order
+  // sequence — `$ participants` integer tokens must keep addressing humans.
   function assignRoomIndex(roomName, { isBot, isAggregator, ownerIndex }) {
     if (isAggregator) return AGGREGATOR_ROOM_INDEX;
     const meta = getRoomMeta(roomName);
     if (isBot && typeof ownerIndex === 'string' && /^\d+$/.test(ownerIndex)) {
-      const count = meta.botCounters.get(ownerIndex) || 0;
-      meta.botCounters.set(ownerIndex, count + 1);
-      return `${ownerIndex}${botSuffix(count)}`;
+      return `${ownerIndex}${botSuffix(lowestFreeBotOrdinal(roomName, ownerIndex))}`;
     }
     return String(meta.nextIndex++);
   }
@@ -147,6 +168,9 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       ws,
       roomName,
       roomIndex: null,
+      // Persistent per-browser identity (humans only); used to reclaim the
+      // returning identity's index and to evict its own lingering record.
+      stableId: null,
       jitsiId: null,
       displayName: null,
       pattern: '',
@@ -195,6 +219,15 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
             record.canWriteModulation = false;
           }
 
+          // A persistent per-browser identity (localStorage 'trussal:clientId'),
+          // sent by humans. ONE stableId = ONE identity — we no longer treat two
+          // connections that share one as distinct people (that only happened
+          // when testing with incognito tabs, which share localStorage). The
+          // aggregator always takes the reserved index, so it neither carries a
+          // stableId nor reclaims by one.
+          const stableId = typeof msg.stableId === 'string' && msg.stableId ? msg.stableId : null;
+          if (!record.isAggregator) record.stableId = stableId;
+
           const room = getRoom(roomName);
 
           // Evict any stale entry with the same jitsiId (e.g. a lingering connection
@@ -203,7 +236,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // Same jitsiId = same participant session, so the new connection
           // inherits the stale record's roomIndex (indices are immutable for
           // the meeting). A genuine rejoin arrives with a fresh Jitsi id and
-          // gets a fresh index below.
+          // reclaims its index by stableId below.
           if (record.jitsiId) {
             for (const [stalePeerId, staleRecord] of room.entries()) {
               if (stalePeerId !== peerId && staleRecord.jitsiId === record.jitsiId) {
@@ -215,25 +248,33 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
             }
           }
 
+          // Evict any lingering record of the SAME identity. A real leave→rejoin
+          // mints a fresh Jitsi id (so the jitsiId path above can't catch it) and
+          // can RACE the old socket's close — the prior record may still be in the
+          // room, holding the very index this rejoin wants to reclaim. Since one
+          // stableId is one identity, that record is this participant's own dying
+          // session: drop it (freeing its index) so the reclaim below succeeds
+          // instead of being mistaken for a collision and stranded at a fresh,
+          // unlisted index. Iterate a snapshot since we mutate the room.
+          if (stableId && !record.isFleet) {
+            for (const [otherPeerId, other] of [...room.entries()]) {
+              if (otherPeerId !== peerId && other.stableId === stableId) {
+                room.delete(otherPeerId);
+                broadcast(room, peerId, { type: 'peer-leave', peerId: otherPeerId });
+              }
+            }
+          }
+
           if (record.roomIndex == null && !record.isFleet) {
             const meta = getRoomMeta(roomName);
-            const stableId = typeof msg.stableId === 'string' && msg.stableId ? msg.stableId : null;
-            // Identity-stable reclaim. A genuine rejoin arrives with a fresh
-            // Jitsi id (the stale-eviction path above only recovers an index for
-            // the SAME jitsiId), so without this it would mint a new, unlisted
-            // index and be stranded off the aggregator's rotation. If the client
-            // carries a persistent stableId we hand back the index that identity
-            // last held — but ONLY when it is currently FREE. Two LIVE participants
-            // can share a stableId (incognito tabs in one browser share
-            // localStorage, so they send the same client id); the later one must
-            // NOT collide onto the occupied index — it falls through to a fresh
-            // one, and the remembered mapping stays with the original holder for
-            // its own rejoin. The aggregator always takes the reserved 'pi' index,
-            // so it is neither reclaimed nor remembered here.
+            // Identity-stable reclaim, now UNCONDITIONAL: the same-stableId
+            // eviction above freed the remembered index, human integer indices are
+            // never reassigned to anyone else (nextIndex only climbs), and a bot's
+            // suffixed index (0a) is never a bare human integer (0) — so nothing
+            // else can legitimately hold what this identity last held. A first-ever
+            // join has nothing stored and takes a fresh index.
             const claimed = (!record.isAggregator && stableId) ? meta.indexByStableId.get(stableId) : undefined;
-            const claimedHeld = claimed != null
-              && [...room.values()].some(r => r.peerId !== peerId && String(r.roomIndex) === String(claimed));
-            if (claimed != null && !claimedHeld) {
+            if (claimed != null) {
               record.roomIndex = claimed;
             } else {
               record.roomIndex = assignRoomIndex(roomName, {
@@ -241,9 +282,6 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
                 isAggregator: record.isAggregator,
                 ownerIndex: typeof msg.ownerIndex === 'string' ? msg.ownerIndex : null
               });
-              // Remember a fresh assignment only when nothing is stored yet for
-              // this stableId — never clobber the original holder's index with a
-              // colliding second participant's fresh one.
               if (!record.isAggregator && stableId && !meta.indexByStableId.has(stableId)) {
                 meta.indexByStableId.set(stableId, record.roomIndex);
               }
@@ -526,24 +564,10 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // room name next, rather than the fresh start a genuinely new
           // meeting should be.
           broadcast(room, null, { type: 'session-reset' });
-        } else if (meta) {
-          // The room survives with real participants. If the leaver was a
-          // cluster bot AND it was its owner's LAST bot, restart that owner's
-          // suffix counter so the owner's next cluster comes back as 0a,0b
-          // instead of climbing (0c,0d). Safe reuse: no live bot of the owner
-          // remains to collide with, bots author no CRDT state, and their O2
-          // service is gone. Mirrors the fleet's _ownerSpawnCounts reset in
-          // removeCluster so the predicted and assigned suffixes agree.
-          const parsed = parseParticipantToken(String(record.roomIndex));
-          if (parsed && parsed.suffix != null) {
-            const owner = String(parsed.ownerIndex);
-            const ownerHasBotLeft = [...room.values()].some((r) => {
-              const p = parseParticipantToken(String(r.roomIndex));
-              return p && p.suffix != null && String(p.ownerIndex) === owner;
-            });
-            if (!ownerHasBotLeft) meta.botCounters.delete(owner);
-          }
         }
+        // A departed bot needs no counter bookkeeping: cluster suffixes are
+        // derived from the live roster (lowestFreeBotOrdinal), so its suffix is
+        // simply free again for the owner's next spawn.
       } else if (!room || room.size === 0) {
         // A probe-only connection (an aggregator claim that never became a
         // participant) closing on an empty room: drop the meta it created so an

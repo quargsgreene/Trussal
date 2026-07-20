@@ -85,10 +85,6 @@ export class FleetService {
     // alongside the duplicate that just joined.
     this.aggregatorQueue = Promise.resolve();
     this._nextBotId = 0;
-    // Never-decreasing per-owner spawn ordinals: mirrors the sidecar's
-    // suffix counters exactly (indices are never reused), so clusterIndex
-    // matches the index the bot will be assigned at its hello.
-    this._ownerSpawnCounts = new Map();
   }
 
   // ---------- lifecycle ----------
@@ -288,6 +284,23 @@ export class FleetService {
       .map((b) => b.botId);
   }
 
+  // Lowest cluster ordinal not currently held by one of ownerIndex's bots.
+  // Mirrors the sidecar's lowestFreeBotOrdinal: bot suffixes gap-refill, so a
+  // removed bot's suffix is reused by the next spawn rather than climbing. The
+  // bot being started is added to `bots` by the caller AFTER this returns, so it
+  // never counts itself.
+  #lowestFreeOrdinal(ownerIndex) {
+    const prefix = String(ownerIndex);
+    const used = new Set();
+    for (const b of this.bots.values()) {
+      if (b.ownerIndex !== ownerIndex) continue;
+      used.add(ordinalForSuffix(b.clusterIndex.slice(prefix.length)));
+    }
+    let ordinal = 0;
+    while (used.has(ordinal)) ordinal++;
+    return ordinal;
+  }
+
   /**
    * Spawn `count` bots on ownerIndex's behalf. Health measures may interrupt:
    * the active ceiling caps the total fleet, a partial spawn reports why.
@@ -323,14 +336,10 @@ export class FleetService {
       ? mine
       : mine.filter((b) => Array.isArray(targets) && targets.includes(b.clusterIndex));
     for (const bot of wanted) await this.#stopBot(bot.botId);
-    // A fully-emptied cluster restarts its suffix sequence. The owner's integer
-    // index is now stable across a rejoin (identity-stable reclaim — see
-    // indexByStableId in latency-instrument/server.js), so a returning owner's
-    // fresh cluster should come back as 0a,0b rather than climbing (0c,0d). A
-    // PARTIAL removal keeps the sequence, so new bots never collide with the
-    // survivors. Mirrors the sidecar's per-owner botCounters reset when an
-    // owner's last bot leaves, keeping the two suffix counters in agreement.
-    if (this.#clusterIds(ownerIndex).length === 0) this._ownerSpawnCounts.delete(ownerIndex);
+    // No counter to reset: cluster suffixes are derived from the live cluster
+    // (see #lowestFreeOrdinal), so a removed bot's suffix is simply free for the
+    // next spawn — a fully-emptied cluster naturally restarts at 'a', a partial
+    // removal refills the hole. Mirrors the sidecar's lowestFreeBotOrdinal.
     const status = {
       type: 'fleet-status',
       action: 'remove',
@@ -346,10 +355,8 @@ export class FleetService {
   async #teardownAll(reason) {
     for (const id of [...this.bots.keys()]) await this.#stopBot(id);
     await this.#stopAggregator();
-    // Meeting over: the sidecar drops the room's meta (every index counter with
-    // it), so clear our mirror too — the next meeting to reuse this name starts
-    // its clusters fresh at 0a rather than continuing a dead meeting's sequence.
-    this._ownerSpawnCounts.clear();
+    // Meeting over: `bots` is now empty, so the derived suffixes reset with it —
+    // the next meeting to reuse this name starts its clusters fresh at 0a.
     this.#busSend({ type: 'fleet-status', action: 'teardown', removed: 'all', reason });
   }
 
@@ -450,14 +457,14 @@ export class FleetService {
   }
 
   async #startBot(botId, ownerIndex) {
-    const clusterOrdinal = this._ownerSpawnCounts.get(ownerIndex) || 0;
-    this._ownerSpawnCounts.set(ownerIndex, clusterOrdinal + 1);
+    const clusterOrdinal = this.#lowestFreeOrdinal(ownerIndex);
     this.bots.set(botId, {
       botId,
       ownerIndex,
-      // Mirror of the sidecar-assigned index (authoritative assignment
-      // happens at the bot's hello; ordinals agree because the fleet is the
-      // only spawner for this owner and neither side reuses them).
+      // Mirror of the sidecar-assigned index. Authoritative assignment happens
+      // at the bot's hello; both sides pick the lowest cluster ordinal not held
+      // by a live bot of this owner (gap-refill), so the SET of suffixes agrees
+      // — the fleet is the only spawner for this owner.
       clusterIndex: `${ownerIndex}${suffixFor(clusterOrdinal)}`,
       name: breedNameFor(botId, this.cfg.sessionSeed),
       script: this.#variationFor(botId),
@@ -646,6 +653,14 @@ export class FleetService {
 export function suffixFor(ordinal) {
   const zs = Math.floor(ordinal / 26);
   return 'z'.repeat(zs) + 'abcdefghijklmnopqrstuvwxyz'[ordinal % 26];
+}
+
+// Inverse of suffixFor: letter suffix (a…z, za…zz, zza…) → 0-based ordinal.
+// Mirrors latency-instrument/room-indices.js's suffixToOrdinal for the valid
+// z*[a-z] suffixes the fleet itself produces.
+export function ordinalForSuffix(suffix) {
+  const zs = suffix.length - 1;
+  return zs * 26 + 'abcdefghijklmnopqrstuvwxyz'.indexOf(suffix[suffix.length - 1]);
 }
 
 // ws-backed sidecar connector for production (tests inject fakes).

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FleetService, suffixFor, AGGREGATOR_BOT_ID } from '../src/orchestrator/fleet-service.js';
+import { FleetService, suffixFor, ordinalForSuffix, AGGREGATOR_BOT_ID } from '../src/orchestrator/fleet-service.js';
 import { createAdminServer } from '../src/config-api/server.js';
 import { mergeConfig } from '../src/shared/config.js';
 
@@ -95,12 +95,12 @@ test("remove: subset by cluster index, only from the requester's own cluster", a
   });
 });
 
-test('cluster ordinals never reuse letters (respawn after removal continues the sequence)', async () => {
+test('cluster suffixes gap-refill: a removed suffix is reused by the next spawn', async () => {
   await withFleet(async ({ fleet }) => {
-    await fleet.spawnCluster('1', 2);           // 1a 1b
-    await fleet.removeCluster('1', ['1a']);
-    await fleet.spawnCluster('1', 1);           // next is 1c, never 1a again
-    assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1b', '1c']);
+    await fleet.spawnCluster('1', 3);           // 1a 1b 1c
+    await fleet.removeCluster('1', ['1b']);     // frees the middle suffix 'b'
+    await fleet.spawnCluster('1', 1);           // refills the hole → 1b, not 1d
+    assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1a', '1b', '1c']);
   });
 });
 
@@ -566,4 +566,10 @@ test('suffixFor matches the shared index grammar', () => {
   assert.equal(suffixFor(26), 'za');
   assert.equal(suffixFor(27), 'zb');
   assert.equal(suffixFor(52), 'zza');
+});
+
+test('ordinalForSuffix inverts suffixFor (used to gap-refill from live suffixes)', () => {
+  for (const ordinal of [0, 1, 25, 26, 27, 52, 53, 100]) {
+    assert.equal(ordinalForSuffix(suffixFor(ordinal)), ordinal);
+  }
 });

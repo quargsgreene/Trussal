@@ -103,27 +103,55 @@ test('a rejoiner carrying its stableId reclaims its old index (identity-stable)'
   });
 });
 
-test('two live peers sharing a stableId do not collide (incognito tabs share localStorage)', async () => {
+test('two connections sharing a stableId are one identity: the later takes over the index', async () => {
   await withServer(async (port) => {
+    // A keeper holds the room open and observes membership changes.
+    const keeper = await connect(port, 'sidshare');
+    await hello(keeper, { jitsiId: 'keeper', stableId: 'KEEP' });
+
     const a = await connect(port, 'sidshare');
     const aYou = await hello(a, { jitsiId: 'ja', stableId: 'SHARED' });
-    assert.equal(aYou.roomIndex, '0');
+    assert.equal(aYou.roomIndex, '1');
 
-    // A second peer with the SAME stableId while the first is still present must
-    // get a FRESH index, not reclaim the occupied '0'.
+    // Same stableId again while `a`'s socket is still present (the leave→rejoin
+    // race): one identity, so the later connection EVICTS `a` (keeper is told it
+    // left) and takes over index '1'. We no longer treat a shared stableId as two
+    // distinct people, so it never falls through to a fresh, unlisted index.
+    const gone = waitFor(keeper, m => m.type === 'peer-leave' && m.peerId === aYou.peerId);
     const b = await connect(port, 'sidshare');
     assert.equal((await hello(b, { jitsiId: 'jb', stableId: 'SHARED' })).roomIndex, '1',
-      'a shared stableId must not reclaim an index a live peer still holds');
-
-    // The original holder keeps the reclaim: it leaves, freeing '0', then a later
-    // SHARED hello lands back on '0'.
-    const gone = waitFor(b, m => m.type === 'peer-leave' && m.peerId === aYou.peerId);
-    await closed(a);
+      'the later same-identity connection reclaims the index rather than colliding');
     await gone;
-    const a2 = await connect(port, 'sidshare');
-    assert.equal((await hello(a2, { jitsiId: 'ja2', stableId: 'SHARED' })).roomIndex, '0',
-      'once free, the remembered index is reclaimable again');
-    b.ws.close(); a2.ws.close();
+
+    keeper.ws.close(); a.ws.close(); b.ws.close();
+  });
+});
+
+test('an owner rejoins to its index while its bots are present and its old record lingers', async () => {
+  await withServer(async (port) => {
+    const keeper = await connect(port, 'rejoinbots');
+    await hello(keeper, { jitsiId: 'keeper', stableId: 'K' }); // index 0, holds the room open
+    const owner = await connect(port, 'rejoinbots');
+    const ownerYou = await hello(owner, { jitsiId: 'o1', stableId: 'OWNER' });
+    assert.equal(ownerYou.roomIndex, '1');
+
+    // Owner 1's cluster is up.
+    const b1 = await connect(port, 'rejoinbots');
+    assert.equal((await hello(b1, { jitsiId: 'b1', isBot: true, ownerIndex: '1' })).roomIndex, '1a');
+    const b2 = await connect(port, 'rejoinbots');
+    assert.equal((await hello(b2, { jitsiId: 'b2', isBot: true, ownerIndex: '1' })).roomIndex, '1b');
+
+    // Owner rejoins with a FRESH jitsiId but the same stableId, WITHOUT closing
+    // the old socket first (the real leave→rejoin race). It must reclaim '1': its
+    // bots (1a/1b) don't hold '1', and its own lingering record is evicted. This
+    // is the invariant — the human's index and its bots' prefix stay matched.
+    const ownerGone = waitFor(keeper, m => m.type === 'peer-leave' && m.peerId === ownerYou.peerId);
+    const owner2 = await connect(port, 'rejoinbots');
+    assert.equal((await hello(owner2, { jitsiId: 'o1-rejoined', stableId: 'OWNER' })).roomIndex, '1',
+      'reclaims its index; bots stay 1a/1b and the prefix still matches');
+    await ownerGone;
+
+    keeper.ws.close(); owner.ws.close(); b1.ws.close(); b2.ws.close(); owner2.ws.close();
   });
 });
 
@@ -210,7 +238,7 @@ test('owned bots get cluster suffixes in spawn order; humans interleave untouche
   });
 });
 
-test("an owner's last bot leaving restarts its cluster suffix; a partial cluster keeps climbing", async () => {
+test('a freed bot suffix gap-refills; an emptied cluster restarts at a', async () => {
   await withServer(async (port) => {
     const owner = await connect(port, 'sidbot'); // stays, so the room/meta survive
     assert.equal((await hello(owner, { jitsiId: 'h0', stableId: 'H0' })).roomIndex, '0');
@@ -221,26 +249,29 @@ test("an owner's last bot leaving restarts its cluster suffix; a partial cluster
     const b2 = await connect(port, 'sidbot');
     const b2You = await hello(b2, { jitsiId: 'b2', isBot: true, ownerIndex: '0' });
     assert.equal(b2You.roomIndex, '0b');
-
-    // One bot leaves — 0b survives, so the sequence is NOT reset (a new bot must
-    // not collide with the survivor).
-    const gone1 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b1You.peerId);
-    await closed(b1);
-    await gone1;
     const b3 = await connect(port, 'sidbot');
     const b3You = await hello(b3, { jitsiId: 'b3', isBot: true, ownerIndex: '0' });
-    assert.equal(b3You.roomIndex, '0c', 'a partial cluster keeps climbing past the survivor');
+    assert.equal(b3You.roomIndex, '0c');
 
-    // Now every one of owner 0's bots leaves (the owner stays) — the counter resets.
+    // The MIDDLE bot leaves — suffix 'b' becomes the lowest free ordinal, so the
+    // next spawn REFILLS it rather than climbing to 0d (bot suffixes gap-refill;
+    // human indices still never reuse).
     const gone2 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b2You.peerId);
     await closed(b2); await gone2;
-    const gone3 = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === b3You.peerId);
-    await closed(b3); await gone3;
-
     const b4 = await connect(port, 'sidbot');
-    assert.equal((await hello(b4, { jitsiId: 'b4', isBot: true, ownerIndex: '0' })).roomIndex, '0a',
-      "an emptied cluster restarts at 'a'");
-    owner.ws.close(); b4.ws.close();
+    const b4You = await hello(b4, { jitsiId: 'b4', isBot: true, ownerIndex: '0' });
+    assert.equal(b4You.roomIndex, '0b', 'a freed middle suffix is refilled, not climbed past');
+
+    // Every one of owner 0's bots leaves (the owner stays) — with nothing left to
+    // occupy a suffix, the next spawn starts back at 'a'.
+    for (const [sock, you] of [[b1, b1You], [b3, b3You], [b4, b4You]]) {
+      const gone = waitFor(owner, m => m.type === 'peer-leave' && m.peerId === you.peerId);
+      await closed(sock); await gone;
+    }
+    const b5 = await connect(port, 'sidbot');
+    assert.equal((await hello(b5, { jitsiId: 'b5', isBot: true, ownerIndex: '0' })).roomIndex, '0a',
+      'an emptied cluster restarts at a');
+    owner.ws.close(); b5.ws.close();
   });
 });
 
