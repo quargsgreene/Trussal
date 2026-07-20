@@ -101,10 +101,10 @@ export function renderJamulusWelcomePanelAndBanner() {
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     startJamulusWelcomePanel();
-    startJamulusBannerPolling();
+    // startJamulusBannerPolling();
   } else {
     window.addEventListener('DOMContentLoaded', startJamulusWelcomePanel);
-    window.addEventListener('DOMContentLoaded', startJamulusBannerPolling);
+    // window.addEventListener('DOMContentLoaded', startJamulusBannerPolling);
   }
 }
 
