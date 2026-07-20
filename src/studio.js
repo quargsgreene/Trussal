@@ -518,6 +518,11 @@ function renderDetail(container) {
 
   const extLabel   = getExternalStreamLabel(peer.jitsiId);
   const nodeLabel  = getExternalNodeLabel(peer.jitsiId);
+  // Jamulus capture + relay UI detached for now (kept for later use). The
+  // template still interpolates ${captureBtn} below, so this MUST stay defined —
+  // an undefined reference throws mid-innerHTML and takes the whole detail panel
+  // (metrics + Strudel editor) down with it. To re-enable, restore the block.
+  const captureBtn = '';
   // const relayOn    = isLocal && isRelayConnected();
   // const captureBtn = isLocal
   //   ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach Jamulus' : '🎙 Route Jamulus audio'}</button>
@@ -950,7 +955,7 @@ function ensureOverlay() {
   const ncHost = overlay.querySelector('.ts-netcycles');
   try {
     mountMetaprogrammerEditor(ncHost);
-    // mountMetaprogrammerCycleHighlighter(ncHost);
+    mountMetaprogrammerCycleHighlighter(ncHost);
   } catch (e) {
     console.warn('[studio] Net Cycles card mount failed', e);
   }
