@@ -51450,20 +51450,16 @@ ${code2}${BTN_MARKER}`;
     const style = document.createElement("style");
     style.id = "nc-play-style";
     style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; }
+    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent !important; }
     .nc-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
+      background:transparent !important;
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:1.5px solid #1ff466; border-radius:3px;
-      background:rgba(31,244,102,0.12);
-      animation:nc-play-pulse 1.2s ease-in-out infinite;
-    }
-    @keyframes nc-play-pulse {
-      0%,100% { box-shadow:0 0 5px rgba(31,244,102,0.35); }
-      50%     { box-shadow:0 0 12px rgba(31,244,102,0.8); }
+      background:transparent !important;
     }
   `;
     document.head.appendChild(style);

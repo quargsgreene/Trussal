@@ -36,21 +36,21 @@ function injectStyleOnce() {
   if (document.getElementById('nc-play-style')) return;
   const style = document.createElement('style');
   style.id = 'nc-play-style';
+  // The Trussal theme sets `body, body * { background: <panel-green> !important }`,
+  // so every element's background is forced opaque unless we beat it with our own
+  // !important. Without this the overlay would paint over the whole editor (hiding
+  // the metaprogram text) and the box fill would hide the token inside the outline.
   style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; }
+    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent !important; }
     .nc-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
+      background:transparent !important;
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:1.5px solid #1ff466; border-radius:3px;
-      background:rgba(31,244,102,0.12);
-      animation:nc-play-pulse 1.2s ease-in-out infinite;
-    }
-    @keyframes nc-play-pulse {
-      0%,100% { box-shadow:0 0 5px rgba(31,244,102,0.35); }
-      50%     { box-shadow:0 0 12px rgba(31,244,102,0.8); }
+      background:transparent !important;
     }
   `;
   document.head.appendChild(style);
@@ -103,8 +103,8 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   overlay.className = 'nc-play-overlay';
   const mirror = document.createElement('div');
   mirror.className = 'nc-play-mirror';
-  // One reused box, so the pulse animation keeps running as it moves between
-  // tokens (recreating it each frame would restart the pulse on every scroll).
+  // One reused box, moved between tokens — avoids churning a DOM node on every
+  // reposition (rotation tick, edit, scroll, resize).
   const box = document.createElement('div');
   box.className = 'nc-play-box';
   box.style.display = 'none';
