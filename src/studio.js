@@ -973,7 +973,7 @@ function ensureOverlay() {
   }
 
   injectFacialGestureToggle(overlay.querySelector('.ts-header'));
-  injectHydraVideoToggle(overlay.querySelector('.ts-header'));
+  // injectHydraVideoToggle(overlay.querySelector('.ts-header'));
 
   refreshSampleBanks();
 
