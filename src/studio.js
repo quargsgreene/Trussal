@@ -950,7 +950,7 @@ function ensureOverlay() {
   const ncHost = overlay.querySelector('.ts-netcycles');
   try {
     mountMetaprogrammerEditor(ncHost);
-    mountMetaprogrammerCycleHighlighter(ncHost);
+    // mountMetaprogrammerCycleHighlighter(ncHost);
   } catch (e) {
     console.warn('[studio] Net Cycles card mount failed', e);
   }
