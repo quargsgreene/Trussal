@@ -273,6 +273,8 @@ export class FleetService {
       await this.spawnCluster(ownerIndex, count);
     } else if (msg.action === 'remove') {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request' });
+    } else if (msg.action === 'removeOne') {
+      await this.removeOneBot(name, ownerIndex ?? -1,  { reason: 'owner request' });
     }
   }
 
@@ -350,6 +352,22 @@ export class FleetService {
     };
     this.#busSend(status);
     return status;
+  }
+
+  //TODO: implement single bot removal, call onclick of x button
+  async removeOneBot(name, target, { reason = '' } = {}) {
+      const botToRemove = [...this.bots.values()].find((bremoveOneot) => bot.name === name && target === bot.clusterIndex);
+      await this.#stopBot(botToRemove.botId);
+      const status = {
+        type: 'fleet-status',
+        action: 'removeOne',
+        name,
+        removed: 1,
+        fleetSize: this.bots.size,
+        ...(reason ? { reason } : {})
+      };
+      this.#busSend(status);
+      return status;
   }
 
   async #teardownAll(reason) {

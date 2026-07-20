@@ -511,7 +511,7 @@ function botClusterBlock() {
       <button class="ts-fx-btn ts-dwell-btn${b.muted ? ' on' : ''}" data-bot-action="mute">${b.muted ? 'unmute' : 'mute'}</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? ' on' : ''}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? ' on' : ''}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
-      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="remove">×</button>
+      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
     </div>`).join('');
   return `
     <div class="ts-section">
