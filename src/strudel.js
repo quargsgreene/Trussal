@@ -18,12 +18,10 @@ import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { registerSamplesFromDB } from './user-samples.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 
-export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4 minor')
+export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
-  .jux(rev)
   .room(2)
-  .sometimes(add(note("12")))
   .lpf(perlin.range(200,20000).slow(4))
 `;
 
