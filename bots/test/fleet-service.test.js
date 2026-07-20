@@ -99,7 +99,7 @@ test("removeOne: the × button removes exactly the one targeted bot from the req
   await withFleet(async ({ fleet, runner, sent }) => {
     await fleet.spawnCluster('1', 3);   // 1a 1b 1c
     await fleet.spawnCluster('2', 1);   // 2a
-    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', target: '1b', fromIndex: '1' });
+    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', targets: ['1b'], fromIndex: '1' });
     assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1a', '1c', '2a']);
     assert.equal(runner.calls.stopped.length, 1);
     assert.ok(sent.find(m => m.type === 'fleet-status' && m.removed === 1), 'reports the single removal');
@@ -110,7 +110,7 @@ test("removeOne: a target in another owner's cluster removes nothing (owner-scop
   await withFleet(async ({ fleet, runner }) => {
     await fleet.spawnCluster('1', 1);   // 1a
     await fleet.spawnCluster('2', 1);   // 2a
-    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', target: '2a', fromIndex: '1' });
+    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', targets: ['2a'], fromIndex: '1' });
     assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1a', '2a'], "2a survives — not owner 1's");
     assert.equal(runner.calls.stopped.length, 0);
   });
@@ -119,7 +119,7 @@ test("removeOne: a target in another owner's cluster removes nothing (owner-scop
 test('removeOne: an unmatched target is a no-op, not a crash', async () => {
   await withFleet(async ({ fleet, runner }) => {
     await fleet.spawnCluster('1', 2);   // 1a 1b
-    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', target: '1z', fromIndex: '1' });
+    await fleet.handleBusMessage({ type: 'fleet-request', action: 'removeOne', targets: ['1z'], fromIndex: '1' });
     assert.deepEqual(fleet.listBots().map(b => b.clusterIndex).sort(), ['1a', '1b']);
     assert.equal(runner.calls.stopped.length, 0);
   });

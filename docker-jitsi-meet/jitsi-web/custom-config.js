@@ -52456,6 +52456,10 @@ ${code2}${BTN_MARKER}`;
     const targets = selectBots(myClusterBots(), selector).map((b) => b.roomIndex);
     if (targets.length) sendFleetRequest("remove", { targets });
   }
+  function removeOneBot(index2) {
+    if (index2 == null) return;
+    sendFleetRequest("removeOne", { targets: [String(index2)] });
+  }
   function muteBots(selector, muted) {
     for (const bot of selectBots(myClusterBots(), selector)) {
       sendRemoteMute(bot.peerId, !!muted);
@@ -53103,7 +53107,7 @@ ${code2}${BTN_MARKER}`;
       <button class="ts-fx-btn ts-dwell-btn${b.muted ? " on" : ""}" data-bot-action="mute">${b.muted ? "unmute" : "mute"}</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? " on" : ""}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? " on" : ""}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
-      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="remove">\xD7</button>
+      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>
     </div>`).join("");
     return `
     <div class="ts-section">
@@ -53131,6 +53135,7 @@ ${code2}${BTN_MARKER}`;
         else if (action === "remove-all") removeBots("all");
         else if (action === "mute-all") muteBots("all", true);
         else if (action === "remove" && idx) removeBots([idx]);
+        else if (action === "removeOne" && idx) removeOneBot(idx);
         else if (action === "mute" && idx) {
           const bot = myClusterBots().find((b) => b.roomIndex === idx);
           muteBots([idx], !(bot && bot.muted));

@@ -66,11 +66,12 @@ export function removeBots(selector = 'all') {
 }
 
 // Remove a single bot from one's own cluster by its room index (e.g. '1a').
-// The × button on a bot row sends exactly one index; the fleet matches it
+// The × button on a bot row sends exactly one index in `targets` — the field
+// the sidecar relays (it drops any other keys) — and the fleet matches it
 // against the bot's cluster index (roomIndex === clusterIndex for bots).
 export function removeOneBot(index) {
   if (index == null) return;
-  sendFleetRequest('removeOne', { target: String(index) });
+  sendFleetRequest('removeOne', { targets: [String(index)] });
 }
 
 // Mute/unmute audio for a subset (all-at-once or conditional).
