@@ -274,7 +274,7 @@ export class FleetService {
     } else if (msg.action === 'remove') {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request' });
     } else if (msg.action === 'removeOne') {
-      await this.removeOneBot(name, ownerIndex ?? -1,  { reason: 'owner request' });
+      await this.removeOneBot(ownerIndex, msg.target, { reason: 'owner request' });
     }
   }
 
@@ -354,20 +354,14 @@ export class FleetService {
     return status;
   }
 
-  //TODO: implement single bot removal, call onclick of x button
-  async removeOneBot(name, target, { reason = '' } = {}) {
-      const botToRemove = [...this.bots.values()].find((bremoveOneot) => bot.name === name && target === bot.clusterIndex);
-      await this.#stopBot(botToRemove.botId);
-      const status = {
-        type: 'fleet-status',
-        action: 'removeOne',
-        name,
-        removed: 1,
-        fleetSize: this.bots.size,
-        ...(reason ? { reason } : {})
-      };
-      this.#busSend(status);
-      return status;
+  // Remove a single bot from ownerIndex's cluster by its cluster index (e.g.
+  // '1a') — the one index a bot row's × button sends. Delegates to
+  // removeCluster's owner-scoped, null-safe subset path: an unmatched target
+  // removes nothing (removed: 0) rather than throwing, and the freed suffix
+  // gap-refills on the next spawn (see removeCluster).
+  async removeOneBot(ownerIndex, target, { reason = '' } = {}) {
+    const targets = target != null ? [String(target)] : [];
+    return this.removeCluster(ownerIndex, targets, { reason });
   }
 
   async #teardownAll(reason) {

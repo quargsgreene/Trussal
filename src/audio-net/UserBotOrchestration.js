@@ -65,6 +65,14 @@ export function removeBots(selector = 'all') {
   if (targets.length) sendFleetRequest('remove', { targets });
 }
 
+// Remove a single bot from one's own cluster by its room index (e.g. '1a').
+// The × button on a bot row sends exactly one index; the fleet matches it
+// against the bot's cluster index (roomIndex === clusterIndex for bots).
+export function removeOneBot(index) {
+  if (index == null) return;
+  sendFleetRequest('removeOne', { target: String(index) });
+}
+
 // Mute/unmute audio for a subset (all-at-once or conditional).
 export function muteBots(selector, muted) {
   for (const bot of selectBots(myClusterBots(), selector)) {

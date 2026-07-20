@@ -63,6 +63,7 @@ import {
   myClusterBots,
   spawnBots,
   removeBots,
+  removeOneBot,
   muteBots,
   setBotPermissions,
   subscribeFleetStatus
@@ -540,6 +541,7 @@ function bindBotClusterBlock(container) {
       else if (action === 'remove-all') removeBots('all');
       else if (action === 'mute-all') muteBots('all', true);
       else if (action === 'remove' && idx) removeBots([idx]);
+      else if (action === 'removeOne' && idx) removeOneBot(idx);
       else if (action === 'mute' && idx) {
         const bot = myClusterBots().find(b => b.roomIndex === idx);
         muteBots([idx], !(bot && bot.muted));

@@ -533,10 +533,11 @@ export function sendResearchEvent(kind, data = null) {
 
 // Ask the fleet service for cluster changes on our behalf. The server stamps
 // the request with our room index; bots cannot send these.
-export function sendFleetRequest(action, { count, targets } = {}) {
+export function sendFleetRequest(action, { count, targets, target } = {}) {
   const msg = { type: 'fleet-request', action };
   if (typeof count === 'number') msg.count = count;
   if (targets !== undefined) msg.targets = targets;
+  if (target !== undefined) msg.target = target;
   safeSend(msg);
 }
 
