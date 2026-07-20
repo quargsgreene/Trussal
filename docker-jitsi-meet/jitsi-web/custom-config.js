@@ -52046,85 +52046,6 @@ ${code2}${BTN_MARKER}`;
   init_latency_instrument();
   init_WorstCaseCalculationUtils();
 
-  // src/audio-net/observability/SpectrumAnalysis.js
-  var DEFAULT_BANDS = 32;
-  var DEFAULT_FRAME_INTERVAL_MS = 250;
-  var DEFAULT_HISTORY = 240;
-  function downsampleBins(bins, bands) {
-    const n2 = bins ? bins.length : 0;
-    if (!n2 || !Number.isInteger(bands) || bands < 1) return [];
-    if (bands >= n2) return Array.from(bins);
-    const out = new Array(bands);
-    const per2 = n2 / bands;
-    for (let b = 0; b < bands; b++) {
-      const start = Math.floor(b * per2);
-      const end2 = Math.min(n2, Math.max(start + 1, Math.floor((b + 1) * per2)));
-      let sum = 0;
-      for (let i = start; i < end2; i++) sum += bins[i];
-      out[b] = sum / (end2 - start);
-    }
-    return out;
-  }
-  function createSpectrumAnalysis(audioCtx2, sourceNode2, {
-    bands = DEFAULT_BANDS,
-    intervalMs = DEFAULT_FRAME_INTERVAL_MS,
-    history = DEFAULT_HISTORY,
-    fftSize = 2048
-  } = {}) {
-    const analyser = audioCtx2.createAnalyser();
-    analyser.fftSize = fftSize;
-    analyser.smoothingTimeConstant = 0.6;
-    sourceNode2.connect(analyser);
-    const binBuf = new Uint8Array(analyser.frequencyBinCount);
-    const frames2 = [];
-    const subscribers3 = /* @__PURE__ */ new Set();
-    let timer3 = null;
-    function captureFrame() {
-      analyser.getByteFrequencyData(binBuf);
-      const frame = { t: audioCtx2.currentTime, bands: downsampleBins(binBuf, bands) };
-      frames2.push(frame);
-      if (frames2.length > history) frames2.shift();
-      subscribers3.forEach((fn) => {
-        try {
-          fn(frame);
-        } catch (e30) {
-          console.warn("[spectrum] subscriber threw", e30);
-        }
-      });
-    }
-    return {
-      analyser,
-      start() {
-        if (timer3) return;
-        timer3 = setInterval(captureFrame, intervalMs);
-      },
-      stop() {
-        if (timer3) {
-          clearInterval(timer3);
-          timer3 = null;
-        }
-      },
-      getFrames() {
-        return frames2.slice();
-      },
-      getLatestFrame() {
-        return frames2.length ? frames2[frames2.length - 1] : null;
-      },
-      subscribe(fn) {
-        subscribers3.add(fn);
-        return () => subscribers3.delete(fn);
-      },
-      dispose() {
-        this.stop();
-        try {
-          sourceNode2.disconnect(analyser);
-        } catch (e30) {
-        }
-        subscribers3.clear();
-      }
-    };
-  }
-
   // src/audio-net/observability/NetStats.js
   var POLL_INTERVAL_MS = 2e3;
   function deriveNetSample(statsEntries, prevTotals = null) {
@@ -52948,12 +52869,6 @@ ${code2}${BTN_MARKER}`;
       height: 16px;
     }
 
-    #${OVERLAY_ID} .ts-spectrum {
-      width: 100%; height: 36px; display: block;
-      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 4px;
-    }
-
     #hydra-canvas {
       z-index: 100;
     }
@@ -53083,7 +52998,6 @@ ${code2}${BTN_MARKER}`;
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         \xB7 measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
       <div class="ts-sliders">${sliders}</div>
-      <canvas class="ts-spectrum" width="560" height="36"></canvas>
     </div>`;
   }
   var monitorSelection = "master";
@@ -53148,33 +53062,6 @@ ${code2}${BTN_MARKER}`;
         }
       });
     });
-  }
-  var spectrum2 = null;
-  function drawSpectrumFrame(frame) {
-    const canvas = document.querySelector(`#${OVERLAY_ID} .ts-spectrum`);
-    if (!canvas || !frame || !frame.bands.length) return;
-    const ctx = canvas.getContext("2d");
-    const { width, height: height2 } = canvas;
-    ctx.clearRect(0, 0, width, height2);
-    const barW = width / frame.bands.length;
-    ctx.fillStyle = "#1ff466";
-    frame.bands.forEach((v2, i) => {
-      const h2 = v2 / 255 * height2;
-      ctx.fillRect(i * barW, height2 - h2, Math.max(1, barW - 1), h2);
-    });
-  }
-  function ensureSpectrum() {
-    if (spectrum2) return;
-    const audioCtx2 = getAudioContext();
-    const bus2 = getMasterBus();
-    if (!audioCtx2 || !bus2) return;
-    try {
-      spectrum2 = createSpectrumAnalysis(audioCtx2, bus2);
-      spectrum2.subscribe(drawSpectrumFrame);
-      spectrum2.start();
-    } catch (e30) {
-      console.warn("[studio] spectrum init failed", e30);
-    }
   }
   function renderDetail(container) {
     let peer = getPeerByJitsiId(selectedJitsiId);
@@ -53680,7 +53567,7 @@ ${voiceCode}${BTN_MARKER2}`);
     startNetStatsPolling(sendLocalNetStats);
     startBotClusterVideo();
     startRoomHealth();
-    bootAudioEngine();
+    bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }
   document.addEventListener("trussal-kbd-eval", (e30) => {
     const code2 = e30.detail?.code;

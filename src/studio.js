@@ -42,12 +42,9 @@ import {
   isPropagatingToRoom,
   setJamulusMode,
   isJamulusMode,
-  getMasterBus,
-  getAudioContext,
   setMonitorMix,
 } from './latency-instrument.js';
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
-import { createSpectrumAnalysis } from './audio-net/observability/SpectrumAnalysis.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import {
   isNetCyclesActive,
@@ -337,12 +334,6 @@ function injectStyles() {
       height: 16px;
     }
 
-    #${OVERLAY_ID} .ts-spectrum {
-      width: 100%; height: 36px; display: block;
-      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 4px;
-    }
-
     #hydra-canvas {
       z-index: 100;
     }
@@ -451,8 +442,8 @@ function metricsLine(peer) {
 }
 
 // Room-wide worst-case metrics (identical on every client — the shared basis
-// for Net Cycles cycle lengths) plus artificial-induction sliders, mix
-// monitoring, and the master-bus mini spectrum.
+// for Net Cycles cycle lengths) plus artificial-induction sliders and mix
+// monitoring.
 function networkMetricsBlock() {
   const measured = computeWorstCaseMetrics(getAllPeers());
   const wc = effectiveWorstCase();
@@ -484,7 +475,6 @@ function networkMetricsBlock() {
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
       <div class="ts-sliders">${sliders}</div>
-      <canvas class="ts-spectrum" width="560" height="36"></canvas>
     </div>`;
 }
 
@@ -554,36 +544,6 @@ function bindBotClusterBlock(container) {
       }
     });
   });
-}
-
-let spectrum = null;
-
-function drawSpectrumFrame(frame) {
-  const canvas = document.querySelector(`#${OVERLAY_ID} .ts-spectrum`);
-  if (!canvas || !frame || !frame.bands.length) return;
-  const ctx = canvas.getContext('2d');
-  const { width, height } = canvas;
-  ctx.clearRect(0, 0, width, height);
-  const barW = width / frame.bands.length;
-  ctx.fillStyle = '#1ff466';
-  frame.bands.forEach((v, i) => {
-    const h = (v / 255) * height;
-    ctx.fillRect(i * barW, height - h, Math.max(1, barW - 1), h);
-  });
-}
-
-function ensureSpectrum() {
-  if (spectrum) return;
-  const audioCtx = getAudioContext();
-  const bus = getMasterBus();
-  if (!audioCtx || !bus) return;
-  try {
-    spectrum = createSpectrumAnalysis(audioCtx, bus);
-    spectrum.subscribe(drawSpectrumFrame);
-    spectrum.start();
-  } catch (e) {
-    console.warn('[studio] spectrum init failed', e);
-  }
 }
 
 function renderDetail(container) {
@@ -1149,9 +1109,7 @@ function tickUi() {
   startNetStatsPolling(sendLocalNetStats);
   startBotClusterVideo();
   startRoomHealth();
-  bootAudioEngine()
-    .then(() => ensureSpectrum())
-    .catch(e => console.warn('[studio] audio boot deferred', e));
+  bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
 }
 
 // Keyboard module requests eval via this event. The Net Cycles editor's

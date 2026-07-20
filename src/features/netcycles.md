@@ -139,8 +139,7 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │   │   ├── UserBotOrchestration.js # Allows users to eliminate, filter, and select bots in their own cluster
 │   │   ├── ClockSync.js            # Critical for O2: syncs local audio time with network time
 │   │   ├── observability/
-│   │   │   ├── SpectrumAnalysis.js # Get frequency response over time
-│   │   │   ├── NetStats.js         # Store network metrics
+│   │   │   └── NetStats.js         # Store network metrics
 │   │   ├── network-modulation/
 │   │       ├── IncreaseJitter.js   # Increase above minimum Worst-Case Jitter (WCJ)
 │   │       ├── IncreaseLatency.js  # Increase above minimum Worst-Case Latency (WCL)
@@ -195,8 +194,7 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
  |        Network Metrics Service        |                                 |
  |---------------------------------------|                                 |
  | src/audio-net/observability/          |                                 |
- | ├── NetStats.js                       |                                 |
- | └── SpectrumAnalysis.js               |                                 |
+ | └── NetStats.js                       |                                 |
  +---------------------------------------+                                 |
        |                                                                   |
        | [RTCStatsReport]                                                  |

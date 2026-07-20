@@ -172,8 +172,8 @@ function ensureAudioContext() {
     // avoiding pitch-shift when relay audio flows through the effects chain.
     audioCtx = new Ctor({ sampleRate: 48000 });
     // Master bus: every chain/effect that used to target audioCtx.destination
-    // now converges on this gain node, giving SpectrumAnalysis (and the room
-    // health compressor) one place to tap the full mix.
+    // now converges on this gain node, giving the room health compressor one
+    // place to tap the full mix.
     const masterBus = audioCtx.createGain();
     masterBus.gain.value = 1.0;
     masterBus.connect(audioCtx.destination);
