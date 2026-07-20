@@ -370,13 +370,13 @@ function renderChip(peer, selected) {
         <div class="ts-name${isLocal ? ' you' : ''}">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
         <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : '·'}</span>
       </div>
-      <div class="ts-indicators">
-        <span class="ts-ind${e.distortion ? ' on' : ''}">D</span>
-        <span class="ts-ind${e.noise ? ' on' : ''}">N</span>
-        <span class="ts-ind${e.reverb ? ' on' : ''}">R</span>
-        <span class="ts-play${peer.playing ? ' on' : ''}">${peer.playing ? '▶' : '■'}</span>
-        <span class="ts-routed${routed ? ' on' : ''}" title="${routed ? 'Audio routed through chain' : 'No live audio source'}">🎙</span>
-      </div>
+      // <div class="ts-indicators">
+      //   <span class="ts-ind${e.distortion ? ' on' : ''}">D</span>
+      //   <span class="ts-ind${e.noise ? ' on' : ''}">N</span>
+      //   <span class="ts-ind${e.reverb ? ' on' : ''}">R</span>
+      //   <span class="ts-play${peer.playing ? ' on' : ''}">${peer.playing ? '▶' : '■'}</span>
+      //   <span class="ts-routed${routed ? ' on' : ''}" title="${routed ? 'Audio routed through chain' : 'No live audio source'}">🎙</span>
+      // </div>
     </button>
   `;
 }
