@@ -53680,7 +53680,7 @@ ${voiceCode}${BTN_MARKER2}`);
     startNetStatsPolling(sendLocalNetStats);
     startBotClusterVideo();
     startRoomHealth();
-    bootAudioEngine().then(() => ensureSpectrum()).catch((e30) => console.warn("[studio] audio boot deferred", e30));
+    bootAudioEngine();
   }
   document.addEventListener("trussal-kbd-eval", (e30) => {
     const code2 = e30.detail?.code;
