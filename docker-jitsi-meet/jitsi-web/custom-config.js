@@ -1426,22 +1426,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
     notifyRoutingChange();
   }
-  function detachNodeFromChain(jitsiId) {
-    const entry = externalNodes.get(jitsiId);
-    if (!entry) return;
-    const chain = chains.get(jitsiId);
-    if (chain) {
-      try {
-        entry.node.disconnect(chain.input);
-      } catch (_3) {
-      }
-    }
-    externalNodes.delete(jitsiId);
-    if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
-      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
-    }
-    console.log("[latency] detached WebAudio node \u2190", jitsiId);
-  }
   function getExternalNodeLabel(jitsiId) {
     return externalNodes.get(jitsiId)?.label ?? null;
   }
@@ -1662,34 +1646,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     `;
     container.prepend(panel);
   }
-  function startJamulusBannerPolling() {
-    attachJamulusBanner();
-    setInterval(attachJamulusBanner, 3e3);
-  }
-  function attachJamulusBanner() {
-    const room2 = getRoomNameFromUrl();
-    if (!room2) return;
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    const entry = mapping[room2];
-    if (!entry) return;
-    if (document.getElementById("jamulus-info-banner")) return;
-    const banner = document.createElement("div");
-    banner.id = "jamulus-info-banner";
-    banner.textContent = `Jamulus: ${entry.host}:${entry.port} (for low-latency audio)`;
-    Object.assign(banner.style, {
-      position: "absolute",
-      bottom: "10px",
-      right: "10px",
-      zIndex: 9999,
-      background: "rgba(0, 0, 0, 0.7)",
-      color: "#fff",
-      padding: "8px 12px",
-      borderRadius: "4px",
-      fontFamily: "sans-serif",
-      fontSize: "12px"
-    });
-    document.body.appendChild(banner);
-  }
   function startJamulusWelcomePanel() {
     addJamulusWelcomePanel();
   }
@@ -1705,107 +1661,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     if (document.readyState === "complete" || document.readyState === "interactive") {
       startJamulusWelcomePanel();
-      startJamulusBannerPolling();
     } else {
       window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
-      window.addEventListener("DOMContentLoaded", startJamulusBannerPolling);
     }
   }
-  async function ensureRelayWorklet(audioCtx2) {
-    if (!_relayWorkletLoaded) {
-      await audioCtx2.audioWorklet.addModule("/jamulus-relay-player.js");
-      _relayWorkletLoaded = true;
-    }
-    return new AudioWorkletNode(audioCtx2, "jamulus-relay-processor", {
-      numberOfOutputs: 1,
-      outputChannelCount: [2]
-    });
-  }
-  async function connectJamulusRelay() {
-    if (_relayWs) return;
-    const local2 = getLocalPeer();
-    if (!local2 || !local2.jitsiId) throw new Error("No local peer identity yet");
-    const room2 = getRoomNameFromUrl();
-    if (!room2) throw new Error("Not in a Jitsi room");
-    const { audioCtx: audioCtx2 } = await bootAudioEngine();
-    if (audioCtx2.state === "suspended") await audioCtx2.resume();
-    const loc = window.location;
-    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-    const url2 = `${proto}//${loc.host}/jamulus-audio?room=${encodeURIComponent(room2)}`;
-    const ws3 = new WebSocket(url2);
-    ws3.binaryType = "arraybuffer";
-    _relayWs = ws3;
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("relay connect timeout")), 2e4);
-      const onMsg = (evt) => {
-        if (typeof evt.data !== "string") return;
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "relay-ready") {
-          clearTimeout(timeout);
-          ws3.removeEventListener("message", onMsg);
-          resolve();
-        } else if (msg.type === "error") {
-          clearTimeout(timeout);
-          ws3.removeEventListener("message", onMsg);
-          reject(new Error(msg.message || "relay error"));
-        }
-      };
-      ws3.addEventListener("message", onMsg);
-      ws3.onerror = () => {
-        clearTimeout(timeout);
-        reject(new Error("WebSocket error"));
-      };
-      ws3.onclose = () => {
-        clearTimeout(timeout);
-        reject(new Error("WebSocket closed"));
-      };
-    });
-    const worklet2 = await ensureRelayWorklet(audioCtx2);
-    _relayWorklet = worklet2;
-    ws3.onmessage = (evt) => {
-      if (typeof evt.data === "string") {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "relay-stopped") disconnectJamulusRelay();
-        return;
-      }
-      worklet2.port.postMessage(evt.data, [evt.data]);
-    };
-    ws3.onclose = () => {
-      console.log("[jamulus] relay WebSocket closed");
-      disconnectJamulusRelay();
-    };
-    await attachNodeToChain(local2.jitsiId, worklet2, "Jamulus relay");
-    setJamulusMode(true);
-    console.log("[jamulus] relay connected, room", room2);
-  }
-  function disconnectJamulusRelay() {
-    if (_relayWs) {
-      _relayWs.onmessage = null;
-      _relayWs.onclose = null;
-      try {
-        _relayWs.close();
-      } catch (_3) {
-      }
-      _relayWs = null;
-    }
-    if (_relayWorklet) {
-      try {
-        _relayWorklet.disconnect();
-      } catch (_3) {
-      }
-      _relayWorklet = null;
-    }
-    const local2 = getLocalPeer();
-    if (local2 && local2.jitsiId) {
-      detachNodeFromChain(local2.jitsiId);
-      setJamulusMode(false);
-    }
-    console.log("[jamulus] relay disconnected");
-  }
-  function isRelayConnected() {
-    return !!_relayWs && _relayWs.readyState === WebSocket.OPEN;
-  }
-  var JAMULUS_ROOM_MAP, _relayWs, _relayWorklet, _relayWorkletLoaded;
+  var JAMULUS_ROOM_MAP;
   var init_jamulus = __esm({
     "src/jamulus.js"() {
       init_latency_instrument();
@@ -1823,9 +1683,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         "9": { host: "jamulus.trussal.com", port: 22009 },
         "10": { host: "jamulus.trussal.com", port: 22010 }
       };
-      _relayWs = null;
-      _relayWorklet = null;
-      _relayWorkletLoaded = false;
     }
   });
 
@@ -49688,10 +49545,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var MODE_DIRECT = "direct";
   var _mode = MODE_SPLIT;
   var _videoEl = null;
-  var _stream = null;
   var _running = false;
   var _rafId = null;
-  var _panelOpen = false;
   var _lastSyncedVideoEl = void 0;
   window._hvBlendAmt = 0.5;
   window._hvR = 1;
@@ -49961,37 +49816,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (!el) return;
     el.textContent = _mode === MODE_DIRECT ? "video \u2192 hydra s0\nuse src(s0).out() in code" : "split: camera shown above";
   }
-  function injectHydraVideoToggle(headerEl) {
-    if (document.getElementById(TOGGLE_ID)) return;
-    _injectStyles();
-    const btn = document.createElement("button");
-    btn.id = TOGGLE_ID;
-    btn.title = "Toggle Hydra video panel";
-    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="currentColor" width="13" height="13" aria-hidden="true">
-    <path d="M4.5 4.5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h8.25a3 3 0 0 0
-      3-3v-9a3 3 0 0 0-3-3H4.5ZM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945
-      2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06Z"/>
-  </svg>Video`;
-    btn.addEventListener("click", async () => {
-      _panelOpen = !_panelOpen;
-      btn.classList.toggle("on", _panelOpen);
-      _ensurePanel();
-      const panel = document.getElementById(PANEL_ID);
-      if (panel) panel.style.display = _panelOpen ? "flex" : "none";
-      if (_panelOpen && !_videoEl?.srcObject) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-          _stream = stream;
-          setVideoStream(stream);
-        } catch (e30) {
-          console.warn("[hydra-video] camera open failed", e30);
-        }
-      }
-    });
-    const closeBtn = headerEl.querySelector(".ts-close");
-    headerEl.insertBefore(btn, closeBtn);
-  }
   subscribePeerState((event, payload) => {
     if (event !== "peer-upsert") return;
     if (!payload?.isLocal) return;
@@ -50001,12 +49825,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   _scheduleFrame();
 
   // src/strudel.js
-  var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4 minor')
+  var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
-  .jux(rev)
   .room(2)
-  .sometimes(add(note("12")))
   .lpf(perlin.range(200,20000).slow(4))
 `;
   var strudelMod = null;
@@ -50638,7 +50460,7 @@ ${code2}${BTN_MARKER}`;
   var _gestureRecognizer = null;
   var _mpClasses = null;
   var _drawingUtils = null;
-  var _stream2 = null;
+  var _stream = null;
   var _rafId2 = null;
   var _videoEl2 = null;
   var _canvasEl = null;
@@ -50915,10 +50737,10 @@ ${code2}${BTN_MARKER}`;
           numHands: 1
         })
       ]);
-      _stream2 = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-      _videoEl2.srcObject = _stream2;
+      _stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      _videoEl2.srcObject = _stream;
       await _videoEl2.play();
-      setVideoStream(_stream2);
+      setVideoStream(_stream);
       _setStatus("ready");
       _rafId2 = requestAnimationFrame(_detectionLoop);
     } catch (e30) {
@@ -50930,8 +50752,8 @@ ${code2}${BTN_MARKER}`;
     cancelAnimationFrame(_rafId2);
     _rafId2 = null;
     setVideoStream(null);
-    _stream2?.getTracks().forEach((t) => t.stop());
-    _stream2 = null;
+    _stream?.getTracks().forEach((t) => t.stop());
+    _stream = null;
     _landmarker?.close();
     _landmarker = null;
     _gestureRecognizer?.close();
@@ -51274,10 +51096,6 @@ ${code2}${BTN_MARKER}`;
   }
 
   // src/on-screen-keyboard.js
-  var KBD_STYLE_ID = "trussal-kbd-style";
-  var KBD_PANEL_ID = "trussal-kbd-panel";
-  var KBD_BTN_ID = "trussal-kbd-btn";
-  var DWELL_MS2 = 1e3;
   var TrieNode = class {
     constructor() {
       this.ch = {};
@@ -51397,624 +51215,10 @@ ${code2}${BTN_MARKER}`;
     ["modulateScale", 3],
     ["modulateRotate", 3]
   ].forEach(([w2, wt2]) => TRIE.insert(w2, wt2));
-  var ROWS = [
-    [
-      { l: "`", k: "`", s: "~" },
-      { l: "1", k: "1", s: "!" },
-      { l: "2", k: "2", s: "@" },
-      { l: "3", k: "3", s: "#" },
-      { l: "4", k: "4", s: "$" },
-      { l: "5", k: "5", s: "%" },
-      { l: "6", k: "6", s: "^" },
-      { l: "7", k: "7", s: "&" },
-      { l: "8", k: "8", s: "*" },
-      { l: "9", k: "9", s: "(" },
-      { l: "0", k: "0", s: ")" },
-      { l: "-", k: "-", s: "_" },
-      { l: "=", k: "=", s: "+" },
-      { l: "\u232B", k: "Backspace", w: 1.5 }
-    ],
-    [
-      { l: "\u21E5", k: "Tab", w: 1.5 },
-      { l: "q", k: "q", s: "Q" },
-      { l: "w", k: "w", s: "W" },
-      { l: "e", k: "e", s: "E" },
-      { l: "r", k: "r", s: "R" },
-      { l: "t", k: "t", s: "T" },
-      { l: "y", k: "y", s: "Y" },
-      { l: "u", k: "u", s: "U" },
-      { l: "i", k: "i", s: "I" },
-      { l: "o", k: "o", s: "O" },
-      { l: "p", k: "p", s: "P" },
-      { l: "[", k: "[", s: "{" },
-      { l: "]", k: "]", s: "}" },
-      { l: "\\", k: "\\", s: "|" }
-    ],
-    [
-      { l: "\u21EA", k: "CapsLock", w: 1.5 },
-      { l: "a", k: "a", s: "A" },
-      { l: "s", k: "s", s: "S" },
-      { l: "d", k: "d", s: "D" },
-      { l: "f", k: "f", s: "F" },
-      { l: "g", k: "g", s: "G" },
-      { l: "h", k: "h", s: "H" },
-      { l: "j", k: "j", s: "J" },
-      { l: "k", k: "k", s: "K" },
-      { l: "l", k: "l", s: "L" },
-      { l: ";", k: ";", s: ":" },
-      { l: "'", k: "'", s: '"' },
-      { l: "\u21B5", k: "Enter", w: 2 }
-    ],
-    [
-      { l: "\u21E7", k: "ShiftLeft", w: 2.25 },
-      { l: "z", k: "z", s: "Z" },
-      { l: "x", k: "x", s: "X" },
-      { l: "c", k: "c", s: "C" },
-      { l: "v", k: "v", s: "V" },
-      { l: "b", k: "b", s: "B" },
-      { l: "n", k: "n", s: "N" },
-      { l: "m", k: "m", s: "M" },
-      { l: ",", k: ",", s: "<" },
-      { l: ".", k: ".", s: ">" },
-      { l: "/", k: "/", s: "?" },
-      { l: "\u21E7", k: "ShiftRight", w: 2.25 }
-    ],
-    [
-      { l: "\u2190", k: "ArrowLeft", w: 1.5 },
-      { l: "\u2191", k: "ArrowUp", w: 1.5 },
-      { l: "\u2193", k: "ArrowDown", w: 1.5 },
-      { l: "space", k: " ", w: 6.5 },
-      { l: "\u2192", k: "ArrowRight", w: 1.5 },
-      { l: "\u21B5eval", k: "Eval", w: 2 }
-    ]
-  ];
-  var _shift = false;
-  var _caps = false;
-  var _visible = false;
-  var _collapsed = false;
   var _lastTA = null;
-  var _dwellEl = null;
-  var _dwellStart = 0;
-  var _dwellFired = false;
-  var _rafId3 = null;
   document.addEventListener("focusin", (e30) => {
     if (e30.target?.classList?.contains("ts-code")) _lastTA = e30.target;
   });
-  function _esc(s2) {
-    return String(s2).replace(
-      /[&<>"']/g,
-      (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
-    );
-  }
-  function _getTA() {
-    return _lastTA || document.querySelector("#trussal-studio-overlay .ts-code");
-  }
-  function _wordPrefix() {
-    const ta = _getTA();
-    if (!ta) return "";
-    const m2 = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
-    return m2 ? m2[0] : "";
-  }
-  function _updatePredictions() {
-    const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
-    if (!row) return;
-    const prefix = _wordPrefix();
-    const preds = prefix.length >= 1 ? TRIE.predict(prefix) : [];
-    if (!preds.length) {
-      row.innerHTML = "";
-      return;
-    }
-    row.innerHTML = preds.map(
-      (p) => `<button class="ts-kbd-pred-btn" data-completion="${_esc(p)}">${_esc(p)}</button>`
-    ).join("");
-    row.querySelectorAll(".ts-kbd-pred-btn").forEach((btn) => {
-      btn.addEventListener("mousedown", (e30) => e30.preventDefault());
-      btn.addEventListener("click", () => _insertCompletion(btn.dataset.completion));
-    });
-  }
-  function _insertCompletion(word2) {
-    const ta = _getTA();
-    if (!ta) return;
-    const pos = ta.selectionStart ?? ta.value.length;
-    const before = ta.value.slice(0, pos);
-    const m2 = before.match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
-    const start = pos - (m2 ? m2[0].length : 0);
-    ta.value = ta.value.slice(0, start) + word2 + ta.value.slice(pos);
-    ta.setSelectionRange(start + word2.length, start + word2.length);
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-    _updatePredictions();
-  }
-  function _renderModState() {
-    const panel = document.getElementById(KBD_PANEL_ID);
-    if (!panel) return;
-    const upper = _shift || _caps;
-    panel.querySelectorAll(".ts-kbd-key[data-lower]").forEach((el) => {
-      el.querySelector(".ts-kbd-label").textContent = upper ? el.dataset.shiftedLabel : el.dataset.lower;
-    });
-    panel.querySelectorAll('.ts-kbd-key[data-k="ShiftLeft"],.ts-kbd-key[data-k="ShiftRight"]').forEach((el) => {
-      el.classList.toggle("ts-kbd-mod-on", _shift);
-    });
-    panel.querySelectorAll('.ts-kbd-key[data-k="CapsLock"]').forEach((el) => {
-      el.classList.toggle("ts-kbd-mod-on", _caps);
-    });
-  }
-  function _activateKeyDef(kd) {
-    const upper = _shift || _caps;
-    _typeKey(upper && kd.s ? kd.s : kd.k);
-  }
-  function _typeKey(key) {
-    if (key === "CapsLock") {
-      _caps = !_caps;
-      _renderModState();
-      return;
-    }
-    if (key === "ShiftLeft" || key === "ShiftRight") {
-      _shift = !_shift;
-      _renderModState();
-      return;
-    }
-    if (key === "Eval") {
-      const ta2 = _getTA();
-      document.dispatchEvent(new CustomEvent("trussal-kbd-eval", {
-        detail: {
-          code: ta2 ? ta2.value : "",
-          editor: ta2 && ta2.classList.contains("nc-code") ? "netcycles" : "strudel"
-        }
-      }));
-      return;
-    }
-    const ta = _getTA();
-    if (!ta) return;
-    const s2 = ta.selectionStart ?? ta.value.length;
-    const e30 = ta.selectionEnd ?? ta.value.length;
-    const val2 = ta.value;
-    if (key === "Backspace") {
-      if (s2 !== e30) {
-        ta.value = val2.slice(0, s2) + val2.slice(e30);
-        ta.setSelectionRange(s2, s2);
-      } else if (s2 > 0) {
-        ta.value = val2.slice(0, s2 - 1) + val2.slice(s2);
-        ta.setSelectionRange(s2 - 1, s2 - 1);
-      }
-    } else if (key === "Enter") {
-      ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
-      ta.setSelectionRange(s2 + 1, s2 + 1);
-    } else if (key === "Tab") {
-      ta.value = val2.slice(0, s2) + "  " + val2.slice(e30);
-      ta.setSelectionRange(s2 + 2, s2 + 2);
-    } else if (key === "ArrowLeft") {
-      const p = Math.max(0, s2 - 1);
-      ta.setSelectionRange(p, p);
-    } else if (key === "ArrowRight") {
-      const p = Math.min(val2.length, e30 + 1);
-      ta.setSelectionRange(p, p);
-    } else if (key === "ArrowUp" || key === "ArrowDown") {
-      _moveLine(ta, key === "ArrowUp" ? -1 : 1);
-    } else if (key.length === 1) {
-      ta.value = val2.slice(0, s2) + key + val2.slice(e30);
-      ta.setSelectionRange(s2 + 1, s2 + 1);
-      if (_shift) {
-        _shift = false;
-        _renderModState();
-      }
-    }
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-    _updatePredictions();
-  }
-  function _moveLine(ta, dir) {
-    const val2 = ta.value;
-    const pos = ta.selectionStart ?? val2.length;
-    const lineStart = val2.lastIndexOf("\n", pos - 1) + 1;
-    const col = pos - lineStart;
-    if (dir === -1) {
-      if (lineStart === 0) return;
-      const prevEnd = lineStart - 1;
-      const prevStart = val2.lastIndexOf("\n", prevEnd - 1) + 1;
-      ta.setSelectionRange(
-        prevStart + Math.min(col, prevEnd - prevStart),
-        prevStart + Math.min(col, prevEnd - prevStart)
-      );
-    } else {
-      const lineEnd = val2.indexOf("\n", pos);
-      if (lineEnd === -1) return;
-      const nextStart = lineEnd + 1;
-      const nextEnd = val2.indexOf("\n", nextStart);
-      const nextLen = (nextEnd === -1 ? val2.length : nextEnd) - nextStart;
-      ta.setSelectionRange(
-        nextStart + Math.min(col, nextLen),
-        nextStart + Math.min(col, nextLen)
-      );
-    }
-  }
-  function _setCollapsed(val2) {
-    _collapsed = val2;
-    const panel = document.getElementById(KBD_PANEL_ID);
-    if (!panel) return;
-    const body = panel.querySelector(".ts-kbd-body");
-    const btn = panel.querySelector(".ts-kbd-collapse-btn");
-    if (body) body.style.display = _collapsed ? "none" : "flex";
-    if (btn) btn.textContent = _collapsed ? "\u25B2" : "\u25BC";
-  }
-  function _makeDraggable(panel, handle) {
-    handle.style.cursor = "grab";
-    handle.addEventListener("mousedown", (e30) => {
-      if (e30.target.closest("button")) return;
-      e30.preventDefault();
-      handle.style.cursor = "grabbing";
-      const rect = panel.getBoundingClientRect();
-      const startX = e30.clientX;
-      const startY = e30.clientY;
-      panel.style.bottom = "";
-      panel.style.left = `${rect.left}px`;
-      panel.style.top = `${rect.top}px`;
-      const origL = rect.left;
-      const origT = rect.top;
-      function onMove(ev) {
-        panel.style.left = `${origL + ev.clientX - startX}px`;
-        panel.style.top = `${origT + ev.clientY - startY}px`;
-      }
-      function onUp() {
-        handle.style.cursor = "grab";
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      }
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-    });
-  }
-  function _injectStyles3() {
-    if (document.getElementById(KBD_STYLE_ID)) return;
-    const s2 = document.createElement("style");
-    s2.id = KBD_STYLE_ID;
-    s2.textContent = `
-    #${KBD_PANEL_ID} {
-      position: fixed;
-      bottom: 60px; left: 10px;
-      width: min(840px, calc(100vw - 20px));
-      z-index: 1000001;
-      background: rgba(5, 10, 8, 0.97);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
-      display: none;
-      flex-direction: column;
-      user-select: none;
-      font-family: sans-serif;
-      overflow: hidden;
-    }
-    .ts-kbd-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 6px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      cursor: grab;
-    }
-    .ts-kbd-header:active { cursor: grabbing; }
-    .ts-kbd-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: #7aa68a;
-      letter-spacing: 0.5px;
-      pointer-events: none;
-    }
-    .ts-kbd-collapse-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a;
-      cursor: pointer;
-      border-radius: 4px;
-      padding: 1px 7px;
-      font-size: 10px;
-      line-height: 1.5;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.1s, color 0.1s;
-    }
-    .ts-kbd-collapse-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
-    .ts-kbd-collapse-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.35);
-      pointer-events: none;
-    }
-    .ts-kbd-body {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      padding: 8px;
-    }
-    .ts-kbd-pred-row {
-      display: flex;
-      gap: 4px;
-      overflow-x: auto;
-      min-height: 24px;
-      padding-bottom: 2px;
-      scrollbar-width: none;
-    }
-    .ts-kbd-pred-btn {
-      flex: 0 0 auto;
-      padding: 1px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(31,244,102,0.35);
-      background: rgba(31,244,102,0.08);
-      color: #1ff466;
-      font-family: ui-monospace, monospace;
-      font-size: 11px;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.08s;
-    }
-    .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: rgba(31,244,102,0.2);
-    }
-    .ts-kbd-pred-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.4);
-      pointer-events: none;
-    }
-    .ts-kbd-row {
-      display: flex;
-      gap: 3px;
-    }
-    .ts-kbd-key {
-      min-height: 38px;
-      padding: 0 2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 5px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
-      color: #d6f5e2;
-      font-size: 12px;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.05s;
-    }
-    .ts-kbd-key:hover {
-      background: rgba(255,255,255,0.12);
-      border-color: rgba(255,255,255,0.22);
-    }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
-    .ts-kbd-key.ts-kbd-mod-on {
-      background: rgba(31,244,102,0.15);
-      border-color: rgba(31,244,102,0.4);
-      color: #1ff466;
-    }
-    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3) !important; }
-    .ts-kbd-key[data-k="Eval"] {
-      background: rgba(31,244,102,0.1);
-      border-color: rgba(31,244,102,0.35);
-      color: #1ff466;
-      font-size: 10px;
-      font-weight: 600;
-    }
-    .ts-kbd-key[data-k="Eval"]:hover { background: rgba(31,244,102,0.22); }
-    .ts-kbd-key::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.3);
-      pointer-events: none;
-    }
-    .ts-kbd-label { pointer-events: none; font-size: 11px; }
-    #${KBD_BTN_ID} {
-      position: fixed;
-      bottom: 80px; left: 20px;
-      z-index: 9999;
-      padding: 0.45rem 0.85rem;
-      border-radius: 999px;
-      border: 1px solid rgba(31,244,102,0.4);
-      background: rgba(31,244,102,0.12);
-      color: #1ff466;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      display: none;
-      font-family: sans-serif;
-      transition: background 0.1s;
-    }
-    #${KBD_BTN_ID}:hover { background: rgba(31,244,102,0.22); }
-    #${KBD_BTN_ID}.on    { background: rgba(31,244,102,0.28); }
-  `;
-    document.head.appendChild(s2);
-  }
-  function _buildPanel() {
-    const panel = document.createElement("div");
-    panel.id = KBD_PANEL_ID;
-    const header = document.createElement("div");
-    header.className = "ts-kbd-header";
-    const title = document.createElement("span");
-    title.className = "ts-kbd-title";
-    title.textContent = "\u2328 keyboard";
-    const collapseBtn = document.createElement("button");
-    collapseBtn.className = "ts-kbd-collapse-btn";
-    collapseBtn.type = "button";
-    collapseBtn.title = "Collapse / expand keyboard";
-    collapseBtn.textContent = "\u25BC";
-    collapseBtn.addEventListener("mousedown", (e30) => e30.preventDefault());
-    collapseBtn.addEventListener("click", () => _setCollapsed(!_collapsed));
-    header.appendChild(title);
-    header.appendChild(collapseBtn);
-    panel.appendChild(header);
-    const body = document.createElement("div");
-    body.className = "ts-kbd-body";
-    const predRow = document.createElement("div");
-    predRow.className = "ts-kbd-pred-row";
-    body.appendChild(predRow);
-    ROWS.forEach((row, ri2) => {
-      const rowEl = document.createElement("div");
-      rowEl.className = "ts-kbd-row";
-      row.forEach((kd, ki2) => {
-        const btn = document.createElement("button");
-        btn.className = "ts-kbd-key";
-        btn.type = "button";
-        btn.dataset.k = kd.k;
-        btn.dataset.row = ri2;
-        btn.dataset.key = ki2;
-        btn.style.flex = String(kd.w || 1);
-        if (kd.s) {
-          btn.dataset.lower = kd.l;
-          btn.dataset.shiftedLabel = kd.s;
-        }
-        const label2 = document.createElement("span");
-        label2.className = "ts-kbd-label";
-        label2.textContent = kd.l;
-        btn.appendChild(label2);
-        btn.addEventListener("mousedown", (e30) => e30.preventDefault());
-        btn.addEventListener("click", () => {
-          _activateKeyDef(kd);
-          _flash2(btn);
-        });
-        rowEl.appendChild(btn);
-      });
-      body.appendChild(rowEl);
-    });
-    panel.appendChild(body);
-    document.body.appendChild(panel);
-    _makeDraggable(panel, header);
-  }
-  function _flash2(el) {
-    el.classList.add("ts-kbd-flash");
-    setTimeout(() => el.classList.remove("ts-kbd-flash"), 150);
-  }
-  function _ensureDOM2() {
-    if (document.getElementById(KBD_PANEL_ID)) return;
-    _injectStyles3();
-    _buildPanel();
-  }
-  function _ensureToggleBtn() {
-    let btn = document.getElementById(KBD_BTN_ID);
-    if (btn) return btn;
-    if (!document.body) return null;
-    _injectStyles3();
-    btn = document.createElement("button");
-    btn.id = KBD_BTN_ID;
-    btn.type = "button";
-    btn.title = "Toggle on-screen keyboard";
-    btn.textContent = "\u2328";
-    btn.addEventListener("click", () => {
-      _ensureDOM2();
-      _visible = !_visible;
-      btn.classList.toggle("on", _visible);
-      const panel = document.getElementById(KBD_PANEL_ID);
-      if (panel) panel.style.display = _visible ? "flex" : "none";
-      if (_visible) _startDwellLoop();
-      else _stopDwellLoop();
-    });
-    document.body.appendChild(btn);
-    return btn;
-  }
-  function _startDwellLoop() {
-    if (_rafId3) return;
-    _rafId3 = requestAnimationFrame(_dwellTick);
-  }
-  function _stopDwellLoop() {
-    if (_rafId3) {
-      cancelAnimationFrame(_rafId3);
-      _rafId3 = null;
-    }
-    if (_dwellEl) {
-      _dwellEl.style.setProperty("--dwell", "0");
-      _dwellEl.classList.remove("ts-kbd-dwelling");
-      _dwellEl = null;
-    }
-  }
-  function _dwellTick() {
-    if (!_visible) {
-      _rafId3 = null;
-      return;
-    }
-    _rafId3 = requestAnimationFrame(_dwellTick);
-    const ctx = window.faceCtx;
-    if (!ctx || ctx.cursorX === window.innerWidth / 2 && ctx.cursorY === window.innerHeight / 2) return;
-    const panel = document.getElementById(KBD_PANEL_ID);
-    if (!panel || panel.style.display === "none") return;
-    const cx = ctx.cursorX;
-    const cy = ctx.cursorY;
-    let hoveredEl = null;
-    for (const el of panel.querySelectorAll(".ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn")) {
-      const r2 = el.getBoundingClientRect();
-      if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
-        hoveredEl = el;
-        break;
-      }
-    }
-    const now = performance.now();
-    if (hoveredEl !== _dwellEl) {
-      if (_dwellEl) {
-        _dwellEl.style.setProperty("--dwell", "0");
-        _dwellEl.classList.remove("ts-kbd-dwelling");
-      }
-      _dwellEl = hoveredEl;
-      _dwellStart = hoveredEl ? now : 0;
-      _dwellFired = false;
-    }
-    if (hoveredEl && !_dwellFired) {
-      const p = Math.min((now - _dwellStart) / DWELL_MS2, 1);
-      hoveredEl.style.setProperty("--dwell", p.toFixed(3));
-      hoveredEl.classList.toggle("ts-kbd-dwelling", p > 0.05);
-      if (p >= 1) {
-        _dwellFired = true;
-        hoveredEl.style.setProperty("--dwell", "0");
-        hoveredEl.classList.remove("ts-kbd-dwelling");
-        _activateDwelled(hoveredEl);
-      }
-    }
-  }
-  function _activateDwelled(el) {
-    _flash2(el);
-    if (el.classList.contains("ts-kbd-collapse-btn")) {
-      _setCollapsed(!_collapsed);
-      return;
-    }
-    if (el.classList.contains("ts-kbd-pred-btn")) {
-      _insertCompletion(el.dataset.completion);
-      return;
-    }
-    const ri2 = parseInt(el.dataset.row);
-    const ki2 = parseInt(el.dataset.key);
-    if (!isNaN(ri2) && !isNaN(ki2)) _activateKeyDef(ROWS[ri2][ki2]);
-  }
-  function _inMeeting() {
-    if (document.getElementById("trussal-welcome-overlay")) return false;
-    if (document.querySelector('.prejoin-screen,.premeeting-screen,[class*="premeeting"],[class*="prejoin"]')) return false;
-    const lv = document.getElementById("largeVideoContainer");
-    if (!lv) return false;
-    const r2 = lv.getBoundingClientRect();
-    return r2.width > 0 && r2.height > 0;
-  }
-  function tickKbdUi() {
-    const inMeeting = _inMeeting();
-    const btn = _ensureToggleBtn();
-    if (!btn) return;
-    if (!inMeeting) {
-      btn.style.display = "none";
-      if (_visible) {
-        _visible = false;
-        btn.classList.remove("on");
-        const panel = document.getElementById(KBD_PANEL_ID);
-        if (panel) panel.style.display = "none";
-        _stopDwellLoop();
-      }
-      return;
-    }
-    btn.style.display = "block";
-  }
 
   // src/studio.js
   init_latency_instrument();
@@ -52217,104 +51421,149 @@ ${code2}${BTN_MARKER}`;
   }
 
   // components/MetaprogrammerCycleHighlighter.js
-  init_Metaprogrammer();
   init_MetaprogrammerParser();
-  function mountMetaprogrammerCycleHighlighter(container) {
-    if (!container || container.querySelector(".nc-highlighter")) return null;
-    const wrap = document.createElement("div");
-    wrap.className = "ts-section nc-highlighter";
-    wrap.innerHTML = `
-    <div class="ts-section-head">
-      <div class="ts-section-title">Cycle</div>
-      <div class="ts-meta nc-cycle-meta">idle</div>
-    </div>
-    <div class="ts-voice-btns nc-slot-chips"></div>
+  var SLOT_MS = 4e3;
+  var MIRROR_PROPS = [
+    "fontFamily",
+    "fontSize",
+    "fontWeight",
+    "fontStyle",
+    "fontVariant",
+    "letterSpacing",
+    "textTransform",
+    "wordSpacing",
+    "textIndent",
+    "lineHeight",
+    "tabSize",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "borderTopWidth",
+    "borderRightWidth",
+    "borderBottomWidth",
+    "borderLeftWidth",
+    "boxSizing"
+  ];
+  function injectStyleOnce() {
+    if (document.getElementById("nc-play-style")) return;
+    const style = document.createElement("style");
+    style.id = "nc-play-style";
+    style.textContent = `
+    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; }
+    .nc-play-mirror {
+      position:absolute; top:0; left:-99999px; visibility:hidden;
+      white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
+    }
+    .nc-play-box {
+      position:absolute; left:0; top:0; box-sizing:border-box;
+      border:1.5px solid #1ff466; border-radius:3px;
+      background:rgba(31,244,102,0.12);
+      animation:nc-play-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes nc-play-pulse {
+      0%,100% { box-shadow:0 0 5px rgba(31,244,102,0.35); }
+      50%     { box-shadow:0 0 12px rgba(31,244,102,0.8); }
+    }
   `;
-    container.appendChild(wrap);
-    const chipsEl = wrap.querySelector(".nc-slot-chips");
-    const metaEl = wrap.querySelector(".nc-cycle-meta");
-    const timers = /* @__PURE__ */ new Set();
-    function tokensFromProgram() {
-      const text2 = getProgramText();
-      if (!text2) return [];
-      const { ast: ast2 } = parseMetaprogram(text2);
-      const tokens = [];
-      const seen = /* @__PURE__ */ new Set();
-      if (ast2.participants) {
-        const walk2 = (els) => {
-          for (const el of els) {
-            if (el.token && !seen.has(el.token)) {
-              seen.add(el.token);
-              tokens.push(el.token);
-            }
-            if (el.type === "sequence") el.stacks.forEach((s2) => walk2(s2.elements));
-            if (el.type === "choice") el.options.forEach(walk2);
-          }
-        };
-        ast2.participants.stacks.forEach((s2) => walk2(s2.elements));
+    document.head.appendChild(style);
+  }
+  function lineColToOffset(text2, line, col) {
+    let offset2 = 0;
+    const lines = text2.split("\n");
+    for (let i = 0; i < line - 1 && i < lines.length; i++) offset2 += lines[i].length + 1;
+    return offset2 + (col - 1);
+  }
+  function orderedParticipantPositions(text2) {
+    const { ast: ast2 } = parseMetaprogram(text2);
+    const out = [];
+    if (!ast2.participants) return out;
+    const walk2 = (els) => {
+      for (const el of els || []) {
+        if (!el) continue;
+        if (el.type === "participant" && el.token != null && el.line != null) {
+          const token = String(el.token);
+          out.push({ token, offset: lineColToOffset(text2, el.line, el.col), len: token.length });
+        } else if (el.type === "choice") {
+          (el.options || []).forEach(walk2);
+        } else if (el.type === "sequence") {
+          (el.stacks || []).forEach((st2) => walk2(st2.elements));
+        }
       }
-      return tokens;
+    };
+    ast2.participants.stacks.forEach((st2) => walk2(st2.elements));
+    return out;
+  }
+  function mountMetaprogrammerCycleHighlighter(container) {
+    if (!container) return null;
+    const ta = container.querySelector(".nc-code");
+    if (!ta) return null;
+    const host = ta.parentElement;
+    if (!host || host.querySelector(".nc-play-overlay")) return null;
+    injectStyleOnce();
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    const overlay = document.createElement("div");
+    overlay.className = "nc-play-overlay";
+    const mirror = document.createElement("div");
+    mirror.className = "nc-play-mirror";
+    const box = document.createElement("div");
+    box.className = "nc-play-box";
+    box.style.display = "none";
+    overlay.appendChild(box);
+    host.append(overlay, mirror);
+    function syncMetrics() {
+      const cs = getComputedStyle(ta);
+      for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
+      const bl = parseFloat(cs.borderLeftWidth) || 0;
+      const br = parseFloat(cs.borderRightWidth) || 0;
+      mirror.style.width = ta.clientWidth + bl + br + "px";
+      overlay.style.left = ta.offsetLeft + "px";
+      overlay.style.top = ta.offsetTop + "px";
+      overlay.style.width = ta.offsetWidth + "px";
+      overlay.style.height = ta.offsetHeight + "px";
     }
-    function renderChips() {
-      chipsEl.innerHTML = tokensFromProgram().map((tok) => `<span class="ts-voice-btn nc-slot-chip" data-token="${tok}">${tok}</span>`).join("");
+    function measureToken(text2, offset2, len) {
+      mirror.textContent = "";
+      const span = document.createElement("span");
+      span.textContent = text2.slice(offset2, offset2 + len) || " ";
+      mirror.append(
+        document.createTextNode(text2.slice(0, offset2)),
+        span,
+        document.createTextNode(text2.slice(offset2 + len))
+      );
+      const m2 = mirror.getBoundingClientRect();
+      const s2 = span.getBoundingClientRect();
+      return { top: s2.top - m2.top, left: s2.left - m2.left, width: s2.width, height: s2.height };
     }
-    renderChips();
-    document.addEventListener("trussal-netcycles-program", renderChips);
-    let lastCycleStart = null;
-    subscribeSlotEvents((ev) => {
-      if (!isNetCyclesActive()) return;
-      if (ev.type === "cycle-start") {
-        lastCycleStart = ev;
-        const delay2 = Math.max(0, (ev.t - performanceNowSeconds()) * 1e3);
-        schedule(() => {
-          metaEl.textContent = `cycle ${ev.cycle} \xB7 ${ev.seconds.toFixed(2)} s \xB7 ${ev.beats} beats`;
-        }, delay2, ev);
+    const PAD = 2;
+    let slotIndex = 0;
+    function renderOutline() {
+      const text2 = ta.value;
+      const order = orderedParticipantPositions(text2);
+      if (!order.length) {
+        box.style.display = "none";
         return;
       }
-      const chip = () => chipsEl.querySelector(`[data-token="${CSS.escape(ev.token)}"]`);
-      if (ev.type === "slot-open") {
-        schedule(() => {
-          const el = chip();
-          if (el) {
-            el.classList.add("on");
-            el.title = `queue depth ${getQueueDepth(ev.token)}`;
-          }
-        }, relDelayMs(ev.t), ev);
-      } else if (ev.type === "slot-close") {
-        schedule(() => {
-          const el = chip();
-          if (el) el.classList.remove("on");
-        }, relDelayMs(ev.t), ev);
-      }
-    });
-    let refNet = null, refWall = null;
-    function performanceNowSeconds() {
-      return performance.now() / 1e3;
+      const active2 = order[slotIndex % order.length];
+      syncMetrics();
+      const m2 = measureToken(text2, active2.offset, active2.len);
+      box.style.display = "";
+      box.style.width = m2.width + PAD * 2 + "px";
+      box.style.height = m2.height + 2 + "px";
+      box.style.transform = `translate(${m2.left - ta.scrollLeft - PAD}px, ${m2.top - ta.scrollTop - 1}px)`;
     }
-    function relDelayMs(tNet) {
-      if (refNet == null) {
-        refNet = tNet;
-        refWall = performanceNowSeconds();
-      }
-      return Math.max(0, (tNet - refNet - (performanceNowSeconds() - refWall)) * 1e3);
+    renderOutline();
+    setInterval(() => {
+      slotIndex++;
+      renderOutline();
+    }, SLOT_MS);
+    ta.addEventListener("input", renderOutline);
+    ta.addEventListener("scroll", renderOutline);
+    document.addEventListener("trussal-netcycles-program", renderOutline);
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(renderOutline).observe(ta);
     }
-    function schedule(fn, ms, ev) {
-      const t = setTimeout(() => {
-        timers.delete(t);
-        fn();
-      }, ms);
-      timers.add(t);
-    }
-    document.addEventListener("trussal-netcycles-mode", (e30) => {
-      if (!e30.detail.active) {
-        for (const t of timers) clearTimeout(t);
-        timers.clear();
-        refNet = refWall = null;
-        metaEl.textContent = "idle";
-        chipsEl.querySelectorAll(".on").forEach((el) => el.classList.remove("on"));
-      }
-    });
-    return wrap;
+    return overlay;
   }
 
   // src/audio-net/UserBotOrchestration.js
@@ -53011,9 +52260,7 @@ ${code2}${BTN_MARKER}`;
     container.style.setProperty("--ts-detail-color", color2);
     const extLabel = getExternalStreamLabel(peer.jitsiId);
     const nodeLabel = getExternalNodeLabel(peer.jitsiId);
-    const relayOn = isLocal && isRelayConnected();
-    const captureBtn = isLocal ? `<button class="ts-btn ghost${extLabel ? " on" : ""}" data-action="capture">${extLabel ? "\u23CF Detach Jamulus" : "\u{1F399} Route Jamulus audio"}</button>
-       <button class="ts-btn ghost${relayOn ? " on" : ""}" data-action="relay">${relayOn ? "\u23CF Disconnect relay" : "\u{1F4E1} Jamulus relay"}</button>` : "";
+    const captureBtn = "";
     const peerKeyAttr = ` data-peer-key="${escapeHtml(String(peer.jitsiId || ""))}"`;
     const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
     const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
@@ -53135,8 +52382,6 @@ ${code2}${BTN_MARKER}`;
     if (stopBtn) stopBtn.addEventListener("click", onStopClick);
     const captureBtnEl = container.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
-    const relayBtnEl = container.querySelector('[data-action="relay"]');
-    if (relayBtnEl) relayBtnEl.addEventListener("click", onRelayClick);
     const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
     const samplesInput = container.querySelector(".ts-samples-input");
     if (loadSamplesBtn && samplesInput) {
@@ -53242,24 +52487,6 @@ ${code2}${BTN_MARKER}`;
     } catch (e30) {
       console.error("[studio] capture failed", e30);
       setStatus("Capture failed: " + (e30 && e30.message ? e30.message : e30));
-    }
-  }
-  async function onRelayClick() {
-    if (isRelayConnected()) {
-      disconnectJamulusRelay();
-      setStatus("Relay disconnected");
-      renderAll();
-      return;
-    }
-    try {
-      setStatus("Connecting to Jamulus relay\u2026");
-      await connectJamulusRelay();
-      setStatus("Relay connected \u2014 Jamulus audio through effects chain");
-      renderAll();
-    } catch (e30) {
-      console.error("[studio] relay connect failed", e30);
-      setStatus("Relay failed: " + (e30 && e30.message ? e30.message : e30));
-      renderAll();
     }
   }
   var BTN_MARKER2 = " // strudel-btn";
@@ -53418,7 +52645,6 @@ ${voiceCode}${BTN_MARKER2}`);
       });
     }
     injectFacialGestureToggle(overlay.querySelector(".ts-header"));
-    injectHydraVideoToggle(overlay.querySelector(".ts-header"));
     refreshSampleBanks();
     const localPeer2 = getLocalPeer();
     if (localPeer2.jitsiId && !localPeer2.pattern) {
@@ -53470,7 +52696,6 @@ ${voiceCode}${BTN_MARKER2}`);
     }
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
-    tickKbdUi();
     startNetStatsPolling(sendLocalNetStats);
     startBotClusterVideo();
     startRoomHealth();

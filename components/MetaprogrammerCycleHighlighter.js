@@ -1,22 +1,29 @@
-// Cycle highlighter: which performer is playing right now, drawn as a
-// rectangular outline around that participant's token *inside* the shared
-// metaprogram editor — rather than a separate row of chips.
+// Cycle highlighter: a rectangular outline around the participant token that is
+// currently "up" in the metaprogram's rotation, drawn INSIDE the shared editor
+// (rather than a separate row of chips).
 //
-// Slot events arrive ahead of time with network timestamps, so highlights are
-// scheduled with the same network→local conversion the audio gates use — what
-// lights up matches what is audible. Token pixel positions are measured with a
-// hidden mirror <div> that replicates the textarea's box model, so the outline
-// tracks the live text (edits, wrapping, scroll) with no framework.
+// There are no live slot events to drive this: the browser-side Net Cycles
+// scheduler is dormant by design (setNetCyclesActive is never called in the
+// shipping build — see src/audio-net/Metaprogrammer.js), which is exactly why
+// the previous chip highlighter was dead. Instead this runs a self-contained
+// LOCAL PREVIEW: it flattens the program's `$ participants` sequence into its
+// written rotation order (the same flatten the aggregator bot's ring adopts —
+// bots/src/bot/aggregator-bot.js `metaprogramTokenSequence`) and advances the
+// outline one token every SLOT_MS, the fixed ~4s turn that ring uses.
+//
+// It previews the LIVE editor text, so the outline always sits on a token the
+// user can see. Phase is NOT synced to the aggregator (no shared epoch): this
+// is a score-follower for what you're writing, not a readout of which voice the
+// assembled master is streaming this instant.
 
-import {
-  subscribeSlotEvents,
-  getProgramText,
-  isNetCyclesActive
-} from '../src/audio-net/Metaprogrammer.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 
-// Font/box metrics the mirror must share with the textarea for its glyph
-// layout to line up. width/whiteSpace are set explicitly (see syncMetrics).
+// The ring's fixed turn length. Mirrors aggregator-bot.js DEFAULT_SLOT_MS; kept
+// as a literal here so this stays a browser-only, no-bot-deploy change.
+const SLOT_MS = 4000;
+
+// Font/box metrics the mirror must share with the textarea for its glyph layout
+// to line up. width/whiteSpace are set explicitly (see syncMetrics).
 const MIRROR_PROPS = [
   'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
   'letterSpacing', 'textTransform', 'wordSpacing', 'textIndent', 'lineHeight',
@@ -57,22 +64,28 @@ function lineColToOffset(text, line, col) {
   return offset + (col - 1);
 }
 
-// Every participant token in the program with its source offset. Occurrences
-// are kept (not deduped) so a token listed twice lights both spots.
-function tokenPositions(text) {
+// Participant token positions in `$ participants`, depth-first in WRITTEN order
+// (every branch of a `|` choice, repeats included) — the same flatten the
+// aggregator's ring adopts. Rests and non-participant nodes are skipped, so the
+// rotation only ever lands on a real performer token.
+function orderedParticipantPositions(text) {
   const { ast } = parseMetaprogram(text);
   const out = [];
   if (!ast.participants) return out;
   const walk = (els) => {
-    for (const el of els) {
-      if (el.token && el.line != null && el.col != null) {
-        out.push({ token: el.token, offset: lineColToOffset(text, el.line, el.col), len: el.token.length });
+    for (const el of els || []) {
+      if (!el) continue;
+      if (el.type === 'participant' && el.token != null && el.line != null) {
+        const token = String(el.token);
+        out.push({ token, offset: lineColToOffset(text, el.line, el.col), len: token.length });
+      } else if (el.type === 'choice') {
+        (el.options || []).forEach(walk);
+      } else if (el.type === 'sequence') {
+        (el.stacks || []).forEach(st => walk(st.elements));
       }
-      if (el.type === 'sequence') el.stacks.forEach(s => walk(s.elements));
-      if (el.type === 'choice') el.options.forEach(walk);
     }
   };
-  ast.participants.stacks.forEach(s => walk(s.elements));
+  ast.participants.stacks.forEach(st => walk(st.elements));
   return out;
 }
 
@@ -90,10 +103,13 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   overlay.className = 'nc-play-overlay';
   const mirror = document.createElement('div');
   mirror.className = 'nc-play-mirror';
+  // One reused box, so the pulse animation keeps running as it moves between
+  // tokens (recreating it each frame would restart the pulse on every scroll).
+  const box = document.createElement('div');
+  box.className = 'nc-play-box';
+  box.style.display = 'none';
+  overlay.appendChild(box);
   host.append(overlay, mirror);
-
-  const activeTokens = new Set();
-  const timers = new Set();
 
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
@@ -111,7 +127,7 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   }
 
   // Pixel rect of [offset, offset+len) relative to the textarea's border-box
-  // top-left (i.e. before scrolling), via the mirror.
+  // top-left (before scrolling), via the mirror.
   function measureToken(text, offset, len) {
     mirror.textContent = '';
     const span = document.createElement('span');
@@ -127,65 +143,32 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   }
 
   const PAD = 2;
-  function renderBoxes() {
-    overlay.textContent = '';
-    if (!activeTokens.size || !isNetCyclesActive()) return;
+  let slotIndex = 0;
+  function renderOutline() {
     const text = ta.value;
+    const order = orderedParticipantPositions(text);
+    if (!order.length) { box.style.display = 'none'; return; }
+    const active = order[slotIndex % order.length];
     syncMetrics();
-    for (const p of tokenPositions(text)) {
-      if (!activeTokens.has(p.token)) continue;
-      const m = measureToken(text, p.offset, p.len);
-      const box = document.createElement('div');
-      box.className = 'nc-play-box';
-      box.style.width = (m.width + PAD * 2) + 'px';
-      box.style.height = (m.height + 2) + 'px';
-      box.style.transform =
-        `translate(${m.left - ta.scrollLeft - PAD}px, ${m.top - ta.scrollTop - 1}px)`;
-      overlay.appendChild(box);
-    }
+    const m = measureToken(text, active.offset, active.len);
+    box.style.display = '';
+    box.style.width = (m.width + PAD * 2) + 'px';
+    box.style.height = (m.height + 2) + 'px';
+    box.style.transform =
+      `translate(${m.left - ta.scrollLeft - PAD}px, ${m.top - ta.scrollTop - 1}px)`;
   }
 
-  // Slot events carry network time `t`; anchor the first one onto the wall
-  // clock and schedule the rest relative to it (the scheduler emits within its
-  // lookahead, so a plain delay tracks the audio gates).
-  let refNet = null, refWall = null;
-  const nowS = () => performance.now() / 1000;
-  function relDelayMs(tNet) {
-    if (refNet == null) { refNet = tNet; refWall = nowS(); }
-    return Math.max(0, ((tNet - refNet) - (nowS() - refWall)) * 1000);
-  }
-  function schedule(fn, ms) {
-    const t = setTimeout(() => { timers.delete(t); fn(); }, ms);
-    timers.add(t);
-  }
-
-  subscribeSlotEvents((ev) => {
-    if (!isNetCyclesActive() || !ev.token) return;
-    if (ev.type === 'slot-open') {
-      schedule(() => { activeTokens.add(ev.token); renderBoxes(); }, relDelayMs(ev.t));
-    } else if (ev.type === 'slot-close') {
-      schedule(() => { activeTokens.delete(ev.token); renderBoxes(); }, relDelayMs(ev.t));
-    }
-  });
+  renderOutline();
+  setInterval(() => { slotIndex++; renderOutline(); }, SLOT_MS);
 
   // Keep the outline glued to the live text: edits, remote/roster program
   // changes, scrolling, and manual resize of the textarea.
-  ta.addEventListener('input', renderBoxes);
-  ta.addEventListener('scroll', renderBoxes);
-  document.addEventListener('trussal-netcycles-program', renderBoxes);
+  ta.addEventListener('input', renderOutline);
+  ta.addEventListener('scroll', renderOutline);
+  document.addEventListener('trussal-netcycles-program', renderOutline);
   if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(renderBoxes).observe(ta);
+    new ResizeObserver(renderOutline).observe(ta);
   }
-
-  document.addEventListener('trussal-netcycles-mode', (e) => {
-    if (!e.detail || !e.detail.active) {
-      for (const t of timers) clearTimeout(t);
-      timers.clear();
-      activeTokens.clear();
-      refNet = refWall = null;
-      overlay.textContent = '';
-    }
-  });
 
   return overlay;
 }
