@@ -1031,7 +1031,7 @@ function tickUi() {
   const btn = ensureToggle();
   if (btn) btn.style.display = 'block';
 
-  tickKbdUi();
+  // tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
   startBotClusterVideo();
   startRoomHealth();
