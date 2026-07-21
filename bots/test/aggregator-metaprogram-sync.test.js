@@ -172,6 +172,15 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
 
     assert.deepEqual(ncActive, ['0', '1', '0'],
       'one nc-active per turn change, no repeat within a turn');
+
+    // A late joiner must learn the CURRENT turn even though the aggregator only
+    // emits on change (it won't re-send just for them): the sidecar replays its
+    // cached last token on hello.
+    const late = [];
+    const human2 = await connectHuman(port, (t) => late.push(t));
+    await sleep(150);
+    assert.deepEqual(late, ['0'], 'late joiner gets the cached active token on hello');
+    human2.ws.close();
   } finally {
     await bot.stop().catch(() => {});
     human.ws.close();

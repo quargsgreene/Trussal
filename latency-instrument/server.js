@@ -55,7 +55,7 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
       // aggregatorClaimPeerId: the connection currently holding the room's
       // single aggregator slot (see the 'aggregator-claim' handler). A losing
       // aggregator bot never joins Jitsi, so a room can only ever contain one.
-      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null };
+      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null, lastActiveToken: null };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -303,6 +303,11 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           if (meta.crdtLog.length) {
             send(ws, { type: 'crdt-state', updates: meta.crdtLog.map(e => e.update) });
           }
+          // …and the aggregator's current ring turn, which is only broadcast on
+          // change (so a joiner that missed the last change needs the cache).
+          if (!record.isFleet && meta.lastActiveToken != null) {
+            send(ws, { type: 'nc-active', token: meta.lastActiveToken });
+          }
           if (!record.isFleet) {
             broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
             logEvent(roomName, 'peer-join', {
@@ -419,11 +424,12 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           // Aggregator publishing which participant token is streaming this ring
           // turn, so browsers can outline it in the shared metaprogram editor.
           // Fleet-only (the aggregator owns the ring); relayed to the room as-is.
-          // Not logged/cached — it's a high-churn cosmetic signal and the
-          // aggregator re-emits every slot flip, so late joiners catch up within
-          // one turn.
+          // Cached per room (not logged): the aggregator only emits on CHANGE, so
+          // with a single static participant it sends once — a late joiner would
+          // otherwise never learn the current turn. hello replays the cache.
           if (!record.isFleet) break;
           const token = typeof msg.token === 'string' ? msg.token : null;
+          getRoomMeta(roomName).lastActiveToken = token;
           const room = rooms.get(roomName);
           if (room) broadcast(room, peerId, { type: 'nc-active', token });
           break;
