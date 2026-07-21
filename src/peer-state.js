@@ -62,6 +62,7 @@ let reconnectDelay = 1000;
 let lastPongAt = 0;
 let currentRoom = null;
 let activeNetCyclesToken = null; // aggregator's current ring turn (nc-active)
+let activeNetCyclesIndex = null; // ring-slot index of that turn (repeats-aware)
 const MAX_RECONNECT_DELAY = 15000;
 const PONG_TIMEOUT_MS = 8000;
 
@@ -329,10 +330,14 @@ function handleMessage(msg) {
 
     case 'nc-active':
       // Aggregator's current ring turn — the participant token whose audio is
-      // streaming this slot. Surfaced as a DOM event so the metaprogram
-      // highlighter can outline that token. null clears the highlight.
+      // streaming this slot, plus the ring-slot index that disambiguates a
+      // token listed more than once. Surfaced as a DOM event so the metaprogram
+      // highlighter can outline the exact occurrence. null token clears it.
       activeNetCyclesToken = typeof msg.token === 'string' ? msg.token : null;
-      document.dispatchEvent(new CustomEvent('trussal-netcycles-active', { detail: { token: activeNetCyclesToken } }));
+      activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
+      document.dispatchEvent(new CustomEvent('trussal-netcycles-active', {
+        detail: { token: activeNetCyclesToken, index: activeNetCyclesIndex }
+      }));
       break;
 
     case 'remote-control': {
@@ -449,6 +454,10 @@ export function getLocalPeer() { return localPeer; }
 // null if unknown / no aggregator has reported. Also emitted as the DOM event
 // 'trussal-netcycles-active' on each change.
 export function getActiveNetCyclesToken() { return activeNetCyclesToken; }
+
+// The ring-slot index of that turn, disambiguating a token listed more than
+// once (null when unknown).
+export function getActiveNetCyclesIndex() { return activeNetCyclesIndex; }
 
 export function getAllPeers() {
   const all = [];

@@ -128,11 +128,13 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
-    // Last active token broadcast to the room over nc-active, and when, so we
-    // emit on change OR on the NC_ACTIVE_HEARTBEAT_MS heartbeat rather than every
-    // audio tick. `undefined` (not null) so the first real value — including
-    // null — is always sent.
+    // Last active token+ring-index broadcast over nc-active, and when, so we emit
+    // on change OR on the NC_ACTIVE_HEARTBEAT_MS heartbeat rather than every audio
+    // tick. The index distinguishes repeated tokens (`<0 1 0>` — same token, two
+    // ring slots) so the browser outlines the occurrence actually playing.
+    // `undefined` (not null) so the first real value — including null — is sent.
     #lastBroadcastActive = undefined;
+    #lastBroadcastIndex = undefined;
     #lastBroadcastActiveAt = 0;
     // Per token: a rolling copy of the audio a participant most recently STREAMED,
     // accumulated a slice at a time as each live turn plays and capped at one full
@@ -666,6 +668,7 @@ export class AggregatorBot extends Bot {
                 // sidecar's cached nc-active. Reset the dedup so the next tick
                 // re-broadcasts the current turn and refills that cache.
                 this.#lastBroadcastActive = undefined;
+                this.#lastBroadcastIndex = undefined;
                 send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` });
             },
             onMessage: (msg) => {
@@ -695,15 +698,18 @@ export class AggregatorBot extends Bot {
      * audio tick, which is why readAndAssembleMasterBuffer can call it every
      * tick. Best-effort: a dropped highlight update is purely cosmetic.
      */
-    #broadcastActiveToken(token) {
+    #broadcastActiveToken(token, index) {
         const t = token == null ? null : String(token);
+        const i = Number.isInteger(index) ? index : null;
         const now = Date.now();
-        if (t === this.#lastBroadcastActive && (now - this.#lastBroadcastActiveAt) < NC_ACTIVE_HEARTBEAT_MS) return;
+        if (t === this.#lastBroadcastActive && i === this.#lastBroadcastIndex &&
+            (now - this.#lastBroadcastActiveAt) < NC_ACTIVE_HEARTBEAT_MS) return;
         this.#lastBroadcastActive = t;
+        this.#lastBroadcastIndex = i;
         this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
-        try { conn.send({ type: 'nc-active', token: t }); } catch (e) { /* cosmetic */ }
+        try { conn.send({ type: 'nc-active', token: t, index: i }); } catch (e) { /* cosmetic */ }
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {
@@ -807,16 +813,16 @@ export class AggregatorBot extends Bot {
         // room-index order (assign-once, so this is a no-op once registered).
         this.#syncOrderFromBuffers();
 
-        const { token: active, lapped, departed, newTurn } = this.order.serve();
+        const { token: active, lapped, departed, newTurn, position } = this.order.serve();
         if (!active) {
             // Nothing has reached the bot yet: assemble nothing. The page player
             // emits silence and we keep checking on the next tick.
             this.#activeToken = null;
-            this.#broadcastActiveToken(null);
+            this.#broadcastActiveToken(null, null);
             return { active: null, assembled: 0 };
         }
         this.#activeToken = active;
-        this.#broadcastActiveToken(active);
+        this.#broadcastActiveToken(active, position);
         // this.buffers[token] is a RingBuffer (mono Float32 PCM) or undefined when
         // the active token has no buffer yet — hence the guard below.
         const currentRingBuffer = this.buffers[active];

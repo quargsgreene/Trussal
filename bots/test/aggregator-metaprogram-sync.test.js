@@ -36,7 +36,7 @@ function connectHuman(port, onActive) {
       } else if (msg.type === 'crdt-state' && Array.isArray(msg.updates)) {
         listeners.forEach(fn => fn('crdt-state', { updates: msg.updates }));
       } else if (msg.type === 'nc-active' && onActive) {
-        onActive(msg.token);
+        onActive(msg);
       }
     });
     ws.on('open', () => {
@@ -139,7 +139,7 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
   const port = wss.address().port;
 
   const ncActive = [];                       // tokens the human stand-in receives
-  const human = await connectHuman(port, (t) => ncActive.push(t));
+  const human = await connectHuman(port, (m) => ncActive.push(m.token));
 
   let clock = 0;                             // injected so rotation is deterministic
   const bot = new AggregatorBot(
@@ -177,7 +177,7 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
     // emits on change (it won't re-send just for them): the sidecar replays its
     // cached last token on hello.
     const late = [];
-    const human2 = await connectHuman(port, (t) => late.push(t));
+    const human2 = await connectHuman(port, (m) => late.push(m.token));
     await sleep(150);
     assert.deepEqual(late, ['0'], 'late joiner gets the cached active token on hello');
     human2.ws.close();
@@ -195,7 +195,7 @@ test('nc-active re-announces the current turn on the heartbeat even when unchang
   const port = wss.address().port;
 
   const ncActive = [];
-  const human = await connectHuman(port, (t) => ncActive.push(t));
+  const human = await connectHuman(port, (m) => ncActive.push(m.token));
 
   const bot = new AggregatorBot(
     // Huge slotMs so the single participant never rotates — the token stays '0'.
@@ -223,6 +223,55 @@ test('nc-active re-announces the current turn on the heartbeat even when unchang
     await sleep(2100);                                        // past NC_ACTIVE_HEARTBEAT_MS
     await bot.readAndAssembleMasterBuffer(); await sleep(80);
     assert.deepEqual(ncActive, ['0', '0'], 'the same token is re-announced after the heartbeat interval');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
+
+test('nc-active carries the ring index so a repeated token is disambiguated', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const got = [];
+  const human = await connectHuman(port, (m) => got.push({ token: m.token, index: m.index }));
+
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0, slotMs: 4000 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true,
+      now: () => clock
+    }
+  );
+
+  try {
+    // `0` appears twice — a browser that keyed only on the token would jump back
+    // to the first `0` at slot 2; the index (0,1,2) pins the exact occurrence.
+    human.sync.setText('$ participants <0 1 0>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    assert.deepEqual(bot.order.order(), ['0', '1', '0'], 'ring keeps both occurrences of 0');
+    bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
+    bot.buffers['1'] = new RingBuffer(1024); bot.buffers['1'].write(new Array(50).fill(0.25));
+
+    clock = 0;    await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = 4000; await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = 8000; await bot.readAndAssembleMasterBuffer(); await sleep(80);
+
+    assert.deepEqual(got, [
+      { token: '0', index: 0 },
+      { token: '1', index: 1 },
+      { token: '0', index: 2 },
+    ], 'each turn carries its ring-slot index, so the repeated 0 is distinguishable');
   } finally {
     await bot.stop().catch(() => {});
     human.ws.close();

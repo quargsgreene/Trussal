@@ -14,7 +14,7 @@
 // wrapping, scroll) with no framework.
 
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
-import { getActiveNetCyclesToken } from '../src/peer-state.js';
+import { getActiveNetCyclesToken, getActiveNetCyclesIndex } from '../src/peer-state.js';
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
 // to line up. width/whiteSpace are set explicitly (see syncMetrics).
@@ -104,8 +104,9 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   overlay.appendChild(box);
   host.append(overlay, mirror);
 
-  // The aggregator's current ring turn, tracked from peer-state.
+  // The aggregator's current ring turn (token + which occurrence), from peer-state.
   let activeToken = getActiveNetCyclesToken();
+  let activeIndex = getActiveNetCyclesIndex();
 
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
@@ -141,10 +142,19 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   const PAD = 2;
   function renderOutline() {
     const text = ta.value;
-    // Outline the first occurrence of whatever token the aggregator says is
-    // streaming; nothing to draw if there's no signal or it isn't in the text.
-    const pos = activeToken == null ? null
-      : participantPositions(text).find(p => p.token === activeToken);
+    // Outline the exact occurrence the aggregator is streaming: prefer the
+    // ring-slot index (so `<0 1 0>` outlines the right `0`), falling back to the
+    // first matching token only when the index doesn't line up with the live
+    // text (e.g. the editor was edited ahead of the applied program). Nothing to
+    // draw without a signal or when the token isn't in the text.
+    let pos = null;
+    if (activeToken != null) {
+      const positions = participantPositions(text);
+      const atIndex = activeIndex != null ? positions[activeIndex] : null;
+      pos = (atIndex && atIndex.token === activeToken)
+        ? atIndex
+        : positions.find(p => p.token === activeToken);
+    }
     if (!pos) { box.style.display = 'none'; return; }
     syncMetrics();
     const m = measureToken(text, pos.offset, pos.len);
@@ -158,6 +168,7 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   // New turn from the aggregator → move (or clear) the outline.
   document.addEventListener('trussal-netcycles-active', (e) => {
     activeToken = e.detail ? e.detail.token : null;
+    activeIndex = e.detail ? e.detail.index : null;
     renderOutline();
   });
 

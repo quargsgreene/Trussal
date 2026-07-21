@@ -443,7 +443,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         break;
       case "nc-active":
         activeNetCyclesToken = typeof msg.token === "string" ? msg.token : null;
-        document.dispatchEvent(new CustomEvent("trussal-netcycles-active", { detail: { token: activeNetCyclesToken } }));
+        activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
+        document.dispatchEvent(new CustomEvent("trussal-netcycles-active", {
+          detail: { token: activeNetCyclesToken, index: activeNetCyclesIndex }
+        }));
         break;
       case "remote-control": {
         if (msg.action === "pattern" && typeof msg.code === "string") {
@@ -494,6 +497,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function getActiveNetCyclesToken() {
     return activeNetCyclesToken;
+  }
+  function getActiveNetCyclesIndex() {
+    return activeNetCyclesIndex;
   }
   function getAllPeers() {
     const all3 = [];
@@ -577,7 +583,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof perms.canWriteModulation === "boolean") msg.canWriteModulation = perms.canWriteModulation;
     safeSend(msg);
   }
-  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
+  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, activeNetCyclesIndex, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
       init_jamulus();
@@ -617,6 +623,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       lastPongAt = 0;
       currentRoom = null;
       activeNetCyclesToken = null;
+      activeNetCyclesIndex = null;
       MAX_RECONNECT_DELAY = 15e3;
       PONG_TIMEOUT_MS = 8e3;
       rttSamples = [];
@@ -51516,6 +51523,7 @@ ${code2}${BTN_MARKER}`;
     overlay.appendChild(box);
     host.append(overlay, mirror);
     let activeToken = getActiveNetCyclesToken();
+    let activeIndex = getActiveNetCyclesIndex();
     function syncMetrics() {
       const cs = getComputedStyle(ta);
       for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
@@ -51543,7 +51551,12 @@ ${code2}${BTN_MARKER}`;
     const PAD = 2;
     function renderOutline() {
       const text2 = ta.value;
-      const pos = activeToken == null ? null : participantPositions(text2).find((p) => p.token === activeToken);
+      let pos = null;
+      if (activeToken != null) {
+        const positions = participantPositions(text2);
+        const atIndex = activeIndex != null ? positions[activeIndex] : null;
+        pos = atIndex && atIndex.token === activeToken ? atIndex : positions.find((p) => p.token === activeToken);
+      }
       if (!pos) {
         box.style.display = "none";
         return;
@@ -51557,6 +51570,7 @@ ${code2}${BTN_MARKER}`;
     }
     document.addEventListener("trussal-netcycles-active", (e30) => {
       activeToken = e30.detail ? e30.detail.token : null;
+      activeIndex = e30.detail ? e30.detail.index : null;
       renderOutline();
     });
     ta.addEventListener("input", renderOutline);
