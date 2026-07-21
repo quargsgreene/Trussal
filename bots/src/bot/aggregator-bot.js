@@ -655,7 +655,13 @@ export class AggregatorBot extends Bot {
         if (!url) return null;
         const listeners = new Set();
         const sidecar = this.connectSidecar(url, {
-            onOpen: (send) => send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` }),
+            onOpen: (send) => {
+                // A (re)connect — including after a sidecar restart — drops the
+                // sidecar's cached nc-active. Reset the dedup so the next tick
+                // re-broadcasts the current turn and refills that cache.
+                this.#lastBroadcastActive = undefined;
+                send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` });
+            },
             onMessage: (msg) => {
                 if (!msg || typeof msg.type !== 'string') return;
                 if (msg.type === 'crdt-update' && msg.update) {
