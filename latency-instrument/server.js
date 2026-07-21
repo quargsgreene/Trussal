@@ -415,6 +415,20 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
           break;
         }
 
+        case 'nc-active': {
+          // Aggregator publishing which participant token is streaming this ring
+          // turn, so browsers can outline it in the shared metaprogram editor.
+          // Fleet-only (the aggregator owns the ring); relayed to the room as-is.
+          // Not logged/cached — it's a high-churn cosmetic signal and the
+          // aggregator re-emits every slot flip, so late joiners catch up within
+          // one turn.
+          if (!record.isFleet) break;
+          const token = typeof msg.token === 'string' ? msg.token : null;
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, { type: 'nc-active', token });
+          break;
+        }
+
         case 'bot-permission': {
           // Owner grants/revokes a bot's metaprogram-edit or modulation-write
           // rights. Only humans may grant, only bots may be targets.

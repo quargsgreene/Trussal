@@ -441,6 +441,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       case "crdt-state":
         if (Array.isArray(msg.updates)) emit2("crdt-state", { updates: msg.updates });
         break;
+      case "nc-active":
+        activeNetCyclesToken = typeof msg.token === "string" ? msg.token : null;
+        document.dispatchEvent(new CustomEvent("trussal-netcycles-active", { detail: { token: activeNetCyclesToken } }));
+        break;
       case "remote-control": {
         if (msg.action === "pattern" && typeof msg.code === "string") {
           localPeer.pattern = msg.code;
@@ -487,6 +491,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function getLocalPeer() {
     return localPeer;
+  }
+  function getActiveNetCyclesToken() {
+    return activeNetCyclesToken;
   }
   function getAllPeers() {
     const all3 = [];
@@ -570,7 +577,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof perms.canWriteModulation === "boolean") msg.canWriteModulation = perms.canWriteModulation;
     safeSend(msg);
   }
-  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
+  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
       init_jamulus();
@@ -609,6 +616,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       reconnectDelay = 1e3;
       lastPongAt = 0;
       currentRoom = null;
+      activeNetCyclesToken = null;
       MAX_RECONNECT_DELAY = 15e3;
       PONG_TIMEOUT_MS = 8e3;
       rttSamples = [];
@@ -51422,7 +51430,7 @@ ${code2}${BTN_MARKER}`;
 
   // components/MetaprogrammerCycleHighlighter.js
   init_MetaprogrammerParser();
-  var SLOT_MS = 4e3;
+  init_peer_state();
   var MIRROR_PROPS = [
     "fontFamily",
     "fontSize",
@@ -51458,7 +51466,7 @@ ${code2}${BTN_MARKER}`;
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:1.5px solid #1ff466; border-radius:3px;
+      border:2.25px solid #1ff466; border-radius:0;
       background:transparent !important;
     }
   `;
@@ -51470,7 +51478,7 @@ ${code2}${BTN_MARKER}`;
     for (let i = 0; i < line - 1 && i < lines.length; i++) offset2 += lines[i].length + 1;
     return offset2 + (col - 1);
   }
-  function orderedParticipantPositions(text2) {
+  function participantPositions(text2) {
     const { ast: ast2 } = parseMetaprogram(text2);
     const out = [];
     if (!ast2.participants) return out;
@@ -51507,6 +51515,7 @@ ${code2}${BTN_MARKER}`;
     box.style.display = "none";
     overlay.appendChild(box);
     host.append(overlay, mirror);
+    let activeToken = getActiveNetCyclesToken();
     function syncMetrics() {
       const cs = getComputedStyle(ta);
       for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
@@ -51532,33 +51541,31 @@ ${code2}${BTN_MARKER}`;
       return { top: s2.top - m2.top, left: s2.left - m2.left, width: s2.width, height: s2.height };
     }
     const PAD = 2;
-    let slotIndex = 0;
     function renderOutline() {
       const text2 = ta.value;
-      const order = orderedParticipantPositions(text2);
-      if (!order.length) {
+      const pos = activeToken == null ? null : participantPositions(text2).find((p) => p.token === activeToken);
+      if (!pos) {
         box.style.display = "none";
         return;
       }
-      const active2 = order[slotIndex % order.length];
       syncMetrics();
-      const m2 = measureToken(text2, active2.offset, active2.len);
+      const m2 = measureToken(text2, pos.offset, pos.len);
       box.style.display = "";
       box.style.width = m2.width + PAD * 2 + "px";
       box.style.height = m2.height + 2 + "px";
       box.style.transform = `translate(${m2.left - ta.scrollLeft - PAD}px, ${m2.top - ta.scrollTop - 1}px)`;
     }
-    renderOutline();
-    setInterval(() => {
-      slotIndex++;
+    document.addEventListener("trussal-netcycles-active", (e30) => {
+      activeToken = e30.detail ? e30.detail.token : null;
       renderOutline();
-    }, SLOT_MS);
+    });
     ta.addEventListener("input", renderOutline);
     ta.addEventListener("scroll", renderOutline);
     document.addEventListener("trussal-netcycles-program", renderOutline);
     if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(renderOutline).observe(ta);
     }
+    renderOutline();
     return overlay;
   }
 

@@ -1,26 +1,20 @@
-// Cycle highlighter: a rectangular outline around the participant token that is
-// currently "up" in the metaprogram's rotation, drawn INSIDE the shared editor
-// (rather than a separate row of chips).
+// Cycle highlighter: a rectangular outline around the participant token the
+// aggregator is streaming RIGHT NOW, drawn inside the shared editor (rather than
+// a separate row of chips).
 //
-// There are no live slot events to drive this: the browser-side Net Cycles
-// scheduler is dormant by design (setNetCyclesActive is never called in the
-// shipping build — see src/audio-net/Metaprogrammer.js), which is exactly why
-// the previous chip highlighter was dead. Instead this runs a self-contained
-// LOCAL PREVIEW: it flattens the program's `$ participants` sequence into its
-// written rotation order (the same flatten the aggregator bot's ring adopts —
-// bots/src/bot/aggregator-bot.js `metaprogramTokenSequence`) and advances the
-// outline one token every SLOT_MS, the fixed ~4s turn that ring uses.
+// The aggregator bot owns the ring (fixed ~4s turns) and broadcasts its current
+// turn as `nc-active` over the sidecar; peer-state surfaces that as the
+// 'trussal-netcycles-active' DOM event (and getActiveNetCyclesToken()). This
+// highlighter outlines whichever token in the LIVE editor text matches the
+// active token, and moves to the next one whenever a new turn is reported. With
+// no aggregator in the room there is no signal, so no outline is drawn.
 //
-// It previews the LIVE editor text, so the outline always sits on a token the
-// user can see. Phase is NOT synced to the aggregator (no shared epoch): this
-// is a score-follower for what you're writing, not a readout of which voice the
-// assembled master is streaming this instant.
+// Token pixel positions are measured with a hidden mirror <div> that replicates
+// the textarea's box model, so the outline tracks the live text (edits,
+// wrapping, scroll) with no framework.
 
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
-
-// The ring's fixed turn length. Mirrors aggregator-bot.js DEFAULT_SLOT_MS; kept
-// as a literal here so this stays a browser-only, no-bot-deploy change.
-const SLOT_MS = 4000;
+import { getActiveNetCyclesToken } from '../src/peer-state.js';
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
 // to line up. width/whiteSpace are set explicitly (see syncMetrics).
@@ -49,7 +43,7 @@ function injectStyleOnce() {
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:1.5px solid #1ff466; border-radius:3px;
+      border:2.25px solid #1ff466; border-radius:0;
       background:transparent !important;
     }
   `;
@@ -64,11 +58,10 @@ function lineColToOffset(text, line, col) {
   return offset + (col - 1);
 }
 
-// Participant token positions in `$ participants`, depth-first in WRITTEN order
-// (every branch of a `|` choice, repeats included) — the same flatten the
-// aggregator's ring adopts. Rests and non-participant nodes are skipped, so the
-// rotation only ever lands on a real performer token.
-function orderedParticipantPositions(text) {
+// Every participant token in `$ participants` with its source offset (depth-first,
+// every branch of a `|` choice, repeats included). Rests and non-participant
+// nodes are skipped. Used to locate the active token's glyphs in the editor.
+function participantPositions(text) {
   const { ast } = parseMetaprogram(text);
   const out = [];
   if (!ast.participants) return out;
@@ -104,12 +97,15 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   const mirror = document.createElement('div');
   mirror.className = 'nc-play-mirror';
   // One reused box, moved between tokens — avoids churning a DOM node on every
-  // reposition (rotation tick, edit, scroll, resize).
+  // reposition (new turn, edit, scroll, resize).
   const box = document.createElement('div');
   box.className = 'nc-play-box';
   box.style.display = 'none';
   overlay.appendChild(box);
   host.append(overlay, mirror);
+
+  // The aggregator's current ring turn, tracked from peer-state.
+  let activeToken = getActiveNetCyclesToken();
 
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
@@ -143,14 +139,15 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   }
 
   const PAD = 2;
-  let slotIndex = 0;
   function renderOutline() {
     const text = ta.value;
-    const order = orderedParticipantPositions(text);
-    if (!order.length) { box.style.display = 'none'; return; }
-    const active = order[slotIndex % order.length];
+    // Outline the first occurrence of whatever token the aggregator says is
+    // streaming; nothing to draw if there's no signal or it isn't in the text.
+    const pos = activeToken == null ? null
+      : participantPositions(text).find(p => p.token === activeToken);
+    if (!pos) { box.style.display = 'none'; return; }
     syncMetrics();
-    const m = measureToken(text, active.offset, active.len);
+    const m = measureToken(text, pos.offset, pos.len);
     box.style.display = '';
     box.style.width = (m.width + PAD * 2) + 'px';
     box.style.height = (m.height + 2) + 'px';
@@ -158,8 +155,11 @@ export function mountMetaprogrammerCycleHighlighter(container) {
       `translate(${m.left - ta.scrollLeft - PAD}px, ${m.top - ta.scrollTop - 1}px)`;
   }
 
-  renderOutline();
-  setInterval(() => { slotIndex++; renderOutline(); }, SLOT_MS);
+  // New turn from the aggregator → move (or clear) the outline.
+  document.addEventListener('trussal-netcycles-active', (e) => {
+    activeToken = e.detail ? e.detail.token : null;
+    renderOutline();
+  });
 
   // Keep the outline glued to the live text: edits, remote/roster program
   // changes, scrolling, and manual resize of the textarea.
@@ -170,5 +170,6 @@ export function mountMetaprogrammerCycleHighlighter(container) {
     new ResizeObserver(renderOutline).observe(ta);
   }
 
+  renderOutline();
   return overlay;
 }

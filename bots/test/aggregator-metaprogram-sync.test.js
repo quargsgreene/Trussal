@@ -11,6 +11,7 @@ import { createRequire } from 'node:module';
 import WebSocket from 'ws';
 
 import { AggregatorBot } from '../src/bot/aggregator-bot.js';
+import { RingBuffer } from '../src/bot/ring-buffer.js';
 import { makeWsSidecarConnector } from '../src/orchestrator/fleet-service.js';
 import {
   createMetaprogramDoc,
@@ -24,7 +25,7 @@ const ROOM = 'nc-sync';
 
 // Human browser stand-in: peer-state.js's crdt-update/crdt-state contract
 // over a raw ws, feeding the real provider (MetaprogrammerCrdtSync).
-function connectHuman(port) {
+function connectHuman(port, onActive) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?room=${ROOM}&role=player`);
     const listeners = new Set();
@@ -34,6 +35,8 @@ function connectHuman(port) {
         listeners.forEach(fn => fn('crdt-update', { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality }));
       } else if (msg.type === 'crdt-state' && Array.isArray(msg.updates)) {
         listeners.forEach(fn => fn('crdt-state', { updates: msg.updates }));
+      } else if (msg.type === 'nc-active' && onActive) {
+        onActive(msg.token);
       }
     });
     ws.on('open', () => {
@@ -122,6 +125,53 @@ test('typing never runs the metaprogram; applies (diff or empty-diff) and catch-
     await sleep(300);
     assert.equal(bot.programText, '$ participants <0a>');
     assert.deepEqual(bot.order.order(), ['0a'], 'fourth update applied');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
+
+test('aggregator broadcasts nc-active on each ring turn change; the browser receives it deduped', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const ncActive = [];                       // tokens the human stand-in receives
+  const human = await connectHuman(port, (t) => ncActive.push(t));
+
+  let clock = 0;                             // injected so rotation is deterministic
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0, slotMs: 4000 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true,
+      now: () => clock
+    }
+  );
+
+  try {
+    human.sync.setText('$ participants <0 1>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();   // adopts the seed + connects the bus
+    await sleep(200);
+    assert.deepEqual(bot.order.order(), ['0', '1'], 'ring follows the seed');
+
+    // Both participants have live audio, so the ring streams each on its turn.
+    bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
+    bot.buffers['1'] = new RingBuffer(1024); bot.buffers['1'].write(new Array(50).fill(0.25));
+
+    clock = 0;    await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 0 → send '0'
+    clock = 4000; await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 1 → send '1'
+    clock = 4200; await bot.readAndAssembleMasterBuffer(); await sleep(80); // same turn → deduped
+    clock = 8000; await bot.readAndAssembleMasterBuffer(); await sleep(80); // wraps → send '0'
+
+    assert.deepEqual(ncActive, ['0', '1', '0'],
+      'one nc-active per turn change, no repeat within a turn');
   } finally {
     await bot.stop().catch(() => {});
     human.ws.close();

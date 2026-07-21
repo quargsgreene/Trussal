@@ -61,6 +61,7 @@ let reconnectTimer = null;
 let reconnectDelay = 1000;
 let lastPongAt = 0;
 let currentRoom = null;
+let activeNetCyclesToken = null; // aggregator's current ring turn (nc-active)
 const MAX_RECONNECT_DELAY = 15000;
 const PONG_TIMEOUT_MS = 8000;
 
@@ -326,6 +327,14 @@ function handleMessage(msg) {
       if (Array.isArray(msg.updates)) emit('crdt-state', { updates: msg.updates });
       break;
 
+    case 'nc-active':
+      // Aggregator's current ring turn — the participant token whose audio is
+      // streaming this slot. Surfaced as a DOM event so the metaprogram
+      // highlighter can outline that token. null clears the highlight.
+      activeNetCyclesToken = typeof msg.token === 'string' ? msg.token : null;
+      document.dispatchEvent(new CustomEvent('trussal-netcycles-active', { detail: { token: activeNetCyclesToken } }));
+      break;
+
     case 'remote-control': {
       // We are the target of an operator action (only bots receive these — the
       // server gates on isBot). Reflect it on our local record and surface it as
@@ -435,6 +444,11 @@ export function getPeerByJitsiId(jitsiId) {
 }
 
 export function getLocalPeer() { return localPeer; }
+
+// The participant token the aggregator is streaming this turn (nc-active), or
+// null if unknown / no aggregator has reported. Also emitted as the DOM event
+// 'trussal-netcycles-active' on each change.
+export function getActiveNetCyclesToken() { return activeNetCyclesToken; }
 
 export function getAllPeers() {
   const all = [];

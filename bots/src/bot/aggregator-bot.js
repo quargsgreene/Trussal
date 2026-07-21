@@ -124,6 +124,10 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
+    // Last active token broadcast to the room over nc-active, so we emit one
+    // message per slot flip (on change) rather than per audio tick. `undefined`
+    // (not null) so the first real value — including null — is always sent.
+    #lastBroadcastActive = undefined;
     // Per token: a rolling copy of the audio a participant most recently STREAMED,
     // accumulated a slice at a time as each live turn plays and capped at one full
     // turn/cycle (this.slotSamples, ~4s) — see #retainScheduled. This is what a
@@ -671,6 +675,23 @@ export class AggregatorBot extends Bot {
         };
     }
 
+    /**
+     * Publish the ring's current turn to the room so browsers can outline the
+     * streaming participant's token in the shared metaprogram editor. Sent over
+     * the metaprogram sidecar connection (already in the room's broadcast set)
+     * ONLY when the token changes — one small message per slot flip, not per
+     * audio tick, which is why readAndAssembleMasterBuffer can call it every
+     * tick. Best-effort: a dropped highlight update is purely cosmetic.
+     */
+    #broadcastActiveToken(token) {
+        const t = token == null ? null : String(token);
+        if (t === this.#lastBroadcastActive) return;
+        this.#lastBroadcastActive = t;
+        const conn = this.#metaprogramConn;
+        if (!conn || typeof conn.send !== 'function') return;
+        try { conn.send({ type: 'nc-active', token: t }); } catch (e) { /* cosmetic */ }
+    }
+
     async writeToIndividualParticipantBufferQueues(captures) {
         // Ingest every participant's captured PCM into that participant's own
         // ring buffer, evicting the oldest samples when the buffer is full (the
@@ -777,9 +798,11 @@ export class AggregatorBot extends Bot {
             // Nothing has reached the bot yet: assemble nothing. The page player
             // emits silence and we keep checking on the next tick.
             this.#activeToken = null;
+            this.#broadcastActiveToken(null);
             return { active: null, assembled: 0 };
         }
         this.#activeToken = active;
+        this.#broadcastActiveToken(active);
         // this.buffers[token] is a RingBuffer (mono Float32 PCM) or undefined when
         // the active token has no buffer yet — hence the guard below.
         const currentRingBuffer = this.buffers[active];
