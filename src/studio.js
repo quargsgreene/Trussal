@@ -389,8 +389,13 @@ function metricsLine(peer) {
     routedTxt = peer.playing ? '<b>instrument ▶</b>' : 'not playing';
   } else {
     routedTxt = 'no live audio';
-  }
-  return `<div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
+  }metric
+  return `
+  <div class="ts-section">
+    <div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>
+    <div class="ts-meta">${networkMetricsBlock()}</div>
+  </div>
+  `;
 }
 
 // Room-wide worst-case metrics (identical on every client — the shared basis
@@ -580,8 +585,6 @@ function renderDetail(container) {
       </div>
       ${metricsLine(peer)}
     </div>
-
-    ${networkMetricsBlock()}
     ${isLocal ? botClusterBlock() : ''}
 
     <div class="ts-section">
