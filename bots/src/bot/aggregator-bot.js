@@ -22,6 +22,10 @@ const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
 // Round-robin turn length (ms) before the metaprogram schedules slots for real:
 // stream one participant, then the next, so the alternation is audible.
 const DEFAULT_SLOT_MS = 4000;
+// Re-announce the current nc-active turn at least this often even when it hasn't
+// changed, so a late joiner (or a sidecar whose per-room cache was cleared by a
+// session reset) learns it without waiting for the ring to rotate.
+const NC_ACTIVE_HEARTBEAT_MS = 2000;
 // Sample rate the page-side taps run at (the shared AudioContext defaults to
 // 48 kHz on Chrome). Used only to convert a cfg.holdMs hold window into a
 // per-participant RingBuffer capacity in samples.
@@ -124,10 +128,12 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
-    // Last active token broadcast to the room over nc-active, so we emit one
-    // message per slot flip (on change) rather than per audio tick. `undefined`
-    // (not null) so the first real value — including null — is always sent.
+    // Last active token broadcast to the room over nc-active, and when, so we
+    // emit on change OR on the NC_ACTIVE_HEARTBEAT_MS heartbeat rather than every
+    // audio tick. `undefined` (not null) so the first real value — including
+    // null — is always sent.
     #lastBroadcastActive = undefined;
+    #lastBroadcastActiveAt = 0;
     // Per token: a rolling copy of the audio a participant most recently STREAMED,
     // accumulated a slice at a time as each live turn plays and capped at one full
     // turn/cycle (this.slotSamples, ~4s) — see #retainScheduled. This is what a
@@ -691,8 +697,10 @@ export class AggregatorBot extends Bot {
      */
     #broadcastActiveToken(token) {
         const t = token == null ? null : String(token);
-        if (t === this.#lastBroadcastActive) return;
+        const now = Date.now();
+        if (t === this.#lastBroadcastActive && (now - this.#lastBroadcastActiveAt) < NC_ACTIVE_HEARTBEAT_MS) return;
         this.#lastBroadcastActive = t;
+        this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
         try { conn.send({ type: 'nc-active', token: t }); } catch (e) { /* cosmetic */ }

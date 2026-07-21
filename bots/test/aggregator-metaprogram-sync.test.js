@@ -188,3 +188,45 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
     for (const c of wss.clients) c.terminate();
   }
 });
+
+test('nc-active re-announces the current turn on the heartbeat even when unchanged', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const ncActive = [];
+  const human = await connectHuman(port, (t) => ncActive.push(t));
+
+  const bot = new AggregatorBot(
+    // Huge slotMs so the single participant never rotates — the token stays '0'.
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0, slotMs: 1e9 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true
+    }
+  );
+
+  try {
+    human.sync.setText('$ participants <0>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
+
+    await bot.readAndAssembleMasterBuffer(); await sleep(80); // sends '0' (change)
+    await bot.readAndAssembleMasterBuffer(); await sleep(80); // deduped within the window
+    assert.deepEqual(ncActive, ['0'], 'unchanged token is not re-sent within the heartbeat window');
+
+    await sleep(2100);                                        // past NC_ACTIVE_HEARTBEAT_MS
+    await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    assert.deepEqual(ncActive, ['0', '0'], 'the same token is re-announced after the heartbeat interval');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
