@@ -91,7 +91,7 @@ function startWelcomeOverlayPoll() {
     const maxTries = 40; // ~10 seconds at 250ms
 
     const timer = setInterval(function () {
-      renderTrussalWelcomeOverlay();
+      // renderTrussalWelcomeOverlay();
       tries += 1;
       if (document.getElementById('trussal-welcome-overlay') || tries >= maxTries) {
         clearInterval(timer);
@@ -102,7 +102,7 @@ function startWelcomeOverlayPoll() {
 
 export default function renderAndPollWelcomePage() {
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        startWelcomeOverlayPoll();
+        // startWelcomeOverlayPoll();
       } else {
         window.addEventListener('DOMContentLoaded', startWelcomeOverlayPoll);
       }

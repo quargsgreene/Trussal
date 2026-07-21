@@ -52,9 +52,9 @@ window.__trussalIsActiveAggregator = () => {
 };
 
 renderAudioConfigCheck();
-renderJamulusWelcomePanelAndBanner();
+// renderJamulusWelcomePanelAndBanner();
 renderRecentListText();
-renderWelcomeOverlay();
+// renderWelcomeOverlay();
 renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();
