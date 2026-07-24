@@ -94,6 +94,16 @@ docker-save-*.tar
 !.env.*.example
 .secrets/
 
+# --- Container-generated runtime config: NEVER commit ---
+# These are rendered inside the jitsi containers from docker-jitsi-meet/.env
+# and carry live credentials. All three leaked to the public repo once
+# (TLS private key, ZeroSSL EAB, JICOFO/JVB XMPP passwords) and were purged
+# from history; these rules stop them coming back. Note *.key/*.pem below do
+# NOT catch acme.sh's backup/key.bak, which is how the TLS key escaped.
+custom-config/web/acme.sh/
+custom-config/jicofo/jicofo.conf
+custom-config/jvb/jvb.conf
+
 # --- Local dev stack (scripts/dev-setup.sh) ---
 docker-jitsi-meet/.jitsi-meet-cfg/
 *.pem
