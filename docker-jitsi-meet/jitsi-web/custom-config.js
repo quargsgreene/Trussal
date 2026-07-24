@@ -1640,45 +1640,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   });
 
   // src/jamulus.js
-  function addJamulusWelcomePanel() {
-    const body = document.body;
-    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
-      return;
-    }
-    if (document.getElementById("jamulus-welcome-panel")) return;
-    const container = document.querySelector("#welcome_page .welcome-page-content") || document.querySelector(".welcome-page-content");
-    if (!container) return;
-    const panel = document.createElement("div");
-    panel.id = "jamulus-welcome-panel";
-    panel.className = "jamulus-panel";
-    const items = Object.entries(JAMULUS_ROOM_MAP).map(
-      ([room2, info]) => `<li><strong>${room2}</strong> \u2192 ${info.host}:${info.port}</li>`
-    ).join("");
-    panel.innerHTML = `
-      <h3>Jamulus rooms</h3>
-      <p>These meeting links have dedicated Jamulus servers:</p>
-      <ul>${items}</ul>
-    `;
-    container.prepend(panel);
-  }
-  function startJamulusWelcomePanel() {
-    addJamulusWelcomePanel();
-  }
   function getRoomNameFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     const roomName = parts.length ? parts[parts.length - 1] : null;
     return roomName;
-  }
-  function renderJamulusWelcomePanelAndBanner() {
-    const mapping = window.JAMULUS_ROOM_MAP || {};
-    if (!Object.keys(mapping).length) {
-      return;
-    }
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startJamulusWelcomePanel();
-    } else {
-      window.addEventListener("DOMContentLoaded", startJamulusWelcomePanel);
-    }
   }
   var JAMULUS_ROOM_MAP;
   var init_jamulus = __esm({
@@ -49071,92 +49036,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   init_jamulus();
 
   // src/welcome-page.js
-  function renderTrussalWelcomeOverlay() {
-    console.log("[Trussal] renderTrussalWelcomeOverlay() called");
-    const body = document.body;
-    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
-      console.log("[Trussal] not on welcome page or body missing, aborting");
-      return;
-    }
-    if (document.getElementById("trussal-welcome-overlay")) {
-      return;
-    }
-    const overlay = document.createElement("div");
-    overlay.id = "trussal-welcome-overlay";
-    overlay.innerHTML = `
-      <div style="
-        position: fixed;
-        left: 50%;
-        top: 40%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.75);
-        padding: 1.5rem 2rem;
-        border-radius: 1rem;
-        max-width: 480px;
-        width: 90%;
-        z-index: 9999;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-      ">
-        <form class="trussal-room-form"
-              style="display:flex;flex-direction:column;gap:0.75rem;">
-          <label for="trussal-room-input"
-                 style="color:#ffffff;font-size:1rem;">
-            Choose a room:
-          </label>
-          <input id="trussal-room-input"
-                 type="number"
-                 min="0"
-                 max="10"
-                 required
-                 placeholder="0"
-                 style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid rgba(255,255,255,0.4);
-                        background:rgba(0,0,0,0.35);
-                        color:#ffffff;"/>
-          <button type="submit"
-                  style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:none;background:#0f5132;color:#ffffff;
-                         font-weight:600;cursor:pointer;">
-            Join session
-          </button>
-          <div id="trussal-room-error"
-               style="display:none;color:#ffb3b3;font-size:0.85rem;"></div>
-        </form>
-      </div>
-    `;
-    body.appendChild(overlay);
-    console.log("[Trussal] custom welcome overlay injected");
-    const form = overlay.querySelector("form");
-    const input = overlay.querySelector("#trussal-room-input");
-    const error = overlay.querySelector("#trussal-room-error");
-    form.addEventListener("submit", function(e30) {
-      e30.preventDefault();
-      const value2 = input.value.trim();
-      const n2 = Number(value2);
-      if (!Number.isInteger(n2) || n2 < 0 || n2 > 10) {
-        error.textContent = "Please enter a whole number between 0 and 10.";
-        error.style.display = "block";
-        return;
-      }
-      error.style.display = "none";
-      const roomName = String(n2);
-      const url2 = window.location.origin + "/" + encodeURIComponent(roomName);
-      console.log("[Trussal] navigating to room", roomName, "\u2192", url2);
-      window.location.href = url2;
-    });
-  }
-  function startWelcomeOverlayPoll() {
-    let tries = 0;
-    const maxTries = 40;
-    const timer3 = setInterval(function() {
-      renderTrussalWelcomeOverlay();
-      tries += 1;
-      if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
-        clearInterval(timer3);
-        console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
-      }
-    }, 250);
-  }
   function patchPrejoinButton() {
     const candidates = Array.from(
       document.querySelectorAll('button, [role="button"]')
@@ -49219,13 +49098,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       startRecentListTextRender();
     } else {
       window.addEventListener("DOMContentLoaded", startRecentListTextRender);
-    }
-  }
-  function renderWelcomeOverlay() {
-    if (document.readyState === "complete" || document.readyState === "interactive") {
-      startWelcomeOverlayPoll();
-    } else {
-      window.addEventListener("DOMContentLoaded", startWelcomeOverlayPoll);
     }
   }
   function hideStartMeetingButton() {
@@ -52162,7 +52034,13 @@ ${code2}${BTN_MARKER}`;
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
+    metric;
+    return `
+  <div class="ts-section">
+    <div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>
+    <div class="ts-meta">${networkMetricsBlock()}</div>
+  </div>
+  `;
   }
   function networkMetricsBlock() {
     const measured = computeWorstCaseMetrics(getAllPeers());
@@ -52314,8 +52192,6 @@ ${code2}${BTN_MARKER}`;
       </div>
       ${metricsLine(peer)}
     </div>
-
-    ${networkMetricsBlock()}
     ${isLocal ? botClusterBlock() : ""}
 
     <div class="ts-section">
@@ -52771,9 +52647,7 @@ ${voiceCode}${BTN_MARKER2}`);
     return !!(winner && local2 && local2.isAggregator && winner.jitsiId === local2.jitsiId);
   };
   renderAudioConfigCheck();
-  renderJamulusWelcomePanelAndBanner();
   renderRecentListText();
-  renderWelcomeOverlay();
   renderHideStartMeetingButton();
   renderPrejoinScreen();
   renderNoAudioToast();
