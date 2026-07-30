@@ -103,6 +103,7 @@ docker-save-*.tar
 custom-config/web/acme.sh/
 custom-config/jicofo/jicofo.conf
 custom-config/jvb/jvb.conf
+*acme.sh
 
 # --- Local dev stack (scripts/dev-setup.sh) ---
 docker-jitsi-meet/.jitsi-meet-cfg/

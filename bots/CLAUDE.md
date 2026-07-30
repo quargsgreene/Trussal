@@ -15,14 +15,36 @@ Bots are automated participants in Trussal/Jitsi sessions. They interact with th
 | `strudel-bot.js` | Sidecar-only: joins the WebSocket bus and plays a pattern. Does NOT appear in the Jitsi video grid. |
 | `jitsi-bot.js` | Full participant: headless Chrome joins Jitsi via WebRTC, visible in the video grid. |
 
-### First-time setup for jitsi-bot
+### First-time setup for jitsi-bot (host only)
+
+There is **no `install-chrome` npm script** — `package.json` defines only `test`,
+`test:one`, `start` and `bot`. Do it by hand. `jitsi-bot.js:27` hardcodes
+`bots/chrome/opt/google/chrome/chrome`, which is exactly the layout you get by
+extracting a Google Chrome .deb into `bots/chrome/`:
 
 ```bash
-npm run install-chrome       # downloads Chrome .deb, extracts to bots/chrome/ (no root needed)
-npm run install-chrome-deps  # installs GTK/audio libs required by Chrome (needs sudo; Ubuntu 24.04+ uses *t64 package names)
+cd bots
+curl -sSLO https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+# resolve Chrome's GTK/audio dependencies (Ubuntu 24.04+ renamed several to *t64,
+# so let apt work the names out rather than listing them)
+sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
+# extract the same .deb to the path jitsi-bot.js expects (no root needed)
+dpkg-deb -x google-chrome-stable_current_amd64.deb chrome/
+rm google-chrome-stable_current_amd64.deb
+./chrome/opt/google/chrome/chrome --version   # verify the hardcoded path resolves
 ```
 
-`bots/chrome/` is gitignored (~250 MB). Re-run `install-chrome` after cloning on a new machine.
+To avoid the system-wide install, extract only and chase the libraries directly:
+`ldd ./chrome/opt/google/chrome/chrome | grep 'not found'`.
+
+`bots/chrome/` is gitignored (~250 MB) and must be recreated after cloning.
+
+**The containerized fleet does NOT need any of this.** Bots spawned by the
+conductor use Debian's packaged Chromium inside the image
+(`docker/Dockerfile.bot`), located via `CHROMIUM_PATH`
+(`src/bot/index.js:33`, default `/usr/bin/chromium`). Only running
+`jitsi-bot.js` directly on a host needs `bots/chrome/`, so a production bots-VM
+deploy can skip it entirely.
 
 ### Running strudel-bot (sidecar only)
 
