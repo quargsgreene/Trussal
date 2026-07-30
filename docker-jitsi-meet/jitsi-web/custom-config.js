@@ -49036,6 +49036,104 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   init_jamulus();
 
   // src/welcome-page.js
+  var MAX_ROOM_NAME_LENGTH = 1023;
+  var ROOM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+  function isValidRoomName(name3) {
+    if (typeof name3 !== "string") return false;
+    if (name3.length === 0 || name3.length > MAX_ROOM_NAME_LENGTH) return false;
+    return ROOM_NAME_RE.test(name3);
+  }
+  function renderTrussalWelcomeOverlay() {
+    console.log("[Trussal] renderTrussalWelcomeOverlay() called");
+    const body = document.body;
+    if (!body || !body.classList || !body.classList.contains("welcome-page")) {
+      console.log("[Trussal] not on welcome page or body missing, aborting");
+      return;
+    }
+    if (document.getElementById("trussal-welcome-overlay")) {
+      return;
+    }
+    const overlay = document.createElement("div");
+    overlay.id = "trussal-welcome-overlay";
+    overlay.innerHTML = `
+      <div style="
+        position: fixed;
+        left: 50%;
+        top: 40%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.75);
+        padding: 1.5rem 2rem;
+        border-radius: 1rem;
+        max-width: 480px;
+        width: 90%;
+        z-index: 9999;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      ">
+        <form class="trussal-room-form"
+              style="display:flex;flex-direction:column;gap:0.75rem;">
+          <label for="trussal-room-input"
+                 style="color:#ffffff;font-size:1rem;">
+            Room name:
+          </label>
+          <input id="trussal-room-input"
+                 type="text"
+                 required
+                 autocomplete="off"
+                 autocapitalize="none"
+                 autocorrect="off"
+                 spellcheck="false"
+                 placeholder="room name with 1023 characters or fewer"
+                 style="padding:0.5rem 0.75rem;border-radius:0.5rem;
+                        border:1px solid rgba(255,255,255,0.4);
+                        background:rgba(0,0,0,0.35);
+                        color:#ffffff;"/>
+          <button type="submit"
+                  style="padding:0.6rem 0.9rem;border-radius:0.5rem;
+                         border:none;background:#0f5132;color:#ffffff;
+                         font-weight:600;cursor:pointer;">
+            Join session
+          </button>
+          <div id="trussal-room-error"
+               style="display:none;color:#ffb3b3;font-size:0.85rem;"></div>
+        </form>
+      </div>
+    `;
+    body.appendChild(overlay);
+    console.log("[Trussal] custom welcome overlay injected");
+    const form = overlay.querySelector("form");
+    const input = overlay.querySelector("#trussal-room-input");
+    const error = overlay.querySelector("#trussal-room-error");
+    form.addEventListener("submit", function(e30) {
+      e30.preventDefault();
+      const roomName = input.value.trim();
+      if (roomName.length > MAX_ROOM_NAME_LENGTH) {
+        error.textContent = `Room name must be ${MAX_ROOM_NAME_LENGTH} characters or fewer.`;
+        error.style.display = "block";
+        return;
+      }
+      if (!isValidRoomName(roomName)) {
+        error.textContent = "Use letters, numbers, - or _, starting with a letter or number.";
+        error.style.display = "block";
+        return;
+      }
+      error.style.display = "none";
+      const url2 = window.location.origin + "/" + encodeURIComponent(roomName);
+      console.log("[Trussal] navigating to room", roomName, "\u2192", url2);
+      window.location.href = url2;
+    });
+  }
+  function startWelcomeOverlayPoll() {
+    let tries = 0;
+    const maxTries = 40;
+    const timer3 = setInterval(function() {
+      renderTrussalWelcomeOverlay();
+      tries += 1;
+      if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
+        clearInterval(timer3);
+        console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
+      }
+    }, 250);
+  }
   function patchPrejoinButton() {
     const candidates = Array.from(
       document.querySelectorAll('button, [role="button"]')
@@ -49098,6 +49196,13 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       startRecentListTextRender();
     } else {
       window.addEventListener("DOMContentLoaded", startRecentListTextRender);
+    }
+  }
+  function renderWelcomeOverlay() {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      startWelcomeOverlayPoll();
+    } else {
+      window.addEventListener("DOMContentLoaded", startWelcomeOverlayPoll);
     }
   }
   function hideStartMeetingButton() {
@@ -52648,6 +52753,7 @@ ${voiceCode}${BTN_MARKER2}`);
   };
   renderAudioConfigCheck();
   renderRecentListText();
+  renderWelcomeOverlay();
   renderHideStartMeetingButton();
   renderPrejoinScreen();
   renderNoAudioToast();

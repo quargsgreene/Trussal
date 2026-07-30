@@ -32,6 +32,34 @@ case "$CFG_REAL/" in "$REPO_REAL"/*)
 
 echo "CONFIG OK: $CFG_REAL"
 
+# Repair prosody's /config ownership. The image only ever fixes this on a FIRST
+# run, because its cont-init guard keys off the top-level dir:
+#
+#   if [[ ! -d /config/data ]]; then mkdir -pm 750 /config/data; fi   # root:root
+#   if [[ "$(stat -c %U /config)" != "prosody" ]]; then chown -R prosody /config; fi
+#
+# Once /config is prosody-owned that second line never fires again, so anything
+# root writes inside it afterwards — a regenerated cert, a recreated data/ —
+# stays root-owned and unreadable by the prosody user. Prosody then dies at
+# startup ("Couldn't write pidfile" / "No TLS context available for c2s") while
+# the container still reports "Up", jicofo and jvb cannot reach 5222, and nginx
+# answers 502 on /xmpp-websocket. The failure looks like an auth or Cloudflare
+# problem and is not; it cost a full debugging session on 2026-07-29.
+#
+# Done in a throwaway container so it needs no host sudo, and resolves the user
+# by name inside the image rather than hardcoding uid 100. Fatal on failure:
+# continuing here just deploys a prosody that will 502 every join.
+PROSODY_CFG_DIR="$CFG_REAL/prosody/config"
+if [ -d "$PROSODY_CFG_DIR" ]; then
+  JITSI_TAG=$(sed -n 's/^JITSI_IMAGE_VERSION=//p' "$ENV_FILE" | tail -n1)
+  JITSI_TAG=${JITSI_TAG:-stable-11031}
+  echo "Repairing prosody /config ownership (jitsi/prosody:$JITSI_TAG)…"
+  docker run --rm -u 0 -v "$PROSODY_CFG_DIR:/config" \
+    --entrypoint sh "jitsi/prosody:$JITSI_TAG" \
+    -c 'chown -R prosody /config' \
+    || { echo "FATAL: prosody /config chown failed; deploying now would 502 on /xmpp-websocket"; exit 1; }
+fi
+
 # Install deps to match the committed lockfile before building. `npm ci` reads
 # (never writes) package-lock.json, so it won't dirty the working tree for the
 # next `git pull --ff-only`, and it installs newly-added deps (e.g. yjs) that a

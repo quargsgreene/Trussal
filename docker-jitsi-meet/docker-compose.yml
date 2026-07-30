@@ -45,6 +45,8 @@ services:
   web:
     build:
       context: ./jitsi-web
+      args:
+        JITSI_IMAGE_VERSION: ${JITSI_IMAGE_VERSION:-stable-11031}
     restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "80:80"
@@ -243,7 +245,7 @@ services:
 
   # XMPP server
   prosody:
-    image: jitsi/prosody:${JITSI_IMAGE_VERSION:-unstable}
+    image: jitsi/prosody:${JITSI_IMAGE_VERSION:-stable-11031}
     restart: ${RESTART_POLICY:-unless-stopped}
     expose:
       - '${XMPP_PORT:-5222}'
@@ -394,7 +396,7 @@ services:
 
   # Focus component
   jicofo:
-    image: jitsi/jicofo:${JITSI_IMAGE_VERSION:-unstable}
+    image: jitsi/jicofo:${JITSI_IMAGE_VERSION:-stable-11031}
     restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - '127.0.0.1:${JICOFO_REST_PORT:-8888}:8888'
@@ -490,7 +492,7 @@ services:
 
   # Video bridge
   jvb:
-    image: jitsi/jvb:${JITSI_IMAGE_VERSION:-unstable}
+    image: jitsi/jvb:${JITSI_IMAGE_VERSION:-stable-11031}
     restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - '${JVB_PORT:-10000}:${JVB_PORT:-10000}/udp'

@@ -54,7 +54,11 @@ window.__trussalIsActiveAggregator = () => {
 renderAudioConfigCheck();
 // renderJamulusWelcomePanelAndBanner();
 renderRecentListText();
-// renderWelcomeOverlay();
+// The overlay is the ONLY way into a room from the welcome page, because
+// renderHideStartMeetingButton() below hides Jitsi's native "Start meeting"
+// button. Disabling one without the other leaves the address bar as the sole
+// entrance, which is exactly what happened in bcf48ea.
+renderWelcomeOverlay();
 renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();

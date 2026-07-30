@@ -1,3 +1,28 @@
+// A typed room name travels three places that each punish a different
+// character class: the URL path (`/<room>`), an XMPP MUC localpart (nodeprep
+// forbids `"&'/:<>@` and whitespace), and the sidecar's `?room=` query. Rather
+// than encode separately for each, accept only characters that are literal in
+// all three. The security benefit is that same restriction read from the other
+// side: a name that clears this carries neither markup nor a `javascript:`
+// scheme, so it stays inert wherever it lands.
+//
+// 1023 is the XMPP localpart ceiling (RFC 6122/7622 nodeprep), which prosody
+// enforces once the room becomes <room>@conference.meet.jitsi. The allowlist is
+// ASCII, so one character is one octet. It is NOT a UI limit — nothing in the
+// Trussal overlay renders the room name — so don't shorten it thinking it is.
+//
+// This validates and rejects rather than normalising: silently reshaping
+// "My Jam Session!" into "my-jam-session" would land two people who typed
+// visibly different names in the same room without telling either of them.
+export const MAX_ROOM_NAME_LENGTH = 1023;
+const ROOM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+export function isValidRoomName(name) {
+  if (typeof name !== 'string') return false;
+  if (name.length === 0 || name.length > MAX_ROOM_NAME_LENGTH) return false;
+  return ROOM_NAME_RE.test(name);
+}
+
 function renderTrussalWelcomeOverlay() {
     console.log('[Trussal] renderTrussalWelcomeOverlay() called');
 
@@ -34,14 +59,16 @@ function renderTrussalWelcomeOverlay() {
               style="display:flex;flex-direction:column;gap:0.75rem;">
           <label for="trussal-room-input"
                  style="color:#ffffff;font-size:1rem;">
-            Choose a room:
+            Room name:
           </label>
           <input id="trussal-room-input"
-                 type="number"
-                 min="0"
-                 max="10"
+                 type="text"
                  required
-                 placeholder="0"
+                 autocomplete="off"
+                 autocapitalize="none"
+                 autocorrect="off"
+                 spellcheck="false"
+                 placeholder="room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
                         border:1px solid rgba(255,255,255,0.4);
                         background:rgba(0,0,0,0.35);
@@ -65,21 +92,39 @@ function renderTrussalWelcomeOverlay() {
     const input = overlay.querySelector('#trussal-room-input');
     const error = overlay.querySelector('#trussal-room-error');
 
+    // Deliberately no input.maxLength: the attribute silently truncates a
+    // pasted name, which would send the user to a room named after the first
+    // 1023 characters of what they pasted without telling them. Reject long
+    // names below instead, for the same reason we reject rather than normalise.
     form.addEventListener('submit', function (e) {
       e.preventDefault();
 
-      const value = input.value.trim();
-      const n = Number(value);
+      const roomName = input.value.trim();
 
-      if (!Number.isInteger(n) || n < 0 || n > 10) {
-        error.textContent = 'Please enter a whole number between 0 and 10.';
+      // Length and character-set failures get distinct messages — a single
+      // combined message would blame the character set for a length problem
+      // and leave a valid-looking long name unexplained. Both are constants or
+      // a number set via textContent, so no typed input reaches markup.
+      if (roomName.length > MAX_ROOM_NAME_LENGTH) {
+        error.textContent =
+          `Room name must be ${MAX_ROOM_NAME_LENGTH} characters or fewer.`;
+        error.style.display = 'block';
+        return;
+      }
+
+      if (!isValidRoomName(roomName)) {
+        error.textContent =
+          'Use letters, numbers, - or _, starting with a letter or number.';
         error.style.display = 'block';
         return;
       }
 
       error.style.display = 'none';
-      const roomName = String(n);
 
+      // Structural, not filtering: origin comes from the browser and the name
+      // is percent-encoded into a single path segment, so the target is always
+      // same-origin. A "javascript:" scheme cannot be smuggled into a path, and
+      // an encoded "/" cannot forge extra segments or an open redirect.
       const url = window.location.origin + '/' + encodeURIComponent(roomName);
       console.log('[Trussal] navigating to room', roomName, '→', url);
       window.location.href = url;
@@ -91,7 +136,7 @@ function startWelcomeOverlayPoll() {
     const maxTries = 40; // ~10 seconds at 250ms
 
     const timer = setInterval(function () {
-      // renderTrussalWelcomeOverlay();
+      renderTrussalWelcomeOverlay();
       tries += 1;
       if (document.getElementById('trussal-welcome-overlay') || tries >= maxTries) {
         clearInterval(timer);
@@ -99,14 +144,6 @@ function startWelcomeOverlayPoll() {
       }
     }, 250);
   }
-
-export default function renderAndPollWelcomePage() {
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        // startWelcomeOverlayPoll();
-      } else {
-        window.addEventListener('DOMContentLoaded', startWelcomeOverlayPoll);
-      }
-}
 
 function patchPrejoinButton() {
     // Look for any button that currently says "Join meeting"

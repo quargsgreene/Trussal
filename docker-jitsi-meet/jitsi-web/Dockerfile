@@ -1,4 +1,10 @@
-FROM jitsi/web:${JITSI_IMAGE_VERSION:-stable}
+# Docker only substitutes ARGs declared BEFORE the FROM. Without this line the
+# expression below collapses to its literal default whatever .env or compose
+# say, which is how web ended up on `stable` (2026-06-08) while prosody, jicofo
+# and jvb ran `unstable` images cached from 2026-05-07. docker-compose.yml
+# passes this through as a build arg so all four move together.
+ARG JITSI_IMAGE_VERSION=stable-11031
+FROM jitsi/web:${JITSI_IMAGE_VERSION}
 
 # Images
 COPY trussal-watermark.svg   /usr/share/jitsi-meet/images/trussal-watermark.svg
