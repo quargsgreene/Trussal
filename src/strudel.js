@@ -16,6 +16,8 @@ import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { registerSamplesFromDB } from './user-samples.js';
+import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
+import { rewriteLiveCalls } from './live-input-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
@@ -190,6 +192,13 @@ function buildPeerBlock(peer) {
   code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
   if (!code) return null;
 
+  // live(): re-emit the device name as a transpiler-proof literal, and for
+  // remote peers swap in the silent stub — capture belongs to the authoring
+  // browser, but the pattern shape (struct, chained ops) must survive here.
+  if (code.includes('live')) {
+    code = rewriteLiveCalls(code, { silent: !peer.isLocal });
+  }
+
   // Per-human publish isolation: while a remote aggregator is present, this
   // client's masterStrudelGain IS its outgoing Jitsi track (latency-instrument
   // publishLocalStrudelToRoom), so the program must carry ONLY the local voice —
@@ -328,7 +337,10 @@ async function ensureStrudel() {
     // _ncGate: reactive per-performer slot gate for Net Cycles (same ref
     // machinery as sliders — pattern events read the current level live).
     const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
-    await mod.evalScope({ sliderWithID, _ncGate });
+    // live("device"): rolling-capture sampler of a local audio input;
+    // _liveSilent is the stub remote peers' live() calls are rewritten to.
+    const { live, _liveSilent } = installLiveInput(mod, audioCtx);
+    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -380,12 +392,18 @@ async function rebuildAndEvaluate() {
   if (!next) {
     anyPlaying = false;
     try { hush(); } catch (e) { /* ignore */ }
+    // Nothing is playing, so no live() call can still want its device.
+    stopLiveCaptures();
     return;
   }
 
   activeSliders = {};
   try {
+    beginLiveEpoch();
     await evaluate(next);
+    // Every live() in this program has now re-stamped the epoch; whatever
+    // didn't is no longer referenced, so release its device.
+    releaseUnusedCaptures();
     anyPlaying = true;
     // Tell hydra-video.js the Hydra synth was (re)created so s0 is re-synced
     // on the next frame rather than relying on the stale pre-eval reference.
@@ -416,6 +434,9 @@ export async function stopStrudel() {
   const { hush, clearHydra } = await loadStrudel();
   try { hush(); } catch (e) { /* ignore */ }
   try { if (typeof clearHydra === 'function') clearHydra(); } catch (e) { /* ignore */ }
+  // Release captured devices with the music; the next evaluate that still
+  // contains live() restarts its capture.
+  stopLiveCaptures();
   anyPlaying = false;
   lastEvaluated = null;
   activeSliders = {};

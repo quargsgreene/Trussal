@@ -38,7 +38,7 @@ const TRIE = new Trie();
   ['rev',7],['jux',6],['add',7],['transpose',6],['speed',5],['every',8],
   ['sometimes',7],['often',6],['rarely',5],['degradeBy',5],['struct',5],
   ['euclid',6],['crush',4],['shape',5],['coarse',4],['vowel',5],['hcutoff',4],
-  ['begin',5],['end',5],['loop',5],['pitch',5],['silence',5],['rest',5],
+  ['begin',5],['end',5],['loop',5],['pitch',5],['silence',5],['rest',5],['live',6],
   ['bd',8],['sd',8],['hh',9],['cp',7],['bass',7],['piano',6],['violin',5],
   ['tabla',4],['crow',4],['jazz',4],['psr',3],
   ['osc',8],['noise',7],['voronoi',6],['solid',6],['gradient',5],

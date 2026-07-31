@@ -129,6 +129,7 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `hydra-video.js` | Hydra visual synthesis with two modes: `split` (camera panel + independent Hydra canvas) and `direct` (camera fed to `s0` for `src(s0)` patterns) |
 | `on-screen-keyboard.js` | On-screen QWERTY with head-cursor dwell, drag, and trie-based Strudel keyword autocomplete |
 | `user-samples.js` | IndexedDB-backed local sample loading; users upload folders, reference them as `s("foldername")` in Strudel patterns |
+| `live-input.js` | `live("device")` Strudel source: rolling ring-buffer capture of a local audio input; each pattern event plays the freshest chunk (authoring browser only, remote peers silenced). Pure ring/matching logic in `live-input-core.js` |
 | `jamulus.js` | Jamulus room map + welcome panel/banner injection; `JAMULUS_ROOM_MAP` is exported to `window` |
 | `welcome-page.js` | Jitsi welcome-page and prejoin-screen customizations |
 | `meeting.js` | In-meeting customizations (e.g. no-audio toast) |

@@ -1533,10 +1533,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       monitorMode = "master";
       jitsiMixState = null;
       JitsiMicMixEffect = class {
-        constructor(audioCtx2, externalStream) {
-          this._audioCtx = audioCtx2;
+        constructor(audioCtx3, externalStream) {
+          this._audioCtx = audioCtx3;
           this._externalStream = externalStream;
-          this._dest = audioCtx2.createMediaStreamDestination();
+          this._dest = audioCtx3.createMediaStreamDestination();
           this._micSource = null;
           this._extSource = null;
         }
@@ -1570,9 +1570,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         }
       };
       NodeOutputEffect = class {
-        constructor(audioCtx2, node) {
+        constructor(audioCtx3, node) {
           this._node = node;
-          this._dest = audioCtx2.createMediaStreamDestination();
+          this._dest = audioCtx3.createMediaStreamDestination();
         }
         isEnabled() {
           return true;
@@ -2502,11 +2502,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         getCycle() {
           return this._cycle;
         }
-        start(epoch2 = this._now()) {
+        start(epoch3 = this._now()) {
           if (this._running) return;
           this._running = true;
           this._cycle = 0;
-          this._nextCycleStart = epoch2;
+          this._nextCycleStart = epoch3;
           if (this._setInterval) {
             this._timer = this._setInterval(() => this.tick(), this._tickMs);
           }
@@ -11911,30 +11911,30 @@ ${err.toString()}`);
       visualLowpass: cutoffHz / CUTOFF_MAX_HZ
     };
   }
-  function createRoomNode(audioCtx2, params2) {
-    const input = audioCtx2.createGain();
-    const output = audioCtx2.createGain();
-    const wet = audioCtx2.createGain();
+  function createRoomNode(audioCtx3, params2) {
+    const input = audioCtx3.createGain();
+    const output = audioCtx3.createGain();
+    const wet = audioCtx3.createGain();
     wet.gain.value = params2.wetGain;
     input.connect(output);
     const combs = params2.combDelaysS.map((d, i) => {
-      const delay2 = audioCtx2.createDelay(Math.max(1, d * 2));
+      const delay2 = audioCtx3.createDelay(Math.max(1, d * 2));
       delay2.delayTime.value = d;
-      const fb = audioCtx2.createGain();
+      const fb = audioCtx3.createGain();
       fb.gain.value = params2.combFeedbacks[i];
       input.connect(delay2);
       delay2.connect(fb);
       fb.connect(delay2);
       return { delay: delay2, fb };
     });
-    const combSum = audioCtx2.createGain();
+    const combSum = audioCtx3.createGain();
     combSum.gain.value = 1 / combs.length;
     combs.forEach((c2) => c2.delay.connect(combSum));
     let head = combSum;
     const allpasses = params2.allpassDelaysS.map((d) => {
-      const delay2 = audioCtx2.createDelay(1);
+      const delay2 = audioCtx3.createDelay(1);
       delay2.delayTime.value = d;
-      const fb = audioCtx2.createGain();
+      const fb = audioCtx3.createGain();
       fb.gain.value = 0.5;
       head.connect(delay2);
       delay2.connect(fb);
@@ -11942,8 +11942,8 @@ ${err.toString()}`);
       return delay2;
     });
     head = allpasses.length ? allpasses[allpasses.length - 1] : head;
-    const lp1 = audioCtx2.createBiquadFilter();
-    const lp2 = audioCtx2.createBiquadFilter();
+    const lp1 = audioCtx3.createBiquadFilter();
+    const lp2 = audioCtx3.createBiquadFilter();
     lp1.type = lp2.type = "lowpass";
     lp1.frequency.value = lp2.frequency.value = params2.cutoffHz;
     head.connect(lp1);
@@ -12000,12 +12000,12 @@ ${err.toString()}`);
       visualBrightness: feedback
     };
   }
-  function createEchoNode(audioCtx2, params2) {
-    const input = audioCtx2.createGain();
-    const output = audioCtx2.createGain();
-    const delay2 = audioCtx2.createDelay(10);
+  function createEchoNode(audioCtx3, params2) {
+    const input = audioCtx3.createGain();
+    const output = audioCtx3.createGain();
+    const delay2 = audioCtx3.createDelay(10);
     delay2.delayTime.value = Math.min(params2.delayS, 9.99);
-    const fb = audioCtx2.createGain();
+    const fb = audioCtx3.createGain();
     fb.gain.value = params2.feedback;
     input.connect(output);
     input.connect(delay2);
@@ -12054,14 +12054,14 @@ ${err.toString()}`);
     }
     return curve2;
   }
-  function createCrushNode(audioCtx2, params2) {
-    const input = audioCtx2.createGain();
-    const output = audioCtx2.createGain();
-    const shaper = audioCtx2.createWaveShaper();
+  function createCrushNode(audioCtx3, params2) {
+    const input = audioCtx3.createGain();
+    const output = audioCtx3.createGain();
+    const shaper = audioCtx3.createWaveShaper();
     shaper.curve = makeCrushCurve(params2.bitDepth);
-    const lp2 = audioCtx2.createBiquadFilter();
+    const lp2 = audioCtx3.createBiquadFilter();
     lp2.type = "lowpass";
-    lp2.frequency.value = audioCtx2.sampleRate / 2 / params2.srDivisor;
+    lp2.frequency.value = audioCtx3.sampleRate / 2 / params2.srDivisor;
     input.connect(shaper);
     shaper.connect(lp2);
     lp2.connect(output);
@@ -12070,7 +12070,7 @@ ${err.toString()}`);
       output,
       update(next) {
         shaper.curve = makeCrushCurve(next.bitDepth);
-        lp2.frequency.value = audioCtx2.sampleRate / 2 / next.srDivisor;
+        lp2.frequency.value = audioCtx3.sampleRate / 2 / next.srDivisor;
       },
       dispose() {
         [input, output, shaper, lp2].forEach((n2) => {
@@ -12128,11 +12128,11 @@ ${err.toString()}`);
     }
     return channel2;
   }
-  function createNoiseNode(audioCtx2, params2) {
-    const input = audioCtx2.createGain();
-    const output = audioCtx2.createGain();
+  function createNoiseNode(audioCtx3, params2) {
+    const input = audioCtx3.createGain();
+    const output = audioCtx3.createGain();
     input.connect(output);
-    const gain2 = audioCtx2.createGain();
+    const gain2 = audioCtx3.createGain();
     gain2.gain.value = params2.gain;
     gain2.connect(output);
     let src2 = null;
@@ -12149,10 +12149,10 @@ ${err.toString()}`);
         src2 = null;
       }
       if (type === "none") return;
-      const len = Math.floor(audioCtx2.sampleRate * 2);
-      const buf = audioCtx2.createBuffer(1, len, audioCtx2.sampleRate);
+      const len = Math.floor(audioCtx3.sampleRate * 2);
+      const buf = audioCtx3.createBuffer(1, len, audioCtx3.sampleRate);
       fillNoise(buf.getChannelData(0), type);
-      src2 = audioCtx2.createBufferSource();
+      src2 = audioCtx3.createBufferSource();
       src2.buffer = buf;
       src2.loop = true;
       src2.connect(gain2);
@@ -12328,8 +12328,8 @@ ${err.toString()}`);
       };
       EffectsChainManager = class {
         // insert/remove: latency-instrument's master-chain hooks.
-        constructor({ audioCtx: audioCtx2, insert, remove, getPeers, getLocalJitsiId }) {
-          this._ctx = audioCtx2;
+        constructor({ audioCtx: audioCtx3, insert, remove, getPeers, getLocalJitsiId }) {
+          this._ctx = audioCtx3;
           this._insert = insert;
           this._remove = remove;
           this._getPeers = getPeers || (() => []);
@@ -49579,6 +49579,261 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     onDone?.(records.length);
   }
 
+  // src/live-input.js
+  init_latency_instrument();
+
+  // src/live-input-core.js
+  var LiveRing = class {
+    constructor(capacity) {
+      this.capacity = Math.max(1, Math.floor(capacity));
+      this.data = new Float32Array(this.capacity);
+      this.writePos = 0;
+      this.total = 0;
+    }
+    get filled() {
+      return Math.min(this.total, this.capacity);
+    }
+    write(chunk2) {
+      if (!chunk2 || !chunk2.length) return;
+      let src2 = chunk2;
+      if (src2.length > this.capacity) src2 = src2.subarray(src2.length - this.capacity);
+      const first = Math.min(src2.length, this.capacity - this.writePos);
+      this.data.set(src2.subarray(0, first), this.writePos);
+      if (first < src2.length) this.data.set(src2.subarray(first), 0);
+      this.writePos = (this.writePos + src2.length) % this.capacity;
+      this.total += chunk2.length;
+    }
+    snapshot(frames2) {
+      const len = Math.max(0, Math.min(Math.floor(frames2), this.capacity));
+      const out = new Float32Array(len);
+      const n2 = Math.min(len, this.filled);
+      if (n2 === 0) return out;
+      const start = (this.writePos - n2 + this.capacity) % this.capacity;
+      const dest = len - n2;
+      const first = Math.min(n2, this.capacity - start);
+      out.set(this.data.subarray(start, start + first), dest);
+      if (first < n2) out.set(this.data.subarray(0, n2 - first), dest + first);
+      return out;
+    }
+  };
+  function matchAudioDevice(devices, name3) {
+    const wanted = (name3 || "").trim().toLowerCase();
+    if (!wanted) return null;
+    const labeled = devices.filter((d) => d.label);
+    return labeled.find((d) => d.label.toLowerCase() === wanted) || labeled.find((d) => d.label.toLowerCase().includes(wanted)) || devices.find((d) => d.deviceId === name3) || null;
+  }
+  function liveSlug(name3) {
+    const base = (name3 || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return `live_${base || "default"}`;
+  }
+  var LIVE_CALL_RE = /(^|[^\w.$])live\s*\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)?\s*\)/g;
+  var LIVE_NAME_RE = /(^|[^\w.$])live\s*\(/g;
+  function decodeLiteral(raw) {
+    const body = raw.slice(1, -1);
+    if (raw[0] === '"') {
+      try {
+        return JSON.parse(raw);
+      } catch (e30) {
+      }
+    }
+    return body.replace(/\\(.)/g, "$1");
+  }
+  function singleQuote(value2) {
+    return `'${value2.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r?\n/g, " ")}'`;
+  }
+  function rewriteLiveCalls(code2, { silent = false } = {}) {
+    const fn = silent ? "_liveSilent" : "live";
+    let out = String(code2 ?? "").replace(LIVE_CALL_RE, (match2, before, literal2) => {
+      if (literal2 && literal2[0] === "`" && literal2.includes("${")) return match2;
+      if (!literal2) return `${before}${fn}()`;
+      return `${before}${fn}(${singleQuote(decodeLiteral(literal2))})`;
+    });
+    if (silent) out = out.replace(LIVE_NAME_RE, `$1${fn}(`);
+    return out;
+  }
+
+  // src/live-input.js
+  var RING_SECONDS = 10;
+  var RETRY_MS = 1e4;
+  var SILENT_SOUND = "_livesilent";
+  var captures = /* @__PURE__ */ new Map();
+  var epoch2 = 0;
+  var audioCtx2 = null;
+  var registerSoundFn = null;
+  var sFn = null;
+  var workletReady = null;
+  var WORKLET_SOURCE = `
+class TrussalLiveCapture extends AudioWorkletProcessor {
+  constructor() { super(); this.batch = []; this.len = 0; }
+  process(inputs) {
+    const ch = inputs[0];
+    if (ch && ch.length && ch[0].length) {
+      const n = ch[0].length;
+      const out = new Float32Array(n);
+      for (let c = 0; c < ch.length; c++) {
+        const d = ch[c];
+        for (let i = 0; i < n; i++) out[i] += d[i];
+      }
+      if (ch.length > 1) {
+        const inv = 1 / ch.length;
+        for (let i = 0; i < n; i++) out[i] *= inv;
+      }
+      this.batch.push(out);
+      this.len += n;
+      if (this.len >= 2048) {
+        const merged = new Float32Array(this.len);
+        let o = 0;
+        for (const b of this.batch) { merged.set(b, o); o += b.length; }
+        this.port.postMessage(merged, [merged.buffer]);
+        this.batch = [];
+        this.len = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('trussal-live-capture', TrussalLiveCapture);
+`;
+  function ensureWorklet() {
+    if (!workletReady) {
+      const url2 = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
+      workletReady = audioCtx2.audioWorklet.addModule(url2);
+    }
+    return workletReady;
+  }
+  function nameToString(arg) {
+    if (typeof arg === "string") return arg;
+    if (arg && typeof arg.firstCycle === "function") {
+      try {
+        return arg.firstCycle().sort((a2, b) => a2.part.begin - b.part.begin).map((h2) => `${h2.value}`).join(" ");
+      } catch (e30) {
+        console.warn("[live] could not read device name pattern", e30);
+      }
+    }
+    return String(arg ?? "");
+  }
+  async function startCapture(slug, name3) {
+    const devices = await listAudioInputDevices();
+    const match2 = matchAudioDevice(devices, name3);
+    if (name3 && !match2) {
+      console.warn(`[live] no local audio input matches "${name3}" \u2014 live() is silent in this browser. Inputs: ${devices.map((d) => d.label).join(", ") || "(none)"}`);
+      captures.get(slug).state = "failed";
+      return;
+    }
+    const audioConstraints = {
+      echoCancellation: false,
+      autoGainControl: false,
+      noiseSuppression: false
+    };
+    if (match2) audioConstraints.deviceId = { exact: match2.deviceId };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    await ensureWorklet();
+    const cap = captures.get(slug);
+    if (!cap || cap.state !== "starting") {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const ring2 = new LiveRing(Math.round(RING_SECONDS * audioCtx2.sampleRate));
+    const source2 = audioCtx2.createMediaStreamSource(stream);
+    const worklet2 = new AudioWorkletNode(audioCtx2, "trussal-live-capture", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1]
+    });
+    worklet2.port.onmessage = (e30) => ring2.write(e30.data);
+    const sink = audioCtx2.createGain();
+    sink.gain.value = 0;
+    source2.connect(worklet2);
+    worklet2.connect(sink);
+    sink.connect(audioCtx2.destination);
+    Object.assign(cap, { state: "ready", ring: ring2, stream, source: source2, worklet: worklet2, sink });
+    console.log(`[live] capturing "${match2 ? match2.label : "default input"}" \u2192 s("${slug}")`);
+  }
+  function makeOnTrigger(slug) {
+    return (t, value2, onEnded) => {
+      const cap = captures.get(slug);
+      if (!cap || cap.state !== "ready" || !cap.ring.filled) return;
+      const speed2 = typeof value2.speed === "number" ? value2.speed : 1;
+      if (speed2 === 0) return;
+      const dur2 = Math.min(RING_SECONDS, Math.max(5e-3, value2.duration ?? 0.1));
+      const data3 = cap.ring.snapshot(Math.round(dur2 * audioCtx2.sampleRate));
+      if (!data3.length) return;
+      if (speed2 < 0) data3.reverse();
+      const buffer = audioCtx2.createBuffer(1, data3.length, audioCtx2.sampleRate);
+      buffer.copyToChannel(data3, 0);
+      const node = audioCtx2.createBufferSource();
+      node.buffer = buffer;
+      node.playbackRate.value = Math.abs(speed2);
+      node.onended = onEnded;
+      node.start(t);
+      return { node, stop: (time2) => {
+        try {
+          node.stop(time2);
+        } catch (e30) {
+        }
+      } };
+    };
+  }
+  function installLiveInput(mod2, ctx) {
+    audioCtx2 = ctx;
+    registerSoundFn = mod2.registerSound;
+    sFn = mod2.s;
+    registerSoundFn(SILENT_SOUND, () => void 0, { type: "live", prebake: true });
+    const live = (nameArg) => {
+      const name3 = nameToString(nameArg).trim();
+      const slug = liveSlug(name3);
+      const existing = captures.get(slug);
+      if (existing && existing.state === "failed" && Date.now() - existing.attemptAt > RETRY_MS) {
+        captures.delete(slug);
+      }
+      if (!captures.has(slug)) {
+        captures.set(slug, { state: "starting", attemptAt: Date.now(), name: name3, epoch: epoch2 });
+        registerSoundFn(slug, makeOnTrigger(slug), { type: "live", prebake: true });
+        startCapture(slug, name3).catch((e30) => {
+          const cap = captures.get(slug);
+          if (cap) cap.state = "failed";
+          console.error(`[live] capture failed for "${name3}"`, e30);
+        });
+      }
+      captures.get(slug).epoch = epoch2;
+      return sFn(slug);
+    };
+    const _liveSilent = () => sFn(SILENT_SOUND);
+    return { live, _liveSilent };
+  }
+  function teardown(slug, cap) {
+    try {
+      cap.stream && cap.stream.getTracks().forEach((t) => t.stop());
+    } catch (e30) {
+    }
+    try {
+      cap.source && cap.source.disconnect();
+    } catch (e30) {
+    }
+    try {
+      cap.worklet && cap.worklet.disconnect();
+    } catch (e30) {
+    }
+    try {
+      cap.sink && cap.sink.disconnect();
+    } catch (e30) {
+    }
+    captures.delete(slug);
+  }
+  function stopLiveCaptures() {
+    for (const [slug, cap] of captures) teardown(slug, cap);
+  }
+  function beginLiveEpoch() {
+    epoch2++;
+  }
+  function releaseUnusedCaptures() {
+    for (const [slug, cap] of captures) {
+      if (cap.epoch === epoch2) continue;
+      console.log(`[live] releasing "${cap.name || "default input"}" \u2014 no longer referenced`);
+      teardown(slug, cap);
+    }
+  }
+
   // src/hydra-video.js
   init_peer_state();
   var MODE_SPLIT = "split";
@@ -49980,6 +50235,9 @@ $: (${split.expr})${fx}`;
     if (!code2 || !peer.playing) return null;
     code2 = code2.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
     if (!code2) return null;
+    if (code2.includes("live")) {
+      code2 = rewriteLiveCalls(code2, { silent: !peer.isLocal });
+    }
     const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
     const params2 = computePeerStrudelParams(peer);
     let fx = peer.isLocal ? "" : effectChainFor(params2);
@@ -50008,8 +50266,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
   async function ensureStrudel() {
     if (strudelBoot) return strudelBoot;
     strudelBoot = (async () => {
-      const { audioCtx: audioCtx2, destinationNode } = await getStrudelAudioContext();
-      Object.defineProperty(audioCtx2, "destination", {
+      const { audioCtx: audioCtx3, destinationNode } = await getStrudelAudioContext();
+      Object.defineProperty(audioCtx3, "destination", {
         configurable: true,
         get: () => destinationNode
       });
@@ -50145,10 +50403,11 @@ ${buildStrudelVoice(strudelCode, fx)}`;
           safe(aliasBank2(`${baseCDN}/tidal-drum-machines-alias.json`));
         }
       };
-      await initStrudel2({ audioContext: audioCtx2, prebake: runPrebake });
+      await initStrudel2({ audioContext: audioCtx3, prebake: runPrebake });
       _sliderRef = mod2.ref;
       const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
-      await mod2.evalScope({ sliderWithID, _ncGate });
+      const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
+      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -50156,7 +50415,7 @@ ${buildStrudelVoice(strudelCode, fx)}`;
           console.warn("[strudel] initAudio failed", e30);
         }
       }
-      return audioCtx2;
+      return audioCtx3;
     })();
     return strudelBoot;
   }
@@ -50186,11 +50445,14 @@ ${next}`;
         hush2();
       } catch (e30) {
       }
+      stopLiveCaptures();
       return;
     }
     activeSliders = {};
     try {
+      beginLiveEpoch();
       await evaluate3(next);
+      releaseUnusedCaptures();
       anyPlaying = true;
       resetHydraSync();
       document.dispatchEvent(new CustomEvent("trussal-sliders-updated", {
@@ -50214,6 +50476,7 @@ ${next}`;
       if (typeof clearHydra2 === "function") clearHydra2();
     } catch (e30) {
     }
+    stopLiveCaptures();
     anyPlaying = false;
     lastEvaluated = null;
     activeSliders = {};
@@ -51218,6 +51481,7 @@ ${code2}${BTN_MARKER}`;
     ["pitch", 5],
     ["silence", 5],
     ["rest", 5],
+    ["live", 6],
     ["bd", 8],
     ["sd", 8],
     ["hh", 9],
