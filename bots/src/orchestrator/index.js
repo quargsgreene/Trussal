@@ -20,7 +20,7 @@ const cfg = mergeConfig({
   ...(process.env.JAMULUS_SERVER ? { jamulusServer: process.env.JAMULUS_SERVER } : {}),
   ...(process.env.VARY_HYDRA ? { varyHydra: process.env.VARY_HYDRA === 'true' } : {}),
   ...(process.env.SIDECAR_WS_URL ? { sidecarWsUrl: process.env.SIDECAR_WS_URL } : {}),
-  ...(process.env.FLEET_ROOM ? { fleetRoom: process.env.FLEET_ROOM } : {}),
+  ...(process.env.FLEET_CONTROL_TOKEN ? { controlToken: process.env.FLEET_CONTROL_TOKEN } : {}),
 });
 
 const runner = makeDockerRunner({
@@ -41,7 +41,7 @@ const fleet = new FleetService(cfg, {
   connectSidecar: makeWsSidecarConnector(WebSocket),
 });
 await fleet.start();
-console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, room ${cfg.fleetRoom}`);
+console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, serving every room on ${cfg.sidecarWsUrl}`);
 
 const admin = createAdminServer(fleet);
 admin.listen(cfg.adminPort, '0.0.0.0', () => {

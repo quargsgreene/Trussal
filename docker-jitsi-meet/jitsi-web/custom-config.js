@@ -52139,15 +52139,9 @@ ${code2}${BTN_MARKER}`;
     } else {
       routedTxt = "no live audio";
     }
-    metric;
-    return `
-  <div class="ts-section">
-    <div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>
-    <div class="ts-meta">${networkMetricsBlock()}</div>
-  </div>
-  `;
+    return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
   }
-  function networkMetricsBlock() {
+  function networkMetricsBlock(peer, controls2 = "") {
     const measured = computeWorstCaseMetrics(getAllPeers());
     const wc = effectiveWorstCase();
     const induced = getInducedMetrics();
@@ -52171,12 +52165,14 @@ ${code2}${BTN_MARKER}`;
       <div class="ts-section-head">
         <div class="ts-section-title">Network Metrics</div>
         <div class="ts-section-controls">
+          ${controls2}
           <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
         </div>
       </div>
+      ${metricsLine(peer)}
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         \xB7 measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
-      <div class="ts-sliders">${sliders}</div>
+      <div class="ts-sliders ts-induce-sliders">${sliders}</div>
     </div>`;
   }
   var monitorSelection = "master";
@@ -52290,13 +52286,7 @@ ${code2}${BTN_MARKER}`;
       ${!isLocal && peer.isBot ? '<span class="ts-bot-badge">BOT</span>' : ""}
     </div>
 
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Latency Effects</div>
-        <div class="ts-section-controls">${captureBtn}</div>
-      </div>
-      ${metricsLine(peer)}
-    </div>
+    ${networkMetricsBlock(peer, captureBtn)}
     ${isLocal ? botClusterBlock() : ""}
 
     <div class="ts-section">
@@ -52306,7 +52296,7 @@ ${code2}${BTN_MARKER}`;
       </div>
       ${sampleBanksRow}
       ${codeBlock}
-      ${isLocal ? '<div class="ts-sliders"></div>' : ""}
+      ${isLocal ? '<div class="ts-sliders ts-strudel-sliders"></div>' : ""}
       ${isLocal ? '<div class="ts-voice-btns"></div>' : ""}
     </div>
 
@@ -52522,7 +52512,7 @@ ${voiceCode}${BTN_MARKER2}`);
     });
   }
   function renderSliders(container, sliders) {
-    const area = container.querySelector(".ts-sliders");
+    const area = container.querySelector(".ts-strudel-sliders");
     if (!area) return;
     if (!sliders || !sliders.length) {
       area.innerHTML = "";

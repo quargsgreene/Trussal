@@ -389,19 +389,17 @@ function metricsLine(peer) {
     routedTxt = peer.playing ? '<b>instrument ▶</b>' : 'not playing';
   } else {
     routedTxt = 'no live audio';
-  }metric
-  return `
-  <div class="ts-section">
-    <div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>
-    <div class="ts-meta">${networkMetricsBlock()}</div>
-  </div>
-  `;
+  }
+  return `<div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
 }
 
-// Room-wide worst-case metrics (identical on every client — the shared basis
-// for Net Cycles cycle lengths) plus artificial-induction sliders and mix
-// monitoring.
-function networkMetricsBlock() {
+// The one network panel: this peer's measured link, the room-wide worst-case
+// basis every client shares (identical everywhere — it sets Net Cycles cycle
+// lengths), and the artificial-induction sliders that move it. `controls` is
+// dropped into the header next to the mix-monitor select; the Jamulus capture
+// buttons live there when re-enabled, since routing them is exactly what the
+// peer line's `routed` state reports.
+function networkMetricsBlock(peer, controls = '') {
   const measured = computeWorstCaseMetrics(getAllPeers());
   const wc = effectiveWorstCase();
   const induced = getInducedMetrics();
@@ -426,12 +424,14 @@ function networkMetricsBlock() {
       <div class="ts-section-head">
         <div class="ts-section-title">Network Metrics</div>
         <div class="ts-section-controls">
+          ${controls}
           <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
         </div>
       </div>
+      ${metricsLine(peer)}
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
-      <div class="ts-sliders">${sliders}</div>
+      <div class="ts-sliders ts-induce-sliders">${sliders}</div>
     </div>`;
 }
 
@@ -523,10 +523,12 @@ function renderDetail(container) {
 
   const extLabel   = getExternalStreamLabel(peer.jitsiId);
   const nodeLabel  = getExternalNodeLabel(peer.jitsiId);
-  // Jamulus capture + relay UI detached for now (kept for later use). The
-  // template still interpolates ${captureBtn} below, so this MUST stay defined —
-  // an undefined reference throws mid-innerHTML and takes the whole detail panel
-  // (metrics + Strudel editor) down with it. To re-enable, restore the block.
+  // Jamulus capture + relay UI detached for now (kept for later use). It is
+  // passed to networkMetricsBlock as that panel's header controls, and the
+  // template interpolates it unconditionally, so this MUST stay defined — any
+  // reference that throws mid-template aborts the whole innerHTML assignment
+  // and takes the entire detail panel (metrics, bot cluster, Strudel editor)
+  // down with it, leaving a blank card. To re-enable, restore the block.
   const captureBtn = '';
   // const relayOn    = isLocal && isRelayConnected();
   // const captureBtn = isLocal
@@ -578,13 +580,7 @@ function renderDetail(container) {
       ${(!isLocal && peer.isBot) ? '<span class="ts-bot-badge">BOT</span>' : ''}
     </div>
 
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Latency Effects</div>
-        <div class="ts-section-controls">${captureBtn}</div>
-      </div>
-      ${metricsLine(peer)}
-    </div>
+    ${networkMetricsBlock(peer, captureBtn)}
     ${isLocal ? botClusterBlock() : ''}
 
     <div class="ts-section">
@@ -594,7 +590,7 @@ function renderDetail(container) {
       </div>
       ${sampleBanksRow}
       ${codeBlock}
-      ${isLocal ? '<div class="ts-sliders"></div>' : ''}
+      ${isLocal ? '<div class="ts-sliders ts-strudel-sliders"></div>' : ''}
       ${isLocal ? '<div class="ts-voice-btns"></div>' : ''}
     </div>
 
@@ -846,8 +842,13 @@ function renderVoiceButtons(container, code) {
   });
 }
 
+// Strudel's own `slider()` controls, re-rendered on every trussal-sliders-updated.
+// Must target .ts-strudel-sliders specifically: the Network Metrics panel's
+// induction sliders share the .ts-sliders styling class and sit EARLIER in the
+// detail panel, so a bare .ts-sliders lookup would find those instead and blank
+// them out (the empty-list early return below) on every render.
 function renderSliders(container, sliders) {
-  const area = container.querySelector('.ts-sliders');
+  const area = container.querySelector('.ts-strudel-sliders');
   if (!area) return;
   if (!sliders || !sliders.length) { area.innerHTML = ''; return; }
   area.innerHTML = sliders.map((s, i) => `

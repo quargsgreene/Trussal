@@ -47,6 +47,14 @@ export function createAdminServer(conductor) {
         return send(200, conductor.cfg);
       }
 
+      // Which meetings the fleet is actually serving, and whether each has a
+      // live aggregator. The fleet discovers rooms at runtime, so this is the
+      // only way to answer "why is there no aggregator in my room" — the older
+      // per-room accessors need a room name you would have to guess.
+      if (req.method === 'GET' && req.url === '/api/rooms') {
+        return send(200, typeof conductor.roomsStatus === 'function' ? conductor.roomsStatus() : []);
+      }
+
       if (req.method === 'POST' && req.url === '/api/config') {
         const overrides = await readJson();
         try {

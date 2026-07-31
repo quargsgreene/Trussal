@@ -64,7 +64,16 @@ export const defaultConfig = Object.freeze({
   // Fleet service (Net Cycles): per-user bot clusters driven by in-room
   // requests relayed through the latency sidecar.
   sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on
-  fleetRoom: '0',                          // room whose requests this fleet serves
+  // There is deliberately NO room setting. The fleet serves every room it
+  // discovers over the relay's control channel (`?role=control`); a room name
+  // is free-form, so any configured value could only ever be a wrong default,
+  // and the room segment of jitsiUrl is just a template that jitsiUrlForRoom
+  // swaps per meeting.
+  // Shared secret for the relay's control channel. It must match the sidecar's
+  // SIDECAR_CONTROL_TOKEN: the channel lists every meeting in progress and /ws
+  // is proxied publicly, so the relay refuses it unauthenticated. Unset here →
+  // no rooms discovered → no aggregator.
+  controlToken: null,
   ownerLeaveGraceMs: 120000,               // cluster lives this long (2 min) after its owner leaves, meeting continuing
   meetingEndGraceMs: 15000,                // all humans gone → teardown (XMPP constraints)
   // The aggregator has no health-replace path (its metrics are deliberately

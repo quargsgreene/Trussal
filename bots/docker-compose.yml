@@ -33,22 +33,30 @@ services:
       MAX_BOTS: "10"
       SESSION_SEED: "1"
       CONDUCTOR_URL: "http://localhost:7700"
-      # Your Jitsi instance (room "0" per the spec). Override here — bots
-      # join JITSI_URL directly; bandwidth guards keep 10 bots gentle on a
-      # self-hosted bridge (see README "Home-network load").
+      # Your Jitsi instance. Only the HOST part matters: the fleet rewrites the
+      # room segment per meeting (jitsiUrlForRoom), so bots join whichever room
+      # their humans are in — the "/0" here is just a template. Bandwidth guards
+      # keep 10 bots gentle on a self-hosted bridge (see README "Home-network load").
       JITSI_URL: "${JITSI_URL:-http://localhost/0}"
       JAMULUS_SERVER: "${JAMULUS_SERVER:-trussal.duckdns.org:22000}"
       # When true, each bot renders its own Hydra visual instead of the shared
       # master. Also toggleable at runtime from the admin page.
       VARY_HYDRA: "${VARY_HYDRA:-false}"
-      # Fleet service: the peer-state bus the conductor joins to receive Spawn
-      # requests, and the room it serves. The sidecar runs on the VIDEO VM, so
-      # the localhost default is wrong on this VM — set SIDECAR_WS_URL in .env to
-      # the sidecar's reachable URL (wss://<jitsi-host>/ws) and FLEET_ROOM to the
-      # room your humans join. Without this the Spawn button broadcasts into the
-      # void and zero bots appear.
+      # Fleet service: the peer-state bus the conductor joins to discover rooms
+      # and receive Spawn requests. It serves EVERY room people open (discovered
+      # over the relay's control channel), so there is no room to configure. The
+      # sidecar runs on the VIDEO VM, so the localhost default is wrong on this
+      # VM — set SIDECAR_WS_URL in .env to the sidecar's reachable URL
+      # (wss://<jitsi-host>/ws). Without it the fleet sees no rooms at all: no
+      # aggregator appears and the Spawn button broadcasts into the void.
       SIDECAR_WS_URL: "${SIDECAR_WS_URL:-ws://localhost:8081/ws}"
-      FLEET_ROOM: "${FLEET_ROOM:-0}"
+      # Must match SIDECAR_CONTROL_TOKEN on the video VM's `latency` service.
+      # The relay refuses room discovery without it (the channel lists every
+      # live meeting on a publicly-proxied path), so leaving it unset means no
+      # rooms are served and no aggregator ever spawns.
+      FLEET_CONTROL_TOKEN: "${FLEET_CONTROL_TOKEN:-}"
+      # No room setting exists: the fleet serves every room it discovers and
+      # points each container at its own meeting through JITSI_URL.
     # The conductor is bridge-networked. Home LANs often can't hairpin the public
     # Jitsi hostname, and the sidecar's TLS cert is for that name (not the LAN
     # IP), so alias the hostname to the video VM's LAN IP: the fleet then reaches

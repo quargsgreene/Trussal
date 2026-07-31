@@ -26,6 +26,14 @@ services:
     ports:
       - 8081
       - 8082
+    environment:
+      # Shared secret for the relay's fleet control channel (?role=control),
+      # which lists every meeting in progress. /ws is proxied publicly with no
+      # auth of its own, and with ENABLE_GUESTS a room's NAME is the only thing
+      # gating entry — so the relay refuses that channel unless this matches the
+      # conductor's FLEET_CONTROL_TOKEN. Unset → room discovery is off and no
+      # aggregator spawns in any room.
+      - SIDECAR_CONTROL_TOKEN=${SIDECAR_CONTROL_TOKEN:-}
     networks:
       meet.jitsi:
 

@@ -20,6 +20,15 @@
  * interrupted by preexisting health measures" (the ceiling caps clusters,
  * partial spawns surface a reason via fleet-status).
  *
+ * The service is MULTI-ROOM. A Trussal room name is free-form, so there is no
+ * meaningful room to configure ahead of time; the fleet instead holds one
+ * relay-wide control connection (`?role=control`) that names the rooms holding
+ * participants, and opens a per-room bus connection for each. Every meeting
+ * therefore gets its own aggregator, roster shadow and meeting-end countdown,
+ * and bot containers are pointed at their room through JITSI_URL. Every method
+ * that acts on a meeting names its room explicitly — there is no configured
+ * room and no default (see requireRoom).
+ *
  * The container runner and the sidecar socket factory are injected so tests
  * drive the full lifecycle with fakes.
  */
@@ -31,11 +40,51 @@ import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
 import { shouldReplace, computeMaxBots } from './health.js';
 
-// The single per-room aggregator container runs outside the per-owner cluster
-// id space (never assigned by #nextBotId, never counted against the ceiling).
-// Its high sentinel id keeps its docker name (trussal-bot-99999) clear of any
-// real bot.
+// Container id for a room's aggregator. Aggregators run outside the per-owner
+// cluster id space (never assigned by #nextBotId, never counted against the
+// ceiling); one room's aggregator keeps the historical trussal-bot-99999 name
+// and further rooms count DOWN from here (see #allocateAggregatorId).
 export const AGGREGATOR_BOT_ID = 99999;
+
+// Request header carrying the relay control-channel secret. Hyphenated, not
+// underscored: nginx drops underscored headers by default, which would silently
+// turn every control connection into an unauthenticated one.
+export const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
+
+// Point a configured Jitsi URL at a different room. The bundle — and the
+// aggregator bot, which derives its sidecar/O2/claim URLs the same way — keys
+// the room on the URL's LAST path segment, so swapping that segment is exactly
+// what moves a container into another meeting.
+//
+// A trailing slash marks the configured URL as a MOUNT POINT rather than a room
+// ("https://host/jitsi/"), so the room is appended instead of replacing the last
+// segment. Without that distinction a sub-path deployment has its prefix eaten
+// ("https://host/jitsi/" → "https://host/gig") and every bot is pointed outside
+// the Jitsi mount and never joins.
+export function jitsiUrlForRoom(baseUrl, room) {
+  try {
+    const url = new URL(baseUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+    if (!url.pathname.endsWith('/')) {
+      segments.pop();                     // the configured room, e.g. the "0" in https://host/0
+    }
+    segments.push(String(room));
+    url.pathname = `/${segments.join('/')}`;
+    return url.toString();
+  } catch {
+    return baseUrl; // unparseable config: leave it exactly as the operator set it
+  }
+}
+
+// Every entry point that acts on one meeting names its room. There is no
+// default and no configured room to fall back to: a room name is free-form and
+// discovered at runtime, so a fallback would silently redirect containers into
+// — or tear down — whatever meeting happened to match the fallback's name
+// instead of failing where the mistake is.
+function requireRoom(room, where) {
+  if (room == null || room === '') throw new TypeError(`${where}: a room name is required`);
+  return String(room);
+}
 
 export class FleetService {
   constructor(cfg, { runner, connectSidecar }) {
@@ -44,71 +93,114 @@ export class FleetService {
     this.runner = runner;
     this.connectSidecar = connectSidecar || null; // (url, handlers) → { send, close }
     this.master = randomMasterScript(cfg.sessionSeed);
-    this.bots = new Map();     // botId → { botId, ownerIndex, name, script, startedAt }
+    this.bots = new Map();     // botId → { botId, room, ownerIndex, name, script, startedAt }
     this.metrics = new Map();  // botId → latest metrics sample
     this.server = null;
     this.port = null;
     this.tick = null;
     this.activeCeiling = cfg.maxBots;
 
-    this.sidecar = null;
-    this.presentIndices = new Map(); // roomIndex → { isBot, peerId }
-    this.ownerTimers = new Map();    // ownerIndex → teardown timeout
-    this.meetingEndTimer = null;
-    // One aggregator per room, spawned when the first human is present and
-    // torn down with the meeting. Tracked separately from `bots` so it never
-    // counts against the ceiling or gets health-replaced.
-    this.aggregatorRunning = false;
-    this.aggregatorMetrics = null;
-    // When the currently-running aggregator was last confirmed alive: set on
-    // a successful start, refreshed by every metrics report. #reapDeadAggregator
-    // reads this to tell "hasn't reported yet, still starting up" (age <
-    // aggregatorStartupGraceMs) apart from "was alive, has gone silent" (no
-    // metrics for aggregatorStaleMs) — see #reapDeadAggregator.
-    this.aggregatorStartedAt = null;
-    // When diag.jitsiJoined was last observed true (defaults to
-    // aggregatorStartedAt via the `||` at the read site, covering "never yet
-    // joined, still within its own startup grace"). Updated on every metrics
-    // arrival that reports joined; a sustained gap since this timestamp — not
-    // a single false reading, which a normal ICE reconnect blip can cause —
-    // means the bot's Jitsi conference is gone even though the process is
-    // alive. See #reapDeadAggregator and the mirrored check in healthTick.
-    this.aggregatorLastJoinedAt = null;
-    // botId → same tracking as aggregatorLastJoinedAt, for player bots.
+    // The relay-wide control connection that tells us which rooms have people
+    // in them. Room names are free-form, so this is the only way to serve more
+    // than one configured meeting — see #joinControlBus.
+    this.control = null;
+    // roomName → per-meeting state (see #roomState). Everything that used to be
+    // a single field here is per-room now: one aggregator, one roster shadow,
+    // one meeting-end countdown PER MEETING.
+    this.rooms = new Map();
+    // botId → when diag.jitsiJoined was last observed true, for player bots
+    // (the aggregator's equivalent lives on its room state).
     this.botLastJoinedAt = new Map();
-    // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
-    // teardown queues behind the in-flight stop instead of racing it. Without
-    // this, a rejoin's start() (which force-removes any stale container by
-    // name first) can run concurrently with a still-in-flight graceful stop
-    // and SIGKILL the old aggregator before its Jitsi leave() completes — a
-    // ghost participant that lingers until Jitsi's own presence timeout,
-    // alongside the duplicate that just joined.
-    this.aggregatorQueue = Promise.resolve();
     this._nextBotId = 0;
+  }
+
+  // ---------- per-room state ----------
+
+  /**
+   * Per-meeting state, created on demand the first time a room is heard from.
+   * A room's aggregator, roster shadow, owner-teardown timers and meeting-end
+   * countdown all belong to one meeting, so they cannot be process-globals the
+   * way they were when the fleet served a single configured room.
+   */
+  #roomState(room) {
+    const name = String(room);
+    let state = this.rooms.get(name);
+    if (!state) {
+      state = {
+        room: name,
+        sidecar: null,
+        presentIndices: new Map(), // roomIndex → { isBot, peerId }
+        ownerTimers: new Map(),    // ownerIndex → teardown timeout
+        meetingEndTimer: null,
+        // One aggregator per room, spawned when the first human is present and
+        // torn down with the meeting. Tracked outside `bots` so it never counts
+        // against the ceiling or gets health-replaced.
+        aggregatorId: null,
+        aggregatorRunning: false,
+        aggregatorMetrics: null,
+        // When this room's aggregator was last confirmed alive: set on a
+        // successful start, refreshed by every metrics report.
+        // #reapDeadAggregator reads it to tell "hasn't reported yet, still
+        // starting up" (age < aggregatorStartupGraceMs) apart from "was alive,
+        // has gone silent" (no metrics for aggregatorStaleMs).
+        aggregatorStartedAt: null,
+        // When diag.jitsiJoined was last observed true (defaults to
+        // aggregatorStartedAt at the read site, covering "never yet joined,
+        // still within its own startup grace"). A sustained gap since this
+        // timestamp — not a single false reading, which a normal ICE reconnect
+        // blip can cause — means the bot's Jitsi conference is gone even though
+        // the process is alive.
+        aggregatorLastJoinedAt: null,
+        // Serializes #ensureAggregator/#stopAggregator so a rejoin landing mid-
+        // teardown queues behind the in-flight stop instead of racing it.
+        // Without this, a rejoin's start() (which force-removes any stale
+        // container by name first) can run concurrently with a still-in-flight
+        // graceful stop and SIGKILL the old aggregator before its Jitsi leave()
+        // completes — a ghost participant that lingers until Jitsi's own
+        // presence timeout, alongside the duplicate that just joined.
+        aggregatorQueue: Promise.resolve(),
+      };
+      this.rooms.set(name, state);
+    }
+    return state;
   }
 
   // ---------- lifecycle ----------
 
   async start() {
     await this.#listen();
-    if (this.connectSidecar) this.#joinBus();
-    this.tick = setInterval(() => this.healthTick().catch(() => {}), this.cfg.healthTickMs);
+    if (this.connectSidecar) this.#joinControlBus();
+    // One tick at a time. A tick awaits real `docker stop`/`docker run` calls
+    // (aggregator reaps, ceiling shrinks, bot replacement) and can easily run
+    // longer than healthTickMs, and overlapping ticks would each reap the same
+    // room and each shrink against a ceiling the other is still recomputing.
+    // Skip rather than queue: every check here is level-triggered, so the next
+    // tick re-derives the same conclusion healthTickMs later.
+    this.tick = setInterval(() => {
+      if (this._ticking) return;
+      this._ticking = true;
+      this.healthTick()
+        .catch(() => {})
+        .finally(() => { this._ticking = false; });
+    }, this.cfg.healthTickMs);
   }
 
   async stop() {
     clearInterval(this.tick);
-    for (const timer of this.ownerTimers.values()) clearTimeout(timer);
-    this.ownerTimers.clear();
-    if (this.meetingEndTimer) clearTimeout(this.meetingEndTimer);
-    // Stop every bot AND the aggregator in PARALLEL so the whole fleet leaves the
-    // Jitsi room within one graceful-stop window (each runner.stop is ~15s), not N
+    for (const state of this.rooms.values()) {
+      for (const timer of state.ownerTimers.values()) clearTimeout(timer);
+      state.ownerTimers.clear();
+      if (state.meetingEndTimer) clearTimeout(state.meetingEndTimer);
+    }
+    // Stop every bot AND every room's aggregator in PARALLEL so the whole fleet
+    // leaves within one graceful-stop window (each runner.stop is ~15s), not N
     // of them back to back — the conductor's stop_grace_period has to cover this.
     // allSettled, not all: one bot that fails to stop must NOT abort the teardown
     // of the rest (that would strand bots in the room). Log every outcome so a
     // failed leave is visible in the conductor's logs (the observer reads them).
     const results = await Promise.allSettled([
       ...[...this.bots.keys()].map((id) => this.#stopBot(id)),
-      this.#stopAggregator(),
+      ...[...this.rooms.keys()].map((room) => this.#stopAggregator(room)),
     ]);
     const failures = results.filter((result) => result.status === 'rejected');
     if (failures.length) {
@@ -117,47 +209,141 @@ export class FleetService {
     } else {
       console.log(`[fleet] teardown: all ${results.length} fleet members stopped cleanly`);
     }
-    if (this.sidecar) { try { this.sidecar.close(); } catch {} this.sidecar = null; }
+    for (const state of this.rooms.values()) {
+      if (state.sidecar) { try { state.sidecar.close(); } catch {} state.sidecar = null; }
+    }
+    if (this.control) { try { this.control.close(); } catch {} this.control = null; }
     if (this.server) await new Promise((resolve) => this.server.close(resolve));
   }
 
   // ---------- sidecar bus ----------
 
-  #joinBus() {
-    const url = `${this.cfg.sidecarWsUrl}?room=${encodeURIComponent(this.cfg.fleetRoom)}&role=fleet`;
-    this.sidecar = this.connectSidecar(url, {
-      onOpen: (send) => send({
-        type: 'hello',
-        jitsiId: `fleet-${this.cfg.fleetRoom}`,
-        displayName: 'fleet-service',
-        isFleet: true
-      }),
-      onMessage: (msg) => this.handleBusMessage(msg).catch((err) => {
-        console.error('[fleet] bus message failed:', err.message);
-      })
+  /**
+   * One connection to the relay's control channel (`?role=control`). It replies
+   * with the rooms that already hold participants and then announces each new
+   * one, which is how the fleet serves whatever meeting people opened: a
+   * room name is free-form, so there is nothing to configure ahead of time.
+   */
+  #joinControlBus() {
+    // The relay refuses an unauthenticated control connection outright — it is a
+    // directory of every live meeting, on a publicly-proxied path — so the
+    // shared secret is not optional. Without it no room is ever discovered and
+    // no aggregator spawns; say so at startup rather than looking like a dead
+    // socket.
+    if (!this.cfg.controlToken) {
+      console.warn('[fleet] FLEET_CONTROL_TOKEN unset — the relay will refuse room discovery, ' +
+        'so no rooms will be served and no aggregator will spawn.');
+    }
+    const url = `${this.cfg.sidecarWsUrl}?role=control`;
+    this.control = this.connectSidecar(url, {
+      // In a header rather than the URL — see makeWsSidecarConnector: a query
+      // parameter would put the shared secret in nginx's access log.
+      headers: this.cfg.controlToken ? { [CONTROL_TOKEN_HEADER]: this.cfg.controlToken } : null,
+      onOpen: () => {},
+      onMessage: (msg) => {
+        if (msg.type === 'control-denied') {
+          console.error('[fleet] the relay REFUSED room discovery — FLEET_CONTROL_TOKEN does not ' +
+            'match the sidecar\'s SIDECAR_CONTROL_TOKEN. No aggregator will spawn.');
+        } else if (msg.type === 'rooms' && Array.isArray(msg.rooms)) {
+          for (const room of msg.rooms) this.attachRoom(room);
+        } else if (msg.type === 'room-active' && msg.room != null) {
+          this.attachRoom(msg.room);
+        }
+      },
     });
   }
 
-  #busSend(msg) {
-    if (this.sidecar) { try { this.sidecar.send(msg); } catch {} }
+  /**
+   * Start serving `room`: open its peer-state bus connection and route that
+   * room's events into this service. Idempotent — the relay re-announces a room
+   * on every join, and an already-attached room must not get a second socket.
+   * Tests substitute the whole `connectSidecar` factory rather than a
+   * per-call connection, so there is no injection seam on this method.
+   */
+  attachRoom(room) {
+    const name = requireRoom(room, 'attachRoom');
+    const state = this.#roomState(name);
+    if (state.sidecar) return state;
+    if (!this.connectSidecar) return state;
+    const url = `${this.cfg.sidecarWsUrl}?room=${encodeURIComponent(name)}&role=fleet`;
+    state.sidecar = this.connectSidecar(url, {
+      onOpen: (send) => send({
+        type: 'hello',
+        jitsiId: `fleet-${name}`,
+        displayName: 'fleet-service',
+        isFleet: true
+      }),
+      onMessage: (msg) => this.handleBusMessage(msg, name).catch((err) => {
+        console.error(`[fleet] bus message failed (room ${name}):`, err.message);
+      })
+    });
+    console.log(`[fleet] serving room ${name}`);
+    return state;
   }
 
-  // Exposed for tests (fakes call this directly).
-  async handleBusMessage(msg) {
+  /**
+   * Stop serving a room once its meeting is over, so idle sockets and dead
+   * meeting state don't accumulate for the conductor's whole uptime. Safe
+   * against a rejoin that races the teardown: the relay announces the room
+   * again on the next join, and the fresh connection's `hello` is answered with
+   * a full roster, which #reconcileRoster folds back in.
+   */
+  #detachRoom(room) {
+    const name = String(room);
+    const state = this.rooms.get(name);
+    if (!state) return;
+    // Discard this meeting's pending countdowns along with it. Both capture the
+    // room by NAME and re-resolve it when they fire, so a timer that outlived
+    // the detach would act on whatever meeting next reuses the name: a stale
+    // meetingEndTimer tears down a live room's aggregator and bots, and a stale
+    // ownerTimer removes a cluster up to ownerLeaveGraceMs (2 minutes) later.
+    for (const timer of state.ownerTimers.values()) clearTimeout(timer);
+    state.ownerTimers.clear();
+    if (state.meetingEndTimer) { clearTimeout(state.meetingEndTimer); state.meetingEndTimer = null; }
+    if (state.sidecar) { try { state.sidecar.close(); } catch {} state.sidecar = null; }
+    this.rooms.delete(name);
+  }
+
+  // Lookup that never creates. The read/cleanup paths must not resurrect a room
+  // that #detachRoom just discarded: a phantom entry has no bus connection, so
+  // it can never learn about another join, leave or session-reset, yet healthTick
+  // would iterate it forever and roomsStatus() would report it as served.
+  #existingRoom(room) {
+    return this.rooms.get(String(room));
+  }
+
+  #busSend(room, msg) {
+    const state = this.rooms.get(String(room));
+    if (state && state.sidecar) { try { state.sidecar.send(msg); } catch {} }
+  }
+
+  // Exposed for tests (fakes call this directly). The room is REQUIRED: every
+  // real caller is a per-room bus connection that knows exactly which meeting
+  // the message arrived on.
+  async handleBusMessage(msg, room) {
+    requireRoom(room, 'handleBusMessage');
     switch (msg.type) {
       case 'roster':
-        if (Array.isArray(msg.peers)) this.#reconcileRoster(msg.peers);
+        if (Array.isArray(msg.peers)) this.#reconcileRoster(room, msg.peers);
         break;
       case 'peer-join':
-        if (msg.peer) this.#trackPeer(msg.peer);
+        if (msg.peer) this.#trackPeer(room, msg.peer);
         break;
       case 'peer-leave':
-        this.#untrackPeer(msg.peerId);
+        this.#untrackPeer(room, msg.peerId);
         break;
       case 'fleet-request':
-        await this.#handleFleetRequest(msg);
+        await this.#handleFleetRequest(room, msg);
         break;
-      case 'session-reset':
+      case 'session-reset': {
+        // The relay is authoritative that no real participant remains. Clear
+        // the shadow roster instead of trusting it: this branch exists BECAUSE
+        // the shadow can be stale (a peer-leave missed during a socket blip),
+        // and a ghost human left in it would block the detach in #teardownAll
+        // and, worse, keep #evaluateMeetingEnd from ever arming again — pinning
+        // the room until a bus reconnect happens to reconcile it.
+        const resetState = this.#existingRoom(room);
+        if (resetState) resetState.presentIndices.clear();
         // The sidecar broadcasts this when the room becomes fleet-only (every
         // real participant gone) — the meeting is genuinely over, even if a
         // human rejoins fast enough to cancel our own meetingEndGraceMs timer
@@ -165,49 +351,59 @@ export class FleetService {
         // directly, old bot clusters (and the old aggregator) would silently
         // carry over into whatever reuses this room name next; a new meeting
         // should start with nothing, and bots should have to be spawned fresh.
-        await this.#teardownAll('session reset — room emptied and reused');
+        await this.#teardownAll(room, 'session reset — room emptied and reused');
         break;
+      }
       default:
         break;
     }
   }
 
-  #trackPeer(peer) {
+  #trackPeer(room, peer) {
     if (peer.roomIndex == null) return;
+    const state = this.#roomState(room);
     const idx = String(peer.roomIndex);
-    this.presentIndices.set(idx, { isBot: !!peer.isBot, peerId: peer.peerId });
+    state.presentIndices.set(idx, { isBot: !!peer.isBot, peerId: peer.peerId });
     // A returning owner cancels their cluster's death sentence.
-    if (!peer.isBot && this.ownerTimers.has(idx)) {
-      clearTimeout(this.ownerTimers.get(idx));
-      this.ownerTimers.delete(idx);
+    if (!peer.isBot && state.ownerTimers.has(idx)) {
+      clearTimeout(state.ownerTimers.get(idx));
+      state.ownerTimers.delete(idx);
     }
     // A human in the room means there is audio to aggregate.
-    if (!peer.isBot) this.#ensureAggregator().catch((e) => {console.error('[fleet] failed to start aggregator:', e.message);});
+    if (!peer.isBot) {
+      this.#ensureAggregator(room).catch((e) => {
+        console.error(`[fleet] failed to start aggregator for room ${room}:`, e.message);
+      });
+    }
     // A present human cancels any pending meeting-end teardown (recomputed here).
-    this.#evaluateMeetingEnd();
+    this.#evaluateMeetingEnd(room);
   }
 
-  #untrackPeer(peerId) {
-    for (const [idx, info] of this.presentIndices.entries()) {
+  #untrackPeer(room, peerId) {
+    const state = this.#existingRoom(room);
+    if (!state) return;
+    for (const [idx, info] of state.presentIndices.entries()) {
       if (info.peerId !== peerId) continue;
-      this.presentIndices.delete(idx);
-      if (!info.isBot) this.#onOwnerLeft(idx);
+      state.presentIndices.delete(idx);
+      if (!info.isBot) this.#onOwnerLeft(room, idx);
       return;
     }
   }
 
-  #onOwnerLeft(ownerIndex) {
-    if (this.#clusterIds(ownerIndex).length > 0 && !this.ownerTimers.has(ownerIndex)) {
+  #onOwnerLeft(room, ownerIndex) {
+    const state = this.#existingRoom(room);
+    if (!state) return;
+    if (this.#botsInRoom(room, ownerIndex).length > 0 && !state.ownerTimers.has(ownerIndex)) {
       const t = setTimeout(() => {
-        this.ownerTimers.delete(ownerIndex);
-        this.removeCluster(ownerIndex, 'all', { reason: 'owner left' }).catch(() => {});
+        state.ownerTimers.delete(ownerIndex);
+        this.removeCluster(ownerIndex, 'all', { reason: 'owner left', room }).catch(() => {});
       }, this.cfg.ownerLeaveGraceMs);
       if (t.unref) t.unref();
-      this.ownerTimers.set(ownerIndex, t);
+      state.ownerTimers.set(ownerIndex, t);
     }
     // Last human gone → the meeting is over; destroy every Puppeteer instance
     // (clusters and the aggregator alike) after the grace period.
-    this.#evaluateMeetingEnd();
+    this.#evaluateMeetingEnd(room);
   }
 
   // The single decision point for meeting-end teardown. Level-triggered on the
@@ -216,28 +412,30 @@ export class FleetService {
   // or a cluster is still up, arm the teardown; a returning human cancels a
   // pending one. XMPP constraints forbid leaving instantly, so the actual fleet
   // leave waits meetingEndGraceMs.
-  #evaluateMeetingEnd() {
-    const humansPresent = [...this.presentIndices.values()].some((p) => !p.isBot);
-    const fleetUp = this.bots.size > 0 || this.aggregatorRunning;
+  #evaluateMeetingEnd(room) {
+    const state = this.#existingRoom(room);
+    if (!state) return;
+    const humansPresent = [...state.presentIndices.values()].some((p) => !p.isBot);
+    const fleetUp = this.#clusterSize(room) > 0 || state.aggregatorRunning;
     const actions = {
       cancel: () => {                              // a returning human aborts the countdown
-        clearTimeout(this.meetingEndTimer);
-        this.meetingEndTimer = null;
+        clearTimeout(state.meetingEndTimer);
+        state.meetingEndTimer = null;
       },
       arm: () => {                                 // last human gone → start the countdown
-        this.meetingEndTimer = setTimeout(() => {
-          this.meetingEndTimer = null;
-          this.#teardownAll('meeting ended').catch((err) => {
+        state.meetingEndTimer = setTimeout(() => {
+          state.meetingEndTimer = null;
+          this.#teardownAll(room, 'meeting ended').catch((err) => {
             console.error('[fleet] meeting-end teardown failed:', err.message);
           });
         }, this.cfg.meetingEndGraceMs);
-        if (this.meetingEndTimer.unref) this.meetingEndTimer.unref();
+        if (state.meetingEndTimer.unref) state.meetingEndTimer.unref();
       },
       noop: () => {},
     };
     const decide = () => {
-      if (humansPresent && this.meetingEndTimer) return 'cancel';
-      if (this.meetingEndTimer && !humansPresent) return 'noop'; // already counting down
+      if (humansPresent && state.meetingEndTimer) return 'cancel';
+      if (state.meetingEndTimer && !humansPresent) return 'noop'; // already counting down
       if (!humansPresent && fleetUp) return 'arm';
       return 'noop';
     };
@@ -253,49 +451,56 @@ export class FleetService {
   // the next meeting (blocking a fresh one). Register the peers the roster lists
   // FIRST so a still-present human is known before we run any departed owner's
   // leave path (otherwise we'd needlessly arm+cancel the teardown mid-reconcile).
-  #reconcileRoster(peers) {
+  #reconcileRoster(room, peers) {
+    const state = this.#roomState(room);
     const present = new Set(
       peers.filter((peer) => peer.roomIndex != null).map((peer) => String(peer.roomIndex)),
     );
-    const departed = [...this.presentIndices.entries()].filter(([idx]) => !present.has(idx));
-    departed.forEach(([idx]) => this.presentIndices.delete(idx));
+    const departed = [...state.presentIndices.entries()].filter(([idx]) => !present.has(idx));
+    departed.forEach(([idx]) => state.presentIndices.delete(idx));
     const departedOwners = departed.filter(([, info]) => !info.isBot).map(([idx]) => idx);
 
-    peers.forEach((peer) => this.#trackPeer(peer));
-    departedOwners.forEach((idx) => this.#onOwnerLeft(idx));
+    peers.forEach((peer) => this.#trackPeer(room, peer));
+    departedOwners.forEach((idx) => this.#onOwnerLeft(room, idx));
   }
 
-  async #handleFleetRequest(msg) {
+  async #handleFleetRequest(room, msg) {
     const ownerIndex = msg.fromIndex != null ? String(msg.fromIndex) : null;
     if (ownerIndex == null) return;
     if (msg.action === 'spawn') {
       const count = Math.max(0, Math.floor(Number(msg.count) || 0));
-      await this.spawnCluster(ownerIndex, count);
+      await this.spawnCluster(ownerIndex, count, { room });
     } else if (msg.action === 'remove') {
-      await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request' });
+      await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request', room });
     } else if (msg.action === 'removeOne') {
-      await this.removeOneBot(ownerIndex, msg.targets, { reason: 'owner request' });
+      await this.removeOneBot(ownerIndex, msg.targets, { reason: 'owner request', room });
     }
   }
 
   // ---------- clusters ----------
 
-  #clusterIds(ownerIndex) {
-    return [...this.bots.values()]
-      .filter((b) => b.ownerIndex === ownerIndex)
-      .map((b) => b.botId);
+  // Clusters are scoped to a room as well as an owner: the same owner index
+  // ('1') exists independently in every concurrent meeting, so an unscoped
+  // lookup would let one room's spawn/remove reach into another's bots.
+  #botsInRoom(room, ownerIndex = null) {
+    const name = String(room);
+    return [...this.bots.values()].filter((b) =>
+      b.room === name && (ownerIndex === null || b.ownerIndex === ownerIndex));
   }
 
-  // Lowest cluster ordinal not currently held by one of ownerIndex's bots.
-  // Mirrors the sidecar's lowestFreeBotOrdinal: bot suffixes gap-refill, so a
-  // removed bot's suffix is reused by the next spawn rather than climbing. The
-  // bot being started is added to `bots` by the caller AFTER this returns, so it
-  // never counts itself.
-  #lowestFreeOrdinal(ownerIndex) {
+  #clusterSize(room) {
+    return this.#botsInRoom(room).length;
+  }
+
+  // Lowest cluster ordinal not currently held by one of this owner's bots IN
+  // THIS ROOM. Mirrors the sidecar's lowestFreeBotOrdinal, which is likewise
+  // per-room: bot suffixes gap-refill, so a removed bot's suffix is reused by
+  // the next spawn rather than climbing. The bot being started is added to
+  // `bots` by the caller AFTER this returns, so it never counts itself.
+  #lowestFreeOrdinal(room, ownerIndex) {
     const prefix = String(ownerIndex);
     const used = new Set();
-    for (const b of this.bots.values()) {
-      if (b.ownerIndex !== ownerIndex) continue;
+    for (const b of this.#botsInRoom(room, ownerIndex)) {
       used.add(ordinalForSuffix(b.clusterIndex.slice(prefix.length)));
     }
     let ordinal = 0;
@@ -304,15 +509,18 @@ export class FleetService {
   }
 
   /**
-   * Spawn `count` bots on ownerIndex's behalf. Health measures may interrupt:
-   * the active ceiling caps the total fleet, a partial spawn reports why.
+   * Spawn `count` bots on ownerIndex's behalf in `room`. Health measures may
+   * interrupt: the active ceiling caps the total fleet ACROSS rooms (it is a
+   * VM-wide resource budget, derived from fps/RAM), and a partial spawn reports
+   * why.
    */
-  async spawnCluster(ownerIndex, count) {
+  async spawnCluster(ownerIndex, count, { room } = {}) {
+    requireRoom(room, 'spawnCluster');
     const headroom = Math.max(0, this.activeCeiling - this.bots.size);
     const toSpawn = Math.min(count, headroom);
     for (let i = 0; i < toSpawn; i++) {
       const botId = this.#nextBotId();
-      await this.#startBot(botId, ownerIndex);
+      await this.#startBot(botId, room, ownerIndex);
     }
     const status = {
       type: 'fleet-status',
@@ -320,20 +528,28 @@ export class FleetService {
       ownerIndex,
       requested: count,
       spawned: toSpawn,
-      fleetSize: this.bots.size,
+      // The room's OWN cluster size — this goes to one room's studio, where a
+      // count that silently included other meetings' bots is just wrong.
+      fleetSize: this.#clusterSize(room),
       ceiling: this.activeCeiling,
-      ...(toSpawn < count ? { reason: `health ceiling ${this.activeCeiling} reached` } : {})
+      // The ceiling is a VM-wide resource budget shared by every meeting, so
+      // say so: otherwise a user whose room holds two bots is told "ceiling 10
+      // reached" with nothing in their room to explain it.
+      ...(toSpawn < count
+        ? { reason: `host ceiling ${this.activeCeiling} reached — ${this.bots.size} bots running across all rooms` }
+        : {})
     };
-    this.#busSend(status);
+    this.#busSend(room, status);
     return status;
   }
 
   /**
    * Remove targets ('all' or an array of cluster indices like ['1a','1c'])
-   * from ownerIndex's own cluster only.
+   * from ownerIndex's own cluster in `room` only.
    */
-  async removeCluster(ownerIndex, targets, { reason = '' } = {}) {
-    const mine = [...this.bots.values()].filter((b) => b.ownerIndex === ownerIndex);
+  async removeCluster(ownerIndex, targets, { reason = '', room } = {}) {
+    requireRoom(room, 'removeCluster');
+    const mine = this.#botsInRoom(room, ownerIndex);
     const wanted = targets === 'all'
       ? mine
       : mine.filter((b) => Array.isArray(targets) && targets.includes(b.clusterIndex));
@@ -347,10 +563,10 @@ export class FleetService {
       action: 'remove',
       ownerIndex,
       removed: wanted.length,
-      fleetSize: this.bots.size,
+      fleetSize: this.#clusterSize(room),
       ...(reason ? { reason } : {})
     };
-    this.#busSend(status);
+    this.#busSend(room, status);
     return status;
   }
 
@@ -359,18 +575,31 @@ export class FleetService {
   // to removeCluster's owner-scoped, null-safe subset path: at most one target
   // is honored, an unmatched one removes nothing (removed: 0) rather than
   // throwing, and the freed suffix gap-refills on the next spawn.
-  async removeOneBot(ownerIndex, targets, { reason = '' } = {}) {
+  async removeOneBot(ownerIndex, targets, { reason = '', room } = {}) {
+    requireRoom(room, 'removeOneBot');
     const one = Array.isArray(targets) ? targets.slice(0, 1) : [];
-    return this.removeCluster(ownerIndex, one, { reason });
+    return this.removeCluster(ownerIndex, one, { reason, room });
   }
 
-  async #teardownAll(reason) {
-    for (const id of [...this.bots.keys()]) await this.#stopBot(id);
-    await this.#stopAggregator();
-    // Meeting over: `bots` is now empty, so the derived suffixes reset with it —
-    // the next meeting to reuse this name starts its clusters fresh at 0a.
-    this.#busSend({ type: 'fleet-status', action: 'teardown', removed: 'all', reason });
+  async #teardownAll(room, reason) {
+    for (const bot of this.#botsInRoom(room)) await this.#stopBot(bot.botId);
+    await this.#stopAggregator(room);
+    // Meeting over: this room's bots are gone, so its derived suffixes reset
+    // with them — the next meeting to reuse this name starts fresh at 0a.
+    this.#busSend(room, { type: 'fleet-status', action: 'teardown', removed: 'all', reason });
+    // Re-read the room only now: a rejoin can land while the stops above are in
+    // flight (they await real `docker stop` calls), and that rejoin legitimately
+    // starts a fresh aggregator behind the same queue. Detaching on the stale
+    // "no one is here" reading would throw away the state of a meeting that just
+    // came back to life. Give up the room only when it is still empty afterwards
+    // — the relay re-announces it the moment anyone joins again (#detachRoom).
+    const state = this.rooms.get(String(room));
+    if (!state) return;
+    const humansPresent = [...state.presentIndices.values()].some((p) => !p.isBot);
+    if (humansPresent || state.aggregatorRunning || this.#clusterSize(room) > 0) return;
+    this.#detachRoom(room);
   }
+
 
   // ---------- aggregator (one per room, outside the cluster id space) ----------
 
@@ -380,33 +609,78 @@ export class FleetService {
   // so a failed op (e.g. runner.stop() throwing) doesn't permanently wedge the
   // queue for whatever's chained after it; the immediate caller still observes
   // the rejection via the returned promise.
-  #queueAggregatorOp(op) {
-    this.aggregatorQueue = this.aggregatorQueue.then(op, op);
-    return this.aggregatorQueue;
+  #queueAggregatorOp(room, op) {
+    const state = this.#existingRoom(room);
+    if (!state) return Promise.resolve();
+    state.aggregatorQueue = state.aggregatorQueue.then(op, op);
+    return state.aggregatorQueue;
   }
 
-  async #ensureAggregator() {
-    return this.#queueAggregatorOp(async () => {
-      if (this.aggregatorRunning) return;
-      this.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
+  /**
+   * Container id for a room's aggregator, held for as long as that aggregator
+   * runs and released on stop. The first room to need one gets
+   * AGGREGATOR_BOT_ID (keeping the familiar trussal-bot-99999 container) and
+   * concurrent rooms count down from it. Player ids climb from 0 and are capped
+   * by activeCeiling — which computeMaxBots only ever scales DOWN from
+   * cfg.maxBots (10 by default) — so the ascending and descending ranges cannot
+   * meet, and no two live containers can ever share a docker name.
+   */
+  #allocateAggregatorId() {
+    const taken = new Set(
+      [...this.rooms.values()].map((s) => s.aggregatorId).filter((id) => id != null),
+    );
+    let id = AGGREGATOR_BOT_ID;
+    while (taken.has(id)) id--;
+    return id;
+  }
+
+  async #ensureAggregator(room) {
+    return this.#queueAggregatorOp(room, async () => {
+      const state = this.#existingRoom(room);
+      if (!state || state.aggregatorRunning) return;
+      state.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
+      const botId = state.aggregatorId ?? this.#allocateAggregatorId();
+      state.aggregatorId = botId;
       try {
-        await this.runner.start(AGGREGATOR_BOT_ID, { BOT_ROLE: 'aggregator' });
-        this.aggregatorStartedAt = Date.now();
+        // JITSI_URL is what puts the container in THIS meeting: the aggregator
+        // bot derives its Jitsi room, sidecar claim, metaprogram bus and O2
+        // relay URLs from the last path segment, so pointing it at the room is
+        // the whole of what makes it room-agnostic.
+        await this.runner.start(botId, {
+          BOT_ROLE: 'aggregator',
+          JITSI_URL: jitsiUrlForRoom(this.cfg.jitsiUrl, room),
+        });
+        state.aggregatorStartedAt = Date.now();
       } catch (err) {
-        this.aggregatorRunning = false;
-        console.error('[fleet] failed to start aggregator:', err.message);
+        state.aggregatorRunning = false;
+        state.aggregatorId = null;
+        console.error(`[fleet] failed to start aggregator for room ${room}:`, err.message);
       }
     });
   }
 
-  async #stopAggregator() {
-    return this.#queueAggregatorOp(async () => {
-      if (!this.aggregatorRunning) return;
-      this.aggregatorRunning = false;
-      this.aggregatorMetrics = null;
-      this.aggregatorStartedAt = null;
-      this.aggregatorLastJoinedAt = null;
-      await this.runner.stop(AGGREGATOR_BOT_ID);
+  async #stopAggregator(room) {
+    return this.#queueAggregatorOp(room, async () => {
+      const state = this.#existingRoom(room);
+      if (!state || !state.aggregatorRunning) return;
+      const botId = state.aggregatorId;
+      state.aggregatorRunning = false;
+      state.aggregatorMetrics = null;
+      state.aggregatorStartedAt = null;
+      state.aggregatorLastJoinedAt = null;
+      try {
+        await this.runner.stop(botId);
+      } finally {
+        // Release the container id only once the container is really gone. The
+        // aggregatorQueue is PER ROOM, so another room's #ensureAggregator runs
+        // concurrently with this stop; #allocateAggregatorId hands out any id no
+        // room claims, and runner.start() begins with `docker rm -f` on that
+        // name. Freeing the id before `docker stop -t 15` returns would let the
+        // other room SIGKILL this container mid-leave() — precisely the ghost
+        // XMPP session the queue exists to prevent, and it would then reap the
+        // other room's brand-new container with its own trailing `docker rm -f`.
+        state.aggregatorId = null;
+      }
     });
   }
 
@@ -435,16 +709,17 @@ export class FleetService {
    * one. runner.stop() on an already-dead container is safe (docker-runner's
    * stop/rm are self-catching), so reaping never fails on the cleanup side.
    */
-  async #reapDeadAggregator() {
-    if (!this.aggregatorRunning) return;
-    const age = Date.now() - (this.aggregatorStartedAt || 0);
+  async #reapDeadAggregator(room) {
+    const state = this.#existingRoom(room);
+    if (!state || !state.aggregatorRunning) return;
+    const age = Date.now() - (state.aggregatorStartedAt || 0);
     if (age < this.cfg.aggregatorStartupGraceMs) return; // hasn't had a chance to report yet
 
-    const lastMetricsAt = this.aggregatorMetrics ? this.aggregatorMetrics.receivedAt : this.aggregatorStartedAt;
+    const lastMetricsAt = state.aggregatorMetrics ? state.aggregatorMetrics.receivedAt : state.aggregatorStartedAt;
     const metricsStaleMs = Date.now() - lastMetricsAt;
     const metricsStale = metricsStaleMs >= this.cfg.aggregatorStaleMs;
 
-    const lastJoinedAt = this.aggregatorLastJoinedAt || this.aggregatorStartedAt;
+    const lastJoinedAt = state.aggregatorLastJoinedAt || state.aggregatorStartedAt;
     const orphanedMs = Date.now() - lastJoinedAt;
     const orphaned = orphanedMs >= this.cfg.jitsiJoinGraceMs;
 
@@ -452,15 +727,33 @@ export class FleetService {
     const reason = metricsStale
       ? `metrics stale for ${metricsStaleMs}ms`
       : `orphaned from its Jitsi conference for ${orphanedMs}ms (room likely destroyed/ended)`;
-    console.warn(`[fleet] aggregator ${reason}; reaping and respawning`);
-    await this.#stopAggregator();
-    const humansPresent = [...this.presentIndices.values()].some((p) => !p.isBot);
-    if (humansPresent) await this.#ensureAggregator();
+    console.warn(`[fleet] aggregator for room ${room} ${reason}; reaping and respawning`);
+    await this.#stopAggregator(room);
+    const humansPresent = [...state.presentIndices.values()].some((p) => !p.isBot);
+    if (humansPresent) await this.#ensureAggregator(room);
   }
 
-  /** Aggregator liveness + latest sample, for observability (not health). */
-  aggregatorStatus() {
-    return { running: this.aggregatorRunning, metrics: this.aggregatorMetrics ?? null };
+  /**
+   * Aggregator liveness + latest sample for one room, for observability (not
+   * health). Name the room: roomsStatus() is the accessor for "what is the
+   * fleet serving", and answering that from a guessed default is what made the
+   * old single-room accessor useless once rooms became dynamic.
+   */
+  aggregatorStatus(room) {
+    const state = this.rooms.get(requireRoom(room, 'aggregatorStatus'));
+    if (!state) return { running: false, metrics: null };
+    return { running: state.aggregatorRunning, metrics: state.aggregatorMetrics ?? null };
+  }
+
+  /** Every room this fleet is currently serving, with its aggregator status. */
+  roomsStatus() {
+    return [...this.rooms.values()].map((state) => ({
+      room: state.room,
+      aggregatorId: state.aggregatorId,
+      aggregatorRunning: state.aggregatorRunning,
+      participants: state.presentIndices.size,
+      bots: this.#clusterSize(state.room),
+    }));
   }
 
   #nextBotId() {
@@ -468,10 +761,20 @@ export class FleetService {
     return this._nextBotId++;
   }
 
-  async #startBot(botId, ownerIndex) {
-    const clusterOrdinal = this.#lowestFreeOrdinal(ownerIndex);
+  // The room whose aggregator currently holds this container id, or null when
+  // no live room claims it.
+  #roomForAggregatorId(botId) {
+    for (const state of this.rooms.values()) {
+      if (state.aggregatorId != null && state.aggregatorId === botId) return state;
+    }
+    return null;
+  }
+
+  async #startBot(botId, room, ownerIndex) {
+    const clusterOrdinal = this.#lowestFreeOrdinal(room, ownerIndex);
     this.bots.set(botId, {
       botId,
+      room: String(room),
       ownerIndex,
       // Mirror of the sidecar-assigned index. Authoritative assignment happens
       // at the bot's hello; both sides pick the lowest cluster ordinal not held
@@ -479,11 +782,16 @@ export class FleetService {
       // — the fleet is the only spawner for this owner.
       clusterIndex: `${ownerIndex}${suffixFor(clusterOrdinal)}`,
       name: breedNameFor(botId, this.cfg.sessionSeed),
-      script: this.#variationFor(botId),
+      script: this.#variationFor(botId, room),
       startedAt: Date.now(),
     });
     try {
-      await this.runner.start(botId, { BOT_OWNER_INDEX: ownerIndex });
+      await this.runner.start(botId, {
+        BOT_OWNER_INDEX: ownerIndex,
+        // Same as the aggregator: the room a player bot joins is carried purely
+        // by the URL's last path segment.
+        JITSI_URL: jitsiUrlForRoom(this.cfg.jitsiUrl, room),
+      });
     } catch (err) {
       this.bots.get(botId).startError = String(err.message || err);
       console.error(`[fleet] failed to start bot ${botId}:`, err.message);
@@ -499,14 +807,26 @@ export class FleetService {
 
   // ---------- script distribution (unchanged from the conductor) ----------
 
-  #variationFor(botId) {
+  // Scoped to the bot's OWN room. botCount and wclMs shape the generated
+  // pattern — frequency bands are carved into botCount slices, stereoTiles
+  // renders a botCount-wide composite, gain is staged for botCount sources —
+  // so folding in another meeting's bots would detune and mis-tile a room for
+  // reasons no one in it can see or fix.
+  #variationFor(botId, room) {
     const m = this.metrics.get(botId);
-    const latencies = [...this.metrics.values()].map((x) => x.latencyMs).filter((x) => x >= 0);
+    const roomBots = this.#botsInRoom(room);
+    const latencies = roomBots
+      .map((b) => this.metrics.get(b.botId))
+      .filter(Boolean)
+      .map((x) => x.latencyMs)
+      .filter((x) => x >= 0);
     const master = this.cfg.varyHydra
       ? { strudel: this.master.strudel, hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra }
       : this.master;
     return variationFor(botId, master, {
-      botCount: Math.max(1, this.bots.size || 1),
+      // The bot being started is not yet in `bots` (see #startBot), matching the
+      // previous single-room behaviour where it did not count itself either.
+      botCount: Math.max(1, roomBots.length || 1),
       roles: this.cfg.roles,
       wclMs: latencies.length ? worstCaseLatency(latencies) : 0,
       latencyMs: m?.latencyMs ?? 0,
@@ -516,7 +836,7 @@ export class FleetService {
   }
 
   #redistribute() {
-    for (const bot of this.bots.values()) bot.script = this.#variationFor(bot.botId);
+    for (const bot of this.bots.values()) bot.script = this.#variationFor(bot.botId, bot.room);
   }
 
   setMasterScript(json) {
@@ -538,9 +858,25 @@ export class FleetService {
   async #shrinkTo(target) {
     // Newest bots go first; owners keep their earliest cluster members.
     const ids = [...this.bots.keys()].sort((a, b) => b - a);
+    const hit = new Map(); // room → how many of its bots the ceiling took
     for (const id of ids) {
       if (this.bots.size <= target) break;
+      const room = this.bots.get(id)?.room;
       await this.#stopBot(id);
+      if (room != null) hit.set(room, (hit.get(room) ?? 0) + 1);
+    }
+    // The ceiling is VM-wide and newest-first, so a shrink driven by ONE busy
+    // meeting routinely deletes a different meeting's bots. #stopBot is silent,
+    // so without this the other room's studio just shows bots disappearing from
+    // myClusterBots() with no explanation anywhere.
+    for (const [room, removed] of hit) {
+      this.#busSend(room, {
+        type: 'fleet-status',
+        action: 'remove',
+        removed,
+        fleetSize: this.#clusterSize(room),
+        reason: `host ceiling ${target} reached — bots reduced across all rooms`,
+      });
     }
   }
 
@@ -549,6 +885,7 @@ export class FleetService {
     return [...this.bots.values()].map((b) => ({
       botId: b.botId,
       name: b.name,
+      room: b.room,
       ownerIndex: b.ownerIndex,
       clusterIndex: b.clusterIndex,
       script: b.script,
@@ -577,8 +914,15 @@ export class FleetService {
   // Public so tests (and operators via a REPL) can force a tick.
   async healthTick() {
     // Ahead of the player-bot early-return below: a room can hold only the
-    // aggregator (no clusters spawned yet), and this check must still run.
-    await this.#reapDeadAggregator();
+    // aggregator (no clusters spawned yet), and this check must still run —
+    // for every room being served, since each has its own aggregator. Snapshot
+    // the keys first: reaping a room can add or remove entries mid-iteration.
+    // In PARALLEL, for the same reason stop() is: a reap awaits `docker stop -t
+    // 15` plus a `docker run`, so serialising three stale rooms would stall the
+    // whole tick — including the ceiling recomputation and bot replacement
+    // below — for a minute, while setInterval keeps firing fresh ticks into it.
+    // allSettled so one room's failed reap cannot abort the others'.
+    await Promise.allSettled([...this.rooms.keys()].map((room) => this.#reapDeadAggregator(room)));
 
     const fleet = [...this.metrics.values()];
     if (fleet.length === 0) return;
@@ -599,9 +943,9 @@ export class FleetService {
         : shouldReplace(m, fleet, this.cfg);
       if (verdict.replace) {
         console.warn(`[fleet] replacing bot ${m.botId}: ${verdict.reason}`);
-        const ownerIndex = existing.ownerIndex;
+        const { ownerIndex, room } = existing;
         await this.#stopBot(m.botId);
-        if (this.bots.size < this.activeCeiling) await this.#startBot(m.botId, ownerIndex);
+        if (this.bots.size < this.activeCeiling) await this.#startBot(m.botId, room, ownerIndex);
       }
     }
   }
@@ -639,10 +983,23 @@ export class FleetService {
           const m = JSON.parse(raw);
           // The aggregator reports too, but it lives outside the fleet: keep its
           // sample out of the health summary (percentiles/replacement) — just
-          // record it for observability.
+          // record it for observability, against the room whose aggregator id
+          // it reports (bot.sampleMetrics always carries botId). A sample from
+          // an id no room claims is a container the fleet already reaped and
+          // hasn't finished dying; dropping it keeps a zombie from refreshing a
+          // live room's liveness clock.
           if (m.role === 'aggregator') {
-            this.aggregatorMetrics = { ...m, receivedAt: Date.now() };
-            if (m.diag && m.diag.jitsiJoined) this.aggregatorLastJoinedAt = Date.now();
+            const state = this.#roomForAggregatorId(m.botId);
+            if (!state) {
+              // Almost always a container that outlived the fleet that started
+              // it (a conductor restart), still reporting into the void. Say so
+              // — swallowing it silently hides a running orphan nothing owns.
+              console.warn(`[fleet] aggregator metrics from unclaimed container ${m.botId} ` +
+                '— an orphaned aggregator is still running; `docker rm -f trussal-bot-' + m.botId + '`');
+              return send(200, { ok: true });
+            }
+            state.aggregatorMetrics = { ...m, receivedAt: Date.now() };
+            if (m.diag && m.diag.jitsiJoined) state.aggregatorLastJoinedAt = Date.now();
             return send(200, { ok: true });
           }
           if (typeof m.botId !== 'number') return send(400, { error: 'botId required' });
@@ -677,11 +1034,17 @@ export function ordinalForSuffix(suffix) {
 
 // ws-backed sidecar connector for production (tests inject fakes).
 export function makeWsSidecarConnector(WebSocketImpl) {
-  return (url, { onOpen, onMessage }) => {
+  return (url, { onOpen, onMessage, headers = null }) => {
     let ws = null;
     let closed = false;
     const open = () => {
-      ws = new WebSocketImpl(url);
+      // Headers, not query parameters, carry the control token: nginx's default
+      // log format records the full request line, so a secret in the URL is
+      // written to the video VM's access log on every (re)connect — and this
+      // socket reconnects every 2s while the relay is down. Only the Node
+      // conductor opens this channel, so nothing forces it into the query
+      // string the way a browser WebSocket would.
+      ws = headers ? new WebSocketImpl(url, { headers }) : new WebSocketImpl(url);
       ws.on('open', () => onOpen((msg) => ws.send(JSON.stringify(msg))));
       ws.on('message', (data) => {
         try { onMessage(JSON.parse(data.toString())); } catch {}

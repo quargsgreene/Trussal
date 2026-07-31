@@ -13,13 +13,18 @@
 // ephemeral port; `node server.js` keeps the original standalone behavior.
 
 const { WebSocketServer } = require('ws');
-const { randomUUID } = require('crypto');
+const { randomUUID, timingSafeEqual } = require('crypto');
 const { URL } = require('url');
 const { appendFileSync, mkdirSync } = require('fs');
 const { join } = require('path');
 const { botSuffix, AGGREGATOR_ROOM_INDEX, parseParticipantToken } = require('./room-indices.js');
 
-function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
+// Request header carrying the control channel's shared secret. Lower-case
+// because Node normalises incoming header names; the fleet sends the same name
+// (see makeWsSidecarConnector in bots/src/orchestrator/fleet-service.js).
+const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
+
+function createLatencyServer({ port = 8081, server, logDir = null, controlToken = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
@@ -136,6 +141,48 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
     };
   }
 
+  // Control connections (`?role=control`) watch the whole relay instead of one
+  // room. The fleet service needs them because a room name is free-form — any
+  // string is a valid meeting — so the fleet cannot know ahead of time which
+  // rooms to join, and a fleet pinned to one configured name only ever serves
+  // that one room (which is exactly why the aggregator used to appear only in
+  // room "0"). A control connection is never put in a `rooms` Map, so it takes
+  // no room index, appears in no roster, and broadcast() can never reach it.
+  const controlConns = new Set();
+
+  // Rooms that currently hold at least one real participant. Fleet/observer
+  // connections don't count: a room containing only them is an empty meeting
+  // that nobody has left yet (the same test the session-reset branch uses).
+  function activeRooms() {
+    return [...rooms.entries()]
+      .filter(([, room]) => [...room.values()].some(r => !r.isFleet))
+      .map(([name]) => name);
+  }
+
+  function announceRoomActive(name) {
+    for (const ws of controlConns) send(ws, { type: 'room-active', room: name });
+  }
+
+  // The control channel is PRIVILEGED and must be authenticated: nginx proxies
+  // /ws to the public internet with no auth of its own (see ws-route.conf), and
+  // with ENABLE_GUESTS a room's NAME is the only thing gating entry to a
+  // meeting. An open control channel would therefore hand any anonymous client
+  // a live directory of every meeting in progress. A per-room connection needs
+  // no such gate — you must already know the room name to ask for it.
+  //
+  // Fails CLOSED: with no token configured, control connections are refused
+  // rather than served, because the failure mode of guessing wrong here is
+  // silent public disclosure. Set SIDECAR_CONTROL_TOKEN on the sidecar and the
+  // matching FLEET_CONTROL_TOKEN on the conductor.
+  function controlTokenAccepted(presented) {
+    if (!controlToken) return false;
+    const expected = Buffer.from(String(controlToken));
+    const actual = Buffer.from(String(presented ?? ''));
+    // Equal-length requirement first: timingSafeEqual throws on a length
+    // mismatch, and the length of a shared secret is not the secret.
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  }
+
   function broadcast(room, exceptPeerId, msg) {
     const data = JSON.stringify(msg);
     for (const peer of room.values()) {
@@ -161,8 +208,39 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
     } catch (e) {
       console.warn('[latency] bad request url:', req.url);
     }
+    // Deliberately a HEADER, never a query parameter: nginx logs the full
+    // request line (`$request` in the default combined format), so a token in
+    // the URL would be written in clear text to the video VM's access log on
+    // every connect and every 2s reconnect. Only the Node conductor opens this
+    // channel, so there is no browser WebSocket API constraint to work around.
+    const connToken = req.headers[CONTROL_TOKEN_HEADER];
 
     const peerId = randomUUID();
+
+    // Control channel: room discovery only, no participant semantics at all.
+    // It gets the current active-room snapshot up front (so a fleet that
+    // starts, restarts, or reconnects mid-meeting adopts rooms already in
+    // progress) and a `room-active` on every subsequent join.
+    if (connRole === 'control') {
+      if (!controlTokenAccepted(connToken)) {
+        console.warn('[latency] control connection REFUSED (bad or missing token)' +
+          (controlToken ? '' : ' — no controlToken configured; set SIDECAR_CONTROL_TOKEN to enable room discovery'));
+        send(ws, { type: 'control-denied' });
+        ws.close();
+        return;
+      }
+      controlConns.add(ws);
+      send(ws, { type: 'welcome', peerId });
+      send(ws, { type: 'rooms', rooms: activeRooms() });
+      console.log(`[latency] control connection peerId=${peerId}`);
+      ws.on('close', () => {
+        controlConns.delete(ws);
+        console.log(`[latency] control close peerId=${peerId}`);
+      });
+      ws.on('error', (err) => console.warn('[latency] control socket error:', err.message));
+      return;
+    }
+
     const record = {
       peerId,
       ws,
@@ -313,6 +391,12 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
             logEvent(roomName, 'peer-join', {
               roomIndex: record.roomIndex, isBot: record.isBot, displayName: record.displayName
             });
+            // Level-triggered on purpose: announced on EVERY real join, not
+            // just the first one into an empty room. A control watcher that
+            // reconnected, restarted, or dropped an edge still learns the room
+            // exists from the next person through the door, and a watcher that
+            // already knows it treats the repeat as a no-op.
+            announceRoomActive(roomName);
           }
           break;
         }
@@ -610,11 +694,19 @@ function createLatencyServer({ port = 8081, server, logDir = null } = {}) {
   return { wss, rooms };
 }
 
-module.exports = { createLatencyServer };
+module.exports = { createLatencyServer, CONTROL_TOKEN_HEADER };
 
 if (require.main === module) {
   console.log('[latency] BOOT: latency WS server starting');
-  createLatencyServer({ port: 8081, logDir: process.env.SESSION_LOG_DIR || './session-logs' });
+  if (!process.env.SIDECAR_CONTROL_TOKEN) {
+    console.warn('[latency] SIDECAR_CONTROL_TOKEN unset — fleet room discovery is DISABLED ' +
+      '(no aggregator will spawn). Set it here and FLEET_CONTROL_TOKEN on the conductor.');
+  }
+  createLatencyServer({
+    port: 8081,
+    logDir: process.env.SESSION_LOG_DIR || './session-logs',
+    controlToken: process.env.SIDECAR_CONTROL_TOKEN || null,
+  });
   console.log('[latency] listening on ws://0.0.0.0:8081');
   const { createO2Relay } = require('./o2-relay.js');
   createO2Relay({ port: 8082 });

@@ -74,7 +74,7 @@ Trussal runs across three SSH-reachable VMs; addresses live in gitignored `.env.
 
 - **video** `trussal-video@192.168.1.254` — Jitsi Docker stack in `~/Trussal/docker-jitsi-meet` (`web`, `jvb`, `jicofo`, `prosody`, and the `latency` sidecar). Serves the bundle. Public name `meet.trussal.com`.
 - **audio** `trussal-audio@192.168.1.120` — Jamulus servers as systemd units (`jamulus@22000`–`22010`, room N → port 22000+N).
-- **bots** `trussal-bot-vm@192.168.1.232` — the conductor + dynamically-spawned `trussal-bot-*` containers (including the aggregator, `trussal-bot-99999`).
+- **bots** `trussal-bot-vm@192.168.1.232` — the conductor + dynamically-spawned `trussal-bot-*` containers (including one aggregator per active room; the first gets `trussal-bot-99999` and further rooms count down).
 
 **Push to `origin/main` first** — every target does `git pull --ff-only`.
 
@@ -86,6 +86,8 @@ make deploy-all     # all three
 ```
 
 Which target to run depends on what changed: `src/` (bundle) or `latency-instrument/server.js` (sidecar) → **video**; `bots/` → **bots**; `system/jamulus@.service` → **audio**.
+
+**Room discovery needs a shared secret on BOTH VMs.** Set the same value as `SIDECAR_CONTROL_TOKEN` in `docker-jitsi-meet/.env` (video) and `FLEET_CONTROL_TOKEN` in `bots/.env` (bots) — generate with `openssl rand -hex 32`. The relay's `?role=control` channel lists every meeting in progress and `/ws` is proxied publicly with no auth of its own, so it **fails closed**: with no token, or a mismatched one, no rooms are discovered and **no aggregator spawns anywhere**. `[fleet] the relay REFUSED room discovery` in the conductor's log means the two values disagree.
 
 ### Deploy caveats (these have each cost real time)
 
@@ -134,4 +136,5 @@ Top-level: `components/` (vanilla-DOM Net Cycles editor/highlighter/cluster vide
 - **Strudel is evaluated once per browser, combining all peers.** `strudel.js` builds one program from every playing peer's pattern using `$:` labeled-voice syntax and re-evaluates whenever any peer's state changes. Local peer effects are applied via WebAudio post-mix; remote peer effects are injected as `.distort()/.crush()/.room()` calls into the combined program.
 - **Audio effects are deterministic from network metrics.** RTT and jitter values (broadcast over the peer-state bus) are used identically on every client to compute effect parameters, so all browsers produce the same processed audio for the same peer.
 - **The latency sidecar WebSocket** connects at `wss://<host>/ws?room=<name>&role=player` (nginx proxies it). `peer-state.js` owns this connection and buffers outbound messages until the `hello` handshake completes.
+- **Room names are free-form and nothing may be pinned to one.** The room is the last path segment of the URL, on both the client (`getRoomNameFromUrl`) and the bots (`AggregatorBot#roomAndProto`). Because no room can be known ahead of time, the fleet service discovers them: it holds one `?role=control` connection to the sidecar, which sends the rooms currently holding participants and announces each new one, and the fleet then opens a per-room `role=fleet` bus. Every active room gets its own aggregator, pointed at that room via `JITSI_URL` (`jitsiUrlForRoom`). There is **no room setting at all** — every fleet method that acts on a meeting takes its room as a required argument (`requireRoom`), because any configured default could only ever be a wrong guess. The control channel is **authenticated and fails closed**: `FLEET_CONTROL_TOKEN` on the conductor must equal `SIDECAR_CONTROL_TOKEN` on the video VM, since the channel lists every meeting in progress and `/ws` is proxied publicly with no auth of its own. Unset or mismatched → discovery is refused and the symptom is "no aggregator in any room".
 - **Hydra `direct` mode** redirects user `.out()` calls to `o1` and composites with the live camera (`s0`) into `o0`, driven by blend/color globals (`window._hvBlendAmt`, `_hvR/G/B`) that `hydra-video.js` updates from peer state.
