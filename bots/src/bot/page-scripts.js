@@ -1023,7 +1023,14 @@ export function pageMasterPlayer() {
   const MAX_CHUNKS = 256;
   const chunks = [];   // Array<Float32Array> waiting to be emitted
   let head = 0;        // read offset into chunks[0]
-  let ctx = null, proc = null;
+  let ctx = null, proc = null, busOut = null;
+  // Master-bus room reverb (`# room wcl …`): applied HERE, on the one mix
+  // every client hears, rather than in each browser. Node computes the pure
+  // params (src/audio-net/av-effects/Room.js roomParams) and pushes them via
+  // setRoom(); the graph below mirrors that module's createRoomNode — the
+  // page-script contract forbids imports, so the construction is inlined.
+  let room = null;         // { input, output, combs: [{delay, fb}], lp1, lp2, all: [...] }
+  let pendingRoom = null;  // params pushed before the ctx existed
 
   function ensure() {
     if (ctx) return;
@@ -1037,8 +1044,85 @@ export function pageMasterPlayer() {
         if (head >= chunks[0].length) { chunks.shift(); head = 0; }
       }
     };
-    // fan -> MediaStreamDestination (this bot's mic -> every other client) + hardware
-    proc.connect(ctx.destination);
+    // proc -> busOut -> fan -> MediaStreamDestination (this bot's mic ->
+    // every other client) + hardware. busOut is the room insert point:
+    // setRoom re-routes busOut through the reverb without touching proc.
+    busOut = ctx.createGain();
+    proc.connect(busOut);
+    busOut.connect(ctx.destination);
+    if (pendingRoom) { const p = pendingRoom; pendingRoom = null; setRoom(p); }
+  }
+
+  function buildRoom(params) {
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+    const wet = ctx.createGain();
+    wet.gain.value = params.wetGain;
+    input.connect(output); // dry path
+    const combs = params.combDelaysS.map((d, i) => {
+      const delay = ctx.createDelay(Math.max(1, d * 2));
+      delay.delayTime.value = d;
+      const fb = ctx.createGain();
+      fb.gain.value = params.combFeedbacks[i];
+      input.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay);
+      return { delay, fb };
+    });
+    const combSum = ctx.createGain();
+    combSum.gain.value = 1 / combs.length;
+    combs.forEach((c) => c.delay.connect(combSum));
+    let hd = combSum;
+    const allpasses = params.allpassDelaysS.map((d) => {
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = d;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.5;
+      hd.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay);
+      return delay;
+    });
+    hd = allpasses.length ? allpasses[allpasses.length - 1] : hd;
+    const lp1 = ctx.createBiquadFilter();
+    const lp2 = ctx.createBiquadFilter();
+    lp1.type = lp2.type = 'lowpass';
+    lp1.frequency.value = lp2.frequency.value = params.cutoffHz;
+    hd.connect(lp1);
+    lp1.connect(lp2);
+    lp2.connect(wet);
+    wet.connect(output);
+    return {
+      input, output, wet, combs, lp1, lp2,
+      all: [input, output, wet, combSum, lp1, lp2,
+        ...combs.map((c) => c.delay), ...combs.map((c) => c.fb), ...allpasses],
+    };
+  }
+
+  function setRoom(params) {
+    if (!ctx) { pendingRoom = params; return; }
+    if (!params) {
+      if (!room) return;
+      busOut.disconnect();
+      room.all.forEach((n) => { try { n.disconnect(); } catch (e) {} });
+      room = null;
+      busOut.connect(ctx.destination);
+      return;
+    }
+    if (!room) {
+      room = buildRoom(params);
+      busOut.disconnect();
+      busOut.connect(room.input);
+      room.output.connect(ctx.destination);
+      return;
+    }
+    room.combs.forEach((c, i) => {
+      c.delay.delayTime.value = Math.min(params.combDelaysS[i], 1.99);
+      c.fb.gain.value = params.combFeedbacks[i];
+    });
+    room.wet.gain.value = params.wetGain;
+    room.lp1.frequency.value = params.cutoffHz;
+    room.lp2.frequency.value = params.cutoffHz;
   }
 
   function queued() {
@@ -1058,6 +1142,7 @@ export function pageMasterPlayer() {
       return queued();
     },
     queued,
+    setRoom,
   };
 }
 
@@ -1065,6 +1150,16 @@ export function pageMasterPlayer() {
 export function pageEnqueueMaster(samples) {
   const p = window.__trussalMasterPlayer;
   return (p && typeof p.enqueue === 'function') ? p.enqueue(samples) : 0;
+}
+
+/**
+ * Apply (or clear, with null) the master-bus room reverb. `params` is the
+ * pure roomParams() output computed Node-side from the applied metaprogram
+ * and the room's worst-case metrics (aggregator-bot.js #syncMasterRoom).
+ */
+export function pageSetMasterRoom(params) {
+  const p = window.__trussalMasterPlayer;
+  if (p && typeof p.setRoom === 'function') p.setRoom(params || null);
 }
 
 /**

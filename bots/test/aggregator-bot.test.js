@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { RingBuffer } from '../src/bot/ring-buffer.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from '../src/bot/aggregator-bot.js';
+import { computeWorstCaseMetrics } from '../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 
 // A fake sidecar connector (shape: (url, {onOpen, onMessage}) => {send, close})
 // that answers the aggregator-claim with a fixed verdict. Records the URL it was
@@ -44,7 +45,7 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
 function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
-  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false };
+  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], roomPushes: [], metrics: 0, closed: false };
   const fakePage = {
     setUserAgent: async () => {},
     evaluateOnNewDocument: async (js) => calls.evalOnNewDoc.push(String(js)),
@@ -55,6 +56,7 @@ function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
       calls.evaluate.push(s);
       if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
       if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
+      if (/\.setRoom\(/.test(s)) { calls.roomPushes.push(args[0]); return undefined; } // pageSetMasterRoom
       if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
         calls.enqueued.push(args[0]);
         return (args[0] || []).length;
@@ -1208,6 +1210,85 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
   assert.deepEqual(bot.order.order(), ['0'], 'only participant 0 rotates (continuously)');
   assert.deepEqual(bot.order.waitingTokens(), ['1'], 'a joiner waits silent until an edit lists them');
   assert.equal(bot.buffers['1'].length, 1, 'their audio buffers all along');
+
+  await bot.stop();
+});
+
+// --- master-bus room reverb (`# room wcl …`) ----------------------------------
+
+// A sidecar connector that hands the test the bot's own onMessage callback, so
+// roster/metrics frames can be delivered the way the real bus would.
+function fakeMetaprogramBus() {
+  const rec = { deliver: null, sent: [] };
+  const connect = (url, { onOpen, onMessage }) => {
+    rec.deliver = onMessage;
+    onOpen((msg) => rec.sent.push(msg));
+    return { send: (msg) => rec.sent.push(msg), close: () => {} };
+  };
+  return { connect, rec };
+}
+
+test('# room wcl scales the master reverb decay by the room worst-case latency', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  await bot.start();
+
+  // The bot must derive wcl from the roster exactly as every browser does, so
+  // the expectation comes from that same function rather than a copied formula.
+  const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 4 }, { peerId: 'p1', roomIndex: '1', rtt: 2 }];
+  bus.rec.deliver({ type: 'roster', peers });
+  bot.applyProgramText('$ participants <0 1>\n# room wcl 2\n');
+
+  const pushed = calls.roomPushes.at(-1);
+  assert.ok(pushed, 'room params reach the page master player');
+  assert.equal(pushed.decayS, 2 * computeWorstCaseMetrics(peers).wcl / 1000, 'decay = scale x wcl');
+  assert.equal(pushed.combFeedbacks.length, pushed.combDelaysS.length);
+
+  // A worse link lengthens the tail without rebuilding anything.
+  bus.rec.deliver({ type: 'peer-update', peerId: 'p1', patch: { rtt: 10 } });
+  const after = calls.roomPushes.at(-1);
+  assert.ok(after.decayS > pushed.decayS, 'a slower peer stretches the decay');
+
+  await bot.stop();
+});
+
+test('# room wcl with a fixed amount pins the decay against live metrics', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  await bot.start();
+
+  bot.applyProgramText('$ participants <0>\n# room wcl 2 0.4\n');
+  assert.equal(calls.roomPushes.at(-1).decayS, 0.8, '2 x 400 ms');
+
+  const pushesBefore = calls.roomPushes.length;
+  bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 250 }] });
+  assert.equal(calls.roomPushes.length, pushesBefore, 'pinned decay ignores the metrics change');
+
+  await bot.stop();
+});
+
+test('dropping # room from the program clears the master reverb', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  await bot.start();
+
+  // The page starts dry, so a program with no `# room` must not push at all.
+  bot.applyProgramText('$ participants <0>\n');
+  assert.deepEqual(calls.roomPushes, [], 'no reverb directive -> nothing pushed');
+
+  bot.applyProgramText('$ participants <0>\n# room wcl 2 0.4\n');
+  assert.ok(calls.roomPushes.at(-1), 'reverb applied');
+  bot.applyProgramText('$ participants <0>\n');
+  assert.equal(calls.roomPushes.at(-1), null, 'removing the directive tears the reverb down');
 
   await bot.stop();
 });

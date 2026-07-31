@@ -22,9 +22,10 @@ export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
-// cycles/tempo. Args are positive reals unless noted.
+// cycles/tempo. Args are positive reals unless noted. `metricKeywords`
+// requires a leading metric word before the numeric args (`# room wcl 2 0.4`).
 const EFFECTS = {
-  room: { minArgs: 0, maxArgs: 2, kind: 'effect' },   // wcl_factor=1, wcrtt_factor=1
+  room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: ['wcl'] }, // scale=1, fixed wcl seconds=live
   echo: { minArgs: 0, maxArgs: 2, kind: 'effect' },   // n_samples_factor=1, magnitude_feedback_factor=0.1
   crush: { minArgs: 0, maxArgs: 1, kind: 'effect' },  // reduction_factor=1
   noise: { minArgs: 0, maxArgs: 0, kind: 'effect' },
@@ -46,7 +47,7 @@ const PATTERN_FNS = {
 };
 
 export const EFFECT_DEFAULTS = {
-  room: { wclFactor: 1, wcrttFactor: 1 },
+  room: { metric: 'wcl', scale: 1, fixedWclS: null },
   echo: { nSamplesFactor: 1, magnitudeFeedbackFactor: 0.1 },
   crush: { reductionFactor: 1 },
   noise: {},
@@ -465,6 +466,21 @@ class Parser {
   }
 
   parseChainFn(program, name, nameTok, sig) {
+    // Metric-keyed effects name their driving metric before the numbers:
+    // `# room wcl 2 0.4`. The keyword is required — a bare-number form has
+    // no metric and is a parse error.
+    let metric = null;
+    if (sig.metricKeywords) {
+      const t = this.peek();
+      if (t.type === 'word' && sig.metricKeywords.includes(t.value)) {
+        metric = t.value;
+        this.next();
+      } else {
+        this.error(`'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its arguments`, t);
+        this.recover();
+        return;
+      }
+    }
     const args = [];
     for (;;) {
       const t = this.peek();
@@ -522,7 +538,9 @@ class Parser {
         }
       }
     }
-    program.chain.push({ fn: name, args: args.map(a => a.value), line: nameTok.line, col: nameTok.col });
+    const entry = { fn: name, args: args.map(a => a.value), line: nameTok.line, col: nameTok.col };
+    if (metric) entry.metric = metric;
+    program.chain.push(entry);
   }
 }
 
@@ -546,7 +564,9 @@ export function parseMetaprogram(text) {
 export function resolveEffectParams(chainEntry) {
   const { fn, args } = chainEntry;
   switch (fn) {
-    case 'room': return { wclFactor: args[0] ?? 1, wcrttFactor: args[1] ?? 1 };
+    // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
+    // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
+    case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedWclS: args[1] ?? null };
     case 'echo': return { nSamplesFactor: args[0] ?? 1, magnitudeFeedbackFactor: args[1] ?? 0.1 };
     case 'crush': return { reductionFactor: args[0] ?? 1 };
     case 'noise': return {};

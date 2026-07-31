@@ -5,12 +5,14 @@ import {
   pageAggregatorCapture, pageDrainParticipantAudio, pageDrainParticipantLeaves,
   pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
-  pageReportStudioStatus, pageAggregatorTrackMapDiag,
+  pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio-net/MetaprogrammerCrdtSync.js';
-import { parseMetaprogram, buildDefaultProgram } from '../../../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram, buildDefaultProgram, resolveEffectParams } from '../../../src/audio-net/MetaprogrammerParser.js';
+import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -172,6 +174,16 @@ export class AggregatorBot extends Bot {
     #metaprogramConn = null;
     // Throttle counter for the capture-diag heartbeat (every ~10th drain).
     #drainTicks = 0;
+    // Room roster as seen over the metaprogram bus (peerId → publicView
+    // record), the worst-case metrics derived from it, the applied program's
+    // `# room` chain entry, and the last room params pushed to the page (as
+    // JSON, so unchanged params don't re-evaluate every peer-update). The
+    // page starts with no reverb, so 'null' — not undefined — is the honest
+    // starting point: a program without `# room` never pushes at all.
+    #peers = new Map();
+    #worstCase = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
+    #roomChain = null;
+    #lastRoomPushJson = 'null';
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -499,6 +511,9 @@ export class AggregatorBot extends Bot {
                 // departed ghost's grace period (Case 2/3).
                 this.#pushProgramToScheduler({ programUpdate: true });
             });
+            // Shared induced-metric floors move the effective worst case the
+            // same way a measured change does.
+            this.metaprogramDoc.onModulationChange(() => this.#refreshWorstCase());
         }
 
         // Give /nc/epoch a beat to arrive before declaring our own — lets an
@@ -566,6 +581,51 @@ export class AggregatorBot extends Bot {
         if (!valid) return;
         if (this.scheduler) this.scheduler.setProgram(ast);
         this.#applyOrderFromProgram(ast, { programUpdate });
+        // `# room wcl …` targets THIS bot's master bus (the mix every client
+        // hears); adopt/drop it with the program.
+        this.#roomChain = (ast.chain || []).find((c) => c.fn === 'room') || null;
+        this.#syncMasterRoom();
+    }
+
+    /**
+     * Worst-case metrics over the roster the metaprogram bus reports, with
+     * the CRDT-shared induced floors layered on — the same computation every
+     * browser's effectiveWorstCase() runs, so cycle lengths and room-reverb
+     * decay agree everywhere. Recomputed on every roster/metrics/modulation
+     * change; the scheduler adopts new metrics at its next cycle boundary.
+     */
+    #refreshWorstCase() {
+        const measured = computeWorstCaseMetrics([...this.#peers.values()]);
+        this.#worstCase = this.metaprogramDoc
+            ? mergeInducedMetrics(measured, this.metaprogramDoc.getInduced())
+            : measured;
+        if (this.scheduler) this.scheduler.setMetrics(this.#worstCase);
+        this.#syncMasterRoom();
+    }
+
+    /**
+     * Push the applied program's `# room` parameters (or null to clear) into
+     * the page's master player, which hosts the actual WebAudio Schroeder
+     * graph on the proc → published-track path. Deduplicated by JSON so the
+     * per-peer-update recompute only crosses into the page when a value
+     * actually moved. Best-effort per push — a failed evaluate (page mid-
+     * navigation/teardown) is logged and the dedup reset so the next change
+     * retries rather than wedging on a stale "already pushed" state.
+     */
+    #syncMasterRoom() {
+        if (!this.page) return;
+        const params = this.#roomChain
+            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain))
+            : null;
+        const json = JSON.stringify(params ?? null);
+        if (json === this.#lastRoomPushJson) return;
+        this.#lastRoomPushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMasterRoom, params)).catch((e) => {
+            // Leave the cache mismatched so the next change retries rather
+            // than believing a push that never landed.
+            this.#lastRoomPushJson = 'stale';
+            console.error('[aggregator-bot] master room push failed', e);
+        });
     }
 
     /**
@@ -620,6 +680,7 @@ export class AggregatorBot extends Bot {
             onEvent: (ev) => this.#onSchedulerEvent(ev),
         });
         this.#pushProgramToScheduler();
+        this.scheduler.setMetrics(this.#worstCase);
         this.scheduler.start(this.epoch);
     }
 
@@ -678,6 +739,26 @@ export class AggregatorBot extends Bot {
                     listeners.forEach((fn) => fn('crdt-update', payload));
                 } else if (msg.type === 'crdt-state' && Array.isArray(msg.updates)) {
                     listeners.forEach((fn) => fn('crdt-state', { updates: msg.updates }));
+                } else if (msg.type === 'roster' && Array.isArray(msg.peers)) {
+                    // The hello reply carries every peer's metrics; peer-update
+                    // patches keep them live. This is the same broadcast stream
+                    // browsers derive their worst-case metrics from, so the
+                    // aggregator's scheduler and master-bus room reverb compute
+                    // the identical values.
+                    this.#peers.clear();
+                    for (const p of msg.peers) if (p && p.peerId) this.#peers.set(p.peerId, p);
+                    this.#refreshWorstCase();
+                } else if (msg.type === 'peer-join' && msg.peer && msg.peer.peerId) {
+                    this.#peers.set(msg.peer.peerId, msg.peer);
+                    this.#refreshWorstCase();
+                } else if (msg.type === 'peer-update' && msg.peerId) {
+                    const rec = this.#peers.get(msg.peerId);
+                    if (rec && msg.patch) {
+                        Object.assign(rec, msg.patch);
+                        this.#refreshWorstCase();
+                    }
+                } else if (msg.type === 'peer-leave' && msg.peerId) {
+                    if (this.#peers.delete(msg.peerId)) this.#refreshWorstCase();
                 }
             },
         });

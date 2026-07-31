@@ -1,22 +1,45 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { roomParams, COMB_BASES_S, CUTOFF_MAX_HZ, CUTOFF_MIN_HZ } from '../src/audio-net/av-effects/Room.js';
+import {
+  roomParams, rt60CombFeedback, COMB_BASES_S, CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, MAX_COMB_FEEDBACK
+} from '../src/audio-net/av-effects/Room.js';
 import { echoParams, echoFeedback, FEEDBACK_CEILING } from '../src/audio-net/av-effects/Echo.js';
 import { crushParams, makeCrushCurve } from '../src/audio-net/av-effects/Crush.js';
 import { noiseTypeForWcpl, noiseParams, fillNoise } from '../src/audio-net/av-effects/Noise.js';
 import { distanceMatrix, gridView, shadeForDistance } from '../src/audio-net/av-effects/Grid.js';
-import { computeChainParams, visualStateFor } from '../src/audio-net/av-effects/index.js';
+import { computeChainParams, visualStateFor, EffectsChainManager } from '../src/audio-net/av-effects/index.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 
 // --- room ---------------------------------------------------------------------
 
-test('room: comb delays stretch with wcl_factor × wcl; cutoff = wcrtt × factor × 100 Hz', () => {
-  const p = roomParams({ wcl: 500, wcrtt: 60 }, { wclFactor: 2, wcrttFactor: 1 });
-  // stretch = 1 + 2 × 0.5 = 2 → every comb doubles.
-  p.combDelaysS.forEach((d, i) => assert.ok(Math.abs(d - COMB_BASES_S[i] * 2) < 1e-12));
+test('room: decay = scale × wcl (RT60) sets per-comb feedback; cutoff = wcrtt × factor × 100 Hz', () => {
+  const p = roomParams({ wcl: 500, wcrtt: 60 }, { scale: 2 });
+  assert.equal(p.decayS, 1); // 2 × 500 ms
+  // After decayS the recirculated signal is down 60 dB: g = 0.001^(delay/decay).
+  p.combFeedbacks.forEach((g, i) => {
+    assert.ok(Math.abs(g - Math.pow(0.001, COMB_BASES_S[i] / 1)) < 1e-12);
+  });
+  assert.deepEqual(p.combDelaysS, COMB_BASES_S, 'comb tunings no longer stretch');
   assert.equal(p.cutoffHz, 6000); // 60 ms × 1 × 100
   assert.ok(Math.abs(p.visualLowpass - 6000 / CUTOFF_MAX_HZ) < 1e-12);
+});
+
+test('room: fixedWclS pins the metric — live wcl is ignored', () => {
+  const pinned = roomParams({ wcl: 9999, wcrtt: 60 }, { scale: 2, fixedWclS: 0.4 });
+  assert.equal(pinned.decayS, 0.8); // 2 × 0.4 s, regardless of metrics.wcl
+  const live = roomParams({ wcl: 400, wcrtt: 60 }, { scale: 2 });
+  assert.deepEqual(pinned.combFeedbacks, live.combFeedbacks, '400 ms pinned ≡ 400 ms measured');
+});
+
+test('room: feedback clamps — no decay silences the tail, huge decay stays below unity', () => {
+  assert.equal(rt60CombFeedback(0.03, 0), 0);
+  const dry = roomParams({ wcl: 0 });
+  dry.combFeedbacks.forEach(g => assert.equal(g, 0));
+  assert.equal(dry.wetGain, 0, 'no tail -> no wet path, not a bare slapback');
+  const huge = roomParams({ wcl: 1e9 }, { scale: 100 });
+  huge.combFeedbacks.forEach(g => assert.equal(g, MAX_COMB_FEEDBACK));
+  assert.ok(huge.wetGain > 0);
 });
 
 test('room: cutoff clamps — zero RTT opens fully, huge RTT caps at max', () => {
@@ -128,13 +151,14 @@ test('grid: self is white, farthest peer is black, perspective is local', () => 
 
 test('parsed # chain resolves to full parameter sets and a merged visual state', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0 1>\n# room 2 3\n# echo 1 0.1\n# crush 1\n# noise\n# grid true\n# ply 2\n'
+    '$ participants <0 1>\n# room wcl 2\n# echo 1 0.1\n# crush 1\n# noise\n# grid true\n# ply 2\n'
   );
   assert.deepEqual(errors, []);
   const metrics = { wcl: 500, wcj: 5, wcrtt: 60, wcpl: 0.5 };
   const chain = computeChainParams(ast.chain, metrics, 48000);
   assert.deepEqual(chain.map(c => c.fn), ['room', 'echo', 'crush', 'noise', 'grid'], 'ply is scheduling, not a bus node');
-  assert.equal(chain[0].params.cutoffHz, 18000); // 60 × 3 × 100 = 18000 (at cap)
+  assert.equal(chain[0].params.decayS, 1);       // 2 × 500 ms
+  assert.equal(chain[0].params.cutoffHz, 6000);  // 60 ms × 100; wcrtt_factor is no longer settable
   assert.equal(chain[1].params.feedback, 0.2);
   assert.equal(chain[3].params.type, 'pink');
   assert.equal(chain[4].params.landmarks, true);
@@ -143,5 +167,47 @@ test('parsed # chain resolves to full parameter sets and a merged visual state',
   assert.equal(vis.brightness, 0.2);   // echo feedback
   assert.equal(vis.pixelate, 4);       // crush divisor
   assert.equal(vis.noise, 0.35);       // pink
-  assert.ok(vis.lowpass <= 1);
+  assert.equal(vis.lowpass, 6000 / CUTOFF_MAX_HZ, 'room still drives the Hydra blur');
+});
+
+// Minimal WebAudio stand-in: enough surface for the crush node, and a call
+// counter so a room node (the only effect built from createDelay) is
+// detectable by its absence.
+function fakeAudioCtx() {
+  const calls = { createDelay: 0 };
+  const node = () => ({ connect() {}, disconnect() {}, gain: { value: 1 }, frequency: { value: 0 } });
+  return {
+    sampleRate: 48000,
+    calls,
+    createGain: node,
+    createWaveShaper: node,
+    createBiquadFilter: () => ({ ...node(), type: '' }),
+    createDelay: () => { calls.createDelay++; return node(); }
+  };
+}
+
+test('room builds no node in the local browser chain — the aggregator master owns it', () => {
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# crush 1\n');
+  assert.deepEqual(errors, []);
+  const ctx = fakeAudioCtx();
+  const inserted = [];
+  const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
+
+  mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60, wcpl: 0.5 });
+  assert.equal(ctx.calls.createDelay, 0, 'no local Schroeder comb lines');
+  assert.equal(inserted.length, 1, 'crush alone still gets a local master insert');
+
+  // A metrics update must not fall out of step now that room is skipped:
+  // crush is nodes[0] even though room precedes it in the chain.
+  mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
+  assert.equal(ctx.calls.createDelay, 0);
+});
+
+test('a room-only chain inserts nothing locally but still publishes the visual', () => {
+  const { ast } = parseMetaprogram('$ participants <0>\n# room wcl 2\n');
+  const ctx = fakeAudioCtx();
+  const inserted = [];
+  const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
+  mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60 });
+  assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
 });

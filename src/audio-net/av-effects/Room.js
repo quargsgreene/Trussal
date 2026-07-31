@@ -1,11 +1,16 @@
-// room — Schroeder reverb whose size breathes with the room's worst-case
+// room — Schroeder reverb whose DECAY TIME follows the room's worst-case
 // latency, with a cascaded lowpass whose cutoff tracks worst-case RTT.
 //
-//   comb delay_i = base_i × (1 + wclFactor × wcl/1000)   (wcl in ms)
-//   cutoff      = wcrtt × wcrttFactor × 100 Hz            (wcrtt in ms)
+//   decay (RT60, s) = scale × wcl_s     wcl_s = fixedWclS ?? wcl/1000 (wcl in ms)
+//   comb feedback_i = 0.001^(base_i / decay)   (clamped below unity)
+//   cutoff          = wcrtt × wcrttFactor × 100 Hz   (wcrtt in ms)
 //
-// The same cutoff (normalized) is exported for the Hydra signal so the
-// visuals blur as the audio darkens. Pure math is separated from node
+// `# room wcl <scale> [<fixed wcl seconds>]` — with the optional third token
+// the metric is pinned (0.4 = 400 ms) and live metrics no longer move it.
+// The audio node runs on the AGGREGATOR's master path (the mix every client
+// hears), not in each browser; browsers keep only the Hydra visual
+// counterpart. The same cutoff (normalized) is exported for that visual so
+// the image blurs as the audio darkens. Pure math is separated from node
 // construction for node:test.
 
 // Classic Schroeder comb/allpass tunings (seconds).
@@ -15,17 +20,34 @@ export const ALLPASS_BASES_S = [0.005, 0.0017];
 export const CUTOFF_MIN_HZ = 40;
 export const CUTOFF_MAX_HZ = 18000;
 
-export function roomParams(metrics, { wclFactor = 1, wcrttFactor = 1 } = {}) {
-  const wcl = Math.max(0, (metrics && metrics.wcl) || 0);
+// Feedback ceiling: RT60 → gain solves g = 0.001^(delay/decay), which walks
+// toward 1 as decay grows; at 1 the combs self-oscillate forever.
+export const MAX_COMB_FEEDBACK = 0.98;
+
+// Wet/dry balance once there is a tail at all.
+export const WET_GAIN = 0.5;
+
+// Comb feedback gain for a target RT60: after decayS seconds the comb's
+// recirculated signal has fallen 60 dB (×0.001). No decay → no tail.
+export function rt60CombFeedback(delayS, decayS) {
+  if (!(decayS > 0)) return 0;
+  return Math.min(MAX_COMB_FEEDBACK, Math.pow(0.001, delayS / decayS));
+}
+
+export function roomParams(metrics, { scale = 1, fixedWclS = null, wcrttFactor = 1 } = {}) {
+  const wclS = fixedWclS != null ? Math.max(0, fixedWclS) : Math.max(0, (metrics && metrics.wcl) || 0) / 1000;
   const wcrtt = Math.max(0, (metrics && metrics.wcrtt) || 0);
-  const stretch = 1 + wclFactor * (wcl / 1000);
-  const combDelaysS = COMB_BASES_S.map(b => b * stretch);
+  const decayS = Math.max(0, scale) * wclS;
   const rawCutoff = wcrtt * wcrttFactor * 100;
   const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
   return {
-    combDelaysS,
+    decayS,
+    combDelaysS: COMB_BASES_S.slice(),
     allpassDelaysS: ALLPASS_BASES_S.slice(),
-    combFeedback: 0.84,
+    combFeedbacks: COMB_BASES_S.map(d => rt60CombFeedback(d, decayS)),
+    // No decay (no metrics yet, or an empty roster) means no tail to hear:
+    // mute the wet path rather than leaving a bare comb slapback on the mix.
+    wetGain: decayS > 0 ? WET_GAIN : 0,
     cutoffHz,
     // Hydra counterpart: 1 = no blur, 0 = fully lowpassed image.
     visualLowpass: cutoffHz / CUTOFF_MAX_HZ
@@ -36,22 +58,22 @@ export function createRoomNode(audioCtx, params) {
   const input = audioCtx.createGain();
   const output = audioCtx.createGain();
   const wet = audioCtx.createGain();
-  wet.gain.value = 0.5;
+  wet.gain.value = params.wetGain;
   input.connect(output); // dry path
 
-  const combs = params.combDelaysS.map((d) => {
+  const combs = params.combDelaysS.map((d, i) => {
     const delay = audioCtx.createDelay(Math.max(1, d * 2));
     delay.delayTime.value = d;
     const fb = audioCtx.createGain();
-    fb.gain.value = params.combFeedback;
+    fb.gain.value = params.combFeedbacks[i];
     input.connect(delay);
     delay.connect(fb);
     fb.connect(delay);
-    return delay;
+    return { delay, fb };
   });
   const combSum = audioCtx.createGain();
   combSum.gain.value = 1 / combs.length;
-  combs.forEach(c => c.connect(combSum));
+  combs.forEach(c => c.delay.connect(combSum));
 
   let head = combSum;
   const allpasses = params.allpassDelaysS.map((d) => {
@@ -81,12 +103,16 @@ export function createRoomNode(audioCtx, params) {
     input,
     output,
     update(next) {
-      combs.forEach((c, i) => { c.delayTime.value = Math.min(next.combDelaysS[i], 1.99); });
+      combs.forEach((c, i) => {
+        c.delay.delayTime.value = Math.min(next.combDelaysS[i], 1.99);
+        c.fb.gain.value = next.combFeedbacks[i];
+      });
+      wet.gain.value = next.wetGain;
       lp1.frequency.value = next.cutoffHz;
       lp2.frequency.value = next.cutoffHz;
     },
     dispose() {
-      [input, output, wet, combSum, lp1, lp2, ...combs, ...allpasses]
+      [input, output, wet, combSum, lp1, lp2, ...combs.map(c => c.delay), ...combs.map(c => c.fb), ...allpasses]
         .forEach(n => { try { n.disconnect(); } catch (e) {} });
     }
   };

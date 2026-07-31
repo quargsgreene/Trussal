@@ -71,7 +71,7 @@ test('spec: good chainable example (rests, degrade, tempo fraction, effects)', (
   const ast = ok(`$ participants [0 1 _ 4? 10 2a - 2za ~]
 # cycles wcj 3
 # tempo 90/4 cpm
-# room 2.5
+# room wcl 2.5
 # noise
 `);
   assert.equal(ast.participants.mode, 'subdivide');
@@ -84,14 +84,14 @@ test('spec: good chainable example (rests, degrade, tempo fraction, effects)', (
   assert.equal(ast.tempo.value, 22.5); // 90/4
   assert.equal(ast.tempo.unit, 'cpm');
   assert.deepEqual(ast.chain.map(c => c.fn), ['room', 'noise']);
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { wclFactor: 2.5, wcrttFactor: 1 });
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2.5, fixedWclS: null });
 });
 
 test('spec: bad example — pattern argument to an effect is rejected', () => {
   bad(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
 # cycles wcj 3
 # tempo 90/4 cpm
-# room (pink # range 0 1)
+# room wcl (pink # range 0 1)
 `, /pattern arguments/);
   // The sequence itself is legal (@/!/? apply "as usual"): removing the bad
   // room line makes the program valid.
@@ -104,9 +104,9 @@ test('spec: bad example — pattern argument to an effect is rejected', () => {
   assert.deepEqual(els.find(e => e.token === '10').modifiers, [{ op: '!', value: 2 }]);
 });
 
-test('spec: effect examples — room 2 3, echo + ply, crush + chop, noise, grid true', () => {
-  let ast = ok('$ participants [0 2 1 4 3]\n# room 2 3\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { wclFactor: 2, wcrttFactor: 3 });
+test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise, grid true', () => {
+  let ast = ok('$ participants [0 2 1 4 3]\n# room wcl 2 0.4\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedWclS: 0.4 });
 
   ast = ok('$ participants [0 2 1 4 3]\n# echo 2.1 9\n# ply 2\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { nSamplesFactor: 2.1, magnitudeFeedbackFactor: 9 });
@@ -190,9 +190,23 @@ test('whitelisted pattern functions parse; anything else is rejected', () => {
   bad('$ participants <0>\n# range 0 1\n', /not a NetCycles function/);
 });
 
+test('room requires its wcl metric keyword; scale and fixed wcl are optional', () => {
+  // Bare `# room wcl` → live wcl at scale 1.
+  let ast = ok('$ participants <0>\n# room wcl\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 1, fixedWclS: null });
+  // `# room wcl 2` → decay 2 × live wcl.
+  ast = ok('$ participants <0>\n# room wcl 2\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedWclS: null });
+  // The retired bare-number form and non-wcl metrics are parse errors.
+  bad('$ participants <0>\n# room\n', /needs a metric keyword \(wcl\)/);
+  bad('$ participants <0>\n# room 2\n', /needs a metric keyword \(wcl\)/);
+  bad('$ participants <0>\n# room 2 0.4\n', /needs a metric keyword \(wcl\)/);
+  bad('$ participants <0>\n# room wcj 2\n', /needs a metric keyword \(wcl\)/);
+});
+
 test('argument arity and positivity are validated', () => {
   bad('$ participants <0>\n# ply\n', /takes 1/);
-  bad('$ participants <0>\n# room 1 2 3\n', /takes 0–2/);
+  bad('$ participants <0>\n# room wcl 1 2 3\n', /takes 0–2/);
   bad('$ participants <0>\n# noise 3\n', /takes 0/);
   bad('$ participants <0>\n# crush 0\n', /positive real/);
   bad('$ participants <0>\n# degradeBy 1.5\n', /probability must be in \[0, 1\]/);

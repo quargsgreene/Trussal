@@ -352,7 +352,7 @@ Examples:
 $ participants [0 1 _ 4? 10 2a - 2za ~]
 # cycles wcj 3
 # tempo 90/4 cpm
-# room 2.5
+# room wcl 2.5
 # noise
 ```
 
@@ -361,7 +361,7 @@ $ participants [0 1 _ 4? 10 2a - 2za ~]
 $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exactly as mondo notation repeats or lengthens an element in the sequence.
 # cycles wcj 3
 # tempo 90/4 cpm
-# room (pink # range 0 1)
+# room wcl (pink # range 0 1)
 ```
 
 ### Supported Audiovisual Functions
@@ -369,18 +369,32 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 
 #### room
 - Description
-The room function is a Schroeder reverb, with a delay line legnthened by multiples of wcl, a lowpass filter with a dynamic lowpass filter cutoff frequency cascaded at the end of the filter chain according to wcrtt.
+The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
+
+Unlike the other chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart still applies locally in every browser.
+- Syntax
+`# room wcl [scale factor] [amount for wcl]`
+
+The `wcl` metric keyword is required; the bare-number form (`# room 2 3`) is not valid.
 - Input
 AV buffer object
 - Parameters
-wcl_factor: A positive real number which multiplies the effect of delay line length changes. Defaults to 1.
-wcrtt_factor: A positive real number which determines the cutoff frequencie with respect to rtt. Defaults to 1. Cutoff is determined by the formula cutoff = wcrtt * wcrtt_factor * 100 Hz, where wcrtt is in ms. This also applies a lowpass filter to the Hydra signal.
+scale factor: A positive real number multiplying wcl to give the reverb decay time: decay = scale_factor * wcl, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
+amount for wcl: A positive real number of seconds that *pins* wcl instead of reading it live, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions. Defaults to unset (live metrics).
+
+Note that wcl is the true one-way estimate, so on a LAN it is a couple of milliseconds and a small scale factor yields no audible tail — `# room wcl 2` is a 4 ms decay at 2 ms wcl. Scale up (`# room wcl 500` for a ~1 s tail) or pin the amount, the same way `# cycles` carries its own 2000× scale openly rather than through a hidden multiplier.
+
+The cascaded cutoff is `wcrtt * 100 Hz` (wcrtt in ms), clamped to [40, 18000]. It also applies a lowpass filter to the Hydra signal.
 - Return value
 Updated AV buffer object
-- Example:
+- Examples:
 ```
 $ participants [0 2 1 4 3]
-# room 2 3
+# room wcl 2
+```
+```
+$ participants [0 2 1 4 3]
+# room wcl 2 0.4
 ```
 
 #### echo

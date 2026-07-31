@@ -1814,8 +1814,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function resolveEffectParams(chainEntry) {
     const { fn, args: args2 } = chainEntry;
     switch (fn) {
+      // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
+      // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
       case "room":
-        return { wclFactor: args2[0] ?? 1, wcrttFactor: args2[1] ?? 1 };
+        return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedWclS: args2[1] ?? null };
       case "echo":
         return { nSamplesFactor: args2[0] ?? 1, magnitudeFeedbackFactor: args2[1] ?? 0.1 };
       case "crush":
@@ -1841,8 +1843,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       TIMING_METRICS = ["wcl", "wcj", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       EFFECTS = {
-        room: { minArgs: 0, maxArgs: 2, kind: "effect" },
-        // wcl_factor=1, wcrtt_factor=1
+        room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: ["wcl"] },
+        // scale=1, fixed wcl seconds=live
         echo: { minArgs: 0, maxArgs: 2, kind: "effect" },
         // n_samples_factor=1, magnitude_feedback_factor=0.1
         crush: { minArgs: 0, maxArgs: 1, kind: "effect" },
@@ -2201,6 +2203,18 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           program.tempo = { value: value2, unit: unitTok.value };
         }
         parseChainFn(program, name3, nameTok, sig) {
+          let metric = null;
+          if (sig.metricKeywords) {
+            const t = this.peek();
+            if (t.type === "word" && sig.metricKeywords.includes(t.value)) {
+              metric = t.value;
+              this.next();
+            } else {
+              this.error(`'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its arguments`, t);
+              this.recover();
+              return;
+            }
+          }
           const args2 = [];
           for (; ; ) {
             const t = this.peek();
@@ -2256,7 +2270,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
               }
             }
           }
-          program.chain.push({ fn: name3, args: args2.map((a2) => a2.value), line: nameTok.line, col: nameTok.col });
+          const entry = { fn: name3, args: args2.map((a2) => a2.value), line: nameTok.line, col: nameTok.col };
+          if (metric) entry.metric = metric;
+          program.chain.push(entry);
         }
       };
     }
@@ -11872,17 +11888,24 @@ ${err.toString()}`);
   });
 
   // src/audio-net/av-effects/Room.js
-  function roomParams(metrics, { wclFactor = 1, wcrttFactor = 1 } = {}) {
-    const wcl = Math.max(0, metrics && metrics.wcl || 0);
+  function rt60CombFeedback(delayS, decayS) {
+    if (!(decayS > 0)) return 0;
+    return Math.min(MAX_COMB_FEEDBACK, Math.pow(1e-3, delayS / decayS));
+  }
+  function roomParams(metrics, { scale: scale2 = 1, fixedWclS = null, wcrttFactor = 1 } = {}) {
+    const wclS = fixedWclS != null ? Math.max(0, fixedWclS) : Math.max(0, metrics && metrics.wcl || 0) / 1e3;
     const wcrtt = Math.max(0, metrics && metrics.wcrtt || 0);
-    const stretch2 = 1 + wclFactor * (wcl / 1e3);
-    const combDelaysS = COMB_BASES_S.map((b) => b * stretch2);
+    const decayS = Math.max(0, scale2) * wclS;
     const rawCutoff = wcrtt * wcrttFactor * 100;
     const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
     return {
-      combDelaysS,
+      decayS,
+      combDelaysS: COMB_BASES_S.slice(),
       allpassDelaysS: ALLPASS_BASES_S.slice(),
-      combFeedback: 0.84,
+      combFeedbacks: COMB_BASES_S.map((d) => rt60CombFeedback(d, decayS)),
+      // No decay (no metrics yet, or an empty roster) means no tail to hear:
+      // mute the wet path rather than leaving a bare comb slapback on the mix.
+      wetGain: decayS > 0 ? WET_GAIN : 0,
       cutoffHz,
       // Hydra counterpart: 1 = no blur, 0 = fully lowpassed image.
       visualLowpass: cutoffHz / CUTOFF_MAX_HZ
@@ -11892,21 +11915,21 @@ ${err.toString()}`);
     const input = audioCtx2.createGain();
     const output = audioCtx2.createGain();
     const wet = audioCtx2.createGain();
-    wet.gain.value = 0.5;
+    wet.gain.value = params2.wetGain;
     input.connect(output);
-    const combs = params2.combDelaysS.map((d) => {
+    const combs = params2.combDelaysS.map((d, i) => {
       const delay2 = audioCtx2.createDelay(Math.max(1, d * 2));
       delay2.delayTime.value = d;
       const fb = audioCtx2.createGain();
-      fb.gain.value = params2.combFeedback;
+      fb.gain.value = params2.combFeedbacks[i];
       input.connect(delay2);
       delay2.connect(fb);
       fb.connect(delay2);
-      return delay2;
+      return { delay: delay2, fb };
     });
     const combSum = audioCtx2.createGain();
     combSum.gain.value = 1 / combs.length;
-    combs.forEach((c2) => c2.connect(combSum));
+    combs.forEach((c2) => c2.delay.connect(combSum));
     let head = combSum;
     const allpasses = params2.allpassDelaysS.map((d) => {
       const delay2 = audioCtx2.createDelay(1);
@@ -11932,13 +11955,15 @@ ${err.toString()}`);
       output,
       update(next) {
         combs.forEach((c2, i) => {
-          c2.delayTime.value = Math.min(next.combDelaysS[i], 1.99);
+          c2.delay.delayTime.value = Math.min(next.combDelaysS[i], 1.99);
+          c2.fb.gain.value = next.combFeedbacks[i];
         });
+        wet.gain.value = next.wetGain;
         lp1.frequency.value = next.cutoffHz;
         lp2.frequency.value = next.cutoffHz;
       },
       dispose() {
-        [input, output, wet, combSum, lp1, lp2, ...combs, ...allpasses].forEach((n2) => {
+        [input, output, wet, combSum, lp1, lp2, ...combs.map((c2) => c2.delay), ...combs.map((c2) => c2.fb), ...allpasses].forEach((n2) => {
           try {
             n2.disconnect();
           } catch (e30) {
@@ -11947,13 +11972,15 @@ ${err.toString()}`);
       }
     };
   }
-  var COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ;
+  var COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ, MAX_COMB_FEEDBACK, WET_GAIN;
   var init_Room = __esm({
     "src/audio-net/av-effects/Room.js"() {
       COMB_BASES_S = [0.0297, 0.0371, 0.0411, 0.0437];
       ALLPASS_BASES_S = [5e-3, 17e-4];
       CUTOFF_MIN_HZ = 40;
       CUTOFF_MAX_HZ = 18e3;
+      MAX_COMB_FEEDBACK = 0.98;
+      WET_GAIN = 0.5;
     }
   });
 
@@ -12321,6 +12348,7 @@ ${err.toString()}`);
           const audioParams = [];
           for (const cp of resolved) {
             if (cp.fn === "grid") this._grid = cp.params;
+            else if (cp.fn === "room") continue;
             else audioParams.push(cp);
           }
           if (this._ctx && audioParams.length) {
@@ -12349,6 +12377,7 @@ ${err.toString()}`);
               this._grid = cp.params;
               continue;
             }
+            if (cp.fn === "room") continue;
             const entry = this._nodes[i++];
             if (entry && entry.fn === cp.fn) entry.node.update(cp.params);
           }
@@ -12785,7 +12814,7 @@ ${SHORTCUT_LINES[fn]}
       slotSubscribers = /* @__PURE__ */ new Set();
       slotTimers = /* @__PURE__ */ new Set();
       crdt = null;
-      SHORTCUT_LINES = { room: "# room 2", echo: "# echo 1 0.1", crush: "# crush 1", noise: "# noise" };
+      SHORTCUT_LINES = { room: "# room wcl 2", echo: "# echo 1 0.1", crush: "# crush 1", noise: "# noise" };
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();
       recorder = null;

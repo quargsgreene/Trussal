@@ -5,7 +5,10 @@
 // Audio-node params re-derive from worst-case metrics on every metrics
 // update; the chain itself rebuilds only when the applied program changes.
 // grid is visual-only: it renders panel overlays and contributes no audio
-// node.
+// node. room is visual-only HERE too: its audio node runs on the
+// aggregator's master path (bots/src/bot/aggregator-bot.js #syncMasterRoom),
+// which is the mix every client hears — inserting it locally as well would
+// reverb that audio twice.
 
 import { roomParams, createRoomNode } from './Room.js';
 import { echoParams, createEchoNode } from './Echo.js';
@@ -14,6 +17,10 @@ import { noiseParams, createNoiseNode } from './Noise.js';
 import { renderGridOverlays, clearGridOverlays } from './Grid.js';
 import { resolveEffectParams } from '../MetaprogrammerParser.js';
 
+// room's entry is DORMANT, not live: setChain/updateMetrics skip it because
+// the reverb belongs to the aggregator's master bus (see the header). It is
+// kept wired so local-chain room can be switched back on in one place if the
+// mix ever stops going through an aggregator.
 const AUDIO_EFFECTS = {
   room: { params: roomParams, create: createRoomNode },
   echo: { params: echoParams, create: createEchoNode },
@@ -75,6 +82,7 @@ export class EffectsChainManager {
     const audioParams = [];
     for (const cp of resolved) {
       if (cp.fn === 'grid') this._grid = cp.params;
+      else if (cp.fn === 'room') continue; // aggregator-master effect; visual only here
       else audioParams.push(cp);
     }
 
@@ -103,6 +111,7 @@ export class EffectsChainManager {
     let i = 0;
     for (const cp of resolved) {
       if (cp.fn === 'grid') { this._grid = cp.params; continue; }
+      if (cp.fn === 'room') continue; // no local node — see setChain
       const entry = this._nodes[i++];
       if (entry && entry.fn === cp.fn) entry.node.update(cp.params);
     }

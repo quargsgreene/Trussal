@@ -246,7 +246,7 @@ export function getProgramText() { return programText; }
 // Studio effect toggles double as metaprogram shortcuts under Net Cycles:
 // toggling adds/removes the corresponding # line and applies it, so the
 // buttons and the shared editor never disagree.
-const SHORTCUT_LINES = { room: '# room 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
+const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
 
 export function hasEffectShortcut(fn) {
   if (!programText) return false;
