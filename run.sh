@@ -72,3 +72,11 @@ cd "$REPO/docker-jitsi-meet"
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
 docker compose build --no-cache latency && docker compose rm -sf latency && docker compose up -d latency
 docker compose down && docker compose up -d
+
+# Fleet control-channel secret, checked LAST so it lands at the bottom of the
+# screen rather than under a full docker build, and after the stack is up so it
+# can read the value the fresh container actually got. Deliberately non-fatal:
+# the meeting platform is useful without the bot fleet, and failing a video
+# deploy over it would be worse than the silence it prevents.
+bash "$REPO/scripts/check-control-token.sh" video \
+  || echo "WARNING: deploy finished, but fleet room discovery is off — no aggregator will spawn."

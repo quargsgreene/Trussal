@@ -89,6 +89,15 @@ Which target to run depends on what changed: `src/` (bundle) or `latency-instrum
 
 **Room discovery needs a shared secret on BOTH VMs.** Set the same value as `SIDECAR_CONTROL_TOKEN` in `docker-jitsi-meet/.env` (video) and `FLEET_CONTROL_TOKEN` in `bots/.env` (bots) — generate with `openssl rand -hex 32`. The relay's `?role=control` channel lists every meeting in progress and `/ws` is proxied publicly with no auth of its own, so it **fails closed**: with no token, or a mismatched one, no rooms are discovered and **no aggregator spawns anywhere**. `[fleet] the relay REFUSED room discovery` in the conductor's log means the two values disagree.
 
+Both files are gitignored, so **no deploy can install them** and both compose files default the variable to empty rather than failing — an absent or mismatched pair is silent everywhere except a conductor log repeating one line every ~2s. Verify it instead of assuming:
+
+```bash
+make check-tokens                       # compares sha256 fingerprints across both VMs
+scripts/check-control-token.sh video    # or bots — checks one side, on that host
+```
+
+`check-tokens` runs at the end of `make deploy-all`; `run.sh` and `make deploy-bots` warn (non-fatally) on their own side. The per-side script also compares the `.env` against the **running container**, because container env is fixed at create time and `docker compose restart` does not re-read `.env` — editing the file and restarting leaves the old value live.
+
 ### Deploy caveats (these have each cost real time)
 
 - **Bundle is a single-file bind mount pinned to the file's INODE at container-create time.** `git pull`/`cp` replace the file (new inode), so the running `web` container keeps serving the OLD bundle. After any bundle change you MUST `docker compose up -d --force-recreate web` to re-bind. **Always verify the SERVED file** (`curl -sk https://localhost/custom-config.js | grep <sym>` and `docker exec <web> grep <sym> /usr/share/jitsi-meet/custom-config.js`), not just the on-disk file. Recreating `web` re-serves nginx/static without dropping the media session, but users must hard-reload for the new bundle.

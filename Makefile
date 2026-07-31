@@ -29,7 +29,7 @@ VIDEO_REPO_PATH ?= $(REPO_PATH)
 AUDIO_REPO_PATH ?= $(REPO_PATH)
 BOTS_REPO_PATH  ?= $(REPO_PATH)
 
-.PHONY: deploy-video deploy-audio deploy-bots deploy-all
+.PHONY: deploy-video deploy-audio deploy-bots deploy-all check-tokens
 
 deploy-video:
 	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && ./run.sh'
@@ -43,6 +43,32 @@ deploy-bots:
 	ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && git pull --ff-only \
 	  && cd bots \
 	  && docker compose --profile build-only build \
-	  && docker compose up -d --force-recreate conductor'
+	  && docker compose up -d --force-recreate conductor \
+	  && cd .. && bash scripts/check-control-token.sh bots' \
+	  || echo "WARNING: bots deployed, but the control token is missing/stale — no aggregator will spawn."
 
-deploy-all: deploy-video deploy-audio deploy-bots
+# The control-channel secret lives only in two gitignored .env files on two
+# different VMs, and both compose files default it to empty rather than failing,
+# so the pair can be absent OR mismatched with no error anywhere except a
+# conductor log flooding one line every 2s. Neither VM can check the other, so
+# this compares sha256 fingerprints of what each side has actually got — the
+# secrets themselves never leave their hosts. Fatal: a wrong pair means the
+# fleet is dead no matter how cleanly everything else deployed.
+check-tokens:
+	@video=$$(ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && bash scripts/check-control-token.sh video' | sed -n 's/^FINGERPRINT //p'); \
+	bots=$$(ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && bash scripts/check-control-token.sh bots' | sed -n 's/^FINGERPRINT //p'); \
+	if [ -z "$$video" ] || [ -z "$$bots" ]; then \
+	  [ -n "$$video" ] || echo "FAIL: video VM has no usable control token (diagnosis above)."; \
+	  [ -n "$$bots" ]  || echo "FAIL: bots VM has no usable control token (diagnosis above)."; \
+	  exit 1; \
+	fi; \
+	if [ "$$video" != "$$bots" ]; then \
+	  echo "FAIL: the two VMs hold DIFFERENT control tokens (video sha $$video, bots sha $$bots)."; \
+	  echo "  Room discovery is refused, so no aggregator spawns in any room. Copy the"; \
+	  echo "  video VM's SIDECAR_CONTROL_TOKEN into bots/.env as FLEET_CONTROL_TOKEN, then:"; \
+	  echo "    cd bots && docker compose up -d --force-recreate conductor"; \
+	  exit 1; \
+	fi; \
+	echo "control token OK — both VMs agree (sha $$video)"
+
+deploy-all: deploy-video deploy-audio deploy-bots check-tokens
