@@ -92,9 +92,9 @@ export const INDUCTIONS = Object.freeze({
 });
 
 // Layer artificially induced conditions onto measured worst-case values.
-// Strictly upward: effective = max(measured, induced) per metric, so a
-// slider below the network's truth is a no-op. Shared via CRDT, so every
-// client computes identical effective values from identical inputs.
+// Strictly upward: effective = max(measured, induced) per metric, so an
+// induced value below the network's truth is a no-op. Shared via CRDT, so
+// every client computes identical effective values from identical inputs.
 export function mergeInducedMetrics(measured, induced) {
   const m = measured || {};
   const i = induced || {};

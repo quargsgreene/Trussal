@@ -1,6 +1,6 @@
 // Artificial latency induction: an upward-only floor under the measured
-// worst-case latency. Effective WCL = max(measured WCL, induced) — pulling a
-// slider below what the network truly does is a no-op, never an improvement.
+// worst-case latency. Effective WCL = max(measured WCL, induced) — inducing
+// below what the network truly does is a no-op, never an improvement.
 
 export const IncreaseLatency = Object.freeze({
   key: 'wcl',

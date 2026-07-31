@@ -144,8 +144,11 @@ function pushEffectiveMetrics() {
   if (effects) effects.updateMetrics(wc);
 }
 
-// Slider API for the studio (and permitted bots): induce an upward-only
-// floor under one metric. Values are shared via CRDT (channel 'modulation').
+// Induce an upward-only floor under one metric; values are shared via CRDT
+// (channel 'modulation'), so every client computes the same effective
+// worst-case. Dormant: the studio's induction sliders were removed and
+// nothing calls this yet, but effectiveWorstCase() still merges whatever
+// lands in the channel, so a future control surface needs no plumbing.
 export function setInducedMetric(key, value) {
   if (!INDUCTIONS[key]) return false;
   ensureMetaprogramSync().setInduced(key, INDUCTIONS[key].clamp(value));

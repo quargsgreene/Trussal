@@ -43,7 +43,6 @@ import {
   isJamulusMode,
   setMonitorMix,
 } from './latency-instrument.js';
-import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import { effectiveWorstCase } from './audio-net/Metaprogrammer.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
@@ -393,8 +392,11 @@ function metricsLine(peer) {
 // Cycles cycle lengths). `controls` is dropped into the header next to the
 // mix-monitor select; the Jamulus capture buttons live there when re-enabled,
 // since routing them is exactly what the peer line's `routed` state reports.
+//
+// effectiveWorstCase() layers the CRDT induced floors over the measured
+// roster metrics, and carries measured's own `sampleCount` through the
+// merge — so one call covers both and there is nothing to show twice.
 function networkMetricsBlock(peer, controls = '') {
-  const measured = computeWorstCaseMetrics(getAllPeers());
   const wc = effectiveWorstCase();
   const ms = (v) => `${v.toFixed(0)}ms`;
   const peers = getAllPeers();
@@ -414,8 +416,8 @@ function networkMetricsBlock(peer, controls = '') {
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
-        · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
+      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+        <span title="peers contributing samples">(${wc.sampleCount})</span></div>
     </div>`;
 }
 

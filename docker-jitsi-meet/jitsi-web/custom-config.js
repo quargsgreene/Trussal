@@ -51526,7 +51526,6 @@ ${code2}${BTN_MARKER}`;
 
   // src/studio.js
   init_latency_instrument();
-  init_WorstCaseCalculationUtils();
 
   // src/audio-net/observability/NetStats.js
   var POLL_INTERVAL_MS = 2e3;
@@ -52453,7 +52452,6 @@ ${code2}${BTN_MARKER}`;
     return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
   }
   function networkMetricsBlock(peer, controls2 = "") {
-    const measured = computeWorstCaseMetrics(getAllPeers());
     const wc = effectiveWorstCase();
     const ms = (v2) => `${v2.toFixed(0)}ms`;
     const peers = getAllPeers();
@@ -52472,8 +52470,8 @@ ${code2}${BTN_MARKER}`;
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
-        \xB7 measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
+      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+        <span title="peers contributing samples">(${wc.sampleCount})</span></div>
     </div>`;
   }
   var monitorSelection = "master";

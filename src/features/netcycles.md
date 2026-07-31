@@ -93,7 +93,7 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Allow reading from network metrics
             - Write to artificial network modulation
                 - Steps:
-                    - Move artificial latency, jitter, RTT, packet loss percentage induction sliders
+                    - Raise the artificial latency, jitter, RTT, packet loss percentage induction floors (no control surface at present — the induction sliders were removed; the CRDT 'modulation' channel and the merge into effective worst-case remain)
             - Allow or disallow bots in cluser to write to artificial network modulation
                 - Steps:
                     - Focus on a subset of bots in personal cluster fleet
@@ -119,7 +119,7 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Allow reading from network metrics
             - Write to artificial network modulation
                 - Steps:
-                    - Move artificial latency, jitter, RTT, packet loss percentage induction sliders according to originating user permissions
+                    - Raise the artificial latency, jitter, RTT, packet loss percentage induction floors according to originating user permissions (no control surface at present — see the same capability above)
             - Leave meeting room
                 - Steps:
                     - Destroy all Puppeteer instances after meeting ends according to standard XMPP constraints
