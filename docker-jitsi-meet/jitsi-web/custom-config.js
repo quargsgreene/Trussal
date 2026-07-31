@@ -51338,7 +51338,6 @@ ${code2}${BTN_MARKER}`;
 
   // src/studio.js
   init_Metaprogrammer();
-  init_WorstCaseCalculationUtils();
 
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
@@ -52163,16 +52162,7 @@ ${code2}${BTN_MARKER}`;
   function networkMetricsBlock(peer, controls2 = "") {
     const measured = computeWorstCaseMetrics(getAllPeers());
     const wc = effectiveWorstCase();
-    const induced = getInducedMetrics();
     const ms = (v2) => `${v2.toFixed(0)}ms`;
-    const sliders = Object.entries(INDUCTIONS).map(([key, mod2]) => `
-    <div class="ts-slider-row" data-induce="${key}">
-      <div class="ts-slider-label">
-        <span>${escapeHtml(mod2.label)}</span>
-        <span class="ts-slider-val">${induced[key] ?? 0}${mod2.unit === "ms" ? "ms" : ""}</span>
-      </div>
-      <input class="ts-slider-input" type="range" min="${mod2.min}" max="${mod2.max}" step="${mod2.step}" value="${induced[key] ?? 0}">
-    </div>`).join("");
     const peers = getAllPeers();
     const mixOptions = [
       `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
@@ -52191,7 +52181,6 @@ ${code2}${BTN_MARKER}`;
       ${metricsLine(peer)}
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         \xB7 measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
-      <div class="ts-sliders ts-induce-sliders">${sliders}</div>
     </div>`;
   }
   var monitorSelection = "master";
@@ -52321,15 +52310,6 @@ ${code2}${BTN_MARKER}`;
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
-    container.querySelectorAll("[data-induce]").forEach((row) => {
-      const key = row.dataset.induce;
-      const input = row.querySelector("input");
-      const valEl = row.querySelector(".ts-slider-val");
-      input.addEventListener("input", () => {
-        setInducedMetric(key, parseFloat(input.value));
-        if (valEl) valEl.textContent = input.value;
-      });
-    });
     const mixSel = container.querySelector(".ts-monitor-mix");
     if (mixSel) mixSel.addEventListener("change", () => {
       monitorSelection = mixSel.value;

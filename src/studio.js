@@ -45,12 +45,7 @@ import {
 } from './latency-instrument.js';
 import { computeWorstCaseMetrics } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
-import {
-  setInducedMetric,
-  getInducedMetrics,
-  effectiveWorstCase,
-} from './audio-net/Metaprogrammer.js';
-import { INDUCTIONS } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { effectiveWorstCase } from './audio-net/Metaprogrammer.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 import {
@@ -393,25 +388,15 @@ function metricsLine(peer) {
   return `<div class="ts-meta">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
 }
 
-// The one network panel: this peer's measured link, the room-wide worst-case
-// basis every client shares (identical everywhere — it sets Net Cycles cycle
-// lengths), and the artificial-induction sliders that move it. `controls` is
-// dropped into the header next to the mix-monitor select; the Jamulus capture
-// buttons live there when re-enabled, since routing them is exactly what the
-// peer line's `routed` state reports.
+// The one network panel: this peer's measured link and the room-wide
+// worst-case basis every client shares (identical everywhere — it sets Net
+// Cycles cycle lengths). `controls` is dropped into the header next to the
+// mix-monitor select; the Jamulus capture buttons live there when re-enabled,
+// since routing them is exactly what the peer line's `routed` state reports.
 function networkMetricsBlock(peer, controls = '') {
   const measured = computeWorstCaseMetrics(getAllPeers());
   const wc = effectiveWorstCase();
-  const induced = getInducedMetrics();
   const ms = (v) => `${v.toFixed(0)}ms`;
-  const sliders = Object.entries(INDUCTIONS).map(([key, mod]) => `
-    <div class="ts-slider-row" data-induce="${key}">
-      <div class="ts-slider-label">
-        <span>${escapeHtml(mod.label)}</span>
-        <span class="ts-slider-val">${(induced[key] ?? 0)}${mod.unit === 'ms' ? 'ms' : ''}</span>
-      </div>
-      <input class="ts-slider-input" type="range" min="${mod.min}" max="${mod.max}" step="${mod.step}" value="${induced[key] ?? 0}">
-    </div>`).join('');
   const peers = getAllPeers();
   const mixOptions = [
     `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
@@ -431,7 +416,6 @@ function networkMetricsBlock(peer, controls = '') {
       ${metricsLine(peer)}
       <div class="ts-meta">effective: WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         · measured WCRTT ${ms(measured.wcrtt)} <span title="peers contributing samples">(${measured.sampleCount})</span></div>
-      <div class="ts-sliders ts-induce-sliders">${sliders}</div>
     </div>`;
 }
 
@@ -596,17 +580,6 @@ function renderDetail(container) {
 
     <div class="ts-status">${escapeHtml(status)}</div>
   `;
-
-  // Artificial network modulation sliders (upward-only, CRDT-shared).
-  container.querySelectorAll('[data-induce]').forEach(row => {
-    const key = row.dataset.induce;
-    const input = row.querySelector('input');
-    const valEl = row.querySelector('.ts-slider-val');
-    input.addEventListener('input', () => {
-      setInducedMetric(key, parseFloat(input.value));
-      if (valEl) valEl.textContent = input.value;
-    });
-  });
 
   // Mix output monitoring: master / ipsilateral / a contralateral peer.
   const mixSel = container.querySelector('.ts-monitor-mix');
@@ -843,10 +816,9 @@ function renderVoiceButtons(container, code) {
 }
 
 // Strudel's own `slider()` controls, re-rendered on every trussal-sliders-updated.
-// Must target .ts-strudel-sliders specifically: the Network Metrics panel's
-// induction sliders share the .ts-sliders styling class and sit EARLIER in the
-// detail panel, so a bare .ts-sliders lookup would find those instead and blank
-// them out (the empty-list early return below) on every render.
+// Target .ts-strudel-sliders, not bare .ts-sliders: any other panel that later
+// reuses the .ts-sliders styling class would get blanked out (the empty-list
+// early return below) on every render.
 function renderSliders(container, sliders) {
   const area = container.querySelector('.ts-strudel-sliders');
   if (!area) return;
