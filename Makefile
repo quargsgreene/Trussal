@@ -29,10 +29,17 @@ VIDEO_REPO_PATH ?= $(REPO_PATH)
 AUDIO_REPO_PATH ?= $(REPO_PATH)
 BOTS_REPO_PATH  ?= $(REPO_PATH)
 
+# run.sh rebuilds the bundle on the video VM, and build.mjs bakes in the
+# Jamulus hostname from JAMULUS_HOST (shell env or a repo-root .env, which no
+# VM has). Passing it here is what keeps that rebuild from silently baking the
+# jamulus.example.com default into the SERVED bundle and leaving the tracked
+# custom-config.js dirty, which breaks the next `git pull --ff-only`.
+JAMULUS_HOST    ?= jamulus.trussal.com
+
 .PHONY: deploy-video deploy-audio deploy-bots deploy-all check-tokens
 
 deploy-video:
-	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && ./run.sh'
+	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh'
 deploy-audio:
 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
 	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \

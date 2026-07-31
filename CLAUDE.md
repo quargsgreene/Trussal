@@ -39,7 +39,7 @@ cd docker-jitsi-meet
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
 ```
 
-Set `JAMULUS_HOST` in the environment (or `docker-jitsi-meet/.env`) before building to override the default Jamulus hostname baked into the bundle.
+Set `JAMULUS_HOST` before building to override the default Jamulus hostname baked into the bundle. `build.mjs` reads it from the shell environment or a **repo-root `.env`** (via `dotenv/config`, resolved against the build's working directory). It does **not** read `docker-jitsi-meet/.env` — that file is for docker compose only, so a `JAMULUS_HOST` set there never reaches the bundle. With the variable unset the build silently bakes in `jamulus.example.com`.
 
 ## Git workflow
 
