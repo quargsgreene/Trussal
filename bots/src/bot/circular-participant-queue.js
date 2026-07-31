@@ -37,6 +37,14 @@
  *     the AggregatorBot pairs it with the RingBuffer's oldest-sample eviction
  *     (requirement 4).
  *
+ *     This fixed-`slotMs` pointer is now the FALLBACK pace. In production the
+ *     metaprogram's scheduler slot grid drives the rotation instead (see
+ *     AggregatorBot #serveFromScheduler), so a turn lasts the network-derived
+ *     cycle length rather than a constant. The pointer still paces before the
+ *     first slot arrives, and in unit/standalone runs with no metaprogram sync
+ *     — and the ORDER and MEMBERSHIP it rotates over are the metaprogram's
+ *     either way (see applyMetaprogramOrder).
+ *
  * Pure module, no page/DOM/WebAudio dependency — testable under node:test.
  */
 
@@ -471,7 +479,6 @@ export class CircularParticipantQueue {
    */
   serve() {
     const n = this.#slots.length;
-    console.log('CircularParticipantQueue.serve() n=%d', n);
     if (!n) return { token: null, position: null, slot: -1, newTurn: false, lapped: false, departed: false };
 
     const now = this.now();
@@ -491,7 +498,30 @@ export class CircularParticipantQueue {
       this.#servedSlotAt[position] = slot;
       this.#lastSlot = slot;
     }
-    console.log({ token, position, slot, newTurn, lapped, departed });
     return { token, position, slot, newTurn, lapped, departed };
+  }
+
+  /**
+   * Whether this token's ring slots are departed ghosts (metaprogram mode: the
+   * participant left but the program still lists the token, so its turns replay
+   * held audio rather than streaming fresh). serve() reports the same thing for
+   * the position IT picked; this answers for a token chosen elsewhere — which
+   * is what the scheduler-paced rotation needs, since there the metaprogram's
+   * slot events pick the token, not the write pointer.
+   *
+   * A token's positions always share one identity (depart/applyMetaprogramOrder
+   * set the flag across every occurrence), so `every` and `some` agree; `every`
+   * is the conservative read — never replay a ghost unless it definitely left.
+   */
+  isDeparted(token) {
+    const positions = this.#positionsByToken.get(String(token));
+    if (!positions || !positions.length) return false;
+    return positions.every((p) => !!this.#slots[p].departed);
+  }
+
+  /** First ring position the token holds, or null when it holds none. */
+  positionOf(token) {
+    const positions = this.#positionsByToken.get(String(token));
+    return positions && positions.length ? positions[0] : null;
   }
 }

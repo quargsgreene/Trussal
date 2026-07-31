@@ -5,6 +5,7 @@ import {
   beatSeconds,
   timingTargetSeconds,
   cycleLength,
+  describeCycleLength,
   expandCycle,
   AVBufferQueue,
   MetaprogramScheduler,
@@ -64,6 +65,93 @@ test('a fixed amount pins the timing metric; live metrics are ignored', () => {
   assert.equal(timingTargetSeconds(
     { metric: 'wcpl', factor: 2, fixed: 0.1 }, { wcpl: 0.9 }
   ), 0.1 * WCPL_FULL_SCALE_S * 2);
+});
+
+test('expandCycle tags each slot with its written-sequence index', () => {
+  // `<0 1 0>` alternate: one entry per cycle, walking the written sequence —
+  // the two `0`s are distinct occurrences and must not collapse to one index.
+  const alt = astOf('$ participants <0 1 0>\n');
+  assert.deepEqual(expandCycle(alt.participants, 0).map(e => [e.token, e.index]), [['0', 0]]);
+  assert.deepEqual(expandCycle(alt.participants, 1).map(e => [e.token, e.index]), [['1', 1]]);
+  assert.deepEqual(expandCycle(alt.participants, 2).map(e => [e.token, e.index]), [['0', 2]]);
+
+  // `[0 1 0]` subdivide: all three share the cycle, indices in written order.
+  const sub = astOf('$ participants [0 1 0]\n');
+  assert.deepEqual(expandCycle(sub.participants, 0).map(e => [e.token, e.index]), [['0', 0], ['1', 1], ['0', 2]]);
+});
+
+test('slot-open and slot-close of the same slot share one id; ids are unique per cycle', () => {
+  // `[0 1 0]` puts the same token in the cycle twice, which is exactly the case
+  // (cycle, stack, token) cannot disambiguate — the aggregator pairs on `id`.
+  const { sched, events } = makeScheduler('$ participants [0 1 0]\n# cycles wcl 1\n', { wcl: 3000 });
+  sched.start(0);
+
+  const opens = events.filter(e => e.type === 'slot-open' && e.cycle === 0);
+  const closes = events.filter(e => e.type === 'slot-close' && e.cycle === 0);
+  assert.equal(opens.length, 3);
+  assert.equal(new Set(opens.map(e => e.id)).size, 3, 'every slot in a cycle gets its own id');
+  assert.deepEqual(closes.map(e => e.id), opens.map(e => e.id), 'closes pair with opens');
+  // The close lands exactly at open + dur, so a consumer can trust either edge.
+  opens.forEach((open, i) => assert.equal(closes[i].t, open.t + open.dur));
+});
+
+test('getCycleLength reports the length in force, which is the aggregator turn length', () => {
+  const { sched } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 2000 });
+  assert.equal(sched.getCycleLength().seconds, 2);
+  sched.start(0);
+  // Pending metrics land at the next boundary, not on the setter.
+  sched.setMetrics({ wcl: 6000 });
+  assert.equal(sched.getCycleLength().seconds, 2, 'still the length the last boundary scheduled');
+});
+
+test('describeCycleLength reports the length, the beat grid, and the metrics behind it', () => {
+  const live = describeCycleLength({
+    cycles: { metric: 'wcl', factor: 2, fixed: null },
+    tempo: { value: 120, unit: 'bpm' },
+    metrics: { wcl: 1500, wcj: 3, wcrtt: 6, wcpl: 0.02 }
+  });
+  assert.match(live, /^3\.000s \[6 beat\(s\) @ 0\.500s\] ← # cycles wcl 2 target 3\.000s /);
+  assert.match(live, /wcl 1500\.0ms/);
+  assert.match(live, /wcpl 2\.0%/);
+  // A pinned amount says so, and reports the pinned target rather than the live one.
+  const pinned = describeCycleLength({
+    cycles: { metric: 'wcl', factor: 10, fixed: 0.3 },
+    tempo: { value: 120, unit: 'bpm' },
+    metrics: { wcl: 99000 }
+  });
+  assert.match(pinned, /# cycles wcl 10 0\.3 \(pinned\) target 3\.000s/);
+});
+
+test('the scheduler prints its cycle length on change and heartbeats when it holds', () => {
+  const lines = [];
+  let now = 0;
+  const sched = new MetaprogramScheduler({
+    now: () => now,
+    onEvent: () => {},
+    lookaheadS: 0.05,
+    log: (l) => lines.push(l),
+    label: 'test',
+    setIntervalFn: null,
+    clearIntervalFn: null
+  });
+  sched.setProgram(astOf('$ participants <0>\n# cycles wcl 1\n'));
+  sched.setMetrics({ wcl: 1000 });
+  sched.start(0);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^\[test\] cycle length @ cycle 0: 1\.000s/);
+
+  // A quiet run inside the heartbeat window prints nothing more...
+  now = 5; sched.tick();
+  assert.equal(lines.length, 1);
+  // ...but a metrics change prints the new length and where it came from.
+  sched.setMetrics({ wcl: 2500 });
+  now = 6; sched.tick();
+  assert.equal(lines.length, 2);
+  assert.match(lines[1], /cycle length @ cycle \d+: 2\.500s .* \(was 1\.000s\)$/);
+
+  // Past the heartbeat window an unchanged length still reports.
+  now = 40; sched.tick();
+  assert.ok(lines.some(l => /cycle length steady/.test(l)), lines.join('\n'));
 });
 
 test('tempo units: bpm and cpm are per minute, cps per second', () => {
@@ -209,6 +297,7 @@ function makeScheduler(text, metrics) {
     now: () => now,
     onEvent: (e) => events.push(e),
     lookaheadS: 0.05,
+    log: false,
     setIntervalFn: null,
     clearIntervalFn: null
   });

@@ -2,7 +2,8 @@
 // aggregator is streaming RIGHT NOW, drawn inside the shared editor (rather than
 // a separate row of chips).
 //
-// The aggregator bot owns the ring (fixed ~4s turns) and broadcasts its current
+// The aggregator bot owns the ring (turns last the program's network-derived
+// cycle length, so they stretch and tighten with the room) and broadcasts its current
 // turn as `nc-active` over the sidecar; peer-state surfaces that as the
 // 'trussal-netcycles-active' DOM event (and getActiveNetCyclesToken()). This
 // highlighter outlines whichever token in the LIVE editor text matches the
