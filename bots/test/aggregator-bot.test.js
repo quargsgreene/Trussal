@@ -1197,7 +1197,7 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
 
   await bot.interpretAndExecuteMetaprogram();
 
-  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n');
+  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n');
   assert.ok(bot.order.hasValidMetaprogram(), 'the default program puts the ring in metaprogram mode');
   assert.ok(bot.scheduler, 'the scheduler runs the default program');
 

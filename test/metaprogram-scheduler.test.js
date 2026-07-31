@@ -24,7 +24,7 @@ function astOf(text) {
 
 // --- Cycle-length math ---------------------------------------------------------
 
-test('plan example: 120 bpm, wcl 900 ms, factor 3 → smallest beats > 2.7 s = 6 beats', () => {
+test('plan example: 120 bpm, wcl 900 ms, factor 3 → smallest beats ≥ 2.7 s = 6 beats', () => {
   const { beats, seconds } = cycleLength({
     cycles: { metric: 'wcl', factor: 3 },
     tempo: { value: 120, unit: 'bpm' },
@@ -34,18 +34,36 @@ test('plan example: 120 bpm, wcl 900 ms, factor 3 → smallest beats > 2.7 s = 6
   assert.equal(seconds, 3);
 });
 
-test('exact multiples are strictly exceeded; zero metric floors at one beat', () => {
-  // wcl 1000 ms at 120 bpm: 2 beats == 1.0 s is NOT > 1.0 s → 3 beats.
+test('exact multiples stay exact (≥); zero metric floors at one beat', () => {
+  // wcl 1000 ms at 120 bpm: 2 beats == 1.0 s covers it exactly → 2 beats.
   assert.equal(cycleLength({
     cycles: { metric: 'wcl', factor: 1 },
     tempo: { value: 120, unit: 'bpm' },
     metrics: { wcl: 1000 }
-  }).beats, 3);
+  }).beats, 2);
   assert.equal(cycleLength({
     cycles: { metric: 'wcl', factor: 1 },
     tempo: { value: 120, unit: 'bpm' },
     metrics: { wcl: 0 }
   }).beats, 1);
+});
+
+test('a fixed amount pins the timing metric; live metrics are ignored', () => {
+  // `# cycles wcl 10 0.3` — 0.3 s × 10 = 3 s even on a 5-second-WCL network.
+  assert.equal(timingTargetSeconds(
+    { metric: 'wcl', factor: 10, fixed: 0.3 }, { wcl: 5000 }
+  ), 3);
+  const { beats, seconds } = cycleLength({
+    cycles: { metric: 'wcl', factor: 10, fixed: 0.3 },
+    tempo: { value: 120, unit: 'bpm' },
+    metrics: { wcl: 5000 }
+  });
+  assert.equal(beats, 6); // lands exactly on the beat grid, no extra beat
+  assert.equal(seconds, 3);
+  // wcpl pins a loss fraction onto the same 10 s full scale.
+  assert.equal(timingTargetSeconds(
+    { metric: 'wcpl', factor: 2, fixed: 0.1 }, { wcpl: 0.9 }
+  ), 0.1 * WCPL_FULL_SCALE_S * 2);
 });
 
 test('tempo units: bpm and cpm are per minute, cps per second', () => {
@@ -202,7 +220,7 @@ function makeScheduler(text, metrics) {
 test('integration: <0 1>*2 emits the slot open/close grid against the fake clock', () => {
   // wcl 900 ms, factor 3, 120 bpm → 6 beats = 3 s cycles.
   const { sched, events, advance } = makeScheduler(
-    '$ participants <0 1>*2\n# cycles wcl*3\n',
+    '$ participants <0 1>*2\n# cycles wcl 3\n',
     { wcl: 900 }
   );
   sched.start(0);
@@ -224,14 +242,16 @@ test('integration: <0 1>*2 emits the slot open/close grid against the fake clock
 
 test('program and metric changes land at the next cycle boundary, not mid-cycle', () => {
   const { sched, events, advance } = makeScheduler(
-    '$ participants <0>\n', { wcl: 900 } // default cycles wcl*1 → beats > 0.9 s = 2 beats = 1 s
+    // Implicit default is cycles wcl 2000; true LAN wcl 0.45 ms → 0.9 s
+    // target → 2 beats = 1 s.
+    '$ participants <0>\n', { wcl: 0.45 }
   );
   sched.start(0);
   advance(0.01);
   assert.equal(events.find(e => e.type === 'cycle-start').seconds, 1);
 
   sched.setProgram(astOf('$ participants <7>\n'));
-  sched.setMetrics({ wcl: 2400 }); // → 5 beats = 2.5 s
+  sched.setMetrics({ wcl: 1.2 }); // × 2000 → 2.4 s → 5 beats = 2.5 s
   advance(0.5); // still inside cycle 0 → nothing new applied yet
   assert.ok(!events.some(e => e.type === 'slot-open' && e.token === '7'));
 

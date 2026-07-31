@@ -29,7 +29,7 @@ function bad(text, pattern) {
 
 test('spec: scheduling example with mixed indices, repeat, and comment', () => {
   const ast = ok(`$ participants <0 1 3 5 2a 1zzzv 9 1>*2
-# cycles wcl*3 // This is a comment.
+# cycles wcl 3 // This is a comment.
 
 `);
   assert.equal(ast.participants.mode, 'alternate');
@@ -37,17 +37,17 @@ test('spec: scheduling example with mixed indices, repeat, and comment', () => {
   const tokens = ast.participants.stacks[0].elements.map(e => e.token);
   assert.deepEqual(tokens, ['0', '1', '3', '5', '2a', '1zzzv', '9', '1']);
   assert.deepEqual(ast.participants.modifiers, [{ op: '*', value: 2 }]);
-  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 3 });
+  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 3, fixed: null });
   assert.equal(ast.tempo.value, 120); // default injected
   assert.equal(ast.tempo.unit, 'bpm');
 });
 
 test('spec: default four-human program with explicit defaults', () => {
   const ast = ok(`$ participants <0 1 2 3>
-# cycles wcl // Default if not specified
+# cycles wcl 2000 // Default if not specified
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit
 `);
-  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 1 });
+  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 2000, fixed: null });
   assert.deepEqual(ast.tempo, { value: 120, unit: 'bpm' });
 });
 
@@ -69,7 +69,7 @@ test('spec: chained cyclic timing modes are invalid', () => {
 
 test('spec: good chainable example (rests, degrade, tempo fraction, effects)', () => {
   const ast = ok(`$ participants [0 1 _ 4? 10 2a - 2za ~]
-# cycles wcj*3
+# cycles wcj 3
 # tempo 90/4 cpm
 # room 2.5
 # noise
@@ -89,14 +89,14 @@ test('spec: good chainable example (rests, degrade, tempo fraction, effects)', (
 
 test('spec: bad example — pattern argument to an effect is rejected', () => {
   bad(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
-# cycles wcj*3
+# cycles wcj 3
 # tempo 90/4 cpm
 # room (pink # range 0 1)
 `, /pattern arguments/);
   // The sequence itself is legal (@/!/? apply "as usual"): removing the bad
   // room line makes the program valid.
   const ast = ok(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
-# cycles wcj*3
+# cycles wcj 3
 # tempo 90/4 cpm
 `);
   const els = ast.participants.stacks[0].elements;
@@ -205,10 +205,28 @@ test('duplicate statements are rejected', () => {
   bad('$ participants <0>\n# tempo 100 bpm\n# tempo 90 cps\n', /duplicate # tempo/);
 });
 
-test('cycles metric must be a timing metric; factor must be positive', () => {
+test('cycles metric must be a timing metric; scale and amount must be positive', () => {
   bad('$ participants <0>\n# cycles wcrtt\n', /timing metric/);
-  bad('$ participants <0>\n# cycles wcl*0\n', /positive real/);
+  bad('$ participants <0>\n# cycles wcl 0\n', /scale factor must be a positive real/);
+  bad('$ participants <0>\n# cycles wcl 10 0\n', /fixed amount must be a positive real/);
   ok('$ participants <0>\n# cycles wcpl\n');
+});
+
+test('cycles args are positional: scale alone stays dynamic, amount pins the metric', () => {
+  // Dynamic: cycle target = live WCL × 1000.
+  let ast = ok('$ participants <0>\n# cycles wcl 1000\n');
+  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 1000, fixed: null });
+  // Pinned: WCL fixed at 0.3 s × 10 = 3 s, regardless of network conditions.
+  ast = ok('$ participants <0>\n# cycles wcl 10 0.3\n');
+  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 10, fixed: 0.3 });
+  // Bare metric: scale defaults to 1.
+  ast = ok('$ participants <0>\n# cycles wcj\n');
+  assert.deepEqual(ast.cycles, { metric: 'wcj', factor: 1, fixed: null });
+  // The retired `*` spelling points at the positional form.
+  bad('$ participants <0>\n# cycles wcl*3\n', /positional now/);
+  // At most two arguments; anything else on the line is junk.
+  bad('$ participants <0>\n# cycles wcl 10 0.3 5\n', /unexpected argument '5'/);
+  bad('$ participants <0>\n# cycles wcl 2a\n', /unexpected argument '2a'/);
 });
 
 test('errors carry 1-based line/col for editor squiggles', () => {
@@ -224,9 +242,12 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   // Participant 0 — the first to join — streams continuously; nobody else is
   // listed, so later joiners stay silent until an edit adds them.
   const text = buildDefaultProgram();
-  assert.equal(text, '$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n');
+  assert.equal(text, '$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n');
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
+  // The implicit default (no # cycles line) mirrors the same directive.
+  const implied = ok('$ participants <0>\n');
+  assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 2000, fixed: null, defaulted: true });
 });
 
 test('comments and blank lines anywhere are ignored', () => {

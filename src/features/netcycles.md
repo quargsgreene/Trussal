@@ -290,28 +290,36 @@ A minimal valid NetCycles program consists of a scheduling sequence of the audio
 
 The length of each cycle is defined according to a multiple of the worst-case latency, worst-case jitter, or length computed by the worst-case percentage of packet loss.
 
+The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl`/`wcj` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
 
 Examples:
 
 ```
 $ participants <0 1 3 5 2a 1zzzv 9 1>*2
-# cycles wcl*3 // This is a comment. 
+# cycles wcl 3 // This is a comment. 
 
 ```
 ```
 $ participants <0 1 2 3>
-# cycles wcl // Default if not specified
+# cycles wcl 2000 // Default if not specified — the scale keeps LAN-grade latencies audible as multi-second solos (2 ms one-way × 2000 = 4 s)
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm, default is 120 bpm if not specified. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
 
- // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats that is greater than wcl. This is the order in which inputs are established via the Web Audio API.
+ // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats covering (≥) the cycle target. This is the order in which inputs are established via the Web Audio API.
 ```
 
 ```
 $ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
-# cycles wcl
+# cycles wcl 2000
 # tempo 120 bpm
 
 // This is how the default program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. Tempo defaults to 120 bpm.
+```
+
+```
+$ participants <0 1 2>
+# cycles wcl 10 0.3
+
+// WCL pinned at 300 ms and scaled by 10: every cycle is exactly 3 s no matter how the network behaves.
 ```
 
 Overarching cyclic timing modes cannot be chained together.
@@ -342,7 +350,7 @@ Examples:
 - Good:
 ```
 $ participants [0 1 _ 4? 10 2a - 2za ~]
-# cycles wcj*3
+# cycles wcj 3
 # tempo 90/4 cpm
 # room 2.5
 # noise
@@ -351,7 +359,7 @@ $ participants [0 1 _ 4? 10 2a - 2za ~]
 - Bad:
 ```
 $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exactly as mondo notation repeats or lengthens an element in the sequence.
-# cycles wcj*3
+# cycles wcj 3
 # tempo 90/4 cpm
 # room (pink # range 0 1)
 ```

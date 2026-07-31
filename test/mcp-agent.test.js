@@ -149,7 +149,7 @@ test('MCP stdio round-trip: list tools, compose valid + invalid patterns, inspec
 
     const goodMeta = await rpc('tools/call', {
       name: 'compose_pattern',
-      arguments: { target: 'metaprogram', code: '$ participants <0 1a>\n# cycles wcj*2\n' }
+      arguments: { target: 'metaprogram', code: '$ participants <0 1a>\n# cycles wcj 2\n' }
     });
     assert.equal(JSON.parse(goodMeta.result.content[0].text).queued, true);
 

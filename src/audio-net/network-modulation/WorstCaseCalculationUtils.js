@@ -46,16 +46,8 @@ function peerRtt(peer) {
   return null;
 }
 
-// Live-testing stretch on the one-way latency estimate: LAN-scale RTTs
-// (a few ms) would otherwise floor metaprogram cycles at one beat, giving
-// each participant almost no solo time. 2000 turns a 4 ms one-way estimate
-// into a 4 s cycle target. Set to 1 to restore the true worst-case latency
-// (also un-stretches the studio WCL readout and the av-effects room reverb,
-// which consume the same wcl).
-export const WCL_SOLO_STRETCH = 2000;
-
 // Worst-case metrics over the whole roster:
-//   wcl   worst-case latency, ms (one-way estimate rtt / 2, × WCL_SOLO_STRETCH)
+//   wcl   worst-case latency, ms (one-way estimate rtt / 2)
 //   wcj   worst-case jitter, ms
 //   wcrtt worst-case round-trip time, ms
 //   wcpl  worst-case packet loss, fraction in [0, 1]
@@ -63,6 +55,11 @@ export const WCL_SOLO_STRETCH = 2000;
 // Peers with no usable sample for a given metric simply don't contribute to
 // it. An empty roster (or all-null metrics) yields zeros so downstream cycle
 // math degenerates to the minimum cycle length instead of NaN.
+//
+// wcl is the TRUE one-way estimate: the old WCL_SOLO_STRETCH live-testing
+// inflation (2000×, so LAN-scale RTTs still gave audible solos) moved into
+// the metaprogram itself — the default program's `# cycles wcl 2000` scale
+// factor — so the studio readout and av-effects see real network values.
 export function computeWorstCaseMetrics(peers) {
   const list = Array.isArray(peers) ? peers : [];
   const rtts = [];
@@ -79,7 +76,7 @@ export function computeWorstCaseMetrics(peers) {
   }
   const wcrtt = worstCase(rtts) ?? 0;
   return {
-    wcl: (wcrtt / 2) * WCL_SOLO_STRETCH,
+    wcl: wcrtt / 2,
     wcj: worstCase(jitters) ?? 0,
     wcrtt,
     wcpl: worstCase(losses) ?? 0,

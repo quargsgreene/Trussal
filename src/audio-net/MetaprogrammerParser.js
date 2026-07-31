@@ -177,8 +177,9 @@ class Parser {
     if (!program.participants) {
       this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
     }
-    // Defaults per spec: cycles wcl, tempo 120 bpm.
-    if (!program.cycles) program.cycles = { metric: 'wcl', factor: 1, defaulted: true };
+    // Defaults per spec: cycles wcl 2000 (mirrors buildDefaultProgram — the
+    // scale keeps LAN-grade latencies audible as solos), tempo 120 bpm.
+    if (!program.cycles) program.cycles = { metric: 'wcl', factor: 2000, fixed: null, defaulted: true };
     if (!program.tempo) program.tempo = { value: 120, unit: 'bpm', defaulted: true };
     return program;
   }
@@ -377,6 +378,11 @@ class Parser {
     this.recover();
   }
 
+  // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
+  // With no amount the metric evolves with the live worst-case measurement;
+  // an amount PINS it there regardless of network conditions (seconds for
+  // wcl/wcj, loss fraction for wcpl), pinning timing only — measured
+  // metrics still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
     if (metricTok.type !== 'word' || !TIMING_METRICS.includes(metricTok.value)) {
@@ -385,24 +391,38 @@ class Parser {
       return;
     }
     this.next();
-    let factor = 1;
     if (this.peek().type === 'op' && this.peek().value === '*') {
+      this.error(`the cycles scale factor is positional now — write '# cycles ${metricTok.value} 3', not '${metricTok.value}*3'`, this.peek());
+      this.recover();
+      return;
+    }
+    let factor = 1;
+    let fixed = null;
+    for (const slot of ['scale factor', 'fixed amount']) {
+      const t = this.peek();
+      if (t.type !== 'number' && t.type !== 'intlike') break;
       this.next();
-      const f = this.peek();
-      const val = f.type === 'number' ? f.value : (f.type === 'intlike' ? parseFloat(f.value) : NaN);
+      const val = t.type === 'number' ? t.value : parseFloat(t.value);
       if (!(val > 0) || !isFinite(val)) {
-        this.error('cycles factor must be a positive real number', f);
-      } else {
+        this.error(`cycles ${slot} must be a positive real number`, t);
+      } else if (slot === 'scale factor') {
         factor = val;
+      } else {
+        fixed = val;
       }
-      this.next();
+    }
+    const trailing = this.peek();
+    if (trailing.type !== 'newline' && trailing.type !== 'eof' && trailing.type !== 'sigil') {
+      this.error(`cycles got an unexpected argument '${trailing.value}' — the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+      this.recover();
+      return;
     }
     if (program.cycles) {
       // "Overarching cyclic timing modes cannot be chained together."
       this.error('cyclic timing modes cannot be chained — exactly one # cycles directive is allowed', nameTok);
       return;
     }
-    program.cycles = { metric: metricTok.value, factor };
+    program.cycles = { metric: metricTok.value, factor, fixed };
   }
 
   parseTempo(program, nameTok) {
@@ -537,9 +557,11 @@ export function resolveEffectParams(chainEntry) {
 
 // The default program every room starts under (Net Cycles is always on):
 // participant 0 — the first to join — streams continuously. Nobody else is
-// listed, so later joiners stay silent until an edit adds them.
+// listed, so later joiners stay silent until an edit adds them. The 2000×
+// scale keeps LAN-grade one-way latencies (a few ms) audible as multi-second
+// solos — 2 ms × 2000 = 4 s (the retired WCL_SOLO_STRETCH, now in the open).
 export function buildDefaultProgram() {
-  return `$ participants <0>\n# cycles wcl\n# tempo 120 bpm\n`;
+  return `$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

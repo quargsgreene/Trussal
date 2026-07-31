@@ -1830,7 +1830,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function buildDefaultProgram() {
     return `$ participants <0>
-# cycles wcl
+# cycles wcl 2000
 # tempo 120 bpm
 `;
   }
@@ -1917,7 +1917,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           if (!program.participants) {
             this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
           }
-          if (!program.cycles) program.cycles = { metric: "wcl", factor: 1, defaulted: true };
+          if (!program.cycles) program.cycles = { metric: "wcl", factor: 2e3, fixed: null, defaulted: true };
           if (!program.tempo) program.tempo = { value: 120, unit: "bpm", defaulted: true };
           return program;
         }
@@ -2118,6 +2118,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           this.error(`'${name3}' is not a NetCycles function \u2014 Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
           this.recover();
         }
+        // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
+        // With no amount the metric evolves with the live worst-case measurement;
+        // an amount PINS it there regardless of network conditions (seconds for
+        // wcl/wcj, loss fraction for wcpl), pinning timing only — measured
+        // metrics still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
           if (metricTok.type !== "word" || !TIMING_METRICS.includes(metricTok.value)) {
@@ -2126,23 +2131,37 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             return;
           }
           this.next();
-          let factor = 1;
           if (this.peek().type === "op" && this.peek().value === "*") {
+            this.error(`the cycles scale factor is positional now \u2014 write '# cycles ${metricTok.value} 3', not '${metricTok.value}*3'`, this.peek());
+            this.recover();
+            return;
+          }
+          let factor = 1;
+          let fixed = null;
+          for (const slot of ["scale factor", "fixed amount"]) {
+            const t = this.peek();
+            if (t.type !== "number" && t.type !== "intlike") break;
             this.next();
-            const f2 = this.peek();
-            const val2 = f2.type === "number" ? f2.value : f2.type === "intlike" ? parseFloat(f2.value) : NaN;
+            const val2 = t.type === "number" ? t.value : parseFloat(t.value);
             if (!(val2 > 0) || !isFinite(val2)) {
-              this.error("cycles factor must be a positive real number", f2);
-            } else {
+              this.error(`cycles ${slot} must be a positive real number`, t);
+            } else if (slot === "scale factor") {
               factor = val2;
+            } else {
+              fixed = val2;
             }
-            this.next();
+          }
+          const trailing = this.peek();
+          if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
+            this.error(`cycles got an unexpected argument '${trailing.value}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+            this.recover();
+            return;
           }
           if (program.cycles) {
             this.error("cyclic timing modes cannot be chained \u2014 exactly one # cycles directive is allowed", nameTok);
             return;
           }
-          program.cycles = { metric: metricTok.value, factor };
+          program.cycles = { metric: metricTok.value, factor, fixed };
         }
         parseTempo(program, nameTok) {
           const q2 = this.peek();
@@ -2259,20 +2278,21 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function timingTargetSeconds(cycles, metrics) {
     const m2 = metrics || {};
     const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
+    const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
     switch (cycles && cycles.metric) {
       case "wcj":
-        return (m2.wcj || 0) / 1e3 * factor;
+        return (fixed ?? (m2.wcj || 0) / 1e3) * factor;
       case "wcpl":
-        return (m2.wcpl || 0) * WCPL_FULL_SCALE_S * factor;
+        return (fixed ?? (m2.wcpl || 0)) * WCPL_FULL_SCALE_S * factor;
       case "wcl":
       default:
-        return (m2.wcl || 0) / 1e3 * factor;
+        return (fixed ?? (m2.wcl || 0) / 1e3) * factor;
     }
   }
   function cycleLength({ cycles, tempo, metrics }) {
     const beatS = beatSeconds(tempo);
     const targetS = timingTargetSeconds(cycles, metrics);
-    const beats = Math.max(1, Math.floor(targetS / beatS) + 1);
+    const beats = Math.max(1, Math.ceil(targetS / beatS - 1e-9));
     return { beats, seconds: beats * beatS, beatSeconds: beatS };
   }
   function seededRandom(seed2) {
@@ -2636,7 +2656,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     const wcrtt = worstCase(rtts) ?? 0;
     return {
-      wcl: wcrtt / 2 * WCL_SOLO_STRETCH,
+      wcl: wcrtt / 2,
       wcj: worstCase(jitters) ?? 0,
       wcrtt,
       wcpl: worstCase(losses) ?? 0,
@@ -2652,14 +2672,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return out;
   }
-  var WCL_SOLO_STRETCH, INDUCTIONS;
+  var INDUCTIONS;
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
       init_IncreaseJitter();
       init_IncreaseRTT();
       init_IncreasePacketLoss();
-      WCL_SOLO_STRETCH = 2e3;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
         wcj: IncreaseJitter,
@@ -3116,10 +3135,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/map.js
+  // ../../../node_modules/lib0/map.js
   var create, copy, setIfUndefined, map, any;
   var init_map = __esm({
-    "node_modules/lib0/map.js"() {
+    "../../../node_modules/lib0/map.js"() {
       create = () => /* @__PURE__ */ new Map();
       copy = (m2) => {
         const r2 = create();
@@ -3153,18 +3172,18 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/set.js
+  // ../../../node_modules/lib0/set.js
   var create2;
   var init_set = __esm({
-    "node_modules/lib0/set.js"() {
+    "../../../node_modules/lib0/set.js"() {
       create2 = () => /* @__PURE__ */ new Set();
     }
   });
 
-  // node_modules/lib0/array.js
+  // ../../../node_modules/lib0/array.js
   var last, appendTo, from, every, some, unfold, isArray;
   var init_array = __esm({
-    "node_modules/lib0/array.js"() {
+    "../../../node_modules/lib0/array.js"() {
       last = (arr) => arr[arr.length - 1];
       appendTo = (dest, src2) => {
         for (let i = 0; i < src2.length; i++) {
@@ -3199,10 +3218,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/observable.js
+  // ../../../node_modules/lib0/observable.js
   var ObservableV2;
   var init_observable = __esm({
-    "node_modules/lib0/observable.js"() {
+    "../../../node_modules/lib0/observable.js"() {
       init_map();
       init_set();
       init_array();
@@ -3278,10 +3297,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/math.js
+  // ../../../node_modules/lib0/math.js
   var floor, abs, min, max, isNaN2, isNegativeZero;
   var init_math = __esm({
-    "node_modules/lib0/math.js"() {
+    "../../../node_modules/lib0/math.js"() {
       floor = Math.floor;
       abs = Math.abs;
       min = (a2, b) => a2 < b ? a2 : b;
@@ -3291,10 +3310,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/binary.js
+  // ../../../node_modules/lib0/binary.js
   var BIT1, BIT2, BIT3, BIT4, BIT6, BIT7, BIT8, BIT18, BIT19, BIT20, BIT21, BIT22, BIT23, BIT24, BIT25, BIT26, BIT27, BIT28, BIT29, BIT30, BIT31, BIT32, BITS5, BITS6, BITS7, BITS17, BITS18, BITS19, BITS20, BITS21, BITS22, BITS23, BITS24, BITS25, BITS26, BITS27, BITS28, BITS29, BITS30, BITS31;
   var init_binary = __esm({
-    "node_modules/lib0/binary.js"() {
+    "../../../node_modules/lib0/binary.js"() {
       BIT1 = 1;
       BIT2 = 2;
       BIT3 = 4;
@@ -3338,10 +3357,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/number.js
+  // ../../../node_modules/lib0/number.js
   var MAX_SAFE_INTEGER, MIN_SAFE_INTEGER, LOWEST_INT32, isInteger, isNaN3, parseInt2;
   var init_number = __esm({
-    "node_modules/lib0/number.js"() {
+    "../../../node_modules/lib0/number.js"() {
       init_math();
       MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
       MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER;
@@ -3352,10 +3371,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/string.js
+  // ../../../node_modules/lib0/string.js
   var fromCharCode, fromCodePoint, MAX_UTF16_CHARACTER, toLowerCase, trimLeftRegex, trimLeft, fromCamelCaseRegex, fromCamelCase, _encodeUtf8Polyfill, utf8TextEncoder, _encodeUtf8Native, encodeUtf8, utf8TextDecoder, repeat;
   var init_string = __esm({
-    "node_modules/lib0/string.js"() {
+    "../../../node_modules/lib0/string.js"() {
       init_array();
       fromCharCode = String.fromCharCode;
       fromCodePoint = String.fromCodePoint;
@@ -3387,10 +3406,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/encoding.js
+  // ../../../node_modules/lib0/encoding.js
   var Encoder, createEncoder, length, toUint8Array, verifyLen, write, writeUint8, writeVarUint, writeVarInt, _strBuffer, _maxStrBSize, _writeVarStringNative, _writeVarStringPolyfill, writeVarString, writeUint8Array, writeVarUint8Array, writeOnDataView, writeFloat32, writeFloat64, writeBigInt64, floatTestBed, isFloat32, writeAny, RleEncoder, flushUintOptRleEncoder, UintOptRleEncoder, flushIntDiffOptRleEncoder, IntDiffOptRleEncoder, StringEncoder;
   var init_encoding = __esm({
-    "node_modules/lib0/encoding.js"() {
+    "../../../node_modules/lib0/encoding.js"() {
       init_math();
       init_number();
       init_binary();
@@ -3704,10 +3723,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/error.js
+  // ../../../node_modules/lib0/error.js
   var create3, methodUnimplemented, unexpectedCase;
   var init_error = __esm({
-    "node_modules/lib0/error.js"() {
+    "../../../node_modules/lib0/error.js"() {
       create3 = (s2) => new Error(s2);
       methodUnimplemented = () => {
         throw create3("Method unimplemented");
@@ -3718,10 +3737,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/decoding.js
+  // ../../../node_modules/lib0/decoding.js
   var errorUnexpectedEndOfArray, errorIntegerOutOfRange, Decoder, createDecoder, hasContent, readUint8Array, readVarUint8Array, readUint8, readVarUint, readVarInt, _readVarStringPolyfill, _readVarStringNative, readVarString, readFromDataView, readFloat32, readFloat64, readBigInt64, readAnyLookupTable, readAny, RleDecoder, UintOptRleDecoder, IntDiffOptRleDecoder, StringDecoder;
   var init_decoding = __esm({
-    "node_modules/lib0/decoding.js"() {
+    "../../../node_modules/lib0/decoding.js"() {
       init_binary();
       init_math();
       init_number();
@@ -3971,19 +3990,19 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/webcrypto.js
+  // ../../../node_modules/lib0/webcrypto.js
   var subtle, getRandomValues;
   var init_webcrypto = __esm({
-    "node_modules/lib0/webcrypto.js"() {
+    "../../../node_modules/lib0/webcrypto.js"() {
       subtle = crypto.subtle;
       getRandomValues = crypto.getRandomValues.bind(crypto);
     }
   });
 
-  // node_modules/lib0/random.js
+  // ../../../node_modules/lib0/random.js
   var uint32, uuidv4Template, uuidv4;
   var init_random = __esm({
-    "node_modules/lib0/random.js"() {
+    "../../../node_modules/lib0/random.js"() {
       init_webcrypto();
       uint32 = () => getRandomValues(new Uint32Array(1))[0];
       uuidv4Template = "10000000-1000-4000-8000" + -1e11;
@@ -3995,18 +4014,18 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/time.js
+  // ../../../node_modules/lib0/time.js
   var getUnixTime;
   var init_time = __esm({
-    "node_modules/lib0/time.js"() {
+    "../../../node_modules/lib0/time.js"() {
       getUnixTime = Date.now;
     }
   });
 
-  // node_modules/lib0/promise.js
+  // ../../../node_modules/lib0/promise.js
   var create4, all;
   var init_promise = __esm({
-    "node_modules/lib0/promise.js"() {
+    "../../../node_modules/lib0/promise.js"() {
       create4 = (f2) => (
         /** @type {Promise<T>} */
         new Promise(f2)
@@ -4015,18 +4034,18 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/conditions.js
+  // ../../../node_modules/lib0/conditions.js
   var undefinedToNull;
   var init_conditions = __esm({
-    "node_modules/lib0/conditions.js"() {
+    "../../../node_modules/lib0/conditions.js"() {
       undefinedToNull = (v2) => v2 === void 0 ? null : v2;
     }
   });
 
-  // node_modules/lib0/storage.js
+  // ../../../node_modules/lib0/storage.js
   var VarStoragePolyfill, _localStorage, usePolyfill, varStorage;
   var init_storage = __esm({
-    "node_modules/lib0/storage.js"() {
+    "../../../node_modules/lib0/storage.js"() {
       VarStoragePolyfill = class {
         constructor() {
           this.map = /* @__PURE__ */ new Map();
@@ -4058,19 +4077,19 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/trait/equality.js
+  // ../../../node_modules/lib0/trait/equality.js
   var EqualityTraitSymbol, equals;
   var init_equality = __esm({
-    "node_modules/lib0/trait/equality.js"() {
+    "../../../node_modules/lib0/trait/equality.js"() {
       EqualityTraitSymbol = Symbol("Equality");
       equals = (a2, b) => a2 === b || !!a2?.[EqualityTraitSymbol]?.(b) || false;
     }
   });
 
-  // node_modules/lib0/object.js
+  // ../../../node_modules/lib0/object.js
   var isObject, assign, keys, forEach, size, isEmpty, every2, hasProperty, equalFlat, freeze, deepFreeze;
   var init_object = __esm({
-    "node_modules/lib0/object.js"() {
+    "../../../node_modules/lib0/object.js"() {
       init_equality();
       isObject = (o) => typeof o === "object";
       assign = Object.assign;
@@ -4110,10 +4129,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/function.js
+  // ../../../node_modules/lib0/function.js
   var callAll, id, equalityDeep, isOneOf;
   var init_function = __esm({
-    "node_modules/lib0/function.js"() {
+    "../../../node_modules/lib0/function.js"() {
       init_object();
       init_equality();
       callAll = (fs, args2, i = 0) => {
@@ -4206,10 +4225,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/environment.js
+  // ../../../node_modules/lib0/environment.js
   var isNode, isMac, params, args, computeParams, hasParam, getVariable, hasConf, production, forceColor, supportsColor;
   var init_environment = __esm({
-    "node_modules/lib0/environment.js"() {
+    "../../../node_modules/lib0/environment.js"() {
       init_map();
       init_string();
       init_conditions();
@@ -4268,10 +4287,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/buffer.js
+  // ../../../node_modules/lib0/buffer.js
   var createUint8ArrayFromLen, copyUint8Array;
   var init_buffer = __esm({
-    "node_modules/lib0/buffer.js"() {
+    "../../../node_modules/lib0/buffer.js"() {
       createUint8ArrayFromLen = (len) => new Uint8Array(len);
       copyUint8Array = (uint8Array) => {
         const newBuf = createUint8ArrayFromLen(uint8Array.byteLength);
@@ -4281,10 +4300,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/pair.js
+  // ../../../node_modules/lib0/pair.js
   var Pair, create5;
   var init_pair = __esm({
-    "node_modules/lib0/pair.js"() {
+    "../../../node_modules/lib0/pair.js"() {
       Pair = class {
         /**
          * @param {L} left
@@ -4299,10 +4318,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/prng.js
+  // ../../../node_modules/lib0/prng.js
   var bool, int53, int32, int31, letter, word, oneOf;
   var init_prng = __esm({
-    "node_modules/lib0/prng.js"() {
+    "../../../node_modules/lib0/prng.js"() {
       init_string();
       init_math();
       bool = (gen) => gen.next() >= 0.5;
@@ -4322,10 +4341,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // node_modules/lib0/schema.js
+  // ../../../node_modules/lib0/schema.js
   var schemaSymbol, ValidationError, shapeExtends, Schema, $ConstructedBy, $constructedBy, $$constructedBy, $Custom, $custom, $$custom, $Literal, $literal, $$literal, _regexEscape, _schemaStringTemplateToRegex, $StringTemplate, $$stringTemplate, isOptionalSymbol, $Optional, $$optional, $Never, $never, $$never, $Object, $object, $$object, $objectAny, $Record, $record, $$record, $Tuple, $tuple, $$tuple, $Array, $array, $$array, $arrayAny, $InstanceOf, $instanceOf, $$instanceOf, $$schema, $Lambda, $$lambda, $function, $Intersection, $$intersect, $Union, $union, $$union, _t, $any, $$any, $bigint, $$bigint, $symbol, $$symbol, $number, $$number, $string, $$string, $boolean, $$boolean, $undefined, $$undefined, $void, $null, $$null, $uint8Array, $$uint8Array, $primitive, $json, $, assert, PatternMatcher, match, _random, random;
   var init_schema = __esm({
-    "node_modules/lib0/schema.js"() {
+    "../../../node_modules/lib0/schema.js"() {
       init_object();
       init_array();
       init_error();
@@ -5048,10 +5067,10 @@ ${err.toString()}`);
     }
   });
 
-  // node_modules/lib0/dom.js
+  // ../../../node_modules/lib0/dom.js
   var doc, $fragment, domParser, $element, $text, mapToStyleString, ELEMENT_NODE, TEXT_NODE, CDATA_SECTION_NODE, COMMENT_NODE, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, DOCUMENT_FRAGMENT_NODE, $node;
   var init_dom = __esm({
-    "node_modules/lib0/dom.js"() {
+    "../../../node_modules/lib0/dom.js"() {
       init_map();
       init_schema();
       doc = /** @type {Document} */
@@ -5073,18 +5092,18 @@ ${err.toString()}`);
     }
   });
 
-  // node_modules/lib0/symbol.js
+  // ../../../node_modules/lib0/symbol.js
   var create6;
   var init_symbol = __esm({
-    "node_modules/lib0/symbol.js"() {
+    "../../../node_modules/lib0/symbol.js"() {
       create6 = Symbol;
     }
   });
 
-  // node_modules/lib0/logging.common.js
+  // ../../../node_modules/lib0/logging.common.js
   var BOLD, UNBOLD, BLUE, GREY, GREEN, RED, PURPLE, ORANGE, UNCOLOR, computeNoColorLoggingArgs, lastLoggingTime;
   var init_logging_common = __esm({
-    "node_modules/lib0/logging.common.js"() {
+    "../../../node_modules/lib0/logging.common.js"() {
       init_symbol();
       init_time();
       BOLD = create6();
@@ -5130,10 +5149,10 @@ ${err.toString()}`);
     }
   });
 
-  // node_modules/lib0/logging.js
+  // ../../../node_modules/lib0/logging.js
   var _browserStyleMap, computeBrowserLoggingArgs, computeLoggingArgs, print, warn, vconsoles;
   var init_logging = __esm({
-    "node_modules/lib0/logging.js"() {
+    "../../../node_modules/lib0/logging.js"() {
       init_environment();
       init_set();
       init_pair();
@@ -5212,10 +5231,10 @@ ${err.toString()}`);
     }
   });
 
-  // node_modules/lib0/iterator.js
+  // ../../../node_modules/lib0/iterator.js
   var createIterator, iteratorFilter, iteratorMap;
   var init_iterator = __esm({
-    "node_modules/lib0/iterator.js"() {
+    "../../../node_modules/lib0/iterator.js"() {
       createIterator = (next) => ({
         /**
          * @return {IterableIterator<T>}
@@ -5240,7 +5259,7 @@ ${err.toString()}`);
     }
   });
 
-  // node_modules/yjs/dist/yjs.mjs
+  // ../../../node_modules/yjs/dist/yjs.mjs
   function* lazyStructReaderGenerator(decoder) {
     const numOfStateUpdates = readVarUint(decoder.restDecoder);
     for (let i = 0; i < numOfStateUpdates; i++) {
@@ -5285,7 +5304,7 @@ ${err.toString()}`);
   }
   var DeleteItem, DeleteSet, iterateDeletedStructs, findIndexDS, isDeleted, sortAndMergeDeleteSet, mergeDeleteSets, addToDeleteSet, createDeleteSet, createDeleteSetFromStructStore, writeDeleteSet, readDeleteSet, readAndApplyDeleteSet, generateNewClientId, Doc, DSDecoderV1, UpdateDecoderV1, DSDecoderV2, UpdateDecoderV2, DSEncoderV1, UpdateEncoderV1, DSEncoderV2, UpdateEncoderV2, writeStructs, writeClientsStructs, readClientsStructRefs, integrateStructs, writeStructsFromTransaction, readUpdateV2, applyUpdateV2, applyUpdate, writeStateAsUpdate, encodeStateAsUpdateV2, encodeStateAsUpdate, readStateVector, decodeStateVector, EventHandler, createEventHandler, addEventHandlerListener, removeEventHandlerListener, callEventHandlerListeners, ID, compareIDs, createID, findRootTypeKey, Snapshot, createSnapshot, emptySnapshot, isVisible, splitSnapshotAffectedStructs, StructStore, getStateVector, getState, addStruct, findIndexSS, find, getItem, findIndexCleanStart, getItemCleanStart, getItemCleanEnd, replaceStruct, iterateStructs, Transaction, writeUpdateMessageFromTransaction, addChangedTypeToTransaction, tryToMergeWithLefts, tryGcDeleteSet, tryMergeDeleteSet, cleanupTransactions, transact, LazyStructReader, LazyStructWriter, mergeUpdates, sliceStruct, mergeUpdatesV2, diffUpdateV2, flushLazyStructWriter, writeStructToLazyStructWriter, finishLazyStructWriting, convertUpdateFormat, convertUpdateFormatV2ToV1, errorComputeChanges, YEvent, getPathTo, warnPrematureAccess, maxSearchMarker, globalSearchMarkerTimestamp, ArraySearchMarker, refreshMarkerTimestamp, overwriteMarker, markPosition, findMarker, updateMarkerChanges, callTypeObservers, AbstractType, typeListSlice, typeListToArray, typeListForEach, typeListMap, typeListCreateIterator, typeListGet, typeListInsertGenericsAfter, lengthExceeded, typeListInsertGenerics, typeListPushGenerics, typeListDelete, typeMapDelete, typeMapSet, typeMapGet, typeMapGetAll, typeMapHas, typeMapGetAllSnapshot, createMapIterator, YArrayEvent, YArray, readYArray, YMapEvent, YMap, readYMap, equalAttrs, ItemTextListPosition, findNextPosition, findPosition, insertNegatedAttributes, updateCurrentAttributes, minimizeAttributeChanges, insertAttributes, insertText, formatText, cleanupFormattingGap, cleanupContextlessFormattingGap, cleanupYTextFormatting, cleanupYTextAfterTransaction, deleteText, YTextEvent, YText, readYText, YXmlTreeWalker, YXmlFragment, readYXmlFragment, YXmlElement, readYXmlElement, YXmlEvent, YXmlHook, readYXmlHook, YXmlText, readYXmlText, AbstractStruct, structGCRefNumber, GC, ContentBinary, readContentBinary, ContentDeleted, readContentDeleted, createDocFromOpts, ContentDoc, readContentDoc, ContentEmbed, readContentEmbed, ContentFormat, readContentFormat, ContentJSON, readContentJSON, isDevMode, ContentAny, readContentAny, ContentString, readContentString, typeRefs, YArrayRefID, YMapRefID, YTextRefID, YXmlElementRefID, YXmlFragmentRefID, YXmlHookRefID, YXmlTextRefID, ContentType, readContentType, splitItem, Item, readItemContent, contentRefs, structSkipRefNumber, Skip, glo, importIdentifier;
   var init_yjs = __esm({
-    "node_modules/yjs/dist/yjs.mjs"() {
+    "../../../node_modules/yjs/dist/yjs.mjs"() {
       init_observable();
       init_array();
       init_math();

@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import {
   percentile,
   worstCase,
-  computeWorstCaseMetrics,
-  WCL_SOLO_STRETCH
+  computeWorstCaseMetrics
 } from '../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 
 test('percentile matches the R-7 interpolation ported from bots/src/shared/stats.js', () => {
@@ -32,7 +31,7 @@ test('computeWorstCaseMetrics over a mixed roster', () => {
   ];
   const wc = computeWorstCaseMetrics(peers);
   assert.equal(wc.wcrtt, 120);
-  assert.equal(wc.wcl, 60 * WCL_SOLO_STRETCH); // one-way wcrtt / 2, stretched
+  assert.equal(wc.wcl, 60); // true one-way estimate, wcrtt / 2
   assert.equal(wc.wcj, 8);
   assert.equal(wc.wcpl, 0.2);
   assert.equal(wc.sampleCount, 2);
@@ -52,7 +51,7 @@ test('empty roster degrades to zeros, not NaN', () => {
 test('single peer roster (alone in room) uses that peer verbatim', () => {
   const wc = computeWorstCaseMetrics([{ rtt: 33, jitter: 1.5, packetLoss: 0.05 }]);
   assert.equal(wc.wcrtt, 33);
-  assert.equal(wc.wcl, 16.5 * WCL_SOLO_STRETCH);
+  assert.equal(wc.wcl, 16.5);
   assert.equal(wc.wcj, 1.5);
   assert.equal(wc.wcpl, 0.05);
 });

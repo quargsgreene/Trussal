@@ -29,25 +29,31 @@ export function beatSeconds(tempo) {
 // heavy loss stretches cycles the way heavy latency does.
 export const WCPL_FULL_SCALE_S = 10;
 
-// The minimum waiting period the timing mode demands, in seconds.
+// The minimum waiting period the timing mode demands, in seconds. A fixed
+// amount on the cycles directive pins the metric there (seconds for wcl/wcj,
+// loss fraction for wcpl) regardless of the live measurement — the pin only
+// reaches timing, never the effects/readouts that consume metrics directly.
 export function timingTargetSeconds(cycles, metrics) {
   const m = metrics || {};
   const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
+  const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
   switch (cycles && cycles.metric) {
-    case 'wcj': return ((m.wcj || 0) / 1000) * factor;
-    case 'wcpl': return (m.wcpl || 0) * WCPL_FULL_SCALE_S * factor;
+    case 'wcj': return (fixed ?? (m.wcj || 0) / 1000) * factor;
+    case 'wcpl': return (fixed ?? (m.wcpl || 0)) * WCPL_FULL_SCALE_S * factor;
     case 'wcl':
-    default: return ((m.wcl || 0) / 1000) * factor;
+    default: return (fixed ?? (m.wcl || 0) / 1000) * factor;
   }
 }
 
-// Smallest whole number of beats strictly exceeding the waiting period —
-// "minimum waiting period prioritized over hitting buffer scheduling
-// deadlines". Never below one beat.
+// Smallest whole number of beats covering (≥) the waiting period — "minimum
+// waiting period prioritized over hitting buffer scheduling deadlines" —
+// never below one beat. ≥ rather than strictly-exceeding so a pinned target
+// landing exactly on the beat grid stays exact (`# cycles wcl 10 0.3` at
+// 120 bpm is 3 s, not 3.5); the epsilon absorbs float noise in that division.
 export function cycleLength({ cycles, tempo, metrics }) {
   const beatS = beatSeconds(tempo);
   const targetS = timingTargetSeconds(cycles, metrics);
-  const beats = Math.max(1, Math.floor(targetS / beatS) + 1);
+  const beats = Math.max(1, Math.ceil(targetS / beatS - 1e-9));
   return { beats, seconds: beats * beatS, beatSeconds: beatS };
 }
 
