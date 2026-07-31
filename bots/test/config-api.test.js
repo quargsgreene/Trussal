@@ -103,3 +103,49 @@ test('POST /api/master-script validates the JSON and redistributes on success', 
     assert.ok(conductor.listBots()[0].script.strudel.includes('arpy*4'));
   });
 });
+
+// The admin port has no authentication and is published on all interfaces
+// (docker-compose.yml "7777:7777", bound 0.0.0.0). Anything reachable through
+// it is effectively public on the operator LAN, so it must never carry — or
+// accept — the relay control-channel credential: that token is what gates a
+// live directory of every meeting in progress, on a publicly-proxied path.
+test('GET /api/config never discloses the relay control token', async () => {
+  await withAdmin(async (base) => {
+    const cfg = await (await fetch(`${base}/api/config`)).json();
+    assert.ok(!('controlToken' in cfg), 'the secret must not be a serializable config key');
+    const serialized = JSON.stringify(cfg);
+    assert.ok(!/controlToken|x-trussal-control-token/i.test(serialized));
+  });
+});
+
+test('POST /api/config refuses keys that move where the fleet connects or who it is', async () => {
+  await withAdmin(async (base, conductor) => {
+    // sidecarWsUrl alone is enough to repoint the control connection at an
+    // attacker's server, which then receives the token in a request header.
+    for (const attack of [
+      { sidecarWsUrl: 'ws://attacker.example/ws' },
+      { controlToken: 'stolen' },
+      { jitsiUrl: 'http://attacker.example/0' },
+      { conductorPort: 1 },
+    ]) {
+      const res = await fetch(`${base}/api/config`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(attack),
+      });
+      assert.equal(res.status, 400, `${Object.keys(attack)[0]} must be refused`);
+      assert.match((await res.json()).error, /not remotely configurable/);
+    }
+    assert.equal(conductor.cfg.sidecarWsUrl, mergeConfig({}).sidecarWsUrl, 'endpoint unchanged');
+
+    // The operational knobs the admin page actually posts still work.
+    const ok = await fetch(`${base}/api/config`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ maxBots: 2, fpsMin: 20, roles: { unison: false, stereoTiles: true } }),
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(conductor.cfg.maxBots, 2);
+    assert.equal(conductor.cfg.roles.stereoTiles, true);
+  });
+});

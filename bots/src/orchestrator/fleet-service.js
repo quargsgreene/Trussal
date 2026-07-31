@@ -87,11 +87,17 @@ function requireRoom(room, where) {
 }
 
 export class FleetService {
-  constructor(cfg, { runner, connectSidecar }) {
+  constructor(cfg, { runner, connectSidecar, controlToken = null }) {
     if (!runner) throw new TypeError('a container runner {start, stop} is required');
     this.cfg = cfg;
     this.runner = runner;
     this.connectSidecar = connectSidecar || null; // (url, handlers) → { send, close }
+    // A dependency, NOT a cfg key: `GET /api/config` serializes cfg wholesale on
+    // an unauthenticated port, so a secret stored there would be handed to any
+    // caller who can reach :7777 — and `POST /api/config` would let them
+    // overwrite it. Keeping it off cfg is what stops the relay's control-channel
+    // credential from leaking out of the admin surface.
+    this.controlToken = controlToken || null;
     this.master = randomMasterScript(cfg.sessionSeed);
     this.bots = new Map();     // botId → { botId, room, ownerIndex, name, script, startedAt }
     this.metrics = new Map();  // botId → latest metrics sample
@@ -230,7 +236,7 @@ export class FleetService {
     // shared secret is not optional. Without it no room is ever discovered and
     // no aggregator spawns; say so at startup rather than looking like a dead
     // socket.
-    if (!this.cfg.controlToken) {
+    if (!this.controlToken) {
       console.warn('[fleet] FLEET_CONTROL_TOKEN unset — the relay will refuse room discovery, ' +
         'so no rooms will be served and no aggregator will spawn.');
     }
@@ -238,7 +244,7 @@ export class FleetService {
     this.control = this.connectSidecar(url, {
       // In a header rather than the URL — see makeWsSidecarConnector: a query
       // parameter would put the shared secret in nginx's access log.
-      headers: this.cfg.controlToken ? { [CONTROL_TOKEN_HEADER]: this.cfg.controlToken } : null,
+      headers: this.controlToken ? { [CONTROL_TOKEN_HEADER]: this.controlToken } : null,
       onOpen: () => {},
       onMessage: (msg) => {
         if (msg.type === 'control-denied') {

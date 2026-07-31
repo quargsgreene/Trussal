@@ -57,13 +57,11 @@ async function withFleet(fn, overrides = {}) {
   const fleet = new FleetService(
     mergeConfig({
       maxBots: 5, conductorPort: 0, ownerLeaveGraceMs: 30, meetingEndGraceMs: 30,
-      // Discovery is not under test here, but start() still opens the control
-      // socket and warns loudly when no token is configured — give it one so
-      // that warning doesn't bury every unrelated test's output.
-      controlToken: 'test-token',
       ...overrides,
     }),
-    { runner, connectSidecar },
+    // controlToken is a dependency, not a cfg key — it must never be serialized
+    // by the admin API. Supplied so start() doesn't warn on every unrelated test.
+    { runner, connectSidecar, controlToken: 'test-token' },
   );
   await fleet.start();
   fleet.attachRoom(ROOM);

@@ -65,10 +65,9 @@ async function withStack(fn, overrides = {}) {
       conductorPort: 0,
       sidecarWsUrl: `ws://127.0.0.1:${port}/ws`,
       jitsiUrl: 'http://localhost/0',
-      controlToken: CONTROL_TOKEN,
       ...overrides,
     }),
-    { runner, connectSidecar: makeWsSidecarConnector(WebSocket) },
+    { runner, connectSidecar: makeWsSidecarConnector(WebSocket), controlToken: CONTROL_TOKEN },
   );
   await fleet.start();
   const sockets = [];

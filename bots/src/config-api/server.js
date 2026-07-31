@@ -12,6 +12,20 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+// Config keys a remote caller may change: the fleet's tuning knobs — how many
+// bots, how they are stratified, the health thresholds and grace periods. Keys
+// that decide WHERE the fleet connects or WHO it authenticates as (jitsiUrl,
+// jamulusServer, sidecarWsUrl, conductorPort, adminPort) are deliberately
+// absent, because this port has no auth: see the POST /api/config handler.
+const REMOTELY_TUNABLE = new Set([
+  'maxBots', 'sessionSeed', 'varyHydra', 'roles', 'staggerSubdivisions',
+  'fpsMin', 'memLimitMb', 'percentileCutoff', 'replaceLatencyFloorMs', 'replaceRamFloorMb',
+  'metricsIntervalMs', 'healthTickMs',
+  'jitsiChannelLastN', 'jitsiVideoHeight', 'jitsiStartBitrateKbps', 'captureFps',
+  'ownerLeaveGraceMs', 'meetingEndGraceMs',
+  'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'jitsiJoinGraceMs',
+]);
+
 // Loaded once at startup: the page is static; all live data arrives via
 // fetch('/api/...') from the inline script.
 const ADMIN_HTML = readFileSync(
@@ -57,6 +71,18 @@ export function createAdminServer(conductor) {
 
       if (req.method === 'POST' && req.url === '/api/config') {
         const overrides = await readJson();
+        // Allowlist, not a denylist: this port has no authentication and is
+        // published on all interfaces, so a remote caller may tune the fleet's
+        // BEHAVIOUR but must not be able to change where it connects or who it
+        // authenticates as. Left writable, `sidecarWsUrl` alone is enough to
+        // repoint the control connection at an attacker's server, which then
+        // receives the control token in the x-trussal-control-token header on
+        // the very next connect. A new endpoint key added to defaultConfig later
+        // is non-writable by default, which is the safe direction to fail.
+        const blocked = Object.keys(overrides).filter((key) => !REMOTELY_TUNABLE.has(key));
+        if (blocked.length) {
+          return send(400, { error: `not remotely configurable: ${blocked.join(', ')}` });
+        }
         try {
           await conductor.applyConfig(overrides);
           return send(200, { ok: true });

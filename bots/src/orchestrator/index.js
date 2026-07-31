@@ -20,7 +20,6 @@ const cfg = mergeConfig({
   ...(process.env.JAMULUS_SERVER ? { jamulusServer: process.env.JAMULUS_SERVER } : {}),
   ...(process.env.VARY_HYDRA ? { varyHydra: process.env.VARY_HYDRA === 'true' } : {}),
   ...(process.env.SIDECAR_WS_URL ? { sidecarWsUrl: process.env.SIDECAR_WS_URL } : {}),
-  ...(process.env.FLEET_CONTROL_TOKEN ? { controlToken: process.env.FLEET_CONTROL_TOKEN } : {}),
 });
 
 const runner = makeDockerRunner({
@@ -39,6 +38,9 @@ const runner = makeDockerRunner({
 const fleet = new FleetService(cfg, {
   runner,
   connectSidecar: makeWsSidecarConnector(WebSocket),
+  // Passed as a dependency, never merged into cfg: the admin API serves cfg
+  // verbatim on an unauthenticated port (see config-api/server.js).
+  controlToken: process.env.FLEET_CONTROL_TOKEN || null,
 });
 await fleet.start();
 console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, serving every room on ${cfg.sidecarWsUrl}`);

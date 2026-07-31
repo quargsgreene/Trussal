@@ -69,11 +69,12 @@ export const defaultConfig = Object.freeze({
   // is free-form, so any configured value could only ever be a wrong default,
   // and the room segment of jitsiUrl is just a template that jitsiUrlForRoom
   // swaps per meeting.
-  // Shared secret for the relay's control channel. It must match the sidecar's
-  // SIDECAR_CONTROL_TOKEN: the channel lists every meeting in progress and /ws
-  // is proxied publicly, so the relay refuses it unauthenticated. Unset here →
-  // no rooms discovered → no aggregator.
-  controlToken: null,
+  // NOTE: the relay control-channel secret (FLEET_CONTROL_TOKEN) is deliberately
+  // NOT a config key. `GET /api/config` serializes this whole object on an
+  // unauthenticated port, and `POST /api/config` can set any key in it, so a
+  // secret living here would be readable — and overwritable — by anyone who can
+  // reach :7777. It is passed to FleetService as a constructor dependency
+  // instead; see orchestrator/index.js.
   ownerLeaveGraceMs: 120000,               // cluster lives this long (2 min) after its owner leaves, meeting continuing
   meetingEndGraceMs: 15000,                // all humans gone → teardown (XMPP constraints)
   // The aggregator has no health-replace path (its metrics are deliberately
