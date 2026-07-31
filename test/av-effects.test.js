@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  roomParams, rt60CombFeedback, COMB_BASES_S, CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, MAX_COMB_FEEDBACK
+  roomParams, rt60CombFeedback, createRoomNode,
+  COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, MAX_COMB_FEEDBACK
 } from '../src/audio-net/av-effects/Room.js';
 import { echoParams, echoFeedback, FEEDBACK_CEILING } from '../src/audio-net/av-effects/Echo.js';
 import { crushParams, makeCrushCurve } from '../src/audio-net/av-effects/Crush.js';
@@ -46,6 +47,62 @@ test('room: cutoff clamps — zero RTT opens fully, huge RTT caps at max', () =>
   assert.equal(roomParams({ wcl: 0, wcrtt: 0 }).cutoffHz, CUTOFF_MAX_HZ);
   assert.equal(roomParams({ wcrtt: 1e6 }).cutoffHz, CUTOFF_MAX_HZ);
   assert.equal(roomParams({ wcrtt: 0.1 }).cutoffHz, CUTOFF_MIN_HZ); // 10 Hz → floor
+});
+
+// Minimal recording stand-in for an AudioContext: enough surface for
+// createRoomNode, and every connect() is logged so the built graph can be
+// asserted on. Schroeder's shape (parallel combs → SERIES allpasses) is a
+// wiring property, invisible to the roomParams math tests above.
+function recordingCtx() {
+  const edges = [];
+  let id = 0;
+  const mk = (kind) => {
+    const node = {
+      id: `${kind}#${id++}`,
+      gain: { value: 0 },
+      delayTime: { value: 0 },
+      frequency: { value: 0 },
+      connect(target) { edges.push([node.id, target.id]); },
+      disconnect() {}
+    };
+    return node;
+  };
+  return {
+    edges,
+    createGain: () => mk('gain'),
+    createDelay: () => mk('delay'),
+    createBiquadFilter: () => Object.assign(mk('biquad'), { type: '' })
+  };
+}
+
+test('room: allpass stages are chained in series, each feeding the next', () => {
+  const ctx = recordingCtx();
+  createRoomNode(ctx, roomParams({ wcl: 200, wcrtt: 60 }, { scale: 2 }));
+
+  // Delay nodes are created combs-first, so the allpasses are the last ones.
+  const allpassIds = [...new Set(ctx.edges.flat())]
+    .filter(n => n.startsWith('delay#'))
+    .slice(COMB_BASES_S.length);
+  assert.equal(allpassIds.length, ALLPASS_BASES_S.length);
+
+  const feedersOf = (id) => ctx.edges.filter(([, to]) => to === id).map(([from]) => from);
+  const sinksOf = (id) => ctx.edges.filter(([from]) => from === id).map(([, to]) => to);
+
+  allpassIds.forEach((apId, i) => {
+    // Every stage after the first is fed by its predecessor, not by combSum.
+    if (i > 0) {
+      assert.ok(feedersOf(apId).includes(allpassIds[i - 1]),
+        `allpass ${i} must be fed by allpass ${i - 1} (series), not tapped off the comb sum`);
+    }
+    // No stage is a dead end: each reaches something besides its own feedback.
+    const onward = sinksOf(apId).filter(to => !feedersOf(apId).includes(to));
+    assert.ok(onward.length > 0, `allpass ${i} output goes nowhere — dead branch`);
+  });
+
+  // The last stage is the one that reaches the lowpass pair.
+  const last = allpassIds[allpassIds.length - 1];
+  assert.ok(sinksOf(last).some(to => to.startsWith('biquad#')),
+    'the final allpass must feed the cascaded lowpass');
 });
 
 // --- echo ---------------------------------------------------------------------

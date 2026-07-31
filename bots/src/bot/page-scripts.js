@@ -1072,6 +1072,9 @@ export function pageMasterPlayer() {
     const combSum = ctx.createGain();
     combSum.gain.value = 1 / combs.length;
     combs.forEach((c) => c.delay.connect(combSum));
+    // Allpass stages run in SERIES (see Room.js): advancing `hd` per stage is
+    // what chains them. Without it every stage taps combSum in parallel, only
+    // the last reaches the lowpass, and the rest are dead recirculating loops.
     let hd = combSum;
     const allpasses = params.allpassDelaysS.map((d) => {
       const delay = ctx.createDelay(1);
@@ -1081,9 +1084,9 @@ export function pageMasterPlayer() {
       hd.connect(delay);
       delay.connect(fb);
       fb.connect(delay);
+      hd = delay;
       return delay;
     });
-    hd = allpasses.length ? allpasses[allpasses.length - 1] : hd;
     const lp1 = ctx.createBiquadFilter();
     const lp2 = ctx.createBiquadFilter();
     lp1.type = lp2.type = 'lowpass';

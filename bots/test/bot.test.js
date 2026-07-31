@@ -6,7 +6,7 @@ import { ffmpegBedArgs } from '../src/bot/ffmpeg-bed.js';
 import { jamulusArgs } from '../src/bot/jamulus.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
-  pageEnsureAudioPublished,
+  pageEnsureAudioPublished, pageMasterPlayer,
 } from '../src/bot/page-scripts.js';
 import { Bot } from '../src/bot/bot.js';
 
@@ -270,4 +270,60 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
 
   await bot.stop();
   assert.equal(calls.closed, true);
+});
+
+// The master-bus reverb is built page-side (the page-script contract forbids
+// imports), so it is a hand-kept mirror of Room.js createRoomNode rather than
+// a shared function. This is the copy in the audible path — every client hears
+// the mix the aggregator publishes — so its graph shape is asserted directly.
+test('pageMasterPlayer: master-room allpass stages are chained in series', () => {
+  const edges = [];
+  let id = 0;
+  const mk = (kind) => {
+    const node = {
+      id: `${kind}#${id++}`,
+      gain: { value: 0 }, delayTime: { value: 0 }, frequency: { value: 0 },
+      connect(t) { edges.push([node.id, t && t.id ? t.id : 'destination']); },
+      disconnect() {}
+    };
+    return node;
+  };
+  class StubCtx {
+    constructor() { this.destination = { id: 'destination' }; }
+    createGain() { return mk('gain'); }
+    createDelay() { return mk('delay'); }
+    createBiquadFilter() { return Object.assign(mk('biquad'), { type: '' }); }
+    createScriptProcessor() { return Object.assign(mk('proc'), { onaudioprocess: null }); }
+  }
+
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]);            // forces ensure() -> ctx exists
+    player.setRoom({
+      combDelaysS: [0.0297, 0.0371, 0.0411, 0.0437],
+      allpassDelaysS: [0.005, 0.0017],
+      combFeedbacks: [0.5, 0.5, 0.5, 0.5],
+      wetGain: 0.5,
+      cutoffHz: 6000
+    });
+
+    const delays = [...new Set(edges.flat())].filter(n => n.startsWith('delay#'));
+    const allpassIds = delays.slice(4); // combs are created first
+    assert.equal(allpassIds.length, 2, 'two allpass stages');
+
+    const feedersOf = (n) => edges.filter(([, to]) => to === n).map(([from]) => from);
+    const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
+
+    assert.ok(feedersOf(allpassIds[1]).includes(allpassIds[0]),
+      'stage 2 must be fed by stage 1 (series), not tapped off the comb sum');
+    const onward = sinksOf(allpassIds[0]).filter(to => !feedersOf(allpassIds[0]).includes(to));
+    assert.ok(onward.length > 0, 'stage 1 output goes nowhere — dead branch');
+    assert.ok(sinksOf(allpassIds[1]).some(to => to.startsWith('biquad#')),
+      'the final allpass must feed the cascaded lowpass');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
 });

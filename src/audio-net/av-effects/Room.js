@@ -75,6 +75,11 @@ export function createRoomNode(audioCtx, params) {
   combSum.gain.value = 1 / combs.length;
   combs.forEach(c => c.delay.connect(combSum));
 
+  // Allpass stages run in SERIES: Schroeder diffuses the parallel comb sum by
+  // passing it through each stage in turn. Advancing `head` per stage is what
+  // makes the chain a chain — leave it pointing at combSum and every stage
+  // taps the sum in parallel, only the last one reaching the lowpass while
+  // the others recirculate into a dead end.
   let head = combSum;
   const allpasses = params.allpassDelaysS.map((d) => {
     // Feedback-comb approximation of the allpass stage.
@@ -85,9 +90,9 @@ export function createRoomNode(audioCtx, params) {
     head.connect(delay);
     delay.connect(fb);
     fb.connect(delay);
+    head = delay;
     return delay;
   });
-  head = allpasses.length ? allpasses[allpasses.length - 1] : head;
 
   // Cascaded lowpass at the end of the filter chain.
   const lp1 = audioCtx.createBiquadFilter();
