@@ -45,6 +45,9 @@ const MAX_PENDING_SLOTS = 256;
 // to an abandoned grid rather than the current one — whichever is larger.
 const SLOT_HORIZON_CYCLES = 3;
 const SLOT_HORIZON_MIN_S = 30;
+// Rate limit for the empty-turn diagnostic: often enough to characterise a
+// persistent silence within seconds, rare enough not to flood a quiet room.
+const EMPTY_TURN_LOG_MS = 3000;
 // Re-announce the current nc-active turn at least this often even when it hasn't
 // changed, so a late joiner (or a sidecar whose per-room cache was cleared by a
 // session reset) learns it without waiting for the ring to rotate.
@@ -218,6 +221,7 @@ export class AggregatorBot extends Bot {
     #turnCounter = 0;
     #servedTurnAt = new Map();   // "stack:index" -> #turnCounter when last served
     #pacingStalled = false;      // latched so the fall-back warning prints once per stall
+    #lastEmptyTurnLogAt = 0;     // rate limit for the empty-turn diagnostic
     #worstCase = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
     #roomChain = null;
     #lastRoomPushJson = 'null';
@@ -1185,15 +1189,24 @@ export class AggregatorBot extends Bot {
         // playing it straight through each turn (looping back only if less than a
         // full cycle was captured) until the program drops the token (retires it).
         let held;
+        let heldFrom;
         if (departed) {
             held = this.#replayDepartedGhost(active, newTurn);
+            heldFrom = 'ghost-replay';
         } else if (!currentRingBuffer) {
             held = new Float32Array(0);
+            heldFrom = 'no-buffer';
         } else {
             this.#ghostReplayOffset.delete(active);
             held = currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples));
             this.#retainScheduled(active, held);
+            heldFrom = 'live-drain';
         }
+        // A turn that streams NOTHING while the room is unmuted is the shape of
+        // every silence bug this thing has had, and "samples=0" alone never says
+        // which branch produced it. Name the branch and its inputs, rate-limited
+        // so a legitimately silent stretch cannot flood the log.
+        if (!held.length) this.#logEmptyTurn(active, heldFrom, currentRingBuffer, departed, newTurn);
         // Gain-stage the master before it is streamed (requirement 6).
         const { gain, samples } = this.computeGainStaging(held);
         // Single-slot handoff to playMasterBufferToClient (drained + cleared there
@@ -1227,6 +1240,24 @@ export class AggregatorBot extends Bot {
             // folded into the ring.
             if (!this.order.knowsToken(token)) this.order.register(token, token);
         }
+    }
+
+    /**
+     * Explain an empty turn once every EMPTY_TURN_LOG_MS: which branch produced
+     * it and the state that decided the branch. Rate-limited rather than
+     * silenced entirely, because the interesting case is the one that persists.
+     */
+    #logEmptyTurn(token, from, ringBuffer, departed, newTurn) {
+        const now = this.now();
+        if (now - this.#lastEmptyTurnLogAt < EMPTY_TURN_LOG_MS) return;
+        this.#lastEmptyTurnLogAt = now;
+        const retained = this.#lastScheduledBuffer.get(token);
+        console.warn(
+            `[aggregator-bot] EMPTY TURN token=${token} via=${from} departed=${departed} ` +
+            `newTurn=${newTurn} bufferLen=${ringBuffer ? ringBuffer.length : 'NO-BUFFER'} ` +
+            `retainedLen=${retained ? retained.length : 0} ghostOffset=${this.#ghostReplayOffset.get(token) ?? 0} ` +
+            `slice=${this.masterSliceSamples} bufferTokens=[${Object.keys(this.buffers)}] ring=[${this.order.order()}]`,
+        );
     }
 
     /**
