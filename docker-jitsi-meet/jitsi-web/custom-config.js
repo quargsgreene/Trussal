@@ -2797,7 +2797,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const worst = sorted[0];
     const partner = sorted.length > 1 ? sorted[1] : worst;
     const network = worst / 2 + partner / 2;
-    const pipeline = typeof pipelineMs === "number" && isFinite(pipelineMs) ? pipelineMs : PIPELINE_ALLOWANCE_MS2;
+    const pipeline = typeof pipelineMs === "number" && isFinite(pipelineMs) ? pipelineMs : PIPELINE_ALLOWANCE_MS;
     return network + (jitterBufferMs || 0) + pipeline;
   }
   function computeWorstCaseMetrics(peers) {
@@ -2816,7 +2816,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         jitterBuffers.push(peer.jitterBufferMs);
       }
       pipelines.push(
-        typeof peer.pipelineMs === "number" && isFinite(peer.pipelineMs) ? peer.pipelineMs : PIPELINE_ALLOWANCE_MS2
+        typeof peer.pipelineMs === "number" && isFinite(peer.pipelineMs) ? peer.pipelineMs : PIPELINE_ALLOWANCE_MS
       );
       if (typeof peer.packetLoss === "number" && isFinite(peer.packetLoss)) {
         losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
@@ -2824,7 +2824,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     const wcrtt = worstCase(rtts) ?? 0;
     const wcjb = worstCase(jitterBuffers) ?? 0;
-    const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS2;
+    const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
     return {
       wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
       wcj: worstCase(jitters) ?? 0,
@@ -2847,14 +2847,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return out;
   }
-  var PIPELINE_ALLOWANCE_MS2, INDUCTIONS;
+  var PIPELINE_ALLOWANCE_MS, INDUCTIONS;
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
       init_IncreaseJitter();
       init_IncreaseRTT();
       init_IncreasePacketLoss();
-      PIPELINE_ALLOWANCE_MS2 = 40;
+      PIPELINE_ALLOWANCE_MS = 40;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
         wcj: IncreaseJitter,
@@ -51928,6 +51928,7 @@ ${code2}${BTN_MARKER}`;
   // src/studio.js
   init_Metaprogrammer();
   init_MetaprogramScheduler();
+  init_WorstCaseCalculationUtils();
   init_MetaprogrammerParser();
 
   // components/MetaprogrammerEditor.js
@@ -52769,6 +52770,18 @@ ${code2}${BTN_MARKER}`;
     return `${n2.toFixed(2)}ms`;
   }
   function networkMetricsBlock(peer, controls2 = "") {
+    try {
+      return networkMetricsBlockUnsafe(peer, controls2);
+    } catch (e30) {
+      console.error("[studio] network metrics block failed to render", e30);
+      return `
+    <div class="ts-section">
+      <div class="ts-section-head"><div class="ts-section-title">Network Metrics</div></div>
+      <div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>
+    </div>`;
+    }
+  }
+  function networkMetricsBlockUnsafe(peer, controls2 = "") {
     const wc = effectiveWorstCase();
     const peers = getAllPeers();
     const mixOptions = [

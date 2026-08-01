@@ -48,6 +48,7 @@ import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import { startPipelineLatencyMeasurement } from './audio-net/observability/PipelineLatency.js';
 import { effectiveWorstCase, getProgramText } from './audio-net/Metaprogrammer.js';
 import { cycleLength, timingTargetSeconds } from './audio-net/MetaprogramScheduler.js';
+import { PIPELINE_ALLOWANCE_MS } from './audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
@@ -438,7 +439,26 @@ function preciseMs(v) {
   return `${n.toFixed(2)}ms`;
 }
 
+// The whole detail panel is one innerHTML assignment, so ANY throw while this
+// template is being built takes the metrics, the bot cluster AND the Strudel
+// editor down with it and leaves a blank card — a bad reference in a readout
+// should not be able to hide the instrument. This has now cost two live
+// outages, so the metrics section degrades to a visible error line instead of
+// propagating. Everything genuinely required to render is computed inside.
 function networkMetricsBlock(peer, controls = '') {
+  try {
+    return networkMetricsBlockUnsafe(peer, controls);
+  } catch (e) {
+    console.error('[studio] network metrics block failed to render', e);
+    return `
+    <div class="ts-section">
+      <div class="ts-section-head"><div class="ts-section-title">Network Metrics</div></div>
+      <div class="ts-meta">unavailable &mdash; ${escapeHtml(String((e && e.message) || e))}</div>
+    </div>`;
+  }
+}
+
+function networkMetricsBlockUnsafe(peer, controls = '') {
   const wc = effectiveWorstCase();
   const peers = getAllPeers();
   const mixOptions = [
