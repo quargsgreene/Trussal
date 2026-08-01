@@ -45,7 +45,7 @@ import {
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
 import { effectiveWorstCase, getProgramText } from './audio-net/Metaprogrammer.js';
-import { cycleLength } from './audio-net/MetaprogramScheduler.js';
+import { cycleLength, timingTargetSeconds } from './audio-net/MetaprogramScheduler.js';
 import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
@@ -241,6 +241,7 @@ function injectStyles() {
     #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
+    #${OVERLAY_ID} .ts-dim { opacity: 0.72; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
     #${OVERLAY_ID} .ts-code, #${OVERLAY_ID} .ts-pre {
       background: #050f0a; color:#1ff466;
@@ -410,16 +411,33 @@ function cycleLengthReadout(wc) {
   const { ast, valid } = parseMetaprogram(text);
   if (!valid) return 'turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
   const { seconds, beats, beatSeconds } = cycleLength({ cycles: ast.cycles, tempo: ast.tempo, metrics: wc });
+  const targetS = timingTargetSeconds(ast.cycles, wc);
   const { metric, factor, fixed } = ast.cycles;
-  const directive = `# cycles ${metric} ${factor}${fixed != null ? ` ${fixed}` : ''}`;
-  return `turn length: <b>${seconds.toFixed(3)}s</b> · ${escapeHtml(directive)}` +
-    `${fixed != null ? ' <span title="pinned: ignores live metrics">(pinned)</span>' : ''}` +
-    ` · ${beats} &times; ${beatSeconds.toFixed(3)}s beat`;
+  // Spell the arithmetic out. On a LAN the driving metric is a fraction of a
+  // millisecond and the scale factor is in the thousands, so "WCL 1ms" next to
+  // a 10 s turn reads as a contradiction unless the multiplication is on screen.
+  const source = fixed != null
+    ? `pinned ${fixed}s`
+    : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
+  return `turn length: <b>${seconds.toFixed(3)}s</b> ` +
+    `<span class="ts-dim">= ${escapeHtml(source)} &times; ${factor} = ${targetS.toFixed(3)}s` +
+    `, rounded up to ${beats} &times; ${beatSeconds.toFixed(3)}s beat</span>`;
+}
+
+// Milliseconds with enough precision to be believable at the scale these
+// actually take. On a LAN every worst-case metric sits between 0 and a few ms,
+// where rounding to whole milliseconds throws away exactly the variation that
+// drives turn length: 1.0 ms and 1.4 ms both print as "1ms" but mean a 10 s and
+// a 14 s turn under `# cycles wcl 10000`.
+function preciseMs(v) {
+  const n = Number(v) || 0;
+  if (n >= 100) return `${n.toFixed(0)}ms`;
+  if (n >= 10) return `${n.toFixed(1)}ms`;
+  return `${n.toFixed(2)}ms`;
 }
 
 function networkMetricsBlock(peer, controls = '') {
   const wc = effectiveWorstCase();
-  const ms = (v) => `${v.toFixed(0)}ms`;
   const peers = getAllPeers();
   const mixOptions = [
     `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
@@ -437,7 +455,7 @@ function networkMetricsBlock(peer, controls = '') {
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="one-way network estimate (WCRTT/2) — NOT perceived audio latency, which also includes encode, jitter buffer and decode">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;

@@ -52450,6 +52450,7 @@ ${code2}${BTN_MARKER}`;
     #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
     #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
     #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
+    #${OVERLAY_ID} .ts-dim { opacity: 0.72; }
     #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
     #${OVERLAY_ID} .ts-code, #${OVERLAY_ID} .ts-pre {
       background: #050f0a; color:#1ff466;
@@ -52597,13 +52598,19 @@ ${code2}${BTN_MARKER}`;
     const { ast: ast2, valid } = parseMetaprogram(text2);
     if (!valid) return 'turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
     const { seconds: seconds2, beats, beatSeconds: beatSeconds2 } = cycleLength({ cycles: ast2.cycles, tempo: ast2.tempo, metrics: wc });
+    const targetS = timingTargetSeconds(ast2.cycles, wc);
     const { metric, factor, fixed } = ast2.cycles;
-    const directive = `# cycles ${metric} ${factor}${fixed != null ? ` ${fixed}` : ""}`;
-    return `turn length: <b>${seconds2.toFixed(3)}s</b> \xB7 ${escapeHtml(directive)}${fixed != null ? ' <span title="pinned: ignores live metrics">(pinned)</span>' : ""} \xB7 ${beats} &times; ${beatSeconds2.toFixed(3)}s beat`;
+    const source2 = fixed != null ? `pinned ${fixed}s` : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
+    return `turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
+  }
+  function preciseMs(v2) {
+    const n2 = Number(v2) || 0;
+    if (n2 >= 100) return `${n2.toFixed(0)}ms`;
+    if (n2 >= 10) return `${n2.toFixed(1)}ms`;
+    return `${n2.toFixed(2)}ms`;
   }
   function networkMetricsBlock(peer, controls2 = "") {
     const wc = effectiveWorstCase();
-    const ms = (v2) => `${v2.toFixed(0)}ms`;
     const peers = getAllPeers();
     const mixOptions = [
       `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
@@ -52620,7 +52627,7 @@ ${code2}${BTN_MARKER}`;
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> \xB7 WCJ <b>${wc.wcj.toFixed(2)}</b> \xB7 WCRTT <b>${ms(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="one-way network estimate (WCRTT/2) \u2014 NOT perceived audio latency, which also includes encode, jitter buffer and decode">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
