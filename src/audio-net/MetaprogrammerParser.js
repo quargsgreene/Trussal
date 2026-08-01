@@ -181,12 +181,7 @@ class Parser {
     // Defaults per spec: cycles wcl 2000 (mirrors buildDefaultProgram — the
     // scale keeps LAN-grade latencies audible as solos), tempo 120 bpm.
     if (!program.cycles) program.cycles = { metric: 'wcl', factor: 2000, fixed: null, defaulted: true };
-    // No tempo is injected: an unwritten `# tempo` leaves program.tempo null,
-    // so the AST reports honestly that no tempo directive is in force. This is
-    // behaviourally a no-op — beatSeconds(null) already falls back to 120 bpm,
-    // which is what quantizes cycle length and what a pinned `# cycles`
-    // amount lands on — but it stops the default program from carrying a
-    // directive nobody wrote.
+    if (!program.tempo) program.tempo = { value: 120, unit: 'bpm', defaulted: true };
     return program;
   }
 
@@ -585,13 +580,8 @@ export function resolveEffectParams(chainEntry) {
 // listed, so later joiners stay silent until an edit adds them. The 2000×
 // scale keeps LAN-grade one-way latencies (a few ms) audible as multi-second
 // solos — 2 ms × 2000 = 4 s (the retired WCL_SOLO_STRETCH, now in the open).
-//
-// No `# tempo` line: the room's default program leaves the tempo unwritten so
-// the beat grid is not part of what a performer reads when they open the
-// editor. Cycle length still quantizes onto the parser's 120 bpm default —
-// writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `$ participants <0>\n# cycles wcl 2000\n`;
+  return `$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

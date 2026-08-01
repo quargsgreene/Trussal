@@ -44,9 +44,7 @@ import {
   setMonitorMix,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
-import { effectiveWorstCase, getProgramText } from './audio-net/Metaprogrammer.js';
-import { cycleLength } from './audio-net/MetaprogramScheduler.js';
-import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
+import { effectiveWorstCase } from './audio-net/Metaprogrammer.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 import {
@@ -398,25 +396,6 @@ function metricsLine(peer) {
 // effectiveWorstCase() layers the CRDT induced floors over the measured
 // roster metrics, and carries measured's own `sampleCount` through the
 // merge — so one call covers both and there is nothing to show twice.
-// The turn length the running metaprogram's `# cycles` directive derives from
-// `wc` — what the aggregator actually paces each performer's solo by. Shown
-// next to the metrics that produce it so a WCL that moves without the turn
-// following is visible in the UI, not only in the aggregator's log. Computed
-// here rather than read off a scheduler because the browser-side scheduler is
-// dormant (see setNetCyclesActive); this is the same pure calculation.
-function cycleLengthReadout(wc) {
-  const text = getProgramText();
-  if (!text) return 'turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
-  const { ast, valid } = parseMetaprogram(text);
-  if (!valid) return 'turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
-  const { seconds, beats, beatSeconds } = cycleLength({ cycles: ast.cycles, tempo: ast.tempo, metrics: wc });
-  const { metric, factor, fixed } = ast.cycles;
-  const directive = `# cycles ${metric} ${factor}${fixed != null ? ` ${fixed}` : ''}`;
-  return `turn length: <b>${seconds.toFixed(3)}s</b> · ${escapeHtml(directive)}` +
-    `${fixed != null ? ' <span title="pinned: ignores live metrics">(pinned)</span>' : ''}` +
-    ` · ${beats} &times; ${beatSeconds.toFixed(3)}s beat`;
-}
-
 function networkMetricsBlock(peer, controls = '') {
   const wc = effectiveWorstCase();
   const ms = (v) => `${v.toFixed(0)}ms`;
@@ -439,7 +418,6 @@ function networkMetricsBlock(peer, controls = '') {
       ${metricsLine(peer)}
       <div class="ts-meta">WCL <b>${ms(wc.wcl)}</b> · WCJ <b>${wc.wcj.toFixed(2)}</b> · WCRTT <b>${ms(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
-      <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
 }
 

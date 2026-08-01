@@ -1,11 +1,10 @@
 // Metaprogrammer — the Net Cycles eval driver (browser side).
 //
 // The shared metaprogram is ALWAYS IN FORCE — there is no on/off button. Its
-// live capabilities today are ORDERING and TIMING: the program text syncs over
-// the CRDT doc to the aggregator bot, whose ring adopts the $ participants
-// membership and written order, and whose rotation is paced by that program's
-// scheduler slot grid — so a turn lasts the cycle length `# cycles` derives
-// from the live worst-case metrics (bots/src/bot/aggregator-bot.js). Typing only
+// one live capability today is ORDERING when/which participants play: the
+// program text syncs over the CRDT doc to the aggregator bot, whose ring
+// adopts the $ participants membership and written order while keeping the
+// fixed 4s rotation interval (bots/src/bot/aggregator-bot.js). Typing only
 // syncs the shared TEXT; the ring (and programText here) adopt a program
 // solely on an explicit apply (▶ Apply / Ctrl+Enter / /nc/apply), the
 // one-time roster seed, or a late joiner's catch-up. The room

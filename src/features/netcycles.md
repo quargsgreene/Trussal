@@ -290,8 +290,6 @@ A minimal valid NetCycles program consists of a scheduling sequence of the audio
 
 The length of each cycle is defined according to a multiple of the worst-case latency, worst-case jitter, or length computed by the worst-case percentage of packet loss.
 
-That cycle length is also the length of each performer's TURN: the aggregator paces its rotation off the scheduler's `slot-open`/`slot-close` grid, so a degrading room stretches every solo and a recovering one tightens them. The join-order write pointer's fixed `slotMs` remains only as the fallback before the first slot arrives, and in standalone runs with no metaprogram sync.
-
 The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl`/`wcj` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
 
 Examples:
@@ -304,7 +302,7 @@ $ participants <0 1 3 5 2a 1zzzv 9 1>*2
 ```
 $ participants <0 1 2 3>
 # cycles wcl 2000 // Default if not specified — the scale keeps LAN-grade latencies audible as multi-second solos (2 ms one-way × 2000 = 4 s)
-# tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm. No tempo directive is injected when none is written, but cycle quantization still falls back to 120 bpm — and the room's default program deliberately carries no `# tempo` line. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
+# tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm, default is 120 bpm if not specified. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
 
  // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats covering (≥) the cycle target. This is the order in which inputs are established via the Web Audio API.
 ```
@@ -314,7 +312,7 @@ $ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
 # cycles wcl 2000
 # tempo 120 bpm
 
-// This is how the program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. The `# tempo` line here is written explicitly — the room's default program carries none, and quantization falls back to 120 bpm.
+// This is how the default program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. Tempo defaults to 120 bpm.
 ```
 
 ```

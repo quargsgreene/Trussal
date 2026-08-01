@@ -165,16 +165,10 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
     bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
     bot.buffers['1'] = new RingBuffer(1024); bot.buffers['1'].write(new Array(50).fill(0.25));
 
-    // Turns are paced by the metaprogram's cycle grid, not the config's slotMs,
-    // so step the clock by the cycle length the scheduler actually computed. No
-    // peer here reports rtt/jitter/loss, so the worst case is all zeros and the
-    // cycle sits on its one-beat floor — read it rather than hardcode it.
-    const turnMs = bot.scheduler.getCycleLength().seconds * 1000;
-
-    clock = 0;             await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 0 → send '0'
-    clock = turnMs;        await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 1 → send '1'
-    clock = turnMs + 40;   await bot.readAndAssembleMasterBuffer(); await sleep(80); // same turn → deduped
-    clock = turnMs * 2;    await bot.readAndAssembleMasterBuffer(); await sleep(80); // wraps → send '0'
+    clock = 0;    await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 0 → send '0'
+    clock = 4000; await bot.readAndAssembleMasterBuffer(); await sleep(80); // turn 1 → send '1'
+    clock = 4200; await bot.readAndAssembleMasterBuffer(); await sleep(80); // same turn → deduped
+    clock = 8000; await bot.readAndAssembleMasterBuffer(); await sleep(80); // wraps → send '0'
 
     assert.deepEqual(ncActive, ['0', '1', '0'],
       'one nc-active per turn change, no repeat within a turn');
@@ -269,16 +263,15 @@ test('nc-active carries the ring index so a repeated token is disambiguated', { 
     bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
     bot.buffers['1'] = new RingBuffer(1024); bot.buffers['1'].write(new Array(50).fill(0.25));
 
-    const turnMs = bot.scheduler.getCycleLength().seconds * 1000;
-    clock = 0;          await bot.readAndAssembleMasterBuffer(); await sleep(80);
-    clock = turnMs;     await bot.readAndAssembleMasterBuffer(); await sleep(80);
-    clock = turnMs * 2; await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = 0;    await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = 4000; await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = 8000; await bot.readAndAssembleMasterBuffer(); await sleep(80);
 
     assert.deepEqual(got, [
       { token: '0', index: 0 },
       { token: '1', index: 1 },
       { token: '0', index: 2 },
-    ], 'each turn carries its written-sequence index, so the repeated 0 is distinguishable');
+    ], 'each turn carries its ring-slot index, so the repeated 0 is distinguishable');
   } finally {
     await bot.stop().catch(() => {});
     human.ws.close();

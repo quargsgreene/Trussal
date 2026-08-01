@@ -38,10 +38,8 @@ test('spec: scheduling example with mixed indices, repeat, and comment', () => {
   assert.deepEqual(tokens, ['0', '1', '3', '5', '2a', '1zzzv', '9', '1']);
   assert.deepEqual(ast.participants.modifiers, [{ op: '*', value: 2 }]);
   assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 3, fixed: null });
-  // No `# tempo` written and none injected — the AST reports honestly that no
-  // tempo directive is in force. beatSeconds(null) still quantizes onto
-  // 120 bpm, so the cycle length is unchanged.
-  assert.equal(ast.tempo, null);
+  assert.equal(ast.tempo.value, 120); // default injected
+  assert.equal(ast.tempo.unit, 'bpm');
 });
 
 test('spec: default four-human program with explicit defaults', () => {
@@ -258,11 +256,9 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   // Participant 0 — the first to join — streams continuously; nobody else is
   // listed, so later joiners stay silent until an edit adds them.
   const text = buildDefaultProgram();
-  assert.equal(text, '$ participants <0>\n# cycles wcl 2000\n');
+  assert.equal(text, '$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n');
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
-  // No tempo directive in the default program, and none injected behind it.
-  assert.equal(ast.tempo, null);
   // The implicit default (no # cycles line) mirrors the same directive.
   const implied = ok('$ participants <0>\n');
   assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 2000, fixed: null, defaulted: true });
