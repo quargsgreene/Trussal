@@ -1214,6 +1214,120 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
   await bot.stop();
 });
 
+// --- clock timebase ------------------------------------------------------------
+// The O2 relay's reference clock is process.hrtime since the SIDECAR started
+// (latency-instrument/o2-relay.js) — a small number. The bot's own clock must
+// live on the same scale, or the moment ClockSync converges every already-
+// scheduled cycle lands on a timeline the bot will never reach. That is what
+// silenced a live room: the scheduler emitted cycle 0 and then nothing, for ever.
+
+test('the scheduler clock is monotonic from bot start, not Unix epoch seconds', () => {
+  const { fakeLauncher } = makeFakes();
+  const clockRef = { ms: 1785540000000 }; // a realistic Date.now()
+  const bot = new AggregatorBot(
+    cfg,
+    { launcher: fakeLauncher, logIngest: false, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  // First read anchors t0, so the bot's clock starts near zero however large
+  // the injected wall clock is — the same scale the relay quotes.
+  assert.equal(bot.schedulerClockSeconds(), 0);
+  clockRef.ms += 4500;
+  assert.equal(bot.schedulerClockSeconds(), 4.5);
+  assert.ok(bot.schedulerClockSeconds() < 1e6,
+    'must not be ~1.79e9 — that scale is what fell off a cliff at ClockSync convergence');
+});
+
+test('an epoch from another timebase is refused, not adopted', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(
+    cfg,
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    const ownEpoch = bot.epoch;
+    assert.ok(Number.isFinite(ownEpoch), 'the bot declared an epoch');
+
+    // A browser that broadcast an epoch off its unsynced AudioContext clock,
+    // or any peer on a different timeline: smaller, but not ours. Adopting it
+    // would anchor the grid ~1.79e9 s away and emit nothing for ever.
+    bot.adoptEpochIfEarlier(-1785540000);
+    assert.equal(bot.epoch, ownEpoch, 'implausible epoch refused');
+    bot.adoptEpochIfEarlier(Number.NaN);
+    assert.equal(bot.epoch, ownEpoch, 'NaN refused');
+    // A future epoch is not "earlier" and must never win either.
+    bot.adoptEpochIfEarlier(ownEpoch + 9999);
+    assert.equal(bot.epoch, ownEpoch, 'later epoch refused');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('the cycle grid survives a ClockSync convergence jump', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+    bot.buffers['0'] = new RingBuffer(4096);
+    bot.buffers['1'] = new RingBuffer(4096);
+
+    clockRef.ms += 30000;
+    bot.scheduler.tick();   // drive the grid explicitly; the 50 ms interval is real time
+    assert.ok((await bot.readAndAssembleMasterBuffer()).active, 'streaming before convergence');
+    const cyclesBefore = bot.scheduler.getCycle();
+    assert.ok(cyclesBefore > 0, 'the grid advanced before the jump');
+
+    // ClockSync converges: network time becomes the relay's reference, offset
+    // from the bot's own clock. Swapping bot.clock is the real injection point
+    // — it is the same public field makeClockSyncOverO2 assigns. Under the old
+    // Date.now()/1000 base this was a ~1.79e9 s cliff; the grid must keep
+    // advancing across it either way.
+    const OFFSET = -500;
+    // Stop the real ClockSync before displacing it: its resync chain reschedules
+    // itself, and a stub that only *looks* like it would leave that timer running
+    // and hold the process open after the test finishes.
+    bot.clock.stop();
+    bot.clock = {
+      isSynced: () => true,
+      toNetworkTime: (t) => t + OFFSET,
+      toAudioTime: (t) => t - OFFSET,
+      stop() {},
+    };
+    clockRef.ms += 10000;
+    bot.scheduler.tick();
+    assert.ok(bot.scheduler.getCycle() > cyclesBefore,
+      'the scheduler kept emitting cycles across the jump');
+    clockRef.ms += 10000;
+    bot.scheduler.tick();
+    assert.ok((await bot.readAndAssembleMasterBuffer()).active,
+      'and the room is still streaming, not silent');
+
+    // A huge FORWARD jump (the relay restarting far ahead of us) must re-anchor
+    // too, not grind out every missed cycle one at a time.
+    const startedAt = Date.now();
+    bot.clock = { isSynced: () => true, toNetworkTime: (t) => t + 1e9, toAudioTime: (t) => t - 1e9, stop() {} };  // already a stub; nothing real to stop
+    bot.scheduler.tick();
+    assert.ok(Date.now() - startedAt < 2000, 'a far-future clock re-anchors instead of hanging');
+    assert.ok((await bot.readAndAssembleMasterBuffer()).active, 'still streaming after the forward jump');
+  } finally {
+    await bot.stop();
+  }
+});
+
 // --- master-bus room reverb (`# room wcl …`) ----------------------------------
 
 // A sidecar connector that hands the test the bot's own onMessage callback, so

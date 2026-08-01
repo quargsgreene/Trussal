@@ -24,6 +24,15 @@ const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
 // Round-robin turn length (ms) before the metaprogram schedules slots for real:
 // stream one participant, then the next, so the alternation is audible.
 const DEFAULT_SLOT_MS = 4000;
+// How long to let ClockSync converge before declaring a cycle epoch. One burst
+// is ~700 ms (DEFAULT_BURST sends at DEFAULT_BURST_SPACING_MS, plus a 2x
+// spacing commit), so this allows several attempts on a slow start.
+const CLOCK_SYNC_WAIT_MS = 5000;
+const CLOCK_SYNC_POLL_MS = 100;
+// How far in the past a remote /nc/epoch may sit and still be believable as
+// the same clock we are reading. A room that started earlier today is minutes
+// old; a value further back than this is another timebase, not an older room.
+const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
 // Re-announce the current nc-active turn at least this often even when it hasn't
 // changed, so a late joiner (or a sidecar whose per-room cache was cleared by a
 // session reset) learns it without waiting for the ring to rotate.
@@ -174,6 +183,9 @@ export class AggregatorBot extends Bot {
     #metaprogramConn = null;
     // Throttle counter for the capture-diag heartbeat (every ~10th drain).
     #drainTicks = 0;
+    // Anchor for #localSeconds, latched on first read so the bot's scheduler
+    // clock counts from its own start rather than the Unix epoch.
+    #localT0 = null;
     // Room roster as seen over the metaprogram bus (peerId → publicView
     // record), the worst-case metrics derived from it, the applied program's
     // `# room` chain entry, and the last room params pushed to the page (as
@@ -462,7 +474,7 @@ export class AggregatorBot extends Bot {
      * (scheduler.setProgram) and hands the ring its new order/membership
      * (this.order.applyMetaprogramOrder) rather than rebuilding anything. The
      * one case that legitimately rebuilds the scheduler is
-     * #adoptEpochIfEarlier, because the epoch defines the cycle grid every
+     * adoptEpochIfEarlier, because the epoch defines the cycle grid every
      * client must share — an ordinary text edit does not touch it.
      */
     async interpretAndExecuteMetaprogram() {
@@ -481,9 +493,9 @@ export class AggregatorBot extends Bot {
         // tore the subsystem down while we were suspended.
         const o2 = new O2LiteClient({ url: o2Url, WebSocketImpl: this.webSocketImpl });
         this.o2 = o2;
-        o2.method(EPOCH_ADDR, (msg) => this.#adoptEpochIfEarlier(msg.args[0]));
+        o2.method(EPOCH_ADDR, (msg) => this.adoptEpochIfEarlier(msg.args[0]));
         o2.method(APPLY_ADDR, (msg) => this.applyProgramText(msg.args[0]));
-        this.clock = makeClockSyncOverO2(o2, () => this.#localSeconds());
+        this.clock = makeClockSyncOverO2(o2, () => this.schedulerClockSeconds());
         try {
             await this.#withTimeout(o2.connect(), O2_CONNECT_TIMEOUT_MS, 'O2 connect');
         } catch (e) {
@@ -516,14 +528,23 @@ export class AggregatorBot extends Bot {
             this.metaprogramDoc.onModulationChange(() => this.#refreshWorstCase());
         }
 
-        // Give /nc/epoch a beat to arrive before declaring our own — lets an
-        // already-running room's epoch win a race against a freshly-joined
-        // aggregator's guess (same grace Metaprogrammer.js gives the browser).
-        await new Promise((r) => setTimeout(r, 500));
+        // Wait for ClockSync to converge before declaring an epoch, and give
+        // /nc/epoch a beat to arrive — an already-running room's epoch should
+        // win a race against a freshly-joined aggregator's guess.
+        //
+        // Waiting for the sync is the point: an epoch declared on the unsynced
+        // local clock and then used against the synced one names an instant on
+        // a DIFFERENT TIMELINE. One burst is ~700 ms (5 sends at 100 ms plus a
+        // 200 ms commit), so the old flat 500 ms grace essentially guaranteed
+        // an unsynced epoch. If the clock never syncs we proceed on the local
+        // one — a self-consistent local grid is fine; what is not fine is
+        // mixing the two, which adoptEpochIfEarlier now also refuses.
+        await this.#awaitClockSync(CLOCK_SYNC_WAIT_MS);
         if (this.o2 !== o2) return; // stop() ran during the grace window
         if (this.epoch == null) {
-            const nowNet = this.clock.isSynced() ? this.clock.toNetworkTime(this.#localSeconds()) : this.#localSeconds();
-            this.epoch = Math.ceil(nowNet);
+            this.epoch = Math.ceil(this.networkSeconds());
+            console.log(`[aggregator-bot] epoch ${this.epoch} declared on the ` +
+                `${this.clock.isSynced() ? 'synced network' : 'local (UNSYNCED)'} clock`);
         }
         // Net Cycles is always on: if no shared program reached us during the
         // grace (empty room, or nothing in the CRDT catch-up), start under the
@@ -532,6 +553,36 @@ export class AggregatorBot extends Bot {
         // the shared doc, so a late catch-up converges on identical text.
         if (this.programText == null) this.applyProgramText(buildDefaultProgram());
         this.#startScheduler();
+    }
+
+    /**
+     * Resolve once ClockSync has committed a burst, or after `ms`. Polls
+     * rather than taking a callback because ClockSync exposes no ready event
+     * and the poll is a handful of cheap checks over one startup window.
+     */
+    async #awaitClockSync(ms) {
+        const deadline = Date.now() + ms;
+        while (Date.now() < deadline) {
+            if (this.clock && this.clock.isSynced()) return true;
+            await new Promise((r) => setTimeout(r, CLOCK_SYNC_POLL_MS));
+        }
+        if (!(this.clock && this.clock.isSynced())) {
+            console.warn(`[aggregator-bot] ClockSync did not converge in ${ms}ms — ` +
+                `running the cycle grid on this bot's local clock`);
+        }
+        return !!(this.clock && this.clock.isSynced());
+    }
+
+    /**
+     * Network time on the same clock the scheduler stamps its events with, so
+     * everything comparing against a scheduled instant compares like with
+     * like. ClockSync's reference once converged; this bot's own monotonic
+     * clock (see #localSeconds) until then.
+     */
+    networkSeconds() {
+        return this.clock && this.clock.isSynced()
+            ? this.clock.toNetworkTime(this.schedulerClockSeconds())
+            : this.schedulerClockSeconds();
     }
 
     // Bound an await on external I/O so a hung handshake can't stall start().
@@ -661,10 +712,26 @@ export class AggregatorBot extends Bot {
      * scheduler must agree on. Non-finite input (a malformed message) is
      * ignored — NaN would poison every later comparison and silently freeze
      * the scheduler's tick loop.
+     *
+     * An epoch is only comparable when both sides quote the SAME clock, so a
+     * remote value that could not plausibly be on our timeline is refused
+     * rather than adopted. "Smaller" is otherwise indistinguishable from "on a
+     * different clock", and adopting across timebases anchors the grid at an
+     * instant our own clock will never reach: the scheduler then emits nothing
+     * for ever and the room goes silent. We only adopt while synced, and only
+     * within EPOCH_PLAUSIBLE_PAST_S of now — a genuine earlier epoch comes
+     * from a room that started minutes ago, not aeons.
      */
-    #adoptEpochIfEarlier(remoteEpoch) {
+    adoptEpochIfEarlier(remoteEpoch) {
         if (!Number.isFinite(remoteEpoch)) return;
         if (this.epoch != null && remoteEpoch >= this.epoch - 0.05) return;
+        const now = this.networkSeconds();
+        const synced = !!(this.clock && this.clock.isSynced());
+        if (!synced || remoteEpoch > now || (now - remoteEpoch) > EPOCH_PLAUSIBLE_PAST_S) {
+            console.warn(`[aggregator-bot] refused /nc/epoch ${remoteEpoch} — ` +
+                `${synced ? `implausible against local now ${now.toFixed(1)}` : 'clock not synced yet'}`);
+            return;
+        }
         this.epoch = remoteEpoch;
         if (this.scheduler) {
             this.scheduler.stop();
@@ -674,9 +741,7 @@ export class AggregatorBot extends Bot {
 
     #startScheduler() {
         this.scheduler = new MetaprogramScheduler({
-            now: () => (this.clock && this.clock.isSynced()
-                ? this.clock.toNetworkTime(this.#localSeconds())
-                : this.#localSeconds()),
+            now: () => this.networkSeconds(),
             onEvent: (ev) => this.#onSchedulerEvent(ev),
         });
         this.#pushProgramToScheduler();
@@ -698,11 +763,23 @@ export class AggregatorBot extends Bot {
         this.#applyOrderFromProgram(this.scheduler.getProgram());
     }
 
-    // Local seconds for O2/ClockSync/the scheduler. this.now() (injectable,
-    // defaults to Date.now()) is in MS — that's CircularParticipantQueue's
-    // unit — so this just rescales it; it does NOT introduce a second clock.
-    #localSeconds() {
-        return this.now() / 1000;
+    // Local seconds for O2/ClockSync/the scheduler: MONOTONIC SINCE THIS BOT
+    // STARTED, not Unix epoch seconds. this.now() (injectable, defaults to
+    // Date.now()) is in MS — CircularParticipantQueue's unit, which only ever
+    // takes differences — so this rescales it AND rebases it; it does NOT
+    // introduce a second clock.
+    //
+    // The rebase matters because the O2 relay's reference clock is
+    // process.hrtime since the SIDECAR started (see latency-instrument/
+    // o2-relay.js) — a small number. Returning Date.now()/1000 (~1.79e9) here
+    // made the pre-sync fallback ~1.79 BILLION seconds larger than the synced
+    // network time, so the instant ClockSync converged the scheduler's clock
+    // fell off a cliff and every already-scheduled cycle sat unreachably in
+    // the future. Same scale in both states means convergence is a small
+    // correction, not a cliff.
+    schedulerClockSeconds() {
+        if (this.#localT0 == null) this.#localT0 = this.now();
+        return (this.now() - this.#localT0) / 1000;
     }
 
     /**

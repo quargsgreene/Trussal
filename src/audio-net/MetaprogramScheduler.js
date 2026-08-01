@@ -237,12 +237,20 @@ export class AVBufferQueue {
 //   { type: 'slot-close', token, t, cycle, stack }
 // Program and metrics changes land at the next cycle boundary — mid-cycle
 // slots are never yanked.
+// How far the next cycle boundary may sit from the clock before the grid is
+// treated as stranded rather than merely early/late — whichever of these is
+// larger. Ordinary lateness is a tick interval; this is orders above that.
+const GRID_REANCHOR_CYCLES = 4;
+const GRID_REANCHOR_MIN_S = 10;
+
 export class MetaprogramScheduler {
   constructor({
     now,                       // () → seconds (network time)
     onEvent,                   // (event) → void
     lookaheadS = 0.2,
     tickMs = 50,
+    label = 'netcycles',       // tags this scheduler's log lines (browser vs aggregator)
+    log = null,                // (line) => void; null = console.log, false = silent
     setIntervalFn = (typeof setInterval !== 'undefined' ? setInterval : null),
     clearIntervalFn = (typeof clearInterval !== 'undefined' ? clearInterval : null)
   }) {
@@ -253,6 +261,8 @@ export class MetaprogramScheduler {
     this._emit = onEvent;
     this._lookaheadS = lookaheadS;
     this._tickMs = tickMs;
+    this._label = label;
+    this._log = log === false ? () => {} : (log || ((line) => console.log(line)));
     this._setInterval = setIntervalFn;
     this._clearInterval = clearIntervalFn;
 
@@ -304,7 +314,9 @@ export class MetaprogramScheduler {
   // or from the interval timer.
   tick() {
     if (!this._running || !this._ast) return;
-    const horizon = this._now() + this._lookaheadS;
+    const now = this._now();
+    this._reanchorIfAdrift(now);
+    const horizon = now + this._lookaheadS;
     while (this._nextCycleStart <= horizon) {
       // Boundary: apply pending program/metrics before computing the cycle.
       if (this._pendingAst) { this._ast = this._pendingAst; this._pendingAst = null; }
@@ -328,5 +340,39 @@ export class MetaprogramScheduler {
       this._nextCycleStart = t0 + seconds;
       this._cycle++;
     }
+  }
+
+  /**
+   * Snap the grid back onto the clock when the two have parted company.
+   *
+   * The clock this scheduler reads is not guaranteed continuous: ClockSync
+   * converging swaps a local estimate for the relay's reference, and the
+   * relay's reference is process.hrtime since the SIDECAR started, so a
+   * sidecar restart moves it backwards past everything already scheduled.
+   * Both leave `_nextCycleStart` stranded:
+   *
+   *   - far in the FUTURE — the loop below never runs, no cycle is ever
+   *     emitted again, and anything pacing off these events goes silent for
+   *     ever. This silenced a live room.
+   *   - far in the PAST — the loop would grind out every missed cycle one at a
+   *     time. Nobody heard them and nobody can now; at a large enough gap that
+   *     is a hang rather than a catch-up.
+   *
+   * Either way the honest response is the same: give up on the old anchor and
+   * start a fresh cycle at `now`. Tolerance scales with cycle length so a slow
+   * grid isn't re-anchored by ordinary lateness, with a floor for fast ones.
+   */
+  _reanchorIfAdrift(now) {
+    if (this._nextCycleStart == null) return;
+    const { seconds } = cycleLength({
+      cycles: this._ast.cycles, tempo: this._ast.tempo, metrics: this._metrics
+    });
+    const tolerance = Math.max(GRID_REANCHOR_MIN_S, seconds * GRID_REANCHOR_CYCLES);
+    const gap = this._nextCycleStart - now;
+    if (Math.abs(gap) <= tolerance) return;
+    this._log(`[${this._label}] cycle grid re-anchored: next boundary was ` +
+      `${gap.toFixed(1)}s ${gap > 0 ? 'ahead of' : 'behind'} the clock ` +
+      `(tolerance ${tolerance.toFixed(1)}s) — the clock moved, not the music`);
+    this._nextCycleStart = now;
   }
 }

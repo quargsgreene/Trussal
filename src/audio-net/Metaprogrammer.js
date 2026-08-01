@@ -62,6 +62,9 @@ import { EffectsChainManager } from './av-effects/index.js';
 const EPOCH_ADDR = '/nc/epoch';
 const APPLY_ADDR = '/nc/apply';
 const EPOCH_REBROADCAST_MS = 10000;
+// How far in the past a remote /nc/epoch may sit and still be believable as
+// the same clock we are reading; beyond this it is another timebase.
+const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
 const QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
 
 let active = false;
@@ -426,12 +429,34 @@ async function replayCapturedAudio(jitsiId, take, ev) {
 
 // --- Epoch agreement -----------------------------------------------------------------
 
-function broadcastEpoch() {
-  if (o2 && epoch != null) o2.send(EPOCH_ADDR, ',t', [epoch]);
+// Network time on the clock the scheduler stamps its events with: ClockSync's
+// reference once converged, this browser's AudioContext clock until then.
+function networkSeconds() {
+  return clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
 }
 
+// Only publish an epoch we actually quoted from the SYNCED clock. An epoch
+// read off the local AudioContext names an instant on this tab's own timeline
+// (seconds since the context opened), and every other client — the aggregator
+// especially, whose grid it can capture via adoptEpochIfEarlier — would anchor
+// its cycle grid at a moment its own clock never reaches. Silence, not drift.
+function broadcastEpoch() {
+  if (!o2 || epoch == null) return;
+  if (!(clock && clock.isSynced())) return;
+  o2.send(EPOCH_ADDR, ',t', [epoch]);
+}
+
+// Symmetrically: only adopt a remote epoch while synced, and only one that
+// could plausibly sit on our own timeline. "Earlier" is otherwise
+// indistinguishable from "measured against a different clock".
 function adoptEpochIfEarlier(remoteEpoch) {
+  if (!Number.isFinite(remoteEpoch)) return;
   if (epoch != null && remoteEpoch >= epoch - 0.05) return;
+  const now = networkSeconds();
+  if (!(clock && clock.isSynced()) || remoteEpoch > now || (now - remoteEpoch) > EPOCH_PLAUSIBLE_PAST_S) {
+    console.warn(`[metaprogrammer] refused /nc/epoch ${remoteEpoch} (local now ${now})`);
+    return;
+  }
   epoch = remoteEpoch;
   if (scheduler) {
     scheduler.stop();
@@ -441,7 +466,7 @@ function adoptEpochIfEarlier(remoteEpoch) {
 
 function startScheduler() {
   scheduler = new MetaprogramScheduler({
-    now: () => (clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds()),
+    now: networkSeconds,
     onEvent: onSchedulerEvent
   });
   pushProgramToScheduler();
@@ -486,8 +511,7 @@ export async function setNetCyclesActive(enable) {
     // a beat to arrive before declaring our own epoch / seeding the default.
     await new Promise(r => setTimeout(r, 500));
     if (epoch == null) {
-      const nowNet = clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
-      epoch = Math.ceil(nowNet);
+      epoch = Math.ceil(networkSeconds());
     }
     maybeSeedDefaultProgram();
     startScheduler();

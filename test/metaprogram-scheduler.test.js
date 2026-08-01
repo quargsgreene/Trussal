@@ -261,6 +261,47 @@ test('program and metric changes land at the next cycle boundary, not mid-cycle'
   assert.equal(c1.find(e => e.type === 'slot-open').token, '7');
 });
 
+test('a backward clock jump re-anchors the grid instead of silencing it', () => {
+  // The clock this scheduler reads is not continuous: ClockSync converging
+  // swaps a local estimate for the relay's reference, and the relay's clock is
+  // hrtime since the SIDECAR started, so a restart moves it backwards. Left
+  // alone the next boundary sits unreachably in the future and NOTHING is ever
+  // emitted again — which silenced a live room.
+  const { sched, events, advance } = makeScheduler('$ participants <0 1>\n# cycles wcl 1\n', { wcl: 4000 });
+  sched.start(1000);
+  advance(1010);
+  const before = events.filter(e => e.type === 'cycle-start').length;
+  assert.ok(before > 0, 'emitting before the jump');
+
+  advance(510);   // clock falls back 500 s, far beyond any cycle
+  advance(520);
+  const after = events.filter(e => e.type === 'cycle-start').length;
+  assert.ok(after > before, `kept emitting across the jump (${before} -> ${after})`);
+});
+
+test('a far-future clock jump re-anchors rather than grinding out every missed cycle', () => {
+  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 4000 });
+  sched.start(0);
+  advance(1);
+  const startedAt = Date.now();
+  advance(1e9);   // 1e9 s at 4 s cycles would be 250 million iterations
+  assert.ok(Date.now() - startedAt < 1000, 'returned promptly instead of hanging');
+  assert.ok(events.some(e => e.type === 'cycle-start' && e.t >= 1e9), 'resumed at the new clock');
+});
+
+test('ordinary lateness does NOT re-anchor — only a real adrift does', () => {
+  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 4000 });
+  sched.start(0);
+  advance(0.01);
+  // A couple of cycles late is normal catch-up: boundaries must stay on the
+  // original 4 s grid, not be snapped to the observation time.
+  advance(9);
+  const starts = events.filter(e => e.type === 'cycle-start').map(e => e.t);
+  // Boundaries stay on the original 4 s grid rather than snapping to 9. The
+  // 12 s boundary is correctly still ahead of the lookahead horizon.
+  assert.deepEqual(starts, [0, 4, 8], 'grid preserved across ordinary lateness');
+});
+
 test('stop() halts emission; restart resumes from a fresh epoch', () => {
   const { sched, events, advance } = makeScheduler('$ participants <0>\n', { wcl: 0 });
   sched.start(0);

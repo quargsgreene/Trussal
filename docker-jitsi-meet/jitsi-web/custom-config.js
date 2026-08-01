@@ -2413,7 +2413,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     events.sort((a2, b) => a2.start - b.start || a2.stack - b.stack);
     return events;
   }
-  var WCPL_FULL_SCALE_S, AVBufferQueue, MetaprogramScheduler;
+  var WCPL_FULL_SCALE_S, AVBufferQueue, GRID_REANCHOR_CYCLES, GRID_REANCHOR_MIN_S, MetaprogramScheduler;
   var init_MetaprogramScheduler = __esm({
     "src/audio-net/MetaprogramScheduler.js"() {
       WCPL_FULL_SCALE_S = 10;
@@ -2456,6 +2456,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           this._bytes = 0;
         }
       };
+      GRID_REANCHOR_CYCLES = 4;
+      GRID_REANCHOR_MIN_S = 10;
       MetaprogramScheduler = class {
         constructor({
           now,
@@ -2464,6 +2466,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           // (event) → void
           lookaheadS = 0.2,
           tickMs = 50,
+          label: label2 = "netcycles",
+          // tags this scheduler's log lines (browser vs aggregator)
+          log: log3 = null,
+          // (line) => void; null = console.log, false = silent
           setIntervalFn = typeof setInterval !== "undefined" ? setInterval : null,
           clearIntervalFn = typeof clearInterval !== "undefined" ? clearInterval : null
         }) {
@@ -2474,6 +2480,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           this._emit = onEvent;
           this._lookaheadS = lookaheadS;
           this._tickMs = tickMs;
+          this._label = label2;
+          this._log = log3 === false ? () => {
+          } : log3 || ((line) => console.log(line));
           this._setInterval = setIntervalFn;
           this._clearInterval = clearIntervalFn;
           this._ast = null;
@@ -2521,7 +2530,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         // or from the interval timer.
         tick() {
           if (!this._running || !this._ast) return;
-          const horizon = this._now() + this._lookaheadS;
+          const now = this._now();
+          this._reanchorIfAdrift(now);
+          const horizon = now + this._lookaheadS;
           while (this._nextCycleStart <= horizon) {
             if (this._pendingAst) {
               this._ast = this._pendingAst;
@@ -2547,6 +2558,39 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             this._nextCycleStart = t0 + seconds2;
             this._cycle++;
           }
+        }
+        /**
+         * Snap the grid back onto the clock when the two have parted company.
+         *
+         * The clock this scheduler reads is not guaranteed continuous: ClockSync
+         * converging swaps a local estimate for the relay's reference, and the
+         * relay's reference is process.hrtime since the SIDECAR started, so a
+         * sidecar restart moves it backwards past everything already scheduled.
+         * Both leave `_nextCycleStart` stranded:
+         *
+         *   - far in the FUTURE — the loop below never runs, no cycle is ever
+         *     emitted again, and anything pacing off these events goes silent for
+         *     ever. This silenced a live room.
+         *   - far in the PAST — the loop would grind out every missed cycle one at a
+         *     time. Nobody heard them and nobody can now; at a large enough gap that
+         *     is a hang rather than a catch-up.
+         *
+         * Either way the honest response is the same: give up on the old anchor and
+         * start a fresh cycle at `now`. Tolerance scales with cycle length so a slow
+         * grid isn't re-anchored by ordinary lateness, with a floor for fast ones.
+         */
+        _reanchorIfAdrift(now) {
+          if (this._nextCycleStart == null) return;
+          const { seconds: seconds2 } = cycleLength({
+            cycles: this._ast.cycles,
+            tempo: this._ast.tempo,
+            metrics: this._metrics
+          });
+          const tolerance = Math.max(GRID_REANCHOR_MIN_S, seconds2 * GRID_REANCHOR_CYCLES);
+          const gap2 = this._nextCycleStart - now;
+          if (Math.abs(gap2) <= tolerance) return;
+          this._log(`[${this._label}] cycle grid re-anchored: next boundary was ${gap2.toFixed(1)}s ${gap2 > 0 ? "ahead of" : "behind"} the clock (tolerance ${tolerance.toFixed(1)}s) \u2014 the clock moved, not the music`);
+          this._nextCycleStart = now;
         }
       };
     }
@@ -12691,11 +12735,22 @@ ${SHORTCUT_LINES[fn]}
       console.warn("[metaprogrammer] replay failed", e30);
     }
   }
+  function networkSeconds() {
+    return clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
+  }
   function broadcastEpoch() {
-    if (o2 && epoch != null) o2.send(EPOCH_ADDR, ",t", [epoch]);
+    if (!o2 || epoch == null) return;
+    if (!(clock && clock.isSynced())) return;
+    o2.send(EPOCH_ADDR, ",t", [epoch]);
   }
   function adoptEpochIfEarlier(remoteEpoch) {
+    if (!Number.isFinite(remoteEpoch)) return;
     if (epoch != null && remoteEpoch >= epoch - 0.05) return;
+    const now = networkSeconds();
+    if (!(clock && clock.isSynced()) || remoteEpoch > now || now - remoteEpoch > EPOCH_PLAUSIBLE_PAST_S) {
+      console.warn(`[metaprogrammer] refused /nc/epoch ${remoteEpoch} (local now ${now})`);
+      return;
+    }
     epoch = remoteEpoch;
     if (scheduler) {
       scheduler.stop();
@@ -12704,7 +12759,7 @@ ${SHORTCUT_LINES[fn]}
   }
   function startScheduler() {
     scheduler = new MetaprogramScheduler({
-      now: () => clock && clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds(),
+      now: networkSeconds,
       onEvent: onSchedulerEvent
     });
     pushProgramToScheduler();
@@ -12743,8 +12798,7 @@ ${SHORTCUT_LINES[fn]}
       });
       await new Promise((r2) => setTimeout(r2, 500));
       if (epoch == null) {
-        const nowNet = clock.isSynced() ? clock.toNetworkTime(localSeconds()) : localSeconds();
-        epoch = Math.ceil(nowNet);
+        epoch = Math.ceil(networkSeconds());
       }
       maybeSeedDefaultProgram();
       startScheduler();
@@ -12781,7 +12835,7 @@ ${SHORTCUT_LINES[fn]}
     }
     document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
   }
-  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
@@ -12797,6 +12851,7 @@ ${SHORTCUT_LINES[fn]}
       EPOCH_ADDR = "/nc/epoch";
       APPLY_ADDR = "/nc/apply";
       EPOCH_REBROADCAST_MS = 1e4;
+      EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
       QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
       active = false;
       programText = null;
