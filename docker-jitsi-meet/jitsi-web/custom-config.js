@@ -355,6 +355,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
     if (typeof patch.packetLoss === "number" || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
     if (typeof patch.rtcRtt === "number" || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+    if (typeof patch.jitterBufferMs === "number" || patch.jitterBufferMs === null) peer.jitterBufferMs = patch.jitterBufferMs;
     if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
     if (typeof patch.canWriteModulation === "boolean") peer.canWriteModulation = patch.canWriteModulation;
   }
@@ -518,13 +519,15 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getLocalMetrics() {
     return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
   }
-  function sendLocalNetStats({ rtcRtt = null, packetLoss = null } = {}) {
+  function sendLocalNetStats({ rtcRtt = null, packetLoss = null, jitterBufferMs = null } = {}) {
     if (typeof rtcRtt === "number" && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
     if (typeof packetLoss === "number" && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
+    if (typeof jitterBufferMs === "number" && isFinite(jitterBufferMs)) localPeer.jitterBufferMs = jitterBufferMs;
     const msg = { type: "metrics" };
     if (typeof localPeer.rtcRtt === "number") msg.rtcRtt = localPeer.rtcRtt;
     if (typeof localPeer.packetLoss === "number") msg.packetLoss = localPeer.packetLoss;
-    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0) return;
+    if (typeof localPeer.jitterBufferMs === "number") msg.jitterBufferMs = localPeer.jitterBufferMs;
+    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0 && msg.jitterBufferMs === void 0) return;
     safeSend(msg);
     emit2("local-metrics", getLocalMetrics());
     emit2("peer-upsert", localPeer);
@@ -610,6 +613,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         jitter: null,
         packetLoss: null,
         rtcRtt: null,
+        jitterBufferMs: null,
         canEditMetaprogram: !LOCAL_IS_BOT,
         canWriteModulation: !LOCAL_IS_BOT
       };
@@ -1832,7 +1836,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function buildDefaultProgram() {
     return `$ participants <0>
-# cycles wcl 2000
+# cycles wcl 20
 `;
   }
   var import_room_indices, TIMING_METRICS, TEMPO_UNITS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser;
@@ -1918,7 +1922,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           if (!program.participants) {
             this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
           }
-          if (!program.cycles) program.cycles = { metric: "wcl", factor: 2e3, fixed: null, defaulted: true };
+          if (!program.cycles) program.cycles = { metric: "wcl", factor: 20, fixed: null, defaulted: true };
           return program;
         }
         parseDollar(program) {
@@ -2783,25 +2787,38 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
     return null;
   }
+  function worstCaseOneWayLatency(rtts, jitterBufferMs) {
+    const sorted = [...rtts].sort((a2, b) => b - a2);
+    if (!sorted.length) return 0;
+    const worst = sorted[0];
+    const partner = sorted.length > 1 ? sorted[1] : worst;
+    const network = worst / 2 + partner / 2;
+    return network + (jitterBufferMs || 0) + PIPELINE_ALLOWANCE_MS2;
+  }
   function computeWorstCaseMetrics(peers) {
     const list = Array.isArray(peers) ? peers : [];
     const rtts = [];
     const jitters = [];
     const losses = [];
+    const jitterBuffers = [];
     for (const peer of list) {
       if (!peer) continue;
       const rtt = peerRtt(peer);
       if (rtt != null) rtts.push(rtt);
       if (typeof peer.jitter === "number" && isFinite(peer.jitter)) jitters.push(peer.jitter);
+      if (typeof peer.jitterBufferMs === "number" && isFinite(peer.jitterBufferMs)) {
+        jitterBuffers.push(peer.jitterBufferMs);
+      }
       if (typeof peer.packetLoss === "number" && isFinite(peer.packetLoss)) {
         losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
       }
     }
     const wcrtt = worstCase(rtts) ?? 0;
     return {
-      wcl: wcrtt / 2,
+      wcl: worstCaseOneWayLatency(rtts, worstCase(jitterBuffers) ?? 0),
       wcj: worstCase(jitters) ?? 0,
       wcrtt,
+      wcjb: worstCase(jitterBuffers) ?? 0,
       wcpl: worstCase(losses) ?? 0,
       sampleCount: rtts.length
     };
@@ -2815,13 +2832,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return out;
   }
-  var INDUCTIONS;
+  var PIPELINE_ALLOWANCE_MS2, INDUCTIONS;
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
       init_IncreaseJitter();
       init_IncreaseRTT();
       init_IncreasePacketLoss();
+      PIPELINE_ALLOWANCE_MS2 = 40;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
         wcj: IncreaseJitter,
@@ -51673,6 +51691,8 @@ ${code2}${BTN_MARKER}`;
     let rtcJitter = null;
     let lost = 0;
     let received = 0;
+    let jbDelay = 0;
+    let jbEmitted = 0;
     let sawInbound = false;
     const pairs2 = entries2.filter((s2) => s2 && s2.type === "candidate-pair");
     const selected = pairs2.find((s2) => s2.selected === true || s2.nominated === true) || pairs2.find((s2) => s2.state === "succeeded");
@@ -51695,9 +51715,11 @@ ${code2}${BTN_MARKER}`;
         }
         if (typeof s2.packetsLost === "number") lost += s2.packetsLost;
         if (typeof s2.packetsReceived === "number") received += s2.packetsReceived;
+        if (typeof s2.jitterBufferDelay === "number") jbDelay += s2.jitterBufferDelay;
+        if (typeof s2.jitterBufferEmittedCount === "number") jbEmitted += s2.jitterBufferEmittedCount;
       }
     }
-    const totals = { lost, received };
+    const totals = { lost, received, jbDelay, jbEmitted };
     let packetLoss = null;
     if (sawInbound) {
       const dLost = prevTotals ? lost - prevTotals.lost : lost;
@@ -51711,7 +51733,11 @@ ${code2}${BTN_MARKER}`;
         packetLoss = 0;
       }
     }
-    const sample = rtcRtt != null || rtcJitter != null || packetLoss != null ? { rtcRtt, rtcJitter, packetLoss } : null;
+    let jitterBufferMs = null;
+    const dDelay = prevTotals ? jbDelay - prevTotals.jbDelay : jbDelay;
+    const dEmitted = prevTotals ? jbEmitted - prevTotals.jbEmitted : jbEmitted;
+    if (dEmitted > 0 && dDelay >= 0) jitterBufferMs = dDelay / dEmitted * 1e3;
+    const sample = rtcRtt != null || rtcJitter != null || packetLoss != null || jitterBufferMs != null ? { rtcRtt, rtcJitter, packetLoss, jitterBufferMs } : null;
     return { sample, totals };
   }
   function mergeSamples(samples2) {
@@ -51721,7 +51747,12 @@ ${code2}${BTN_MARKER}`;
       const vals = usable.map((s2) => s2[key]).filter((v2) => typeof v2 === "number" && isFinite(v2));
       return vals.length ? Math.max(...vals) : null;
     };
-    return { rtcRtt: pick2("rtcRtt"), rtcJitter: pick2("rtcJitter"), packetLoss: pick2("packetLoss") };
+    return {
+      rtcRtt: pick2("rtcRtt"),
+      rtcJitter: pick2("rtcJitter"),
+      packetLoss: pick2("packetLoss"),
+      jitterBufferMs: pick2("jitterBufferMs")
+    };
   }
   function listPeerConnections() {
     const out = [];
@@ -52627,8 +52658,11 @@ ${code2}${BTN_MARKER}`;
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta" title="one-way network estimate (WCRTT/2) \u2014 NOT perceived audio latency, which also includes encode, jitter buffer and decode">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
+      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - PIPELINE_ALLOWANCE_MS))}
+        + buffer ${preciseMs(wc.wcjb || 0)} + pipeline ${PIPELINE_ALLOWANCE_MS}ms
+        <span title="the first two are measured; the pipeline term is a fixed allowance for encode, decode and device buffering, which getStats does not expose">(last term assumed)</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
   }

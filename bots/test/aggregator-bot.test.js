@@ -1199,7 +1199,7 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
 
   await bot.interpretAndExecuteMetaprogram();
 
-  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 2000\n');
+  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 20\n');
   assert.ok(bot.order.hasValidMetaprogram(), 'the default program puts the ring in metaprogram mode');
   assert.ok(bot.scheduler, 'the scheduler runs the default program');
 
@@ -1280,7 +1280,7 @@ test('the cycle grid survives a ClockSync convergence jump', async () => {
   );
   try {
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
     bot.buffers['0'] = new RingBuffer(4096);
     bot.buffers['1'] = new RingBuffer(4096);
@@ -1365,22 +1365,27 @@ test('turn length follows the cycle length # cycles computes, not the fixed slot
   );
   try {
     await bot.interpretAndExecuteMetaprogram();
-    // rtt 6 -> wcl 3 ms; x 2000 = 6 s cycles. Deliberately NOT the configured
-    // 4000 ms slotMs, so a turn still coming from the write pointer is obvious.
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 6 }] });
+    // wcl is mouth-to-ear: both legs (20/2 + 20/2) + the measured de-jitter
+    // buffer (240) + the fixed pipeline allowance (40) = 300 ms; x 20 = 6 s.
+    // Deliberately NOT the configured 4000 ms slotMs, so a turn still coming
+    // from the write pointer would be obvious.
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 240 },
+    ] });
     bot.buffers['0'] = new RingBuffer(4096);
     bot.buffers['1'] = new RingBuffer(4096);
 
     // Metrics land at a cycle boundary, so cross one before measuring.
     clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
-    assert.equal(bot.scheduler.getCycleLength().seconds, 6, 'wcl 3 ms x 2000 -> a 6 s cycle');
+    assert.equal(bot.scheduler.getCycleLength().seconds, 6, 'wcl 300 ms x 20 -> a 6 s cycle');
     const shortTurn = await measureTurnMs(bot, clockRef, 60000);
     assert.ok(Math.abs(shortTurn - 6000) <= 200, `turn tracked the 6 s cycle (got ${shortTurn}ms)`);
     assert.notEqual(shortTurn, bot.slotMs, 'the fixed slotMs no longer paces anything');
 
-    // The room degrades: rtt 14 -> wcl 7 ms -> 14 s cycles.
-    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 14 } });
+    // The room degrades — the buffer grows, which is what a listener hears:
+    // 20 + 640 + 40 = 700 ms -> 14 s cycles.
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { jitterBufferMs: 640 } });
     clockRef.ms = 200000; await bot.readAndAssembleMasterBuffer();
     assert.equal(bot.scheduler.getCycleLength().seconds, 14);
     const longTurn = await measureTurnMs(bot, clockRef, 260000);
@@ -1409,8 +1414,10 @@ test('a metaprogram rest schedules silence; an empty grid falls back to the writ
 
     await bot.interpretAndExecuteMetaprogram();
     // `<0 ~>`: participant 0 plays one cycle, the next cycle is a rest.
-    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 2000\n');
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },  // 20+140+40 = 200 ms
+    ] });
     clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
     assert.equal(bot.scheduler.getCycleLength().seconds, 4);
 
@@ -1444,14 +1451,16 @@ test('the ghost retention window follows the cycle length and is capped', async 
     assert.equal(bot.slotSamples, Math.round(bot.slotMs * bot.sampleRate / 1000));
 
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
-    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 2 }] }); // wcl 1 ms -> 2 s
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 40 },   // 20+40+40 = 100 ms -> 2 s
+    ] });
     clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
     assert.equal(bot.slotSamples, 2 * bot.sampleRate, 'retains exactly one 2 s turn');
 
     // A badly degraded room would demand an unbounded window; it is capped so
     // the per-participant cost cannot grow without limit.
-    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 60 } }); // wcl 30 ms -> 60 s
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { jitterBufferMs: 2940 } }); // 3000 ms -> 60 s
     clockRef.ms = 300000; await bot.readAndAssembleMasterBuffer();
     assert.equal(bot.scheduler.getCycleLength().seconds, 60);
     assert.equal(bot.slotSamples, 10 * bot.sampleRate, 'capped at MAX_RETAIN_MS, not 60 s');
@@ -1475,7 +1484,7 @@ test('an unusable slot grid falls back to the write pointer instead of going sil
   );
   try {
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
     bot.buffers['0'] = new RingBuffer(4096); bot.buffers['0'].write(new Array(50).fill(0.5));
     bot.buffers['1'] = new RingBuffer(4096); bot.buffers['1'].write(new Array(50).fill(0.25));

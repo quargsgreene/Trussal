@@ -178,9 +178,9 @@ class Parser {
     if (!program.participants) {
       this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
     }
-    // Defaults per spec: cycles wcl 2000 (mirrors buildDefaultProgram — the
-    // scale keeps LAN-grade latencies audible as solos), tempo 120 bpm.
-    if (!program.cycles) program.cycles = { metric: 'wcl', factor: 2000, fixed: null, defaulted: true };
+    // Defaults per spec: cycles wcl 20 (mirrors buildDefaultProgram — wcl is
+    // mouth-to-ear latency in the tens of ms, so a small scale gives seconds).
+    if (!program.cycles) program.cycles = { metric: 'wcl', factor: 20, fixed: null, defaulted: true };
     // No tempo is injected: an unwritten `# tempo` leaves program.tempo null,
     // so the AST reports honestly that no tempo directive is in force. This is
     // behaviourally a no-op — beatSeconds(null) already falls back to 120 bpm,
@@ -582,16 +582,17 @@ export function resolveEffectParams(chainEntry) {
 
 // The default program every room starts under (Net Cycles is always on):
 // participant 0 — the first to join — streams continuously. Nobody else is
-// listed, so later joiners stay silent until an edit adds them. The 2000×
-// scale keeps LAN-grade one-way latencies (a few ms) audible as multi-second
-// solos — 2 ms × 2000 = 4 s (the retired WCL_SOLO_STRETCH, now in the open).
+// listed, so later joiners stay silent until an edit adds them. wcl is the
+// worst-case mouth-to-ear latency a performer actually hears — tens of ms, the
+// de-jitter buffer dominating — so a scale of 20 turns a ~100 ms room into ~2 s
+// solos. Raise it for longer turns, lower it for a faster round.
 //
 // No `# tempo` line: the room's default program leaves the tempo unwritten so
 // the beat grid is not part of what a performer reads when they open the
 // editor. Cycle length still quantizes onto the parser's 120 bpm default —
 // writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `$ participants <0>\n# cycles wcl 2000\n`;
+  return `$ participants <0>\n# cycles wcl 20\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

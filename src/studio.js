@@ -455,8 +455,11 @@ function networkMetricsBlock(peer, controls = '') {
         </div>
       </div>
       ${metricsLine(peer)}
-      <div class="ts-meta" title="one-way network estimate (WCRTT/2) — NOT perceived audio latency, which also includes encode, jitter buffer and decode">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
+      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - PIPELINE_ALLOWANCE_MS))}
+        + buffer ${preciseMs(wc.wcjb || 0)} + pipeline ${PIPELINE_ALLOWANCE_MS}ms
+        <span title="the first two are measured; the pipeline term is a fixed allowance for encode, decode and device buffering, which getStats does not expose">(last term assumed)</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
 }

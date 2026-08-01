@@ -331,16 +331,16 @@ test('integration: <0 1>*2 emits the slot open/close grid against the fake clock
 
 test('program and metric changes land at the next cycle boundary, not mid-cycle', () => {
   const { sched, events, advance } = makeScheduler(
-    // Implicit default is cycles wcl 2000; true LAN wcl 0.45 ms → 0.9 s
-    // target → 2 beats = 1 s.
-    '$ participants <0>\n', { wcl: 0.45 }
+    // Implicit default is cycles wcl 20; wcl is mouth-to-ear latency, so a
+    // 45 ms room → 0.9 s target → 2 beats = 1 s.
+    '$ participants <0>\n', { wcl: 45 }
   );
   sched.start(0);
   advance(0.01);
   assert.equal(events.find(e => e.type === 'cycle-start').seconds, 1);
 
   sched.setProgram(astOf('$ participants <7>\n'));
-  sched.setMetrics({ wcl: 1.2 }); // × 2000 → 2.4 s → 5 beats = 2.5 s
+  sched.setMetrics({ wcl: 120 }); // × 20 → 2.4 s → 5 beats = 2.5 s
   advance(0.5); // still inside cycle 0 → nothing new applied yet
   assert.ok(!events.some(e => e.type === 'slot-open' && e.token === '7'));
 

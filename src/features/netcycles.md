@@ -303,7 +303,7 @@ $ participants <0 1 3 5 2a 1zzzv 9 1>*2
 ```
 ```
 $ participants <0 1 2 3>
-# cycles wcl 2000 // Default if not specified — the scale keeps LAN-grade latencies audible as multi-second solos (2 ms one-way × 2000 = 4 s)
+# cycles wcl 20 // Default if not specified. wcl is worst-case MOUTH-TO-EAR latency (both network legs + the measured de-jitter buffer + a fixed encode/decode/device allowance), so it sits in the tens of ms and a scale of 20 gives ~2 s solos.
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm. No tempo directive is injected when none is written, but cycle quantization still falls back to 120 bpm — and the room's default program deliberately carries no `# tempo` line. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
 
  // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats covering (≥) the cycle target. This is the order in which inputs are established via the Web Audio API.
@@ -311,7 +311,7 @@ $ participants <0 1 2 3>
 
 ```
 $ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
-# cycles wcl 2000
+# cycles wcl 20
 # tempo 120 bpm
 
 // This is how the program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. The `# tempo` line here is written explicitly — the room's default program carries none, and quantization falls back to 120 bpm.
@@ -384,7 +384,7 @@ AV buffer object
 scale factor: A positive real number multiplying wcl to give the reverb decay time: decay = scale_factor * wcl, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
 amount for wcl: A positive real number of seconds that *pins* wcl instead of reading it live, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions. Defaults to unset (live metrics).
 
-Note that wcl is the true one-way estimate, so on a LAN it is a couple of milliseconds and a small scale factor yields no audible tail — `# room wcl 2` is a 4 ms decay at 2 ms wcl. Scale up (`# room wcl 500` for a ~1 s tail) or pin the amount, the same way `# cycles` carries its own 2000× scale openly rather than through a hidden multiplier.
+Note that wcl models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room wcl 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
 
 The cascaded cutoff is `wcrtt * 100 Hz` (wcrtt in ms), clamped to [40, 18000]. It also applies a lowpass filter to the Hydra signal.
 - Return value

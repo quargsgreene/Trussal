@@ -22,6 +22,14 @@ const POLL_INTERVAL_MS = 2000;
 //   rtcRtt     ms — selected candidate-pair currentRoundTripTime, falling
 //              back to remote-inbound-rtp roundTripTime (both arrive in s).
 //   rtcJitter  ms — worst inbound-rtp jitter (arrives in s).
+//   jitterBufferMs ms — receive-side de-jitter buffer delay, measured as the
+//              DELTA of inbound-rtp jitterBufferDelay / jitterBufferEmittedCount
+//              since prevTotals. This is normally the single largest term in
+//              mouth-to-ear latency (tens of ms, far above the network leg on
+//              a LAN), and it is the only part of the receive pipeline WebRTC
+//              actually exposes — encode, decode and device buffering are not
+//              measurable from getStats and are carried as a constant
+//              allowance in the worst-case model instead.
 //   packetLoss fraction [0,1] — lost / (lost + received) over the delta
 //              since `prevTotals` so it tracks *current* loss, not the
 //              lifetime average. First call (no prev) uses lifetime totals.
@@ -35,6 +43,8 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
   let rtcJitter = null;
   let lost = 0;
   let received = 0;
+  let jbDelay = 0;      // cumulative seconds, summed over emitted samples
+  let jbEmitted = 0;    // cumulative emitted sample/frame count
   let sawInbound = false;
 
   // Selected candidate pair is the authoritative RTT for the media path.
@@ -62,10 +72,12 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
       }
       if (typeof s.packetsLost === 'number') lost += s.packetsLost;
       if (typeof s.packetsReceived === 'number') received += s.packetsReceived;
+      if (typeof s.jitterBufferDelay === 'number') jbDelay += s.jitterBufferDelay;
+      if (typeof s.jitterBufferEmittedCount === 'number') jbEmitted += s.jitterBufferEmittedCount;
     }
   }
 
-  const totals = { lost, received };
+  const totals = { lost, received, jbDelay, jbEmitted };
   let packetLoss = null;
   if (sawInbound) {
     const dLost = prevTotals ? lost - prevTotals.lost : lost;
@@ -81,8 +93,16 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
     }
   }
 
-  const sample = (rtcRtt != null || rtcJitter != null || packetLoss != null)
-    ? { rtcRtt, rtcJitter, packetLoss }
+  // Average buffer delay over THIS interval: both fields are cumulative, so
+  // the delta ratio tracks the buffer's current depth rather than its
+  // lifetime average (which barely moves once a call has been up a while).
+  let jitterBufferMs = null;
+  const dDelay = prevTotals ? jbDelay - prevTotals.jbDelay : jbDelay;
+  const dEmitted = prevTotals ? jbEmitted - prevTotals.jbEmitted : jbEmitted;
+  if (dEmitted > 0 && dDelay >= 0) jitterBufferMs = (dDelay / dEmitted) * 1000;
+
+  const sample = (rtcRtt != null || rtcJitter != null || packetLoss != null || jitterBufferMs != null)
+    ? { rtcRtt, rtcJitter, packetLoss, jitterBufferMs }
     : null;
   return { sample, totals };
 }
@@ -97,7 +117,10 @@ export function mergeSamples(samples) {
     const vals = usable.map(s => s[key]).filter(v => typeof v === 'number' && isFinite(v));
     return vals.length ? Math.max(...vals) : null;
   };
-  return { rtcRtt: pick('rtcRtt'), rtcJitter: pick('rtcJitter'), packetLoss: pick('packetLoss') };
+  return {
+    rtcRtt: pick('rtcRtt'), rtcJitter: pick('rtcJitter'),
+    packetLoss: pick('packetLoss'), jitterBufferMs: pick('jitterBufferMs')
+  };
 }
 
 // --- Browser wiring ---------------------------------------------------------

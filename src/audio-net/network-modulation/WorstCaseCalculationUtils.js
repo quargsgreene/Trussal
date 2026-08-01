@@ -46,8 +46,40 @@ function peerRtt(peer) {
   return null;
 }
 
+// Fixed allowance for the parts of the audio pipeline WebRTC does not expose:
+// Opus encode + decode, and the capture/playout device buffers at each end.
+// getStats reports the de-jitter buffer but nothing either side of it, so this
+// is an explicit ESTIMATE rather than a measurement — named and separate so it
+// is obvious in the readout what is measured and what is assumed.
+export const PIPELINE_ALLOWANCE_MS = 40;
+
+// Worst-case one-way MOUTH-TO-EAR latency between two performers, in ms.
+//
+// Every client holds one PeerConnection to the JVB (P2P is off), so the audio
+// path is sender -> JVB -> receiver and the network part of one-way latency is
+//     rtt(sender)/2 + rtt(receiver)/2
+// i.e. the two worst legs halved and summed — NOT max(rtt)/2, which halves a
+// figure that was already a single leg and so under-reported the network by
+// about 2x. With one peer we have no partner leg to measure and assume a
+// symmetric one, which makes the network term simply that peer's rtt.
+//
+// On top of the network path sit the terms that actually dominate: the
+// receive-side de-jitter buffer (measured, tens of ms) and PIPELINE_ALLOWANCE_MS
+// (assumed). On a LAN the network is single-digit ms while the buffer alone is
+// an order of magnitude more, which is why a network-only figure read as
+// implausibly small for anything a musician can hear.
+export function worstCaseOneWayLatency(rtts, jitterBufferMs) {
+  const sorted = [...rtts].sort((a, b) => b - a);
+  if (!sorted.length) return 0;
+  const worst = sorted[0];
+  // Second leg: the next-worst peer, or a symmetric partner when alone.
+  const partner = sorted.length > 1 ? sorted[1] : worst;
+  const network = worst / 2 + partner / 2;
+  return network + (jitterBufferMs || 0) + PIPELINE_ALLOWANCE_MS;
+}
+
 // Worst-case metrics over the whole roster:
-//   wcl   worst-case latency, ms (one-way estimate rtt / 2)
+//   wcl   worst-case one-way mouth-to-ear latency, ms (see above)
 //   wcj   worst-case jitter, ms
 //   wcrtt worst-case round-trip time, ms
 //   wcpl  worst-case packet loss, fraction in [0, 1]
@@ -56,29 +88,34 @@ function peerRtt(peer) {
 // it. An empty roster (or all-null metrics) yields zeros so downstream cycle
 // math degenerates to the minimum cycle length instead of NaN.
 //
-// wcl is the TRUE one-way estimate: the old WCL_SOLO_STRETCH live-testing
-// inflation (2000×, so LAN-scale RTTs still gave audible solos) moved into
-// the metaprogram itself — the default program's `# cycles wcl 2000` scale
-// factor — so the studio readout and av-effects see real network values.
+// wcl models what a performer HEARS, not the network leg alone. The scale
+// factor in `# cycles wcl <n>` carries the musical inflation (the default
+// program's `# cycles wcl 20`), so the studio readout and av-effects see a
+// real, physically meaningful latency in the tens of milliseconds.
 export function computeWorstCaseMetrics(peers) {
   const list = Array.isArray(peers) ? peers : [];
   const rtts = [];
   const jitters = [];
   const losses = [];
+  const jitterBuffers = [];
   for (const peer of list) {
     if (!peer) continue;
     const rtt = peerRtt(peer);
     if (rtt != null) rtts.push(rtt);
     if (typeof peer.jitter === 'number' && isFinite(peer.jitter)) jitters.push(peer.jitter);
+    if (typeof peer.jitterBufferMs === 'number' && isFinite(peer.jitterBufferMs)) {
+      jitterBuffers.push(peer.jitterBufferMs);
+    }
     if (typeof peer.packetLoss === 'number' && isFinite(peer.packetLoss)) {
       losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
     }
   }
   const wcrtt = worstCase(rtts) ?? 0;
   return {
-    wcl: wcrtt / 2,
+    wcl: worstCaseOneWayLatency(rtts, worstCase(jitterBuffers) ?? 0),
     wcj: worstCase(jitters) ?? 0,
     wcrtt,
+    wcjb: worstCase(jitterBuffers) ?? 0,
     wcpl: worstCase(losses) ?? 0,
     sampleCount: rtts.length
   };

@@ -46,10 +46,10 @@ test('spec: scheduling example with mixed indices, repeat, and comment', () => {
 
 test('spec: default four-human program with explicit defaults', () => {
   const ast = ok(`$ participants <0 1 2 3>
-# cycles wcl 2000 // Default if not specified
+# cycles wcl 20 // Default if not specified
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit
 `);
-  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 2000, fixed: null });
+  assert.deepEqual(ast.cycles, { metric: 'wcl', factor: 20, fixed: null });
   assert.deepEqual(ast.tempo, { value: 120, unit: 'bpm' });
 });
 
@@ -258,14 +258,14 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   // Participant 0 — the first to join — streams continuously; nobody else is
   // listed, so later joiners stay silent until an edit adds them.
   const text = buildDefaultProgram();
-  assert.equal(text, '$ participants <0>\n# cycles wcl 2000\n');
+  assert.equal(text, '$ participants <0>\n# cycles wcl 20\n');
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
   // No tempo directive in the default program, and none injected behind it.
   assert.equal(ast.tempo, null);
   // The implicit default (no # cycles line) mirrors the same directive.
   const implied = ok('$ participants <0>\n');
-  assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 2000, fixed: null, defaulted: true });
+  assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 20, fixed: null, defaulted: true });
 });
 
 test('comments and blank lines anywhere are ignored', () => {
