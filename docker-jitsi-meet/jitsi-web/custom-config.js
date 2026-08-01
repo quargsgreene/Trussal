@@ -356,6 +356,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof patch.packetLoss === "number" || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
     if (typeof patch.rtcRtt === "number" || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
     if (typeof patch.jitterBufferMs === "number" || patch.jitterBufferMs === null) peer.jitterBufferMs = patch.jitterBufferMs;
+    if (typeof patch.pipelineMs === "number" || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
     if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
     if (typeof patch.canWriteModulation === "boolean") peer.canWriteModulation = patch.canWriteModulation;
   }
@@ -519,15 +520,17 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getLocalMetrics() {
     return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
   }
-  function sendLocalNetStats({ rtcRtt = null, packetLoss = null, jitterBufferMs = null } = {}) {
+  function sendLocalNetStats({ rtcRtt = null, packetLoss = null, jitterBufferMs = null, pipelineMs = null } = {}) {
     if (typeof rtcRtt === "number" && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
     if (typeof packetLoss === "number" && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
     if (typeof jitterBufferMs === "number" && isFinite(jitterBufferMs)) localPeer.jitterBufferMs = jitterBufferMs;
+    if (typeof pipelineMs === "number" && isFinite(pipelineMs)) localPeer.pipelineMs = pipelineMs;
     const msg = { type: "metrics" };
     if (typeof localPeer.rtcRtt === "number") msg.rtcRtt = localPeer.rtcRtt;
     if (typeof localPeer.packetLoss === "number") msg.packetLoss = localPeer.packetLoss;
     if (typeof localPeer.jitterBufferMs === "number") msg.jitterBufferMs = localPeer.jitterBufferMs;
-    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0 && msg.jitterBufferMs === void 0) return;
+    if (typeof localPeer.pipelineMs === "number") msg.pipelineMs = localPeer.pipelineMs;
+    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0 && msg.jitterBufferMs === void 0 && msg.pipelineMs === void 0) return;
     safeSend(msg);
     emit2("local-metrics", getLocalMetrics());
     emit2("peer-upsert", localPeer);
@@ -614,6 +617,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         packetLoss: null,
         rtcRtt: null,
         jitterBufferMs: null,
+        pipelineMs: null,
         canEditMetaprogram: !LOCAL_IS_BOT,
         canWriteModulation: !LOCAL_IS_BOT
       };
@@ -2787,13 +2791,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
     return null;
   }
-  function worstCaseOneWayLatency(rtts, jitterBufferMs) {
+  function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
     const sorted = [...rtts].sort((a2, b) => b - a2);
     if (!sorted.length) return 0;
     const worst = sorted[0];
     const partner = sorted.length > 1 ? sorted[1] : worst;
     const network = worst / 2 + partner / 2;
-    return network + (jitterBufferMs || 0) + PIPELINE_ALLOWANCE_MS2;
+    const pipeline = typeof pipelineMs === "number" && isFinite(pipelineMs) ? pipelineMs : PIPELINE_ALLOWANCE_MS2;
+    return network + (jitterBufferMs || 0) + pipeline;
   }
   function computeWorstCaseMetrics(peers) {
     const list = Array.isArray(peers) ? peers : [];
@@ -2801,6 +2806,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const jitters = [];
     const losses = [];
     const jitterBuffers = [];
+    const pipelines = [];
     for (const peer of list) {
       if (!peer) continue;
       const rtt = peerRtt(peer);
@@ -2809,16 +2815,25 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       if (typeof peer.jitterBufferMs === "number" && isFinite(peer.jitterBufferMs)) {
         jitterBuffers.push(peer.jitterBufferMs);
       }
+      pipelines.push(
+        typeof peer.pipelineMs === "number" && isFinite(peer.pipelineMs) ? peer.pipelineMs : PIPELINE_ALLOWANCE_MS2
+      );
       if (typeof peer.packetLoss === "number" && isFinite(peer.packetLoss)) {
         losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
       }
     }
     const wcrtt = worstCase(rtts) ?? 0;
+    const wcjb = worstCase(jitterBuffers) ?? 0;
+    const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS2;
     return {
-      wcl: worstCaseOneWayLatency(rtts, worstCase(jitterBuffers) ?? 0),
+      wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
       wcj: worstCase(jitters) ?? 0,
       wcrtt,
-      wcjb: worstCase(jitterBuffers) ?? 0,
+      wcjb,
+      wcpipe,
+      // How many rigs actually measured their own pipeline, so a readout can say
+      // whether the bound rests on measurement or on the fallback.
+      pipelineMeasured: list.filter((p) => p && typeof p.pipelineMs === "number" && isFinite(p.pipelineMs)).length,
       wcpl: worstCase(losses) ?? 0,
       sampleCount: rtts.length
     };
@@ -51797,6 +51812,119 @@ ${code2}${BTN_MARKER}`;
     }, POLL_INTERVAL_MS);
   }
 
+  // src/audio-net/observability/PipelineLatency.js
+  var IMPULSE_AMPLITUDE = 1;
+  var DETECT_THRESHOLD = 0.05;
+  var MEASURE_TIMEOUT_MS = 5e3;
+  var REMEASURE_INTERVAL_MS = 6e4;
+  function pipelineLatencyMs({ loopbackS = null, baseLatencyS = 0, outputLatencyS = 0 } = {}) {
+    const device = (Number(baseLatencyS) || 0) + (Number(outputLatencyS) || 0);
+    if (loopbackS == null || !isFinite(loopbackS) || loopbackS < 0) {
+      return device > 0 ? device * 1e3 : null;
+    }
+    return (loopbackS + device) * 1e3;
+  }
+  function firstImpulseOffset(samples2, threshold = DETECT_THRESHOLD) {
+    if (!samples2) return -1;
+    for (let i = 0; i < samples2.length; i++) {
+      if (Math.abs(samples2[i]) >= threshold) return i;
+    }
+    return -1;
+  }
+  async function measureLoopbackSeconds(ctx) {
+    if (typeof RTCPeerConnection !== "function") return null;
+    const nodes = [];
+    const pcs2 = [];
+    try {
+      const source2 = ctx.createConstantSource();
+      source2.offset.value = 0;
+      const outbound = ctx.createMediaStreamDestination();
+      source2.connect(outbound);
+      nodes.push(source2, outbound);
+      const pcSend = new RTCPeerConnection();
+      const pcRecv = new RTCPeerConnection();
+      pcs2.push(pcSend, pcRecv);
+      pcSend.onicecandidate = (e30) => e30.candidate && pcRecv.addIceCandidate(e30.candidate);
+      pcRecv.onicecandidate = (e30) => e30.candidate && pcSend.addIceCandidate(e30.candidate);
+      const inbound = new Promise((resolve) => {
+        pcRecv.ontrack = (e30) => resolve(e30.streams[0]);
+      });
+      for (const track of outbound.stream.getAudioTracks()) pcSend.addTrack(track, outbound.stream);
+      const offer = await pcSend.createOffer();
+      await pcSend.setLocalDescription(offer);
+      await pcRecv.setRemoteDescription(offer);
+      const answer = await pcRecv.createAnswer();
+      await pcRecv.setLocalDescription(answer);
+      await pcSend.setRemoteDescription(answer);
+      const remoteStream = await Promise.race([
+        inbound,
+        new Promise((r2) => setTimeout(() => r2(null), MEASURE_TIMEOUT_MS))
+      ]);
+      if (!remoteStream) return null;
+      const back = ctx.createMediaStreamSource(remoteStream);
+      const detector = ctx.createScriptProcessor(256, 1, 1);
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+      back.connect(detector);
+      detector.connect(mute);
+      mute.connect(ctx.destination);
+      nodes.push(back, detector, mute);
+      await new Promise((r2) => setTimeout(r2, 300));
+      const emittedAt = ctx.currentTime + 0.05;
+      source2.offset.setValueAtTime(0, emittedAt - 1e-3);
+      source2.offset.setValueAtTime(IMPULSE_AMPLITUDE, emittedAt);
+      source2.offset.setValueAtTime(0, emittedAt + 5e-3);
+      source2.start();
+      return await Promise.race([
+        new Promise((resolve) => {
+          detector.onaudioprocess = (e30) => {
+            const offset2 = firstImpulseOffset(e30.inputBuffer.getChannelData(0));
+            if (offset2 < 0) return;
+            detector.onaudioprocess = null;
+            resolve(Math.max(0, e30.playbackTime + offset2 / ctx.sampleRate - emittedAt));
+          };
+        }),
+        new Promise((r2) => setTimeout(() => r2(null), MEASURE_TIMEOUT_MS))
+      ]);
+    } catch (e30) {
+      console.error(`[pipeline-latency] loopback measurement failed: ${e30.message}`);
+      return null;
+    } finally {
+      for (const n2 of nodes) {
+        try {
+          n2.disconnect();
+        } catch (e30) {
+        }
+      }
+      for (const pc of pcs2) {
+        try {
+          pc.close();
+        } catch (e30) {
+        }
+      }
+    }
+  }
+  var measureTimer = null;
+  function startPipelineLatencyMeasurement(send, getContext) {
+    if (measureTimer || typeof send !== "function" || typeof getContext !== "function") return;
+    const runOnce = async () => {
+      const ctx = getContext();
+      if (!ctx) return;
+      const loopbackS = await measureLoopbackSeconds(ctx);
+      const pipelineMs = pipelineLatencyMs({
+        loopbackS,
+        baseLatencyS: ctx.baseLatency,
+        outputLatencyS: ctx.outputLatency
+      });
+      if (pipelineMs != null) {
+        console.log(`[pipeline-latency] this rig: ${pipelineMs.toFixed(1)}ms (loopback ${loopbackS == null ? "n/a" : (loopbackS * 1e3).toFixed(1) + "ms"}, device ${(((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1e3).toFixed(1)}ms)`);
+        send({ pipelineMs });
+      }
+    };
+    runOnce();
+    measureTimer = setInterval(runOnce, REMEASURE_INTERVAL_MS);
+  }
+
   // src/studio.js
   init_Metaprogrammer();
   init_MetaprogramScheduler();
@@ -52660,9 +52788,10 @@ ${code2}${BTN_MARKER}`;
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
-      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - PIPELINE_ALLOWANCE_MS))}
-        + buffer ${preciseMs(wc.wcjb || 0)} + pipeline ${PIPELINE_ALLOWANCE_MS}ms
-        <span title="the first two are measured; the pipeline term is a fixed allowance for encode, decode and device buffering, which getStats does not expose">(last term assumed)</span></div>
+      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
+        + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}
+        <span title="worst value of each term across the room \u2014 an upper bound, so no real path exceeds it">(upper bound)</span>
+        <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
   }
@@ -53167,6 +53296,7 @@ ${voiceCode}${BTN_MARKER2}`);
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
     startNetStatsPolling(sendLocalNetStats);
+    startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext);
     startBotClusterVideo();
     startRoomHealth();
     bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));

@@ -290,6 +290,8 @@ A minimal valid NetCycles program consists of a scheduling sequence of the audio
 
 The length of each cycle is defined according to a multiple of the worst-case latency, worst-case jitter, or length computed by the worst-case percentage of packet loss.
 
+Each rig measures its own audio pipeline by loopback — a local RTCPeerConnection pair carrying an impulse through a real Opus encoder and decoder, plus the platform's reported device buffers — and publishes the result, so the bound reflects the actual hardware in the room rather than one constant standing in for every machine. A rig that has not measured itself yet contributes a mid-range fallback and so can never pull the bound below what is already known.
+
 That cycle length is also the length of each performer's TURN: the aggregator paces its rotation off the scheduler's `slot-open`/`slot-close` grid, so a degrading room stretches every solo and a recovering one tightens them. The join-order write pointer's fixed `slotMs` remains only as the fallback before the first slot arrives, and in standalone runs with no metaprogram sync.
 
 The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl`/`wcj` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
@@ -303,7 +305,7 @@ $ participants <0 1 3 5 2a 1zzzv 9 1>*2
 ```
 ```
 $ participants <0 1 2 3>
-# cycles wcl 20 // Default if not specified. wcl is worst-case MOUTH-TO-EAR latency (both network legs + the measured de-jitter buffer + a fixed encode/decode/device allowance), so it sits in the tens of ms and a scale of 20 gives ~2 s solos.
+# cycles wcl 20 // Default if not specified. wcl is worst-case MOUTH-TO-EAR latency: an UPPER BOUND over the room, built from the two worst network legs, the worst measured de-jitter buffer, and the worst rig's own measured capture/codec/playout latency. It sits in the tens-to-low-hundreds of ms, so a scale of 20 gives seconds-long solos.
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm. No tempo directive is injected when none is written, but cycle quantization still falls back to 120 bpm — and the room's default program deliberately carries no `# tempo` line. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
 
  // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats covering (≥) the cycle target. This is the order in which inputs are established via the Web Audio API.

@@ -42,8 +42,10 @@ import {
   setJamulusMode,
   isJamulusMode,
   setMonitorMix,
+  getAudioContext,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
+import { startPipelineLatencyMeasurement } from './audio-net/observability/PipelineLatency.js';
 import { effectiveWorstCase, getProgramText } from './audio-net/Metaprogrammer.js';
 import { cycleLength, timingTargetSeconds } from './audio-net/MetaprogramScheduler.js';
 import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
@@ -457,9 +459,10 @@ function networkMetricsBlock(peer, controls = '') {
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
-      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - PIPELINE_ALLOWANCE_MS))}
-        + buffer ${preciseMs(wc.wcjb || 0)} + pipeline ${PIPELINE_ALLOWANCE_MS}ms
-        <span title="the first two are measured; the pipeline term is a fixed allowance for encode, decode and device buffering, which getStats does not expose">(last term assumed)</span></div>
+      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
+        + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}
+        <span title="worst value of each term across the room — an upper bound, so no real path exceeds it">(upper bound)</span>
+        <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     </div>`;
 }
@@ -1059,6 +1062,10 @@ function tickUi() {
 
   // tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
+  // This rig measures its own capture/codec/playout latency by loopback and
+  // publishes it, so the room's worst-case bound is built from real hardware
+  // rather than one constant standing in for every machine.
+  startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext);
   startBotClusterVideo();
   startRoomHealth();
   bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));

@@ -49,10 +49,39 @@ test('the de-jitter buffer is measured, and normally dominates wcl', () => {
   const wc = computeWorstCaseMetrics(peers);
   assert.equal(wc.wcjb, 55, 'worst buffer is carried for the readout');
   assert.equal(wc.wcl, 6 / 2 + 1 / 2 + 55 + PIPELINE_ALLOWANCE_MS);
+  assert.equal(wc.pipelineMeasured, 0, 'neither rig measured itself here');
   // The point of the model: on a LAN the network is single-digit ms while what
   // a performer hears is ~100 ms, so a network-only figure was ~25x too small.
   assert.ok(wc.wcl > 90 && wc.wcl < 110, `physically plausible (${wc.wcl}ms)`);
   assert.ok(wc.wcl > wc.wcrtt * 10, 'buffer + pipeline dwarf the network leg');
+});
+
+test('wcl is an UPPER BOUND: each term at its worst across the roster', () => {
+  const room = [
+    { rtcRtt: 6,  jitterBufferMs: 55, pipelineMs: 130 },  // laptop, WiFi, soft devices
+    { rtcRtt: 1,  jitterBufferMs: 40, pipelineMs: 12 },   // LAN bot, tight buffers
+    { rtcRtt: 20, jitterBufferMs: 30, pipelineMs: 25 },   // wired human
+  ];
+  const wc = computeWorstCaseMetrics(room);
+  assert.equal(wc.wcjb, 55, 'worst buffer');
+  assert.equal(wc.wcpipe, 130, 'worst rig pipeline');
+  assert.equal(wc.wcl, 20 / 2 + 6 / 2 + 55 + 130, 'two worst legs + worst buffer + worst rig');
+  assert.equal(wc.pipelineMeasured, 3);
+
+  // Monotone: any single rig getting worse can only push the bound up, never
+  // down — that is what makes it usable as a bound rather than an average.
+  const worse = computeWorstCaseMetrics(
+    room.map((p, i) => (i === 1 ? { ...p, pipelineMs: 400 } : p)));
+  assert.ok(worse.wcl > wc.wcl);
+});
+
+test('a rig that has not measured itself uses the fallback, never lowers the bound', () => {
+  const measured = [{ rtcRtt: 10, jitterBufferMs: 20, pipelineMs: 200 }];
+  const withFresh = computeWorstCaseMetrics([...measured, { rtcRtt: 10, jitterBufferMs: 20 }]);
+  assert.equal(withFresh.wcpipe, 200, 'the fresh joiner cannot pull the worst rig down');
+  assert.equal(withFresh.pipelineMeasured, 1, 'and the readout can say only one rig measured');
+  // Alone and unmeasured, the fallback is what stands in.
+  assert.equal(computeWorstCaseMetrics([{ rtcRtt: 10 }]).wcpipe, PIPELINE_ALLOWANCE_MS);
 });
 
 test('wcl counts BOTH legs — it is not a halved single leg', () => {

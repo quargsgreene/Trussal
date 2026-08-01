@@ -46,36 +46,49 @@ function peerRtt(peer) {
   return null;
 }
 
-// Fixed allowance for the parts of the audio pipeline WebRTC does not expose:
-// Opus encode + decode, and the capture/playout device buffers at each end.
-// getStats reports the de-jitter buffer but nothing either side of it, so this
-// is an explicit ESTIMATE rather than a measurement — named and separate so it
-// is obvious in the readout what is measured and what is assumed.
+// Fallback for a rig that has not reported a measured pipeline latency yet —
+// a peer that just joined, or a client too old to run the loopback. Rigs
+// MEASURE this for real (see observability/PipelineLatency.js: a local
+// RTCPeerConnection loopback through Opus, plus the platform's device-buffer
+// report), so this constant is a placeholder for the first few seconds, not
+// the model's answer. It is deliberately mid-range: a typical laptop with
+// default devices, so an unmeasured peer neither flatters nor panics the room.
 export const PIPELINE_ALLOWANCE_MS = 40;
 
-// Worst-case one-way MOUTH-TO-EAR latency between two performers, in ms.
+// Worst-case one-way MOUTH-TO-EAR latency between two performers, in ms — an
+// UPPER BOUND over every path in the room, built from each rig's own numbers.
 //
 // Every client holds one PeerConnection to the JVB (P2P is off), so the audio
-// path is sender -> JVB -> receiver and the network part of one-way latency is
-//     rtt(sender)/2 + rtt(receiver)/2
-// i.e. the two worst legs halved and summed — NOT max(rtt)/2, which halves a
-// figure that was already a single leg and so under-reported the network by
-// about 2x. With one peer we have no partner leg to measure and assume a
-// symmetric one, which makes the network term simply that peer's rtt.
+// path for a pair is sender -> JVB -> receiver:
 //
-// On top of the network path sit the terms that actually dominate: the
-// receive-side de-jitter buffer (measured, tens of ms) and PIPELINE_ALLOWANCE_MS
-// (assumed). On a LAN the network is single-digit ms while the buffer alone is
-// an order of magnitude more, which is why a network-only figure read as
-// implausibly small for anything a musician can hear.
-export function worstCaseOneWayLatency(rtts, jitterBufferMs) {
+//     pipeline(sender) + rtt(sender)/2 + rtt(receiver)/2
+//         + jitterBuffer(receiver) + pipeline(receiver)
+//
+// Each term is taken at its worst across the roster INDEPENDENTLY, which is
+// what makes the result a bound rather than a specific pair's latency: no real
+// path can exceed it, and it is monotone — one rig getting worse can only push
+// it up. The two network legs are the two worst legs halved and summed, NOT
+// max(rtt)/2, which halves a figure that was already a single leg and so
+// under-reported the network by about 2x.
+//
+// `pipeline` is each rig's MEASURED local latency (capture, Opus encode/decode,
+// playout — see PipelineLatency.js); it is counted once at the worst rig rather
+// than twice, since a bound built from the worst sender and the worst receiver
+// already dominates any real pair. Alone in a room there is no partner leg to
+// measure, so a symmetric one is assumed.
+//
+// On a LAN the network is single-digit ms while the buffer and the rig pipeline
+// are each an order of magnitude more — which is why a network-only figure read
+// as implausibly small for anything a musician can hear.
+export function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
   const sorted = [...rtts].sort((a, b) => b - a);
   if (!sorted.length) return 0;
   const worst = sorted[0];
-  // Second leg: the next-worst peer, or a symmetric partner when alone.
   const partner = sorted.length > 1 ? sorted[1] : worst;
   const network = worst / 2 + partner / 2;
-  return network + (jitterBufferMs || 0) + PIPELINE_ALLOWANCE_MS;
+  const pipeline = (typeof pipelineMs === 'number' && isFinite(pipelineMs))
+    ? pipelineMs : PIPELINE_ALLOWANCE_MS;
+  return network + (jitterBufferMs || 0) + pipeline;
 }
 
 // Worst-case metrics over the whole roster:
@@ -98,6 +111,7 @@ export function computeWorstCaseMetrics(peers) {
   const jitters = [];
   const losses = [];
   const jitterBuffers = [];
+  const pipelines = [];
   for (const peer of list) {
     if (!peer) continue;
     const rtt = peerRtt(peer);
@@ -106,16 +120,28 @@ export function computeWorstCaseMetrics(peers) {
     if (typeof peer.jitterBufferMs === 'number' && isFinite(peer.jitterBufferMs)) {
       jitterBuffers.push(peer.jitterBufferMs);
     }
+    // A rig that has not measured itself yet contributes the fallback, so a
+    // fresh joiner cannot drag the room's bound BELOW what is already known.
+    pipelines.push(
+      typeof peer.pipelineMs === 'number' && isFinite(peer.pipelineMs)
+        ? peer.pipelineMs : PIPELINE_ALLOWANCE_MS,
+    );
     if (typeof peer.packetLoss === 'number' && isFinite(peer.packetLoss)) {
       losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
     }
   }
   const wcrtt = worstCase(rtts) ?? 0;
+  const wcjb = worstCase(jitterBuffers) ?? 0;
+  const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
   return {
-    wcl: worstCaseOneWayLatency(rtts, worstCase(jitterBuffers) ?? 0),
+    wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
     wcj: worstCase(jitters) ?? 0,
     wcrtt,
-    wcjb: worstCase(jitterBuffers) ?? 0,
+    wcjb,
+    wcpipe,
+    // How many rigs actually measured their own pipeline, so a readout can say
+    // whether the bound rests on measurement or on the fallback.
+    pipelineMeasured: list.filter(p => p && typeof p.pipelineMs === 'number' && isFinite(p.pipelineMs)).length,
     wcpl: worstCase(losses) ?? 0,
     sampleCount: rtts.length
   };

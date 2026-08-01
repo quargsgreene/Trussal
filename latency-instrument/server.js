@@ -134,6 +134,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       packetLoss: record.packetLoss,
       rtcRtt: record.rtcRtt,
       jitterBufferMs: record.jitterBufferMs,
+      pipelineMs: record.pipelineMs,
       isBot: record.isBot,
       isAggregator: record.isAggregator,
       muted: record.muted,
@@ -259,6 +260,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       jitter: null,
       packetLoss: null,
       jitterBufferMs: null,
+      pipelineMs: null,
       rtcRtt: null,
       isBot: false,
       // The one bot per room that gathers every participant's audio and streams
@@ -611,6 +613,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           if (typeof msg.jitter === 'number') record.jitter = msg.jitter;
           if (typeof msg.packetLoss === 'number') record.packetLoss = msg.packetLoss;
           if (typeof msg.jitterBufferMs === 'number') record.jitterBufferMs = msg.jitterBufferMs;
+          if (typeof msg.pipelineMs === 'number') record.pipelineMs = msg.pipelineMs;
           if (typeof msg.rtcRtt === 'number') record.rtcRtt = msg.rtcRtt;
           const room = rooms.get(roomName);
           if (room) broadcast(room, peerId, {
@@ -618,7 +621,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             peerId,
             patch: {
               rtt: record.rtt, jitter: record.jitter, packetLoss: record.packetLoss,
-              rtcRtt: record.rtcRtt, jitterBufferMs: record.jitterBufferMs
+              rtcRtt: record.rtcRtt, jitterBufferMs: record.jitterBufferMs,
+            pipelineMs: record.pipelineMs,
+              pipelineMs: record.pipelineMs
             }
           });
           logEvent(roomName, 'metrics', {
