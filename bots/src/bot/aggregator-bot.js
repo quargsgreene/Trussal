@@ -33,6 +33,18 @@ const CLOCK_SYNC_POLL_MS = 100;
 // the same clock we are reading. A room that started earlier today is minutes
 // old; a value further back than this is another timebase, not an older room.
 const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
+// Ceiling on the per-participant ghost-replay retention window. Cycle length
+// tracks the network and has no upper bound, but the window costs
+// ~192 kB/s/participant at 48 kHz Float32 — past this a ghost loops what it has.
+const MAX_RETAIN_MS = 10000;
+// Ceiling on banked-but-unplayed scheduler slots. The scheduler only emits a
+// lookahead ahead of real time, so this is slack for a stalled playback loop,
+// not a working size.
+const MAX_PENDING_SLOTS = 256;
+// How far ahead of now a banked slot may sit before it is treated as belonging
+// to an abandoned grid rather than the current one — whichever is larger.
+const SLOT_HORIZON_CYCLES = 3;
+const SLOT_HORIZON_MIN_S = 30;
 // Re-announce the current nc-active turn at least this often even when it hasn't
 // changed, so a late joiner (or a sidecar whose per-room cache was cleared by a
 // session reset) learns it without waiting for the ring to rotate.
@@ -149,7 +161,8 @@ export class AggregatorBot extends Bot {
     #lastBroadcastActiveAt = 0;
     // Per token: a rolling copy of the audio a participant most recently STREAMED,
     // accumulated a slice at a time as each live turn plays and capped at one full
-    // turn/cycle (this.slotSamples, ~4s) — see #retainScheduled. This is what a
+    // turn/cycle (this.slotSamples, which tracks cycle length) — see
+    // #retainScheduled. This is what a
     // departed ghost replays: the live RingBuffer only holds ~holdMs (<1s) and is
     // drained by the participant's own turns, so it can't be the replay source;
     // this retained window is, and holding a whole cycle lets the ghost's turn play
@@ -183,7 +196,7 @@ export class AggregatorBot extends Bot {
     #metaprogramConn = null;
     // Throttle counter for the capture-diag heartbeat (every ~10th drain).
     #drainTicks = 0;
-    // Anchor for #localSeconds, latched on first read so the bot's scheduler
+    // Anchor for schedulerClockSeconds, latched on first read so the bot's scheduler
     // clock counts from its own start rather than the Unix epoch.
     #localT0 = null;
     // Room roster as seen over the metaprogram bus (peerId → publicView
@@ -193,6 +206,18 @@ export class AggregatorBot extends Bot {
     // page starts with no reverb, so 'null' — not undefined — is the honest
     // starting point: a program without `# room` never pushes at all.
     #peers = new Map();
+    // The metaprogram's slot grid, banked from the scheduler's slot-open/
+    // slot-close events with their NETWORK timestamps (the scheduler emits a
+    // lookahead early, so these wait here until their window arrives) and read
+    // by #serveFromScheduler. Empty until the first slot-open, which is what
+    // #schedulerPacing latches — before that the join-order write pointer
+    // still paces the rotation.
+    #slotTimeline = [];
+    #schedulerPacing = false;
+    #lastSlotId = null;
+    #turnCounter = 0;
+    #servedTurnAt = new Map();   // "stack:index" -> #turnCounter when last served
+    #pacingStalled = false;      // latched so the fall-back warning prints once per stall
     #worstCase = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
     #roomChain = null;
     #lastRoomPushJson = 'null';
@@ -237,7 +262,6 @@ export class AggregatorBot extends Bot {
         // streams (accumulated a masterSliceSamples slice at a time) and is capped
         // here; the ghost loops back to the start only if less than this was ever
         // captured (see #retainScheduled / #replayDepartedGhost).
-        this.slotSamples = Math.max(1, Math.round(this.slotMs * this.sampleRate / 1000));
         // The circular priority queue: the fixed join-order ring, the assign-once
         // jitsiId -> room-index-token mapping, and the write/turn pointer. Shares
         // this bot's clock and slot length so serve() rotates in lockstep with the
@@ -577,7 +601,7 @@ export class AggregatorBot extends Bot {
      * Network time on the same clock the scheduler stamps its events with, so
      * everything comparing against a scheduled instant compares like with
      * like. ClockSync's reference once converged; this bot's own monotonic
-     * clock (see #localSeconds) until then.
+     * clock (see schedulerClockSeconds) until then.
      */
     networkSeconds() {
         return this.clock && this.clock.isSynced()
@@ -740,9 +764,14 @@ export class AggregatorBot extends Bot {
     }
 
     #startScheduler() {
+        // A fresh grid: drop any slots banked against the previous epoch, or
+        // #serveFromScheduler would keep serving turns the old cycle grid
+        // scheduled.
+        this.#resetSlotPacing();
         this.scheduler = new MetaprogramScheduler({
             now: () => this.networkSeconds(),
             onEvent: (ev) => this.#onSchedulerEvent(ev),
+            label: 'netcycles/aggregator',
         });
         this.#pushProgramToScheduler();
         this.scheduler.setMetrics(this.#worstCase);
@@ -750,17 +779,163 @@ export class AggregatorBot extends Bot {
     }
 
     /**
-     * Scheduler events → the ring. At every cycle boundary the ring re-adopts
-     * the program the scheduler is actually playing (setProgram defers swaps
-     * to the boundary, so this is where a mid-cycle edit really lands).
-     * Remaining work: slot-open/slot-close should eventually take over the
-     * TIMING of the rotation too, replacing the fixed slotMs turn length that
-     * readAndAssembleMasterBuffer's this.order.serve() still paces — today
-     * the metaprogram dictates order and membership, the queue dictates pace.
+     * Scheduler events → the ring AND the rotation's pace.
+     *
+     * At every cycle boundary the ring re-adopts the program the scheduler is
+     * actually playing (setProgram defers swaps to the boundary, so this is
+     * where a mid-cycle edit really lands).
+     *
+     * slot-open/slot-close are banked into #slotTimeline, which
+     * #serveFromScheduler reads to decide whose turn it is — so the metaprogram
+     * dictates ORDER, MEMBERSHIP *and* TIMING. The scheduler emits a lookahead
+     * ahead of real time, which is exactly why the events are banked with their
+     * network timestamps rather than applied on arrival.
      */
     #onSchedulerEvent(ev) {
-        if (ev.type !== 'cycle-start' || !this.scheduler) return;
-        this.#applyOrderFromProgram(this.scheduler.getProgram());
+        if (ev.type === 'cycle-start') {
+            if (this.scheduler) this.#applyOrderFromProgram(this.scheduler.getProgram());
+            return;
+        }
+        if (!ev.id) return;
+        if (ev.type === 'slot-open') {
+            this.#slotTimeline.push({
+                id: ev.id,
+                token: String(ev.token),
+                openT: ev.t,
+                closeT: ev.t + ev.dur,
+                cycle: ev.cycle,
+                stack: ev.stack,
+                index: ev.index ?? null,
+            });
+            this.#schedulerPacing = true;
+            // Bounded: a scheduler left running while nothing drains the
+            // timeline (a stalled playback loop) must not grow without end.
+            if (this.#slotTimeline.length > MAX_PENDING_SLOTS) this.#slotTimeline.shift();
+        } else if (ev.type === 'slot-close') {
+            // The close event is authoritative for the closing edge — trust it
+            // over open.t + open.dur if they ever disagree.
+            const slot = this.#slotTimeline.find((s) => s.id === ev.id);
+            if (slot) slot.closeT = ev.t;
+        }
+    }
+
+    /**
+     * Drop banked slots whose window has closed and return those already open,
+     * both relative to network time now. Kept as a plain filter rather than a
+     * sorted scan: the timeline holds at most a scheduler lookahead's worth.
+     */
+    #pruneToOpenSlots() {
+        const now = this.networkSeconds();
+        // Drop slots whose window has closed AND slots stranded implausibly far
+        // ahead. The latter matters because the scheduler's clock can move
+        // (ClockSync converging, a sidecar restart resetting the relay's
+        // hrtime): when it does, everything banked against the old grid sits in
+        // an unreachable future. The scheduler re-anchors and emits a fresh
+        // grid, but these leftovers would linger for ever — indistinguishable
+        // from a rest, and liable to "open" spuriously much later.
+        const horizon = now + this.#slotHorizonS();
+        this.#slotTimeline = this.#slotTimeline.filter((slot) => slot.closeT > now && slot.openT <= horizon);
+        return this.#slotTimeline.filter((slot) => slot.openT <= now);
+    }
+
+    /**
+     * How far ahead a banked slot may legitimately sit. The scheduler only
+     * emits a lookahead ahead of real time, so anything beyond a couple of
+     * cycles came from a grid that no longer applies.
+     */
+    #slotHorizonS() {
+        const cycle = this.scheduler ? this.scheduler.getCycleLength() : null;
+        return Math.max(SLOT_HORIZON_MIN_S, (cycle ? cycle.seconds : this.slotMs / 1000) * SLOT_HORIZON_CYCLES);
+    }
+
+    /**
+     * Forget the metaprogram's slot grid and fall back to the join-order write
+     * pointer until a new one arrives. Used when the grid is rebuilt (a new
+     * epoch) and on teardown — banked slots carry absolute network timestamps
+     * from the grid that produced them, so they must never outlive it.
+     */
+    #resetSlotPacing() {
+        this.#slotTimeline = [];
+        this.#schedulerPacing = false;
+        this.#lastSlotId = null;
+        this.#servedTurnAt.clear();
+    }
+
+    /**
+     * Whose turn it is according to the metaprogram's slot grid — the
+     * scheduler-paced counterpart of CircularParticipantQueue.serve(), and the
+     * reason turn length now tracks the cycle length `# cycles` computes
+     * instead of a fixed 4 s. Returns serve()'s shape so
+     * readAndAssembleMasterBuffer treats both pacing sources identically.
+     */
+    #serveFromScheduler() {
+        const silence = { token: null, position: null, slot: -1, newTurn: false, lapped: false, departed: false };
+        let open = this.#pruneToOpenSlots();
+        if (!open.length) {
+            // Nothing open right now. Distinguish two cases that look identical
+            // from here but must not behave alike:
+            //
+            //   - slots are banked and upcoming -> the metaprogram schedules a
+            //     REST at this instant. Silence is the correct output.
+            //   - nothing usable is banked at all -> the grid has fallen behind
+            //     (a late tick, a stalled loop, a clock jump). Pump the
+            //     scheduler, which re-anchors if it has come adrift, and look
+            //     again. tick() is idempotent.
+            //
+            // If that still yields nothing, PACING FAILS OPEN: hand back to the
+            // join-order write pointer rather than reporting silence. Getting
+            // this wrong is what silenced a live room — an unusable grid read
+            // as an endless rest, and the room stayed quiet for ever. A
+            // slightly wrong turn order is a far better failure than no audio.
+            if (!this.#slotTimeline.length && this.scheduler) {
+                this.scheduler.tick();
+                open = this.#pruneToOpenSlots();
+            }
+            if (!open.length) {
+                // A HEALTHY grid with no slot open is a rest — the program
+                // genuinely schedules nothing here, and a rest longer than the
+                // scheduler's lookahead legitimately leaves the timeline empty.
+                // Emptiness alone therefore proves nothing; grid health does.
+                if (this.scheduler && this.scheduler.isGridHealthy()) return silence;
+                if (!this.#pacingStalled) {
+                    this.#pacingStalled = true;
+                    console.warn('[aggregator-bot] no usable metaprogram slot grid — ' +
+                        'falling back to the join-order rotation so the room keeps streaming');
+                }
+                return this.order.serve();
+            }
+        }
+        this.#pacingStalled = false;
+        // Concurrent stacks (the `,` operator) can overlap, but requirement 1
+        // says the master carries exactly one voice: lowest stack wins, earlier
+        // opening breaks the tie. Deterministic, so every client resolving the
+        // same grid picks the same participant.
+        open.sort((a, b) => a.stack - b.stack || a.openT - b.openT);
+        const active = open[0];
+
+        const newTurn = active.id !== this.#lastSlotId;
+        let lapped = false;
+        if (newTurn) {
+            this.#lastSlotId = active.id;
+            this.#turnCounter++;
+            // "The write pointer reached this position again": the same slot of
+            // the program has come round after a full lap of the ring, so what
+            // it held a lap ago is stale (requirement 4). Position identity is
+            // the written index, since that is what repeats each lap.
+            const key = `${active.stack}:${active.index}`;
+            const previousTurn = this.#servedTurnAt.get(key);
+            const ringSize = Math.max(1, this.order.size);
+            if (previousTurn != null && this.#turnCounter - previousTurn >= ringSize) lapped = true;
+            this.#servedTurnAt.set(key, this.#turnCounter);
+        }
+        return {
+            token: active.token,
+            position: active.index ?? this.order.positionOf(active.token),
+            slot: this.#turnCounter,
+            newTurn,
+            lapped,
+            departed: this.order.isDeparted(active.token),
+        };
     }
 
     // Local seconds for O2/ClockSync/the scheduler: MONOTONIC SINCE THIS BOT
@@ -946,18 +1121,21 @@ export class AggregatorBot extends Bot {
     }
 
     async readAndAssembleMasterBuffer() {
-        // Cyclic turn-taking: the circular queue rotates the active participant
-        // every slotMs (default 4s) and only that participant's audio is
-        // concatenated into the shared master. The ring's ORDER and MEMBERSHIP
-        // follow the room's metaprogram (see interpretAndExecuteMetaprogram /
-        // #applyOrderFromProgram: unlisted participants wait silent, departed-
-        // but-listed ghosts keep streaming their held audio), which is always
-        // in force in production — `$ participants <0>` by default. Join-order
-        // rotation remains only as the fallback when metaprogram sync isn't
-        // wired (unit tests / standalone runs). Slot TIMING is
-        // still the queue's fixed slotMs — handing that to the scheduler's
-        // slot-open/slot-close events is the remaining metaprogram work (see
-        // #onSchedulerEvent).
+        // Cyclic turn-taking: one participant is active at a time and only that
+        // participant's audio is concatenated into the shared master. ORDER,
+        // MEMBERSHIP and TIMING all follow the room's metaprogram (see
+        // interpretAndExecuteMetaprogram / #applyOrderFromProgram: unlisted
+        // participants wait silent, departed-but-listed ghosts keep streaming
+        // their held audio), which is always in force in production —
+        // `$ participants <0>` with `# cycles wcl 2000` by default.
+        //
+        // Pace comes from the scheduler's slot-open/slot-close grid
+        // (#serveFromScheduler), so a turn lasts exactly the cycle length the
+        // program's `# cycles` directive derives from the live worst-case
+        // metrics: a degrading room stretches its turns, a recovering one
+        // tightens them. The queue's fixed-slotMs write pointer remains the
+        // fallback for when no metaprogram grid exists yet — before the first
+        // slot-open, and in unit/standalone runs with no metaprogram sync.
         //
         // The inactive participants' individual buffers keep filling (and evicting
         // their oldest, ms-bounded) in the meantime; when a participant's turn
@@ -971,10 +1149,12 @@ export class AggregatorBot extends Bot {
         // room-index order (assign-once, so this is a no-op once registered).
         this.#syncOrderFromBuffers();
 
-        const { token: active, lapped, departed, newTurn, position } = this.order.serve();
+        const { token: active, lapped, departed, newTurn, position } =
+            this.#schedulerPacing ? this.#serveFromScheduler() : this.order.serve();
         if (!active) {
-            // Nothing has reached the bot yet: assemble nothing. The page player
-            // emits silence and we keep checking on the next tick.
+            // No audio has reached the bot yet, or the metaprogram schedules a
+            // REST right now: assemble nothing. The page player emits silence
+            // and we keep checking on the next tick.
             this.#activeToken = null;
             this.#broadcastActiveToken(null, null);
             return { active: null, assembled: 0 };
@@ -1047,6 +1227,29 @@ export class AggregatorBot extends Bot {
             // folded into the ring.
             if (!this.order.knowsToken(token)) this.order.register(token, token);
         }
+    }
+
+    /**
+     * How much of a participant's most-recently-STREAMED audio to retain for a
+     * ghost replay: ONE FULL TURN, so a departed ghost's turn replays a whole
+     * cycle of distinct audio rather than looping a sub-second fragment.
+     *
+     * Derived, not stored, because the turn length is no longer fixed: the
+     * scheduler paces the rotation, so a turn lasts the program's current cycle
+     * length, which moves with the network. A stored slotMs-derived constant
+     * would under-retain on a degraded room (ghosts looping mid-turn) and
+     * over-retain on a fast one. Falls back to slotMs when no scheduler is
+     * running, matching the fallback pacing.
+     *
+     * Bounded by MAX_RETAIN_MS: cycle length has no upper limit, and at 48 kHz
+     * a Float32 window costs ~192 kB/s PER PARTICIPANT. Past the cap a ghost
+     * loops its retained window, which is the documented short-capture
+     * behaviour anyway (see #replayDepartedGhost).
+     */
+    get slotSamples() {
+        const cycle = this.scheduler ? this.scheduler.getCycleLength() : null;
+        const turnMs = cycle ? cycle.seconds * 1000 : this.slotMs;
+        return Math.max(1, Math.round(Math.min(turnMs, MAX_RETAIN_MS) * this.sampleRate / 1000));
     }
 
     /**
@@ -1177,6 +1380,7 @@ export class AggregatorBot extends Bot {
         if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
         this.#playbackTimer = null;
         this.#pendingMaster = EMPTY_MASTER;
+        this.#resetSlotPacing();
         this.#ghostReplayOffset.clear();
         this.#lastScheduledBuffer.clear();
         for (const rb of Object.values(this.buffers)) rb.clear();

@@ -1199,7 +1199,7 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
 
   await bot.interpretAndExecuteMetaprogram();
 
-  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 2000\n# tempo 120 bpm\n');
+  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 2000\n');
   assert.ok(bot.order.hasValidMetaprogram(), 'the default program puts the ring in metaprogram mode');
   assert.ok(bot.scheduler, 'the scheduler runs the default program');
 
@@ -1323,6 +1323,187 @@ test('the cycle grid survives a ClockSync convergence jump', async () => {
     bot.scheduler.tick();
     assert.ok(Date.now() - startedAt < 2000, 'a far-future clock re-anchors instead of hanging');
     assert.ok((await bot.readAndAssembleMasterBuffer()).active, 'still streaming after the forward jump');
+  } finally {
+    await bot.stop();
+  }
+});
+
+// --- scheduler-paced rotation -------------------------------------------------
+// Turn length comes from the metaprogram's slot-open/slot-close grid, so it is
+// the cycle length `# cycles` computes — not the fixed slotMs the join-order
+// write pointer uses.
+
+// The turn length actually in force, measured BOUNDARY TO BOUNDARY: advance the
+// clock until the streamed token changes (that is a turn boundary), then report
+// how long until the next change. Starting mid-turn and measuring to the first
+// change would report the remainder of a turn, not a whole one — the grid is
+// generally out of phase with any arbitrary start time.
+async function measureTurnMs(bot, clockRef, startMs, stepMs = 100, limitMs = 80000) {
+  clockRef.ms = startMs;
+  let prev = (await bot.readAndAssembleMasterBuffer()).active;
+  let boundary = null;
+  for (let t = startMs + stepMs; t <= startMs + limitMs; t += stepMs) {
+    clockRef.ms = t;
+    const active = (await bot.readAndAssembleMasterBuffer()).active;
+    if (active === prev) continue;
+    prev = active;
+    if (boundary == null) { boundary = t; continue; }
+    return t - boundary;
+  }
+  return null;
+}
+
+test('turn length follows the cycle length # cycles computes, not the fixed slotMs', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    // rtt 6 -> wcl 3 ms; x 2000 = 6 s cycles. Deliberately NOT the configured
+    // 4000 ms slotMs, so a turn still coming from the write pointer is obvious.
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 6 }] });
+    bot.buffers['0'] = new RingBuffer(4096);
+    bot.buffers['1'] = new RingBuffer(4096);
+
+    // Metrics land at a cycle boundary, so cross one before measuring.
+    clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
+    assert.equal(bot.scheduler.getCycleLength().seconds, 6, 'wcl 3 ms x 2000 -> a 6 s cycle');
+    const shortTurn = await measureTurnMs(bot, clockRef, 60000);
+    assert.ok(Math.abs(shortTurn - 6000) <= 200, `turn tracked the 6 s cycle (got ${shortTurn}ms)`);
+    assert.notEqual(shortTurn, bot.slotMs, 'the fixed slotMs no longer paces anything');
+
+    // The room degrades: rtt 14 -> wcl 7 ms -> 14 s cycles.
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 14 } });
+    clockRef.ms = 200000; await bot.readAndAssembleMasterBuffer();
+    assert.equal(bot.scheduler.getCycleLength().seconds, 14);
+    const longTurn = await measureTurnMs(bot, clockRef, 260000);
+    assert.ok(Math.abs(longTurn - 14000) <= 200, `turn stretched with wcl (got ${longTurn}ms)`);
+    assert.ok(longTurn > shortTurn, 'a worse network gives each performer a longer turn');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('a metaprogram rest schedules silence; an empty grid falls back to the write pointer', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    // Before any scheduler grid exists the join-order write pointer still
+    // paces, so standalone/unit runs are unaffected by any of this.
+    bot.buffers['0'] = new RingBuffer(4096); bot.buffers['0'].write(new Array(50).fill(0.5));
+    assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0', 'fallback pacing before the grid');
+
+    await bot.interpretAndExecuteMetaprogram();
+    // `<0 ~>`: participant 0 plays one cycle, the next cycle is a rest.
+    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 2000\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+    clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
+    assert.equal(bot.scheduler.getCycleLength().seconds, 4);
+
+    // Walk several cycles: some carry the token, the rests carry nothing. A
+    // rest is deliberate silence, NOT a stale grid to fall back from.
+    const seen = new Set();
+    for (let t = 60000; t < 76000; t += 500) {
+      clockRef.ms = t;
+      seen.add((await bot.readAndAssembleMasterBuffer()).active);
+    }
+    assert.ok(seen.has('0'), 'the played cycle streams participant 0');
+    assert.ok(seen.has(null), 'the rest cycle streams nothing at all');
+    assert.equal(seen.size, 2, 'nothing else ever streams');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('the ghost retention window follows the cycle length and is capped', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    // No scheduler yet: the window falls back to slotMs, as the pacing does.
+    assert.equal(bot.slotSamples, Math.round(bot.slotMs * bot.sampleRate / 1000));
+
+    await bot.interpretAndExecuteMetaprogram();
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 2 }] }); // wcl 1 ms -> 2 s
+    clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
+    assert.equal(bot.slotSamples, 2 * bot.sampleRate, 'retains exactly one 2 s turn');
+
+    // A badly degraded room would demand an unbounded window; it is capped so
+    // the per-participant cost cannot grow without limit.
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 60 } }); // wcl 30 ms -> 60 s
+    clockRef.ms = 300000; await bot.readAndAssembleMasterBuffer();
+    assert.equal(bot.scheduler.getCycleLength().seconds, 60);
+    assert.equal(bot.slotSamples, 10 * bot.sampleRate, 'capped at MAX_RETAIN_MS, not 60 s');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('an unusable slot grid falls back to the write pointer instead of going silent', async () => {
+  // The live outage in the flesh: the grid was banked against one clock, the
+  // clock moved, and every banked slot sat unreachably in the future. Read as
+  // an endless rest, the room stayed silent for ever. Pacing must fail OPEN.
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 2000\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+    bot.buffers['0'] = new RingBuffer(4096); bot.buffers['0'].write(new Array(50).fill(0.5));
+    bot.buffers['1'] = new RingBuffer(4096); bot.buffers['1'].write(new Array(50).fill(0.25));
+
+    clockRef.ms += 30000;
+    bot.scheduler.tick();
+    assert.ok((await bot.readAndAssembleMasterBuffer()).active, 'streaming under scheduler pacing');
+
+    // Strand the grid exactly as the outage did: freeze the scheduler so it
+    // cannot re-anchor, then move the clock out from under the banked slots.
+    bot.scheduler.stop();
+    bot.clock.stop();
+    bot.clock = {
+      isSynced: () => true,
+      toNetworkTime: (t) => t - 1_000_000,
+      toAudioTime: (t) => t + 1_000_000,
+      stop() {},
+    };
+
+    // Every banked slot is now ~1e6 s in the future. The room must NOT fall
+    // silent: the write pointer takes over.
+    const seen = new Set();
+    for (let i = 0; i < 6; i++) {
+      clockRef.ms += 4000;
+      seen.add((await bot.readAndAssembleMasterBuffer()).active);
+    }
+    assert.ok(!seen.has(null), `never silent across the stall (saw ${[...seen]})`);
+    assert.ok(seen.has('0') || seen.has('1'), 'a real participant is streaming');
   } finally {
     await bot.stop();
   }
