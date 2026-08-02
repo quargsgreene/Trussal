@@ -297,6 +297,14 @@ const GRID_REANCHOR_MIN_S = 10;
 // Seconds of network time between "still this length" cycle-length log lines
 // when nothing changed. Changes always print immediately.
 const CYCLE_LOG_HEARTBEAT_S = 30;
+// Scheduled boundaries retained for getCyclePosition(), as a floor rather
+// than a cap: the lookahead schedules as many boundaries ahead of the clock
+// as fit in it, so a fast grid (a high `# tempo`, where a cycle is a fraction
+// of the lookahead) can hold a dozen future entries. Trimming to a fixed
+// count would throw away the entry containing NOW and leave every value
+// pattern frozen on its first element, so the trim also requires a later
+// entry to have started — see the push site in tick().
+const GRID_HISTORY = 4;
 
 export class MetaprogramScheduler {
   constructor({
@@ -332,6 +340,7 @@ export class MetaprogramScheduler {
     this._timer = null;
     this._cycle = 0;
     this._nextCycleStart = null;
+    this._grid = [];              // recent { cycle, t0, seconds }, newest last
   }
 
   setProgram(ast) {
@@ -377,11 +386,32 @@ export class MetaprogramScheduler {
     return cycleLength({ cycles: this._ast.cycles, tempo: this._ast.tempo, metrics: this._metrics });
   }
 
+  /**
+   * Where `t` sits on the cycle grid, in fractional cycles: 2.5 is halfway
+   * through cycle 2. null until a cycle has been scheduled at or before `t`.
+   *
+   * Read off the boundaries actually EMITTED rather than computed as
+   * (t - epoch) / cycleLength, because cycle length moves with the metrics —
+   * dividing by the current length would renumber every past cycle each time
+   * the network changed, and anything paced off the position (patterned
+   * effect arguments) would jump rather than advance. Cycles are scheduled up
+   * to a lookahead ahead of the clock, so the newest entry can still be in
+   * the future; walk back to the one that has actually begun.
+   */
+  getCyclePosition(t = this._now()) {
+    for (let i = this._grid.length - 1; i >= 0; i--) {
+      const g = this._grid[i];
+      if (t >= g.t0) return g.cycle + Math.max(0, Math.min(1, (t - g.t0) / g.seconds));
+    }
+    return null;
+  }
+
   start(epoch = this._now()) {
     if (this._running) return;
     this._running = true;
     this._cycle = 0;
     this._nextCycleStart = epoch;
+    this._grid = [];
     if (this._setInterval) {
       this._timer = this._setInterval(() => this.tick(), this._tickMs);
     }
@@ -392,6 +422,10 @@ export class MetaprogramScheduler {
     this._running = false;
     if (this._timer && this._clearInterval) this._clearInterval(this._timer);
     this._timer = null;
+    // A stopped grid has no position: without this the last boundary stays
+    // readable for ever and getCyclePosition() keeps answering (clamped to
+    // the end of that cycle) off a grid that is no longer advancing.
+    this._grid = [];
   }
 
   // Advance the schedule up to now + lookahead. Safe to call manually (tests)
@@ -414,6 +448,13 @@ export class MetaprogramScheduler {
       const { beats, seconds } = cycleLength(spec);
       const t0 = this._nextCycleStart;
       this._logCycleLength(spec, seconds, t0);
+      // Keep a short tail of scheduled boundaries so getCyclePosition() can
+      // find the cycle containing a given instant. Only ever drop a boundary
+      // that a LATER one has already superseded (`_grid[1]` has begun) — a
+      // count alone would discard the current cycle whenever the lookahead
+      // holds more future boundaries than the cap.
+      this._grid.push({ cycle: this._cycle, t0, seconds });
+      while (this._grid.length > GRID_HISTORY && this._grid[1].t0 <= now) this._grid.shift();
       this._emit({ type: 'cycle-start', cycle: this._cycle, t: t0, seconds, beats });
 
       // open/close share one `id` so a consumer pacing off these events can
@@ -467,6 +508,10 @@ export class MetaprogramScheduler {
       `${gap.toFixed(1)}s ${gap > 0 ? 'ahead of' : 'behind'} the clock ` +
       `(tolerance ${tolerance.toFixed(1)}s) — the clock moved, not the music`);
     this._nextCycleStart = now;
+    // The retained boundaries were stamped on the clock we just gave up on;
+    // a backwards jump would leave getCyclePosition() reading a position off
+    // the abandoned grid. Start the history fresh with the anchor.
+    this._grid = [];
   }
 
   // Print the cycle length this boundary is actually scheduling — which is

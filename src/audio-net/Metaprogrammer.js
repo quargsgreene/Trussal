@@ -220,8 +220,18 @@ function maybeSeedDefaultProgram() {
 // same program over CRDT//nc/apply and pushes the ordering into the queue there.
 function pushProgramToScheduler() {
   if (programText == null) return;
-  const { ast, valid } = parseMetaprogram(programText);
-  if (!valid) return;
+  const { ast, errors, valid } = parseMetaprogram(programText);
+  if (!valid) {
+    // programText only ever holds APPLIED text, so invalid here is not a
+    // half-typed line — it is a program the room is running that this client
+    // cannot parse (a peer on an older bundle, or a directive whose syntax
+    // changed under a saved doc). The whole program is refused, `$
+    // participants` included, and the last valid one stays in force; say so
+    // rather than leaving the room's ordering silently frozen.
+    console.error('[metaprogrammer] refused an applied program this client cannot parse — ' +
+      'still running the previous one', errors, programText);
+    return;
+  }
   if (scheduler) scheduler.setProgram(ast);
   // The program's #-chain drives the Effects Service on the master bus.
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
@@ -253,7 +263,7 @@ export function getProgramText() { return programText; }
 // Studio effect toggles double as metaprogram shortcuts under Net Cycles:
 // toggling adds/removes the corresponding # line and applies it, so the
 // buttons and the shared editor never disagree.
-const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
+const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo 1 0.1', crush: '# crush wcl 1', noise: '# noise' };
 
 export function hasEffectShortcut(fn) {
   if (!programText) return false;
@@ -506,7 +516,11 @@ export async function setNetCyclesActive(enable) {
       insert: insertMasterChain,
       remove: removeMasterChain,
       getPeers: getAllPeers,
-      getLocalJitsiId: () => getLocalPeer().jitsiId
+      getLocalJitsiId: () => getLocalPeer().jitsiId,
+      // Patterned effect arguments (`# crush wcl <2 4>`) are read off the
+      // same grid the slots run on, so a value turns over on a turn boundary
+      // rather than on a clock of its own.
+      getCyclePosition: () => (scheduler ? scheduler.getCyclePosition() : null)
     });
     // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
     // a beat to arrive before declaring our own epoch / seeding the default.
