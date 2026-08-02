@@ -89,110 +89,228 @@ export function seededRandom(seed) {
 }
 
 // --- Cycle expansion -----------------------------------------------------------
+//
+// Every element/sequence modifier is resolved by one model: a sequence node
+// owns a TIMELINE measured in its own units, and a cycle shows a WINDOW of it.
+//
+//   - `@n` gives an entry n units of room instead of 1, and `!n` replicates it
+//     into n independent one-unit entries. What a unit is worth is the mode:
+//     one repetition of a `[…]` subdivision is 1 unit long (so `[0@2 1]` gives
+//     0 two thirds of the cycle), while one repetition of a `<…>` alternation
+//     is `totalWeight` units long and a cycle covers 1 (so `<0@2 1>` holds the
+//     ring on 0 for two whole cycles).
+//   - `*n` / `/n` / `%n` set the RATE: how many of those units pass per cycle.
+//     `*2` packs two turns into a cycle, halving each; `/2` stretches one turn
+//     across two cycles. They compose (`*4/2` is ×2).
+//
+// So cycle c shows [c·rate, c·rate + rate), and any occurrence overlapping it
+// is emitted CLIPPED to the cycle. Clipping — rather than gating on the
+// occurrence's onset the way Strudel's `slow` does — is what makes a stretched
+// turn continuous: `<0@2 1>` streams participant 0 for the whole of both its
+// cycles rather than falling silent for the second.
+
+const EPS = 1e-9;
+
+// Backstop on expansion WORK: each stack gets this many occurrence visits per
+// cycle, then the cycle is truncated. Rates are clamped (below) so a flat
+// sequence can't reach this, but nesting multiplies — `[<0 1>*1024]*1024` still
+// has to stop somewhere, and the scheduler's tick is the loop that keeps the
+// room streaming.
+export const MAX_EXPANSION_STEPS = 1024;
+
+// Bounds on how fast or slow a sequence may be read. A rate is user input, and
+// unclamped it does not degrade gracefully in either direction: `*1000000000`
+// drives every span below EPS and `/1000000000` puts the whole window there, so
+// BOTH emit nothing at all, for ever, from a program that parses without a
+// single error. Silence with no diagnostic is the failure this codebase has
+// paid for repeatedly. Clamped, each still means what it says — pack turns in
+// until they are a millisecond long, or hold one turn for a thousand cycles.
+const MAX_RATE = MAX_EXPANSION_STEPS;
+
+function clampRate(rate) {
+  if (!(rate > 0) || !isFinite(rate)) return 1;
+  return Math.min(MAX_RATE, Math.max(1 / MAX_RATE, rate));
+}
 
 function modValue(el, op, dflt) {
-  const m = (el.modifiers || []).find(x => x.op === op);
+  const m = ((el && el.modifiers) || []).find(x => x.op === op);
   return m ? m.value : dflt;
 }
 
-// Flatten a run of elements into weighted entries, applying `!` replication.
-function weightedEntries(elements) {
-  const out = [];
-  for (const el of elements) {
+// The `*` / `/` multiplier on a node, unclamped — callers clamp once they have
+// folded in `%`, which can push the product back out of range either way.
+function rateScale(node) {
+  let scale = 1;
+  for (const m of (node && node.modifiers) || []) {
+    if (m.op === '*') scale *= m.value;
+    else if (m.op === '/') scale /= m.value;
+  }
+  return (scale > 0 && isFinite(scale)) ? scale : 1;
+}
+
+// One repetition of a sequence, laid out on its own timeline: `!` replicated,
+// `@` weighted, positions in units. Returns null for a sequence with nothing
+// to place (which emits silence rather than dividing by zero).
+function layoutRepetition(elements, mode) {
+  const entries = [];
+  let totalWeight = 0;
+  for (const el of elements || []) {
+    if (!el) continue;
     const repeats = Math.max(1, Math.round(modValue(el, '!', 1)));
     const weight = modValue(el, '@', 1);
-    for (let r = 0; r < repeats; r++) out.push({ el, weight });
+    if (!(weight > 0) || !isFinite(weight)) continue;
+    for (let replica = 0; replica < repeats; replica++) {
+      entries.push({ el, replica, start: totalWeight, end: totalWeight + weight });
+      totalWeight += weight;
+    }
   }
-  return out;
+  if (!(totalWeight > 0)) return null;
+  // Subdividing packs the whole repetition into one unit; alternating spends
+  // one unit per weight, which is what turns `@` from a share of a cycle into
+  // a number of cycles.
+  const repLength = mode === 'subdivide' ? 1 : totalWeight;
+  const unitsPerStep = repLength / totalWeight;
+  for (const entry of entries) {
+    entry.start *= unitsPerStep;
+    entry.end *= unitsPerStep;
+  }
+  return { entries, repLength, unitsPerStep };
 }
 
-// Resolve `?` (probabilistic rest) and `|` choices deterministically.
-function resolveEntry(entry, rng) {
+// Units of this node's own timeline per cycle: how fast the room reads it.
+// `%n` states the step count outright, so it is resolved against the layout;
+// `*` and `/` then scale whatever that came to.
+function rateOf(node, layout) {
+  const steps = ((node && node.modifiers) || []).find(m => m.op === '%');
+  const base = steps && steps.value > 0 ? steps.value * layout.unitsPerStep : 1;
+  return clampRate(base * rateScale(node));
+}
+
+// --- Deterministic per-occurrence draws ---------------------------------------
+//
+// `?` and `|` must decide identically on every client, and — because an
+// occurrence widened by `@` or `/` is clipped across several cycles — must
+// decide ONCE for the whole occurrence rather than re-flipping at each cycle
+// boundary. Seeding by (stack, node, repetition, replica) does both: the seed
+// names the occurrence, not the cycle it is being viewed through.
+
+function hashSeed(...parts) {
+  let h = 0x811c9dc5;
+  for (const part of parts) {
+    h = (h ^ (part | 0)) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    h = (h ^ (h >>> 15)) >>> 0;
+    h = Math.imul(h, 0x2545f491) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function occurrenceRandom(ctx, entry, rep, salt) {
+  return seededRandom(hashSeed(ctx.stack, ctx.nodeIds.get(entry.el) ?? 0, rep, entry.replica, salt))();
+}
+
+// `?` drops the occurrence (null — the slot is silent and the cycle advances
+// regardless); `|` picks one of its branches. Both are per-occurrence.
+function resolveEntry(ctx, entry, rep) {
   const el = entry.el;
-  if (el.type === 'choice') {
-    const pick = el.options[Math.floor(rng() * el.options.length) % el.options.length] || [];
-    return { resolved: { type: 'run', elements: pick }, weight: entry.weight };
-  }
   const q = (el.modifiers || []).find(m => m.op === '?');
-  if (q) {
-    const p = q.value == null ? 0.5 : q.value;
-    if (rng() < p) return { resolved: { type: 'rest' }, weight: entry.weight };
+  if (q && occurrenceRandom(ctx, entry, rep, 1) < (q.value == null ? 0.5 : q.value)) return null;
+  if (el.type === 'choice') {
+    const options = el.options || [];
+    if (!options.length) return null;
+    const pick = Math.floor(occurrenceRandom(ctx, entry, rep, 2) * options.length) % options.length;
+    return { type: 'run', elements: options[pick] };
   }
-  return { resolved: el, weight: entry.weight };
+  return el;
 }
 
-// Pre-order index of every participant element in the program, matching how
-// the editor's highlighter scans the source text (depth-first, every branch of
-// a `|` choice, repeats included — see participantPositions in
-// components/MetaprogrammerCycleHighlighter.js). Emitted on each slot event as
-// `index` so a consumer can tell WHICH occurrence is playing: in
+// --- Emission ------------------------------------------------------------------
+
+// A token carrying its own rate repeats inside its slot (`0*2` → two
+// half-length turns) or holds it unbroken (`0/2`).
+function emitParticipant(ctx, el, start, span, phaseCycle) {
+  const rate = clampRate(rateScale(el));
+  if (Math.abs(rate - 1) <= EPS) {
+    ctx.events.push({ token: el.token, start, dur: span, stack: ctx.stack, index: ctx.written.get(el) ?? null });
+    return;
+  }
+  const w0 = phaseCycle * rate;
+  const w1 = w0 + rate;
+  const scale = span / rate;
+  const last = Math.ceil(w1 - EPS) - 1;
+  for (let rep = Math.floor(w0 + EPS); rep <= last; rep++) {
+    if (ctx.budget-- <= 0) return;
+    const lo = Math.max(rep, w0);
+    const hi = Math.min(rep + 1, w1);
+    if (!(hi - lo > EPS)) continue;
+    ctx.events.push({
+      token: el.token, start: start + (lo - w0) * scale, dur: (hi - lo) * scale,
+      stack: ctx.stack, index: ctx.written.get(el) ?? null
+    });
+  }
+}
+
+// Emit `node` occupying [start, start+span) of the cycle. `phaseCycle` is how
+// many times the ENCLOSING sequence has come round, so a nested `<…>` advances
+// once per visit rather than once per cycle of the room.
+function emitNode(ctx, node, start, span, phaseCycle) {
+  if (!node || !(span > EPS)) return;
+  if (node.type === 'rest') return;            // rests hold their room silently
+  if (node.type === 'participant') { emitParticipant(ctx, node, start, span, phaseCycle); return; }
+  if (node.type === 'run') { emitSequence(ctx, node, node.elements, 'subdivide', start, span, phaseCycle); return; }
+  if (node.type === 'sequence') {
+    // A nested `,` stack overlays the same span rather than splitting it.
+    for (const st of node.stacks || []) emitSequence(ctx, node, st.elements, node.mode, start, span, phaseCycle);
+  }
+}
+
+// Show the window of `elements` that cycle `phaseCycle` reveals, across
+// [start, start+span).
+function emitSequence(ctx, node, elements, mode, start, span, phaseCycle) {
+  const layout = layoutRepetition(elements, mode);
+  if (!layout) return;
+  const { entries, repLength } = layout;
+  const rate = rateOf(node, layout);
+  const w0 = phaseCycle * rate;
+  const w1 = w0 + rate;
+  const scale = span / rate;
+  const lastRep = Math.ceil((w1 - EPS) / repLength) - 1;
+  for (let rep = Math.floor((w0 + EPS) / repLength); rep <= lastRep; rep++) {
+    const base = rep * repLength;
+    for (const entry of entries) {
+      if (ctx.budget-- <= 0) return;
+      const lo = Math.max(base + entry.start, w0);
+      const hi = Math.min(base + entry.end, w1);
+      if (!(hi - lo > EPS)) continue;
+      // Children are phased by the repetition they sit in, so `<0 <1 2>>`
+      // alternates the inner pair across VISITS (0 1 0 2), not across cycles.
+      emitNode(ctx, resolveEntry(ctx, entry, rep), start + (lo - w0) * scale, (hi - lo) * scale, rep);
+    }
+  }
+}
+
+// Stable identity for every node in the program. `nodeIds` numbers them all so
+// a seed can name one occurrence; `written` numbers the participant tokens
+// alone, pre-order, matching how the editor's highlighter scans the source text
+// (depth-first, every branch of a `|` choice — see participantPositions in
+// components/MetaprogrammerCycleHighlighter.js). The latter is emitted on each
+// slot event as `index` so a consumer can tell WHICH occurrence is playing: in
 // `$ participants <0 1 0>` the two `0`s are different slots.
-function writtenIndices(participants) {
-  const map = new Map();
-  let next = 0;
+function indexNodes(participants) {
+  const nodeIds = new Map();
+  const written = new Map();
+  let nextNode = 0, nextWritten = 0;
   const walk = (els) => {
     for (const el of els || []) {
       if (!el) continue;
-      if (el.type === 'participant') map.set(el, next++);
+      nodeIds.set(el, nextNode++);
+      if (el.type === 'participant') written.set(el, nextWritten++);
       else if (el.type === 'choice') (el.options || []).forEach(walk);
       else if (el.type === 'sequence') (el.stacks || []).forEach(st => walk(st.elements));
     }
   };
   ((participants && participants.stacks) || []).forEach(st => walk(st.elements));
-  return map;
-}
-
-// Emit events for `resolved` occupying [start, start+span) of the cycle.
-// `ctx` is { events, indices, rng } — one per stack, since the RNG is seeded
-// per (cycle, stack).
-function emitInto(ctx, resolved, start, span, cycleForNesting, stack) {
-  if (resolved.type === 'participant') {
-    ctx.events.push({
-      token: resolved.token, start, dur: span, stack,
-      index: ctx.indices.get(resolved) ?? null
-    });
-    return;
-  }
-  if (resolved.type === 'rest') return; // rests advance time silently
-  if (resolved.type === 'run') {
-    subdivideInto(ctx, resolved.elements, start, span, cycleForNesting, stack);
-    return;
-  }
-  if (resolved.type === 'sequence') {
-    // Nested group: subdivide groups split their span; alternate groups pick
-    // one member per enclosing cycle.
-    if (resolved.mode === 'subdivide') {
-      const speed = Math.max(1, Math.round(modValue(resolved, '*', 1)));
-      for (let r = 0; r < speed; r++) {
-        for (const st of resolved.stacks) {
-          subdivideInto(ctx, st.elements, start + (span / speed) * r, span / speed, cycleForNesting, stack);
-        }
-      }
-    } else {
-      for (const st of resolved.stacks) {
-        const entries = weightedEntries(st.elements);
-        if (!entries.length) continue;
-        const pick = entries[((cycleForNesting % entries.length) + entries.length) % entries.length];
-        const { resolved: r2 } = resolveEntry(pick, ctx.rng);
-        emitInto(ctx, r2, start, span, cycleForNesting, stack);
-      }
-    }
-  }
-}
-
-// Lay `elements` out across [start, start+span), each taking a share of the
-// span proportional to its `@` weight.
-function subdivideInto(ctx, elements, start, span, cycle, stack) {
-  const entries = weightedEntries(elements);
-  const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
-  if (!(totalWeight > 0)) return;
-  let cursor = start;
-  for (const entry of entries) {
-    const entrySpan = (entry.weight / totalWeight) * span;
-    const { resolved } = resolveEntry(entry, ctx.rng);
-    emitInto(ctx, resolved, cursor, entrySpan, cycle, stack);
-    cursor += entrySpan;
-  }
+  return { nodeIds, written };
 }
 
 // Expand one cycle of the participants sequence into slot events with
@@ -203,28 +321,17 @@ function subdivideInto(ctx, elements, start, span, cycle, stack) {
 export function expandCycle(participants, cycleNumber) {
   const events = [];
   if (!participants || !Array.isArray(participants.stacks)) return events;
-  const seqSpeed = Math.max(1, Math.round(modValue(participants, '*', 1)));
-  const indices = writtenIndices(participants);
+  const { nodeIds, written } = indexNodes(participants);
 
   participants.stacks.forEach((stack, k) => {
     const effCycle = cycleNumber - (stack.cycleOffset || 0);
     if (effCycle < 0) return;
-    const ctx = { events, indices, rng: seededRandom((effCycle * 7919 + k * 104729 + 1) >>> 0) };
-
-    if (participants.mode === 'subdivide') {
-      for (let r = 0; r < seqSpeed; r++) {
-        subdivideInto(ctx, stack.elements, r / seqSpeed, 1 / seqSpeed, effCycle, k);
-      }
-    } else {
-      // alternate: `speed` consecutive entries per cycle, each 1/speed wide.
-      const entries = weightedEntries(stack.elements);
-      if (!entries.length) return;
-      for (let j = 0; j < seqSpeed; j++) {
-        const idx = (effCycle * seqSpeed + j) % entries.length;
-        const { resolved } = resolveEntry(entries[idx], ctx.rng);
-        emitInto(ctx, resolved, j / seqSpeed, 1 / seqSpeed, effCycle, k);
-      }
-    }
+    // One budget per stack, shared down the recursion by reference, so a
+    // pathological rate in one stack cannot starve the others.
+    emitSequence(
+      { events, nodeIds, written, stack: k, budget: MAX_EXPANSION_STEPS },
+      participants, stack.elements, participants.mode, 0, 1, effCycle
+    );
   });
   events.sort((a, b) => a.start - b.start || a.stack - b.stack);
   return events;
