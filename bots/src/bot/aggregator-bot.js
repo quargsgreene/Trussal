@@ -159,8 +159,12 @@ export class AggregatorBot extends Bot {
     // tick. The index distinguishes repeated tokens (`<0 1 0>` — same token, two
     // ring slots) so the browser outlines the occurrence actually playing.
     // `undefined` (not null) so the first real value — including null — is sent.
+    // `kind` distinguishes the two token-less states that must NOT dedup against
+    // each other: 'rest' (the program is resting at a named `~`) and null (no
+    // turn at all).
     #lastBroadcastActive = undefined;
     #lastBroadcastIndex = undefined;
+    #lastBroadcastKind = undefined;
     #lastBroadcastActiveAt = 0;
     // Per token: a rolling copy of the audio a participant most recently STREAMED,
     // accumulated a slice at a time as each live turn plays and capped at one full
@@ -213,10 +217,13 @@ export class AggregatorBot extends Bot {
     // slot-close events with their NETWORK timestamps (the scheduler emits a
     // lookahead early, so these wait here until their window arrives) and read
     // by #serveFromScheduler. Empty until the first slot-open, which is what
-    // #schedulerPacing latches — before that the join-order write pointer
+    // schedulerPacing latches — before that the join-order write pointer
     // still paces the rotation.
     #slotTimeline = [];
-    #schedulerPacing = false;
+    // Public (like this.ingestTimer, and for the same reason): which of the two
+    // pacing sources is in force is what a test must assert to know it exercised
+    // the grid rather than the fallback, so it is not honestly private.
+    schedulerPacing = false;
     #lastSlotId = null;
     #turnCounter = 0;
     #servedTurnAt = new Map();   // "stack:index" -> #turnCounter when last served
@@ -804,17 +811,30 @@ export class AggregatorBot extends Bot {
         if (ev.type === 'slot-open') {
             this.#slotTimeline.push({
                 id: ev.id,
-                token: String(ev.token),
+                // A rest slot has no participant: keep the token null rather
+                // than stringifying it into the literal "null", which would
+                // look like a token to everything downstream.
+                token: ev.rest ? null : String(ev.token),
+                rest: ev.rest === true,
                 openT: ev.t,
                 closeT: ev.t + ev.dur,
                 cycle: ev.cycle,
                 stack: ev.stack,
                 index: ev.index ?? null,
             });
-            this.#schedulerPacing = true;
+            this.schedulerPacing = true;
             // Bounded: a scheduler left running while nothing drains the
             // timeline (a stalled playback loop) must not grow without end.
-            if (this.#slotTimeline.length > MAX_PENDING_SLOTS) this.#slotTimeline.shift();
+            // Now that rests are banked too, a dense program fills this roughly
+            // twice as fast, so reclaim the slots whose windows have CLOSED
+            // before falling back to dropping the oldest — a blind shift at a
+            // full timeline can evict the slot covering `now`, which reads to
+            // #pruneToOpenSlots as "nothing open" and drops the rotation into
+            // the join-order fallback mid-turn.
+            if (this.#slotTimeline.length > MAX_PENDING_SLOTS) {
+                this.#pruneToOpenSlots();
+                if (this.#slotTimeline.length > MAX_PENDING_SLOTS) this.#slotTimeline.shift();
+            }
         } else if (ev.type === 'slot-close') {
             // The close event is authoritative for the closing edge — trust it
             // over open.t + open.dur if they ever disagree.
@@ -860,7 +880,7 @@ export class AggregatorBot extends Bot {
      */
     #resetSlotPacing() {
         this.#slotTimeline = [];
-        this.#schedulerPacing = false;
+        this.schedulerPacing = false;
         this.#lastSlotId = null;
         this.#servedTurnAt.clear();
     }
@@ -873,7 +893,10 @@ export class AggregatorBot extends Bot {
      * readAndAssembleMasterBuffer treats both pacing sources identically.
      */
     #serveFromScheduler() {
-        const silence = { token: null, position: null, slot: -1, newTurn: false, lapped: false, departed: false };
+        const silence = {
+            token: null, position: null, slot: -1, newTurn: false, lapped: false,
+            departed: false, resting: false, restIndex: null,
+        };
         let open = this.#pruneToOpenSlots();
         if (!open.length) {
             // Nothing open right now. Distinguish two cases that look identical
@@ -910,12 +933,20 @@ export class AggregatorBot extends Bot {
             }
         }
         this.#pacingStalled = false;
-        // Concurrent stacks (the `,` operator) can overlap, but requirement 1
-        // says the master carries exactly one voice: lowest stack wins, earlier
-        // opening breaks the tie. Deterministic, so every client resolving the
-        // same grid picks the same participant.
-        open.sort((a, b) => a.stack - b.stack || a.openT - b.openT);
-        const active = open[0];
+        // A rest slot is open time with nobody in it. It decides the output only
+        // when NO participant slot is open: with concurrent stacks (the `,`
+        // operator) a rest in the lowest stack must not silence a participant
+        // playing alongside it — before rests were emitted at all, that
+        // participant is what played, and a highlight must not change what the
+        // room hears.
+        const playing = open.filter((slot) => !slot.rest);
+        if (!playing.length) return { ...silence, ...this.#restingSlot(open) };
+        // Concurrent stacks can overlap, but requirement 1 says the master
+        // carries exactly one voice: lowest stack wins, earlier opening breaks
+        // the tie. Deterministic, so every client resolving the same grid picks
+        // the same participant.
+        playing.sort((a, b) => a.stack - b.stack || a.openT - b.openT);
+        const active = playing[0];
 
         const newTurn = active.id !== this.#lastSlotId;
         let lapped = false;
@@ -939,7 +970,35 @@ export class AggregatorBot extends Bot {
             newTurn,
             lapped,
             departed: this.order.isDeparted(active.token),
+            restIndex: null,
         };
+    }
+
+    /**
+     * The room is RESTING: open slots exist but none of them has a participant
+     * in it. Streams nothing, so no participant audio reaches the master for
+     * the rest's span, and names which written rest is in force so the shared
+     * editor can outline it.
+     *
+     * `resting` is the decision itself, NOT `restIndex != null`: a `0?` that
+     * degraded to a rest this cycle is a real rest with no `~` in the source to
+     * address, and reporting it as an idle room would lose exactly the silence
+     * hardest to attribute.
+     *
+     * Nothing here touches the bot's own output path — the same "assemble
+     * nothing" the pre-rest code reached by inference. That is what leaves the
+     * page's master player running into the `# room` graph, so the master-bus
+     * reverb tail rings on across the rest instead of being cut with the
+     * participants. Scheduling the rest explicitly is what stops the pacing
+     * fallback (see #serveFromScheduler) from filling the rest with a
+     * join-order turn; the tail is the output path's own doing.
+     *
+     * Same tie-break as a played slot (lowest stack, earliest opening) so every
+     * client resolving the same grid outlines the same `~`.
+     */
+    #restingSlot(open) {
+        const resting = open.sort((a, b) => a.stack - b.stack || a.openT - b.openT)[0];
+        return { resting: true, restIndex: resting ? resting.index : null };
     }
 
     // Local seconds for O2/ClockSync/the scheduler: MONOTONIC SINCE THIS BOT
@@ -986,6 +1045,7 @@ export class AggregatorBot extends Bot {
                 // re-broadcasts the current turn and refills that cache.
                 this.#lastBroadcastActive = undefined;
                 this.#lastBroadcastIndex = undefined;
+                this.#lastBroadcastKind = undefined;
                 send({ type: 'hello', isFleet: true, displayName: `${this.cfg.name || 'aggregator'}-metaprogram-sync` });
             },
             onMessage: (msg) => {
@@ -1028,25 +1088,30 @@ export class AggregatorBot extends Bot {
     }
 
     /**
-     * Publish the ring's current turn to the room so browsers can outline the
-     * streaming participant's token in the shared metaprogram editor. Sent over
+     * Publish the ring's current turn to the room so browsers can outline it in
+     * the shared metaprogram editor: the streaming participant's token, or —
+     * with `kind: 'rest'` and no token — the written `~` the program is resting
+     * at, so a rest is shown as the deliberate part of the cycle it is. Sent over
      * the metaprogram sidecar connection (already in the room's broadcast set)
      * ONLY when the token changes — one small message per slot flip, not per
      * audio tick, which is why readAndAssembleMasterBuffer can call it every
      * tick. Best-effort: a dropped highlight update is purely cosmetic.
      */
-    #broadcastActiveToken(token, index) {
+    #broadcastActiveToken(token, index, kind = null) {
         const t = token == null ? null : String(token);
         const i = Number.isInteger(index) ? index : null;
+        const k = kind === 'rest' ? 'rest' : null;
         const now = Date.now();
         if (t === this.#lastBroadcastActive && i === this.#lastBroadcastIndex &&
+            k === this.#lastBroadcastKind &&
             (now - this.#lastBroadcastActiveAt) < NC_ACTIVE_HEARTBEAT_MS) return;
         this.#lastBroadcastActive = t;
         this.#lastBroadcastIndex = i;
+        this.#lastBroadcastKind = k;
         this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
-        try { conn.send({ type: 'nc-active', token: t, index: i }); } catch (e) { /* cosmetic */ }
+        try { conn.send({ type: 'nc-active', token: t, index: i, kind: k }); } catch (e) { /* cosmetic */ }
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {
@@ -1153,18 +1218,27 @@ export class AggregatorBot extends Bot {
         // room-index order (assign-once, so this is a no-op once registered).
         this.#syncOrderFromBuffers();
 
-        const { token: active, lapped, departed, newTurn, position } =
-            this.#schedulerPacing ? this.#serveFromScheduler() : this.order.serve();
+        // `resting` is absent from the join-order fallback's shape (it knows
+        // nothing of the program), which is honest: without a grid there are no
+        // rests to be in.
+        const { token: active, lapped, departed, newTurn, position, restIndex, resting = false } =
+            this.schedulerPacing ? this.#serveFromScheduler() : this.order.serve();
         if (!active) {
             // No audio has reached the bot yet, or the metaprogram schedules a
-            // REST right now: assemble nothing. The page player emits silence
-            // and we keep checking on the next tick.
+            // REST right now: assemble nothing, so no participant reaches the
+            // master for this span. The page player emits silence — while its
+            // graph, and so the `# room` reverb tail, keeps running — and we
+            // check again on the next tick.
+            //
+            // A rest says so, and names the `~` it is resting at when the
+            // program wrote one, so the editor outlines that occurrence; a
+            // merely idle room sends neither and clears the outline as before.
             this.#activeToken = null;
-            this.#broadcastActiveToken(null, null);
-            return { active: null, assembled: 0 };
+            this.#broadcastActiveToken(null, restIndex, resting ? 'rest' : null);
+            return { active: null, assembled: 0, resting };
         }
         this.#activeToken = active;
-        this.#broadcastActiveToken(active, position);
+        this.#broadcastActiveToken(active, position, null);
         // this.buffers[token] is a RingBuffer (mono Float32 PCM) or undefined when
         // the active token has no buffer yet — hence the guard below.
         const currentRingBuffer = this.buffers[active];

@@ -436,7 +436,10 @@ test('round trip: empty room assembles silence and enqueues nothing (keeps check
   await bot.start();
 
   const a = await bot.readAndAssembleMasterBuffer();
-  assert.deepEqual(a, { active: null, assembled: 0 }, 'no participants -> nothing assembled');
+  // `resting: false` — an empty room is not a programmed rest, and the two are
+  // reported apart so a silence can be attributed.
+  assert.deepEqual(a, { active: null, assembled: 0, resting: false },
+    'no participants -> nothing assembled');
   const p = await bot.playMasterBufferToClient();
   assert.equal(p.played, 0);
   assert.equal(calls.enqueued.length, 0, 'nothing enqueued to the page player');
@@ -1431,6 +1434,173 @@ test('a metaprogram rest schedules silence; an empty grid falls back to the writ
     assert.ok(seen.has('0'), 'the played cycle streams participant 0');
     assert.ok(seen.has(null), 'the rest cycle streams nothing at all');
     assert.equal(seen.size, 2, 'nothing else ever streams');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('a rest names the `~` it is resting at, and leaves the master output path alone', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.start();
+    await bot.interpretAndExecuteMetaprogram();
+    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 20\n# room wcl 2\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },  // 4 s cycles
+    ] });
+    bot.buffers['0'] = new RingBuffer(4096);
+
+    // The reverb the rest must not cut is the one this push installed.
+    const installedRoom = calls.roomPushes.at(-1);
+    assert.ok(installedRoom && installedRoom.decayS > 0, '# room is in force before the first rest');
+
+    let restTicks = 0;
+    let playedTicks = 0;
+    let enqueuedDuringRests = 0;
+    let enqueuedDuringTurns = 0;
+    for (let t = 30000; t < 46000; t += 500) {
+      clockRef.ms = t;
+      bot.buffers['0'].write(new Array(50).fill(0.5));   // participant keeps playing throughout
+      const buffered = bot.buffers['0'].length;
+      const r = await bot.readAndAssembleMasterBuffer();
+      const drained = buffered - bot.buffers['0'].length;
+      const before = calls.enqueued.length;
+      await bot.playMasterBufferToClient();
+      const enqueued = calls.enqueued.length - before;
+      if (r.resting) {
+        restTicks++;
+        assert.equal(r.active, null, 'a rest streams no participant');
+        // Muted, not stopped: the participant's buffer is left untouched (it
+        // keeps accumulating), it is simply not drained into the master.
+        assert.equal(drained, 0, 'a rest drains nobody');
+        enqueuedDuringRests += enqueued;
+      } else if (r.active === '0') {
+        playedTicks++;
+        assert.ok(drained > 0, 'a played turn drains the participant');
+        enqueuedDuringTurns += enqueued;
+      }
+    }
+    assert.ok(playedTicks > 0 && restTicks > 0, 'the program both plays and rests');
+    // The mute is of the PARTICIPANTS: their audio stops reaching the master
+    // for the rest's span, while their buffer keeps filling.
+    assert.equal(enqueuedDuringRests, 0, 'no participant audio is streamed during a rest');
+    assert.equal(enqueuedDuringTurns, playedTicks, 'every played tick streams');
+    assert.equal(bot.schedulerPacing, true, 'the grid — not the fallback — paced this run');
+    // The aggregator's own output path is untouched: the `# room` params stay
+    // installed across the rest (never re-pushed, never cleared), which is what
+    // leaves the page-side graph free to ring out. The tail itself is WebAudio
+    // and lives in the page — out of reach of this harness.
+    assert.equal(calls.roomPushes.at(-1), installedRoom, '# room still in force after the rest');
+    assert.ok(calls.roomPushes.every((p) => p != null), '# room never cleared');
+
+    const active = bus.rec.sent.filter((m) => m.type === 'nc-active');
+    const rest = active.find((m) => m.kind === 'rest');
+    assert.ok(rest, 'the rest is broadcast so the editor can outline it');
+    assert.equal(rest.token, null, 'a rest names no participant');
+    assert.equal(rest.index, 0, 'and addresses the first (only) written rest');
+    assert.ok(active.some((m) => m.token === '0' && m.kind == null),
+      'a played turn still broadcasts its token, with no kind');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('a `?` that degrades to a rest still reports resting, with no glyph to name', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    // No `~` anywhere: every rest here is a token the cycle's RNG dropped, so
+    // it has no written glyph and no rest index — but the room IS resting, and
+    // must not be reported as merely idle.
+    bot.applyProgramText('$ participants <0? 1?>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },
+      { peerId: 'p1', roomIndex: '1', rtcRtt: 20, jitterBufferMs: 140 },
+    ] });
+    bot.buffers['0'] = new RingBuffer(4096);
+    bot.buffers['1'] = new RingBuffer(4096);
+
+    let degradedRests = 0;
+    for (let t = 30000; t < 70000; t += 500) {
+      clockRef.ms = t;
+      bot.buffers['0'].write(new Array(50).fill(0.5));
+      bot.buffers['1'].write(new Array(50).fill(0.25));
+      const r = await bot.readAndAssembleMasterBuffer();
+      if (r.resting) degradedRests++;
+    }
+    assert.equal(bot.schedulerPacing, true, 'the grid paced this run');
+    assert.ok(degradedRests > 0, 'some cycles degrade to a rest and say so');
+    // Broadcast as a rest with a null index: the room is resting, and there is
+    // nothing in the source for the editor to outline.
+    const active = bus.rec.sent.filter((m) => m.type === 'nc-active');
+    const rest = active.find((m) => m.kind === 'rest');
+    assert.ok(rest, 'the degraded rest is still broadcast as a rest');
+    assert.equal(rest.index, null, 'and addresses no written rest');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('a rest in one stack does not silence a participant playing in another', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 0 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000 },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.interpretAndExecuteMetaprogram();
+    // Stack 0 rests on even effective cycles; stack 1 (offset one cycle) plays
+    // `0` throughout. Requirement 1 still holds — one voice at a time — but the
+    // voice must be the participant, not the concurrent rest.
+    bot.applyProgramText('$ participants <~ 1, 0>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },
+      { peerId: 'p1', roomIndex: '1', rtcRtt: 20, jitterBufferMs: 140 },
+    ] });
+    bot.buffers['0'] = new RingBuffer(4096);
+    bot.buffers['1'] = new RingBuffer(4096);
+
+    let restedWhileSomeoneCouldPlay = false;
+    const streamed = new Set();
+    for (let t = 30000; t < 54000; t += 500) {
+      clockRef.ms = t;
+      bot.buffers['0'].write(new Array(50).fill(0.5));
+      bot.buffers['1'].write(new Array(50).fill(0.25));
+      const r = await bot.readAndAssembleMasterBuffer();
+      // Every cycle from stack 1's epoch on has SOMEBODY open, so nothing here
+      // may report a rest: a rest only decides the output when no participant
+      // slot is open at all.
+      if (r.resting) restedWhileSomeoneCouldPlay = true;
+      if (r.active) streamed.add(r.active);
+    }
+    // Positive control FIRST: without it the negative below passes vacuously on
+    // the join-order fallback, which knows no rests and so can never report
+    // one — exercising none of the precedence this test is about.
+    assert.equal(bot.schedulerPacing, true, 'the grid — not the fallback — paced this run');
+    assert.deepEqual([...streamed].sort(), ['0', '1'],
+      'both stacks got their turns while stack 0 was resting');
+    assert.equal(restedWhileSomeoneCouldPlay, false,
+      'a concurrent participant outranks a rest');
   } finally {
     await bot.stop();
   }

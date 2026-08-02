@@ -1,6 +1,10 @@
-// Cycle highlighter: a rectangular outline around the participant token the
-// aggregator is streaming RIGHT NOW, drawn inside the shared editor (rather than
-// a separate row of chips).
+// Cycle highlighter: a rectangular outline around the part of the program the
+// aggregator is playing RIGHT NOW — the participant token whose audio is
+// streaming, or the `~` the program is resting at — drawn inside the shared
+// editor (rather than a separate row of chips). A rest is a slot like any
+// other, so it gets the same outline; the room hears no participant for its
+// span, while the aggregator's master-bus reverb — untouched by the rest —
+// rings on.
 //
 // The aggregator bot owns the ring (turns last the program's network-derived
 // cycle length, so they stretch and tighten with the room) and broadcasts its current
@@ -15,7 +19,9 @@
 // wrapping, scroll) with no framework.
 
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
-import { getActiveNetCyclesToken, getActiveNetCyclesIndex } from '../src/peer-state.js';
+import {
+  getActiveNetCyclesToken, getActiveNetCyclesIndex, getActiveNetCyclesKind
+} from '../src/peer-state.js';
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
 // to line up. width/whiteSpace are set explicitly (see syncMetrics).
@@ -63,13 +69,27 @@ function lineColToOffset(text, line, col) {
 // every branch of a `|` choice, repeats included). Rests and non-participant
 // nodes are skipped. Used to locate the active token's glyphs in the editor.
 function participantPositions(text) {
+  return elementPositions(text, 'participant');
+}
+
+// The same scan over the rests (`~`, `_`, `-`) — a separate list because the
+// scheduler numbers rests in their own index space, so the two never shift each
+// other (see restIndices in src/audio-net/MetaprogramScheduler.js).
+function restPositions(text) {
+  return elementPositions(text, 'rest');
+}
+
+// Source offsets of every element of `type`, in the same depth-first order the
+// scheduler indexes them — that shared order is what lets a slot's `index`
+// address a glyph in the live text.
+function elementPositions(text, type) {
   const { ast } = parseMetaprogram(text);
   const out = [];
   if (!ast.participants) return out;
   const walk = (els) => {
     for (const el of els || []) {
       if (!el) continue;
-      if (el.type === 'participant' && el.token != null && el.line != null) {
+      if (el.type === type && el.token != null && el.line != null) {
         const token = String(el.token);
         out.push({ token, offset: lineColToOffset(text, el.line, el.col), len: token.length });
       } else if (el.type === 'choice') {
@@ -105,9 +125,11 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   overlay.appendChild(box);
   host.append(overlay, mirror);
 
-  // The aggregator's current ring turn (token + which occurrence), from peer-state.
+  // The aggregator's current ring turn (token + which occurrence, or a rest),
+  // from peer-state.
   let activeToken = getActiveNetCyclesToken();
   let activeIndex = getActiveNetCyclesIndex();
+  let activeKind = getActiveNetCyclesKind();
 
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
@@ -149,7 +171,17 @@ export function mountMetaprogrammerCycleHighlighter(container) {
     // text (e.g. the editor was edited ahead of the applied program). Nothing to
     // draw without a signal or when the token isn't in the text.
     let pos = null;
-    if (activeToken != null) {
+    if (activeKind === 'rest') {
+      // Resting: outline the `~` the program is resting at, addressed by index
+      // alone. Unlike a participant there is no token to cross-check the index
+      // against, so an editor typed AHEAD of the applied program can renumber
+      // the rests and land the box on a rest the program isn't resting at —
+      // out of range draws nothing, in-range-but-stale draws the wrong glyph.
+      // Both resolve themselves on the next apply; a rest slot is only ever
+      // marking time, so a briefly misplaced box is cheaper than the round trip
+      // it would take to make it authoritative.
+      pos = activeIndex != null ? restPositions(text)[activeIndex] : null;
+    } else if (activeToken != null) {
       const positions = participantPositions(text);
       const atIndex = activeIndex != null ? positions[activeIndex] : null;
       pos = (atIndex && atIndex.token === activeToken)
@@ -170,6 +202,7 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   document.addEventListener('trussal-netcycles-active', (e) => {
     activeToken = e.detail ? e.detail.token : null;
     activeIndex = e.detail ? e.detail.index : null;
+    activeKind = e.detail ? e.detail.kind : null;
     renderOutline();
   });
 

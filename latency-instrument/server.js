@@ -60,7 +60,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       // aggregatorClaimPeerId: the connection currently holding the room's
       // single aggregator slot (see the 'aggregator-claim' handler). A losing
       // aggregator bot never joins Jitsi, so a room can only ever contain one.
-      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null, lastActiveToken: null, lastActiveIndex: null };
+      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null, lastActiveToken: null, lastActiveIndex: null, lastActiveKind: null };
       roomMeta.set(name, meta);
     }
     return meta;
@@ -389,8 +389,16 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           }
           // …and the aggregator's current ring turn, which is only broadcast on
           // change (so a joiner that missed the last change needs the cache).
-          if (!record.isFleet && meta.lastActiveToken != null) {
-            send(ws, { type: 'nc-active', token: meta.lastActiveToken, index: meta.lastActiveIndex });
+          // A REST is a turn too — it has no token, so it is recognised by its
+          // kind; without that a joiner landing mid-rest would see no outline
+          // until the next participant slot.
+          if (!record.isFleet && (meta.lastActiveToken != null || meta.lastActiveKind === 'rest')) {
+            send(ws, {
+              type: 'nc-active',
+              token: meta.lastActiveToken,
+              index: meta.lastActiveIndex,
+              kind: meta.lastActiveKind,
+            });
           }
           if (!record.isFleet) {
             broadcast(room, peerId, { type: 'peer-join', peer: publicView(record) });
@@ -522,11 +530,15 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // Ring-slot index — distinguishes repeated tokens so the browser
           // outlines the occurrence actually playing (see nc-active on hello).
           const index = Number.isInteger(msg.index) ? msg.index : null;
+          // 'rest': the turn is a written `~` rather than a participant, and
+          // `index` addresses the program's rests instead of its participants.
+          const kind = msg.kind === 'rest' ? 'rest' : null;
           const ncMeta = getRoomMeta(roomName);
           ncMeta.lastActiveToken = token;
           ncMeta.lastActiveIndex = index;
+          ncMeta.lastActiveKind = kind;
           const room = rooms.get(roomName);
-          if (room) broadcast(room, peerId, { type: 'nc-active', token, index });
+          if (room) broadcast(room, peerId, { type: 'nc-active', token, index, kind });
           break;
         }
 
