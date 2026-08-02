@@ -43,7 +43,7 @@ import {
   parseMetaprogram,
   buildDefaultProgram
 } from './MetaprogrammerParser.js';
-import { MetaprogramScheduler, AVBufferQueue } from './MetaprogramScheduler.js';
+import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
 import { makeClockSyncOverO2 } from './ClockSync.js';
 import { O2LiteClient } from '../../public/lib/o2lite-web.js';
@@ -77,6 +77,8 @@ let clock = null;
 let epoch = null;
 let epochTimer = null;
 let localSecondsFallbackT0 = null;
+let cycleGrid = null;        // last cycle-start seen: { cycle, t, seconds }
+let currentAst = null;       // last program that parsed clean
 
 const queues = new Map();        // token (room index) → AVBufferQueue
 const activePatterns = new Map(); // jitsiId → pattern applied by the last dequeued buffer
@@ -139,6 +141,35 @@ export function ensureMetaprogramSync() {
 export function effectiveWorstCase() {
   const measured = computeWorstCaseMetrics(getAllPeers());
   return crdt ? mergeInducedMetrics(measured, crdt.getInduced()) : measured;
+}
+
+// Where the room is on its cycle grid, for effects written in cycles rather
+// than seconds (`# echo` delay length) or sampled per cycle (patterned effect
+// arguments). Position is deliberately UNCLAMPED arithmetic off the last
+// boundary: cycle-start events are emitted a lookahead early, so between the
+// event and the boundary the fraction is negative and the position correctly
+// still names the previous cycle — no dual-anchor bookkeeping needed, as long
+// as consumers floor-mod (NumberPattern.js does).
+//
+// Before the first boundary there is no anchor: compute the length the grid is
+// about to use — from the running scheduler if there is one, otherwise from
+// the program itself, since setChain runs during the roster seed while
+// `scheduler` is still null. It has to be a CYCLE length either way; a beat is
+// not a cycle (cycleLength quantizes the timing metric UP onto whole beats),
+// and reporting one would size the first echo against a fabricated 0.5 s.
+// Every client derives this from the same shared epoch and metrics, so
+// patterned parameters stay identical across browsers.
+function cycleContext() {
+  if (cycleGrid && cycleGrid.seconds > 0) {
+    return {
+      cycleSeconds: cycleGrid.seconds,
+      cyclePos: cycleGrid.cycle + (networkSeconds() - cycleGrid.t) / cycleGrid.seconds
+    };
+  }
+  const len = scheduler
+    ? scheduler.getCycleLength()
+    : (currentAst && cycleLength({ cycles: currentAst.cycles, tempo: currentAst.tempo, metrics: effectiveWorstCase() }));
+  return { cycleSeconds: len ? len.seconds : beatSeconds(null), cyclePos: 0 };
 }
 
 function pushEffectiveMetrics() {
@@ -222,6 +253,7 @@ function pushProgramToScheduler() {
   if (programText == null) return;
   const { ast, valid } = parseMetaprogram(programText);
   if (!valid) return;
+  currentAst = ast;
   if (scheduler) scheduler.setProgram(ast);
   // The program's #-chain drives the Effects Service on the master bus.
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
@@ -253,7 +285,7 @@ export function getProgramText() { return programText; }
 // Studio effect toggles double as metaprogram shortcuts under Net Cycles:
 // toggling adds/removes the corresponding # line and applies it, so the
 // buttons and the shared editor never disagree.
-const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo 1 0.1', crush: '# crush 1', noise: '# noise' };
+const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo', crush: '# crush 1', noise: '# noise' };
 
 export function hasEffectShortcut(fn) {
   if (!programText) return false;
@@ -335,6 +367,13 @@ function scheduleGate(jitsiId, level, atNetworkT) {
 function onSchedulerEvent(ev) {
   emitSlot(ev);
   if (ev.type === 'cycle-start') {
+    const lengthChanged = !cycleGrid || cycleGrid.seconds !== ev.seconds;
+    cycleGrid = { cycle: ev.cycle, t: ev.t, seconds: ev.seconds };
+    // A boundary is the only moment the cycle LENGTH can change, and the
+    // scheduler applies pending metrics here rather than when they arrived —
+    // so an echo written in cycles has to be re-derived now. Nothing else
+    // would: pushEffectiveMetrics ran before the swap, with the old length.
+    if (lengthChanged && effects) effects.updateMetrics(effectiveWorstCase());
     enqueueCycleBuffers(ev.cycle);
     return;
   }
@@ -466,6 +505,9 @@ function adoptEpochIfEarlier(remoteEpoch) {
 }
 
 function startScheduler() {
+  // A fresh grid counts from cycle 0 again — an anchor from the old one would
+  // place cycle-position sampling in a cycle that no longer exists.
+  cycleGrid = null;
   scheduler = new MetaprogramScheduler({
     now: networkSeconds,
     onEvent: onSchedulerEvent
@@ -506,7 +548,8 @@ export async function setNetCyclesActive(enable) {
       insert: insertMasterChain,
       remove: removeMasterChain,
       getPeers: getAllPeers,
-      getLocalJitsiId: () => getLocalPeer().jitsiId
+      getLocalJitsiId: () => getLocalPeer().jitsiId,
+      getCycleContext: cycleContext
     });
     // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
     // a beat to arrive before declaring our own epoch / seeding the default.
@@ -528,6 +571,7 @@ export async function setNetCyclesActive(enable) {
     if (clock) clock.stop();
     if (epochTimer) { clearInterval(epochTimer); epochTimer = null; }
     epoch = null;
+    cycleGrid = null;
     for (const t of slotTimers) clearTimeout(t);
     slotTimers.clear();
     gateLevels.clear();

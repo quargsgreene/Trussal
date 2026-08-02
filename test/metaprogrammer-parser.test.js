@@ -89,12 +89,12 @@ test('spec: good chainable example (rests, degrade, tempo fraction, effects)', (
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2.5, fixedWclS: null });
 });
 
-test('spec: bad example — pattern argument to an effect is rejected', () => {
+test('spec: bad example — a Strudel call as an effect argument is rejected', () => {
   bad(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
 # cycles wcj 3
 # tempo 90/4 cpm
 # room wcl (pink # range 0 1)
-`, /pattern arguments/);
+`, /cannot take Strudel-call arguments/);
   // The sequence itself is legal (@/!/? apply "as usual"): removing the bad
   // room line makes the program valid.
   const ast = ok(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
@@ -110,8 +110,14 @@ test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise,
   let ast = ok('$ participants [0 2 1 4 3]\n# room wcl 2 0.4\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedWclS: 0.4 });
 
-  ast = ok('$ participants [0 2 1 4 3]\n# echo 2.1 9\n# ply 2\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { nSamplesFactor: 2.1, magnitudeFeedbackFactor: 9 });
+  ast = ok('$ participants [0 2 1 4 3]\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# ply 2\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), {
+    slots: [
+      { param: 'length', metric: 'wcl', scale: 2, bound: 1500 },
+      { param: 'feedback', metric: 'wcpl', scale: 0.3, bound: 20 },
+      { param: 'gain', metric: 'wcl', scale: 3, bound: 1200 }
+    ]
+  });
   assert.deepEqual(ast.chain[1], { fn: 'ply', args: [2], line: 3, col: 3 });
 
   ast = ok('$ participants [0 2 1 4 3]\n# crush 1.0003\n# chop 2\n');
@@ -204,6 +210,73 @@ test('room requires its wcl metric keyword; scale and fixed wcl are optional', (
   bad('$ participants <0>\n# room 2\n', /needs a metric keyword \(wcl\)/);
   bad('$ participants <0>\n# room 2 0.4\n', /needs a metric keyword \(wcl\)/);
   bad('$ participants <0>\n# room wcj 2\n', /needs a metric keyword \(wcl\)/);
+});
+
+test('echo takes three metric/scale pairs, or none, plus up to three bounds', () => {
+  // Bare form: wcl drives all three at the default scales.
+  let ast = ok('$ participants <0>\n# echo\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).slots, [
+    { param: 'length', metric: 'wcl', scale: 0.5, bound: null },
+    { param: 'feedback', metric: 'wcl', scale: 0.5, bound: null },
+    { param: 'gain', metric: 'wcl', scale: 1, bound: null }
+  ]);
+
+  // Six arguments, no bounds: each metric keeps its own default bound.
+  ast = ok('$ participants <0>\n# echo wcj 2 wcpl 0.3 wcrtt 3\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).slots.map(s => [s.metric, s.scale, s.bound]),
+    [['wcj', 2, null], ['wcpl', 0.3, null], ['wcrtt', 3, null]]);
+
+  // Bounds fill their slots left to right, so a partial list is legal.
+  ast = ok('$ participants <0>\n# echo wcl 2 wcpl 0.3 wcl 3 1500\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).slots.map(s => s.bound), [1500, null, null]);
+  ast = ok('$ participants <0>\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).slots.map(s => s.bound), [1500, 20, null]);
+
+  // All the pairs or none — a half-written chain is a mistake, not a default.
+  bad('$ participants <0>\n# echo wcl 2\n', /needs a metric keyword .* before its feedback/);
+  bad('$ participants <0>\n# echo wcl 2 wcpl 0.3\n', /needs a metric keyword .* before its gain/);
+  bad('$ participants <0>\n# echo 2 0.3 3\n', /needs a metric keyword .* before its length/);
+  bad('$ participants <0>\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200 900\n', /unexpected argument '900'/);
+  bad('$ participants <0>\n# echo wcl 0 wcpl 0.3 wcl 3\n', /length scale factor must be a positive real/);
+  bad('$ participants <0>\n# echo wcl 2 wcj\n', /needs a feedback scale factor/);
+  bad('$ participants <0>\n# echo wcl 2 wcpl 0.3 wcl 3 (pink)\n', /cannot take Strudel-call arguments/);
+
+  // A rejected Strudel call is skipped whole. Its innards are not this
+  // language's tokens — `#` inside it is a statement sigil — so leaving it for
+  // recover() would turn one honest error into two and lose the next line.
+  const res = parseMetaprogram('$ participants <0>\n# echo wcl 2 wcpl 0.3 wcl 3 (pink # range 0 1)\n# crush 1\n');
+  assert.equal(res.errors.length, 1, `one error, not a cascade: ${res.errors.map(e => e.message).join(' | ')}`);
+  assert.deepEqual(res.ast.chain.map(c => c.fn), ['crush'], 'parsing resumes at the next directive');
+
+  // An echo length is naturally said in rational cycles, so it may be written
+  // as a fraction — the same spelling `# tempo 90/4` already uses.
+  ast = ok('$ participants <0>\n# echo wcl 1/2 wcpl 0.3 wcl 3 1500/2\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).slots.map(s => [s.scale, s.bound]),
+    [[0.5, 750], [0.3, null], [3, null]]);
+  bad('$ participants <0>\n# echo wcl 1/0 wcpl 0.3 wcl 3\n', /fraction denominator must be a positive real/);
+});
+
+test('echo scales and bounds may be patterns; malformed ones are parse errors', () => {
+  let ast = ok('$ participants <0>\n# echo wcl <2 3 0.5> wcpl 0.3 wcl [1 4] 1500 20 <1200 600>\n');
+  let slots = resolveEffectParams(ast.chain[0]).slots;
+  assert.deepEqual(slots[0].scale, { type: 'numseq', mode: 'alternate', values: [2, 3, 0.5] });
+  assert.deepEqual(slots[2].scale, { type: 'numseq', mode: 'subdivide', values: [1, 4] });
+  assert.deepEqual(slots[2].bound, { type: 'numseq', mode: 'alternate', values: [1200, 600] });
+
+  // Nesting works the way it does in a participants sequence.
+  ast = ok('$ participants <0>\n# echo wcl <2 [3 4]> wcl 0.5 wcl 1\n');
+  slots = resolveEffectParams(ast.chain[0]).slots;
+  assert.deepEqual(slots[0].scale.values[1], { type: 'numseq', mode: 'subdivide', values: [3, 4] });
+
+  // A directive is one line: an unclosed pattern stops at the line break
+  // instead of swallowing the statements below it.
+  bad('$ participants <0>\n# echo wcl <2 3\n# crush 1\n', /pattern is unclosed/);
+  bad('$ participants <0>\n# echo wcl <> wcl 0.5 wcl 1\n', /pattern is empty/);
+  bad('$ participants <0>\n# echo wcl <2 3] wcl 0.5 wcl 1\n', /mismatched '\]'/);
+  bad('$ participants <0>\n# echo wcl <2 x> wcl 0.5 wcl 1\n', /needs a length scale factor/);
+  bad('$ participants <0>\n# echo wcl <2 0> wcl 0.5 wcl 1\n', /must be a positive real/);
+  // Only echo takes patterns — the other effects still reject them.
+  bad('$ participants <0>\n# crush <1 2>\n', /unexpected argument/);
 });
 
 test('argument arity and positivity are validated', () => {

@@ -136,6 +136,7 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │   │   ├── MetaprogrammerCrdtSync.js # Allow editing by all meeting participants
 │   │   ├── Metaprogrammer.js       # Runs the metaprogrammer and creates scheduling rule patterns
 │   │   ├── MetaprogrammerParser.js # Parses metaprogrammer syntax
+│   │   ├── NumberPattern.js        # Samples patterned effect arguments (<2 3>, [1 4]) at the cycle position
 │   │   ├── UserBotOrchestration.js # Allows users to eliminate, filter, and select bots in their own cluster
 │   │   ├── ClockSync.js            # Critical for O2: syncs local audio time with network time
 │   │   ├── observability/
@@ -403,20 +404,43 @@ $ participants [0 2 1 4 3]
 
 #### echo
 - Description
-This is a simple echo effect with a delay by a dynamic number of samples with respect to wcj, as well as a feedback gain factor mediated by wcpl. 
+A feedback delay whose three parameters — echo length, feedback and gain — are each driven by a network metric of the user's choosing, one metric per parameter.
+- Syntax
+`# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound 1> [<bound 2> [<bound 3>]]]`
+
+Six arguments (three metric/scale pairs), or none at all; a half-written chain is a parse error rather than a partial default. The three upper bounds are individually optional and fill their slots left to right. Legal metrics are `wcl`, `wcj`, `wcrtt` and `wcpl` — wcrtt is admitted here even though `# cycles` has no use for it, since an echo tracking the round trip rather than mouth-to-ear latency is a different musical choice.
 - Input
 AV buffer object
 - Parameters
-n_samples_factor: A positive real number that is a multiple number of samples after whilayer_opacity: ch the repeat of the audio or visual signal is recommenced, which is defined by n_samples = n_samples_factor * wcj * 100. Default is 1.
-magnitude_feedback_factor: A positive real number that multiplies the amount of feedback determined by the wcpl percentage expressed as a real number between 0 and 1, magnitude_feedback = max(magnitude_feedback_factor/wcp, 1). Visually, this magnitude feedback factor modulates the brightness of the synthesized video output. Default is 0.1.
+Every parameter is its scale factor times its metric **normalized against an upper bound**, clamped so a network that keeps degrading cannot push it further:
+
+    value = scale × min(metric / bound, 1)
+
+The scale is therefore the value that parameter reaches when its metric sits at the bound, and nothing runs away when the network does.
+
+length: the delay time in **cycles**, not seconds. The echo rides the room's cycle grid, so it re-times itself whenever the metrics move the cycle length and stays in rhythm with the rotation. Rational lengths may be written as fractions — `# echo wcl 1/2 …`, the same spelling `# tempo 90/4` uses — or as decimals. Default scale 0.5.
+feedback: the recirculated proportion, clamped strictly below unity (0.95) — the one place a user's scale factor is overruled, because a self-oscillating delay line never gets quiet again. It also modulates the brightness of the synthesized video output: `brightness = 1 − feedback`, so an echo doing nothing audible leaves the image untouched and thicker repeats darken it. Default scale 0.5.
+gain: the level of the wet (echoed) path against the dry signal. Default scale 1.
+
+upper bound for each: a positive real in the unit its metric is *written* in — milliseconds for wcl/wcj/wcrtt, **percent for wcpl** (`20` means 20 % loss, while the metric itself is broadcast as the fraction 0.2). Omitted bounds default per metric: wcl 500 ms, wcj 50 ms, wcrtt 500 ms, wcpl 20 %. These sit near the worst a real algorave room reaches rather than at each metric's theoretical ceiling, so the effect audibly moves without anyone having to induce degradation first.
+
+A bare `# echo` is `wcl` driving all three at scales 0.5 / 0.5 / 1 — still normalized against wcl's default bound, so even the default echo follows the network rather than sitting at fixed values. A new meeting starts with no `# echo` line at all, i.e. bypassed.
+
+Scales and bounds may both be **patterns** instead of plain numbers: `<2 3 0.5>` alternates one value per cycle and `[1 4]` subdivides the cycle, nesting the way a `$ participants` sequence does. They are sampled from the cycle position, which every client derives from the same shared epoch, program and metrics — so a patterned parameter stays identical across browsers.
 - Return value
 Updated AV buffer object
-- Example:
+- Examples:
 ```
 $ participants [0 2 1 4 3]
-# echo 2.1 9
+# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200 // packet loss is a percentage
 # ply 2
 ```
+A 2-cycle echo at 1500 ms of worst-case latency, 0.3 feedback at 20 % worst-case loss, and gain 3 at 1200 ms — all three shrinking together as the room gets healthier.
+```
+$ participants [0 2 1 4 3]
+# echo wcl <2 3 0.5> wcpl 0.3 wcl [1 4] 1500 20 1200
+```
+The same echo with its length alternating per cycle and its gain jumping mid-cycle.
 
 #### crush
 - Description

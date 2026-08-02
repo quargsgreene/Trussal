@@ -4,8 +4,10 @@
 // sequences) but deliberately tiny: one `$ participants` scheduling sequence
 // plus `#`-chained directives (one cyclic timing mode, a tempo, network-
 // modulated AV effects, and a whitelist of Strudel-analog pattern functions).
-// Everything else — arbitrary Strudel calls, any Hydra call, pattern-valued
-// effect arguments — is a validation error.
+// Everything else — arbitrary Strudel calls, any Hydra call — is a validation
+// error. Effect arguments are plain positive numbers, except where a
+// signature opts into `patternArgs` (`# echo`), whose scale factors and bounds
+// may also be `<2 3>` / `[1 4]` sequences of them.
 //
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
 // in the browser bundle, in bots, and under node:test. Errors carry
@@ -17,16 +19,30 @@ import {
   isValidParticipantToken,
   parseParticipantToken
 } from '../../latency-instrument/room-indices.js';
+// echo's slot names, legal metrics and default slots are the effect's own
+// business (av-effects/Echo.js), not the grammar's — the parser reads them
+// from there rather than keeping a second copy that could drift. Nothing in
+// that module touches WebAudio until createEchoNode() is CALLED with a
+// context, so importing it keeps this parser loadable in the bots process.
+import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted. `metricKeywords`
-// requires a leading metric word before the numeric args (`# room wcl 2 0.4`).
+// requires a leading metric word before the numeric args (`# room wcl 2 0.4`);
+// `metricPairs` instead takes that many <metric> <scale> pairs, one per
+// parameter, followed by that many optional upper bounds (`# echo`, below).
 const EFFECTS = {
   room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: ['wcl'] }, // scale=1, fixed wcl seconds=live
-  echo: { minArgs: 0, maxArgs: 2, kind: 'effect' },   // n_samples_factor=1, magnitude_feedback_factor=0.1
+  echo: {
+    kind: 'effect',
+    metricKeywords: ECHO_METRICS,
+    metricPairs: ECHO_SLOTS,          // length (cycles), feedback, gain
+    patternArgs: true,                // scales and bounds may be <2 3> / [1 4]
+    usage: '# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>]'
+  },
   crush: { minArgs: 0, maxArgs: 1, kind: 'effect' },  // reduction_factor=1
   noise: { minArgs: 0, maxArgs: 0, kind: 'effect' },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true } // landmarks=false
@@ -48,7 +64,12 @@ const PATTERN_FNS = {
 
 export const EFFECT_DEFAULTS = {
   room: { metric: 'wcl', scale: 1, fixedWclS: null },
-  echo: { nSamplesFactor: 1, magnitudeFeedbackFactor: 0.1 },
+  // Bare `# echo`: wcl drives all three parameters, at half a cycle of delay,
+  // half feedback and unity gain — each still normalized against wcl's default
+  // upper bound, so these are the values reached at that bound rather than
+  // fixed outputs. Bounds default per metric (av-effects/Echo.js, which owns
+  // this table; echoParams falls back to the very same objects).
+  echo: { slots: ECHO_DEFAULT_SLOTS },
   crush: { reductionFactor: 1 },
   noise: {},
   grid: { landmarks: false }
@@ -378,7 +399,12 @@ class Parser {
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
 
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
-    if (EFFECTS[name]) { this.parseChainFn(program, name, nameTok, EFFECTS[name]); return; }
+    if (EFFECTS[name]) {
+      const sig = EFFECTS[name];
+      if (sig.metricPairs) this.parseMetricPairFn(program, name, nameTok, sig);
+      else this.parseChainFn(program, name, nameTok, sig);
+      return;
+    }
 
     this.error(`'${name}' is not a NetCycles function — Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
     this.recover();
@@ -417,8 +443,8 @@ class Parser {
         fixed = val;
       }
     }
-    const trailing = this.peek();
-    if (trailing.type !== 'newline' && trailing.type !== 'eof' && trailing.type !== 'sigil') {
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
       this.error(`cycles got an unexpected argument '${trailing.value}' — the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
       this.recover();
       return;
@@ -470,6 +496,149 @@ class Parser {
     program.tempo = { value, unit: unitTok.value };
   }
 
+  atStatementEnd() {
+    const t = this.peek();
+    return t.type === 'newline' || t.type === 'eof' || t.type === 'sigil';
+  }
+
+  // Consume a balanced `(…)` run. A rejected Strudel call is skipped whole
+  // because its innards are not this language's tokens — in particular a '#'
+  // inside it is a statement sigil to the tokenizer, and leaving it for
+  // recover() turns one honest error into two.
+  skipParenBlob() {
+    let depth = 0;
+    while (!this.atEof()) {
+      const p = this.next();
+      if (p.type === 'punct' && p.value === '(') depth++;
+      if (p.type === 'punct' && p.value === ')') { depth--; if (depth === 0) return; }
+    }
+  }
+
+  // One <metric> <scale> pair per parameter, then an optional upper bound per
+  // parameter in the same order:
+  //
+  //   # echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200
+  //          |----| |------| |----| |---------|
+  //          length  feedbk   gain    bounds
+  //
+  // All the pairs or none — a half-written chain (`# echo wcl 2`) is far more
+  // likely a mistake than an intention, and silently defaulting the rest would
+  // hide it. Bounds are individually optional, filling their slots left to
+  // right; each omitted one falls back to that metric's default.
+  parseMetricPairFn(program, name, nameTok, sig) {
+    const slots = sig.metricPairs;
+    const pairs = [];
+    const bounds = [];
+
+    if (!this.atStatementEnd()) {
+      for (let i = 0; i < slots.length; i++) {
+        const t = this.peek();
+        if (t.type !== 'word' || !sig.metricKeywords.includes(t.value)) {
+          this.error(
+            `'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its ${slots[i]} ` +
+            `— the syntax is '${sig.usage}'`, t);
+          this.recover();
+          return;
+        }
+        this.next();
+        const value = this.parseNumericArg(name, `${slots[i]} scale factor`, sig);
+        if (value == null) { this.recover(); return; }
+        pairs.push({ metric: t.value, value });
+      }
+      for (let i = 0; i < slots.length && !this.atStatementEnd(); i++) {
+        const value = this.parseNumericArg(name, `${slots[i]} upper bound`, sig);
+        if (value == null) { this.recover(); return; }
+        bounds.push(value);
+      }
+    }
+
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
+      this.error(`'${name}' got an unexpected argument '${trailing.value}' — the syntax is '${sig.usage}'`, trailing);
+      this.recover();
+      return;
+    }
+    program.chain.push({ fn: name, args: [], pairs, bounds, line: nameTok.line, col: nameTok.col });
+  }
+
+  // A positive number — plain or as the fraction `1/2`, the way `# tempo 90/4`
+  // is written, since an echo length is naturally said in rational cycles —
+  // or, where the signature allows it, a pattern of them. Returns null once an
+  // error has been recorded.
+  parseNumericArg(name, slot, sig) {
+    const t = this.peek();
+    if (t.type === 'number' || t.type === 'intlike') {
+      this.next();
+      let val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+      if (this.peek().type === 'op' && this.peek().value === '/') {
+        this.next();
+        const d = this.peek();
+        const den = (d.type === 'number' || d.type === 'intlike')
+          ? (typeof d.value === 'number' ? d.value : parseFloat(d.value)) : NaN;
+        if (!(den > 0) || !isFinite(den)) {
+          this.error(`'${name}' ${slot} fraction denominator must be a positive real number`, d);
+          return null;
+        }
+        this.next();
+        val = val / den;
+      }
+      if (!(val > 0) || !isFinite(val)) {
+        this.error(`'${name}' ${slot} must be a positive real number`, t);
+        return null;
+      }
+      return val;
+    }
+    if (sig.patternArgs && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+      return this.parseNumberPattern(name, slot, sig);
+    }
+    if (t.type === 'punct' && t.value === '(') {
+      this.error(`'${name}' cannot take Strudel-call arguments — ${slot} is a number or a pattern of numbers`, t);
+      // Consume the parenthesized blob rather than leaving it for recover():
+      // a Strudel call may contain a '#' (`(pink # range 0 1)`), which
+      // tokenizes as a statement sigil and would otherwise be picked up as a
+      // second, bogus "not a NetCycles function" error.
+      this.skipParenBlob();
+      return null;
+    }
+    this.error(
+      `'${name}' needs a ${slot} — a positive number` +
+      (sig.patternArgs ? ' or a pattern like <2 3> / [1 4]' : ''), t);
+    return null;
+  }
+
+  // `<a b c>` alternates one value per cycle, `[a b]` subdivides the cycle,
+  // and the two nest — the same brackets and the same meaning they carry in a
+  // `$ participants` sequence, over numbers instead of participant tokens.
+  // Evaluated at the cycle position by NumberPattern.js.
+  parseNumberPattern(name, slot, sig) {
+    const open = this.next(); // '<' or '['
+    const close = open.value === '<' ? '>' : ']';
+    const mode = open.value === '<' ? 'alternate' : 'subdivide';
+    const values = [];
+    for (;;) {
+      const t = this.peek();
+      // A directive is one line: an unclosed pattern ends at the line break
+      // rather than swallowing the statements below it.
+      if (t.type === 'eof' || t.type === 'newline' || t.type === 'sigil') {
+        this.error(`'${name}' ${slot} pattern is unclosed — expected '${close}'`, t);
+        return null;
+      }
+      if (t.type === 'punct' && t.value === close) { this.next(); break; }
+      if (t.type === 'punct' && (t.value === '>' || t.value === ']')) {
+        this.error(`mismatched '${t.value}' in '${name}' ${slot} — expected '${close}'`, t);
+        return null;
+      }
+      const value = this.parseNumericArg(name, slot, sig);
+      if (value == null) return null;
+      values.push(value);
+    }
+    if (!values.length) {
+      this.error(`'${name}' ${slot} pattern is empty`, open);
+      return null;
+    }
+    return { type: 'numseq', mode, values };
+  }
+
   parseChainFn(program, name, nameTok, sig) {
     // Metric-keyed effects name their driving metric before the numbers:
     // `# room wcl 2 0.4`. The keyword is required — a bare-number form has
@@ -490,14 +659,8 @@ class Parser {
     for (;;) {
       const t = this.peek();
       if (t.type === 'punct' && t.value === '(') {
-        this.error(`'${name}' cannot take pattern arguments — parameters are plain positive numbers`, t);
-        // Skip the parenthesized blob.
-        let depth = 0;
-        while (!this.atEof()) {
-          const p = this.next();
-          if (p.type === 'punct' && p.value === '(') depth++;
-          if (p.type === 'punct' && p.value === ')') { depth--; if (depth === 0) break; }
-        }
+        this.error(`'${name}' cannot take Strudel-call arguments — parameters are plain positive numbers`, t);
+        this.skipParenBlob();
         return;
       }
       if (t.type === 'number' || t.type === 'intlike') {
@@ -521,8 +684,8 @@ class Parser {
 
     // Anything left on the statement that isn't the next directive is junk
     // (e.g. `# grid maybe`).
-    const trailing = this.peek();
-    if (trailing.type !== 'newline' && trailing.type !== 'eof' && trailing.type !== 'sigil') {
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
       this.error(`'${name}' got an unexpected argument '${trailing.value}'`, trailing);
       this.recover();
       return;
@@ -572,7 +735,23 @@ export function resolveEffectParams(chainEntry) {
     // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
     // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
     case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedWclS: args[1] ?? null };
-    case 'echo': return { nSamplesFactor: args[0] ?? 1, magnitudeFeedbackFactor: args[1] ?? 0.1 };
+    // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
+    // per parameter, each carrying its own metric, scale (number or pattern)
+    // and upper bound. Written-out pairs win; anything missing takes the
+    // bare-`# echo` default, and a null bound defers to the metric's own
+    // (av-effects/Echo.js owns both the bounds and the normalization).
+    case 'echo': {
+      const pairs = chainEntry.pairs || [];
+      const bounds = chainEntry.bounds || [];
+      return {
+        slots: ECHO_DEFAULT_SLOTS.map((fallback, i) => ({
+          param: fallback.param,
+          metric: pairs[i] ? pairs[i].metric : fallback.metric,
+          scale: pairs[i] ? pairs[i].value : fallback.scale,
+          bound: bounds[i] ?? fallback.bound
+        }))
+      };
+    }
     case 'crush': return { reductionFactor: args[0] ?? 1 };
     case 'noise': return {};
     case 'grid': return { landmarks: args[0] ?? false };
