@@ -6,7 +6,10 @@ import {
   COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MAX_HZ, CUTOFF_MIN_HZ, MAX_COMB_FEEDBACK
 } from '../src/audio-net/av-effects/Room.js';
 import { echoParams, echoFeedback, FEEDBACK_CEILING } from '../src/audio-net/av-effects/Echo.js';
-import { crushParams, makeCrushCurve } from '../src/audio-net/av-effects/Crush.js';
+import {
+  crushParams, makeCrushCurve, crushMetricAmount,
+  BASE_BIT_DEPTH, MAX_BIT_DEPTH, HALVING_AMOUNTS
+} from '../src/audio-net/av-effects/Crush.js';
 import { noiseTypeForWcpl, noiseParams, fillNoise } from '../src/audio-net/av-effects/Noise.js';
 import { distanceMatrix, gridView, shadeForDistance } from '../src/audio-net/av-effects/Grid.js';
 import { computeChainParams, visualStateFor, EffectsChainManager } from '../src/audio-net/av-effects/index.js';
@@ -124,15 +127,96 @@ test('echo: feedback clamps below unity and survives wcpl = 0 (spec erratum)', (
 
 // --- crush --------------------------------------------------------------------
 
-test('crush: ×2 reduction per 25 % loss, scaled by reduction_factor', () => {
-  assert.equal(crushParams({ wcpl: 0 }).reduction, 1);
-  assert.equal(crushParams({ wcpl: 0.25 }).reduction, 2);
-  assert.equal(crushParams({ wcpl: 0.5 }).reduction, 4);
-  assert.equal(crushParams({ wcpl: 0.5 }, { reductionFactor: 2 }).reduction, 8);
-  const p = crushParams({ wcpl: 0.5 });
-  assert.equal(p.bitDepth, 4);      // 16 / 4
+test('crush: 8-bit resting depth, halved per 100 ms of wcl', () => {
+  const at = (wcl, user) => crushParams({ wcl }, user).bitDepth;
+  assert.equal(at(0), BASE_BIT_DEPTH);   // quiet network → the resting depth
+  assert.equal(at(100), 4);
+  assert.equal(at(200), 2);
+  assert.equal(at(300), 1);
+  assert.equal(at(1000), 1, 'clamped at 1 bit, never below');
+
+  const p = crushParams({ wcl: 200 });
+  assert.equal(p.metric, 'wcl', 'the driving metric travels with the params');
+  assert.equal(p.reduction, 4);
   assert.equal(p.srDivisor, 4);
   assert.equal(p.visualPixelate, 4); // same decimation on pixels
+});
+
+test('crush: the scale factor multiplies the resting depth (higher = less crush)', () => {
+  assert.equal(crushParams({ wcl: 0 }, { scale: 2 }).bitDepth, MAX_BIT_DEPTH);
+  assert.equal(crushParams({ wcl: 100 }, { scale: 2 }).bitDepth, 8);
+  assert.equal(crushParams({ wcl: 200 }, { scale: 2 }).bitDepth, 4);
+  // Below 1 it crushes harder than the default.
+  assert.equal(crushParams({ wcl: 0 }, { scale: 0.5 }).bitDepth, 4);
+  // Scale sets the bit ceiling only: sample-rate decimation follows the
+  // metric, so a quiet room stays undecimated whatever base was asked for.
+  assert.equal(crushParams({ wcl: 0 }, { scale: 0.5 }).srDivisor, 1);
+});
+
+test('crush: every worst-case metric can drive it, each on its own scale', () => {
+  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcj', 'wcl', 'wcpl', 'wcrtt']);
+  const metrics = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
+  // One halving of the 8-bit base for each metric at its own halving amount.
+  for (const metric of Object.keys(HALVING_AMOUNTS)) {
+    assert.equal(crushParams(metrics, { metric }).bitDepth, 4, metric);
+  }
+  // A metric the room has not measured yet reads as 0 — no crush, not NaN.
+  assert.equal(crushParams({}, { metric: 'wcrtt' }).bitDepth, BASE_BIT_DEPTH);
+});
+
+test('crush: a fixed third argument pins the metric, in the metric\'s own unit', () => {
+  // Durations are pinned in SECONDS (as `# room wcl 2 0.4` pins wcl).
+  assert.equal(crushMetricAmount('wcl', { wcl: 9999 }, 0.2), 200);
+  assert.equal(crushParams({ wcl: 9999 }, { fixedMetric: 0.2 }).bitDepth, 2);
+  // Loss is pinned as a fraction.
+  assert.equal(crushMetricAmount('wcpl', { wcpl: 0.9 }, 0.25), 0.25);
+  assert.equal(crushParams({ wcpl: 0.9 }, { metric: 'wcpl', fixedMetric: 0.25 }).bitDepth, 4);
+  // Unpinned still tracks the live metric.
+  assert.equal(crushParams({ wcl: 200 }, { fixedMetric: null }).bitDepth, 2);
+});
+
+test('crush: loss is a fraction whether measured or pinned', () => {
+  // The parser only checks "positive real", so a pinned 5 reaches here as
+  // 500 % loss; clamping keeps the reported reduction meaningful.
+  assert.equal(crushMetricAmount('wcpl', {}, 5), 1);
+  assert.equal(crushParams({}, { metric: 'wcpl', fixedMetric: 5 }).reduction,
+    crushParams({}, { metric: 'wcpl', fixedMetric: 1 }).reduction);
+  assert.equal(crushMetricAmount('wcpl', { wcpl: -0.5 }), 0);
+});
+
+test('crush: a bogus metric falls back rather than poisoning the numbers', () => {
+  // A prototype key must not pass for a metric — `amount / <function>` is NaN,
+  // and a NaN curve reaches the WaveShaper.
+  for (const bogus of ['constructor', 'toString', 'nope', 42, null]) {
+    const p = crushParams({ wcl: 100 }, { metric: bogus });
+    assert.equal(p.metric, 'wcl', String(bogus));
+    assert.ok(Number.isFinite(p.bitDepth) && Number.isFinite(p.srDivisor), String(bogus));
+  }
+  // A non-numeric pin is ignored, not coerced.
+  assert.equal(crushParams({ wcl: 100 }, { fixedMetric: '0.4' }).bitDepth, 4);
+  assert.equal(crushParams({ wcl: 100 }, { scale: '2' }).bitDepth, 4);
+});
+
+test('crush: mini-notation arguments are read off the cycle grid', () => {
+  const metrics = { wcl: 100, wcj: 20 };
+  const alt = { type: 'valueSeq', mode: 'alternate', terms: [1, 2] };
+  // <1 2> on the scale: cycle 0 → 8-bit base, cycle 1 → 16-bit base.
+  assert.equal(crushParams(metrics, { scale: alt }, 0).bitDepth, 4);
+  assert.equal(crushParams(metrics, { scale: alt }, 1).bitDepth, 8);
+  assert.equal(crushParams(metrics, { scale: alt }, 2).bitDepth, 4);
+  // Mid-cycle reads the same value as the boundary did — <> is per cycle.
+  assert.equal(crushParams(metrics, { scale: alt }, 1.75).bitDepth, 8);
+
+  // A patterned METRIC switches what is driving the crush.
+  const metricPat = { type: 'valueSeq', mode: 'alternate', terms: ['wcl', 'wcj'] };
+  assert.equal(crushParams(metrics, { metric: metricPat }, 0).metric, 'wcl');
+  assert.equal(crushParams(metrics, { metric: metricPat }, 1).metric, 'wcj');
+
+  // [] subdivides the cycle instead of alternating across cycles.
+  const sub = { type: 'valueSeq', mode: 'subdivide', terms: [1, 2] };
+  assert.equal(crushParams(metrics, { scale: sub }, 0).bitDepth, 4);
+  assert.equal(crushParams(metrics, { scale: sub }, 0.5).bitDepth, 8);
+  assert.equal(crushParams(metrics, { scale: sub }, 1.25).bitDepth, 4);
 });
 
 test('crush: quantization curve has exactly 2^bits levels', () => {
@@ -208,7 +292,7 @@ test('grid: self is white, farthest peer is black, perspective is local', () => 
 
 test('parsed # chain resolves to full parameter sets and a merged visual state', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0 1>\n# room wcl 2\n# echo 1 0.1\n# crush 1\n# noise\n# grid true\n# ply 2\n'
+    '$ participants <0 1>\n# room wcl 2\n# echo 1 0.1\n# crush wcpl 1\n# noise\n# grid true\n# ply 2\n'
   );
   assert.deepEqual(errors, []);
   const metrics = { wcl: 500, wcj: 5, wcrtt: 60, wcpl: 0.5 };
@@ -229,22 +313,31 @@ test('parsed # chain resolves to full parameter sets and a merged visual state',
 
 // Minimal WebAudio stand-in: enough surface for the crush node, and a call
 // counter so a room node (the only effect built from createDelay) is
-// detectable by its absence.
-function fakeAudioCtx() {
+// detectable by its absence. `onNode` sees every node as it is created, for
+// tests that need to read a node's live settings back.
+function fakeAudioCtx({ onNode = () => {} } = {}) {
   const calls = { createDelay: 0 };
-  const node = () => ({ connect() {}, disconnect() {}, gain: { value: 1 }, frequency: { value: 0 } });
+  const make = (kind, extra = {}) => {
+    const n = {
+      kind, connect() {}, disconnect() {},
+      gain: { value: 1 }, frequency: { value: 0 }, delayTime: { value: 0 }, curve: null,
+      ...extra
+    };
+    onNode(n);
+    return n;
+  };
   return {
     sampleRate: 48000,
     calls,
-    createGain: node,
-    createWaveShaper: node,
-    createBiquadFilter: () => ({ ...node(), type: '' }),
-    createDelay: () => { calls.createDelay++; return node(); }
+    createGain: () => make('gain'),
+    createWaveShaper: () => make('waveshaper'),
+    createBiquadFilter: () => make('biquad', { type: '' }),
+    createDelay: () => { calls.createDelay++; return make('delay'); }
   };
 }
 
 test('room builds no node in the local browser chain — the aggregator master owns it', () => {
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# crush 1\n');
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# crush wcl 1\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
   const inserted = [];
@@ -258,6 +351,45 @@ test('room builds no node in the local browser chain — the aggregator master o
   // crush is nodes[0] even though room precedes it in the chain.
   mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
   assert.equal(ctx.calls.createDelay, 0);
+});
+
+test('patterned arguments re-derive as the cycle advances; constants do not tick', (t) => {
+  const shapers = [];
+  const ctx = fakeAudioCtx({ onNode: (n) => { if (n.kind === 'waveshaper') shapers.push(n); } });
+
+  let cyclePos = 0;
+  const { ast } = parseMetaprogram('$ participants <0>\n# crush wcl <1 2>\n');
+  const mgr = new EffectsChainManager({
+    audioCtx: ctx, insert: () => {}, remove: () => {}, getCyclePosition: () => cyclePos
+  });
+  // setChain arms a real 50 ms interval; without this an assertion failure
+  // below would leave it running and `node --test` would never exit.
+  t.after(() => mgr.dispose());
+
+  // wcl 100 ms halves the base: scale 1 → 4 bits, scale 2 → 8 bits.
+  mgr.setChain(ast.chain, { wcl: 100 });
+  assert.equal(mgr.patternTicking(), true, 'a patterned chain arms the tick');
+  const levels = () => new Set(Array.from(shapers[0].curve).map(v => v.toFixed(6))).size;
+  assert.equal(levels(), 2 ** 4);
+
+  cyclePos = 1;
+  mgr.refresh();
+  assert.equal(levels(), 2 ** 8, 'cycle 1 takes the second element of <1 2>');
+  cyclePos = 2;
+  mgr.refresh();
+  assert.equal(levels(), 2 ** 4, 'and wraps');
+
+  // Metrics still move it within a cycle.
+  mgr.updateMetrics({ wcl: 0 });
+  assert.equal(levels(), 2 ** 8, 'cycle 2 → scale 1 → the plain 8-bit resting depth');
+
+  mgr.dispose();
+  assert.equal(mgr.patternTicking(), false, 'dispose disarms the tick');
+
+  // A constant-argument chain never arms it.
+  const plain = parseMetaprogram('$ participants <0>\n# crush wcl 1\n').ast;
+  mgr.setChain(plain.chain, { wcl: 100 });
+  assert.equal(mgr.patternTicking(), false);
 });
 
 test('a room-only chain inserts nothing locally but still publishes the visual', () => {

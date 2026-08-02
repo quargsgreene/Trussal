@@ -436,19 +436,39 @@ $ participants [0 2 1 4 3]
 
 #### crush
 - Description
-This effect reduces the bit-depth and sample rate for both the incoming audio and video buffer according to wcpl.
+This effect reduces the bit-depth and sample rate for both the incoming audio and video buffer according to a worst-case network metric. 8 bits is the resting depth and the metric eats into it: the depth halves each time the metric climbs by one halving amount, arriving at a 1-bit square wave on a bad enough network. It is bypassed until a performer writes it into the metaprogram — there is no crush on the bus otherwise.
+- Syntax
+`# crush <metric> [scale factor] [amount for metric]`
+
+The metric keyword is required; the bare-number form (`# crush 2`) is not valid. Unlike `# room` and `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
 - Input
 AV buffer object
 - Parameters
-reduction_factor: Bit-depth and sample rate are by default reduced by a factor of 2 per 25% packet loss. This positive real number parameter multiplies this reduction factor.
-An object containing the updated patterns, modified audio sample buffers, and modified pixel buffers.
+scale factor: A positive real number multiplying the 8-bit resting depth: bit_depth = clamp(8 * scale_factor / 2^(metric / halving_amount), 1, 16). Defaults to 1. Raising it crushes **less** (a 2 gives a 16-bit base); a value below 1 crushes harder.
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl/wcj/wcrtt (`# crush wcl 2 0.4` is a fixed 400 ms whatever the network does), a loss fraction for wcpl, clamped to [0, 1].
+
+The halving amounts are per metric, because the metrics are not on one scale: 100 ms of wcl, 20 ms of wcj, 100 ms of wcrtt, or 0.25 of wcpl each halve the depth. The wcpl figure preserves the "a factor of 2 per 25 % packet loss" this effect was first specified with.
+
+**The resting depth is a ceiling, not a typical reading.** wcl is mouth-to-ear — both network legs plus the de-jitter buffer plus each rig's own capture/encode/playout pipeline (40 ms assumed until a rig measures itself) — so a healthy LAN room already sits around 90-150 ms. `# crush wcl 1` therefore rests near 4 bits rather than 8, and `# crush wcl 2` is the line that puts a typical room near 8. wcrtt runs the other way: single-digit on a LAN, so it barely crushes until a room is spread over a WAN.
+
+Sample rate follows the metric alone, not the scale factor: sr_divisor = clamp(round(2^(metric / halving_amount)), 1, 64), a sample-and-hold period that is also the pixel-block edge for the Hydra counterpart. A clean room therefore decimates nothing whatever base depth the performer asked for.
+- Parameters as patterns
+Each of the three may be written as a mini-notation sequence instead of a constant, read once per Net Cycles cycle off the same grid the slots run on: `<a b>` alternates one element per cycle, `[a b]` subdivides the cycle, and the two nest. This applies to the metric keyword as well as the numbers. The value is a pure function of the shared epoch, program, and metrics, so every client reads the same one at the same instant.
 - Return value
 Updated AV buffer object
-- Example:
+- Examples:
 ```
 $ participants [0 2 1 4 3]
-# crush 1.0003
+# crush wcl 2
 # chop 2
+```
+```
+$ participants [0 2 1 4 3]
+# crush wcpl 1 0.25       // pinned at 25 % loss: a steady 4 bits
+```
+```
+$ participants [0 2 1 4 3]
+# crush <wcl wcj> <2 4>   // metric and base depth both turn over per cycle
 ```
 
 #### noise

@@ -4,8 +4,11 @@
 // sequences) but deliberately tiny: one `$ participants` scheduling sequence
 // plus `#`-chained directives (one cyclic timing mode, a tempo, network-
 // modulated AV effects, and a whitelist of Strudel-analog pattern functions).
-// Everything else — arbitrary Strudel calls, any Hydra call, pattern-valued
-// effect arguments — is a validation error.
+// Everything else — arbitrary Strudel calls, any Hydra call, a parenthesized
+// expression anywhere — is a validation error. Effect arguments are plain
+// positive numbers, except where a directive opts in to mini-notation values
+// (`patternArgs`, currently `# crush <wcl wcj> <2 4>`): those parse to a
+// `valueSeq` node the caller reads per cycle via ValuePattern.js.
 //
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
 // in the browser bundle, in bots, and under node:test. Errors carry
@@ -21,13 +24,20 @@ import {
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
+// crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
+// which turns its metric into a duration and has no meaning for a round trip.
+export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
+
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted. `metricKeywords`
 // requires a leading metric word before the numeric args (`# room wcl 2 0.4`).
+// `patternArgs` additionally lets the metric and the numbers be written as
+// mini-notation sequences (`# crush <wcl wcj> <2 4>`), read per cycle.
 const EFFECTS = {
   room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: ['wcl'] }, // scale=1, fixed wcl seconds=live
   echo: { minArgs: 0, maxArgs: 2, kind: 'effect' },   // n_samples_factor=1, magnitude_feedback_factor=0.1
-  crush: { minArgs: 0, maxArgs: 1, kind: 'effect' },  // reduction_factor=1
+  // scale=1 (8-bit base), fixed metric amount=live
+  crush: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: CRUSH_METRICS, patternArgs: true },
   noise: { minArgs: 0, maxArgs: 0, kind: 'effect' },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true } // landmarks=false
 };
@@ -49,7 +59,7 @@ const PATTERN_FNS = {
 export const EFFECT_DEFAULTS = {
   room: { metric: 'wcl', scale: 1, fixedWclS: null },
   echo: { nSamplesFactor: 1, magnitudeFeedbackFactor: 0.1 },
-  crush: { reductionFactor: 1 },
+  crush: { metric: 'wcl', scale: 1, fixedMetric: null },
   noise: {},
   grid: { landmarks: false }
 };
@@ -477,6 +487,89 @@ class Parser {
     program.tempo = { value, unit: unitTok.value };
   }
 
+  // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
+  // (numbers or metric words) rather than over participants, so it needs its
+  // own reader — parseSequenceGroup's elements are participant indices.
+  // `kind` is 'metric' or 'number'; nesting mixes modes freely.
+  parseValueSequence(name, kind, sig) {
+    const open = this.next(); // '<' or '['
+    const close = open.value === '<' ? '>' : ']';
+    const mode = open.value === '<' ? 'alternate' : 'subdivide';
+    const terms = [];
+
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof') {
+        this.error(`unclosed pattern argument to '${name}' — expected '${close}'`, t);
+        return null;
+      }
+      if (t.type === 'newline') { this.next(); continue; } // may wrap lines
+      if (t.type === 'punct' && t.value === close) { this.next(); break; }
+      if (t.type === 'punct' && (t.value === '>' || t.value === ']')) {
+        this.error(`mismatched '${t.value}' — expected '${close}'`, t);
+        this.next();
+        break;
+      }
+      if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        const inner = this.parseValueSequence(name, kind, sig);
+        if (!inner) return null;
+        terms.push(inner);
+        continue;
+      }
+      if (kind === 'metric' && t.type === 'word') {
+        if (!sig.metricKeywords.includes(t.value)) {
+          this.error(`'${t.value}' is not a metric '${name}' can read (${sig.metricKeywords.join('|')})`, t);
+        } else {
+          terms.push(t.value);
+        }
+        this.next();
+        continue;
+      }
+      if (kind === 'number' && (t.type === 'number' || t.type === 'intlike')) {
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+        if (!(val > 0) || !isFinite(val)) {
+          this.error(`'${name}' arguments must be positive real numbers`, t);
+        } else {
+          terms.push(val);
+        }
+        this.next();
+        continue;
+      }
+      if (t.type === 'op') {
+        // `<2@3 4>` — name the modifier rather than letting the leaf error
+        // blame '@' for not being a number, and swallow its operand too so
+        // the 3 is not then read as another element of the sequence.
+        this.error(`'${name}' pattern arguments do not take modifiers ('${t.value}')`, t);
+        this.next();
+        const operand = this.peek();
+        if (operand.type === 'number' || operand.type === 'intlike') this.next();
+        continue;
+      }
+      this.error(
+        kind === 'metric'
+          ? `'${name}' pattern expects metric names (${sig.metricKeywords.join('|')}), got '${t.value}'`
+          : `'${name}' pattern expects positive numbers, got '${t.value}'`,
+        t
+      );
+      this.next();
+    }
+
+    if (!terms.length) {
+      this.error(`empty pattern argument to '${name}'`, open);
+      return null;
+    }
+    // Sequence-level postfix (`<2 4>*2`) has no meaning for a parameter that
+    // is sampled at a point in time — say so rather than letting the generic
+    // trailing-junk error blame the operator's operand.
+    const after = this.peek();
+    if (after.type === 'op') {
+      this.error(`'${name}' pattern arguments do not take modifiers ('${after.value}')`, after);
+      this.recover();
+      return null;
+    }
+    return { type: 'valueSeq', mode, terms, line: open.line, col: open.col };
+  }
+
   parseChainFn(program, name, nameTok, sig) {
     // Metric-keyed effects name their driving metric before the numbers:
     // `# room wcl 2 0.4`. The keyword is required — a bare-number form has
@@ -487,6 +580,9 @@ class Parser {
       if (t.type === 'word' && sig.metricKeywords.includes(t.value)) {
         metric = t.value;
         this.next();
+      } else if (sig.patternArgs && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        metric = this.parseValueSequence(name, 'metric', sig);
+        if (!metric) { this.recover(); return; }
       } else {
         this.error(`'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its arguments`, t);
         this.recover();
@@ -497,7 +593,9 @@ class Parser {
     for (;;) {
       const t = this.peek();
       if (t.type === 'punct' && t.value === '(') {
-        this.error(`'${name}' cannot take pattern arguments — parameters are plain positive numbers`, t);
+        this.error(sig.patternArgs
+          ? `'${name}' arguments are positive numbers or mini-notation patterns like <2 4> — parenthesized expressions cannot be executed in the NetCycles editor`
+          : `'${name}' cannot take pattern arguments — parameters are plain positive numbers`, t);
         // Skip the parenthesized blob.
         let depth = 0;
         while (!this.atEof()) {
@@ -516,6 +614,12 @@ class Parser {
       if (t.type === 'word' && (t.value === 'true' || t.value === 'false')) {
         this.next();
         args.push({ value: t.value === 'true', tok: t });
+        continue;
+      }
+      if (sig.patternArgs && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        const seq = this.parseValueSequence(name, 'number', sig);
+        if (!seq) return;
+        args.push({ value: seq, tok: t });
         continue;
       }
       if (sig.takesSequence && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
@@ -580,7 +684,10 @@ export function resolveEffectParams(chainEntry) {
     // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
     case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedWclS: args[1] ?? null };
     case 'echo': return { nSamplesFactor: args[0] ?? 1, magnitudeFeedbackFactor: args[1] ?? 0.1 };
-    case 'crush': return { reductionFactor: args[0] ?? 1 };
+    // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
+    // halved as the metric climbs. Any of the three may be a valueSeq node
+    // (`# crush <wcl wcj> <2 4>`); crushParams reads them per cycle.
+    case 'crush': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
     case 'noise': return {};
     case 'grid': return { landmarks: args[0] ?? false };
     default: return { args };

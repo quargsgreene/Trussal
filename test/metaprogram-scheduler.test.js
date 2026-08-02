@@ -616,6 +616,87 @@ test('stop() halts emission; restart resumes from a fresh epoch', () => {
   assert.equal(events.length, n);
 });
 
+test('getCyclePosition reports fractional cycles for patterned effect arguments', () => {
+  // wcl 900 ms, factor 3, 120 bpm → 3 s cycles (as above).
+  const { sched, advance, nowRef } = makeScheduler(
+    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+  );
+  assert.equal(sched.getCyclePosition(0), null, 'no grid before start()');
+  sched.start(0);
+  advance(0);
+  assert.equal(sched.getCyclePosition(nowRef()), 0);
+  advance(1.5);
+  assert.equal(sched.getCyclePosition(nowRef()), 0.5, 'halfway through cycle 0');
+  advance(3);
+  assert.equal(sched.getCyclePosition(nowRef()), 1);
+  advance(7.5);
+  assert.equal(sched.getCyclePosition(nowRef()), 2.5);
+  // The lookahead schedules cycles ahead of the clock; the position must
+  // follow the clock, not the furthest boundary already emitted.
+  assert.equal(sched.getCyclePosition(6.0), 2);
+});
+
+test('getCyclePosition tracks the boundaries actually emitted, not a live division', () => {
+  // A cycle-length change mid-run must not renumber the cycles already past:
+  // 1 s cycles for three of them, then 2 s. Dividing elapsed time by the
+  // current length would read cycle 1.5 where the grid says 3.
+  const { sched, advance, nowRef } = makeScheduler(
+    '$ participants <0>\n# cycles wcl 1 1\n', { wcl: 0 }
+  );
+  sched.start(0);
+  advance(2.5);
+  assert.equal(sched.getCyclePosition(nowRef()), 2.5);
+  sched.setMetrics({ wcl: 0 });
+  sched.setProgram(astOf('$ participants <0>\n# cycles wcl 1 2\n'));
+  advance(3.0);
+  assert.equal(sched.getCyclePosition(nowRef()), 3, 'boundary 3 is still cycle 3');
+  advance(4.0);
+  assert.equal(sched.getCyclePosition(nowRef()), 3.5, 'now halfway through a 2 s cycle');
+});
+
+test('a fast grid keeps the cycle containing now, however far the lookahead runs', () => {
+  // 900 bpm → 1-beat cycles of ~0.067 s, so the 0.2 s lookahead schedules
+  // several boundaries AHEAD of the clock every tick. Trimming the retained
+  // grid by count alone would evict the cycle that is actually sounding and
+  // freeze every value pattern on its first element.
+  const { sched, advance, nowRef } = makeScheduler(
+    '$ participants <0>\n# tempo 900 bpm\n', { wcl: 0 }
+  );
+  sched.start(0);
+  for (let t = 0; t <= 2; t += 0.05) {
+    advance(t);
+    const pos = sched.getCyclePosition(nowRef());
+    assert.ok(pos != null, `no position at t=${t.toFixed(2)}`);
+    assert.ok(Math.abs(pos - t / (60 / 900)) < 1, `position adrift at t=${t.toFixed(2)}`);
+  }
+});
+
+test('a stopped grid has no position rather than a frozen one', () => {
+  const { sched, advance, nowRef } = makeScheduler(
+    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+  );
+  sched.start(0);
+  advance(1.5);
+  assert.equal(sched.getCyclePosition(nowRef()), 0.5);
+  sched.stop();
+  assert.equal(sched.getCyclePosition(nowRef()), null, 'not a plausible-looking stale value');
+});
+
+test('a re-anchor drops the old grid rather than reading a position off it', () => {
+  const { sched, advance, nowRef } = makeScheduler(
+    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+  );
+  sched.start(0);
+  advance(3);
+  assert.equal(sched.getCyclePosition(nowRef()), 1);
+  advance(-60); // clock jumped backwards past everything scheduled
+  const pos = sched.getCyclePosition(nowRef());
+  assert.equal(pos, 2, 'the counter keeps going across a re-anchor; only the clock moved');
+  assert.equal(pos % 1, 0, 'and lands on a boundary, not partway through an abandoned cycle');
+  // An instant from the discarded grid no longer resolves against it.
+  assert.ok(sched.getCyclePosition(1) >= 2);
+});
+
 // --- Deliberate program text edits -------------------------------------------------------
 
 test('append/remove helpers edit the sequence text; user text is preserved', () => {
