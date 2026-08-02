@@ -65,8 +65,23 @@ test('a missing or nonsensical cycle position reads the first element', () => {
   assert.equal(evaluateValuePattern(p), 1);
   assert.equal(evaluateValuePattern(p, null), 1);
   assert.equal(evaluateValuePattern(p, NaN), 1);
-  assert.equal(evaluateValuePattern(p, -5), 1, 'before the epoch is not cycle -5');
   assert.equal(evaluateValuePattern({ type: 'valueSeq', mode: 'alternate', terms: [] }, 3), null);
+});
+
+test('a position before the epoch keeps counting backwards rather than clamping', () => {
+  // Negative positions are produced deliberately: the scheduler emits each
+  // cycle-start a lookahead EARLY, so between the event and the boundary the
+  // position sits before the grid's origin and still names the previous cycle
+  // (see cyclePosition in Metaprogrammer.js, which leaves the arithmetic
+  // unclamped on the understanding that consumers floor-mod). Clamping to the
+  // first element would make every argument misread for that whole window.
+  const p = alt(1, 2);
+  assert.equal(evaluateValuePattern(p, -1), 2, 'the cycle before 0 is the last element');
+  assert.equal(evaluateValuePattern(p, -2), 1);
+  assert.equal(evaluateValuePattern(p, -5), 2);
+  // …and it stays continuous across the boundary rather than jumping.
+  assert.equal(evaluateValuePattern(p, -0.25), 2, 'still in cycle -1');
+  assert.equal(evaluateValuePattern(p, 0.25), 1, 'now in cycle 0');
 });
 
 test('chains report whether anything in them needs a per-cycle re-read', () => {

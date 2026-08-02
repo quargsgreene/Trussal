@@ -31,9 +31,18 @@ export function isValuePattern(node) {
 // True when any argument of this chain entry is patterned — the caller needs
 // to know whether params must be re-derived as the cycle advances, or only
 // when metrics change.
+//
+// Both argument shapes count, since a directive uses one or the other: the
+// positional `args` (with `metric` in front) that `# crush` and `# room` take,
+// and the metric/scale `pairs` plus `bounds` that `# echo` takes.
 export function entryHasValuePattern(entry) {
   if (!entry) return false;
-  const candidates = [entry.metric, ...(entry.args || [])];
+  const candidates = [
+    entry.metric,
+    ...(entry.args || []),
+    ...(entry.pairs || []).map(p => p && p.value),
+    ...(entry.bounds || [])
+  ];
   return candidates.some(isValuePattern);
 }
 
@@ -47,12 +56,17 @@ export function evaluateValuePattern(node, cyclePos = 0) {
   if (!isValuePattern(node)) return node;
   const terms = node.terms || [];
   if (!terms.length) return null;
-  const pos = Number.isFinite(cyclePos) && cyclePos > 0 ? cyclePos : 0;
+  // Negative positions are real, not a caller's mistake: the scheduler emits
+  // each cycle-start a lookahead EARLY, so between the event and the boundary
+  // the position sits before the grid's origin and correctly still names the
+  // previous cycle. Floor-mod rather than clamping, so -1 selects the last
+  // element instead of indexing off the end of the array.
+  const pos = Number.isFinite(cyclePos) ? cyclePos : 0;
   const cycle = Math.floor(pos);
   const phase = pos - cycle;
 
   if (node.mode === 'alternate') {
-    const i = cycle % terms.length;
+    const i = ((cycle % terms.length) + terms.length) % terms.length;
     // A nested sequence sees one cycle per VISIT, not per outer cycle: in
     // `<a <c d>>` the inner alternation advances on each pass of the outer
     // one, as it does in Strudel. Passing `cycle` straight down instead would
