@@ -41,6 +41,26 @@ test('computeWorstCaseMetrics over a mixed roster', () => {
   assert.equal(wc.sampleCount, 2);
 });
 
+test('wcj prefers the media path, falling back to WS ping/pong per peer', () => {
+  // rtcJitter is RTP inter-arrival jitter on the audio path; `jitter` is the
+  // stdev of the WS ping/pong to the sidecar — a different leg. The media
+  // figure wins wherever it exists, exactly as rtcRtt does for wcrtt.
+  const wc = computeWorstCaseMetrics([
+    { jitter: 40, rtcJitter: 3 },   // signalling leg noisy, media path calm
+    { jitter: 1, rtcJitter: 5 },
+  ]);
+  assert.equal(wc.wcj, 5, 'the worst MEDIA jitter, not the worst ping/pong stdev');
+
+  const mixed = computeWorstCaseMetrics([
+    { jitter: 40, rtcJitter: 3 },   // measured: contributes 3
+    { jitter: 9 },                  // no RTCStats sample yet: contributes 9
+  ]);
+  assert.equal(mixed.wcj, 9, 'a peer with no media sample still contributes its fallback');
+
+  const none = computeWorstCaseMetrics([{ rtcRtt: 10 }]);
+  assert.equal(none.wcj, 0, 'no jitter of either kind degenerates to 0, not NaN');
+});
+
 test('the de-jitter buffer is measured, and normally dominates wcl', () => {
   const peers = [
     { rtcRtt: 6, jitterBufferMs: 55 },   // a WiFi human

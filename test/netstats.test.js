@@ -10,14 +10,42 @@ const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const poll1 = JSON.parse(readFileSync(join(fixturesDir, 'rtcstats-poll1.json'), 'utf8'));
 const poll2 = JSON.parse(readFileSync(join(fixturesDir, 'rtcstats-poll2.json'), 'utf8'));
 
-test('first poll: RTT from selected candidate pair, jitter is worst stream, lifetime loss', () => {
+test('first poll: RTT from selected candidate pair, jitter is worst AUDIO stream, lifetime loss', () => {
   const { sample, totals } = deriveNetSample(poll1, null);
   assert.equal(sample.rtcRtt, 62); // 0.062 s → ms, not the failed pair's 900
-  assert.equal(sample.rtcJitter, 11); // video stream's 0.011 s is the worst
+  // Worst audio jitter across both directions: inbound 0.004 s and the far
+  // end's 0.006 s on our outbound. The video stream's 0.011 s is EXCLUDED —
+  // see the audio-only test below for why that matters.
+  assert.equal(sample.rtcJitter, 6);
   // Lifetime totals on the first poll: (100+400) / (100+400+9000+45000)
   assert.ok(Math.abs(sample.packetLoss - 500 / 54500) < 1e-9);
   assert.deepEqual(totals, { lost: 500, received: 54000, jbDelay: 0, jbEmitted: 0 });
   assert.equal(sample.jitterBufferMs, null, 'fixture reports no buffer stats');
+});
+
+test('rtcJitter is audio-only, so turning a camera on cannot change WCJ', () => {
+  // rtcJitter drives WCJ, which paces turns and tunes the echo. Video on the
+  // same connection routinely jitters an order of magnitude more than Opus;
+  // unfiltered it wins the max and the room's musical timing would track
+  // whether cameras happen to be on.
+  const audioOnly = [
+    { type: 'inbound-rtp', kind: 'audio', jitter: 0.003, packetsReceived: 500, packetsLost: 0 }
+  ];
+  const withVideo = [
+    ...audioOnly,
+    { type: 'inbound-rtp', kind: 'video', jitter: 0.09, packetsReceived: 9000, packetsLost: 0 }
+  ];
+  assert.equal(deriveNetSample(audioOnly, null).sample.rtcJitter, 3);
+  assert.equal(deriveNetSample(withVideo, null).sample.rtcJitter, 3,
+    'a 90 ms video stream must not become the room worst-case jitter');
+
+  // Legacy reports label the stream `mediaType` instead of `kind`.
+  const legacy = [{ type: 'inbound-rtp', mediaType: 'audio', jitter: 0.005, packetsReceived: 10, packetsLost: 0 }];
+  assert.equal(deriveNetSample(legacy, null).sample.rtcJitter, 5, 'mediaType is honoured as an alias');
+
+  // Neither field present: not assumed to be audio.
+  const unlabelled = [{ type: 'inbound-rtp', jitter: 0.07, packetsReceived: 10, packetsLost: 0 }];
+  assert.equal(deriveNetSample(unlabelled, null).sample.rtcJitter, null);
 });
 
 test('second poll derives loss from the delta, not the lifetime average', () => {

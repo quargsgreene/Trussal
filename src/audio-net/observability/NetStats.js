@@ -21,7 +21,11 @@ const POLL_INTERVAL_MS = 2000;
 //
 //   rtcRtt     ms — selected candidate-pair currentRoundTripTime, falling
 //              back to remote-inbound-rtp roundTripTime (both arrive in s).
-//   rtcJitter  ms — worst inbound-rtp jitter (arrives in s).
+//   rtcJitter  ms — worst AUDIO-only inbound/remote-inbound-rtp jitter
+//              (arrives in s). Audio-only because this is what WCJ is built
+//              from, and video jitter on the same connection would otherwise
+//              dominate the max. Note jitterBufferMs below is NOT filtered
+//              this way — it still sums every kind.
 //   jitterBufferMs ms — receive-side de-jitter buffer delay, measured as the
 //              DELTA of inbound-rtp jitterBufferDelay / jitterBufferEmittedCount
 //              since prevTotals. This is normally the single largest term in
@@ -55,6 +59,14 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
     rtcRtt = selected.currentRoundTripTime * 1000;
   }
 
+  // rtcJitter drives WCJ, which paces turns and tunes the echo — musical
+  // timing, so it must describe the AUDIO a performer hears. Video streams
+  // routinely jitter an order of magnitude more than Opus on the same
+  // connection, and unfiltered they win the max: WCJ would then track whether
+  // cameras are on. `kind` is the modern field, `mediaType` the legacy alias;
+  // a stat carrying neither is not assumed to be audio.
+  const isAudio = (s) => (s.kind ?? s.mediaType) === 'audio';
+
   for (const s of entries) {
     if (!s) continue;
     if (s.type === 'remote-inbound-rtp') {
@@ -62,12 +74,12 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
       if (rtcRtt == null && typeof s.roundTripTime === 'number') {
         rtcRtt = s.roundTripTime * 1000;
       }
-      if (typeof s.jitter === 'number') {
+      if (typeof s.jitter === 'number' && isAudio(s)) {
         rtcJitter = Math.max(rtcJitter ?? 0, s.jitter * 1000);
       }
     } else if (s.type === 'inbound-rtp') {
       sawInbound = true;
-      if (typeof s.jitter === 'number') {
+      if (typeof s.jitter === 'number' && isAudio(s)) {
         rtcJitter = Math.max(rtcJitter ?? 0, s.jitter * 1000);
       }
       if (typeof s.packetsLost === 'number') lost += s.packetsLost;

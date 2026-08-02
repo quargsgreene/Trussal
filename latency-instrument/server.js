@@ -133,6 +133,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       jitter: record.jitter,
       packetLoss: record.packetLoss,
       rtcRtt: record.rtcRtt,
+      rtcJitter: record.rtcJitter,
       jitterBufferMs: record.jitterBufferMs,
       pipelineMs: record.pipelineMs,
       isBot: record.isBot,
@@ -262,6 +263,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       jitterBufferMs: null,
       pipelineMs: null,
       rtcRtt: null,
+      rtcJitter: null,
       isBot: false,
       // The one bot per room that gathers every participant's audio and streams
       // back the assembled master. Listening clients silence every OTHER peer so
@@ -607,29 +609,37 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // Network metrics broadcast so each peer's effects chain (and the
           // shared worst-case cycle math) everywhere uses that peer's own
           // network conditions rather than the viewer's. rtt/jitter come from
-          // the WS ping/pong fallback; packetLoss (0..1) and rtcRtt (ms) come
-          // from RTCStatsReport polling when available.
+          // the WS ping/pong fallback (the signalling leg to this sidecar);
+          // packetLoss (0..1), rtcRtt and rtcJitter (ms) come from
+          // RTCStatsReport polling of the media path when available.
+          //
+          // The RTCStats fields are three-state: a number sets, an explicit
+          // null CLEARS (the client looked and found nothing), and an absent
+          // key leaves the last value alone. Relaying the clear is what stops
+          // a peer that has stopped receiving media from pinning the room's
+          // worst-case metrics to a reading nothing stands behind.
           if (typeof msg.rtt === 'number') record.rtt = msg.rtt;
           if (typeof msg.jitter === 'number') record.jitter = msg.jitter;
-          if (typeof msg.packetLoss === 'number') record.packetLoss = msg.packetLoss;
-          if (typeof msg.jitterBufferMs === 'number') record.jitterBufferMs = msg.jitterBufferMs;
-          if (typeof msg.pipelineMs === 'number') record.pipelineMs = msg.pipelineMs;
-          if (typeof msg.rtcRtt === 'number') record.rtcRtt = msg.rtcRtt;
+          for (const key of ['packetLoss', 'jitterBufferMs', 'pipelineMs', 'rtcRtt', 'rtcJitter']) {
+            if (msg[key] === undefined) continue;
+            record[key] = typeof msg[key] === 'number' ? msg[key] : null;
+          }
           const room = rooms.get(roomName);
           if (room) broadcast(room, peerId, {
             type: 'peer-update',
             peerId,
             patch: {
               rtt: record.rtt, jitter: record.jitter, packetLoss: record.packetLoss,
-              rtcRtt: record.rtcRtt, jitterBufferMs: record.jitterBufferMs,
-            pipelineMs: record.pipelineMs,
+              rtcRtt: record.rtcRtt, rtcJitter: record.rtcJitter,
+              jitterBufferMs: record.jitterBufferMs,
               pipelineMs: record.pipelineMs
             }
           });
           logEvent(roomName, 'metrics', {
             roomIndex: record.roomIndex,
             rtt: record.rtt, jitter: record.jitter, packetLoss: record.packetLoss,
-            rtcRtt: record.rtcRtt, jitterBufferMs: record.jitterBufferMs
+            rtcRtt: record.rtcRtt, rtcJitter: record.rtcJitter,
+            jitterBufferMs: record.jitterBufferMs, pipelineMs: record.pipelineMs
           });
           break;
         }

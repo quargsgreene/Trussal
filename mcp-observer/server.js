@@ -81,8 +81,21 @@ function observeRoom(roomName) {
             logEvent(roomName, 'pattern', { peerId: msg.peerId, pattern: msg.patch.pattern });
           if (msg.patch.playing !== undefined)
             logEvent(roomName, msg.patch.playing ? 'play' : 'stop', { peerId: msg.peerId });
-          if (msg.patch.rtt !== undefined)
-            logEvent(roomName, 'metrics', { peerId: msg.peerId, rtt: msg.patch.rtt, jitter: msg.patch.jitter });
+          // Log the media-path fields too, not just the WS ping/pong leg:
+          // WCRTT and WCJ are derived from rtcRtt/rtcJitter wherever those
+          // exist, so a log carrying only rtt/jitter cannot explain the
+          // worst-case numbers a room is actually running on. Keyed off the
+          // patch carrying ANY metric, since an RTCStats-only poll sends no
+          // rtt at all.
+          if (msg.patch.rtt !== undefined || msg.patch.rtcRtt !== undefined ||
+              msg.patch.rtcJitter !== undefined || msg.patch.packetLoss !== undefined)
+            logEvent(roomName, 'metrics', {
+              peerId: msg.peerId,
+              rtt: msg.patch.rtt, jitter: msg.patch.jitter,
+              rtcRtt: msg.patch.rtcRtt, rtcJitter: msg.patch.rtcJitter,
+              packetLoss: msg.patch.packetLoss,
+              jitterBufferMs: msg.patch.jitterBufferMs, pipelineMs: msg.patch.pipelineMs
+            });
           break;
         }
       }

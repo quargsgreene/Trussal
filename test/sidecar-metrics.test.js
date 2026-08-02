@@ -1,6 +1,11 @@
 // Integration: the latency sidecar relays the extended metrics fields
-// (packetLoss, rtcRtt) alongside the existing rtt/jitter, and includes them
-// in the roster snapshot for late joiners.
+// (packetLoss, rtcRtt, rtcJitter, jitterBufferMs, pipelineMs) alongside the
+// existing rtt/jitter, and includes them in the roster snapshot for late
+// joiners.
+//
+// The transport leg is tested because it is where these fields get silently
+// dropped: rtcJitter was measured by NetStats for months and never reached
+// any peer, because nothing here asserted it survived the round trip.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,18 +66,52 @@ test('metrics broadcast carries packetLoss and rtcRtt to other peers', async () 
     const joined = await waitFor(a, m => m.type === 'peer-join');
     const bPeerId = joined.peer.peerId;
 
-    send(b, { type: 'metrics', rtt: 42, jitter: 1.5, packetLoss: 0.12, rtcRtt: 66 });
+    send(b, {
+      type: 'metrics', rtt: 42, jitter: 1.5, packetLoss: 0.12,
+      rtcRtt: 66, rtcJitter: 2.75, jitterBufferMs: 48, pipelineMs: 31
+    });
     const update = await waitFor(a, m => m.type === 'peer-update' && m.peerId === bPeerId && m.patch.packetLoss != null);
     assert.equal(update.patch.rtt, 42);
     assert.equal(update.patch.jitter, 1.5);
     assert.equal(update.patch.packetLoss, 0.12);
     assert.equal(update.patch.rtcRtt, 66);
+    assert.equal(update.patch.rtcJitter, 2.75, 'media jitter reaches other peers');
+    assert.equal(update.patch.jitterBufferMs, 48);
+    assert.equal(update.patch.pipelineMs, 31);
 
     // Partial update (RTCStats only) keeps the previously stored WS values.
     send(b, { type: 'metrics', packetLoss: 0.3 });
     const update2 = await waitFor(a, m => m.type === 'peer-update' && m.peerId === bPeerId && m.patch.packetLoss === 0.3);
     assert.equal(update2.patch.rtt, 42);
     assert.equal(update2.patch.rtcRtt, 66);
+    assert.equal(update2.patch.rtcJitter, 2.75, 'an absent key leaves the stored value alone');
+
+    a.ws.close(); b.ws.close();
+  });
+});
+
+test('an explicit null CLEARS a stored metric rather than being ignored', async () => {
+  // A peer that stops receiving media reports rtcJitter: null. If the sidecar
+  // ignored the null the last reading would be rebroadcast forever, pinning
+  // the room's WCJ (and so its turn length) to a dead measurement.
+  await withServer(async (port) => {
+    const a = await connect(port, 'r3');
+    send(a, { type: 'hello', jitsiId: 'jit-a', displayName: 'A' });
+    await waitFor(a, m => m.type === 'roster');
+    const b = await connect(port, 'r3');
+    send(b, { type: 'hello', jitsiId: 'jit-b', displayName: 'B' });
+    await waitFor(b, m => m.type === 'roster');
+    const joined = await waitFor(a, m => m.type === 'peer-join');
+    const bPeerId = joined.peer.peerId;
+
+    send(b, { type: 'metrics', rtt: 20, jitter: 1, rtcRtt: 30, rtcJitter: 9 });
+    await waitFor(a, m => m.type === 'peer-update' && m.peerId === bPeerId && m.patch.rtcJitter === 9);
+
+    send(b, { type: 'metrics', rtcRtt: 30, rtcJitter: null });
+    const cleared = await waitFor(a, m => m.type === 'peer-update' && m.peerId === bPeerId && m.patch.rtcJitter === null);
+    assert.equal(cleared.patch.rtcJitter, null, 'the clear is relayed');
+    assert.equal(cleared.patch.rtcRtt, 30, 'a sibling field measured in the same poll survives');
+    assert.equal(cleared.patch.rtt, 20, 'the WS fallback leg is untouched by an RTCStats clear');
 
     a.ws.close(); b.ws.close();
   });

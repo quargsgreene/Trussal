@@ -48,6 +48,7 @@ const localPeer = {
   jitter: null,
   packetLoss: null,
   rtcRtt: null,
+  rtcJitter: null,
   jitterBufferMs: null,
   pipelineMs: null,
   canEditMetaprogram: !LOCAL_IS_BOT,
@@ -227,6 +228,7 @@ function applyPatch(peer, patch) {
   if (typeof patch.jitter === 'number' || patch.jitter === null) peer.jitter = patch.jitter;
   if (typeof patch.packetLoss === 'number' || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
   if (typeof patch.rtcRtt === 'number' || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+  if (typeof patch.rtcJitter === 'number' || patch.rtcJitter === null) peer.rtcJitter = patch.rtcJitter;
   if (typeof patch.jitterBufferMs === 'number' || patch.jitterBufferMs === null) peer.jitterBufferMs = patch.jitterBufferMs;
   if (typeof patch.pipelineMs === 'number' || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
   if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
@@ -249,6 +251,9 @@ function defaultPeer(peerId) {
     jitter: null,
     packetLoss: null,
     rtcRtt: null,
+    rtcJitter: null,
+    jitterBufferMs: null,
+    pipelineMs: null,
     canEditMetaprogram: true,
     canWriteModulation: true
   };
@@ -482,24 +487,49 @@ export function getAllPeers() {
 
 export function getMyPeerId() { return myPeerId; }
 export function getLocalMetrics() {
-  return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
+  return {
+    rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss,
+    rtcRtt: localPeer.rtcRtt, rtcJitter: localPeer.rtcJitter
+  };
 }
 
+const NET_STAT_FIELDS = ['rtcRtt', 'rtcJitter', 'packetLoss', 'jitterBufferMs', 'pipelineMs'];
+
 // RTCStats-derived sample from NetStats.js. rtt/jitter keep their WS
-// ping/pong semantics (fallback path); packetLoss and rtcRtt ride the same
-// `metrics` broadcast so every browser computes identical worst-case values.
-export function sendLocalNetStats({ rtcRtt = null, packetLoss = null, jitterBufferMs = null, pipelineMs = null } = {}) {
-  if (typeof rtcRtt === 'number' && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
-  if (typeof packetLoss === 'number' && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
-  if (typeof jitterBufferMs === 'number' && isFinite(jitterBufferMs)) localPeer.jitterBufferMs = jitterBufferMs;
-  if (typeof pipelineMs === 'number' && isFinite(pipelineMs)) localPeer.pipelineMs = pipelineMs;
+// ping/pong semantics (fallback path); rtcRtt/rtcJitter (media path) and
+// packetLoss ride the same `metrics` broadcast so every browser computes
+// identical worst-case values.
+//
+// rtcJitter is the RTP inter-arrival jitter of the audio actually being
+// played, so it belongs to the same media path as rtcRtt and the de-jitter
+// buffer that WCL is built from. The WS ping/pong `jitter` measures the
+// signalling leg to the sidecar instead, and stays only as the fallback for
+// a peer with no RTCStats sample yet.
+//
+// Each field is three-state. A NUMBER sets it; an explicit `null` means
+// "looked, nothing there" and CLEARS it, locally and over the wire; an ABSENT
+// key means "not reporting on this field" and leaves it untouched. That last
+// distinction is what lets the two callers compose — NetStats always passes
+// all four of its fields (null where the stat was missing) while
+// PipelineLatency sends `{ pipelineMs }` alone, and neither clobbers the
+// other. Only the keys actually supplied are broadcast.
+//
+// Without the clear, a value that stops being measured is rebroadcast
+// forever: a peer left alone in a room has no inbound-rtp at all, but the
+// candidate pair still yields rtcRtt, so every poll would keep re-sending the
+// last jitter reading and pin the room's WCJ — and so its turn length — to a
+// measurement with nothing behind it.
+export function sendLocalNetStats(sample = {}) {
   const msg = { type: 'metrics' };
-  if (typeof localPeer.rtcRtt === 'number') msg.rtcRtt = localPeer.rtcRtt;
-  if (typeof localPeer.packetLoss === 'number') msg.packetLoss = localPeer.packetLoss;
-  if (typeof localPeer.jitterBufferMs === 'number') msg.jitterBufferMs = localPeer.jitterBufferMs;
-  if (typeof localPeer.pipelineMs === 'number') msg.pipelineMs = localPeer.pipelineMs;
-  if (msg.rtcRtt === undefined && msg.packetLoss === undefined &&
-      msg.jitterBufferMs === undefined && msg.pipelineMs === undefined) return;
+  let reported = false;
+  for (const key of NET_STAT_FIELDS) {
+    const value = sample[key];
+    if (value === undefined) continue;
+    localPeer[key] = (typeof value === 'number' && isFinite(value)) ? value : null;
+    msg[key] = localPeer[key];
+    reported = true;
+  }
+  if (!reported) return;
   safeSend(msg);
   emit('local-metrics', getLocalMetrics());
   emit('peer-upsert', localPeer);

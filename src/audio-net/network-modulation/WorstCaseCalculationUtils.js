@@ -46,6 +46,18 @@ function peerRtt(peer) {
   return null;
 }
 
+// Same media-path-first rule as peerRtt. `rtcJitter` is the RTP inter-arrival
+// jitter of the audio a peer is actually receiving, which is the quantity WCJ
+// is supposed to describe and the one that belongs with the rest of WCL's
+// inputs (rtcRtt, jitterBufferMs). `jitter` is the stdev of the WS ping/pong
+// RTT to the sidecar — a different network leg entirely (signalling, through
+// nginx), kept only as the fallback for a peer with no RTCStats sample yet.
+function peerJitter(peer) {
+  if (typeof peer.rtcJitter === 'number' && isFinite(peer.rtcJitter)) return peer.rtcJitter;
+  if (typeof peer.jitter === 'number' && isFinite(peer.jitter)) return peer.jitter;
+  return null;
+}
+
 // Fallback for a rig that has not reported a measured pipeline latency yet —
 // a peer that just joined, or a client too old to run the loopback. Rigs
 // MEASURE this for real (see observability/PipelineLatency.js: a local
@@ -93,7 +105,8 @@ export function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
 
 // Worst-case metrics over the whole roster:
 //   wcl   worst-case one-way mouth-to-ear latency, ms (see above)
-//   wcj   worst-case jitter, ms
+//   wcj   worst-case RTP inter-arrival jitter on the media path, ms —
+//         the WS ping/pong figure only for peers with no RTCStats sample yet
 //   wcrtt worst-case round-trip time, ms
 //   wcpl  worst-case packet loss, fraction in [0, 1]
 //
@@ -116,7 +129,8 @@ export function computeWorstCaseMetrics(peers) {
     if (!peer) continue;
     const rtt = peerRtt(peer);
     if (rtt != null) rtts.push(rtt);
-    if (typeof peer.jitter === 'number' && isFinite(peer.jitter)) jitters.push(peer.jitter);
+    const jitter = peerJitter(peer);
+    if (jitter != null) jitters.push(jitter);
     if (typeof peer.jitterBufferMs === 'number' && isFinite(peer.jitterBufferMs)) {
       jitterBuffers.push(peer.jitterBufferMs);
     }

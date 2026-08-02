@@ -294,6 +294,8 @@ Each rig measures its own audio pipeline by loopback — a local RTCPeerConnecti
 
 That cycle length is also the length of each performer's TURN: the aggregator paces its rotation off the scheduler's `slot-open`/`slot-close` grid, so a degrading room stretches every solo and a recovering one tightens them. The join-order write pointer's fixed `slotMs` remains only as the fallback before the first slot arrives, and in standalone runs with no metaprogram sync.
 
+WCJ is the worst-case **audio** RTP inter-arrival jitter across the room, read from RTCStats on the media path — the same path WCL's own terms come from. (It falls back to the WebSocket ping/pong RTT stdev, a different and much noisier leg, only for a peer that has not produced an RTCStats sample yet.) Video streams are excluded, so WCJ does not move when a camera is switched on. On a LAN this puts WCJ in the low single-digit milliseconds, an order of magnitude below the WS figure that preceded it — scale factors calibrated against the old value, including Echo's `n_samples_factor`, produce correspondingly shorter results.
+
 The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl`/`wcj` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
 
 Examples:
