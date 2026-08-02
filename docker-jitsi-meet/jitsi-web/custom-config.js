@@ -355,6 +355,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
     if (typeof patch.packetLoss === "number" || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
     if (typeof patch.rtcRtt === "number" || patch.rtcRtt === null) peer.rtcRtt = patch.rtcRtt;
+    if (typeof patch.rtcJitter === "number" || patch.rtcJitter === null) peer.rtcJitter = patch.rtcJitter;
     if (typeof patch.jitterBufferMs === "number" || patch.jitterBufferMs === null) peer.jitterBufferMs = patch.jitterBufferMs;
     if (typeof patch.pipelineMs === "number" || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
     if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
@@ -376,6 +377,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       jitter: null,
       packetLoss: null,
       rtcRtt: null,
+      rtcJitter: null,
+      jitterBufferMs: null,
+      pipelineMs: null,
       canEditMetaprogram: true,
       canWriteModulation: true
     };
@@ -446,8 +450,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       case "nc-active":
         activeNetCyclesToken = typeof msg.token === "string" ? msg.token : null;
         activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
+        activeNetCyclesKind = msg.kind === "rest" ? "rest" : null;
         document.dispatchEvent(new CustomEvent("trussal-netcycles-active", {
-          detail: { token: activeNetCyclesToken, index: activeNetCyclesIndex }
+          detail: {
+            token: activeNetCyclesToken,
+            index: activeNetCyclesIndex,
+            kind: activeNetCyclesKind
+          }
         }));
         break;
       case "remote-control": {
@@ -503,6 +512,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getActiveNetCyclesIndex() {
     return activeNetCyclesIndex;
   }
+  function getActiveNetCyclesKind() {
+    return activeNetCyclesKind;
+  }
   function getAllPeers() {
     const all3 = [];
     const seenJitsiIds = /* @__PURE__ */ new Set();
@@ -518,19 +530,25 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return all3;
   }
   function getLocalMetrics() {
-    return { rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss, rtcRtt: localPeer.rtcRtt };
+    return {
+      rtt: localRtt,
+      jitter: localJitter,
+      packetLoss: localPeer.packetLoss,
+      rtcRtt: localPeer.rtcRtt,
+      rtcJitter: localPeer.rtcJitter
+    };
   }
-  function sendLocalNetStats({ rtcRtt = null, packetLoss = null, jitterBufferMs = null, pipelineMs = null } = {}) {
-    if (typeof rtcRtt === "number" && isFinite(rtcRtt)) localPeer.rtcRtt = rtcRtt;
-    if (typeof packetLoss === "number" && isFinite(packetLoss)) localPeer.packetLoss = packetLoss;
-    if (typeof jitterBufferMs === "number" && isFinite(jitterBufferMs)) localPeer.jitterBufferMs = jitterBufferMs;
-    if (typeof pipelineMs === "number" && isFinite(pipelineMs)) localPeer.pipelineMs = pipelineMs;
+  function sendLocalNetStats(sample = {}) {
     const msg = { type: "metrics" };
-    if (typeof localPeer.rtcRtt === "number") msg.rtcRtt = localPeer.rtcRtt;
-    if (typeof localPeer.packetLoss === "number") msg.packetLoss = localPeer.packetLoss;
-    if (typeof localPeer.jitterBufferMs === "number") msg.jitterBufferMs = localPeer.jitterBufferMs;
-    if (typeof localPeer.pipelineMs === "number") msg.pipelineMs = localPeer.pipelineMs;
-    if (msg.rtcRtt === void 0 && msg.packetLoss === void 0 && msg.jitterBufferMs === void 0 && msg.pipelineMs === void 0) return;
+    let reported = false;
+    for (const key of NET_STAT_FIELDS) {
+      const value2 = sample[key];
+      if (value2 === void 0) continue;
+      localPeer[key] = typeof value2 === "number" && isFinite(value2) ? value2 : null;
+      msg[key] = localPeer[key];
+      reported = true;
+    }
+    if (!reported) return;
     safeSend(msg);
     emit2("local-metrics", getLocalMetrics());
     emit2("peer-upsert", localPeer);
@@ -589,7 +607,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof perms.canWriteModulation === "boolean") msg.canWriteModulation = perms.canWriteModulation;
     safeSend(msg);
   }
-  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, activeNetCyclesIndex, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends;
+  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, activeNetCyclesIndex, activeNetCyclesKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
       init_jamulus();
@@ -616,6 +634,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         jitter: null,
         packetLoss: null,
         rtcRtt: null,
+        rtcJitter: null,
         jitterBufferMs: null,
         pipelineMs: null,
         canEditMetaprogram: !LOCAL_IS_BOT,
@@ -632,6 +651,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       currentRoom = null;
       activeNetCyclesToken = null;
       activeNetCyclesIndex = null;
+      activeNetCyclesKind = null;
       MAX_RECONNECT_DELAY = 15e3;
       PONG_TIMEOUT_MS = 8e3;
       rttSamples = [];
@@ -691,6 +711,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         }
         openSocket();
       });
+      NET_STAT_FIELDS = ["rtcRtt", "rtcJitter", "packetLoss", "jitterBufferMs", "pipelineMs"];
     }
   });
 
@@ -1720,7 +1741,167 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/audio-net/ValuePattern.js
+  function isValuePattern(node) {
+    return !!node && typeof node === "object" && node.type === "valueSeq";
+  }
+  function entryHasValuePattern(entry) {
+    if (!entry) return false;
+    const candidates = [
+      entry.metric,
+      ...entry.metrics || [],
+      ...entry.args || [],
+      ...(entry.pairs || []).map((p) => p && p.value),
+      ...entry.bounds || []
+    ];
+    return candidates.some(isValuePattern);
+  }
+  function chainHasValuePattern(chainEntries) {
+    return (chainEntries || []).some(entryHasValuePattern);
+  }
+  function evaluateValuePattern(node, cyclePos = 0) {
+    if (!isValuePattern(node)) return node;
+    const terms = node.terms || [];
+    if (!terms.length) return null;
+    const pos = Number.isFinite(cyclePos) ? cyclePos : 0;
+    const cycle = Math.floor(pos);
+    const phase = pos - cycle;
+    if (node.mode === "alternate") {
+      const i = (cycle % terms.length + terms.length) % terms.length;
+      return evaluateValuePattern(terms[i], Math.floor(cycle / terms.length) + phase);
+    }
+    const n2 = terms.length;
+    const part = Math.min(n2 - 1, Math.floor(phase * n2));
+    return evaluateValuePattern(terms[part], cycle + (phase * n2 - part));
+  }
+  var init_ValuePattern = __esm({
+    "src/audio-net/ValuePattern.js"() {
+    }
+  });
+
+  // src/audio-net/av-effects/Echo.js
+  function metricInBoundUnits(metric, metrics) {
+    const m2 = metrics || {};
+    const raw = Math.max(0, m2[metric] || 0);
+    return metric === "wcpl" ? raw * 100 : raw;
+  }
+  function normalizedMetric(metric, metrics, bound) {
+    const limit = bound > 0 && isFinite(bound) ? bound : ECHO_METRIC_BOUNDS[metric] ?? ECHO_METRIC_BOUNDS.wcl;
+    return Math.min(1, metricInBoundUnits(metric, metrics) / limit);
+  }
+  function echoParams(metrics, user, { cycleSeconds = 1, cyclePos = 0 } = {}) {
+    const slots = user && user.slots && user.slots.length ? user.slots : ECHO_DEFAULT_SLOTS;
+    const value2 = /* @__PURE__ */ new Map();
+    for (const slot of slots) {
+      const scale2 = evaluateValuePattern(slot.scale, cyclePos);
+      const bound = evaluateValuePattern(slot.bound, cyclePos);
+      value2.set(slot.param, Math.max(0, scale2 || 0) * normalizedMetric(slot.metric, metrics, bound));
+    }
+    const lengthCycles = value2.get("length") || 0;
+    const feedback = Math.min(FEEDBACK_CEILING, value2.get("feedback") || 0);
+    const gain2 = value2.get("gain") || 0;
+    const delayS = Math.min(ECHO_MAX_DELAY_S, Math.max(0, lengthCycles * Math.max(0, cycleSeconds)));
+    return {
+      lengthCycles,
+      delayS,
+      feedback,
+      gain: gain2,
+      // Below one render quantum there is no echo to hear, only a comb: the
+      // DelayNode floors delayTime at the quantum anyway, so a length that
+      // rounds to nothing would ring as a fixed ~375 Hz resonance — at up to
+      // FEEDBACK_CEILING, since each slot reads its own metric and a dead length
+      // does not imply dead feedback. Mute the wet path instead.
+      wetGain: delayS >= MIN_DELAY_S ? gain2 : 0,
+      // Hydra counterpart: 1 = untouched, and the image darkens as the repeats
+      // thicken. Anchored at unity so a chain doing nothing audible does nothing
+      // visible — which the old brightness = feedback could not do: its feedback
+      // ROSE as packet loss fell (it divided by wcpl), so a healthy room sat near
+      // full brightness and a lossy one went dark, with no value meaning "off".
+      visualBrightness: 1 - feedback
+    };
+  }
+  function createEchoNode(audioCtx3, params2) {
+    const input = audioCtx3.createGain();
+    const output = audioCtx3.createGain();
+    const delay2 = audioCtx3.createDelay(ECHO_MAX_DELAY_S);
+    delay2.delayTime.value = params2.delayS;
+    const fb = audioCtx3.createGain();
+    fb.gain.value = params2.feedback;
+    const wet = audioCtx3.createGain();
+    wet.gain.value = params2.wetGain;
+    const limiter = audioCtx3.createDynamicsCompressor();
+    limiter.threshold.value = LIMITER_THRESHOLD_DB;
+    input.connect(output);
+    input.connect(delay2);
+    delay2.connect(fb);
+    fb.connect(delay2);
+    delay2.connect(wet);
+    wet.connect(limiter);
+    limiter.connect(output);
+    const rampTo = (param, target) => {
+      if (param.value === target) return;
+      const now = audioCtx3.currentTime;
+      param.cancelScheduledValues(now);
+      param.setValueAtTime(param.value, now);
+      param.linearRampToValueAtTime(target, now + GAIN_RAMP_S);
+    };
+    return {
+      input,
+      output,
+      update(next) {
+        if (delay2.delayTime.value !== next.delayS) delay2.delayTime.value = next.delayS;
+        rampTo(fb.gain, next.feedback);
+        rampTo(wet.gain, next.wetGain);
+      },
+      dispose() {
+        [input, output, delay2, fb, wet, limiter].forEach((n2) => {
+          try {
+            n2.disconnect();
+          } catch (e30) {
+          }
+        });
+      }
+    };
+  }
+  var ECHO_METRICS, ECHO_METRIC_BOUNDS, ECHO_SLOTS, ECHO_DEFAULT_SCALES, FEEDBACK_CEILING, ECHO_MAX_DELAY_S, MIN_DELAY_S, LIMITER_THRESHOLD_DB, ECHO_DEFAULT_SLOTS, GAIN_RAMP_S;
+  var init_Echo = __esm({
+    "src/audio-net/av-effects/Echo.js"() {
+      init_ValuePattern();
+      ECHO_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
+      ECHO_METRIC_BOUNDS = Object.freeze({
+        wcl: 500,
+        wcj: 50,
+        wcrtt: 500,
+        wcpl: 20
+      });
+      ECHO_SLOTS = ["length", "feedback", "gain"];
+      ECHO_DEFAULT_SCALES = Object.freeze({ length: 0.5, feedback: 0.5, gain: 1 });
+      FEEDBACK_CEILING = 0.95;
+      ECHO_MAX_DELAY_S = 20;
+      MIN_DELAY_S = 128 / 48e3;
+      LIMITER_THRESHOLD_DB = -1;
+      ECHO_DEFAULT_SLOTS = Object.freeze(ECHO_SLOTS.map((param) => Object.freeze({
+        param,
+        metric: "wcl",
+        scale: ECHO_DEFAULT_SCALES[param],
+        bound: null
+      })));
+      GAIN_RAMP_S = 0.02;
+    }
+  });
+
   // src/audio-net/MetaprogrammerParser.js
+  function valuePatternKind(node) {
+    if (!isValuePattern(node)) return null;
+    for (const term of node.terms || []) {
+      if (isValuePattern(term)) {
+        const inner = valuePatternKind(term);
+        if (inner) return inner;
+      } else if (typeof term === "string") return "metric";
+      else if (typeof term === "number") return "number";
+    }
+    return null;
+  }
   function tokenize(text2) {
     const tokens = [];
     const errors = [];
@@ -1819,19 +2000,59 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     errors.sort((a2, b) => a2.line - b.line || a2.col - b.col);
     return { ast: ast2, errors, valid: errors.length === 0 };
   }
-  function resolveEffectParams(chainEntry) {
+  function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     const { fn, args: args2 } = chainEntry;
     switch (fn) {
       // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
       // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
       case "room":
         return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedWclS: args2[1] ?? null };
-      case "echo":
-        return { nSamplesFactor: args2[0] ?? 1, magnitudeFeedbackFactor: args2[1] ?? 0.1 };
+      // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
+      // per parameter, each carrying its own metric, scale (number or pattern)
+      // and upper bound. Written-out pairs win; anything missing takes the
+      // bare-`# echo` default, and a null bound defers to the metric's own
+      // (av-effects/Echo.js owns both the bounds and the normalization).
+      case "echo": {
+        const pairs2 = chainEntry.pairs || [];
+        const bounds = chainEntry.bounds || [];
+        return {
+          slots: ECHO_DEFAULT_SLOTS.map((fallback, i) => ({
+            param: fallback.param,
+            metric: pairs2[i] ? pairs2[i].metric : fallback.metric,
+            scale: pairs2[i] ? pairs2[i].value : fallback.scale,
+            bound: bounds[i] ?? fallback.bound
+          }))
+        };
+      }
+      // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
+      // halved as the metric climbs. Any of the three may be a valueSeq node
+      // (`# crush <wcl wcj> <2 4>`); crushParams reads them per cycle.
       case "crush":
-        return { reductionFactor: args2[0] ?? 1 };
-      case "noise":
-        return {};
+        return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedMetric: args2[1] ?? null };
+      // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
+      // [<amount 1>] [<amount 2>]` — one slot per axis, each naming the metric
+      // that modulates it, how hard, and (optionally) a value pinning that
+      // metric. A factor defaults to 1 only when its metric keyword was
+      // written; unwritten means 0, which is "this axis does not modulate" and
+      // is what leaves a bare `# noise` at brown, 25 dB.
+      //
+      // Unlike crush and echo — whose params functions sample their own patterns
+      // — noise is resolved to plain numbers HERE, because the aggregator's
+      // master bus rebuilds the bed from the resolved values once per cycle.
+      case "noise": {
+        const metrics = chainEntry.metrics || [];
+        const axis = (i) => {
+          const metric = evaluateValuePattern(metrics[i], cycle);
+          const factor = evaluateValuePattern(args2[i], cycle);
+          const fixed = evaluateValuePattern(args2[i + 2], cycle);
+          return {
+            metric: EFFECT_METRICS.includes(metric) ? metric : "wcl",
+            factor: typeof factor === "number" ? factor : metrics[i] != null ? 1 : 0,
+            fixed: typeof fixed === "number" ? fixed : null
+          };
+        };
+        return { spectrum: axis(0), volume: axis(1) };
+      }
       case "grid":
         return { landmarks: args2[0] ?? false };
       default:
@@ -1843,20 +2064,34 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
 # cycles wcl 20
 `;
   }
-  var import_room_indices, TIMING_METRICS, TEMPO_UNITS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser;
+  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
+      init_Echo();
+      init_ValuePattern();
       TIMING_METRICS = ["wcl", "wcj", "wcpl"];
+      EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
+      CRUSH_METRICS = ["wcl", "wcj", "wcpl", "wcrtt"];
       EFFECTS = {
         room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: ["wcl"] },
         // scale=1, fixed wcl seconds=live
-        echo: { minArgs: 0, maxArgs: 2, kind: "effect" },
-        // n_samples_factor=1, magnitude_feedback_factor=0.1
-        crush: { minArgs: 0, maxArgs: 1, kind: "effect" },
-        // reduction_factor=1
-        noise: { minArgs: 0, maxArgs: 0, kind: "effect" },
+        echo: {
+          kind: "effect",
+          metricKeywords: ECHO_METRICS,
+          metricPairs: ECHO_SLOTS,
+          // length (cycles), feedback, gain
+          patternArgs: true,
+          // scales and bounds may be <2 3> / [1 4]
+          usage: "# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>]"
+        },
+        // scale=1 (8-bit base), fixed metric amount=live
+        crush: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: CRUSH_METRICS, patternArgs: true },
+        // noise interleaves two metric keywords with its numbers and takes patterns
+        // in any slot, which parseChainFn's positional-numbers grammar cannot
+        // express — it parses in parseNoise instead.
+        noise: { kind: "effect", grammar: "noise", metricKeywords: EFFECT_METRICS, patternArgs: true },
         grid: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
         // landmarks=false
       };
@@ -2070,16 +2305,22 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             if (t.type !== "op") return mods;
             if (t.value === "..") return mods;
             this.next();
-            if (t.value === "?") {
+            if (t.value === "?" || t.value === "!") {
               const p = this.peek();
-              const adjacent = p.line === t.line && p.col === t.col + 1;
-              if (adjacent && (p.type === "number" || p.type === "intlike")) {
-                this.next();
-                const val3 = typeof p.value === "number" ? p.value : parseFloat(p.value);
+              const bare = t.value === "?" ? { op: "?", value: null } : { op: "!", value: 2 };
+              if (!(p.line === t.line && p.col === t.col + 1) || p.type !== "number" && p.type !== "intlike") {
+                mods.push(bare);
+                continue;
+              }
+              this.next();
+              const val3 = typeof p.value === "number" ? p.value : parseFloat(p.value);
+              if (t.value === "?") {
                 if (!(val3 >= 0 && val3 <= 1)) this.error("'?' probability must be in [0, 1]", p);
                 else mods.push({ op: "?", value: val3 });
+              } else if (!(val3 > 0) || !isFinite(val3)) {
+                this.error("'!' needs a positive repeat count", p);
               } else {
-                mods.push({ op: "?", value: null });
+                mods.push({ op: "!", value: val3 });
               }
               continue;
             }
@@ -2120,7 +2361,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             return;
           }
           if (EFFECTS[name3]) {
-            this.parseChainFn(program, name3, nameTok, EFFECTS[name3]);
+            const sig = EFFECTS[name3];
+            if (sig.grammar === "noise") this.parseNoise(program, nameTok, sig);
+            else if (sig.metricPairs) this.parseMetricPairFn(program, name3, nameTok, sig);
+            else this.parseChainFn(program, name3, nameTok, sig);
             return;
           }
           this.error(`'${name3}' is not a NetCycles function \u2014 Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
@@ -2159,8 +2403,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
               fixed = val2;
             }
           }
-          const trailing = this.peek();
-          if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
+          if (!this.atStatementEnd()) {
+            const trailing = this.peek();
             this.error(`cycles got an unexpected argument '${trailing.value}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
             this.recover();
             return;
@@ -2208,6 +2452,293 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           }
           program.tempo = { value: value2, unit: unitTok.value };
         }
+        // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
+        // (numbers or metric words) rather than over participants, so it needs its
+        // own reader — parseSequenceGroup's elements are participant indices.
+        //
+        // `kind` is 'metric', 'number', or 'any' where the slot is positional and
+        // could be either (`# noise <wcl wcpl> <20 5>`); 'any' infers it from the
+        // leaves and refuses a pattern that mixes the two. `alternationOnly` rejects
+        // `[…]`: an effect re-derived once per cycle boundary has nowhere to put a
+        // sub-cycle subdivision, so it is an error rather than quietly behaving as
+        // alternation. Nesting otherwise mixes modes freely.
+        parseValueSequence(name3, kind, sig, { alternationOnly = false } = {}) {
+          const open = this.next();
+          const close = open.value === "<" ? ">" : "]";
+          const mode2 = open.value === "<" ? "alternate" : "subdivide";
+          const terms = [];
+          if (alternationOnly && open.value === "[") {
+            this.error(`'${name3}' arguments are sampled once per cycle \u2014 use '<\u2026>' alternation, not '[\u2026]'`, open);
+            return null;
+          }
+          let leafKind = kind === "any" ? null : kind;
+          const settleKind = (k2, tok) => {
+            if (leafKind && leafKind !== k2) {
+              this.error(`'${name3}' pattern arguments cannot mix metric keywords with numbers`, tok);
+              return false;
+            }
+            leafKind = k2;
+            return true;
+          };
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "eof" || t.type === "sigil") {
+              this.error(`unclosed pattern argument to '${name3}' \u2014 expected '${close}'`, t);
+              return null;
+            }
+            if (t.type === "newline") {
+              this.next();
+              continue;
+            }
+            if (t.type === "punct" && t.value === close) {
+              this.next();
+              break;
+            }
+            if (t.type === "punct" && (t.value === ">" || t.value === "]")) {
+              this.error(`mismatched '${t.value}' \u2014 expected '${close}'`, t);
+              this.next();
+              break;
+            }
+            if (t.type === "punct" && (t.value === "<" || t.value === "[")) {
+              const inner = this.parseValueSequence(name3, kind, sig, { alternationOnly });
+              if (!inner) return null;
+              const innerKind = valuePatternKind(inner);
+              if (innerKind && !settleKind(innerKind, t)) return null;
+              terms.push(inner);
+              continue;
+            }
+            if ((kind === "metric" || kind === "any") && t.type === "word") {
+              if (!settleKind("metric", t)) return null;
+              if (!sig.metricKeywords.includes(t.value)) {
+                this.error(`'${t.value}' is not a metric '${name3}' can read (${sig.metricKeywords.join("|")})`, t);
+              } else {
+                terms.push(t.value);
+              }
+              this.next();
+              continue;
+            }
+            if ((kind === "number" || kind === "any") && (t.type === "number" || t.type === "intlike")) {
+              if (!settleKind("number", t)) return null;
+              const val2 = this.readPositiveNumber(name3, "arguments");
+              if (val2 == null) return null;
+              terms.push(val2);
+              continue;
+            }
+            if (t.type === "op") {
+              this.error(`'${name3}' pattern arguments do not take modifiers ('${t.value}')`, t);
+              this.next();
+              const operand = this.peek();
+              if (operand.type === "number" || operand.type === "intlike") this.next();
+              continue;
+            }
+            this.error(
+              leafKind === "metric" ? `'${name3}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join("|")}), got '${t.value}'` : `'${name3}' pattern expects positive numbers, got '${t.value}'`,
+              t
+            );
+            this.next();
+          }
+          if (!terms.length) {
+            this.error(`empty pattern argument to '${name3}'`, open);
+            return null;
+          }
+          const after = this.peek();
+          if (after.type === "op") {
+            this.error(`'${name3}' pattern arguments do not take modifiers ('${after.value}')`, after);
+            this.recover();
+            return null;
+          }
+          return { type: "valueSeq", mode: mode2, terms, line: open.line, col: open.col };
+        }
+        atStatementEnd() {
+          const t = this.peek();
+          return t.type === "newline" || t.type === "eof" || t.type === "sigil";
+        }
+        // Consume a balanced `(…)` run. A rejected Strudel call is skipped whole
+        // because its innards are not this language's tokens — in particular a '#'
+        // inside it is a statement sigil to the tokenizer, and leaving it for
+        // recover() turns one honest error into two.
+        skipParenBlob() {
+          let depth = 0;
+          while (!this.atEof()) {
+            const p = this.next();
+            if (p.type === "punct" && p.value === "(") depth++;
+            if (p.type === "punct" && p.value === ")") {
+              depth--;
+              if (depth === 0) return;
+            }
+          }
+        }
+        // One <metric> <scale> pair per parameter, then an optional upper bound per
+        // parameter in the same order:
+        //
+        //   # echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200
+        //          |----| |------| |----| |---------|
+        //          length  feedbk   gain    bounds
+        //
+        // All the pairs or none — a half-written chain (`# echo wcl 2`) is far more
+        // likely a mistake than an intention, and silently defaulting the rest would
+        // hide it. Bounds are individually optional, filling their slots left to
+        // right; each omitted one falls back to that metric's default.
+        parseMetricPairFn(program, name3, nameTok, sig) {
+          const slots = sig.metricPairs;
+          const pairs2 = [];
+          const bounds = [];
+          if (!this.atStatementEnd()) {
+            for (let i = 0; i < slots.length; i++) {
+              const t = this.peek();
+              if (t.type !== "word" || !sig.metricKeywords.includes(t.value)) {
+                this.error(
+                  `'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its ${slots[i]} \u2014 the syntax is '${sig.usage}'`,
+                  t
+                );
+                this.recover();
+                return;
+              }
+              this.next();
+              const value2 = this.parseNumericArg(name3, `${slots[i]} scale factor`, sig);
+              if (value2 == null) {
+                this.recover();
+                return;
+              }
+              pairs2.push({ metric: t.value, value: value2 });
+            }
+            for (let i = 0; i < slots.length && !this.atStatementEnd(); i++) {
+              const value2 = this.parseNumericArg(name3, `${slots[i]} upper bound`, sig);
+              if (value2 == null) {
+                this.recover();
+                return;
+              }
+              bounds.push(value2);
+            }
+          }
+          if (!this.atStatementEnd()) {
+            const trailing = this.peek();
+            this.error(`'${name3}' got an unexpected argument '${trailing.value}' \u2014 the syntax is '${sig.usage}'`, trailing);
+            this.recover();
+            return;
+          }
+          program.chain.push({ fn: name3, args: [], pairs: pairs2, bounds, line: nameTok.line, col: nameTok.col });
+        }
+        // A positive number, plain or as the fraction `1/2` — the spelling
+        // `# tempo 90/4` already uses, and the natural one for an echo length said
+        // in rational cycles. Consumes the tokens; returns null once an error has
+        // been recorded.
+        readPositiveNumber(name3, slot) {
+          const t = this.next();
+          let val2 = typeof t.value === "number" ? t.value : parseFloat(t.value);
+          if (this.peek().type === "op" && this.peek().value === "/") {
+            this.next();
+            const d = this.peek();
+            const den = d.type === "number" || d.type === "intlike" ? typeof d.value === "number" ? d.value : parseFloat(d.value) : NaN;
+            if (!(den > 0) || !isFinite(den)) {
+              this.error(`'${name3}' ${slot} fraction denominator must be a positive real number`, d);
+              return null;
+            }
+            this.next();
+            val2 = val2 / den;
+          }
+          if (!(val2 > 0) || !isFinite(val2)) {
+            this.error(`'${name3}' ${slot} must be a positive real number`, t);
+            return null;
+          }
+          return val2;
+        }
+        // A positive number — plain or fractional — or, where the signature allows
+        // it, a pattern of them. Returns null once an error has been recorded.
+        parseNumericArg(name3, slot, sig) {
+          const t = this.peek();
+          if (t.type === "number" || t.type === "intlike") return this.readPositiveNumber(name3, slot);
+          if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
+            return this.parseValueSequence(name3, "number", sig);
+          }
+          if (t.type === "punct" && t.value === "(") {
+            this.error(`'${name3}' cannot take Strudel-call arguments \u2014 ${slot} is a number or a pattern of numbers`, t);
+            this.skipParenBlob();
+            return null;
+          }
+          this.error(
+            `'${name3}' needs a ${slot} \u2014 a positive number` + (sig.patternArgs ? " or a pattern like <2 3> / [1 4]" : ""),
+            t
+          );
+          return null;
+        }
+        // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
+        //          [<amount for metric 1>] [<amount for metric 2>]`
+        //
+        // Positional, with the two metric keywords optional and interleaved: a
+        // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
+        // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
+        // the spectrum factor, the volume factor, then the two pinned amounts — in
+        // the order the metrics were written. Any slot may instead be a `<…>`
+        // pattern, sampled one element per cycle.
+        parseNoise(program, nameTok, sig) {
+          const metrics = [null, null];
+          const args2 = [];
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "punct" && t.value === "(") {
+              this.error("'noise' takes patterns as '<\u2026>', not parenthesized expressions", t);
+              this.recover();
+              return;
+            }
+            if (t.type === "punct" && (t.value === "<" || t.value === "[")) {
+              const node = this.parseValueSequence("noise", "any", sig, { alternationOnly: true });
+              if (!node) {
+                this.recover();
+                return;
+              }
+              if (valuePatternKind(node) === "metric") {
+                if (!this.bindNoiseMetric(metrics, args2.length, node, t)) return;
+              } else {
+                args2.push(node);
+              }
+              continue;
+            }
+            if (t.type === "word" && EFFECT_METRICS.includes(t.value)) {
+              this.next();
+              if (!this.bindNoiseMetric(metrics, args2.length, t.value, t)) return;
+              continue;
+            }
+            if (t.type === "number" || t.type === "intlike") {
+              this.next();
+              const val2 = typeof t.value === "number" ? t.value : parseFloat(t.value);
+              if (!(val2 > 0) || !isFinite(val2)) {
+                this.error("'noise' arguments must be positive real numbers", t);
+              }
+              args2.push(val2);
+              continue;
+            }
+            break;
+          }
+          const trailing = this.peek();
+          if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
+            this.error(`'noise' got an unexpected argument '${trailing.value}' \u2014 the syntax is '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'`, trailing);
+            this.recover();
+            return;
+          }
+          if (args2.length > 4) {
+            this.error(`'noise' takes at most 4 numeric arguments (two factors then two pinned amounts), got ${args2.length}`, nameTok);
+            return;
+          }
+          program.chain.push({ fn: "noise", args: args2, metrics, line: nameTok.line, col: nameTok.col });
+        }
+        // A metric keyword binds to the factor that follows it, so it is legal only
+        // ahead of the spectrum or volume factor — never ahead of the pinned
+        // amounts, which belong to the two metrics already named.
+        bindNoiseMetric(metrics, slot, value2, tok) {
+          if (slot > 1) {
+            this.error("'noise' metric keywords go before the spectrum and volume factors \u2014 the 5th and 6th arguments are amounts pinning those same two metrics", tok);
+            this.recover();
+            return false;
+          }
+          if (metrics[slot] != null) {
+            this.error(`'noise' already has a metric for its ${slot === 0 ? "spectrum" : "volume"} argument`, tok);
+            this.recover();
+            return false;
+          }
+          metrics[slot] = value2;
+          return true;
+        }
         parseChainFn(program, name3, nameTok, sig) {
           let metric = null;
           if (sig.metricKeywords) {
@@ -2215,6 +2746,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             if (t.type === "word" && sig.metricKeywords.includes(t.value)) {
               metric = t.value;
               this.next();
+            } else if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
+              metric = this.parseValueSequence(name3, "metric", sig);
+              if (!metric) {
+                this.recover();
+                return;
+              }
             } else {
               this.error(`'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its arguments`, t);
               this.recover();
@@ -2225,16 +2762,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           for (; ; ) {
             const t = this.peek();
             if (t.type === "punct" && t.value === "(") {
-              this.error(`'${name3}' cannot take pattern arguments \u2014 parameters are plain positive numbers`, t);
-              let depth = 0;
-              while (!this.atEof()) {
-                const p = this.next();
-                if (p.type === "punct" && p.value === "(") depth++;
-                if (p.type === "punct" && p.value === ")") {
-                  depth--;
-                  if (depth === 0) break;
-                }
-              }
+              this.error(sig.patternArgs ? `'${name3}' arguments are positive numbers or mini-notation patterns like <2 4> \u2014 parenthesized expressions cannot be executed in the NetCycles editor` : `'${name3}' cannot take Strudel-call arguments \u2014 parameters are plain positive numbers`, t);
+              this.skipParenBlob();
               return;
             }
             if (t.type === "number" || t.type === "intlike") {
@@ -2248,6 +2777,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
               args2.push({ value: t.value === "true", tok: t });
               continue;
             }
+            if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
+              const seq2 = this.parseValueSequence(name3, "number", sig);
+              if (!seq2) return;
+              args2.push({ value: seq2, tok: t });
+              continue;
+            }
             if (sig.takesSequence && t.type === "punct" && (t.value === "<" || t.value === "[")) {
               const seq2 = this.parseSequenceGroup();
               if (seq2) args2.push({ value: seq2, tok: t });
@@ -2255,8 +2790,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             }
             break;
           }
-          const trailing = this.peek();
-          if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
+          if (!this.atStatementEnd()) {
+            const trailing = this.peek();
             this.error(`'${name3}' got an unexpected argument '${trailing.value}'`, trailing);
             this.recover();
             return;
@@ -2337,123 +2872,188 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
   }
+  function clampRate(rate) {
+    if (!(rate > 0) || !isFinite(rate)) return 1;
+    return Math.min(MAX_RATE, Math.max(1 / MAX_RATE, rate));
+  }
   function modValue(el, op, dflt) {
-    const m2 = (el.modifiers || []).find((x2) => x2.op === op);
+    const m2 = (el && el.modifiers || []).find((x2) => x2.op === op);
     return m2 ? m2.value : dflt;
   }
-  function weightedEntries(elements) {
-    const out = [];
-    for (const el of elements) {
+  function rateScale(node) {
+    let scale2 = 1;
+    for (const m2 of node && node.modifiers || []) {
+      if (m2.op === "*") scale2 *= m2.value;
+      else if (m2.op === "/") scale2 /= m2.value;
+    }
+    return scale2 > 0 && isFinite(scale2) ? scale2 : 1;
+  }
+  function layoutRepetition(elements, mode2) {
+    const entries2 = [];
+    let totalWeight = 0;
+    for (const el of elements || []) {
+      if (!el) continue;
       const repeats = Math.max(1, Math.round(modValue(el, "!", 1)));
       const weight = modValue(el, "@", 1);
-      for (let r2 = 0; r2 < repeats; r2++) out.push({ el, weight });
+      if (!(weight > 0) || !isFinite(weight)) continue;
+      for (let replica = 0; replica < repeats; replica++) {
+        entries2.push({ el, replica, start: totalWeight, end: totalWeight + weight });
+        totalWeight += weight;
+      }
     }
-    return out;
+    if (!(totalWeight > 0)) return null;
+    const repLength = mode2 === "subdivide" ? 1 : totalWeight;
+    const unitsPerStep = repLength / totalWeight;
+    for (const entry of entries2) {
+      entry.start *= unitsPerStep;
+      entry.end *= unitsPerStep;
+    }
+    return { entries: entries2, repLength, unitsPerStep };
   }
-  function resolveEntry(entry, rng) {
+  function rateOf(node, layout) {
+    const steps2 = (node && node.modifiers || []).find((m2) => m2.op === "%");
+    const base = steps2 && steps2.value > 0 ? steps2.value * layout.unitsPerStep : 1;
+    return clampRate(base * rateScale(node));
+  }
+  function hashSeed(...parts) {
+    let h2 = 2166136261;
+    for (const part of parts) {
+      h2 = (h2 ^ (part | 0)) >>> 0;
+      h2 = Math.imul(h2, 16777619) >>> 0;
+      h2 = (h2 ^ h2 >>> 15) >>> 0;
+      h2 = Math.imul(h2, 625341585) >>> 0;
+    }
+    return h2 >>> 0;
+  }
+  function occurrenceRandom(ctx, entry, rep, salt) {
+    return seededRandom(hashSeed(ctx.stack, ctx.nodeIds.get(entry.el) ?? 0, rep, entry.replica, salt))();
+  }
+  function resolveEntry(ctx, entry, rep) {
     const el = entry.el;
-    if (el.type === "choice") {
-      const pick2 = el.options[Math.floor(rng() * el.options.length) % el.options.length] || [];
-      return { resolved: { type: "run", elements: pick2 }, weight: entry.weight };
-    }
     const q2 = (el.modifiers || []).find((m2) => m2.op === "?");
-    if (q2) {
-      const p = q2.value == null ? 0.5 : q2.value;
-      if (rng() < p) return { resolved: { type: "rest" }, weight: entry.weight };
+    if (q2 && occurrenceRandom(ctx, entry, rep, 1) < (q2.value == null ? 0.5 : q2.value)) return { type: "rest" };
+    if (el.type === "choice") {
+      const options = el.options || [];
+      if (!options.length) return null;
+      const pick2 = Math.floor(occurrenceRandom(ctx, entry, rep, 2) * options.length) % options.length;
+      return { type: "run", elements: options[pick2] };
     }
-    return { resolved: el, weight: entry.weight };
+    return el;
   }
-  function writtenIndices(participants) {
-    const map3 = /* @__PURE__ */ new Map();
-    let next = 0;
+  function emitParticipant(ctx, el, start, span, phaseCycle) {
+    const rate = clampRate(rateScale(el));
+    if (Math.abs(rate - 1) <= EPS) {
+      ctx.events.push({ token: el.token, start, dur: span, stack: ctx.stack, index: ctx.written.get(el) ?? null });
+      return;
+    }
+    const w0 = phaseCycle * rate;
+    const w1 = w0 + rate;
+    const scale2 = span / rate;
+    const last2 = Math.ceil(w1 - EPS) - 1;
+    for (let rep = Math.floor(w0 + EPS); rep <= last2; rep++) {
+      if (ctx.budget-- <= 0) return;
+      const lo = Math.max(rep, w0);
+      const hi2 = Math.min(rep + 1, w1);
+      if (!(hi2 - lo > EPS)) continue;
+      ctx.events.push({
+        token: el.token,
+        start: start + (lo - w0) * scale2,
+        dur: (hi2 - lo) * scale2,
+        stack: ctx.stack,
+        index: ctx.written.get(el) ?? null
+      });
+    }
+  }
+  function emitNode(ctx, node, start, span, phaseCycle) {
+    if (!node || !(span > EPS)) return;
+    if (node.type === "rest") {
+      ctx.events.push({
+        token: null,
+        rest: true,
+        start,
+        dur: span,
+        stack: ctx.stack,
+        index: ctx.rests?.get(node) ?? null
+      });
+      return;
+    }
+    if (node.type === "participant") {
+      emitParticipant(ctx, node, start, span, phaseCycle);
+      return;
+    }
+    if (node.type === "run") {
+      emitSequence(ctx, node, node.elements, "subdivide", start, span, phaseCycle);
+      return;
+    }
+    if (node.type === "sequence") {
+      for (const st2 of node.stacks || []) emitSequence(ctx, node, st2.elements, node.mode, start, span, phaseCycle);
+    }
+  }
+  function emitSequence(ctx, node, elements, mode2, start, span, phaseCycle) {
+    const layout = layoutRepetition(elements, mode2);
+    if (!layout) return;
+    const { entries: entries2, repLength } = layout;
+    const rate = rateOf(node, layout);
+    const w0 = phaseCycle * rate;
+    const w1 = w0 + rate;
+    const scale2 = span / rate;
+    const lastRep = Math.ceil((w1 - EPS) / repLength) - 1;
+    for (let rep = Math.floor((w0 + EPS) / repLength); rep <= lastRep; rep++) {
+      const base = rep * repLength;
+      for (const entry of entries2) {
+        if (ctx.budget-- <= 0) return;
+        const lo = Math.max(base + entry.start, w0);
+        const hi2 = Math.min(base + entry.end, w1);
+        if (!(hi2 - lo > EPS)) continue;
+        emitNode(ctx, resolveEntry(ctx, entry, rep), start + (lo - w0) * scale2, (hi2 - lo) * scale2, rep);
+      }
+    }
+  }
+  function indexNodes(participants) {
+    const nodeIds = /* @__PURE__ */ new Map();
+    const written = /* @__PURE__ */ new Map();
+    const rests = /* @__PURE__ */ new Map();
+    let nextNode = 0, nextWritten = 0, nextRest = 0;
     const walk2 = (els) => {
       for (const el of els || []) {
         if (!el) continue;
-        if (el.type === "participant") map3.set(el, next++);
+        nodeIds.set(el, nextNode++);
+        if (el.type === "participant") written.set(el, nextWritten++);
+        else if (el.type === "rest") rests.set(el, nextRest++);
         else if (el.type === "choice") (el.options || []).forEach(walk2);
         else if (el.type === "sequence") (el.stacks || []).forEach((st2) => walk2(st2.elements));
       }
     };
     (participants && participants.stacks || []).forEach((st2) => walk2(st2.elements));
-    return map3;
-  }
-  function emitInto(ctx, resolved, start, span, cycleForNesting, stack2) {
-    if (resolved.type === "participant") {
-      ctx.events.push({
-        token: resolved.token,
-        start,
-        dur: span,
-        stack: stack2,
-        index: ctx.indices.get(resolved) ?? null
-      });
-      return;
-    }
-    if (resolved.type === "rest") return;
-    if (resolved.type === "run") {
-      subdivideInto(ctx, resolved.elements, start, span, cycleForNesting, stack2);
-      return;
-    }
-    if (resolved.type === "sequence") {
-      if (resolved.mode === "subdivide") {
-        const speed2 = Math.max(1, Math.round(modValue(resolved, "*", 1)));
-        for (let r2 = 0; r2 < speed2; r2++) {
-          for (const st2 of resolved.stacks) {
-            subdivideInto(ctx, st2.elements, start + span / speed2 * r2, span / speed2, cycleForNesting, stack2);
-          }
-        }
-      } else {
-        for (const st2 of resolved.stacks) {
-          const entries2 = weightedEntries(st2.elements);
-          if (!entries2.length) continue;
-          const pick2 = entries2[(cycleForNesting % entries2.length + entries2.length) % entries2.length];
-          const { resolved: r2 } = resolveEntry(pick2, ctx.rng);
-          emitInto(ctx, r2, start, span, cycleForNesting, stack2);
-        }
-      }
-    }
-  }
-  function subdivideInto(ctx, elements, start, span, cycle, stack2) {
-    const entries2 = weightedEntries(elements);
-    const totalWeight = entries2.reduce((sum, entry) => sum + entry.weight, 0);
-    if (!(totalWeight > 0)) return;
-    let cursor = start;
-    for (const entry of entries2) {
-      const entrySpan = entry.weight / totalWeight * span;
-      const { resolved } = resolveEntry(entry, ctx.rng);
-      emitInto(ctx, resolved, cursor, entrySpan, cycle, stack2);
-      cursor += entrySpan;
-    }
+    return { nodeIds, written, rests };
   }
   function expandCycle(participants, cycleNumber) {
     const events = [];
     if (!participants || !Array.isArray(participants.stacks)) return events;
-    const seqSpeed = Math.max(1, Math.round(modValue(participants, "*", 1)));
-    const indices = writtenIndices(participants);
+    const { nodeIds, written, rests } = indexNodes(participants);
     participants.stacks.forEach((stack2, k2) => {
       const effCycle = cycleNumber - (stack2.cycleOffset || 0);
       if (effCycle < 0) return;
-      const ctx = { events, indices, rng: seededRandom(effCycle * 7919 + k2 * 104729 + 1 >>> 0) };
-      if (participants.mode === "subdivide") {
-        for (let r2 = 0; r2 < seqSpeed; r2++) {
-          subdivideInto(ctx, stack2.elements, r2 / seqSpeed, 1 / seqSpeed, effCycle, k2);
-        }
-      } else {
-        const entries2 = weightedEntries(stack2.elements);
-        if (!entries2.length) return;
-        for (let j2 = 0; j2 < seqSpeed; j2++) {
-          const idx = (effCycle * seqSpeed + j2) % entries2.length;
-          const { resolved } = resolveEntry(entries2[idx], ctx.rng);
-          emitInto(ctx, resolved, j2 / seqSpeed, 1 / seqSpeed, effCycle, k2);
-        }
-      }
+      emitSequence(
+        { events, nodeIds, written, rests, stack: k2, budget: MAX_EXPANSION_STEPS },
+        participants,
+        stack2.elements,
+        participants.mode,
+        0,
+        1,
+        effCycle
+      );
     });
     events.sort((a2, b) => a2.start - b.start || a2.stack - b.stack);
     return events;
   }
-  var WCPL_FULL_SCALE_S, AVBufferQueue, GRID_REANCHOR_CYCLES, GRID_REANCHOR_MIN_S, CYCLE_LOG_HEARTBEAT_S, MetaprogramScheduler;
+  var WCPL_FULL_SCALE_S, EPS, MAX_EXPANSION_STEPS, MAX_RATE, AVBufferQueue, GRID_REANCHOR_CYCLES, GRID_REANCHOR_MIN_S, CYCLE_LOG_HEARTBEAT_S, GRID_HISTORY, MetaprogramScheduler;
   var init_MetaprogramScheduler = __esm({
     "src/audio-net/MetaprogramScheduler.js"() {
       WCPL_FULL_SCALE_S = 10;
+      EPS = 1e-9;
+      MAX_EXPANSION_STEPS = 1024;
+      MAX_RATE = MAX_EXPANSION_STEPS;
       AVBufferQueue = class {
         constructor({ maxBuffers = 8, maxBytes = 32 * 1024 * 1024 } = {}) {
           this.maxBuffers = maxBuffers;
@@ -2496,6 +3096,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       GRID_REANCHOR_CYCLES = 4;
       GRID_REANCHOR_MIN_S = 10;
       CYCLE_LOG_HEARTBEAT_S = 30;
+      GRID_HISTORY = 4;
       MetaprogramScheduler = class {
         constructor({
           now,
@@ -2533,6 +3134,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           this._timer = null;
           this._cycle = 0;
           this._nextCycleStart = null;
+          this._grid = [];
         }
         setProgram(ast2) {
           if (!ast2 || !ast2.participants) return false;
@@ -2578,11 +3180,31 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           if (!this._ast) return null;
           return cycleLength({ cycles: this._ast.cycles, tempo: this._ast.tempo, metrics: this._metrics });
         }
+        /**
+         * Where `t` sits on the cycle grid, in fractional cycles: 2.5 is halfway
+         * through cycle 2. null until a cycle has been scheduled at or before `t`.
+         *
+         * Read off the boundaries actually EMITTED rather than computed as
+         * (t - epoch) / cycleLength, because cycle length moves with the metrics —
+         * dividing by the current length would renumber every past cycle each time
+         * the network changed, and anything paced off the position (patterned
+         * effect arguments) would jump rather than advance. Cycles are scheduled up
+         * to a lookahead ahead of the clock, so the newest entry can still be in
+         * the future; walk back to the one that has actually begun.
+         */
+        getCyclePosition(t = this._now()) {
+          for (let i = this._grid.length - 1; i >= 0; i--) {
+            const g2 = this._grid[i];
+            if (t >= g2.t0) return g2.cycle + Math.max(0, Math.min(1, (t - g2.t0) / g2.seconds));
+          }
+          return null;
+        }
         start(epoch3 = this._now()) {
           if (this._running) return;
           this._running = true;
           this._cycle = 0;
           this._nextCycleStart = epoch3;
+          this._grid = [];
           if (this._setInterval) {
             this._timer = this._setInterval(() => this.tick(), this._tickMs);
           }
@@ -2592,6 +3214,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           this._running = false;
           if (this._timer && this._clearInterval) this._clearInterval(this._timer);
           this._timer = null;
+          this._grid = [];
         }
         // Advance the schedule up to now + lookahead. Safe to call manually (tests)
         // or from the interval timer.
@@ -2617,6 +3240,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
             const { beats, seconds: seconds2 } = cycleLength(spec);
             const t0 = this._nextCycleStart;
             this._logCycleLength(spec, seconds2, t0);
+            this._grid.push({ cycle: this._cycle, t0, seconds: seconds2 });
+            while (this._grid.length > GRID_HISTORY && this._grid[1].t0 <= now) this._grid.shift();
             this._emit({ type: "cycle-start", cycle: this._cycle, t: t0, seconds: seconds2, beats });
             expandCycle(this._ast.participants, this._cycle).forEach((ev, i) => {
               const t = t0 + ev.start * seconds2;
@@ -2626,7 +3251,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
                 token: ev.token,
                 cycle: this._cycle,
                 stack: ev.stack,
-                index: ev.index
+                index: ev.index,
+                // Rest slots carry `token: null`; `rest` says the emptiness is the
+                // program's intent rather than an absent participant, and `index`
+                // then addresses the rest's own index space (see indexNodes).
+                rest: ev.rest === true
               };
               this._emit({ ...slot, type: "slot-open", t, dur: dur2 });
               this._emit({ ...slot, type: "slot-close", t: t + dur2 });
@@ -2667,6 +3296,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           if (Math.abs(gap2) <= tolerance) return;
           this._log(`[${this._label}] cycle grid re-anchored: next boundary was ${gap2.toFixed(1)}s ${gap2 > 0 ? "ahead of" : "behind"} the clock (tolerance ${tolerance.toFixed(1)}s) \u2014 the clock moved, not the music`);
           this._nextCycleStart = now;
+          this._grid = [];
         }
         // Print the cycle length this boundary is actually scheduling — which is
         // also the length of each performer's turn. Every change is printed (that is
@@ -2791,6 +3421,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
     return null;
   }
+  function peerJitter(peer) {
+    if (typeof peer.rtcJitter === "number" && isFinite(peer.rtcJitter)) return peer.rtcJitter;
+    if (typeof peer.jitter === "number" && isFinite(peer.jitter)) return peer.jitter;
+    return null;
+  }
   function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
     const sorted = [...rtts].sort((a2, b) => b - a2);
     if (!sorted.length) return 0;
@@ -2811,7 +3446,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       if (!peer) continue;
       const rtt = peerRtt(peer);
       if (rtt != null) rtts.push(rtt);
-      if (typeof peer.jitter === "number" && isFinite(peer.jitter)) jitters.push(peer.jitter);
+      const jitter = peerJitter(peer);
+      if (jitter != null) jitters.push(jitter);
       if (typeof peer.jitterBufferMs === "number" && isFinite(peer.jitterBufferMs)) {
         jitterBuffers.push(peer.jitterBufferMs);
       }
@@ -12144,66 +12780,27 @@ ${err.toString()}`);
     }
   });
 
-  // src/audio-net/av-effects/Echo.js
-  function echoFeedback(wcpl, magnitudeFeedbackFactor = 0.1) {
-    const loss = Math.max(FEEDBACK_EPSILON, Math.max(0, wcpl || 0));
-    return Math.min(magnitudeFeedbackFactor / loss, FEEDBACK_CEILING);
-  }
-  function echoParams(metrics, { nSamplesFactor = 1, magnitudeFeedbackFactor = 0.1 } = {}, sampleRate = 48e3) {
-    const wcj = Math.max(0, metrics && metrics.wcj || 0);
-    const nSamples = Math.max(1, Math.round(nSamplesFactor * wcj * 100));
-    const feedback = echoFeedback(metrics && metrics.wcpl, magnitudeFeedbackFactor);
-    return {
-      nSamples,
-      delayS: nSamples / sampleRate,
-      feedback,
-      visualBrightness: feedback
-    };
-  }
-  function createEchoNode(audioCtx3, params2) {
-    const input = audioCtx3.createGain();
-    const output = audioCtx3.createGain();
-    const delay2 = audioCtx3.createDelay(10);
-    delay2.delayTime.value = Math.min(params2.delayS, 9.99);
-    const fb = audioCtx3.createGain();
-    fb.gain.value = params2.feedback;
-    input.connect(output);
-    input.connect(delay2);
-    delay2.connect(fb);
-    fb.connect(delay2);
-    delay2.connect(output);
-    return {
-      input,
-      output,
-      update(next) {
-        delay2.delayTime.value = Math.min(next.delayS, 9.99);
-        fb.gain.value = next.feedback;
-      },
-      dispose() {
-        [input, output, delay2, fb].forEach((n2) => {
-          try {
-            n2.disconnect();
-          } catch (e30) {
-          }
-        });
-      }
-    };
-  }
-  var FEEDBACK_EPSILON, FEEDBACK_CEILING;
-  var init_Echo = __esm({
-    "src/audio-net/av-effects/Echo.js"() {
-      FEEDBACK_EPSILON = 1e-3;
-      FEEDBACK_CEILING = 0.95;
-    }
-  });
-
   // src/audio-net/av-effects/Crush.js
-  function crushParams(metrics, { reductionFactor = 1 } = {}) {
-    const wcpl = Math.min(1, Math.max(0, metrics && metrics.wcpl || 0));
-    const reduction = Math.max(1, reductionFactor * Math.pow(2, wcpl / 0.25));
-    const bitDepth = Math.min(16, Math.max(1, 16 / reduction));
-    const srDivisor = Math.min(64, Math.max(1, Math.round(reduction)));
-    return { reduction, bitDepth, srDivisor, visualPixelate: srDivisor };
+  function crushMetricAmount(metric, metrics, fixed = null) {
+    const clamp2 = (v2) => metric === "wcpl" ? Math.min(1, Math.max(0, v2)) : Math.max(0, v2);
+    if (Number.isFinite(fixed) && fixed >= 0) {
+      return clamp2(metric === "wcpl" ? fixed : fixed * 1e3);
+    }
+    const m2 = metrics || {};
+    const live = metric === "wcpl" ? m2.wcpl : m2[metric];
+    return clamp2(Number.isFinite(live) ? live : 0);
+  }
+  function crushParams(metrics, user = {}, cyclePos = 0) {
+    const metricRaw = evaluateValuePattern(user.metric ?? DEFAULT_METRIC, cyclePos);
+    const metric = Object.hasOwn(HALVING_AMOUNTS, metricRaw) ? metricRaw : DEFAULT_METRIC;
+    const scaleRaw = evaluateValuePattern(user.scale ?? 1, cyclePos);
+    const scale2 = Number.isFinite(scaleRaw) && scaleRaw > 0 ? scaleRaw : 1;
+    const fixed = evaluateValuePattern(user.fixedMetric ?? null, cyclePos);
+    const amount = crushMetricAmount(metric, metrics, Number.isFinite(fixed) ? fixed : null);
+    const reduction = Math.pow(2, amount / HALVING_AMOUNTS[metric]);
+    const bitDepth = Math.min(MAX_BIT_DEPTH, Math.max(MIN_BIT_DEPTH, BASE_BIT_DEPTH * scale2 / reduction));
+    const srDivisor = Math.min(MAX_SR_DIVISOR, Math.max(1, Math.round(reduction)));
+    return { metric, amount, scale: scale2, reduction, bitDepth, srDivisor, visualPixelate: srDivisor };
   }
   function makeCrushCurve(bitDepth, length2 = 2048) {
     const steps2 = Math.max(2, Math.round(Math.pow(2, bitDepth)));
@@ -12225,11 +12822,15 @@ ${err.toString()}`);
     input.connect(shaper);
     shaper.connect(lp2);
     lp2.connect(output);
+    let curveBits = params2.bitDepth;
     return {
       input,
       output,
       update(next) {
-        shaper.curve = makeCrushCurve(next.bitDepth);
+        if (next.bitDepth !== curveBits) {
+          shaper.curve = makeCrushCurve(next.bitDepth);
+          curveBits = next.bitDepth;
+        }
         lp2.frequency.value = audioCtx3.sampleRate / 2 / next.srDivisor;
       },
       dispose() {
@@ -12242,26 +12843,68 @@ ${err.toString()}`);
       }
     };
   }
+  var BASE_BIT_DEPTH, MIN_BIT_DEPTH, MAX_BIT_DEPTH, MAX_SR_DIVISOR, HALVING_AMOUNTS, DEFAULT_METRIC;
   var init_Crush = __esm({
     "src/audio-net/av-effects/Crush.js"() {
+      init_ValuePattern();
+      BASE_BIT_DEPTH = 8;
+      MIN_BIT_DEPTH = 1;
+      MAX_BIT_DEPTH = 16;
+      MAX_SR_DIVISOR = 64;
+      HALVING_AMOUNTS = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
+      DEFAULT_METRIC = "wcl";
     }
   });
 
   // src/audio-net/av-effects/Noise.js
-  function noiseTypeForWcpl(wcpl) {
-    const v2 = Math.min(1, Math.max(0, wcpl || 0));
-    if (v2 > 0.6) return "white";
-    if (v2 >= 0.3) return "pink";
-    if (v2 >= 0.1) return "brown";
-    return "none";
+  function metricAmount(metrics, metric, fixed) {
+    const live = Math.max(0, metrics && metrics[metric] || 0);
+    const raw = fixed != null && fixed > 0 ? fixed : metric === "wcpl" ? live : live / 1e3;
+    return metric === "wcpl" ? Math.min(1, raw) : Math.max(0, raw);
   }
-  function noiseParams(metrics) {
-    const type = noiseTypeForWcpl(metrics && metrics.wcpl);
+  function modulationAmount(metrics, slot) {
+    const s2 = { ...SLOT_DEFAULTS, ...slot || {} };
+    if (!(s2.factor > 0)) return 0;
+    return clamp01(metricAmount(metrics, s2.metric, s2.fixed) * s2.factor);
+  }
+  function tiltSegment(tilt) {
+    const span = clamp01(tilt) * (NOISE_COLORS.length - 1);
+    const lower = Math.min(Math.floor(span), NOISE_COLORS.length - 2);
+    return { lower, frac: span - lower };
+  }
+  function noiseMix(tilt) {
+    const { lower, frac } = tiltSegment(tilt);
+    const mix = {};
+    for (const color2 of NOISE_COLORS) mix[color2] = 0;
+    const snap = (g2) => Math.abs(g2) < 1e-12 ? 0 : g2;
+    mix[NOISE_COLORS[lower]] = snap(Math.cos(frac * Math.PI / 2));
+    mix[NOISE_COLORS[lower + 1]] = snap(Math.sin(frac * Math.PI / 2));
+    return mix;
+  }
+  function noiseTypeForTilt(tilt) {
+    const { lower, frac } = tiltSegment(tilt);
+    return frac < 0.5 ? NOISE_COLORS[lower] : NOISE_COLORS[lower + 1];
+  }
+  function noiseGainForDb(db) {
+    const clamped = Math.min(NOISE_MAX_DB, Math.max(0, Number.isFinite(db) ? db : 0));
+    return NOISE_BASE_GAIN * Math.pow(10, (clamped - NOISE_BASE_DB) / 20);
+  }
+  function noiseParams(metrics, { spectrum: spectrum2 = null, volume = null } = {}) {
+    const tilt = modulationAmount(metrics, spectrum2);
+    const level = modulationAmount(metrics, volume);
+    const gainDb = NOISE_BASE_DB + level * (NOISE_MAX_DB - NOISE_BASE_DB);
+    const { lower, frac } = tiltSegment(tilt);
+    const grain = VISUAL_GRAIN[lower] + (VISUAL_GRAIN[lower + 1] - VISUAL_GRAIN[lower]) * frac;
     return {
-      type,
-      gain: type === "none" ? 0 : 0.12,
-      // Hydra counterpart: normalized grain amount.
-      visualNoise: type === "none" ? 0 : type === "brown" ? 0.15 : type === "pink" ? 0.35 : 0.6
+      tilt,
+      gainDb,
+      gain: noiseGainForDb(gainDb),
+      mix: noiseMix(tilt),
+      type: noiseTypeForTilt(tilt),
+      // Hydra counterpart: colour sets the grain's character, level scales it,
+      // so a quiet brown bed barely marks the image and a loud white one buries
+      // it. Full scale (0.6) needs both a white tilt and the 75 dB ceiling.
+      visualNoise: grain * (gainDb / NOISE_MAX_DB)
     };
   }
   function fillNoise(channel2, type) {
@@ -12288,64 +12931,85 @@ ${err.toString()}`);
     }
     return channel2;
   }
+  function normalizeRms(channel2, target = NOISE_RMS) {
+    let sum = 0;
+    for (let i = 0; i < channel2.length; i++) sum += channel2[i] * channel2[i];
+    const rms = Math.sqrt(sum / (channel2.length || 1));
+    if (!(rms > 0)) return channel2;
+    const scale2 = target / rms;
+    for (let i = 0; i < channel2.length; i++) channel2[i] *= scale2;
+    return channel2;
+  }
   function createNoiseNode(audioCtx3, params2) {
     const input = audioCtx3.createGain();
     const output = audioCtx3.createGain();
     input.connect(output);
-    const gain2 = audioCtx3.createGain();
-    gain2.gain.value = params2.gain;
-    gain2.connect(output);
-    let src2 = null;
-    let currentType = "none";
-    const setType = (type) => {
-      if (type === currentType) return;
-      currentType = type;
-      if (src2) {
-        try {
-          src2.stop();
-          src2.disconnect();
-        } catch (e30) {
-        }
-        src2 = null;
-      }
-      if (type === "none") return;
-      const len = Math.floor(audioCtx3.sampleRate * 2);
+    const level = audioCtx3.createGain();
+    level.gain.value = params2.gain;
+    level.connect(output);
+    const len = Math.max(1, Math.floor(audioCtx3.sampleRate * NOISE_LOOP_S));
+    const voices = NOISE_COLORS.map((color2) => {
       const buf = audioCtx3.createBuffer(1, len, audioCtx3.sampleRate);
-      fillNoise(buf.getChannelData(0), type);
-      src2 = audioCtx3.createBufferSource();
+      normalizeRms(fillNoise(buf.getChannelData(0), color2));
+      const gain2 = audioCtx3.createGain();
+      gain2.gain.value = params2.mix && params2.mix[color2] || 0;
+      const src2 = audioCtx3.createBufferSource();
       src2.buffer = buf;
       src2.loop = true;
       src2.connect(gain2);
+      gain2.connect(level);
       src2.start();
-    };
-    setType(params2.type);
+      return { color: color2, src: src2, gain: gain2 };
+    });
     return {
       input,
       output,
       update(next) {
-        setType(next.type);
-        gain2.gain.value = next.gain;
+        level.gain.value = next.gain;
+        voices.forEach((v2) => {
+          v2.gain.gain.value = next.mix && next.mix[v2.color] || 0;
+        });
       },
+      // Teardown logs and keeps going rather than logging and re-throwing: the
+      // first failed stop()/disconnect() must not strand the generators still
+      // running behind it. Nothing here is silent.
       dispose() {
-        if (src2) {
+        voices.forEach((v2) => {
           try {
-            src2.stop();
+            v2.src.stop();
           } catch (e30) {
+            console.error(`[noise] stopping the ${v2.color} generator failed`, e30);
           }
-        }
-        [input, output, gain2, src2].forEach((n2) => {
-          if (n2) {
-            try {
-              n2.disconnect();
-            } catch (e30) {
-            }
+        });
+        const named = [
+          ["input", input],
+          ["output", output],
+          ["level", level],
+          ...voices.flatMap((v2) => [[`${v2.color} source`, v2.src], [`${v2.color} gain`, v2.gain]])
+        ];
+        named.forEach(([label2, node]) => {
+          if (!node) return;
+          try {
+            node.disconnect();
+          } catch (e30) {
+            console.error(`[noise] disconnecting the ${label2} node failed`, e30);
           }
         });
       }
     };
   }
+  var NOISE_COLORS, VISUAL_GRAIN, NOISE_BASE_DB, NOISE_MAX_DB, NOISE_BASE_GAIN, NOISE_RMS, NOISE_LOOP_S, clamp01, SLOT_DEFAULTS;
   var init_Noise = __esm({
     "src/audio-net/av-effects/Noise.js"() {
+      NOISE_COLORS = ["brown", "pink", "white"];
+      VISUAL_GRAIN = [0.15, 0.35, 0.6];
+      NOISE_BASE_DB = 25;
+      NOISE_MAX_DB = 75;
+      NOISE_BASE_GAIN = 0.12;
+      NOISE_RMS = 0.2;
+      NOISE_LOOP_S = 2;
+      clamp01 = (v2) => Math.min(1, Math.max(0, Number.isFinite(v2) ? v2 : 0));
+      SLOT_DEFAULTS = { metric: "wcl", factor: 0, fixed: null };
     }
   });
 
@@ -12435,22 +13099,22 @@ ${err.toString()}`);
   });
 
   // src/audio-net/av-effects/index.js
-  function computeChainParams(chainEntries, metrics, sampleRate = 48e3) {
+  function computeChainParams(chainEntries, metrics, cycle = {}) {
     const out = [];
     for (const entry of chainEntries || []) {
-      const user = resolveEffectParams(entry);
+      const user = resolveEffectParams(entry, { cycle: cycle.cyclePos || 0 });
       switch (entry.fn) {
         case "room":
           out.push({ fn: "room", params: roomParams(metrics, user) });
           break;
         case "echo":
-          out.push({ fn: "echo", params: echoParams(metrics, user, sampleRate) });
+          out.push({ fn: "echo", params: echoParams(metrics, user, cycle) });
           break;
         case "crush":
-          out.push({ fn: "crush", params: crushParams(metrics, user) });
+          out.push({ fn: "crush", params: crushParams(metrics, user, cycle.cyclePos || 0) });
           break;
         case "noise":
-          out.push({ fn: "noise", params: noiseParams(metrics) });
+          out.push({ fn: "noise", params: noiseParams(metrics, user) });
           break;
         case "grid":
           out.push({ fn: "grid", params: { landmarks: !!user.landmarks } });
@@ -12465,13 +13129,13 @@ ${err.toString()}`);
     const state = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
     for (const { fn, params: params2 } of chainParams) {
       if (fn === "room") state.lowpass = Math.min(state.lowpass, params2.visualLowpass);
-      if (fn === "echo") state.brightness = params2.visualBrightness;
+      if (fn === "echo") state.brightness = Math.min(state.brightness, params2.visualBrightness);
       if (fn === "crush") state.pixelate = Math.max(state.pixelate, params2.visualPixelate);
       if (fn === "noise") state.noise = Math.max(state.noise, params2.visualNoise);
     }
     return state;
   }
-  var AUDIO_EFFECTS, EffectsChainManager;
+  var PATTERN_TICK_MS, MASTER_BUS_EFFECTS, AUDIO_EFFECTS, EffectsChainManager;
   var init_av_effects = __esm({
     "src/audio-net/av-effects/index.js"() {
       init_Room();
@@ -12480,35 +13144,60 @@ ${err.toString()}`);
       init_Noise();
       init_Grid();
       init_MetaprogrammerParser();
+      init_ValuePattern();
+      PATTERN_TICK_MS = 50;
+      MASTER_BUS_EFFECTS = /* @__PURE__ */ new Set(["room", "noise"]);
       AUDIO_EFFECTS = {
-        room: { params: roomParams, create: createRoomNode },
-        echo: { params: echoParams, create: createEchoNode },
-        crush: { params: crushParams, create: createCrushNode },
-        noise: { params: (m2) => noiseParams(m2), create: createNoiseNode }
+        room: createRoomNode,
+        echo: createEchoNode,
+        crush: createCrushNode,
+        noise: createNoiseNode
       };
       EffectsChainManager = class {
         // insert/remove: latency-instrument's master-chain hooks.
-        constructor({ audioCtx: audioCtx3, insert, remove, getPeers, getLocalJitsiId }) {
+        // getCycleContext: () → { cycleSeconds, cyclePos } for the grid the room is
+        // on — cyclePos being the fractional cycles since the epoch that patterned
+        // effect arguments are read against, so they resolve to the same element the
+        // aggregator is using. Its default keeps this class usable without a
+        // scheduler (tests, and any browser whose grid has not started): a 1 s cycle
+        // frozen at position 0.
+        constructor({ audioCtx: audioCtx3, insert, remove, getPeers, getLocalJitsiId, getCycleContext }) {
           this._ctx = audioCtx3;
           this._insert = insert;
           this._remove = remove;
           this._getPeers = getPeers || (() => []);
           this._getLocalJitsiId = getLocalJitsiId || (() => null);
+          this._getCycleContext = getCycleContext || (() => ({ cycleSeconds: 1, cyclePos: 0 }));
           this._nodes = [];
           this._chainEntries = [];
+          this._metrics = null;
           this._endpoints = null;
           this._grid = null;
           this._gridTimer = null;
+          this._patternTimer = null;
+        }
+        // The grid the patterned arguments are read against, defended against a
+        // scheduler that has not started (null/NaN position) so a chain still
+        // resolves rather than producing NaN parameters.
+        cycleContext() {
+          const ctx = this._getCycleContext() || {};
+          const pos = ctx.cyclePos;
+          const seconds2 = ctx.cycleSeconds;
+          return {
+            cyclePos: typeof pos === "number" && isFinite(pos) && pos > 0 ? pos : 0,
+            cycleSeconds: typeof seconds2 === "number" && isFinite(seconds2) && seconds2 > 0 ? seconds2 : 1
+          };
         }
         setChain(chainEntries, metrics) {
           this._teardownAudio();
           this._chainEntries = chainEntries || [];
-          const resolved = computeChainParams(this._chainEntries, metrics, this._ctx ? this._ctx.sampleRate : 48e3);
+          this._metrics = metrics;
+          const resolved = computeChainParams(this._chainEntries, metrics, this.cycleContext());
           this._grid = null;
           const audioParams = [];
           for (const cp of resolved) {
             if (cp.fn === "grid") this._grid = cp.params;
-            else if (cp.fn === "room") continue;
+            else if (MASTER_BUS_EFFECTS.has(cp.fn)) continue;
             else audioParams.push(cp);
           }
           if (this._ctx && audioParams.length) {
@@ -12516,7 +13205,7 @@ ${err.toString()}`);
             const output = this._ctx.createGain();
             let head = input;
             for (const cp of audioParams) {
-              const node = AUDIO_EFFECTS[cp.fn].create(this._ctx, cp.params);
+              const node = AUDIO_EFFECTS[cp.fn](this._ctx, cp.params);
               head.connect(node.input);
               head = node.output;
               this._nodes.push({ fn: cp.fn, node });
@@ -12526,18 +13215,26 @@ ${err.toString()}`);
             if (this._insert) this._insert(this._endpoints);
           }
           this._syncGridLoop();
+          this._syncPatternLoop();
           this._publishVisual(resolved);
         }
         updateMetrics(metrics) {
+          this._metrics = metrics;
+          this.refresh();
+        }
+        // Re-derive every node's params from the last metrics at the current cycle
+        // position, and push them into the live nodes. Public because it is what
+        // the pattern tick calls: nothing about it is internal-only.
+        refresh() {
           if (!this._chainEntries.length) return;
-          const resolved = computeChainParams(this._chainEntries, metrics, this._ctx ? this._ctx.sampleRate : 48e3);
+          const resolved = computeChainParams(this._chainEntries, this._metrics, this.cycleContext());
           let i = 0;
           for (const cp of resolved) {
             if (cp.fn === "grid") {
               this._grid = cp.params;
               continue;
             }
-            if (cp.fn === "room") continue;
+            if (MASTER_BUS_EFFECTS.has(cp.fn)) continue;
             const entry = this._nodes[i++];
             if (entry && entry.fn === cp.fn) entry.node.update(cp.params);
           }
@@ -12545,6 +13242,23 @@ ${err.toString()}`);
         }
         _publishVisual(resolved) {
           if (typeof window !== "undefined") window._ncVisual = visualStateFor(resolved);
+        }
+        patternTicking() {
+          return this._patternTimer != null;
+        }
+        // Patterned arguments change with the cycle, not with the metrics, so they
+        // need a clock of their own. Whether any parameter follows the grid is a
+        // property of the PROGRAM, so it is settled here, at setChain time, rather
+        // than re-resolved on every tick. Armed only while the chain actually holds
+        // one: a constant-argument chain keeps re-deriving on metrics updates alone.
+        _syncPatternLoop() {
+          const wanted = chainHasValuePattern(this._chainEntries) && typeof setInterval !== "undefined";
+          if (wanted && !this._patternTimer) {
+            this._patternTimer = setInterval(() => this.refresh(), PATTERN_TICK_MS);
+          } else if (!wanted && this._patternTimer) {
+            clearInterval(this._patternTimer);
+            this._patternTimer = null;
+          }
         }
         _syncGridLoop() {
           if (this._grid && !this._gridTimer && typeof document !== "undefined") {
@@ -12566,8 +13280,10 @@ ${err.toString()}`);
         dispose() {
           this._teardownAudio();
           this._chainEntries = [];
+          this._metrics = null;
           this._grid = null;
           this._syncGridLoop();
+          this._syncPatternLoop();
           if (typeof window !== "undefined") window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
         }
       };
@@ -12636,6 +13352,16 @@ ${err.toString()}`);
     const measured = computeWorstCaseMetrics(getAllPeers());
     return crdt ? mergeInducedMetrics(measured, crdt.getInduced()) : measured;
   }
+  function cycleContext() {
+    if (cycleGrid && cycleGrid.seconds > 0) {
+      return {
+        cycleSeconds: cycleGrid.seconds,
+        cyclePos: cycleGrid.cycle + (networkSeconds() - cycleGrid.t) / cycleGrid.seconds
+      };
+    }
+    const len = scheduler ? scheduler.getCycleLength() : currentAst && cycleLength({ cycles: currentAst.cycles, tempo: currentAst.tempo, metrics: effectiveWorstCase() });
+    return { cycleSeconds: len ? len.seconds : beatSeconds(null), cyclePos: 0 };
+  }
   function pushEffectiveMetrics() {
     if (!active) return;
     const wc = effectiveWorstCase();
@@ -12684,8 +13410,12 @@ ${err.toString()}`);
   }
   function pushProgramToScheduler() {
     if (programText == null) return;
-    const { ast: ast2, valid } = parseMetaprogram(programText);
-    if (!valid) return;
+    const { ast: ast2, errors, valid } = parseMetaprogram(programText);
+    if (!valid) {
+      console.error("[metaprogrammer] refused an applied program this client cannot parse \u2014 still running the previous one", errors, programText);
+      return;
+    }
+    currentAst = ast2;
     if (scheduler) scheduler.setProgram(ast2);
     if (effects) effects.setChain(ast2.chain, effectiveWorstCase());
   }
@@ -12770,6 +13500,9 @@ ${SHORTCUT_LINES[fn]}
   function onSchedulerEvent(ev) {
     emitSlot(ev);
     if (ev.type === "cycle-start") {
+      const lengthChanged = !cycleGrid || cycleGrid.seconds !== ev.seconds;
+      cycleGrid = { cycle: ev.cycle, t: ev.t, seconds: ev.seconds };
+      if (lengthChanged && effects) effects.updateMetrics(effectiveWorstCase());
       enqueueCycleBuffers(ev.cycle);
       return;
     }
@@ -12874,6 +13607,7 @@ ${SHORTCUT_LINES[fn]}
     }
   }
   function startScheduler() {
+    cycleGrid = null;
     scheduler = new MetaprogramScheduler({
       now: networkSeconds,
       onEvent: onSchedulerEvent
@@ -12910,7 +13644,19 @@ ${SHORTCUT_LINES[fn]}
         insert: insertMasterChain,
         remove: removeMasterChain,
         getPeers: getAllPeers,
-        getLocalJitsiId: () => getLocalPeer().jitsiId
+        getLocalJitsiId: () => getLocalPeer().jitsiId,
+        // Patterned effect arguments (`# crush wcl <2 4>`, `# noise wcl <20 10>`)
+        // are read off the same grid the slots run on, so a value turns over on a
+        // turn boundary rather than on a clock of its own; `# echo` reads the
+        // cycle LENGTH off it too, its delay being written in cycles.
+        //
+        // cycleContext derives its position from the last cycle-start the
+        // scheduler EMITTED, not from scheduler.getCycle() — the scheduler
+        // increments past the cycle it just announced (and emits a lookahead
+        // ahead of real time), so getCycle() names the next one and would put
+        // this browser's visual an element ahead of the aggregator's audio. The
+        // aggregator tracks the same event the same way (#onSchedulerEvent).
+        getCycleContext: cycleContext
       });
       await new Promise((r2) => setTimeout(r2, 500));
       if (epoch == null) {
@@ -12941,6 +13687,7 @@ ${SHORTCUT_LINES[fn]}
         epochTimer = null;
       }
       epoch = null;
+      cycleGrid = null;
       for (const t of slotTimers) clearTimeout(t);
       slotTimers.clear();
       gateLevels.clear();
@@ -12951,7 +13698,7 @@ ${SHORTCUT_LINES[fn]}
     }
     document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
   }
-  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
@@ -12978,6 +13725,8 @@ ${SHORTCUT_LINES[fn]}
       epoch = null;
       epochTimer = null;
       localSecondsFallbackT0 = null;
+      cycleGrid = null;
+      currentAst = null;
       queues = /* @__PURE__ */ new Map();
       activePatterns = /* @__PURE__ */ new Map();
       gateLevels = /* @__PURE__ */ new Map();
@@ -12985,7 +13734,7 @@ ${SHORTCUT_LINES[fn]}
       slotSubscribers = /* @__PURE__ */ new Set();
       slotTimers = /* @__PURE__ */ new Set();
       crdt = null;
-      SHORTCUT_LINES = { room: "# room wcl 2", echo: "# echo 1 0.1", crush: "# crush 1", noise: "# noise" };
+      SHORTCUT_LINES = { room: "# room wcl 2", echo: "# echo", crush: "# crush wcl 1", noise: "# noise" };
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();
       recorder = null;
@@ -51714,18 +52463,19 @@ ${code2}${BTN_MARKER}`;
     if (selected && typeof selected.currentRoundTripTime === "number") {
       rtcRtt = selected.currentRoundTripTime * 1e3;
     }
+    const isAudio = (s2) => (s2.kind ?? s2.mediaType) === "audio";
     for (const s2 of entries2) {
       if (!s2) continue;
       if (s2.type === "remote-inbound-rtp") {
         if (rtcRtt == null && typeof s2.roundTripTime === "number") {
           rtcRtt = s2.roundTripTime * 1e3;
         }
-        if (typeof s2.jitter === "number") {
+        if (typeof s2.jitter === "number" && isAudio(s2)) {
           rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
         }
       } else if (s2.type === "inbound-rtp") {
         sawInbound = true;
-        if (typeof s2.jitter === "number") {
+        if (typeof s2.jitter === "number" && isAudio(s2)) {
           rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
         }
         if (typeof s2.packetsLost === "number") lost += s2.packetsLost;
@@ -52073,13 +52823,19 @@ ${code2}${BTN_MARKER}`;
     return offset2 + (col - 1);
   }
   function participantPositions(text2) {
+    return elementPositions(text2, "participant");
+  }
+  function restPositions(text2) {
+    return elementPositions(text2, "rest");
+  }
+  function elementPositions(text2, type) {
     const { ast: ast2 } = parseMetaprogram(text2);
     const out = [];
     if (!ast2.participants) return out;
     const walk2 = (els) => {
       for (const el of els || []) {
         if (!el) continue;
-        if (el.type === "participant" && el.token != null && el.line != null) {
+        if (el.type === type && el.token != null && el.line != null) {
           const token = String(el.token);
           out.push({ token, offset: lineColToOffset(text2, el.line, el.col), len: token.length });
         } else if (el.type === "choice") {
@@ -52111,6 +52867,7 @@ ${code2}${BTN_MARKER}`;
     host.append(overlay, mirror);
     let activeToken = getActiveNetCyclesToken();
     let activeIndex = getActiveNetCyclesIndex();
+    let activeKind = getActiveNetCyclesKind();
     function syncMetrics() {
       const cs = getComputedStyle(ta);
       for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
@@ -52139,7 +52896,9 @@ ${code2}${BTN_MARKER}`;
     function renderOutline() {
       const text2 = ta.value;
       let pos = null;
-      if (activeToken != null) {
+      if (activeKind === "rest") {
+        pos = activeIndex != null ? restPositions(text2)[activeIndex] : null;
+      } else if (activeToken != null) {
         const positions = participantPositions(text2);
         const atIndex = activeIndex != null ? positions[activeIndex] : null;
         pos = atIndex && atIndex.token === activeToken ? atIndex : positions.find((p) => p.token === activeToken);
@@ -52158,6 +52917,7 @@ ${code2}${BTN_MARKER}`;
     document.addEventListener("trussal-netcycles-active", (e30) => {
       activeToken = e30.detail ? e30.detail.token : null;
       activeIndex = e30.detail ? e30.detail.index : null;
+      activeKind = e30.detail ? e30.detail.kind : null;
       renderOutline();
     });
     ta.addEventListener("input", renderOutline);
@@ -52303,12 +53063,12 @@ ${code2}${BTN_MARKER}`;
     return base * stretch2;
   }
   function compressionParams(load2 = {}) {
-    const clamp01 = (x2) => Math.max(0, Math.min(1, Number(x2) || 0));
-    const fpsPressure = load2.fps != null && load2.fpsMin ? clamp01(1 - load2.fps / load2.fpsMin) : 0;
+    const clamp012 = (x2) => Math.max(0, Math.min(1, Number(x2) || 0));
+    const fpsPressure = load2.fps != null && load2.fpsMin ? clamp012(1 - load2.fps / load2.fpsMin) : 0;
     const pressure = Math.max(
-      clamp01(load2.serverLoad),
-      clamp01(load2.cpuPressure),
-      clamp01(load2.ramPressure),
+      clamp012(load2.serverLoad),
+      clamp012(load2.cpuPressure),
+      clamp012(load2.ramPressure),
       fpsPressure
     );
     return {
@@ -52733,9 +53493,11 @@ ${code2}${BTN_MARKER}`;
     });
   }
   function metricsLine(peer) {
-    const rtt = typeof peer.rtt === "number" ? `${peer.rtt.toFixed(0)}ms` : "\u2013";
-    const jitter = typeof peer.jitter === "number" ? peer.jitter.toFixed(2) : "\u2013";
-    const rtcRtt = typeof peer.rtcRtt === "number" ? `${peer.rtcRtt.toFixed(0)}ms` : "\u2013";
+    const ms = (v2) => typeof v2 === "number" ? preciseMs(v2) : "\u2013";
+    const rtt = ms(peer.rtt);
+    const jitter = ms(peer.jitter);
+    const rtcRtt = ms(peer.rtcRtt);
+    const rtcJitter = ms(peer.rtcJitter);
     const loss = typeof peer.packetLoss === "number" ? `${(peer.packetLoss * 100).toFixed(1)}%` : "\u2013";
     const extLabel = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
     const routed = routedSet.has(peer.jitsiId);
@@ -52750,7 +53512,7 @@ ${code2}${BTN_MARKER}`;
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
+    return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCRTT/WCJ prefer">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 media jitter <b>${rtcJitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
   }
   function cycleLengthReadout(wc) {
     const text2 = getProgramText();
