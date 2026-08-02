@@ -333,18 +333,25 @@ class Parser {
       if (t.type !== 'op') return mods;
       if (t.value === '..') return mods; // handled by the caller as a range
       this.next();
-      if (t.value === '?') {
-        // Optional probability: ?0.3 — the number must be glued to the '?';
-        // with a gap it's the next sequence element ("4? 10").
+      // `?` and `!` may stand alone (Strudel's "half the time" and "once
+      // more"). Their count must be GLUED to the operator to belong to it —
+      // with a gap it is the next sequence element ("4? 10", "0! 2").
+      if (t.value === '?' || t.value === '!') {
         const p = this.peek();
-        const adjacent = p.line === t.line && p.col === t.col + 1;
-        if (adjacent && (p.type === 'number' || p.type === 'intlike')) {
-          this.next();
-          const val = typeof p.value === 'number' ? p.value : parseFloat(p.value);
+        const bare = t.value === '?' ? { op: '?', value: null } : { op: '!', value: 2 };
+        if (!(p.line === t.line && p.col === t.col + 1) || (p.type !== 'number' && p.type !== 'intlike')) {
+          mods.push(bare);
+          continue;
+        }
+        this.next();
+        const val = typeof p.value === 'number' ? p.value : parseFloat(p.value);
+        if (t.value === '?') {
           if (!(val >= 0 && val <= 1)) this.error("'?' probability must be in [0, 1]", p);
           else mods.push({ op: '?', value: val });
+        } else if (!(val > 0) || !isFinite(val)) {
+          this.error("'!' needs a positive repeat count", p);
         } else {
-          mods.push({ op: '?', value: null });
+          mods.push({ op: '!', value: val });
         }
         continue;
       }

@@ -337,7 +337,21 @@ $ participants [0 2 ~ 3 1]
 # cycles wcj
 ```
 
-The infix operators @, !, ?, .., |, %, /, *, and : each apply as usual. The , (stack) operator, as well as the semantics of the `jux` and `superimpose` functions result in the stacked elements receiving an offset of one cycle according to the current cyclic timing mode
+The infix operators @, !, ?, .., |, %, /, *, and : each apply as usual. What they apply to here is a TURN — the stretch of the room's output that belongs to one participant — so read them that way:
+
+| | Effect on the sequence |
+|---|---|
+| `0@n` | Gives 0 n times the room of a plain element. In a `[…]` subdivision that is a share of one cycle (`[0@2 1]` — 0 takes two thirds of it); in a `<…>` alternation, where a cycle already IS the turn, it is a number of cycles (`<0@2 1>` — 0 holds the ring for two whole cycles, unbroken across the boundary). |
+| `0!n` | 0 takes n turns in a row. Bare `!` means once more, i.e. `!2`. The count must be glued to the operator: `<0! 2>` is a doubled 0 followed by participant 2, not `<0!2>`. |
+| `0?` / `0?p` | 0's turn is dropped with probability 0.5 (or p) — the cycle still advances, the room just hears nothing. The draw is seeded per OCCURRENCE, not per cycle, so a turn stretched over several cycles by `@` or `/` is dropped or kept as a whole rather than flickering at each boundary. |
+| `<…>*n` `/n` `%n` | The rate the room reads the sequence at. `*n` fits n turns where one used to go, so every turn is 1/n as long; `/n` is the inverse, stretching each turn over n cycles; `%n` states the steps per cycle outright. They compose, so `*4/2` is ×2. |
+| `0*n` / `0/n` | The same on one token: `0*2` splits 0's own slot into two turns, `0/2` holds a single turn across it. |
+
+For example, `$ participants <0@2 1!3 0a?>*2` gives participant 0 twice the turn of anyone else, sends participant 1 three times in a row, and drops 0a's audio half the time. `<0@2 1!3 0a?>/2` is the same rotation played four times as slowly as that and twice as slowly as an unmodified `<0@2 1!3 0a?>`.
+
+A turn widened past one cycle is CLIPPED to each cycle it covers rather than gated on its onset the way Strudel's `slow` is, which is what keeps a stretched solo continuous instead of sounding only on the cycle it began in. Rates are clamped to between 1/1024 and 1024 units per cycle: past that a program that parses perfectly well would schedule turns too short to emit, or a window too narrow to contain one, and the room would fall silent with nothing to diagnose. Clamped, the extremes still say what they mean — turns a millisecond long, or one turn held for a thousand cycles.
+
+The , (stack) operator, as well as the semantics of the `jux` and `superimpose` functions result in the stacked elements receiving an offset of one cycle according to the current cyclic timing mode
 
 The `ply`,`chop`, and `shuffle`, `degrade`, `hush`, `undegrade`, `undegradeBy`, and `degradeBy` functions function as in Strudel in that they split and/or omit each buffer into the specified subdivision and/or probability.
 

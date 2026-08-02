@@ -9,7 +9,8 @@ import {
   expandCycle,
   AVBufferQueue,
   MetaprogramScheduler,
-  WCPL_FULL_SCALE_S
+  WCPL_FULL_SCALE_S,
+  MAX_EXPANSION_STEPS
 } from '../src/audio-net/MetaprogramScheduler.js';
 import {
   parseMetaprogram,
@@ -314,6 +315,165 @@ test('nested groups subdivide their span', () => {
   const ast = astOf('$ participants <0 [1 2]>\n');
   const c1 = expandCycle(ast.participants, 1);
   assert.deepEqual(c1.map(e => [e.token, e.start, e.dur]), [['1', 0, 0.5], ['2', 0.5, 0.5]]);
+});
+
+// --- Pattern-modifying operators --------------------------------------------------
+//
+// The turn a participant gets is what these operators move. `@` and `!` shape
+// one repetition of the sequence, `*` `/` `%` set how fast the room reads it.
+
+// One line per cycle, so a turn stretched over several cycles is visible as
+// such rather than having to be inferred from starts and durations.
+function cycles(text, n) {
+  const ast = astOf(`$ participants ${text}\n`);
+  const out = [];
+  for (let c = 0; c < n; c++) {
+    out.push(expandCycle(ast.participants, c).map(e => e.token).join(' '));
+  }
+  return out;
+}
+
+test('@ in an alternation lengthens the turn by that many cycles', () => {
+  // `<0@2 1>`: one entry per cycle, but 0 is worth two of them — it holds the
+  // ring for two whole cycles, which is what "plays twice as long" means when
+  // a cycle IS the turn. The turn stays unbroken across the boundary.
+  assert.deepEqual(cycles('<0@2 1>', 6), ['0', '0', '1', '0', '0', '1']);
+  for (const cycle of [0, 1]) {
+    assert.deepEqual(
+      expandCycle(astOf('$ participants <0@2 1>\n').participants, cycle).map(e => [e.start, e.dur]),
+      [[0, 1]], 'each of 0\'s cycles is a full-width slot, not a half'
+    );
+  }
+  // In a subdivision the same weight buys a share of ONE cycle instead.
+  const shares = expandCycle(astOf('$ participants [0@2 1]\n').participants, 0);
+  assert.deepEqual(shares.map(e => e.token), ['0', '1']);
+  assert.ok(Math.abs(shares[0].dur - 2 / 3) < 1e-12);
+  assert.ok(Math.abs(shares[1].dur - 1 / 3) < 1e-12);
+});
+
+test('! repeats the turn that many times in a row', () => {
+  assert.deepEqual(cycles('<0 1!3>', 8), ['0', '1', '1', '1', '0', '1', '1', '1']);
+  // Bare `!` is Strudel's "once more" — and only binds when glued, so `0! 2`
+  // is a doubled 0 followed by participant 2, not `0!2`.
+  assert.deepEqual(cycles('<0! 2>', 6), ['0', '0', '2', '0', '0', '2']);
+});
+
+test('? drops the turn about half the time, per occurrence and identically everywhere', () => {
+  const ast = astOf('$ participants <0 1?>\n');
+  // Every client resolves the same cycle the same way.
+  for (let c = 0; c < 20; c++) {
+    assert.deepEqual(expandCycle(ast.participants, c), expandCycle(ast.participants, c));
+  }
+  // Both outcomes actually occur, near enough evenly. Counted over the slots
+  // that still name a participant: a dropped turn emits a REST slot rather than
+  // nothing, so the raw event count no longer moves.
+  let kept = 0;
+  for (let c = 1; c < 401; c += 2) kept += expandCycle(ast.participants, c).filter(e => !e.rest).length;
+  assert.ok(kept > 60 && kept < 140, `kept ${kept} of 200`);
+  // An explicit probability is honoured: ?1 always drops, ?0 never does.
+  assert.deepEqual(cycles('<0 1?1>', 4), ['0', '', '0', '']);
+  assert.deepEqual(cycles('<0 1?0>', 4), ['0', '1', '0', '1']);
+});
+
+test("a stretched turn's ? is decided once, not re-flipped at every cycle boundary", () => {
+  // `0a?` is worth four cycles here (@2 doubled again by /2). The draw is
+  // seeded by the OCCURRENCE, so those four cycles are all-or-nothing — the
+  // turn must not flicker in and out mid-solo.
+  const ast = astOf('$ participants <1@6 0a?@2>/2\n');
+  // Counted over participant slots — a dropped turn still fills its span with a
+  // rest slot, so the raw event count is 1 either way and would flicker unseen.
+  let dropped = 0;
+  for (let turn = 0; turn < 6; turn++) {
+    const played = [0, 1, 2, 3].map(
+      k => expandCycle(ast.participants, turn * 16 + 12 + k).filter(e => !e.rest).length
+    );
+    assert.ok(
+      played.every(n => n === played[0]),
+      `turn ${turn} flickered across its four cycles: ${played.join(',')}`
+    );
+    if (played[0] === 0) dropped++;
+  }
+  // …and the run actually exercises both outcomes, so "never flickers" is not
+  // being satisfied by a turn that simply always played.
+  assert.ok(dropped > 0 && dropped < 6, `${dropped} of 6 turns dropped`);
+});
+
+test('* halves each turn and packs more per cycle; / doubles each turn', () => {
+  // The plan's worked example. `<0@2 1!3 0a?>` spends 6 units per lap: 0 for
+  // two, 1 for three, 0a for one.
+  const bare = cycles('<0@2 1!3 0a?>', 6);
+  assert.deepEqual(bare.slice(0, 5), ['0', '0', '1', '1', '1']);
+
+  // *2 reads two units per cycle: every turn is half as long, so 0's two units
+  // become one cycle and 1's three units become three half-cycle turns.
+  const fast = expandCycle(astOf('$ participants <0@2 1!3 0a?>*2\n').participants, 0);
+  assert.deepEqual(fast.map(e => [e.token, e.start, e.dur]), [['0', 0, 1]]);
+  assert.deepEqual(
+    expandCycle(astOf('$ participants <0@2 1!3 0a?>*2\n').participants, 1)
+      .map(e => [e.token, e.start, e.dur]),
+    [['1', 0, 0.5], ['1', 0.5, 0.5]]
+  );
+
+  // /2 reads half a unit per cycle: 0's turn runs 4 cycles — four times the
+  // *2 version's one and twice the unmodified version's two.
+  assert.deepEqual(cycles('<0@2 1!3 0a?>/2', 10),
+    ['0', '0', '0', '0', '1', '1', '1', '1', '1', '1']);
+
+  // Same operators on a subdivision: /2 hands each element a whole cycle.
+  assert.deepEqual(cycles('[0 1]/2', 4), ['0', '1', '0', '1']);
+  assert.deepEqual(cycles('[0 1]*2', 1), ['0 1 0 1']);
+  // And they compose, so *4/2 is ×2.
+  assert.deepEqual(cycles('<0 1>*4/2', 2), ['0 1', '0 1']);
+});
+
+test('* and / on a token alone repeat or hold that one turn', () => {
+  // `0*2` splits 0's own slot into two turns; the rest of the cycle is untouched.
+  assert.deepEqual(
+    expandCycle(astOf('$ participants [0*2 1]\n').participants, 0).map(e => [e.token, e.start, e.dur]),
+    [['0', 0, 0.25], ['0', 0.25, 0.25], ['1', 0.5, 0.5]]
+  );
+  // `0/2` holds one turn across the whole slot rather than retriggering.
+  assert.deepEqual(
+    expandCycle(astOf('$ participants [0/2 1]\n').participants, 0).map(e => [e.token, e.dur]),
+    [['0', 0.5], ['1', 0.5]]
+  );
+});
+
+test('% sets steps per cycle', () => {
+  assert.deepEqual(cycles('<0 1 2>%2', 3), ['0 1', '2 0', '1 2']);
+  assert.deepEqual(cycles('[0 1 2 3]%2', 2), ['0 1', '2 3']);
+});
+
+test('a nested alternation advances once per visit, not once per cycle', () => {
+  // Tidal/Strudel semantics: the inner pair only steps on the cycles it is
+  // actually reached, so this is 0 1 0 2 — not 0 2 0 2.
+  assert.deepEqual(cycles('<0 <1 2>>', 6), ['0', '1', '0', '2', '0', '1']);
+  // Reached every cycle inside a subdivision, it steps every cycle.
+  assert.deepEqual(cycles('[0 <1 2>]', 4), ['0 1', '0 2', '0 1', '0 2']);
+  // A nested rate slices the inner group across the outer's cycles.
+  assert.deepEqual(cycles('[0 [1 2]/2]', 4), ['0 1', '0 2', '0 1', '0 2']);
+  assert.deepEqual(cycles('[0 [1 2]*2]', 1), ['0 1 2 1 2']);
+});
+
+test('an absurd rate degrades in both directions rather than silencing the room', () => {
+  // Neither of these is a parse error, so an unclamped rate would silence the
+  // room with no diagnostic anywhere: `*1e9` drives every span below EPS and
+  // `/1e9` puts the whole window there, and BOTH then emit nothing for ever.
+  const fast = expandCycle(astOf('$ participants <0 1>*1000000000\n').participants, 0);
+  assert.ok(fast.length > 0, 'a huge speed-up still schedules turns');
+  assert.ok(fast.length <= MAX_EXPANSION_STEPS, `emitted ${fast.length}`);
+  const slowAst = astOf('$ participants <0 1>/1000000000\n').participants;
+  for (let c = 0; c < 5; c++) {
+    assert.equal(expandCycle(slowAst, c).length, 1, `cycle ${c} of a huge slow-down went silent`);
+  }
+  // The scheduler's tick is the loop that keeps the room streaming, so however
+  // the rate is written it must also return promptly rather than grinding out
+  // a billion repetitions.
+  const started = Date.now();
+  expandCycle(astOf('$ participants [<0 1>*1000000000]*1000000000\n').participants, 0);
+  assert.ok(Date.now() - started < 1000, 'nested extremes still return promptly');
+  // A merely dense rate is expanded in full, untouched by clamp or budget.
+  assert.equal(expandCycle(astOf('$ participants <0 1>*100\n').participants, 0).length, 100);
 });
 
 // --- AV buffer queue ---------------------------------------------------------------
