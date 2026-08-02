@@ -77,6 +77,9 @@ let clock = null;
 let epoch = null;
 let epochTimer = null;
 let localSecondsFallbackT0 = null;
+// Cycle number of the last cycle-start the scheduler emitted — the cycle
+// currently PLAYING, which is what patterned effect arguments sample at.
+let lastCycleStarted = 0;
 
 const queues = new Map();        // token (room index) → AVBufferQueue
 const activePatterns = new Map(); // jitsiId → pattern applied by the last dequeued buffer
@@ -335,6 +338,7 @@ function scheduleGate(jitsiId, level, atNetworkT) {
 function onSchedulerEvent(ev) {
   emitSlot(ev);
   if (ev.type === 'cycle-start') {
+    lastCycleStarted = ev.cycle;
     enqueueCycleBuffers(ev.cycle);
     return;
   }
@@ -506,7 +510,15 @@ export async function setNetCyclesActive(enable) {
       insert: insertMasterChain,
       remove: removeMasterChain,
       getPeers: getAllPeers,
-      getLocalJitsiId: () => getLocalPeer().jitsiId
+      getLocalJitsiId: () => getLocalPeer().jitsiId,
+      // Patterned effect arguments (`# noise wcl <20 10>`) are sampled by
+      // cycle number. This reads the last cycle-start the scheduler EMITTED,
+      // not scheduler.getCycle() — the scheduler increments past the cycle it
+      // just announced (and emits a lookahead ahead of real time), so
+      // getCycle() names the next one and would put this browser's visual an
+      // element ahead of the aggregator's audio. The aggregator tracks the
+      // same event the same way (#onSchedulerEvent).
+      getCycle: () => lastCycleStarted
     });
     // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
     // a beat to arrive before declaring our own epoch / seeding the default.
@@ -528,6 +540,7 @@ export async function setNetCyclesActive(enable) {
     if (clock) clock.stop();
     if (epochTimer) { clearInterval(epochTimer); epochTimer = null; }
     epoch = null;
+    lastCycleStarted = 0; // the next arming starts a fresh grid at cycle 0
     for (const t of slotTimers) clearTimeout(t);
     slotTimers.clear();
     gateLevels.clear();

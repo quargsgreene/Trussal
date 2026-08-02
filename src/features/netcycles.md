@@ -347,7 +347,9 @@ Each individual participant automatically enqueues AV buffer objects at interval
 ### Valid Chainable Functions
 There exist audiovisual analogs to Strudel functions whose parameters are automatically modulated according to network conditions in addition to user input, which do not align with Strudel's preexisting semantic framework when executed within the NetCycles editor.
 
-These include the functions `room`, `crush`,  and `echo`. More analogs will exist in later versions.
+These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
+
+Effect parameters are plain positive numbers, with one exception: `noise` also accepts `<…>` patterns in any of its argument slots, sampled one element per cycle.
 
 Examples:
 
@@ -375,7 +377,7 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 - Description
 The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
 
-Unlike the other chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart still applies locally in every browser.
+Like `noise`, and unlike the rest of the chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`). Where both are written the master path is `room` then `noise` regardless of the order in the program, because the bed is additive and belongs on the mix rather than in the reverb's tail.
 - Syntax
 `# room wcl [scale factor] [amount for wcl]`
 
@@ -437,17 +439,43 @@ $ participants [0 2 1 4 3]
 
 #### noise
 - Description
-Adds audiovisual noise based on wcpl, adds white noise if wcpl is greater than 0.6, pink noise if wcpl is between 0.3 and 0.59, brown noise if wcpl is between 0.1 and 0.29, and none if wcpl is between 0 and 0.09
+Lays a noise bed over the mix whose **spectrum** and **output volume** are each modulated by a worst-case metric of the user's choosing. The spectrum sweeps continuously from brown through pink to white, so worsening conditions open the bed's top end; the volume rises from the base level toward the clamp. Like `room` (and unlike the rest), the audio node runs on the **aggregator's master bus**, so the room hears one bed on the shared mix rather than one uncorrelated bed per browser; the Hydra grain counterpart still applies locally in every browser.
+
+A meeting opens **bypassed**: the default program carries no `# noise` line, so no node exists at all — not a silent one.
+- Syntax
+`# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount for metric 1] [amount for metric 2]`
+
+Both metric keywords are optional and default to `wcl`; either may be `wcl`, `wcj`, `wcrtt` or `wcpl`. A keyword binds to the factor that *follows* it, so `# noise wcl 20 wcrtt 10` reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers are positional: spectrum factor, volume factor, then the two pinned amounts in the same order the metrics were written.
 - Input
 AV buffer object
 - Parameters
-None
+spectrum factor: A positive real number multiplying its metric to give the bed's position on the colour axis, clamped to [0, 1]: 0 is brown, 0.5 pink, 1 white, with an equal-power crossfade between the two adjacent colours (the generators are normalized to a common level, so a sweep changes colour without changing level). Metrics are read in seconds for `wcl`/`wcj`/`wcrtt` and as a loss fraction for `wcpl`, so at 100 ms wcl a factor of 5 lands exactly on pink and a factor of 10 or more saturates at white. Defaults to 0 — an unmodulated bed sits at brown.
+volume factor: A positive real number multiplying its metric the same way, mapping [0, 1] onto 25 dB … 75 dB. The bed's gain is `0.12 × 10^((dB − 25) / 20)`, so 25 dB is the level the effect has always run at and each further 6 dB doubles it. **Clamped at 75 dB** — 50 dB above the base, i.e. 316× the base gain, an absolute linear gain of ~38. The clamp bounds the modulation; it does not promise the bed stays inside the mix's headroom. 0 dBFS arrives at about 43 dB, and there is no limiter between the bed and the published track, so the upper part of the range clips the master by design. Defaults to 0, leaving the bed at 25 dB.
+amount for metric 1 / metric 2: Positive real numbers that *pin* the corresponding metric instead of reading it live — seconds for `wcl`/`wcj`/`wcrtt`, a loss fraction for `wcpl` — exactly as `# room wcl 2 0.4` pins room's. Being positional, pinning the first metric means writing a volume factor first. Default unset (live metrics).
+
+A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise wcj` is "spectrum from live wcj at scale 1", the same shape as `# room wcl`.
+
+Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, which a per-cycle argument cannot express, and is a parse error; so is mixing metric keywords and numbers in one pattern. Nested groups advance once per visit of their parent, as in mondo.
+
+The Hydra counterpart is image grain: the colour sets its character (0.15 brown … 0.6 white) and the level scales it, so a quiet brown bed barely marks the image and a loud white one buries it. Note that this value is *published* — every browser computes it into `window._ncVisual.noise` — but nothing renders it yet: the only channel of that object the visual layer reads today is `brightness`. The grain (like room's blur) is wired up to the point of publication and no further.
 - Return value
 Updated AV buffer object
-- Example:
+- Examples:
 ```
 $ participants [0 2 1 4 3]
 # noise
+```
+```
+$ participants [0 2 1 4 3]
+# noise wcl 20 wcrtt 10
+```
+```
+$ participants [0 2 1 4 3]
+# noise wcl 20 wcrtt 10 0.4 0.06
+```
+```
+$ participants [0 2 1 4 3]
+# noise <wcl wcpl> <20 5> wcrtt 10
 ```
 
 ### grid

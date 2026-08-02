@@ -5,7 +5,7 @@ import {
   pageAggregatorCapture, pageDrainParticipantAudio, pageDrainParticipantLeaves,
   pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
-  pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom,
+  pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -13,6 +13,7 @@ import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio
 import { parseMetaprogram, buildDefaultProgram, resolveEffectParams } from '../../../src/audio-net/MetaprogrammerParser.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
+import { noiseParams } from '../../../src/audio-net/av-effects/Noise.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -204,10 +205,11 @@ export class AggregatorBot extends Bot {
     #localT0 = null;
     // Room roster as seen over the metaprogram bus (peerId → publicView
     // record), the worst-case metrics derived from it, the applied program's
-    // `# room` chain entry, and the last room params pushed to the page (as
-    // JSON, so unchanged params don't re-evaluate every peer-update). The
-    // page starts with no reverb, so 'null' — not undefined — is the honest
-    // starting point: a program without `# room` never pushes at all.
+    // `# room` and `# noise` chain entries, and the last params pushed to the
+    // page for each (as JSON, so unchanged params don't re-evaluate every
+    // peer-update — or, for noise, every cycle). The page starts with no
+    // reverb and no noise bed, so 'null' — not undefined — is the honest
+    // starting point: a program without those directives never pushes at all.
     #peers = new Map();
     // The metaprogram's slot grid, banked from the scheduler's slot-open/
     // slot-close events with their NETWORK timestamps (the scheduler emits a
@@ -225,6 +227,11 @@ export class AggregatorBot extends Bot {
     #worstCase = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
     #roomChain = null;
     #lastRoomPushJson = 'null';
+    #noiseChain = null;
+    #lastNoisePushJson = 'null';
+    // Cycle number the scheduler last opened. noise is the one effect whose
+    // arguments may be `<…>` patterns, and they are sampled by cycle.
+    #cycle = 0;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -660,10 +667,12 @@ export class AggregatorBot extends Bot {
         if (!valid) return;
         if (this.scheduler) this.scheduler.setProgram(ast);
         this.#applyOrderFromProgram(ast, { programUpdate });
-        // `# room wcl …` targets THIS bot's master bus (the mix every client
-        // hears); adopt/drop it with the program.
+        // `# room wcl …` and `# noise …` target THIS bot's master bus (the mix
+        // every client hears); adopt/drop them with the program.
         this.#roomChain = (ast.chain || []).find((c) => c.fn === 'room') || null;
+        this.#noiseChain = (ast.chain || []).find((c) => c.fn === 'noise') || null;
         this.#syncMasterRoom();
+        this.#syncMasterNoise();
     }
 
     /**
@@ -680,6 +689,7 @@ export class AggregatorBot extends Bot {
             : measured;
         if (this.scheduler) this.scheduler.setMetrics(this.#worstCase);
         this.#syncMasterRoom();
+        this.#syncMasterNoise();
     }
 
     /**
@@ -704,6 +714,26 @@ export class AggregatorBot extends Bot {
             // than believing a push that never landed.
             this.#lastRoomPushJson = 'stale';
             console.error('[aggregator-bot] master room push failed', e);
+        });
+    }
+
+    /**
+     * The same for the applied program's `# noise` bed. Unlike room this is
+     * also called at every cycle boundary, because noise arguments may be
+     * `<…>` patterns that resolve per cycle — the JSON dedup is what keeps
+     * that from crossing into the page on cycles where nothing moved.
+     */
+    #syncMasterNoise() {
+        if (!this.page) return;
+        const params = this.#noiseChain
+            ? noiseParams(this.#worstCase, resolveEffectParams(this.#noiseChain, { cycle: this.#cycle }))
+            : null;
+        const json = JSON.stringify(params ?? null);
+        if (json === this.#lastNoisePushJson) return;
+        this.#lastNoisePushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMasterNoise, params)).catch((e) => {
+            this.#lastNoisePushJson = 'stale';
+            console.error('[aggregator-bot] master noise push failed', e);
         });
     }
 
@@ -798,6 +828,16 @@ export class AggregatorBot extends Bot {
     #onSchedulerEvent(ev) {
         if (ev.type === 'cycle-start') {
             if (this.scheduler) this.#applyOrderFromProgram(this.scheduler.getProgram());
+            // Patterned noise arguments advance one element per cycle, so the
+            // bed is re-derived here; a program with none pushes nothing.
+            // Applied on ARRIVAL rather than banked against ev.t like the
+            // slots are, so the new element lands up to the scheduler's
+            // lookahead (0.2 s) before the cycle it belongs to. The bed is a
+            // continuous drone against cycles of at least a second, so it
+            // reads as a slightly early fade rather than a missed cue; a
+            // percussive effect would need the timeline treatment instead.
+            this.#cycle = ev.cycle;
+            this.#syncMasterNoise();
             return;
         }
         if (!ev.id) return;

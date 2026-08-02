@@ -4,8 +4,9 @@
 // sequences) but deliberately tiny: one `$ participants` scheduling sequence
 // plus `#`-chained directives (one cyclic timing mode, a tempo, network-
 // modulated AV effects, and a whitelist of Strudel-analog pattern functions).
-// Everything else — arbitrary Strudel calls, any Hydra call, pattern-valued
-// effect arguments — is a validation error.
+// Everything else — arbitrary Strudel calls, any Hydra call — is a validation
+// error, as is a pattern-valued argument to any effect but `noise`, whose
+// arguments accept `<…>` alternation sampled one element per cycle.
 //
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
 // in the browser bundle, in bots, and under node:test. Errors carry
@@ -19,6 +20,10 @@ import {
 } from '../../latency-instrument/room-indices.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
+// Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
+// cannot set a cycle length (it is a round trip, not a turn) but it is a
+// perfectly good modulation source, and room already reads it for its cutoff.
+export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
@@ -28,7 +33,10 @@ const EFFECTS = {
   room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: ['wcl'] }, // scale=1, fixed wcl seconds=live
   echo: { minArgs: 0, maxArgs: 2, kind: 'effect' },   // n_samples_factor=1, magnitude_feedback_factor=0.1
   crush: { minArgs: 0, maxArgs: 1, kind: 'effect' },  // reduction_factor=1
-  noise: { minArgs: 0, maxArgs: 0, kind: 'effect' },
+  // noise interleaves two metric keywords with its numbers and takes patterns
+  // in any slot, which parseChainFn's positional-numbers grammar cannot
+  // express — it parses in parseNoise instead.
+  noise: { kind: 'effect', grammar: 'noise' },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true } // landmarks=false
 };
 
@@ -50,7 +58,13 @@ export const EFFECT_DEFAULTS = {
   room: { metric: 'wcl', scale: 1, fixedWclS: null },
   echo: { nSamplesFactor: 1, magnitudeFeedbackFactor: 0.1 },
   crush: { reductionFactor: 1 },
-  noise: {},
+  // Both noise axes default to wcl but to factor 0 — nothing modulates until
+  // a factor (or the metric keyword that implies one) is written, which is
+  // what makes a bare `# noise` the unmodulated floor.
+  noise: {
+    spectrum: { metric: 'wcl', factor: 0, fixed: null },
+    volume: { metric: 'wcl', factor: 0, fixed: null }
+  },
   grid: { landmarks: false }
 };
 
@@ -378,7 +392,11 @@ class Parser {
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
 
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
-    if (EFFECTS[name]) { this.parseChainFn(program, name, nameTok, EFFECTS[name]); return; }
+    if (EFFECTS[name]) {
+      if (EFFECTS[name].grammar === 'noise') this.parseNoise(program, nameTok);
+      else this.parseChainFn(program, name, nameTok, EFFECTS[name]);
+      return;
+    }
 
     this.error(`'${name}' is not a NetCycles function — Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
     this.recover();
@@ -468,6 +486,148 @@ class Parser {
       return;
     }
     program.tempo = { value, unit: unitTok.value };
+  }
+
+  // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
+  //          [<amount for metric 1>] [<amount for metric 2>]`
+  //
+  // Positional, with the two metric keywords optional and interleaved: a
+  // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
+  // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
+  // the spectrum factor, the volume factor, then the two pinned amounts — in
+  // the order the metrics were written. Any slot may instead be a `<…>`
+  // pattern, sampled one element per cycle.
+  parseNoise(program, nameTok) {
+    const metrics = [null, null]; // spectrum, volume: keyword, pattern, or unwritten
+    const args = [];              // spectrum factor, volume factor, amount 1, amount 2
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'punct' && t.value === '(') {
+        this.error("'noise' takes patterns as '<…>', not parenthesized expressions", t);
+        this.recover();
+        return;
+      }
+      if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        const pattern = this.parseArgPattern();
+        if (!pattern) { this.recover(); return; }
+        if (pattern.kind === 'metric') {
+          if (!this.bindNoiseMetric(metrics, args.length, pattern.node, pattern.tok)) return;
+        } else {
+          args.push(pattern.node);
+        }
+        continue;
+      }
+      if (t.type === 'word' && EFFECT_METRICS.includes(t.value)) {
+        this.next();
+        if (!this.bindNoiseMetric(metrics, args.length, t.value, t)) return;
+        continue;
+      }
+      if (t.type === 'number' || t.type === 'intlike') {
+        this.next();
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+        if (!(val > 0) || !isFinite(val)) {
+          this.error("'noise' arguments must be positive real numbers", t);
+        }
+        args.push(val);
+        continue;
+      }
+      break;
+    }
+
+    const trailing = this.peek();
+    if (trailing.type !== 'newline' && trailing.type !== 'eof' && trailing.type !== 'sigil') {
+      this.error(`'noise' got an unexpected argument '${trailing.value}' — the syntax is ` +
+        "'# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'", trailing);
+      this.recover();
+      return;
+    }
+    if (args.length > 4) {
+      this.error(`'noise' takes at most 4 numeric arguments (two factors then two pinned amounts), got ${args.length}`, nameTok);
+      return;
+    }
+    program.chain.push({ fn: 'noise', args, metrics, line: nameTok.line, col: nameTok.col });
+  }
+
+  // A metric keyword binds to the factor that follows it, so it is legal only
+  // ahead of the spectrum or volume factor — never ahead of the pinned
+  // amounts, which belong to the two metrics already named.
+  bindNoiseMetric(metrics, slot, value, tok) {
+    if (slot > 1) {
+      this.error("'noise' metric keywords go before the spectrum and volume factors — " +
+        'the 5th and 6th arguments are amounts pinning those same two metrics', tok);
+      this.recover();
+      return false;
+    }
+    if (metrics[slot] != null) {
+      this.error(`'noise' already has a metric for its ${slot === 0 ? 'spectrum' : 'volume'} argument`, tok);
+      this.recover();
+      return false;
+    }
+    metrics[slot] = value;
+    return true;
+  }
+
+  // A `<…>` argument pattern: mondo alternation, one element per cycle.
+  // `[…]` subdivides WITHIN a cycle, which an effect argument cannot express
+  // — the aggregator re-derives these once per cycle boundary — so it is
+  // rejected rather than quietly behaving as alternation. Elements are plain
+  // values or nested `<…>` (which advances once per visit of its parent); the
+  // postfix operators do not apply here.
+  parseArgPattern() {
+    const open = this.next(); // '<' or '['
+    if (open.value === '[') {
+      this.error("effect arguments are sampled once per cycle — use '<…>' alternation, not '[…]'", open);
+      return null;
+    }
+    const items = [];
+    let kind = null; // 'metric' | 'number', taken from the leaves
+    const setKind = (k, tok) => {
+      if (kind && kind !== k) {
+        this.error('a pattern argument cannot mix metric keywords with numbers', tok);
+        return false;
+      }
+      kind = k;
+      return true;
+    };
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof') { this.error("unclosed pattern argument — expected '>'", open); return null; }
+      // A '$' or '#' starts the next statement, so a missing '>' stops HERE
+      // rather than eating the rest of the program: without this the parser
+      // consumes every following statement one token at a time, and a single
+      // typo reports as a pile of unrelated errors plus a bogus "missing
+      // '$ participants'". The sigil is left unconsumed for recover().
+      if (t.type === 'sigil') { this.error("unclosed pattern argument — expected '>'", open); return null; }
+      if (t.type === 'newline') { this.next(); continue; } // patterns may wrap lines
+      if (t.type === 'punct' && t.value === '>') { this.next(); break; }
+      if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        const inner = this.parseArgPattern();
+        if (!inner) return null;
+        if (inner.kind && !setKind(inner.kind, t)) return null;
+        items.push(inner.node);
+        continue;
+      }
+      if (t.type === 'number' || t.type === 'intlike') {
+        this.next();
+        if (!setKind('number', t)) return null;
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+        if (!(val > 0) || !isFinite(val)) {
+          this.error('pattern argument values must be positive real numbers', t);
+        }
+        items.push(val);
+        continue;
+      }
+      if (t.type === 'word' && EFFECT_METRICS.includes(t.value)) {
+        this.next();
+        if (!setKind('metric', t)) return null;
+        items.push(t.value);
+        continue;
+      }
+      this.error(`unexpected '${t.value ?? 'end of input'}' in a pattern argument`, t);
+      this.next();
+    }
+    if (!items.length) { this.error('empty pattern argument', open); return null; }
+    return { node: { type: 'alt', items }, kind, tok: open };
   }
 
   parseChainFn(program, name, nameTok, sig) {
@@ -564,9 +724,24 @@ export function parseMetaprogram(text) {
 //   const { tokens, _ } = tokenize(typeof text === 'string' ? text: '');
 //   return tokens;
 // }
+// One element of a `<…>` argument pattern, chosen by cycle number: element
+// `cycle mod n`, with a nested group advancing once per visit of its parent
+// (mondo alternation). A plain value passes straight through, so callers need
+// not know whether a slot was patterned.
+export function sampleArgPattern(value, cycle = 0) {
+  if (!value || value.type !== 'alt') return value;
+  const n = value.items.length;
+  if (!n) return null;
+  const c = Math.floor(Number.isFinite(cycle) ? cycle : 0);
+  const item = value.items[((c % n) + n) % n];
+  return (item && item.type === 'alt') ? sampleArgPattern(item, Math.floor(c / n)) : item;
+}
+
 // Resolved effect parameter objects for the chain (validation must have
 // passed). Consumed by the Metaprogrammer when instantiating av-effects.
-export function resolveEffectParams(chainEntry) {
+// `cycle` selects the element of any `<…>` argument pattern; effects without
+// patterned arguments ignore it entirely.
+export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
   const { fn, args } = chainEntry;
   switch (fn) {
     // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
@@ -574,7 +749,26 @@ export function resolveEffectParams(chainEntry) {
     case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedWclS: args[1] ?? null };
     case 'echo': return { nSamplesFactor: args[0] ?? 1, magnitudeFeedbackFactor: args[1] ?? 0.1 };
     case 'crush': return { reductionFactor: args[0] ?? 1 };
-    case 'noise': return {};
+    // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
+    // [<amount 1>] [<amount 2>]` — one slot per axis, each naming the metric
+    // that modulates it, how hard, and (optionally) a value pinning that
+    // metric. A factor defaults to 1 only when its metric keyword was
+    // written; unwritten means 0, which is "this axis does not modulate" and
+    // is what leaves a bare `# noise` at brown, 25 dB.
+    case 'noise': {
+      const metrics = chainEntry.metrics || [];
+      const axis = (i) => {
+        const metric = sampleArgPattern(metrics[i], cycle);
+        const factor = sampleArgPattern(args[i], cycle);
+        const fixed = sampleArgPattern(args[i + 2], cycle);
+        return {
+          metric: EFFECT_METRICS.includes(metric) ? metric : 'wcl',
+          factor: typeof factor === 'number' ? factor : (metrics[i] != null ? 1 : 0),
+          fixed: typeof fixed === 'number' ? fixed : null
+        };
+      };
+      return { spectrum: axis(0), volume: axis(1) };
+    }
     case 'grid': return { landmarks: args[0] ?? false };
     default: return { args };
   }

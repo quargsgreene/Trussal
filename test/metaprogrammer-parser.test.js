@@ -118,7 +118,10 @@ test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise,
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { reductionFactor: 1.0003 });
 
   ast = ok('$ participants [0 2 1 4 3]\n# noise\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), {});
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), {
+    spectrum: { metric: 'wcl', factor: 0, fixed: null },
+    volume: { metric: 'wcl', factor: 0, fixed: null }
+  });
 
   ast = ok('$ participants <0 9 1 4 2>*2\n# grid true\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { landmarks: true });
@@ -206,10 +209,67 @@ test('room requires its wcl metric keyword; scale and fixed wcl are optional', (
   bad('$ participants <0>\n# room wcj 2\n', /needs a metric keyword \(wcl\)/);
 });
 
+test('noise: two metric/factor pairs, then two amounts pinning those metrics', () => {
+  // The spec line: spectrum from wcl × 20, volume from wcrtt × 10.
+  let ast = ok('$ participants <0>\n# noise wcl 20 wcrtt 10\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), {
+    spectrum: { metric: 'wcl', factor: 20, fixed: null },
+    volume: { metric: 'wcrtt', factor: 10, fixed: null }
+  });
+  // 5th and 6th arguments pin the metrics in written order.
+  ast = ok('$ participants <0>\n# noise wcl 20 wcrtt 10 0.4 0.06\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), {
+    spectrum: { metric: 'wcl', factor: 20, fixed: 0.4 },
+    volume: { metric: 'wcrtt', factor: 10, fixed: 0.06 }
+  });
+  // Metric keywords are optional and default to wcl; a keyword alone implies
+  // factor 1, the way `# room wcl` does.
+  assert.deepEqual(resolveEffectParams(ok('$ participants <0>\n# noise 20 10\n').chain[0]), {
+    spectrum: { metric: 'wcl', factor: 20, fixed: null },
+    volume: { metric: 'wcl', factor: 10, fixed: null }
+  });
+  assert.deepEqual(resolveEffectParams(ok('$ participants <0>\n# noise wcj\n').chain[0]).spectrum,
+    { metric: 'wcj', factor: 1, fixed: null });
+  // A keyword binds to the factor that follows it, so it may sit second.
+  assert.deepEqual(resolveEffectParams(ok('$ participants <0>\n# noise 20 wcpl 2\n').chain[0]).volume,
+    { metric: 'wcpl', factor: 2, fixed: null });
+
+  bad('$ participants <0>\n# noise wcl 1 2 3 4 5\n', /at most 4 numeric arguments/);
+  bad('$ participants <0>\n# noise wcl wcj 2\n', /already has a metric for its spectrum/);
+  bad('$ participants <0>\n# noise wcl 1 wcj 2 0.4 0.5 wcl\n', /metric keywords go before/);
+  bad('$ participants <0>\n# noise rtt 2\n', /unexpected argument 'rtt'/);
+  bad('$ participants <0>\n# noise wcl 0\n', /positive real numbers/);
+  bad('$ participants <0>\n# noise wcl (pink)\n', /patterns as '<…>'/);
+});
+
+test('noise: any slot may be a <…> pattern, sampled one element per cycle', () => {
+  const ast = ok('$ participants <0>\n# noise <wcl wcj> <20 10> wcrtt <5 <1 2>>\n');
+  const at = (cycle) => resolveEffectParams(ast.chain[0], { cycle });
+  assert.deepEqual(at(0).spectrum, { metric: 'wcl', factor: 20, fixed: null });
+  assert.deepEqual(at(1).spectrum, { metric: 'wcj', factor: 10, fixed: null });
+  assert.deepEqual(at(2).spectrum, { metric: 'wcl', factor: 20, fixed: null }, 'wraps');
+  // Nested: the inner group advances once per visit of its parent.
+  assert.deepEqual([0, 1, 2, 3].map((c) => at(c).volume.factor), [5, 1, 5, 2]);
+
+  // Subdivision has no meaning for a per-cycle argument, and a pattern may
+  // not mix the two kinds of leaf.
+  bad('$ participants <0>\n# noise wcl [20 10]\n', /use '<…>' alternation/);
+  bad('$ participants <0>\n# noise <wcl 20>\n', /cannot mix metric keywords with numbers/);
+  bad('$ participants <0>\n# noise wcl <20\n', /unclosed pattern argument/);
+  // A missing '>' must stop at the next statement, not eat the rest of the
+  // program: swallowing it produced a pile of unrelated squiggles and a bogus
+  // "missing '$ participants'" for a program that plainly has one.
+  const errors = bad('# noise wcl <20\n$ participants [0]\n# crush 1\n', /unclosed pattern argument/);
+  assert.equal(errors.length, 1, `one error, got: ${errors.map(e => e.message).join(' | ')}`);
+  bad('$ participants <0>\n# noise wcl <>\n', /empty pattern argument/);
+});
+
 test('argument arity and positivity are validated', () => {
   bad('$ participants <0>\n# ply\n', /takes 1/);
   bad('$ participants <0>\n# room wcl 1 2 3\n', /takes 0–2/);
-  bad('$ participants <0>\n# noise 3\n', /takes 0/);
+  // noise's own arity lives with its grammar (see the noise tests above):
+  // `# noise 3` is now a spectrum factor, not an arity error.
+  ok('$ participants <0>\n# noise 3\n');
   bad('$ participants <0>\n# crush 0\n', /positive real/);
   bad('$ participants <0>\n# degradeBy 1.5\n', /probability must be in \[0, 1\]/);
   bad('$ participants <0>\n# grid maybe\n', /unexpected argument 'maybe'/);

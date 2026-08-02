@@ -1024,17 +1024,25 @@ export function pageMasterPlayer() {
   const chunks = [];   // Array<Float32Array> waiting to be emitted
   let head = 0;        // read offset into chunks[0]
   let ctx = null, proc = null, busOut = null;
-  // Master-bus room reverb (`# room wcl …`): applied HERE, on the one mix
-  // every client hears, rather than in each browser. Node computes the pure
-  // params (src/audio-net/av-effects/Room.js roomParams) and pushes them via
-  // setRoom(); the graph below mirrors that module's createRoomNode — the
-  // page-script contract forbids imports, so the construction is inlined.
+  // Master-bus effects (`# room wcl …`, `# noise …`): applied HERE, on the one
+  // mix every client hears, rather than in each browser. Node computes the
+  // pure params (src/audio-net/av-effects/Room.js roomParams and Noise.js
+  // noiseParams) and pushes them via setRoom()/setNoise(); the graphs below
+  // mirror those modules' createRoomNode/createNoiseNode — the page-script
+  // contract forbids imports, so the construction is inlined.
   let room = null;         // { input, output, combs: [{delay, fb}], lp1, lp2, all: [...] }
+  let noise = null;        // { input, output, level, voices: [{color, src, gain}], all: [...] }
   let pendingRoom = null;  // params pushed before the ctx existed
+  let pendingNoise = null;
 
   function ensure() {
     if (ctx) return;
-    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      console.error('[trussal] master player could not open an AudioContext', e);
+      return;
+    }
     proc = ctx.createScriptProcessor(FRAME, 1, 1);
     proc.onaudioprocess = (ev) => {
       const out = ev.outputBuffer.getChannelData(0);
@@ -1045,12 +1053,56 @@ export function pageMasterPlayer() {
       }
     };
     // proc -> busOut -> fan -> MediaStreamDestination (this bot's mic ->
-    // every other client) + hardware. busOut is the room insert point:
-    // setRoom re-routes busOut through the reverb without touching proc.
+    // every other client) + hardware. busOut is the master insert point:
+    // relink() re-routes it through whichever effects exist without touching
+    // proc.
     busOut = ctx.createGain();
     proc.connect(busOut);
     busOut.connect(ctx.destination);
     if (pendingRoom) { const p = pendingRoom; pendingRoom = null; setRoom(p); }
+    if (pendingNoise) { const p = pendingNoise; pendingNoise = null; setNoise(p); }
+  }
+
+  // busOut -> room? -> noise? -> destination. The order is fixed rather than
+  // read from the written chain: noise is additive and belongs ON the mix, so
+  // running it after the reverb keeps the bed dry instead of feeding it
+  // through the tail. Called after any build/teardown; a params-only update
+  // touches no edges and does not re-link.
+  function relink() {
+    // Every node that can be a link in the chain drops its outgoing edge
+    // first. Clearing busOut alone is not enough: whichever effect used to be
+    // last still holds its edge to the destination, so inserting another one
+    // behind it would leave the old path live and the mix would reach the fan
+    // twice. Each of these has exactly one outgoing edge — the chain link —
+    // so a blanket disconnect() is the whole of it.
+    // Each disconnect is guarded on its own: a throw here would otherwise
+    // abort before the reconnection below, leaving busOut attached to nothing
+    // and the bot publishing silence with no path back.
+    [busOut, room && room.output, noise && noise.output].forEach((n) => {
+      if (!n) return;
+      try {
+        n.disconnect();
+      } catch (e) {
+        console.error('[trussal] master path: disconnecting a chain link failed', e);
+      }
+    });
+    let hd = busOut;
+    if (room) { hd.connect(room.input); hd = room.output; }
+    if (noise) { hd.connect(noise.input); hd = noise.output; }
+    hd.connect(ctx.destination);
+  }
+
+  // Disconnect a torn-down effect's nodes. Logs and continues per node: one
+  // failure must not strand the rest still wired into the master path.
+  function unwire(label, nodes) {
+    nodes.forEach((n, i) => {
+      if (!n) return;
+      try {
+        n.disconnect();
+      } catch (e) {
+        console.error(`[trussal] master ${label}: disconnecting node ${i} failed`, e);
+      }
+    });
   }
 
   function buildRoom(params) {
@@ -1102,21 +1154,107 @@ export function pageMasterPlayer() {
     };
   }
 
+  // Three level-matched generators (see Noise.js: brown/pink/white, each
+  // normalized to white's RMS) mixed by params.mix and scaled by params.gain.
+  // All three run for the node's lifetime, so a spectrum sweep crossfades
+  // rather than rebuilding a buffer mid-stream.
+  function buildNoise(params) {
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+    input.connect(output); // additive: the assembled mix passes through
+    const level = ctx.createGain();
+    level.gain.value = params.gain;
+    level.connect(output);
+
+    const len = Math.max(1, Math.floor(ctx.sampleRate * 2));
+    const voices = ['brown', 'pink', 'white'].map((color) => {
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const ch = buf.getChannelData(0);
+      if (color === 'white') {
+        for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+      } else if (color === 'pink') {
+        let b0 = 0, b1 = 0, b2 = 0;
+        for (let i = 0; i < ch.length; i++) {
+          const w = Math.random() * 2 - 1;
+          b0 = 0.99765 * b0 + w * 0.0990460;
+          b1 = 0.96300 * b1 + w * 0.2965164;
+          b2 = 0.57000 * b2 + w * 1.0526913;
+          ch[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+        }
+      } else {
+        let last = 0;
+        for (let i = 0; i < ch.length; i++) {
+          const w = Math.random() * 2 - 1;
+          last = (last + 0.02 * w) / 1.02;
+          ch[i] = last * 3.5;
+        }
+      }
+      // 0.2 is Noise.js's NOISE_RMS (the brown generator's own level). It is
+      // duplicated here rather than imported, so bot.test.js compares these
+      // buffers against the module's generators to catch the two drifting.
+      let sum = 0;
+      for (let i = 0; i < ch.length; i++) sum += ch[i] * ch[i];
+      const rms = Math.sqrt(sum / (ch.length || 1));
+      if (rms > 0) {
+        const scale = 0.2 / rms;
+        for (let i = 0; i < ch.length; i++) ch[i] *= scale;
+      }
+      const gain = ctx.createGain();
+      gain.gain.value = (params.mix && params.mix[color]) || 0;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(gain);
+      gain.connect(level);
+      src.start();
+      return { color, src, gain };
+    });
+
+    return {
+      input, output, level, voices,
+      all: [input, output, level, ...voices.map((v) => v.src), ...voices.map((v) => v.gain)],
+    };
+  }
+
+  function setNoise(params) {
+    if (!ctx) { pendingNoise = params; return; }
+    if (!params) {
+      if (!noise) return;
+      noise.voices.forEach((v) => {
+        try {
+          v.src.stop();
+        } catch (e) {
+          console.error(`[trussal] master noise: stopping the ${v.color} generator failed`, e);
+        }
+      });
+      const dead = noise;
+      noise = null;
+      relink();
+      unwire('noise', dead.all);
+      return;
+    }
+    if (!noise) {
+      noise = buildNoise(params);
+      relink();
+      return;
+    }
+    noise.level.gain.value = params.gain;
+    noise.voices.forEach((v) => { v.gain.gain.value = (params.mix && params.mix[v.color]) || 0; });
+  }
+
   function setRoom(params) {
     if (!ctx) { pendingRoom = params; return; }
     if (!params) {
       if (!room) return;
-      busOut.disconnect();
-      room.all.forEach((n) => { try { n.disconnect(); } catch (e) {} });
+      const dead = room;
       room = null;
-      busOut.connect(ctx.destination);
+      relink();
+      unwire('room', dead.all);
       return;
     }
     if (!room) {
       room = buildRoom(params);
-      busOut.disconnect();
-      busOut.connect(room.input);
-      room.output.connect(ctx.destination);
+      relink();
       return;
     }
     room.combs.forEach((c, i) => {
@@ -1146,6 +1284,7 @@ export function pageMasterPlayer() {
     },
     queued,
     setRoom,
+    setNoise,
   };
 }
 
@@ -1163,6 +1302,18 @@ export function pageEnqueueMaster(samples) {
 export function pageSetMasterRoom(params) {
   const p = window.__trussalMasterPlayer;
   if (p && typeof p.setRoom === 'function') p.setRoom(params || null);
+}
+
+/**
+ * Apply (or clear, with null) the master-bus noise bed. `params` is the pure
+ * noiseParams() output computed Node-side from the applied metaprogram, the
+ * room's worst-case metrics and the current cycle (aggregator-bot.js
+ * #syncMasterNoise) — the cycle matters because noise is the one effect whose
+ * arguments may be `<…>` patterns.
+ */
+export function pageSetMasterNoise(params) {
+  const p = window.__trussalMasterPlayer;
+  if (p && typeof p.setNoise === 'function') p.setNoise(params || null);
 }
 
 /**
