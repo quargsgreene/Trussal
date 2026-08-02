@@ -9,10 +9,11 @@
 // would trigger — hence the pattern tick, armed only while such an argument
 // is in the chain.
 // grid is visual-only: it renders panel overlays and contributes no audio
-// node. room is visual-only HERE too: its audio node runs on the
-// aggregator's master path (bots/src/bot/aggregator-bot.js #syncMasterRoom),
-// which is the mix every client hears — inserting it locally as well would
-// reverb that audio twice.
+// node. room and noise are visual-only HERE too: their audio nodes run on the
+// aggregator's master path (bots/src/bot/aggregator-bot.js #syncMasterRoom /
+// #syncMasterNoise), which is the mix every client hears — building them
+// locally as well would reverb that audio twice and lay one uncorrelated
+// noise bed per browser over a mix that already carries the room's.
 
 import { roomParams, createRoomNode } from './Room.js';
 import { echoParams, createEchoNode } from './Echo.js';
@@ -37,31 +38,38 @@ import { chainHasValuePattern } from '../ValuePattern.js';
 // driving AudioParam automation, which waits on that machinery being armed.
 export const PATTERN_TICK_MS = 50;
 
-// room's entry is DORMANT, not live: setChain/updateMetrics skip it because
-// the reverb belongs to the aggregator's master bus (see the header). It is
-// kept wired so local-chain room can be switched back on in one place if the
-// mix ever stops going through an aggregator.
+// room's and noise's entries are DORMANT, not live: setChain/updateMetrics
+// skip them because both belong to the aggregator's master bus (see the
+// header). They stay wired so local-chain room/noise can be switched back on
+// in one place if the mix ever stops going through an aggregator.
+const MASTER_BUS_EFFECTS = new Set(['room', 'noise']);
+
+// fn → node constructor. The parameter functions are NOT registered here:
+// computeChainParams calls each by name, and a second copy of that mapping
+// was dead weight that could only drift from the switch that actually runs.
 const AUDIO_EFFECTS = {
-  room: { params: roomParams, create: createRoomNode },
-  echo: { params: echoParams, create: createEchoNode },
-  crush: { params: crushParams, create: createCrushNode },
-  noise: { params: (m) => noiseParams(m), create: createNoiseNode }
+  room: createRoomNode,
+  echo: createEchoNode,
+  crush: createCrushNode,
+  noise: createNoiseNode
 };
 
 // Pure: resolve the full parameter set for a chain at given metrics and cycle
 // position. `cycle` is { cycleSeconds, cyclePos } — cyclePos (fractional cycles
-// since the epoch) is what patterned arguments are sampled at, and echo needs
-// the length too, since its delay is written in cycles. Exported for tests and
-// for the research log.
+// since the epoch) is what every patterned argument is sampled at, and echo
+// needs the length too, since its delay is written in cycles. Exported for
+// tests and for the research log.
 export function computeChainParams(chainEntries, metrics, cycle = {}) {
   const out = [];
   for (const entry of (chainEntries || [])) {
-    const user = resolveEffectParams(entry);
+    // noise's patterns are read here rather than in its params function, so
+    // the position has to reach resolveEffectParams as well.
+    const user = resolveEffectParams(entry, { cycle: cycle.cyclePos || 0 });
     switch (entry.fn) {
       case 'room': out.push({ fn: 'room', params: roomParams(metrics, user) }); break;
       case 'echo': out.push({ fn: 'echo', params: echoParams(metrics, user, cycle) }); break;
       case 'crush': out.push({ fn: 'crush', params: crushParams(metrics, user, cycle.cyclePos || 0) }); break;
-      case 'noise': out.push({ fn: 'noise', params: noiseParams(metrics) }); break;
+      case 'noise': out.push({ fn: 'noise', params: noiseParams(metrics, user) }); break;
       case 'grid': out.push({ fn: 'grid', params: { landmarks: !!user.landmarks } }); break;
       default: break; // pattern fns (ply/chop/…) apply to scheduling, not the bus
     }
@@ -85,9 +93,10 @@ export class EffectsChainManager {
   // insert/remove: latency-instrument's master-chain hooks.
   // getCycleContext: () → { cycleSeconds, cyclePos } for the grid the room is
   // on — cyclePos being the fractional cycles since the epoch that patterned
-  // effect arguments are read against. Its default keeps this class usable
-  // without a scheduler (tests, and any browser whose grid has not started):
-  // a 1 s cycle frozen at position 0.
+  // effect arguments are read against, so they resolve to the same element the
+  // aggregator is using. Its default keeps this class usable without a
+  // scheduler (tests, and any browser whose grid has not started): a 1 s cycle
+  // frozen at position 0.
   constructor({ audioCtx, insert, remove, getPeers, getLocalJitsiId, getCycleContext }) {
     this._ctx = audioCtx;
     this._insert = insert;
@@ -127,7 +136,7 @@ export class EffectsChainManager {
     const audioParams = [];
     for (const cp of resolved) {
       if (cp.fn === 'grid') this._grid = cp.params;
-      else if (cp.fn === 'room') continue; // aggregator-master effect; visual only here
+      else if (MASTER_BUS_EFFECTS.has(cp.fn)) continue; // aggregator-master effect; visual only here
       else audioParams.push(cp);
     }
 
@@ -136,7 +145,7 @@ export class EffectsChainManager {
       const output = this._ctx.createGain();
       let head = input;
       for (const cp of audioParams) {
-        const node = AUDIO_EFFECTS[cp.fn].create(this._ctx, cp.params);
+        const node = AUDIO_EFFECTS[cp.fn](this._ctx, cp.params);
         head.connect(node.input);
         head = node.output;
         this._nodes.push({ fn: cp.fn, node });
@@ -165,7 +174,7 @@ export class EffectsChainManager {
     let i = 0;
     for (const cp of resolved) {
       if (cp.fn === 'grid') { this._grid = cp.params; continue; }
-      if (cp.fn === 'room') continue; // no local node — see setChain
+      if (MASTER_BUS_EFFECTS.has(cp.fn)) continue; // no local node — see setChain
       const entry = this._nodes[i++];
       if (entry && entry.fn === cp.fn) entry.node.update(cp.params);
     }

@@ -77,7 +77,9 @@ let clock = null;
 let epoch = null;
 let epochTimer = null;
 let localSecondsFallbackT0 = null;
-let cycleGrid = null;        // last cycle-start seen: { cycle, t, seconds }
+// The last cycle-start the scheduler EMITTED — the cycle currently playing,
+// which is what patterned effect arguments sample at.
+let cycleGrid = null;        // { cycle, t, seconds }
 let currentAst = null;       // last program that parsed clean
 
 const queues = new Map();        // token (room index) → AVBufferQueue
@@ -559,10 +561,17 @@ export async function setNetCyclesActive(enable) {
       remove: removeMasterChain,
       getPeers: getAllPeers,
       getLocalJitsiId: () => getLocalPeer().jitsiId,
-      // Patterned effect arguments (`# crush wcl <2 4>`) are read off the
-      // same grid the slots run on, so a value turns over on a turn boundary
-      // rather than on a clock of its own; `# echo` reads the cycle LENGTH off
-      // it too, its delay being written in cycles.
+      // Patterned effect arguments (`# crush wcl <2 4>`, `# noise wcl <20 10>`)
+      // are read off the same grid the slots run on, so a value turns over on a
+      // turn boundary rather than on a clock of its own; `# echo` reads the
+      // cycle LENGTH off it too, its delay being written in cycles.
+      //
+      // cycleContext derives its position from the last cycle-start the
+      // scheduler EMITTED, not from scheduler.getCycle() — the scheduler
+      // increments past the cycle it just announced (and emits a lookahead
+      // ahead of real time), so getCycle() names the next one and would put
+      // this browser's visual an element ahead of the aggregator's audio. The
+      // aggregator tracks the same event the same way (#onSchedulerEvent).
       getCycleContext: cycleContext
     });
     // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
@@ -585,7 +594,7 @@ export async function setNetCyclesActive(enable) {
     if (clock) clock.stop();
     if (epochTimer) { clearInterval(epochTimer); epochTimer = null; }
     epoch = null;
-    cycleGrid = null;
+    cycleGrid = null; // the next arming starts a fresh grid at cycle 0
     for (const t of slotTimers) clearTimeout(t);
     slotTimers.clear();
     gateLevels.clear();

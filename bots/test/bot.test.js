@@ -8,6 +8,9 @@ import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
   pageEnsureAudioPublished, pageMasterPlayer,
 } from '../src/bot/page-scripts.js';
+import {
+  noiseParams, fillNoise, normalizeRms, NOISE_RMS, NOISE_LOOP_S
+} from '../../src/audio-net/av-effects/Noise.js';
 import { Bot } from '../src/bot/bot.js';
 
 test('chromiumArgs includes the four spec-required flags plus fake-media + no-prompt flags', () => {
@@ -323,6 +326,173 @@ test('pageMasterPlayer: master-room allpass stages are chained in series', () =>
     assert.ok(onward.length > 0, 'stage 1 output goes nowhere — dead branch');
     assert.ok(sinksOf(allpassIds[1]).some(to => to.startsWith('biquad#')),
       'the final allpass must feed the cascaded lowpass');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+// Recording stand-in for the page's AudioContext, with the buffer surface the
+// noise bed needs on top of what the reverb uses. Node ids count up in
+// creation order, which is how the tests below name the nodes an effect built.
+function masterPlayerStub() {
+  const edges = [];
+  const byId = new Map();
+  const buffers = [];
+  const state = { next: 0 };
+  const mk = (kind) => {
+    const node = {
+      id: `${kind}#${state.next++}`,
+      gain: { value: 0 }, delayTime: { value: 0 }, frequency: { value: 0 },
+      connect(t) { edges.push([node.id, t && t.id ? t.id : 'destination']); },
+      disconnect() { for (let i = edges.length - 1; i >= 0; i--) if (edges[i][0] === node.id) edges.splice(i, 1); }
+    };
+    byId.set(node.id, node);
+    return node;
+  };
+  class StubCtx {
+    constructor() { this.destination = { id: 'destination' }; this.sampleRate = 48000; }
+    createGain() { return mk('gain'); }
+    createDelay() { return mk('delay'); }
+    createBiquadFilter() { return Object.assign(mk('biquad'), { type: '' }); }
+    createScriptProcessor() { return Object.assign(mk('proc'), { onaudioprocess: null }); }
+    createBuffer(channels, length) {
+      const data = new Float32Array(length);
+      buffers.push(data);
+      return { getChannelData: () => data };
+    }
+    createBufferSource() { return Object.assign(mk('src'), { buffer: null, loop: false, start() {}, stop() {} }); }
+  }
+  return { edges, byId, buffers, state, StubCtx };
+}
+
+const ROOM_PARAMS = {
+  combDelaysS: [0.0297, 0.0371, 0.0411, 0.0437],
+  allpassDelaysS: [0.005, 0.0017],
+  combFeedbacks: [0.5, 0.5, 0.5, 0.5],
+  wetGain: 0.5,
+  cutoffHz: 6000,
+};
+
+// The other half of the aggregator's master bus. Order matters audibly: the
+// bed is additive and belongs ON the mix, so it must sit after the reverb
+// rather than being fed through its tail.
+test('pageMasterPlayer: the noise bed runs after the room on the master path', () => {
+  const { edges, byId, state, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]); // forces ensure() -> ctx exists
+
+    const proc = [...byId.keys()].find((n) => n.startsWith('proc#'));
+    const busOut = edges.find(([from]) => from === proc)[1];
+    const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
+    assert.deepEqual(sinksOf(busOut), ['destination'], 'bare master bus goes straight out');
+
+    // buildRoom/buildNoise each create their input gain first and their output
+    // gain second, so the ids at the boundary name those two nodes.
+    const roomAt = state.next;
+    player.setRoom(ROOM_PARAMS);
+    const noiseAt = state.next;
+    const params = noiseParams({ wcl: 500, wcrtt: 60 }, {
+      spectrum: { metric: 'wcl', factor: 1, fixed: null },
+      volume: { metric: 'wcrtt', factor: 10, fixed: null },
+    });
+    player.setNoise(params);
+
+    const roomIn = `gain#${roomAt}`, roomOut = `gain#${roomAt + 1}`;
+    const noiseIn = `gain#${noiseAt}`, noiseOut = `gain#${noiseAt + 1}`, level = `gain#${noiseAt + 2}`;
+    assert.deepEqual(sinksOf(busOut), [roomIn], 'the bus now feeds the reverb');
+    assert.deepEqual(sinksOf(roomOut), [noiseIn], 'the reverb feeds the bed, not the destination');
+    assert.deepEqual(sinksOf(noiseOut), ['destination'], 'the bed is last before the fan');
+    assert.ok(sinksOf(noiseIn).includes(noiseOut), 'the mix passes through dry — the bed is additive');
+
+    // Three generators, each through its own gain into the shared level.
+    const sources = [...byId.keys()].filter((n) => n.startsWith('src#'));
+    assert.equal(sources.length, 3, 'brown, pink and white all run');
+    sources.forEach((src) => {
+      const [voiceGain] = sinksOf(src);
+      assert.ok(voiceGain.startsWith('gain#'));
+      assert.deepEqual(sinksOf(voiceGain), [level], 'every generator lands on the level gain');
+    });
+    assert.equal(byId.get(level).gain.value, params.gain);
+    // wcl 0.5 s × 1 is halfway along the colour axis: pure pink, the other two
+    // silent but running.
+    const voiceGains = sources.map((src) => byId.get(sinksOf(src)[0]).gain.value).sort();
+    assert.deepEqual(voiceGains, [0, 0, 1]);
+
+    // Clearing one effect must leave the other wired, not orphan the bus.
+    player.setNoise(null);
+    assert.deepEqual(sinksOf(busOut), [roomIn]);
+    assert.deepEqual(sinksOf(roomOut), ['destination'], 'the reverb reconnects to the fan');
+    player.setRoom(null);
+    assert.deepEqual(sinksOf(busOut), ['destination'], 'a bare bus again');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+// buildNoise re-implements Noise.js's generators inline (the page-script
+// contract forbids imports) and, since noise is a master-bus effect, the page
+// copy is the ONLY one that makes sound — createNoiseNode never runs in
+// production. So the copy is checked against the module's own output rather
+// than trusted to stay in step by inspection.
+test('pageMasterPlayer: the page-side generators match Noise.js in level and character', () => {
+  const { buffers, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]);
+    player.setNoise(noiseParams({ wcl: 0 }, {}));
+
+    assert.equal(buffers.length, 3, 'one buffer per colour');
+    buffers.forEach((buf) => assert.equal(buf.length, 48000 * NOISE_LOOP_S, 'loop length matches'));
+
+    const rms = (b) => Math.sqrt(b.reduce((a, v) => a + v * v, 0) / b.length);
+    const meanAbsDelta = (b) => {
+      let s = 0; for (let i = 1; i < b.length; i++) s += Math.abs(b[i] - b[i - 1]);
+      return s / (b.length - 1);
+    };
+    // Every colour normalized to the module's target, so the page's crossfade
+    // is level-flat exactly as noiseMix() assumes.
+    buffers.forEach((buf, i) => {
+      assert.ok(Math.abs(rms(buf) - NOISE_RMS) < 1e-5, `buffer ${i} is off the module's RMS target`);
+    });
+    // Built dark → bright, matching NOISE_COLORS, and each colour's spectral
+    // character matches the module's own generator for that colour.
+    const pageRoughness = buffers.map((b) => meanAbsDelta(b) / rms(b));
+    const moduleRoughness = ['brown', 'pink', 'white'].map((color) => {
+      const b = normalizeRms(fillNoise(new Float32Array(48000 * NOISE_LOOP_S), color));
+      return meanAbsDelta(b) / rms(b);
+    });
+    pageRoughness.forEach((r, i) => {
+      assert.ok(Math.abs(r - moduleRoughness[i]) / moduleRoughness[i] < 0.05,
+        `page colour ${i} does not match the module's generator (${r} vs ${moduleRoughness[i]})`);
+    });
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+test('pageMasterPlayer: master effects pushed before the context exists are applied on first audio', () => {
+  const { edges, byId, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    // The aggregator pushes as soon as a program is applied, which can precede
+    // the first assembled chunk.
+    player.setRoom(ROOM_PARAMS);
+    player.setNoise(noiseParams({ wcl: 500 }, { spectrum: { metric: 'wcl', factor: 1, fixed: null } }));
+    assert.deepEqual(edges, [], 'nothing is built without a context');
+
+    player.enqueue([0, 0, 0]);
+    assert.equal([...byId.keys()].filter((n) => n.startsWith('src#')).length, 3, 'the bed was built');
+    assert.ok(edges.some(([, to]) => to === 'destination'));
   } finally {
     if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
   }

@@ -32,13 +32,15 @@ export function isValuePattern(node) {
 // to know whether params must be re-derived as the cycle advances, or only
 // when metrics change.
 //
-// Both argument shapes count, since a directive uses one or the other: the
+// Every argument shape counts, since a directive uses one of them: the
 // positional `args` (with `metric` in front) that `# crush` and `# room` take,
-// and the metric/scale `pairs` plus `bounds` that `# echo` takes.
+// the metric/scale `pairs` plus `bounds` that `# echo` takes, and the two
+// interleaved `metrics` that `# noise` takes.
 export function entryHasValuePattern(entry) {
   if (!entry) return false;
   const candidates = [
     entry.metric,
+    ...(entry.metrics || []),
     ...(entry.args || []),
     ...(entry.pairs || []).map(p => p && p.value),
     ...(entry.bounds || [])

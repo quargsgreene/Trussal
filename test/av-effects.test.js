@@ -14,10 +14,13 @@ import {
   crushParams, makeCrushCurve, crushMetricAmount,
   BASE_BIT_DEPTH, MAX_BIT_DEPTH, HALVING_AMOUNTS
 } from '../src/audio-net/av-effects/Crush.js';
-import { noiseTypeForWcpl, noiseParams, fillNoise } from '../src/audio-net/av-effects/Noise.js';
+import {
+  noiseParams, fillNoise, normalizeRms, noiseGainForDb, noiseMix,
+  NOISE_BASE_DB, NOISE_MAX_DB, NOISE_BASE_GAIN, NOISE_RMS
+} from '../src/audio-net/av-effects/Noise.js';
 import { distanceMatrix, gridView, shadeForDistance } from '../src/audio-net/av-effects/Grid.js';
 import { computeChainParams, visualStateFor, EffectsChainManager } from '../src/audio-net/av-effects/index.js';
-import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram, resolveEffectParams } from '../src/audio-net/MetaprogrammerParser.js';
 
 // --- room ---------------------------------------------------------------------
 
@@ -353,16 +356,90 @@ test('crush: quantization curve has exactly 2^bits levels', () => {
 
 // --- noise --------------------------------------------------------------------
 
-test('noise thresholds incl. every boundary value from the plan', () => {
-  assert.equal(noiseTypeForWcpl(0), 'none');
-  assert.equal(noiseTypeForWcpl(0.09), 'none');
-  assert.equal(noiseTypeForWcpl(0.1), 'brown');
-  assert.equal(noiseTypeForWcpl(0.29), 'brown');
-  assert.equal(noiseTypeForWcpl(0.3), 'pink');
-  assert.equal(noiseTypeForWcpl(0.59), 'pink');
-  assert.equal(noiseTypeForWcpl(0.6), 'pink');   // "greater than 0.6" is white
-  assert.equal(noiseTypeForWcpl(0.61), 'white');
-  assert.equal(noiseParams({ wcpl: 0.05 }).gain, 0);
+// Resolve `# noise …` the way the aggregator does, so these exercise the
+// written syntax rather than a hand-built parameter object.
+function noiseFor(line, metrics, cycle = 0) {
+  const { ast, errors } = parseMetaprogram(`$ participants <0>\n${line}\n`);
+  assert.deepEqual(errors, [], `${line} should parse`);
+  return noiseParams(metrics, resolveEffectParams(ast.chain[0], { cycle }));
+}
+
+test('noise: a bare directive is the unmodulated floor — brown at the base dB', () => {
+  const p = noiseFor('# noise', { wcl: 500, wcrtt: 60, wcpl: 0.9 });
+  assert.equal(p.tilt, 0);
+  assert.equal(p.gainDb, NOISE_BASE_DB);
+  assert.equal(p.gain, NOISE_BASE_GAIN, 'the level the fixed-gain implementation ran at');
+  assert.equal(p.type, 'brown');
+  assert.deepEqual(p.mix, { brown: 1, pink: 0, white: 0 });
+});
+
+test('noise: the spectrum factor sweeps brown → pink → white', () => {
+  // wcl 500 ms = 0.5 s, so factor 1 lands exactly halfway along the axis.
+  const pink = noiseFor('# noise wcl 1', { wcl: 500 });
+  assert.equal(pink.tilt, 0.5);
+  assert.equal(pink.type, 'pink');
+  assert.deepEqual(pink.mix, { brown: 0, pink: 1, white: 0 });
+
+  const brownish = noiseFor('# noise wcl 0.4', { wcl: 500 });
+  assert.equal(brownish.tilt, 0.2);
+  assert.equal(brownish.type, 'brown', 'nearest colour is the label; the mix is a blend');
+  assert.ok(brownish.mix.brown > brownish.mix.pink && brownish.mix.pink > 0);
+  // Equal-power: uncorrelated generators sum in POWER, so the bed keeps its
+  // level across the sweep instead of dipping in the middle.
+  const power = Object.values(brownish.mix).reduce((a, g) => a + g * g, 0);
+  assert.ok(Math.abs(power - 1) < 1e-12);
+
+  const white = noiseFor('# noise wcl 20', { wcl: 500 });
+  assert.equal(white.tilt, 1, 'clamped at the top of the axis');
+  assert.deepEqual(white.mix, { brown: 0, pink: 0, white: 1 });
+});
+
+test('noise: the volume factor rides its own metric from the base dB to the clamp', () => {
+  // wcrtt 60 ms = 0.06 s × 10 = 0.6 of the way from 25 dB to 75 dB.
+  const p = noiseFor('# noise wcl 1 wcrtt 10', { wcl: 500, wcrtt: 60 });
+  assert.equal(p.gainDb, 55);
+  assert.ok(Math.abs(p.gain - NOISE_BASE_GAIN * Math.pow(10, 30 / 20)) < 1e-12);
+
+  const loud = noiseFor('# noise wcl 1 wcrtt 1000', { wcl: 500, wcrtt: 60 });
+  assert.equal(loud.gainDb, NOISE_MAX_DB, 'clamped at 75 dB');
+  assert.ok(Math.abs(loud.gain - NOISE_BASE_GAIN * Math.pow(10, 50 / 20)) < 1e-12);
+  assert.equal(noiseGainForDb(1e6), noiseGainForDb(NOISE_MAX_DB), 'the clamp is the ceiling');
+});
+
+test('noise: each axis modulates only when its own factor is written', () => {
+  // Spectrum named, volume not: the bed brightens but stays at the floor.
+  const p = noiseFor('# noise wcl 1', { wcl: 500, wcrtt: 60 });
+  assert.equal(p.tilt, 0.5);
+  assert.equal(p.gainDb, NOISE_BASE_DB);
+  // A metric keyword alone implies factor 1, as `# room wcl` does.
+  assert.equal(noiseFor('# noise wcl', { wcl: 500 }).tilt, 0.5);
+  // Bare numbers take the default metric, wcl, for both axes.
+  const both = noiseFor('# noise 1 1', { wcl: 500, wcrtt: 60 });
+  assert.equal(both.tilt, 0.5);
+  assert.equal(both.gainDb, 50); // 25 + 0.5 × 50, from wcl again — not wcrtt
+});
+
+test('noise: the 5th and 6th arguments pin the metrics in written order', () => {
+  const pinned = noiseFor('# noise wcl 1 wcrtt 10 0.5 0.06', { wcl: 9999, wcrtt: 9999 });
+  const live = noiseFor('# noise wcl 1 wcrtt 10', { wcl: 500, wcrtt: 60 });
+  assert.equal(pinned.tilt, live.tilt, '0.5 s pinned ≡ 500 ms measured');
+  assert.equal(pinned.gainDb, live.gainDb, '0.06 s pinned ≡ 60 ms measured');
+  // The amounts are positional, so pinning the spectrum metric means writing
+  // a volume factor first — as `# cycles wcl 10 0.3` needs its scale first.
+  // wcpl is a fraction, not seconds, and pins on its own scale.
+  assert.equal(noiseFor('# noise wcpl 2 1 0.25', { wcpl: 0, wcl: 0 }).tilt, 0.5);
+});
+
+test('noise: patterned arguments advance one element per cycle', () => {
+  const metrics = { wcl: 500 };
+  const tiltAt = (c) => noiseFor('# noise wcl <1 0.5 20>', metrics, c).tilt;
+  assert.deepEqual([0, 1, 2, 3].map(tiltAt), [0.5, 0.25, 1, 0.5]);
+  // The metric keyword itself may alternate.
+  const metricAt = (c) => noiseFor('# noise <wcl wcpl> 1', { wcl: 500, wcpl: 0.25 }, c).tilt;
+  assert.deepEqual([0, 1].map(metricAt), [0.5, 0.25]);
+  // Nested groups advance once per visit of the parent.
+  const nested = (c) => noiseFor('# noise wcl <1 <0.5 20>>', metrics, c).tilt;
+  assert.deepEqual([0, 1, 2, 3].map(nested), [0.5, 0.25, 0.5, 1]);
 });
 
 test('noise buffers stay in range and have the right character', () => {
@@ -379,6 +456,25 @@ test('noise buffers stay in range and have the right character', () => {
   };
   const rms = (b) => Math.sqrt(b.reduce((a, v) => a + v * v, 0) / b.length);
   assert.ok(meanAbsDelta(brown) / rms(brown) < meanAbsDelta(white) / rms(white) / 5);
+});
+
+test('noise: generators are level-matched, so a crossfade changes colour only', () => {
+  const rms = (b) => Math.sqrt(b.reduce((a, v) => a + v * v, 0) / b.length);
+  const levels = ['brown', 'pink', 'white'].map((color) => {
+    const buf = normalizeRms(fillNoise(new Float32Array(48000), color));
+    return rms(buf);
+  });
+  levels.forEach((r) => assert.ok(Math.abs(r - NOISE_RMS) < 1e-6));
+  // Un-normalized the generators span ~9 dB (white ≈ 2.9 × brown), which
+  // would make a colour sweep an unintended volume ramp.
+  assert.ok(rms(fillNoise(new Float32Array(48000), 'white')) /
+            rms(fillNoise(new Float32Array(48000), 'brown')) > 2);
+  // Mixed at any tilt the summed power is unity, so the bed's level is the
+  // gain alone.
+  for (const tilt of [0, 0.17, 0.5, 0.83, 1]) {
+    const power = Object.values(noiseMix(tilt)).reduce((a, g) => a + g * g, 0);
+    assert.ok(Math.abs(power - 1) < 1e-12, `tilt ${tilt}`);
+  }
 });
 
 // --- grid ---------------------------------------------------------------------
@@ -416,7 +512,7 @@ test('grid: self is white, farthest peer is black, perspective is local', () => 
 
 test('parsed # chain resolves to full parameter sets and a merged visual state', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0 1>\n# room wcl 2\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# crush wcpl 1\n# noise\n# grid true\n# ply 2\n'
+    '$ participants <0 1>\n# room wcl 2\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# crush wcpl 1\n# noise wcl 1 wcrtt 10 0.5\n# grid true\n# ply 2\n'
   );
   assert.deepEqual(errors, []);
   const metrics = { wcl: 750, wcj: 5, wcrtt: 60, wcpl: 0.5 };
@@ -427,23 +523,25 @@ test('parsed # chain resolves to full parameter sets and a merged visual state',
   assert.equal(chain[1].params.lengthCycles, 1); // 2 × 750/1500
   assert.equal(chain[1].params.delayS, 2);       // 1 cycle × 2 s
   assert.equal(chain[1].params.feedback, 0.3);   // 50 % loss is past the 20 % bound → clamped
-  assert.equal(chain[3].params.type, 'pink');
+  assert.equal(chain[3].params.type, 'pink');    // wcl pinned at 0.5 s × 1 → halfway along the colour axis
+  assert.equal(chain[3].params.gainDb, 55);      // wcrtt 0.06 s × 10 → 0.6 of 25…75 dB
   assert.equal(chain[4].params.landmarks, true);
 
   const vis = visualStateFor(chain);
   assert.equal(vis.brightness, 0.7);   // 1 − echo feedback
   assert.equal(vis.pixelate, 4);       // crush divisor
-  assert.equal(vis.noise, 0.35);       // pink
+  assert.ok(Math.abs(vis.noise - 0.35 * (55 / NOISE_MAX_DB)) < 1e-12, 'pink grain, scaled by level');
   assert.equal(vis.lowpass, 6000 / CUTOFF_MAX_HZ, 'room still drives the Hydra blur');
 });
 
 // Minimal WebAudio stand-in: enough surface for the crush and echo nodes, and
-// a call counter so a room node (whose four comb lines are the only reason a
-// local chain would build several delays) is detectable by its absence.
+// call counters so a room node (whose four comb lines are the only reason a
+// local chain would build several delays) and a noise node (the only one built
+// from createBufferSource) are each detectable by their absence.
 // `onNode` sees every node as it is created, for tests that need to read a
 // node's live settings back.
 function fakeAudioCtx({ onNode = () => {} } = {}) {
-  const calls = { createDelay: 0 };
+  const calls = { createDelay: 0, createBufferSource: 0 };
   const delays = [];
   const param = (v) => ({
     value: v,
@@ -472,12 +570,17 @@ function fakeAudioCtx({ onNode = () => {} } = {}) {
     createWaveShaper: () => make('waveshaper'),
     createBiquadFilter: () => make('biquad', { type: '' }),
     createDynamicsCompressor: () => make('compressor'),
-    createDelay: () => { calls.createDelay++; const d = make('delay'); delays.push(d); return d; }
+    createDelay: () => { calls.createDelay++; const d = make('delay'); delays.push(d); return d; },
+    createBuffer: (ch, len) => ({ getChannelData: () => new Float32Array(len) }),
+    createBufferSource: () => {
+      calls.createBufferSource++;
+      return make('buffersource', { buffer: null, loop: false, start() {}, stop() {} });
+    }
   };
 }
 
-test('room builds no node in the local browser chain — the aggregator master owns it', () => {
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# crush wcl 1\n');
+test('room and noise build no node in the local browser chain — the aggregator master owns them', () => {
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# noise wcl 1\n# crush wcl 1\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
   const inserted = [];
@@ -485,12 +588,14 @@ test('room builds no node in the local browser chain — the aggregator master o
 
   mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60, wcpl: 0.5 });
   assert.equal(ctx.calls.createDelay, 0, 'no local Schroeder comb lines');
+  assert.equal(ctx.calls.createBufferSource, 0, 'no local noise generators');
   assert.equal(inserted.length, 1, 'crush alone still gets a local master insert');
 
-  // A metrics update must not fall out of step now that room is skipped:
-  // crush is nodes[0] even though room precedes it in the chain.
+  // A metrics update must not fall out of step now that both are skipped:
+  // crush is nodes[0] even though room and noise precede it in the chain.
   mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
   assert.equal(ctx.calls.createDelay, 0);
+  assert.equal(ctx.calls.createBufferSource, 0);
 });
 
 test('patterned arguments re-derive as the cycle advances; constants do not tick', (t) => {
@@ -532,13 +637,57 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
   assert.equal(mgr.patternTicking(), false);
 });
 
-test('a room-only chain inserts nothing locally but still publishes the visual', () => {
-  const { ast } = parseMetaprogram('$ participants <0>\n# room wcl 2\n');
+// The manager's only observable output for a master-bus effect is the visual
+// state it publishes on `window`, so these stub one to read it back.
+function withStubWindow(fn) {
+  const saved = globalThis.window;
+  globalThis.window = {};
+  try {
+    return fn(() => globalThis.window._ncVisual);
+  } finally {
+    if (saved === undefined) delete globalThis.window; else globalThis.window = saved;
+  }
+}
+
+test('a master-bus-only chain inserts nothing locally but still publishes the visual', () => {
+  const { ast } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# noise wcl 1\n');
   const ctx = fakeAudioCtx();
   const inserted = [];
-  const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
-  mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60 });
-  assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
+  withStubWindow((visual) => {
+    const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
+    mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60 });
+    assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
+    assert.ok(visual().noise > 0, 'the bed still reaches the visual state');
+    assert.ok(visual().lowpass < 1, 'so does the reverb');
+  });
+});
+
+test('patterned noise arguments follow the cycle the manager is given', () => {
+  const { ast } = parseMetaprogram('$ participants <0>\n# noise wcl <1 20>\n');
+  const ctx = fakeAudioCtx();
+  let cycle = 0;
+  withStubWindow((visual) => {
+    const mgr = new EffectsChainManager({
+      audioCtx: ctx, insert: () => {}, remove: () => {}, getCycleContext: () => ({ cycleSeconds: 1, cyclePos: cycle })
+    });
+    // setChain arms a real 50 ms interval now that noise's arguments are
+    // patterned like any other effect's; without this the suite never exits.
+    try {
+    // Read the grain the manager published — with the cycle context unwired
+    // this stays on the first element for ever.
+    mgr.setChain(ast.chain, { wcl: 500 });
+    const pinkGrain = visual().noise;
+    cycle = 1;
+    mgr.updateMetrics({ wcl: 500 });
+    const whiteGrain = visual().noise;
+    assert.ok(whiteGrain > pinkGrain,
+      'the second element (factor 20 → white) takes over on the next cycle');
+    // Anchored against the pure math so the assertion above cannot pass on a
+    // coincidence: element 0 is tilt 0.5 (pink), element 1 is tilt 1 (white).
+    assert.equal(pinkGrain, computeChainParams(ast.chain, { wcl: 500 }, { cyclePos: 0 })[0].params.visualNoise);
+    assert.equal(whiteGrain, computeChainParams(ast.chain, { wcl: 500 }, { cyclePos: 1 })[0].params.visualNoise);
+    } finally { mgr.dispose(); }
+  });
 });
 
 test('echo: the wet path is limited, because this chain runs after the per-peer limiters', () => {
