@@ -128,12 +128,41 @@ function resolveEntry(entry, rng) {
 // `index` so a consumer can tell WHICH occurrence is playing: in
 // `$ participants <0 1 0>` the two `0`s are different slots.
 function writtenIndices(participants) {
+  return preOrderIndices(participants, 'participant');
+}
+
+// The same pre-order scan over REST elements (`~`, `_`, `-`), in their OWN
+// index space rather than sharing the participants' numbering. Rests get an
+// index so a rest slot can say WHICH rest is resting — `<0 ~ 1 ~>` has two, and
+// the editor outlines the one actually in force.
+//
+// Separate numbering on purpose. The browser bundle and the bot image deploy
+// independently, so the two sides are routinely a version apart; folding rests
+// into `writtenIndices` would renumber every participant after the first rest
+// and a skewed pair would outline the wrong token. With two spaces an older
+// highlighter simply never draws a rest (rest slots carry `token: null`, which
+// it already treats as "nothing to outline") and participant outlines stay
+// correct in every combination.
+//
+// Version skew degrades, but a rest highlight still needs all THREE hops
+// deployed — the aggregator emits it, the SIDECAR relays it (an older
+// latency-instrument rebuilds the nc-active message field by field and drops
+// `kind`), and the bundle draws it. New bots alone show no rests anywhere.
+function restIndices(participants) {
+  return preOrderIndices(participants, 'rest');
+}
+
+// Depth-first index of every element of `type` in the program (every branch of
+// a `|` choice, repeats included), matching how the editor's highlighter scans
+// the source text — see participantPositions/restPositions in
+// components/MetaprogrammerCycleHighlighter.js.
+function preOrderIndices(participants, type) {
   const map = new Map();
   let next = 0;
   const walk = (els) => {
     for (const el of els || []) {
       if (!el) continue;
-      if (el.type === 'participant') map.set(el, next++);
+      if (el.type === type) map.set(el, next++);
       else if (el.type === 'choice') (el.options || []).forEach(walk);
       else if (el.type === 'sequence') (el.stacks || []).forEach(st => walk(st.elements));
     }
@@ -143,8 +172,10 @@ function writtenIndices(participants) {
 }
 
 // Emit events for `resolved` occupying [start, start+span) of the cycle.
-// `ctx` is { events, indices, rng } — one per stack, since the RNG is seeded
-// per (cycle, stack).
+// `ctx` is { events, indices, restIndices, rng } — one per stack, since the RNG
+// is seeded per (cycle, stack). A missing index map costs a null index, never a
+// throw, so a partially-built ctx degrades to "unaddressable" rather than
+// taking the expansion down.
 function emitInto(ctx, resolved, start, span, cycleForNesting, stack) {
   if (resolved.type === 'participant') {
     ctx.events.push({
@@ -153,7 +184,25 @@ function emitInto(ctx, resolved, start, span, cycleForNesting, stack) {
     });
     return;
   }
-  if (resolved.type === 'rest') return; // rests advance time silently
+  if (resolved.type === 'rest') {
+    // A rest is a slot like any other — it just has nobody in it. Emitting it
+    // (rather than letting time advance silently, as this did) is what lets a
+    // consumer say "resting HERE": the aggregator outlines the rest in the
+    // shared editor and streams no participant into the master for its span,
+    // while its own output path — and so the `# room` reverb tail — keeps
+    // running. `token: null` marks it; nothing downstream schedules audio for a
+    // slot with no token.
+    //
+    // `index` is null for a rest the program did not WRITE — a `0?` that this
+    // cycle's RNG resolved to a rest (resolveEntry synthesizes that one, so it
+    // is in no index map). There is no rest glyph in the source to outline, so
+    // the editor draws nothing, exactly as before.
+    ctx.events.push({
+      token: null, rest: true, start, dur: span, stack,
+      index: ctx.restIndices?.get(resolved) ?? null
+    });
+    return;
+  }
   if (resolved.type === 'run') {
     subdivideInto(ctx, resolved.elements, start, span, cycleForNesting, stack);
     return;
@@ -205,11 +254,15 @@ export function expandCycle(participants, cycleNumber) {
   if (!participants || !Array.isArray(participants.stacks)) return events;
   const seqSpeed = Math.max(1, Math.round(modValue(participants, '*', 1)));
   const indices = writtenIndices(participants);
+  const rests = restIndices(participants);
 
   participants.stacks.forEach((stack, k) => {
     const effCycle = cycleNumber - (stack.cycleOffset || 0);
     if (effCycle < 0) return;
-    const ctx = { events, indices, rng: seededRandom((effCycle * 7919 + k * 104729 + 1) >>> 0) };
+    const ctx = {
+      events, indices, restIndices: rests,
+      rng: seededRandom((effCycle * 7919 + k * 104729 + 1) >>> 0)
+    };
 
     if (participants.mode === 'subdivide') {
       for (let r = 0; r < seqSpeed; r++) {
@@ -280,8 +333,10 @@ export class AVBufferQueue {
 // Emits timestamped events ahead of time (lookahead window) so the audio
 // layer can schedule sample-accurately:
 //   { type: 'cycle-start', cycle, t, seconds, beats }
-//   { type: 'slot-open',  id, token, index, t, dur, cycle, stack }
-//   { type: 'slot-close', id, token, index, t, cycle, stack }
+//   { type: 'slot-open',  id, token, index, rest, t, dur, cycle, stack }
+//   { type: 'slot-close', id, token, index, rest, t, cycle, stack }
+// A REST slot is `token: null, rest: true` with `index` in the rest index
+// space; every other slot names a participant.
 // Program and metrics changes land at the next cycle boundary — mid-cycle
 // slots are never yanked.
 //
@@ -424,7 +479,11 @@ export class MetaprogramScheduler {
         const dur = ev.dur * seconds;
         const slot = {
           id: `${this._cycle}:${ev.stack}:${i}`,
-          token: ev.token, cycle: this._cycle, stack: ev.stack, index: ev.index
+          token: ev.token, cycle: this._cycle, stack: ev.stack, index: ev.index,
+          // Rest slots carry `token: null`; `rest` says the emptiness is the
+          // program's intent rather than an absent participant, and `index`
+          // then addresses the rest's own index space (see restIndices).
+          rest: ev.rest === true
         };
         this._emit({ ...slot, type: 'slot-open', t, dur });
         this._emit({ ...slot, type: 'slot-close', t: t + dur });

@@ -218,12 +218,65 @@ test('<0 1>*2 plays two half-cycle slots per cycle', () => {
   assert.deepEqual(expandCycle(ast.participants, 1).map(e => e.token), ['0', '1']);
 });
 
-test('subdivide [0 1 ~ 3]: rests advance time silently', () => {
+test('subdivide [0 1 ~ 3]: a rest is a slot with nobody in it', () => {
   const ast = astOf('$ participants [0 1 ~ 3]\n');
   const evs = expandCycle(ast.participants, 0);
+  // The rest occupies its share of the cycle like any other element — it is
+  // emitted (so a consumer can say "resting HERE") but names no participant.
   assert.deepEqual(evs.map(e => [e.token, e.start, e.dur]), [
-    ['0', 0, 0.25], ['1', 0.25, 0.25], ['3', 0.75, 0.25]
+    ['0', 0, 0.25], ['1', 0.25, 0.25], [null, 0.5, 0.25], ['3', 0.75, 0.25]
   ]);
+  assert.deepEqual(evs.map(e => e.rest === true), [false, false, true, false]);
+  // Rests are numbered in their OWN index space, so the participant indices are
+  // exactly what they would be with no rest in the program — the editor's two
+  // scans (participants, rests) can never shift each other.
+  assert.deepEqual(evs.map(e => e.index), [0, 1, 0, 2]);
+});
+
+test('every rest is addressable: `[0 ~ 1 ~]` numbers its two rests apart', () => {
+  const ast = astOf('$ participants [0 ~ 1 ~]\n');
+  const rests = expandCycle(ast.participants, 0).filter(e => e.rest);
+  assert.deepEqual(rests.map(e => [e.index, e.start]), [[0, 0.25], [1, 0.75]]);
+});
+
+test('alternate `<0 ~ 1 ~>` rests on its own cycles, each naming its own `~`', () => {
+  // The mode the aggregator actually runs, and a different path into emitInto
+  // (one entry per cycle) than the subdivide case above.
+  const ast = astOf('$ participants <0 ~ 1 ~>\n');
+  const cycles = [];
+  for (let c = 0; c < 4; c++) {
+    const [ev] = expandCycle(ast.participants, c);
+    cycles.push([ev.token, ev.rest === true, ev.index]);
+  }
+  assert.deepEqual(cycles, [
+    ['0', false, 0],   // participant index 0
+    [null, true, 0],   // rest index 0 — the two spaces number independently
+    ['1', false, 1],
+    [null, true, 1],
+  ]);
+});
+
+test('`_` and `-` rest exactly as `~` does', () => {
+  for (const glyph of ['~', '_', '-']) {
+    const evs = expandCycle(astOf(`$ participants [0 ${glyph}]\n`).participants, 0);
+    assert.deepEqual(evs.map(e => [e.token, e.rest === true]), [['0', false], [null, true]],
+      `${glyph} rests`);
+  }
+});
+
+test('a `?` that degrades to a rest has no written glyph, so no rest index', () => {
+  // resolveEntry synthesizes that rest — it is in no index map, and there is no
+  // `~` in the source to outline. It still occupies the slot.
+  const ast = astOf('$ participants [0? 1? 2? 3? 4? 5? 6? 7?]\n');
+  let degraded = 0;
+  for (let c = 0; c < 50; c++) {
+    for (const ev of expandCycle(ast.participants, c)) {
+      if (!ev.rest) continue;
+      degraded++;
+      assert.equal(ev.index, null, 'a degraded participant addresses no rest glyph');
+    }
+  }
+  assert.ok(degraded > 0, 'some cycles degrade');
 });
 
 test('@ weights and ! replication shape the subdivision', () => {
@@ -241,8 +294,10 @@ test('? degradation is deterministic per cycle (all clients agree)', () => {
   const b = expandCycle(ast.participants, 5).map(e => `${e.token}@${e.start}`);
   assert.deepEqual(a, b);
   // Across many cycles roughly half survive (sanity, not distribution law).
+  // Counted over the slots that still name a participant: a degraded one now
+  // emits a rest slot rather than nothing, so the event count no longer moves.
   let kept = 0;
-  for (let c = 0; c < 50; c++) kept += expandCycle(ast.participants, c).length;
+  for (let c = 0; c < 50; c++) kept += expandCycle(ast.participants, c).filter(e => !e.rest).length;
   assert.ok(kept > 100 && kept < 300, `kept ${kept} of 400`);
 });
 

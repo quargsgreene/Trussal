@@ -286,3 +286,103 @@ test('nc-active carries the ring index so a repeated token is disambiguated', { 
     for (const c of wss.clients) c.terminate();
   }
 });
+
+test('a rest reaches the browser as a rest, addressing the written `~`', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const got = [];
+  const human = await connectHuman(port, (m) => got.push({ token: m.token, index: m.index, kind: m.kind }));
+
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0, slotMs: 4000 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true,
+      now: () => clock
+    }
+  );
+
+  try {
+    // Two rests, so the browser needs the index to know WHICH one is resting —
+    // the rests are numbered in their own space, independent of `0` and `1`.
+    human.sync.setText('$ participants <0 ~ 1 ~>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
+    bot.buffers['1'] = new RingBuffer(1024); bot.buffers['1'].write(new Array(50).fill(0.25));
+
+    const turnMs = bot.scheduler.getCycleLength().seconds * 1000;
+    for (let cycle = 0; cycle < 4; cycle++) {
+      clock = turnMs * cycle;
+      await bot.readAndAssembleMasterBuffer();
+      await sleep(80);
+    }
+
+    assert.deepEqual(got, [
+      { token: '0', index: 0, kind: null },
+      { token: null, index: 0, kind: 'rest' },
+      { token: '1', index: 1, kind: null },
+      { token: null, index: 1, kind: 'rest' },
+    ], 'played turns name their participant; rests name which `~` is resting');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
+
+test('a joiner landing mid-rest is told the room is resting', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  // The aggregator broadcasts only on change, so the sidecar caches the last
+  // turn and replays it on hello. A rest carries no token, so a cache keyed on
+  // "token present" would leave a mid-rest joiner with no outline at all.
+  const first = await connectHuman(port, () => {});
+
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0, slotMs: 4000 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true,
+      now: () => clock
+    }
+  );
+
+  try {
+    first.sync.setText('$ participants <0 ~>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    bot.buffers['0'] = new RingBuffer(1024); bot.buffers['0'].write(new Array(50).fill(0.5));
+
+    const turnMs = bot.scheduler.getCycleLength().seconds * 1000;
+    clock = 0;       await bot.readAndAssembleMasterBuffer(); await sleep(80);
+    clock = turnMs;  await bot.readAndAssembleMasterBuffer(); await sleep(80);  // resting now
+
+    const replayed = [];
+    const late = await connectHuman(port, (m) => replayed.push({ token: m.token, index: m.index, kind: m.kind }));
+    await sleep(200);
+    assert.deepEqual(replayed, [{ token: null, index: 0, kind: 'rest' }],
+      'the catch-up says "resting at the first ~", not "no turn"');
+    late.ws.close();
+  } finally {
+    await bot.stop().catch(() => {});
+    first.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});

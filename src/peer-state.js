@@ -65,6 +65,7 @@ let lastPongAt = 0;
 let currentRoom = null;
 let activeNetCyclesToken = null; // aggregator's current ring turn (nc-active)
 let activeNetCyclesIndex = null; // ring-slot index of that turn (repeats-aware)
+let activeNetCyclesKind = null;  // 'rest' when the turn is a written `~`, else null
 const MAX_RECONNECT_DELAY = 15000;
 const PONG_TIMEOUT_MS = 8000;
 
@@ -336,11 +337,21 @@ function handleMessage(msg) {
       // Aggregator's current ring turn — the participant token whose audio is
       // streaming this slot, plus the ring-slot index that disambiguates a
       // token listed more than once. Surfaced as a DOM event so the metaprogram
-      // highlighter can outline the exact occurrence. null token clears it.
+      // highlighter can outline the exact occurrence.
+      //
+      // A REST arrives as kind:'rest' with no token, and its index addresses
+      // the program's rests rather than its participants — the room is resting
+      // at that written `~`. No token and no kind means no turn at all, which
+      // clears the outline.
       activeNetCyclesToken = typeof msg.token === 'string' ? msg.token : null;
       activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
+      activeNetCyclesKind = msg.kind === 'rest' ? 'rest' : null;
       document.dispatchEvent(new CustomEvent('trussal-netcycles-active', {
-        detail: { token: activeNetCyclesToken, index: activeNetCyclesIndex }
+        detail: {
+          token: activeNetCyclesToken,
+          index: activeNetCyclesIndex,
+          kind: activeNetCyclesKind,
+        }
       }));
       break;
 
@@ -460,8 +471,13 @@ export function getLocalPeer() { return localPeer; }
 export function getActiveNetCyclesToken() { return activeNetCyclesToken; }
 
 // The ring-slot index of that turn, disambiguating a token listed more than
-// once (null when unknown).
+// once (null when unknown). Indexes the program's PARTICIPANTS normally and
+// its RESTS when the turn is a rest — see getActiveNetCyclesKind.
 export function getActiveNetCyclesIndex() { return activeNetCyclesIndex; }
+
+// 'rest' when the current turn is a written `~` (no participant is streaming
+// and the index addresses the rests), null otherwise.
+export function getActiveNetCyclesKind() { return activeNetCyclesKind; }
 
 export function getAllPeers() {
   const all = [];
