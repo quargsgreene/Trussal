@@ -6,6 +6,7 @@
 *
 !bots
 !src/audio-net
+!src/hydra-code.js
 !latency-instrument
 !public/lib
 bots/node_modules
