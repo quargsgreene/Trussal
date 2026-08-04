@@ -38380,7 +38380,39 @@ When mixing down to 2 channels, the input channels are equally distributed over 
 # cycles wcl 20
 `;
   }
-  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2;
+  function escapeForRegExp(s2) {
+    return String(s2).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function matchSequence(text2) {
+    return String(text2 ?? "").match(SEQUENCE_RE);
+  }
+  function sequenceLists(m2, token) {
+    return new RegExp(`(^|[\\s<\\[])${escapeForRegExp(token)}($|[\\s\\]>@!?*/,|%:])`).test(m2[2] + m2[3] + m2[4]);
+  }
+  function programHasParticipant(text2, token) {
+    const m2 = matchSequence(text2);
+    return !!m2 && sequenceLists(m2, token);
+  }
+  function hasParticipantSequence(text2) {
+    return !!matchSequence(text2);
+  }
+  function appendParticipantToProgram(text2, token) {
+    const m2 = matchSequence(text2);
+    if (!m2 || sequenceLists(m2, token)) return text2;
+    const body = m2[3].trimEnd();
+    return text2.replace(m2[0], `${m2[1]}${m2[2]}${body ? `${body} ` : ""}${token}${m2[4]}`);
+  }
+  function removeParticipantFromProgram(text2, token) {
+    const m2 = matchSequence(text2);
+    if (!m2) return text2;
+    const cleaned = m2[3].split(/\s+/).filter((w2) => {
+      if (w2 === token) return false;
+      const base = w2.match(/^([0-9]+[a-z]*)/);
+      return !(base && base[1] === token);
+    }).join(" ");
+    return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
+  }
+  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
@@ -38458,12 +38490,23 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         skipNewlines() {
           while (this.peek().type === "newline") this.next();
         }
+        // Consume the rest of the physical line. A button declaration is one line,
+        // as `*name: code` is in the personal editor — it is skipped whole rather
+        // than validated, because nothing in it runs until its button writes it
+        // into the program, where it is parsed like any other statement.
+        skipDeclarationLine() {
+          while (!this.atEof() && this.peek().type !== "newline") this.next();
+        }
         // Consume to the start of the next statement ($ or # at statement level) so
         // one bad statement doesn't cascade.
         recover() {
           while (!this.atEof()) {
             const t = this.peek();
-            if (t.type === "sigil") return;
+            if (t.type === "sigil") {
+              const prev = this.tokens[this.pos - 1];
+              if (prev && prev.type === "op" && prev.value === "*") this.pos--;
+              return;
+            }
             this.next();
           }
         }
@@ -38472,6 +38515,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           this.skipNewlines();
           while (!this.atEof()) {
             const t = this.peek();
+            if (t.type === "op" && t.value === "*" && this.peek(1).type === "sigil") {
+              this.skipDeclarationLine();
+              this.skipNewlines();
+              continue;
+            }
             if (t.type !== "sigil") {
               this.error(`expected '$' or '#' at start of statement, got '${t.value}'`, t);
               this.next();
@@ -39358,6 +39406,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           program.chain.push(entry);
         }
       };
+      SEQUENCE_RE = /^([ \t]*\$[ \t]*participants[ \t]*)([<[])([^\]>]*)([\]>])/m;
     }
   });
 
@@ -52283,6 +52332,7 @@ ${next}`;
   init_peer_state();
 
   // src/editor-router-core.js
+  init_MetaprogrammerParser();
   function classifyEditor(classNames) {
     const set2 = new Set(classNames || []);
     if (set2.has("nc-code")) return "netcycles";
@@ -52290,8 +52340,61 @@ ${next}`;
     return null;
   }
   var NC_BTN_MARKER = " // netcycles-btn";
+  var NC_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
+  function parseNetCyclesButtons(text2) {
+    const buttons = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const line of String(text2 ?? "").split("\n")) {
+      const m2 = NC_BTN_DECL_RE.exec(line);
+      if (!m2) continue;
+      const body = m2[2].replace(/\s*\/\/.*$/, "").trimEnd();
+      if (!body) continue;
+      const snippet = `${m2[1]} ${body}`;
+      if (m2[1] === "$" && !participantTokensIn(snippet)) continue;
+      if (seen.has(snippet)) continue;
+      seen.add(snippet);
+      buttons.push({
+        snippet,
+        label: buttonLabel(m2[1], body),
+        active: isNetCyclesSnippetActive(text2, snippet)
+      });
+    }
+    return buttons;
+  }
+  function buttonLabel(sigil, body) {
+    const compact2 = sigil === "$" ? body.replace(/^participants\s*/, "") : body;
+    return compact2.length > 20 ? `${compact2.slice(0, 20)}\u2026` : compact2;
+  }
+  function participantTokensIn(snippet) {
+    const m2 = /^\$\s*participants\s*[<[]([^\]>]*)[\]>]\s*$/.exec(String(snippet ?? "").trim());
+    if (!m2) return null;
+    const tokens = m2[1].split(/\s+/).filter(Boolean);
+    return tokens.length ? tokens : null;
+  }
+  function isNetCyclesSnippetActive(text2, snippet) {
+    const cur = text2 || "";
+    const tokens = participantTokensIn(snippet);
+    if (tokens) return hasParticipantSequence(cur) && tokens.every((t) => programHasParticipant(cur, t));
+    return cur.includes(`
+${snippet}${NC_BTN_MARKER}`);
+  }
   function toggleNetCyclesSnippet(text2, snippet) {
     const cur = text2 || "";
+    const tokens = participantTokensIn(snippet);
+    if (tokens) {
+      if (!hasParticipantSequence(cur)) {
+        const head = cur.replace(/\s*$/, "");
+        return head ? `${head}
+${snippet}
+` : `${snippet}
+`;
+      }
+      const on = tokens.every((t) => programHasParticipant(cur, t));
+      return tokens.reduce(
+        (acc, t) => on ? removeParticipantFromProgram(acc, t) : appendParticipantToProgram(acc, t),
+        cur
+      );
+    }
     const active3 = `
 ${snippet}${NC_BTN_MARKER}`;
     const commented = `
@@ -52313,6 +52416,13 @@ ${snippet}${NC_BTN_MARKER}`;
       const kind = e30.target && e30.target.classList ? classifyEditor(e30.target.classList) : null;
       if (kind) lastKind = kind;
     });
+  }
+  function activeEditorKind() {
+    return lastKind;
+  }
+  function metaprogramReadOnly() {
+    const peer = getLocalPeer();
+    return !!peer.isBot && peer.canEditMetaprogram === false;
   }
   function strudelTextarea() {
     return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)");
@@ -52349,12 +52459,16 @@ ${snippet}${NC_BTN_MARKER}`;
     return applyProgramText(readNetCyclesText());
   }
   function toggleNetCyclesButtonCode(snippet) {
+    if (metaprogramReadOnly()) return [];
     const next = toggleNetCyclesSnippet(readNetCyclesText(), snippet);
     const sync = ensureMetaprogramSync();
     sync.setText(next, "local");
     const ta = netcyclesTextarea();
     if (ta) ta.value = next;
-    applyProgramText(next);
+    document.dispatchEvent(new CustomEvent("trussal-netcycles-program", {
+      detail: { text: next, modality: "button" }
+    }));
+    return applyProgramText(next);
   }
   function readNetCyclesText() {
     const sync = ensureMetaprogramSync();
@@ -52421,6 +52535,9 @@ ${snippet}${NC_BTN_MARKER}`;
     globalThis.NetCyclesButton = NetCyclesButton;
   }
   trackEditorFocus();
+  if (typeof document !== "undefined") {
+    document.addEventListener("focusin", () => refreshFacialGestureButtons());
+  }
   function getCode() {
     return readActiveEditor();
   }
@@ -52548,6 +52665,7 @@ ${code2}${BTN_MARKER}`;
   };
   var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
   var _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
+  var _barKey = null;
   var _regexTrigger = "mouthOpen";
   var _regexPattern = "";
   var _regexReplacement = "";
@@ -52919,6 +53037,8 @@ ${code2}${BTN_MARKER}`;
     }
     .strudel-head-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
     .strudel-head-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    /* Already in the pattern / in the ring \u2014 the same "on" the editor cards show. */
+    .strudel-head-btn.strudel-btn-on { border-color:#1ff466; color:#1ff466; background:rgba(31,244,102,0.08); }
 
     #${FG_PANEL_ID} .fg-section {
       border-top: 1px solid rgba(255,255,255,0.08);
@@ -53056,6 +53176,18 @@ ${code2}${BTN_MARKER}`;
       </div>
 
       <div class="fg-section">
+        <div class="fg-section-title">NetCyclesButton</div>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          write in the Net Cycles editor:<br>
+          <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
+          <code style="font-size:9px">*# crush wcl 2</code><br>
+          dwell to put that voice in the ring (or that effect in the chain)
+          and apply; dwell again to take it out. The bar above follows
+          whichever editor has focus.
+        </div>
+      </div>
+
+      <div class="fg-section">
         <div class="fg-section-title">window.faceCtx</div>
         <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
         <div style="font-size:10px;color:#5d7264;line-height:1.5;">
@@ -53137,27 +53269,53 @@ ${code2}${BTN_MARKER}`;
   function refreshFacialGestureButtons() {
     const bar = document.getElementById("trussal-fg-btns");
     if (!bar || !_enabled) {
-      if (bar) bar.innerHTML = "";
+      if (bar) {
+        bar.innerHTML = "";
+        _barKey = null;
+      }
       return;
     }
     const code2 = getCode();
-    const buttons = [];
+    const esc = (s2) => String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
+    const escAt = (s2) => String(s2).replace(/"/g, "&quot;");
+    const render = (buttons2, klass, attr) => {
+      const key = `${klass}\0${buttons2.map((b) => `${b.code}${b.label}${b.on ? 1 : 0}`).join("")}`;
+      if (key === _barKey) return false;
+      _barKey = key;
+      bar.innerHTML = buttons2.map(
+        (b) => `<button class="strudel-head-btn${klass}${b.on ? " strudel-btn-on" : ""}" ${attr}="${escAt(b.code)}" title="${escAt(b.code)}">\u25B6 ${esc(b.label)}</button>`
+      ).join("");
+      return true;
+    };
+    const truncate = (s2) => s2.length > 20 ? s2.slice(0, 20) + "\u2026" : s2;
+    if (activeEditorKind() === "netcycles") {
+      const buttons2 = parseNetCyclesButtons(code2).map((b) => ({ code: b.snippet, label: b.label, on: b.active }));
+      if (render(buttons2, " nc-head-btn", "data-netcycles-code")) {
+        bar.querySelectorAll("[data-netcycles-code]").forEach((btn) => {
+          btn.addEventListener("click", () => toggleNetCyclesButtonCode(btn.dataset.netcyclesCode));
+        });
+      }
+      return;
+    }
+    const snippets = [];
     const starred = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
     const explicit = /new\s+StrudelButton\((['"`])([\s\S]*?)\1\)/g;
     let m2;
     starred.lastIndex = 0;
     explicit.lastIndex = 0;
-    while ((m2 = starred.exec(code2)) !== null) buttons.push(`${m2[1]}: ${m2[2].trim()}`);
-    while ((m2 = explicit.exec(code2)) !== null) buttons.push(m2[2]);
-    const esc = (s2) => String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
-    const escAt = (s2) => String(s2).replace(/"/g, "&quot;");
-    bar.innerHTML = buttons.map((code3) => {
-      const label2 = code3.length > 20 ? code3.slice(0, 20) + "\u2026" : code3;
-      return `<button class="strudel-head-btn" data-strudel-code="${escAt(code3)}">\u25B6 ${esc(label2)}</button>`;
-    }).join("");
-    bar.querySelectorAll(".strudel-head-btn").forEach((btn) => {
-      btn.addEventListener("click", () => toggleButtonCode(btn.dataset.strudelCode));
-    });
+    while ((m2 = starred.exec(code2)) !== null) snippets.push(`${m2[1]}: ${m2[2].trim()}`);
+    while ((m2 = explicit.exec(code2)) !== null) snippets.push(m2[2]);
+    const buttons = snippets.map((s2) => ({
+      code: s2,
+      label: truncate(s2),
+      on: code2.includes(`
+${s2}${BTN_MARKER}`)
+    }));
+    if (render(buttons, "", "data-strudel-code")) {
+      bar.querySelectorAll("[data-strudel-code]").forEach((btn) => {
+        btn.addEventListener("click", () => toggleButtonCode(btn.dataset.strudelCode));
+      });
+    }
   }
 
   // src/on-screen-keyboard.js
@@ -53526,7 +53684,6 @@ ${code2}${BTN_MARKER}`;
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
   init_MetaprogrammerParser();
-  init_peer_state();
   var PARSE_IDLE_MS = 300;
   function mountMetaprogrammerEditor(container2) {
     if (!container2 || container2.querySelector(".nc-editor")) return null;
@@ -53541,6 +53698,7 @@ ${code2}${BTN_MARKER}`;
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
+    <div class="ts-voice-btns nc-voice-btns"></div>
     <div class="ts-meta nc-errors" style="color:#ff8a8a;"></div>
     <div class="ts-meta nc-byline"></div>
   `;
@@ -53549,8 +53707,9 @@ ${code2}${BTN_MARKER}`;
     const errorsEl = wrap.querySelector(".nc-errors");
     const bylineEl = wrap.querySelector(".nc-byline");
     const applyBtn = wrap.querySelector(".nc-apply");
+    const btnsEl = wrap.querySelector(".nc-voice-btns");
     const sync = ensureMetaprogramSync();
-    const readOnly = !!getLocalPeer().isBot && getLocalPeer().canEditMetaprogram === false;
+    const readOnly = metaprogramReadOnly();
     if (readOnly) {
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
@@ -53567,10 +53726,31 @@ ${code2}${BTN_MARKER}`;
       clearTimeout(parseTimer);
       parseTimer = setTimeout(() => showErrors(ta.value), PARSE_IDLE_MS);
     }
+    const esc = (s2) => String(s2).replace(
+      /[&<>"']/g,
+      (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
+    );
+    function renderButtons() {
+      const buttons = parseNetCyclesButtons(ta.value);
+      btnsEl.innerHTML = buttons.map(
+        (b) => `<button class="ts-voice-btn nc-head-btn${b.active ? " on" : ""}" type="button" data-netcycles-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
+      ).join("");
+      btnsEl.querySelectorAll(".nc-head-btn").forEach((btn) => {
+        btn.addEventListener("click", () => press2(btn.dataset.netcyclesCode));
+      });
+      refreshFacialGestureButtons();
+    }
+    function press2(snippet) {
+      if (readOnly) return;
+      const errors = toggleNetCyclesButtonCode(snippet);
+      showErrors(ta.value);
+      bylineEl.textContent = errors.length ? "button left the program invalid \u2014 fix it above, then apply" : "applied \u2014 takes effect at the next cycle boundary";
+    }
     ta.addEventListener("input", () => {
       if (readOnly) return;
       sync.setText(ta.value);
       parseOnIdle();
+      renderButtons();
     });
     const refreshFromDoc = () => {
       const next = sync.getText();
@@ -53586,6 +53766,7 @@ ${code2}${BTN_MARKER}`;
         }
       }
       parseOnIdle();
+      renderButtons();
     };
     sync.onRemoteChange((_3, payload) => {
       refreshFromDoc();
@@ -53593,7 +53774,10 @@ ${code2}${BTN_MARKER}`;
         bylineEl.textContent = `last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`;
       }
     });
-    document.addEventListener("trussal-netcycles-program", refreshFromDoc);
+    document.addEventListener("trussal-netcycles-program", () => {
+      refreshFromDoc();
+      renderButtons();
+    });
     const apply2 = () => {
       if (readOnly) return;
       const errors = applyProgramText(ta.value);
@@ -53602,6 +53786,7 @@ ${code2}${BTN_MARKER}`;
         errorsEl.textContent = "";
         bylineEl.textContent = "applied \u2014 takes effect at the next cycle boundary";
       }
+      renderButtons();
     };
     applyBtn.addEventListener("click", apply2);
     ta.addEventListener("keydown", (e30) => {
@@ -53611,6 +53796,7 @@ ${code2}${BTN_MARKER}`;
       }
     });
     showErrors(ta.value);
+    renderButtons();
     return wrap;
   }
 
@@ -54259,6 +54445,11 @@ ${code2}${BTN_MARKER}`;
     }
     #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
     #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+    #${OVERLAY_ID} .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
+    /* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+       yellow-fills-then-green as every other dwell target. */
+    #${OVERLAY_ID} .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    #${OVERLAY_ID} .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
 
     #${OVERLAY_ID} .ts-sample-banks {
       display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -54745,7 +54936,7 @@ ${voiceCode}${BTN_MARKER2}`);
     area.querySelectorAll(".ts-voice-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         toggleButtonCode(btn.dataset.voiceCode);
-        const ta = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+        const ta = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
         if (ta) renderVoiceButtons(container2, ta.value);
       });
     });
@@ -54941,7 +55132,7 @@ ${voiceCode}${BTN_MARKER2}`);
     onEvalAndPlay(typeof code2 === "string" ? code2 : getLocalPeer()?.pattern ?? "");
   });
   document.addEventListener("trussal-eval", () => {
-    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
     if (codeEl) {
       codeEl.classList.remove("ts-eval-flash");
       void codeEl.offsetWidth;
