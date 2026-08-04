@@ -18,6 +18,8 @@ import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { registerSamplesFromDB } from './user-samples.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
 import { rewriteLiveCalls } from './live-input-core.js';
+import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
+import { hasTextCycles, rewriteTextCalls, keepTextStatements } from './text-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
@@ -115,6 +117,29 @@ function splitDeclAndExpr(code) {
 }
 
 const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
+
+// A program declares its non-audio capabilities with an `await initX()` line
+// before the first blank line — visuals with initHydra, chat text with
+// initTextCycles. Both may appear in the same preamble.
+const PREAMBLE_INIT_RE = /^\s*await\s+init(?:Hydra|TextCycles)\s*\(/;
+
+// Text Cycles atoms for the program currently being assembled. Literal words
+// are minted into grammar-legal tokens (see text-cycles-core.js) and the real
+// characters travel here; the counter is shared across peers within one
+// rebuild so two performers can never mint the same token.
+let textAtoms = {};
+let textCounter = { n: 0 };
+
+// Mint one peer's text statements into the shared table and return the code
+// with the renderer attached.
+function applyTextRewrite(code, peer) {
+  const { code: rewritten, atoms } = rewriteTextCalls(code, {
+    peer: peer.jitsiId,
+    counter: textCounter,
+  });
+  Object.assign(textAtoms, atoms);
+  return rewritten;
+}
 
 // Build a labeled Strudel voice string from code that is known to be a Strudel
 // pattern (no hydra preamble).  Used by buildPeerBlock for both the plain case
@@ -218,17 +243,31 @@ function buildPeerBlock(peer) {
   // no re-evaluation needed when a slot opens or closes.
   if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
 
-  // Detect hydra preamble: code that begins with `await initHydra(...)`.
-  // Split at the first blank line: preamble above, strudel code below.
-  if (/^\s*await\s+initHydra\s*\(/.test(code)) {
+  // Text Cycles: words are painted per-page into each viewer's own chat panel
+  // and make no sound, so they never ride the published track — a text voice
+  // must therefore survive the aggregator exclusion below that drops a remote
+  // peer's audio, otherwise only your own words would ever appear.
+  const isText = hasTextCycles(code);
+
+  // Detect a capability preamble: code beginning with `await initHydra(...)`
+  // or `await initTextCycles(...)`. Split at the first blank line: preamble
+  // above, strudel code below.
+  if (PREAMBLE_INIT_RE.test(code)) {
     const blankMatch = code.match(/\n\n+/);
     if (!blankMatch) {
-      // Entire block is the hydra preamble — no Strudel pattern voice.
+      // Entire block is the preamble — no Strudel pattern voice.
       return code;
     }
-    const preamble    = code.slice(0, blankMatch.index).trim();
-    const strudelCode = code.slice(blankMatch.index).trim();
-    if (!strudelCode || remoteVoiceExcluded) return preamble;
+    const preamble = code.slice(0, blankMatch.index).trim();
+    let strudelCode = code.slice(blankMatch.index).trim();
+    if (isText) {
+      // Excluded remote peer: keep the text statements, drop the audio ones.
+      if (remoteVoiceExcluded) strudelCode = keepTextStatements(strudelCode);
+      if (strudelCode) strudelCode = applyTextRewrite(strudelCode, peer);
+    } else if (remoteVoiceExcluded) {
+      return preamble;
+    }
+    if (!strudelCode) return preamble;
     return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
   }
 
@@ -340,7 +379,10 @@ async function ensureStrudel() {
     // live("device"): rolling-capture sampler of a local audio input;
     // _liveSilent is the stub remote peers' live() calls are rewritten to.
     const { live, _liveSilent } = installLiveInput(mod, audioCtx);
-    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent });
+    // Text Cycles: word/typeface/… controls plus initTextCycles(). Silent by
+    // construction — the renderer it attaches carries a dominant trigger.
+    const textScope = installTextCycles(mod);
+    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -350,6 +392,11 @@ async function ensureStrudel() {
 }
 
 async function rebuildAndEvaluate() {
+  // Rebuilt from scratch every pass: tokens are only meaningful for the
+  // program they were minted into.
+  textAtoms = {};
+  textCounter = { n: 0 };
+
   const blocks = getAllPeers()
     .map(buildPeerBlock)
     .filter(Boolean);
@@ -400,6 +447,9 @@ async function rebuildAndEvaluate() {
   activeSliders = {};
   try {
     beginLiveEpoch();
+    // Must precede evaluate(): the first haps can trigger before it returns,
+    // and a token with no table entry would paint as raw "tc7".
+    setTextAtoms(textAtoms);
     await evaluate(next);
     // Every live() in this program has now re-stamped the epoch; whatever
     // didn't is no longer referenced, so release its device.
@@ -437,6 +487,8 @@ export async function stopStrudel() {
   // Release captured devices with the music; the next evaluate that still
   // contains live() restarts its capture.
   stopLiveCaptures();
+  // Words already in the chat stay there as history; only new ones stop.
+  stopTextCycles();
   anyPlaying = false;
   lastEvaluated = null;
   activeSliders = {};

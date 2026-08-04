@@ -130,6 +130,7 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `on-screen-keyboard.js` | On-screen QWERTY with head-cursor dwell, drag, and trie-based Strudel keyword autocomplete |
 | `user-samples.js` | IndexedDB-backed local sample loading; users upload folders, reference them as `s("foldername")` in Strudel patterns |
 | `live-input.js` | `live("device")` Strudel source: rolling ring-buffer capture of a local audio input; each pattern event plays the freshest chunk (authoring browser only, remote peers silenced). Pure ring/matching logic in `live-input-core.js` |
+| `text-cycles.js` | Text Cycles: `word`/`typeface`/… controls that paint styled spans into the Jitsi chat window (one bubble per cycle per performer) instead of making sound. Declared by `await initTextCycles()`. Silent by construction — the renderer carries a dominant `onTrigger`, so superdough is never reached. Mini escaping (`\~`), emoji support, CSS/href sanitising and statement scanning are pure logic in `text-cycles-core.js`; see `src/features/textcycles.md` |
 | `jamulus.js` | Jamulus room map + welcome panel/banner injection; `JAMULUS_ROOM_MAP` is exported to `window` |
 | `welcome-page.js` | Jitsi welcome-page and prejoin-screen customizations |
 | `meeting.js` | In-meeting customizations (e.g. no-audio toast) |

@@ -1,0 +1,146 @@
+# Text Cycles
+
+Strudel patterns that play into the Jitsi chat window instead of the speakers.
+
+```js
+await initTextCycles()
+
+$: typeface("Times New Roman").word("<I like@2 ~ squirrels\?>")
+     .weight("400 200 100 800")
+     .slant("<italic none>")
+     .size("<12px 24px 10px 1px>*2")
+     .color("<#346234 #bfe968>")
+     .underline("underline")
+     .spacing("<3px 6px 9px 12px>")
+     .hover("color:#ffffff")
+     .hyperlink("<google.com reddit.com ca.gov devry.edu>")
+```
+
+`await initTextCycles()` declares a program's text presence exactly as
+`await initHydra()` declares its visuals: first line, then a blank line, then
+the patterns. Both may appear in the same preamble.
+
+## What it renders
+
+One styled `<span>` per hap, appended into a chat bubble. There is **one bubble
+per cycle per performer**, so a fast pattern fills a line rather than flooding
+the panel with messages. Scrollback is capped at 200 bubbles.
+
+Nothing is sent over XMPP. Every browser already evaluates every peer's program
+(see `strudel.js`), so each client paints the same words at the same time from
+the shared program — no chat traffic, no rate limits, and nothing written into
+the room's saved message history.
+
+With no CSS specified, words inherit Jitsi's own chat typography. Only
+properties you set are applied.
+
+## No sound, by construction
+
+The renderer attaches with `onTrigger(fn, dominant = true)`, and `repl.mjs`
+skips `defaultOutput` for any hap carrying a dominant trigger — so a text voice
+cannot reach superdough even if it also names a sound. Tempo still works
+(`*2`, `@2`, `fast`, `slow`) because that is pattern structure, not output.
+
+The renderer is attached **per statement**, never per block, since landing a
+dominant trigger on an audio voice would silence it. A program can mix text and
+audio voices freely.
+
+## Escaping
+
+Mini notation owns several characters. To render one literally, escape it:
+
+| Written | Renders |
+|---|---|
+| `word("<a ~ b>")` | `a`, a rest, `b` |
+| `word("<a \~ b>")` | `a`, a literal `~`, `b` |
+| `word("squirrels?")` | `squirrels`, played only sometimes |
+| `word("squirrels\?")` | `squirrels?` every cycle |
+
+Everything else is literal already — spaces separate words, and emoji, `#`, `:`
+and `.` are ordinary text. Case is preserved exactly.
+
+Single quotes opt out of mini entirely, so no escaping is needed at all:
+`word('I like ~ squirrels?')` is one whole phrase, one hap.
+
+**Why escaping needs a Trussal rewrite.** JS itself discards unknown escapes
+(`"\~"` is just `"~"`), and Strudel's transpiler reads the post-escape string,
+so a backslash that reaches `evaluate()` is already gone. `text-cycles-core.js`
+therefore runs over the raw source *before* the transpiler. It also mints every
+literal atom into a placeholder token (`tc0`, `tc1`, …), because krill's grammar
+cannot hold an emoji, a space or a literal `?` in an atom — the real characters
+travel out-of-band in an atom table. Operators pass through untouched, so the
+pattern still means what it looks like.
+
+Consequence: `word(someVariable)` and interpolated templates cannot be rewritten
+statically. They still render, but with no escaping and no mini.
+
+## css()
+
+`css()` takes arbitrary declarations and is applied **last**, so it wins over a
+named parameter it conflicts with. Four forms work:
+
+```js
+const myCss = [
+  { color: 'blue', 'font-family': 'Monaco', 'text-emphasis': '"x"' },
+  { color: '#333333', margin: '50%' },
+  { 'font-family': 'Courier' },
+];
+
+$: word("I like squirrels").css(myCss[0])                        // one object
+$: word("I like squirrels").css(cat(myCss[0], myCss[2], myCss[1])) // pattern of objects
+$: word("I like squirrels").css("<'color:blue' 'margin:50%'>")   // declaration strings
+$: word("I like squirrels").css('color:blue;margin:50%')         // one literal
+```
+
+`cat(...)` is the alternation form — it cycles the list in the order given,
+which is what an index pattern like `<0 2 1>` was reaching for. Note the inner
+**single** quotes in the mini form: a double-quoted string inside a pattern is
+itself mini-parsed.
+
+## Borrowed controls
+
+`size` and `color` already exist in Strudel — `size` is an alias of the reverb
+`roomsize` control, and `color` is the visual one. Text Cycles **reuses** them
+rather than re-registering, because overriding `Pattern.prototype.size` would
+break `.size()` for every audio voice in the room. So `size` arrives on the hap
+as `roomsize`. All other names (`word`/`w`, `typeface`/`t`, `weight`, `spacing`,
+`slant`, `hover`, `hyperlink`, `underline`, `css`) are new controls.
+
+Because they are reused, `.size()` and `.color()` are only rewritten inside
+statements that contain a `word()` call — an audio voice's `.size(4)` still
+means reverb size.
+
+## Per-participant scoping
+
+Every performer's words carry their own class, `tc-p-<jitsiId>`, on both the
+bubble and each span. Generated `:hover` rules are scoped under it, so one
+performer's styling can never restyle another's lines.
+
+## Trust
+
+Words, styles and links a peer writes are injected into **every** participant's
+DOM, so none of it is trusted:
+
+- text is set with `textContent`, never `innerHTML`;
+- declarations are filtered — `url(`, `expression(`, `@import`, `javascript:`
+  and any `{}<>;` that could break out of a generated rule are dropped, as are
+  the legacy code-executing `behavior` and `-moz-binding`. Layout properties
+  like `margin: 50%` are deliberately allowed: disruption is the instrument;
+- `hyperlink` forces a scheme (a bare domain gets `https://`), permits only
+  http/https/mailto, and emits `rel="noopener noreferrer"` with `target=_blank`.
+  Jitsi's own chat already linkifies pasted URLs, so this adds no new
+  capability to the room.
+
+## Aggregator interaction
+
+While a remote aggregator is present, `buildPeerBlock` drops remote humans'
+audio voices from the local program (per-human publish isolation). Text voices
+are kept: they make no sound, so they never ride the published track, and
+dropping them would mean only ever seeing your own words. For a mixed program,
+`keepTextStatements` keeps the text statements and drops the audio ones.
+
+## Play state
+
+Text flows only while the performer is playing — `buildPeerBlock` skips peers
+who are not, the same as audio. Stopping leaves already-painted words in the
+chat as history.
