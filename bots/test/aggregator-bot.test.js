@@ -1808,6 +1808,63 @@ test('# room arguments may be patterns, re-read as the cycle grid advances', asy
   }
 });
 
+// Every patterned `#` argument on this bus is sampled from ONE position
+// reader (#cycleContext), the same one the browser derives an effect's Hydra
+// counterpart from. room used to read the scheduler's getCyclePosition()
+// instead, which clamps the in-cycle fraction to [0,1] and walks a retained
+// grid — indistinguishable while the grid keeps up, and a different element
+// once it does not. Patterning the METRIC gives both effects the same field to
+// compare, since roomParams and crushParams each report which one is driving.
+test('room and crush sample one cycle position, including off a stale grid', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+    connectSidecar: bus.connect, now: () => clockRef.ms,
+  }, {}, 1024);
+  // A no-op roster re-delivery: re-pushes both effects off the CURRENT clock
+  // without advancing the grid, which is what separates the two readers.
+  const peers = [{ peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 240 }];
+  const repush = () => bus.rec.deliver({ type: 'roster', peers });
+  const bothMetrics = () => [calls.roomPushes.at(-1)?.metric, calls.crushPushes.at(-1)?.metric];
+  try {
+    await bot.start();
+    bus.rec.deliver({ type: 'roster', peers });
+    // Pinned 6 s cycles (wcl 300 ms x 20), so the alternation's boundaries are
+    // not chasing the metrics.
+    bot.applyProgramText(
+      '$ participants <0 1>\n# cycles wcl 20 0.3\n# room <wcl wcj>\n# crush <wcl wcj>\n');
+    clockRef.ms += 1000; bot.scheduler.tick();
+
+    const [room0, crush0] = bothMetrics();
+    assert.ok(room0 && crush0, 'both patterned effects reach the page master player');
+    assert.equal(room0, crush0, 'the two effects start on the same element');
+
+    // Let the grid go stale: advance whole cycles WITHOUT ticking the
+    // scheduler, so the newest boundary sits behind the clock. An unclamped
+    // reader keeps counting (anchor + k); a clamped one freezes one cycle past
+    // the last boundary that started (anchor + 1). They therefore differ by
+    // k-1 elements, and TWO stale cycles is the smallest k that lands them on
+    // opposite sides of a two-element alternation — at k=3 the readers are two
+    // elements apart, which on this pattern is the same element again and
+    // hides the divergence entirely.
+    clockRef.ms += 12000;
+    repush();
+    const [roomStale, crushStale] = bothMetrics();
+    assert.equal(roomStale, crushStale,
+      'a stale grid moves both effects together, or neither — never one of them');
+
+    // And once the grid catches up again, they are still in step.
+    bot.scheduler.tick();
+    repush();
+    const [roomFresh, crushFresh] = bothMetrics();
+    assert.equal(roomFresh, crushFresh, 'still one reader after the grid catches up');
+  } finally {
+    await bot.stop();
+  }
+});
+
 test('dropping # room from the program clears the master reverb', async () => {
   const { calls, fakeLauncher } = makeFakes();
   const bus = fakeMetaprogramBus();

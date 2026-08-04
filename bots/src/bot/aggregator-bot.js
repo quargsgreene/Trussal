@@ -752,15 +752,27 @@ export class AggregatorBot extends Bot {
     /**
      * Where the room is on its cycle grid, for the effects written in cycles
      * (`# echo`'s delay length) or sampled at a fractional position (`[…]`
-     * arguments). Position is deliberately UNCLAMPED arithmetic off the last
-     * boundary: cycle-start events are emitted a lookahead early, so between
-     * the event and the boundary the fraction is negative and the position
-     * correctly still names the previous cycle — evaluateValuePattern
-     * floor-mods, so that resolves to the last element rather than off the
-     * end. Before the first boundary there is no anchor, so fall back to the
-     * length the scheduler is about to use at position 0. Identical to the
-     * browser's cycleContext(), which is what keeps a patterned parameter the
-     * same value on the mix and in every client's visual.
+     * arguments). THE one position reader on this bot: every patterned `#`
+     * argument — room, crush and echo alike — is sampled here, so the master
+     * bus cannot hold two effects that disagree about what time it is.
+     *
+     * Position is deliberately UNCLAMPED arithmetic off the last boundary:
+     * cycle-start events are emitted a lookahead early, so between the event
+     * and the boundary the fraction is negative and the position correctly
+     * still names the previous cycle — evaluateValuePattern floor-mods, so
+     * that resolves to the last element rather than off the end. Before the
+     * first boundary there is no anchor, so fall back to the length the
+     * scheduler is about to use at position 0.
+     *
+     * Identical to the browser's cycleContext(), and that is the point rather
+     * than a coincidence: a browser derives an effect's Hydra counterpart from
+     * its own copy while this derives the audio, so a second reader here with
+     * different edge behaviour (the scheduler's own getCyclePosition() clamps
+     * the in-cycle fraction and walks a retained grid) would let the reverb on
+     * the mix sample a different element than the lowpass drawn against it.
+     * `# noise` is the one deliberate exception: it is re-derived once per
+     * boundary and reads the whole cycle NUMBER (#cycle), which is all a
+     * per-cycle argument can express.
      */
     #cycleContext() {
         if (this.#cycleGrid && this.#cycleGrid.seconds > 0) {
@@ -818,20 +830,6 @@ export class AggregatorBot extends Bot {
         if (this.scheduler) this.scheduler.setMetrics(this.#worstCase);
         this.#syncMasterEffects();
         this.#syncMosaicCells();
-    }
-
-    /**
-     * Where the room sits on its cycle grid, in fractional cycles — what every
-     * patterned effect argument is sampled at. Read off the scheduler, which
-     * derives it from the boundaries it actually emitted rather than from the
-     * current cycle length, so a metrics change does not renumber the past and
-     * jump every pattern. Falls back to the last cycle-start's NUMBER before
-     * the first boundary has been scheduled (and when there is no scheduler at
-     * all), which is exactly the resolution noise has always run at.
-     */
-    #cyclePosition() {
-        const pos = this.scheduler ? this.scheduler.getCyclePosition() : null;
-        return Number.isFinite(pos) ? pos : this.#cycle;
     }
 
     /**
@@ -948,7 +946,7 @@ export class AggregatorBot extends Bot {
     #syncMasterRoom() {
         if (!this.page) return;
         const params = this.#roomChain
-            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain), this.#cyclePosition())
+            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain), this.#cycleContext().cyclePos)
             : null;
         const json = JSON.stringify(params ?? null);
         if (json === this.#lastRoomPushJson) return;
