@@ -36,6 +36,11 @@ COPY bots/src ./src
 # up from /repo/src — the dev checkout's root node_modules plays that role
 # locally.
 COPY src/audio-net /repo/src/audio-net
+# The mosaic's membership rule (MosaicCells.js imports it) — the one place
+# that decides what counts as Hydra code, shared with the browser so a cell
+# can never appear for code the browser doesn't treat as Hydra. A src/-root
+# file rather than an audio-net one, so the tree COPY above doesn't cover it.
+COPY src/hydra-code.js /repo/src/hydra-code.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules
