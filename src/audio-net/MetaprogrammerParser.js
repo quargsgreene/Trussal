@@ -128,7 +128,9 @@ function tokenize(text) {
   let line = 1, col = 1;
   let i = 0;
   const n = text.length;
-  const push = (type, value, l, c) => tokens.push({ type, value, line: l, col: c });
+  // `raw` is carried only where the parsed value cannot reproduce the spelling
+  // (`0.50`, `007`) — see tokenWidth, which measures a token's source extent.
+  const push = (type, value, l, c, raw = null) => tokens.push({ type, value, line: l, col: c, raw });
 
   while (i < n) {
     const ch = text[i];
@@ -162,7 +164,7 @@ function tokenize(text) {
         j++;
         while (j < n && /[0-9]/.test(text[j])) j++;
         const raw = text.slice(i, j);
-        push('number', parseFloat(raw), startLine, startCol);
+        push('number', parseFloat(raw), startLine, startCol, raw);
         advance(j - i);
         continue;
       }
@@ -192,6 +194,13 @@ function tokenize(text) {
 
 // ---------------------------------------------------------------------------
 // Parser
+
+// How many source characters a token spans. Numbers carry their raw spelling
+// because parseFloat loses it (`0.50`, `007`); every other token is written
+// exactly as its value.
+function tokenWidth(t) {
+  return String(t.raw != null ? t.raw : (t.value ?? '')).length;
+}
 
 class Parser {
   constructor(tokens, errors) {
@@ -268,7 +277,7 @@ class Parser {
     const seq = this.parseSequenceGroup();
     if (!seq) { this.recover(); return; }
     // Sequence-level postfix: *n or /n.
-    seq.modifiers = this.parseModifiers();
+    this.parseModifiers(seq);
     program.participants = seq;
   }
 
@@ -285,6 +294,9 @@ class Parser {
 
     // stacks ← elements split on ','; each stack may be a '|' choice of runs.
     const stacks = [];
+    // Where the closing bracket leaves off, so a postfix on the sequence
+    // (`[0 1]*2`) is held to the same glue rule as one on an element.
+    let end = null;
     let segments = [[]]; // '|'-separated runs within the current stack
     const finishStack = (tok) => {
       const runs = segments.map(run => run);
@@ -307,12 +319,14 @@ class Parser {
       if (t.type === 'newline') { this.next(); continue; } // sequences may wrap lines
       if (t.type === 'punct' && t.value === close) {
         this.next();
+        end = { line: t.line, col: t.col + 1 };
         finishStack(t);
         break;
       }
       if (t.type === 'punct' && (t.value === '>' || t.value === ']')) {
         this.error(`mismatched '${t.value}' — expected '${close}'`, t);
         this.next();
+        end = { line: t.line, col: t.col + 1 };
         finishStack(t);
         break;
       }
@@ -343,22 +357,30 @@ class Parser {
           this.error("'..' range upper bound below lower bound", dots);
           continue;
         }
+        // Every expanded index stands at the low bound's glyph — it is the only
+        // text it has — and so spans exactly that, whatever it is called.
         for (let v = lo; v <= high; v++) {
-          run.push({ type: 'participant', token: String(v), ownerIndex: v, suffix: null, modifiers: [], line: el.line, col: el.col });
+          run.push({
+            type: 'participant', token: String(v), ownerIndex: v, suffix: null, modifiers: [],
+            line: el.line, col: el.col, endLine: el.endLine, endCol: el.endCol
+          });
         }
         continue;
       }
-      el.modifiers = this.parseModifiers();
+      this.parseModifiers(el);
       run.push(el);
     }
-    return { type: 'sequence', mode, stacks, modifiers: [] };
+    return { type: 'sequence', mode, stacks, modifiers: [], endLine: end?.line, endCol: end?.col };
   }
 
   parseElement() {
     const t = this.peek();
     if (t.type === 'rest') {
       this.next();
-      return { type: 'rest', token: t.value, modifiers: [], line: t.line, col: t.col };
+      return {
+        type: 'rest', token: t.value, modifiers: [],
+        line: t.line, col: t.col, endLine: t.line, endCol: t.col + 1
+      };
     }
     if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
       const group = this.parseSequenceGroup();
@@ -379,7 +401,9 @@ class Parser {
         suffix: parsed.suffix,
         modifiers: [],
         line: t.line,
-        col: t.col
+        col: t.col,
+        endLine: t.line,
+        endCol: t.col + tokenWidth(t)
       };
     }
     this.error(`unexpected '${t.value}' in sequence`, t);
@@ -387,32 +411,82 @@ class Parser {
   }
 
   // Postfix element/sequence modifiers: *n /n @n !n %n :n ?[p]
-  parseModifiers() {
+  //
+  // A modifier is written GLUED to what it modifies, with no space anywhere in
+  // the run: `4@3`, `10!2`, `[0 1]*2`. A gap is a syntax error rather than the
+  // same thing loosely spelled, because whitespace is the only thing separating
+  // one turn from the next — `<0 @3>` LOOKS like two of them, and is far more
+  // likely a slipped `<0@3>` (or a `3` that lost its token) than a deliberate
+  // spelling of one weighted turn. `..` is exempt: it joins two elements into a
+  // range rather than modifying one, and `0 .. 3` is how the docs write it.
+  //
+  // Attaches the run to `node` and extends its extent (`endLine`/`endCol`,
+  // 1-based, exclusive of the last character) over it, which is what lets the
+  // editor's cycle highlighter outline a slot as its author wrote it — the
+  // whole of `10!2` or `4@3`, not the bare token with its operators hanging
+  // outside the box. Only an ACCEPTED modifier widens the extent, so text
+  // swallowed to recover from an error never ends up inside the outline. A run
+  // never crosses a newline: the loop stops at one either way, so a modifier on
+  // the next line is simply not this element's.
+  parseModifiers(node) {
     const mods = [];
+    // Where the previous token left off — the element's own extent to begin
+    // with, so the first operator is measured against the token it follows.
+    const own = (node.endLine != null && node.endCol != null)
+      ? { line: node.endLine, col: node.endCol }
+      : null;
+    let end = own;      // scan position, error recovery included
+    let extent = own;   // through the last accepted modifier
+    // Nothing to measure against (a node with no recorded extent) reads as
+    // glued: a missing position must not invent an error.
+    const glued = (t) => end == null || (t.line === end.line && t.col === end.col);
+    // Consume one token and carry the scan position along with it.
+    const take = () => {
+      const t = this.next();
+      end = { line: t.line, col: t.col + tokenWidth(t) };
+      return t;
+    };
+    // Set once a glue error has swallowed text for recovery: from there on the
+    // scan position is past a gap, so nothing more may widen the extent — the
+    // element still ends where it did before the mistake.
+    let detached = false;
+    // A modifier that survived validation: it is part of the element, so the
+    // element now reaches to the end of it.
+    const accept = (mod) => { mods.push(mod); if (!detached) extent = end; };
     for (;;) {
       const t = this.peek();
-      if (t.type !== 'op') return mods;
-      if (t.value === '..') return mods; // handled by the caller as a range
-      this.next();
+      if (t.type !== 'op' || t.value === '..') break; // '..' is the caller's range
+      if (!glued(t)) {
+        this.error(
+          `'${t.value}' has to be attached to what it modifies — write '0${t.value}2', not '0 ${t.value}2'`, t);
+        // Swallow the operator and its operand: one stray space is one error,
+        // not that plus 'unexpected @ in sequence' from the caller's loop.
+        detached = true;
+        take();
+        const operand = this.peek();
+        if (glued(operand) && (operand.type === 'number' || operand.type === 'intlike')) take();
+        continue;
+      }
+      take();
       // `?` and `!` may stand alone (Strudel's "half the time" and "once
       // more"). Their count must be GLUED to the operator to belong to it —
       // with a gap it is the next sequence element ("4? 10", "0! 2").
       if (t.value === '?' || t.value === '!') {
         const p = this.peek();
         const bare = t.value === '?' ? { op: '?', value: null } : { op: '!', value: 2 };
-        if (!(p.line === t.line && p.col === t.col + 1) || (p.type !== 'number' && p.type !== 'intlike')) {
-          mods.push(bare);
+        if (!glued(p) || (p.type !== 'number' && p.type !== 'intlike')) {
+          accept(bare);
           continue;
         }
-        this.next();
+        take();
         const val = typeof p.value === 'number' ? p.value : parseFloat(p.value);
         if (t.value === '?') {
           if (!(val >= 0 && val <= 1)) this.error("'?' probability must be in [0, 1]", p);
-          else mods.push({ op: '?', value: val });
+          else accept({ op: '?', value: val });
         } else if (!(val > 0) || !isFinite(val)) {
           this.error("'!' needs a positive repeat count", p);
         } else {
-          mods.push({ op: '!', value: val });
+          accept({ op: '!', value: val });
         }
         continue;
       }
@@ -421,14 +495,26 @@ class Parser {
         this.error(`operator '${t.value}' needs a numeric argument`, t);
         continue;
       }
-      this.next();
+      if (!glued(arg)) {
+        // The other half of the same rule: `0@ 3` is no more one weighted turn
+        // than `0 @3` is.
+        this.error(
+          `'${t.value}' has to be attached to its number — write '0${t.value}2', not '0${t.value} 2'`, arg);
+        detached = true;
+        take();
+        continue;
+      }
+      take();
       const val = typeof arg.value === 'number' ? arg.value : parseFloat(arg.value);
       if (!(val > 0) || !isFinite(val)) {
         this.error(`operator '${t.value}' needs a positive number`, arg);
         continue;
       }
-      mods.push({ op: t.value, value: val });
+      accept({ op: t.value, value: val });
     }
+    node.modifiers = mods;
+    if (extent) { node.endLine = extent.line; node.endCol = extent.col; }
+    return mods;
   }
 
   parseDirective(program) {

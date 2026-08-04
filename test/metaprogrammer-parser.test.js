@@ -184,6 +184,62 @@ test('? takes an optional probability in [0,1]', () => {
   bad('$ participants <0?1.5>\n', /probability must be in \[0, 1\]/);
 });
 
+// The cycle highlighter outlines a slot from its token's (line, col) to this
+// extent, so `4@3` / `10!2` / `2a?` sit inside one box rather than leaving the
+// operator that shapes the turn outside it.
+test('elements carry the source extent of their postfix operators', () => {
+  const text = '$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]\n';
+  const els = ok(text).participants.stacks[0].elements;
+  const extent = (token) => {
+    const el = els.find(e => e.token === token && e.modifiers.length);
+    return text.slice(el.col - 1, el.endCol - 1);
+  };
+  assert.equal(extent('_'), '_@2');
+  assert.equal(extent('4'), '4@3');
+  assert.equal(extent('10'), '10!2');
+  assert.equal(extent('2a'), '2a?');
+  // Both ends are 1-based and on the same line: a modifier run never crosses one.
+  assert.equal(els.find(e => e.token === '10').endLine, 1);
+  // An unmodified token spans exactly itself.
+  assert.equal(text.slice(els[0].col - 1, els[0].endCol - 1), '0');
+  assert.equal(text.slice(els[8].col - 1, els[8].endCol - 1), '4zza');
+});
+
+test('an operator has to be glued to what it modifies', () => {
+  // Whitespace separates one turn from the next, so a gap either side of an
+  // operator is a syntax error rather than a loose spelling of the same turn.
+  bad('$ participants <0 @3>\n', /'@' has to be attached to what it modifies/);
+  bad('$ participants <0@ 3>\n', /'@' has to be attached to its number/);
+  bad('$ participants <0 !2>\n', /'!' has to be attached to what it modifies/);
+  bad('$ participants <0 ?0.5>\n', /'\?' has to be attached to what it modifies/);
+  bad('$ participants <[0 1] *2>\n', /'\*' has to be attached to what it modifies/);
+  bad('$ participants <0 1> *2\n', /'\*' has to be attached to what it modifies/);
+  bad('$ participants <0 /2 1>\n', /'\/' has to be attached to what it modifies/);
+  bad('$ participants <~ @2 1>\n', /'@' has to be attached to what it modifies/);
+  // One error for one stray space — the swallowed operand must not come back
+  // as a second complaint from the sequence loop.
+  assert.equal(bad('$ participants <0 @3>\n').length, 1);
+
+  // The glued spellings all still parse, and `..` — which joins two elements
+  // rather than modifying one — is exempt, spaces and all.
+  ok('$ participants <0@3 1!2 2a? 3?0.5 4*2 5/2 6%2 7:3>\n');
+  ok('$ participants <[0 1]*2 <2 3>/2>*2\n');
+  ok('$ participants <0 .. 3>\n');
+  ok('$ participants <0..3>\n');
+  // Unchanged: a detached count is the next element, not this one's operand.
+  const els = ok('$ participants <0! 2>\n').participants.stacks[0].elements;
+  assert.deepEqual(els.map(e => e.token), ['0', '2']);
+  assert.deepEqual(els[0].modifiers, [{ op: '!', value: 2 }]);
+});
+
+test('the extent keeps a number\'s spelling, which its parsed value loses', () => {
+  const text = '$ participants <0?0.50 1!02>\n';
+  const els = ok(text).participants.stacks[0].elements;
+  assert.deepEqual(els[0].modifiers, [{ op: '?', value: 0.5 }]);
+  assert.equal(text.slice(els[0].col - 1, els[0].endCol - 1), '0?0.50');
+  assert.equal(text.slice(els[1].col - 1, els[1].endCol - 1), '1!02');
+});
+
 test('structural errors: unclosed and mismatched brackets, missing participants', () => {
   bad('$ participants <0 1\n', /unclosed sequence/);
   bad('$ participants <0 1]\n', /mismatched/);
