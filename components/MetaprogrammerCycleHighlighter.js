@@ -1,6 +1,7 @@
 // Cycle highlighter: a rectangular outline around the part of the program the
 // aggregator is playing RIGHT NOW — the participant token whose audio is
-// streaming, or the `~` the program is resting at — drawn inside the shared
+// streaming, or the `~` the program is resting at, each with the postfix
+// operators that shape its turn (`4@3`, `10!2`, `2a?`) — drawn inside the shared
 // editor (rather than a separate row of chips). A rest is a slot like any
 // other, so it gets the same outline; the room hears no participant for its
 // span, while the aggregator's master-bus reverb — untouched by the rest —
@@ -82,6 +83,14 @@ function restPositions(text) {
 // Source offsets of every element of `type`, in the same depth-first order the
 // scheduler indexes them — that shared order is what lets a slot's `index`
 // address a glyph in the live text.
+//
+// The span is the element's source extent (`endCol`, from the parser), which
+// runs from the token through its postfix operators — so `4@3` / `10!2` / `2a?`
+// are outlined as one thing. Those operators are what shape the turn being
+// played: how long it holds, how many times it comes round, whether it sounds
+// at all. They belong inside the box rather than beside it, and because the
+// grammar requires them glued to the token, the extent is always one unbroken
+// run of glyphs. An element with no extent recorded falls back to its token.
 function elementPositions(text, type) {
   const { ast } = parseMetaprogram(text);
   const out = [];
@@ -91,7 +100,11 @@ function elementPositions(text, type) {
       if (!el) continue;
       if (el.type === type && el.token != null && el.line != null) {
         const token = String(el.token);
-        out.push({ token, offset: lineColToOffset(text, el.line, el.col), len: token.length });
+        const offset = lineColToOffset(text, el.line, el.col);
+        const end = el.endCol != null
+          ? lineColToOffset(text, el.endLine ?? el.line, el.endCol)
+          : offset + token.length;
+        out.push({ token, offset, len: Math.max(1, end - offset) });
       } else if (el.type === 'choice') {
         (el.options || []).forEach(walk);
       } else if (el.type === 'sequence') {
