@@ -36,8 +36,8 @@ test('room: decay = scale × wcl (RT60) sets per-comb feedback; cutoff = wcrtt �
   assert.ok(Math.abs(p.visualLowpass - 6000 / CUTOFF_MAX_HZ) < 1e-12);
 });
 
-test('room: fixedWclS pins the metric — live wcl is ignored', () => {
-  const pinned = roomParams({ wcl: 9999, wcrtt: 60 }, { scale: 2, fixedWclS: 0.4 });
+test('room: fixedMetric pins the metric — live wcl is ignored', () => {
+  const pinned = roomParams({ wcl: 9999, wcrtt: 60 }, { scale: 2, fixedMetric: 0.4 });
   assert.equal(pinned.decayS, 0.8); // 2 × 0.4 s, regardless of metrics.wcl
   const live = roomParams({ wcl: 400, wcrtt: 60 }, { scale: 2 });
   assert.deepEqual(pinned.combFeedbacks, live.combFeedbacks, '400 ms pinned ≡ 400 ms measured');

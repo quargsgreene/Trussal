@@ -11,6 +11,8 @@
 // choice (`?`, `|`) is seeded by (cycle number, stack, position) — so all
 // clients compute identical slot grids without further coordination.
 
+import { occurrenceDraw } from './SeededRandom.js';
+
 // --- Cycle length ------------------------------------------------------------
 
 // Seconds per beat for a tempo directive. cpm/bpm are per-minute, cps per
@@ -73,19 +75,6 @@ export function describeCycleLength({ cycles, tempo, metrics }) {
   return `${seconds.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] ← ${source} ` +
     `target ${targetS.toFixed(3)}s (wcl ${(m.wcl || 0).toFixed(1)}ms, wcj ${(m.wcj || 0).toFixed(1)}ms, ` +
     `wcrtt ${(m.wcrtt || 0).toFixed(1)}ms, wcpl ${((m.wcpl || 0) * 100).toFixed(1)}%)`;
-}
-
-// --- Deterministic RNG --------------------------------------------------------
-
-// mulberry32 — tiny, good-enough, identical everywhere.
-export function seededRandom(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 // --- Cycle expansion -----------------------------------------------------------
@@ -192,21 +181,12 @@ function rateOf(node, layout) {
 // occurrence widened by `@` or `/` is clipped across several cycles — must
 // decide ONCE for the whole occurrence rather than re-flipping at each cycle
 // boundary. Seeding by (stack, node, repetition, replica) does both: the seed
-// names the occurrence, not the cycle it is being viewed through.
-
-function hashSeed(...parts) {
-  let h = 0x811c9dc5;
-  for (const part of parts) {
-    h = (h ^ (part | 0)) >>> 0;
-    h = Math.imul(h, 0x01000193) >>> 0;
-    h = (h ^ (h >>> 15)) >>> 0;
-    h = Math.imul(h, 0x2545f491) >>> 0;
-  }
-  return h >>> 0;
-}
+// names the occurrence, not the cycle it is being viewed through. The draw
+// itself is the room's shared one (SeededRandom.js), which patterned `#` effect
+// arguments read from as well.
 
 function occurrenceRandom(ctx, entry, rep, salt) {
-  return seededRandom(hashSeed(ctx.stack, ctx.nodeIds.get(entry.el) ?? 0, rep, entry.replica, salt))();
+  return occurrenceDraw(ctx.stack, ctx.nodeIds.get(entry.el) ?? 0, rep, entry.replica, salt);
 }
 
 // `?` drops the occurrence — it becomes a REST, so the slot is silent and the

@@ -1747,6 +1747,46 @@ test('# room wcl with a fixed amount pins the decay against live metrics', async
   await bot.stop();
 });
 
+test('# room arguments may be patterns, re-read as the cycle grid advances', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+    connectSidecar: bus.connect, now: () => clockRef.ms,
+  }, {}, 1024);
+  try {
+    // start(), not interpretAndExecuteMetaprogram() alone: the push needs the
+    // page as well as the scheduler.
+    await bot.start();
+    // Pin the cycle length so the grid is a known 6 s and the pattern's
+    // element boundaries are not chasing the metrics: wcl 300 ms x 20.
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 240 },
+    ] });
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20 0.3\n# room wcl <1 4>\n');
+    clockRef.ms += 1000; bot.scheduler.tick();
+
+    const first = calls.roomPushes.at(-1);
+    assert.ok(first, 'a patterned room still reaches the page master player');
+
+    // Cross exactly one cycle boundary — a step of the full cycle length does
+    // that from any phase, so the test does not depend on where in the grid
+    // start() left us. The scale alternates 1 <-> 4 off unchanged metrics.
+    clockRef.ms += 6000; bot.scheduler.tick();
+    const second = calls.roomPushes.at(-1);
+    const ratio = second.decayS / first.decayS;
+    assert.ok(Math.abs(ratio - 4) < 1e-9 || Math.abs(ratio - 0.25) < 1e-9,
+      `the tail moved by the pattern's 1:4 (${first.decayS} -> ${second.decayS})`);
+
+    // …and back, so it is the pattern turning over rather than a one-way drift.
+    clockRef.ms += 6000; bot.scheduler.tick();
+    assert.ok(Math.abs(calls.roomPushes.at(-1).decayS - first.decayS) < 1e-9, 'wraps');
+  } finally {
+    await bot.stop();
+  }
+});
+
 test('dropping # room from the program clears the master reverb', async () => {
   const { calls, fakeLauncher } = makeFakes();
   const bus = fakeMetaprogramBus();

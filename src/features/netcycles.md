@@ -368,7 +368,28 @@ There exist audiovisual analogs to Strudel functions whose parameters are automa
 
 These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
 
-Effect parameters are plain positive numbers, except where the effect says otherwise: `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position. `crush` and `echo` run in each browser and are re-read on a 50 ms tick, so both `<…>` alternation and `[…]` subdivision apply; `noise` runs on the aggregator's master bus and is re-derived once per cycle boundary, so it takes `<…>` only and a `[…]` is a parse error.
+Effect parameters are plain positive numbers, except where the effect says otherwise: `room`, `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position.
+
+A patterned argument is read the way a `$ participants` sequence is, on the same timeline model and with the same operators: a sequence owns units, and a cycle shows a window of them. What they apply to here is a VALUE — the parameter in force over that span — rather than a turn.
+
+| | Effect on the argument |
+|---|---|
+| `<a b>` | Alternates — one element per cycle. |
+| `[a b]` | Subdivides — the cycle split between the elements. |
+| `~` `_` `-` | A **rest**: no value for that span, so the parameter falls back to its default while the rest is in force. |
+| `<…>*n` `/n` | The **rate** the sequence is read at: `*2` fits it into half a cycle, `/2` stretches it over two. Rates compose (`*4/2` is ×2), and a nested group carries its own — `<2 [4 8]*2>`. |
+| `a@n` | The element's **weight**. What a unit is worth is the mode, exactly as for a turn: in a `[…]` subdivision it is a share of one cycle (`[1@2 4]` holds 1 for two thirds of it), and in a `<…>` alternation it is a number of cycles (`<1@2 4>` holds 1 for two whole cycles). A widened element is held as ONE value across its whole span, so a nested sequence inside it advances once per visit rather than once per cycle covered. |
+| `a?` / `a?p` | The element is **dropped** with probability 0.5 (or p), reading as a rest for that occurrence. |
+| `a!n` | The element is taken n times in a row, as n **independent** elements — where `a@n` is one element n units wide. The difference shows under `?`: each replica of `a?!3` draws its own coin, while `a?@3` decides once and holds. Bare `!` means once more, i.e. `!2`, and the count is capped at 1024. |
+| `a*n` / `a/n` | The rate the element's **own content** is read at, the same as `1*2` giving two half-length turns of participant 1 back to back: `<[1 4]*2 8>` reads `1 4` twice inside the span its cycle gives it. On a constant leaf there is nothing to re-read — the same value twice running is that value — so it is accepted and inert rather than an error. |
+
+`@`, `?`, `!` and an element's `*` / `/` modify one element and are written inside the brackets; a `*` / `/` written *after* the closing bracket is the rate of the whole sequence. The count must be glued to its operator: `<1? 2>` is a maybe-1 followed by 2, not `<1?2>`, and `<1@ 2>` is an error rather than a weight that swallows the 2. The remaining operators (`%`, `:`) are parse errors inside an effect argument.
+
+**`/` after a number is a fraction, not a rate.** `# echo wcl 1/2` writes half a cycle, and that reading wins wherever a number is followed by `/` — so inside a pattern `<3/4 1>` is the value 0.75, not element 3 at a quarter rate. Nothing is lost by it: an element rate on a constant is inert either way. To rate a group, write it on the group (`<[1 4]/2 8>`). This is the one place the effect-argument grammar reads a spelling differently from a `$ participants` sequence, where `3/4` *is* participant 3 at a quarter rate.
+
+**`?` is not a per-client coin flip.** The draw is seeded — by the pattern's position in the program text, the element's index (so replicas made by `!` draw separately), and which repetition of the sequence it is — so every browser and the aggregator drop and keep exactly the same elements at the same instants. Seeding by the occurrence rather than by the cycle also means an element widened by `@` or `/` decides **once, as a whole**, instead of flickering at each cycle boundary. This is the same generator, and the same guarantee, that `?` and `|` on a participant turn already run on.
+
+Which of them a given effect can use follows from how often it is re-read. `crush` and `echo` run in each browser, and `room` on the aggregator's master bus; all three are re-read on a 50 ms tick, so subdivision and any rate apply. `noise` also runs on the master bus but is re-derived once per cycle boundary, so it takes `<…>` at rate 1 or slower only — a `[…]` or a `*2` has nowhere to land within its cycle and is a parse error.
 
 Examples:
 
@@ -398,16 +419,18 @@ The room function is a Schroeder reverb whose decay time (RT60) is a multiple of
 
 Like `noise`, and unlike the rest of the chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`). Where both are written the master path is `room` then `noise` regardless of the order in the program, because the bed is additive and belongs on the mix rather than in the reverb's tail.
 - Syntax
-`# room wcl [scale factor] [amount for wcl]`
+`# room <metric> [scale factor] [amount for metric]`
 
-The `wcl` metric keyword is required; the bare-number form (`# room 2 3`) is not valid.
+The metric keyword is required; the bare-number form (`# room 2 3`) is not valid. As with `# crush`, and unlike `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
 - Input
 AV buffer object
 - Parameters
-scale factor: A positive real number multiplying wcl to give the reverb decay time: decay = scale_factor * wcl, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
-amount for wcl: A positive real number of seconds that *pins* wcl instead of reading it live, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions. Defaults to unset (live metrics).
+scale factor: A positive real number multiplying the metric to give the reverb decay time: decay = scale_factor * metric, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl/wcj/wcrtt, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions, and a loss fraction for wcpl. Defaults to unset (live metrics).
 
-Note that wcl models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room wcl 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
+Metrics are read in seconds, and wcpl — a fraction — as it stands, so `# room wcpl 2` is a 200 ms tail at 10 % loss. Note that wcl models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room wcl 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
+- Parameters as patterns
+Each of the three may be written as a mini-notation sequence instead of a constant, with rests, rates, weights and chances (see *Valid Chainable Functions* above). A rest in the metric or scale slot leaves that argument at its default — `wcl` and 1 — for as long as it is in force, rather than silencing the tail. Both the browser's Hydra counterpart and the aggregator's master reverb re-read the pattern on a 50 ms tick, so a sub-cycle step is heard where it is written.
 
 The cascaded cutoff is `wcrtt * 100 Hz` (wcrtt in ms), clamped to [40, 18000]. It also applies a lowpass filter to the Hydra signal.
 - Return value
@@ -417,6 +440,18 @@ Updated AV buffer object
 $ participants [0 2 1 4 3]
 # room wcl 2
 ```
+```
+$ participants [0 2 1 4 3]
+# room <wcl wcj> <1 2 ~ 2 3>*2   // metric turns over per cycle, scale twice per cycle
+```
+```
+$ participants [0 2 1 4 3]
+# room wcl <2@3 8?0.25>
+```
+A modest tail held for three whole cycles, then one four times as long for a
+fourth — except that a quarter of the time that long one is dropped, leaving
+the scale at its default 1 for that cycle. Every listener hears the same
+cycles dropped, because the draw is seeded rather than rolled per client.
 ```
 $ participants [0 2 1 4 3]
 # room wcl 2 0.4
@@ -446,7 +481,7 @@ upper bound for each: a positive real in the unit its metric is *written* in —
 
 A bare `# echo` is `wcl` driving all three at scales 0.5 / 0.5 / 1 — still normalized against wcl's default bound, so even the default echo follows the network rather than sitting at fixed values. A new meeting starts with no `# echo` line at all, i.e. bypassed.
 
-Scales and bounds may both be **patterns** instead of plain numbers: `<2 3 0.5>` alternates one value per cycle and `[1 4]` subdivides the cycle, nesting the way a `$ participants` sequence does. They are sampled from the cycle position, which every client derives from the same shared epoch, program and metrics — so a patterned parameter stays identical across browsers.
+Scales and bounds may both be **patterns** instead of plain numbers: `<2 3 0.5>` alternates one value per cycle and `[1 4]` subdivides the cycle, nesting the way a `$ participants` sequence does and taking the same rests, rates, weights and chances (see *Valid Chainable Functions* above). They are sampled from the cycle position, which every client derives from the same shared epoch, program and metrics — so a patterned parameter stays identical across browsers.
 - Return value
 Updated AV buffer object
 - Examples:
@@ -468,7 +503,7 @@ This effect reduces the bit-depth and sample rate for both the incoming audio an
 - Syntax
 `# crush <metric> [scale factor] [amount for metric]`
 
-The metric keyword is required; the bare-number form (`# crush 2`) is not valid. Unlike `# room` and `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
+The metric keyword is required; the bare-number form (`# crush 2`) is not valid. As with `# room`, and unlike `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
 - Input
 AV buffer object
 - Parameters
@@ -481,7 +516,7 @@ The halving amounts are per metric, because the metrics are not on one scale: 10
 
 Sample rate follows the metric alone, not the scale factor: sr_divisor = clamp(round(2^(metric / halving_amount)), 1, 64), a sample-and-hold period that is also the pixel-block edge for the Hydra counterpart. A clean room therefore decimates nothing whatever base depth the performer asked for.
 - Parameters as patterns
-Each of the three may be written as a mini-notation sequence instead of a constant, read once per Net Cycles cycle off the same grid the slots run on: `<a b>` alternates one element per cycle, `[a b]` subdivides the cycle, and the two nest. This applies to the metric keyword as well as the numbers. The value is a pure function of the shared epoch, program, and metrics, so every client reads the same one at the same instant.
+Each of the three may be written as a mini-notation sequence instead of a constant, read off the same grid the slots run on: `<a b>` alternates one element per cycle, `[a b]` subdivides the cycle, and the two nest — with rests, rates, weights and chances (see *Valid Chainable Functions* above). This applies to the metric keyword as well as the numbers. The value is a pure function of the shared epoch, program, and metrics, so every client reads the same one at the same instant.
 - Return value
 Updated AV buffer object
 - Examples:
@@ -517,7 +552,7 @@ amount for metric 1 / metric 2: Positive real numbers that *pin* the correspondi
 
 A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise wcj` is "spectrum from live wcj at scale 1", the same shape as `# room wcl`.
 
-Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, which a per-cycle argument cannot express, and is a parse error; so is mixing metric keywords and numbers in one pattern. Nested groups advance once per visit of their parent, as in mondo.
+Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, and a rate above 1 (`*2`) steps within one; neither is something a per-cycle argument can express, so both are parse errors, as is mixing metric keywords and numbers in one pattern. A rate of 1 or slower (`/2`) is fine, and so are rests, `@` weights (which hold an element for whole cycles) and `?` chances. Nested groups advance once per visit of their parent, as in mondo.
 
 The Hydra counterpart is image grain: the colour sets its character (0.15 brown … 0.6 white) and the level scales it, so a quiet brown bed barely marks the image and a loud white one buries it. Note that this value is *published* — every browser computes it into `window._ncVisual.noise` — but nothing renders it yet: the only channel of that object the visual layer reads today is `brightness`. The grain (like room's blur) is wired up to the point of publication and no further.
 - Return value

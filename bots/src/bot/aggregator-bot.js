@@ -14,6 +14,10 @@ import { parseMetaprogram, buildDefaultProgram, resolveEffectParams } from '../.
 import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
 import { noiseParams } from '../../../src/audio-net/av-effects/Noise.js';
+// The master-bus counterpart of the browser chain's pattern tick: same reader,
+// same cadence, so a `# room` pattern steps identically on both paths.
+import { entryHasValuePattern } from '../../../src/audio-net/ValuePattern.js';
+import { PATTERN_TICK_MS } from '../../../src/audio-net/av-effects/index.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -236,9 +240,13 @@ export class AggregatorBot extends Bot {
     #lastRoomPushJson = 'null';
     #noiseChain = null;
     #lastNoisePushJson = 'null';
-    // Cycle number the scheduler last opened. noise is the one effect whose
-    // arguments may be `<…>` patterns, and they are sampled by cycle.
+    // Cycle number the scheduler last opened, and the sub-cycle re-read timer
+    // for room. Both master-bus effects take `<…>` patterns in their arguments:
+    // noise is sampled once per cycle by design, so the cycle NUMBER is all it
+    // needs, while room also takes `[…]` and a `*n` rate, which move within a
+    // cycle and so need a position and a clock of their own.
     #cycle = 0;
+    #roomPatternTimer = null;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -678,6 +686,7 @@ export class AggregatorBot extends Bot {
         // every client hears); adopt/drop them with the program.
         this.#roomChain = (ast.chain || []).find((c) => c.fn === 'room') || null;
         this.#noiseChain = (ast.chain || []).find((c) => c.fn === 'noise') || null;
+        this.#syncRoomPatternLoop();
         this.#syncMasterRoom();
         this.#syncMasterNoise();
     }
@@ -700,6 +709,44 @@ export class AggregatorBot extends Bot {
     }
 
     /**
+     * Where the room sits on its cycle grid, in fractional cycles — what every
+     * patterned effect argument is sampled at. Read off the scheduler, which
+     * derives it from the boundaries it actually emitted rather than from the
+     * current cycle length, so a metrics change does not renumber the past and
+     * jump every pattern. Falls back to the last cycle-start's NUMBER before
+     * the first boundary has been scheduled (and when there is no scheduler at
+     * all), which is exactly the resolution noise has always run at.
+     */
+    #cyclePosition() {
+        const pos = this.scheduler ? this.scheduler.getCyclePosition() : null;
+        return Number.isFinite(pos) ? pos : this.#cycle;
+    }
+
+    /**
+     * Unlike noise's, room's arguments may step WITHIN a cycle (`# room wcl
+     * [1 4]`, or any pattern carrying a `*n` rate) — which neither the metrics
+     * path nor the cycle boundary would ever notice. So a patterned room gets a
+     * poll at the browser chain's own PATTERN_TICK_MS, matching how the same
+     * pattern is read there. Armed off entryHasValuePattern rather than off
+     * "does it subdivide", since a per-cycle pattern costs only the JSON
+     * compare; a constant `# room wcl 2` arms nothing and keeps re-deriving on
+     * metrics changes alone, as it always has. That dedup in #syncMasterRoom is
+     * what keeps the tick from crossing into the page on the ticks where
+     * nothing moved.
+     */
+    #syncRoomPatternLoop() {
+        const wanted = entryHasValuePattern(this.#roomChain) && !!this.#setInterval;
+        if (wanted && !this.#roomPatternTimer) {
+            this.#roomPatternTimer = this.#setInterval(() => this.#syncMasterRoom(), PATTERN_TICK_MS);
+            // Don't keep the process alive just to re-read a pattern.
+            if (this.#roomPatternTimer.unref) this.#roomPatternTimer.unref();
+        } else if (!wanted && this.#roomPatternTimer) {
+            if (this.#clearInterval) this.#clearInterval(this.#roomPatternTimer);
+            this.#roomPatternTimer = null;
+        }
+    }
+
+    /**
      * Push the applied program's `# room` parameters (or null to clear) into
      * the page's master player, which hosts the actual WebAudio Schroeder
      * graph on the proc → published-track path. Deduplicated by JSON so the
@@ -711,7 +758,7 @@ export class AggregatorBot extends Bot {
     #syncMasterRoom() {
         if (!this.page) return;
         const params = this.#roomChain
-            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain))
+            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain), this.#cyclePosition())
             : null;
         const json = JSON.stringify(params ?? null);
         if (json === this.#lastRoomPushJson) return;
@@ -845,6 +892,11 @@ export class AggregatorBot extends Bot {
             // percussive effect would need the timeline treatment instead.
             this.#cycle = ev.cycle;
             this.#syncMasterNoise();
+            // room's patterns turn over on the boundary too. A sub-cycle one
+            // also has #syncRoomPatternLoop's tick, but a plain `<a b>` must
+            // not wait on that tick being armed, and re-deriving here costs a
+            // JSON compare when nothing moved.
+            this.#syncMasterRoom();
             return;
         }
         if (!ev.id) return;
@@ -1524,6 +1576,16 @@ export class AggregatorBot extends Bot {
         this.ingestTimer = null;
         if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
         this.#playbackTimer = null;
+        // Drop the applied room entry before syncing, so the pattern tick stands
+        // down with the rest of the loops rather than polling a dead page.
+        this.#roomChain = null;
+        this.#syncRoomPatternLoop();
+        // Both push caches record what THIS page was last given, and stop()
+        // discards the page — so they have to go with it. Left standing, a
+        // restart onto the same program would dedup its first push away and
+        // leave the fresh master bus dry and bedless.
+        this.#lastRoomPushJson = 'null';
+        this.#lastNoisePushJson = 'null';
         this.#pendingMaster = EMPTY_MASTER;
         this.#resetSlotPacing();
         this.#ghostReplayOffset.clear();

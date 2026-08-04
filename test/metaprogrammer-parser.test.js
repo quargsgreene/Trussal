@@ -86,7 +86,7 @@ test('spec: good chainable example (rests, degrade, tempo fraction, effects)', (
   assert.equal(ast.tempo.value, 22.5); // 90/4
   assert.equal(ast.tempo.unit, 'cpm');
   assert.deepEqual(ast.chain.map(c => c.fn), ['room', 'noise']);
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2.5, fixedWclS: null });
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2.5, fixedMetric: null });
 });
 
 test('spec: bad example — a Strudel call as an effect argument is rejected', () => {
@@ -94,7 +94,7 @@ test('spec: bad example — a Strudel call as an effect argument is rejected', (
 # cycles wcj 3
 # tempo 90/4 cpm
 # room wcl (pink # range 0 1)
-`, /cannot take Strudel-call arguments/);
+`, /cannot be executed in the NetCycles editor/);
   // The sequence itself is legal (@/!/? apply "as usual"): removing the bad
   // room line makes the program valid.
   const ast = ok(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
@@ -108,7 +108,7 @@ test('spec: bad example — a Strudel call as an effect argument is rejected', (
 
 test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise, grid true', () => {
   let ast = ok('$ participants [0 2 1 4 3]\n# room wcl 2 0.4\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedWclS: 0.4 });
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: 0.4 });
 
   ast = ok('$ participants [0 2 1 4 3]\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# ply 2\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), {
@@ -257,18 +257,23 @@ test('whitelisted pattern functions parse; anything else is rejected', () => {
   bad('$ participants <0>\n# range 0 1\n', /not a NetCycles function/);
 });
 
-test('room requires its wcl metric keyword; scale and fixed wcl are optional', () => {
+test('room requires a metric keyword; scale and pinned amount are optional', () => {
   // Bare `# room wcl` → live wcl at scale 1.
   let ast = ok('$ participants <0>\n# room wcl\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 1, fixedWclS: null });
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 1, fixedMetric: null });
   // `# room wcl 2` → decay 2 × live wcl.
   ast = ok('$ participants <0>\n# room wcl 2\n');
-  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedWclS: null });
-  // The retired bare-number form and non-wcl metrics are parse errors.
-  bad('$ participants <0>\n# room\n', /needs a metric keyword \(wcl\)/);
-  bad('$ participants <0>\n# room 2\n', /needs a metric keyword \(wcl\)/);
-  bad('$ participants <0>\n# room 2 0.4\n', /needs a metric keyword \(wcl\)/);
-  bad('$ participants <0>\n# room wcj 2\n', /needs a metric keyword \(wcl\)/);
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: null });
+  // Any worst-case metric may drive the decay, as it may drive crush.
+  for (const metric of ['wcl', 'wcj', 'wcpl', 'wcrtt']) {
+    ast = ok(`$ participants <0>\n# room ${metric} 2\n`);
+    assert.equal(resolveEffectParams(ast.chain[0]).metric, metric);
+  }
+  // The retired bare-number form is still a parse error.
+  bad('$ participants <0>\n# room\n', /needs a metric keyword \(wcl\|wcj\|wcrtt\|wcpl\)/);
+  bad('$ participants <0>\n# room 2\n', /needs a metric keyword/);
+  bad('$ participants <0>\n# room 2 0.4\n', /needs a metric keyword/);
+  bad('$ participants <0>\n# room wcx 2\n', /needs a metric keyword/);
 });
 
 test('crush takes a metric keyword, a scale factor, and an optional pinned amount', () => {
@@ -315,6 +320,23 @@ test('crush arguments may be mini-notation patterns, including the metric', () =
   ast = ok('$ participants <0>\n# crush wcl 2 <0.1 0.4>\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]).fixedMetric.terms, [0.1, 0.4]);
 
+  // Rests are leaves like any other — `~`, `_` and `-` all parse to null, and
+  // one in a metric pattern does not make it a pattern of numbers.
+  ast = ok('$ participants <0>\n# crush wcl <2 ~ 4 _ ->\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).scale.terms, [2, null, 4, null, null]);
+  ast = ok('$ participants <0>\n# crush <wcl ~ wcj> 2\n');
+  assert.deepEqual(resolveEffectParams(ast.chain[0]).metric.terms, ['wcl', null, 'wcj']);
+
+  // `*n` / `/n` set the rate the argument is read at, and compose.
+  assert.equal(resolveEffectParams(ok('$ participants <0>\n# crush wcl <2 4>*2\n').chain[0]).scale.speed, 2);
+  assert.equal(resolveEffectParams(ok('$ participants <0>\n# crush wcl <2 4>/2\n').chain[0]).scale.speed, 0.5);
+  assert.equal(resolveEffectParams(ok('$ participants <0>\n# crush wcl <2 4>*4/2\n').chain[0]).scale.speed, 2);
+  // A nested group carries its own.
+  const nested = resolveEffectParams(ok('$ participants <0>\n# crush wcl <2 [4 8]*2>\n').chain[0]);
+  assert.equal(nested.scale.terms[1].speed, 2);
+  bad('$ participants <0>\n# crush wcl <2 4>*\n', /pattern rate '\*' needs a positive number/);
+  bad('$ participants <0>\n# crush wcl <2 4>*0\n', /pattern rate '\*' needs a positive number/);
+
   // Malformed patterns are errors, with the leaf kind named.
   bad('$ participants <0>\n# crush wcl <2 4\n', /unclosed pattern argument/);
   bad('$ participants <0>\n# crush wcl <>\n', /empty pattern argument/);
@@ -322,11 +344,13 @@ test('crush arguments may be mini-notation patterns, including the metric', () =
   bad('$ participants <0>\n# crush wcl <0 4>\n', /positive real/);
   bad('$ participants <0>\n# crush <wcl 2> 4\n', /expects metric names/);
   bad('$ participants <0>\n# crush <wcl foo> 4\n', /not a metric 'crush' can read/);
-  bad('$ participants <0>\n# crush wcl <2 4>*2\n', /do not take modifiers/);
-  // Inside the sequence too — and the modifier's operand must not survive as
-  // an extra element of the pattern.
-  const errs = bad('$ participants <0>\n# crush wcl <2@3 4>\n', /do not take modifiers \('@'\)/);
+  // A modifier that is neither a rate nor an element modifier, and its operand
+  // must not survive as an extra element of the pattern.
+  const errs = bad('$ participants <0>\n# crush wcl <2%3 4>\n', /'%' is not one of them/);
   assert.equal(errs.filter(e => /expects positive numbers/.test(e.message)).length, 0);
+  // `@` and `?` weigh and drop an ELEMENT, so the whole argument is the wrong
+  // place for them — and at the top level there is no parent to weigh against.
+  bad('$ participants <0>\n# crush wcl <2 4>@3\n', /modifies one ELEMENT/);
   // Strudel expressions stay out of the editor, patterns or not.
   bad('$ participants <0>\n# crush wcl (pink # range 0 1)\n', /cannot be executed in the NetCycles editor/);
   // Effects without patternArgs keep rejecting sequences outright.
@@ -405,8 +429,102 @@ test('echo scales and bounds may be patterns; malformed ones are parse errors', 
   bad('$ participants <0>\n# echo wcl <2 3] wcl 0.5 wcl 1\n', /mismatched '\]'/);
   bad('$ participants <0>\n# echo wcl <2 x> wcl 0.5 wcl 1\n', /expects positive numbers/);
   bad('$ participants <0>\n# echo wcl <2 0> wcl 0.5 wcl 1\n', /must be a positive real/);
-  // Effects that did not opt in still reject them.
-  bad('$ participants <0>\n# room wcl <2 4>\n', /unexpected argument/);
+});
+
+test('pattern elements take @ weights and ? chances, as participant turns do', () => {
+  const scaleOf = (line) => resolveEffectParams(ok(`$ participants <0>\n${line}\n`).chain[0]).scale;
+
+  // `@n` records a weight parallel to the terms; unweighted elements fill in
+  // at 1 so the array always lines up with them.
+  let scale = scaleOf('# crush wcl <1@2 2 3@0.5>');
+  assert.deepEqual(scale.terms, [1, 2, 3]);
+  assert.deepEqual(scale.weights, [2, 1, 0.5]);
+  // `?` records a chance the same way, bare meaning one in two.
+  scale = scaleOf('# crush wcl <1? 2?0.25 3>');
+  assert.deepEqual(scale.chances, [0.5, 0.25, null]);
+  // Both on one element, in either order, and on a nested group or a rest.
+  assert.deepEqual(scaleOf('# crush wcl <1@2? 2>').weights, [2, 1]);
+  assert.deepEqual(scaleOf('# crush wcl <1?@2 2>').weights, [2, 1]);
+  assert.deepEqual(scaleOf('# crush wcl <[1 2]*2@3 4>').weights, [3, 1]);
+  assert.deepEqual(scaleOf('# crush wcl <~@2 4>').weights, [2, 1]);
+  // An untouched pattern grows neither field.
+  scale = scaleOf('# crush wcl <1 2>');
+  assert.equal(scale.weights, undefined);
+  assert.equal(scale.chances, undefined);
+
+  // The count must be glued to its operator. For `?` a gap means the bare
+  // form followed by the next element; `@` has no bare form, so a gap is an
+  // error rather than a weight that quietly swallows that element.
+  assert.deepEqual(scaleOf('# crush wcl <1? 2>').terms, [1, 2]);
+  bad('$ participants <0>\n# crush wcl <1@ 2>\n', /'@' needs a positive weight written against it/);
+  bad('$ participants <0>\n# crush wcl <1@0 2>\n', /'@' needs a positive weight/);
+  bad('$ participants <0>\n# crush wcl <1?2 2>\n', /'\?' probability must be in \[0, 1\]/);
+  bad('$ participants <0>\n# crush wcl <1@2@3 2>\n', /already has an '@' weight/);
+  bad('$ participants <0>\n# crush wcl <1?0.2?0.3 2>\n', /already has a '\?' chance/);
+});
+
+test('!n replicates a pattern element into that many independent ones', () => {
+  const scaleOf = (line) => resolveEffectParams(ok(`$ participants <0>\n${line}\n`).chain[0]).scale;
+
+  // Expanded at parse time, so downstream sees a plain list of terms.
+  assert.deepEqual(scaleOf('# crush wcl <1!3 2>').terms, [1, 1, 1, 2]);
+  assert.deepEqual(scaleOf('# crush wcl <1! 2>').terms, [1, 1, 2], 'bare ! is once more');
+  assert.equal(scaleOf('# crush wcl <[1 2]!2 4>').terms.length, 3, 'a group replicates too');
+
+  // A replica keeps the element's weight and chance — and, being a separate
+  // element, draws its own `?` where `@` would decide once for one wide span.
+  const replicated = scaleOf('# crush wcl <1?0.5!3 2>');
+  assert.deepEqual(replicated.terms, [1, 1, 1, 2]);
+  assert.deepEqual(replicated.chances, [0.5, 0.5, 0.5, null]);
+  assert.deepEqual(scaleOf('# crush wcl <1@2!2 3>').weights, [2, 2, 1]);
+
+  // The count is glued, capped, and written once.
+  assert.deepEqual(scaleOf('# crush wcl <1! 2>').terms, [1, 1, 2]);
+  bad('$ participants <0>\n# crush wcl <1!0 2>\n', /'!' needs a repeat count of 1 or more/);
+  bad('$ participants <0>\n# crush wcl <1!99999 2>\n', /repeats at most 1024 times/);
+  bad('$ participants <0>\n# crush wcl <1!2!3 2>\n', /already has a '!' repeat count/);
+  bad('$ participants <0>\n# crush wcl <1 2>!3\n', /'!' modifies one ELEMENT/);
+});
+
+test('an element carries its own *n rate; on a number / stays a fraction', () => {
+  const scaleOf = (line) => resolveEffectParams(ok(`$ participants <0>\n${line}\n`).chain[0]).scale;
+
+  // `<[1 2]*2 3>` reads the group twice inside its own span — the value
+  // analogue of `1*2` giving two half-length turns back to back.
+  assert.deepEqual(scaleOf('# crush wcl <1*2 3>').rates, [2, 1]);
+  assert.deepEqual(scaleOf('# crush wcl <1*4/2 3>').rates, [2, 1], 'rates compose');
+  // Written on a nested group the group takes it itself, so the parent records
+  // nothing — the two spellings mean the same thing and must not double up.
+  const grouped = scaleOf('# crush wcl <[1 2]*2 3>');
+  assert.equal(grouped.rates, undefined);
+  assert.equal(grouped.terms[0].speed, 2);
+
+  // `/` after a NUMBER is the fraction spelling `# echo wcl 1/2` already uses,
+  // and that reading wins: `<3/4 1>` is the value 0.75, not element 3 at a
+  // quarter rate. Nothing is lost — an element rate on a constant is inert
+  // either way — but the two readings share a spelling, so pin it.
+  assert.deepEqual(scaleOf('# crush wcl <3/4 1>').terms, [0.75, 1]);
+  assert.equal(scaleOf('# crush wcl <3/4 1>').rates, undefined);
+
+  bad('$ participants <0>\n# crush wcl <~* 2>\n', /'\*' needs a positive rate written against it/);
+  bad('$ participants <0>\n# crush wcl <~*0 2>\n', /'\*' needs a positive rate/);
+});
+
+test('room arguments may be patterns too, rests and a rate included', () => {
+  // The spec line: metric and scale both turn over, twice per cycle.
+  const ast = ok('$ participants <0>\n# room <wcl wcj> <1 2 ~ 2 3>*2\n');
+  const { metric, scale, fixedMetric } = resolveEffectParams(ast.chain[0]);
+  assert.deepEqual(shapeOf(metric), { mode: 'alternate', terms: ['wcl', 'wcj'] });
+  assert.deepEqual(shapeOf(scale), { mode: 'alternate', terms: [1, 2, null, 2, 3] });
+  assert.equal(scale.speed, 2);
+  assert.equal(fixedMetric, null);
+  assert.equal(metric.speed, undefined, 'an unrated pattern carries no speed field');
+
+  // The pinned amount patterns as well, and `[…]` subdivides — room is
+  // re-read on the browser's 50 ms tick and the aggregator's, not only at
+  // cycle boundaries.
+  const pinned = resolveEffectParams(ok('$ participants <0>\n# room wcl 2 [0.1 0.4]\n').chain[0]);
+  assert.deepEqual(shapeOf(pinned.fixedMetric), { mode: 'subdivide', terms: [0.1, 0.4] });
 });
 
 test('noise: two metric/factor pairs, then two amounts pinning those metrics', () => {
@@ -451,9 +569,20 @@ test('noise: any slot may be a <…> pattern, sampled one element per cycle', ()
   // Nested: the inner group advances once per visit of its parent.
   assert.deepEqual([0, 1, 2, 3].map((c) => at(c).volume.factor), [5, 1, 5, 2]);
 
-  // Subdivision has no meaning for a per-cycle argument, and a pattern may
-  // not mix the two kinds of leaf.
+  // Rests read as "no value here", so the slot falls back to the default it
+  // would have had unwritten — for the spectrum factor that is 1, since a
+  // metric pattern IS written (the same rule that makes `# noise wcj` scale 1).
+  const rested = ok('$ participants <0>\n# noise <wcl ~> <20 ~>\n');
+  assert.deepEqual(resolveEffectParams(rested.chain[0], { cycle: 0 }).spectrum,
+    { metric: 'wcl', factor: 20, fixed: null });
+  assert.deepEqual(resolveEffectParams(rested.chain[0], { cycle: 1 }).spectrum,
+    { metric: 'wcl', factor: 1, fixed: null });
+
+  // Subdivision has no meaning for a per-cycle argument, nor does a rate that
+  // steps within one; and a pattern may not mix the two kinds of leaf.
   bad('$ participants <0>\n# noise wcl [20 10]\n', /use '<…>' alternation/);
+  bad('$ participants <0>\n# noise wcl <20 10>*2\n', /a rate above 1/);
+  ok('$ participants <0>\n# noise wcl <20 10>/2\n'); // slower than a cycle is fine
   bad('$ participants <0>\n# noise <wcl 20>\n', /cannot mix metric keywords with numbers/);
   bad('$ participants <0>\n# noise wcl <20\n', /unclosed pattern argument/);
   // A missing '>' must stop at the next statement, not eat the rest of the
