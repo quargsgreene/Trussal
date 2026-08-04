@@ -8,6 +8,12 @@
 // the sole signal the aggregator's ring (and any armed scheduler) acts on.
 // Bots get a read-only view (the sidecar drops their updates anyway — this
 // is just honest UI).
+//
+// Button parity with the personal Strudel card: a `*`-prefixed statement
+// (`*$ participants <2a 2b>`) declares a voice rather than running it, and
+// shows up as a button below the code. Pressing it — by mouse or by holding
+// the head cursor on it, which is what `.nc-head-btn` marks it as — writes
+// the voice into the program and applies; pressing again takes it out.
 
 import {
   ensureMetaprogramSync,
@@ -15,7 +21,9 @@ import {
   getProgramText
 } from '../src/audio-net/Metaprogrammer.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
-import { getLocalPeer } from '../src/peer-state.js';
+import { parseNetCyclesButtons } from '../src/editor-router-core.js';
+import { toggleNetCyclesButtonCode, metaprogramReadOnly } from '../src/editor-router.js';
+import { refreshFacialGestureButtons } from '../src/facial-gesture.js';
 
 const PARSE_IDLE_MS = 300;
 
@@ -33,6 +41,7 @@ export function mountMetaprogrammerEditor(container) {
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
+    <div class="ts-voice-btns nc-voice-btns"></div>
     <div class="ts-meta nc-errors" style="color:#ff8a8a;"></div>
     <div class="ts-meta nc-byline"></div>
   `;
@@ -42,9 +51,10 @@ export function mountMetaprogrammerEditor(container) {
   const errorsEl = wrap.querySelector('.nc-errors');
   const bylineEl = wrap.querySelector('.nc-byline');
   const applyBtn = wrap.querySelector('.nc-apply');
+  const btnsEl = wrap.querySelector('.nc-voice-btns');
 
   const sync = ensureMetaprogramSync();
-  const readOnly = !!getLocalPeer().isBot && getLocalPeer().canEditMetaprogram === false;
+  const readOnly = metaprogramReadOnly();
   if (readOnly) {
     ta.setAttribute('readonly', 'readonly');
     applyBtn.disabled = true;
@@ -66,11 +76,46 @@ export function mountMetaprogrammerEditor(container) {
     parseTimer = setTimeout(() => showErrors(ta.value), PARSE_IDLE_MS);
   }
 
+  const esc = (s) => String(s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  // One button per `*`-declared statement. `.nc-head-btn` + data-netcycles-code
+  // is the head-cursor dwell contract (facial-gesture.js), so a dwell and a
+  // click run the very same toggle.
+  function renderButtons() {
+    const buttons = parseNetCyclesButtons(ta.value);
+    btnsEl.innerHTML = buttons.map(b =>
+      `<button class="ts-voice-btn nc-head-btn${b.active ? ' on' : ''}" type="button"` +
+      ` data-netcycles-code="${esc(b.snippet)}"` +
+      ` title="${esc(b.snippet)}"${readOnly ? ' disabled' : ''}>▶ ${esc(b.label)}</button>`
+    ).join('');
+    btnsEl.querySelectorAll('.nc-head-btn').forEach(btn => {
+      btn.addEventListener('click', () => press(btn.dataset.netcyclesCode));
+    });
+    // The head-cursor bar in the facial-control panel lists the same buttons
+    // whenever this editor holds focus; keep it in step with the declarations
+    // as they are typed rather than waiting for the next studio re-render.
+    refreshFacialGestureButtons();
+  }
+
+  function press(snippet) {
+    if (readOnly) return;
+    const errors = toggleNetCyclesButtonCode(snippet);
+    // toggleNetCyclesButtonCode has already written the textarea and the doc,
+    // and its 'trussal-netcycles-program' event has already re-rendered the
+    // button row — only the error line and the byline are left to update.
+    showErrors(ta.value);
+    bylineEl.textContent = errors.length
+      ? 'button left the program invalid — fix it above, then apply'
+      : 'applied — takes effect at the next cycle boundary';
+  }
+
   // Local typing → CRDT doc.
   ta.addEventListener('input', () => {
     if (readOnly) return;
     sync.setText(ta.value);
     parseOnIdle();
+    renderButtons();
   });
 
   // Remote/roster changes → textarea, preserving the caret when possible.
@@ -85,6 +130,7 @@ export function mountMetaprogrammerEditor(container) {
       try { ta.setSelectionRange(clamp(selStart), clamp(selEnd)); } catch (e) {}
     }
     parseOnIdle();
+    renderButtons();
   };
   sync.onRemoteChange((_, payload) => {
     refreshFromDoc();
@@ -92,7 +138,13 @@ export function mountMetaprogrammerEditor(container) {
       bylineEl.textContent = `last edit by ${payload.authorIndex} (${payload.modality || 'keyboard'})`;
     }
   });
-  document.addEventListener('trussal-netcycles-program', refreshFromDoc);
+  // A head-cursor dwell writes the textarea itself, so refreshFromDoc sees no
+  // change and returns early — the button row still has to be re-read, since
+  // what the dwell changed is exactly which buttons are on.
+  document.addEventListener('trussal-netcycles-program', () => {
+    refreshFromDoc();
+    renderButtons();
+  });
 
   const apply = () => {
     if (readOnly) return;
@@ -102,6 +154,7 @@ export function mountMetaprogrammerEditor(container) {
       errorsEl.textContent = '';
       bylineEl.textContent = 'applied — takes effect at the next cycle boundary';
     }
+    renderButtons();
   };
   applyBtn.addEventListener('click', apply);
   ta.addEventListener('keydown', (e) => {
@@ -109,5 +162,6 @@ export function mountMetaprogrammerEditor(container) {
   });
 
   showErrors(ta.value);
+  renderButtons();
   return wrap;
 }

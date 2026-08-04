@@ -22,8 +22,10 @@ import {
   writeActiveEditor,
   applyIfNetCycles,
   applyMetaprogramNow,
-  toggleNetCyclesButtonCode
+  toggleNetCyclesButtonCode,
+  activeEditorKind
 } from './editor-router.js';
+import { parseNetCyclesButtons } from './editor-router-core.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -96,6 +98,15 @@ function initStrudelButton() {
 // editor (CRDT doc). editor-router.js owns the resolution.
 // ---------------------------------------------------------------------------
 trackEditorFocus();
+
+// The dwell bar shows the FOCUSED editor's buttons, and a dwell writes to
+// whichever editor is focused — so a bar left holding the other editor's
+// buttons is not a stale label, it is a Strudel voice written into the shared
+// metaprogram. Rebuild it the moment focus moves; the rebuild is a no-op when
+// the buttons come out the same.
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', () => refreshFacialGestureButtons());
+}
 
 function getCode() {
   return readActiveEditor();
@@ -239,6 +250,8 @@ const _latch      = { headLeft: false, headRight: false, leftBlink: false, browR
 const _lastFired  = { play: 0, stop: 0 };
 // _dwell.type: 'strudel' | 'fx' | null.  key is strudelCode or fx name.
 const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false };
+// What the dwell bar currently shows, so an unchanged rebuild is skipped.
+let _barKey = null;
 
 // Regex mutator UI state — mirrors FacialGestureControl.jsx's useState for
 // triggerGesture / regex / replacement.
@@ -662,6 +675,8 @@ function _injectStyles() {
     }
     .strudel-head-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
     .strudel-head-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    /* Already in the pattern / in the ring — the same "on" the editor cards show. */
+    .strudel-head-btn.strudel-btn-on { border-color:#1ff466; color:#1ff466; background:rgba(31,244,102,0.08); }
 
     #${FG_PANEL_ID} .fg-section {
       border-top: 1px solid rgba(255,255,255,0.08);
@@ -804,6 +819,18 @@ function _ensureDOM() {
       </div>
 
       <div class="fg-section">
+        <div class="fg-section-title">NetCyclesButton</div>
+        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+          write in the Net Cycles editor:<br>
+          <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
+          <code style="font-size:9px">*# crush wcl 2</code><br>
+          dwell to put that voice in the ring (or that effect in the chain)
+          and apply; dwell again to take it out. The bar above follows
+          whichever editor has focus.
+        </div>
+      </div>
+
+      <div class="fg-section">
         <div class="fg-section-title">window.faceCtx</div>
         <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
         <div style="font-size:10px;color:#5d7264;line-height:1.5;">
@@ -897,33 +924,70 @@ export function injectFacialGestureToggle(headerEl) {
 }
 
 /**
- * Rebuild the StrudelButton dwell-bar from the current pattern text.
+ * Rebuild the dwell-bar from the focused editor's button declarations —
+ * StrudelButtons (`*name: code`) for the personal editor, NetCyclesButtons
+ * (`*$ participants <2a>`, `*# crush wcl 2`) for the shared metaprogram.
  * Call this after renderDetail() whenever the pattern or overlay is refreshed.
  */
 export function refreshFacialGestureButtons() {
   const bar = document.getElementById('trussal-fg-btns');
-  if (!bar || !_enabled) { if (bar) bar.innerHTML = ''; return; }
+  if (!bar || !_enabled) { if (bar) { bar.innerHTML = ''; _barKey = null; } return; }
 
-  const code    = getCode();
-  const buttons = [];
+  const code = getCode();
+  const esc   = (s) => String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+  const escAt = (s) => String(s).replace(/"/g, '&quot;');
+  // Rebuilding the bar detaches whatever node a dwell is currently filling
+  // against — _dwell.el would go on styling an element that is no longer in
+  // the document, and the user loses all feedback mid-hold. The shared editor
+  // re-renders this on every remote keystroke, so only rebuild when the
+  // buttons themselves actually changed.
+  const render = (buttons, klass, attr) => {
+    const key = `${klass} ${buttons.map(b => `${b.code}${b.label}${b.on ? 1 : 0}`).join('')}`;
+    if (key === _barKey) return false;
+    _barKey = key;
+    bar.innerHTML = buttons.map((b) =>
+      `<button class="strudel-head-btn${klass}${b.on ? ' strudel-btn-on' : ''}"` +
+      ` ${attr}="${escAt(b.code)}" title="${escAt(b.code)}">▶ ${esc(b.label)}</button>`
+    ).join('');
+    return true;
+  };
+  const truncate = (s) => (s.length > 20 ? s.slice(0, 20) + '…' : s);
+
+  // The bar follows the focused editor, because so does the dwell action.
+  // `.nc-head-btn` is what routes a dwell to the metaprogram toggle instead of
+  // the pattern one (see the dwell classification in _detectionLoop).
+  if (activeEditorKind() === 'netcycles') {
+    // Same label and same on/off state as the editor card's own row — one
+    // button named two ways in two places is two buttons as far as the
+    // performer can tell.
+    const buttons = parseNetCyclesButtons(code)
+      .map(b => ({ code: b.snippet, label: b.label, on: b.active }));
+    if (render(buttons, ' nc-head-btn', 'data-netcycles-code')) {
+      bar.querySelectorAll('[data-netcycles-code]').forEach((btn) => {
+        btn.addEventListener('click', () => toggleNetCyclesButtonCode(btn.dataset.netcyclesCode));
+      });
+    }
+    return;
+  }
+
+  const snippets = [];
   const starred = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
   const explicit= /new\s+StrudelButton\((['"`])([\s\S]*?)\1\)/g;
   let m;
   starred.lastIndex  = 0;
   explicit.lastIndex = 0;
-  while ((m = starred.exec(code))  !== null) buttons.push(`${m[1]}: ${m[2].trim()}`);
-  while ((m = explicit.exec(code)) !== null) buttons.push(m[2]);
+  while ((m = starred.exec(code))  !== null) snippets.push(`${m[1]}: ${m[2].trim()}`);
+  while ((m = explicit.exec(code)) !== null) snippets.push(m[2]);
 
-  const esc   = (s) => String(s).replace(/[&<>"']/g, (c) =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
-  const escAt = (s) => String(s).replace(/"/g, '&quot;');
-
-  bar.innerHTML = buttons.map((code) => {
-    const label = code.length > 20 ? code.slice(0, 20) + '…' : code;
-    return `<button class="strudel-head-btn" data-strudel-code="${escAt(code)}">▶ ${esc(label)}</button>`;
-  }).join('');
-
-  bar.querySelectorAll('.strudel-head-btn').forEach((btn) => {
-    btn.addEventListener('click', () => toggleButtonCode(btn.dataset.strudelCode));
-  });
+  const buttons = snippets.map(s => ({
+    code: s,
+    label: truncate(s),
+    on: code.includes(`\n${s}${BTN_MARKER}`)
+  }));
+  if (render(buttons, '', 'data-strudel-code')) {
+    bar.querySelectorAll('[data-strudel-code]').forEach((btn) => {
+      btn.addEventListener('click', () => toggleButtonCode(btn.dataset.strudelCode));
+    });
+  }
 }

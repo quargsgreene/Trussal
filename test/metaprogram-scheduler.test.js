@@ -15,7 +15,9 @@ import {
 import {
   parseMetaprogram,
   appendParticipantToProgram,
-  removeParticipantFromProgram
+  removeParticipantFromProgram,
+  programHasParticipant,
+  hasParticipantSequence
 } from '../src/audio-net/MetaprogrammerParser.js';
 
 function astOf(text) {
@@ -717,4 +719,43 @@ test('append/remove helpers edit the sequence text; user text is preserved', () 
   assert.match(custom, /# room 2/, 'user directives untouched');
   // '1a' must not match owner '1'.
   assert.match(removeParticipantFromProgram('$ participants <1 1a>\n', '1'), /<1a>/);
+  // A token written WITH its modifiers is removable on its own terms — that
+  // is how a `*$ participants <1@2>` button takes its voice back out — while
+  // the bare owner still takes every decorated occurrence with it.
+  assert.match(removeParticipantFromProgram('$ participants <0 1@2>\n', '1@2'), /<0>/);
+  assert.match(removeParticipantFromProgram('$ participants <0 1@2>\n', '1'), /<0>/);
+  assert.match(removeParticipantFromProgram('$ participants <0 1@2>\n', '1@3'), /<0 1@2>/);
+});
+
+test('participant membership answers for decorated tokens without a regex throw', () => {
+  const text = '$ participants <0 1@2 2a>\n# cycles wcl\n';
+  assert.equal(programHasParticipant(text, '0'), true);
+  assert.equal(programHasParticipant(text, '1@2'), true);
+  assert.equal(programHasParticipant(text, '2a'), true);
+  assert.equal(programHasParticipant(text, '2'), false);
+  assert.equal(programHasParticipant(text, '3'), false);
+  // No `$ participants` statement → nothing is a member, and nothing throws.
+  assert.equal(programHasParticipant('# cycles wcl\n', '0'), false);
+  assert.equal(hasParticipantSequence(text), true);
+  assert.equal(hasParticipantSequence('# cycles wcl\n'), false);
+  assert.equal(hasParticipantSequence(''), false);
+});
+
+test('the roster helpers edit the LIVE statement, not a declaration or a comment', () => {
+  // A `*$` button declaration and a commented-out line both contain the text
+  // `$ participants <…>`; neither is the running program, and an unanchored
+  // match would edit whichever came first in the file.
+  const declared = '*$ participants <2a 2b>\n$ participants <0 1>\n# cycles wcl 20\n';
+  assert.equal(programHasParticipant(declared, '0'), true);
+  assert.equal(programHasParticipant(declared, '2a'), false);
+  assert.match(appendParticipantToProgram(declared, '5'), /^\$ participants <0 1 5>$/m);
+  assert.match(appendParticipantToProgram(declared, '5'), /^\*\$ participants <2a 2b>$/m);
+  assert.match(removeParticipantFromProgram(declared, '0'), /^\$ participants <1>$/m);
+
+  const commented = '// $ participants <0 1> — retired\n# cycles wcl 20\n';
+  assert.equal(hasParticipantSequence(commented), false);
+  assert.equal(appendParticipantToProgram(commented, '5'), commented);
+
+  // An emptied sequence takes the next append without a stray separator.
+  assert.match(appendParticipantToProgram('$ participants <>\n', '0'), /<0>/);
 });

@@ -360,6 +360,34 @@ The `ply`,`chop`, and `shuffle`, `degrade`, `hush`, `undegrade`, `undegradeBy`, 
 
 Otherwise, Strudel functions cannot be executed in the NetCycles editor. No Hydra functions can be executed within the NetCycles metaprogramming editor.
 
+### Button Declarations (NetCyclesButton)
+
+The personal Strudel editor declares a voice it is not yet playing by writing `*name: code`: the line is stripped before evaluation and appears as a button under the editor instead, and pressing it — with the mouse, or by holding the head cursor on it for a second — writes `name: code` into the pattern and re-evaluates. Pressing again comments it back out.
+
+The metaprogram has the same thing, spelled with the sigil the statement already carries. A statement written with a leading `*` is a DECLARATION rather than a statement:
+
+```
+$ participants <0 1>
+*$ participants <2a 2b>     // a voice, waiting for its button
+*# crush wcl 2              // an effect, waiting for its button
+# cycles wcl 20
+```
+
+The parser skips declaration lines whole — including when it is recovering from a syntax error somewhere above them — so nothing in a declaration runs and nothing in it is validated until a button writes it into the program, where it is parsed like any other statement. A declaration is one line, it may carry a trailing comment, and the same statement declared twice is one button. A declaration commented out (`// *$ …`) declares nothing, and neither does one with nothing after its sigil (`*$`, `*$ participants`, `*#`) — those show no button at all.
+
+Every declaration renders as a button under the Net Cycles editor, marked as a head-cursor dwell target, and — while that editor holds focus — in the facial-control panel's dwell bar alongside the StrudelButtons. Pressing one applies the resulting program immediately, exactly as ▶ Apply does.
+
+What "pressing" writes depends on the statement:
+
+| Declaration | Pressed on | Pressed off |
+|---|---|---|
+| `*$ participants <2a 2b>` | its tokens join the live scheduling sequence (`<0 1>` → `<0 1 2a 2b>`) | those same tokens leave it |
+| `*# crush wcl 2` | the directive is appended as its own line, marked `// netcycles-btn` | that line is commented out |
+
+A scheduling voice MERGES into the one sequence the language allows rather than appending a second `$ participants` statement, which would be a duplicate-statement error. A voice counts as on only when every one of its tokens is in the ring, so pressing a half-listed voice adds what is missing rather than removing what is there. Tokens keep whatever modifiers they are declared with (`*$ participants <1@2>` puts `1@2` in the ring and takes `1@2` back out). In a program with no `$ participants` statement at all there is nothing to merge into, so the voice becomes the sequence — written plain, without the marker, so that from then on it is an ordinary statement the same button goes on editing token by token. Turning off the last voice in the ring therefore leaves `$ participants <>`, which is an invalid program and reported as one, but a recoverable one: pressing the button again puts the voice straight back.
+
+Only the live statement is ever edited. A declaration and a commented-out line both contain the text `$ participants <…>`, and neither is the running program — writing a declaration above the statement it declares changes nothing about what the button reads or writes.
+
 ### AV Buffer Object Sequencing
 Each individual participant automatically enqueues AV buffer objects at intervals specified by the cyclic timing mode, which may or may not be empty, and which varies in size both according to this setting, and health monitor memory constraints. When a participant updates code in their own Trussal Studio Strudel-Hydra editor, if it is valid, it is additionally enqueued at the next scheduled interval. When the metapattern reaches a particular participant's buffer queue, a single buffer is dequeued and streamed.
 

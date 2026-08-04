@@ -14,6 +14,11 @@
 // re-derived once per cycle boundary, so a `[…]` subdivision or a `*2` has
 // nowhere to land.
 //
+// A statement written with a leading `*` (`*$ participants <2a 2b>`) is a
+// BUTTON DECLARATION rather than a statement: inert to this parser, rendered
+// as a button by the Net Cycles editor, and written into the program only when
+// that button is pressed. It is the metaprogram's `*name: code`.
+//
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
 // in the browser bundle, in bots, and under node:test. Errors carry
 // line/col (1-based) for editor squiggles.
@@ -248,12 +253,30 @@ class Parser {
   }
   skipNewlines() { while (this.peek().type === 'newline') this.next(); }
 
+  // Consume the rest of the physical line. A button declaration is one line,
+  // as `*name: code` is in the personal editor — it is skipped whole rather
+  // than validated, because nothing in it runs until its button writes it
+  // into the program, where it is parsed like any other statement.
+  skipDeclarationLine() {
+    while (!this.atEof() && this.peek().type !== 'newline') this.next();
+  }
+
   // Consume to the start of the next statement ($ or # at statement level) so
   // one bad statement doesn't cascade.
   recover() {
     while (!this.atEof()) {
       const t = this.peek();
-      if (t.type === 'sigil') return;
+      if (t.type === 'sigil') {
+        // The sigil of a `*$` / `*#` declaration is not a statement start:
+        // stopping on it would run a declared voice that nobody pressed, and
+        // one typo above a declaration is all it takes. Back onto the '*' so
+        // parseProgram skips the whole line. Only a '*' GLUED to the sigil
+        // counts — a newline token sits between a trailing `*` modifier and
+        // the next statement's sigil.
+        const prev = this.tokens[this.pos - 1];
+        if (prev && prev.type === 'op' && prev.value === '*') this.pos--;
+        return;
+      }
       this.next();
     }
   }
@@ -263,6 +286,17 @@ class Parser {
     this.skipNewlines();
     while (!this.atEof()) {
       const t = this.peek();
+      // `*$ …` / `*# …` — a BUTTON DECLARATION, not a statement. The personal
+      // Strudel editor's `*name: code` lines are stripped before evaluation
+      // (strudel.js) and surface as voice buttons instead; these are the same
+      // thing for the metaprogram, so the grammar has to see them as inert
+      // rather than as a broken statement. Pressing the button is what puts
+      // the declared voice into the program (editor-router-core.js).
+      if (t.type === 'op' && t.value === '*' && this.peek(1).type === 'sigil') {
+        this.skipDeclarationLine();
+        this.skipNewlines();
+        continue;
+      }
       if (t.type !== 'sigil') {
         this.error(`expected '$' or '#' at start of statement, got '${t.value}'`, t);
         this.next();
@@ -1333,20 +1367,60 @@ export function buildDefaultProgram() {
 // departed-but-listed participants persist as ghosts until an edit drops
 // them). Pure so the CRDT layer can apply the same edits to the shared doc.
 
+// The LIVE scheduling statement: `$ participants` opening a line, as the
+// grammar requires of every statement. Anchoring matters — an unanchored match
+// finds `$ participants <…>` anywhere, including inside a `*$` button
+// declaration or a commented-out line, and every helper below would then edit
+// text that is not the running program. Groups: prefix, open bracket, body,
+// close bracket. The body may span lines, as a wrapped sequence does.
+const SEQUENCE_RE = /^([ \t]*\$[ \t]*participants[ \t]*)([<[])([^\]>]*)([\]>])/m;
+
+function escapeForRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchSequence(text) {
+  return String(text ?? '').match(SEQUENCE_RE);
+}
+
+// Whether a matched sequence lists this token. The token may carry its own
+// modifiers (`0@2`), so it is escaped before it goes into the pattern.
+function sequenceLists(m, token) {
+  return new RegExp(`(^|[\\s<\\[])${escapeForRegExp(token)}($|[\\s\\]>@!?*/,|%:])`)
+    .test(m[2] + m[3] + m[4]);
+}
+
+// Whether the program's live scheduling sequence already lists this token.
+export function programHasParticipant(text, token) {
+  const m = matchSequence(text);
+  return !!m && sequenceLists(m, token);
+}
+
+// Whether the program has a live scheduling sequence to append to at all. An
+// empty doc has none, and a caller that wants a token in the ring has to write
+// the whole `$ participants <…>` statement instead.
+export function hasParticipantSequence(text) {
+  return !!matchSequence(text);
+}
+
 export function appendParticipantToProgram(text, token) {
-  const m = text.match(/(\$\s*participants\s*[<[][^\]>]*)([\]>])/);
-  if (!m) return text;
-  if (new RegExp(`(^|[\\s<\\[])${token}($|[\\s\\]>@!?*/,|%:])`).test(m[1] + m[2])) return text;
-  const body = m[1].trimEnd();
-  return text.replace(m[0], `${body} ${token}${m[2]}`);
+  const m = matchSequence(text);
+  if (!m || sequenceLists(m, token)) return text;
+  // No separator into an empty sequence — `<>` becomes `<0>`, not `< 0>`.
+  const body = m[3].trimEnd();
+  return text.replace(m[0], `${m[1]}${m[2]}${body ? `${body} ` : ''}${token}${m[4]}`);
 }
 
 export function removeParticipantFromProgram(text, token) {
-  const m = text.match(/(\$\s*participants\s*)([<[])([^\]>]*)([\]>])/);
+  const m = matchSequence(text);
   if (!m) return text;
   const cleaned = m[3]
     .split(/\s+/)
     .filter(w => {
+      // Exact match first: a token written WITH its modifiers (`0@2`) is a
+      // different element from the bare `0` and has to be removable on its
+      // own terms. Bare `0` still takes `0@2` with it, via the base match.
+      if (w === token) return false;
       const base = w.match(/^([0-9]+[a-z]*)/);
       return !(base && base[1] === token);
     })

@@ -700,6 +700,47 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 20, fixed: null, defaulted: true });
 });
 
+test('`*`-prefixed statements are inert button declarations, not program', () => {
+  // A declared voice does not join the ring, and a declared effect does not
+  // join the chain — the button is what puts them there.
+  const ast = ok(`$ participants <0>
+*$ participants <2a 2b>
+# cycles wcl 20
+*# crush wcl 2 // a declaration may carry a comment
+`);
+  assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
+  assert.deepEqual(ast.chain, []);
+  // Whitespace around the '*' and the sigil is allowed, as it is on statements.
+  ok('$ participants <0>\n  *  $ participants <1>\n');
+  // Declarations do not stand in for the required scheduling sequence.
+  bad('*$ participants <0>\n', /missing '\$ participants'/);
+  // A declaration never swallows the statements below it.
+  bad('$ participants <0>\n*# crush wcl 2\n# lpf 200\n', /not a NetCycles function/);
+  // A bare '*' is still junk: it declares nothing.
+  bad('$ participants <0>\n* crush wcl 2\n', /expected '\$' or '#'/);
+  // A declaration ending the text, with no newline after it.
+  ok('$ participants <0>\n*# crush wcl 2');
+  ok('$ participants <0>\n*$');
+});
+
+test('a declaration stays inert after an error on any line above it', () => {
+  // Error recovery scans forward to the next sigil, and a declaration's own
+  // sigil must not stop it — otherwise one typo while live coding runs a voice
+  // nobody pressed, and blames the user's real statement for being a duplicate.
+  let res = parseMetaprogram('# lpf 200\n*$ participants <9>\n$ participants <0>\n');
+  assert.deepEqual(res.ast.participants.stacks[0].elements.map(e => e.token), ['0']);
+  assert.equal(res.errors.filter(e => /duplicate/.test(e.message)).length, 0);
+
+  res = parseMetaprogram('$ participants <0>\n# lpf 200\n*# crush wcl 2\n');
+  assert.deepEqual(res.ast.chain, []);
+
+  // A trailing `*` modifier is still a modifier: the newline between it and
+  // the next statement's sigil is what tells the two cases apart.
+  const ast = ok('$ participants <0 1>*2\n# cycles wcl 20\n');
+  assert.deepEqual(ast.participants.modifiers, [{ op: '*', value: 2 }]);
+  assert.equal(ast.cycles.factor, 20);
+});
+
 test('comments and blank lines anywhere are ignored', () => {
   ok('// leading comment\n\n$ participants <0 1> // trailing\n\n// between\n# cycles wcj\n');
 });

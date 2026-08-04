@@ -285,6 +285,11 @@ function injectStyles() {
     }
     #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
     #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+    #${OVERLAY_ID} .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
+    /* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+       yellow-fills-then-green as every other dwell target. */
+    #${OVERLAY_ID} .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    #${OVERLAY_ID} .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
 
     #${OVERLAY_ID} .ts-sample-banks {
       display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -889,7 +894,10 @@ function renderVoiceButtons(container, code) {
   area.querySelectorAll('.ts-voice-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       toggleButtonCode(btn.dataset.voiceCode);
-      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+      // :not(.nc-code) — the Net Cycles textarea is also a .ts-code and comes
+      // FIRST in the overlay, so a bare selector re-reads the personal
+      // buttons out of the shared metaprogram.
+      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
       if (ta) renderVoiceButtons(container, ta.value);
     });
   });
@@ -1118,8 +1126,10 @@ document.addEventListener('trussal-kbd-eval', (e) => {
 });
 
 // Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
+// trussal-eval is the personal instrument's signal, so it must not land on the
+// Net Cycles textarea — which shares .ts-code and sits above it in the overlay.
 document.addEventListener('trussal-eval', () => {
-  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code`);
+  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
   if (codeEl) {
     codeEl.classList.remove('ts-eval-flash');
     void codeEl.offsetWidth; // force reflow so the animation restarts each time

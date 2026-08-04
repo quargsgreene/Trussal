@@ -33,6 +33,14 @@ export function trackEditorFocus() {
 
 export function activeEditorKind() { return lastKind; }
 
+// Whether this peer may write the shared metaprogram at all. Bots whose owner
+// withheld the permission may not; the sidecar drops their updates anyway, so
+// this is what keeps the local UI from pretending otherwise.
+export function metaprogramReadOnly() {
+  const peer = getLocalPeer();
+  return !!peer.isBot && peer.canEditMetaprogram === false;
+}
+
 function strudelTextarea() {
   // The personal editor is the detail-panel .ts-code that is NOT the shared
   // NetCycles one.
@@ -83,15 +91,30 @@ export function applyMetaprogramNow() {
   return applyProgramText(readNetCyclesText());
 }
 
-// NetCyclesButton dwell target: toggle the snippet in the shared doc and
-// apply. Mirrors toggleButtonCode for the personal editor.
+// NetCyclesButton dwell/click target: toggle the declared statement in the
+// shared doc and apply. Mirrors toggleButtonCode for the personal editor.
+// Returns the parse errors of the resulting program — a button can produce an
+// invalid one (removing the last participant empties the sequence), and the
+// caller shows them rather than letting the press look like it did nothing.
 export function toggleNetCyclesButtonCode(snippet) {
+  // The editor card renders a read-only peer's buttons `disabled`, but a
+  // head-cursor dwell never goes through click() — it calls this directly, and
+  // a disabled button still has a bounding box to hover. The guard has to be
+  // here, at the one place both paths meet.
+  if (metaprogramReadOnly()) return [];
   const next = toggleNetCyclesSnippet(readNetCyclesText(), snippet);
   const sync = ensureMetaprogramSync();
   sync.setText(next, 'local');
   const ta = netcyclesTextarea();
   if (ta) ta.value = next;
-  applyProgramText(next);
+  // Announce the new text whether or not it applies: the press came from a
+  // button (or a head-cursor dwell) that is nowhere near the textarea, and the
+  // editor has to re-render its own button row either way. applyProgramText
+  // fires this event again on success, which is an idempotent refresh.
+  document.dispatchEvent(new CustomEvent('trussal-netcycles-program', {
+    detail: { text: next, modality: 'button' }
+  }));
+  return applyProgramText(next);
 }
 
 function readNetCyclesText() {

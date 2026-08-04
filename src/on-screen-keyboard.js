@@ -106,7 +106,11 @@ function _esc(s) {
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 function _getTA() {
-  return _lastTA || document.querySelector('#trussal-studio-overlay .ts-code');
+  // :not(.nc-code) — the shared Net Cycles textarea is also a .ts-code and
+  // comes FIRST in the overlay, so before anything has been focused a bare
+  // selector puts every keystroke into the room's program rather than into
+  // this user's own editor.
+  return _lastTA || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)');
 }
 function _wordPrefix() {
   const ta = _getTA();
