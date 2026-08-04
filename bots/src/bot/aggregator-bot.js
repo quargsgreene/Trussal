@@ -7,11 +7,16 @@ import {
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
   pageSetMasterCrush, pageSetMasterEcho,
+  pageMosaic, pageSetMosaicCells, pageSetMosaicActive, pageSetMosaicEnabled, pageSetMosaicCycle,
+  pageEnsureVideoPublished, pageInstallVideoPublisher,
+  pageForcePreserveDrawingBuffer,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio-net/MetaprogrammerCrdtSync.js';
-import { parseMetaprogram, buildDefaultProgram, resolveEffectParams } from '../../../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram, buildDefaultProgram, resolveEffectParams, mosaicEnabled } from '../../../src/audio-net/MetaprogrammerParser.js';
+import { mosaicCellsForPeers, cellsEqual } from '../../../src/audio-net/MosaicCells.js';
+import { reconcileSlots, layoutCells } from '../../../src/audio-net/MosaicLayout.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
 import { noiseParams } from '../../../src/audio-net/av-effects/Noise.js';
@@ -264,6 +269,14 @@ export class AggregatorBot extends Bot {
     // sub-cycle step falls between the metrics updates and the cycle
     // boundaries, so it needs a clock of its own (see PATTERN_TICK_MS).
     #patternTimer = null;
+    // The video mosaic. Cells are recomputed on every peer update — which
+    // arrives several times a second per peer as metrics tick — so the last
+    // pushed set is kept to gate the crossing into the page: re-pushing would
+    // tear down and re-evaluate every performer's Hydra continuously.
+    #mosaicCells = [];
+    #mosaicSlots = [];
+    #lastMosaicEnabled = null;
+    #lastMosaicActive = undefined;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -377,26 +390,33 @@ export class AggregatorBot extends Bot {
 
         // Installed before navigation (Jitsi enumerates devices / renders peers
         // on load). Order matches Bot: mark-as-bot first, then the audio bridge
-        // (its shared AudioContext is what the capture tap reuses). No
-        // preserve-drawing-buffer shim — the aggregator creates no WebGL canvas.
+        // (its shared AudioContext is what the capture tap reuses).
         await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
         // Announce as the room's aggregator so every other client silences all
         // non-aggregator peers, leaving this bot's assembled master the only
         // audio source they hear.
         await this.page.evaluateOnNewDocument(pageMarkAggregator);
         await this.page.evaluateOnNewDocument(pageAudioBridge);
+        // The mosaic's cells are Hydra WebGL canvases that get drawImage'd into
+        // the published frame. A WebGL context clears its drawing buffer after
+        // each composite, so without this the cell reads back empty exactly as
+        // a regular bot's captured canvas used to.
+        await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
+        await this.page.evaluateOnNewDocument(pageMosaic, this.#mosaicFrame());
         await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
         // The ingest tap: accumulates every remote <audio> element's PCM.
         await this.page.evaluateOnNewDocument(pageAggregatorCapture);
         // The return-path sink: streams the assembled master mix back out through
         // the bot's published track. Installed before navigation like the tap.
         await this.page.evaluateOnNewDocument(pageMasterPlayer);
+        await this.page.evaluateOnNewDocument(pageInstallVideoPublisher);
         await this.page.evaluateOnNewDocument(pageFpsSampler);
 
-        // Audio-first: join with video muted so Jitsi never requests a camera
-        // (the gUM override would otherwise wait forever for a Hydra canvas the
-        // aggregator never creates, hanging the join).
-        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: true }), {
+        // Join with video LIVE: the aggregator's camera is the mosaic, and
+        // pageMosaic built its output canvas at document-start, so the gUM
+        // override resolves immediately rather than hanging the join waiting
+        // for a canvas (which is why this used to join video-muted).
+        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: false }), {
             waitUntil: 'networkidle2',
             timeout: 60000,
         });
@@ -408,9 +428,17 @@ export class AggregatorBot extends Bot {
 
         // Publish an unmuted audio track immediately so the aggregator holds a
         // live track to carry the assembled master mix (wired up in
-        // readAndAssembleMasterBuffer). No video track — see videoMuted above.
+        // readAndAssembleMasterBuffer).
         await this.page.evaluate(pageEnsureAudioPublished).catch((e) => {
             console.error(`[aggregator-bot] failed to ensure audio is published: ${e.message}`);
+        });
+        // And the video track carrying the mosaic. Like audio, joining unmuted
+        // is not enough headlessly — lib-jitsi-meet never requests the camera
+        // on its own, so this forces the gUM that our override answers with the
+        // mosaic's output canvas. The room sees a black frame until the first
+        // participant writes Hydra, which is the intended resting state.
+        await this.page.evaluate(pageEnsureVideoPublished).catch((e) => {
+            console.error(`[aggregator-bot] failed to ensure the mosaic is published: ${e.message}`);
         });
 
         await this.publishMetrics();
@@ -708,6 +736,9 @@ export class AggregatorBot extends Bot {
         this.#echoChain = chain.find((c) => c.fn === 'echo') || null;
         this.#syncMasterEffects();
         this.#syncPatternLoop(chain);
+        // `# mosaic` is this bot's video arrangement, adopted with the program
+        // the same way. A program that never mentions it tiles.
+        this.#syncMosaicEnabled(mosaicEnabled(ast));
     }
 
     /** Push all four master-bus effects. */
@@ -786,6 +817,7 @@ export class AggregatorBot extends Bot {
             : measured;
         if (this.scheduler) this.scheduler.setMetrics(this.#worstCase);
         this.#syncMasterEffects();
+        this.#syncMosaicCells();
     }
 
     /**
@@ -800,6 +832,108 @@ export class AggregatorBot extends Bot {
     #cyclePosition() {
         const pos = this.scheduler ? this.scheduler.getCyclePosition() : null;
         return Number.isFinite(pos) ? pos : this.#cycle;
+    }
+
+    /**
+     * Reconcile the mosaic against the roster: who is running Hydra right now,
+     * which slot each of them holds, and where that slot sits in the published
+     * frame. Slots persist across the churn — a performer keeps their cell for
+     * as long as they keep running Hydra — so this is a reconcile against the
+     * previous arrangement rather than a fresh layout each time.
+     *
+     * Gated on the cells actually changing. This runs on every peer update,
+     * and a peer update arrives on every metrics tick; pushing unconditionally
+     * would re-evaluate every performer's Hydra preamble several times a
+     * second. Note the gate is on the CELLS, not the slots — slots are derived
+     * from cells, so equal cells imply an unchanged arrangement.
+     */
+    #syncMosaicCells() {
+        const cells = mosaicCellsForPeers(this.#peers);
+        if (cellsEqual(cells, this.#mosaicCells)) return;
+        this.#mosaicCells = cells;
+        this.#mosaicSlots = reconcileSlots(this.#mosaicSlots, cells.map((c) => c.token));
+        this.#pushMosaicCells();
+    }
+
+    /**
+     * The published frame's pixel size. Derived from the SAME `videoHeight`
+     * the join URL caps the send side at (jitsiRoomUrl), at 16:9 — publishing
+     * 720p into a 360p cap would only waste encode. One derivation, because
+     * the canvas, the cell rectangles drawn into it and the constraint Jitsi
+     * negotiates all have to agree; two defaults in two places is how a
+     * mosaic ends up laid out for a frame that isn't the one being sent.
+     */
+    #mosaicFrame() {
+        const { videoHeight = 360 } = this.cfg.bandwidth || {};
+        const height = Math.max(2, Math.round(videoHeight));
+        // Even width: encoders reject odd dimensions on some pixel formats.
+        const width = Math.round((height * 16) / 9 / 2) * 2;
+        return { width, height };
+    }
+
+    #pushMosaicCells() {
+        if (!this.page) return;
+        const { width, height } = this.#mosaicFrame();
+        const payload = {
+            cells: this.#mosaicCells,
+            slots: this.#mosaicSlots,
+            layout: layoutCells(this.#mosaicSlots, width, height),
+        };
+        Promise.resolve(this.page.evaluate(pageSetMosaicCells, payload)).catch((e) => {
+            // Leave the cached cells mismatched so the next roster change
+            // retries rather than believing a push that never landed.
+            this.#mosaicCells = [];
+            console.error('[aggregator-bot] mosaic cell push failed', e);
+        });
+    }
+
+    /**
+     * Whose cell is lit. Every other cell stays black, so this is what makes
+     * the mosaic show one performer at a time; under `# mosaic false` it is
+     * also what selects the single full-frame cell. A rest passes null and the
+     * whole frame goes black, which is the visual counterpart of the silence.
+     */
+    #syncMosaicActive(token) {
+        const t = token == null ? null : String(token);
+        if (t === this.#lastMosaicActive) return;
+        this.#lastMosaicActive = t;
+        if (!this.page) return;
+        Promise.resolve(this.page.evaluate(pageSetMosaicActive, t)).catch((e) => {
+            this.#lastMosaicActive = undefined;
+            console.error('[aggregator-bot] mosaic active push failed', e);
+        });
+    }
+
+    /**
+     * Anchor the page's cycle clock to a boundary the scheduler just emitted.
+     * `inSeconds` is how far AHEAD of now that boundary falls — cycle events
+     * are emitted with a lookahead, so it is normally still in the future and
+     * the page must not treat it as "now" or every pattern-bound parameter
+     * runs a fraction of a cycle early.
+     *
+     * Not deduplicated: each cycle is a new boundary, and re-anchoring once a
+     * cycle is exactly what keeps the page's interpolation from drifting.
+     */
+    #syncMosaicCycle(ev) {
+        if (!this.page || !(ev.seconds > 0)) return;
+        const anchor = {
+            cycle: ev.cycle,
+            seconds: ev.seconds,
+            inSeconds: ev.t - this.networkSeconds(),
+        };
+        Promise.resolve(this.page.evaluate(pageSetMosaicCycle, anchor)).catch((e) => {
+            console.error('[aggregator-bot] mosaic cycle push failed', e);
+        });
+    }
+
+    #syncMosaicEnabled(on) {
+        if (on === this.#lastMosaicEnabled) return;
+        this.#lastMosaicEnabled = on;
+        if (!this.page) return;
+        Promise.resolve(this.page.evaluate(pageSetMosaicEnabled, on)).catch((e) => {
+            this.#lastMosaicEnabled = null;
+            console.error('[aggregator-bot] mosaic mode push failed', e);
+        });
     }
 
     /**
@@ -1004,6 +1138,10 @@ export class AggregatorBot extends Bot {
             this.#syncMasterRoom();
             this.#syncMasterCrush();
             this.#syncMasterEcho();
+            // The same boundary anchors the mosaic's clock, so `H(...)`
+            // parameters in participants' Hydra advance on the grid the room
+            // is already synchronised to.
+            this.#syncMosaicCycle(ev);
             return;
         }
         if (!ev.id) return;
@@ -1300,6 +1438,11 @@ export class AggregatorBot extends Bot {
         const t = token == null ? null : String(token);
         const i = Number.isInteger(index) ? index : null;
         const k = kind === 'rest' ? 'rest' : null;
+        // The mosaic lights the same participant this highlight names, so it
+        // hangs off the one place the turn is already known. Its own dedup
+        // absorbs the heartbeat re-sends below, which exist to refill the
+        // sidecar's cache and do not mean the turn moved.
+        this.#syncMosaicActive(t);
         const now = Date.now();
         if (t === this.#lastBroadcastActive && i === this.#lastBroadcastIndex &&
             k === this.#lastBroadcastKind &&

@@ -12,6 +12,7 @@ import {
   getLocalPeer,
   sendFleetRequest,
   sendRemoteMute,
+  sendRemoteVideo,
   sendBotPermission,
   subscribePeerState
 } from '../peer-state.js';
@@ -78,6 +79,15 @@ export function removeOneBot(index) {
 export function muteBots(selector, muted) {
   for (const bot of selectBots(myClusterBots(), selector)) {
     sendRemoteMute(bot.peerId, !!muted);
+  }
+}
+
+// Turn a subset's video tiles on or off. Bots join dark like every other
+// non-aggregator participant; what appears when a tile is on is that bot's own
+// Hydra output, or black when its script has none.
+export function setBotsVideo(selector, videoOn) {
+  for (const bot of selectBots(myClusterBots(), selector)) {
+    sendRemoteVideo(bot.peerId, !!videoOn);
   }
 }
 

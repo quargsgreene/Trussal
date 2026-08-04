@@ -21,6 +21,7 @@ import { rewriteLiveCalls } from './live-input-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
 import { hasTextCycles, rewriteTextCalls, keepTextStatements } from './text-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
+import { normalizePeerCode, splitHydraCode } from './hydra-code.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
@@ -120,8 +121,28 @@ const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
 
 // A program declares its non-audio capabilities with an `await initX()` line
 // before the first blank line — visuals with initHydra, chat text with
-// initTextCycles. Both may appear in the same preamble.
-const PREAMBLE_INIT_RE = /^\s*await\s+init(?:Hydra|TextCycles)\s*\(/;
+// initTextCycles.
+//
+// The Hydra half of that question is asked through hydra-code.js, because the
+// aggregator's mosaic asks the same one of the same text and the two must not
+// disagree. Text Cycles is deliberately NOT folded in there: a text peer paints
+// into each viewer's own chat panel and publishes no video, so it earns no
+// mosaic cell, and teaching the mosaic's membership rule about it would hand
+// one out. Same shape of split, different question.
+const INIT_TEXT_RE = /^\s*await\s+initTextCycles\s*\(/;
+
+// Split already-normalized code into its Text Cycles preamble and Strudel
+// remainder, or null when the block does not declare one. A preamble-only
+// block is legal and yields an empty `strudel`, exactly as for Hydra.
+function splitTextCyclesCode(code) {
+  if (!code || !INIT_TEXT_RE.test(code)) return null;
+  const blank = code.match(/\n\n+/);
+  if (!blank) return { preamble: code, strudel: '' };
+  return {
+    preamble: code.slice(0, blank.index).trim(),
+    strudel: code.slice(blank.index).trim()
+  };
+}
 
 // Text Cycles atoms for the program currently being assembled. Literal words
 // are minted into grammar-legal tokens (see text-cycles-core.js) and the real
@@ -210,12 +231,11 @@ function buildPeerBlock(peer) {
   const netCycles = isNetCyclesActive();
   const source = netCycles ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
 
-  let code = (source || '').replace(/[\s;]+$/g, '');
+  // Trailing noise and *name: widget declarations (buttons, not patterns) are
+  // stripped by the shared normalizer — the same one the aggregator's mosaic
+  // runs before asking whether this peer is running Hydra.
+  let code = normalizePeerCode(source);
   if (!code || !peer.playing) return null;
-
-  // Strip *name: code lines — these are button widget declarations, not patterns.
-  code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
-  if (!code) return null;
 
   // live(): re-emit the device name as a transpiler-proof literal, and for
   // remote peers swap in the silent stub — capture belongs to the authoring
@@ -249,17 +269,13 @@ function buildPeerBlock(peer) {
   // peer's audio, otherwise only your own words would ever appear.
   const isText = hasTextCycles(code);
 
-  // Detect a capability preamble: code beginning with `await initHydra(...)`
-  // or `await initTextCycles(...)`. Split at the first blank line: preamble
-  // above, strudel code below.
-  if (PREAMBLE_INIT_RE.test(code)) {
-    const blankMatch = code.match(/\n\n+/);
-    if (!blankMatch) {
-      // Entire block is the preamble — no Strudel pattern voice.
-      return code;
-    }
-    const preamble = code.slice(0, blankMatch.index).trim();
-    let strudelCode = code.slice(blankMatch.index).trim();
+  // Capability preamble, running to the first blank line: Hydra split by the
+  // shared rule, so this page and the aggregator's mosaic never disagree about
+  // which peers are running Hydra, or Text Cycles split by its own.
+  const split = splitHydraCode(code) || splitTextCyclesCode(code);
+  if (split) {
+    const preamble = split.preamble;
+    let strudelCode = split.strudel;
     if (isText) {
       // Excluded remote peer: keep the text statements, drop the audio ones.
       if (remoteVoiceExcluded) strudelCode = keepTextStatements(strudelCode);
@@ -267,6 +283,7 @@ function buildPeerBlock(peer) {
     } else if (remoteVoiceExcluded) {
       return preamble;
     }
+    // A preamble-only block has no Strudel voice to build.
     if (!strudelCode) return preamble;
     return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
   }

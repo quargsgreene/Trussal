@@ -264,9 +264,14 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
   // bot must also drive pageEnsureAudioPublished after joining.
   const ensureIdx = calls.evaluate.findIndex((s) => /muteAudio\(false\)/.test(s));
   assert.ok(ensureIdx !== -1, 'bot publishes an unmuted audio track after joining');
-  // ...and explicitly publishes the Hydra canvas as its video track.
-  const videoIdx = calls.evaluate.findIndex((s) => /muteVideo\(false\)/.test(s));
-  assert.ok(videoIdx !== -1, 'bot publishes a Hydra video track after joining');
+  // ...but does NOT publish video: a bot joins dark like every other
+  // non-aggregator participant, and its owner turns the tile on from the
+  // studio. The publisher is installed and waiting, not called.
+  assert.match(calls.goto[0], /config\.startWithVideoMuted=true/, 'bot joins with video off');
+  assert.ok(!calls.evaluate.some((s) => /__trussalEnsureVideoPublished/.test(s)),
+    'bot does not publish video at startup');
+  assert.ok(calls.evalOnNewDoc.some((s) => /muteVideo\(false\)/.test(s)),
+    'the publisher is installed so the owner can toggle the tile on later');
 
   const m = await bot.sampleMetrics();
   assert.equal(typeof m.ramBytes, 'number');

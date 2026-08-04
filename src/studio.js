@@ -58,6 +58,7 @@ import {
   removeBots,
   removeOneBot,
   muteBots,
+  setBotsVideo,
   setBotPermissions,
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
@@ -516,6 +517,7 @@ function botClusterBlock() {
       <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
       <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || 'bot')}</span>
       <button class="ts-fx-btn ts-dwell-btn${b.muted ? ' on' : ''}" data-bot-action="mute">${b.muted ? 'unmute' : 'mute'}</button>
+      <button class="ts-fx-btn ts-dwell-btn${b.videoOn ? ' on' : ''}" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? ' on' : ''}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
       <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? ' on' : ''}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
       <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
@@ -551,6 +553,9 @@ function bindBotClusterBlock(container) {
       else if (action === 'mute' && idx) {
         const bot = myClusterBots().find(b => b.roomIndex === idx);
         muteBots([idx], !(bot && bot.muted));
+      } else if (action === 'video' && idx) {
+        const bot = myClusterBots().find(b => b.roomIndex === idx);
+        setBotsVideo([idx], !(bot && bot.videoOn));
       } else if (action === 'edit-perm' && idx) {
         const bot = myClusterBots().find(b => b.roomIndex === idx);
         setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });

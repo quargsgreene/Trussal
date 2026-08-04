@@ -15,6 +15,7 @@ window.StrudelButton — custom element registered so the transpiler's *name: co
 import { getLocalPeer, sendLocalPattern, sendLocalPlaying, sendLocalEffects } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel } from './strudel.js';
 import { setVideoStream } from './hydra-video.js';
+import { openCamera } from './published-video.js';
 import {
   trackEditorFocus,
   readActiveEditor,
@@ -538,7 +539,11 @@ async function _startCamera() {
       }),
     ]);
 
-    _stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+    // The REAL camera: face tracking needs the performer's face, and the
+    // landmarks UI is one of the two places their camera is legitimately
+    // visible. A plain getUserMedia would be intercepted by the
+    // published-video override and return the canvas the ROOM sees.
+    _stream = await openCamera({ video: { width: 320, height: 240 } });
     _videoEl.srcObject = _stream;
     await _videoEl.play();
 

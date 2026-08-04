@@ -218,6 +218,22 @@ export function pageRemoteControl() {
     const fan = window.__trussalFanGain;
     if (fan && fan.gain) { try { fan.gain.value = muted ? 0 : 1; } catch (_) {} }
   });
+  // The bot's owner turning its tile on or off. Turning it ON is a publish,
+  // not just an unmute: a bot that joined dark has no video track at all, so
+  // the first toggle has to go through the same gUM-driven publish the bot
+  // used to do at startup (which is exactly what pageEnsureVideoPublished is).
+  document.addEventListener('trussal-remote-video', async (e) => {
+    const on = !!(e && e.detail && e.detail.videoOn);
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return;
+      if (on) await window.__trussalEnsureVideoPublished();
+      else if (typeof conf.muteVideo === 'function') await conf.muteVideo(true);
+    } catch (err) {
+      if (window.__trussalReportError) window.__trussalReportError(err);
+      else console.error('[trussal] bot video toggle failed', err);
+    }
+  });
 }
 
 /**
@@ -254,6 +270,13 @@ export function pageGumOverride(captureFps = 15) {
   const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
 
   function hydraCanvas() {
+    // The aggregator publishes its composited mosaic, never a single Hydra
+    // canvas — and its per-cell canvases are each as large as the output, so
+    // the largest-canvas fallback below would pick an arbitrary cell. Match
+    // the mosaic first; on a regular bot (no mosaic installed) this misses and
+    // the Strudel REPL's own initHydra() canvas wins as before.
+    const mosaic = document.querySelector('canvas#trussal-mosaic-out');
+    if (mosaic) return mosaic;
     // initHydra() in the Strudel REPL creates a canvas; prefer one it tagged,
     // fall back to the largest canvas in the page.
     const tagged = document.querySelector('canvas#hydra-canvas, canvas.hydra-canvas');
@@ -482,15 +505,27 @@ export async function pageEnsureAudioPublished() {
 }
 
 /**
- * After the bot has joined, make sure its Hydra canvas is actually published as
- * a live video track (the bot's "camera"). Like audio, startWithVideoMuted=false
- * is not enough headlessly — lib-jitsi-meet never requests the camera on its own
- * (gUM is only ever called for audio), so the Hydra canvas stream from the gUM
- * override is never published and the bot's tile stays blank. Drive jitsi-meet
- * directly: ask it to unmute video (which triggers a gUM → our canvas override),
- * falling back to creating the track explicitly.
+ * Install the video publisher as a page global, at document-start.
+ *
+ * Publishing has to be reachable from INSIDE the page, not just from Node:
+ * bots now join dark, and their owner turning the tile on arrives as a
+ * peer-state DOM event that pageRemoteControl handles in-page. Node still
+ * drives it too (the aggregator publishes its mosaic at startup), so both
+ * callers share this one implementation rather than each carrying a copy.
  */
-export async function pageEnsureVideoPublished() {
+export function pageInstallVideoPublisher() {
+  if (window.__trussalEnsureVideoPublished) return;
+
+  /**
+   * Make sure the page's canvas is actually published as a live video track
+   * (the bot's "camera": its Hydra canvas, or the aggregator's mosaic).
+   * startWithVideoMuted=false is not enough headlessly — lib-jitsi-meet never
+   * requests the camera on its own (gUM is only ever called for audio), so the
+   * canvas stream from the gUM override is never published and the tile stays
+   * blank. Drive jitsi-meet directly: ask it to unmute video (which triggers a
+   * gUM → our canvas override), falling back to creating the track explicitly.
+   */
+  window.__trussalEnsureVideoPublished = async function ensureVideoPublished() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     const APP = globalThis.APP;
@@ -519,6 +554,20 @@ export async function pageEnsureVideoPublished() {
       } catch (e) {console.error(e)}
     }
   } catch (e) {console.error(e)}
+  };
+}
+
+/**
+ * Node-side entry: publish the page's canvas as a video track. Thin, because
+ * the implementation is the page global above — the in-page toggle path calls
+ * the very same function, so a fix to one can never miss the other.
+ */
+export async function pageEnsureVideoPublished() {
+  if (typeof window.__trussalEnsureVideoPublished !== 'function') {
+    console.error('[trussal] video publisher not installed — pageInstallVideoPublisher must run at document-start');
+    return;
+  }
+  return window.__trussalEnsureVideoPublished();
 }
 
 /**
@@ -1569,4 +1618,446 @@ export function pageReadSamples() {
     },
   };
   return samples;
+}
+
+/**
+ * The aggregator's video: every Hydra participant's output tiled into one
+ * published frame.
+ *
+ * The aggregator publishes ONE video track, so the mosaic cannot be N canvases
+ * on a page — it is N canvases COMPOSITED into a single output canvas, and it
+ * is that output canvas the gUM override hands to Jitsi. The per-peer canvases
+ * are still real DOM nodes (created when a peer starts running Hydra, removed
+ * when they stop), which is what makes the page inspectable: a screenshot of
+ * the container shows exactly what each cell is drawing.
+ *
+ * Only the participant whose turn it is renders. Everyone else's cell is
+ * black, and their Hydra instance is not ticked at all — no rAF, no GPU. A
+ * paused instance costs a live WebGL context and nothing else, which is what
+ * keeps a large room inside Chromium's ~16-context ceiling. Hydra patterns are
+ * written against a clock (`() => time`), so an instance resumes looking
+ * continuous rather than restarting.
+ *
+ * Two kinds of cell, decided Node-side (src/hydra-code.js mosaicCellSource):
+ *   - 'reexecute': the preamble runs here, in its own Hydra instance. The
+ *     common case.
+ *   - 'blit': the code reads the camera (`src(s0)`), which this page hasn't
+ *     got. That performer's own browser already renders it against their real
+ *     camera and publishes the result, so the cell draws their incoming video
+ *     track instead of trying to reproduce it.
+ *
+ * Installed at document-start: the output canvas must exist before Jitsi's
+ * first device enumeration, or the gUM override waits for a canvas that does
+ * not exist yet and the join hangs.
+ */
+export function pageMosaic(options = {}) {
+  if (window.__trussalMosaic) return;
+  const {
+    width = 1280,
+    height = 720,
+    hydraSrc = 'https://unpkg.com/hydra-synth',
+  } = options || {};
+
+  // The published frame. Black from the moment it exists, so the aggregator
+  // has something to publish from the instant the meeting begins — before any
+  // participant has written a line of Hydra.
+  const out = document.createElement('canvas');
+  out.id = 'trussal-mosaic-out';
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, width, height);
+
+  // Per-peer canvases live here, and so does the output canvas. Off to the
+  // side rather than display:none — a display:none canvas is not guaranteed to
+  // be composited, and we need Hydra's WebGL output to be readable by
+  // drawImage.
+  const container = document.createElement('div');
+  container.id = 'trussal-mosaic';
+  container.style.cssText =
+    'position:fixed;left:-20000px;top:0;width:' + width + 'px;height:' + height + 'px;';
+  // The output canvas MUST be in the document: the gUM override finds it with
+  // document.querySelector, which cannot match a detached node. Left detached,
+  // that lookup falls through to "largest canvas in the page" — which is no
+  // canvas at all before anyone runs Hydra (so the join hangs waiting for one)
+  // and an arbitrary CELL canvas afterwards (so the aggregator publishes one
+  // participant full-frame instead of the mosaic).
+  container.appendChild(out);
+  const attach = () => (document.body || document.documentElement).appendChild(container);
+  if (document.body) attach();
+  else document.addEventListener('DOMContentLoaded', attach, { once: true });
+
+  let cells = [];           // [{ token, jitsiId, source, preamble }] from Node
+  let slots = [];           // grid position -> token | null
+  let activeToken = null;   // whose turn it is
+  let enabled = true;       // `# mosaic`; false = only the streaming cell
+  let layout = [];          // [{ token, index, rect }] computed Node-side
+  // Where the room is on its cycle grid, for `H(...)` parameters. Node pushes
+  // an anchor at each cycle boundary — "cycle N begins `inSeconds` from now,
+  // and a cycle lasts `seconds`" — and the page interpolates between pushes so
+  // a parameter moves smoothly at frame rate instead of stepping once a cycle.
+  let cycleAnchor = null;   // { cycle, seconds, atMs }
+  const instances = new Map();   // token -> { canvas, hydra, video, error }
+  const errors = [];
+
+  function noteError(where, e) {
+    const msg = `[trussal] mosaic ${where}: ${e && e.message ? e.message : e}`;
+    console.error(msg, e);
+    errors.push(msg);
+    if (errors.length > 32) errors.shift();
+  }
+
+  // --- hydra-synth, loaded once and shared by every instance -----------------
+
+  let hydraLoading = null;
+  function loadHydra() {
+    if (window.Hydra) return Promise.resolve(window.Hydra);
+    if (hydraLoading) return hydraLoading;
+    hydraLoading = import(/* webpackIgnore: true */ hydraSrc)
+      .then((mod) => window.Hydra || (mod && (mod.default || mod.Hydra)))
+      .then((ctor) => {
+        if (!ctor) throw new Error('hydra-synth loaded but exposed no constructor');
+        window.Hydra = ctor;
+        return ctor;
+      })
+      .catch((e) => {
+        hydraLoading = null; // let a later cell retry rather than wedging
+        noteError('hydra-synth load', e);
+        throw e;
+      });
+    return hydraLoading;
+  }
+
+  // The preamble's own `await initHydra(...)` is the marker that made this
+  // Hydra code in the first place; it would build the page-wide singleton this
+  // renderer exists to avoid, so it is stripped and the instance we already
+  // made stands in for it.
+  function stripInitHydra(preamble) {
+    return String(preamble || '').replace(/^\s*await\s+initHydra\s*\([^)]*\)\s*;?/, '');
+  }
+
+  // The room's position in fractional cycles, interpolated from the last
+  // anchor Node pushed. Before the first anchor there is no grid to read, so
+  // parameters sit at cycle 0 rather than racing on a clock of their own.
+  function cyclePos() {
+    if (!cycleAnchor || !(cycleAnchor.seconds > 0)) return 0;
+    const elapsed = (performance.now() - cycleAnchor.atMs) / 1000;
+    return cycleAnchor.cycle + elapsed / cycleAnchor.seconds;
+  }
+
+  // Run a peer's preamble against THEIR synth rather than page globals. `with`
+  // is what makes an unmodified `osc(10).out()` resolve to this instance —
+  // new Function bodies are sloppy-mode, so it is available here.
+  //
+  // Three layers, and the order is load-bearing:
+  //   1. Strudel's exports, so `H(saw.range(0,2))` can resolve `saw` at all;
+  //   2. this cell's Hydra synth, which must win the names both libraries
+  //      define (`shape`, `speed`, `noise`) — this is Hydra code;
+  //   3. our `H`, which must win over @strudel/hydra's, since that one reads a
+  //      scheduler clock this page has not got.
+  // A PROXY, not a copy. Hydra mutates `synth.time` (and `mouse`, `bpm`) on
+  // every tick, so a snapshot would freeze the very values patterns animate
+  // on — `osc(60, 0.1, () => time)` would render one still frame for ever.
+  // `has` is what `with` consults to decide whether an identifier belongs to
+  // the scope, so it must answer false for everything the layers don't hold,
+  // or `console`/`Math`/`Promise` inside a preamble would resolve to
+  // undefined instead of reaching the real global scope.
+  function preambleScope(inst, H) {
+    const params = window.__trussalHydraParams;
+    const strudelScope = (params && params.patternScope()) || null;
+    const synth = inst.synth;
+    return new Proxy(Object.create(null), {
+      has(_t, key) {
+        if (key === Symbol.unscopables) return false;
+        return key === 'H' || key in synth || !!(strudelScope && key in strudelScope);
+      },
+      get(_t, key) {
+        if (key === Symbol.unscopables) return undefined;
+        if (key === 'H') return H;
+        // Hydra wins the names both libraries define (`shape`, `speed`,
+        // `noise`): this is Hydra code.
+        if (key in synth) return synth[key];
+        return strudelScope ? strudelScope[key] : undefined;
+      },
+      set(_t, key, value) {
+        synth[key] = value;
+        return true;
+      },
+    });
+  }
+
+  function runPreamble(inst, preamble) {
+    const body = stripInitHydra(preamble);
+    if (!body.trim()) return;
+    const params = window.__trussalHydraParams;
+    // Ours must win over @strudel/hydra's H, which reads a scheduler clock
+    // this page has not got.
+    const H = params
+      ? params.makeH(cyclePos)
+      : (spec) => () => (typeof spec === 'number' ? spec : 0);
+    /* eslint-disable-next-line no-new-func */
+    const run = new Function('scope', `with (scope) { return (async () => {\n${body}\n})(); }`);
+    return Promise.resolve(run(preambleScope(inst, H)));
+  }
+
+  // A cell whose preamble uses `H(...)` must not be evaluated before the
+  // pattern machinery is there, or its parameters bind to the fallback for the
+  // life of the instance. Cells without H never wait.
+  function whenParamsReady(needed) {
+    if (!needed) return Promise.resolve();
+    const deadline = performance.now() + 20000;
+    return new Promise((resolve) => {
+      const tick = () => {
+        const params = window.__trussalHydraParams;
+        if (params) { params.whenReady.then(resolve, resolve); return; }
+        if (performance.now() > deadline) {
+          noteError('pattern params', new Error('Strudel pattern machinery never appeared'));
+          resolve();
+          return;
+        }
+        setTimeout(tick, 250);
+      };
+      tick();
+    });
+  }
+
+  function ensureInstance(cell) {
+    const existing = instances.get(cell.token);
+    if (existing && existing.preamble === cell.preamble && existing.source === cell.source) return;
+    destroyInstance(cell.token);
+
+    const entry = { canvas: null, hydra: null, video: null, source: cell.source, preamble: cell.preamble };
+    instances.set(cell.token, entry);
+
+    if (cell.source === 'blit') {
+      // A hidden <video> fed from that participant's published track. Built
+      // from the JitsiTrack's own MediaStream rather than by hunting Jitsi's
+      // DOM, whose remote element ids are generic in this deployment (see
+      // pageAggregatorTrackMapDiag).
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.dataset.trussalToken = cell.token;
+      container.appendChild(video);
+      entry.video = video;
+      attachRemoteVideo(entry, cell.jitsiId);
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'trussal-mosaic-cell';
+    canvas.dataset.trussalToken = cell.token;
+    // Cell pixels, not frame pixels: sized to the largest cell it could be
+    // asked to fill, then scaled down by drawImage. Re-sizing a live Hydra
+    // instance mid-performance would reset its WebGL state.
+    canvas.width = width;
+    canvas.height = height;
+    container.appendChild(canvas);
+    entry.canvas = canvas;
+
+    Promise.all([loadHydra(), whenParamsReady(cell.usesPatternParams)])
+      .then(([Hydra]) => {
+        if (instances.get(cell.token) !== entry) return; // superseded while loading
+        entry.hydra = new Hydra({
+          canvas,
+          makeGlobal: false,      // no page globals — N synths coexist
+          detectAudio: false,
+          autoLoop: false,        // WE decide when a cell advances
+          width,
+          height,
+        });
+        return runPreamble(entry.hydra, cell.preamble);
+      })
+      .catch((e) => {
+        entry.error = e && e.message ? e.message : String(e);
+        noteError(`cell ${cell.token}`, e);
+      });
+  }
+
+  function attachRemoteVideo(entry, jitsiId) {
+    try {
+      const room = window.APP && window.APP.conference && window.APP.conference._room;
+      if (!room || typeof room.getParticipants !== 'function') return;
+      const participant = room.getParticipants().find((p) => p.getId() === jitsiId);
+      if (!participant || typeof participant.getTracks !== 'function') return;
+      const track = participant.getTracks().find((t) => t.getType() === 'video');
+      if (!track) return;
+      const stream = typeof track.getOriginalStream === 'function' ? track.getOriginalStream() : null;
+      if (!stream) return;
+      entry.video.srcObject = stream;
+      const play = entry.video.play();
+      if (play && typeof play.catch === 'function') play.catch(() => {});
+    } catch (e) {
+      noteError('attach remote video', e);
+    }
+  }
+
+  function destroyInstance(token) {
+    const entry = instances.get(token);
+    if (!entry) return;
+    instances.delete(token);
+    if (entry.hydra) {
+      try { entry.hydra.synth.hush(); } catch (e) { noteError(`hush ${token}`, e); }
+      // Release the WebGL context EXPLICITLY rather than waiting for the
+      // detached canvas to be collected. Chromium allows ~16 live contexts
+      // per page and drops the oldest when that is exceeded — in a room where
+      // performers start and stop Hydra, GC timing would decide whether a
+      // returning cell gets a context or silently renders nothing.
+      try {
+        const gl = entry.canvas.getContext('webgl') || entry.canvas.getContext('webgl2');
+        const lose = gl && gl.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+      } catch (e) { noteError(`release context ${token}`, e); }
+    }
+    if (entry.video) {
+      try { entry.video.pause(); entry.video.srcObject = null; } catch (e) { noteError(`detach ${token}`, e); }
+      entry.video.remove();
+    }
+    if (entry.canvas) entry.canvas.remove();
+  }
+
+  // --- compositing -----------------------------------------------------------
+
+  let lastTick = 0;
+
+  function sourceCanvasFor(token) {
+    const entry = instances.get(token);
+    if (!entry) return null;
+    if (entry.video) return entry.video.readyState >= 2 ? entry.video : null;
+    return entry.hydra ? entry.canvas : null;
+  }
+
+  function drawCell(token, rect) {
+    const src = sourceCanvasFor(token);
+    if (!src) return;
+    try {
+      ctx.drawImage(src, rect.x, rect.y, rect.w, rect.h);
+    } catch (e) {
+      noteError(`draw ${token}`, e);
+    }
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = lastTick ? now - lastTick : 16;
+    lastTick = now;
+
+    // Advance ONLY the streaming participant. Everyone else holds still
+    // behind a black cell.
+    const live = instances.get(activeToken);
+    if (live && live.hydra) {
+      try { live.hydra.tick(dt); } catch (e) { noteError(`tick ${activeToken}`, e); }
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+
+    if (!enabled) {
+      // `# mosaic false`: whoever is streaming, full frame. Nothing else.
+      if (activeToken != null) drawCell(activeToken, { x: 0, y: 0, w: width, h: height });
+      return;
+    }
+    for (const cell of layout) {
+      if (cell.token !== activeToken) continue; // every other cell stays black
+      drawCell(cell.token, cell.rect);
+    }
+  }
+  requestAnimationFrame(frame);
+
+  window.__trussalMosaic = {
+    // Node pushes the full cell list whenever it changes; the page reconciles
+    // instances against it. Layout (which slot each token holds) is computed
+    // Node-side too, so the arrangement is decided in one testable place.
+    setCells(nextCells, nextSlots, nextLayout) {
+      cells = Array.isArray(nextCells) ? nextCells : [];
+      slots = Array.isArray(nextSlots) ? nextSlots : [];
+      layout = Array.isArray(nextLayout) ? nextLayout : [];
+      const wanted = new Set(cells.map((c) => c.token));
+      for (const token of [...instances.keys()]) {
+        if (!wanted.has(token)) destroyInstance(token);
+      }
+      for (const cell of cells) ensureInstance(cell);
+    },
+    setActive(token) {
+      activeToken = token == null ? null : String(token);
+    },
+    setEnabled(on) {
+      enabled = !!on;
+    },
+    // The cycle grid `H(...)` parameters are sampled against. `inSeconds` is
+    // how far ahead of the push the boundary falls — the scheduler emits cycle
+    // events with a lookahead, so the boundary is usually still in the future.
+    setCycle({ cycle, seconds, inSeconds = 0 } = {}) {
+      if (!(seconds > 0) || !Number.isFinite(cycle)) return;
+      cycleAnchor = { cycle, seconds, atMs: performance.now() + inSeconds * 1000 };
+    },
+    // A blit cell's track may arrive after the cell does (the peer toggles
+    // video on later), so retry attachment for any blit cell still without a
+    // stream. Called on the same cadence as the roster scan.
+    retryAttachments() {
+      for (const cell of cells) {
+        if (cell.source !== 'blit') continue;
+        const entry = instances.get(cell.token);
+        if (entry && entry.video && !entry.video.srcObject) attachRemoteVideo(entry, cell.jitsiId);
+      }
+    },
+    diag() {
+      return {
+        enabled,
+        activeToken,
+        slots,
+        cyclePos: cyclePos(),
+        patternApi: Boolean(window.__trussalHydraParams),
+        cells: cells.map((c) => ({ token: c.token, source: c.source })),
+        instances: [...instances.entries()].map(([token, e]) => ({
+          token,
+          kind: e.video ? 'blit' : 'hydra',
+          ready: Boolean(e.hydra) || Boolean(e.video && e.video.srcObject),
+          error: e.error || null,
+        })),
+        errors: errors.slice(),
+      };
+    },
+  };
+
+  setInterval(() => window.__trussalMosaic.retryAttachments(), 1000);
+}
+
+/** Push the current mosaic cells + layout into the page. */
+export function pageSetMosaicCells(payload) {
+  const m = window.__trussalMosaic;
+  if (!m) return false;
+  m.setCells(payload.cells || [], payload.slots || [], payload.layout || []);
+  return true;
+}
+
+/** Tell the mosaic whose turn it is (null = a rest: every cell black). */
+export function pageSetMosaicActive(token) {
+  const m = window.__trussalMosaic;
+  if (!m) return false;
+  m.setActive(token);
+  return true;
+}
+
+/** Anchor the mosaic's cycle clock, which `H(...)` parameters are read off. */
+export function pageSetMosaicCycle(anchor) {
+  const m = window.__trussalMosaic;
+  if (!m) return false;
+  m.setCycle(anchor);
+  return true;
+}
+
+/** Apply `# mosaic`: true tiles the room, false shows only the streamer. */
+export function pageSetMosaicEnabled(on) {
+  const m = window.__trussalMosaic;
+  if (!m) return false;
+  m.setEnabled(on);
+  return true;
+}
+
+/** Mosaic state, for diagnosing a black or wrong-looking published frame. */
+export function pageMosaicDiag() {
+  return (window.__trussalMosaic && window.__trussalMosaic.diag()) || null;
 }

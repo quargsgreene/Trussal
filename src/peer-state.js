@@ -372,6 +372,10 @@ function handleMessage(msg) {
         localPeer.muted = !!msg.muted;
         document.dispatchEvent(new CustomEvent('trussal-remote-mute', { detail: { muted: localPeer.muted } }));
         emit('peer-upsert', localPeer);
+      } else if (msg.action === 'video') {
+        localPeer.videoOn = !!msg.videoOn;
+        document.dispatchEvent(new CustomEvent('trussal-remote-video', { detail: { videoOn: localPeer.videoOn } }));
+        emit('peer-upsert', localPeer);
       }
       break;
     }
@@ -592,6 +596,14 @@ export function sendRemotePattern(targetPeerId, code) {
 export function sendRemoteMute(targetPeerId, muted) {
   if (!targetPeerId) return;
   safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
+}
+
+// Turn one of your own bots' tiles on or off. Bots join dark like every other
+// non-aggregator participant; what appears when this is on is the bot's Hydra
+// output, or black if its script has none.
+export function sendRemoteVideo(targetPeerId, videoOn) {
+  if (!targetPeerId) return;
+  safeSend({ type: 'remote-control', targetPeerId, action: 'video', videoOn: !!videoOn });
 }
 
 // Shared metaprogram doc: outbound Yjs update (base64). `snapshot` marks a

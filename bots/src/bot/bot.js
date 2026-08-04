@@ -11,7 +11,7 @@
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
-  pageEnsureAudioPublished, pageEnsureVideoPublished, pageFpsSampler, pageReadSamples,
+  pageEnsureAudioPublished, pageInstallVideoPublisher, pageFpsSampler, pageReadSamples,
   pageMarkBot, pageRemoteControl,
 } from './page-scripts.js';
 
@@ -50,12 +50,18 @@ export class Bot {
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
+    await this.page.evaluateOnNewDocument(pageInstallVideoPublisher);
     await this.page.evaluateOnNewDocument(pageFpsSampler);
 
     // networkidle2 instead of domcontentloaded: Jitsi keeps performing
     // client-side navigations while joining, and each one destroys the
     // page's execution context.
-    await this.page.goto(jitsiRoomUrl(jitsiUrl, name, bandwidth), {
+    //
+    // Video off on arrival, like every other non-aggregator participant: the
+    // room's visuals come from the aggregator's mosaic, and a bot's own tile
+    // stays dark until its owner turns it on (the 'video' remote-control
+    // action, handled in-page by pageRemoteControl).
+    await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: true }), {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
@@ -80,8 +86,7 @@ export class Bot {
     // logs+throws internally), so surface it.
     await this.page.evaluate(pageEnsureAudioPublished)
       .catch((e) => console.error('[bot] pageEnsureAudioPublished failed', e));
-    await this.page.evaluate(pageEnsureVideoPublished)
-      .catch((e) => console.error('[bot] pageEnsureVideoPublished failed', e));
+    // No video publish here: the bot joins dark and its owner toggles it on.
   }
 
   /**

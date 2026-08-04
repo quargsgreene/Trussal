@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {
   parseMetaprogram,
   resolveEffectParams,
-  buildDefaultProgram
+  buildDefaultProgram,
+  mosaicEnabled
 } from '../src/audio-net/MetaprogrammerParser.js';
 
 function ok(text) {
@@ -131,6 +132,48 @@ test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise,
 
   ast = ok('$ participants <0 9 1 4 2>*2\n# grid true\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { landmarks: true });
+});
+
+// --- # mosaic ----------------------------------------------------------------
+
+test('mosaic: the aggregator tiles unless the program says otherwise', () => {
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n')), true);
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic\n')), true);
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic true\n')), true);
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic false\n')), false);
+});
+
+test('mosaic: the default program leaves the directive unwritten', () => {
+  const text = buildDefaultProgram();
+  assert.ok(!text.includes('mosaic'), 'default program should not inject a directive nobody typed');
+  assert.equal(mosaicEnabled(ok(text)), true);
+});
+
+test('mosaic: a re-typed directive wins over the earlier one', () => {
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic false\n# mosaic true\n')), true);
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic true\n# mosaic false\n')), false);
+});
+
+test('mosaic: it is its own directive, leaving # grid alone', () => {
+  const ast = ok('$ participants <0>\n# grid false\n# mosaic false\n');
+  assert.deepEqual(ast.chain.map(c => c.fn), ['grid', 'mosaic']);
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { landmarks: false });
+  assert.deepEqual(resolveEffectParams(ast.chain[1]), { enabled: false });
+});
+
+test('mosaic: takes a boolean, not a bare word or a pattern', () => {
+  bad('$ participants <0>\n# mosaic maybe\n', /unexpected argument 'maybe'/);
+  bad('$ participants <0>\n# mosaic <1 2>\n', /unexpected argument '<'/);
+  bad('$ participants <0>\n# mosaic true false\n', /takes 0–1 argument/);
+  // A number is tolerated and read as truthy — the shared boolArg path lets
+  // positive reals through, exactly as `# grid 2` does. Not worth an
+  // asymmetry between the language's two boolean directives.
+  assert.equal(mosaicEnabled(ok('$ participants <0>\n# mosaic 2\n')), true);
+});
+
+test('mosaic: an unparseable program falls back to the default rather than dark', () => {
+  assert.equal(mosaicEnabled(null), true);
+  assert.equal(mosaicEnabled({}), true);
 });
 
 // --- Index grammar in sequences ---------------------------------------------
