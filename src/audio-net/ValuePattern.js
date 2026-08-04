@@ -24,6 +24,24 @@
 // Pure module: no DOM, no WebAudio, so it runs in the bundle, in bots, and
 // under node:test.
 
+// How often a chain holding PATTERNED arguments re-reads them off the cycle
+// grid. The metrics-driven path is event-driven and cycle boundaries are
+// pushed by whoever owns the scheduler, but a SUB-cycle step (`# crush wcl
+// [2 8]`, `# echo wcl [1 4] …`) falls between both, so those chains poll at
+// this rate instead. Lives here rather than beside either consumer because
+// both the aggregator's master bus (bots/src/bot/aggregator-bot.js) and the
+// browser's visual counterparts (av-effects/index.js) tick against it, and a
+// second copy could only drift.
+//
+// This is a sampling floor, not exact timing: a step edge lands within one
+// tick of where it belongs, and a pattern subdividing a short cycle into more
+// steps than that can skip some entirely (a 12-step pattern on a 0.5 s cycle
+// is ~42 ms a step). The sampled VALUE is a pure function of network time, so
+// clients still agree on what is playing — they just cross the edge up to a
+// tick apart. Anything finer wants the scheduler's timestamped slot events
+// driving AudioParam automation, which waits on that machinery being armed.
+export const PATTERN_TICK_MS = 50;
+
 export function isValuePattern(node) {
   return !!node && typeof node === 'object' && node.type === 'valueSeq';
 }

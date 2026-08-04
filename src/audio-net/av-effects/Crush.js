@@ -30,9 +30,16 @@
 // pins wcl. Any of the three may be a mini-notation pattern instead of a
 // constant, read at the caller's position on the cycle grid.
 //
+// Like every other audio effect, the node runs on the AGGREGATOR's master
+// path (the mix every client hears), not in each browser: bots/src/bot/
+// page-scripts.js pageMasterPlayer inlines this graph, because the
+// page-script contract forbids imports. createCrushNode below is therefore
+// the reference copy rather than the audible one — bot.test.js compares the
+// two curves so they cannot drift apart.
+//
 // The same decimation applies to pixels: visualPixelate is the pixel-block
-// edge for the Hydra counterpart. Pure math is separated from node
-// construction for node:test.
+// edge for the Hydra counterpart, which browsers DO still compute locally.
+// Pure math is separated from node construction for node:test.
 
 import { evaluateValuePattern } from '../ValuePattern.js';
 

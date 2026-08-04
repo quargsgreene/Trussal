@@ -6,6 +6,7 @@ import {
   pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
+  pageSetMasterCrush, pageSetMasterEcho,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -14,6 +15,9 @@ import { parseMetaprogram, buildDefaultProgram, resolveEffectParams } from '../.
 import { computeWorstCaseMetrics, mergeInducedMetrics } from '../../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { roomParams } from '../../../src/audio-net/av-effects/Room.js';
 import { noiseParams } from '../../../src/audio-net/av-effects/Noise.js';
+import { crushParams } from '../../../src/audio-net/av-effects/Crush.js';
+import { echoParams } from '../../../src/audio-net/av-effects/Echo.js';
+import { chainHasValuePattern, PATTERN_TICK_MS } from '../../../src/audio-net/ValuePattern.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -209,11 +213,12 @@ export class AggregatorBot extends Bot {
     #localT0 = null;
     // Room roster as seen over the metaprogram bus (peerId → publicView
     // record), the worst-case metrics derived from it, the applied program's
-    // `# room` and `# noise` chain entries, and the last params pushed to the
-    // page for each (as JSON, so unchanged params don't re-evaluate every
-    // peer-update — or, for noise, every cycle). The page starts with no
-    // reverb and no noise bed, so 'null' — not undefined — is the honest
-    // starting point: a program without those directives never pushes at all.
+    // four audio-effect chain entries, and the last params pushed to the page
+    // for each (as JSON, so unchanged params don't re-evaluate every
+    // peer-update — or, for the patterned ones, every cycle and every pattern
+    // tick). The page starts with a bare master bus, so 'null' — not
+    // undefined — is the honest starting point: a program without a given
+    // directive never pushes it at all.
     #peers = new Map();
     // The metaprogram's slot grid, banked from the scheduler's slot-open/
     // slot-close events with their NETWORK timestamps (the scheduler emits a
@@ -236,9 +241,26 @@ export class AggregatorBot extends Bot {
     #lastRoomPushJson = 'null';
     #noiseChain = null;
     #lastNoisePushJson = 'null';
-    // Cycle number the scheduler last opened. noise is the one effect whose
-    // arguments may be `<…>` patterns, and they are sampled by cycle.
+    #crushChain = null;
+    #lastCrushPushJson = 'null';
+    #echoChain = null;
+    #lastEchoPushJson = 'null';
+    // Cycle number the scheduler last opened. noise's `<…>` arguments are
+    // sampled by whole cycle, so this alone is what it needs.
     #cycle = 0;
+    // The last cycle-start the scheduler EMITTED, for the effects that sample
+    // at a fractional position rather than a whole cycle: crush and echo take
+    // `[…]` subdivisions too, and echo's delay is written in cycles so it
+    // needs the length. Mirrors the browser's cycleGrid
+    // (src/audio-net/Metaprogrammer.js), including reading position off the
+    // emitted event rather than scheduler.getCycle() — the scheduler
+    // increments past the cycle it just announced, so getCycle() names the
+    // next one and every client would sample an element apart.
+    #cycleGrid = null;           // { cycle, t, seconds }
+    // Armed only while the applied chain holds a patterned argument: a
+    // sub-cycle step falls between the metrics updates and the cycle
+    // boundaries, so it needs a clock of its own (see PATTERN_TICK_MS).
+    #patternTimer = null;
 
     constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
@@ -674,12 +696,75 @@ export class AggregatorBot extends Bot {
         if (!valid) return;
         if (this.scheduler) this.scheduler.setProgram(ast);
         this.#applyOrderFromProgram(ast, { programUpdate });
-        // `# room wcl …` and `# noise …` target THIS bot's master bus (the mix
-        // every client hears); adopt/drop them with the program.
-        this.#roomChain = (ast.chain || []).find((c) => c.fn === 'room') || null;
-        this.#noiseChain = (ast.chain || []).find((c) => c.fn === 'noise') || null;
+        // Every `#` audio effect targets THIS bot's master bus (the mix every
+        // client hears); adopt/drop them with the program.
+        const chain = ast.chain || [];
+        this.#roomChain = chain.find((c) => c.fn === 'room') || null;
+        this.#noiseChain = chain.find((c) => c.fn === 'noise') || null;
+        this.#crushChain = chain.find((c) => c.fn === 'crush') || null;
+        this.#echoChain = chain.find((c) => c.fn === 'echo') || null;
+        this.#syncMasterEffects();
+        this.#syncPatternLoop(chain);
+    }
+
+    /** Push all four master-bus effects. */
+    #syncMasterEffects() {
         this.#syncMasterRoom();
         this.#syncMasterNoise();
+        this.#syncMasterCrush();
+        this.#syncMasterEcho();
+    }
+
+    /**
+     * Where the room is on its cycle grid, for the effects written in cycles
+     * (`# echo`'s delay length) or sampled at a fractional position (`[…]`
+     * arguments). Position is deliberately UNCLAMPED arithmetic off the last
+     * boundary: cycle-start events are emitted a lookahead early, so between
+     * the event and the boundary the fraction is negative and the position
+     * correctly still names the previous cycle — evaluateValuePattern
+     * floor-mods, so that resolves to the last element rather than off the
+     * end. Before the first boundary there is no anchor, so fall back to the
+     * length the scheduler is about to use at position 0. Identical to the
+     * browser's cycleContext(), which is what keeps a patterned parameter the
+     * same value on the mix and in every client's visual.
+     */
+    #cycleContext() {
+        if (this.#cycleGrid && this.#cycleGrid.seconds > 0) {
+            return {
+                cycleSeconds: this.#cycleGrid.seconds,
+                cyclePos: this.#cycleGrid.cycle +
+                    (this.networkSeconds() - this.#cycleGrid.t) / this.#cycleGrid.seconds,
+            };
+        }
+        const len = this.scheduler ? this.scheduler.getCycleLength() : null;
+        return { cycleSeconds: len && len.seconds > 0 ? len.seconds : 1, cyclePos: 0 };
+    }
+
+    /**
+     * Whether the applied program has the pattern tick armed. Public for the
+     * same reason schedulerPacing is: which clock is re-deriving the effects
+     * is what a test must assert to know it exercised the sub-cycle path
+     * rather than the cycle-boundary one.
+     */
+    patternTicking() { return this.#patternTimer != null; }
+
+    /**
+     * A patterned argument moves with the CYCLE, not with the metrics, so
+     * neither the metrics hook nor the cycle-boundary hook covers a `[…]`
+     * subdivision — it needs its own tick. Whether any argument follows the
+     * grid is a property of the PROGRAM, so it is settled here, when a
+     * program is adopted, rather than re-resolved every tick; a chain of
+     * constants keeps re-deriving on metrics updates alone and this stays
+     * disarmed.
+     */
+    #syncPatternLoop(chain) {
+        const wanted = chainHasValuePattern(chain) && !!this.#setInterval;
+        if (wanted && !this.#patternTimer) {
+            this.#patternTimer = this.#setInterval(() => this.#syncMasterEffects(), PATTERN_TICK_MS);
+        } else if (!wanted && this.#patternTimer) {
+            if (this.#clearInterval) this.#clearInterval(this.#patternTimer);
+            this.#patternTimer = null;
+        }
     }
 
     /**
@@ -695,8 +780,7 @@ export class AggregatorBot extends Bot {
             ? mergeInducedMetrics(measured, this.metaprogramDoc.getInduced())
             : measured;
         if (this.scheduler) this.scheduler.setMetrics(this.#worstCase);
-        this.#syncMasterRoom();
-        this.#syncMasterNoise();
+        this.#syncMasterEffects();
     }
 
     /**
@@ -741,6 +825,46 @@ export class AggregatorBot extends Bot {
         Promise.resolve(this.page.evaluate(pageSetMasterNoise, params)).catch((e) => {
             this.#lastNoisePushJson = 'stale';
             console.error('[aggregator-bot] master noise push failed', e);
+        });
+    }
+
+    /**
+     * The same for `# crush`. Unlike room it is re-derived at every cycle
+     * boundary AND on the pattern tick, because any of its three arguments
+     * may be a `<…>`/`[…]` pattern; the JSON dedup is what keeps a tick where
+     * nothing moved from crossing into the page 20 times a second.
+     */
+    #syncMasterCrush() {
+        if (!this.page) return;
+        const params = this.#crushChain
+            ? crushParams(this.#worstCase, resolveEffectParams(this.#crushChain),
+                this.#cycleContext().cyclePos)
+            : null;
+        const json = JSON.stringify(params ?? null);
+        if (json === this.#lastCrushPushJson) return;
+        this.#lastCrushPushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMasterCrush, params)).catch((e) => {
+            this.#lastCrushPushJson = 'stale';
+            console.error('[aggregator-bot] master crush push failed', e);
+        });
+    }
+
+    /**
+     * The same for `# echo`, which additionally needs the cycle LENGTH: its
+     * delay is written in cycles, so it re-times itself whenever the metrics
+     * move the grid — a change no argument of its own reflects.
+     */
+    #syncMasterEcho() {
+        if (!this.page) return;
+        const params = this.#echoChain
+            ? echoParams(this.#worstCase, resolveEffectParams(this.#echoChain), this.#cycleContext())
+            : null;
+        const json = JSON.stringify(params ?? null);
+        if (json === this.#lastEchoPushJson) return;
+        this.#lastEchoPushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMasterEcho, params)).catch((e) => {
+            this.#lastEchoPushJson = 'stale';
+            console.error('[aggregator-bot] master echo push failed', e);
         });
     }
 
@@ -807,8 +931,11 @@ export class AggregatorBot extends Bot {
     #startScheduler() {
         // A fresh grid: drop any slots banked against the previous epoch, or
         // #serveFromScheduler would keep serving turns the old cycle grid
-        // scheduled.
+        // scheduled. The pattern anchor goes with them — it counts from cycle
+        // 0 again, so the old one would sample in a cycle that no longer
+        // exists.
         this.#resetSlotPacing();
+        this.#cycleGrid = null;
         this.scheduler = new MetaprogramScheduler({
             now: () => this.networkSeconds(),
             onEvent: (ev) => this.#onSchedulerEvent(ev),
@@ -844,7 +971,15 @@ export class AggregatorBot extends Bot {
             // reads as a slightly early fade rather than a missed cue; a
             // percussive effect would need the timeline treatment instead.
             this.#cycle = ev.cycle;
+            this.#cycleGrid = { cycle: ev.cycle, t: ev.t, seconds: ev.seconds };
+            // crush and echo come along: a boundary is the only moment the
+            // cycle LENGTH can change (the scheduler applies pending metrics
+            // here, not when they arrived), and echo's delay is quoted in
+            // cycles, so nothing else would re-time it — #refreshWorstCase ran
+            // before the swap, with the old length.
             this.#syncMasterNoise();
+            this.#syncMasterCrush();
+            this.#syncMasterEcho();
             return;
         }
         if (!ev.id) return;
@@ -1524,6 +1659,11 @@ export class AggregatorBot extends Bot {
         this.ingestTimer = null;
         if (this.#playbackTimer && this.#clearInterval) this.#clearInterval(this.#playbackTimer);
         this.#playbackTimer = null;
+        if (this.#patternTimer && this.#clearInterval) this.#clearInterval(this.#patternTimer);
+        this.#patternTimer = null;
+        // The next arming starts a fresh grid at cycle 0, so an anchor from
+        // the old one would sample patterns in a cycle that no longer exists.
+        this.#cycleGrid = null;
         this.#pendingMaster = EMPTY_MASTER;
         this.#resetSlotPacing();
         this.#ghostReplayOffset.clear();

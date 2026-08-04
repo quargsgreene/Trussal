@@ -33,6 +33,13 @@
 // goes through. Since that sampling and the metrics are identical on every
 // client, so is the resulting audio.
 //
+// Like every other audio effect, the node runs on the AGGREGATOR's master
+// path (the mix every client hears), not in each browser: bots/src/bot/
+// page-scripts.js pageMasterPlayer inlines this graph, because the
+// page-script contract forbids imports. createEchoNode below is therefore the
+// reference copy rather than the audible one; browsers keep only the Hydra
+// counterpart, visualBrightness.
+//
 // Pure math (echoParams) is separated from node construction (createEchoNode)
 // for node:test.
 
@@ -74,12 +81,11 @@ export const ECHO_MAX_DELAY_S = 20;
 // produce. Anything below it is a comb filter, not an echo (see wetGain).
 export const MIN_DELAY_S = 128 / 48000;
 
-// The echo's gain is the user's to set and is deliberately NOT clamped — but
-// this chain is spliced in AFTER the per-peer limiters (latency-instrument's
-// insertMasterChain sits between realDestination and the context destination),
-// so nothing downstream catches a large one. The node brings its own limiter,
-// the same way every per-peer chain does: gain stays expressive, full scale
-// stays a wall.
+// The echo's gain is the user's to set and is deliberately NOT clamped — and
+// on the aggregator's master path nothing downstream catches a large one: the
+// mix's gain staging is applied Node-side to the assembled buffer, upstream of
+// this graph. The node therefore brings its own limiter, the same way every
+// per-peer chain does: gain stays expressive, full scale stays a wall.
 export const LIMITER_THRESHOLD_DB = -1.0;
 
 // Slot defaults as echoParams sees them when no `#` line resolved them.

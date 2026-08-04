@@ -267,7 +267,9 @@ function pushProgramToScheduler() {
   }
   currentAst = ast;
   if (scheduler) scheduler.setProgram(ast);
-  // The program's #-chain drives the Effects Service on the master bus.
+  // The program's #-chain drives this browser's Effects Service, which today
+  // computes only the Hydra counterparts — every audio node it knows about
+  // runs on the aggregator's master bus instead (av-effects/index.js).
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
 }
 

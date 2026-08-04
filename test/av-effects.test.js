@@ -579,62 +579,72 @@ function fakeAudioCtx({ onNode = () => {} } = {}) {
   };
 }
 
-test('room and noise build no node in the local browser chain — the aggregator master owns them', () => {
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# noise wcl 1\n# crush wcl 1\n');
+test('no audio effect builds a node in the local browser chain — the aggregator master owns all four', () => {
+  const { ast, errors } = parseMetaprogram(
+    '$ participants <0>\n# room wcl 2\n# noise wcl 1\n# crush wcl 1\n# echo\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
   const inserted = [];
   const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
+  try {
+    mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60, wcpl: 0.5 });
+    assert.equal(ctx.calls.createDelay, 0, 'no local Schroeder combs and no local echo line');
+    assert.equal(ctx.calls.createBufferSource, 0, 'no local noise generators');
+    // A second copy of any of these on the local bus is the bug this guards:
+    // the room would hear the aggregator's mix reverbed, crushed or echoed
+    // twice, once per client.
+    assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
 
-  mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60, wcpl: 0.5 });
-  assert.equal(ctx.calls.createDelay, 0, 'no local Schroeder comb lines');
-  assert.equal(ctx.calls.createBufferSource, 0, 'no local noise generators');
-  assert.equal(inserted.length, 1, 'crush alone still gets a local master insert');
-
-  // A metrics update must not fall out of step now that both are skipped:
-  // crush is nodes[0] even though room and noise precede it in the chain.
-  mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
-  assert.equal(ctx.calls.createDelay, 0);
-  assert.equal(ctx.calls.createBufferSource, 0);
+    // Re-deriving must not fall out of step now that every entry is skipped.
+    mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
+    assert.equal(ctx.calls.createDelay, 0);
+    assert.equal(ctx.calls.createBufferSource, 0);
+  } finally {
+    mgr.dispose();
+  }
 });
 
 test('patterned arguments re-derive as the cycle advances; constants do not tick', (t) => {
-  const shapers = [];
-  const ctx = fakeAudioCtx({ onNode: (n) => { if (n.kind === 'waveshaper') shapers.push(n); } });
-
+  // Every audio node having moved to the aggregator, this manager's one
+  // observable output is the visual state — so the pattern is read back
+  // through crush's Hydra counterpart. A patterned METRIC rather than a
+  // patterned scale, because pixelate follows the sample-rate divisor, which
+  // the metric drives and the scale deliberately does not.
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <wcl wcj> 1\n');
+  assert.deepEqual(errors, []);
   let cyclePos = 0;
-  const { ast } = parseMetaprogram('$ participants <0>\n# crush wcl <1 2>\n');
-  const mgr = new EffectsChainManager({
-    audioCtx: ctx, insert: () => {}, remove: () => {}, getCycleContext: () => ({ cycleSeconds: 1, cyclePos })
+  withStubWindow((visual) => {
+    const mgr = new EffectsChainManager({
+      audioCtx: fakeAudioCtx(), insert: () => {}, remove: () => {},
+      getCycleContext: () => ({ cycleSeconds: 1, cyclePos })
+    });
+    // setChain arms a real 50 ms interval; without this an assertion failure
+    // below would leave it running and `node --test` would never exit.
+    t.after(() => mgr.dispose());
+
+    mgr.setChain(ast.chain, { wcl: 300, wcj: 0 });
+    assert.equal(mgr.patternTicking(), true, 'a patterned chain arms the tick');
+    assert.equal(visual().pixelate, 8, 'cycle 0 reads wcl — 300 ms is three halvings');
+
+    cyclePos = 1;
+    mgr.refresh();
+    assert.equal(visual().pixelate, 1, 'cycle 1 takes the second element, wcj, which is clean');
+    cyclePos = 2;
+    mgr.refresh();
+    assert.equal(visual().pixelate, 8, 'and wraps');
+
+    // Metrics still move it within a cycle.
+    mgr.updateMetrics({ wcl: 0, wcj: 0 });
+    assert.equal(visual().pixelate, 1, 'a clean wcl decimates nothing either');
+
+    mgr.dispose();
+    assert.equal(mgr.patternTicking(), false, 'dispose disarms the tick');
+
+    // A constant-argument chain never arms it.
+    const plain = parseMetaprogram('$ participants <0>\n# crush wcl 1\n').ast;
+    mgr.setChain(plain.chain, { wcl: 100 });
+    assert.equal(mgr.patternTicking(), false);
   });
-  // setChain arms a real 50 ms interval; without this an assertion failure
-  // below would leave it running and `node --test` would never exit.
-  t.after(() => mgr.dispose());
-
-  // wcl 100 ms halves the base: scale 1 → 4 bits, scale 2 → 8 bits.
-  mgr.setChain(ast.chain, { wcl: 100 });
-  assert.equal(mgr.patternTicking(), true, 'a patterned chain arms the tick');
-  const levels = () => new Set(Array.from(shapers[0].curve).map(v => v.toFixed(6))).size;
-  assert.equal(levels(), 2 ** 4);
-
-  cyclePos = 1;
-  mgr.refresh();
-  assert.equal(levels(), 2 ** 8, 'cycle 1 takes the second element of <1 2>');
-  cyclePos = 2;
-  mgr.refresh();
-  assert.equal(levels(), 2 ** 4, 'and wraps');
-
-  // Metrics still move it within a cycle.
-  mgr.updateMetrics({ wcl: 0 });
-  assert.equal(levels(), 2 ** 8, 'cycle 2 → scale 1 → the plain 8-bit resting depth');
-
-  mgr.dispose();
-  assert.equal(mgr.patternTicking(), false, 'dispose disarms the tick');
-
-  // A constant-argument chain never arms it.
-  const plain = parseMetaprogram('$ participants <0>\n# crush wcl 1\n').ast;
-  mgr.setChain(plain.chain, { wcl: 100 });
-  assert.equal(mgr.patternTicking(), false);
 });
 
 // The manager's only observable output for a master-bus effect is the visual
@@ -690,11 +700,15 @@ test('patterned noise arguments follow the cycle the manager is given', () => {
   });
 });
 
-test('echo: the wet path is limited, because this chain runs after the per-peer limiters', () => {
+// createEchoNode is the REFERENCE copy — the audible graph is inlined
+// page-side in the aggregator (bots page-scripts.js buildEcho, asserted in
+// bots/test/bot.test.js) — so what this checks is the shape both copies have
+// to keep.
+test('echo: the limiter sits on the wet path only, so an unclamped gain is loud rather than unbounded', () => {
   // gain is the user's parameter and is deliberately not clamped — a large one
-  // must be loud, not unbounded: insertMasterChain splices this chain between
-  // realDestination and the context destination, downstream of every per-peer
-  // limiter, so nothing else stands between it and the speakers.
+  // must be loud, not unbounded. On the aggregator's master path the mix's own
+  // gain staging is applied Node-side to the assembled buffer, upstream of
+  // this graph, so nothing downstream of the delay would catch a large one.
   const loud = echoParams({ wcl: 500 }, {
     slots: [
       { param: 'length', metric: 'wcl', scale: 1, bound: 500 },
@@ -718,7 +732,7 @@ test('echo: the wet path is limited, because this chain runs after the per-peer 
   node.dispose();
 });
 
-test('echo does build a local node, and follows the cycle grid as well as the metrics', () => {
+test('echo builds no local node, and its delay follows the cycle grid as well as the metrics', () => {
   const { ast, errors } = parseMetaprogram('$ participants <0>\n# echo wcl <1 2> wcl 0.5 wcl 1 1000\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
@@ -726,22 +740,27 @@ test('echo does build a local node, and follows the cycle grid as well as the me
   const mgr = new EffectsChainManager({
     audioCtx: ctx, insert: () => {}, remove: () => {}, getCycleContext: () => cycle
   });
+  try {
+    // The delay line lives on the aggregator's master bus; this manager owns
+    // the derivation and the visual, so the grid has to move those and build
+    // nothing.
+    mgr.setChain(ast.chain, { wcl: 1000 });
+    assert.equal(ctx.calls.createDelay, 0, 'a local delay line would echo the mix twice');
 
-  mgr.setChain(ast.chain, { wcl: 1000 });
-  assert.equal(ctx.calls.createDelay, 1, 'echo runs in the local browser chain, unlike room');
-  assert.equal(ctx.delays[0].delayTime.value, 2, '1 cycle × 2 s at cycle 0');
+    const delayS = (metrics) =>
+      computeChainParams(ast.chain, metrics, cycle).find(c => c.fn === 'echo').params.delayS;
+    assert.equal(delayS({ wcl: 1000 }), 2, '1 cycle × 2 s at cycle 0');
 
-  // Same metrics, next cycle: the pattern alone moves the delay.
-  cycle.cyclePos = 1;
-  mgr.updateMetrics({ wcl: 1000 });
-  assert.equal(ctx.delays[0].delayTime.value, 4, '2 cycles × 2 s at cycle 1');
-  assert.equal(ctx.calls.createDelay, 1, 'parameters re-derive; the graph is not rebuilt');
+    // Same metrics, next cycle: the pattern alone moves the delay.
+    cycle.cyclePos = 1;
+    assert.equal(delayS({ wcl: 1000 }), 4, '2 cycles × 2 s at cycle 1');
 
-  // Same cycle, worse metrics: normalization is already at its ceiling, so a
-  // longer cycle is what stretches the delay.
-  cycle.cycleSeconds = 3;
-  mgr.updateMetrics({ wcl: 9999 });
-  assert.equal(ctx.delays[0].delayTime.value, 6);
-
-  mgr.dispose();
+    // Same cycle, worse metrics: normalization is already at its ceiling, so a
+    // longer cycle is what stretches the delay — the point of writing the
+    // length in cycles rather than seconds.
+    cycle.cycleSeconds = 3;
+    assert.equal(delayS({ wcl: 9999 }), 6);
+  } finally {
+    mgr.dispose();
+  }
 });

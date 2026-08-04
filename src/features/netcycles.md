@@ -366,7 +366,9 @@ There exist audiovisual analogs to Strudel functions whose parameters are automa
 
 These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
 
-Effect parameters are plain positive numbers, except where the effect says otherwise: `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position. `crush` and `echo` run in each browser and are re-read on a 50 ms tick, so both `<…>` alternation and `[…]` subdivision apply; `noise` runs on the aggregator's master bus and is re-derived once per cycle boundary, so it takes `<…>` only and a `[…]` is a parse error.
+All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their Hydra counterparts are still computed locally in every browser and published to `window._ncVisual`.
+
+Effect parameters are plain positive numbers, except where the effect says otherwise: `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position. `crush` and `echo` are re-read on a 50 ms tick, so both `<…>` alternation and `[…]` subdivision apply; `noise` is re-derived once per cycle boundary only, so it takes `<…>` alone and a `[…]` is a parse error.
 
 Examples:
 
@@ -394,7 +396,7 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 - Description
 The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
 
-Like `noise`, and unlike the rest of the chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`). Where both are written the master path is `room` then `noise` regardless of the order in the program, because the bed is additive and belongs on the mix rather than in the reverb's tail.
+Like every other audio effect, room runs on the **aggregator's master bus** (see the chainable-function preamble for the fixed `crush` → `echo` → `room` → `noise` path), so everyone hears one reverb on the shared mix rather than one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`).
 - Syntax
 `# room wcl [scale factor] [amount for wcl]`
 
@@ -499,7 +501,7 @@ $ participants [0 2 1 4 3]
 
 #### noise
 - Description
-Lays a noise bed over the mix whose **spectrum** and **output volume** are each modulated by a worst-case metric of the user's choosing. The spectrum sweeps continuously from brown through pink to white, so worsening conditions open the bed's top end; the volume rises from the base level toward the clamp. Like `room` (and unlike the rest), the audio node runs on the **aggregator's master bus**, so the room hears one bed on the shared mix rather than one uncorrelated bed per browser; the Hydra grain counterpart still applies locally in every browser.
+Lays a noise bed over the mix whose **spectrum** and **output volume** are each modulated by a worst-case metric of the user's choosing. The spectrum sweeps continuously from brown through pink to white, so worsening conditions open the bed's top end; the volume rises from the base level toward the clamp. Like every other audio effect, the node runs on the **aggregator's master bus**, so the room hears one bed on the shared mix rather than one uncorrelated bed per browser; the Hydra grain counterpart still applies locally in every browser.
 
 A meeting opens **bypassed**: the default program carries no `# noise` line, so no node exists at all — not a silent one.
 - Syntax
