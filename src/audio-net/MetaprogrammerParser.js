@@ -37,6 +37,13 @@ export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 // perfectly good modulation source, and room already reads it for its cutoff.
 export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 
+// A room with no `# mosaic` directive still tiles: the mosaic is the resting
+// state of the aggregator's video, and `# mosaic false` is the deviation from
+// it. Kept as a consumer-side default rather than a line injected into
+// buildDefaultProgram, for the same reason `# tempo` is left unwritten — the
+// AST should report the directives performers actually typed.
+export const MOSAIC_ENABLED_BY_DEFAULT = true;
+
 // Whether a parsed pattern holds metric keywords or numbers, taken from its
 // first leaf. `# noise`'s slots are positional, so which of the two a `<…>`
 // carries is only known once it has been read.
@@ -79,7 +86,13 @@ const EFFECTS = {
   // in any slot, which parseChainFn's positional-numbers grammar cannot
   // express — it parses in parseNoise instead.
   noise: { kind: 'effect', grammar: 'noise', metricKeywords: EFFECT_METRICS, patternArgs: true },
-  grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true } // landmarks=false
+  grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }, // landmarks=false
+  // How the aggregator arranges the room's Hydra output in its published
+  // frame: true (or bare) tiles every Hydra participant into a square mosaic,
+  // false shows only whoever is streaming, full-frame. Unwritten means the
+  // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
+  // rather than in an injected directive nobody typed.
+  mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
 };
 
 const PATTERN_FNS = {
@@ -112,7 +125,8 @@ export const EFFECT_DEFAULTS = {
     spectrum: { metric: 'wcl', factor: 0, fixed: null },
     volume: { metric: 'wcl', factor: 0, fixed: null }
   },
-  grid: { landmarks: false }
+  grid: { landmarks: false },
+  mosaic: { enabled: MOSAIC_ENABLED_BY_DEFAULT }
 };
 
 // ---------------------------------------------------------------------------
@@ -999,8 +1013,22 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
       return { spectrum: axis(0), volume: axis(1) };
     }
     case 'grid': return { landmarks: args[0] ?? false };
+    // `# mosaic [bool]` — a bare `# mosaic` is the mosaic, same as omitting it
+    // entirely; only an explicit `false` drops to the single streaming cell.
+    case 'mosaic': return { enabled: args[0] ?? true };
     default: return { args };
   }
+}
+
+// Whether the aggregator should tile its frame, for a parsed program. Reads
+// the LAST `# mosaic` in the chain so a re-typed directive wins, and falls
+// back to the default for a program that never mentions it.
+export function mosaicEnabled(ast) {
+  const chain = (ast && ast.chain) || [];
+  for (let i = chain.length - 1; i >= 0; i--) {
+    if (chain[i].fn === 'mosaic') return !!resolveEffectParams(chain[i]).enabled;
+  }
+  return MOSAIC_ENABLED_BY_DEFAULT;
 }
 
 // The default program every room starts under (Net Cycles is always on):

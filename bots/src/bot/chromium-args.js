@@ -101,9 +101,10 @@ export function jitsiRoomUrl(baseUrl, displayName, {
   channelLastN = 0,
   videoHeight = 360,
   startBitrateKbps = 800,
-  // The aggregator has no Hydra canvas to publish; joining with video unmuted
-  // would make Jitsi request a camera and the gUM override wait forever for a
-  // canvas that never appears, hanging the join. Audio-only bots set this true.
+  // Joining with video unmuted makes Jitsi request a camera, which the gUM
+  // override answers with a canvas — so it may only be false for a bot that
+  // HAS one at document-start, or the join hangs waiting. Regular bots have
+  // their Hydra canvas; the aggregator has the mosaic's output canvas.
   videoMuted = false,
 } = {}) {
   const params = [

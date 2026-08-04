@@ -45,7 +45,10 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
 function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
-  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], roomPushes: [], metrics: 0, closed: false };
+  const calls = {
+    evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], roomPushes: [], metrics: 0, closed: false,
+    mosaicCells: [], mosaicActive: [], mosaicEnabled: [], mosaicCycle: [],
+  };
   const fakePage = {
     setUserAgent: async () => {},
     evaluateOnNewDocument: async (js) => calls.evalOnNewDoc.push(String(js)),
@@ -57,6 +60,10 @@ function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
       if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
       if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
       if (/\.setRoom\(/.test(s)) { calls.roomPushes.push(args[0]); return undefined; } // pageSetMasterRoom
+      if (/setCells\(/.test(s)) { calls.mosaicCells.push(args[0]); return true; }      // pageSetMosaicCells
+      if (/setActive\(/.test(s)) { calls.mosaicActive.push(args[0]); return true; }    // pageSetMosaicActive
+      if (/setEnabled\(/.test(s)) { calls.mosaicEnabled.push(args[0]); return true; }  // pageSetMosaicEnabled
+      if (/setCycle\(/.test(s)) { calls.mosaicCycle.push(args[0]); return true; }      // pageSetMosaicCycle
       if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
         calls.enqueued.push(args[0]);
         return (args[0] || []).length;
@@ -88,17 +95,24 @@ test('start(): joins injected browser unmuted, taps participants, no Strudel, pu
   assert.ok(calls.launchOpts.args.includes('--use-fake-device-for-media-stream'), 'launched with bot chromium args');
   assert.equal(calls.goto.length, 1);
   assert.match(calls.goto[0], /displayName="Aggregator"/);
-  // Audio-first: joins with video muted so the headless join never blocks on a
-  // Hydra canvas the aggregator never creates.
-  assert.match(calls.goto[0], /config\.startWithVideoMuted=true/);
+  // Joins with video LIVE: the mosaic's output canvas is built at
+  // document-start, so the gUM override has a canvas to hand over immediately
+  // and the headless join never blocks waiting for one.
+  assert.match(calls.goto[0], /config\.startWithVideoMuted=false/);
 
   // Ingest tap + return-path playback sink installed before navigation.
   assert.ok(calls.evalOnNewDoc.some((sink) => /__trussalAggCapture/.test(sink)), 'participant-audio tap installed');
   assert.ok(calls.evalOnNewDoc.some((s) => /__trussalMasterPlayer/.test(s)), 'return-path playback sink installed');
+  // The mosaic renderer and the WebGL readback shim its cells depend on.
+  assert.ok(calls.evalOnNewDoc.some((s) => /__trussalMosaic\b/.test(s)), 'mosaic renderer installed');
+  assert.ok(calls.evalOnNewDoc.some((s) => /preserveDrawingBuffer/.test(s)), 'preserve-drawing-buffer shim installed');
   // Unmutes audio (its published track will carry the master mix)...
   assert.ok(calls.evaluate.some((s) => /muteAudio\(false\)/.test(s)), 'publishes an unmuted audio track');
-  // ...but does NOT publish video (no canvas to capture yet).
-  assert.ok(!calls.evaluate.some((s) => /muteVideo\(false\)/.test(s)), 'does not publish a video track');
+  // ...and video, which carries the mosaic (black until someone runs Hydra).
+  // The publish itself lives in the document-start installer, so that a bot's
+  // in-page video toggle and this startup call share one implementation.
+  assert.ok(calls.evalOnNewDoc.some((s) => /muteVideo\(false\)/.test(s)), 'video publisher installed');
+  assert.ok(calls.evaluate.some((s) => /__trussalEnsureVideoPublished/.test(s)), 'publishes the mosaic video track');
   // Makes no sound of its own — never boots the Strudel REPL. (pageReadSamples
   // *queries* for a strudel-editor to diagnose; only pageStrudelBoot *creates* one.)
   assert.ok(!calls.evaluate.some((s) => /createElement\(['"]strudel-editor/.test(s)), 'does not boot Strudel');
@@ -1765,4 +1779,240 @@ test('dropping # room from the program clears the master reverb', async () => {
   assert.equal(calls.roomPushes.at(-1), null, 'removing the directive tears the reverb down');
 
   await bot.stop();
+});
+
+// --- the video mosaic ---------------------------------------------------------
+
+const HYDRA = 'await initHydra()\nosc(10).out()';
+const HYDRA_CAM = 'await initHydra()\nsrc(s0).out()';
+
+// 720p so the rectangles below read in round numbers; the frame is derived
+// from the same videoHeight the join URL caps the send side at.
+async function mosaicBot({ bandwidth = { videoHeight: 720 } } = {}) {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot({ ...cfg, bandwidth }, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  await bot.start();
+  return { calls, bus, bot };
+}
+
+test('mosaic: the frame follows the configured send-side video height, at 16:9', async () => {
+  const { calls, bus, bot } = await mosaicBot({ bandwidth: { videoHeight: 360 } });
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA }] });
+    assert.deepEqual(calls.mosaicCells.at(-1).layout[0].rect, { x: 0, y: 0, w: 640, h: 360 },
+      'a 360p cap publishes a 640x360 mosaic, not a 720p frame the bridge would only downscale');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic: a peer running Hydra gets a cell, laid out in the published frame', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+
+    // Nobody running Hydra: no cells pushed beyond whatever start() settled on.
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', pattern: 's("bd")' }] });
+    assert.deepEqual(calls.mosaicCells.at(-1)?.cells ?? [], [], 'a Strudel-only peer gets no cell');
+
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA }] });
+    const pushed = calls.mosaicCells.at(-1);
+    assert.deepEqual(pushed.cells.map(c => c.token), ['0']);
+    assert.deepEqual(pushed.slots, ['0']);
+    // One participant fills the whole frame.
+    assert.deepEqual(pushed.layout, [{ token: '0', index: 0, rect: { x: 0, y: 0, w: 1280, h: 720 } }]);
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+test('mosaic: cells fill the frame, four of them in a 2x2', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: ['0', '1', '2', '3'].map((i) => (
+      { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern: HYDRA }
+    )) });
+
+    const { layout } = calls.mosaicCells.at(-1);
+    assert.equal(layout.length, 4);
+    assert.deepEqual(layout.map(c => c.rect), [
+      { x: 0, y: 0, w: 640, h: 360 },
+      { x: 640, y: 0, w: 640, h: 360 },
+      { x: 0, y: 360, w: 640, h: 360 },
+      { x: 640, y: 360, w: 640, h: 360 },
+    ]);
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+test('mosaic: a peer stopping Hydra blanks their slot, and the next arrival takes it', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    const peers = (patterns) => ({
+      type: 'roster',
+      peers: Object.entries(patterns).map(([i, pattern]) => (
+        { peerId: `p${i}`, roomIndex: i, jitsiId: `j${i}`, pattern }
+      )),
+    });
+
+    bus.rec.deliver(peers({ 0: HYDRA, 1: HYDRA, 2: HYDRA, 3: HYDRA }));
+    assert.deepEqual(calls.mosaicCells.at(-1).slots, ['0', '1', '2', '3']);
+
+    // 1 stops: the slot goes blank in place rather than closing up.
+    bus.rec.deliver(peers({ 0: HYDRA, 1: 's("bd")', 2: HYDRA, 3: HYDRA }));
+    assert.deepEqual(calls.mosaicCells.at(-1).slots, ['0', null, '2', '3']);
+    assert.deepEqual(calls.mosaicCells.at(-1).layout.map(c => c.token), ['0', '2', '3']);
+
+    // A newcomer fills the hole rather than being appended.
+    bus.rec.deliver(peers({ 0: HYDRA, 1: 's("bd")', 2: HYDRA, 3: HYDRA, 4: HYDRA }));
+    assert.deepEqual(calls.mosaicCells.at(-1).slots, ['0', '4', '2', '3']);
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+test('mosaic: camera-fed code is marked for blitting, and carries its jitsiId', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
+      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA_CAM },
+    ] });
+
+    const { cells } = calls.mosaicCells.at(-1);
+    assert.deepEqual(cells.map(c => c.source), ['reexecute', 'blit']);
+    assert.equal(cells.find(c => c.source === 'blit').jitsiId, 'j1',
+      'the blit cell needs the endpoint id to find its incoming track');
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+// The gate that keeps a metrics tick from re-evaluating everybody's Hydra.
+test('mosaic: a metrics-only peer update does not re-push the cells', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA, rtt: 20 }] });
+    const pushes = calls.mosaicCells.length;
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 90 } });
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { jitter: 5 } });
+    assert.equal(calls.mosaicCells.length, pushes, 'metrics churn must not tear down live Hydra instances');
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { pattern: 'await initHydra()\nosc(40).out()' } });
+    assert.equal(calls.mosaicCells.length, pushes + 1, 'an edited preamble does re-push');
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+test('mosaic: the aggregator is not a cell in its own mosaic', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'pAgg', roomIndex: 'pi', jitsiId: 'jAgg', pattern: HYDRA, isAggregator: true },
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
+    ] });
+    assert.deepEqual(calls.mosaicCells.at(-1).cells.map(c => c.token), ['0']);
+  } finally {
+    await bot.stop();
+  }
+
+});
+
+test('mosaic: # mosaic false drops to the single streaming cell, and back', async () => {
+  const { calls, bot } = await mosaicBot();
+  try {
+    // Adopting the default program states the mode explicitly once, rather
+    // than leaving the page to be trusted to have started tiled.
+    assert.deepEqual(calls.mosaicEnabled, [true], 'startup asserts the tiled default');
+
+    bot.applyProgramText('$ participants <0>\n# mosaic false\n');
+    assert.equal(calls.mosaicEnabled.at(-1), false);
+
+    bot.applyProgramText('$ participants <0>\n# mosaic true\n');
+    assert.equal(calls.mosaicEnabled.at(-1), true);
+
+    // Dropping the directive returns to the tiled default, not to whatever
+    // was last set.
+    bot.applyProgramText('$ participants <0>\n# mosaic false\n');
+    bot.applyProgramText('$ participants <0>\n');
+    assert.equal(calls.mosaicEnabled.at(-1), true, 'an unwritten # mosaic tiles');
+
+    const pushes = calls.mosaicEnabled.length;
+    bot.applyProgramText('$ participants <0 1>\n');
+    assert.equal(calls.mosaicEnabled.length, pushes, 'an unchanged mode is not re-pushed');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic: the lit cell follows the turn', async () => {
+  const { calls, bus, bot } = await mosaicBot();
+  try {
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA },
+      { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA },
+    ] });
+
+    bot.applyProgramText('$ participants <0 1>\n');
+    bot.buffers['0'] = new RingBuffer(4096);
+    bot.buffers['1'] = new RingBuffer(4096);
+    bot.buffers['0'].write(new Float32Array(2048).fill(0.1));
+
+    const served = await bot.readAndAssembleMasterBuffer();
+    assert.ok(calls.mosaicActive.length > 0, 'the turn reaches the mosaic');
+    assert.equal(calls.mosaicActive.at(-1), served.active,
+      'the lit cell is the participant whose audio the master is streaming');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic: the cycle grid is pushed so H() parameters advance on the room clock', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const clockRef = { ms: 1785540000000 };
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 4000, bandwidth: { videoHeight: 720 } },
+    { launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket,
+      connectSidecar: bus.connect, now: () => clockRef.ms },
+    {}, 1024,
+  );
+  try {
+    await bot.start();
+    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+
+    clockRef.ms += 30000;
+    bot.scheduler.tick();
+
+    const anchor = calls.mosaicCycle.at(-1);
+    assert.ok(anchor, 'a cycle boundary anchors the page clock');
+    assert.ok(Number.isInteger(anchor.cycle), 'anchored to a whole cycle');
+    assert.ok(anchor.seconds > 0, 'carries the cycle length to interpolate over');
+    // The scheduler emits with a lookahead, so the boundary is normally still
+    // ahead of now. Treating it as "now" would run every pattern-bound
+    // parameter a fraction of a cycle early.
+    assert.equal(typeof anchor.inSeconds, 'number');
+    assert.ok(Math.abs(anchor.inSeconds) < anchor.seconds + 1,
+      'the boundary is within a cycle of now, not on some other timebase');
+
+    // Re-anchoring every cycle is what stops the page's interpolation drifting,
+    // so this must NOT be deduplicated away.
+    const before = calls.mosaicCycle.length;
+    clockRef.ms += 30000;
+    bot.scheduler.tick();
+    assert.ok(calls.mosaicCycle.length > before, 'each cycle re-anchors');
+  } finally {
+    await bot.stop();
+  }
 });

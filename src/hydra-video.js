@@ -8,6 +8,10 @@
 // peer's rtt/jitter when the corresponding effect toggle is on.
 
 import { subscribePeerState } from './peer-state.js';
+// The REAL camera. A plain getUserMedia here would be intercepted by the
+// published-video override and hand back the canvas the room sees, leaving
+// `s0` (and this panel) showing their own output instead of the camera.
+import { openCamera } from './published-video.js';
 
 export const MODE_SPLIT  = 'split';
 export const MODE_DIRECT = 'direct';
@@ -123,7 +127,7 @@ async function _autoStartVideo() {
   }
   if (!_videoEl?.srcObject) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+      const stream = await openCamera({ video: { width: 320, height: 240 } });
       _stream = stream;
       setVideoStream(stream);
     } catch (e) {
@@ -431,7 +435,7 @@ export function injectHydraVideoToggle(headerEl) {
     if (_panelOpen && !_videoEl?.srcObject) {
       // Open own camera if FG hasn't shared an active stream.
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+        const stream = await openCamera({ video: { width: 320, height: 240 } });
         _stream = stream;
         setVideoStream(stream);
       } catch (e) {

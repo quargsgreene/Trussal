@@ -139,6 +139,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       isBot: record.isBot,
       isAggregator: record.isAggregator,
       muted: record.muted,
+      videoOn: record.videoOn,
       canEditMetaprogram: record.canEditMetaprogram,
       canWriteModulation: record.canWriteModulation
     };
@@ -271,6 +272,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       isAggregator: false,
       isFleet: false,
       muted: false,
+      // Every non-aggregator participant joins with video off; a bot's owner
+      // turns its tile on from the studio (remote-control action 'video').
+      videoOn: false,
       // Metaprogram permissions. Humans always read+edit; bots default to
       // read-only until their owner grants edit (Phase 8 UI, enforced here).
       canEditMetaprogram: true,
@@ -613,6 +617,13 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             target.muted = !!msg.muted;
             send(target.ws, { type: 'remote-control', action: 'mute', muted: target.muted });
             broadcast(room, target.peerId, { type: 'peer-update', peerId: target.peerId, patch: { muted: target.muted } });
+          } else if (msg.action === 'video') {
+            // Every non-aggregator joins dark; this is how a human turns their
+            // own bot's tile on. Like mute, the state lives here so a studio
+            // that joins later sees the tile's real state rather than assuming.
+            target.videoOn = !!msg.videoOn;
+            send(target.ws, { type: 'remote-control', action: 'video', videoOn: target.videoOn });
+            broadcast(room, target.peerId, { type: 'peer-update', peerId: target.peerId, patch: { videoOn: target.videoOn } });
           }
           break;
         }

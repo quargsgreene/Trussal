@@ -5,6 +5,8 @@ import {renderAudioConfigCheck} from './audio-config-check.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
+import { installPublishedVideoOverride, startWithVideoMuted } from './published-video.js';
+import { installHydraParamApi } from './hydra-params.js';
 import './studio.js';
 
 window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
@@ -50,6 +52,27 @@ window.__trussalIsActiveAggregator = () => {
   const local = getLocalPeer();
   return !!(winner && local && local.isAggregator && winner.jitsiId === local.jitsiId);
 };
+
+// The mosaic re-executes participants' Hydra preambles, which may bind
+// parameters to Strudel patterns via `H(...)`. Lend the aggregator the pattern
+// half of Strudel so those animate instead of holding at a constant.
+if (window.__trussalIsAggregator) installHydraParamApi();
+
+// Before anything can ask for a camera. A participant's published video is
+// their Hydra output or black — never the raw camera — so this has to be in
+// place ahead of lib-jitsi-meet's first getUserMedia, and ahead of the
+// video-off default, which only decides whether that canvas is sent.
+//
+// Bots are exempt, aggregator included (pageMarkBot sets this on both). They
+// install their own getUserMedia override at document-start — before this
+// bundle runs — and it already hands Jitsi the right canvas: a regular bot's
+// Hydra canvas, or the aggregator's composited mosaic. Wrapping it again would
+// publish a copy of a copy, and `startWithVideoMuted` here would fight the
+// videoMuted flag their join URL already sets deliberately per bot kind.
+if (!window.__trussalIsBot) {
+  installPublishedVideoOverride();
+  startWithVideoMuted();
+}
 
 renderAudioConfigCheck();
 // renderJamulusWelcomePanelAndBanner();

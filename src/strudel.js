@@ -19,6 +19,7 @@ import { registerSamplesFromDB } from './user-samples.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
 import { rewriteLiveCalls } from './live-input-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
+import { normalizePeerCode, splitHydraCode } from './hydra-code.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
@@ -185,12 +186,11 @@ function buildPeerBlock(peer) {
   const netCycles = isNetCyclesActive();
   const source = netCycles ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
 
-  let code = (source || '').replace(/[\s;]+$/g, '');
+  // Trailing noise and *name: widget declarations (buttons, not patterns) are
+  // stripped by the shared normalizer — the same one the aggregator's mosaic
+  // runs before asking whether this peer is running Hydra.
+  let code = normalizePeerCode(source);
   if (!code || !peer.playing) return null;
-
-  // Strip *name: code lines — these are button widget declarations, not patterns.
-  code = code.replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '').trim();
-  if (!code) return null;
 
   // live(): re-emit the device name as a transpiler-proof literal, and for
   // remote peers swap in the silent stub — capture belongs to the authoring
@@ -218,18 +218,14 @@ function buildPeerBlock(peer) {
   // no re-evaluation needed when a slot opens or closes.
   if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
 
-  // Detect hydra preamble: code that begins with `await initHydra(...)`.
-  // Split at the first blank line: preamble above, strudel code below.
-  if (/^\s*await\s+initHydra\s*\(/.test(code)) {
-    const blankMatch = code.match(/\n\n+/);
-    if (!blankMatch) {
-      // Entire block is the hydra preamble — no Strudel pattern voice.
-      return code;
-    }
-    const preamble    = code.slice(0, blankMatch.index).trim();
-    const strudelCode = code.slice(blankMatch.index).trim();
-    if (!strudelCode || remoteVoiceExcluded) return preamble;
-    return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
+  // Hydra preamble (code beginning `await initHydra(...)`, running to the
+  // first blank line) — split by the shared rule so this page and the
+  // aggregator's mosaic never disagree about which peers are running Hydra.
+  const hydra = splitHydraCode(code);
+  if (hydra) {
+    // A Hydra-only block has no Strudel voice to build.
+    if (!hydra.strudel || remoteVoiceExcluded) return hydra.preamble;
+    return `${hydra.preamble}\n\n${buildStrudelVoice(hydra.strudel, fx)}`;
   }
 
   if (remoteVoiceExcluded) return null;
