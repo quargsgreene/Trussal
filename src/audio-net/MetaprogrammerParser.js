@@ -7,10 +7,12 @@
 // Everything else — arbitrary Strudel calls, any Hydra call, a parenthesized
 // expression anywhere — is a validation error. Effect arguments are plain
 // positive numbers, except where a signature opts in to mini-notation values
-// (`# crush <wcl wcj> <2 4>`, `# echo`'s scales and bounds, `# noise`'s every
-// slot): those parse to a `valueSeq` node the caller reads per cycle via
-// ValuePattern.js. `# noise` takes `<…>` alternation only — it is re-derived
-// once per cycle boundary, so a `[…]` subdivision has nowhere to land.
+// (`# room` and `# crush`'s metric/scale/pinned amount, `# echo`'s scales and
+// bounds, `# noise`'s every slot): those parse to a `valueSeq` node the caller
+// reads per cycle via ValuePattern.js, and may carry rests and a `*n` / `/n`
+// rate. `# noise` takes `<…>` alternation at rate 1 or slower only — it is
+// re-derived once per cycle boundary, so a `[…]` subdivision or a `*2` has
+// nowhere to land.
 //
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
 // in the browser bundle, in bots, and under node:test. Errors carry
@@ -28,8 +30,10 @@ import {
 // that module touches WebAudio until createEchoNode() is CALLED with a
 // context, so importing it keeps this parser loadable in the bots process.
 import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.js';
-// The one reader for every patterned `#` argument, whatever the effect.
-import { evaluateValuePattern, isValuePattern } from './ValuePattern.js';
+// The one reader for every patterned `#` argument, whatever the effect — and
+// the bare-`?` probability, which is that reader's to define rather than the
+// grammar's.
+import { evaluateValuePattern, isValuePattern, DEFAULT_DROP_CHANCE } from './ValuePattern.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
@@ -53,6 +57,15 @@ function valuePatternKind(node) {
 }
 export const TEMPO_UNITS = ['bpm', 'cps', 'cpm'];
 
+// Modifiers that attach to ONE element of a patterned `#` argument, the same
+// four that attach to one turn of a `$ participants` sequence.
+const VALUE_ELEMENT_OPS = new Set(['@', '?', '!', '*', '/']);
+
+// `!` expands at parse time, so the count is a real allocation rather than a
+// number the reader walks past. The scheduler bounds the same work per cycle
+// with MAX_EXPANSION_STEPS; this is that bound applied to one written element.
+export const MAX_VALUE_REPEATS = 1024;
+
 // crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
 // which turns its metric into a duration and has no meaning for a round trip.
 export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
@@ -63,9 +76,12 @@ export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
 // `metricPairs` instead takes that many <metric> <scale> pairs, one per
 // parameter, followed by that many optional upper bounds (`# echo`, below).
 // `patternArgs` additionally lets the metric and the numbers be written as
-// mini-notation sequences (`# crush <wcl wcj> <2 4>`), read per cycle.
+// mini-notation sequences (`# crush <wcl wcj> <2 4>`), read per cycle — rests
+// and a trailing `*n` / `/n` rate included.
 const EFFECTS = {
-  room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: ['wcl'] }, // scale=1, fixed wcl seconds=live
+  // scale=1, fixed metric amount=live. Any worst-case metric may drive the
+  // decay, and all three arguments pattern — `# room <wcl wcj> <1 2 ~ 2 3>*2`.
+  room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: EFFECT_METRICS, patternArgs: true },
   echo: {
     kind: 'effect',
     metricKeywords: ECHO_METRICS,
@@ -97,7 +113,7 @@ const PATTERN_FNS = {
 };
 
 export const EFFECT_DEFAULTS = {
-  room: { metric: 'wcl', scale: 1, fixedWclS: null },
+  room: { metric: 'wcl', scale: 1, fixedMetric: null },
   // Bare `# echo`: wcl drives all three parameters, at half a cycle of delay,
   // half feedback and unity gain — each still normalized against wcl's default
   // upper bound, so these are the values reached at that bound rather than
@@ -551,14 +567,26 @@ class Parser {
   // `kind` is 'metric', 'number', or 'any' where the slot is positional and
   // could be either (`# noise <wcl wcpl> <20 5>`); 'any' infers it from the
   // leaves and refuses a pattern that mixes the two. `alternationOnly` rejects
-  // `[…]`: an effect re-derived once per cycle boundary has nowhere to put a
-  // sub-cycle subdivision, so it is an error rather than quietly behaving as
-  // alternation. Nesting otherwise mixes modes freely.
-  parseValueSequence(name, kind, sig, { alternationOnly = false } = {}) {
+  // `[…]` and any rate above 1: an effect re-derived once per cycle boundary
+  // has nowhere to put a sub-cycle step, so it is an error rather than quietly
+  // aliasing to something the performer did not write. Nesting otherwise mixes
+  // modes and rates freely.
+  //
+  // A `~` leaf is a REST — no value for that span. It parses to null, which
+  // ValuePattern.js reads back unchanged and each effect's params function
+  // already treats as "use the default", so a rest leaves the parameter alone
+  // for as long as it is in force. Rests settle nothing about the leaf kind:
+  // `<wcl ~ wcj>` is still a pattern of metrics.
+  parseValueSequence(name, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
     const open = this.next(); // '<' or '['
     const close = open.value === '<' ? '>' : ']';
     const mode = open.value === '<' ? 'alternate' : 'subdivide';
     const terms = [];
+    // Parallel to `terms`, and left sparse: a pattern nobody weighted, dropped
+    // or rated keeps the node shape it has always had.
+    const weights = [];
+    const chances = [];
+    const rates = [];
     if (alternationOnly && open.value === '[') {
       this.error(`'${name}' arguments are sampled once per cycle — use '<…>' alternation, not '[…]'`, open);
       return null;
@@ -590,21 +618,37 @@ class Parser {
         break;
       }
       if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
-        const inner = this.parseValueSequence(name, kind, sig, { alternationOnly });
+        // The nested call consumes its own trailing RATE (`<a [b c]*2>`) but
+        // leaves `@` and `?` for us: those weigh and drop the group as an
+        // element of THIS sequence, so they belong in our parallel arrays.
+        const inner = this.parseValueSequence(name, kind, sig, { alternationOnly, topLevel: false });
         if (!inner) return null;
         const innerKind = valuePatternKind(inner);
         if (innerKind && !settleKind(innerKind, t)) return null;
         terms.push(inner);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
+        continue;
+      }
+      if (t.type === 'rest') {
+        this.next();
+        terms.push(null);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
       if ((kind === 'metric' || kind === 'any') && t.type === 'word') {
         if (!settleKind('metric', t)) return null;
         if (!sig.metricKeywords.includes(t.value)) {
           this.error(`'${t.value}' is not a metric '${name}' can read (${sig.metricKeywords.join('|')})`, t);
+          // Stand a rest in its place so the parallel weight/chance arrays stay
+          // aligned with `terms`. The program is already invalid, so nothing
+          // downstream reads this — but a misaligned array would make the
+          // errors that follow describe the wrong element.
+          terms.push(null);
         } else {
           terms.push(t.value);
         }
         this.next();
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
       if ((kind === 'number' || kind === 'any') && (t.type === 'number' || t.type === 'intlike')) {
@@ -612,13 +656,19 @@ class Parser {
         const val = this.readPositiveNumber(name, 'arguments');
         if (val == null) return null;
         terms.push(val);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
       if (t.type === 'op') {
-        // `<2@3 4>` — name the modifier rather than letting the leaf error
-        // blame '@' for not being a number, and swallow its operand too so
-        // the 3 is not then read as another element of the sequence.
-        this.error(`'${name}' pattern arguments do not take modifiers ('${t.value}')`, t);
+        // `@` and `?` are consumed by parseValueElementModifiers as part of
+        // the element they follow, and a group eats its own rate, so anything
+        // reaching here has no element to attach to (a leading `<*2 …>`) or is
+        // an operator a value cannot carry. Name it rather than letting the
+        // leaf error blame it for not being a number, and swallow its operand
+        // too so the count is not then read as another element.
+        this.error(
+          `'${name}' pattern elements take '@' (weight) and '?' (chance); ` +
+          `'${t.value}' is not one of them — '*' and '/' set the rate of a whole <…> or […] group`, t);
         this.next();
         const operand = this.peek();
         if (operand.type === 'number' || operand.type === 'intlike') this.next();
@@ -637,16 +687,157 @@ class Parser {
       this.error(`empty pattern argument to '${name}'`, open);
       return null;
     }
-    // Sequence-level postfix (`<2 4>*2`) has no meaning for a parameter that
-    // is sampled at a point in time — say so rather than letting the generic
-    // trailing-junk error blame the operator's operand.
+    const speed = this.parseValueRate(name);
+    // Nested, an element modifier here belongs to the PARENT — this group is
+    // one of its elements — so leave it. (`*` and `/` never reach this point:
+    // parseValueRate above has already taken them as this sequence's own rate.)
+    // At the top level there is no parent to attach to, and saying so beats the
+    // generic trailing-argument error.
     const after = this.peek();
     if (after.type === 'op') {
-      this.error(`'${name}' pattern arguments do not take modifiers ('${after.value}')`, after);
+      const elementModifier = VALUE_ELEMENT_OPS.has(after.value);
+      if (!topLevel && elementModifier) return this.finishValueSequence(
+        { mode, terms, weights, chances, rates, speed, open, name, alternationOnly });
+      this.error(elementModifier
+        ? `'${after.value}' modifies one ELEMENT of a pattern — write it inside the '${mode === 'alternate' ? '<…>' : '[…]'}', not after it`
+        : `'${name}' pattern arguments take only the '*' and '/' rate operators, not '${after.value}'`, after);
       this.recover();
       return null;
     }
-    return { type: 'valueSeq', mode, terms, line: open.line, col: open.col };
+    return this.finishValueSequence({ mode, terms, weights, chances, rates, speed, open, name, alternationOnly });
+  }
+
+  // Assemble the node, dropping the parallel arrays and the rate when nothing
+  // wrote them — an unmodified pattern keeps the shape it has always had
+  // rather than growing fields that always read 1 and null.
+  finishValueSequence({ mode, terms, weights, chances, rates, speed, open, name, alternationOnly }) {
+    if (alternationOnly && speed > 1) {
+      this.error(`'${name}' arguments are sampled once per cycle — a rate above 1 ` +
+        'steps within a cycle, which has nowhere to land here', open);
+      return null;
+    }
+    const node = { type: 'valueSeq', mode, terms, line: open.line, col: open.col };
+    if (speed !== 1) node.speed = speed;
+    if (weights.some(weight => weight != null)) node.weights = Array.from(terms, (_, i) => weights[i] ?? 1);
+    if (chances.some(chance => chance != null)) node.chances = Array.from(terms, (_, i) => chances[i] ?? null);
+    if (rates.some(rate => rate != null)) node.rates = Array.from(terms, (_, i) => rates[i] ?? 1);
+    return node;
+  }
+
+  // Every element-level modifier a value pattern takes, after one element:
+  //
+  //   `@n`   how much of the sequence the element takes
+  //   `?[p]` dropped with probability p, reading as a rest
+  //   `!n`   taken n times in a row, as n independent elements
+  //   `*n` `/n`  the rate the element's OWN content is read at
+  //
+  // The same four are element-level in the `$ participants` grammar. `*n` and
+  // `/n` are the one spelling that is both: written after a whole `<…>` /
+  // `[…]` they set that sequence's rate, and a nested group has already eaten
+  // its own by the time we get here — so a rate reaching this point belongs to
+  // the element it follows.
+  //
+  // Fills the caller's parallel arrays in place and expands `!` into repeated
+  // terms; errors are recorded, never thrown.
+  parseValueElementModifiers(name, index, terms, weights, chances, rates) {
+    let repeats = 1;
+    let rate = 1;
+    for (;;) {
+      const op = this.peek();
+      if (op.type !== 'op' || !VALUE_ELEMENT_OPS.has(op.value)) break;
+      this.next();
+      const countTok = this.peek();
+      // The count must be GLUED to the operator to belong to it — with a gap
+      // it is the next element of the sequence (`<1? 2>` is a maybe-1 followed
+      // by 2, `<1! 2>` a doubled 1 followed by 2), as in a participants
+      // sequence. `@` demands the same here, where parseModifiers lets it take
+      // the next numeric token whatever the gap: the elements of a value
+      // pattern are usually bare numbers, so a stray space in `<1@ 2>` would
+      // quietly eat the 2 as a weight and leave a one-element pattern that
+      // still parses.
+      const glued = (countTok.type === 'number' || countTok.type === 'intlike')
+        && countTok.line === op.line && countTok.col === op.col + 1;
+      const count = glued
+        ? (typeof countTok.value === 'number' ? countTok.value : parseFloat(countTok.value))
+        : NaN;
+      if (glued) this.next(); // the count belongs to the operator
+
+      if (op.value === '?') {
+        if (glued && !(count >= 0 && count <= 1)) this.error(`'${name}' pattern '?' probability must be in [0, 1]`, countTok);
+        else if (chances[index] != null) this.error(`'${name}' pattern element already has a '?' chance`, op);
+        else chances[index] = glued ? count : DEFAULT_DROP_CHANCE;
+        continue;
+      }
+      if (op.value === '!') {
+        // Bare `!` is "once more", i.e. `!2`.
+        const wanted = glued ? count : 2;
+        if (!(wanted >= 1) || !isFinite(wanted)) {
+          this.error(`'${name}' pattern '!' needs a repeat count of 1 or more`, glued ? countTok : op);
+        } else if (wanted > MAX_VALUE_REPEATS) {
+          this.error(`'${name}' pattern '!' repeats at most ${MAX_VALUE_REPEATS} times`, glued ? countTok : op);
+        } else if (repeats !== 1) {
+          this.error(`'${name}' pattern element already has a '!' repeat count`, op);
+        } else {
+          repeats = Math.round(wanted);
+        }
+        continue;
+      }
+      if (op.value === '*' || op.value === '/') {
+        if (!glued) {
+          this.error(`'${name}' pattern '${op.value}' needs a positive rate written against it, as in '2${op.value}3'`, op);
+          continue;
+        }
+        if (!(count > 0) || !isFinite(count)) this.error(`'${name}' pattern '${op.value}' needs a positive rate`, countTok);
+        else rate = op.value === '*' ? rate * count : rate / count;
+        continue;
+      }
+      if (!glued) {
+        this.error(`'${name}' pattern '@' needs a positive weight written against it, as in '2@3'`, op);
+        continue;
+      }
+      if (!(count > 0) || !isFinite(count)) this.error(`'${name}' pattern '@' needs a positive weight`, countTok);
+      else if (weights[index] != null) this.error(`'${name}' pattern element already has an '@' weight`, op);
+      else weights[index] = count;
+    }
+
+    if (rate !== 1) rates[index] = rate;
+    // `!` replicates the element into that many INDEPENDENT ones, each keeping
+    // its weight, chance and rate — so a `?` on a replicated element draws once
+    // per copy rather than once for all of them, which is what the scheduler
+    // does with `entry.replica`. Expanding here rather than at read time keeps
+    // the node a plain list of terms for everything downstream.
+    for (let copy = 1; copy < repeats; copy++) {
+      terms.push(terms[index]);
+      weights[terms.length - 1] = weights[index];
+      chances[terms.length - 1] = chances[index];
+      rates[terms.length - 1] = rates[index];
+    }
+  }
+
+  // Trailing `*n` / `/n` on a value sequence: the rate the argument is read
+  // at, in the sequence's own units. `*2` fits both elements of a `<a b>` into
+  // one cycle, `/2` holds each for two. They compose the way they do on a
+  // `$ participants` sequence, so `*4/2` is ×2. Returns the folded multiplier
+  // (1 when nothing was written); errors are recorded, never thrown.
+  parseValueRate(name) {
+    let speed = 1;
+    for (;;) {
+      const t = this.peek();
+      if (t.type !== 'op' || (t.value !== '*' && t.value !== '/')) return speed;
+      this.next();
+      const arg = this.peek();
+      if (arg.type !== 'number' && arg.type !== 'intlike') {
+        this.error(`'${name}' pattern rate '${t.value}' needs a positive number`, t);
+        return speed;
+      }
+      this.next();
+      const val = typeof arg.value === 'number' ? arg.value : parseFloat(arg.value);
+      if (!(val > 0) || !isFinite(val)) {
+        this.error(`'${name}' pattern rate '${t.value}' needs a positive number`, arg);
+        continue;
+      }
+      speed = t.value === '*' ? speed * val : speed / val;
+    }
   }
 
   atStatementEnd() {
@@ -950,9 +1141,11 @@ export function parseMetaprogram(text) {
 export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
   const { fn, args } = chainEntry;
   switch (fn) {
-    // `# room wcl <scale> [<fixed wcl seconds>]` — decay = scale × wcl; the
-    // optional second number pins wcl (0.4 = 400 ms) instead of live metrics.
-    case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedWclS: args[1] ?? null };
+    // `# room <metric> [scale] [fixed metric amount]` — decay = scale × the
+    // named metric; the optional third token pins it (0.4 = 400 ms) instead of
+    // reading live metrics. Any of the three may be a valueSeq node
+    // (`# room <wcl wcj> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
+    case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
     // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
     // per parameter, each carrying its own metric, scale (number or pattern)
     // and upper bound. Written-out pairs win; anything missing takes the

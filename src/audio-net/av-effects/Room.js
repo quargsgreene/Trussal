@@ -1,17 +1,22 @@
-// room — Schroeder reverb whose DECAY TIME follows the room's worst-case
-// latency, with a cascaded lowpass whose cutoff tracks worst-case RTT.
+// room — Schroeder reverb whose DECAY TIME follows a worst-case network
+// metric, with a cascaded lowpass whose cutoff tracks worst-case RTT.
 //
-//   decay (RT60, s) = scale × wcl_s     wcl_s = fixedWclS ?? wcl/1000 (wcl in ms)
+//   decay (RT60, s) = scale × metric_s   metric_s = fixed ?? metric / its units
 //   comb feedback_i = 0.001^(base_i / decay)   (clamped below unity)
 //   cutoff          = wcrtt × wcrttFactor × 100 Hz   (wcrtt in ms)
 //
-// `# room wcl <scale> [<fixed wcl seconds>]` — with the optional third token
-// the metric is pinned (0.4 = 400 ms) and live metrics no longer move it.
-// The audio node runs on the AGGREGATOR's master path (the mix every client
-// hears), not in each browser; browsers keep only the Hydra visual
+// `# room <metric> [<scale>] [<fixed metric amount>]` — with the optional third
+// token the metric is pinned (0.4 = 400 ms) and live metrics no longer move it.
+// Any of the three may be a mini-notation pattern instead of a constant, read
+// at the caller's position on the cycle grid, exactly as `# crush`'s are; a
+// rest in one leaves that argument at its default for as long as it is in
+// force. The audio node runs on the AGGREGATOR's master path (the mix every
+// client hears), not in each browser; browsers keep only the Hydra visual
 // counterpart. The same cutoff (normalized) is exported for that visual so
 // the image blurs as the audio darkens. Pure math is separated from node
 // construction for node:test.
+
+import { evaluateValuePattern } from '../ValuePattern.js';
 
 // Classic Schroeder comb/allpass tunings (seconds).
 export const COMB_BASES_S = [0.0297, 0.0371, 0.0411, 0.0437];
@@ -34,13 +39,51 @@ export function rt60CombFeedback(delayS, decayS) {
   return Math.min(MAX_COMB_FEEDBACK, Math.pow(0.001, delayS / decayS));
 }
 
-export function roomParams(metrics, { scale = 1, fixedWclS = null, wcrttFactor = 1 } = {}) {
-  const wclS = fixedWclS != null ? Math.max(0, fixedWclS) : Math.max(0, (metrics && metrics.wcl) || 0) / 1000;
+// Units of each metric to one second of decay. The durations are broadcast in
+// ms; wcpl is a loss FRACTION and is taken as it stands, so `# room wcpl 2` is
+// a 200 ms tail at 10 % loss. A pinned amount is already quoted in seconds /
+// fraction (0.4 = 400 ms), matching `# crush`'s and `# noise`'s third token.
+//
+// A divisor rather than a seconds-per-unit multiplier because 43 / 1000 is
+// exact where 43 * 0.001 is not, and the decay feeds an exponent — every
+// client solving the same comb gains from the same metrics should land on the
+// same float, not one an ulp apart.
+export const METRIC_PER_SECOND = { wcl: 1000, wcj: 1000, wcrtt: 1000, wcpl: 1 };
+
+export const DEFAULT_METRIC = 'wcl';
+
+// The decay's driving metric in seconds. A pinned amount wins over the live
+// reading; either way the result is floored at 0, since a negative decay is
+// not a shorter tail but an unsolvable feedback gain.
+export function roomMetricSeconds(metric, metrics, fixed = null) {
+  if (Number.isFinite(fixed) && fixed >= 0) return fixed;
+  const live = (metrics || {})[metric];
+  return Math.max(0, Number.isFinite(live) ? live : 0) / METRIC_PER_SECOND[metric];
+}
+
+export function roomParams(metrics, user = {}, cyclePos = 0) {
+  // hasOwn, not truthiness: METRIC_PER_SECOND is a plain object, so a pattern
+  // leaf of 'constructor' would inherit a truthy value off the prototype, pass
+  // as a metric, and make every number below NaN (the same guard crushParams
+  // carries over HALVING_AMOUNTS).
+  const metricRaw = evaluateValuePattern(user.metric ?? DEFAULT_METRIC, cyclePos);
+  const metric = Object.hasOwn(METRIC_PER_SECOND, metricRaw) ? metricRaw : DEFAULT_METRIC;
+  // A rest — or any leaf that is not a usable number — reads as "no value
+  // here", which for a scale is the unity default rather than a silent 0.
+  const scaleRaw = evaluateValuePattern(user.scale ?? 1, cyclePos);
+  const scale = (Number.isFinite(scaleRaw) && scaleRaw > 0) ? scaleRaw : 1;
+  const fixedRaw = evaluateValuePattern(user.fixedMetric ?? null, cyclePos);
+  const wcrttFactor = user.wcrttFactor ?? 1;
+
+  const metricS = roomMetricSeconds(metric, metrics, Number.isFinite(fixedRaw) ? fixedRaw : null);
   const wcrtt = Math.max(0, (metrics && metrics.wcrtt) || 0);
-  const decayS = Math.max(0, scale) * wclS;
+  const decayS = scale * metricS;
   const rawCutoff = wcrtt * wcrttFactor * 100;
   const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
   return {
+    // Which metric is driving, so a readout (and the aggregator's push
+    // dedup) can see it move without re-resolving the pattern themselves.
+    metric,
     decayS,
     combDelaysS: COMB_BASES_S.slice(),
     allpassDelaysS: ALLPASS_BASES_S.slice(),

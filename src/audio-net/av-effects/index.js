@@ -66,7 +66,7 @@ export function computeChainParams(chainEntries, metrics, cycle = {}) {
     // the position has to reach resolveEffectParams as well.
     const user = resolveEffectParams(entry, { cycle: cycle.cyclePos || 0 });
     switch (entry.fn) {
-      case 'room': out.push({ fn: 'room', params: roomParams(metrics, user) }); break;
+      case 'room': out.push({ fn: 'room', params: roomParams(metrics, user, cycle.cyclePos || 0) }); break;
       case 'echo': out.push({ fn: 'echo', params: echoParams(metrics, user, cycle) }); break;
       case 'crush': out.push({ fn: 'crush', params: crushParams(metrics, user, cycle.cyclePos || 0) }); break;
       case 'noise': out.push({ fn: 'noise', params: noiseParams(metrics, user) }); break;
