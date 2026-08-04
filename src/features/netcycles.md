@@ -368,6 +368,8 @@ There exist audiovisual analogs to Strudel functions whose parameters are automa
 
 These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
 
+All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their Hydra counterparts are still computed locally in every browser and published to `window._ncVisual`.
+
 Effect parameters are plain positive numbers, except where the effect says otherwise: `room`, `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position.
 
 A patterned argument is read the way a `$ participants` sequence is, on the same timeline model and with the same operators: a sequence owns units, and a cycle shows a window of them. What they apply to here is a VALUE — the parameter in force over that span — rather than a turn.
@@ -389,7 +391,7 @@ A patterned argument is read the way a `$ participants` sequence is, on the same
 
 **`?` is not a per-client coin flip.** The draw is seeded — by the pattern's position in the program text, the element's index (so replicas made by `!` draw separately), and which repetition of the sequence it is — so every browser and the aggregator drop and keep exactly the same elements at the same instants. Seeding by the occurrence rather than by the cycle also means an element widened by `@` or `/` decides **once, as a whole**, instead of flickering at each cycle boundary. This is the same generator, and the same guarantee, that `?` and `|` on a participant turn already run on.
 
-Which of them a given effect can use follows from how often it is re-read. `crush` and `echo` run in each browser, and `room` on the aggregator's master bus; all three are re-read on a 50 ms tick, so subdivision and any rate apply. `noise` also runs on the master bus but is re-derived once per cycle boundary, so it takes `<…>` at rate 1 or slower only — a `[…]` or a `*2` has nowhere to land within its cycle and is a parse error.
+Which of them a given effect can use follows from how often it is re-read. `crush`, `echo` and `room` are re-read on a 50 ms tick, so subdivision and any rate apply. `noise` is re-derived once per cycle boundary, so it takes `<…>` at rate 1 or slower only — a `[…]` or a `*2` has nowhere to land within its cycle and is a parse error.
 
 Examples:
 
@@ -417,7 +419,7 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 - Description
 The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
 
-Like `noise`, and unlike the rest of the chainable functions, room runs on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser. Everyone therefore hears one reverb on the shared mix, not one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`). Where both are written the master path is `room` then `noise` regardless of the order in the program, because the bed is additive and belongs on the mix rather than in the reverb's tail.
+Like every other audio effect, room runs on the **aggregator's master bus** (see the chainable-function preamble for the fixed `crush` → `echo` → `room` → `noise` path), so everyone hears one reverb on the shared mix rather than one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`).
 - Syntax
 `# room <metric> [scale factor] [amount for metric]`
 
@@ -536,7 +538,7 @@ $ participants [0 2 1 4 3]
 
 #### noise
 - Description
-Lays a noise bed over the mix whose **spectrum** and **output volume** are each modulated by a worst-case metric of the user's choosing. The spectrum sweeps continuously from brown through pink to white, so worsening conditions open the bed's top end; the volume rises from the base level toward the clamp. Like `room` (and unlike the rest), the audio node runs on the **aggregator's master bus**, so the room hears one bed on the shared mix rather than one uncorrelated bed per browser; the Hydra grain counterpart still applies locally in every browser.
+Lays a noise bed over the mix whose **spectrum** and **output volume** are each modulated by a worst-case metric of the user's choosing. The spectrum sweeps continuously from brown through pink to white, so worsening conditions open the bed's top end; the volume rises from the base level toward the clamp. Like every other audio effect, the node runs on the **aggregator's master bus**, so the room hears one bed on the shared mix rather than one uncorrelated bed per browser; the Hydra grain counterpart still applies locally in every browser.
 
 A meeting opens **bypassed**: the default program carries no `# noise` line, so no node exists at all — not a silent one.
 - Syntax

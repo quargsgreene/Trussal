@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { RingBuffer } from '../src/bot/ring-buffer.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from '../src/bot/aggregator-bot.js';
 import { computeWorstCaseMetrics } from '../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
+import { crushParams } from '../../src/audio-net/av-effects/Crush.js';
 
 // A fake sidecar connector (shape: (url, {onOpen, onMessage}) => {send, close})
 // that answers the aggregator-claim with a fixed verdict. Records the URL it was
@@ -45,7 +46,10 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
 function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
-  const calls = { evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], roomPushes: [], metrics: 0, closed: false };
+  const calls = {
+    evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false,
+    roomPushes: [], noisePushes: [], crushPushes: [], echoPushes: [],
+  };
   const fakePage = {
     setUserAgent: async () => {},
     evaluateOnNewDocument: async (js) => calls.evalOnNewDoc.push(String(js)),
@@ -56,7 +60,12 @@ function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
       calls.evaluate.push(s);
       if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
       if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
-      if (/\.setRoom\(/.test(s)) { calls.roomPushes.push(args[0]); return undefined; } // pageSetMasterRoom
+      // The four master-bus effect pushes. Matched ahead of the enqueue arm
+      // because every pageSetMaster* body names __trussalMasterPlayer too.
+      if (/\.setRoom\(/.test(s)) { calls.roomPushes.push(args[0]); return undefined; }   // pageSetMasterRoom
+      if (/\.setNoise\(/.test(s)) { calls.noisePushes.push(args[0]); return undefined; } // pageSetMasterNoise
+      if (/\.setCrush\(/.test(s)) { calls.crushPushes.push(args[0]); return undefined; } // pageSetMasterCrush
+      if (/\.setEcho\(/.test(s)) { calls.echoPushes.push(args[0]); return undefined; }   // pageSetMasterEcho
       if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
         calls.enqueued.push(args[0]);
         return (args[0] || []).length;
@@ -1805,4 +1814,112 @@ test('dropping # room from the program clears the master reverb', async () => {
   assert.equal(calls.roomPushes.at(-1), null, 'removing the directive tears the reverb down');
 
   await bot.stop();
+});
+
+// crush and echo used to parse, validate and then reach nothing at all: the
+// only consumer was the browser's EffectsChainManager, which no code path
+// arms. They belong on this bus for the same reason room and noise do — it is
+// the mix the room hears — so what the program says has to arrive here.
+test('# crush drives the master bit crusher from the room worst-case metric', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  try {
+    await bot.start();
+
+    bot.applyProgramText('$ participants <0>\n');
+    assert.deepEqual(calls.crushPushes, [], 'no crush directive -> nothing pushed');
+
+    // wcl is mouth-to-ear, so the pipeline allowance alone puts a quiet room
+    // well up the ladder; take the expectation from the shared calculation
+    // rather than a copied formula.
+    const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 4 }, { peerId: 'p1', roomIndex: '1', rtt: 2 }];
+    bus.rec.deliver({ type: 'roster', peers });
+    bot.applyProgramText('$ participants <0 1>\n# crush wcl 1\n');
+
+    const pushed = calls.crushPushes.at(-1);
+    assert.ok(pushed, 'crush params reach the page master player');
+    assert.deepEqual(pushed, crushParams(computeWorstCaseMetrics(peers), { metric: 'wcl', scale: 1, fixedMetric: null }, 0));
+    assert.ok(pushed.bitDepth < 8, 'a real room eats into the resting depth');
+
+    // A worse link crushes harder, with no rebuild — the params-only path.
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p1', patch: { rtt: 400 } });
+    assert.ok(calls.crushPushes.at(-1).bitDepth < pushed.bitDepth, 'a slower peer crushes harder');
+
+    // Constant arguments follow the metrics alone; nothing polls the grid.
+    assert.equal(bot.patternTicking(), false, 'a chain of constants armed the pattern tick');
+
+    bot.applyProgramText('$ participants <0 1>\n');
+    assert.equal(calls.crushPushes.at(-1), null, 'removing the directive tears the crusher down');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('# echo drives the master delay, and re-times when the cycle length moves', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  try {
+    await bot.start();
+
+    bot.applyProgramText('$ participants <0>\n');
+    assert.deepEqual(calls.echoPushes, [], 'no echo directive -> nothing pushed');
+
+    const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 40 }, { peerId: 'p1', roomIndex: '1', rtt: 20 }];
+    bus.rec.deliver({ type: 'roster', peers });
+    bot.applyProgramText('$ participants <0 1>\n# echo wcl 2 wcl 0.5 wcl 1\n');
+
+    const pushed = calls.echoPushes.at(-1);
+    assert.ok(pushed, 'echo params reach the page master player');
+    assert.ok(pushed.delayS > 0 && pushed.wetGain > 0, 'the wet path is audible');
+    assert.ok(pushed.feedback < 1, 'feedback stays under self-oscillation');
+    // The delay is written in CYCLES, so what lands on the page is that length
+    // times the grid the aggregator is actually running.
+    assert.equal(pushed.delayS, pushed.lengthCycles * bot.scheduler.getCycleLength().seconds);
+
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p1', patch: { rtt: 300 } });
+    const after = calls.echoPushes.at(-1);
+    assert.ok(after.delayS > pushed.delayS, 'a worse room lengthens the echo');
+
+    bot.applyProgramText('$ participants <0 1>\n');
+    assert.equal(calls.echoPushes.at(-1), null, 'removing the directive tears the delay down');
+  } finally {
+    await bot.stop();
+  }
+});
+
+// A `<…>` argument turns over on the cycle boundary, which the scheduler
+// already drives; a `[…]` steps WITHIN a cycle and falls between the metrics
+// hook and the boundary hook, so it needs the tick. Arming it is a property of
+// the program, and it must disarm again — a leaked 50 ms interval outlives the
+// program that wanted it.
+test('a patterned effect argument arms the aggregator pattern tick; a constant one does not', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bus = fakeMetaprogramBus();
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
+  }, {}, 1024);
+  try {
+    await bot.start();
+
+    bot.applyProgramText('$ participants <0>\n# crush wcl 1\n');
+    assert.equal(bot.patternTicking(), false);
+
+    bot.applyProgramText('$ participants <0>\n# crush wcl [2 8]\n');
+    assert.equal(bot.patternTicking(), true, 'a sub-cycle argument needs its own clock');
+
+    bot.applyProgramText('$ participants <0>\n# echo wcl <1 2> wcl 0.5 wcl 1\n');
+    assert.equal(bot.patternTicking(), true, 'echo scales are patterned too');
+
+    bot.applyProgramText('$ participants <0>\n# room wcl 2\n');
+    assert.equal(bot.patternTicking(), false, 'the tick disarms with the pattern');
+  } finally {
+    await bot.stop();
+    assert.equal(bot.patternTicking(), false, 'stop() left the pattern tick running');
+  }
 });

@@ -1024,16 +1024,21 @@ export function pageMasterPlayer() {
   const chunks = [];   // Array<Float32Array> waiting to be emitted
   let head = 0;        // read offset into chunks[0]
   let ctx = null, proc = null, busOut = null;
-  // Master-bus effects (`# room wcl …`, `# noise …`): applied HERE, on the one
-  // mix every client hears, rather than in each browser. Node computes the
-  // pure params (src/audio-net/av-effects/Room.js roomParams and Noise.js
-  // noiseParams) and pushes them via setRoom()/setNoise(); the graphs below
-  // mirror those modules' createRoomNode/createNoiseNode — the page-script
+  // Master-bus effects (`# room wcl …`, `# noise …`, `# crush …`, `# echo …`):
+  // applied HERE, on the one mix every client hears, rather than in each
+  // browser. Node computes the pure params (src/audio-net/av-effects/Room.js
+  // roomParams, Noise.js noiseParams, Crush.js crushParams, Echo.js
+  // echoParams) and pushes them via setRoom()/setNoise()/setCrush()/setEcho();
+  // the graphs below mirror those modules' create*Node — the page-script
   // contract forbids imports, so the construction is inlined.
   let room = null;         // { input, output, combs: [{delay, fb}], lp1, lp2, all: [...] }
   let noise = null;        // { input, output, level, voices: [{color, src, gain}], all: [...] }
+  let crush = null;        // { input, output, shaper, lp, bits, all: [...] }
+  let echo = null;         // { input, output, delay, fb, wet, limiter, all: [...] }
   let pendingRoom = null;  // params pushed before the ctx existed
   let pendingNoise = null;
+  let pendingCrush = null;
+  let pendingEcho = null;
 
   function ensure() {
     if (ctx) return;
@@ -1059,15 +1064,28 @@ export function pageMasterPlayer() {
     busOut = ctx.createGain();
     proc.connect(busOut);
     busOut.connect(ctx.destination);
+    if (pendingCrush) { const p = pendingCrush; pendingCrush = null; setCrush(p); }
+    if (pendingEcho) { const p = pendingEcho; pendingEcho = null; setEcho(p); }
     if (pendingRoom) { const p = pendingRoom; pendingRoom = null; setRoom(p); }
     if (pendingNoise) { const p = pendingNoise; pendingNoise = null; setNoise(p); }
   }
 
-  // busOut -> room? -> noise? -> destination. The order is fixed rather than
-  // read from the written chain: noise is additive and belongs ON the mix, so
-  // running it after the reverb keeps the bed dry instead of feeding it
-  // through the tail. Called after any build/teardown; a params-only update
-  // touches no edges and does not re-link.
+  // busOut -> crush? -> echo? -> room? -> noise? -> destination. The order is
+  // fixed rather than read from the written chain, and each position is a
+  // musical decision:
+  //   crush first — the quantizer degrades the SOURCE material, which is what
+  //     it is for; run last it would grind the reverb tail into a wash and
+  //     lose the grit.
+  //   echo next — the repeats carry the crushed signal, the way a lo-fi delay
+  //     does, and each repeat is one identical quantization rather than a
+  //     progressively re-crushed one (the shaper sits outside the feedback
+  //     loop).
+  //   room after both — the space contains the repeats instead of the
+  //     repeats smearing an already-reverberant signal.
+  //   noise last — it is additive and belongs ON the mix, so running it after
+  //     the reverb keeps the bed dry instead of feeding it through the tail.
+  // Called after any build/teardown; a params-only update touches no edges
+  // and does not re-link.
   function relink() {
     // Every node that can be a link in the chain drops its outgoing edge
     // first. Clearing busOut alone is not enough: whichever effect used to be
@@ -1078,7 +1096,8 @@ export function pageMasterPlayer() {
     // Each disconnect is guarded on its own: a throw here would otherwise
     // abort before the reconnection below, leaving busOut attached to nothing
     // and the bot publishing silence with no path back.
-    [busOut, room && room.output, noise && noise.output].forEach((n) => {
+    [busOut, crush && crush.output, echo && echo.output,
+      room && room.output, noise && noise.output].forEach((n) => {
       if (!n) return;
       try {
         n.disconnect();
@@ -1087,6 +1106,8 @@ export function pageMasterPlayer() {
       }
     });
     let hd = busOut;
+    if (crush) { hd.connect(crush.input); hd = crush.output; }
+    if (echo) { hd.connect(echo.input); hd = echo.output; }
     if (room) { hd.connect(room.input); hd = room.output; }
     if (noise) { hd.connect(noise.input); hd = noise.output; }
     hd.connect(ctx.destination);
@@ -1266,6 +1287,138 @@ export function pageMasterPlayer() {
     room.lp2.frequency.value = params.cutoffHz;
   }
 
+  // makeCrushCurve's quantization ladder (see Crush.js): 2^bits steps across
+  // [-1, 1]. The length duplicates that module's default rather than importing
+  // it; bot.test.js compares the two arrays to catch the copies drifting.
+  const CRUSH_CURVE_LENGTH = 2048;
+  function crushCurve(bitDepth) {
+    const steps = Math.max(2, Math.round(Math.pow(2, bitDepth)));
+    const curve = new Float32Array(CRUSH_CURVE_LENGTH);
+    for (let i = 0; i < CRUSH_CURVE_LENGTH; i++) {
+      const x = (i * 2) / (CRUSH_CURVE_LENGTH - 1) - 1;
+      curve[i] = Math.round((x + 1) / 2 * (steps - 1)) / (steps - 1) * 2 - 1;
+    }
+    return curve;
+  }
+
+  // Bit-depth reduction as a waveshaper, sample-rate reduction as a lowpass at
+  // the decimated Nyquist — the same graph-only approximation
+  // createCrushNode makes, which keeps a second ScriptProcessor off a path
+  // that already carries one. Fully wet: there is no dry leg to blend, since a
+  // quantizer summed with its own input is just a quieter quantizer.
+  function buildCrush(params) {
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = crushCurve(params.bitDepth);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = ctx.sampleRate / 2 / params.srDivisor;
+    input.connect(shaper);
+    shaper.connect(lp);
+    lp.connect(output);
+    return { input, output, shaper, lp, bits: params.bitDepth, all: [input, output, shaper, lp] };
+  }
+
+  function setCrush(params) {
+    if (!ctx) { pendingCrush = params; return; }
+    if (!params) {
+      if (!crush) return;
+      const dead = crush;
+      crush = null;
+      relink();
+      unwire('crush', dead.all);
+      return;
+    }
+    if (!crush) {
+      crush = buildCrush(params);
+      relink();
+      return;
+    }
+    // Rebuilding the curve allocates a 2048-float array, and with patterned
+    // arguments this runs on every pattern tick rather than only on a metrics
+    // change — so skip it when the depth has not actually moved.
+    if (params.bitDepth !== crush.bits) {
+      crush.shaper.curve = crushCurve(params.bitDepth);
+      crush.bits = params.bitDepth;
+    }
+    crush.lp.frequency.value = ctx.sampleRate / 2 / params.srDivisor;
+  }
+
+  // Echo.js's ECHO_MAX_DELAY_S, LIMITER_THRESHOLD_DB and GAIN_RAMP_S. The
+  // delay ceiling is a real memory decision rather than just a clamp: a
+  // DelayNode allocates maxDelayTime x sampleRate of buffer at construction.
+  const ECHO_MAX_DELAY_S = 20;
+  const ECHO_LIMITER_THRESHOLD_DB = -1.0;
+  const ECHO_GAIN_RAMP_S = 0.02;
+
+  function buildEcho(params) {
+    const input = ctx.createGain();
+    const output = ctx.createGain();
+    const delay = ctx.createDelay(ECHO_MAX_DELAY_S);
+    delay.delayTime.value = params.delayS;
+    const fb = ctx.createGain();
+    fb.gain.value = params.feedback;
+    const wet = ctx.createGain();
+    wet.gain.value = params.wetGain;
+    // Wet-path limiter (see Echo.js): the echo's gain is the performer's to
+    // set and is deliberately not clamped, so the repeats bring their own
+    // wall. The dry signal reaches the output untouched.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = ECHO_LIMITER_THRESHOLD_DB;
+    input.connect(output);        // dry
+    input.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);            // feedback loop
+    delay.connect(wet);
+    wet.connect(limiter);
+    limiter.connect(output);      // wet, at the echo's own gain
+    return {
+      input, output, delay, fb, wet, limiter,
+      all: [input, output, delay, fb, wet, limiter],
+    };
+  }
+
+  // Patterned arguments step at cycle boundaries rather than drifting with the
+  // metrics, so an instant jump on the wet or feedback gain is an audible
+  // click on every step; a ramp this short is inaudible as a glide but removes
+  // the discontinuity. Never schedules a ramp to where the parameter already
+  // sits, because the pattern tick re-derives 20x/s and most updates carry the
+  // value already in force.
+  function rampGain(param, target) {
+    if (param.value === target) return;
+    const now = ctx.currentTime;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(target, now + ECHO_GAIN_RAMP_S);
+  }
+
+  function setEcho(params) {
+    if (!ctx) { pendingEcho = params; return; }
+    if (!params) {
+      if (!echo) return;
+      const dead = echo;
+      echo = null;
+      relink();
+      // unwire breaks the feedback loop as well as the chain link — left
+      // connected, a delay->fb->delay ring keeps recirculating whatever was in
+      // it after the effect is gone.
+      unwire('echo', dead.all);
+      return;
+    }
+    if (!echo) {
+      echo = buildEcho(params);
+      relink();
+      return;
+    }
+    // delayTime is left to JUMP: ramping it sweeps the read pointer, which is
+    // a pitch bend rather than a crossfade, and the point of a re-timed echo
+    // is that it re-times.
+    if (echo.delay.delayTime.value !== params.delayS) echo.delay.delayTime.value = params.delayS;
+    rampGain(echo.fb.gain, params.feedback);
+    rampGain(echo.wet.gain, params.wetGain);
+  }
+
   function queued() {
     let n = -head;
     for (const c of chunks) n += c.length;
@@ -1285,6 +1438,8 @@ export function pageMasterPlayer() {
     queued,
     setRoom,
     setNoise,
+    setCrush,
+    setEcho,
   };
 }
 
@@ -1314,6 +1469,30 @@ export function pageSetMasterRoom(params) {
 export function pageSetMasterNoise(params) {
   const p = window.__trussalMasterPlayer;
   if (p && typeof p.setNoise === 'function') p.setNoise(params || null);
+}
+
+/**
+ * Apply (or clear, with null) the master-bus bit crusher. `params` is the pure
+ * crushParams() output computed Node-side from the applied metaprogram, the
+ * room's worst-case metrics and the current cycle POSITION
+ * (aggregator-bot.js #syncMasterCrush) — a fractional position, because crush
+ * accepts `[…]` subdivisions as well as `<…>` alternation.
+ */
+export function pageSetMasterCrush(params) {
+  const p = window.__trussalMasterPlayer;
+  if (p && typeof p.setCrush === 'function') p.setCrush(params || null);
+}
+
+/**
+ * Apply (or clear, with null) the master-bus feedback delay. `params` is the
+ * pure echoParams() output computed Node-side (aggregator-bot.js
+ * #syncMasterEcho). Echo needs the cycle LENGTH as well as the position: its
+ * delay is written in cycles, so it re-times whenever the metrics move the
+ * grid.
+ */
+export function pageSetMasterEcho(params) {
+  const p = window.__trussalMasterPlayer;
+  if (p && typeof p.setEcho === 'function') p.setEcho(params || null);
 }
 
 /**

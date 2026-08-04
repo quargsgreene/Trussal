@@ -8,12 +8,19 @@
 // has to be re-derived as the cycle grid advances, which no metrics update
 // would trigger — hence the pattern tick, armed only while such an argument
 // is in the chain.
-// grid is visual-only: it renders panel overlays and contributes no audio
-// node. room and noise are visual-only HERE too: their audio nodes run on the
-// aggregator's master path (bots/src/bot/aggregator-bot.js #syncMasterRoom /
-// #syncMasterNoise), which is the mix every client hears — building them
-// locally as well would reverb that audio twice and lay one uncorrelated
-// noise bed per browser over a mix that already carries the room's.
+//
+// EVERY audio effect now runs on the aggregator's master path
+// (bots/src/bot/aggregator-bot.js #syncMasterRoom / #syncMasterNoise /
+// #syncMasterCrush / #syncMasterEcho), which is the single assembled mix the
+// room actually hears — so all four are VISUAL-ONLY here. Building them
+// locally as well would reverb that audio twice, lay one uncorrelated noise
+// bed per browser over a mix that already carries the room's, and quantize or
+// re-echo a signal the aggregator already processed. grid never had an audio
+// node at all: it renders panel overlays and nothing else.
+//
+// What this class still does, therefore, is compute each effect's Hydra
+// counterpart and publish it to window._ncVisual — which is per-browser by
+// nature and not the aggregator's business.
 
 import { roomParams, createRoomNode } from './Room.js';
 import { echoParams, createEchoNode } from './Echo.js';
@@ -21,32 +28,24 @@ import { crushParams, createCrushNode } from './Crush.js';
 import { noiseParams, createNoiseNode } from './Noise.js';
 import { renderGridOverlays, clearGridOverlays } from './Grid.js';
 import { resolveEffectParams } from '../MetaprogrammerParser.js';
-import { chainHasValuePattern } from '../ValuePattern.js';
+import { chainHasValuePattern, PATTERN_TICK_MS } from '../ValuePattern.js';
 
-// How often a chain with PATTERNED arguments re-reads them off the cycle grid.
-// The metrics-driven path is event-driven and cycle boundaries are pushed by
-// the Metaprogrammer, but a SUB-cycle step (`# crush wcl [2 8]`, `# echo wcl
-// [1 4] …`) falls between both, so those chains poll at the scheduler's own
-// tick rate.
-//
-// This is a sampling floor, not exact timing: a step edge lands within one
-// tick of where it belongs, and a pattern subdividing a short cycle into more
-// steps than that can skip some entirely (a 12-step pattern on a 0.5 s cycle
-// is ~42 ms a step). The sampled VALUE is a pure function of network time, so
-// clients still agree on what is playing — they just cross the edge up to a
-// tick apart. Anything finer wants the scheduler's timestamped slot events
-// driving AudioParam automation, which waits on that machinery being armed.
-export const PATTERN_TICK_MS = 50;
+// Re-exported for the callers that read the tick rate off this module; it is
+// declared in ValuePattern.js because the aggregator ticks against it too.
+export { PATTERN_TICK_MS };
 
-// room's and noise's entries are DORMANT, not live: setChain/updateMetrics
-// skip them because both belong to the aggregator's master bus (see the
-// header). They stay wired so local-chain room/noise can be switched back on
-// in one place if the mix ever stops going through an aggregator.
-const MASTER_BUS_EFFECTS = new Set(['room', 'noise']);
+// Every audio effect belongs to the aggregator's master bus (see the header),
+// so setChain/updateMetrics skip all four and this class builds no audio node
+// at all today.
+const MASTER_BUS_EFFECTS = new Set(['room', 'noise', 'crush', 'echo']);
 
-// fn → node constructor. The parameter functions are NOT registered here:
-// computeChainParams calls each by name, and a second copy of that mapping
-// was dead weight that could only drift from the switch that actually runs.
+// fn → node constructor. DORMANT, not live: MASTER_BUS_EFFECTS covers every
+// key below, so nothing reaches this map while the mix goes through an
+// aggregator. It stays wired — along with the create*Node functions it points
+// at — so a local chain can be switched back on in one place if it ever
+// stops. The parameter functions are NOT registered here: computeChainParams
+// calls each by name, and a second copy of that mapping was dead weight that
+// could only drift from the switch that actually runs.
 const AUDIO_EFFECTS = {
   room: createRoomNode,
   echo: createEchoNode,
@@ -192,6 +191,11 @@ export class EffectsChainManager {
   // property of the PROGRAM, so it is settled here, at setChain time, rather
   // than re-resolved on every tick. Armed only while the chain actually holds
   // one: a constant-argument chain keeps re-deriving on metrics updates alone.
+  //
+  // With every audio node on the aggregator, what this tick keeps current is
+  // the VISUAL side — a patterned `# crush` still has to step _ncVisual.
+  // pixelate on the grid. The aggregator runs its own tick, off the same
+  // PATTERN_TICK_MS, for the audio.
   _syncPatternLoop() {
     const wanted = chainHasValuePattern(this._chainEntries) && typeof setInterval !== 'undefined';
     if (wanted && !this._patternTimer) {

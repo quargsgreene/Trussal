@@ -11,6 +11,8 @@ import {
 import {
   noiseParams, fillNoise, normalizeRms, NOISE_RMS, NOISE_LOOP_S
 } from '../../src/audio-net/av-effects/Noise.js';
+import { crushParams, makeCrushCurve } from '../../src/audio-net/av-effects/Crush.js';
+import { echoParams, ECHO_MAX_DELAY_S, LIMITER_THRESHOLD_DB } from '../../src/audio-net/av-effects/Echo.js';
 import { Bot } from '../src/bot/bot.js';
 
 test('chromiumArgs includes the four spec-required flags plus fake-media + no-prompt flags', () => {
@@ -338,22 +340,36 @@ function masterPlayerStub() {
   const edges = [];
   const byId = new Map();
   const buffers = [];
+  const ramps = [];
   const state = { next: 0 };
+  // AudioParam stand-in. The automation methods record what was scheduled and
+  // settle .value on the ramp target, so a test reads the value an effect
+  // asked for whether it was written directly (room, noise) or ramped (echo).
+  const param = (owner, name) => ({
+    value: 0,
+    cancelScheduledValues() {},
+    setValueAtTime(v) { this.value = v; },
+    linearRampToValueAtTime(v, t) { ramps.push({ node: owner.id, name, value: v, at: t }); this.value = v; },
+  });
   const mk = (kind) => {
     const node = {
       id: `${kind}#${state.next++}`,
-      gain: { value: 0 }, delayTime: { value: 0 }, frequency: { value: 0 },
       connect(t) { edges.push([node.id, t && t.id ? t.id : 'destination']); },
       disconnect() { for (let i = edges.length - 1; i >= 0; i--) if (edges[i][0] === node.id) edges.splice(i, 1); }
     };
+    node.gain = param(node, 'gain');
+    node.delayTime = param(node, 'delayTime');
+    node.frequency = param(node, 'frequency');
     byId.set(node.id, node);
     return node;
   };
   class StubCtx {
-    constructor() { this.destination = { id: 'destination' }; this.sampleRate = 48000; }
+    constructor() { this.destination = { id: 'destination' }; this.sampleRate = 48000; this.currentTime = 0; }
     createGain() { return mk('gain'); }
-    createDelay() { return mk('delay'); }
+    createDelay(max) { return Object.assign(mk('delay'), { maxDelayTime: max }); }
     createBiquadFilter() { return Object.assign(mk('biquad'), { type: '' }); }
+    createWaveShaper() { return Object.assign(mk('shaper'), { curve: null }); }
+    createDynamicsCompressor() { const n = mk('comp'); n.threshold = param(n, 'threshold'); return n; }
     createScriptProcessor() { return Object.assign(mk('proc'), { onaudioprocess: null }); }
     createBuffer(channels, length) {
       const data = new Float32Array(length);
@@ -362,7 +378,7 @@ function masterPlayerStub() {
     }
     createBufferSource() { return Object.assign(mk('src'), { buffer: null, loop: false, start() {}, stop() {} }); }
   }
-  return { edges, byId, buffers, state, StubCtx };
+  return { edges, byId, buffers, ramps, state, StubCtx };
 }
 
 const ROOM_PARAMS = {
@@ -472,6 +488,154 @@ test('pageMasterPlayer: the page-side generators match Noise.js in level and cha
       assert.ok(Math.abs(r - moduleRoughness[i]) / moduleRoughness[i] < 0.05,
         `page colour ${i} does not match the module's generator (${r} vs ${moduleRoughness[i]})`);
     });
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+// All four `#` audio effects live on this bus — none of them runs in a
+// browser — so the chain order is decided here and nowhere else. It is fixed
+// rather than read from the written program, and each position is a musical
+// claim the graph has to keep making.
+test('pageMasterPlayer: the master path runs crush -> echo -> room -> noise', () => {
+  const { edges, byId, state, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]); // forces ensure() -> ctx exists
+
+    const proc = [...byId.keys()].find((n) => n.startsWith('proc#'));
+    const busOut = edges.find(([from]) => from === proc)[1];
+    const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
+
+    // Pushed in the REVERSE of the audio order, so passing this can only mean
+    // the path is fixed by the bus rather than by the order they arrived in.
+    // Every build creates its input gain first and its output gain second, so
+    // the ids at each boundary name those two nodes.
+    const noiseAt = state.next;
+    player.setNoise(noiseParams({ wcl: 0 }, {}));
+    const roomAt = state.next;
+    player.setRoom(ROOM_PARAMS);
+    const echoAt = state.next;
+    player.setEcho(echoParams({ wcl: 500 }, null, { cycleSeconds: 2 }));
+    const crushAt = state.next;
+    player.setCrush(crushParams({ wcl: 100 }));
+
+    const io = (at) => [`gain#${at}`, `gain#${at + 1}`];
+    const [crushIn, crushOut] = io(crushAt);
+    const [echoIn, echoOut] = io(echoAt);
+    const [roomIn, roomOut] = io(roomAt);
+    const [noiseIn, noiseOut] = io(noiseAt);
+
+    assert.deepEqual(sinksOf(busOut), [crushIn], 'the bus hits the quantizer first');
+    assert.deepEqual(sinksOf(crushOut), [echoIn], 'the repeats carry crushed audio, not the reverse');
+    assert.deepEqual(sinksOf(echoOut), [roomIn], 'the room contains the repeats, not the reverse');
+    assert.deepEqual(sinksOf(roomOut), [noiseIn]);
+    assert.deepEqual(sinksOf(noiseOut), ['destination'], 'the bed stays last, on the mix and dry');
+
+    // Dropping a link from the MIDDLE has to close the gap: the classic
+    // failure is the removed effect keeping its edge and the mix reaching the
+    // fan by two paths, or the tail being stranded with no path at all.
+    player.setEcho(null);
+    assert.deepEqual(sinksOf(crushOut), [roomIn], 'crush feeds the room directly once echo is gone');
+    assert.deepEqual(sinksOf(echoOut), [], 'the dropped echo holds no edge');
+    player.setCrush(null);
+    assert.deepEqual(sinksOf(busOut), [roomIn], 'the bus reconnects to whatever is still first');
+    player.setRoom(null);
+    player.setNoise(null);
+    assert.deepEqual(sinksOf(busOut), ['destination'], 'a bare bus again');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+// buildCrush re-implements makeCrushCurve inline (the page-script contract
+// forbids imports) and this copy is the only one that makes sound —
+// createCrushNode never runs in production — so it is checked against the
+// module rather than trusted to stay in step by inspection.
+test('pageMasterPlayer: the page-side crush curve matches Crush.js, and is rebuilt only on a depth change', () => {
+  const { byId, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]);
+
+    const params = crushParams({ wcl: 100 });          // 100 ms of wcl = one halving
+    player.setCrush(params);
+    const shaper = [...byId.values()].find((n) => n.id.startsWith('shaper#'));
+    const lp = [...byId.values()].find((n) => n.id.startsWith('biquad#'));
+    assert.deepEqual(shaper.curve, makeCrushCurve(params.bitDepth), 'page curve differs from the module');
+    assert.equal(lp.type, 'lowpass');
+    assert.equal(lp.frequency.value, 48000 / 2 / params.srDivisor, 'lowpass sits at the decimated Nyquist');
+
+    // The pattern tick pushes 20x/s; a curve rebuild there would allocate a
+    // 2048-float array every 50 ms for a depth that never moved.
+    const firstCurve = shaper.curve;
+    player.setCrush(crushParams({ wcl: 100 }));
+    assert.equal(shaper.curve, firstCurve, 'unchanged depth rebuilt the curve anyway');
+
+    const deeper = crushParams({ wcl: 300 });
+    player.setCrush(deeper);
+    assert.notEqual(shaper.curve, firstCurve, 'a real depth change must rebuild');
+    assert.deepEqual(shaper.curve, makeCrushCurve(deeper.bitDepth));
+    assert.equal(lp.frequency.value, 48000 / 2 / deeper.srDivisor);
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
+test('pageMasterPlayer: the echo keeps the dry path clean, limits only the wet one, and ramps its gains', () => {
+  const { edges, byId, ramps, state, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0, 0, 0]);
+
+    const at = state.next;
+    const params = echoParams({ wcl: 500 }, null, { cycleSeconds: 2 });
+    player.setEcho(params);
+    const [input, output, delay, fb, wet, limiter] =
+      [`gain#${at}`, `gain#${at + 1}`, `delay#${at + 2}`, `gain#${at + 3}`, `gain#${at + 4}`, `comp#${at + 5}`];
+    const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
+
+    assert.ok(sinksOf(input).includes(output), 'the dry signal reaches the output untouched');
+    assert.ok(sinksOf(input).includes(delay));
+    assert.deepEqual(sinksOf(fb), [delay], 'the feedback loop closes back onto the delay');
+    assert.deepEqual(sinksOf(wet), [limiter], 'the wet path goes through the limiter');
+    assert.deepEqual(sinksOf(limiter), [output]);
+    assert.ok(!sinksOf(input).includes(limiter), 'the limiter must not sit on the dry signal');
+    assert.equal(byId.get(delay).maxDelayTime, ECHO_MAX_DELAY_S, 'delay buffer sized for a long cycle');
+    assert.equal(byId.get(limiter).threshold.value, LIMITER_THRESHOLD_DB);
+    assert.equal(byId.get(delay).delayTime.value, params.delayS);
+    assert.equal(byId.get(fb).gain.value, params.feedback);
+    assert.equal(byId.get(wet).gain.value, params.wetGain);
+
+    // A patterned argument steps at a boundary, so the gains glide across the
+    // discontinuity rather than clicking — but delayTime JUMPS, because
+    // ramping the read pointer is a pitch bend, not a re-timing.
+    ramps.length = 0;
+    const shorter = echoParams({ wcl: 250 }, null, { cycleSeconds: 2 });
+    player.setEcho(shorter);
+    assert.equal(byId.get(delay).delayTime.value, shorter.delayS, 'the delay re-timed');
+    assert.deepEqual(ramps.map((r) => r.name).sort(), ['gain', 'gain'], 'only the two gains were ramped');
+    assert.deepEqual(ramps.map((r) => r.node).sort(), [fb, wet].sort());
+
+    // An unchanged push (the pattern tick's usual case) schedules nothing.
+    ramps.length = 0;
+    player.setEcho(echoParams({ wcl: 250 }, null, { cycleSeconds: 2 }));
+    assert.deepEqual(ramps, [], 'a no-op update still scheduled automation');
+
+    // Tearing the effect down has to break the recirculating ring too, or the
+    // delay keeps feeding itself whatever was in it after the effect is gone.
+    player.setEcho(null);
+    assert.deepEqual(sinksOf(fb), [], 'the feedback loop survived teardown');
+    assert.deepEqual(sinksOf(delay), []);
   } finally {
     if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
   }
