@@ -21,7 +21,7 @@ import { rewriteLiveCalls } from './live-input-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
 import { hasTextCycles, rewriteTextCalls, keepTextStatements } from './text-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
-import { normalizePeerCode, splitHydraCode } from './hydra-code.js';
+import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
@@ -452,7 +452,31 @@ async function rebuildAndEvaluate() {
   if (next === lastEvaluated) return;
   lastEvaluated = next;
 
-  const { evaluate, hush } = await loadStrudel();
+  const { evaluate, hush, clearHydra } = await loadStrudel();
+
+  // Take the Hydra canvas down when the program no longer asks for it.
+  //
+  // initHydra() creates a FULLSCREEN fixed canvas prepended to <body> and
+  // thereafter only ever reuses the one already there, so no amount of
+  // re-evaluating removes it: a performer who deleted their visuals was left
+  // with them covering the room until they pressed Stop, which was the only
+  // caller of clearHydra() and takes the audio down with it. Commenting the
+  // preamble out is the natural gesture for "no more visuals", and this is
+  // what makes it work.
+  //
+  // In `direct` mode the preamble is injected above, so the program always
+  // declares Hydra and this correctly never fires — that mode's whole premise
+  // is compositing the camera through Hydra.
+  if (!programDeclaresHydra(next)) {
+    try {
+      if (typeof clearHydra === 'function') clearHydra();
+    } catch (e) {
+      // Reported, not rethrown: a canvas that would not come down must not
+      // also stop the program that is still playing from being evaluated.
+      console.error('[strudel] could not clear the Hydra canvas', e);
+    }
+  }
+
   if (!next) {
     anyPlaying = false;
     try { hush(); } catch (e) { /* ignore */ }

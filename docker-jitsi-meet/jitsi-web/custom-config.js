@@ -52068,6 +52068,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
 
   // src/hydra-code.js
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+  var PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
   function normalizePeerCode(code2) {
     return (code2 || "").replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
   }
@@ -52080,6 +52081,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       preamble: normalized.slice(0, blank.index).trim(),
       strudel: normalized.slice(blank.index).trim()
     };
+  }
+  function programDeclaresHydra(code2) {
+    return PROGRAM_INIT_HYDRA_RE.test(code2 || "");
   }
 
   // src/strudel.js
@@ -52426,7 +52430,14 @@ ${next}`;
     }
     if (next === lastEvaluated) return;
     lastEvaluated = next;
-    const { evaluate: evaluate3, hush: hush2 } = await loadStrudel();
+    const { evaluate: evaluate3, hush: hush2, clearHydra: clearHydra2 } = await loadStrudel();
+    if (!programDeclaresHydra(next)) {
+      try {
+        if (typeof clearHydra2 === "function") clearHydra2();
+      } catch (e30) {
+        console.error("[strudel] could not clear the Hydra canvas", e30);
+      }
+    }
     if (!next) {
       anyPlaying = false;
       try {

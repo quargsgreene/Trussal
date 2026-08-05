@@ -15,6 +15,15 @@
 
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
 
+// The same marker, asked of a COMBINED program rather than one performer's
+// block. strudel.js stacks every playing peer into a single program, so the
+// preamble that INIT_HYDRA_RE requires at the start of a block legitimately
+// lands at any line of the joined result — and `direct` mode injects one at
+// the top. Anchored to a line start so a commented-out `//await initHydra()`
+// still reads as "no Hydra", which is what lets a performer take their
+// visuals down by commenting them out.
+const PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
+
 // Editor text minus the noise that is never part of either language: trailing
 // whitespace/semicolons, and `*name: code` lines (studio button widgets, not
 // patterns). buildPeerBlock strips exactly these before testing for a
@@ -39,6 +48,15 @@ export function splitHydraCode(code) {
     preamble: normalized.slice(0, blank.index).trim(),
     strudel: normalized.slice(blank.index).trim()
   };
+}
+
+// Does a combined program declare Hydra at all? The browser's teardown test:
+// initHydra() only ever REUSES an existing `#hydra-canvas`, so nothing in an
+// evaluate cycle takes that canvas away on its own, and a program that no
+// longer declares Hydra has to be recognised as such before its visuals can
+// be removed.
+export function programDeclaresHydra(code) {
+  return PROGRAM_INIT_HYDRA_RE.test(code || '');
 }
 
 // Is this peer running Hydra? The mosaic's membership test.

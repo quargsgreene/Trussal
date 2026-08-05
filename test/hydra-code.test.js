@@ -7,7 +7,8 @@ import {
   hasHydraCode,
   usesCameraSource,
   usesPatternParams,
-  mosaicCellSource
+  mosaicCellSource,
+  programDeclaresHydra
 } from '../src/hydra-code.js';
 
 // --- detection ----------------------------------------------------------------
@@ -20,6 +21,26 @@ test('hydra-code: a plain Strudel block is not Hydra', () => {
   assert.equal(hasHydraCode('s("bd sd").fast(2)'), false);
   assert.equal(hasHydraCode(''), false);
   assert.equal(hasHydraCode(null), false);
+});
+
+// --- teardown test (combined programs) ---------------------------------------
+
+test('hydra-code: a combined program declares Hydra wherever the preamble sits', () => {
+  // strudel.js joins every playing peer into one program, so the peer running
+  // Hydra is rarely the first block — a rule anchored to the start of the text
+  // would take a live performer's canvas down.
+  assert.equal(programDeclaresHydra('s("bd sd")\n\nawait initHydra()\nosc(10).out()'), true);
+  assert.equal(programDeclaresHydra('await initHydra()\nosc(10).out()'), true);
+});
+
+test('hydra-code: a program with no Hydra, or only a commented one, declares none', () => {
+  // Commenting the preamble out is how a performer takes their visuals down,
+  // so it must read as "no Hydra" — this is the exact text that left a
+  // fullscreen canvas covering the room with no way to remove it.
+  assert.equal(programDeclaresHydra('//await initHydra()\n//osc(10).out()\n\nn("0 1").s("piano")'), false);
+  assert.equal(programDeclaresHydra('s("bd sd").fast(2)'), false);
+  assert.equal(programDeclaresHydra(''), false);
+  assert.equal(programDeclaresHydra(null), false);
 });
 
 test('hydra-code: initHydra further down the block does not count', () => {
