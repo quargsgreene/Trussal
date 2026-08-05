@@ -38020,6 +38020,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (!entry) return false;
     const candidates = [
       entry.metric,
+      entry.media,
       ...entry.metrics || [],
       ...entry.args || [],
       ...(entry.pairs || []).map((p) => p && p.value),
@@ -38197,6 +38198,21 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/audio-net/EffectMedia.js
+  function isMedium(name3) {
+    return MEDIA.includes(name3);
+  }
+  function normalizeMediaSet(names2) {
+    return Object.freeze(MEDIA.filter((m2) => (names2 || []).includes(m2)));
+  }
+  var MEDIA;
+  var init_EffectMedia = __esm({
+    "src/audio-net/EffectMedia.js"() {
+      init_ValuePattern();
+      MEDIA = Object.freeze(["audio", "css", "text", "video"]);
+    }
+  });
+
   // src/audio-net/MetaprogrammerParser.js
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
@@ -38241,6 +38257,21 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       }
       if (ch2 === "/" && text2[i + 1] === "/") {
         while (i < n2 && text2[i] !== "\n") advance();
+        continue;
+      }
+      if (ch2 === '"') {
+        let j2 = i + 1;
+        while (j2 < n2 && text2[j2] !== '"' && text2[j2] !== "\n") j2++;
+        const terminated = text2[j2] === '"';
+        if (!terminated) {
+          errors.push({
+            message: `unterminated string \u2014 a medium name closes with a '"' on the same line`,
+            line: startLine,
+            col: startCol
+          });
+        }
+        push("string", text2.slice(i + 1, j2), startLine, startCol, text2.slice(i, terminated ? j2 + 1 : j2));
+        advance(j2 - i + (terminated ? 1 : 0));
         continue;
       }
       if (ch2 === "$" || ch2 === "#") {
@@ -38418,6 +38449,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       import_room_indices = __toESM(require_room_indices(), 1);
       init_Echo();
       init_ValuePattern();
+      init_EffectMedia();
       TIMING_METRICS = ["wcl", "wcj", "wcpl"];
       EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
@@ -38427,7 +38459,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       EFFECTS = {
         // scale=1, fixed metric amount=live. Any worst-case metric may drive the
         // decay, and all three arguments pattern — `# room <wcl wcj> <1 2 ~ 2 3>*2`.
-        room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: EFFECT_METRICS, patternArgs: true },
+        room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
         echo: {
           kind: "effect",
           metricKeywords: ECHO_METRICS,
@@ -38435,14 +38467,15 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           // length (cycles), feedback, gain
           patternArgs: true,
           // scales and bounds may be <2 3> / [1 4]
-          usage: "# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>]"
+          mediaArg: true,
+          usage: "# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>] [<media>]"
         },
         // scale=1 (8-bit base), fixed metric amount=live
-        crush: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: CRUSH_METRICS, patternArgs: true },
+        crush: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: CRUSH_METRICS, patternArgs: true, mediaArg: true },
         // noise interleaves two metric keywords with its numbers and takes patterns
         // in any slot, which parseChainFn's positional-numbers grammar cannot
         // express — it parses in parseNoise instead.
-        noise: { kind: "effect", grammar: "noise", metricKeywords: EFFECT_METRICS, patternArgs: true },
+        noise: { kind: "effect", grammar: "noise", metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
         grid: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true },
         // landmarks=false
         // How the aggregator arranges the room's Hydra output in its published
@@ -38961,6 +38994,24 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               this.next();
               break;
             }
+            if (kind === "media" && t.type === "punct" && t.value === "[") {
+              const set2 = this.parseMediaSet(name3);
+              if (!set2) return null;
+              terms.push(set2);
+              this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
+              continue;
+            }
+            if (kind === "media" && t.type === "string") {
+              this.next();
+              if (!isMedium(t.value)) {
+                this.error(`'${t.value}' is not a medium (${MEDIA.join("|")})`, t);
+                terms.push(null);
+              } else {
+                terms.push(normalizeMediaSet([t.value]));
+              }
+              this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
+              continue;
+            }
             if (t.type === "punct" && (t.value === "<" || t.value === "[")) {
               const inner = this.parseValueSequence(name3, kind, sig, { alternationOnly, topLevel: false });
               if (!inner) return null;
@@ -39007,7 +39058,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               continue;
             }
             this.error(
-              leafKind === "metric" ? `'${name3}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join("|")}), got '${t.value}'` : `'${name3}' pattern expects positive numbers, got '${t.value}'`,
+              kind === "media" ? `'${name3}' medium pattern expects quoted medium names or sets of them (${MEDIA.join("|")}), got '${t.value}'` : leafKind === "metric" ? `'${name3}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join("|")}), got '${t.value}'` : `'${name3}' pattern expects positive numbers, got '${t.value}'`,
               t
             );
             this.next();
@@ -39173,7 +39224,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           const slots = sig.metricPairs;
           const pairs2 = [];
           const bounds = [];
-          if (!this.atStatementEnd()) {
+          let media = null;
+          if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
             for (let i = 0; i < slots.length; i++) {
               const t = this.peek();
               if (t.type !== "word" || !sig.metricKeywords.includes(t.value)) {
@@ -39193,6 +39245,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               pairs2.push({ metric: t.value, value: value2 });
             }
             for (let i = 0; i < slots.length && !this.atStatementEnd(); i++) {
+              if (sig.mediaArg && this.atMediaArg()) break;
               const value2 = this.parseNumericArg(name3, `${slots[i]} upper bound`, sig);
               if (value2 == null) {
                 this.recover();
@@ -39201,13 +39254,22 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               bounds.push(value2);
             }
           }
+          if (sig.mediaArg && this.atMediaArg()) {
+            media = this.parseMediaArg(name3, sig);
+            if (!media) {
+              this.recover();
+              return;
+            }
+          }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
             this.error(`'${name3}' got an unexpected argument '${trailing.value}' \u2014 the syntax is '${sig.usage}'`, trailing);
             this.recover();
             return;
           }
-          program.chain.push({ fn: name3, args: [], pairs: pairs2, bounds, line: nameTok.line, col: nameTok.col });
+          const entry = { fn: name3, args: [], pairs: pairs2, bounds, line: nameTok.line, col: nameTok.col };
+          if (media) entry.media = media;
+          program.chain.push(entry);
         }
         // A positive number, plain or as the fraction `1/2` — the spelling
         // `# tempo 90/4` already uses, and the natural one for an echo length said
@@ -39232,6 +39294,82 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             return null;
           }
           return val2;
+        }
+        // The offset of the first token at or after `offset` that is not a line
+        // break. Patterns may wrap lines, so a lookahead has to step over newlines
+        // the way parseValueSequence does.
+        nextMeaningful(offset2) {
+          let i = offset2;
+          while (this.peek(i) && this.peek(i).type === "newline") i++;
+          return i;
+        }
+        // Whether what follows opens the trailing MEDIUM argument rather than
+        // another numeric one. Both are written with the same brackets, so the LEAF
+        // settles it: a quoted string can only be a medium name, and a number can
+        // never be one. That is what makes `# echo … [1 4] ["audio"]` — a numeric
+        // bound followed by a medium set — read unambiguously.
+        atMediaArg() {
+          const t = this.peek();
+          if (t.type !== "punct" || t.value !== "[" && t.value !== "<") return false;
+          let i = this.nextMeaningful(1);
+          const inner = this.peek(i);
+          if (t.value === "<" && inner && inner.type === "punct" && inner.value === "[") {
+            i = this.nextMeaningful(i + 1);
+          }
+          const leaf = this.peek(i);
+          return !!leaf && leaf.type === "string";
+        }
+        // `["audio" "video"]` — one set of media, space-separated. A comma is
+        // refused by name rather than as a generic unexpected token: it is the one
+        // separator a performer arriving from JSON would reach for, and the error
+        // has to teach the convention rather than just reject the character.
+        parseMediaSet(name3) {
+          const open = this.next();
+          const names2 = [];
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "eof" || t.type === "sigil") {
+              this.error(`unclosed medium set on '${name3}' \u2014 expected ']'`, t);
+              return null;
+            }
+            if (t.type === "newline") {
+              this.next();
+              continue;
+            }
+            if (t.type === "punct" && t.value === "]") {
+              this.next();
+              break;
+            }
+            if (t.type === "punct" && t.value === ",") {
+              this.error(`'${name3}' medium names are separated by spaces, not commas \u2014 write ["audio" "video"]`, t);
+              this.next();
+              continue;
+            }
+            if (t.type === "string") {
+              this.next();
+              if (!isMedium(t.value)) {
+                this.error(`'${t.value}' is not a medium (${MEDIA.join("|")})`, t);
+              } else if (names2.includes(t.value)) {
+                this.error(`'${name3}' already names the medium '${t.value}'`, t);
+              } else {
+                names2.push(t.value);
+              }
+              continue;
+            }
+            this.error(`'${name3}' medium sets hold quoted medium names (${MEDIA.join("|")}), got '${t.value}'`, t);
+            this.next();
+          }
+          if (!names2.length) {
+            this.error(`'${name3}' names no medium \u2014 an effect that acts on nothing does nothing, so delete the directive rather than emptying its medium set`, open);
+            return null;
+          }
+          return normalizeMediaSet(names2);
+        }
+        // The trailing medium argument: one set, or a `<…>` alternation of sets read
+        // per cycle exactly as every other patterned argument is.
+        parseMediaArg(name3, sig) {
+          if (this.peek().value === "[") return this.parseMediaSet(name3);
+          return this.parseValueSequence(name3, "media", sig);
         }
         // A positive number — plain or fractional — or, where the signature allows
         // it, a pattern of them. Returns null once an error has been recorded.
@@ -39264,8 +39402,27 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         parseNoise(program, nameTok, sig) {
           const metrics = [null, null];
           const args2 = [];
+          let media = null;
           for (; ; ) {
             const t = this.peek();
+            if (sig.mediaArg && this.atMediaArg()) {
+              if (media) {
+                this.error("'noise' already has a medium set", t);
+                this.recover();
+                return;
+              }
+              media = this.parseMediaArg("noise", sig);
+              if (!media) {
+                this.recover();
+                return;
+              }
+              continue;
+            }
+            if (media && !this.atStatementEnd()) {
+              this.error("'noise' takes its medium set last \u2014 move it to the end of the directive", t);
+              this.recover();
+              return;
+            }
             if (t.type === "punct" && t.value === "(") {
               this.error("'noise' takes patterns as '<\u2026>', not parenthesized expressions", t);
               this.recover();
@@ -39310,7 +39467,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             this.error(`'noise' takes at most 4 numeric arguments (two factors then two pinned amounts), got ${args2.length}`, nameTok);
             return;
           }
-          program.chain.push({ fn: "noise", args: args2, metrics, line: nameTok.line, col: nameTok.col });
+          const entry = { fn: "noise", args: args2, metrics, line: nameTok.line, col: nameTok.col };
+          if (media) entry.media = media;
+          program.chain.push(entry);
         }
         // A metric keyword binds to the factor that follows it, so it is legal only
         // ahead of the spectrum or volume factor — never ahead of the pinned
@@ -39349,8 +39508,27 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             }
           }
           const args2 = [];
+          let media = null;
           for (; ; ) {
             const t = this.peek();
+            if (sig.mediaArg && this.atMediaArg()) {
+              if (media) {
+                this.error(`'${name3}' already has a medium set`, t);
+                this.recover();
+                return;
+              }
+              media = this.parseMediaArg(name3, sig);
+              if (!media) {
+                this.recover();
+                return;
+              }
+              continue;
+            }
+            if (media && !this.atStatementEnd()) {
+              this.error(`'${name3}' takes its medium set last \u2014 move it to the end of the directive`, t);
+              this.recover();
+              return;
+            }
             if (t.type === "punct" && t.value === "(") {
               this.error(sig.patternArgs ? `'${name3}' arguments are positive numbers or mini-notation patterns like <2 4> \u2014 parenthesized expressions cannot be executed in the NetCycles editor` : `'${name3}' cannot take Strudel-call arguments \u2014 parameters are plain positive numbers`, t);
               this.skipParenBlob();
@@ -39403,6 +39581,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           const entry = { fn: name3, args: args2.map((a2) => a2.value), line: nameTok.line, col: nameTok.col };
           if (metric) entry.metric = metric;
+          if (media) entry.media = media;
           program.chain.push(entry);
         }
       };

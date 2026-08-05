@@ -90,12 +90,16 @@ export function isValuePattern(node) {
 //
 // Every argument shape counts, since a directive uses one of them: the
 // positional `args` (with `metric` in front) that `# crush` and `# room` take,
-// the metric/scale `pairs` plus `bounds` that `# echo` takes, and the two
-// interleaved `metrics` that `# noise` takes.
+// the metric/scale `pairs` plus `bounds` that `# echo` takes, the two
+// interleaved `metrics` that `# noise` takes, and the trailing `media` set any
+// of them may carry. A patterned medium moves nothing about an effect's
+// PARAMETERS, but it switches the effect on and off across the media as the
+// cycle advances, which needs re-deriving on exactly the same tick.
 export function entryHasValuePattern(entry) {
   if (!entry) return false;
   const candidates = [
     entry.metric,
+    entry.media,
     ...(entry.metrics || []),
     ...(entry.args || []),
     ...(entry.pairs || []).map(p => p && p.value),
@@ -200,6 +204,11 @@ export function evaluateValuePattern(node, cyclePos = 0) {
 // tests. Scalars stringify as themselves; a rest is written the way it was.
 export function formatValuePattern(node) {
   if (node == null) return '~';
+  // A medium set is a LEAF, not a nested sequence, so it comes back out as the
+  // bracketed, quoted, space-separated set that was written — never as
+  // String(array), which would join it with the one separator the grammar
+  // refuses.
+  if (Array.isArray(node)) return `[${node.map(medium => `"${medium}"`).join(' ')}]`;
   if (!isValuePattern(node)) return String(node);
   const open = node.mode === 'alternate' ? '<' : '[';
   const close = node.mode === 'alternate' ? '>' : ']';

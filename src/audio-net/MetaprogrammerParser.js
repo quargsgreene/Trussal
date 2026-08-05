@@ -39,6 +39,9 @@ import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.
 // the bare-`?` probability, which is that reader's to define rather than the
 // grammar's.
 import { evaluateValuePattern, isValuePattern, DEFAULT_DROP_CHANCE } from './ValuePattern.js';
+// Which media an effect may name, and how a written set resolves. The grammar
+// validates against the same list the four consumers gate on.
+import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
@@ -89,24 +92,27 @@ export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
 // parameter, followed by that many optional upper bounds (`# echo`, below).
 // `patternArgs` additionally lets the metric and the numbers be written as
 // mini-notation sequences (`# crush <wcl wcj> <2 4>`), read per cycle — rests
-// and a trailing `*n` / `/n` rate included.
+// and a trailing `*n` / `/n` rate included. `mediaArg` allows the trailing
+// medium set (`# crush wcl 2 ["audio" "video"]`), which narrows the effect
+// from its whole-room default and patterns like any other argument.
 const EFFECTS = {
   // scale=1, fixed metric amount=live. Any worst-case metric may drive the
   // decay, and all three arguments pattern — `# room <wcl wcj> <1 2 ~ 2 3>*2`.
-  room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: EFFECT_METRICS, patternArgs: true },
+  room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   echo: {
     kind: 'effect',
     metricKeywords: ECHO_METRICS,
     metricPairs: ECHO_SLOTS,          // length (cycles), feedback, gain
     patternArgs: true,                // scales and bounds may be <2 3> / [1 4]
-    usage: '# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>]'
+    mediaArg: true,
+    usage: '# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound> <bound> <bound>] [<media>]'
   },
   // scale=1 (8-bit base), fixed metric amount=live
-  crush: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: CRUSH_METRICS, patternArgs: true },
+  crush: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: CRUSH_METRICS, patternArgs: true, mediaArg: true },
   // noise interleaves two metric keywords with its numbers and takes patterns
   // in any slot, which parseChainFn's positional-numbers grammar cannot
   // express — it parses in parseNoise instead.
-  noise: { kind: 'effect', grammar: 'noise', metricKeywords: EFFECT_METRICS, patternArgs: true },
+  noise: { kind: 'effect', grammar: 'noise', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }, // landmarks=false
   // How the aggregator arranges the room's Hydra output in its published
   // frame: true (or bare) tiles every Hydra participant into a square mosaic,
@@ -181,6 +187,26 @@ function tokenize(text) {
     if (ch === ' ' || ch === '\t' || ch === '\r') { advance(); continue; }
     if (ch === '/' && text[i + 1] === '/') { // comment to end of line
       while (i < n && text[i] !== '\n') advance();
+      continue;
+    }
+    if (ch === '"') {
+      // Medium names are the only strings the language has, so this lexeme
+      // exists for them alone — which is also what keeps `["audio" "video"]`
+      // distinguishable from the numeric subdivision `[1 4]` that every
+      // patterned argument already spells with the same brackets.
+      let j = i + 1;
+      while (j < n && text[j] !== '"' && text[j] !== '\n') j++;
+      const terminated = text[j] === '"';
+      if (!terminated) {
+        errors.push({
+          message: 'unterminated string — a medium name closes with a \'"\' on the same line',
+          line: startLine, col: startCol
+        });
+      }
+      // The raw spelling carries the quotes so tokenWidth measures the token's
+      // real source extent and an editor squiggle covers what was written.
+      push('string', text.slice(i + 1, j), startLine, startCol, text.slice(i, terminated ? j + 1 : j));
+      advance(j - i + (terminated ? 1 : 0));
       continue;
     }
     if (ch === '$' || ch === '#') { push('sigil', ch, startLine, startCol); advance(); continue; }
@@ -751,6 +777,31 @@ class Parser {
         this.next();
         break;
       }
+      if (kind === 'media' && t.type === 'punct' && t.value === '[') {
+        // In a MEDIA pattern `[…]` is a SET, not a subdivision — the elements
+        // of `<["audio" "video"] "css">` are sets. Subdividing has nothing to
+        // offer here anyway: an effect is either acting on a medium for the
+        // span or it is not, so splitting that span would only mean switching
+        // media faster, which the alternation already expresses.
+        const set = this.parseMediaSet(name);
+        if (!set) return null;
+        terms.push(set);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
+        continue;
+      }
+      if (kind === 'media' && t.type === 'string') {
+        // A bare name is the one-element set: brackets are what a set of
+        // several needs, not what makes something a set.
+        this.next();
+        if (!isMedium(t.value)) {
+          this.error(`'${t.value}' is not a medium (${MEDIA.join('|')})`, t);
+          terms.push(null); // keep the parallel arrays aligned — see below
+        } else {
+          terms.push(normalizeMediaSet([t.value]));
+        }
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
+        continue;
+      }
       if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
         // The nested call consumes its own trailing RATE (`<a [b c]*2>`) but
         // leaves `@` and `?` for us: those weigh and drop the group as an
@@ -809,9 +860,12 @@ class Parser {
         continue;
       }
       this.error(
-        leafKind === 'metric'
-          ? `'${name}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join('|')}), got '${t.value}'`
-          : `'${name}' pattern expects positive numbers, got '${t.value}'`,
+        kind === 'media'
+          ? `'${name}' medium pattern expects quoted medium names or sets of them ` +
+            `(${MEDIA.join('|')}), got '${t.value}'`
+          : leafKind === 'metric'
+            ? `'${name}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join('|')}), got '${t.value}'`
+            : `'${name}' pattern expects positive numbers, got '${t.value}'`,
         t
       );
       this.next();
@@ -1007,8 +1061,11 @@ class Parser {
     const slots = sig.metricPairs;
     const pairs = [];
     const bounds = [];
+    let media = null;
 
-    if (!this.atStatementEnd()) {
+    // A bare `# echo ["audio"]` is the defaulted effect narrowed to one
+    // medium, so a leading medium set is not the start of the pair list.
+    if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
       for (let i = 0; i < slots.length; i++) {
         const t = this.peek();
         if (t.type !== 'word' || !sig.metricKeywords.includes(t.value)) {
@@ -1024,10 +1081,18 @@ class Parser {
         pairs.push({ metric: t.value, value });
       }
       for (let i = 0; i < slots.length && !this.atStatementEnd(); i++) {
+        // The bounds are the last numeric slots, so a medium set is what ends
+        // the list early — `# echo … 1500 ["audio"]` bounds only the length.
+        if (sig.mediaArg && this.atMediaArg()) break;
         const value = this.parseNumericArg(name, `${slots[i]} upper bound`, sig);
         if (value == null) { this.recover(); return; }
         bounds.push(value);
       }
+    }
+
+    if (sig.mediaArg && this.atMediaArg()) {
+      media = this.parseMediaArg(name, sig);
+      if (!media) { this.recover(); return; }
     }
 
     if (!this.atStatementEnd()) {
@@ -1036,7 +1101,9 @@ class Parser {
       this.recover();
       return;
     }
-    program.chain.push({ fn: name, args: [], pairs, bounds, line: nameTok.line, col: nameTok.col });
+    const entry = { fn: name, args: [], pairs, bounds, line: nameTok.line, col: nameTok.col };
+    if (media) entry.media = media;
+    program.chain.push(entry);
   }
 
   // A positive number, plain or as the fraction `1/2` — the spelling
@@ -1063,6 +1130,86 @@ class Parser {
       return null;
     }
     return val;
+  }
+
+  // The offset of the first token at or after `offset` that is not a line
+  // break. Patterns may wrap lines, so a lookahead has to step over newlines
+  // the way parseValueSequence does.
+  nextMeaningful(offset) {
+    let i = offset;
+    while (this.peek(i) && this.peek(i).type === 'newline') i++;
+    return i;
+  }
+
+  // Whether what follows opens the trailing MEDIUM argument rather than
+  // another numeric one. Both are written with the same brackets, so the LEAF
+  // settles it: a quoted string can only be a medium name, and a number can
+  // never be one. That is what makes `# echo … [1 4] ["audio"]` — a numeric
+  // bound followed by a medium set — read unambiguously.
+  atMediaArg() {
+    const t = this.peek();
+    if (t.type !== 'punct' || (t.value !== '[' && t.value !== '<')) return false;
+    let i = this.nextMeaningful(1);
+    // `<["audio" "video"] …>`: step over the opening bracket of the first set
+    // to reach the name inside it.
+    const inner = this.peek(i);
+    if (t.value === '<' && inner && inner.type === 'punct' && inner.value === '[') {
+      i = this.nextMeaningful(i + 1);
+    }
+    const leaf = this.peek(i);
+    return !!leaf && leaf.type === 'string';
+  }
+
+  // `["audio" "video"]` — one set of media, space-separated. A comma is
+  // refused by name rather than as a generic unexpected token: it is the one
+  // separator a performer arriving from JSON would reach for, and the error
+  // has to teach the convention rather than just reject the character.
+  parseMediaSet(name) {
+    const open = this.next(); // '['
+    const names = [];
+    for (;;) {
+      const t = this.peek();
+      // A directive is one line: an unclosed set ends here rather than
+      // swallowing the statements below it.
+      if (t.type === 'eof' || t.type === 'sigil') {
+        this.error(`unclosed medium set on '${name}' — expected ']'`, t);
+        return null;
+      }
+      if (t.type === 'newline') { this.next(); continue; }
+      if (t.type === 'punct' && t.value === ']') { this.next(); break; }
+      if (t.type === 'punct' && t.value === ',') {
+        this.error(`'${name}' medium names are separated by spaces, not commas — ` +
+          `write ["audio" "video"]`, t);
+        this.next();
+        continue;
+      }
+      if (t.type === 'string') {
+        this.next();
+        if (!isMedium(t.value)) {
+          this.error(`'${t.value}' is not a medium (${MEDIA.join('|')})`, t);
+        } else if (names.includes(t.value)) {
+          this.error(`'${name}' already names the medium '${t.value}'`, t);
+        } else {
+          names.push(t.value);
+        }
+        continue;
+      }
+      this.error(`'${name}' medium sets hold quoted medium names (${MEDIA.join('|')}), got '${t.value}'`, t);
+      this.next();
+    }
+    if (!names.length) {
+      this.error(`'${name}' names no medium — an effect that acts on nothing does nothing, ` +
+        'so delete the directive rather than emptying its medium set', open);
+      return null;
+    }
+    return normalizeMediaSet(names);
+  }
+
+  // The trailing medium argument: one set, or a `<…>` alternation of sets read
+  // per cycle exactly as every other patterned argument is.
+  parseMediaArg(name, sig) {
+    if (this.peek().value === '[') return this.parseMediaSet(name);
+    return this.parseValueSequence(name, 'media', sig);
   }
 
   // A positive number — plain or fractional — or, where the signature allows
@@ -1102,8 +1249,28 @@ class Parser {
   parseNoise(program, nameTok, sig) {
     const metrics = [null, null]; // spectrum, volume: keyword, pattern, or unwritten
     const args = [];              // spectrum factor, volume factor, amount 1, amount 2
+    let media = null;
     for (;;) {
       const t = this.peek();
+      // Before the pattern branch, for the same reason as in parseChainFn: the
+      // brackets are shared and only the leaf tells the two apart.
+      if (sig.mediaArg && this.atMediaArg()) {
+        if (media) {
+          this.error("'noise' already has a medium set", t);
+          this.recover();
+          return;
+        }
+        media = this.parseMediaArg('noise', sig);
+        if (!media) { this.recover(); return; }
+        continue;
+      }
+      // As in parseChainFn: the set names the media of the whole directive, so
+      // nothing may follow it.
+      if (media && !this.atStatementEnd()) {
+        this.error("'noise' takes its medium set last — move it to the end of the directive", t);
+        this.recover();
+        return;
+      }
       if (t.type === 'punct' && t.value === '(') {
         this.error("'noise' takes patterns as '<…>', not parenthesized expressions", t);
         this.recover();
@@ -1147,7 +1314,9 @@ class Parser {
       this.error(`'noise' takes at most 4 numeric arguments (two factors then two pinned amounts), got ${args.length}`, nameTok);
       return;
     }
-    program.chain.push({ fn: 'noise', args, metrics, line: nameTok.line, col: nameTok.col });
+    const entry = { fn: 'noise', args, metrics, line: nameTok.line, col: nameTok.col };
+    if (media) entry.media = media;
+    program.chain.push(entry);
   }
 
   // A metric keyword binds to the factor that follows it, so it is legal only
@@ -1189,8 +1358,29 @@ class Parser {
       }
     }
     const args = [];
+    let media = null;
     for (;;) {
       const t = this.peek();
+      // Checked BEFORE the numeric-pattern branch below, which would otherwise
+      // take `["audio" "video"]` for a subdivision and fault on its leaves.
+      if (sig.mediaArg && this.atMediaArg()) {
+        if (media) {
+          this.error(`'${name}' already has a medium set`, t);
+          this.recover();
+          return;
+        }
+        media = this.parseMediaArg(name, sig);
+        if (!media) { this.recover(); return; }
+        continue;
+      }
+      // The medium set closes the directive. Allowing arguments after it would
+      // read as though the set applied only to what preceded it, which is not
+      // what it means — an effect names its media once, for the whole line.
+      if (media && !this.atStatementEnd()) {
+        this.error(`'${name}' takes its medium set last — move it to the end of the directive`, t);
+        this.recover();
+        return;
+      }
       if (t.type === 'punct' && t.value === '(') {
         this.error(sig.patternArgs
           ? `'${name}' arguments are positive numbers or mini-notation patterns like <2 4> — parenthesized expressions cannot be executed in the NetCycles editor`
@@ -1249,6 +1439,10 @@ class Parser {
     }
     const entry = { fn: name, args: args.map(a => a.value), line: nameTok.line, col: nameTok.col };
     if (metric) entry.metric = metric;
+    // Left off entirely when unwritten, so the AST reports the directives
+    // performers actually typed and the whole-room default lives in one place
+    // (EffectMedia.resolveMedia) rather than being baked into every entry.
+    if (media) entry.media = media;
     program.chain.push(entry);
   }
 }
