@@ -15,7 +15,7 @@ import { getStrudelAudioContext, getAggregatorPeer } from './latency-instrument.
 import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
-import { registerSamplesFromDB } from './user-samples.js';
+import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
 import { rewriteLiveCalls } from './live-input-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
@@ -327,6 +327,9 @@ async function ensureStrudel() {
         safe(typeof registerZZFXSounds === 'function' && registerZZFXSounds()),
         safe(typeof registerSoundfonts === 'function' && registerSoundfonts()),
         safe(typeof registerSampleSource === 'function' && registerSamplesFromDB(registerSampleSource)),
+        // Uploaded images, alongside the sounds: this is what makes img()
+        // resolve inside a Hydra preamble.
+        safe(registerImagesFromDB()),
         safe(samples(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
         safe(samples(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
         safe(samples(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: 'drum-machines' })),
@@ -546,6 +549,11 @@ export async function refreshLocalSamples() {
   if (!mod || typeof mod.registerSampleSource !== 'function') return;
   await registerSamplesFromDB(mod.registerSampleSource).catch(e =>
     console.warn('[strudel] refreshLocalSamples failed', e)
+  );
+  // Images come from the same upload, so a refresh has to re-mint their URLs
+  // too — otherwise a folder dropped in mid-set is playable but not drawable.
+  await registerImagesFromDB().catch(e =>
+    console.warn('[strudel] refreshing uploaded images failed', e)
   );
 }
 

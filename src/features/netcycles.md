@@ -398,6 +398,38 @@ These include the functions `room`, `crush`, `echo`, and `noise`. More analogs w
 
 All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their Hydra counterparts are still computed locally in every browser and published to `window._ncVisual`.
 
+### The medium argument
+
+Every effect has a counterpart in each of the room's four output media, and by default a directive acts on all of them: `# room wcl 2` reverberates the mix, blurs the published frame, blurs the styled text and stretches its letter-spacing at once. An optional trailing set narrows that.
+
+```
+# room wcl 2 ["audio" "video"]                       audio and video only
+# room wcl 2 <["audio" "video"] ["video" "css"]@2>*3 ...and it patterns
+```
+
+The four media are `audio`, `css`, `text` and `video`. Names are space-separated and **a comma is a parse error** — the metaprogram's sequences have always separated elements by whitespace, and one collection spelled differently from every other would be a second convention to learn. Medium names are the only strings the language has, which is what keeps `["audio" "video"]` distinguishable from the numeric subdivision `[1 4]` a patterned argument may already be written as: **inside a medium argument `[…]` is a set, not a subdivision.** The set closes the directive — nothing may follow it.
+
+The set patterns like every other argument (`<…>` alternation, with `@`, `?`, `!` and a `*n` / `/n` rate), so an effect can move across media as the cycle advances. A rest reads as the default, which is all four: a rest widens rather than silences. Unwritten means all four for the same reason — the argument is how a performer takes media away, not how they opt in, so existing programs are unchanged.
+
+`EffectMedia.js` owns the names, the default and the resolution of a patterned set. It has to: the audio gate runs in the aggregator, the video gate in its compositor, and css/text in each browser, and three processes must agree on what a set selected on a given cycle.
+
+### What each effect does to each medium
+
+| | **audio** | **video** | **css** | **text** |
+|---|---|---|---|---|
+| `room` | Schroeder reverb, decay from the metric | blur; radius from the cutoff, mix from the decay | blur on the styled spans | letter-spacing grows, **added** to the authored value |
+| `crush` | bit-depth + sample-rate reduction | pixel decimation (the blockiness *is* the compression) | declaration values quantized; colours posterized to `2^bitDepth` levels | a scaled share of the letters is dropped |
+| `echo` | delay, feedback, gain | crossfade between turns | each turn's declarations transition out of the previous turn's | the turn's last word repeats, each quieter |
+| `noise` | noise bed, colour from the tilt | grain over the frame | numeric declarations jitter | glyphs prefixed, infixed and suffixed; the tilt picks the character band |
+
+Audio runs on the aggregator's master bus and video on its composited frame — **one application point each**, for the same reason: the master is the single mix the room hears and the mosaic is the single image it sees. `css` and `text` have no such point, because every browser paints its own chat panel.
+
+That is why **every text and css mutation is seeded** (`SeededRandom.js`), never `Math.random()`. Text Cycles' guarantee is that all clients paint the same words at the same time from the shared program, and one un-agreed coin flip breaks that silently and only for some viewers. The seed is drawn from the **Net Cycles grid** cycle, the performer, and the word's position in the turn — not from the Strudel hap's cycle number, which is per-browser (each client starts its own Strudel scheduler at its own moment) and would reintroduce exactly the divergence the seeding prevents.
+
+Each mapping is capped, at the point where more of the effect stops reading as the effect: blur at 24 px (3 px on text, which has to stay readable), pixel blocks at 32, grain at 0.6, crossfades at 2 s, letter-spacing at 14 px, letter-dropping at 60 %, injected glyphs at 4 per word, and word repeats at 3. `VideoState.js` and `TextState.js` hold those ceilings beside the mappings that need them.
+
+**Uploaded material is never rewritten.** `# crush` compresses a render-time copy of an image (`compressImage`), so turning the directive off restores the picture — a set cannot slowly destroy its own material. Uploaded images live in the performer's own IndexedDB and are addressed by an object URL minted there, so a preamble calling `img(...)` earns a **blit** cell rather than a re-executed one, exactly as a camera preamble does: the aggregator never had the file and would draw a broken image.
+
 Effect parameters are plain positive numbers, except where the effect says otherwise: `room`, `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position.
 
 A patterned argument is read the way a `$ participants` sequence is, on the same timeline model and with the same operators: a sequence owns units, and a cycle shows a window of them. What they apply to here is a VALUE — the parameter in force over that span — rather than a turn.

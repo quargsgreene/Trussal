@@ -8,7 +8,7 @@ import {
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
   pageSetMasterCrush, pageSetMasterEcho,
   pageMosaic, pageSetMosaicCells, pageSetMosaicActive, pageSetMosaicEnabled, pageSetMosaicCycle,
-  pageMosaicDiag,
+  pageMosaicDiag, pageSetMosaicVideo,
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
 } from './page-scripts.js';
@@ -27,6 +27,7 @@ import { echoParams } from '../../../src/audio-net/av-effects/Echo.js';
 // same cadence, so a patterned argument steps identically on both paths.
 import { chainHasValuePattern, PATTERN_TICK_MS } from '../../../src/audio-net/ValuePattern.js';
 import { entryAffects } from '../../../src/audio-net/EffectMedia.js';
+import { videoStateFor, videoStateIsNeutral } from '../../../src/audio-net/av-effects/VideoState.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -252,6 +253,9 @@ export class AggregatorBot extends Bot {
     #lastEmptyTurnLogAt = 0;     // rate limit for the empty-turn diagnostic
     #worstCase = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
     #roomChain = null;
+    // The applied program's whole `#` chain, for the video counterpart.
+    #chain = [];
+    #lastVideoPushJson = undefined;
     #lastRoomPushJson = 'null';
     #noiseChain = null;
     #lastNoisePushJson = 'null';
@@ -748,6 +752,10 @@ export class AggregatorBot extends Bot {
         this.#noiseChain = chain.find((c) => c.fn === 'noise') || null;
         this.#crushChain = chain.find((c) => c.fn === 'crush') || null;
         this.#echoChain = chain.find((c) => c.fn === 'echo') || null;
+        // The whole chain, for the VIDEO counterpart: it composes every
+        // directive onto one frame rather than building one node per effect,
+        // so it is computed from the chain as a unit.
+        this.#chain = chain;
         this.#syncMasterEffects();
         this.#syncPatternLoop(chain);
         // `# mosaic` is this bot's video arrangement, adopted with the program
@@ -755,12 +763,39 @@ export class AggregatorBot extends Bot {
         this.#syncMosaicEnabled(mosaicEnabled(ast));
     }
 
-    /** Push all four master-bus effects. */
+    /** Push all four master-bus effects, and the chain's video counterpart. */
     #syncMasterEffects() {
         this.#syncMasterRoom();
         this.#syncMasterNoise();
         this.#syncMasterCrush();
         this.#syncMasterEcho();
+        this.#syncMosaicVideo();
+    }
+
+    /**
+     * The `#` chain applied to the PUBLISHED FRAME — blur, pixel block, grain
+     * and the per-turn crossfade.
+     *
+     * Pushed from the same place as the master audio and on the same triggers,
+     * because they are the same directives: `# room wcl 2` reverberates the
+     * mix and blurs the image off one decay, and computing them apart is how
+     * a sound and its picture drift out of step.
+     *
+     * A chain that touches no pixel pushes null rather than a neutral state,
+     * so the compositor's fast path (a direct blit, no offscreen buffers) is
+     * what a program with no video effects actually runs.
+     */
+    #syncMosaicVideo() {
+        if (!this.page) return;
+        const state = videoStateFor(this.#chain, this.#worstCase, this.#cycleContext());
+        const payload = videoStateIsNeutral(state) ? null : state;
+        const json = JSON.stringify(payload);
+        if (json === this.#lastVideoPushJson) return;
+        this.#lastVideoPushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMosaicVideo, payload)).catch((e) => {
+            this.#lastVideoPushJson = 'stale';
+            console.error('[aggregator-bot] mosaic video push failed', e);
+        });
     }
 
     /**

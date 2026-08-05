@@ -29,6 +29,7 @@ import { noiseParams, createNoiseNode } from './Noise.js';
 import { renderGridOverlays, clearGridOverlays } from './Grid.js';
 import { resolveEffectParams } from '../MetaprogrammerParser.js';
 import { chainHasValuePattern, PATTERN_TICK_MS } from '../ValuePattern.js';
+import { textAndCssStateFor, textStateIsNeutral, cssStateIsNeutral } from './TextState.js';
 
 // Re-exported for the callers that read the tick rate off this module; it is
 // declared in ValuePattern.js because the aggregator ticks against it too.
@@ -181,7 +182,21 @@ export class EffectsChainManager {
   }
 
   _publishVisual(resolved) {
-    if (typeof window !== 'undefined') window._ncVisual = visualStateFor(resolved);
+    if (typeof window === 'undefined') return;
+    window._ncVisual = visualStateFor(resolved);
+    // The text and css counterparts, for the Text Cycles renderer. Unlike the
+    // audio and video paths there is no single application point to push
+    // these to — every browser paints its own chat panel — so they are
+    // published here and consumed in text-cycles.js. The CYCLE travels with
+    // them: it is what seeds every mutation, and it has to be the Net Cycles
+    // grid's rather than a Strudel hap's, which is per-browser.
+    const cycle = this.cycleContext();
+    const { text, css } = textAndCssStateFor(this._chainEntries, this._metrics, cycle);
+    window._ncText = {
+      text, css,
+      cycle: Math.floor(cycle.cyclePos),
+      active: !textStateIsNeutral(text) || !cssStateIsNeutral(css)
+    };
   }
 
   patternTicking() { return this._patternTimer != null; }
@@ -232,6 +247,11 @@ export class EffectsChainManager {
     this._grid = null;
     this._syncGridLoop();
     this._syncPatternLoop();
-    if (typeof window !== 'undefined') window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+    if (typeof window !== 'undefined') {
+      window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+      // Left ACTIVE, a torn-down chain would go on dropping letters from every
+      // word the room paints, with no directive anywhere to explain it.
+      window._ncText = null;
+    }
   }
 }

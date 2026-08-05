@@ -144,3 +144,36 @@ dropping them would mean only ever seeing your own words. For a mixed program,
 Text flows only while the performer is playing — `buildPeerBlock` skips peers
 who are not, the same as audio. Stopping leaves already-painted words in the
 chat as history.
+
+## The room's effects, applied to words
+
+A Net Cycles `#` directive reaches text and styling as well as sound. By
+default every effect acts on all four media, so `# room wcl 2` in the shared
+metaprogram stretches the letter-spacing of every word this panel paints while
+it reverberates the mix; `# room wcl 2 ["audio"]` leaves the words alone. See
+`netcycles.md` for the medium argument and the full effect-by-medium table.
+
+| effect | what happens to a word | what happens to its styling |
+|---|---|---|
+| `room` | letter-spacing grows, **added** to your `.spacing()` so what you wrote stays legible | the span blurs |
+| `crush` | a scaled share of the letters is dropped; a word crushed away entirely paints nothing | sizes and spacings snap to a coarse step, colours posterize |
+| `noise` | glyphs are prefixed, infixed and suffixed — the bed's colour picks the character band, from `.,'`-_` (brown) to `#@%&$!?` (white) | numeric declarations jitter |
+| `echo` | the turn's **last** word repeats, each repeat quieter | each turn's declarations transition out of the previous turn's rather than switching hard |
+
+Two properties are worth knowing when a mutation looks wrong:
+
+**Every mutation is seeded, so all clients paint the same characters.** The
+seed names the occurrence — the Net Cycles cycle, the performer, and the word's
+position in the turn — so the third word of a turn mutates identically in every
+browser while the first and second do not follow it. It is deliberately *not*
+seeded from the Strudel cycle number: each browser starts its own scheduler at
+its own moment, so that number is not a shared coordinate and would give every
+viewer different text.
+
+**A word can vanish, and that is the effect working.** `# crush` decides each
+character on its own, so long words lose proportionally more than short ones,
+and a word that loses every character paints nothing at all — the same
+directive is dropping samples out of the audio at that moment.
+
+Echo's repeats are appended when the turn **ends**, since that is the first
+moment its last word is known to have been last.

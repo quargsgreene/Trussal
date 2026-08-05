@@ -88,7 +88,19 @@ export function usesPatternParams(code) {
 //   'blit'      — draw their published video track (camera-fed, can't re-run)
 //   'reexecute' — run the preamble locally in its own Hydra instance
 //   null        — not Hydra, no cell
+// Does this preamble draw one of the performer's UPLOADED IMAGES? Those live
+// in that browser's IndexedDB and are addressed by an object URL minted there,
+// so the aggregator cannot resolve one: re-executing such a preamble in the
+// mosaic page would draw a broken image where the performer sees their
+// picture. Same situation as the camera, and the same answer — blit their
+// published track instead.
+export function usesLocalImage(code) {
+  const split = splitHydraCode(code);
+  if (!split) return false;
+  return /(^|[^\w$])img\s*\(/.test(split.preamble);
+}
+
 export function mosaicCellSource(code) {
   if (!hasHydraCode(code)) return null;
-  return usesCameraSource(code) ? 'blit' : 'reexecute';
+  return (usesCameraSource(code) || usesLocalImage(code)) ? 'blit' : 'reexecute';
 }

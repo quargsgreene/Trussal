@@ -1966,13 +1966,83 @@ export function pageMosaic(options = {}) {
     return entry.hydra ? entry.canvas : null;
   }
 
-  function drawCell(token, rect) {
+  // `target` is the published canvas's context when no frame effect is in
+  // force, and the scene buffer's when one is — the cells are drawn the same
+  // way either side of that choice.
+  function drawCell(token, rect, target) {
     const src = sourceCanvasFor(token);
     if (!src) return;
     try {
-      ctx.drawImage(src, rect.x, rect.y, rect.w, rect.h);
+      (target || ctx).drawImage(src, rect.x, rect.y, rect.w, rect.h);
     } catch (e) {
       noteError(`draw ${token}`, e);
+    }
+  }
+
+  // --- frame effects ---------------------------------------------------------
+  //
+  // The video counterpart of the `#` chain, computed Node-side by
+  // av-effects/VideoState.js and pushed here. Applied in the master path's
+  // order — crush, echo, room, noise — so the image degrades the way the mix
+  // does: decimate the source, carry that through the repeats, blur what the
+  // repeats produced, then lay the grain on top.
+
+  let videoFx = null;        // { blurPx, blurWet, pixelBlock, grain, crossfadeS, crossfadeGain }
+  let work = null;           // the scene, when effects need it off-canvas first
+  let small = null;          // pixelation buffer
+  let fade = null;           // the outgoing turn's last frame, for the crossfade
+  let fadeStartedAt = 0;
+  let grainTile = null;
+  let grainTileAt = 0;
+
+  const fxActive = () => !!videoFx && (
+    (videoFx.blurPx > 0 && videoFx.blurWet > 0)
+    || videoFx.pixelBlock > 1
+    || videoFx.grain > 0
+    || (videoFx.crossfadeS > 0 && videoFx.crossfadeGain > 0)
+  );
+
+  function buffer(existing, w, h) {
+    const c = existing || document.createElement('canvas');
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
+    return c;
+  }
+
+  // Monochrome grain, regenerated a few times a second so it shimmers rather
+  // than sitting as a fixed dirty overlay. One small tile, drawn repeatedly —
+  // per-pixel noise over a whole frame every tick would cost more than every
+  // other effect here combined.
+  function grainPattern(now) {
+    if (grainTile && now - grainTileAt < 80) return grainTile;
+    const size = 128;
+    grainTile = buffer(grainTile, size, size);
+    const g = grainTile.getContext('2d');
+    const img = g.createImageData(size, size);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = (Math.random() * 255) | 0;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    grainTileAt = now;
+    return grainTile;
+  }
+
+  // Draw whichever cells are lit into `target`, which is either the published
+  // canvas (no effects) or the scene buffer (effects).
+  function drawScene(target) {
+    const c = target.getContext('2d');
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, width, height);
+    if (!enabled) {
+      // `# mosaic false`: whoever is streaming, full frame. Nothing else.
+      if (activeToken != null) drawCell(activeToken, { x: 0, y: 0, w: width, h: height }, c);
+      return;
+    }
+    for (const cell of layout) {
+      if (cell.token !== activeToken) continue; // every other cell stays black
+      drawCell(cell.token, cell.rect, c);
     }
   }
 
@@ -1988,17 +2058,76 @@ export function pageMosaic(options = {}) {
       try { live.hydra.tick(dt); } catch (e) { noteError(`tick ${activeToken}`, e); }
     }
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
-
-    if (!enabled) {
-      // `# mosaic false`: whoever is streaming, full frame. Nothing else.
-      if (activeToken != null) drawCell(activeToken, { x: 0, y: 0, w: width, h: height });
+    if (!fxActive()) {
+      drawScene(out);
       return;
     }
-    for (const cell of layout) {
-      if (cell.token !== activeToken) continue; // every other cell stays black
-      drawCell(cell.token, cell.rect);
+
+    work = buffer(work, width, height);
+    drawScene(work);
+    let source = work;
+
+    // crush — spatial decimation. Draw small, then back up with smoothing
+    // off, which is what makes it read as blocks rather than as a soft image.
+    if (videoFx.pixelBlock > 1) {
+      const sw = Math.max(1, Math.round(width / videoFx.pixelBlock));
+      const sh = Math.max(1, Math.round(height / videoFx.pixelBlock));
+      small = buffer(small, sw, sh);
+      const sc = small.getContext('2d');
+      sc.imageSmoothingEnabled = false;
+      sc.drawImage(source, 0, 0, sw, sh);
+      const wc = work.getContext('2d');
+      wc.imageSmoothingEnabled = false;
+      wc.clearRect(0, 0, width, height);
+      wc.drawImage(small, 0, 0, sw, sh, 0, 0, width, height);
+      wc.imageSmoothingEnabled = true;
+      source = work;
+    }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    ctx.drawImage(source, 0, 0);
+
+    // echo — the outgoing turn lingers over the incoming one. The snapshot is
+    // taken at the turn boundary (setActive), so only ONE Hydra instance is
+    // ever ticking: fading two live cells would mean two live WebGL contexts
+    // per transition, against Chromium's ~16-context ceiling.
+    if (fade && videoFx.crossfadeS > 0 && videoFx.crossfadeGain > 0) {
+      const elapsed = (now - fadeStartedAt) / 1000;
+      if (elapsed >= videoFx.crossfadeS) {
+        fade = null;
+      } else {
+        ctx.globalAlpha = videoFx.crossfadeGain * (1 - elapsed / videoFx.crossfadeS);
+        ctx.drawImage(fade, 0, 0);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // room — a blurred copy mixed over the dry frame at the wet balance, so
+    // the image softens as the tail lengthens rather than simply going soft.
+    if (videoFx.blurPx > 0 && videoFx.blurWet > 0) {
+      ctx.filter = `blur(${videoFx.blurPx.toFixed(2)}px)`;
+      ctx.globalAlpha = videoFx.blurWet;
+      ctx.drawImage(source, 0, 0);
+      ctx.filter = 'none';
+      ctx.globalAlpha = 1;
+    }
+
+    // noise — the bed, last, because it is additive and belongs on the image
+    // rather than inside the blur.
+    if (videoFx.grain > 0) {
+      const tile = grainPattern(now);
+      const pattern = ctx.createPattern(tile, 'repeat');
+      if (pattern) {
+        ctx.globalAlpha = videoFx.grain;
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
     }
   }
   requestAnimationFrame(frame);
@@ -2018,7 +2147,33 @@ export function pageMosaic(options = {}) {
       for (const cell of cells) ensureInstance(cell);
     },
     setActive(token) {
-      activeToken = token == null ? null : String(token);
+      const next = token == null ? null : String(token);
+      // The turn boundary is where `# echo`'s crossfade starts, and the only
+      // moment the outgoing performer's last frame still exists — the next
+      // tick advances a different cell and this one stops being drawn. Hold a
+      // copy rather than keeping its Hydra instance ticking: a fade between
+      // two LIVE cells would need two WebGL contexts per transition, and the
+      // whole reason only the active cell renders is Chromium's ~16-context
+      // ceiling.
+      if (next !== activeToken && videoFx && videoFx.crossfadeS > 0 && videoFx.crossfadeGain > 0) {
+        try {
+          fade = buffer(fade, width, height);
+          const f = fade.getContext('2d');
+          f.clearRect(0, 0, width, height);
+          f.drawImage(out, 0, 0);
+          fadeStartedAt = performance.now();
+        } catch (e) {
+          fade = null;
+          noteError('crossfade snapshot', e);
+        }
+      }
+      activeToken = next;
+    },
+    // The `#` chain's video counterpart, recomputed Node-side whenever the
+    // metrics, the cycle or a patterned argument moves. Null clears it.
+    setVideo(state) {
+      videoFx = state || null;
+      if (!videoFx || !(videoFx.crossfadeS > 0)) fade = null;
     },
     setEnabled(on) {
       enabled = !!on;
@@ -2075,6 +2230,18 @@ export function pageSetMosaicActive(token) {
   const m = window.__trussalMosaic;
   if (!m) return false;
   m.setActive(token);
+  return true;
+}
+
+/**
+ * The `#` chain's video counterpart for the published frame — blur, pixel
+ * block, grain and the per-turn crossfade, computed by
+ * av-effects/VideoState.js. Null restores an untouched frame.
+ */
+export function pageSetMosaicVideo(state) {
+  const m = window.__trussalMosaic;
+  if (!m) return false;
+  m.setVideo(state);
   return true;
 }
 

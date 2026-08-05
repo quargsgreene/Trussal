@@ -38205,6 +38205,17 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function normalizeMediaSet(names2) {
     return Object.freeze(MEDIA.filter((m2) => (names2 || []).includes(m2)));
   }
+  function resolveMedia(mediaArg, cyclePos = 0) {
+    if (mediaArg == null) return MEDIA;
+    const value2 = isValuePattern(mediaArg) ? evaluateValuePattern(mediaArg, cyclePos) : mediaArg;
+    if (value2 == null) return MEDIA;
+    const names2 = typeof value2 === "string" ? [value2] : value2;
+    const set2 = normalizeMediaSet(names2);
+    return set2.length ? set2 : MEDIA;
+  }
+  function entryAffects(entry, medium, cyclePos = 0) {
+    return resolveMedia(entry && entry.media, cyclePos).includes(medium);
+  }
   var MEDIA;
   var init_EffectMedia = __esm({
     "src/audio-net/EffectMedia.js"() {
@@ -49550,13 +49561,13 @@ ${err.toString()}`);
 
   // src/audio-net/av-effects/Crush.js
   function crushMetricAmount(metric, metrics, fixed = null) {
-    const clamp2 = (v2) => metric === "wcpl" ? Math.min(1, Math.max(0, v2)) : Math.max(0, v2);
+    const clamp3 = (v2) => metric === "wcpl" ? Math.min(1, Math.max(0, v2)) : Math.max(0, v2);
     if (Number.isFinite(fixed) && fixed >= 0) {
-      return clamp2(metric === "wcpl" ? fixed : fixed * 1e3);
+      return clamp3(metric === "wcpl" ? fixed : fixed * 1e3);
     }
     const m2 = metrics || {};
     const live = metric === "wcpl" ? m2.wcpl : m2[metric];
-    return clamp2(Number.isFinite(live) ? live : 0);
+    return clamp3(Number.isFinite(live) ? live : 0);
   }
   function crushParams(metrics, user = {}, cyclePos = 0) {
     const metricRaw = evaluateValuePattern(user.metric ?? DEFAULT_METRIC2, cyclePos);
@@ -49866,6 +49877,149 @@ ${err.toString()}`);
     }
   });
 
+  // src/audio-net/av-effects/TextState.js
+  function neutralTextState() {
+    return { spacingPx: 0, dropChance: 0, noiseChars: 0, noiseBand: 0, repeats: 0, repeatAlpha: 0 };
+  }
+  function neutralCssState() {
+    return { blurPx: 0, quantizeStep: 0, colorLevels: 0, jitter: 0, fadeFromPrevious: 0 };
+  }
+  function textAndCssStateFor(chainEntries, metrics, cycle = {}) {
+    const cyclePos = cycle.cyclePos || 0;
+    const text2 = neutralTextState();
+    const css = neutralCssState();
+    for (const entry of chainEntries || []) {
+      const onText = entryAffects(entry, "text", cyclePos);
+      const onCss = entryAffects(entry, "css", cyclePos);
+      if (!onText && !onCss) continue;
+      const user = resolveEffectParams(entry, { cycle: cyclePos });
+      switch (entry.fn) {
+        case "room": {
+          const params2 = roomParams(metrics, user, cyclePos);
+          if (onText) {
+            const growth = params2.decayS > 0 ? params2.decayS / (params2.decayS + SPACING_HALF_S) : 0;
+            text2.spacingPx = Math.max(text2.spacingPx, MAX_SPACING_PX * growth);
+          }
+          if (onCss) {
+            css.blurPx = Math.max(css.blurPx, MAX_TEXT_BLUR_PX * (1 - clamp2(params2.visualLowpass, 0, 1)));
+          }
+          break;
+        }
+        case "crush": {
+          const params2 = crushParams(metrics, user, cyclePos);
+          if (onText) {
+            const reduction = Math.max(1, params2.reduction || 1);
+            text2.dropChance = Math.max(text2.dropChance, clamp2(1 - 1 / reduction, 0, MAX_DROP));
+          }
+          if (onCss) {
+            css.quantizeStep = Math.max(css.quantizeStep, clamp2(Math.round(params2.reduction), 0, 64));
+            css.colorLevels = Math.max(css.colorLevels, clamp2(Math.round(Math.pow(2, params2.bitDepth)), 2, 256));
+          }
+          break;
+        }
+        case "noise": {
+          const params2 = noiseParams(metrics, user);
+          const level = clamp2(params2.visualNoise, 0, 1);
+          if (onText) {
+            text2.noiseChars = Math.max(text2.noiseChars, Math.round(MAX_NOISE_CHARS * level));
+            text2.noiseBand = Math.max(
+              text2.noiseBand,
+              clamp2(Math.floor(clamp2(params2.tilt, 0, 1) * NOISE_GLYPHS.length), 0, NOISE_GLYPHS.length - 1)
+            );
+          }
+          if (onCss) css.jitter = Math.max(css.jitter, MAX_JITTER * level);
+          break;
+        }
+        case "echo": {
+          const params2 = echoParams(metrics, user, cycle);
+          if (onText && params2.wetGain > 0) {
+            text2.repeats = Math.max(text2.repeats, Math.ceil(MAX_REPEATS * clamp2(params2.feedback, 0, 1)));
+            text2.repeatAlpha = Math.max(text2.repeatAlpha, clamp2(params2.wetGain, 0, 1));
+          }
+          if (onCss) css.fadeFromPrevious = Math.max(css.fadeFromPrevious, clamp2(params2.wetGain, 0, 1));
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return { text: text2, css };
+  }
+  function textStateIsNeutral(state) {
+    if (!state) return true;
+    return !(state.spacingPx > 0) && !(state.dropChance > 0) && !(state.noiseChars > 0) && !(state.repeats > 0 && state.repeatAlpha > 0);
+  }
+  function cssStateIsNeutral(state) {
+    if (!state) return true;
+    return !(state.blurPx > 0) && !(state.quantizeStep > 1) && !(state.colorLevels > 0 && state.colorLevels < 256) && !(state.jitter > 0) && !(state.fadeFromPrevious > 0);
+  }
+  function crushWord(word2, dropChance, cycle, peer, index2) {
+    if (!(dropChance > 0) || !word2) return word2;
+    const rand3 = seededRandom(hashSeed(cycle, peer, index2, 99));
+    let out = "";
+    for (const ch2 of word2) {
+      if (rand3() >= dropChance) out += ch2;
+    }
+    return out;
+  }
+  function noiseWord(word2, { noiseChars, noiseBand }, cycle, peer, index2) {
+    if (!(noiseChars > 0) || !word2) return word2;
+    const glyphs = NOISE_GLYPHS[clamp2(noiseBand, 0, NOISE_GLYPHS.length - 1)] || NOISE_GLYPHS[0];
+    const rand3 = seededRandom(hashSeed(cycle, peer, index2, 110));
+    const draw = (n2) => {
+      let s2 = "";
+      for (let i = 0; i < n2; i++) s2 += glyphs[Math.floor(rand3() * glyphs.length)] ?? "";
+      return s2;
+    };
+    const pre = Math.round(rand3() * noiseChars);
+    const suf = Math.round(rand3() * (noiseChars - pre));
+    const inf = Math.max(0, noiseChars - pre - suf);
+    const prefix = draw(pre);
+    const suffix = draw(suf);
+    if (inf > 0 && word2.length > 1) {
+      const at2 = 1 + Math.floor(rand3() * (word2.length - 1));
+      return prefix + word2.slice(0, at2) + draw(inf) + word2.slice(at2) + suffix;
+    }
+    return prefix + word2 + suffix;
+  }
+  function mutateNumber(value2, { quantizeStep, jitter }, cycle, peer, index2) {
+    let out = value2;
+    if (quantizeStep > 1) out = Math.round(out / quantizeStep) * quantizeStep;
+    if (jitter > 0) {
+      const rand3 = seededRandom(hashSeed(cycle, peer, index2, 106));
+      out = out * (1 + (rand3() * 2 - 1) * jitter);
+    }
+    return out;
+  }
+  var MAX_SPACING_PX, MAX_DROP, MAX_NOISE_CHARS, MAX_REPEATS, MAX_TEXT_BLUR_PX, MAX_JITTER, SPACING_HALF_S, NOISE_GLYPHS, clamp2;
+  var init_TextState = __esm({
+    "src/audio-net/av-effects/TextState.js"() {
+      init_Room();
+      init_Echo();
+      init_Crush();
+      init_Noise();
+      init_MetaprogrammerParser();
+      init_EffectMedia();
+      init_SeededRandom();
+      MAX_SPACING_PX = 14;
+      MAX_DROP = 0.6;
+      MAX_NOISE_CHARS = 4;
+      MAX_REPEATS = 3;
+      MAX_TEXT_BLUR_PX = 3;
+      MAX_JITTER = 0.5;
+      SPACING_HALF_S = 1;
+      NOISE_GLYPHS = [
+        " .,'`-_",
+        // brown — barely marks the word
+        "~^*+=:;<>/\\|",
+        // pink/white middle
+        "#@%&$!?0123456789ABCXYZ"
+        // white — dense and loud
+      ];
+      clamp2 = (value2, lo, hi2) => Math.min(hi2, Math.max(lo, Number.isFinite(value2) ? value2 : lo));
+    }
+  });
+
   // src/audio-net/av-effects/index.js
   function computeChainParams(chainEntries, metrics, cycle = {}) {
     const out = [];
@@ -49913,6 +50067,7 @@ ${err.toString()}`);
       init_Grid();
       init_MetaprogrammerParser();
       init_ValuePattern();
+      init_TextState();
       MASTER_BUS_EFFECTS = /* @__PURE__ */ new Set(["room", "noise", "crush", "echo"]);
       AUDIO_EFFECTS = {
         room: createRoomNode,
@@ -50008,7 +50163,16 @@ ${err.toString()}`);
           this._publishVisual(resolved);
         }
         _publishVisual(resolved) {
-          if (typeof window !== "undefined") window._ncVisual = visualStateFor(resolved);
+          if (typeof window === "undefined") return;
+          window._ncVisual = visualStateFor(resolved);
+          const cycle = this.cycleContext();
+          const { text: text2, css } = textAndCssStateFor(this._chainEntries, this._metrics, cycle);
+          window._ncText = {
+            text: text2,
+            css,
+            cycle: Math.floor(cycle.cyclePos),
+            active: !textStateIsNeutral(text2) || !cssStateIsNeutral(css)
+          };
         }
         patternTicking() {
           return this._patternTimer != null;
@@ -50056,7 +50220,10 @@ ${err.toString()}`);
           this._grid = null;
           this._syncGridLoop();
           this._syncPatternLoop();
-          if (typeof window !== "undefined") window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+          if (typeof window !== "undefined") {
+            window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+            window._ncText = null;
+          }
         }
       };
     }
@@ -51065,8 +51232,15 @@ ${SHORTCUT_LINES[fn]}
   var DB_VERSION = 1;
   var DB_TABLE = "usersamples";
   var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["wav", "mp3", "flac", "ogg", "m4a", "aac"]);
+  var IMAGE_EXTENSIONS = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
+  function extensionOf(filename) {
+    return String(filename || "").split(".").pop().toLowerCase();
+  }
   function isAudioFile(filename) {
-    return AUDIO_EXTENSIONS.has(filename.split(".").pop().toLowerCase());
+    return AUDIO_EXTENSIONS.has(extensionOf(filename));
+  }
+  function isImageFile(filename) {
+    return IMAGE_EXTENSIONS.has(extensionOf(filename));
   }
   function openSamplesDB() {
     return new Promise((resolve2, reject) => {
@@ -51150,12 +51324,12 @@ ${SHORTCUT_LINES[fn]}
     });
   }
   async function uploadSamplesToDB(files2, onDone) {
-    const audioFiles = Array.from(files2).filter((f2) => isAudioFile(f2.name));
-    if (!audioFiles.length) {
+    const wanted = Array.from(files2).filter((f2) => isAudioFile(f2.name) || isImageFile(f2.name));
+    if (!wanted.length) {
       onDone?.(0);
       return;
     }
-    const records = await Promise.all(audioFiles.map(async (f2) => {
+    const records = await Promise.all(wanted.map(async (f2) => {
       const blob = await fetch(URL.createObjectURL(f2)).then((r2) => r2.blob());
       return {
         id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
@@ -51172,6 +51346,51 @@ ${SHORTCUT_LINES[fn]}
     records.forEach((r2) => objectStore.put(r2));
     console.log(`[trussal] stored ${records.length} sample(s) in IDB`);
     onDone?.(records.length);
+  }
+  var imageUrls = /* @__PURE__ */ new Map();
+  function folderOf(id3) {
+    const parts = String(id3).split("/");
+    return parts.length > 1 ? parts[parts.length - 2] : "";
+  }
+  async function registerImagesFromDB() {
+    const idb = await openSamplesDB().catch((e30) => {
+      console.error("[trussal] could not open the sample DB for images", e30);
+      throw e30;
+    });
+    if (!idb) return 0;
+    for (const entries2 of imageUrls.values()) {
+      for (const entry of entries2) URL.revokeObjectURL(entry.url);
+    }
+    imageUrls.clear();
+    const { objectStore } = idb;
+    const stored = await new Promise((resolve2, reject) => {
+      const req = objectStore.getAll();
+      req.onsuccess = () => resolve2(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+    let count = 0;
+    for (const record of stored) {
+      if (!record || !isImageFile(record.title || record.id)) continue;
+      const folder = folderOf(record.id) || (record.title || "").replace(/\.[^.]+$/, "");
+      if (!imageUrls.has(folder)) imageUrls.set(folder, []);
+      imageUrls.get(folder).push({ title: record.title, url: URL.createObjectURL(record.blob) });
+      count++;
+    }
+    for (const entries2 of imageUrls.values()) {
+      entries2.sort((a2, b) => String(a2.title).localeCompare(String(b.title)));
+    }
+    if (typeof window !== "undefined") window.img = imageUrl;
+    console.log(`[trussal] ${count} uploaded image(s) available to img()`);
+    return count;
+  }
+  function imageUrl(folder, index2 = 0) {
+    const entries2 = imageUrls.get(String(folder));
+    if (!entries2 || !entries2.length) {
+      console.warn(`[trussal] img("${folder}") \u2014 no uploaded image by that name`);
+      return "";
+    }
+    const i = Number.isFinite(index2) ? Math.abs(Math.trunc(index2)) % entries2.length : 0;
+    return entries2[i].url;
   }
 
   // src/live-input.js
@@ -51590,6 +51809,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   }
 
   // src/text-cycles.js
+  init_TextState();
   var CONTAINER_ID = "trussal-text-cycles";
   var STYLE_ID = "trussal-text-cycles-style";
   var MAX_BUBBLES = 200;
@@ -51671,6 +51891,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   }
   function bubbleFor(peerId, cycle, peerClass) {
     const key = `${peerId}:${cycle}`;
+    if (!bubbles.has(key)) echoLastWord(peerId);
     const existing = bubbles.get(key);
     if (existing && existing.parentNode === container) return existing;
     const bubble = document.createElement("div");
@@ -51692,30 +51913,129 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     return bubble;
   }
+  var wordCounters = /* @__PURE__ */ new Map();
+  function nextWordIndex(peerId, cycle) {
+    const key = `${peerId}:${cycle}`;
+    const n2 = wordCounters.get(key) ?? 0;
+    wordCounters.set(key, n2 + 1);
+    if (wordCounters.size > 512) {
+      for (const k2 of wordCounters.keys()) {
+        if (wordCounters.size <= 256) break;
+        wordCounters.delete(k2);
+      }
+    }
+    return n2;
+  }
+  function peerSeed(peerId) {
+    const s2 = String(peerId ?? "");
+    let h2 = 0;
+    for (let i = 0; i < s2.length; i++) h2 = Math.imul(h2, 31) + s2.charCodeAt(i) | 0;
+    return h2;
+  }
+  var NUMBER_UNIT_RE = /(-?\d*\.?\d+)(px|em|rem|%|pt|vh|vw)?/g;
+  var HEX_COLOUR_RE = /#([0-9a-fA-F]{6})\b/g;
+  function mutateDeclaration(prop, value2, fx, cycle, peer, index2) {
+    if (!fx || !(fx.quantizeStep > 1) && !(fx.jitter > 0) && !(fx.colorLevels > 0 && fx.colorLevels < 256)) {
+      return value2;
+    }
+    let out = String(value2);
+    if (fx.colorLevels > 0 && fx.colorLevels < 256) {
+      const levels = Math.max(2, Math.round(fx.colorLevels));
+      out = out.replace(HEX_COLOUR_RE, (_m, hex) => {
+        const step = 255 / (levels - 1);
+        const channel2 = (i) => {
+          const v2 = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+          return Math.round(Math.round(v2 / step) * step).toString(16).padStart(2, "0");
+        };
+        return `#${channel2(0)}${channel2(1)}${channel2(2)}`;
+      });
+      if (/^#/.test(out.trim())) return out;
+    }
+    let nth = 0;
+    return out.replace(NUMBER_UNIT_RE, (match2, num2, unit2) => {
+      const mutated = mutateNumber(parseFloat(num2), fx, cycle, peer, index2 * 16 + nth++);
+      if (!Number.isFinite(mutated)) return match2;
+      return `${Math.round(mutated * 100) / 100}${unit2 || ""}`;
+    });
+  }
+  var previousTurnStyle = /* @__PURE__ */ new Map();
+  function rememberTurnStyle(peerId, span) {
+    previousTurnStyle.set(String(peerId), span.style.cssText);
+  }
+  function crossfadeFromPreviousTurn(span, peerId, fx) {
+    const previous = previousTurnStyle.get(String(peerId));
+    if (!previous) return;
+    const target = span.style.cssText;
+    if (previous === target) return;
+    const seconds2 = Math.max(0.05, fx.fadeFromPrevious * 2);
+    span.style.cssText = previous;
+    span.style.transition = `all ${seconds2.toFixed(2)}s linear`;
+    requestAnimationFrame(() => {
+      span.style.cssText = `${target};transition:all ${seconds2.toFixed(2)}s linear`;
+    });
+  }
+  function echoLastWord(peerId) {
+    const held = lastWordOfTurn.get(String(peerId));
+    if (!held) return;
+    lastWordOfTurn.delete(String(peerId));
+    const { text: text2, line, repeats, alpha, peerClass } = held;
+    if (!(repeats > 0) || !line || !line.isConnected) return;
+    for (let i = 1; i <= repeats; i++) {
+      const echo2 = document.createElement("span");
+      echo2.className = `tc-word tc-echo ${peerClass}`;
+      echo2.textContent = text2;
+      echo2.style.opacity = String(Math.max(0.05, alpha * Math.pow(0.6, i)));
+      line.appendChild(document.createTextNode(" "));
+      line.appendChild(echo2);
+    }
+  }
+  var lastWordOfTurn = /* @__PURE__ */ new Map();
   function paint(value2, cycle) {
     ensureContainer();
-    const text2 = resolve(value2.word);
+    let text2 = resolve(value2.word);
     if (text2 == null || text2 === "") return;
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
+    const fx = typeof window !== "undefined" && window._ncText || null;
+    const active3 = fx && fx.active ? fx : null;
+    const seedCycle = active3 ? active3.cycle : 0;
+    const seedPeer = peerSeed(peerId);
+    const wordIndex = nextWordIndex(peerId, cycle);
+    if (active3) {
+      text2 = crushWord(text2, active3.text.dropChance, seedCycle, seedPeer, wordIndex);
+      if (!text2) return;
+      text2 = noiseWord(text2, active3.text, seedCycle, seedPeer, wordIndex);
+    }
     const bubble = bubbleFor(peerId, cycle, peerClass);
     const line = bubble.lastChild;
     const span = document.createElement("span");
     span.className = `tc-word ${peerClass}`;
     span.textContent = text2;
+    const styleFx = active3 ? active3.css : null;
     for (const [param, prop] of CSS_BY_PARAM) {
       if (value2[param] == null) continue;
       for (const [p, v2] of sanitizeDeclarations(`${prop}: ${resolve(value2[param])}`)) {
-        span.style.setProperty(p, v2);
+        span.style.setProperty(p, mutateDeclaration(p, v2, styleFx, seedCycle, seedPeer, wordIndex));
       }
     }
     if (value2.css != null) {
       const raw = typeof value2.css === "object" ? value2.css : resolve(value2.css);
-      for (const [p, v2] of sanitizeDeclarations(raw)) span.style.setProperty(p, v2);
+      for (const [p, v2] of sanitizeDeclarations(raw)) {
+        span.style.setProperty(p, mutateDeclaration(p, v2, styleFx, seedCycle, seedPeer, wordIndex));
+      }
     }
     if (value2.hover != null) {
       const cls = hoverClassFor(peerClass, resolve(value2.hover));
       if (cls) span.classList.add(cls);
+    }
+    if (styleFx) {
+      if (styleFx.blurPx > 0) span.style.filter = `blur(${styleFx.blurPx.toFixed(2)}px)`;
+      if (active3.text.spacingPx > 0) {
+        const authored = parseFloat(span.style.letterSpacing) || 0;
+        span.style.letterSpacing = `${(authored + active3.text.spacingPx).toFixed(2)}px`;
+      }
+      if (styleFx.fadeFromPrevious > 0) crossfadeFromPreviousTurn(span, peerId, styleFx);
+      rememberTurnStyle(peerId, span);
     }
     let node = span;
     if (value2.hyperlink != null) {
@@ -51731,6 +52051,15 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (line.childNodes.length) line.appendChild(document.createTextNode(" "));
     line.appendChild(node);
+    if (active3 && active3.text.repeats > 0 && active3.text.repeatAlpha > 0) {
+      lastWordOfTurn.set(String(peerId), {
+        text: text2,
+        line,
+        peerClass,
+        repeats: active3.text.repeats,
+        alpha: active3.text.repeatAlpha
+      });
+    }
     const log3 = container.parentNode;
     if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
       log3.scrollTop = log3.scrollHeight;
@@ -51779,6 +52108,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   }
   function stopTextCycles() {
     active2 = false;
+    lastWordOfTurn.clear();
+    previousTurnStyle.clear();
+    wordCounters.clear();
   }
 
   // src/hydra-video.js
@@ -52253,6 +52585,9 @@ ${buildStrudelVoice(strudelCode, fx)}`;
           safe(typeof registerZZFXSounds2 === "function" && registerZZFXSounds2()),
           safe(typeof registerSoundfonts2 === "function" && registerSoundfonts2()),
           safe(typeof registerSampleSource2 === "function" && registerSamplesFromDB(registerSampleSource2)),
+          // Uploaded images, alongside the sounds: this is what makes img()
+          // resolve inside a Hydra preamble.
+          safe(registerImagesFromDB()),
           safe(samples2(`${baseCDN}/piano.json`, `${baseCDN}/piano/`, { prebake: true })),
           safe(samples2(`${baseCDN}/vcsl.json`, `${baseCDN}/VCSL/`, { prebake: true })),
           safe(samples2(`${baseCDN}/tidal-drum-machines.json`, `${baseCDN}/tidal-drum-machines/machines/`, { prebake: true, tag: "drum-machines" })),
@@ -52472,6 +52807,9 @@ ${next}`;
     if (!mod2 || typeof mod2.registerSampleSource !== "function") return;
     await registerSamplesFromDB(mod2.registerSampleSource).catch(
       (e30) => console.warn("[strudel] refreshLocalSamples failed", e30)
+    );
+    await registerImagesFromDB().catch(
+      (e30) => console.warn("[strudel] refreshing uploaded images failed", e30)
     );
   }
   async function rebakeStrudel() {
@@ -53933,9 +54271,9 @@ ${s2}${BTN_MARKER}`)
       const selStart = ta.selectionStart, selEnd = ta.selectionEnd;
       ta.value = next;
       if (hadFocus) {
-        const clamp2 = (n2) => Math.min(n2, next.length);
+        const clamp3 = (n2) => Math.min(n2, next.length);
         try {
-          ta.setSelectionRange(clamp2(selStart), clamp2(selEnd));
+          ta.setSelectionRange(clamp3(selStart), clamp3(selEnd));
         } catch (e30) {
         }
       }

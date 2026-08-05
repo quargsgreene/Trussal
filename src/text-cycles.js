@@ -24,6 +24,10 @@
 
 import { getPeerByJitsiId } from './peer-state.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
+// The room's `#` effects, as they apply to words and their styling. The
+// mutations are pure and SEEDED there, so every browser paints the same
+// characters from the same shared program.
+import { crushWord, noiseWord, mutateNumber } from './audio-net/av-effects/TextState.js';
 
 const CONTAINER_ID = 'trussal-text-cycles';
 const STYLE_ID = 'trussal-text-cycles-style';
@@ -142,6 +146,10 @@ function hoverClassFor(peerClass, declarations) {
 
 function bubbleFor(peerId, cycle, peerClass) {
   const key = `${peerId}:${cycle}`;
+  // A new bubble for this peer means their previous turn is over, which is the
+  // first moment its last word is KNOWN to have been last — so that is where
+  // echo's repeats go.
+  if (!bubbles.has(key)) echoLastWord(peerId);
   // Checked against the container, not isConnected: while chat is closed the
   // container is detached, and isConnected would report every bubble as gone
   // and mint a duplicate for the same cycle on every hap.
@@ -173,13 +181,146 @@ function bubbleFor(peerId, cycle, peerClass) {
   return bubble;
 }
 
+// --- effect plumbing ----------------------------------------------------------
+
+// Per-(peer, cycle) word counter. It NAMES the occurrence a mutation is drawn
+// for, so the third word of a turn mutates the same way in every browser while
+// the first and second do not follow it.
+let wordCounters = new Map();
+function nextWordIndex(peerId, cycle) {
+  const key = `${peerId}:${cycle}`;
+  const n = (wordCounters.get(key) ?? 0);
+  wordCounters.set(key, n + 1);
+  // The map is keyed by cycle, so it would grow for the length of a set.
+  if (wordCounters.size > 512) {
+    for (const k of wordCounters.keys()) {
+      if (wordCounters.size <= 256) break;
+      wordCounters.delete(k);
+    }
+  }
+  return n;
+}
+
+// A stable integer for a peer id. hashSeed mixes integers, and the peer has to
+// be part of the seed or two performers saying the same word in the same cycle
+// would have it mutated identically.
+function peerSeed(peerId) {
+  const s = String(peerId ?? '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+// Numbers inside a declaration, quantized by crush and jittered by noise. The
+// unit is preserved — only the magnitude moves — and a value with no number in
+// it (a font family, `italic`, `underline`) passes through untouched.
+const NUMBER_UNIT_RE = /(-?\d*\.?\d+)(px|em|rem|%|pt|vh|vw)?/g;
+const HEX_COLOUR_RE = /#([0-9a-fA-F]{6})\b/g;
+
+function mutateDeclaration(prop, value, fx, cycle, peer, index) {
+  if (!fx || (!(fx.quantizeStep > 1) && !(fx.jitter > 0) && !(fx.colorLevels > 0 && fx.colorLevels < 256))) {
+    return value;
+  }
+  let out = String(value);
+  // Colour is quantized by BIT DEPTH rather than by the numeric step: posterizing
+  // the channels is what crush means for a colour, and running it through the
+  // generic number path would instead nudge the digits of the hex string.
+  if (fx.colorLevels > 0 && fx.colorLevels < 256) {
+    const levels = Math.max(2, Math.round(fx.colorLevels));
+    out = out.replace(HEX_COLOUR_RE, (_m, hex) => {
+      const step = 255 / (levels - 1);
+      const channel = (i) => {
+        const v = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+        return Math.round(Math.round(v / step) * step).toString(16).padStart(2, '0');
+      };
+      return `#${channel(0)}${channel(1)}${channel(2)}`;
+    });
+    // Channels are done; don't let the numeric pass walk the hex digits too.
+    if (/^#/.test(out.trim())) return out;
+  }
+  let nth = 0;
+  return out.replace(NUMBER_UNIT_RE, (match, num, unit) => {
+    const mutated = mutateNumber(parseFloat(num), fx, cycle, peer, index * 16 + (nth++));
+    if (!Number.isFinite(mutated)) return match;
+    return `${Math.round(mutated * 100) / 100}${unit || ''}`;
+  });
+}
+
+// The previous turn's declarations, per peer, for echo's CSS crossfade.
+let previousTurnStyle = new Map();
+
+function rememberTurnStyle(peerId, span) {
+  previousTurnStyle.set(String(peerId), span.style.cssText);
+}
+
+// Paint the span with the PREVIOUS turn's declarations, then let the real ones
+// transition in. A span is created fresh for every word, so there is otherwise
+// nothing for a CSS transition to move from and the styling switches hard at
+// the turn boundary — which is precisely what echo should soften.
+function crossfadeFromPreviousTurn(span, peerId, fx) {
+  const previous = previousTurnStyle.get(String(peerId));
+  if (!previous) return;
+  const target = span.style.cssText;
+  if (previous === target) return;
+  const seconds = Math.max(0.05, fx.fadeFromPrevious * 2);
+  span.style.cssText = previous;
+  span.style.transition = `all ${seconds.toFixed(2)}s linear`;
+  // Next frame, so the browser has the starting values before they change.
+  requestAnimationFrame(() => {
+    span.style.cssText = `${target};transition:all ${seconds.toFixed(2)}s linear`;
+  });
+}
+
+// echo — the last word of a turn comes back, fading. Called when a peer's
+// bubble is superseded, which is the moment its last word is known to be last.
+function echoLastWord(peerId) {
+  const held = lastWordOfTurn.get(String(peerId));
+  if (!held) return;
+  lastWordOfTurn.delete(String(peerId));
+  const { text, line, repeats, alpha, peerClass } = held;
+  if (!(repeats > 0) || !line || !line.isConnected) return;
+  for (let i = 1; i <= repeats; i++) {
+    const echo = document.createElement('span');
+    echo.className = `tc-word tc-echo ${peerClass}`;
+    echo.textContent = text;
+    // Each repeat quieter than the last, as a delay's are.
+    echo.style.opacity = String(Math.max(0.05, alpha * Math.pow(0.6, i)));
+    line.appendChild(document.createTextNode(' '));
+    line.appendChild(echo);
+  }
+}
+
+let lastWordOfTurn = new Map();
+
 function paint(value, cycle) {
   ensureContainer();
-  const text = resolve(value.word);
+  let text = resolve(value.word);
   if (text == null || text === '') return;
 
   const peerId = peerOf(value.word);
   const peerClass = peerTextClass(peerId);
+
+  // The room's `#` chain, as it applies to words and their styling. Published
+  // by the Effects Service (av-effects/index.js) rather than computed here,
+  // and carrying the NET CYCLES cycle number — every mutation below is seeded
+  // from it, so each browser paints the same characters. `cycle` above is the
+  // Strudel hap's and is per-browser, which is exactly why it is not the seed.
+  const fx = (typeof window !== 'undefined' && window._ncText) || null;
+  const active = fx && fx.active ? fx : null;
+  const seedCycle = active ? active.cycle : 0;
+  const seedPeer = peerSeed(peerId);
+  const wordIndex = nextWordIndex(peerId, cycle);
+
+  if (active) {
+    // crush first, then noise — the master path's order, so the glyphs a bed
+    // adds are not themselves eaten by the decimation.
+    text = crushWord(text, active.text.dropChance, seedCycle, seedPeer, wordIndex);
+    // A word crushed away entirely paints nothing. That is the effect working,
+    // not an error: the same directive is dropping samples out of the audio.
+    if (!text) return;
+    text = noiseWord(text, active.text, seedCycle, seedPeer, wordIndex);
+  }
+
   const bubble = bubbleFor(peerId, cycle, peerClass);
   const line = bubble.lastChild;
 
@@ -187,23 +328,43 @@ function paint(value, cycle) {
   span.className = `tc-word ${peerClass}`;
   span.textContent = text;
 
+  const styleFx = active ? active.css : null;
   for (const [param, prop] of CSS_BY_PARAM) {
     if (value[param] == null) continue;
     // Route through the same sanitiser as css() so one path governs what can
     // reach a style, and so "underline" or a colour cannot smuggle a url().
     for (const [p, v] of sanitizeDeclarations(`${prop}: ${resolve(value[param])}`)) {
-      span.style.setProperty(p, v);
+      span.style.setProperty(p, mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex));
     }
   }
   // css() last, so it wins on conflict — it is the arbitrary-property escape
   // hatch and should be able to override a named param.
   if (value.css != null) {
     const raw = typeof value.css === 'object' ? value.css : resolve(value.css);
-    for (const [p, v] of sanitizeDeclarations(raw)) span.style.setProperty(p, v);
+    for (const [p, v] of sanitizeDeclarations(raw)) {
+      span.style.setProperty(p, mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex));
+    }
   }
   if (value.hover != null) {
     const cls = hoverClassFor(peerClass, resolve(value.hover));
     if (cls) span.classList.add(cls);
+  }
+
+  if (styleFx) {
+    // room — the tail pushes the letters apart. ADDED to whatever the
+    // performer wrote, so their own .spacing() stays legible in the result and
+    // a room with no decay is a no-op rather than an override.
+    if (styleFx.blurPx > 0) span.style.filter = `blur(${styleFx.blurPx.toFixed(2)}px)`;
+    if (active.text.spacingPx > 0) {
+      const authored = parseFloat(span.style.letterSpacing) || 0;
+      span.style.letterSpacing = `${(authored + active.text.spacingPx).toFixed(2)}px`;
+    }
+    // echo — each turn's styling arrives out of the previous turn's instead of
+    // switching hard. The span is new every time, so there is nothing for a
+    // transition to move FROM: paint it with the previous turn's declarations,
+    // then let the real ones transition in over the delay.
+    if (styleFx.fadeFromPrevious > 0) crossfadeFromPreviousTurn(span, peerId, styleFx);
+    rememberTurnStyle(peerId, span);
   }
 
   let node = span;
@@ -221,6 +382,16 @@ function paint(value, cycle) {
 
   if (line.childNodes.length) line.appendChild(document.createTextNode(' '));
   line.appendChild(node);
+
+  // Held rather than echoed now: which word is the turn's LAST is only known
+  // once the turn ends (echoLastWord, from bubbleFor).
+  if (active && active.text.repeats > 0 && active.text.repeatAlpha > 0) {
+    lastWordOfTurn.set(String(peerId), {
+      text, line, peerClass,
+      repeats: active.text.repeats,
+      alpha: active.text.repeatAlpha
+    });
+  }
 
   // Follow the conversation only if the reader is already at the bottom, so
   // scrolling back through chat is not yanked away by the next word.
@@ -291,4 +462,11 @@ export function installTextCycles(mod) {
 // they read as conversation history, not as live state.
 export function stopTextCycles() {
   active = false;
+  // Per-turn effect state, dropped with the run. Words already painted stay as
+  // history, but a turn that never ended must not echo its last word into the
+  // next set, and a stale previous-turn style must not be what the next one
+  // crossfades out of.
+  lastWordOfTurn.clear();
+  previousTurnStyle.clear();
+  wordCounters.clear();
 }
