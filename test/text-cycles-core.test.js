@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   hasTextCycles,
   splitStatements,
-  keepTextStatements,
   encodeMiniText,
   rewriteTextCalls,
   sanitizeDeclarations,
@@ -213,11 +212,6 @@ test('a chained .word() on a continuation line is still detected', () => {
 
 test('slow() does not read as the w alias', () => {
   assert.equal(splitStatements('$: s("bd").slow(2)')[0].hasWord, false);
-});
-
-test('keepTextStatements drops audio voices but keeps words', () => {
-  const src = '$: s("bd*4")\n$: word("hi").color("red")\n$: n("0 1").s("piano")';
-  assert.equal(keepTextStatements(src), '$: word("hi").color("red")');
 });
 
 // --- sanitising -------------------------------------------------------------

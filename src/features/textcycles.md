@@ -74,28 +74,23 @@ pattern still means what it looks like.
 Consequence: `word(someVariable)` and interpolated templates cannot be rewritten
 statically. They still render, but with no escaping and no mini.
 
-## css()
+## Arbitrary properties: use CSS Cycles
 
-`css()` takes arbitrary declarations and is applied **last**, so it wins over a
-named parameter it conflicts with. Four forms work:
+`css()` no longer belongs to Text Cycles — styling is its own capability, and
+it addresses selectors rather than the words themselves. Text spans are
+reachable from there by class:
 
 ```js
-const myCss = [
-  { color: 'blue', 'font-family': 'Monaco', 'text-emphasis': '"x"' },
-  { color: '#333333', margin: '50%' },
-  { 'font-family': 'Courier' },
-];
+await initTextCycles()
+await initCss()
 
-$: word("I like squirrels").css(myCss[0])                        // one object
-$: word("I like squirrels").css(cat(myCss[0], myCss[2], myCss[1])) // pattern of objects
-$: word("I like squirrels").css("<'color:blue' 'margin:50%'>")   // declaration strings
-$: word("I like squirrels").css('color:blue;margin:50%')         // one literal
+$: word("I like squirrels").color("<#346234 #bfe968>")
+$: css(`.tc-word`).letterSpacing("<1px 4px>").fast(2)
 ```
 
-`cat(...)` is the alternation form — it cycles the list in the order given,
-which is what an index pattern like `<0 2 1>` was reaching for. Note the inner
-**single** quotes in the mini form: a double-quoted string inside a pattern is
-itself mini-parsed.
+`.tc-word` is every text span; `.tc-p-<jitsiId>` is one performer's. Both sit
+inside `#trussal-text-cycles`, which is a Trussal root, so the full property
+set applies there. See [csscycles.md](csscycles.md).
 
 ## Borrowed controls
 
@@ -104,7 +99,7 @@ itself mini-parsed.
 rather than re-registering, because overriding `Pattern.prototype.size` would
 break `.size()` for every audio voice in the room. So `size` arrives on the hap
 as `roomsize`. All other names (`word`/`w`, `typeface`/`t`, `weight`, `spacing`,
-`slant`, `hover`, `hyperlink`, `underline`, `css`) are new controls.
+`slant`, `hover`, `hyperlink`, `underline`) are new controls.
 
 Because they are reused, `.size()` and `.color()` are only rewritten inside
 statements that contain a `word()` call — an audio voice's `.size(4)` still
@@ -137,7 +132,8 @@ While a remote aggregator is present, `buildPeerBlock` drops remote humans'
 audio voices from the local program (per-human publish isolation). Text voices
 are kept: they make no sound, so they never ride the published track, and
 dropping them would mean only ever seeing your own words. For a mixed program,
-`keepTextStatements` keeps the text statements and drops the audio ones.
+`keepSilentStatements` (in `css-cycles-core.js`) keeps the text and css
+statements and drops the audio ones.
 
 ## Play state
 

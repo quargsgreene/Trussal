@@ -19,7 +19,9 @@ import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
 import { rewriteLiveCalls } from './live-input-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
-import { hasTextCycles, rewriteTextCalls, keepTextStatements } from './text-cycles-core.js';
+import { hasTextCycles, rewriteTextCalls } from './text-cycles-core.js';
+import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from './css-cycles.js';
+import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
 
@@ -121,21 +123,22 @@ const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
 
 // A program declares its non-audio capabilities with an `await initX()` line
 // before the first blank line — visuals with initHydra, chat text with
-// initTextCycles.
+// initTextCycles, page styling with initCss. Any of them may share one
+// preamble.
 //
 // The Hydra half of that question is asked through hydra-code.js, because the
 // aggregator's mosaic asks the same one of the same text and the two must not
-// disagree. Text Cycles is deliberately NOT folded in there: a text peer paints
-// into each viewer's own chat panel and publishes no video, so it earns no
-// mosaic cell, and teaching the mosaic's membership rule about it would hand
-// one out. Same shape of split, different question.
-const INIT_TEXT_RE = /^\s*await\s+initTextCycles\s*\(/;
+// disagree. The silent capabilities are deliberately NOT folded in there: a
+// text or styling peer paints into each viewer's own page and publishes no
+// video, so it earns no mosaic cell, and teaching the mosaic's membership rule
+// about them would hand one out. Same shape of split, different question.
+const INIT_SILENT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(/;
 
-// Split already-normalized code into its Text Cycles preamble and Strudel
+// Split already-normalized code into its silent-capability preamble and Strudel
 // remainder, or null when the block does not declare one. A preamble-only
 // block is legal and yields an empty `strudel`, exactly as for Hydra.
-function splitTextCyclesCode(code) {
-  if (!code || !INIT_TEXT_RE.test(code)) return null;
+function splitSilentCode(code) {
+  if (!code || !INIT_SILENT_RE.test(code)) return null;
   const blank = code.match(/\n\n+/);
   if (!blank) return { preamble: code, strudel: '' };
   return {
@@ -162,6 +165,28 @@ function applyTextRewrite(code, peer) {
   return rewritten;
 }
 
+// CSS Cycles atoms and sheets for the program currently being assembled. Same
+// minting scheme as the text table, and the same shared counter reasoning: two
+// performers must never mint the same token, because the token is also what
+// names the custom properties their rules read.
+let cssAtoms = {};
+let cssCounter = { n: 0 };
+// EVERY peer's sheets, not just ours: this browser evaluates every peer's
+// program, so it is this browser that assigns the custom properties their
+// installed rules read. Only the SCSS send is local-only.
+let cssSheets = [];
+
+function applyCssRewrite(code, peer) {
+  const { code: rewritten, atoms, sheets, errors } = rewriteCssCalls(code, {
+    peer: peer.jitsiId,
+    counter: cssCounter,
+  });
+  Object.assign(cssAtoms, atoms);
+  cssSheets = cssSheets.concat(sheets);
+  if (errors.length) console.error('[css-cycles]', errors.join('; '));
+  return rewritten;
+}
+
 // A bot's contribution to this page's program: its Text Cycles statements, or
 // nothing at all.
 //
@@ -178,12 +203,12 @@ function buildBotTextBlock(peer) {
   );
   if (!code || !peer.playing || !hasTextCycles(code)) return null;
 
-  const split = splitTextCyclesCode(code);
+  const split = splitSilentCode(code);
   if (!split) return null;
 
   // Audio statements are dropped, not silenced: the bot is already playing them
   // for real, and a muted copy here would still cost a voice in every browser.
-  const textOnly = keepTextStatements(split.strudel);
+  const textOnly = keepSilentStatements(split.strudel);
   if (!textOnly) return split.preamble;
   return `${split.preamble}\n\n${buildStrudelVoice(applyTextRewrite(textOnly, peer), '')}`;
 }
@@ -297,23 +322,29 @@ function buildPeerBlock(peer) {
   // no re-evaluation needed when a slot opens or closes.
   if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
 
-  // Text Cycles: words are painted per-page into each viewer's own chat panel
-  // and make no sound, so they never ride the published track — a text voice
-  // must therefore survive the aggregator exclusion below that drops a remote
-  // peer's audio, otherwise only your own words would ever appear.
+  // Text Cycles paints per-page into each viewer's own chat panel and CSS
+  // Cycles restyles each viewer's own document; neither makes a sound, so
+  // neither rides the published track. Both must therefore survive the
+  // aggregator exclusion below that drops a remote peer's audio — otherwise
+  // you would only ever see your own words and your own styling.
   const isText = hasTextCycles(code);
+  const isCss = hasCssCycles(code);
 
   // Capability preamble, running to the first blank line: Hydra split by the
   // shared rule, so this page and the aggregator's mosaic never disagree about
-  // which peers are running Hydra, or Text Cycles split by its own.
-  const split = splitHydraCode(code) || splitTextCyclesCode(code);
+  // which peers are running Hydra, or the silent capabilities split by their
+  // own.
+  const split = splitHydraCode(code) || splitSilentCode(code);
   if (split) {
     const preamble = split.preamble;
     let strudelCode = split.strudel;
-    if (isText) {
-      // Excluded remote peer: keep the text statements, drop the audio ones.
-      if (remoteVoiceExcluded) strudelCode = keepTextStatements(strudelCode);
-      if (strudelCode) strudelCode = applyTextRewrite(strudelCode, peer);
+    if (isText || isCss) {
+      // Excluded remote peer: keep the silent statements, drop the audio ones.
+      if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+      // CSS first: the text rewrite appends `._tcRender()` on its own line,
+      // which would otherwise land between a css() call and its chain.
+      if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
+      if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
     } else if (remoteVoiceExcluded) {
       return preamble;
     }
@@ -436,7 +467,11 @@ async function ensureStrudel() {
     // Text Cycles: word/typeface/… controls plus initTextCycles(). Silent by
     // construction — the renderer it attaches carries a dominant trigger.
     const textScope = installTextCycles(mod);
-    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope });
+    // CSS Cycles: css() plus one `_cc_*` control per CSS property, and
+    // initCss(). Silent by construction for the same reason — the renderer it
+    // attaches carries a dominant trigger.
+    const cssScope = installCssCycles(mod);
+    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope, ...cssScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -450,6 +485,9 @@ async function rebuildAndEvaluate() {
   // program they were minted into.
   textAtoms = {};
   textCounter = { n: 0 };
+  cssAtoms = {};
+  cssCounter = { n: 0 };
+  cssSheets = [];
 
   const blocks = getAllPeers()
     .map(buildPeerBlock)
@@ -528,6 +566,11 @@ async function rebuildAndEvaluate() {
     // Must precede evaluate(): the first haps can trigger before it returns,
     // and a token with no table entry would paint as raw "tc7".
     setTextAtoms(textAtoms);
+    setCssAtoms(cssAtoms);
+    // Register every peer's stylesheets and hand ours to the sidecar. Off the
+    // hot path on purpose: this is one compile per edit, while the patterned
+    // values inside those sheets are reassigned per hap as custom properties.
+    publishCssSheets(cssSheets);
     await evaluate(next);
     // Every live() in this program has now re-stamped the epoch; whatever
     // didn't is no longer referenced, so release its device.
@@ -567,6 +610,9 @@ export async function stopStrudel() {
   stopLiveCaptures();
   // Words already in the chat stay there as history; only new ones stop.
   stopTextCycles();
+  // Styling does NOT stay: every sheet is pulled and every custom property
+  // released, so stopping is always a way back to a usable UI.
+  stopCssCycles();
   anyPlaying = false;
   lastEvaluated = null;
   activeSliders = {};

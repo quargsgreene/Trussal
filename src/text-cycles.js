@@ -331,17 +331,9 @@ function paint(value, cycle) {
   const styleFx = active ? active.css : null;
   for (const [param, prop] of CSS_BY_PARAM) {
     if (value[param] == null) continue;
-    // Route through the same sanitiser as css() so one path governs what can
-    // reach a style, and so "underline" or a colour cannot smuggle a url().
+    // Sanitised even though these are named params, so "underline" or a colour
+    // cannot smuggle a url() into a style attribute.
     for (const [p, v] of sanitizeDeclarations(`${prop}: ${resolve(value[param])}`)) {
-      span.style.setProperty(p, mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex));
-    }
-  }
-  // css() last, so it wins on conflict — it is the arbitrary-property escape
-  // hatch and should be able to override a named param.
-  if (value.css != null) {
-    const raw = typeof value.css === 'object' ? value.css : resolve(value.css);
-    for (const [p, v] of sanitizeDeclarations(raw)) {
       span.style.setProperty(p, mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex));
     }
   }
@@ -440,7 +432,6 @@ export function installTextCycles(mod) {
     ...registerControl('hover'),
     ...registerControl('hyperlink'),
     ...registerControl('underline'),
-    ...registerControl('css'),
   };
 
   // Dominant trigger: this is what makes a text voice silent.

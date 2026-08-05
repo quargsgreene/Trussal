@@ -20,7 +20,7 @@
  */
 
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
-import { hasTextCycles, keepTextStatements, splitStatements } from '../../../src/text-cycles-core.js';
+import { hasTextCycles, splitStatements } from '../../../src/text-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { randomMasterScript } from './generator.js';
 import {

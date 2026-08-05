@@ -42,6 +42,9 @@ const localPeer = {
   isAggregator: LOCAL_IS_AGGREGATOR,
   muted: false,
   pattern: '',
+  // CSS Cycles: this peer's SCSS as compiled by the sidecar. Set from the bus
+  // for everyone including ourselves — the compile is never done in a browser.
+  compiledCss: '',
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
   rtt: null,
@@ -218,6 +221,7 @@ function openSocket() {
 function applyPatch(peer, patch) {
   if (!patch) return;
   if (typeof patch.pattern === 'string') peer.pattern = patch.pattern;
+  if (typeof patch.compiledCss === 'string') peer.compiledCss = patch.compiledCss;
   if (patch.effects) peer.effects = {
     distortion: !!patch.effects.distortion,
     noise: !!patch.effects.noise,
@@ -246,6 +250,7 @@ function defaultPeer(peerId) {
     isAggregator: false,
     muted: false,
     pattern: '',
+    compiledCss: '',
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
@@ -319,6 +324,20 @@ function handleMessage(msg) {
       emit('peer-upsert', peer);
       break;
     }
+
+    // CSS Cycles: our own SCSS came back compiled. Applied to localPeer rather
+    // than the roster echo, which getAllPeers deliberately skips.
+    case 'scss-compiled':
+      localPeer.compiledCss = typeof msg.css === 'string' ? msg.css : '';
+      emit('peer-upsert', localPeer);
+      break;
+
+    case 'scss-error':
+      // A stylesheet that will not compile is the performer's to fix, so it is
+      // surfaced rather than swallowed.
+      console.error('[css-cycles] the sidecar refused our SCSS:', msg.message);
+      document.dispatchEvent(new CustomEvent('trussal-css-errors', { detail: [String(msg.message ?? '')] }));
+      break;
 
     case 'fleet-status':
       // Fleet service reporting back (spawn results, ceiling hits, teardown).
@@ -559,6 +578,13 @@ export function sendLocalPattern(code) {
   localPeer.pattern = typeof code === 'string' ? code : '';
   safeSend({ type: 'pattern', code: localPeer.pattern });
   emit('peer-upsert', localPeer);
+}
+
+// CSS Cycles: hand our SCSS to the sidecar to compile. The compiled sheet
+// comes back as a peer-update for everyone, ourselves included, so there is
+// one compile per edit for the whole room and no browser ships a compiler.
+export function sendLocalScss(scss) {
+  safeSend({ type: 'scss', source: typeof scss === 'string' ? scss : '' });
 }
 
 export function sendLocalEffects(effects) {
