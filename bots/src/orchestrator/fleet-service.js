@@ -1043,6 +1043,19 @@ export function makeWsSidecarConnector(WebSocketImpl) {
   return (url, { onOpen, onMessage, headers = null }) => {
     let ws = null;
     let closed = false;
+    // Last failure reported for this socket. Both handlers below used to
+    // swallow everything they caught, which is how a fleet bus that never
+    // connects — or a roster that never parses — produced a room with no
+    // aggregator and NOTHING in the log to say why. Reconnection is every 2s,
+    // so repeats are collapsed: the first failure is reported, and after that
+    // only a change of failure or a recovery.
+    let lastFailure = null;
+    const reportFailure = (where, err) => {
+      const message = `${where}: ${(err && err.message) || err}`;
+      if (message === lastFailure) return;
+      lastFailure = message;
+      console.error(`[fleet] sidecar socket ${url} — ${message}`);
+    };
     const open = () => {
       // Headers, not query parameters, carry the control token: nginx's default
       // log format records the full request line, so a secret in the URL is
@@ -1051,12 +1064,28 @@ export function makeWsSidecarConnector(WebSocketImpl) {
       // conductor opens this channel, so nothing forces it into the query
       // string the way a browser WebSocket would.
       ws = headers ? new WebSocketImpl(url, { headers }) : new WebSocketImpl(url);
-      ws.on('open', () => onOpen((msg) => ws.send(JSON.stringify(msg))));
+      ws.on('open', () => {
+        if (lastFailure) {
+          console.log(`[fleet] sidecar socket ${url} — recovered`);
+          lastFailure = null;
+        }
+        onOpen((msg) => ws.send(JSON.stringify(msg)));
+      });
       ws.on('message', (data) => {
-        try { onMessage(JSON.parse(data.toString())); } catch {}
+        // A bus message that cannot be parsed or handled is a room whose
+        // roster, joins and leaves are silently not arriving — the aggregator
+        // simply never spawns. Report it instead of dropping it on the floor.
+        try {
+          onMessage(JSON.parse(data.toString()));
+        } catch (err) {
+          reportFailure('message handling failed', err);
+        }
       });
       ws.on('close', () => { if (!closed) setTimeout(open, 2000); });
-      ws.on('error', () => { try { ws.close(); } catch {} });
+      ws.on('error', (err) => {
+        reportFailure('connection failed', err);
+        try { ws.close(); } catch (e) { reportFailure('close after error failed', e); }
+      });
     };
     open();
     return {

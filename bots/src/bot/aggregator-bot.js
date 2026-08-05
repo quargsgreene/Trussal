@@ -8,6 +8,7 @@ import {
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
   pageSetMasterCrush, pageSetMasterEcho,
   pageMosaic, pageSetMosaicCells, pageSetMosaicActive, pageSetMosaicEnabled, pageSetMosaicCycle,
+  pageMosaicDiag,
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
 } from './page-scripts.js';
@@ -25,6 +26,7 @@ import { echoParams } from '../../../src/audio-net/av-effects/Echo.js';
 // The master-bus counterpart of the browser chain's pattern tick: same reader,
 // same cadence, so a patterned argument steps identically on both paths.
 import { chainHasValuePattern, PATTERN_TICK_MS } from '../../../src/audio-net/ValuePattern.js';
+import { entryAffects } from '../../../src/audio-net/EffectMedia.js';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -118,6 +120,11 @@ function metaprogramTokenSequence(participants) {
 // `!samples.length` without a null guard. Length 0 and never mutated, so a
 // single shared instance is safe to reuse as the "nothing pending" sentinel.
 const EMPTY_MASTER = new Float32Array(0);
+
+// How often the mosaic watchdog asks the page why its frame looks the way it
+// does. Slow on purpose: it exists to explain a black stage that has PERSISTED,
+// not to trace individual frames, and it only speaks when the answer changes.
+const MOSAIC_WATCHDOG_MS = 10000;
 
 
 // err.code set on the throw from start() when another aggregator already holds
@@ -269,6 +276,10 @@ export class AggregatorBot extends Bot {
     // sub-cycle step falls between the metrics updates and the cycle
     // boundaries, so it needs a clock of its own (see PATTERN_TICK_MS).
     #patternTimer = null;
+    // Mosaic watchdog handle, and the last state it reported — the watchdog
+    // speaks only when this changes.
+    #mosaicWatchdogTimer = null;
+    #lastMosaicHealth = null;
     // The video mosaic. Cells are recomputed on every peer update — which
     // arrives several times a second per peer as metrics tick — so the last
     // pushed set is kept to gate the crossing into the page: re-pushing would
@@ -440,6 +451,9 @@ export class AggregatorBot extends Bot {
         await this.page.evaluate(pageEnsureVideoPublished).catch((e) => {
             console.error(`[aggregator-bot] failed to ensure the mosaic is published: ${e.message}`);
         });
+        // From here on the stage is live, and every reason it might be black
+        // has somewhere to be said.
+        this.#startMosaicWatchdog();
 
         await this.publishMetrics();
         this.startIngestLoop();
@@ -891,6 +905,78 @@ export class AggregatorBot extends Bot {
      * also what selects the single full-frame cell. A rest passes null and the
      * whole frame goes black, which is the visual counterpart of the silence.
      */
+    /**
+     * Why the published frame looks the way it does, said out loud.
+     *
+     * The compositor draws ONLY the active token's cell, so the stage goes
+     * black for several unrelated reasons — nobody is scheduled, nobody's
+     * program declares Hydra, a cell's preamble threw, hydra-synth failed to
+     * load in the page. From the room they are indistinguishable (one black
+     * tile) and none of them reached a log: the page collects its own errors
+     * and `pageMosaicDiag` was exported but never called anywhere, so the
+     * diagnosis was being produced and thrown away.
+     *
+     * Logged on CHANGE only. A legitimately black stage (an empty room, a rest
+     * in the ring) must not fill the log every ten seconds, and a stage that
+     * recovers should say so once.
+     */
+    async #mosaicWatchdogTick() {
+        if (!this.page) return;
+        let diag = null;
+        try {
+            diag = await this.page.evaluate(pageMosaicDiag);
+        } catch (e) {
+            console.error('[aggregator-bot] mosaic diag failed', e);
+            return;
+        }
+        if (!diag) return;
+
+        const cells = diag.cells || [];
+        const instances = diag.instances || [];
+        const ready = instances.filter((inst) => inst.ready).map((inst) => String(inst.token));
+        const failed = instances.filter((inst) => inst.error);
+        const active = diag.activeToken == null ? null : String(diag.activeToken);
+        const drawing = active != null && ready.includes(active);
+
+        const signature = JSON.stringify({
+            drawing, active,
+            cells: cells.map((c) => c.token),
+            ready,
+            failed: failed.map((inst) => `${inst.token}:${inst.error}`),
+            errors: diag.errors || []
+        });
+        if (signature === this.#lastMosaicHealth) return;
+        this.#lastMosaicHealth = signature;
+
+        if (drawing) {
+            console.log(`[aggregator-bot] mosaic drawing cell ${active} ` +
+                `(${ready.length}/${cells.length} cells ready)`);
+            return;
+        }
+        // Ordered by which condition stops a cell being drawn FIRST, so the
+        // opening line names the actual cause rather than a symptom of it.
+        const why = !cells.length
+            ? 'no participant is running Hydra, so the mosaic has no cells to draw'
+            : active == null
+                ? 'no cell is scheduled — activeToken is null (a rest, or the ring never named anyone)'
+                : !ready.length
+                    ? `the scheduled cell ${active} has no renderer ready, and neither has any other cell`
+                    : `the scheduled cell ${active} is not among the ready cells [${ready.join(', ')}]`;
+        console.warn(`[aggregator-bot] published frame is BLACK: ${why}`);
+        for (const inst of failed) {
+            console.warn(`[aggregator-bot]   cell ${inst.token} (${inst.kind}) failed: ${inst.error}`);
+        }
+        for (const err of (diag.errors || [])) console.warn(`[aggregator-bot]   ${err}`);
+    }
+
+    #startMosaicWatchdog() {
+        if (this.#mosaicWatchdogTimer || !this.#setInterval) return;
+        this.#mosaicWatchdogTimer = this.#setInterval(() => {
+            this.#mosaicWatchdogTick()
+                .catch((e) => console.error('[aggregator-bot] mosaic watchdog failed', e));
+        }, MOSAIC_WATCHDOG_MS);
+    }
+
     #syncMosaicActive(token) {
         const t = token == null ? null : String(token);
         if (t === this.#lastMosaicActive) return;
@@ -943,10 +1029,26 @@ export class AggregatorBot extends Bot {
      * navigation/teardown) is logged and the dedup reset so the next change
      * retries rather than wedging on a stale "already pushed" state.
      */
+    /**
+     * The chain entry to build a master audio node from, or null when the
+     * applied program's medium set takes this effect off the audio bus.
+     * `# room wcl 2 ["video"]` still blurs the mosaic and stretches the room's
+     * text — it just does not reverberate the mix.
+     *
+     * Read at the same grid position the effect's other patterned arguments
+     * are, since the set may itself be a pattern (`<["audio"] ["video"]>`):
+     * sampling it anywhere else would put a directive on the audio bus a cycle
+     * out of step with the parameters it is carrying.
+     */
+    #onAudio(entry) {
+        return (entry && entryAffects(entry, 'audio', this.#cycleContext().cyclePos)) ? entry : null;
+    }
+
     #syncMasterRoom() {
         if (!this.page) return;
-        const params = this.#roomChain
-            ? roomParams(this.#worstCase, resolveEffectParams(this.#roomChain), this.#cycleContext().cyclePos)
+        const chain = this.#onAudio(this.#roomChain);
+        const params = chain
+            ? roomParams(this.#worstCase, resolveEffectParams(chain), this.#cycleContext().cyclePos)
             : null;
         const json = JSON.stringify(params ?? null);
         if (json === this.#lastRoomPushJson) return;
@@ -967,8 +1069,9 @@ export class AggregatorBot extends Bot {
      */
     #syncMasterNoise() {
         if (!this.page) return;
-        const params = this.#noiseChain
-            ? noiseParams(this.#worstCase, resolveEffectParams(this.#noiseChain, { cycle: this.#cycle }))
+        const noiseChain = this.#onAudio(this.#noiseChain);
+        const params = noiseChain
+            ? noiseParams(this.#worstCase, resolveEffectParams(noiseChain, { cycle: this.#cycle }))
             : null;
         const json = JSON.stringify(params ?? null);
         if (json === this.#lastNoisePushJson) return;
@@ -987,8 +1090,9 @@ export class AggregatorBot extends Bot {
      */
     #syncMasterCrush() {
         if (!this.page) return;
-        const params = this.#crushChain
-            ? crushParams(this.#worstCase, resolveEffectParams(this.#crushChain),
+        const crushChain = this.#onAudio(this.#crushChain);
+        const params = crushChain
+            ? crushParams(this.#worstCase, resolveEffectParams(crushChain),
                 this.#cycleContext().cyclePos)
             : null;
         const json = JSON.stringify(params ?? null);
@@ -1007,8 +1111,9 @@ export class AggregatorBot extends Bot {
      */
     #syncMasterEcho() {
         if (!this.page) return;
-        const params = this.#echoChain
-            ? echoParams(this.#worstCase, resolveEffectParams(this.#echoChain), this.#cycleContext())
+        const echoChain = this.#onAudio(this.#echoChain);
+        const params = echoChain
+            ? echoParams(this.#worstCase, resolveEffectParams(echoChain), this.#cycleContext())
             : null;
         const json = JSON.stringify(params ?? null);
         if (json === this.#lastEchoPushJson) return;
@@ -1826,6 +1931,12 @@ export class AggregatorBot extends Bot {
         this.#playbackTimer = null;
         if (this.#patternTimer && this.#clearInterval) this.#clearInterval(this.#patternTimer);
         this.#patternTimer = null;
+        if (this.#mosaicWatchdogTimer && this.#clearInterval) this.#clearInterval(this.#mosaicWatchdogTimer);
+        this.#mosaicWatchdogTimer = null;
+        // Cleared with the timer: a restarted aggregator must re-report its
+        // stage state rather than staying quiet because the last run's
+        // signature happens to match.
+        this.#lastMosaicHealth = null;
         // The next arming starts a fresh grid at cycle 0, so an anchor from
         // the old one would sample patterns in a cycle that no longer exists.
         this.#cycleGrid = null;
