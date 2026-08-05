@@ -14,8 +14,11 @@ import {
   sendRemoteMute,
   sendRemoteVideo,
   sendBotPermission,
+  sendSampleFile,
   subscribePeerState
 } from '../peer-state.js';
+import { flag, parseBotConfig } from '../bot-config.js';
+import { readSampleBanks } from '../user-samples.js';
 
 // --- Pure selection helpers -----------------------------------------------------
 
@@ -51,9 +54,55 @@ export function myClusterBots() {
 
 // Spawn N bots on the local user's behalf. May be interrupted by health
 // measures — the fleet answers with a fleet-status carrying the reason.
+//
+// The local peer's code rides along: it is both the master the cluster plays
+// and the carrier of the `botConfig(...)` declaration that shapes it. Sent at
+// spawn and only at spawn — a bot plays what its author was playing when it
+// arrived, and only a `retroactive: true` config re-captures later.
 export function spawnBots(count) {
   const n = Math.max(1, Math.floor(count) || 1);
-  sendFleetRequest('spawn', { count: n });
+  const code = localPerformerCode();
+  // Samples first, spawn second: the fleet builds each bot's assignment when
+  // the spawn arrives, and a bank that lands after that is one the bot has
+  // already been told does not exist.
+  shareSamplesIfAsked(code)
+    .catch((err) => { console.error('[trussal] sharing samples with bots failed', err); })
+    .finally(() => sendFleetRequest('spawn', { count: n, code }));
+}
+
+// Ship the local performer's uploaded samples to the fleet when their config
+// asks for it. Sent as base64 over the peer-state bus — the only channel a
+// browser has to the bots VM — and capped fleet-side, which reports anything it
+// refuses as a fleet-status the studio surfaces.
+async function shareSamplesIfAsked(code) {
+  const parsed = parseBotConfig(code);
+  if (!parsed.ok || !flag(parsed.config.samples)) return;
+
+  const banks = await readSampleBanks();
+  for (const { bank, name, blob } of banks) {
+    const buffer = await blob.arrayBuffer();
+    sendSampleFile({ bank, name, data: base64FromBuffer(buffer) });
+  }
+}
+
+function base64FromBuffer(buffer) {
+  const bytes = new Uint8Array(buffer);
+  // Chunked so a multi-megabyte sample doesn't blow the argument limit that a
+  // single String.fromCharCode(...bytes) spread would hit.
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+// What the local performer currently has in their editor, as the bus sees it.
+// Falls back to an empty string rather than throwing: a spawn with no code is
+// legal and the fleet substitutes its own master.
+function localPerformerCode() {
+  const local = getLocalPeer();
+  return typeof local?.pattern === 'string' ? local.pattern : '';
 }
 
 // Remove a subset ('all', index array, or predicate) of one's own cluster.

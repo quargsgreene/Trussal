@@ -55,8 +55,18 @@ const LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
 // rewriteLiveCalls we WANT to match `.word(`, so "." is allowed to precede.
 const WORD_CALL_RE = /(?:^|[^\w$])(?:word|w)\s*\(/;
 
+const INIT_TEXT_CYCLES_RE = /^\s*await\s+initTextCycles\s*\(/m;
+
+// The declaration rule as a serialisable descriptor, for consumers that cannot
+// import a module — the bot's page scripts are function bodies handed to
+// Chromium by puppeteer and can only receive JSON. Mirrors INIT_HYDRA_PATTERN.
+export const INIT_TEXT_CYCLES_PATTERN = {
+  source: INIT_TEXT_CYCLES_RE.source,
+  flags: INIT_TEXT_CYCLES_RE.flags,
+};
+
 export function hasTextCycles(code) {
-  return /^\s*await\s+initTextCycles\s*\(/m.test(String(code ?? ''));
+  return INIT_TEXT_CYCLES_RE.test(String(code ?? ''));
 }
 
 // Split a program into statements, each flagged with whether it contains a

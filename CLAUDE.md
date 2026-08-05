@@ -128,6 +128,7 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `facial-gesture.js` | MediaPipe face-tracking: smile → play, thumbs-up → stop, head cursor for UI dwell |
 | `hydra-video.js` | Hydra visual synthesis with two modes: `split` (camera panel + independent Hydra canvas) and `direct` (camera fed to `s0` for `src(s0)` patterns) |
 | `hydra-code.js` | The one rule for what counts as Hydra code in a performer's editor (the `await initHydra(` preamble), shared by `strudel.js` and the aggregator's mosaic so the two cannot disagree |
+| `bot-config.js` | The one rule for `botConfig({...})` — what the declaration is, what its argument may say, and how it is stripped before Strudel sees it. Shared with the fleet (which builds clusters from it) so the browser and the bots VM cannot disagree; see `src/features/botconfig.md` |
 | `hydra-params.js` | `H(...)` for the aggregator's mosaic: Strudel's pattern machinery (reify + mini + signals, no audio) sampled against the room's cycle grid, so pattern-bound Hydra parameters animate on a page that runs no Strudel |
 | `published-video.js` | What a participant's video track carries: a canvas mirroring their Hydra output (black when they run none), never the raw camera. `openCamera()` is the real camera, for `s0` and the landmarks UI |
 | `on-screen-keyboard.js` | On-screen QWERTY with head-cursor dwell, drag, and trie-based Strudel keyword autocomplete |

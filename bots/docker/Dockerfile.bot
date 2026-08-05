@@ -41,6 +41,14 @@ COPY src/audio-net /repo/src/audio-net
 # can never appear for code the browser doesn't treat as Hydra. A src/-root
 # file rather than an audio-net one, so the tree COPY above doesn't cover it.
 COPY src/hydra-code.js /repo/src/hydra-code.js
+# hydra-code.js imports it: the `botConfig(...)` rule, stripped by the same
+# normalizer that finds a Hydra preamble. Another src/-root file, so it needs
+# its own COPY and its own .dockerignore whitelist entry.
+COPY src/bot-config.js /repo/src/bot-config.js
+# The Text Cycles declaration rule (bot.js imports it): the bot hands both
+# capability rules to its page scripts, which are serialised function bodies and
+# cannot import anything themselves. A third src/-root file, same two entries.
+COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules

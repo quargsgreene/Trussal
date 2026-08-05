@@ -118,7 +118,10 @@ test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports ev
   assert.match(js, /strudel-editor/);
   assert.match(js, /initHydra|hydra/, 'hydra code path present');
   assert.match(js, /__trussalReportError/, 'runtime eval errors must reach the conductor');
-  assert.match(js, /\{\s*strudel,\s*hydra\s*\}/, 'per-bot code arrives as a parameter, not spliced source');
+  // Pins the intent (arguments, not string-spliced source) without pinning the
+  // exact field list — the boot payload also carries the owner's sample banks.
+  assert.match(js, /\{\s*strudel,\s*hydra\b[^}]*\}/, 'per-bot code arrives as a parameter, not spliced source');
+  assert.match(js, /__trussalSamples/, 'shared sample banks reach the page');
 });
 
 test('pageFpsSampler counts rAF frames; pageReadSamples drains errors', () => {

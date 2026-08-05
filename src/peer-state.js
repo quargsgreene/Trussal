@@ -623,11 +623,23 @@ export function sendResearchEvent(kind, data = null) {
 
 // Ask the fleet service for cluster changes on our behalf. The server stamps
 // the request with our room index; bots cannot send these.
-export function sendFleetRequest(action, { count, targets } = {}) {
+export function sendFleetRequest(action, { count, targets, code } = {}) {
   const msg = { type: 'fleet-request', action };
   if (typeof count === 'number') msg.count = count;
   if (targets !== undefined) msg.targets = targets;
+  // The requester's editor text — the master their cluster plays and the
+  // carrier of their botConfig(...). The relay forwards this field explicitly;
+  // anything not named there is dropped before the fleet ever sees it.
+  if (typeof code === 'string') msg.code = code;
   safeSend(msg);
+}
+
+// One of the local performer's uploaded samples, on its way to their bots.
+// The relay forwards this to the fleet alone rather than broadcasting it, so
+// a sample library costs one upload rather than one per participant.
+export function sendSampleFile({ bank, name, data }) {
+  if (typeof bank !== 'string' || typeof name !== 'string' || typeof data !== 'string') return;
+  safeSend({ type: 'sample-file', bank, name, data });
 }
 
 // Owner-side permission grant for a bot in one's cluster.

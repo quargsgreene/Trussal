@@ -13,6 +13,8 @@
     "bot": "node src/bot/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "puppeteer-core": "^25.3.0",
     "ws": "^8.21.0",
     "yjs": "^13.6.31"

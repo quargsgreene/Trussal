@@ -7,6 +7,8 @@
 !bots
 !src/audio-net
 !src/hydra-code.js
+!src/bot-config.js
+!src/text-cycles-core.js
 !latency-instrument
 !public/lib
 bots/node_modules
