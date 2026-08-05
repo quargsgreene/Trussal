@@ -18,9 +18,12 @@
 // re-echo a signal the aggregator already processed. grid never had an audio
 // node at all: it renders panel overlays and nothing else.
 //
-// What this class still does, therefore, is compute each effect's Hydra
-// counterpart and publish it to window._ncVisual — which is per-browser by
-// nature and not the aggregator's business.
+// What this class still does, therefore, is publish the per-browser state the
+// aggregator has no business owning: the Hydra tint (window._ncVisual) and the
+// text/css mutations the Text Cycles renderer applies (window._ncText). The
+// IMAGE effects are not here — they belong to the single composited frame the
+// room sees, so they live in the aggregator's compositor and are computed by
+// av-effects/VideoState.js.
 
 import { roomParams, createRoomNode } from './Room.js';
 import { echoParams, createEchoNode } from './Echo.js';
@@ -77,14 +80,20 @@ export function computeChainParams(chainEntries, metrics, cycle = {}) {
   return out;
 }
 
-// Merge the chain's visual counterparts into one state object for Hydra.
+// The chain's one Hydra counterpart: the tint every peer's program is wrapped
+// in (strudel.js, the `.color(...)` on the o0 blend).
+//
+// ONE channel, because one is all anything reads. This object used to carry
+// `lowpass`, `pixelate` and `noise` beside it, computed on every tick and
+// rendered by nothing — the image effects they described now live where the
+// pixels actually reach the wire, in the aggregator's compositor
+// (av-effects/VideoState.js), driven by the very same params fields. Keeping
+// the unread copies here meant two descriptions of one effect, one of which
+// could never be seen to be wrong.
 export function visualStateFor(chainParams) {
-  const state = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+  const state = { brightness: 1 };
   for (const { fn, params } of chainParams) {
-    if (fn === 'room') state.lowpass = Math.min(state.lowpass, params.visualLowpass);
     if (fn === 'echo') state.brightness = Math.min(state.brightness, params.visualBrightness);
-    if (fn === 'crush') state.pixelate = Math.max(state.pixelate, params.visualPixelate);
-    if (fn === 'noise') state.noise = Math.max(state.noise, params.visualNoise);
   }
   return state;
 }
@@ -248,7 +257,7 @@ export class EffectsChainManager {
     this._syncGridLoop();
     this._syncPatternLoop();
     if (typeof window !== 'undefined') {
-      window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+      window._ncVisual = { brightness: 1 };
       // Left ACTIVE, a torn-down chain would go on dropping letters from every
       // word the room paints, with no directive anywhere to explain it.
       window._ncText = null;

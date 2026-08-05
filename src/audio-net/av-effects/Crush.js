@@ -93,6 +93,9 @@ export function crushParams(metrics, user = {}, cyclePos = 0) {
   const srDivisor = Math.min(MAX_SR_DIVISOR, Math.max(1, Math.round(reduction)));
   // metric/amount travel with the params so a readout can say which one is
   // driving without re-resolving the pattern at a different cycle position.
+  // visualPixelate is the sample-rate divisor read as a PIXEL BLOCK: the same
+  // decimation, applied to the image by av-effects/VideoState.js on the
+  // aggregator's composited frame.
   return { metric, amount, scale, reduction, bitDepth, srDivisor, visualPixelate: srDivisor };
 }
 

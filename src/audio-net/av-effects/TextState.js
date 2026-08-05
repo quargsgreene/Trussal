@@ -110,7 +110,12 @@ export function textAndCssStateFor(chainEntries, metrics, cycle = {}) {
         const params = noiseParams(metrics, user);
         const level = clamp(params.visualNoise, 0, 1);
         if (onText) {
-          text.noiseChars = Math.max(text.noiseChars, Math.round(MAX_NOISE_CHARS * level));
+          // ceil, not round, for the same reason echo's repeats use it: a bed
+          // audible on the mix must be visible in the text. A bare `# noise`
+          // sits at 25 dB of brown, which is a level of ~0.12 — rounding gave
+          // it no glyphs at all, so the directive did nothing to the words
+          // across most of its own range.
+          text.noiseChars = Math.max(text.noiseChars, level > 0 ? Math.ceil(MAX_NOISE_CHARS * level) : 0);
           // tilt runs 0 (brown) → 1 (white); the band it lands in chooses the
           // glyphs, so a brown bed speckles and a white one shouts.
           text.noiseBand = Math.max(

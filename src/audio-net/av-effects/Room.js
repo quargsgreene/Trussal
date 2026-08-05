@@ -11,10 +11,12 @@
 // at the caller's position on the cycle grid, exactly as `# crush`'s are; a
 // rest in one leaves that argument at its default for as long as it is in
 // force. The audio node runs on the AGGREGATOR's master path (the mix every
-// client hears), not in each browser; browsers keep only the Hydra visual
-// counterpart. The same cutoff (normalized) is exported for that visual so
-// the image blurs as the audio darkens. Pure math is separated from node
-// construction for node:test.
+// client hears), not in each browser. The same cutoff (normalized) is
+// exported so the image blurs as the audio darkens — applied on the
+// aggregator's COMPOSITED FRAME (av-effects/VideoState.js) and on the styled
+// spans Text Cycles paints (av-effects/TextState.js), where the decay also
+// pushes the letters apart. Pure math is separated from node construction for
+// node:test.
 
 import { evaluateValuePattern } from '../ValuePattern.js';
 
@@ -92,7 +94,11 @@ export function roomParams(metrics, user = {}, cyclePos = 0) {
     // mute the wet path rather than leaving a bare comb slapback on the mix.
     wetGain: decayS > 0 ? WET_GAIN : 0,
     cutoffHz,
-    // Hydra counterpart: 1 = no blur, 0 = fully lowpassed image.
+    // The image counterpart: 1 = no blur, 0 = fully lowpassed. Consumed by
+    // av-effects/VideoState.js, which turns it into the blur RADIUS on the
+    // aggregator's composited frame, and by TextState.js for the blur on a
+    // styled span. Not published to window._ncVisual — that carries only the
+    // one channel anything reads (the Hydra tint).
     visualLowpass: cutoffHz / CUTOFF_MAX_HZ
   };
 }

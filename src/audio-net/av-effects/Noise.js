@@ -25,12 +25,12 @@
 // instead of jumping between buffers.
 //
 // Like room, the audio node runs on the AGGREGATOR's master path (the mix
-// every client hears), not in each browser; browsers keep only the Hydra
-// visual counterpart, whose grain follows both the colour and the level.
-// That counterpart is published to `window._ncVisual.noise` and, as with
-// room's blur, is not yet rendered — `brightness` is the only channel of that
-// object the visual layer reads today.
-// Pure math is separated from node construction for node:test.
+// every client hears), not in each browser. Its image counterpart — grain
+// following both the colour and the level — is applied on the aggregator's
+// COMPOSITED FRAME (av-effects/VideoState.js), the single image the room
+// sees, and its text counterpart injects glyphs into the words Text Cycles
+// paints (av-effects/TextState.js). Pure math is separated from node
+// construction for node:test.
 
 // Ordered dark → bright: `tilt` sweeps along this axis.
 export const NOISE_COLORS = ['brown', 'pink', 'white'];
@@ -131,9 +131,12 @@ export function noiseParams(metrics, { spectrum = null, volume = null } = {}) {
     gain: noiseGainForDb(gainDb),
     mix: noiseMix(tilt),
     type: noiseTypeForTilt(tilt),
-    // Hydra counterpart: colour sets the grain's character, level scales it,
-    // so a quiet brown bed barely marks the image and a loud white one buries
-    // it. Full scale (0.6) needs both a white tilt and the 75 dB ceiling.
+    // The image counterpart: colour sets the grain's character, level scales
+    // it, so a quiet brown bed barely marks the image and a loud white one
+    // buries it. Full scale (0.6) needs both a white tilt and the 75 dB
+    // ceiling. Consumed by av-effects/VideoState.js, which lays it over the
+    // aggregator's composited frame, and by TextState.js, where the same
+    // level sets how many glyphs the bed injects into a word.
     visualNoise: grain * (gainDb / NOISE_MAX_DB)
   };
 }

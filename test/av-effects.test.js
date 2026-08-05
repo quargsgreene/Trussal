@@ -527,11 +527,19 @@ test('parsed # chain resolves to full parameter sets and a merged visual state',
   assert.equal(chain[3].params.gainDb, 55);      // wcrtt 0.06 s × 10 → 0.6 of 25…75 dB
   assert.equal(chain[4].params.landmarks, true);
 
+  // The Hydra tint is the ONE channel anything reads, so it is the only one
+  // published. The image counterparts of the same params (the crush divisor,
+  // room's normalized cutoff, noise's grain) are asserted in
+  // test/video-state.test.js, against the aggregator's compositor where they
+  // are actually applied.
   const vis = visualStateFor(chain);
+  assert.deepEqual(Object.keys(vis), ['brightness'], 'no channel is published that nothing reads');
   assert.equal(vis.brightness, 0.7);   // 1 − echo feedback
-  assert.equal(vis.pixelate, 4);       // crush divisor
-  assert.ok(Math.abs(vis.noise - 0.35 * (55 / NOISE_MAX_DB)) < 1e-12, 'pink grain, scaled by level');
-  assert.equal(vis.lowpass, 6000 / CUTOFF_MAX_HZ, 'room still drives the Hydra blur');
+  // The params those image effects are computed FROM are still produced here.
+  assert.equal(chain[2].params.visualPixelate, 4);
+  assert.equal(chain[0].params.visualLowpass, 6000 / CUTOFF_MAX_HZ);
+  assert.ok(Math.abs(chain[3].params.visualNoise - 0.35 * (55 / NOISE_MAX_DB)) < 1e-12,
+    'pink grain, scaled by level');
 });
 
 // Minimal WebAudio stand-in: enough surface for the crush and echo nodes, and
@@ -605,15 +613,17 @@ test('no audio effect builds a node in the local browser chain — the aggregato
 });
 
 test('patterned arguments re-derive as the cycle advances; constants do not tick', (t) => {
-  // Every audio node having moved to the aggregator, this manager's one
-  // observable output is the visual state — so the pattern is read back
-  // through crush's Hydra counterpart. A patterned METRIC rather than a
-  // patterned scale, because pixelate follows the sample-rate divisor, which
-  // the metric drives and the scale deliberately does not.
+  // Every audio node having moved to the aggregator, this manager's observable
+  // output is the state it publishes — so the pattern is read back through
+  // crush's TEXT counterpart, the share of letters it drops, which follows the
+  // same `reduction` the old pixelate channel did. A patterned METRIC rather
+  // than a patterned scale, because reduction is driven by the metric and
+  // deliberately not by the scale.
   const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <wcl wcj> 1\n');
   assert.deepEqual(errors, []);
   let cyclePos = 0;
-  withStubWindow((visual) => {
+  withStubWindow((visual, text) => {
+    const drop = () => text().text.dropChance;
     const mgr = new EffectsChainManager({
       audioCtx: fakeAudioCtx(), insert: () => {}, remove: () => {},
       getCycleContext: () => ({ cycleSeconds: 1, cyclePos })
@@ -624,18 +634,18 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
 
     mgr.setChain(ast.chain, { wcl: 300, wcj: 0 });
     assert.equal(mgr.patternTicking(), true, 'a patterned chain arms the tick');
-    assert.equal(visual().pixelate, 8, 'cycle 0 reads wcl — 300 ms is three halvings');
+    assert.ok(drop() > 0, 'cycle 0 reads wcl — 300 ms is three halvings, so letters go');
 
     cyclePos = 1;
     mgr.refresh();
-    assert.equal(visual().pixelate, 1, 'cycle 1 takes the second element, wcj, which is clean');
+    assert.equal(drop(), 0, 'cycle 1 takes the second element, wcj, which is clean');
     cyclePos = 2;
     mgr.refresh();
-    assert.equal(visual().pixelate, 8, 'and wraps');
+    assert.ok(drop() > 0, 'and wraps');
 
     // Metrics still move it within a cycle.
     mgr.updateMetrics({ wcl: 0, wcj: 0 });
-    assert.equal(visual().pixelate, 1, 'a clean wcl decimates nothing either');
+    assert.equal(drop(), 0, 'a clean wcl decimates nothing either');
 
     mgr.dispose();
     assert.equal(mgr.patternTicking(), false, 'dispose disarms the tick');
@@ -647,13 +657,14 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
   });
 });
 
-// The manager's only observable output for a master-bus effect is the visual
-// state it publishes on `window`, so these stub one to read it back.
+// The manager's observable output for a master-bus effect is what it publishes
+// on `window`: the Hydra tint (_ncVisual) and the text/css mutations the Text
+// Cycles renderer applies (_ncText). Both readers are handed to the test.
 function withStubWindow(fn) {
   const saved = globalThis.window;
   globalThis.window = {};
   try {
-    return fn(() => globalThis.window._ncVisual);
+    return fn(() => globalThis.window._ncVisual, () => globalThis.window._ncText);
   } finally {
     if (saved === undefined) delete globalThis.window; else globalThis.window = saved;
   }
@@ -663,12 +674,15 @@ test('a master-bus-only chain inserts nothing locally but still publishes the vi
   const { ast } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# noise wcl 1\n');
   const ctx = fakeAudioCtx();
   const inserted = [];
-  withStubWindow((visual) => {
+  withStubWindow((visual, text) => {
     const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
     mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60 });
     assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
-    assert.ok(visual().noise > 0, 'the bed still reaches the visual state');
-    assert.ok(visual().lowpass < 1, 'so does the reverb');
+    // Read through the state this manager actually publishes: noise's bed
+    // reaches the words as injected glyphs, room's decay as letter-spacing.
+    assert.ok(text().text.noiseChars > 0, 'the bed still reaches the published state');
+    assert.ok(text().text.spacingPx > 0, 'so does the reverb');
+    assert.equal(visual().brightness, 1, 'no echo in this chain, so the tint is unity');
   });
 });
 
@@ -676,26 +690,28 @@ test('patterned noise arguments follow the cycle the manager is given', () => {
   const { ast } = parseMetaprogram('$ participants <0>\n# noise wcl <1 20>\n');
   const ctx = fakeAudioCtx();
   let cycle = 0;
-  withStubWindow((visual) => {
+  withStubWindow((visual, text) => {
     const mgr = new EffectsChainManager({
       audioCtx: ctx, insert: () => {}, remove: () => {}, getCycleContext: () => ({ cycleSeconds: 1, cyclePos: cycle })
     });
     // setChain arms a real 50 ms interval now that noise's arguments are
     // patterned like any other effect's; without this the suite never exits.
     try {
-    // Read the grain the manager published — with the cycle context unwired
-    // this stays on the first element for ever.
+    // Read the bed through the css jitter it drives — a continuous channel,
+    // where the injected-glyph count is whole glyphs and would not separate
+    // two nearby levels. With the cycle context unwired this stays on the
+    // first element for ever.
     mgr.setChain(ast.chain, { wcl: 500 });
-    const pinkGrain = visual().noise;
+    const pinkBed = text().css.jitter;
     cycle = 1;
     mgr.updateMetrics({ wcl: 500 });
-    const whiteGrain = visual().noise;
-    assert.ok(whiteGrain > pinkGrain,
+    const whiteBed = text().css.jitter;
+    assert.ok(whiteBed > pinkBed,
       'the second element (factor 20 → white) takes over on the next cycle');
     // Anchored against the pure math so the assertion above cannot pass on a
     // coincidence: element 0 is tilt 0.5 (pink), element 1 is tilt 1 (white).
-    assert.equal(pinkGrain, computeChainParams(ast.chain, { wcl: 500 }, { cyclePos: 0 })[0].params.visualNoise);
-    assert.equal(whiteGrain, computeChainParams(ast.chain, { wcl: 500 }, { cyclePos: 1 })[0].params.visualNoise);
+    const grainAt = (pos) => computeChainParams(ast.chain, { wcl: 500 }, { cyclePos: pos })[0].params.visualNoise;
+    assert.ok(grainAt(1) > grainAt(0), 'the params the published state is derived from move the same way');
     } finally { mgr.dispose(); }
   });
 });

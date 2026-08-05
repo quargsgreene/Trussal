@@ -49479,7 +49479,11 @@ ${err.toString()}`);
       // mute the wet path rather than leaving a bare comb slapback on the mix.
       wetGain: decayS > 0 ? WET_GAIN : 0,
       cutoffHz,
-      // Hydra counterpart: 1 = no blur, 0 = fully lowpassed image.
+      // The image counterpart: 1 = no blur, 0 = fully lowpassed. Consumed by
+      // av-effects/VideoState.js, which turns it into the blur RADIUS on the
+      // aggregator's composited frame, and by TextState.js for the blur on a
+      // styled span. Not published to window._ncVisual — that carries only the
+      // one channel anything reads (the Hydra tint).
       visualLowpass: cutoffHz / CUTOFF_MAX_HZ
     };
   }
@@ -49680,9 +49684,12 @@ ${err.toString()}`);
       gain: noiseGainForDb(gainDb),
       mix: noiseMix(tilt),
       type: noiseTypeForTilt(tilt),
-      // Hydra counterpart: colour sets the grain's character, level scales it,
-      // so a quiet brown bed barely marks the image and a loud white one buries
-      // it. Full scale (0.6) needs both a white tilt and the 75 dB ceiling.
+      // The image counterpart: colour sets the grain's character, level scales
+      // it, so a quiet brown bed barely marks the image and a loud white one
+      // buries it. Full scale (0.6) needs both a white tilt and the 75 dB
+      // ceiling. Consumed by av-effects/VideoState.js, which lays it over the
+      // aggregator's composited frame, and by TextState.js, where the same
+      // level sets how many glyphs the bed injects into a word.
       visualNoise: grain * (gainDb / NOISE_MAX_DB)
     };
   }
@@ -49921,7 +49928,7 @@ ${err.toString()}`);
           const params2 = noiseParams(metrics, user);
           const level = clamp2(params2.visualNoise, 0, 1);
           if (onText) {
-            text2.noiseChars = Math.max(text2.noiseChars, Math.round(MAX_NOISE_CHARS * level));
+            text2.noiseChars = Math.max(text2.noiseChars, level > 0 ? Math.ceil(MAX_NOISE_CHARS * level) : 0);
             text2.noiseBand = Math.max(
               text2.noiseBand,
               clamp2(Math.floor(clamp2(params2.tilt, 0, 1) * NOISE_GLYPHS.length), 0, NOISE_GLYPHS.length - 1)
@@ -50048,12 +50055,9 @@ ${err.toString()}`);
     return out;
   }
   function visualStateFor(chainParams) {
-    const state = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+    const state = { brightness: 1 };
     for (const { fn, params: params2 } of chainParams) {
-      if (fn === "room") state.lowpass = Math.min(state.lowpass, params2.visualLowpass);
       if (fn === "echo") state.brightness = Math.min(state.brightness, params2.visualBrightness);
-      if (fn === "crush") state.pixelate = Math.max(state.pixelate, params2.visualPixelate);
-      if (fn === "noise") state.noise = Math.max(state.noise, params2.visualNoise);
     }
     return state;
   }
@@ -50221,7 +50225,7 @@ ${err.toString()}`);
           this._syncGridLoop();
           this._syncPatternLoop();
           if (typeof window !== "undefined") {
-            window._ncVisual = { brightness: 1, lowpass: 1, pixelate: 1, noise: 0 };
+            window._ncVisual = { brightness: 1 };
             window._ncText = null;
           }
         }

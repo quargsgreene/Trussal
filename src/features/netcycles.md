@@ -396,7 +396,7 @@ There exist audiovisual analogs to Strudel functions whose parameters are automa
 
 These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
 
-All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their Hydra counterparts are still computed locally in every browser and published to `window._ncVisual`.
+All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their **image** counterparts are applied on the aggregator's composited frame — one application point, for the same reason — and their **text/css** counterparts in each browser's chat panel. `window._ncVisual` carries only the Hydra tint (`brightness`), which is the one channel anything reads.
 
 ### The medium argument
 
@@ -479,7 +479,7 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 - Description
 The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
 
-Like every other audio effect, room runs on the **aggregator's master bus** (see the chainable-function preamble for the fixed `crush` → `echo` → `room` → `noise` path), so everyone hears one reverb on the shared mix rather than one per client stacked on top of it. The Hydra lowpass counterpart is still computed locally in every browser and published to `window._ncVisual.lowpass`, though nothing reads that channel yet (see the note under `noise`).
+Like every other audio effect, room runs on the **aggregator's master bus** (see the chainable-function preamble for the fixed `crush` → `echo` → `room` → `noise` path), so everyone hears one reverb on the shared mix rather than one per client stacked on top of it. The same normalized cutoff drives the blur radius on the aggregator's composited frame and on the styled spans Text Cycles paints, while the decay pushes letter-spacing apart.
 - Syntax
 `# room <metric> [scale factor] [amount for metric]`
 
@@ -616,7 +616,7 @@ A factor defaults to 1 rather than 0 when its metric keyword was written, so `# 
 
 Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, and a rate above 1 (`*2`) steps within one; neither is something a per-cycle argument can express, so both are parse errors, as is mixing metric keywords and numbers in one pattern. A rate of 1 or slower (`/2`) is fine, and so are rests, `@` weights (which hold an element for whole cycles) and `?` chances. Nested groups advance once per visit of their parent, as in mondo.
 
-The Hydra counterpart is image grain: the colour sets its character (0.15 brown … 0.6 white) and the level scales it, so a quiet brown bed barely marks the image and a loud white one buries it. Note that this value is *published* — every browser computes it into `window._ncVisual.noise` — but nothing renders it yet: the only channel of that object the visual layer reads today is `brightness`. The grain (like room's blur) is wired up to the point of publication and no further.
+The Hydra counterpart is image grain: the colour sets its character (0.15 brown … 0.6 white) and the level scales it, so a quiet brown bed barely marks the image and a loud white one buries it. It is applied on the aggregator's composited frame, and the same level sets how many glyphs the bed injects into a word.
 - Return value
 Updated AV buffer object
 - Examples:
