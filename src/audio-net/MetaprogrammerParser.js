@@ -38,7 +38,9 @@ import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.
 // The one reader for every patterned `#` argument, whatever the effect — and
 // the bare-`?` probability, which is that reader's to define rather than the
 // grammar's.
-import { evaluateValuePattern, isValuePattern, DEFAULT_DROP_CHANCE } from './ValuePattern.js';
+import {
+  evaluateValuePattern, isValuePattern, isDataRefNode, DEFAULT_DROP_CHANCE,
+} from './ValuePattern.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
@@ -58,6 +60,10 @@ export const MOSAIC_ENABLED_BY_DEFAULT = true;
 // carries is only known once it has been read.
 function valuePatternKind(node) {
   if (!isValuePattern(node)) return null;
+  // A data reference reads out as a number, so it settles a mixed sequence the
+  // same way a literal one does — `<wcl Weather:1>` is the same mistake as
+  // `<wcl 3>`.
+  if (isDataRefNode(node)) return 'number';
   for (const term of node.terms || []) {
     if (isValuePattern(term)) {
       const inner = valuePatternKind(term);
@@ -216,6 +222,17 @@ function tokenize(text) {
     if (/[a-zA-Z_]/.test(ch)) {
       let j = i;
       while (j < n && /[a-zA-Z0-9_]/.test(text[j])) j++;
+      // `Weather:3` — a data pack reference, the same spelling Strudel takes.
+      // Claimed here rather than left to the `:` op, which no rule consumes.
+      if (text[j] === ':' && /[0-9]/.test(text[j + 1] || '')) {
+        let k = j + 1;
+        while (k < n && /[0-9]/.test(text[k])) k++;
+        const raw = text.slice(i, k);
+        push('dataref', { name: text.slice(i, j), index: parseInt(text.slice(j + 1, k), 10) },
+          startLine, startCol, raw);
+        advance(k - i);
+        continue;
+      }
       push('word', text.slice(i, j), startLine, startCol);
       advance(j - i);
       continue;
@@ -235,6 +252,12 @@ function tokenize(text) {
 // exactly as its value.
 function tokenWidth(t) {
   return String(t.raw != null ? t.raw : (t.value ?? '')).length;
+}
+
+// A token as it was written, for error messages. Only `dataref` carries a
+// structured value, which would otherwise read as '[object Object]'.
+function tokenText(t) {
+  return String(t.raw != null ? t.raw : (t.value ?? ''));
 }
 
 class Parser {
@@ -643,7 +666,15 @@ class Parser {
     }
     if (!this.atStatementEnd()) {
       const trailing = this.peek();
-      this.error(`cycles got an unexpected argument '${trailing.value}' — the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+      // A data reference is accepted exactly where a `<…>` pattern is, and the
+      // cycles scale/amount are read once per program rather than per cycle —
+      // so say that, instead of reporting it as a stray argument.
+      if (trailing.type === 'dataref') {
+        this.error(`'# cycles' takes fixed numbers, so it cannot read '${tokenText(trailing)}' —`
+          + ' a data reference belongs in an effect argument (# crush / # echo / # room / # noise)', trailing);
+      } else {
+        this.error(`cycles got an unexpected argument '${tokenText(trailing)}' — the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+      }
       this.recover();
       return;
     }
@@ -790,6 +821,13 @@ class Parser {
         const val = this.readPositiveNumber(name, 'arguments');
         if (val == null) return null;
         terms.push(val);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
+        continue;
+      }
+      if ((kind === 'number' || kind === 'any') && t.type === 'dataref') {
+        if (!settleKind('number', t)) return null;
+        this.next();
+        terms.push({ type: 'dataRef', name: t.value.name, index: t.value.index });
         this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
@@ -1032,7 +1070,7 @@ class Parser {
 
     if (!this.atStatementEnd()) {
       const trailing = this.peek();
-      this.error(`'${name}' got an unexpected argument '${trailing.value}' — the syntax is '${sig.usage}'`, trailing);
+      this.error(`'${name}' got an unexpected argument '${tokenText(trailing)}' — the syntax is '${sig.usage}'`, trailing);
       this.recover();
       return;
     }
@@ -1070,6 +1108,12 @@ class Parser {
   parseNumericArg(name, slot, sig) {
     const t = this.peek();
     if (t.type === 'number' || t.type === 'intlike') return this.readPositiveNumber(name, slot);
+    // `# cycles Weather:3` — the column supplies the number, sampled against
+    // the room's cycle grid like any other patterned argument.
+    if (t.type === 'dataref') {
+      this.next();
+      return { type: 'dataRef', name: t.value.name, index: t.value.index };
+    }
     if (sig.patternArgs && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
       // One pattern reader for every `#` argument, whatever the effect: the
       // node it returns is what ValuePattern.js samples at the cycle position.
@@ -1138,7 +1182,7 @@ class Parser {
 
     const trailing = this.peek();
     if (trailing.type !== 'newline' && trailing.type !== 'eof' && trailing.type !== 'sigil') {
-      this.error(`'noise' got an unexpected argument '${trailing.value}' — the syntax is ` +
+      this.error(`'noise' got an unexpected argument '${tokenText(trailing)}' — the syntax is ` +
         "'# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'", trailing);
       this.recover();
       return;
@@ -1215,6 +1259,13 @@ class Parser {
         args.push({ value: seq, tok: t });
         continue;
       }
+      // A bare `Weather:3`, on the same footing as a bare `<…>`: both are
+      // sampled per cycle, so both belong to the same set of directives.
+      if (sig.patternArgs && t.type === 'dataref') {
+        this.next();
+        args.push({ value: { type: 'dataRef', name: t.value.name, index: t.value.index }, tok: t });
+        continue;
+      }
       if (sig.takesSequence && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
         const seq = this.parseSequenceGroup();
         if (seq) args.push({ value: seq, tok: t });
@@ -1227,7 +1278,7 @@ class Parser {
     // (e.g. `# grid maybe`).
     if (!this.atStatementEnd()) {
       const trailing = this.peek();
-      this.error(`'${name}' got an unexpected argument '${trailing.value}'`, trailing);
+      this.error(`'${name}' got an unexpected argument '${tokenText(trailing)}'`, trailing);
       this.recover();
       return;
     }

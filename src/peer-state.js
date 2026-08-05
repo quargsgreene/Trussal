@@ -9,6 +9,7 @@
 
 import { getRoomNameFromUrl } from './jamulus.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
+import { setPeerPacks, removePeerPacks } from './data-ref.js';
 
 const subscribers = new Set();
 
@@ -42,6 +43,7 @@ const localPeer = {
   isAggregator: LOCAL_IS_AGGREGATOR,
   muted: false,
   pattern: '',
+  dataPacks: [],
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
   rtt: null,
@@ -234,6 +236,13 @@ function applyPatch(peer, patch) {
   if (typeof patch.pipelineMs === 'number' || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
   if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
   if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
+  // Data packs feed the shared reference registry rather than sitting on the
+  // peer: "Weather:3" has to resolve identically on every client, so the
+  // registry keys them by owner and never prefers the local browser's copy.
+  if (Array.isArray(patch.dataPacks)) {
+    peer.dataPacks = patch.dataPacks;
+    setPeerPacks(peer.peerId, patch.dataPacks);
+  }
 }
 
 function defaultPeer(peerId) {
@@ -246,6 +255,7 @@ function defaultPeer(peerId) {
     isAggregator: false,
     muted: false,
     pattern: '',
+    dataPacks: [],
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
@@ -277,6 +287,10 @@ function handleMessage(msg) {
   switch (msg.type) {
     case 'welcome':
       myPeerId = msg.peerId || null;
+      // Packs loaded from IndexedDB before the handshake finished have no owner
+      // to be keyed under yet; now they do. (Their outbound message is already
+      // safe — safeSend buffers until hello completes.)
+      if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
       sendHelloIfReady();
       break;
 
@@ -307,6 +321,10 @@ function handleMessage(msg) {
       if (peer) {
         peersByPeerId.delete(peer.peerId);
         if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
+        // Their uploads leave with them: a reference to a departed peer's pack
+        // must stop resolving everywhere at once, not linger on whichever
+        // clients happened to have cached it.
+        removePeerPacks(peer.peerId);
         emit('peer-leave', peer);
       }
       break;
@@ -558,6 +576,20 @@ export function sendLocalNetStats(sample = {}) {
 export function sendLocalPattern(code) {
   localPeer.pattern = typeof code === 'string' ? code : '';
   safeSend({ type: 'pattern', code: localPeer.pattern });
+  emit('peer-upsert', localPeer);
+}
+
+// Mirror our JSON/CSV/TSV packs to the room. They ride the bus rather than
+// staying local because the combined program is evaluated in EVERY browser and
+// by the aggregator: a peer without the values would evaluate a different
+// program than its author, and the same pattern would sound different on every
+// listener. Registered locally under our own peerId too, so our own references
+// resolve by the same room-wide rule as everyone else's.
+export function sendLocalDataPacks(packs) {
+  const list = Array.isArray(packs) ? packs : [];
+  localPeer.dataPacks = list;
+  if (myPeerId) setPeerPacks(myPeerId, list);
+  safeSend({ type: 'datapacks', packs: list });
   emit('peer-upsert', localPeer);
 }
 

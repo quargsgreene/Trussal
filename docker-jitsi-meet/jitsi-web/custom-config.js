@@ -191,6 +191,168 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/audio-net/SeededRandom.js
+  function seededRandom(seed2) {
+    let a2 = seed2 >>> 0;
+    return function() {
+      a2 |= 0;
+      a2 = a2 + 1831565813 | 0;
+      let t = Math.imul(a2 ^ a2 >>> 15, 1 | a2);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function hashSeed(...parts) {
+    let h2 = 2166136261;
+    for (const part of parts) {
+      h2 = (h2 ^ (part | 0)) >>> 0;
+      h2 = Math.imul(h2, 16777619) >>> 0;
+      h2 = (h2 ^ h2 >>> 15) >>> 0;
+      h2 = Math.imul(h2, 625341585) >>> 0;
+    }
+    return h2 >>> 0;
+  }
+  function occurrenceDraw(...parts) {
+    return seededRandom(hashSeed(...parts))();
+  }
+  var init_SeededRandom = __esm({
+    "src/audio-net/SeededRandom.js"() {
+    }
+  });
+
+  // src/data-ref.js
+  function setPeerPacks(peerId, packs) {
+    if (!peerId) return;
+    const byName = /* @__PURE__ */ new Map();
+    for (const pack of packs ?? []) {
+      if (pack?.name && Array.isArray(pack.samples)) byName.set(pack.name, pack);
+    }
+    if (byName.size) packsByPeer.set(peerId, byName);
+    else packsByPeer.delete(peerId);
+  }
+  function removePeerPacks(peerId) {
+    packsByPeer.delete(peerId);
+  }
+  function getPack(name3) {
+    if (!name3) return null;
+    for (const peerId of [...packsByPeer.keys()].sort()) {
+      const pack = packsByPeer.get(peerId).get(name3);
+      if (pack) return pack;
+    }
+    return null;
+  }
+  function parseDataRef(text2) {
+    if (typeof text2 !== "string") return null;
+    const m2 = REF_RE.exec(text2);
+    if (!m2) return null;
+    const index2 = Number(m2[2]);
+    if (!Number.isInteger(index2) || index2 < 1) return null;
+    return { name: m2[1], index: index2 };
+  }
+  function resolveAmount(amount, length2) {
+    const n2 = Number(amount);
+    if (!Number.isFinite(n2) || n2 < 0) return null;
+    if (n2 < 1) return Math.round(n2 * length2);
+    return Math.min(Math.round(n2), length2);
+  }
+  function dataBegin(values, amount) {
+    const drop2 = resolveAmount(amount, values.length);
+    if (drop2 === null) return values;
+    return values.slice(Math.min(drop2, values.length));
+  }
+  function dataClip(values, amount) {
+    const keep2 = resolveAmount(amount, values.length);
+    if (keep2 === null) return values;
+    return values.slice(0, Math.max(0, keep2));
+  }
+  function dataChop(values, n2) {
+    const count = Math.round(Number(n2));
+    if (!Number.isFinite(count) || count < 1 || !values.length) return values;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      out.push(values[Math.min(values.length - 1, Math.floor(i * values.length / count))]);
+    }
+    return out;
+  }
+  function dataShuffle(values, seedParts = []) {
+    const parts = seedParts.flatMap((part) => typeof part === "string" ? [...part].map((c2) => c2.charCodeAt(0)) : [Number(part) | 0]);
+    const rand3 = seededRandom(hashSeed(...parts));
+    const out = values.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j2 = Math.floor(rand3() * (i + 1));
+      [out[i], out[j2]] = [out[j2], out[i]];
+    }
+    return out;
+  }
+  function buildPattern(values, strudel2, seedParts) {
+    const pattern2 = values.length ? strudel2.fastcat(...values) : strudel2.silence;
+    const rebuild = (next) => buildPattern(next, strudel2, seedParts);
+    const ops = {
+      begin: (amount) => rebuild(dataBegin(values, amount)),
+      clip: (amount) => rebuild(dataClip(values, amount)),
+      chop: (n2) => rebuild(dataChop(values, n2)),
+      shuffle: (seed2 = 0) => rebuild(dataShuffle(values, [...seedParts, seed2]))
+    };
+    for (const [name3, fn] of Object.entries(ops)) {
+      Object.defineProperty(pattern2, name3, {
+        value: fn,
+        writable: true,
+        configurable: true,
+        enumerable: false
+      });
+    }
+    Object.defineProperty(pattern2, "dataValues", {
+      value: values,
+      writable: false,
+      configurable: true,
+      enumerable: false
+    });
+    return pattern2;
+  }
+  function resolveDataRef2(text2, strudel2) {
+    const ref2 = parseDataRef(text2);
+    if (!ref2) return null;
+    const pack = getPack(ref2.name);
+    if (!pack) return null;
+    const sample = pack.samples[ref2.index - 1];
+    if (!sample) {
+      console.error(`[data] ${ref2.name}:${ref2.index} is out of range \u2014 ${pack.name} has ${pack.samples.length} sample(s); using silence`);
+      return strudel2.silence;
+    }
+    return buildPattern(sample.values, strudel2, [ref2.name, ref2.index]);
+  }
+  function rewriteDataRefs(code2) {
+    return String(code2 ?? "").replace(REWRITE_RE, (match2, soundCall, ref2) => {
+      if (soundCall) return match2;
+      const { name: name3, index: index2 } = parseDataRef(ref2);
+      return `_data('${name3}',${index2},'${name3}:${index2}')`;
+    });
+  }
+  function makeDataFn(strudel2) {
+    return function _data(name3, index2, literal2) {
+      const text2 = literal2 ?? `${name3}:${index2}`;
+      return resolveDataRef2(text2, strudel2) ?? strudel2.mini(text2);
+    };
+  }
+  function sampleDataRefAt(text2, cyclePos) {
+    const ref2 = parseDataRef(text2);
+    if (!ref2) return null;
+    const pack = getPack(ref2.name);
+    const sample = pack?.samples?.[ref2.index - 1];
+    if (!sample?.values?.length) return null;
+    const phase = ((Number(cyclePos) || 0) % 1 + 1) % 1;
+    return sample.values[Math.min(sample.values.length - 1, Math.floor(phase * sample.values.length))];
+  }
+  var packsByPeer, REF_RE, REWRITE_RE;
+  var init_data_ref = __esm({
+    "src/data-ref.js"() {
+      init_SeededRandom();
+      packsByPeer = /* @__PURE__ */ new Map();
+      REF_RE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\d+)\s*$/;
+      REWRITE_RE = /(\b(?:s|sound)\s*\(\s*)?"([A-Za-z_][A-Za-z0-9_]*\s*:\s*\d+)"/g;
+    }
+  });
+
   // src/peer-state.js
   function emit2(event, payload) {
     subscribers2.forEach((fn) => {
@@ -360,6 +522,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof patch.pipelineMs === "number" || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
     if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
     if (typeof patch.canWriteModulation === "boolean") peer.canWriteModulation = patch.canWriteModulation;
+    if (Array.isArray(patch.dataPacks)) {
+      peer.dataPacks = patch.dataPacks;
+      setPeerPacks(peer.peerId, patch.dataPacks);
+    }
   }
   function defaultPeer(peerId) {
     return {
@@ -371,6 +537,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       isAggregator: false,
       muted: false,
       pattern: "",
+      dataPacks: [],
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
       rtt: null,
@@ -400,6 +567,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     switch (msg.type) {
       case "welcome":
         myPeerId = msg.peerId || null;
+        if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
         sendHelloIfReady();
         break;
       case "roster":
@@ -425,6 +593,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         if (peer) {
           peersByPeerId.delete(peer.peerId);
           if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
+          removePeerPacks(peer.peerId);
           emit2("peer-leave", peer);
         }
         break;
@@ -562,6 +731,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     safeSend({ type: "pattern", code: localPeer.pattern });
     emit2("peer-upsert", localPeer);
   }
+  function sendLocalDataPacks(packs) {
+    const list = Array.isArray(packs) ? packs : [];
+    localPeer.dataPacks = list;
+    if (myPeerId) setPeerPacks(myPeerId, list);
+    safeSend({ type: "datapacks", packs: list });
+    emit2("peer-upsert", localPeer);
+  }
   function sendLocalEffects(effects2) {
     localPeer.effects = {
       distortion: !!effects2.distortion,
@@ -620,6 +796,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     "src/peer-state.js"() {
       init_jamulus();
       init_participants();
+      init_data_ref();
       subscribers2 = /* @__PURE__ */ new Set();
       peersByPeerId = /* @__PURE__ */ new Map();
       peerIdByJitsiId = /* @__PURE__ */ new Map();
@@ -636,6 +813,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         isAggregator: LOCAL_IS_AGGREGATOR,
         muted: false,
         pattern: "",
+        dataPacks: [],
         effects: { distortion: false, noise: false, reverb: false },
         playing: false,
         rtt: null,
@@ -37937,6 +38115,91 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/audio-net/ValuePattern.js
+  function isValuePattern(node) {
+    return !!node && typeof node === "object" && (node.type === "valueSeq" || node.type === "dataRef");
+  }
+  function isDataRefNode(node) {
+    return !!node && typeof node === "object" && node.type === "dataRef";
+  }
+  function setDataRefReader(fn) {
+    readDataRef = typeof fn === "function" ? fn : () => null;
+  }
+  function entryHasValuePattern(entry) {
+    if (!entry) return false;
+    const candidates = [
+      entry.metric,
+      ...entry.metrics || [],
+      ...entry.args || [],
+      ...(entry.pairs || []).map((p) => p && p.value),
+      ...entry.bounds || []
+    ];
+    return candidates.some(isValuePattern);
+  }
+  function chainHasValuePattern(chainEntries) {
+    return (chainEntries || []).some(entryHasValuePattern);
+  }
+  function layout(node) {
+    const terms = node.terms || [];
+    const weights = node.weights;
+    const spans = [];
+    let totalWeight = 0;
+    for (let i = 0; i < terms.length; i++) {
+      const written = weights ? weights[i] : null;
+      const weight = Number.isFinite(written) && written > 0 ? written : 1;
+      spans.push({ index: i, start: totalWeight, end: totalWeight + weight });
+      totalWeight += weight;
+    }
+    if (!(totalWeight > 0)) return null;
+    const repLength = node.mode === "subdivide" ? 1 : totalWeight;
+    const unitsPerStep = repLength / totalWeight;
+    for (const span of spans) {
+      span.start *= unitsPerStep;
+      span.end *= unitsPerStep;
+    }
+    return { spans, repLength };
+  }
+  function evaluateValuePattern(node, cyclePos = 0) {
+    if (isDataRefNode(node)) {
+      const value2 = readDataRef(`${node.name}:${node.index}`, cyclePos);
+      return typeof value2 === "number" ? value2 : null;
+    }
+    if (!isValuePattern(node)) return node;
+    const terms = node.terms || [];
+    if (!terms.length) return null;
+    const grid = layout(node);
+    if (!grid) return null;
+    const raw = Number.isFinite(cyclePos) ? cyclePos : 0;
+    const speed2 = Number.isFinite(node.speed) && node.speed > 0 ? node.speed : 1;
+    const units = raw * speed2;
+    const rep = Math.floor(units / grid.repLength);
+    const offset2 = units - rep * grid.repLength;
+    let span = grid.spans[grid.spans.length - 1];
+    for (const candidate of grid.spans) {
+      if (offset2 < candidate.end) {
+        span = candidate;
+        break;
+      }
+    }
+    const chance = node.chances ? node.chances[span.index] : null;
+    if (Number.isFinite(chance) && occurrenceDraw(node.line | 0, node.col | 0, span.index, rep) < chance) {
+      return null;
+    }
+    const width = span.end - span.start;
+    const rate = node.rates ? node.rates[span.index] : null;
+    const elementRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    return evaluateValuePattern(terms[span.index], (rep + (offset2 - span.start) / width) * elementRate);
+  }
+  var PATTERN_TICK_MS, readDataRef, DEFAULT_DROP_CHANCE;
+  var init_ValuePattern = __esm({
+    "src/audio-net/ValuePattern.js"() {
+      init_SeededRandom();
+      PATTERN_TICK_MS = 50;
+      readDataRef = () => null;
+      DEFAULT_DROP_CHANCE = 0.5;
+    }
+  });
+
   // latency-instrument/room-indices.js
   var require_room_indices = __commonJS({
     "latency-instrument/room-indices.js"(exports, module) {
@@ -37980,109 +38243,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         isValidParticipantToken: isValidParticipantToken2,
         parseParticipantToken: parseParticipantToken2
       };
-    }
-  });
-
-  // src/audio-net/SeededRandom.js
-  function seededRandom(seed2) {
-    let a2 = seed2 >>> 0;
-    return function() {
-      a2 |= 0;
-      a2 = a2 + 1831565813 | 0;
-      let t = Math.imul(a2 ^ a2 >>> 15, 1 | a2);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  function hashSeed(...parts) {
-    let h2 = 2166136261;
-    for (const part of parts) {
-      h2 = (h2 ^ (part | 0)) >>> 0;
-      h2 = Math.imul(h2, 16777619) >>> 0;
-      h2 = (h2 ^ h2 >>> 15) >>> 0;
-      h2 = Math.imul(h2, 625341585) >>> 0;
-    }
-    return h2 >>> 0;
-  }
-  function occurrenceDraw(...parts) {
-    return seededRandom(hashSeed(...parts))();
-  }
-  var init_SeededRandom = __esm({
-    "src/audio-net/SeededRandom.js"() {
-    }
-  });
-
-  // src/audio-net/ValuePattern.js
-  function isValuePattern(node) {
-    return !!node && typeof node === "object" && node.type === "valueSeq";
-  }
-  function entryHasValuePattern(entry) {
-    if (!entry) return false;
-    const candidates = [
-      entry.metric,
-      ...entry.metrics || [],
-      ...entry.args || [],
-      ...(entry.pairs || []).map((p) => p && p.value),
-      ...entry.bounds || []
-    ];
-    return candidates.some(isValuePattern);
-  }
-  function chainHasValuePattern(chainEntries) {
-    return (chainEntries || []).some(entryHasValuePattern);
-  }
-  function layout(node) {
-    const terms = node.terms || [];
-    const weights = node.weights;
-    const spans = [];
-    let totalWeight = 0;
-    for (let i = 0; i < terms.length; i++) {
-      const written = weights ? weights[i] : null;
-      const weight = Number.isFinite(written) && written > 0 ? written : 1;
-      spans.push({ index: i, start: totalWeight, end: totalWeight + weight });
-      totalWeight += weight;
-    }
-    if (!(totalWeight > 0)) return null;
-    const repLength = node.mode === "subdivide" ? 1 : totalWeight;
-    const unitsPerStep = repLength / totalWeight;
-    for (const span of spans) {
-      span.start *= unitsPerStep;
-      span.end *= unitsPerStep;
-    }
-    return { spans, repLength };
-  }
-  function evaluateValuePattern(node, cyclePos = 0) {
-    if (!isValuePattern(node)) return node;
-    const terms = node.terms || [];
-    if (!terms.length) return null;
-    const grid = layout(node);
-    if (!grid) return null;
-    const raw = Number.isFinite(cyclePos) ? cyclePos : 0;
-    const speed2 = Number.isFinite(node.speed) && node.speed > 0 ? node.speed : 1;
-    const units = raw * speed2;
-    const rep = Math.floor(units / grid.repLength);
-    const offset2 = units - rep * grid.repLength;
-    let span = grid.spans[grid.spans.length - 1];
-    for (const candidate of grid.spans) {
-      if (offset2 < candidate.end) {
-        span = candidate;
-        break;
-      }
-    }
-    const chance = node.chances ? node.chances[span.index] : null;
-    if (Number.isFinite(chance) && occurrenceDraw(node.line | 0, node.col | 0, span.index, rep) < chance) {
-      return null;
-    }
-    const width = span.end - span.start;
-    const rate = node.rates ? node.rates[span.index] : null;
-    const elementRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
-    return evaluateValuePattern(terms[span.index], (rep + (offset2 - span.start) / width) * elementRate);
-  }
-  var PATTERN_TICK_MS, DEFAULT_DROP_CHANCE;
-  var init_ValuePattern = __esm({
-    "src/audio-net/ValuePattern.js"() {
-      init_SeededRandom();
-      PATTERN_TICK_MS = 50;
-      DEFAULT_DROP_CHANCE = 0.5;
     }
   });
 
@@ -38200,6 +38360,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   // src/audio-net/MetaprogrammerParser.js
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
+    if (isDataRefNode(node)) return "number";
     for (const term of node.terms || []) {
       if (isValuePattern(term)) {
         const inner = valuePatternKind(term);
@@ -38290,6 +38451,20 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       if (/[a-zA-Z_]/.test(ch2)) {
         let j2 = i;
         while (j2 < n2 && /[a-zA-Z0-9_]/.test(text2[j2])) j2++;
+        if (text2[j2] === ":" && /[0-9]/.test(text2[j2 + 1] || "")) {
+          let k2 = j2 + 1;
+          while (k2 < n2 && /[0-9]/.test(text2[k2])) k2++;
+          const raw = text2.slice(i, k2);
+          push(
+            "dataref",
+            { name: text2.slice(i, j2), index: parseInt(text2.slice(j2 + 1, k2), 10) },
+            startLine,
+            startCol,
+            raw
+          );
+          advance(k2 - i);
+          continue;
+        }
         push("word", text2.slice(i, j2), startLine, startCol);
         advance(j2 - i);
         continue;
@@ -38302,6 +38477,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
   function tokenWidth(t) {
     return String(t.raw != null ? t.raw : t.value ?? "").length;
+  }
+  function tokenText(t) {
+    return String(t.raw != null ? t.raw : t.value ?? "");
   }
   function parseMetaprogram(text2) {
     const { tokens, errors } = tokenize2(typeof text2 === "string" ? text2 : "");
@@ -38857,7 +39035,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`cycles got an unexpected argument '${trailing.value}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+            if (trailing.type === "dataref") {
+              this.error(`'# cycles' takes fixed numbers, so it cannot read '${tokenText(trailing)}' \u2014 a data reference belongs in an effect argument (# crush / # echo / # room / # noise)`, trailing);
+            } else {
+              this.error(`cycles got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+            }
             this.recover();
             return;
           }
@@ -38993,6 +39175,13 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               const val2 = this.readPositiveNumber(name3, "arguments");
               if (val2 == null) return null;
               terms.push(val2);
+              this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
+              continue;
+            }
+            if ((kind === "number" || kind === "any") && t.type === "dataref") {
+              if (!settleKind("number", t)) return null;
+              this.next();
+              terms.push({ type: "dataRef", name: t.value.name, index: t.value.index });
               this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
               continue;
             }
@@ -39203,7 +39392,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`'${name3}' got an unexpected argument '${trailing.value}' \u2014 the syntax is '${sig.usage}'`, trailing);
+            this.error(`'${name3}' got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '${sig.usage}'`, trailing);
             this.recover();
             return;
           }
@@ -39238,6 +39427,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         parseNumericArg(name3, slot, sig) {
           const t = this.peek();
           if (t.type === "number" || t.type === "intlike") return this.readPositiveNumber(name3, slot);
+          if (t.type === "dataref") {
+            this.next();
+            return { type: "dataRef", name: t.value.name, index: t.value.index };
+          }
           if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
             return this.parseValueSequence(name3, "number", sig);
           }
@@ -39302,7 +39495,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           const trailing = this.peek();
           if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
-            this.error(`'noise' got an unexpected argument '${trailing.value}' \u2014 the syntax is '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'`, trailing);
+            this.error(`'noise' got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'`, trailing);
             this.recover();
             return;
           }
@@ -39373,6 +39566,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               args2.push({ value: seq2, tok: t });
               continue;
             }
+            if (sig.patternArgs && t.type === "dataref") {
+              this.next();
+              args2.push({ value: { type: "dataRef", name: t.value.name, index: t.value.index }, tok: t });
+              continue;
+            }
             if (sig.takesSequence && t.type === "punct" && (t.value === "<" || t.value === "[")) {
               const seq2 = this.parseSequenceGroup();
               if (seq2) args2.push({ value: seq2, tok: t });
@@ -39382,7 +39580,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`'${name3}' got an unexpected argument '${trailing.value}'`, trailing);
+            this.error(`'${name3}' got an unexpected argument '${tokenText(trailing)}'`, trailing);
             this.recover();
             return;
           }
@@ -50838,7 +51036,7 @@ ${SHORTCUT_LINES[fn]}
           let pattern2 = null;
           let last2 = typeof spec === "number" ? spec : 0;
           try {
-            pattern2 = strudel2 ? strudel2.reify(spec) : null;
+            pattern2 = strudel2 ? resolveDataRef(spec, strudel2) ?? strudel2.reify(spec) : null;
           } catch (e30) {
             console.error("[hydra-params] could not reify a H() argument", e30);
           }
@@ -50870,6 +51068,10 @@ ${SHORTCUT_LINES[fn]}
     return void 0;
   }
 
+  // src/index.js
+  init_data_ref();
+  init_ValuePattern();
+
   // src/studio.js
   init_jamulus();
   init_participants();
@@ -50881,56 +51083,311 @@ ${SHORTCUT_LINES[fn]}
   init_Metaprogrammer();
   init_participants();
 
+  // src/data-samples-core.js
+  var MAX_VALUES_PER_SAMPLE = 1024;
+  var MAX_SAMPLES_PER_PACK = 64;
+  var MAX_VALUES_PER_PACK = 8192;
+  var MAX_VALUES_TOTAL = 16384;
+  var VALUE_PRECISION = 6;
+  var DATA_EXTENSIONS = /* @__PURE__ */ new Set(["json", "csv", "tsv"]);
+  function isDataFile(filename) {
+    return DATA_EXTENSIONS.has(extensionOf(filename));
+  }
+  function extensionOf(filename) {
+    const base = String(filename ?? "").split("/").pop();
+    const dot = base.lastIndexOf(".");
+    return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+  }
+  var NOTE_RE = /^[a-gA-G](?:[#bs]|es|is)*-?[0-9]?$/;
+  var REST = "~";
+  function isRecognizedStrudelValue(text2) {
+    return text2 === REST || NOTE_RE.test(text2);
+  }
+  function parseLenientNumber(text2) {
+    const m2 = /^[\s$£€¥+]*(-?\d[\d,_ ]*(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(text2);
+    if (!m2) return null;
+    const cleaned = m2[1].replace(/[,_ ]/g, "");
+    const n2 = Number(cleaned);
+    return Number.isFinite(n2) ? n2 : null;
+  }
+  function roundValue(n2) {
+    if (!Number.isFinite(n2)) return 0;
+    if (n2 === 0) return 0;
+    return Number(n2.toPrecision(VALUE_PRECISION));
+  }
+  function castValue(raw, ordinals) {
+    if (typeof raw === "number") return roundValue(raw);
+    if (typeof raw === "boolean") return raw ? 1 : 0;
+    if (raw === null || raw === void 0) return 0;
+    const text2 = String(raw).trim();
+    if (text2 === "") return 0;
+    if (isRecognizedStrudelValue(text2)) return text2;
+    const n2 = parseLenientNumber(text2);
+    if (n2 !== null) return roundValue(n2);
+    if (!ordinals.has(text2)) ordinals.set(text2, ordinals.size);
+    return ordinals.get(text2);
+  }
+  function parseDelimited(text2, delimiter) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let quoted = false;
+    let hadContent = false;
+    const endField = () => {
+      row.push(field);
+      field = "";
+    };
+    const endRow = () => {
+      endField();
+      if (!(row.length === 1 && row[0] === "" && !hadContent)) rows.push(row);
+      row = [];
+      hadContent = false;
+    };
+    const src2 = String(text2 ?? "").replace(/\r\n?/g, "\n");
+    for (let i = 0; i < src2.length; i++) {
+      const ch2 = src2[i];
+      if (quoted) {
+        if (ch2 === '"') {
+          if (src2[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else quoted = false;
+        } else field += ch2;
+        hadContent = true;
+        continue;
+      }
+      if (ch2 === '"') {
+        quoted = true;
+        hadContent = true;
+        continue;
+      }
+      if (ch2 === delimiter) {
+        endField();
+        continue;
+      }
+      if (ch2 === "\n") {
+        endRow();
+        continue;
+      }
+      field += ch2;
+      if (ch2.trim() !== "") hadContent = true;
+    }
+    if (field !== "" || row.length > 0 || hadContent) endRow();
+    return rows;
+  }
+  function looksLikeHeader(rows) {
+    if (rows.length < 2) return false;
+    const first = rows[0];
+    if (!first.length) return false;
+    return first.every((cell) => {
+      const text2 = String(cell ?? "").trim();
+      return text2 !== "" && parseLenientNumber(text2) === null;
+    });
+  }
+  function flattenValues(value2, limit, ordinals) {
+    const values = [];
+    let truncated = false;
+    const walk2 = (node) => {
+      if (values.length >= limit) {
+        truncated = true;
+        return;
+      }
+      if (Array.isArray(node)) {
+        for (const v2 of node) walk2(v2);
+        return;
+      }
+      if (node && typeof node === "object") {
+        for (const v2 of Object.values(node)) walk2(v2);
+        return;
+      }
+      values.push(castValue(node, ordinals));
+    };
+    walk2(value2);
+    if (values.length > limit) {
+      values.length = limit;
+      truncated = true;
+    }
+    return { values, truncated };
+  }
+  function packNameFromFilename(filename) {
+    const base = String(filename ?? "").split("/").pop();
+    const dot = base.lastIndexOf(".");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const cleaned = stem.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!cleaned) return "data";
+    return /^[0-9]/.test(cleaned) ? `_${cleaned}` : cleaned;
+  }
+  function uniquePackName(base, taken) {
+    const names2 = taken instanceof Set ? taken : new Set(taken ?? []);
+    if (!names2.has(base)) return base;
+    for (let i = 2; ; i++) {
+      const candidate = `${base}_${i}`;
+      if (!names2.has(candidate)) return candidate;
+    }
+  }
+  function applyPackCaps(samples2, budget) {
+    const notes2 = { droppedSamples: 0, truncatedSamples: 0 };
+    let kept = samples2;
+    if (kept.length > MAX_SAMPLES_PER_PACK) {
+      notes2.droppedSamples = kept.length - MAX_SAMPLES_PER_PACK;
+      kept = kept.slice(0, MAX_SAMPLES_PER_PACK);
+    }
+    let remaining = Math.min(MAX_VALUES_PER_PACK, budget ?? MAX_VALUES_PER_PACK);
+    const out = [];
+    for (const sample of kept) {
+      const limit = Math.min(MAX_VALUES_PER_SAMPLE, remaining);
+      if (limit <= 0) {
+        notes2.droppedSamples++;
+        continue;
+      }
+      const values = sample.values.length > limit ? sample.values.slice(0, limit) : sample.values;
+      const truncated = sample.truncated || values.length < sample.values.length;
+      if (truncated) notes2.truncatedSamples++;
+      remaining -= values.length;
+      out.push({ label: sample.label, values, truncated });
+    }
+    return { samples: out, ...notes2 };
+  }
+  function samplesFromRows(rows) {
+    const header = looksLikeHeader(rows) ? rows[0] : null;
+    const body = header ? rows.slice(1) : rows;
+    const width = rows.reduce((max2, r2) => Math.max(max2, r2.length), 0);
+    const samples2 = [];
+    for (let col = 0; col < width; col++) {
+      const ordinals = /* @__PURE__ */ new Map();
+      const label2 = header?.[col]?.trim() || `column ${col + 1}`;
+      const values = body.map((row) => castValue(row[col], ordinals));
+      samples2.push({ label: label2, values, truncated: false });
+    }
+    return samples2;
+  }
+  function samplesFromJson(parsed, packName) {
+    if (Array.isArray(parsed)) {
+      const records = parsed.filter((v2) => v2 && typeof v2 === "object" && !Array.isArray(v2));
+      if (records.length === parsed.length && records.length > 0) {
+        const keys3 = [];
+        for (const record of records) {
+          for (const key of Object.keys(record)) if (!keys3.includes(key)) keys3.push(key);
+        }
+        return keys3.map((key) => {
+          const ordinals3 = /* @__PURE__ */ new Map();
+          const values = [];
+          for (const record of records) {
+            const flat2 = flattenValues(record[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals3);
+            values.push(...flat2.values);
+          }
+          return { label: key, values, truncated: false };
+        });
+      }
+      const ordinals2 = /* @__PURE__ */ new Map();
+      const flat = flattenValues(parsed, MAX_VALUES_PER_SAMPLE, ordinals2);
+      return [{ label: packName, values: flat.values, truncated: flat.truncated }];
+    }
+    if (parsed && typeof parsed === "object") {
+      return Object.entries(parsed).map(([key, value2]) => {
+        const ordinals2 = /* @__PURE__ */ new Map();
+        const flat = flattenValues(value2, MAX_VALUES_PER_SAMPLE, ordinals2);
+        return { label: key, values: flat.values, truncated: flat.truncated };
+      });
+    }
+    const ordinals = /* @__PURE__ */ new Map();
+    return [{ label: packName, values: [castValue(parsed, ordinals)], truncated: false }];
+  }
+  function parseDataFile(filename, text2, { budget = MAX_VALUES_TOTAL, taken } = {}) {
+    const kind = extensionOf(filename);
+    const name3 = uniquePackName(packNameFromFilename(filename), taken);
+    let samples2;
+    if (kind === "json") {
+      let parsed;
+      try {
+        parsed = JSON.parse(text2);
+      } catch (e30) {
+        throw new Error(`${filename}: not valid JSON \u2014 ${e30.message}`);
+      }
+      samples2 = samplesFromJson(parsed, name3);
+    } else if (kind === "csv" || kind === "tsv") {
+      const rows = parseDelimited(text2, kind === "tsv" ? "	" : ",");
+      if (!rows.length) throw new Error(`${filename}: no rows`);
+      samples2 = samplesFromRows(rows);
+    } else {
+      throw new Error(`${filename}: not a JSON, CSV or TSV file`);
+    }
+    samples2 = samples2.filter((s2) => s2.values.length > 0);
+    if (!samples2.length) throw new Error(`${filename}: no values found`);
+    const capped = applyPackCaps(samples2, budget);
+    return { name: name3, kind, ...capped };
+  }
+
   // src/user-samples.js
   var DB_NAME = "samples";
   var DB_VERSION = 1;
   var DB_TABLE = "usersamples";
   var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["wav", "mp3", "flac", "ogg", "m4a", "aac"]);
+  var DATA_ID_PREFIX = "data:";
   function isAudioFile(filename) {
     return AUDIO_EXTENSIONS.has(filename.split(".").pop().toLowerCase());
   }
-  function openSamplesDB() {
+  function openDB() {
     return new Promise((resolve2, reject) => {
       if (typeof window === "undefined" || !("indexedDB" in window)) {
         resolve2(null);
         return;
       }
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const store = req.result.createObjectStore(DB_TABLE, { keyPath: "id", autoIncrement: false });
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const store = request.result.createObjectStore(DB_TABLE, { keyPath: "id", autoIncrement: false });
         ["blob", "title"].forEach((c2) => store.createIndex(c2, c2, { unique: false }));
       };
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction([DB_TABLE], "readwrite");
-        resolve2({ objectStore: tx.objectStore(DB_TABLE), db });
-      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve2(request.result);
     });
   }
-  async function registerSamplesFromDB(registerSampleSource2) {
-    const idb = await openSamplesDB().catch(() => null);
-    if (!idb) return;
-    const { objectStore } = idb;
-    const soundFiles = await new Promise((resolve2, reject) => {
-      const q2 = objectStore.getAll();
-      q2.onerror = () => reject(q2.error);
-      q2.onsuccess = (e30) => resolve2(e30.target.result);
+  async function withStore(mode2, fn) {
+    const db = await openDB().catch((e30) => {
+      console.error("[trussal] samples DB failed to open", e30);
+      throw e30;
     });
+    if (!db) return null;
+    return new Promise((resolve2, reject) => {
+      const tx = db.transaction([DB_TABLE], mode2);
+      const store = tx.objectStore(DB_TABLE);
+      let result;
+      Promise.resolve(fn(store)).then((r2) => {
+        result = r2;
+      }).catch(reject);
+      tx.oncomplete = () => resolve2(result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+  function req(request) {
+    return new Promise((resolve2, reject) => {
+      request.onsuccess = () => resolve2(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  function readAll() {
+    return withStore("readonly", (store) => req(store.getAll())).catch((e30) => {
+      console.error("[trussal] samples DB read failed", e30);
+      return [];
+    });
+  }
+  function bankOf(record) {
+    const parts = record.id.split("/");
+    return parts.length >= 2 ? parts[parts.length - 2] : record.id.split(/\W+/)[0] ?? "user";
+  }
+  var isDataRecord = (record) => record?.kind === "data" && !!record.pack;
+  async function registerSamplesFromDB(registerSampleSource2) {
+    const soundFiles = await readAll();
     if (!soundFiles?.length) return;
     const sounds = /* @__PURE__ */ new Map();
-    await Promise.all(
-      [...soundFiles].sort((a2, b) => a2.title.localeCompare(b.title, void 0, { numeric: true, sensitivity: "base" })).map((sf) => {
-        if (!isAudioFile(sf.title)) return null;
-        const parts = sf.id.split("/");
-        const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
-        const url2 = URL.createObjectURL(sf.blob);
-        const bank2 = sounds.get(parent) ?? /* @__PURE__ */ new Map();
-        bank2.set(sf.title, url2);
-        sounds.set(parent, bank2);
-        return null;
-      }).filter(Boolean)
-    );
+    [...soundFiles].sort((a2, b) => a2.title.localeCompare(b.title, void 0, { numeric: true, sensitivity: "base" })).forEach((sf) => {
+      if (isDataRecord(sf) || !isAudioFile(sf.title)) return;
+      const url2 = URL.createObjectURL(sf.blob);
+      const bank2 = sounds.get(bankOf(sf)) ?? /* @__PURE__ */ new Map();
+      bank2.set(sf.title, url2);
+      sounds.set(bankOf(sf), bank2);
+    });
     sounds.forEach((bank2, key) => {
       const urls = Array.from(bank2.keys()).sort((a2, b) => a2.localeCompare(b)).map((t) => bank2.get(t));
       registerSampleSource2(key, urls, { prebake: false });
@@ -50940,23 +51397,40 @@ ${SHORTCUT_LINES[fn]}
     }
   }
   async function getSampleBanks() {
-    const idb = await openSamplesDB().catch(() => null);
-    if (!idb) return [];
-    const { objectStore } = idb;
-    const soundFiles = await new Promise((resolve2, reject) => {
-      const q2 = objectStore.getAll();
-      q2.onerror = () => reject(q2.error);
-      q2.onsuccess = (e30) => resolve2(e30.target.result);
-    }).catch(() => []);
-    if (!soundFiles?.length) return [];
-    const counts = /* @__PURE__ */ new Map();
-    for (const sf of soundFiles) {
-      if (!isAudioFile(sf.title)) continue;
-      const parts = sf.id.split("/");
-      const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
-      counts.set(parent, (counts.get(parent) ?? 0) + 1);
+    const records = await readAll();
+    if (!records?.length) return [];
+    const banks = /* @__PURE__ */ new Map();
+    for (const record of records) {
+      if (isDataRecord(record)) {
+        banks.set(record.pack.name, {
+          name: record.pack.name,
+          kind: record.pack.kind,
+          count: record.pack.samples.length,
+          truncated: record.pack.truncatedSamples > 0 || record.pack.droppedSamples > 0,
+          samples: record.pack.samples.map((s2, i) => ({
+            label: s2.label,
+            id: `${record.id}#${i}`,
+            length: s2.values.length,
+            truncated: s2.truncated
+          }))
+        });
+        continue;
+      }
+      if (!isAudioFile(record.title)) continue;
+      const name3 = bankOf(record);
+      const bank2 = banks.get(name3) ?? { name: name3, kind: "audio", count: 0, truncated: false, samples: [] };
+      bank2.samples.push({ label: record.title, id: record.id });
+      bank2.count = bank2.samples.length;
+      banks.set(name3, bank2);
     }
-    return [...counts.entries()].sort((a2, b) => a2[0].localeCompare(b[0])).map(([name3, count]) => ({ name: name3, count }));
+    for (const bank2 of banks.values()) {
+      if (bank2.kind === "audio") bank2.samples.sort((a2, b) => a2.label.localeCompare(b.label));
+    }
+    return [...banks.values()].sort((a2, b) => a2.name.localeCompare(b.name));
+  }
+  async function getDataPacks() {
+    const records = await readAll();
+    return (records ?? []).filter(isDataRecord).map((r2) => r2.pack);
   }
   async function clearSamplesDB() {
     return new Promise((resolve2) => {
@@ -50964,36 +51438,76 @@ ${SHORTCUT_LINES[fn]}
         resolve2();
         return;
       }
-      const req = indexedDB.deleteDatabase(DB_NAME);
-      req.onsuccess = resolve2;
-      req.onerror = resolve2;
-      req.onblocked = resolve2;
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = resolve2;
+      request.onerror = resolve2;
+      request.onblocked = resolve2;
+    });
+  }
+  async function deleteSample(sampleId) {
+    const id3 = String(sampleId ?? "");
+    if (!id3) return;
+    const hash = id3.lastIndexOf("#");
+    if (!id3.startsWith(DATA_ID_PREFIX) || hash < 0) {
+      await withStore("readwrite", (store) => req(store.delete(id3)));
+      return;
+    }
+    const recordId = id3.slice(0, hash);
+    const index2 = Number(id3.slice(hash + 1));
+    await withStore("readwrite", async (store) => {
+      const record = await req(store.get(recordId));
+      if (!isDataRecord(record) || !Number.isInteger(index2)) return;
+      const samples2 = record.pack.samples.filter((_3, i) => i !== index2);
+      if (!samples2.length) {
+        await req(store.delete(recordId));
+        return;
+      }
+      await req(store.put({ ...record, pack: { ...record.pack, samples: samples2 } }));
     });
   }
   async function uploadSamplesToDB(files2, onDone) {
-    const audioFiles = Array.from(files2).filter((f2) => isAudioFile(f2.name));
-    if (!audioFiles.length) {
-      onDone?.(0);
+    const all3 = Array.from(files2 ?? []);
+    const audioFiles = all3.filter((f2) => isAudioFile(f2.name));
+    const dataFiles = all3.filter((f2) => isDataFile(f2.name));
+    if (!audioFiles.length && !dataFiles.length) {
+      onDone?.({ audio: 0, packs: 0, errors: [] });
       return;
     }
-    const records = await Promise.all(audioFiles.map(async (f2) => {
-      const blob = await fetch(URL.createObjectURL(f2)).then((r2) => r2.blob());
-      return {
-        id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
-        title: f2.name,
-        blob
-      };
-    }));
-    const idb = await openSamplesDB();
-    if (!idb) {
-      onDone?.(0);
-      return;
+    const audioRecords = await Promise.all(audioFiles.map(async (f2) => ({
+      id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
+      title: f2.name,
+      blob: await f2.arrayBuffer().then((buf) => new Blob([buf], { type: f2.type }))
+    })));
+    const existing = await getSampleBanks();
+    const taken = new Set(existing.map((b) => b.name));
+    for (const record of audioRecords) taken.add(bankOf(record));
+    let budget = MAX_VALUES_TOTAL - (await getDataPacks()).reduce((sum, pack) => sum + pack.samples.reduce((n2, s2) => n2 + s2.values.length, 0), 0);
+    const errors = [];
+    const dataRecords = [];
+    for (const f2 of dataFiles) {
+      try {
+        if (budget <= 0) throw new Error(`${f2.name}: no room left \u2014 delete some data samples first`);
+        const pack = parseDataFile(f2.name, await f2.text(), { budget, taken });
+        taken.add(pack.name);
+        budget -= pack.samples.reduce((n2, s2) => n2 + s2.values.length, 0);
+        dataRecords.push({ id: `${DATA_ID_PREFIX}${pack.name}`, title: f2.name, kind: "data", pack });
+      } catch (e30) {
+        console.error("[trussal] data file rejected", e30);
+        errors.push(e30.message);
+      }
     }
-    const { objectStore } = idb;
-    records.forEach((r2) => objectStore.put(r2));
-    console.log(`[trussal] stored ${records.length} sample(s) in IDB`);
-    onDone?.(records.length);
+    const records = [...audioRecords, ...dataRecords];
+    if (records.length) {
+      await withStore("readwrite", (store) => {
+        records.forEach((r2) => store.put(r2));
+      });
+      console.log(`[trussal] stored ${audioRecords.length} sample(s) and ${dataRecords.length} data pack(s) in IDB`);
+    }
+    onDone?.({ audio: audioRecords.length, packs: dataRecords.length, errors });
   }
+
+  // src/strudel.js
+  init_data_ref();
 
   // src/live-input.js
   init_latency_instrument();
@@ -51999,7 +52513,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     Object.assign(textAtoms, atoms2);
     return rewritten;
   }
-  function buildStrudelVoice(code2, fx) {
+  function buildStrudelVoice(rawCode, fx) {
+    const code2 = rewriteDataRefs(rawCode);
     const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code2);
     if (hasLabels) {
       const firstLabelPos = code2.search(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
@@ -52214,7 +52729,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
       const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
       const textScope = installTextCycles(mod2);
-      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope });
+      const _data = makeDataFn(mod2);
+      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, ...textScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -54241,9 +54757,11 @@ ${s2}${BTN_MARKER}`)
   var lastStatus = "Idle";
   var routedSet = /* @__PURE__ */ new Set();
   var sampleBanks = [];
+  var expandedBank = null;
   var currentSliders = [];
   async function refreshSampleBanks() {
     sampleBanks = await getSampleBanks().catch(() => []);
+    sendLocalDataPacks(await getDataPacks().catch(() => []));
     renderAll();
   }
   function isInMeeting() {
@@ -54460,7 +54978,39 @@ ${s2}${BTN_MARKER}`)
       background: rgba(31,244,102,0.1); color: #1ff466;
       border: 1px solid rgba(31,244,102,0.25);
       white-space: nowrap;
+      font-size: 11px; font-family: monospace; cursor: pointer;
     }
+    #${OVERLAY_ID} .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
+    /* Data packs read as a different kind of thing from sound banks. */
+    #${OVERLAY_ID} .ts-sample-bank.data {
+      background: rgba(120,180,255,0.1); color: #7ab4ff;
+      border-color: rgba(120,180,255,0.3);
+    }
+    #${OVERLAY_ID} .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+    #${OVERLAY_ID} .ts-sample-bank.open { border-style: dashed; }
+
+    #${OVERLAY_ID} .ts-sample-list {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin-top: 4px; padding: 5px 6px; border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-item {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 1px 3px 1px 6px; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #cfd8e3;
+      max-width: 100%;
+    }
+    #${OVERLAY_ID} .ts-sample-idx { color: #7ab4ff; }
+    #${OVERLAY_ID} .ts-sample-label {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+    }
+    #${OVERLAY_ID} .ts-sample-len { color: #8a94a3; }
+    #${OVERLAY_ID} .ts-sample-x {
+      border: none; background: transparent; cursor: pointer; padding: 0 3px;
+      color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
     #${OVERLAY_ID} .ts-sample-banks-del {
       margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
       background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
@@ -54703,8 +55253,10 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
         <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">\u2B06 Samples</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">\u2B06 Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
+        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">\u2B06 Data</button>
+        <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
       </div>` : `
       <div class="ts-section-controls">
@@ -54714,11 +55266,31 @@ ${s2}${BTN_MARKER}`)
       </div>`;
     const playing = peer.playing ? "Playing" : "Idle";
     const status = isLocal ? lastStatus : peer.muted ? "Muted" : playing;
+    const bankChip = (b) => {
+      const label2 = b.kind === "audio" ? `${escapeHtml(b.name)} (${b.count})` : `${escapeHtml(b.name)}:${b.count}`;
+      const open = expandedBank === b.name;
+      return `<button class="ts-sample-bank${b.kind === "audio" ? "" : " data"}${open ? " open" : ""}"
+      data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
+      title="${b.kind === "audio" ? "audio bank" : `${b.kind.toUpperCase()} data pack`}${b.truncated ? " \u2014 truncated to fit the memory budget" : ""}">${label2}${b.truncated ? " \u26A0" : ""}</button>`;
+    };
+    const openBank = sampleBanks.find((b) => b.name === expandedBank);
+    const sampleList = openBank ? `
+    <div class="ts-sample-list">
+      ${openBank.samples.map((s2, i) => `
+        <span class="ts-sample-item">
+          <span class="ts-sample-idx">${openBank.kind === "audio" ? i : i + 1}</span>
+          <span class="ts-sample-label">${escapeHtml(s2.label)}</span>
+          ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? "\u26A0" : ""}</span>` : ""}
+          <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s2.id)}"
+            title="delete this sample">\xD7</button>
+        </span>`).join("")}
+    </div>` : "";
     const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
     <div class="ts-sample-banks">
-      ${sampleBanks.map((b) => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join("")}
+      ${sampleBanks.map(bankChip).join("")}
       <button class="ts-sample-banks-del" data-action="delete-samples">\xD7 delete all user samples</button>
-    </div>` : "";
+    </div>
+    ${sampleList}` : "";
     container2.innerHTML = `
     <div class="ts-detail-header">
       <div class="ts-detail-name">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
@@ -54800,33 +55372,62 @@ ${s2}${BTN_MARKER}`)
     if (stopBtn) stopBtn.addEventListener("click", onStopClick);
     const captureBtnEl = container2.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
-    const loadSamplesBtn = container2.querySelector('[data-action="load-samples"]');
-    const samplesInput = container2.querySelector(".ts-samples-input");
-    if (loadSamplesBtn && samplesInput) {
-      loadSamplesBtn.addEventListener("click", () => samplesInput.click());
-      samplesInput.addEventListener("change", async () => {
-        const files2 = samplesInput.files;
+    const wireUpload = (buttonSelector, inputSelector) => {
+      const button = container2.querySelector(buttonSelector);
+      const input = container2.querySelector(inputSelector);
+      if (!button || !input) return;
+      button.addEventListener("click", () => input.click());
+      input.addEventListener("change", async () => {
+        const files2 = input.files;
         if (!files2 || !files2.length) return;
-        setStatus("Loading samples\u2026");
-        await uploadSamplesToDB(files2, async (count) => {
-          if (count === 0) {
-            setStatus("No audio files found");
+        setStatus("Loading\u2026");
+        await uploadSamplesToDB(files2, async ({ audio, packs, errors }) => {
+          if (!audio && !packs) {
+            setStatus(errors.length ? errors[0] : "No audio or data files found");
             return;
           }
-          await refreshLocalSamples();
+          if (audio) await refreshLocalSamples();
           await refreshSampleBanks();
-          setStatus(`Loaded ${count} sample${count === 1 ? "" : "s"} \u2014 use s("foldername") in patterns`);
+          const parts = [];
+          if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
+          if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
+          const hint = packs ? ' \u2014 reference a column as "Name:3"' : ' \u2014 use s("foldername") in patterns';
+          setStatus(`Loaded ${parts.join(" and ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
         });
-        samplesInput.value = "";
+        input.value = "";
       });
-    }
+    };
+    wireUpload('[data-action="load-samples"]', ".ts-samples-input");
+    wireUpload('[data-action="load-data"]', ".ts-data-input");
+    container2.querySelectorAll('[data-action="toggle-bank"]').forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const name3 = chip.getAttribute("data-bank");
+        expandedBank = expandedBank === name3 ? null : name3;
+        renderAll();
+      });
+    });
+    container2.querySelectorAll('[data-action="delete-sample"]').forEach((x2) => {
+      x2.addEventListener("click", async () => {
+        const id3 = x2.getAttribute("data-sample");
+        setStatus("Deleting sample\u2026");
+        await deleteSample(id3);
+        await refreshLocalSamples();
+        await refreshSampleBanks();
+        if (!sampleBanks.some((b) => b.name === expandedBank)) expandedBank = null;
+        await rebakeStrudel();
+        setStatus("Sample deleted");
+        renderAll();
+      });
+    });
     const deleteBtn = container2.querySelector('[data-action="delete-samples"]');
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async () => {
-        if (!window.confirm("Delete all imported user samples?")) return;
+        if (!window.confirm("Delete all imported user samples and data packs?")) return;
         setStatus("Deleting samples\u2026");
         await clearSamplesDB();
         sampleBanks = [];
+        expandedBank = null;
+        sendLocalDataPacks([]);
         await rebakeStrudel();
         setStatus("User samples deleted");
         renderAll();
@@ -55157,6 +55758,7 @@ ${voiceCode}${BTN_MARKER2}`);
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+  setDataRefReader(sampleDataRefAt);
   subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
   window.__trussalAnnounceLocalPattern = (code2) => {
     sendLocalPattern(typeof code2 === "string" ? code2 : "");

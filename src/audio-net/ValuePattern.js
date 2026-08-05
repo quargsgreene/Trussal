@@ -81,7 +81,23 @@ import { occurrenceDraw } from './SeededRandom.js';
 export const PATTERN_TICK_MS = 50;
 
 export function isValuePattern(node) {
-  return !!node && typeof node === 'object' && node.type === 'valueSeq';
+  return !!node && typeof node === 'object'
+    && (node.type === 'valueSeq' || node.type === 'dataRef');
+}
+
+export function isDataRefNode(node) {
+  return !!node && typeof node === 'object' && node.type === 'dataRef';
+}
+
+// A `Weather:3` written into a metaprogram reads its values from the room's
+// data packs. Those live in data-ref.js, which this module deliberately does
+// not import: ValuePattern is pure and ships inside the bot image, so the
+// reader is injected instead. Until something installs one, a reference reads
+// as "no value" — a rest — rather than a wrong number.
+let readDataRef = () => null;
+
+export function setDataRefReader(fn) {
+  readDataRef = typeof fn === 'function' ? fn : () => null;
 }
 
 // True when any argument of this chain entry is patterned — the caller needs
@@ -144,6 +160,13 @@ function layout(node) {
 // Read the value in force at `cyclePos`. Scalars pass straight through, so
 // callers can hand it every argument without first asking whether it is one.
 export function evaluateValuePattern(node, cyclePos = 0) {
+  if (isDataRefNode(node)) {
+    // One cycle walks the whole sample, matching what the same reference lays
+    // out in Strudel — so `# cycles Weather:3` steps the column in time with
+    // `.distort("Weather:3")` on the same grid.
+    const value = readDataRef(`${node.name}:${node.index}`, cyclePos);
+    return typeof value === 'number' ? value : null;
+  }
   if (!isValuePattern(node)) return node;
   const terms = node.terms || [];
   if (!terms.length) return null;
@@ -200,6 +223,7 @@ export function evaluateValuePattern(node, cyclePos = 0) {
 // tests. Scalars stringify as themselves; a rest is written the way it was.
 export function formatValuePattern(node) {
   if (node == null) return '~';
+  if (isDataRefNode(node)) return `${node.name}:${node.index}`;
   if (!isValuePattern(node)) return String(node);
   const open = node.mode === 'alternate' ? '<' : '[';
   const close = node.mode === 'alternate' ? '>' : ']';
