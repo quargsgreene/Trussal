@@ -40,6 +40,36 @@ test('cells: bots are participants like anyone else', () => {
   assert.deepEqual(cells.map(c => c.token), ['0', '0a']);
 });
 
+// The exact shape a bot announces: its generated Hydra preamble, a blank line,
+// then the Strudel half (bots/src/bot/page-scripts.js, pageStrudelBoot). The
+// test above passes a hand-written Hydra pattern, which is why it stayed green
+// while production bots announced their Strudel half alone — and every ring
+// turn that fell to a bot published a black frame.
+const BOT_ANNOUNCED = [
+  'await initHydra()',
+  'osc(60,0.1,1.4).kaleid(4).out(o0)',
+  '',
+  'stack(',
+  '  s("[bd ~]*2 sd:2"),',
+  '  note("c3 eb3").s("sawtooth")',
+  ')'
+].join('\n');
+
+test('cells: a bot announcing its whole program earns a cell, with its preamble intact', () => {
+  const cells = mosaicCellsForPeers([peer({ roomIndex: '0a', isBot: true, pattern: BOT_ANNOUNCED })]);
+  assert.deepEqual(cells.map(c => c.token), ['0a']);
+  assert.equal(cells[0].preamble, 'await initHydra()\nosc(60,0.1,1.4).kaleid(4).out(o0)');
+  assert.equal(cells[0].source, 'reexecute');
+});
+
+test('cells: a bot announcing only its Strudel half earns none', () => {
+  // The pre-fix production behaviour, pinned so it cannot return unnoticed.
+  const cells = mosaicCellsForPeers([
+    peer({ roomIndex: '0a', isBot: true, pattern: 'stack(\n  s("[bd ~]*2 sd:2")\n)' })
+  ]);
+  assert.deepEqual(cells, []);
+});
+
 test('cells: camera-fed code is blitted, everything else re-executed', () => {
   const cells = mosaicCellsForPeers([
     peer({ roomIndex: '0', pattern: HYDRA }),

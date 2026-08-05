@@ -195,12 +195,31 @@ export function pageIsActiveAggregator() {
  */
 export function pageRemoteControl() {
   document.addEventListener('trussal-remote-pattern', async (e) => {
-    const strudel = e && e.detail && e.detail.code;
-    if (typeof strudel !== 'string') return;
+    const edited = e && e.detail && e.detail.code;
+    if (typeof edited !== 'string') return;
     const editor = window.__trussalStrudelEditor;
     const ed = editor && editor.editor;
     const hydra = window.__trussalHydra || '';
-    const code = hydra ? `${hydra};\n${strudel}` : strudel;
+    // The bot announces its WHOLE program (preamble, blank line, Strudel) so
+    // the aggregator can give it a mosaic cell, which means what an operator
+    // edits in the studio is that whole program — prepending the stored Hydra
+    // to it would evaluate two initHydra preambles.
+    //
+    // The marker is hydra-code.js's rule, inlined because this function is
+    // serialized into the page and cannot import it (as stripInitHydra below
+    // already is). Keep the two in step.
+    const declaresHydra = /^\s*await\s+initHydra\s*\(/.test(edited);
+    let code;
+    if (declaresHydra) {
+      code = edited;
+      // Adopt the edited preamble, so a later edit that sends only the Strudel
+      // half recombines with what the bot is actually running rather than with
+      // the preamble it booted on.
+      const blank = edited.match(/\n\n+/);
+      window.__trussalHydra = blank ? edited.slice(0, blank.index).trim() : edited.trim();
+    } else {
+      code = hydra ? `${hydra};\n${edited}` : edited;
+    }
     try {
       if (ed && typeof ed.setCode === 'function') {
         ed.setCode(code);
@@ -636,7 +655,25 @@ export async function pageStrudelBoot({ strudel, hydra }) {
       await new Promise((r) => setTimeout(r, 250));
     }
     if (typeof window.__trussalAnnounceLocalPattern === 'function') {
-      try { window.__trussalAnnounceLocalPattern(strudel); } catch (_) {}
+      // Announce the WHOLE program — Hydra preamble, blank line, Strudel — not
+      // just the Strudel half.
+      //
+      // A bot runs both (see `code` above), but announcing only the audio left
+      // `peer.pattern` with no preamble, and the aggregator's mosaic decides
+      // who earns a cell by asking exactly that text whether it declares Hydra
+      // (MosaicCells.mosaicCellsForPeers). So a bot never earned a cell, and
+      // every ring turn that fell to one published a black frame while its
+      // audio played — visuals are meant to take their turn through the
+      // aggregator whether the participant is a bot or not.
+      //
+      // The blank line is load-bearing: it is where hydra-code.js splits the
+      // preamble from the Strudel remainder. This does not reach any human's
+      // combined program — strudel.js drops bot peers outright
+      // (buildPeerBlock) so their audio is not played twice.
+      const announced = hydra ? `${hydra}\n\n${strudel}` : strudel;
+      try { window.__trussalAnnounceLocalPattern(announced); } catch (err) {
+        window.__trussalReportError(err);
+      }
     }
   } catch (e) {
     window.__trussalReportError(e);
