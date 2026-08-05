@@ -21,8 +21,11 @@
 services:
   conductor:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.conductor
+      # Repo root, not bots/, for the same reason as bot-image below: the fleet
+      # service imports the shared botConfig rule from src/, which a bots/-scoped
+      # context can't reach.
+      context: ..
+      dockerfile: bots/docker/Dockerfile.conductor
     container_name: trussal-conductor
     ports:
       - "7777:7777"   # admin page — reachable from outside the VM (spec)

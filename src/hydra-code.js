@@ -13,6 +13,8 @@
 // statement is `await initHydra(...)` is Hydra, and the preamble runs until
 // the first blank line. Everything after that blank line is Strudel.
 
+import { stripBotConfig } from './bot-config.js';
+
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
 
 // The same marker, asked of a COMBINED program rather than one performer's
@@ -24,13 +26,25 @@ const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
 // visuals down by commenting them out.
 const PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
 
+// The same rule as a serialisable descriptor, for consumers that cannot import
+// a module: the bot's page scripts are function bodies handed to Chromium by
+// puppeteer, so they can only receive JSON. Exporting the pattern instead of
+// letting them re-type the literal is what keeps this the single rule.
+export const INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
+
 // Editor text minus the noise that is never part of either language: trailing
-// whitespace/semicolons, and `*name: code` lines (studio button widgets, not
+// whitespace/semicolons, `*name: code` lines (studio button widgets, not
+// patterns), and `botConfig(...)` declarations (bot-cluster settings, not
 // patterns). buildPeerBlock strips exactly these before testing for a
 // preamble, so the mosaic has to strip them too or a leading widget line would
 // hide an otherwise-valid preamble.
+//
+// botConfig has to go before Strudel's transpiler sees the block, not just to
+// keep it out of the program: its argument is free text, and the transpiler
+// mini-parses every double-quoted string, so one `mcp: "make it spooky"` left
+// in place would throw and stop the whole room's program.
 export function normalizePeerCode(code) {
-  return (code || '')
+  return stripBotConfig(code || '')
     .replace(/[\s;]+$/g, '')
     .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
     .trim();

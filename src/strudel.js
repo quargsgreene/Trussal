@@ -162,6 +162,32 @@ function applyTextRewrite(code, peer) {
   return rewritten;
 }
 
+// A bot's contribution to this page's program: its Text Cycles statements, or
+// nothing at all.
+//
+// A bot's audio arrives as audio (its own headless browser plays it into Jitsi
+// or Jamulus), so folding its pattern in here would play it twice. Its WORDS
+// are the opposite case — text is painted per-page from the program and never
+// rides any track, so a bot's words reach a viewer only if that viewer's own
+// program carries them. This is the whole mechanism behind `textParrot`: the
+// fleet decides whether a bot's script keeps its author's word() statements,
+// and this decides whether the room can see them.
+function buildBotTextBlock(peer) {
+  const code = normalizePeerCode(
+    isNetCyclesActive() ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern,
+  );
+  if (!code || !peer.playing || !hasTextCycles(code)) return null;
+
+  const split = splitTextCyclesCode(code);
+  if (!split) return null;
+
+  // Audio statements are dropped, not silenced: the bot is already playing them
+  // for real, and a muted copy here would still cost a voice in every browser.
+  const textOnly = keepTextStatements(split.strudel);
+  if (!textOnly) return split.preamble;
+  return `${split.preamble}\n\n${buildStrudelVoice(applyTextRewrite(textOnly, peer), '')}`;
+}
+
 // Build a labeled Strudel voice string from code that is known to be a Strudel
 // pattern (no hydra preamble).  Used by buildPeerBlock for both the plain case
 // and the post-preamble section of a hydra peer.
@@ -223,7 +249,15 @@ function buildPeerBlock(peer) {
   // for display + remote editing only — never folded into each viewer's combined
   // mix, which would play it a second time on top of the bot's incoming audio.
   // Under Net Cycles their incoming audio is slot-gated at the chain instead.
-  if (peer.isBot) return null;
+  //
+  // Text Cycles are the one exception, and for the same reason the aggregator
+  // exclusion below carves them out: words are painted into each viewer's own
+  // chat panel from that viewer's program, and make no sound. A bot's words
+  // would otherwise appear NOWHERE — the only page running its program is its
+  // own headless Chromium, whose chat panel nobody sees. So keep a bot's text
+  // statements (silent by construction) and drop everything else, which is
+  // exactly what `textParrot` asks for.
+  if (peer.isBot) return buildBotTextBlock(peer);
 
   // Net Cycles: the pattern that plays is the one the scheduler last dequeued
   // from this performer's buffer queue, so editor changes land at their next

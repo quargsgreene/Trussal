@@ -1,5 +1,11 @@
 # Conductor + admin API container. Needs the docker CLI (not the daemon) to
 # start/stop bot containers through the mounted /var/run/docker.sock.
+#
+# BUILD CONTEXT IS THE REPO ROOT (see docker-compose.yml + the root
+# .dockerignore), for the same reason as Dockerfile.bot: the fleet service
+# imports a shared module that lives outside bots/ (src/bot-config.js), so the
+# image mirrors the repo layout under /repo and the source's ../../../ imports
+# resolve exactly as they do in a dev checkout.
 
 FROM node:22-bookworm-slim
 
@@ -8,13 +14,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /repo/bots
 
-COPY package.json ./
+COPY bots/package.json ./
 RUN npm install --omit=dev
 
-COPY src ./src
+COPY bots/src ./src
+# The one rule for what a `botConfig(...)` declaration is and what its argument
+# may say, shared with the browser so the fleet can never build a bot from a
+# config the performer's editor would have rejected. A src/-root file, so it
+# needs its own .dockerignore whitelist entry. The node_modules symlink lets
+# bare specifiers resolve by walking up from /repo/src, as the dev checkout's
+# root node_modules does locally.
+COPY src/bot-config.js /repo/src/bot-config.js
+# The other two rules cluster-source.js reads a performer's editor with: where a
+# Hydra preamble ends, and which statements paint words. Shared with the browser
+# for the same reason as bot-config.js — the fleet must split a block exactly
+# the way the page that wrote it does.
+COPY src/hydra-code.js /repo/src/hydra-code.js
+COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
+RUN ln -s bots/node_modules /repo/node_modules
+
+# Import guard: fail the BUILD if anything the conductor runs cannot load inside
+# the image — a cross-tree import of a repo file that was never copied in
+# resolves fine in a dev checkout and then crashes the fleet on boot. Scoped to
+# the orchestrator's own graph: bot/ pulls src/audio-net, which only the bot
+# image mirrors.
+COPY bots/docker/verify-imports.mjs ./docker/verify-imports.mjs
+RUN node docker/verify-imports.mjs src/orchestrator
 
 EXPOSE 7700 7777
 
-CMD ["node", "/app/src/orchestrator/index.js"]
+CMD ["node", "/repo/bots/src/orchestrator/index.js"]

@@ -448,6 +448,34 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           break;
         }
 
+        case 'sample-file': {
+          // One uploaded sample on its way to a performer's bots. Sent only by
+          // humans, and forwarded ONLY to the fleet: this is file bytes, and
+          // broadcasting a sample library at every participant in the room
+          // would cost each of them the whole library for nothing. The fleet
+          // caps and stores it (see bots/src/orchestrator/sample-store.js) and
+          // reports rejections back as a fleet-status.
+          if (record.isBot || record.isFleet) break;
+          if (typeof msg.bank !== 'string' || typeof msg.name !== 'string') break;
+          if (typeof msg.data !== 'string') break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          const forward = JSON.stringify({
+            type: 'sample-file',
+            fromIndex: record.roomIndex,
+            bank: msg.bank,
+            name: msg.name,
+            data: msg.data,
+          });
+          for (const peer of room.values()) {
+            if (!peer.isFleet) continue;
+            if (peer.ws.readyState === peer.ws.OPEN) {
+              try { peer.ws.send(forward); } catch (e) { /* ignore */ }
+            }
+          }
+          break;
+        }
+
         case 'fleet-request': {
           // A human asks their fleet service for cluster changes (spawn N
           // bots, remove a subset, …). Relayed to the whole room with the
@@ -461,7 +489,12 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             fromIndex: record.roomIndex,
             action: msg.action,
             count: msg.count,
-            targets: msg.targets
+            targets: msg.targets,
+            // The requester's editor text at the moment they asked. The fleet
+            // builds their cluster from it and reads their botConfig(...) out
+            // of it, so a spawn that loses this field would silently produce
+            // generic bots instead of the ones the performer configured.
+            code: typeof msg.code === 'string' ? msg.code : undefined
           });
           logEvent(roomName, 'fleet-request', { fromIndex: record.roomIndex, action: msg.action, count: msg.count });
           break;

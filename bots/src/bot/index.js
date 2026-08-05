@@ -22,6 +22,7 @@ import { jamulusArgs, jamulusIniContent } from './jamulus.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { gainForBotCount } from '../shared/audio-math.js';
 import { frequencyBand } from '../script-gen/variation.js';
+import { absoluteSampleUrls } from '../shared/sample-urls.js';
 
 const env = (key, fallback) => process.env[key] ?? fallback;
 
@@ -41,7 +42,7 @@ const name = breedNameFor(botId, sessionSeed);
 async function fetchAssignment() {
   const res = await fetch(`${conductorUrl}/assignment/${botId}`);
   if (!res.ok) throw new Error(`conductor refused assignment: ${res.status}`);
-  return res.json(); // { script: {strudel, hydra, entryDelayMs}, botCount }
+  return res.json(); // { script: {strudel, hydra, entryDelayMs}, botCount, samples }
 }
 
 function startSidecars(botCount) {
@@ -149,11 +150,18 @@ async function aggregatorMain() {
 }
 
 async function playerMain() {
-  const { script, botCount } = await fetchAssignment();
+  const { script, botCount, samples } = await fetchAssignment();
   const sidecars = startSidecars(botCount);
   const ownerIndex = env('BOT_OWNER_INDEX', '');
   const bot = new Bot(
-    { botId, name, jitsiUrl, script, executablePath, bandwidth: bandwidthFromEnv(), ownerIndex },
+    {
+      botId, name, jitsiUrl, script, executablePath,
+      bandwidth: bandwidthFromEnv(), ownerIndex,
+      // Bank → absolute URLs. The fleet hands out paths because it cannot know
+      // how this container addresses it; resolving them here is what makes
+      // CONDUCTOR_URL the single answer to that question.
+      samples: absoluteSampleUrls(samples, conductorUrl),
+    },
     { launcher: puppeteer },
   );
   await bot.start();

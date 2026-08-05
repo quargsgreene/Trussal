@@ -38,7 +38,10 @@ import { mergeConfig } from '../shared/config.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
+import { botScriptFor, captureClusterSource, scriptToEditorCode } from '../script-gen/cluster-source.js';
+import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { shouldReplace, computeMaxBots } from './health.js';
+import { SampleStore } from './sample-store.js';
 
 // Container id for a room's aggregator. Aggregators run outside the per-owner
 // cluster id space (never assigned by #nextBotId, never counted against the
@@ -87,8 +90,12 @@ function requireRoom(room, where) {
 }
 
 export class FleetService {
-  constructor(cfg, { runner, connectSidecar, controlToken = null }) {
+  constructor(cfg, { runner, connectSidecar, controlToken = null, compose = null }) {
     if (!runner) throw new TypeError('a container runner {start, stop} is required');
+    // Composes a cluster's code from an `mcp` prompt. Injected — and null on a
+    // deployment with no model reachable — so the fleet never depends on an LLM
+    // being present; a config with `mcp` simply keeps the performer's own code.
+    this.compose = compose;
     this.cfg = cfg;
     this.runner = runner;
     this.connectSidecar = connectSidecar || null; // (url, handlers) → { send, close }
@@ -98,7 +105,20 @@ export class FleetService {
     // overwrite it. Keeping it off cfg is what stops the relay's control-channel
     // credential from leaking out of the admin surface.
     this.controlToken = controlToken || null;
+    // The fleet-wide fallback master: what a cluster plays when its spawn
+    // carried no code, and the palette `random: "full"` draws from. A cluster
+    // whose human sent code uses that instead (see #ownerSources).
     this.master = randomMasterScript(cfg.sessionSeed);
+    // "<room>\0<ownerIndex>" → { master, config, declared, capturedAt }.
+    // One snapshot per human per room, taken when they press spawn: their
+    // editor text plus the botConfig(...) it declared. Keyed by room as well as
+    // owner because room indices are per-meeting, so index "1" in two rooms is
+    // two different people.
+    this.ownerSources = new Map();
+    // Performers' uploaded samples, for clusters whose config shares them.
+    // Held in memory and served on the same :7700 the bots already fetch their
+    // assignment from — see sample-store.js for why the bytes travel at all.
+    this.samples = new SampleStore();
     this.bots = new Map();     // botId → { botId, room, ownerIndex, name, script, startedAt }
     this.metrics = new Map();  // botId → latest metrics sample
     this.server = null;
@@ -138,6 +158,10 @@ export class FleetService {
         presentIndices: new Map(), // roomIndex → { isBot, peerId }
         ownerTimers: new Map(),    // ownerIndex → teardown timeout
         meetingEndTimer: null,
+        // Cluster indices whose owner declared `retroactive: true` and has since
+        // edited their code. Held until that token's own turn comes round, so a
+        // bot is never rewritten mid-phrase — see #handlePerformerEdit.
+        pendingRelatch: new Set(),
         // One aggregator per room, spawned when the first human is present and
         // torn down with the meeting. Tracked outside `bots` so it never counts
         // against the ceiling or gets health-replaced.
@@ -341,6 +365,39 @@ export class FleetService {
       case 'fleet-request':
         await this.#handleFleetRequest(room, msg);
         break;
+      case 'sample-file': {
+        // One of a performer's uploaded samples, forwarded by the relay ahead
+        // of their spawn request. Rejections are reported rather than dropped:
+        // a sample that never arrived shows up much later as a pattern that
+        // plays silence, with nothing to point at.
+        const owner = msg.fromIndex != null ? String(msg.fromIndex) : null;
+        if (owner == null || typeof msg.data !== 'string') break;
+        const res = this.samples.put(room, owner, {
+          bank: msg.bank,
+          name: msg.name,
+          bytes: Buffer.from(msg.data, 'base64'),
+        });
+        if (!res.ok) {
+          this.#busSend(room, {
+            type: 'fleet-status', action: 'samples', ownerIndex: owner, reason: res.error,
+          });
+        }
+        break;
+      }
+      case 'peer-update':
+        // A human edited their editor. Only a `retroactive: true` config acts on
+        // it; every other edit is left for the next spawn to capture, so a bot
+        // keeps playing what its author was playing when it arrived.
+        if (msg.patch && typeof msg.patch.pattern === 'string') {
+          this.#handlePerformerEdit(room, msg.peerId, msg.patch.pattern);
+        }
+        break;
+      case 'nc-active':
+        // The aggregator announcing whose turn is streaming. This is the only
+        // turn signal on the bus, and it is what "applies on their next turn"
+        // is measured against.
+        if (typeof msg.token === 'string') this.#relatchToken(room, msg.token);
+        break;
       case 'session-reset': {
         // The relay is authoritative that no real participant remains. Clear
         // the shadow roster instead of trusting it: this branch exists BECAUSE
@@ -475,6 +532,28 @@ export class FleetService {
     if (ownerIndex == null) return;
     if (msg.action === 'spawn') {
       const count = Math.max(0, Math.floor(Number(msg.count) || 0));
+      // Snapshot the requester's editor before starting anything: this is the
+      // master their cluster plays and the botConfig(...) that shapes it. A
+      // config that fails to parse is surfaced to every studio rather than
+      // swallowed — the performer typed it expecting it to take effect.
+      const captured = this.#captureOwnerSource(room, ownerIndex, msg.code);
+      if (!captured.ok) {
+        this.#busSend(room, {
+          type: 'fleet-status', action: 'spawn', ownerIndex, reason: captured.error,
+        });
+      }
+      // An `mcp` prompt is composed before any container starts, so every bot
+      // in the cluster boots with the finished code rather than starting on the
+      // palette and being rewritten a moment later.
+      const composed = await this.#composeOwnerSource(room, ownerIndex, captured.source);
+      if (composed && !composed.ok) {
+        this.#busSend(room, {
+          type: 'fleet-status',
+          action: 'spawn',
+          ownerIndex,
+          reason: `mcp prompt fell back to the built-in palette — ${composed.error}`,
+        });
+      }
       await this.spawnCluster(ownerIndex, count, { room });
     } else if (msg.action === 'remove') {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request', room });
@@ -788,9 +867,14 @@ export class FleetService {
       // — the fleet is the only spawner for this owner.
       clusterIndex: `${ownerIndex}${suffixFor(clusterOrdinal)}`,
       name: breedNameFor(botId, this.cfg.sessionSeed),
-      script: this.#variationFor(botId, room),
+      script: null,
       startedAt: Date.now(),
     });
+    // After the record is stored, not inside it: the script is derived from this
+    // bot's own owner and cluster position, which #variationFor reads back out
+    // of the map. Computed in the object literal it would look itself up before
+    // the entry existed and silently fall back to the fleet-wide master.
+    this.bots.get(botId).script = this.#variationFor(botId, room);
     try {
       await this.runner.start(botId, {
         BOT_OWNER_INDEX: ownerIndex,
@@ -818,6 +902,137 @@ export class FleetService {
   // renders a botCount-wide composite, gain is staged for botCount sources —
   // so folding in another meeting's bots would detune and mis-tile a room for
   // reasons no one in it can see or fix.
+  // Which room index a peerId belongs to, from the roster shadow. peer-update
+  // carries only a peerId, but everything about clusters is keyed by index.
+  #indexForPeerId(room, peerId) {
+    const state = this.#existingRoom(room);
+    if (!state || peerId == null) return null;
+    for (const [index, entry] of state.presentIndices) {
+      if (entry.peerId === peerId) return { index, isBot: !!entry.isBot };
+    }
+    return null;
+  }
+
+  /**
+   * A human changed their editor text.
+   *
+   * The config that governs is the one they just typed, not the one their
+   * cluster was built with: setting `retroactive: true` is itself an edit, and
+   * it has to be able to take effect on the edit that introduces it. Every
+   * other edit is ignored here — the next spawn captures current code anyway,
+   * so a non-retroactive edit needs no bookkeeping.
+   *
+   * Re-latching is deferred, never immediate: the bots are mid-phrase. Each is
+   * marked and picks the new script up when its own token next takes a turn.
+   */
+  #handlePerformerEdit(room, peerId, code) {
+    const who = this.#indexForPeerId(room, peerId);
+    if (!who || who.isBot) return;
+
+    const parsed = parseBotConfig(code);
+    if (!parsed.ok || !flag(parsed.config.retroactive)) return;
+
+    this.#captureOwnerSource(room, who.index, code);
+    const state = this.#existingRoom(room);
+    if (!state) return;
+    for (const bot of this.#botsInRoom(room)) {
+      if (bot.ownerIndex === who.index) state.pendingRelatch.add(bot.clusterIndex);
+    }
+  }
+
+  /**
+   * The aggregator says `token` is taking its turn. If that token belongs to a
+   * bot waiting on a retroactive update, this is the moment it was waiting for:
+   * rebuild its script from its owner's current snapshot and drive the bot's
+   * REPL through the same remote-control path a human's edit uses.
+   */
+  #relatchToken(room, token) {
+    const state = this.#existingRoom(room);
+    if (!state || !state.pendingRelatch.has(token)) return;
+    state.pendingRelatch.delete(token);
+
+    const bot = this.#botsInRoom(room).find((b) => b.clusterIndex === token);
+    if (!bot) return;
+
+    bot.script = this.#variationFor(bot.botId, room);
+    const target = state.presentIndices.get(token);
+    if (!target || !target.peerId) return;
+
+    this.#busSend(room, {
+      type: 'remote-control',
+      targetPeerId: target.peerId,
+      action: 'pattern',
+      code: scriptToEditorCode(bot.script),
+    });
+  }
+
+  // Key for one human's snapshot. Room indices are assigned per meeting, so the
+  // room has to be part of the identity or two rooms' "1" would share a cluster
+  // source. NUL separates because it cannot occur in a room name, so no name
+  // can be crafted that collides with another room's key.
+  #ownerSourceKey(room, ownerIndex) {
+    return `${room}\u0000${ownerIndex}`;
+  }
+
+  /**
+   * Snapshot a human's editor + botConfig for their cluster. Called on spawn,
+   * and again for a `retroactive: true` config, which is the only thing that
+   * re-captures — otherwise a bot keeps playing what its author was playing
+   * when it arrived.
+   */
+  #captureOwnerSource(room, ownerIndex, code) {
+    const captured = captureClusterSource(code, {
+      fallbackMaster: this.master,
+      seed: this.cfg.sessionSeed,
+    });
+    this.ownerSources.set(this.#ownerSourceKey(room, ownerIndex), captured.source);
+    return captured;
+  }
+
+  /**
+   * Replace a snapshot's master with model-composed code, for a config that
+   * carries an `mcp` prompt.
+   *
+   * Awaited on the spawn path and nowhere else. A rotation slot is a few
+   * seconds and a model round-trip is not reliably shorter, so generation never
+   * sits on a turn boundary — a retroactive edit reuses whatever was composed
+   * at spawn rather than re-prompting mid-set.
+   *
+   * Failure is reported and survivable: composeScript always returns a script,
+   * falling back to the palette, so a cluster spawns either way.
+   */
+  async #composeOwnerSource(room, ownerIndex, source) {
+    const prompt = source?.config?.mcp;
+    if (!prompt || !this.compose) return null;
+
+    const result = await this.compose({
+      prompt,
+      master: source.master,
+      seed: this.cfg.sessionSeed,
+    }).catch((err) => ({ ok: false, source: 'palette', error: String(err.message || err) }));
+
+    if (result.script) source.master = result.script;
+    return result;
+  }
+
+  // The snapshot a bot's script is built from, or a default one wrapping the
+  // fleet-wide master for a cluster that never sent code.
+  #ownerSource(room, ownerIndex) {
+    return this.ownerSources.get(this.#ownerSourceKey(room, ownerIndex))
+      ?? { master: this.master, config: defaultBotConfig(), declared: false };
+  }
+
+  // A bot's ordinal within its OWN cluster, which is what harmony voicings and
+  // colour schemes are spread along. Derived from the cluster suffix the bot was
+  // assigned ('1a' → 0, '1b' → 1) so it survives a bot being replaced.
+  #clusterOrdinalOf(bot) {
+    const suffix = String(bot.clusterIndex ?? '').slice(String(bot.ownerIndex ?? '').length);
+    if (!/^[a-z]+$/.test(suffix)) return 0;
+    let ordinal = 0;
+    for (const ch of suffix) ordinal = ordinal * 26 + (ch.charCodeAt(0) - 96);
+    return ordinal - 1;
+  }
+
   #variationFor(botId, room) {
     const m = this.metrics.get(botId);
     const roomBots = this.#botsInRoom(room);
@@ -826,9 +1041,29 @@ export class FleetService {
       .filter(Boolean)
       .map((x) => x.latencyMs)
       .filter((x) => x >= 0);
-    const master = this.cfg.varyHydra
-      ? { strudel: this.master.strudel, hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra }
+
+    const bot = this.bots.get(botId);
+    const ownerIndex = bot?.ownerIndex ?? null;
+    const source = ownerIndex != null ? this.#ownerSource(room, ownerIndex) : null;
+    const cluster = ownerIndex != null
+      ? roomBots.filter((b) => b.ownerIndex === ownerIndex)
+      : roomBots;
+
+    // What this bot plays: its human's snapshot shaped by their botConfig, or
+    // the fleet-wide master when they never sent code. varyHydra stays an
+    // admin-side override of the visual only, as before.
+    const configured = source && bot
+      ? botScriptFor(source, {
+        index: this.#clusterOrdinalOf(bot),
+        count: Math.max(1, cluster.length || 1),
+        seed: this.cfg.sessionSeed,
+        botId,
+      })
       : this.master;
+
+    const master = this.cfg.varyHydra
+      ? { strudel: configured.strudel, hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra }
+      : configured;
     return variationFor(botId, master, {
       // The bot being started is not yet in `bots` (see #startBot), matching the
       // previous single-room behaviour where it did not count itself either.
@@ -978,7 +1213,34 @@ export class FleetService {
     if (req.method === 'GET' && assignment) {
       const bot = this.bots.get(Number(assignment[1]));
       if (!bot) return send(404, { error: 'unknown bot' });
-      return send(200, { script: bot.script, botCount: this.bots.size });
+      return send(200, {
+        script: bot.script,
+        botCount: this.bots.size,
+        // The owner's uploaded samples, as bank → [path]. Empty unless their
+        // botConfig asked to share them; the bot registers whatever is here
+        // with Strudel under the same folder names their own code uses, so
+        // s("mykit") means the same thing in both editors.
+        //
+        // Paths, not absolute URLs: how a bot addresses this service is the
+        // bot's own CONDUCTOR_URL, which the fleet has no way to know (it is
+        // "localhost:7700" from a host-networked container and something else
+        // from anywhere else). The bot resolves them against its own base.
+        samples: this.samples.manifestFor(bot.room, bot.ownerIndex),
+      });
+    }
+
+    // Sample bytes for a bot that just read the manifest above. Bots are
+    // host-networked on this VM, so this never leaves localhost.
+    const sample = req.url.match(/^\/samples\/([^/]+)\/([^/]+)\/([^/]+)\/([^/?]+)/);
+    if (req.method === 'GET' && sample) {
+      const [, room, owner, bank, name] = sample.map(decodeURIComponent);
+      const file = this.samples.get(room, owner, bank, name);
+      if (!file) return send(404, { error: 'unknown sample' });
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': file.bytes.length,
+      });
+      return res.end(file.bytes);
     }
 
     if (req.method === 'POST' && req.url === '/metrics') {

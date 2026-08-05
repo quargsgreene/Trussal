@@ -187,39 +187,50 @@ export function pageIsActiveAggregator() {
  * React to operator control from the studio (relayed over the peer-state bus,
  * surfaced by peer-state.js as DOM events):
  *   - trussal-remote-pattern: re-evaluate the bot's Strudel REPL with the edited
- *     pattern, recombined with the bot's original Hydra preamble.
+ *     code, recombined with the bot's original Hydra preamble unless the edit
+ *     brings a preamble of its own.
  *   - trussal-remote-mute: zero/restore the shared audio fan gain, muting the
  *     bot on both the Jitsi and Jamulus paths at once.
  * Installed at document-start; it reads the editor/fan globals lazily at event
  * time, so ordering against pageStrudelBoot / pageAudioBridge doesn't matter.
+ *
+ * `preamblePatterns` carries the browser's own capability rules as JSON (see
+ * INIT_HYDRA_PATTERN / INIT_TEXT_CYCLES_PATTERN). A bot's editor is editable in
+ * every medium its human's is, so an edit that opens with `await initHydra(` or
+ * `await initTextCycles(` REPLACES the bot's program wholesale — prepending the
+ * bot's stored Hydra there would produce two preambles and a dead REPL. An edit
+ * that is only Strudel still recombines, so tweaking a bot's audio doesn't
+ * silently take away the visual it was given at spawn.
  */
-export function pageRemoteControl() {
+export function pageRemoteControl(preamblePatterns) {
+  const patterns = Array.isArray(preamblePatterns) ? preamblePatterns : [];
+  const declaresOwnPreamble = (code) => patterns.some(({ source, flags }) => {
+    try {
+      return new RegExp(source, flags || '').test(code);
+    } catch (err) {
+      // A malformed pattern must not silently disable remote editing.
+      if (window.__trussalReportError) window.__trussalReportError(err);
+      else console.error('[trussal] bad preamble pattern', err);
+      return false;
+    }
+  });
+
   document.addEventListener('trussal-remote-pattern', async (e) => {
-    const edited = e && e.detail && e.detail.code;
-    if (typeof edited !== 'string') return;
+    const pushed = e && e.detail && e.detail.code;
+    if (typeof pushed !== 'string') return;
     const editor = window.__trussalStrudelEditor;
     const ed = editor && editor.editor;
     const hydra = window.__trussalHydra || '';
     // The bot announces its WHOLE program (preamble, blank line, Strudel) so
     // the aggregator can give it a mosaic cell, which means what an operator
-    // edits in the studio is that whole program — prepending the stored Hydra
-    // to it would evaluate two initHydra preambles.
-    //
-    // The marker is hydra-code.js's rule, inlined because this function is
-    // serialized into the page and cannot import it (as stripInitHydra below
-    // already is). Keep the two in step.
-    const declaresHydra = /^\s*await\s+initHydra\s*\(/.test(edited);
-    let code;
-    if (declaresHydra) {
-      code = edited;
-      // Adopt the edited preamble, so a later edit that sends only the Strudel
-      // half recombines with what the bot is actually running rather than with
-      // the preamble it booted on.
-      const blank = edited.match(/\n\n+/);
-      window.__trussalHydra = blank ? edited.slice(0, blank.index).trim() : edited.trim();
-    } else {
-      code = hydra ? `${hydra};\n${edited}` : edited;
-    }
+    // edits in the studio is that whole program — prepending the stored
+    // preamble to it would evaluate two of them.
+    const ownPreamble = declaresOwnPreamble(pushed);
+    const code = hydra && !ownPreamble ? `${hydra};\n${pushed}` : pushed;
+    // Once an edit brings its own preamble, the pushed text is the whole
+    // program and the spawn-time Hydra is no longer part of it. Forget it, so a
+    // later audio-only edit doesn't resurrect a visual the operator replaced.
+    if (ownPreamble) window.__trussalHydra = '';
     try {
       if (ed && typeof ed.setCode === 'function') {
         ed.setCode(code);
@@ -598,9 +609,15 @@ export async function pageEnsureVideoPublished() {
  * incorrect code → terminate and replace" policy when an error slips past
  * static validation.
  */
-export async function pageStrudelBoot({ strudel, hydra }) {
+export async function pageStrudelBoot({ strudel, hydra, samples }) {
   window.__trussalErrors = window.__trussalErrors || [];
   window.__trussalReportError = (e) => window.__trussalErrors.push(String((e && e.stack) || e));
+  // The owner's shared sample banks, registered under the SAME folder names
+  // their own editor uses so `s("mykit")` means one thing across the room. Kept
+  // on window because registration has to happen after the REPL defines
+  // registerSampleSource but before the bot's code is evaluated — a pattern
+  // naming a bank Strudel doesn't know yet just plays nothing.
+  window.__trussalSamples = samples && typeof samples === 'object' ? samples : {};
   // The ';' is load-bearing: hydra ends in an expression and the strudel
   // wrapper starts with '(' — joined by bare newline, ASI reads it as a
   // call: `out(o0)(stack(...))`, which throws inside Strudel's own error
@@ -634,6 +651,27 @@ export async function pageStrudelBoot({ strudel, hydra }) {
     }
     const ed = editor.editor;
     if (!ed) throw new Error('strudel editor failed to mount within 30s');
+
+    // Register the owner's shared banks BEFORE the first evaluation, or the
+    // opening cycle of any pattern naming one plays silence. prebake:false
+    // matches how the browser registers a performer's own uploads, so the two
+    // resolve identically. A failure here is reported, not thrown: the bot
+    // should still play whatever does not depend on samples.
+    try {
+      const register = window.registerSampleSource
+        || (window.strudel && window.strudel.registerSampleSource);
+      const banks = window.__trussalSamples || {};
+      if (typeof register === 'function') {
+        for (const [bank, urls] of Object.entries(banks)) {
+          if (Array.isArray(urls) && urls.length) register(bank, urls, { prebake: false });
+        }
+      } else if (Object.keys(banks).length) {
+        throw new Error('strudel exposed no registerSampleSource; shared samples unavailable');
+      }
+    } catch (err) {
+      window.__trussalReportError(err);
+    }
+
     // StrudelMirror exposes evaluate(); older builds nest it under .repl.
     if (typeof ed.evaluate === 'function') await ed.evaluate();
     else if (ed.repl && typeof ed.repl.evaluate === 'function') await ed.repl.evaluate(code);

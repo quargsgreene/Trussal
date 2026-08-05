@@ -8,6 +8,8 @@
  * reason `puppeteer-core` is only imported lazily in index.js, never here.
  */
 
+import { INIT_HYDRA_PATTERN } from '../../../src/hydra-code.js';
+import { INIT_TEXT_CYCLES_PATTERN } from '../../../src/text-cycles-core.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
@@ -46,7 +48,14 @@ export class Bot {
     // getUserMedia override hands Jitsi as the bot's microphone.
     await this.page.evaluateOnNewDocument(pageAudioBridge);
     // Operator control (studio edit/mute) → re-eval the REPL / mute the fan.
-    await this.page.evaluateOnNewDocument(pageRemoteControl);
+    // The capability rules travel as JSON because page scripts are function
+    // bodies puppeteer serialises — they cannot import the modules that own
+    // them, so the bot hands them over rather than letting the page re-type
+    // them and drift from the browser's answer.
+    await this.page.evaluateOnNewDocument(pageRemoteControl, [
+      INIT_HYDRA_PATTERN,
+      INIT_TEXT_CYCLES_PATTERN,
+    ]);
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
@@ -99,6 +108,7 @@ export class Bot {
       await this.page.evaluate(pageStrudelBoot, {
         strudel: script.strudel,
         hydra: script.hydra,
+        samples: this.cfg.samples || {},
       });
     } catch (err) {
       if (attempt === 0 && /context was destroyed/i.test(String(err.message))) {

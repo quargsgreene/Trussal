@@ -96,6 +96,32 @@ export async function registerSamplesFromDB(registerSampleSource) {
   }
 }
 
+// Every stored sample as { bank, name, blob }, grouped the same way
+// registerSamplesFromDB groups them (parent folder = bank name) so a bot
+// registers exactly the banks its author's own `s("...")` calls name.
+//
+// Used to hand a performer's library to their bots, which run in separate
+// browser profiles and therefore share none of this IndexedDB.
+export async function readSampleBanks() {
+  const idb = await openSamplesDB().catch(() => null);
+  if (!idb) return [];
+
+  const soundFiles = await new Promise((resolve, reject) => {
+    const q = idb.objectStore.getAll();
+    q.onerror = () => reject(q.error);
+    q.onsuccess = (e) => resolve(e.target.result);
+  }).catch(() => null);
+  if (!soundFiles?.length) return [];
+
+  return soundFiles
+    .filter((sf) => isAudioFile(sf.title))
+    .map((sf) => {
+      const parts = String(sf.id).split('/');
+      const bank = parts.length >= 2 ? parts[parts.length - 2] : (String(sf.id).split(/\W+/)[0] ?? 'user');
+      return { bank, name: sf.title, blob: sf.blob };
+    });
+}
+
 // Return [{name, count}] for every audio folder currently stored in IDB,
 // sorted alphabetically. Used to render the sample bank list in the Studio UI.
 export async function getSampleBanks() {
