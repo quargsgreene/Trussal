@@ -1,0 +1,201 @@
+# CSS Cycles
+
+Strudel patterns that play into the page's stylesheet instead of the speakers.
+
+```js
+await initCss()
+
+$: css(`.ts-card {
+     &:hover { border-color: #ffffff }
+   }`)
+     .color("<#ffffff #eeeeee #34e3df>/4")
+     .borderRadius("<^2em / 1em 3em 0.5em^ ^0.2em 1em 4em 1em^>")
+     .backgroundColor("<#101014 #16161c>")
+     .fast(3)
+```
+
+`await initCss()` declares a program's styling presence exactly as
+`await initTextCycles()` declares its words: first line, then a blank line,
+then the patterns. Any of the capability declarations may share one preamble.
+
+## The two halves of a statement
+
+**The backticked argument is SCSS** — nesting, `&`, `$variables`, `@media`,
+`@keyframes`, `@mixin`. Backticks rather than double quotes for two reasons: a
+double-quoted string is mini-parsed, so `.example` would hit `.` as the
+subdivision operator; and `{}` never survives value sanitising.
+
+**The chain carries the patterned properties.** Any camelCase name that is a
+real CSS property becomes a patterned declaration on that block —
+`borderRadius` → `border-radius`, `webkitTextFillColor` →
+`-webkit-text-fill-color`. Everything else in the chain is left alone as
+Strudel structure, so `.fast(3)`, `.slow(2)`, `.every(4, …)` and `.off(…)` mean
+what they always mean.
+
+Patterned declarations land in the block's **first** top-level selector. If the
+SCSS has several top-level blocks, give each its own `css()` voice.
+
+### Shadowed names
+
+`filter`, `mask`, `scale`, `rotate`, `translate`, `transition`, `order`,
+`offset`, `content`, `clip`, `direction` and `all` are both Strudel methods and
+CSS properties. **Inside a `css()` chain the CSS meaning wins.** Reach for the
+Strudel one outside the chain, or in a separate voice.
+
+Nothing is registered under a bare CSS name — the controls are namespaced
+`_cc_*` by the rewrite — so `.color()`, `.size()`, `.speed()` and `.delay()`
+still mean reverb, gain and echo for every audio voice in the room.
+
+## Multi-parameter values: the `^…^` fence
+
+A double-quoted value is mini notation, so spaces are steps:
+
+```js
+.borderRadius("2em 1em")     // TWO steps: 2em, then 1em
+```
+
+Carets fence one literal CSS value. Inside them, spaces, commas and slashes are
+CSS rather than mini operators — which is also the only way to write the slash
+form of `border-radius`:
+
+```js
+.borderRadius("^2em / 1em 3em 0.5em^")                   // one value, all cycle
+.borderRadius("<^2em 1em 3em 0.5em^ ^0.2em 1em 4em 1em^>") // two steps, each a full value
+.boxShadow("^0 0 4px #f0f, 0 0 8px #0ff^")               // commas survive
+```
+
+A function call needs no fence — `rgb(255, 0, 0)` is already read as one value.
+
+## Reach
+
+The **full property set** applies only where a rule matches inside a Trussal
+root (`#trussal-studio-overlay`, `#trussal-text-cycles`, the Hydra and keyboard
+panels, the facial-gesture panel, the welcome overlays — see `TRUSSAL_ROOTS`).
+
+Everywhere else on the page, the same rule is re-emitted carrying only:
+
+- background colour and image properties
+- border properties (including radius and border-image)
+- `filter` and `backdrop-filter`
+- text `color`, `font-family`, `font-size`
+
+So `css(\`body\`).backgroundImage("^url(https://…)^")` works; `css(\`body\`)
+.display("flex")` is refused. Every guardrail below applies to both copies.
+
+Each statement compiles to two rules: one nested under the Trussal roots, whose
+extra id gives it the specificity to win there, and one bare with the allowlist.
+
+## Guardrails
+
+A statement is **refused whole** if any value its pattern can produce is
+illegal — including one that only surfaces on the third cycle of
+`<1 0.5 0>`. Refusal is reported to the performer and the statement contributes
+nothing to the sheet.
+
+| Refused | |
+|---|---|
+| `display: none` | |
+| `overflow`/`overflow-x`/`overflow-y`, `visibility`, `content-visibility` set to hidden | |
+| any size property at `0` | except `margin`, `padding`, every `*radius`, and border/outline widths |
+| `opacity: 0`, or an alpha of 0 on `color` | a transparent *background* is ordinary |
+| `z-index`, on any selector | no layering at all, including your own overlays |
+| off-screen positions | `top`/`left`/`inset`/negative margins/`text-indent`, and `translate()` inside a `transform` |
+| `filter: opacity(0)`, `brightness(0)`, `contrast(0)`, `blur()` over 8px | other filter functions are unrestricted |
+| `clip-path` shapes that enclose nothing | |
+| `pointer-events: none` | *not* in the original specification — an unclickable UI is as non-functional as an invisible one |
+| `url()` outside background/border-image properties, or on a scheme other than http(s)/`data:image`/same-origin | |
+| `expression()`, `javascript:`, `@import`, `behavior`, `-moz-binding` | |
+
+**Media queries** are walked and their contents held to the same rules, so a
+breakpoint cannot hide the UI for a screen-size range this browser does not
+currently have. **`@keyframes`** are walked too, so an animation cannot travel
+somewhere a static rule may not go; they are namespaced per performer
+(`tc-p-<jitsiId>-<name>`) and references in `animation`/`animation-name` are
+rewritten to match, so two performers animating `spin` do not collide.
+
+### Values that only exist at runtime
+
+`.opacity(sliderWithID(…))`, a JS variable, a facial-gesture-driven value —
+none can be enumerated when the statement is accepted. These are allowed, and
+**clamped per hap** instead: `opacity: 0` becomes `0.04`, a zero size becomes
+`1px`, `blur(80px)` becomes `blur(8px)`. Where there is nothing sensible to
+clamp to (an off-screen position, a z-index) the declaration is dropped and the
+previous value stands.
+
+### Text against its container
+
+This one is a two-party, runtime property: your text colour is legal until
+another performer sets a matching background, and neither statement is illegal
+alone. So it is **not** refused — the colliding text colour is walked away from
+the background in lightness until it clears a 3:1 contrast ratio. A ratio
+rather than exact equality, because `#fffffe` on `#ffffff` is not an accident.
+
+## Two speeds
+
+SCSS cannot be compiled per hap, so the work splits:
+
+- **cold**, once per code-state update: the chained properties are transpiled
+  into the SCSS block as `var()` references, the whole sheet goes to the latency
+  sidecar over the peer bus, and the compiled CSS is broadcast back to the room.
+- **hot**, per hap: the trigger reassigns a CSS custom property on `:root`. No
+  compile, no round-trip, no re-evaluation.
+
+The custom property name (`--cc-<token>-<property>`) is derived from the
+statement's own token, so the sheet the sidecar compiled and the trigger running
+in every browser agree on it without coordinating.
+
+Only the authoring browser sends its SCSS. One compile serves the whole room,
+and no browser ships a Sass compiler — the bundle Jitsi loads on every join
+would have grown by several megabytes.
+
+## Trust
+
+Guardrails run **twice**, and the second time is the one that counts:
+
+- **outbound**, in the authoring browser, so the performer gets an error naming
+  the rule that will not run;
+- **inbound**, in every receiving browser, before a peer's compiled sheet enters
+  the document.
+
+The sidecar compiles whatever it is handed and cannot tell an honest client from
+a patched one, so a sheet that never passed an outbound check still has to fail
+on the way in. Inbound refusal takes the whole sheet. A selector must genuinely
+stay inside a Trussal root to earn the full property set —
+`#trussal-studio-overlay ~ *` starts there but selects everything beside it, so
+sibling combinators disqualify it, and one escaping alternative in a selector
+list holds the whole rule to the allowlist.
+
+The sidecar defends itself separately: `@use`, `@import`, `@forward` and
+`meta.load-css` are refused before the compiler sees them (Sass resolves those
+against the container's filesystem), and sources over 64KB are rejected.
+
+**One thing the allowlist opens on purpose:** `background-image` outside Trussal
+surfaces permits `url(https://…)`, so a performer can make every participant's
+browser fetch a URL of their choosing, disclosing IP addresses to a third-party
+host. That follows directly from background images being allowed page-wide;
+restrict `URL_OK_PROPS` to `data:` and same-origin if that trade is not wanted.
+
+## No sound, by construction
+
+The renderer attaches with `onTrigger(fn, dominant = true)`, and `repl.mjs`
+skips `defaultOutput` for any hap carrying a dominant trigger — so a css voice
+cannot reach superdough even if it also names a sound. Tempo still works
+(`fast`, `slow`, `*2`, `@2`) because that is pattern structure, not output.
+
+The renderer is attached **per statement**, never per block, since landing a
+dominant trigger on an audio voice would silence it. A program can mix audio,
+text and css voices freely.
+
+## Play state
+
+Styling flows only while the performer is playing, and — unlike text, which
+stays in the chat as history — **stopping pulls every sheet and releases every
+custom property**. That is the deliberate way back to a usable UI, and it works
+for a peer's styling as well as your own.
+
+## Aggregator interaction
+
+While a remote aggregator is present, `buildPeerBlock` drops remote humans'
+audio voices from the local program. `keepSilentStatements` keeps the text and
+css statements: they make no sound, never ride the published track, and dropping
+them would mean only ever seeing your own styling.

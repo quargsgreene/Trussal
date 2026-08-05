@@ -6,7 +6,7 @@ COPY package*.json ./
 
 RUN npm ci
 
-COPY server.js room-indices.js o2lite-format.js o2-relay.js ./
+COPY server.js room-indices.js o2lite-format.js o2-relay.js scss-compile.js ./
 
 EXPOSE 8081 8082
 

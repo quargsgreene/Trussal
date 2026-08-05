@@ -27,9 +27,12 @@
 // absent: they are pre-existing Strudel controls (roomsize alias, and color),
 // reused as-is so registering ours would not clobber `.size()` for every audio
 // voice in the room. They are still rewritten — see TEXT_VALUE_PARAMS.
+// `css` is deliberately absent: styling is its own capability now, declared
+// with initCss() and addressing selectors rather than the words themselves.
+// A text span is reachable from there as `.tc-word` or `.tc-p-<jitsiId>`.
 export const TEXT_PARAMS = [
   'word', 'w', 'typeface', 't', 'weight', 'spacing', 'slant',
-  'hover', 'hyperlink', 'underline', 'css',
+  'hover', 'hyperlink', 'underline',
 ];
 
 // Everything rewritten inside a text statement, including the two borrowed
@@ -75,14 +78,6 @@ export function splitStatements(code) {
   }
   if (cur.length) out.push(cur.join('\n'));
   return out.map((text) => ({ text, hasWord: WORD_CALL_RE.test(text) }));
-}
-
-// Keep only the statements that render text. Used when a remote peer's audio
-// voices are excluded (aggregator mode) but their words must still appear —
-// chat is per-page and never rides the published track.
-export function keepTextStatements(code) {
-  const kept = splitStatements(code).filter((s) => s.hasWord).map((s) => s.text);
-  return kept.join('\n').trim();
 }
 
 // Walk one mini string, minting literal atoms and passing operators through.

@@ -18,6 +18,7 @@ const { URL } = require('url');
 const { appendFileSync, mkdirSync } = require('fs');
 const { join } = require('path');
 const { botSuffix, AGGREGATOR_ROOM_INDEX, parseParticipantToken } = require('./room-indices.js');
+const { compileScss } = require('./scss-compile.js');
 
 // Request header carrying the control channel's shared secret. Lower-case
 // because Node normalises incoming header names; the fleet sends the same name
@@ -127,6 +128,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       jitsiId: record.jitsiId,
       displayName: record.displayName,
       pattern: record.pattern,
+      compiledCss: record.compiledCss,
       effects: record.effects,
       playing: record.playing,
       rtt: record.rtt,
@@ -255,6 +257,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       jitsiId: null,
       displayName: null,
       pattern: '',
+      // CSS Cycles: the peer's SCSS compiled here and mirrored to the room, so
+      // one compile per edit serves every browser.
+      compiledCss: '',
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
       rtt: null,
@@ -572,6 +577,28 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           record.pattern = msg.code;
           const room = rooms.get(roomName);
           if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { pattern: record.pattern } });
+          break;
+        }
+
+        case 'scss': {
+          // CSS Cycles: the authoring browser sends SCSS, we compile once and
+          // mirror the CSS to the whole room. Peers do NOT trust this output —
+          // every receiving browser re-checks it against the guardrails before
+          // installing it (see sanitizeCompiledCss), because nothing here can
+          // tell an honest client from a patched one.
+          if (typeof msg.source !== 'string') break;
+          const { css, error } = compileScss(msg.source);
+          if (error) {
+            send(ws, { type: 'scss-error', message: error });
+            break;
+          }
+          record.compiledCss = css;
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { compiledCss: css } });
+          // The author needs it too, but their own roster echo is skipped
+          // client-side in favour of the local record, so a peer-update back
+          // to the sender would land where nothing reads it.
+          send(ws, { type: 'scss-compiled', css });
           break;
         }
 
