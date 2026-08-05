@@ -323,8 +323,39 @@ function injectStyles() {
       height: 16px;
     }
 
+    /* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
+       their own page — it should behave like a bot's, whose visuals reach the
+       room only through the aggregator's mosaic.
+
+       @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
+       (width and height 100%, position fixed at top 0 left 0) prepended to
+       <body>, which covered the whole Jitsi UI. Park it off-screen instead.
+
+       Off-screen, NOT display:none: the canvas has to keep compositing.
+       published-video.js mirrors it into the published track every frame, and
+       a src(s0) cell is blitted from that track rather than re-executed, so a
+       canvas the browser stops painting publishes black. Same reasoning, and
+       the same spelling, as the aggregator's own off-screen mosaic container
+       in bots/src/bot/page-scripts.js.
+
+       The backing store is unaffected by any of this — it is sized from
+       window.innerWidth/innerHeight in getDrawContext — so the published
+       frame keeps its full resolution.
+
+       The !important is load-bearing: getDrawContext writes those properties
+       as an INLINE style, which beats a plain rule. The old z-index: 100 here
+       only ever worked because z-index is the one property that inline style
+       does not set.
+
+       Note for editors: this whole block sits inside a JS template literal, so
+       it must contain neither a backtick nor a dollar-brace interpolation —
+       both terminate or evaluate inside the string rather than staying CSS
+       comment text. */
     #hydra-canvas {
-      z-index: 100;
+      position: fixed !important;
+      top: 0 !important;
+      left: -20000px !important;
+      pointer-events: none !important;
     }
 
     #${BUTTON_ID} {

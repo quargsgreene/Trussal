@@ -51856,14 +51856,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     if (effects2?.noise) {
       _noiseAmt = Math.max(0.15, Math.min(1, 0.15 + j2 / 4 + r2 / 150));
     }
-    const prevStretch = _stretchAmt;
     _stretchAmt = 0;
     if (effects2?.reverb) {
       _stretchAmt = Math.max(0.04, Math.min(0.35, 0.04 + j2 / 8 + r2 / 300));
-    }
-    if (_stretchAmt !== prevStretch) {
-      const bd = document.getElementById("trussal-hv-backdrop");
-      if (bd) bd.classList.toggle("visible", _stretchAmt > 0);
     }
     const ratio2 = j2 > 0 && r2 > 0 ? Math.min(1, j2 / r2) : 0;
     window._hvR = 0.9 + ratio2 * 0.6;
@@ -52005,12 +52000,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     #${PANEL_ID} .hv-body.collapsed { display:none; }
     #${PANEL_ID} .hv-status { font-size:10px; color:#5d7264; line-height:1.5; }
 
-    #trussal-hv-backdrop {
-      position:fixed; inset:0; z-index:99; background:#000;
-      opacity:0; transition:opacity 0.4s; pointer-events:none;
-    }
-    #trussal-hv-backdrop.visible { opacity:1; }
-
     #${TOGGLE_ID} {
       background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
       cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
@@ -52026,11 +52015,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   function _ensurePanel() {
     if (document.getElementById(PANEL_ID)) return;
     _injectStyles();
-    if (!document.getElementById("trussal-hv-backdrop")) {
-      const bd = document.createElement("div");
-      bd.id = "trussal-hv-backdrop";
-      document.body.appendChild(bd);
-    }
     const panel = document.createElement("div");
     panel.id = PANEL_ID;
     panel.innerHTML = `
@@ -54673,8 +54657,39 @@ ${s2}${BTN_MARKER}`)
       height: 16px;
     }
 
+    /* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
+       their own page \u2014 it should behave like a bot's, whose visuals reach the
+       room only through the aggregator's mosaic.
+
+       @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
+       (width and height 100%, position fixed at top 0 left 0) prepended to
+       <body>, which covered the whole Jitsi UI. Park it off-screen instead.
+
+       Off-screen, NOT display:none: the canvas has to keep compositing.
+       published-video.js mirrors it into the published track every frame, and
+       a src(s0) cell is blitted from that track rather than re-executed, so a
+       canvas the browser stops painting publishes black. Same reasoning, and
+       the same spelling, as the aggregator's own off-screen mosaic container
+       in bots/src/bot/page-scripts.js.
+
+       The backing store is unaffected by any of this \u2014 it is sized from
+       window.innerWidth/innerHeight in getDrawContext \u2014 so the published
+       frame keeps its full resolution.
+
+       The !important is load-bearing: getDrawContext writes those properties
+       as an INLINE style, which beats a plain rule. The old z-index: 100 here
+       only ever worked because z-index is the one property that inline style
+       does not set.
+
+       Note for editors: this whole block sits inside a JS template literal, so
+       it must contain neither a backtick nor a dollar-brace interpolation \u2014
+       both terminate or evaluate inside the string rather than staying CSS
+       comment text. */
     #hydra-canvas {
-      z-index: 100;
+      position: fixed !important;
+      top: 0 !important;
+      left: -20000px !important;
+      pointer-events: none !important;
     }
 
     #${BUTTON_ID} {

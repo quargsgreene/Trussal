@@ -159,15 +159,9 @@ function _updateParams(effects, rtt, jitter) {
   }
 
   // Base 0.04 (subtle warp) when on; network conditions make it more extreme.
-  const prevStretch = _stretchAmt;
   _stretchAmt = 0;
   if (effects?.reverb) {
     _stretchAmt = Math.max(0.04, Math.min(0.35, 0.04 + j / 8 + r / 300));
-  }
-  // Black backdrop behind Hydra canvas when reverb is active.
-  if (_stretchAmt !== prevStretch) {
-    const bd = document.getElementById('trussal-hv-backdrop');
-    if (bd) bd.classList.toggle('visible', _stretchAmt > 0);
   }
 
   // Color tint for the s0 Hydra blend.  ratio = jitter/rtt shifts the hue:
@@ -345,12 +339,6 @@ function _injectStyles() {
     #${PANEL_ID} .hv-body.collapsed { display:none; }
     #${PANEL_ID} .hv-status { font-size:10px; color:#5d7264; line-height:1.5; }
 
-    #trussal-hv-backdrop {
-      position:fixed; inset:0; z-index:99; background:#000;
-      opacity:0; transition:opacity 0.4s; pointer-events:none;
-    }
-    #trussal-hv-backdrop.visible { opacity:1; }
-
     #${TOGGLE_ID} {
       background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
       cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
@@ -367,13 +355,6 @@ function _injectStyles() {
 function _ensurePanel() {
   if (document.getElementById(PANEL_ID)) return;
   _injectStyles();
-
-  // Backdrop: full-screen black shown behind Hydra canvas when reverb is on.
-  if (!document.getElementById('trussal-hv-backdrop')) {
-    const bd = document.createElement('div');
-    bd.id = 'trussal-hv-backdrop';
-    document.body.appendChild(bd);
-  }
 
   const panel = document.createElement('div');
   panel.id = PANEL_ID;
