@@ -16,6 +16,7 @@ import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
+import { rewriteDataRefs, makeDataFn } from './data-ref.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
 import { rewriteLiveCalls } from './live-input-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
@@ -216,7 +217,14 @@ function buildBotTextBlock(peer) {
 // Build a labeled Strudel voice string from code that is known to be a Strudel
 // pattern (no hydra preamble).  Used by buildPeerBlock for both the plain case
 // and the post-preamble section of a hydra peer.
-function buildStrudelVoice(code, fx) {
+function buildStrudelVoice(rawCode, fx) {
+  // Data packs: "Weather:3" → _data('Weather',3,…) before the transpiler can
+  // mini-parse it into a sound:index object. Applied here rather than in
+  // buildPeerBlock so it only ever sees Strudel code — a Hydra or Text Cycles
+  // preamble has already been split off, and its H("Weather:3") is resolved by
+  // hydra-params instead.
+  const code = rewriteDataRefs(rawCode);
+
   // Detect labeled-statement syntax ("name: expr" / "$: expr").
   const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code);
   if (hasLabels) {
@@ -471,7 +479,11 @@ async function ensureStrudel() {
     // initCss(). Silent by construction for the same reason — the renderer it
     // attaches carries a dominant trigger.
     const cssScope = installCssCycles(mod);
-    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope, ...cssScope });
+    // _data("Name",N): what the "Weather:3" rewrite calls. Falls back to mini
+    // notation when the name is not a loaded pack, so a rewritten sound
+    // reference behaves exactly as it did before data packs existed.
+    const _data = makeDataFn(mod);
+    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, ...textScope, ...cssScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }

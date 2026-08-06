@@ -191,6 +191,168 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/audio-net/SeededRandom.js
+  function seededRandom(seed2) {
+    let a2 = seed2 >>> 0;
+    return function() {
+      a2 |= 0;
+      a2 = a2 + 1831565813 | 0;
+      let t = Math.imul(a2 ^ a2 >>> 15, 1 | a2);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function hashSeed(...parts) {
+    let h2 = 2166136261;
+    for (const part of parts) {
+      h2 = (h2 ^ (part | 0)) >>> 0;
+      h2 = Math.imul(h2, 16777619) >>> 0;
+      h2 = (h2 ^ h2 >>> 15) >>> 0;
+      h2 = Math.imul(h2, 625341585) >>> 0;
+    }
+    return h2 >>> 0;
+  }
+  function occurrenceDraw(...parts) {
+    return seededRandom(hashSeed(...parts))();
+  }
+  var init_SeededRandom = __esm({
+    "src/audio-net/SeededRandom.js"() {
+    }
+  });
+
+  // src/data-ref.js
+  function setPeerPacks(peerId, packs) {
+    if (!peerId) return;
+    const byName = /* @__PURE__ */ new Map();
+    for (const pack of packs ?? []) {
+      if (pack?.name && Array.isArray(pack.samples)) byName.set(pack.name, pack);
+    }
+    if (byName.size) packsByPeer.set(peerId, byName);
+    else packsByPeer.delete(peerId);
+  }
+  function removePeerPacks(peerId) {
+    packsByPeer.delete(peerId);
+  }
+  function getPack(name3) {
+    if (!name3) return null;
+    for (const peerId of [...packsByPeer.keys()].sort()) {
+      const pack = packsByPeer.get(peerId).get(name3);
+      if (pack) return pack;
+    }
+    return null;
+  }
+  function parseDataRef(text2) {
+    if (typeof text2 !== "string") return null;
+    const m2 = REF_RE.exec(text2);
+    if (!m2) return null;
+    const index2 = Number(m2[2]);
+    if (!Number.isInteger(index2) || index2 < 1) return null;
+    return { name: m2[1], index: index2 };
+  }
+  function resolveAmount(amount, length2) {
+    const n2 = Number(amount);
+    if (!Number.isFinite(n2) || n2 < 0) return null;
+    if (n2 < 1) return Math.round(n2 * length2);
+    return Math.min(Math.round(n2), length2);
+  }
+  function dataBegin(values, amount) {
+    const drop2 = resolveAmount(amount, values.length);
+    if (drop2 === null) return values;
+    return values.slice(Math.min(drop2, values.length));
+  }
+  function dataClip(values, amount) {
+    const keep2 = resolveAmount(amount, values.length);
+    if (keep2 === null) return values;
+    return values.slice(0, Math.max(0, keep2));
+  }
+  function dataChop(values, n2) {
+    const count = Math.round(Number(n2));
+    if (!Number.isFinite(count) || count < 1 || !values.length) return values;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      out.push(values[Math.min(values.length - 1, Math.floor(i * values.length / count))]);
+    }
+    return out;
+  }
+  function dataShuffle(values, seedParts = []) {
+    const parts = seedParts.flatMap((part) => typeof part === "string" ? [...part].map((c2) => c2.charCodeAt(0)) : [Number(part) | 0]);
+    const rand3 = seededRandom(hashSeed(...parts));
+    const out = values.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j2 = Math.floor(rand3() * (i + 1));
+      [out[i], out[j2]] = [out[j2], out[i]];
+    }
+    return out;
+  }
+  function buildPattern(values, strudel2, seedParts) {
+    const pattern2 = values.length ? strudel2.fastcat(...values) : strudel2.silence;
+    const rebuild = (next) => buildPattern(next, strudel2, seedParts);
+    const ops = {
+      begin: (amount) => rebuild(dataBegin(values, amount)),
+      clip: (amount) => rebuild(dataClip(values, amount)),
+      chop: (n2) => rebuild(dataChop(values, n2)),
+      shuffle: (seed2 = 0) => rebuild(dataShuffle(values, [...seedParts, seed2]))
+    };
+    for (const [name3, fn] of Object.entries(ops)) {
+      Object.defineProperty(pattern2, name3, {
+        value: fn,
+        writable: true,
+        configurable: true,
+        enumerable: false
+      });
+    }
+    Object.defineProperty(pattern2, "dataValues", {
+      value: values,
+      writable: false,
+      configurable: true,
+      enumerable: false
+    });
+    return pattern2;
+  }
+  function resolveDataRef2(text2, strudel2) {
+    const ref2 = parseDataRef(text2);
+    if (!ref2) return null;
+    const pack = getPack(ref2.name);
+    if (!pack) return null;
+    const sample = pack.samples[ref2.index - 1];
+    if (!sample) {
+      console.error(`[data] ${ref2.name}:${ref2.index} is out of range \u2014 ${pack.name} has ${pack.samples.length} sample(s); using silence`);
+      return strudel2.silence;
+    }
+    return buildPattern(sample.values, strudel2, [ref2.name, ref2.index]);
+  }
+  function rewriteDataRefs(code2) {
+    return String(code2 ?? "").replace(REWRITE_RE, (match2, soundCall, ref2) => {
+      if (soundCall) return match2;
+      const { name: name3, index: index2 } = parseDataRef(ref2);
+      return `_data('${name3}',${index2},'${name3}:${index2}')`;
+    });
+  }
+  function makeDataFn(strudel2) {
+    return function _data(name3, index2, literal2) {
+      const text2 = literal2 ?? `${name3}:${index2}`;
+      return resolveDataRef2(text2, strudel2) ?? strudel2.mini(text2);
+    };
+  }
+  function sampleDataRefAt(text2, cyclePos) {
+    const ref2 = parseDataRef(text2);
+    if (!ref2) return null;
+    const pack = getPack(ref2.name);
+    const sample = pack?.samples?.[ref2.index - 1];
+    if (!sample?.values?.length) return null;
+    const phase = ((Number(cyclePos) || 0) % 1 + 1) % 1;
+    return sample.values[Math.min(sample.values.length - 1, Math.floor(phase * sample.values.length))];
+  }
+  var packsByPeer, REF_RE, REWRITE_RE;
+  var init_data_ref = __esm({
+    "src/data-ref.js"() {
+      init_SeededRandom();
+      packsByPeer = /* @__PURE__ */ new Map();
+      REF_RE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(\d+)\s*$/;
+      REWRITE_RE = /(\b(?:s|sound)\s*\(\s*)?"([A-Za-z_][A-Za-z0-9_]*\s*:\s*\d+)"/g;
+    }
+  });
+
   // src/peer-state.js
   function emit2(event, payload) {
     subscribers2.forEach((fn) => {
@@ -344,6 +506,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function applyPatch(peer, patch) {
     if (!patch) return;
     if (typeof patch.pattern === "string") peer.pattern = patch.pattern;
+    if (typeof patch.compiledCss === "string") peer.compiledCss = patch.compiledCss;
     if (patch.effects) peer.effects = {
       distortion: !!patch.effects.distortion,
       noise: !!patch.effects.noise,
@@ -360,6 +523,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof patch.pipelineMs === "number" || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
     if (typeof patch.canEditMetaprogram === "boolean") peer.canEditMetaprogram = patch.canEditMetaprogram;
     if (typeof patch.canWriteModulation === "boolean") peer.canWriteModulation = patch.canWriteModulation;
+    if (Array.isArray(patch.dataPacks)) {
+      peer.dataPacks = patch.dataPacks;
+      setPeerPacks(peer.peerId, patch.dataPacks);
+    }
   }
   function defaultPeer(peerId) {
     return {
@@ -371,6 +538,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       isAggregator: false,
       muted: false,
       pattern: "",
+      compiledCss: "",
+      dataPacks: [],
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
       rtt: null,
@@ -400,6 +569,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     switch (msg.type) {
       case "welcome":
         myPeerId = msg.peerId || null;
+        if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
         sendHelloIfReady();
         break;
       case "roster":
@@ -425,6 +595,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         if (peer) {
           peersByPeerId.delete(peer.peerId);
           if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
+          removePeerPacks(peer.peerId);
           emit2("peer-leave", peer);
         }
         break;
@@ -436,6 +607,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         emit2("peer-upsert", peer);
         break;
       }
+      // CSS Cycles: our own SCSS came back compiled. Applied to localPeer rather
+      // than the roster echo, which getAllPeers deliberately skips.
+      case "scss-compiled":
+        localPeer.compiledCss = typeof msg.css === "string" ? msg.css : "";
+        emit2("peer-upsert", localPeer);
+        break;
+      case "scss-error":
+        console.error("[css-cycles] the sidecar refused our SCSS:", msg.message);
+        document.dispatchEvent(new CustomEvent("trussal-css-errors", { detail: [String(msg.message ?? "")] }));
+        break;
       case "fleet-status":
         emit2("fleet-status", msg);
         break;
@@ -562,6 +743,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     safeSend({ type: "pattern", code: localPeer.pattern });
     emit2("peer-upsert", localPeer);
   }
+  function sendLocalScss(scss) {
+    safeSend({ type: "scss", source: typeof scss === "string" ? scss : "" });
+  }
+  function sendLocalDataPacks(packs) {
+    const list = Array.isArray(packs) ? packs : [];
+    localPeer.dataPacks = list;
+    if (myPeerId) setPeerPacks(myPeerId, list);
+    safeSend({ type: "datapacks", packs: list });
+    emit2("peer-upsert", localPeer);
+  }
   function sendLocalEffects(effects2) {
     localPeer.effects = {
       distortion: !!effects2.distortion,
@@ -602,11 +793,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof kind !== "string" || !kind) return;
     safeSend({ type: "research-event", kind, data: data3 });
   }
-  function sendFleetRequest(action, { count, targets } = {}) {
+  function sendFleetRequest(action, { count, targets, code: code2 } = {}) {
     const msg = { type: "fleet-request", action };
     if (typeof count === "number") msg.count = count;
     if (targets !== void 0) msg.targets = targets;
+    if (typeof code2 === "string") msg.code = code2;
     safeSend(msg);
+  }
+  function sendSampleFile({ bank: bank2, name: name3, data: data3 }) {
+    if (typeof bank2 !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
+    safeSend({ type: "sample-file", bank: bank2, name: name3, data: data3 });
   }
   function sendBotPermission(targetPeerId, perms) {
     if (!targetPeerId || !perms) return;
@@ -620,6 +816,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     "src/peer-state.js"() {
       init_jamulus();
       init_participants();
+      init_data_ref();
       subscribers2 = /* @__PURE__ */ new Set();
       peersByPeerId = /* @__PURE__ */ new Map();
       peerIdByJitsiId = /* @__PURE__ */ new Map();
@@ -636,6 +833,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         isAggregator: LOCAL_IS_AGGREGATOR,
         muted: false,
         pattern: "",
+        // CSS Cycles: this peer's SCSS as compiled by the sidecar. Set from the bus
+        // for everyone including ourselves — the compile is never done in a browser.
+        compiledCss: "",
+        dataPacks: [],
         effects: { distortion: false, noise: false, reverb: false },
         playing: false,
         rtt: null,
@@ -37937,6 +38138,92 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/audio-net/ValuePattern.js
+  function isValuePattern(node) {
+    return !!node && typeof node === "object" && (node.type === "valueSeq" || node.type === "dataRef");
+  }
+  function isDataRefNode(node) {
+    return !!node && typeof node === "object" && node.type === "dataRef";
+  }
+  function setDataRefReader(fn) {
+    readDataRef = typeof fn === "function" ? fn : () => null;
+  }
+  function entryHasValuePattern(entry) {
+    if (!entry) return false;
+    const candidates = [
+      entry.metric,
+      entry.media,
+      ...entry.metrics || [],
+      ...entry.args || [],
+      ...(entry.pairs || []).map((p) => p && p.value),
+      ...entry.bounds || []
+    ];
+    return candidates.some(isValuePattern);
+  }
+  function chainHasValuePattern(chainEntries) {
+    return (chainEntries || []).some(entryHasValuePattern);
+  }
+  function layout(node) {
+    const terms = node.terms || [];
+    const weights = node.weights;
+    const spans = [];
+    let totalWeight = 0;
+    for (let i = 0; i < terms.length; i++) {
+      const written = weights ? weights[i] : null;
+      const weight = Number.isFinite(written) && written > 0 ? written : 1;
+      spans.push({ index: i, start: totalWeight, end: totalWeight + weight });
+      totalWeight += weight;
+    }
+    if (!(totalWeight > 0)) return null;
+    const repLength = node.mode === "subdivide" ? 1 : totalWeight;
+    const unitsPerStep = repLength / totalWeight;
+    for (const span of spans) {
+      span.start *= unitsPerStep;
+      span.end *= unitsPerStep;
+    }
+    return { spans, repLength };
+  }
+  function evaluateValuePattern(node, cyclePos = 0) {
+    if (isDataRefNode(node)) {
+      const value2 = readDataRef(`${node.name}:${node.index}`, cyclePos);
+      return typeof value2 === "number" ? value2 : null;
+    }
+    if (!isValuePattern(node)) return node;
+    const terms = node.terms || [];
+    if (!terms.length) return null;
+    const grid = layout(node);
+    if (!grid) return null;
+    const raw = Number.isFinite(cyclePos) ? cyclePos : 0;
+    const speed2 = Number.isFinite(node.speed) && node.speed > 0 ? node.speed : 1;
+    const units = raw * speed2;
+    const rep = Math.floor(units / grid.repLength);
+    const offset2 = units - rep * grid.repLength;
+    let span = grid.spans[grid.spans.length - 1];
+    for (const candidate of grid.spans) {
+      if (offset2 < candidate.end) {
+        span = candidate;
+        break;
+      }
+    }
+    const chance = node.chances ? node.chances[span.index] : null;
+    if (Number.isFinite(chance) && occurrenceDraw(node.line | 0, node.col | 0, span.index, rep) < chance) {
+      return null;
+    }
+    const width = span.end - span.start;
+    const rate = node.rates ? node.rates[span.index] : null;
+    const elementRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    return evaluateValuePattern(terms[span.index], (rep + (offset2 - span.start) / width) * elementRate);
+  }
+  var PATTERN_TICK_MS, readDataRef, DEFAULT_DROP_CHANCE;
+  var init_ValuePattern = __esm({
+    "src/audio-net/ValuePattern.js"() {
+      init_SeededRandom();
+      PATTERN_TICK_MS = 50;
+      readDataRef = () => null;
+      DEFAULT_DROP_CHANCE = 0.5;
+    }
+  });
+
   // latency-instrument/room-indices.js
   var require_room_indices = __commonJS({
     "latency-instrument/room-indices.js"(exports, module) {
@@ -37980,110 +38267,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         isValidParticipantToken: isValidParticipantToken2,
         parseParticipantToken: parseParticipantToken2
       };
-    }
-  });
-
-  // src/audio-net/SeededRandom.js
-  function seededRandom(seed2) {
-    let a2 = seed2 >>> 0;
-    return function() {
-      a2 |= 0;
-      a2 = a2 + 1831565813 | 0;
-      let t = Math.imul(a2 ^ a2 >>> 15, 1 | a2);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  function hashSeed(...parts) {
-    let h2 = 2166136261;
-    for (const part of parts) {
-      h2 = (h2 ^ (part | 0)) >>> 0;
-      h2 = Math.imul(h2, 16777619) >>> 0;
-      h2 = (h2 ^ h2 >>> 15) >>> 0;
-      h2 = Math.imul(h2, 625341585) >>> 0;
-    }
-    return h2 >>> 0;
-  }
-  function occurrenceDraw(...parts) {
-    return seededRandom(hashSeed(...parts))();
-  }
-  var init_SeededRandom = __esm({
-    "src/audio-net/SeededRandom.js"() {
-    }
-  });
-
-  // src/audio-net/ValuePattern.js
-  function isValuePattern(node) {
-    return !!node && typeof node === "object" && node.type === "valueSeq";
-  }
-  function entryHasValuePattern(entry) {
-    if (!entry) return false;
-    const candidates = [
-      entry.metric,
-      entry.media,
-      ...entry.metrics || [],
-      ...entry.args || [],
-      ...(entry.pairs || []).map((p) => p && p.value),
-      ...entry.bounds || []
-    ];
-    return candidates.some(isValuePattern);
-  }
-  function chainHasValuePattern(chainEntries) {
-    return (chainEntries || []).some(entryHasValuePattern);
-  }
-  function layout(node) {
-    const terms = node.terms || [];
-    const weights = node.weights;
-    const spans = [];
-    let totalWeight = 0;
-    for (let i = 0; i < terms.length; i++) {
-      const written = weights ? weights[i] : null;
-      const weight = Number.isFinite(written) && written > 0 ? written : 1;
-      spans.push({ index: i, start: totalWeight, end: totalWeight + weight });
-      totalWeight += weight;
-    }
-    if (!(totalWeight > 0)) return null;
-    const repLength = node.mode === "subdivide" ? 1 : totalWeight;
-    const unitsPerStep = repLength / totalWeight;
-    for (const span of spans) {
-      span.start *= unitsPerStep;
-      span.end *= unitsPerStep;
-    }
-    return { spans, repLength };
-  }
-  function evaluateValuePattern(node, cyclePos = 0) {
-    if (!isValuePattern(node)) return node;
-    const terms = node.terms || [];
-    if (!terms.length) return null;
-    const grid = layout(node);
-    if (!grid) return null;
-    const raw = Number.isFinite(cyclePos) ? cyclePos : 0;
-    const speed2 = Number.isFinite(node.speed) && node.speed > 0 ? node.speed : 1;
-    const units = raw * speed2;
-    const rep = Math.floor(units / grid.repLength);
-    const offset2 = units - rep * grid.repLength;
-    let span = grid.spans[grid.spans.length - 1];
-    for (const candidate of grid.spans) {
-      if (offset2 < candidate.end) {
-        span = candidate;
-        break;
-      }
-    }
-    const chance = node.chances ? node.chances[span.index] : null;
-    if (Number.isFinite(chance) && occurrenceDraw(node.line | 0, node.col | 0, span.index, rep) < chance) {
-      return null;
-    }
-    const width = span.end - span.start;
-    const rate = node.rates ? node.rates[span.index] : null;
-    const elementRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
-    return evaluateValuePattern(terms[span.index], (rep + (offset2 - span.start) / width) * elementRate);
-  }
-  var PATTERN_TICK_MS, DEFAULT_DROP_CHANCE;
-  var init_ValuePattern = __esm({
-    "src/audio-net/ValuePattern.js"() {
-      init_SeededRandom();
-      PATTERN_TICK_MS = 50;
-      DEFAULT_DROP_CHANCE = 0.5;
     }
   });
 
@@ -38227,6 +38410,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   // src/audio-net/MetaprogrammerParser.js
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
+    if (isDataRefNode(node)) return "number";
     for (const term of node.terms || []) {
       if (isValuePattern(term)) {
         const inner = valuePatternKind(term);
@@ -38332,6 +38516,20 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       if (/[a-zA-Z_]/.test(ch2)) {
         let j2 = i;
         while (j2 < n2 && /[a-zA-Z0-9_]/.test(text2[j2])) j2++;
+        if (text2[j2] === ":" && /[0-9]/.test(text2[j2 + 1] || "")) {
+          let k2 = j2 + 1;
+          while (k2 < n2 && /[0-9]/.test(text2[k2])) k2++;
+          const raw = text2.slice(i, k2);
+          push(
+            "dataref",
+            { name: text2.slice(i, j2), index: parseInt(text2.slice(j2 + 1, k2), 10) },
+            startLine,
+            startCol,
+            raw
+          );
+          advance(k2 - i);
+          continue;
+        }
         push("word", text2.slice(i, j2), startLine, startCol);
         advance(j2 - i);
         continue;
@@ -38344,6 +38542,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   }
   function tokenWidth(t) {
     return String(t.raw != null ? t.raw : t.value ?? "").length;
+  }
+  function tokenText(t) {
+    return String(t.raw != null ? t.raw : t.value ?? "");
   }
   function parseMetaprogram(text2) {
     const { tokens, errors } = tokenize2(typeof text2 === "string" ? text2 : "");
@@ -38901,7 +39102,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`cycles got an unexpected argument '${trailing.value}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+            if (trailing.type === "dataref") {
+              this.error(`'# cycles' takes fixed numbers, so it cannot read '${tokenText(trailing)}' \u2014 a data reference belongs in an effect argument (# crush / # echo / # room / # noise)`, trailing);
+            } else {
+              this.error(`cycles got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '# cycles <metric> [scale factor] [amount]'`, trailing);
+            }
             this.recover();
             return;
           }
@@ -39055,6 +39260,13 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               const val2 = this.readPositiveNumber(name3, "arguments");
               if (val2 == null) return null;
               terms.push(val2);
+              this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
+              continue;
+            }
+            if ((kind === "number" || kind === "any") && t.type === "dataref") {
+              if (!settleKind("number", t)) return null;
+              this.next();
+              terms.push({ type: "dataRef", name: t.value.name, index: t.value.index });
               this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
               continue;
             }
@@ -39274,7 +39486,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`'${name3}' got an unexpected argument '${trailing.value}' \u2014 the syntax is '${sig.usage}'`, trailing);
+            this.error(`'${name3}' got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '${sig.usage}'`, trailing);
             this.recover();
             return;
           }
@@ -39387,6 +39599,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         parseNumericArg(name3, slot, sig) {
           const t = this.peek();
           if (t.type === "number" || t.type === "intlike") return this.readPositiveNumber(name3, slot);
+          if (t.type === "dataref") {
+            this.next();
+            return { type: "dataRef", name: t.value.name, index: t.value.index };
+          }
           if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
             return this.parseValueSequence(name3, "number", sig);
           }
@@ -39470,7 +39686,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           const trailing = this.peek();
           if (trailing.type !== "newline" && trailing.type !== "eof" && trailing.type !== "sigil") {
-            this.error(`'noise' got an unexpected argument '${trailing.value}' \u2014 the syntax is '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'`, trailing);
+            this.error(`'noise' got an unexpected argument '${tokenText(trailing)}' \u2014 the syntax is '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount] [amount]'`, trailing);
             this.recover();
             return;
           }
@@ -39562,6 +39778,11 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               args2.push({ value: seq2, tok: t });
               continue;
             }
+            if (sig.patternArgs && t.type === "dataref") {
+              this.next();
+              args2.push({ value: { type: "dataRef", name: t.value.name, index: t.value.index }, tok: t });
+              continue;
+            }
             if (sig.takesSequence && t.type === "punct" && (t.value === "<" || t.value === "[")) {
               const seq2 = this.parseSequenceGroup();
               if (seq2) args2.push({ value: seq2, tok: t });
@@ -39571,7 +39792,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           if (!this.atStatementEnd()) {
             const trailing = this.peek();
-            this.error(`'${name3}' got an unexpected argument '${trailing.value}'`, trailing);
+            this.error(`'${name3}' got an unexpected argument '${tokenText(trailing)}'`, trailing);
             this.recover();
             return;
           }
@@ -40611,7 +40832,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         // first connect's promise.
         connect() {
           if (this._connectPromise) return this._connectPromise;
-          this._connectPromise = new Promise((resolve2, reject) => {
+          this._connectPromise = new Promise((resolve3, reject) => {
             let ws3;
             try {
               ws3 = new this._WS(this.url);
@@ -40626,7 +40847,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             }
             const onOpen = () => {
               removeListener(ws3, "error", onError);
-              resolve2(this);
+              resolve3(this);
             };
             const onError = (ev) => {
               removeListener(ws3, "error", onError);
@@ -43117,17 +43338,17 @@ ${err.toString()}`);
           this.isLoaded = false;
           this.isSynced = false;
           this.isDestroyed = false;
-          this.whenLoaded = create4((resolve2) => {
+          this.whenLoaded = create4((resolve3) => {
             this.on("load", () => {
               this.isLoaded = true;
-              resolve2(this);
+              resolve3(this);
             });
           });
-          const provideSyncedPromise = () => create4((resolve2) => {
+          const provideSyncedPromise = () => create4((resolve3) => {
             const eventHandler = (isSynced) => {
               if (isSynced === void 0 || isSynced === true) {
                 this.off("sync", eventHandler);
-                resolve2();
+                resolve3();
               }
             };
             this.on("sync", eventHandler);
@@ -51188,7 +51409,7 @@ ${SHORTCUT_LINES[fn]}
           let pattern2 = null;
           let last2 = typeof spec === "number" ? spec : 0;
           try {
-            pattern2 = strudel2 ? strudel2.reify(spec) : null;
+            pattern2 = strudel2 ? resolveDataRef(spec, strudel2) ?? strudel2.reify(spec) : null;
           } catch (e30) {
             console.error("[hydra-params] could not reify a H() argument", e30);
           }
@@ -51220,6 +51441,10 @@ ${SHORTCUT_LINES[fn]}
     return void 0;
   }
 
+  // src/index.js
+  init_data_ref();
+  init_ValuePattern();
+
   // src/studio.js
   init_jamulus();
   init_participants();
@@ -51231,63 +51456,318 @@ ${SHORTCUT_LINES[fn]}
   init_Metaprogrammer();
   init_participants();
 
+  // src/data-samples-core.js
+  var MAX_VALUES_PER_SAMPLE = 1024;
+  var MAX_SAMPLES_PER_PACK = 64;
+  var MAX_VALUES_PER_PACK = 8192;
+  var MAX_VALUES_TOTAL = 16384;
+  var VALUE_PRECISION = 6;
+  var DATA_EXTENSIONS = /* @__PURE__ */ new Set(["json", "csv", "tsv"]);
+  function isDataFile(filename) {
+    return DATA_EXTENSIONS.has(extensionOf(filename));
+  }
+  function extensionOf(filename) {
+    const base = String(filename ?? "").split("/").pop();
+    const dot = base.lastIndexOf(".");
+    return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+  }
+  var NOTE_RE = /^[a-gA-G](?:[#bs]|es|is)*-?[0-9]?$/;
+  var REST = "~";
+  function isRecognizedStrudelValue(text2) {
+    return text2 === REST || NOTE_RE.test(text2);
+  }
+  function parseLenientNumber(text2) {
+    const m2 = /^[\s$£€¥+]*(-?\d[\d,_ ]*(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(text2);
+    if (!m2) return null;
+    const cleaned = m2[1].replace(/[,_ ]/g, "");
+    const n2 = Number(cleaned);
+    return Number.isFinite(n2) ? n2 : null;
+  }
+  function roundValue(n2) {
+    if (!Number.isFinite(n2)) return 0;
+    if (n2 === 0) return 0;
+    return Number(n2.toPrecision(VALUE_PRECISION));
+  }
+  function castValue(raw, ordinals) {
+    if (typeof raw === "number") return roundValue(raw);
+    if (typeof raw === "boolean") return raw ? 1 : 0;
+    if (raw === null || raw === void 0) return 0;
+    const text2 = String(raw).trim();
+    if (text2 === "") return 0;
+    if (isRecognizedStrudelValue(text2)) return text2;
+    const n2 = parseLenientNumber(text2);
+    if (n2 !== null) return roundValue(n2);
+    if (!ordinals.has(text2)) ordinals.set(text2, ordinals.size);
+    return ordinals.get(text2);
+  }
+  function parseDelimited(text2, delimiter) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let quoted = false;
+    let hadContent = false;
+    const endField = () => {
+      row.push(field);
+      field = "";
+    };
+    const endRow = () => {
+      endField();
+      if (!(row.length === 1 && row[0] === "" && !hadContent)) rows.push(row);
+      row = [];
+      hadContent = false;
+    };
+    const src2 = String(text2 ?? "").replace(/\r\n?/g, "\n");
+    for (let i = 0; i < src2.length; i++) {
+      const ch2 = src2[i];
+      if (quoted) {
+        if (ch2 === '"') {
+          if (src2[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else quoted = false;
+        } else field += ch2;
+        hadContent = true;
+        continue;
+      }
+      if (ch2 === '"') {
+        quoted = true;
+        hadContent = true;
+        continue;
+      }
+      if (ch2 === delimiter) {
+        endField();
+        continue;
+      }
+      if (ch2 === "\n") {
+        endRow();
+        continue;
+      }
+      field += ch2;
+      if (ch2.trim() !== "") hadContent = true;
+    }
+    if (field !== "" || row.length > 0 || hadContent) endRow();
+    return rows;
+  }
+  function looksLikeHeader(rows) {
+    if (rows.length < 2) return false;
+    const first = rows[0];
+    if (!first.length) return false;
+    return first.every((cell) => {
+      const text2 = String(cell ?? "").trim();
+      return text2 !== "" && parseLenientNumber(text2) === null;
+    });
+  }
+  function flattenValues(value2, limit, ordinals) {
+    const values = [];
+    let truncated = false;
+    const walk2 = (node) => {
+      if (values.length >= limit) {
+        truncated = true;
+        return;
+      }
+      if (Array.isArray(node)) {
+        for (const v2 of node) walk2(v2);
+        return;
+      }
+      if (node && typeof node === "object") {
+        for (const v2 of Object.values(node)) walk2(v2);
+        return;
+      }
+      values.push(castValue(node, ordinals));
+    };
+    walk2(value2);
+    if (values.length > limit) {
+      values.length = limit;
+      truncated = true;
+    }
+    return { values, truncated };
+  }
+  function packNameFromFilename(filename) {
+    const base = String(filename ?? "").split("/").pop();
+    const dot = base.lastIndexOf(".");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const cleaned = stem.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!cleaned) return "data";
+    return /^[0-9]/.test(cleaned) ? `_${cleaned}` : cleaned;
+  }
+  function uniquePackName(base, taken) {
+    const names2 = taken instanceof Set ? taken : new Set(taken ?? []);
+    if (!names2.has(base)) return base;
+    for (let i = 2; ; i++) {
+      const candidate = `${base}_${i}`;
+      if (!names2.has(candidate)) return candidate;
+    }
+  }
+  function applyPackCaps(samples2, budget) {
+    const notes2 = { droppedSamples: 0, truncatedSamples: 0 };
+    let kept = samples2;
+    if (kept.length > MAX_SAMPLES_PER_PACK) {
+      notes2.droppedSamples = kept.length - MAX_SAMPLES_PER_PACK;
+      kept = kept.slice(0, MAX_SAMPLES_PER_PACK);
+    }
+    let remaining = Math.min(MAX_VALUES_PER_PACK, budget ?? MAX_VALUES_PER_PACK);
+    const out = [];
+    for (const sample of kept) {
+      const limit = Math.min(MAX_VALUES_PER_SAMPLE, remaining);
+      if (limit <= 0) {
+        notes2.droppedSamples++;
+        continue;
+      }
+      const values = sample.values.length > limit ? sample.values.slice(0, limit) : sample.values;
+      const truncated = sample.truncated || values.length < sample.values.length;
+      if (truncated) notes2.truncatedSamples++;
+      remaining -= values.length;
+      out.push({ label: sample.label, values, truncated });
+    }
+    return { samples: out, ...notes2 };
+  }
+  function samplesFromRows(rows) {
+    const header = looksLikeHeader(rows) ? rows[0] : null;
+    const body = header ? rows.slice(1) : rows;
+    const width = rows.reduce((max2, r2) => Math.max(max2, r2.length), 0);
+    const samples2 = [];
+    for (let col = 0; col < width; col++) {
+      const ordinals = /* @__PURE__ */ new Map();
+      const label2 = header?.[col]?.trim() || `column ${col + 1}`;
+      const values = body.map((row) => castValue(row[col], ordinals));
+      samples2.push({ label: label2, values, truncated: false });
+    }
+    return samples2;
+  }
+  function samplesFromJson(parsed, packName) {
+    if (Array.isArray(parsed)) {
+      const records = parsed.filter((v2) => v2 && typeof v2 === "object" && !Array.isArray(v2));
+      if (records.length === parsed.length && records.length > 0) {
+        const keys3 = [];
+        for (const record of records) {
+          for (const key of Object.keys(record)) if (!keys3.includes(key)) keys3.push(key);
+        }
+        return keys3.map((key) => {
+          const ordinals3 = /* @__PURE__ */ new Map();
+          const values = [];
+          for (const record of records) {
+            const flat2 = flattenValues(record[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals3);
+            values.push(...flat2.values);
+          }
+          return { label: key, values, truncated: false };
+        });
+      }
+      const ordinals2 = /* @__PURE__ */ new Map();
+      const flat = flattenValues(parsed, MAX_VALUES_PER_SAMPLE, ordinals2);
+      return [{ label: packName, values: flat.values, truncated: flat.truncated }];
+    }
+    if (parsed && typeof parsed === "object") {
+      return Object.entries(parsed).map(([key, value2]) => {
+        const ordinals2 = /* @__PURE__ */ new Map();
+        const flat = flattenValues(value2, MAX_VALUES_PER_SAMPLE, ordinals2);
+        return { label: key, values: flat.values, truncated: flat.truncated };
+      });
+    }
+    const ordinals = /* @__PURE__ */ new Map();
+    return [{ label: packName, values: [castValue(parsed, ordinals)], truncated: false }];
+  }
+  function parseDataFile(filename, text2, { budget = MAX_VALUES_TOTAL, taken } = {}) {
+    const kind = extensionOf(filename);
+    const name3 = uniquePackName(packNameFromFilename(filename), taken);
+    let samples2;
+    if (kind === "json") {
+      let parsed;
+      try {
+        parsed = JSON.parse(text2);
+      } catch (e30) {
+        throw new Error(`${filename}: not valid JSON \u2014 ${e30.message}`);
+      }
+      samples2 = samplesFromJson(parsed, name3);
+    } else if (kind === "csv" || kind === "tsv") {
+      const rows = parseDelimited(text2, kind === "tsv" ? "	" : ",");
+      if (!rows.length) throw new Error(`${filename}: no rows`);
+      samples2 = samplesFromRows(rows);
+    } else {
+      throw new Error(`${filename}: not a JSON, CSV or TSV file`);
+    }
+    samples2 = samples2.filter((s2) => s2.values.length > 0);
+    if (!samples2.length) throw new Error(`${filename}: no values found`);
+    const capped = applyPackCaps(samples2, budget);
+    return { name: name3, kind, ...capped };
+  }
+
   // src/user-samples.js
   var DB_NAME = "samples";
   var DB_VERSION = 1;
   var DB_TABLE = "usersamples";
   var AUDIO_EXTENSIONS = /* @__PURE__ */ new Set(["wav", "mp3", "flac", "ogg", "m4a", "aac"]);
   var IMAGE_EXTENSIONS = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
-  function extensionOf(filename) {
+  function extensionOf2(filename) {
     return String(filename || "").split(".").pop().toLowerCase();
   }
+  var DATA_ID_PREFIX = "data:";
   function isAudioFile(filename) {
-    return AUDIO_EXTENSIONS.has(extensionOf(filename));
+    return AUDIO_EXTENSIONS.has(extensionOf2(filename));
   }
   function isImageFile(filename) {
-    return IMAGE_EXTENSIONS.has(extensionOf(filename));
+    return IMAGE_EXTENSIONS.has(extensionOf2(filename));
   }
-  function openSamplesDB() {
-    return new Promise((resolve2, reject) => {
+  function openDB() {
+    return new Promise((resolve3, reject) => {
       if (typeof window === "undefined" || !("indexedDB" in window)) {
-        resolve2(null);
+        resolve3(null);
         return;
       }
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const store = req.result.createObjectStore(DB_TABLE, { keyPath: "id", autoIncrement: false });
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const store = request.result.createObjectStore(DB_TABLE, { keyPath: "id", autoIncrement: false });
         ["blob", "title"].forEach((c2) => store.createIndex(c2, c2, { unique: false }));
       };
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => {
-        const db = req.result;
-        const tx = db.transaction([DB_TABLE], "readwrite");
-        resolve2({ objectStore: tx.objectStore(DB_TABLE), db });
-      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve3(request.result);
     });
   }
-  async function registerSamplesFromDB(registerSampleSource2) {
-    const idb = await openSamplesDB().catch(() => null);
-    if (!idb) return;
-    const { objectStore } = idb;
-    const soundFiles = await new Promise((resolve2, reject) => {
-      const q2 = objectStore.getAll();
-      q2.onerror = () => reject(q2.error);
-      q2.onsuccess = (e30) => resolve2(e30.target.result);
+  async function withStore(mode2, fn) {
+    const db = await openDB().catch((e30) => {
+      console.error("[trussal] samples DB failed to open", e30);
+      throw e30;
     });
+    if (!db) return null;
+    return new Promise((resolve3, reject) => {
+      const tx = db.transaction([DB_TABLE], mode2);
+      const store = tx.objectStore(DB_TABLE);
+      let result;
+      Promise.resolve(fn(store)).then((r2) => {
+        result = r2;
+      }).catch(reject);
+      tx.oncomplete = () => resolve3(result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+  function req(request) {
+    return new Promise((resolve3, reject) => {
+      request.onsuccess = () => resolve3(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  function readAll() {
+    return withStore("readonly", (store) => req(store.getAll())).catch((e30) => {
+      console.error("[trussal] samples DB read failed", e30);
+      return [];
+    });
+  }
+  function bankOf(record) {
+    const parts = record.id.split("/");
+    return parts.length >= 2 ? parts[parts.length - 2] : record.id.split(/\W+/)[0] ?? "user";
+  }
+  var isDataRecord = (record) => record?.kind === "data" && !!record.pack;
+  async function registerSamplesFromDB(registerSampleSource2) {
+    const soundFiles = await readAll();
     if (!soundFiles?.length) return;
     const sounds = /* @__PURE__ */ new Map();
-    await Promise.all(
-      [...soundFiles].sort((a2, b) => a2.title.localeCompare(b.title, void 0, { numeric: true, sensitivity: "base" })).map((sf) => {
-        if (!isAudioFile(sf.title)) return null;
-        const parts = sf.id.split("/");
-        const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
-        const url2 = URL.createObjectURL(sf.blob);
-        const bank2 = sounds.get(parent) ?? /* @__PURE__ */ new Map();
-        bank2.set(sf.title, url2);
-        sounds.set(parent, bank2);
-        return null;
-      }).filter(Boolean)
-    );
+    [...soundFiles].sort((a2, b) => a2.title.localeCompare(b.title, void 0, { numeric: true, sensitivity: "base" })).forEach((sf) => {
+      if (isDataRecord(sf) || !isAudioFile(sf.title)) return;
+      const url2 = URL.createObjectURL(sf.blob);
+      const bank2 = sounds.get(bankOf(sf)) ?? /* @__PURE__ */ new Map();
+      bank2.set(sf.title, url2);
+      sounds.set(bankOf(sf), bank2);
+    });
     sounds.forEach((bank2, key) => {
       const urls = Array.from(bank2.keys()).sort((a2, b) => a2.localeCompare(b)).map((t) => bank2.get(t));
       registerSampleSource2(key, urls, { prebake: false });
@@ -51296,60 +51776,125 @@ ${SHORTCUT_LINES[fn]}
       console.log("[trussal] local samples registered:", [...sounds.keys()].join(", "));
     }
   }
+  async function readSampleBanks() {
+    const records = await readAll();
+    if (!records?.length) return [];
+    return records.filter((sf) => !isDataRecord(sf) && isAudioFile(sf.title)).map((sf) => ({ bank: bankOf(sf), name: sf.title, blob: sf.blob }));
+  }
   async function getSampleBanks() {
-    const idb = await openSamplesDB().catch(() => null);
-    if (!idb) return [];
-    const { objectStore } = idb;
-    const soundFiles = await new Promise((resolve2, reject) => {
-      const q2 = objectStore.getAll();
-      q2.onerror = () => reject(q2.error);
-      q2.onsuccess = (e30) => resolve2(e30.target.result);
-    }).catch(() => []);
-    if (!soundFiles?.length) return [];
-    const counts = /* @__PURE__ */ new Map();
-    for (const sf of soundFiles) {
-      if (!isAudioFile(sf.title)) continue;
-      const parts = sf.id.split("/");
-      const parent = parts.length >= 2 ? parts[parts.length - 2] : sf.id.split(/\W+/)[0] ?? "user";
-      counts.set(parent, (counts.get(parent) ?? 0) + 1);
+    const records = await readAll();
+    if (!records?.length) return [];
+    const banks = /* @__PURE__ */ new Map();
+    for (const record of records) {
+      if (isDataRecord(record)) {
+        banks.set(record.pack.name, {
+          name: record.pack.name,
+          kind: record.pack.kind,
+          count: record.pack.samples.length,
+          truncated: record.pack.truncatedSamples > 0 || record.pack.droppedSamples > 0,
+          samples: record.pack.samples.map((s2, i) => ({
+            label: s2.label,
+            id: `${record.id}#${i}`,
+            length: s2.values.length,
+            truncated: s2.truncated
+          }))
+        });
+        continue;
+      }
+      if (!isAudioFile(record.title)) continue;
+      const name3 = bankOf(record);
+      const bank2 = banks.get(name3) ?? { name: name3, kind: "audio", count: 0, truncated: false, samples: [] };
+      bank2.samples.push({ label: record.title, id: record.id });
+      bank2.count = bank2.samples.length;
+      banks.set(name3, bank2);
     }
-    return [...counts.entries()].sort((a2, b) => a2[0].localeCompare(b[0])).map(([name3, count]) => ({ name: name3, count }));
+    for (const bank2 of banks.values()) {
+      if (bank2.kind === "audio") bank2.samples.sort((a2, b) => a2.label.localeCompare(b.label));
+    }
+    return [...banks.values()].sort((a2, b) => a2.name.localeCompare(b.name));
+  }
+  async function getDataPacks() {
+    const records = await readAll();
+    return (records ?? []).filter(isDataRecord).map((r2) => r2.pack);
   }
   async function clearSamplesDB() {
-    return new Promise((resolve2) => {
+    return new Promise((resolve3) => {
       if (typeof window === "undefined" || !("indexedDB" in window)) {
-        resolve2();
+        resolve3();
         return;
       }
-      const req = indexedDB.deleteDatabase(DB_NAME);
-      req.onsuccess = resolve2;
-      req.onerror = resolve2;
-      req.onblocked = resolve2;
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = resolve3;
+      request.onerror = resolve3;
+      request.onblocked = resolve3;
+    });
+  }
+  async function deleteSample(sampleId) {
+    const id3 = String(sampleId ?? "");
+    if (!id3) return;
+    const hash = id3.lastIndexOf("#");
+    if (!id3.startsWith(DATA_ID_PREFIX) || hash < 0) {
+      await withStore("readwrite", (store) => req(store.delete(id3)));
+      return;
+    }
+    const recordId = id3.slice(0, hash);
+    const index2 = Number(id3.slice(hash + 1));
+    await withStore("readwrite", async (store) => {
+      const record = await req(store.get(recordId));
+      if (!isDataRecord(record) || !Number.isInteger(index2)) return;
+      const samples2 = record.pack.samples.filter((_3, i) => i !== index2);
+      if (!samples2.length) {
+        await req(store.delete(recordId));
+        return;
+      }
+      await req(store.put({ ...record, pack: { ...record.pack, samples: samples2 } }));
     });
   }
   async function uploadSamplesToDB(files2, onDone) {
-    const wanted = Array.from(files2).filter((f2) => isAudioFile(f2.name) || isImageFile(f2.name));
-    if (!wanted.length) {
-      onDone?.(0);
+    const all3 = Array.from(files2 ?? []);
+    const audioFiles = all3.filter((f2) => isAudioFile(f2.name));
+    const imageFiles = all3.filter((f2) => isImageFile(f2.name));
+    const dataFiles = all3.filter((f2) => isDataFile(f2.name));
+    if (!audioFiles.length && !imageFiles.length && !dataFiles.length) {
+      onDone?.({ audio: 0, images: 0, packs: 0, errors: [] });
       return;
     }
-    const records = await Promise.all(wanted.map(async (f2) => {
-      const blob = await fetch(URL.createObjectURL(f2)).then((r2) => r2.blob());
-      return {
-        id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
-        title: f2.name,
-        blob
-      };
-    }));
-    const idb = await openSamplesDB();
-    if (!idb) {
-      onDone?.(0);
-      return;
+    const blobRecords = await Promise.all([...audioFiles, ...imageFiles].map(async (f2) => ({
+      id: f2.webkitRelativePath?.length ? f2.webkitRelativePath : f2.name,
+      title: f2.name,
+      blob: await f2.arrayBuffer().then((buf) => new Blob([buf], { type: f2.type }))
+    })));
+    const existing = await getSampleBanks();
+    const taken = new Set(existing.map((b) => b.name));
+    for (const record of blobRecords) taken.add(bankOf(record));
+    let budget = MAX_VALUES_TOTAL - (await getDataPacks()).reduce((sum, pack) => sum + pack.samples.reduce((n2, s2) => n2 + s2.values.length, 0), 0);
+    const errors = [];
+    const dataRecords = [];
+    for (const f2 of dataFiles) {
+      try {
+        if (budget <= 0) throw new Error(`${f2.name}: no room left \u2014 delete some data samples first`);
+        const pack = parseDataFile(f2.name, await f2.text(), { budget, taken });
+        taken.add(pack.name);
+        budget -= pack.samples.reduce((n2, s2) => n2 + s2.values.length, 0);
+        dataRecords.push({ id: `${DATA_ID_PREFIX}${pack.name}`, title: f2.name, kind: "data", pack });
+      } catch (e30) {
+        console.error("[trussal] data file rejected", e30);
+        errors.push(e30.message);
+      }
     }
-    const { objectStore } = idb;
-    records.forEach((r2) => objectStore.put(r2));
-    console.log(`[trussal] stored ${records.length} sample(s) in IDB`);
-    onDone?.(records.length);
+    const records = [...blobRecords, ...dataRecords];
+    if (records.length) {
+      await withStore("readwrite", (store) => {
+        records.forEach((r2) => store.put(r2));
+      });
+      console.log(`[trussal] stored ${audioFiles.length} sample(s), ${imageFiles.length} image(s) and ${dataRecords.length} data pack(s) in IDB`);
+    }
+    onDone?.({
+      audio: audioFiles.length,
+      images: imageFiles.length,
+      packs: dataRecords.length,
+      errors
+    });
   }
   var imageUrls = /* @__PURE__ */ new Map();
   function folderOf(id3) {
@@ -51367,10 +51912,10 @@ ${SHORTCUT_LINES[fn]}
     }
     imageUrls.clear();
     const { objectStore } = idb;
-    const stored = await new Promise((resolve2, reject) => {
-      const req = objectStore.getAll();
-      req.onsuccess = () => resolve2(req.result || []);
-      req.onerror = () => reject(req.error);
+    const stored = await new Promise((resolve3, reject) => {
+      const req2 = objectStore.getAll();
+      req2.onsuccess = () => resolve3(req2.result || []);
+      req2.onerror = () => reject(req2.error);
     });
     let count = 0;
     for (const record of stored) {
@@ -51396,6 +51941,9 @@ ${SHORTCUT_LINES[fn]}
     const i = Number.isFinite(index2) ? Math.abs(Math.trunc(index2)) % entries2.length : 0;
     return entries2[i].url;
   }
+
+  // src/strudel.js
+  init_data_ref();
 
   // src/live-input.js
   init_latency_instrument();
@@ -51666,8 +52214,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     "slant",
     "hover",
     "hyperlink",
-    "underline",
-    "css"
+    "underline"
   ];
   var TEXT_VALUE_PARAMS = [...TEXT_PARAMS, "size", "color"].sort((a2, b) => b.length - a2.length);
   var STRUCTURAL = /* @__PURE__ */ new Set(["<", ">", "[", "]", "{", "}", ",", "|", "~"]);
@@ -51675,8 +52222,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   var STRING_LITERAL = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
   var LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
   var WORD_CALL_RE = /(?:^|[^\w$])(?:word|w)\s*\(/;
+  var INIT_TEXT_CYCLES_RE = /^\s*await\s+initTextCycles\s*\(/m;
+  var INIT_TEXT_CYCLES_PATTERN = {
+    source: INIT_TEXT_CYCLES_RE.source,
+    flags: INIT_TEXT_CYCLES_RE.flags
+  };
   function hasTextCycles(code2) {
-    return /^\s*await\s+initTextCycles\s*\(/m.test(String(code2 ?? ""));
+    return INIT_TEXT_CYCLES_RE.test(String(code2 ?? ""));
   }
   function splitStatements(code2) {
     const lines = String(code2 ?? "").split("\n");
@@ -51691,10 +52243,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (cur.length) out.push(cur.join("\n"));
     return out.map((text2) => ({ text: text2, hasWord: WORD_CALL_RE.test(text2) }));
-  }
-  function keepTextStatements(code2) {
-    const kept = splitStatements(code2).filter((s2) => s2.hasWord).map((s2) => s2.text);
-    return kept.join("\n").trim();
   }
   function encodeMiniText(src2, mint) {
     let out = "";
@@ -51750,10 +52298,10 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return { quote: raw[0], body: raw.slice(1, -1) };
   }
   function rewriteTextCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
-    const atoms2 = {};
+    const atoms3 = {};
     const mint = (text2) => {
       const token = `tc${counter.n++}`;
-      atoms2[token] = { text: text2, peer };
+      atoms3[token] = { text: text2, peer };
       return token;
     };
     const re2 = new RegExp(
@@ -51771,7 +52319,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       return `${out.replace(/[\s;]+$/, "")}
 ._tcRender()`;
     }).join("\n");
-    return { code: rewritten, atoms: atoms2 };
+    return { code: rewritten, atoms: atoms3 };
   }
   var CSS_VALUE_BLOCK = /url\s*\(|expression\s*\(|javascript\s*:|@import|<\/|[{}<>;]/i;
   var CSS_PROP_OK = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/;
@@ -52001,30 +52549,24 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
     const fx = typeof window !== "undefined" && window._ncText || null;
-    const active3 = fx && fx.active ? fx : null;
-    const seedCycle = active3 ? active3.cycle : 0;
+    const active4 = fx && fx.active ? fx : null;
+    const seedCycle = active4 ? active4.cycle : 0;
     const seedPeer = peerSeed(peerId);
     const wordIndex = nextWordIndex(peerId, cycle);
-    if (active3) {
-      text2 = crushWord(text2, active3.text.dropChance, seedCycle, seedPeer, wordIndex);
+    if (active4) {
+      text2 = crushWord(text2, active4.text.dropChance, seedCycle, seedPeer, wordIndex);
       if (!text2) return;
-      text2 = noiseWord(text2, active3.text, seedCycle, seedPeer, wordIndex);
+      text2 = noiseWord(text2, active4.text, seedCycle, seedPeer, wordIndex);
     }
     const bubble = bubbleFor(peerId, cycle, peerClass);
     const line = bubble.lastChild;
     const span = document.createElement("span");
     span.className = `tc-word ${peerClass}`;
     span.textContent = text2;
-    const styleFx = active3 ? active3.css : null;
+    const styleFx = active4 ? active4.css : null;
     for (const [param, prop] of CSS_BY_PARAM) {
       if (value2[param] == null) continue;
       for (const [p, v2] of sanitizeDeclarations(`${prop}: ${resolve(value2[param])}`)) {
-        span.style.setProperty(p, mutateDeclaration(p, v2, styleFx, seedCycle, seedPeer, wordIndex));
-      }
-    }
-    if (value2.css != null) {
-      const raw = typeof value2.css === "object" ? value2.css : resolve(value2.css);
-      for (const [p, v2] of sanitizeDeclarations(raw)) {
         span.style.setProperty(p, mutateDeclaration(p, v2, styleFx, seedCycle, seedPeer, wordIndex));
       }
     }
@@ -52034,9 +52576,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (styleFx) {
       if (styleFx.blurPx > 0) span.style.filter = `blur(${styleFx.blurPx.toFixed(2)}px)`;
-      if (active3.text.spacingPx > 0) {
+      if (active4.text.spacingPx > 0) {
         const authored = parseFloat(span.style.letterSpacing) || 0;
-        span.style.letterSpacing = `${(authored + active3.text.spacingPx).toFixed(2)}px`;
+        span.style.letterSpacing = `${(authored + active4.text.spacingPx).toFixed(2)}px`;
       }
       if (styleFx.fadeFromPrevious > 0) crossfadeFromPreviousTurn(span, peerId, styleFx);
       rememberTurnStyle(peerId, span);
@@ -52055,13 +52597,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (line.childNodes.length) line.appendChild(document.createTextNode(" "));
     line.appendChild(node);
-    if (active3 && active3.text.repeats > 0 && active3.text.repeatAlpha > 0) {
+    if (active4 && active4.text.repeats > 0 && active4.text.repeatAlpha > 0) {
       lastWordOfTurn.set(String(peerId), {
         text: text2,
         line,
         peerClass,
-        repeats: active3.text.repeats,
-        alpha: active3.text.repeatAlpha
+        repeats: active4.text.repeats,
+        alpha: active4.text.repeatAlpha
       });
     }
     const log3 = container.parentNode;
@@ -52096,8 +52638,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       ...registerControl2("slant"),
       ...registerControl2("hover"),
       ...registerControl2("hyperlink"),
-      ...registerControl2("underline"),
-      ...registerControl2("css")
+      ...registerControl2("underline")
     };
     register2("_tcRender", (pat) => pat.onTrigger(handleTrigger, true));
     scope2.initTextCycles = async () => {
@@ -52115,6 +52656,1364 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     lastWordOfTurn.clear();
     previousTurnStyle.clear();
     wordCounters.clear();
+  }
+
+  // src/css-cycles.js
+  init_peer_state();
+
+  // src/css-cycles-core.js
+  var CSS_PROPERTIES = /* @__PURE__ */ new Set([
+    "accent-color",
+    "align-content",
+    "align-items",
+    "align-self",
+    "all",
+    "animation",
+    "animation-delay",
+    "animation-direction",
+    "animation-duration",
+    "animation-fill-mode",
+    "animation-iteration-count",
+    "animation-name",
+    "animation-play-state",
+    "animation-timing-function",
+    "aspect-ratio",
+    "backdrop-filter",
+    "backface-visibility",
+    "background",
+    "background-attachment",
+    "background-blend-mode",
+    "background-clip",
+    "background-color",
+    "background-image",
+    "background-origin",
+    "background-position",
+    "background-repeat",
+    "background-size",
+    "block-size",
+    "border",
+    "border-block",
+    "border-bottom",
+    "border-bottom-color",
+    "border-bottom-left-radius",
+    "border-bottom-right-radius",
+    "border-bottom-style",
+    "border-bottom-width",
+    "border-collapse",
+    "border-color",
+    "border-image",
+    "border-image-outset",
+    "border-image-repeat",
+    "border-image-slice",
+    "border-image-source",
+    "border-image-width",
+    "border-inline",
+    "border-left",
+    "border-left-color",
+    "border-left-style",
+    "border-left-width",
+    "border-radius",
+    "border-right",
+    "border-right-color",
+    "border-right-style",
+    "border-right-width",
+    "border-spacing",
+    "border-style",
+    "border-top",
+    "border-top-color",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-top-style",
+    "border-top-width",
+    "border-width",
+    "bottom",
+    "box-shadow",
+    "box-sizing",
+    "caption-side",
+    "caret-color",
+    "clear",
+    "clip-path",
+    "color",
+    "color-scheme",
+    "column-count",
+    "column-gap",
+    "column-rule",
+    "column-rule-color",
+    "column-rule-style",
+    "column-rule-width",
+    "column-span",
+    "column-width",
+    "columns",
+    "content",
+    "content-visibility",
+    "counter-increment",
+    "counter-reset",
+    "cursor",
+    "direction",
+    "display",
+    "empty-cells",
+    "filter",
+    "flex",
+    "flex-basis",
+    "flex-direction",
+    "flex-flow",
+    "flex-grow",
+    "flex-shrink",
+    "flex-wrap",
+    "float",
+    "font",
+    "font-family",
+    "font-feature-settings",
+    "font-kerning",
+    "font-optical-sizing",
+    "font-size",
+    "font-size-adjust",
+    "font-stretch",
+    "font-style",
+    "font-synthesis",
+    "font-variant",
+    "font-variant-caps",
+    "font-variant-numeric",
+    "font-variation-settings",
+    "font-weight",
+    "gap",
+    "grid",
+    "grid-area",
+    "grid-auto-columns",
+    "grid-auto-flow",
+    "grid-auto-rows",
+    "grid-column",
+    "grid-column-end",
+    "grid-column-start",
+    "grid-row",
+    "grid-row-end",
+    "grid-row-start",
+    "grid-template",
+    "grid-template-areas",
+    "grid-template-columns",
+    "grid-template-rows",
+    "height",
+    "hyphens",
+    "image-rendering",
+    "inline-size",
+    "inset",
+    "inset-block",
+    "inset-inline",
+    "isolation",
+    "justify-content",
+    "justify-items",
+    "justify-self",
+    "left",
+    "letter-spacing",
+    "line-break",
+    "line-height",
+    "list-style",
+    "list-style-image",
+    "list-style-position",
+    "list-style-type",
+    "margin",
+    "margin-block",
+    "margin-bottom",
+    "margin-inline",
+    "margin-left",
+    "margin-right",
+    "margin-top",
+    "mask",
+    "mask-image",
+    "mask-mode",
+    "mask-position",
+    "mask-repeat",
+    "mask-size",
+    "max-block-size",
+    "max-height",
+    "max-inline-size",
+    "max-width",
+    "min-block-size",
+    "min-height",
+    "min-inline-size",
+    "min-width",
+    "mix-blend-mode",
+    "object-fit",
+    "object-position",
+    "offset",
+    "opacity",
+    "order",
+    "outline",
+    "outline-color",
+    "outline-offset",
+    "outline-style",
+    "outline-width",
+    "overflow",
+    "overflow-wrap",
+    "overflow-x",
+    "overflow-y",
+    "overscroll-behavior",
+    "padding",
+    "padding-block",
+    "padding-bottom",
+    "padding-inline",
+    "padding-left",
+    "padding-right",
+    "padding-top",
+    "page-break-after",
+    "page-break-before",
+    "page-break-inside",
+    "perspective",
+    "perspective-origin",
+    "place-content",
+    "place-items",
+    "place-self",
+    "pointer-events",
+    "position",
+    "quotes",
+    "resize",
+    "right",
+    "rotate",
+    "row-gap",
+    "scale",
+    "scroll-behavior",
+    "scroll-margin",
+    "scroll-padding",
+    "scrollbar-color",
+    "scrollbar-width",
+    "shape-outside",
+    "tab-size",
+    "table-layout",
+    "text-align",
+    "text-align-last",
+    "text-decoration",
+    "text-decoration-color",
+    "text-decoration-line",
+    "text-decoration-style",
+    "text-decoration-thickness",
+    "text-emphasis",
+    "text-indent",
+    "text-justify",
+    "text-orientation",
+    "text-overflow",
+    "text-rendering",
+    "text-shadow",
+    "text-transform",
+    "text-underline-offset",
+    "text-wrap",
+    "top",
+    "touch-action",
+    "transform",
+    "transform-box",
+    "transform-origin",
+    "transform-style",
+    "transition",
+    "transition-delay",
+    "transition-duration",
+    "transition-property",
+    "transition-timing-function",
+    "translate",
+    "unicode-bidi",
+    "user-select",
+    "vertical-align",
+    "visibility",
+    "white-space",
+    "width",
+    "will-change",
+    "word-break",
+    "word-spacing",
+    "writing-mode",
+    "z-index",
+    "zoom",
+    // The vendor-prefixed handful that still has no unprefixed equivalent
+    // everywhere. Reached as webkitTextFillColor, webkitBackdropFilter, …
+    "-webkit-text-fill-color",
+    "-webkit-text-stroke",
+    "-webkit-text-stroke-color",
+    "-webkit-text-stroke-width",
+    "-webkit-background-clip",
+    "-webkit-backdrop-filter"
+  ]);
+  var OUTSIDE_TRUSSAL_ALLOW = /* @__PURE__ */ new Set([
+    "background",
+    "background-attachment",
+    "background-blend-mode",
+    "background-clip",
+    "background-color",
+    "background-image",
+    "background-origin",
+    "background-position",
+    "background-repeat",
+    "background-size",
+    "border",
+    "border-block",
+    "border-bottom",
+    "border-bottom-color",
+    "border-bottom-left-radius",
+    "border-bottom-right-radius",
+    "border-bottom-style",
+    "border-bottom-width",
+    "border-color",
+    "border-image",
+    "border-image-outset",
+    "border-image-repeat",
+    "border-image-slice",
+    "border-image-source",
+    "border-image-width",
+    "border-inline",
+    "border-left",
+    "border-left-color",
+    "border-left-style",
+    "border-left-width",
+    "border-radius",
+    "border-right",
+    "border-right-color",
+    "border-right-style",
+    "border-right-width",
+    "border-style",
+    "border-top",
+    "border-top-color",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-top-style",
+    "border-top-width",
+    "border-width",
+    "backdrop-filter",
+    "filter",
+    "-webkit-backdrop-filter",
+    "color",
+    "font-family",
+    "font-size",
+    "-webkit-text-fill-color"
+  ]);
+  var TRUSSAL_ROOTS = [
+    "#trussal-studio-overlay",
+    "#trussal-studio-toggle",
+    "#trussal-text-cycles",
+    "#trussal-hv-panel",
+    "#trussal-hv-toggle",
+    "#trussal-hv-backdrop",
+    "#trussal-kbd-panel",
+    "#trussal-kbd-btn",
+    "#trussal-fg-panel",
+    "#trussal-fg-cursor",
+    "#trussal-welcome-overlay",
+    "#jamulus-welcome-panel",
+    "#jamulus-info-banner"
+  ];
+  var CSS_PROPERTY_LIST = [...CSS_PROPERTIES];
+  function methodForCssProp(prop) {
+    return String(prop).replace(/^-/, "").replace(/-([a-z])/g, (m2, c2) => c2.toUpperCase());
+  }
+  function cssPropForMethod(name3) {
+    const raw = String(name3 ?? "");
+    if (!raw) return null;
+    let hyphenated = raw.replace(/[A-Z]/g, (c2) => `-${c2.toLowerCase()}`);
+    if (/^(webkit|moz|ms|o)-/.test(hyphenated)) hyphenated = `-${hyphenated}`;
+    return CSS_PROPERTIES.has(hyphenated) ? hyphenated : null;
+  }
+  function isOutsideTrussalAllowed(prop) {
+    return OUTSIDE_TRUSSAL_ALLOW.has(String(prop ?? "").toLowerCase());
+  }
+  var CONTRAST_FLOOR = 3;
+  var MAX_BLUR_PX = 8;
+  var MIN_OPACITY = 0.04;
+  var ZERO_FORBIDDEN_SIZE = /* @__PURE__ */ new Set([
+    "width",
+    "height",
+    "min-width",
+    "min-height",
+    "max-width",
+    "max-height",
+    "inline-size",
+    "block-size",
+    "min-inline-size",
+    "min-block-size",
+    "max-inline-size",
+    "max-block-size",
+    "flex-basis",
+    "font-size",
+    "line-height",
+    "column-width",
+    "zoom",
+    "scale"
+  ]);
+  var POSITION_PROPS = /* @__PURE__ */ new Set([
+    "top",
+    "left",
+    "right",
+    "bottom",
+    "inset",
+    "inset-block",
+    "inset-inline",
+    "margin",
+    "margin-top",
+    "margin-bottom",
+    "margin-left",
+    "margin-right",
+    "margin-block",
+    "margin-inline",
+    "text-indent",
+    "transform",
+    "translate",
+    "offset",
+    "perspective-origin",
+    "transform-origin",
+    "object-position"
+  ]);
+  var PROP_BLOCK = /* @__PURE__ */ new Set(["behavior", "-moz-binding"]);
+  var PROP_OK = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/;
+  var VALUE_BLOCK = /expression\s*\(|javascript\s*:|@import|<\/|[{}<>;]/i;
+  var URL_OK_PROPS = /* @__PURE__ */ new Set([
+    "background",
+    "background-image",
+    "border-image",
+    "border-image-source",
+    "list-style",
+    "list-style-image",
+    "content",
+    "cursor"
+  ]);
+  var STRUCTURAL2 = /* @__PURE__ */ new Set(["<", ">", "[", "]", "{", "}", ",", "|", "~"]);
+  var NUM_ARG_OPS2 = /* @__PURE__ */ new Set(["*", "/", "!", "@", "%", "?"]);
+  function encodeCssValue(src2, mint) {
+    let out = "";
+    let atom2 = "";
+    const flush = () => {
+      if (atom2 === "") return;
+      out += mint(atom2);
+      atom2 = "";
+    };
+    for (let i = 0; i < String(src2).length; i++) {
+      const c2 = src2[i];
+      if (c2 === "^") {
+        flush();
+        let j2 = i + 1;
+        let body = "";
+        while (j2 < src2.length && src2[j2] !== "^") body += src2[j2++];
+        out += mint(body.trim());
+        i = j2;
+        continue;
+      }
+      if (c2 === "\\") {
+        if (i + 1 < src2.length) atom2 += src2[++i];
+        else atom2 += "\\";
+        continue;
+      }
+      if (/\s/.test(c2)) {
+        flush();
+        out += c2;
+        continue;
+      }
+      if (STRUCTURAL2.has(c2)) {
+        flush();
+        out += c2;
+        continue;
+      }
+      if (NUM_ARG_OPS2.has(c2)) {
+        flush();
+        out += c2;
+        let j2 = i + 1;
+        while (j2 < src2.length && /[0-9.]/.test(src2[j2])) out += src2[j2++];
+        i = j2 - 1;
+        continue;
+      }
+      atom2 += c2;
+      if (c2 === "(") {
+        let depth = 1;
+        let j2 = i + 1;
+        for (; j2 < src2.length && depth > 0; j2++) {
+          if (src2[j2] === "(") depth++;
+          else if (src2[j2] === ")") depth--;
+          atom2 += src2[j2];
+        }
+        i = j2 - 1;
+      }
+    }
+    flush();
+    return out;
+  }
+  function collectValues(src2) {
+    const values = [];
+    encodeCssValue(src2, (text2) => {
+      values.push(text2);
+      return "x";
+    });
+    return values;
+  }
+  var NAMED_COLORS = {
+    black: [0, 0, 0],
+    white: [255, 255, 255],
+    red: [255, 0, 0],
+    green: [0, 128, 0],
+    blue: [0, 0, 255],
+    yellow: [255, 255, 0],
+    cyan: [0, 255, 255],
+    magenta: [255, 0, 255],
+    gray: [128, 128, 128],
+    grey: [128, 128, 128],
+    silver: [192, 192, 192],
+    maroon: [128, 0, 0],
+    olive: [128, 128, 0],
+    lime: [0, 255, 0],
+    aqua: [0, 255, 255],
+    teal: [0, 128, 128],
+    navy: [0, 0, 128],
+    fuchsia: [255, 0, 255],
+    purple: [128, 0, 128],
+    orange: [255, 165, 0],
+    pink: [255, 192, 203],
+    brown: [165, 42, 42]
+  };
+  function parseColor(input) {
+    const raw = String(input ?? "").trim().toLowerCase();
+    if (!raw) return null;
+    if (raw === "transparent") return { r: 0, g: 0, b: 0, a: 0 };
+    if (NAMED_COLORS[raw]) {
+      const [r2, g2, b] = NAMED_COLORS[raw];
+      return { r: r2, g: g2, b, a: 1 };
+    }
+    const hex = raw.match(/^#([0-9a-f]{3,8})$/);
+    if (hex) {
+      const h2 = hex[1];
+      const wide = h2.length <= 4 ? h2.split("").map((c2) => c2 + c2).join("") : h2;
+      if (wide.length !== 6 && wide.length !== 8) return null;
+      return {
+        r: parseInt(wide.slice(0, 2), 16),
+        g: parseInt(wide.slice(2, 4), 16),
+        b: parseInt(wide.slice(4, 6), 16),
+        a: wide.length === 8 ? parseInt(wide.slice(6, 8), 16) / 255 : 1
+      };
+    }
+    const fn = raw.match(/^(rgba?|hsla?)\s*\(([^)]*)\)$/);
+    if (!fn) return null;
+    const parts = fn[2].split(/[\s,/]+/).filter(Boolean);
+    if (parts.length < 3) return null;
+    const num2 = (s2) => {
+      const v2 = parseFloat(s2);
+      return Number.isFinite(v2) ? v2 : 0;
+    };
+    const alpha = parts.length > 3 ? parts[3].endsWith("%") ? num2(parts[3]) / 100 : num2(parts[3]) : 1;
+    if (fn[1].startsWith("rgb")) {
+      const chan = (s2) => s2.endsWith("%") ? num2(s2) / 100 * 255 : num2(s2);
+      return { r: chan(parts[0]), g: chan(parts[1]), b: chan(parts[2]), a: alpha };
+    }
+    return { ...hslToRgb(num2(parts[0]), num2(parts[1]) / 100, num2(parts[2]) / 100), a: alpha };
+  }
+  function hslToRgb(h2, s2, l) {
+    const hue = (h2 % 360 + 360) % 360;
+    const c2 = (1 - Math.abs(2 * l - 1)) * s2;
+    const x2 = c2 * (1 - Math.abs(hue / 60 % 2 - 1));
+    const m2 = l - c2 / 2;
+    const seg2 = Math.floor(hue / 60) % 6;
+    const [r1, g1, b1] = [
+      [c2, x2, 0],
+      [x2, c2, 0],
+      [0, c2, x2],
+      [0, x2, c2],
+      [x2, 0, c2],
+      [c2, 0, x2]
+    ][seg2];
+    return {
+      r: Math.round((r1 + m2) * 255),
+      g: Math.round((g1 + m2) * 255),
+      b: Math.round((b1 + m2) * 255)
+    };
+  }
+  function toHex({ r: r2, g: g2, b }) {
+    const p = (v2) => Math.max(0, Math.min(255, Math.round(v2))).toString(16).padStart(2, "0");
+    return `#${p(r2)}${p(g2)}${p(b)}`;
+  }
+  function relativeLuminance({ r: r2, g: g2, b }) {
+    const chan = (v2) => {
+      const s2 = v2 / 255;
+      return s2 <= 0.03928 ? s2 / 12.92 : ((s2 + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * chan(r2) + 0.7152 * chan(g2) + 0.0722 * chan(b);
+  }
+  function contrastRatio(a2, b) {
+    const ca = typeof a2 === "string" ? parseColor(a2) : a2;
+    const cb = typeof b === "string" ? parseColor(b) : b;
+    if (!ca || !cb) return Infinity;
+    const la = relativeLuminance(ca);
+    const lb = relativeLuminance(cb);
+    const [hi2, lo] = la >= lb ? [la, lb] : [lb, la];
+    return (hi2 + 0.05) / (lo + 0.05);
+  }
+  function adjustColorForBackground(color2, background, floor3 = CONTRAST_FLOOR) {
+    const fg = parseColor(color2);
+    const bg = parseColor(background);
+    if (!fg || !bg) return color2;
+    if (fg.a === 0) return color2;
+    if (contrastRatio(fg, bg) >= floor3) return color2;
+    const towardWhite = relativeLuminance(bg) < 0.5;
+    const target = towardWhite ? 255 : 0;
+    for (let step = 1; step <= 20; step++) {
+      const t = step / 20;
+      const candidate = {
+        r: fg.r + (target - fg.r) * t,
+        g: fg.g + (target - fg.g) * t,
+        b: fg.b + (target - fg.b) * t
+      };
+      if (contrastRatio(candidate, bg) >= floor3) {
+        return fg.a < 1 ? `rgba(${Math.round(candidate.r)}, ${Math.round(candidate.g)}, ${Math.round(candidate.b)}, ${fg.a})` : toHex(candidate);
+      }
+    }
+    return towardWhite ? "#ffffff" : "#000000";
+  }
+  function isOffscreenLength(token) {
+    const m2 = String(token).match(/^([+-]?[\d.]+)(px|em|rem|%|vw|vh|vmin|vmax|pt|cm|in)?$/);
+    if (!m2) return false;
+    const n2 = parseFloat(m2[1]);
+    if (!Number.isFinite(n2)) return false;
+    const unit2 = m2[2] || "px";
+    const mag = Math.abs(n2);
+    if (unit2 === "%" || unit2 === "vw" || unit2 === "vh" || unit2 === "vmin" || unit2 === "vmax") {
+      return mag >= 100;
+    }
+    if (unit2 === "em" || unit2 === "rem") return mag >= 60;
+    if (unit2 === "pt") return mag >= 1500;
+    if (unit2 === "cm" || unit2 === "in") return mag >= 50;
+    return mag >= 2e3 || n2 <= -1e3;
+  }
+  function isZero(token) {
+    const m2 = String(token).match(/^([+-]?[\d.]+)([a-z%]*)$/i);
+    if (!m2) return false;
+    return parseFloat(m2[1]) === 0;
+  }
+  function functionCalls(value2) {
+    const out = [];
+    const re2 = /([a-zA-Z-]+)\s*\(/g;
+    let m2;
+    while (m2 = re2.exec(value2)) {
+      let depth = 1;
+      let i = re2.lastIndex;
+      let args2 = "";
+      for (; i < value2.length && depth > 0; i++) {
+        if (value2[i] === "(") depth++;
+        else if (value2[i] === ")") {
+          depth--;
+          if (!depth) break;
+        }
+        args2 += value2[i];
+      }
+      out.push([m2[1].toLowerCase(), args2]);
+    }
+    return out;
+  }
+  function checkFilter(value2) {
+    for (const [fn, args2] of functionCalls(value2)) {
+      const n2 = parseFloat(args2);
+      if (fn === "opacity" && Number.isFinite(n2) && (args2.includes("%") ? n2 === 0 : n2 === 0)) {
+        return "filter: opacity(0) hides the element";
+      }
+      if ((fn === "brightness" || fn === "contrast") && Number.isFinite(n2) && n2 === 0) {
+        return `filter: ${fn}(0) hides the element`;
+      }
+      if (fn === "blur") {
+        const px = /(\d[\d.]*)\s*px/.exec(args2);
+        if (px && parseFloat(px[1]) > MAX_BLUR_PX) {
+          return `filter: blur() above ${MAX_BLUR_PX}px is illegible`;
+        }
+      }
+    }
+    return null;
+  }
+  function checkDeclaration(prop, value2, { inTrussal = true } = {}) {
+    const p = String(prop ?? "").trim().toLowerCase();
+    const v2 = String(value2 ?? "").trim();
+    if (!p || !v2) return null;
+    if (!PROP_OK.test(p)) return `"${prop}" is not a CSS property name`;
+    if (PROP_BLOCK.has(p)) return `${p} can execute code from a stylesheet`;
+    if (/javascript\s*:|expression\s*\(|@import/i.test(v2)) return `${p}: value can execute or fetch code`;
+    let scannable = v2;
+    if (/url\s*\(/i.test(v2)) {
+      if (!URL_OK_PROPS.has(p)) return `url() is not permitted on ${p}`;
+      for (const [fn, args2] of functionCalls(v2)) {
+        if (fn !== "url") continue;
+        const href = args2.trim().replace(/^["']|["']$/g, "");
+        if (!/^(https?:\/\/|data:image\/|\/)/i.test(href)) {
+          return "url() must be http(s), a data:image, or same-origin";
+        }
+        if (/[{}<>"'`\s\\]/.test(href)) return "url() contains characters that could break out of it";
+      }
+      scannable = v2.replace(/url\s*\([^)]*\)/gi, "url(_)");
+    }
+    if (VALUE_BLOCK.test(scannable)) {
+      return `${p}: value contains characters that could break out of the rule`;
+    }
+    const lower = v2.toLowerCase();
+    if (!inTrussal && !isOutsideTrussalAllowed(p)) {
+      return `${p} only applies inside Trussal surfaces`;
+    }
+    if (p === "z-index") return "z-index may not be changed";
+    if (p === "display" && lower === "none") return "display: none would hide the UI";
+    if ((p === "overflow" || p === "overflow-x" || p === "overflow-y") && /hidden|clip/.test(lower)) {
+      return `${p}: ${v2} would hide content`;
+    }
+    if (p === "visibility" && /hidden|collapse/.test(lower)) return `visibility: ${v2} would hide the UI`;
+    if (p === "content-visibility" && lower === "hidden") return "content-visibility: hidden would hide the UI";
+    if (p === "pointer-events" && lower === "none") return "pointer-events: none would break interaction";
+    if (p === "opacity") {
+      const n2 = parseFloat(v2);
+      if (Number.isFinite(n2) && n2 <= 0) return "opacity: 0 would hide the UI";
+    }
+    if (p === "color" || p === "-webkit-text-fill-color") {
+      const c2 = parseColor(v2);
+      if (c2 && c2.a === 0) return `${p}: an alpha of 0 would hide the text`;
+    }
+    if (ZERO_FORBIDDEN_SIZE.has(p) && v2.split(/[\s,]+/).some(isZero)) {
+      return `${p}: 0 would collapse the element`;
+    }
+    if (p === "filter" || p === "backdrop-filter") {
+      const reason = checkFilter(v2);
+      if (reason) return reason;
+    }
+    if (p === "clip-path") {
+      for (const [fn, args2] of functionCalls(v2)) {
+        if (fn === "inset" && args2.split(/\s+/).some((t) => /^(100|1[0-9][0-9])%$/.test(t))) {
+          return "clip-path: inset(100%) would hide the element";
+        }
+        if ((fn === "circle" || fn === "ellipse") && /(^|\s)0(px|%|em|rem)?(\s|$)/.test(args2)) {
+          return `clip-path: ${fn}(0) would hide the element`;
+        }
+      }
+    }
+    if (POSITION_PROPS.has(p)) {
+      if (p === "transform" || p === "translate" || p === "scale") {
+        for (const [fn, args2] of functionCalls(v2)) {
+          if (/^(translate|translatex|translatey|translate3d)$/.test(fn)) {
+            if (args2.split(/[\s,]+/).some(isOffscreenLength)) {
+              return `${p}: ${fn}() would move the element off-screen`;
+            }
+          }
+          if (/^(scale|scalex|scaley|scale3d)$/.test(fn)) {
+            if (args2.split(/[\s,]+/).filter(Boolean).some(isZero)) {
+              return `${p}: ${fn}(0) would collapse the element`;
+            }
+          }
+        }
+        if (p === "translate" && v2.split(/[\s,]+/).some(isOffscreenLength)) {
+          return "translate: would move the element off-screen";
+        }
+      } else if (v2.split(/[\s,]+/).some(isOffscreenLength)) {
+        return `${p}: ${v2} would move the element off-screen`;
+      }
+    }
+    return null;
+  }
+  function clampValue(prop, value2, { inTrussal = true } = {}) {
+    const p = String(prop ?? "").trim().toLowerCase();
+    const v2 = String(value2 ?? "").trim();
+    if (!checkDeclaration(p, v2, { inTrussal })) return v2;
+    if (p === "opacity") {
+      const n2 = parseFloat(v2);
+      if (Number.isFinite(n2) && n2 <= 0) return String(MIN_OPACITY);
+    }
+    if (ZERO_FORBIDDEN_SIZE.has(p) && isZero(v2)) return "1px";
+    if (p === "display" && v2.toLowerCase() === "none") return "block";
+    if (p === "visibility") return "visible";
+    if (p === "overflow" || p === "overflow-x" || p === "overflow-y") return "auto";
+    if (p === "pointer-events") return "auto";
+    if (p === "color") {
+      const c2 = parseColor(v2);
+      if (c2 && c2.a === 0) return toHex(c2);
+    }
+    if (p === "filter" || p === "backdrop-filter") {
+      return v2.replace(/\bopacity\s*\(\s*0\s*%?\s*\)/gi, `opacity(${MIN_OPACITY})`).replace(/\b(brightness|contrast)\s*\(\s*0\s*%?\s*\)/gi, "$1(0.1)").replace(/\bblur\s*\(\s*([\d.]+)px\s*\)/gi, (m2, px) => parseFloat(px) > MAX_BLUR_PX ? `blur(${MAX_BLUR_PX}px)` : m2);
+    }
+    return null;
+  }
+  function scanBlocks(src2) {
+    const text2 = String(src2 ?? "");
+    const blocks = [];
+    let depth = 0;
+    let start = 0;
+    let i = 0;
+    let quote = null;
+    while (i < text2.length) {
+      const c2 = text2[i];
+      if (quote) {
+        if (c2 === "\\") i++;
+        else if (c2 === quote) quote = null;
+        i++;
+        continue;
+      }
+      if (c2 === '"' || c2 === "'") {
+        quote = c2;
+        i++;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "/") {
+        while (i < text2.length && text2[i] !== "\n") i++;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "*") {
+        i += 2;
+        while (i < text2.length && !(text2[i] === "*" && text2[i + 1] === "/")) i++;
+        i += 2;
+        continue;
+      }
+      if (c2 === "{") {
+        depth++;
+        i++;
+        continue;
+      }
+      if (c2 === "}") {
+        depth--;
+        i++;
+        if (depth === 0) {
+          blocks.push({ text: text2.slice(start, i), start, end: i });
+          start = i;
+        }
+        continue;
+      }
+      i++;
+    }
+    const tail = text2.slice(start).trim();
+    if (tail) blocks.push({ text: text2.slice(start), start, end: text2.length, bare: true });
+    return blocks;
+  }
+  function parseScssDeclarations(src2) {
+    const text2 = String(src2 ?? "");
+    const out = [];
+    let i = 0;
+    let quote = null;
+    let propStart = -1;
+    let colon = -1;
+    while (i < text2.length) {
+      const c2 = text2[i];
+      if (quote) {
+        if (c2 === "\\") i++;
+        else if (c2 === quote) quote = null;
+        i++;
+        continue;
+      }
+      if (c2 === '"' || c2 === "'") {
+        quote = c2;
+        i++;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "/") {
+        while (i < text2.length && text2[i] !== "\n") i++;
+        propStart = -1;
+        colon = -1;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "*") {
+        i += 2;
+        while (i < text2.length && !(text2[i] === "*" && text2[i + 1] === "/")) i++;
+        i += 2;
+        propStart = -1;
+        colon = -1;
+        continue;
+      }
+      if (c2 === "{") {
+        propStart = -1;
+        colon = -1;
+        i++;
+        continue;
+      }
+      if (c2 === "}") {
+        if (colon !== -1 && propStart !== -1) {
+          const value2 = text2.slice(colon + 1, i).trim();
+          if (value2) {
+            out.push({
+              prop: text2.slice(propStart, colon).trim(),
+              value: value2,
+              start: propStart,
+              end: i
+            });
+          }
+        }
+        propStart = -1;
+        colon = -1;
+        i++;
+        continue;
+      }
+      if (c2 === ":" && colon === -1 && propStart !== -1) {
+        colon = i;
+        i++;
+        continue;
+      }
+      if (c2 === ";") {
+        if (colon !== -1 && propStart !== -1) {
+          out.push({
+            prop: text2.slice(propStart, colon).trim(),
+            value: text2.slice(colon + 1, i).trim(),
+            start: propStart,
+            end: i + 1
+          });
+        }
+        propStart = -1;
+        colon = -1;
+        i++;
+        continue;
+      }
+      if (!/\s/.test(c2) && propStart === -1) propStart = i;
+      i++;
+    }
+    if (colon !== -1 && propStart !== -1) {
+      const rest = text2.slice(colon + 1).trim();
+      if (rest) {
+        out.push({
+          prop: text2.slice(propStart, colon).trim(),
+          value: rest,
+          start: propStart,
+          end: text2.length
+        });
+      }
+    }
+    return out.filter((d) => d.prop && !d.prop.startsWith("$") && !d.prop.startsWith("@"));
+  }
+  function extractKeyframes(src2) {
+    const text2 = String(src2 ?? "");
+    const frames2 = [];
+    let rest = "";
+    for (const block of scanBlocks(text2)) {
+      const m2 = block.text.match(/@(-\w+-)?keyframes\s+([\w-]+)/);
+      if (m2) frames2.push({ name: m2[2], text: block.text });
+      else rest += block.text;
+    }
+    return { frames: frames2, rest };
+  }
+  function hasCssCycles(code2) {
+    return /^\s*await\s+initCss\s*\(/m.test(String(code2 ?? ""));
+  }
+  var CSS_CALL_RE = /(?:^|[^\w$])css\s*\(/;
+  function splitCssStatements(code2) {
+    return splitStatements(code2).map((s2) => ({ ...s2, hasCss: CSS_CALL_RE.test(s2.text) }));
+  }
+  function keepSilentStatements(code2) {
+    return splitCssStatements(code2).filter((s2) => s2.hasWord || s2.hasCss).map((s2) => s2.text).join("\n").trim();
+  }
+  function cssVarName(token, prop) {
+    return `--cc-${token}-${prop}`;
+  }
+  function readTemplateArg(text2, open) {
+    let i = open + 1;
+    while (i < text2.length && /\s/.test(text2[i])) i++;
+    if (text2[i] !== "`") return null;
+    const start = i;
+    i++;
+    while (i < text2.length) {
+      if (text2[i] === "\\") {
+        i += 2;
+        continue;
+      }
+      if (text2[i] === "`") return { start, end: i + 1, body: text2.slice(start + 1, i) };
+      i++;
+    }
+    return null;
+  }
+  function readChain(text2, from2) {
+    const calls = [];
+    let i = from2;
+    for (; ; ) {
+      let j2 = i;
+      while (j2 < text2.length && /[\s\n]/.test(text2[j2])) j2++;
+      if (text2[j2] !== ".") break;
+      const m2 = /^\.\s*([A-Za-z_$][\w$]*)\s*\(/.exec(text2.slice(j2));
+      if (!m2) break;
+      const open = j2 + m2[0].length - 1;
+      let depth = 1;
+      let k2 = open + 1;
+      let quote = null;
+      for (; k2 < text2.length && depth > 0; k2++) {
+        const c2 = text2[k2];
+        if (quote) {
+          if (c2 === "\\") k2++;
+          else if (c2 === quote) quote = null;
+          continue;
+        }
+        if (c2 === '"' || c2 === "'" || c2 === "`") {
+          quote = c2;
+          continue;
+        }
+        if (c2 === "(") depth++;
+        else if (c2 === ")") depth--;
+      }
+      calls.push({ name: m2[1], argStart: open + 1, argEnd: k2 - 1, start: j2, end: k2 });
+      i = k2;
+    }
+    return { calls, end: i };
+  }
+  function rewriteCssCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
+    const atoms3 = {};
+    const sheets = [];
+    const errors = [];
+    const mint = (text2, kind = "value") => {
+      const token = `cc${counter.n++}`;
+      atoms3[token] = { text: text2, peer, kind };
+      return token;
+    };
+    const rewritten = splitCssStatements(code2).map(({ text: text2, hasCss }) => {
+      if (!hasCss) return text2;
+      const call = CSS_CALL_RE.exec(text2);
+      const open = text2.indexOf("(", call.index);
+      const arg = readTemplateArg(text2, open);
+      if (!arg) {
+        errors.push("css() takes SCSS in backticks, e.g. css(`.example { color: red }`)");
+        return text2;
+      }
+      const scssToken = mint(arg.body, "scss");
+      const { calls, end: chainEnd } = readChain(text2, arg.end + 1);
+      const props = [];
+      let out = `${text2.slice(0, call.index + call[0].length - 1)}("${scssToken}")`;
+      for (const c2 of calls) {
+        const prop = cssPropForMethod(c2.name);
+        const argText = text2.slice(c2.argStart, c2.argEnd);
+        if (!prop) {
+          out += text2.slice(c2.start, c2.end);
+          continue;
+        }
+        const literal2 = /^\s*"(?:[^"\\]|\\.)*"\s*$/.test(argText);
+        if (literal2) {
+          const body = argText.trim().slice(1, -1);
+          const encoded = encodeCssValue(body, (v2) => mint(v2));
+          out += `._cc_${c2.name}("${encoded}")`;
+          props.push({ prop, method: c2.name, values: collectValues(body), literal: true });
+        } else {
+          out += `._cc_${c2.name}(${argText})`;
+          props.push({ prop, method: c2.name, values: [], literal: false });
+        }
+      }
+      out += text2.slice(chainEnd);
+      sheets.push({ token: scssToken, scss: arg.body, props, peer });
+      return `${out.replace(/[\s;]+$/, "")}
+._ccRender()`;
+    }).join("\n");
+    return { code: rewritten, atoms: atoms3, sheets, errors };
+  }
+  function checkSheet(sheet) {
+    const errors = [];
+    const { frames: frames2, rest } = extractKeyframes(sheet.scss);
+    for (const src2 of [rest, ...frames2.map((f2) => f2.text)]) {
+      for (const decl of parseScssDeclarations(src2)) {
+        const reason = checkDeclaration(decl.prop, decl.value, { inTrussal: true });
+        if (reason) errors.push(reason);
+      }
+    }
+    for (const p of sheet.props) {
+      for (const v2 of p.values) {
+        const reason = checkDeclaration(p.prop, v2, { inTrussal: true });
+        if (reason) errors.push(`${p.method}(): ${reason}`);
+      }
+    }
+    return errors;
+  }
+  function filterToAllowlist(src2) {
+    const decls = parseScssDeclarations(src2);
+    let out = String(src2 ?? "");
+    for (const d of [...decls].reverse()) {
+      if (isOutsideTrussalAllowed(d.prop.toLowerCase())) continue;
+      out = out.slice(0, d.start) + out.slice(d.end);
+    }
+    return out;
+  }
+  function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
+    const decls = sheet.props.filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop)).map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)});`).join("\n");
+    if (!decls) return scss;
+    const src2 = String(scss).trim();
+    const brace = src2.indexOf("{");
+    if (brace === -1) {
+      return `${src2} {
+${decls}
+}`;
+    }
+    return `${src2.slice(0, brace + 1)}
+${decls}
+${src2.slice(brace + 1)}`;
+  }
+  function isTrussalScoped(selectorPart) {
+    const sel = String(selectorPart).trim();
+    const root = TRUSSAL_ROOTS.find((r2) => sel === r2 || sel.startsWith(`${r2} `) || sel.startsWith(`${r2}>`) || sel.startsWith(`${r2}:`) || sel.startsWith(`${r2}.`) || sel.startsWith(`${r2}[`));
+    if (!root) return false;
+    return !/[~+]/.test(sel.slice(root.length));
+  }
+  function walkCssRules(css, out = [], inherited = null) {
+    const text2 = String(css ?? "");
+    let i = 0;
+    let prelude = "";
+    let quote = null;
+    while (i < text2.length) {
+      const c2 = text2[i];
+      if (quote) {
+        prelude += c2;
+        if (c2 === "\\") {
+          prelude += text2[++i] ?? "";
+        } else if (c2 === quote) quote = null;
+        i++;
+        continue;
+      }
+      if (c2 === '"' || c2 === "'") {
+        quote = c2;
+        prelude += c2;
+        i++;
+        continue;
+      }
+      if (c2 === "}") {
+        i++;
+        prelude = "";
+        continue;
+      }
+      if (c2 !== "{") {
+        prelude += c2;
+        i++;
+        continue;
+      }
+      let depth = 1;
+      let j2 = i + 1;
+      let q2 = null;
+      for (; j2 < text2.length && depth > 0; j2++) {
+        const d = text2[j2];
+        if (q2) {
+          if (d === "\\") j2++;
+          else if (d === q2) q2 = null;
+          continue;
+        }
+        if (d === '"' || d === "'") {
+          q2 = d;
+          continue;
+        }
+        if (d === "{") depth++;
+        else if (d === "}") depth--;
+      }
+      const body = text2.slice(i + 1, j2 - 1);
+      const head = prelude.trim();
+      if (/^@(media|supports|layer|container|scope)\b/i.test(head)) {
+        walkCssRules(body, out, inherited);
+      } else if (/^@keyframes\b/i.test(head) || /^@-\w+-keyframes\b/i.test(head)) {
+        walkCssRules(body, out, { selector: head, keyframes: true });
+      } else if (head.startsWith("@")) {
+        out.push({ selector: head, body, atRule: true });
+      } else {
+        out.push({ selector: inherited?.selector ?? head, body, keyframes: !!inherited?.keyframes });
+      }
+      prelude = "";
+      i = j2;
+    }
+    return out;
+  }
+  function checkCompiledCss(css) {
+    const errors = [];
+    for (const rule of walkCssRules(css)) {
+      if (rule.atRule) continue;
+      const parts = String(rule.selector).split(",").filter((p) => p.trim());
+      const inTrussal = rule.keyframes || parts.length > 0 && parts.every(isTrussalScoped);
+      for (const decl of parseScssDeclarations(rule.body)) {
+        if (/^var\(--cc-/.test(decl.value.trim())) continue;
+        const reason = checkDeclaration(decl.prop, decl.value, { inTrussal });
+        if (reason) errors.push(`${rule.selector.slice(0, 60)} \u2014 ${reason}`);
+      }
+    }
+    return errors;
+  }
+  function buildPeerScss(sheets, { peerClass = "anon" } = {}) {
+    const parts = [];
+    for (const sheet of sheets) {
+      if (checkSheet(sheet).length) continue;
+      const { frames: frames2, rest } = extractKeyframes(sheet.scss);
+      for (const frame of frames2) {
+        parts.push(frame.text.replace(
+          /@(-\w+-)?keyframes\s+([\w-]+)/,
+          (m2, vendor, name3) => `@${vendor || ""}keyframes ${peerClass}-${name3}`
+        ));
+      }
+      const named = (src2) => src2.replace(
+        /(animation(?:-name)?\s*:)([^;}]*)/g,
+        (m2, head, val2) => head + frames2.reduce(
+          (acc, f2) => acc.replace(new RegExp(`\\b${f2.name}\\b`, "g"), `${peerClass}-${f2.name}`),
+          val2
+        )
+      );
+      const full = withPatternedProps(named(rest), sheet);
+      if (full.trim()) {
+        parts.push(`${TRUSSAL_ROOTS.join(",\n")} {
+${full}
+}`);
+      }
+      const outside2 = withPatternedProps(filterToAllowlist(named(rest)), sheet, { allowlistOnly: true });
+      if (parseScssDeclarations(outside2).length) parts.push(outside2);
+    }
+    return parts.join("\n\n");
+  }
+
+  // src/css-cycles.js
+  var STYLE_PREFIX = "trussal-css-cycles-";
+  var atoms2 = {};
+  var active3 = false;
+  var sheetsByToken = /* @__PURE__ */ new Map();
+  var refused = /* @__PURE__ */ new Set();
+  var styleEls = /* @__PURE__ */ new Map();
+  var lastSentScss = "";
+  var bgCache = /* @__PURE__ */ new Map();
+  var BG_CACHE_MS = 250;
+  function setCssAtoms(table) {
+    atoms2 = table || {};
+  }
+  function resolve2(value2) {
+    if (value2 == null) return null;
+    const key = String(value2);
+    const atom2 = atoms2[key];
+    return atom2 ? atom2.text : key;
+  }
+  function publishCssSheets(sheets) {
+    sheetsByToken = new Map(sheets.map((s2) => [s2.token, s2]));
+    refused = /* @__PURE__ */ new Set();
+    const local2 = getLocalPeer();
+    const problems = [];
+    for (const sheet of sheets) {
+      const errors = checkSheet(sheet);
+      if (!errors.length) continue;
+      refused.add(sheet.token);
+      if (sheet.peer === local2?.jitsiId) problems.push(...errors);
+    }
+    if (problems.length) {
+      console.error("[css-cycles] statement refused:", problems.join("; "));
+      document.dispatchEvent(new CustomEvent("trussal-css-errors", { detail: problems }));
+    }
+    const mine = sheets.filter((s2) => s2.peer === local2?.jitsiId);
+    const scss = buildPeerScss(mine, { peerClass: peerTextClass(local2?.jitsiId) });
+    if (scss === lastSentScss) return;
+    lastSentScss = scss;
+    sendLocalScss(scss);
+  }
+  function installPeerCss(peerId, css) {
+    let el = styleEls.get(peerId);
+    if (css) {
+      const errors = checkCompiledCss(css);
+      if (errors.length) {
+        console.error(`[css-cycles] refused the sheet from ${peerId}:`, errors.join("; "));
+        css = "";
+      }
+    }
+    if (!css) {
+      el?.remove();
+      styleEls.delete(peerId);
+      return;
+    }
+    let added = false;
+    if (!el) {
+      el = document.createElement("style");
+      el.id = `${STYLE_PREFIX}${peerId}`;
+      el.dataset.ccPeer = peerId;
+      styleEls.set(peerId, el);
+      added = true;
+    }
+    if (el.textContent !== css) {
+      el.textContent = css;
+      bgCache.clear();
+    }
+    if (added) reorderSheets();
+  }
+  function reorderSheets() {
+    const ordered = [...styleEls.entries()].sort(([a2], [b]) => a2 < b ? -1 : a2 > b ? 1 : 0);
+    for (const [, node] of ordered) document.head.appendChild(node);
+  }
+  function syncFromPeers() {
+    const seen = /* @__PURE__ */ new Set();
+    for (const peer of getAllPeers()) {
+      if (!peer.jitsiId) continue;
+      seen.add(peer.jitsiId);
+      installPeerCss(peer.jitsiId, peer.playing ? peer.compiledCss || "" : "");
+    }
+    for (const peerId of [...styleEls.keys()]) {
+      if (!seen.has(peerId)) installPeerCss(peerId, "");
+    }
+  }
+  function effectiveBackground(el) {
+    let node = el;
+    while (node) {
+      const bg = getComputedStyle(node).backgroundColor;
+      const parsed = parseColor(bg);
+      if (parsed && parsed.a > 0.1) return bg;
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function backgroundForSelector(selector) {
+    const now = Date.now();
+    const hit = bgCache.get(selector);
+    if (hit && now - hit.at < BG_CACHE_MS) return hit.color;
+    let color2 = null;
+    try {
+      const el = document.querySelector(selector);
+      if (el) color2 = effectiveBackground(el);
+    } catch (e30) {
+      console.warn("[css-cycles] could not resolve selector", selector, e30);
+    }
+    bgCache.set(selector, { color: color2, at: now });
+    return color2;
+  }
+  function selectorOf(sheet) {
+    const src2 = String(sheet?.scss ?? "").trim();
+    const brace = src2.indexOf("{");
+    return (brace === -1 ? src2 : src2.slice(0, brace)).trim();
+  }
+  function applyHap(value2) {
+    const token = String(value2.css);
+    const sheet = sheetsByToken.get(token);
+    if (!sheet || refused.has(token)) return;
+    for (const [key, raw] of Object.entries(value2)) {
+      if (!key.startsWith("_cc_")) continue;
+      const prop = cssPropForMethod(key.slice(4));
+      if (!prop) continue;
+      let resolved = resolve2(raw);
+      if (resolved == null || resolved === "") continue;
+      const declared = sheet.props.find((p) => p.prop === prop);
+      if (!declared?.literal) {
+        resolved = clampValue(prop, resolved);
+        if (resolved == null) continue;
+      }
+      if (prop === "color") {
+        const bg = backgroundForSelector(selectorOf(sheet));
+        if (bg) resolved = adjustColorForBackground(resolved, bg);
+      }
+      document.documentElement.style.setProperty(cssVarName(token, prop), resolved);
+    }
+  }
+  function handleTrigger2(hap, currentTime, cps2, targetTime) {
+    if (!active3) return;
+    const value2 = hap?.value;
+    if (!value2 || value2.css == null) return;
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(() => {
+      try {
+        applyHap(value2);
+      } catch (e30) {
+        console.error("[css-cycles] apply failed", e30);
+        throw e30;
+      }
+    }, delayMs);
+  }
+  var cssSubscribed = false;
+  function installCssCycles(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = { ...registerControl2("css") };
+    for (const prop of CSS_PROPERTY_LIST) {
+      Object.assign(scope2, registerControl2(`_cc_${methodForCssProp(prop)}`));
+    }
+    register2("_ccRender", (pat) => pat.onTrigger(handleTrigger2, true));
+    scope2.initCss = async () => {
+      active3 = true;
+      if (!cssSubscribed) {
+        cssSubscribed = true;
+        subscribePeerState(syncFromPeers);
+        syncFromPeers();
+      }
+      return true;
+    };
+    return scope2;
+  }
+  function stopCssCycles() {
+    active3 = false;
+    for (const [peerId] of [...styleEls]) installPeerCss(peerId, "");
+    for (const sheet of sheetsByToken.values()) {
+      for (const p of sheet.props) {
+        document.documentElement.style.removeProperty(cssVarName(sheet.token, p.prop));
+      }
+    }
+    sheetsByToken = /* @__PURE__ */ new Map();
+    refused = /* @__PURE__ */ new Set();
+    lastSentScss = "";
+    bgCache.clear();
   }
 
   // src/hydra-video.js
@@ -52386,11 +54285,215 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   _running = true;
   _scheduleFrame();
 
+  // src/bot-config.js
+  var BOT_CONFIG_PROPS = {
+    random: { type: "string", values: ["params", "full"] },
+    paramFactor: { type: "number" },
+    harmony: { type: "string", pattern: /^(diatonic|random|[+-]\d+)$/ },
+    mcp: { type: "string" },
+    colorScheme: {
+      type: "string",
+      values: [
+        "complementary",
+        "monochromatic",
+        "analogous",
+        "triadic",
+        "tetradic",
+        "split-complementary",
+        "square",
+        "random"
+      ]
+    },
+    textParrot: { type: "boolean" },
+    retroactive: { type: "boolean" },
+    samples: { type: "boolean" }
+  };
+  var BOT_CONFIG_KEYS = Object.keys(BOT_CONFIG_PROPS);
+  function defaultBotConfig() {
+    const out = {};
+    for (const key of BOT_CONFIG_KEYS) out[key] = null;
+    return out;
+  }
+  var CALL_RE = /(^|[^\w$.])botConfig\s*\(/;
+  function findBotConfigCall(code2) {
+    const src2 = String(code2 ?? "");
+    const match2 = CALL_RE.exec(src2);
+    if (!match2) return null;
+    const start = match2.index + match2[1].length;
+    const open = src2.indexOf("(", start);
+    let depth = 0;
+    let quote = null;
+    for (let i = open; i < src2.length; i++) {
+      const ch2 = src2[i];
+      if (quote) {
+        if (ch2 === "\\") i++;
+        else if (ch2 === quote) quote = null;
+        continue;
+      }
+      if (ch2 === '"' || ch2 === "'" || ch2 === "`") {
+        quote = ch2;
+        continue;
+      }
+      if (ch2 === "(") depth++;
+      else if (ch2 === ")") {
+        depth--;
+        if (depth === 0) {
+          let end2 = i + 1;
+          if (src2[end2] === ";") end2++;
+          return { start, end: end2, argText: src2.slice(open + 1, i).trim(), unbalanced: false };
+        }
+      }
+    }
+    return { start, end: src2.length, argText: src2.slice(open + 1).trim(), unbalanced: true };
+  }
+  function stripBotConfig(code2) {
+    const found = findBotConfigCall(code2);
+    if (!found) return String(code2 ?? "");
+    const src2 = String(code2 ?? "");
+    const before = src2.slice(0, found.start);
+    const after = src2.slice(found.end);
+    if (/(^|\n)[ \t]*$/.test(before) && /^[ \t]*(\n|$)/.test(after)) {
+      return before.replace(/[ \t]*$/, "") + after.replace(/^[ \t]*\n?/, "");
+    }
+    return before + after;
+  }
+  function parseObjectLiteral(text2) {
+    const src2 = String(text2 ?? "").trim();
+    if (src2 === "") return { ok: true, value: {} };
+    let i = 0;
+    const ws3 = () => {
+      while (i < src2.length && /\s/.test(src2[i])) i++;
+    };
+    const fail = (msg) => ({ ok: false, error: `${msg} at position ${i}` });
+    ws3();
+    if (src2[i] !== "{") return fail('expected "{"');
+    i++;
+    const out = {};
+    ws3();
+    if (src2[i] === "}") return i === src2.length - 1 ? { ok: true, value: out } : fail('trailing text after "}"');
+    while (i < src2.length) {
+      ws3();
+      let key;
+      if (src2[i] === '"' || src2[i] === "'") {
+        const str = readString();
+        if (!str.ok) return str;
+        key = str.value;
+      } else {
+        const start = i;
+        while (i < src2.length && /[\w$]/.test(src2[i])) i++;
+        if (i === start) return fail("expected a property name");
+        key = src2.slice(start, i);
+      }
+      ws3();
+      if (src2[i] !== ":") return fail(`expected ":" after "${key}"`);
+      i++;
+      ws3();
+      const value2 = readValue();
+      if (!value2.ok) return value2;
+      out[key] = value2.value;
+      ws3();
+      if (src2[i] === ",") {
+        i++;
+        ws3();
+        if (src2[i] === "}") {
+          i++;
+          break;
+        }
+        continue;
+      }
+      if (src2[i] === "}") {
+        i++;
+        break;
+      }
+      return fail('expected "," or "}"');
+    }
+    ws3();
+    if (i < src2.length) return fail('trailing text after "}"');
+    return { ok: true, value: out };
+    function readString() {
+      const quote = src2[i];
+      i++;
+      let str = "";
+      while (i < src2.length && src2[i] !== quote) {
+        if (src2[i] === "\\") {
+          i++;
+          const esc = src2[i];
+          str += esc === "n" ? "\n" : esc === "t" ? "	" : esc;
+        } else {
+          str += src2[i];
+        }
+        i++;
+      }
+      if (i >= src2.length) return fail("unterminated string");
+      i++;
+      return { ok: true, value: str };
+    }
+    function readValue() {
+      if (src2[i] === '"' || src2[i] === "'") return readString();
+      const start = i;
+      while (i < src2.length && !/[,}\s]/.test(src2[i])) i++;
+      const word2 = src2.slice(start, i);
+      if (word2 === "") return fail("expected a value");
+      if (word2 === "true") return { ok: true, value: true };
+      if (word2 === "false") return { ok: true, value: false };
+      if (word2 === "null") return { ok: true, value: null };
+      const num2 = Number(word2);
+      if (word2 !== "" && Number.isFinite(num2)) return { ok: true, value: num2 };
+      return { ok: false, error: `unquoted value "${word2}" at position ${start}` };
+    }
+  }
+  function propertyError(key, value2) {
+    const spec = BOT_CONFIG_PROPS[key];
+    if (!spec) return `unknown property "${key}" (expected one of: ${BOT_CONFIG_KEYS.join(", ")})`;
+    if (value2 === null) return null;
+    if (spec.type === "number") {
+      return Number.isFinite(value2) ? null : `"${key}" must be a number`;
+    }
+    if (spec.type === "boolean") {
+      return typeof value2 === "boolean" ? null : `"${key}" must be true or false`;
+    }
+    if (typeof value2 !== "string") return `"${key}" must be a string`;
+    if (spec.values && !spec.values.includes(value2)) {
+      return `"${key}" must be one of: ${spec.values.join(", ")}`;
+    }
+    if (spec.pattern && !spec.pattern.test(value2)) {
+      return `"${key}" must be "diatonic", "random", or a signed semitone count like "+2" or "-13"`;
+    }
+    if (spec.values == null && spec.pattern == null && value2.trim() === "") {
+      return `"${key}" must be a non-empty string`;
+    }
+    return null;
+  }
+  function validateBotConfig(raw) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      return { ok: false, error: "botConfig takes a single object argument" };
+    }
+    for (const [key, value2] of Object.entries(raw)) {
+      const error = propertyError(key, value2);
+      if (error) return { ok: false, error };
+    }
+    return { ok: true, config: { ...defaultBotConfig(), ...raw } };
+  }
+  function parseBotConfig(code2) {
+    const found = findBotConfigCall(code2);
+    if (!found) return { ok: true, present: false, config: defaultBotConfig() };
+    if (found.unbalanced) return { ok: false, present: true, error: 'botConfig: unclosed "("' };
+    const parsed = parseObjectLiteral(found.argText);
+    if (!parsed.ok) return { ok: false, present: true, error: `botConfig: ${parsed.error}` };
+    const valid = validateBotConfig(parsed.value);
+    if (!valid.ok) return { ok: false, present: true, error: `botConfig: ${valid.error}` };
+    return { ok: true, present: true, config: valid.config };
+  }
+  function flag(value2) {
+    return value2 === true;
+  }
+
   // src/hydra-code.js
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
   var PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
+  var INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
   function normalizePeerCode(code2) {
-    return (code2 || "").replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
+    return stripBotConfig(code2 || "").replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
   }
   function splitHydraCode(code2) {
     const normalized = normalizePeerCode(code2);
@@ -52482,9 +54585,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     };
   }
   var DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
-  var INIT_TEXT_RE = /^\s*await\s+initTextCycles\s*\(/;
-  function splitTextCyclesCode(code2) {
-    if (!code2 || !INIT_TEXT_RE.test(code2)) return null;
+  var INIT_SILENT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(/;
+  function splitSilentCode(code2) {
+    if (!code2 || !INIT_SILENT_RE.test(code2)) return null;
     const blank = code2.match(/\n\n+/);
     if (!blank) return { preamble: code2, strudel: "" };
     return {
@@ -52495,14 +54598,41 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   var textAtoms = {};
   var textCounter = { n: 0 };
   function applyTextRewrite(code2, peer) {
-    const { code: rewritten, atoms: atoms2 } = rewriteTextCalls(code2, {
+    const { code: rewritten, atoms: atoms3 } = rewriteTextCalls(code2, {
       peer: peer.jitsiId,
       counter: textCounter
     });
-    Object.assign(textAtoms, atoms2);
+    Object.assign(textAtoms, atoms3);
     return rewritten;
   }
-  function buildStrudelVoice(code2, fx) {
+  var cssAtoms = {};
+  var cssCounter = { n: 0 };
+  var cssSheets = [];
+  function applyCssRewrite(code2, peer) {
+    const { code: rewritten, atoms: atoms3, sheets, errors } = rewriteCssCalls(code2, {
+      peer: peer.jitsiId,
+      counter: cssCounter
+    });
+    Object.assign(cssAtoms, atoms3);
+    cssSheets = cssSheets.concat(sheets);
+    if (errors.length) console.error("[css-cycles]", errors.join("; "));
+    return rewritten;
+  }
+  function buildBotTextBlock(peer) {
+    const code2 = normalizePeerCode(
+      isNetCyclesActive() ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern
+    );
+    if (!code2 || !peer.playing || !hasTextCycles(code2)) return null;
+    const split = splitSilentCode(code2);
+    if (!split) return null;
+    const textOnly = keepSilentStatements(split.strudel);
+    if (!textOnly) return split.preamble;
+    return `${split.preamble}
+
+${buildStrudelVoice(applyTextRewrite(textOnly, peer), "")}`;
+  }
+  function buildStrudelVoice(rawCode, fx) {
+    const code2 = rewriteDataRefs(rawCode);
     const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code2);
     if (hasLabels) {
       const firstLabelPos = code2.search(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
@@ -52535,7 +54665,7 @@ $: (${split.expr})${fx}`;
     return `$: (${code2})${fx}`;
   }
   function buildPeerBlock(peer) {
-    if (peer.isBot) return null;
+    if (peer.isBot) return buildBotTextBlock(peer);
     const netCycles = isNetCyclesActive();
     const source2 = netCycles ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
     let code2 = normalizePeerCode(source2);
@@ -52548,13 +54678,15 @@ $: (${split.expr})${fx}`;
     let fx = peer.isLocal ? "" : effectChainFor(params2);
     if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
     const isText = hasTextCycles(code2);
-    const split = splitHydraCode(code2) || splitTextCyclesCode(code2);
+    const isCss = hasCssCycles(code2);
+    const split = splitHydraCode(code2) || splitSilentCode(code2);
     if (split) {
       const preamble = split.preamble;
       let strudelCode = split.strudel;
-      if (isText) {
-        if (remoteVoiceExcluded) strudelCode = keepTextStatements(strudelCode);
-        if (strudelCode) strudelCode = applyTextRewrite(strudelCode, peer);
+      if (isText || isCss) {
+        if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+        if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
+        if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
       } else if (remoteVoiceExcluded) {
         return preamble;
       }
@@ -52720,7 +54852,9 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
       const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
       const textScope = installTextCycles(mod2);
-      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, ...textScope });
+      const cssScope = installCssCycles(mod2);
+      const _data = makeDataFn(mod2);
+      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, ...textScope, ...cssScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -52735,6 +54869,9 @@ ${buildStrudelVoice(strudelCode, fx)}`;
   async function rebuildAndEvaluate() {
     textAtoms = {};
     textCounter = { n: 0 };
+    cssAtoms = {};
+    cssCounter = { n: 0 };
+    cssSheets = [];
     const blocks = getAllPeers().map(buildPeerBlock).filter(Boolean);
     const rawJoined = blocks.join("\n");
     let next = blocks.length === 0 ? null : rawJoined;
@@ -52774,6 +54911,8 @@ ${next}`;
     try {
       beginLiveEpoch();
       setTextAtoms(textAtoms);
+      setCssAtoms(cssAtoms);
+      publishCssSheets(cssSheets);
       await evaluate3(next);
       releaseUnusedCaptures();
       anyPlaying = true;
@@ -52801,6 +54940,7 @@ ${next}`;
     }
     stopLiveCaptures();
     stopTextCycles();
+    stopCssCycles();
     anyPlaying = false;
     lastEvaluated = null;
     activeSliders = {};
@@ -52911,13 +55051,13 @@ ${snippet}
         cur
       );
     }
-    const active3 = `
+    const active4 = `
 ${snippet}${NC_BTN_MARKER}`;
     const commented = `
 // ${snippet}${NC_BTN_MARKER}`;
-    if (cur.includes(commented)) return cur.replace(commented, active3);
-    if (cur.includes(active3)) return cur.replace(active3, commented);
-    return cur + active3;
+    if (cur.includes(commented)) return cur.replace(commented, active4);
+    if (cur.includes(active4)) return cur.replace(active4, commented);
+    return cur + active4;
   }
 
   // src/editor-router.js
@@ -53116,14 +55256,14 @@ ${snippet}${NC_BTN_MARKER}`;
   }
   function toggleButtonCode(code2) {
     const cur = getCode();
-    const active3 = `
+    const active4 = `
 ${code2}${BTN_MARKER}`;
     const commented = `
 // ${code2}${BTN_MARKER}`;
     let next;
-    if (cur.includes(commented)) next = cur.replace(commented, active3);
-    else if (cur.includes(active3)) next = cur.replace(active3, commented);
-    else next = cur + active3;
+    if (cur.includes(commented)) next = cur.replace(commented, active4);
+    else if (cur.includes(active4)) next = cur.replace(active4, commented);
+    else next = cur + active4;
     setCode(next);
     evaluate2();
   }
@@ -54112,8 +56252,8 @@ ${s2}${BTN_MARKER}`)
       pcs2.push(pcSend, pcRecv);
       pcSend.onicecandidate = (e30) => e30.candidate && pcRecv.addIceCandidate(e30.candidate);
       pcRecv.onicecandidate = (e30) => e30.candidate && pcSend.addIceCandidate(e30.candidate);
-      const inbound = new Promise((resolve2) => {
-        pcRecv.ontrack = (e30) => resolve2(e30.streams[0]);
+      const inbound = new Promise((resolve3) => {
+        pcRecv.ontrack = (e30) => resolve3(e30.streams[0]);
       });
       for (const track of outbound.stream.getAudioTracks()) pcSend.addTrack(track, outbound.stream);
       const offer = await pcSend.createOffer();
@@ -54142,12 +56282,12 @@ ${s2}${BTN_MARKER}`)
       source2.offset.setValueAtTime(0, emittedAt + 5e-3);
       source2.start();
       return await Promise.race([
-        new Promise((resolve2) => {
+        new Promise((resolve3) => {
           detector.onaudioprocess = (e30) => {
             const offset2 = firstImpulseOffset(e30.inputBuffer.getChannelData(0));
             if (offset2 < 0) return;
             detector.onaudioprocess = null;
-            resolve2(Math.max(0, e30.playbackTime + offset2 / ctx2.sampleRate - emittedAt));
+            resolve3(Math.max(0, e30.playbackTime + offset2 / ctx2.sampleRate - emittedAt));
           };
         }),
         new Promise((r2) => setTimeout(() => r2(null), MEASURE_TIMEOUT_MS))
@@ -54500,7 +56640,32 @@ ${s2}${BTN_MARKER}`)
   }
   function spawnBots(count) {
     const n2 = Math.max(1, Math.floor(count) || 1);
-    sendFleetRequest("spawn", { count: n2 });
+    const code2 = localPerformerCode();
+    shareSamplesIfAsked(code2).catch((err) => {
+      console.error("[trussal] sharing samples with bots failed", err);
+    }).finally(() => sendFleetRequest("spawn", { count: n2, code: code2 }));
+  }
+  async function shareSamplesIfAsked(code2) {
+    const parsed = parseBotConfig(code2);
+    if (!parsed.ok || !flag(parsed.config.samples)) return;
+    const banks = await readSampleBanks();
+    for (const { bank: bank2, name: name3, blob } of banks) {
+      const buffer = await blob.arrayBuffer();
+      sendSampleFile({ bank: bank2, name: name3, data: base64FromBuffer(buffer) });
+    }
+  }
+  function base64FromBuffer(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary2 = "";
+    const CHUNK = 32768;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary2 += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary2);
+  }
+  function localPerformerCode() {
+    const local2 = getLocalPeer();
+    return typeof local2?.pattern === "string" ? local2.pattern : "";
   }
   function removeBots(selector = "all") {
     if (selector === "all") {
@@ -54757,9 +56922,11 @@ ${s2}${BTN_MARKER}`)
   var lastStatus = "Idle";
   var routedSet = /* @__PURE__ */ new Set();
   var sampleBanks = [];
+  var expandedBank = null;
   var currentSliders = [];
   async function refreshSampleBanks() {
     sampleBanks = await getSampleBanks().catch(() => []);
+    sendLocalDataPacks(await getDataPacks().catch(() => []));
     renderAll();
   }
   function isInMeeting() {
@@ -54976,7 +57143,39 @@ ${s2}${BTN_MARKER}`)
       background: rgba(31,244,102,0.1); color: #1ff466;
       border: 1px solid rgba(31,244,102,0.25);
       white-space: nowrap;
+      font-size: 11px; font-family: monospace; cursor: pointer;
     }
+    #${OVERLAY_ID} .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
+    /* Data packs read as a different kind of thing from sound banks. */
+    #${OVERLAY_ID} .ts-sample-bank.data {
+      background: rgba(120,180,255,0.1); color: #7ab4ff;
+      border-color: rgba(120,180,255,0.3);
+    }
+    #${OVERLAY_ID} .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+    #${OVERLAY_ID} .ts-sample-bank.open { border-style: dashed; }
+
+    #${OVERLAY_ID} .ts-sample-list {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin-top: 4px; padding: 5px 6px; border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-item {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 1px 3px 1px 6px; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #cfd8e3;
+      max-width: 100%;
+    }
+    #${OVERLAY_ID} .ts-sample-idx { color: #7ab4ff; }
+    #${OVERLAY_ID} .ts-sample-label {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+    }
+    #${OVERLAY_ID} .ts-sample-len { color: #8a94a3; }
+    #${OVERLAY_ID} .ts-sample-x {
+      border: none; background: transparent; cursor: pointer; padding: 0 3px;
+      color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
     #${OVERLAY_ID} .ts-sample-banks-del {
       margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
       background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
@@ -55250,8 +57449,10 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
         <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">\u2B06 Samples</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">\u2B06 Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
+        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">\u2B06 Data</button>
+        <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
       </div>` : `
       <div class="ts-section-controls">
@@ -55261,11 +57462,31 @@ ${s2}${BTN_MARKER}`)
       </div>`;
     const playing = peer.playing ? "Playing" : "Idle";
     const status = isLocal ? lastStatus : peer.muted ? "Muted" : playing;
+    const bankChip = (b) => {
+      const label2 = b.kind === "audio" ? `${escapeHtml(b.name)} (${b.count})` : `${escapeHtml(b.name)}:${b.count}`;
+      const open = expandedBank === b.name;
+      return `<button class="ts-sample-bank${b.kind === "audio" ? "" : " data"}${open ? " open" : ""}"
+      data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
+      title="${b.kind === "audio" ? "audio bank" : `${b.kind.toUpperCase()} data pack`}${b.truncated ? " \u2014 truncated to fit the memory budget" : ""}">${label2}${b.truncated ? " \u26A0" : ""}</button>`;
+    };
+    const openBank = sampleBanks.find((b) => b.name === expandedBank);
+    const sampleList = openBank ? `
+    <div class="ts-sample-list">
+      ${openBank.samples.map((s2, i) => `
+        <span class="ts-sample-item">
+          <span class="ts-sample-idx">${openBank.kind === "audio" ? i : i + 1}</span>
+          <span class="ts-sample-label">${escapeHtml(s2.label)}</span>
+          ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? "\u26A0" : ""}</span>` : ""}
+          <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s2.id)}"
+            title="delete this sample">\xD7</button>
+        </span>`).join("")}
+    </div>` : "";
     const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
     <div class="ts-sample-banks">
-      ${sampleBanks.map((b) => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join("")}
+      ${sampleBanks.map(bankChip).join("")}
       <button class="ts-sample-banks-del" data-action="delete-samples">\xD7 delete all user samples</button>
-    </div>` : "";
+    </div>
+    ${sampleList}` : "";
     container2.innerHTML = `
     <div class="ts-detail-header">
       <div class="ts-detail-name">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
@@ -55347,33 +57568,63 @@ ${s2}${BTN_MARKER}`)
     if (stopBtn) stopBtn.addEventListener("click", onStopClick);
     const captureBtnEl = container2.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
-    const loadSamplesBtn = container2.querySelector('[data-action="load-samples"]');
-    const samplesInput = container2.querySelector(".ts-samples-input");
-    if (loadSamplesBtn && samplesInput) {
-      loadSamplesBtn.addEventListener("click", () => samplesInput.click());
-      samplesInput.addEventListener("change", async () => {
-        const files2 = samplesInput.files;
+    const wireUpload = (buttonSelector, inputSelector) => {
+      const button = container2.querySelector(buttonSelector);
+      const input = container2.querySelector(inputSelector);
+      if (!button || !input) return;
+      button.addEventListener("click", () => input.click());
+      input.addEventListener("change", async () => {
+        const files2 = input.files;
         if (!files2 || !files2.length) return;
-        setStatus("Loading samples\u2026");
-        await uploadSamplesToDB(files2, async (count) => {
-          if (count === 0) {
-            setStatus("No audio files found");
+        setStatus("Loading\u2026");
+        await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
+          if (!audio && !images && !packs) {
+            setStatus(errors.length ? errors[0] : "No audio, image or data files found");
             return;
           }
-          await refreshLocalSamples();
+          if (audio || images) await refreshLocalSamples();
           await refreshSampleBanks();
-          setStatus(`Loaded ${count} sample${count === 1 ? "" : "s"} \u2014 use s("foldername") in patterns`);
+          const parts = [];
+          if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
+          if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
+          if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
+          const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
+          setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
         });
-        samplesInput.value = "";
+        input.value = "";
       });
-    }
+    };
+    wireUpload('[data-action="load-samples"]', ".ts-samples-input");
+    wireUpload('[data-action="load-data"]', ".ts-data-input");
+    container2.querySelectorAll('[data-action="toggle-bank"]').forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const name3 = chip.getAttribute("data-bank");
+        expandedBank = expandedBank === name3 ? null : name3;
+        renderAll();
+      });
+    });
+    container2.querySelectorAll('[data-action="delete-sample"]').forEach((x2) => {
+      x2.addEventListener("click", async () => {
+        const id3 = x2.getAttribute("data-sample");
+        setStatus("Deleting sample\u2026");
+        await deleteSample(id3);
+        await refreshLocalSamples();
+        await refreshSampleBanks();
+        if (!sampleBanks.some((b) => b.name === expandedBank)) expandedBank = null;
+        await rebakeStrudel();
+        setStatus("Sample deleted");
+        renderAll();
+      });
+    });
     const deleteBtn = container2.querySelector('[data-action="delete-samples"]');
     if (deleteBtn) {
       deleteBtn.addEventListener("click", async () => {
-        if (!window.confirm("Delete all imported user samples?")) return;
+        if (!window.confirm("Delete all imported user samples and data packs?")) return;
         setStatus("Deleting samples\u2026");
         await clearSamplesDB();
         sampleBanks = [];
+        expandedBank = null;
+        sendLocalDataPacks([]);
         await rebakeStrudel();
         setStatus("User samples deleted");
         renderAll();
@@ -55533,14 +57784,14 @@ ${voiceCode}${BTN_MARKER2}`);
       if (strip) renderStrip(strip);
       if (detail) {
         const existingCodeEl = detail.querySelector("textarea.ts-code");
-        const active3 = document.activeElement;
-        const isCodeFocused = active3 && active3 === existingCodeEl;
+        const active4 = document.activeElement;
+        const isCodeFocused = active4 && active4 === existingCodeEl;
         const codeValue = existingCodeEl ? existingCodeEl.value : null;
         const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
         const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === "1" || isCodeFocused);
-        const selStart = isCodeFocused ? active3.selectionStart : null;
-        const selEnd = isCodeFocused ? active3.selectionEnd : null;
-        const scrollTop = isCodeFocused ? active3.scrollTop : null;
+        const selStart = isCodeFocused ? active4.selectionStart : null;
+        const selEnd = isCodeFocused ? active4.selectionEnd : null;
+        const scrollTop = isCodeFocused ? active4.scrollTop : null;
         renderDetail(detail);
         refreshFacialGestureButtons();
         const nextCodeEl = detail.querySelector(".ts-code");
@@ -55704,6 +57955,7 @@ ${voiceCode}${BTN_MARKER2}`);
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+  setDataRefReader(sampleDataRefAt);
   subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
   window.__trussalAnnounceLocalPattern = (code2) => {
     sendLocalPattern(typeof code2 === "string" ? code2 : "");

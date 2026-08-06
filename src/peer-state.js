@@ -9,6 +9,7 @@
 
 import { getRoomNameFromUrl } from './jamulus.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
+import { setPeerPacks, removePeerPacks } from './data-ref.js';
 
 const subscribers = new Set();
 
@@ -45,6 +46,7 @@ const localPeer = {
   // CSS Cycles: this peer's SCSS as compiled by the sidecar. Set from the bus
   // for everyone including ourselves — the compile is never done in a browser.
   compiledCss: '',
+  dataPacks: [],
   effects: { distortion: false, noise: false, reverb: false },
   playing: false,
   rtt: null,
@@ -238,6 +240,13 @@ function applyPatch(peer, patch) {
   if (typeof patch.pipelineMs === 'number' || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
   if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
   if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
+  // Data packs feed the shared reference registry rather than sitting on the
+  // peer: "Weather:3" has to resolve identically on every client, so the
+  // registry keys them by owner and never prefers the local browser's copy.
+  if (Array.isArray(patch.dataPacks)) {
+    peer.dataPacks = patch.dataPacks;
+    setPeerPacks(peer.peerId, patch.dataPacks);
+  }
 }
 
 function defaultPeer(peerId) {
@@ -251,6 +260,7 @@ function defaultPeer(peerId) {
     muted: false,
     pattern: '',
     compiledCss: '',
+    dataPacks: [],
     effects: { distortion: false, noise: false, reverb: false },
     playing: false,
     rtt: null,
@@ -282,6 +292,10 @@ function handleMessage(msg) {
   switch (msg.type) {
     case 'welcome':
       myPeerId = msg.peerId || null;
+      // Packs loaded from IndexedDB before the handshake finished have no owner
+      // to be keyed under yet; now they do. (Their outbound message is already
+      // safe — safeSend buffers until hello completes.)
+      if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
       sendHelloIfReady();
       break;
 
@@ -312,6 +326,10 @@ function handleMessage(msg) {
       if (peer) {
         peersByPeerId.delete(peer.peerId);
         if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
+        // Their uploads leave with them: a reference to a departed peer's pack
+        // must stop resolving everywhere at once, not linger on whichever
+        // clients happened to have cached it.
+        removePeerPacks(peer.peerId);
         emit('peer-leave', peer);
       }
       break;
@@ -585,6 +603,20 @@ export function sendLocalPattern(code) {
 // one compile per edit for the whole room and no browser ships a compiler.
 export function sendLocalScss(scss) {
   safeSend({ type: 'scss', source: typeof scss === 'string' ? scss : '' });
+}
+
+// Mirror our JSON/CSV/TSV packs to the room. They ride the bus rather than
+// staying local because the combined program is evaluated in EVERY browser and
+// by the aggregator: a peer without the values would evaluate a different
+// program than its author, and the same pattern would sound different on every
+// listener. Registered locally under our own peerId too, so our own references
+// resolve by the same room-wide rule as everyone else's.
+export function sendLocalDataPacks(packs) {
+  const list = Array.isArray(packs) ? packs : [];
+  localPeer.dataPacks = list;
+  if (myPeerId) setPeerPacks(myPeerId, list);
+  safeSend({ type: 'datapacks', packs: list });
+  emit('peer-upsert', localPeer);
 }
 
 export function sendLocalEffects(effects) {

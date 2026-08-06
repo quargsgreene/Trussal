@@ -7,9 +7,16 @@ import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import { installPublishedVideoOverride, startWithVideoMuted } from './published-video.js';
 import { installHydraParamApi } from './hydra-params.js';
+import { sampleDataRefAt } from './data-ref.js';
+import { setDataRefReader } from './audio-net/ValuePattern.js';
 import './studio.js';
 
 window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+
+// Let a metaprogram read the room's data packs (`# cycles Weather:3`).
+// ValuePattern.js ships inside the bot image and stays free of the registry, so
+// the reader is handed to it here rather than imported there.
+setDataRefReader(sampleDataRefAt);
 
 // Keep the XMPP↔O2 mapping current: every peer with a room index gets an O2
 // service name (/perf/<index>) the moment the sidecar announces it.

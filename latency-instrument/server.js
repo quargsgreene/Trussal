@@ -20,6 +20,51 @@ const { join } = require('path');
 const { botSuffix, AGGREGATOR_ROOM_INDEX, parseParticipantToken } = require('./room-indices.js');
 const { compileScss } = require('./scss-compile.js');
 
+// Data packs (JSON/CSV/TSV uploads) are relayed to the whole room, so they are
+// re-validated here rather than trusted. These ceilings mirror the caps in
+// src/data-samples-core.js, which is the authority — a client that respects
+// them never notices this code. It exists so a buggy or hostile client cannot
+// push an unbounded payload into every other browser in the meeting. The
+// duplication is unavoidable: the sidecar is CommonJS in its own package and
+// cannot import the bundle's ESM module.
+const PACK_MAX_SAMPLES = 64;
+const PACK_MAX_VALUES_PER_SAMPLE = 1024;
+const PACK_MAX_VALUES_TOTAL = 16384;
+const PACK_MAX_PACKS = 32;
+
+function sanitizeDataPacks(packs) {
+  if (!Array.isArray(packs)) return null;
+  let budget = PACK_MAX_VALUES_TOTAL;
+  const out = [];
+  for (const pack of packs.slice(0, PACK_MAX_PACKS)) {
+    if (!pack || typeof pack.name !== 'string' || !Array.isArray(pack.samples)) continue;
+    const samples = [];
+    for (const sample of pack.samples.slice(0, PACK_MAX_SAMPLES)) {
+      if (!sample || !Array.isArray(sample.values)) continue;
+      const limit = Math.min(PACK_MAX_VALUES_PER_SAMPLE, budget);
+      if (limit <= 0) break;
+      // Numbers pass through; the only strings a pack may carry are the note
+      // names and rests data-samples-core leaves uncast, so anything else is
+      // dropped to a number rather than relayed as arbitrary text.
+      const values = sample.values.slice(0, limit).map((v) => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && /^(~|[a-gA-G](#|b|s|es|is)*-?[0-9]?)$/.test(v)) return v;
+        return 0;
+      });
+      budget -= values.length;
+      samples.push({
+        label: String(sample.label ?? '').slice(0, 64),
+        values,
+        truncated: !!sample.truncated
+      });
+    }
+    if (samples.length) {
+      out.push({ name: pack.name.slice(0, 64), kind: String(pack.kind ?? '').slice(0, 8), samples });
+    }
+  }
+  return out;
+}
+
 // Request header carrying the control channel's shared secret. Lower-case
 // because Node normalises incoming header names; the fleet sends the same name
 // (see makeWsSidecarConnector in bots/src/orchestrator/fleet-service.js).
@@ -143,7 +188,8 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       muted: record.muted,
       videoOn: record.videoOn,
       canEditMetaprogram: record.canEditMetaprogram,
-      canWriteModulation: record.canWriteModulation
+      canWriteModulation: record.canWriteModulation,
+      dataPacks: record.dataPacks
     };
   }
 
@@ -261,6 +307,11 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
       // CSS Cycles: the peer's SCSS compiled here and mirrored to the room, so
       // one compile per edit serves every browser.
       compiledCss: '',
+      // JSON/CSV/TSV packs this peer has loaded, mirrored to the whole room so
+      // a "Weather:3" in anyone's code resolves to the same values on every
+      // client and in the aggregator. Held on the record so a late joiner gets
+      // them in the roster rather than only hearing about later uploads.
+      dataPacks: [],
       effects: { distortion: false, noise: false, reverb: false },
       playing: false,
       rtt: null,
@@ -636,6 +687,19 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // client-side in favour of the local record, so a peer-update back
           // to the sender would land where nothing reads it.
           send(ws, { type: 'scss-compiled', css });
+          break;
+        }
+
+        case 'datapacks': {
+          const packs = sanitizeDataPacks(msg.packs);
+          if (!packs) break;
+          record.dataPacks = packs;
+          const room = rooms.get(roomName);
+          if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { dataPacks: packs } });
+          logEvent(roomName, 'datapacks', {
+            index: record.roomIndex,
+            packs: packs.map(p => ({ name: p.name, kind: p.kind, samples: p.samples.length }))
+          });
           break;
         }
 

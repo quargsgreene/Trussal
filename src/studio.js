@@ -21,9 +21,12 @@ import {
   sendRemotePattern,
   sendRemoteMute,
   sendLocalNetStats,
+  sendLocalDataPacks,
 } from './peer-state.js';
 import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrudel, DEFAULT_PATTERN, updateSliderValue } from './strudel.js';
-import { uploadSamplesToDB, getSampleBanks, clearSamplesDB } from './user-samples.js';
+import {
+  uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
+} from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
 import { injectHydraVideoToggle } from './hydra-video.js';
 import { tickKbdUi } from './on-screen-keyboard.js';
@@ -75,11 +78,18 @@ let initedRoom = null;
 let codeDebounce = null;
 let lastStatus = 'Idle';
 let routedSet = new Set();
-let sampleBanks = []; // [{name, count}] — kept in sync after every load/delete
+// [{name, kind, count, samples}] — audio banks and data packs alike, kept in
+// sync after every load/delete.
+let sampleBanks = [];
+let expandedBank = null; // which bank's per-sample list is open, if any
 let currentSliders = []; // most recent slider configs from strudel eval
 
 async function refreshSampleBanks() {
   sampleBanks = await getSampleBanks().catch(() => []);
+  // Data packs must reach every other browser and the aggregator, or a
+  // "Weather:3" in our code would resolve to nothing on their side and the
+  // room would hear a different program than we do.
+  sendLocalDataPacks(await getDataPacks().catch(() => []));
   renderAll();
 }
 
@@ -300,7 +310,39 @@ function injectStyles() {
       background: rgba(31,244,102,0.1); color: #1ff466;
       border: 1px solid rgba(31,244,102,0.25);
       white-space: nowrap;
+      font-size: 11px; font-family: monospace; cursor: pointer;
     }
+    #${OVERLAY_ID} .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
+    /* Data packs read as a different kind of thing from sound banks. */
+    #${OVERLAY_ID} .ts-sample-bank.data {
+      background: rgba(120,180,255,0.1); color: #7ab4ff;
+      border-color: rgba(120,180,255,0.3);
+    }
+    #${OVERLAY_ID} .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+    #${OVERLAY_ID} .ts-sample-bank.open { border-style: dashed; }
+
+    #${OVERLAY_ID} .ts-sample-list {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin-top: 4px; padding: 5px 6px; border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      font-size: 11px; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-item {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 1px 3px 1px 6px; border-radius: 3px;
+      background: rgba(255,255,255,0.06); color: #cfd8e3;
+      max-width: 100%;
+    }
+    #${OVERLAY_ID} .ts-sample-idx { color: #7ab4ff; }
+    #${OVERLAY_ID} .ts-sample-label {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
+    }
+    #${OVERLAY_ID} .ts-sample-len { color: #8a94a3; }
+    #${OVERLAY_ID} .ts-sample-x {
+      border: none; background: transparent; cursor: pointer; padding: 0 3px;
+      color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+    }
+    #${OVERLAY_ID} .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
     #${OVERLAY_ID} .ts-sample-banks-del {
       margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
       background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
@@ -654,8 +696,10 @@ function renderDetail(container) {
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">▶ Play</button>
         <button class="ts-btn stop" data-action="stop">■ Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files into Strudel">⬆ Samples</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">⬆ Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
+        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">⬆ Data</button>
+        <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop</span>
       </div>`
     : `
@@ -668,11 +712,40 @@ function renderDetail(container) {
   const playing = peer.playing ? 'Playing' : 'Idle';
   const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : playing);
 
+  // A bank chip opens a list of its own samples, each deletable on its own.
+  // Audio banks read `name (n)` as they always have; a data pack reads
+  // `Name:n` — the same spelling a reference to it uses, with n the number of
+  // columns/properties it holds.
+  const bankChip = (b) => {
+    const label = b.kind === 'audio'
+      ? `${escapeHtml(b.name)} (${b.count})`
+      : `${escapeHtml(b.name)}:${b.count}`;
+    const open = expandedBank === b.name;
+    return `<button class="ts-sample-bank${b.kind === 'audio' ? '' : ' data'}${open ? ' open' : ''}"
+      data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
+      title="${b.kind === 'audio' ? 'audio bank' : `${b.kind.toUpperCase()} data pack`}${
+        b.truncated ? ' — truncated to fit the memory budget' : ''}">${label}${b.truncated ? ' ⚠' : ''}</button>`;
+  };
+
+  const openBank = sampleBanks.find(b => b.name === expandedBank);
+  const sampleList = openBank ? `
+    <div class="ts-sample-list">
+      ${openBank.samples.map((s, i) => `
+        <span class="ts-sample-item">
+          <span class="ts-sample-idx">${openBank.kind === 'audio' ? i : i + 1}</span>
+          <span class="ts-sample-label">${escapeHtml(s.label)}</span>
+          ${s.length != null ? `<span class="ts-sample-len">${s.length}${s.truncated ? '⚠' : ''}</span>` : ''}
+          <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s.id)}"
+            title="delete this sample">×</button>
+        </span>`).join('')}
+    </div>` : '';
+
   const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
     <div class="ts-sample-banks">
-      ${sampleBanks.map(b => `<span class="ts-sample-bank">${escapeHtml(b.name)} (${b.count})</span>`).join('')}
+      ${sampleBanks.map(bankChip).join('')}
       <button class="ts-sample-banks-del" data-action="delete-samples">× delete all user samples</button>
-    </div>` : '';
+    </div>
+    ${sampleList}` : '';
 
   container.innerHTML = `
     <div class="ts-detail-header">
@@ -757,31 +830,79 @@ function renderDetail(container) {
   // const relayBtnEl = container.querySelector('[data-action="relay"]');
   // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
 
-  const loadSamplesBtn = container.querySelector('[data-action="load-samples"]');
-  const samplesInput = container.querySelector('.ts-samples-input');
-  if (loadSamplesBtn && samplesInput) {
-    loadSamplesBtn.addEventListener('click', () => samplesInput.click());
-    samplesInput.addEventListener('change', async () => {
-      const files = samplesInput.files;
+  // One ingest path for both buttons: the folder picker takes audio and any
+  // data files sitting alongside it, the file picker takes data files chosen
+  // directly. uploadSamplesToDB sorts them out by extension either way.
+  const wireUpload = (buttonSelector, inputSelector) => {
+    const button = container.querySelector(buttonSelector);
+    const input = container.querySelector(inputSelector);
+    if (!button || !input) return;
+    button.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      const files = input.files;
       if (!files || !files.length) return;
-      setStatus('Loading samples…');
-      await uploadSamplesToDB(files, async (count) => {
-        if (count === 0) { setStatus('No audio files found'); return; }
-        await refreshLocalSamples();
+      setStatus('Loading…');
+      await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
+        if (!audio && !images && !packs) {
+          setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
+          return;
+        }
+        // Images are re-minted by the same refresh as the sounds, so an
+        // image-only upload has to trigger it too or img() resolves to nothing.
+        if (audio || images) await refreshLocalSamples();
         await refreshSampleBanks();
-        setStatus(`Loaded ${count} sample${count === 1 ? '' : 's'} — use s("foldername") in patterns`);
+        const parts = [];
+        if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
+        if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
+        if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
+        const hint = packs
+          ? ' — reference a column as "Name:3"'
+          : images && !audio
+            ? ' — use img("foldername") in a Hydra preamble'
+            : ' — use s("foldername") in patterns';
+        setStatus(`Loaded ${parts.join(', ')}${hint}`
+          + (errors.length ? ` (${errors.length} rejected)` : ''));
       });
-      samplesInput.value = '';
+      input.value = '';
     });
-  }
+  };
+  wireUpload('[data-action="load-samples"]', '.ts-samples-input');
+  wireUpload('[data-action="load-data"]', '.ts-data-input');
+
+  container.querySelectorAll('[data-action="toggle-bank"]').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const name = chip.getAttribute('data-bank');
+      expandedBank = expandedBank === name ? null : name;
+      renderAll();
+    });
+  });
+
+  container.querySelectorAll('[data-action="delete-sample"]').forEach((x) => {
+    x.addEventListener('click', async () => {
+      const id = x.getAttribute('data-sample');
+      setStatus('Deleting sample…');
+      await deleteSample(id);
+      await refreshLocalSamples();
+      await refreshSampleBanks();
+      // The pack may have been emptied by that delete, which removes it.
+      if (!sampleBanks.some(b => b.name === expandedBank)) expandedBank = null;
+      await rebakeStrudel();
+      setStatus('Sample deleted');
+      renderAll();
+    });
+  });
 
   const deleteBtn = container.querySelector('[data-action="delete-samples"]');
   if (deleteBtn) {
     deleteBtn.addEventListener('click', async () => {
-      if (!window.confirm('Delete all imported user samples?')) return;
+      if (!window.confirm('Delete all imported user samples and data packs?')) return;
       setStatus('Deleting samples…');
       await clearSamplesDB();
       sampleBanks = [];
+      expandedBank = null;
+      // Withdraw them from the room too, or peers would keep resolving
+      // references to packs this browser no longer has.
+      sendLocalDataPacks([]);
       await rebakeStrudel();
       setStatus('User samples deleted');
       renderAll();

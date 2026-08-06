@@ -744,3 +744,32 @@ test('a declaration stays inert after an error on any line above it', () => {
 test('comments and blank lines anywhere are ignored', () => {
   ok('// leading comment\n\n$ participants <0 1> // trailing\n\n// between\n# cycles wcj\n');
 });
+
+// --- Data-pack references --------------------------------------------------
+
+const PARTS = '$ participants <0>\n';
+
+test('a data reference is accepted wherever a pattern argument is', () => {
+  const ast = ok(`${PARTS}# crush wcl Weather:3`);
+  assert.match(JSON.stringify(ast), /"type":"dataRef","name":"Weather","index":3/);
+});
+
+test('a data reference works as a term inside a pattern', () => {
+  const ast = ok(`${PARTS}# crush wcl <Weather:1 4>`);
+  assert.match(JSON.stringify(ast), /"type":"dataRef","name":"Weather","index":1/);
+});
+
+test('a data reference does not loosen what a pattern may hold', () => {
+  bad(`${PARTS}# crush wcl <wcl Weather:1>`, /pattern expects positive numbers/);
+});
+
+test('# cycles reads fixed numbers, so it names the limit rather than reporting an object', () => {
+  const errors = bad(`${PARTS}# cycles wcl Weather:3`, /cannot read 'Weather:3'/);
+  assert.ok(!errors.some(e => /\[object Object\]/.test(e.message)),
+    'the token is reported as it was written');
+});
+
+test('the colon binds an identifier to digits and nothing else', () => {
+  ok(`${PARTS}# cycles wcl 20`, 'a plain numeric argument is untouched');
+  bad(`${PARTS}# crush wcl :3`);
+});

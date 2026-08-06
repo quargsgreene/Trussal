@@ -69,7 +69,15 @@ export function installHydraParamApi() {
         let pattern = null;
         let last = typeof spec === 'number' ? spec : 0;
         try {
-          pattern = strudel ? strudel.reify(spec) : null;
+          // A data-pack reference resolves to its values before reify sees it.
+          // Hydra preambles are not run through the Strudel transpiler, so the
+          // "Weather:3" rewrite never reaches them — but reify with
+          // miniAllStrings active would read the string as sound:index and
+          // hold the parameter on an object. Resolving first is what keeps
+          // H("Weather:3") meaning the same column it means in Strudel.
+          pattern = strudel
+            ? (resolveDataRef(spec, strudel) ?? strudel.reify(spec))
+            : null;
         } catch (e) {
           console.error('[hydra-params] could not reify a H() argument', e);
         }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   evaluateValuePattern, isValuePattern, formatValuePattern,
-  entryHasValuePattern, chainHasValuePattern
+  entryHasValuePattern, chainHasValuePattern, isDataRefNode, setDataRefReader
 } from '../src/audio-net/ValuePattern.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 
@@ -229,4 +229,56 @@ test('room, crush and echo report a patterned argument; a rate alone is not one'
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room <wcl wcj> <1 2 ~ 2 3>*2\n')), true);
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room wcl 2 [0.1 0.4]\n')), true,
     'a patterned pinned amount counts');
+});
+
+// ---------------------------------------------------------------------------
+// Data-pack references
+// ---------------------------------------------------------------------------
+
+test('a data reference reads its column against the cycle grid', () => {
+  const ref = { type: 'dataRef', name: 'Weather', index: 3 };
+  assert.equal(isValuePattern(ref), true, 'counts as patterned: re-derived per cycle');
+  assert.equal(isDataRefNode(ref), true);
+
+  // No reader installed yet: a reference reads as a rest, never a wrong number.
+  assert.equal(evaluateValuePattern(ref, 0), null);
+
+  setDataRefReader((text, cycle) => {
+    assert.equal(text, 'Weather:3');
+    const values = [10, 20, 30, 40];
+    const phase = ((cycle % 1) + 1) % 1;
+    return values[Math.floor(phase * values.length)];
+  });
+  try {
+    assert.equal(evaluateValuePattern(ref, 0), 10);
+    assert.equal(evaluateValuePattern(ref, 0.25), 20);
+    assert.equal(evaluateValuePattern(ref, 0.75), 40);
+    assert.equal(evaluateValuePattern(ref, 5.5), 30, 'the same every cycle');
+  } finally {
+    setDataRefReader(null);
+  }
+});
+
+test('a non-numeric reading is a rest rather than a bad parameter', () => {
+  setDataRefReader(() => 'c4');
+  try {
+    assert.equal(evaluateValuePattern({ type: 'dataRef', name: 'W', index: 1 }, 0), null);
+  } finally {
+    setDataRefReader(null);
+  }
+});
+
+test('a data reference composes inside a sequence and round-trips', () => {
+  const ref = { type: 'dataRef', name: 'Weather', index: 3 };
+  assert.equal(formatValuePattern(ref), 'Weather:3');
+  assert.equal(formatValuePattern(alt(ref, 5)), '<Weather:3 5>');
+
+  setDataRefReader(() => 7);
+  try {
+    // Cycle 0 takes the reference, cycle 1 the literal.
+    assert.equal(evaluateValuePattern(alt(ref, 5), 0), 7);
+    assert.equal(evaluateValuePattern(alt(ref, 5), 1), 5);
+  } finally {
+    setDataRefReader(null);
+  }
 });
