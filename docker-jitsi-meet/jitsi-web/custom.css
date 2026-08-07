@@ -119,8 +119,12 @@ body.welcome-page div
 
 }
 
+/* No !important, same reasoning as body, body * above: this is the default
+   background for an unstyled button, not a forced override. A button with
+   its own more-specific styling (Jitsi's native components, or a CSS Cycles
+   sheet targeting it) wins normally through the cascade. */
 button{
-	background-color: #000000 !important;
+	background-color: #000000;
 
 }
 

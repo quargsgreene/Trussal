@@ -5,7 +5,7 @@ Strudel patterns that play into the page's stylesheet instead of the speakers.
 ```js
 await initCss()
 
-$: css(`.ts-card {
+$: css(`.ts-chip {
      &:hover { border-color: #ffffff }
    }`)
      .color("<#ffffff #eeeeee #34e3df>/4")
@@ -17,6 +17,14 @@ $: css(`.ts-card {
 `await initCss()` declares a program's styling presence exactly as
 `await initTextCycles()` declares its words: first line, then a blank line,
 then the patterns. Any of the capability declarations may share one preamble.
+
+`.ts-chip` above is a real selector — the participant strip inside
+`#trussal-studio-overlay` — so the example is literally paste-able. A
+selector that matches nothing in the DOM is not an error: the statement
+compiles, the sheet installs, the custom properties update on schedule, and
+none of it is visible, because there is nothing on the page for the rule to
+land on. If a `css()` voice looks silently inert, check the selector matches
+a real element before suspecting the pipeline.
 
 ## The two halves of a statement
 

@@ -3,10 +3,15 @@
 // `await initCss()` declares a program's styling presence, exactly as
 // `await initTextCycles()` declares its words. After it, a voice like
 //
-//   $: css(`.ts-card { &:hover { border-color: #fff } }`)
+//   $: css(`.ts-chip { &:hover { border-color: #fff } }`)
 //        .color("<#ffffff #eeeeee #34e3df>/4")
 //        .borderRadius("<^2em / 1em 3em^ ^0.2em 1em 4em 1em^>")
 //        .fast(3)
+//
+// `.ts-chip` (the participant strip) is a real selector inside
+// #trussal-studio-overlay, so this is literally paste-able — a class that
+// exists nowhere in the DOM compiles and runs without error but visibly does
+// nothing, since its rule then matches zero elements.
 //
 // restyles the running UI in time. Silent by construction, the same way Text
 // Cycles is: the renderer carries a dominant onTrigger, so a css voice cannot
