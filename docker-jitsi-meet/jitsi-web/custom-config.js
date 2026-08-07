@@ -55193,6 +55193,11 @@ ${next}`;
       }
       next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)";
     }
+    if (next) {
+      setTextAtoms(textAtoms);
+      setCssAtoms(cssAtoms);
+      publishCssSheets(cssSheets);
+    }
     if (next === lastEvaluated) return;
     lastEvaluated = next;
     const { evaluate: evaluate3, hush: hush2, clearHydra: clearHydra2 } = await loadStrudel();
@@ -55215,9 +55220,6 @@ ${next}`;
     activeSliders = {};
     try {
       beginLiveEpoch();
-      setTextAtoms(textAtoms);
-      setCssAtoms(cssAtoms);
-      publishCssSheets(cssSheets);
       if (hasTextCycles(next)) {
         textLog("program", {
           atoms: Object.keys(textAtoms).length,

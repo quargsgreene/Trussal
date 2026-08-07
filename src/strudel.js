@@ -600,6 +600,24 @@ async function rebuildAndEvaluate() {
          +  '()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)';
   }
 
+  // Minted tokens (cc0, tc7, …) are positional placeholders assigned by
+  // encounter order, not the literal text they stand for — a program that
+  // only changed a word's spelling or a css() value's hex code re-mints
+  // byte-identical tokens in the same positions, so `next` looks unchanged
+  // even though the atom table underneath it just did. Atoms and css sheets
+  // are cheap, side-effect-free to republish and are read live at trigger
+  // time (resolve() consults the CURRENT table on every hap), so they always
+  // run here regardless of the dedup below — only the actual (expensive,
+  // pattern-restarting) re-evaluation is skipped when the program text
+  // itself did not change. Skipping this would freeze every text/css voice
+  // at whatever it first evaluated to: further edits would keep being
+  // accepted and sent, but never take visible effect.
+  if (next) {
+    setTextAtoms(textAtoms);
+    setCssAtoms(cssAtoms);
+    publishCssSheets(cssSheets);
+  }
+
   if (next === lastEvaluated) return;
   lastEvaluated = next;
 
@@ -639,14 +657,6 @@ async function rebuildAndEvaluate() {
   activeSliders = {};
   try {
     beginLiveEpoch();
-    // Must precede evaluate(): the first haps can trigger before it returns,
-    // and a token with no table entry would paint as raw "tc7".
-    setTextAtoms(textAtoms);
-    setCssAtoms(cssAtoms);
-    // Register every peer's stylesheets and hand ours to the sidecar. Off the
-    // hot path on purpose: this is one compile per edit, while the patterned
-    // values inside those sheets are reassigned per hap as custom properties.
-    publishCssSheets(cssSheets);
     // STORAGE POINT 5: the program actually handed to Strudel. If the words
     // are here and nothing appears, the failure is downstream — the trigger or
     // the container.
