@@ -3,7 +3,7 @@
 // `await initTextCycles()` declares a program's text presence, exactly as
 // `await initHydra()` declares its visuals. After it, a voice like
 //
-//   $: typeface("Times New Roman").word("<I like@2 ~ squirrels\?>")
+//   $: typeface('Times New Roman').word("<I like@2 ~ squirrels\?>")
 //        .size("<12px 24px>*2").color("<#346234 #bfe968>")
 //
 // paints one styled <span> per hap into a chat bubble, one bubble per cycle
@@ -21,9 +21,17 @@
 // emoji, a space or a literal "?" in an atom, so text-cycles-core.js mints every
 // literal atom into a grammar-legal token and carries the real characters in the
 // atom table set here before each evaluate.
+//
+// Double-quoted values go through MINI notation, where a bare space separates
+// sequence steps — that is how `.weight("400 200 100 800")` cycles through four
+// weights across a cycle. A value that must stay ONE atom despite its own
+// spaces (a font family like "Times New Roman") needs single quotes instead,
+// which bypass mini entirely (see rewriteTextCalls in text-cycles-core.js) —
+// double-quoting it would mint three separate one-third-cycle steps.
 
-import { getPeerByJitsiId } from './peer-state.js';
+import { getPeerByJitsiId, getLocalPeer } from './peer-state.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
+import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip } from './text-debug.js';
 // The room's `#` effects, as they apply to words and their styling. The
 // mutations are pure and SEEDED there, so every browser paints the same
 // characters from the same shared program.
@@ -60,6 +68,12 @@ const CSS_BY_PARAM = [
 // so tokens in the program about to run always resolve against their own text.
 export function setTextAtoms(table) {
   atoms = table || {};
+  // STORAGE POINT 4: the words as characters, keyed by the token the program
+  // carries. A token the renderer cannot find here paints as raw "tc7".
+  textLogChanged('atoms', {
+    count: Object.keys(atoms).length,
+    table: Object.fromEntries(Object.entries(atoms).map(([t, a]) => [t, `${a.text} (${a.peer ?? 'no peer'})`])),
+  });
 }
 
 export function isTextCyclesActive() { return active; }
@@ -116,7 +130,76 @@ function ensureContainer() {
     if (sentinel && sentinel.parentNode === log) log.insertBefore(container, sentinel);
     else log.appendChild(container);
   }
+  // STORAGE POINT 6: where the painted spans actually are. Detached is not an
+  // error state — that is how the backlog survives a closed chat — but it IS
+  // the state in which a perfectly working pipeline shows nothing at all, so
+  // it has to be visible. Logged on transitions only; this runs per hap.
+  textLogChanged('container', {
+    attached: container.parentNode === log && !!log,
+    chatLogInDocument: !!log,
+    bubbles: bubbles.size,
+    ...(log ? {} : { why: chatAbsenceReason() }),
+  });
   return container;
+}
+
+// --- entering the chat --------------------------------------------------------
+//
+// Jitsi gates the message LOG behind a nickname. With no name on the local
+// participant the chat panel renders its DisplayNameForm INSTEAD of the message
+// container, so #chatconversation is not in the document at all — our container
+// never finds a parent and every word is painted into a detached div. That is
+// indistinguishable, from the outside, from a pipeline that never ran.
+//
+// Running a text pattern is the gesture that asks for the chat, so it also
+// supplies the nickname: the performer's Net Cycles room index, which is the
+// token the metaprogram already addresses them by, so a bubble is labelled with
+// the identity the room uses rather than an anonymous "text".
+//
+// A performer who chose their own name keeps it — the prompt is already
+// satisfied for them, and the name is theirs across the whole meeting UI, not
+// just this panel.
+
+// The chat DOM is missing for two quite different reasons and the fix differs,
+// so say which.
+function chatAbsenceReason() {
+  const state = jitsiState();
+  if (!state) return 'no Jitsi store yet';
+  const local = state['features/base/participants']?.local;
+  if (!local?.name) {
+    return 'the local participant has no display name — Jitsi is showing the chat nickname prompt instead of the message list';
+  }
+  return 'the chat panel is closed (words are collecting in a detached container and appear when it reopens)';
+}
+
+function jitsiState() {
+  const store = typeof window !== 'undefined' ? window.APP?.store : null;
+  return store && typeof store.getState === 'function' ? store.getState() : null;
+}
+
+function localParticipantName() {
+  const state = jitsiState();
+  const name = state?.['features/base/participants']?.local?.name;
+  return typeof name === 'string' && name.trim() ? name : null;
+}
+
+// The performer's Net Cycles token. Assigned by the sidecar in its roster, so
+// it can arrive after the first evaluate — which is why the entry below
+// retries rather than giving up on the first miss.
+function localToken() {
+  const index = getLocalPeer()?.roomIndex;
+  return index == null || index === '' ? null : String(index);
+}
+
+// Exactly what Jitsi's own nickname form dispatches (updateSettings →
+// SETTINGS_UPDATED). The base/settings middleware copies displayName onto the
+// local participant as `name`, which is the field the chat panel's prompt
+// tests, so this both dismisses the prompt and names us in the room.
+function setNickname(name) {
+  const store = typeof window !== 'undefined' ? window.APP?.store : null;
+  if (!store || typeof store.dispatch !== 'function') return false;
+  store.dispatch({ type: 'SETTINGS_UPDATED', settings: { displayName: name } });
+  return true;
 }
 
 // Ask Jitsi to open the chat panel. OPEN_CHAT is a real action type in the
@@ -128,6 +211,71 @@ function openChatPanel() {
   } catch (e) {
     console.warn('[text-cycles] could not open the chat panel', e);
   }
+}
+
+let chatEntryTimer = null;
+let chatEntryTries = 0;
+// ~20s. Long enough to cover the sidecar handshake that assigns the token and
+// the React renders that mount the panel, short enough that a page which will
+// never get there says so instead of retrying for the whole set.
+const CHAT_ENTRY_MAX_TRIES = 40;
+const CHAT_ENTRY_INTERVAL_MS = 500;
+
+// Take a nickname, open the panel, attach the container — retrying while the
+// pieces arrive. Stops as soon as the container is in the document, so a
+// performer who later closes the chat is not fought over it.
+function ensureChatEntry() {
+  if (chatEntryTimer !== null) return;
+  chatEntryTries = 0;
+  const attempt = () => {
+    chatEntryTimer = null;
+    if (!active) {
+      textLog('chat-entry:abandoned', { reason: 'text cycles stopped before the chat opened' });
+      return;
+    }
+    chatEntryTries++;
+
+    const name = localParticipantName();
+    const token = localToken();
+    if (!name) {
+      if (token) {
+        const dispatched = setNickname(token);
+        textLog('chat-entry:nickname', {
+          token,
+          dispatched,
+          note: dispatched ? 'set as the display name — this is what dismisses the chat nickname prompt' : 'no Jitsi store to dispatch to',
+        });
+      } else {
+        textLog('chat-entry:waiting', {
+          try: chatEntryTries,
+          reason: 'the sidecar has not assigned a room index yet, so there is no token to use as the nickname',
+        });
+      }
+    }
+    openChatPanel();
+    const attached = ensureContainer().parentNode != null;
+
+    textLog('chat-entry', {
+      try: chatEntryTries,
+      participantName: localParticipantName(),
+      token,
+      chatLogInDocument: !!document.getElementById('chatconversation'),
+      attached,
+    });
+    if (attached) return;
+    if (chatEntryTries >= CHAT_ENTRY_MAX_TRIES) {
+      // Not fatal: the container keeps collecting, and a later paint attaches
+      // it the moment the log appears — including if the performer opens chat
+      // or types a nickname by hand.
+      textWarn('chat-entry', 'gave up opening the chat; words are collecting in a detached container and will appear if it opens later', {
+        tries: chatEntryTries,
+        why: chatAbsenceReason(),
+      });
+      return;
+    }
+    chatEntryTimer = setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS);
+  };
+  attempt();
 }
 
 // One reusable hover rule per (participant, declaration) pair. Inline styles
@@ -295,7 +443,10 @@ let lastWordOfTurn = new Map();
 function paint(value, cycle) {
   ensureContainer();
   let text = resolve(value.word);
-  if (text == null || text === '') return;
+  if (text == null || text === '') {
+    textHapLog('paint:empty', { token: value.word, note: 'token resolved to nothing — it is not in the atom table for the program that is running' });
+    return;
+  }
 
   const peerId = peerOf(value.word);
   const peerClass = peerTextClass(peerId);
@@ -312,12 +463,16 @@ function paint(value, cycle) {
   const wordIndex = nextWordIndex(peerId, cycle);
 
   if (active) {
+    const authored = text;
     // crush first, then noise — the master path's order, so the glyphs a bed
     // adds are not themselves eaten by the decimation.
     text = crushWord(text, active.text.dropChance, seedCycle, seedPeer, wordIndex);
     // A word crushed away entirely paints nothing. That is the effect working,
     // not an error: the same directive is dropping samples out of the audio.
-    if (!text) return;
+    if (!text) {
+      textHapLog('paint:crushed-away', { authored, seedCycle, wordIndex, note: 'the room `#` chain dropped every character — the effect working, not a failure' });
+      return;
+    }
     text = noiseWord(text, active.text, seedCycle, seedPeer, wordIndex);
   }
 
@@ -375,6 +530,17 @@ function paint(value, cycle) {
   if (line.childNodes.length) line.appendChild(document.createTextNode(' '));
   line.appendChild(node);
 
+  // The last thing that can be said about a word: it is in the DOM. Whether a
+  // human can SEE it is the container's question, one line up — a span in a
+  // detached container is painted and invisible.
+  textHapLog('paint', {
+    text,
+    peer: peerId,
+    cycle,
+    visible: !!container.parentNode,
+    style: span.style.cssText || '(inherited from Jitsi chat)',
+  });
+
   // Held rather than echoed now: which word is the turn's LAST is only known
   // once the turn ends (echoLastWord, from bubbleFor).
   if (active && active.text.repeats > 0 && active.text.repeatAlpha > 0) {
@@ -397,13 +563,23 @@ function paint(value, cycle) {
 // accurately; the paint is deferred by the same lead so words land in step with
 // the beat rather than early.
 function handleTrigger(hap, currentTime, cps, targetTime) {
-  if (!active) return;
+  // STORAGE POINT 5b: the hap, as the scheduler hands it over. Reaching here
+  // at all proves ._tcRender() was attached and the program evaluated; a hap
+  // with no `word` is a text statement that lost its word() in the rewrite.
+  if (!active) {
+    textHapLog('trigger:inactive', { note: 'a hap arrived but initTextCycles() has not run in this evaluate', value: hap?.value });
+    return;
+  }
   const value = hap?.value;
-  if (!value || value.word == null) return;
+  if (!value || value.word == null) {
+    textHapLog('trigger:no-word', { value });
+    return;
+  }
   const begin = hap.whole?.begin ?? hap.part?.begin;
   const cycle = Math.floor(Number(begin?.valueOf?.() ?? begin ?? 0));
   const lead = Number(targetTime) - Number(currentTime);
   const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1000) : 0;
+  textHapLog('trigger', { token: value.word, text: resolve(value.word), cycle, delayMs: Math.round(delayMs) });
   setTimeout(() => {
     try {
       paint(value, cycle);
@@ -438,9 +614,18 @@ export function installTextCycles(mod) {
   register('_tcRender', (pat) => pat.onTrigger(handleTrigger, true));
 
   scope.initTextCycles = async () => {
-    if (!active) {
-      active = true;
-      openChatPanel();
+    const wasActive = active;
+    active = true;
+    // Every evaluate re-runs the preamble, so this is also the room's heartbeat
+    // for "a text program is running" — but the chat entry only has to be
+    // driven when it was not already.
+    if (!wasActive) {
+      textLog('init', {
+        note: 'a program declared text presence — taking a nickname and opening the chat',
+        participantName: localParticipantName(),
+        token: localToken(),
+      });
+      ensureChatEntry();
     }
     ensureContainer();
     return true;
@@ -452,7 +637,12 @@ export function installTextCycles(mod) {
 // Text stops with the music. The bubbles already painted stay in the chat —
 // they read as conversation history, not as live state.
 export function stopTextCycles() {
+  textLog('stop', { bubblesKept: bubbles.size });
   active = false;
+  if (chatEntryTimer !== null) {
+    clearTimeout(chatEntryTimer);
+    chatEntryTimer = null;
+  }
   // Per-turn effect state, dropped with the run. Words already painted stay as
   // history, but a turn that never ended must not echo its last word into the
   // next set, and a stale previous-turn style must not be what the next one
@@ -461,3 +651,23 @@ export function stopTextCycles() {
   previousTurnStyle.clear();
   wordCounters.clear();
 }
+
+// Everything the renderer is holding right now, for __trussalText.state().
+// Pulled rather than pushed: these are the questions asked AFTER the words
+// failed to appear, and none of them is worth a line per hap.
+registerTextProbe('renderer', () => ({
+  active,
+  atoms: Object.keys(atoms).length,
+  bubbles: bubbles.size,
+  containerAttached: !!(container && container.parentNode),
+  chatLogInDocument: !!document.getElementById('chatconversation'),
+  chatAbsenceReason: document.getElementById('chatconversation') ? null : chatAbsenceReason(),
+  participantName: localParticipantName(),
+  token: localToken(),
+  wordsPainted: container ? container.querySelectorAll('.tc-word').length : 0,
+  // The characters currently in the chat, so a page can be asked what it is
+  // showing without reading the DOM by hand.
+  lines: container
+    ? Array.from(container.querySelectorAll('.tc-line')).slice(-5).map((el) => clip(el.textContent, 120))
+    : [],
+}));

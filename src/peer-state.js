@@ -10,6 +10,8 @@
 import { getRoomNameFromUrl } from './jamulus.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { setPeerPacks, removePeerPacks } from './data-ref.js';
+import { hasTextCycles } from './text-cycles-core.js';
+import { textLog, clip } from './text-debug.js';
 
 const subscribers = new Set();
 
@@ -222,7 +224,23 @@ function openSocket() {
 
 function applyPatch(peer, patch) {
   if (!patch) return;
-  if (typeof patch.pattern === 'string') peer.pattern = patch.pattern;
+  if (typeof patch.pattern === 'string') {
+    // STORAGE POINT 1 (remote): a peer's program as this browser received it.
+    // Only on a real change and only when text is involved on either side of
+    // it — peer updates arrive at metrics rate and carry the pattern every
+    // time. Losing text here means the sender never sent it; every browser
+    // paints from its own copy of this string.
+    if (patch.pattern !== peer.pattern && (hasTextCycles(patch.pattern) || hasTextCycles(peer.pattern))) {
+      textLog('peer-state:pattern-in', {
+        peer: peer.peerId,
+        jitsiId: peer.jitsiId,
+        isBot: peer.isBot,
+        declaresText: hasTextCycles(patch.pattern),
+        code: clip(patch.pattern),
+      });
+    }
+    peer.pattern = patch.pattern;
+  }
   if (typeof patch.compiledCss === 'string') peer.compiledCss = patch.compiledCss;
   if (patch.effects) peer.effects = {
     distortion: !!patch.effects.distortion,
@@ -593,7 +611,19 @@ export function sendLocalNetStats(sample = {}) {
 }
 
 export function sendLocalPattern(code) {
-  localPeer.pattern = typeof code === 'string' ? code : '';
+  const next = typeof code === 'string' ? code : '';
+  // STORAGE POINT 1 (local): the editor's text, on its way out. This is the
+  // first place the program is held outside the textarea, and the copy every
+  // other browser will paint from.
+  if (next !== localPeer.pattern && (hasTextCycles(next) || hasTextCycles(localPeer.pattern))) {
+    textLog('peer-state:pattern-out', {
+      declaresText: hasTextCycles(next),
+      playing: localPeer.playing,
+      roomIndex: localPeer.roomIndex,
+      code: clip(next),
+    });
+  }
+  localPeer.pattern = next;
   safeSend({ type: 'pattern', code: localPeer.pattern });
   emit('peer-upsert', localPeer);
 }

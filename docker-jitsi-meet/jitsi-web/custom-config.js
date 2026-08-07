@@ -353,6 +353,265 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/text-cycles-core.js
+  function hasTextCycles(code2) {
+    return INIT_TEXT_CYCLES_RE.test(String(code2 ?? ""));
+  }
+  function splitStatements(code2) {
+    const lines = String(code2 ?? "").split("\n");
+    const out = [];
+    let cur = [];
+    for (const line of lines) {
+      if (LABEL_RE.test(line) && cur.length) {
+        out.push(cur.join("\n"));
+        cur = [];
+      }
+      cur.push(line);
+    }
+    if (cur.length) out.push(cur.join("\n"));
+    return out.map((text2) => ({ text: text2, hasWord: WORD_CALL_RE.test(text2) }));
+  }
+  function encodeMiniText(src2, mint) {
+    let out = "";
+    let atom2 = "";
+    const flush = () => {
+      if (atom2 === "") return;
+      out += atom2 === "." ? "." : mint(atom2);
+      atom2 = "";
+    };
+    for (let i = 0; i < src2.length; i++) {
+      const c2 = src2[i];
+      if (c2 === "\\") {
+        if (i + 1 < src2.length) atom2 += src2[++i];
+        else atom2 += "\\";
+        continue;
+      }
+      if (/\s/.test(c2)) {
+        flush();
+        out += c2;
+        continue;
+      }
+      if (STRUCTURAL.has(c2)) {
+        flush();
+        out += c2;
+        continue;
+      }
+      if (NUM_ARG_OPS.has(c2)) {
+        flush();
+        out += c2;
+        let j2 = i + 1;
+        while (j2 < src2.length && /[0-9.]/.test(src2[j2])) out += src2[j2++];
+        i = j2 - 1;
+        continue;
+      }
+      if (c2 === "(") {
+        flush();
+        let depth = 0;
+        let j2 = i;
+        for (; j2 < src2.length; j2++) {
+          out += src2[j2];
+          if (src2[j2] === "(") depth++;
+          else if (src2[j2] === ")" && --depth === 0) break;
+        }
+        i = j2;
+        continue;
+      }
+      atom2 += c2;
+    }
+    flush();
+    return out;
+  }
+  function literalBody(raw) {
+    return { quote: raw[0], body: raw.slice(1, -1) };
+  }
+  function rewriteTextCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
+    const atoms3 = {};
+    const mint = (text2) => {
+      const token = `tc${counter.n++}`;
+      atoms3[token] = { text: text2, peer };
+      return token;
+    };
+    const re2 = new RegExp(
+      `((?:^|[^\\w$])(?:${TEXT_VALUE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL}`,
+      "g"
+    );
+    const rewritten = splitStatements(code2).map(({ text: text2, hasWord }) => {
+      if (!hasWord) return text2;
+      const out = text2.replace(re2, (match2, head, raw) => {
+        if (raw[0] === "`" && raw.includes("${")) return match2;
+        const { quote, body } = literalBody(raw);
+        const encoded = quote === "'" ? mint(body) : encodeMiniText(body, mint);
+        return `${head}"${encoded}"`;
+      });
+      return `${out.replace(/[\s;]+$/, "")}
+._tcRender()`;
+    }).join("\n");
+    return { code: rewritten, atoms: atoms3 };
+  }
+  function sanitizeDeclarations(input) {
+    if (!input) return [];
+    const pairs2 = [];
+    if (typeof input === "object") {
+      for (const [prop, value2] of Object.entries(input)) pairs2.push([prop, value2]);
+    } else {
+      for (const chunk2 of String(input).split(";")) {
+        if (!chunk2.trim()) continue;
+        const idx = chunk2.indexOf(":");
+        if (idx === -1) continue;
+        pairs2.push([chunk2.slice(0, idx), chunk2.slice(idx + 1)]);
+      }
+    }
+    const out = [];
+    for (const [rawProp, rawValue] of pairs2) {
+      const prop = String(rawProp).trim().toLowerCase();
+      const value2 = String(rawValue ?? "").trim();
+      if (!prop || !value2) continue;
+      if (!CSS_PROP_OK.test(prop) || CSS_PROP_BLOCK.has(prop)) continue;
+      if (CSS_VALUE_BLOCK.test(value2)) continue;
+      out.push([prop, value2]);
+    }
+    return out;
+  }
+  function sanitizeHref(url2) {
+    const raw = String(url2 ?? "").trim();
+    if (!raw || /[\s<>"']/.test(raw)) return null;
+    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
+    if (!/^(https?|mailto):/i.test(withScheme)) return null;
+    return withScheme;
+  }
+  function peerTextClass(jitsiId) {
+    const safe = String(jitsiId ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return `tc-p-${safe || "anon"}`;
+  }
+  var TEXT_PARAMS, TEXT_VALUE_PARAMS, STRUCTURAL, NUM_ARG_OPS, STRING_LITERAL, LABEL_RE, WORD_CALL_RE, INIT_TEXT_CYCLES_RE, INIT_TEXT_CYCLES_PATTERN, CSS_VALUE_BLOCK, CSS_PROP_OK, CSS_PROP_BLOCK;
+  var init_text_cycles_core = __esm({
+    "src/text-cycles-core.js"() {
+      TEXT_PARAMS = [
+        "word",
+        "w",
+        "typeface",
+        "t",
+        "weight",
+        "spacing",
+        "slant",
+        "hover",
+        "hyperlink",
+        "underline"
+      ];
+      TEXT_VALUE_PARAMS = [...TEXT_PARAMS, "size", "color"].sort((a2, b) => b.length - a2.length);
+      STRUCTURAL = /* @__PURE__ */ new Set(["<", ">", "[", "]", "{", "}", ",", "|", "~"]);
+      NUM_ARG_OPS = /* @__PURE__ */ new Set(["*", "/", "!", "@", "%", "?"]);
+      STRING_LITERAL = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
+      LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
+      WORD_CALL_RE = /(?:^|[^\w$])(?:word|w)\s*\(/;
+      INIT_TEXT_CYCLES_RE = /^\s*await\s+initTextCycles\s*\(/m;
+      INIT_TEXT_CYCLES_PATTERN = {
+        source: INIT_TEXT_CYCLES_RE.source,
+        flags: INIT_TEXT_CYCLES_RE.flags
+      };
+      CSS_VALUE_BLOCK = /url\s*\(|expression\s*\(|javascript\s*:|@import|<\/|[{}<>;]/i;
+      CSS_PROP_OK = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/;
+      CSS_PROP_BLOCK = /* @__PURE__ */ new Set(["behavior", "-moz-binding"]);
+    }
+  });
+
+  // src/text-debug.js
+  function printing() {
+    return typeof window === "undefined" || window.__trussalTextDebug !== false;
+  }
+  function clip(text2, max2 = MAX_INLINE) {
+    const s2 = String(text2 ?? "");
+    return s2.length <= max2 ? s2 : `${s2.slice(0, max2)}\u2026 (+${s2.length - max2} more chars)`;
+  }
+  function record(stage, detail) {
+    const previous = stages.get(stage);
+    stages.set(stage, { at: Date.now(), count: (previous?.count ?? 0) + 1, detail });
+    return previous;
+  }
+  function textLog(stage, detail) {
+    record(stage, detail);
+    if (printing()) console.log(`${PREFIX} ${stage}`, detail);
+  }
+  function recordAndDiff(stage, detail) {
+    let key;
+    try {
+      key = JSON.stringify(detail);
+    } catch (e30) {
+      key = null;
+    }
+    const previous = stages.get(stage);
+    record(stage, detail);
+    stages.get(stage).key = key;
+    return key !== null && previous && previous.key === key;
+  }
+  function textLogChanged(stage, detail) {
+    if (recordAndDiff(stage, detail)) return;
+    if (printing()) console.log(`${PREFIX} ${stage}`, detail);
+  }
+  function textHapLog(stage, detail) {
+    record(stage, detail);
+    if (!printing()) return;
+    const now = Date.now();
+    if (now - hapWindowStart >= 1e3) {
+      if (hapSuppressed) console.log(`${PREFIX} \u2026 ${hapSuppressed} more hap line(s) not printed`);
+      hapWindowStart = now;
+      hapPrinted = 0;
+      hapSuppressed = 0;
+    }
+    if (hapPrinted++ >= HAP_LOGS_PER_SEC) {
+      hapSuppressed++;
+      return;
+    }
+    console.log(`${PREFIX} ${stage}`, detail);
+  }
+  function textWarn(stage, message, detail) {
+    if (recordAndDiff(stage, { message, ...detail })) return;
+    console.warn(`${PREFIX} ${stage}: ${message}`, detail);
+  }
+  function registerTextProbe(name3, fn) {
+    probes.set(name3, fn);
+  }
+  function textState() {
+    const out = { stages: {}, probes: {} };
+    for (const [stage, rec] of stages) {
+      out.stages[stage] = { at: new Date(rec.at).toISOString(), count: rec.count, detail: rec.detail };
+    }
+    for (const [name3, fn] of probes) {
+      try {
+        out.probes[name3] = fn();
+      } catch (e30) {
+        out.probes[name3] = { error: String(e30 && e30.message || e30) };
+      }
+    }
+    return out;
+  }
+  var PREFIX, MAX_INLINE, HAP_LOGS_PER_SEC, stages, probes, hapWindowStart, hapPrinted, hapSuppressed;
+  var init_text_debug = __esm({
+    "src/text-debug.js"() {
+      PREFIX = "[text-cycles]";
+      MAX_INLINE = 500;
+      HAP_LOGS_PER_SEC = 12;
+      stages = /* @__PURE__ */ new Map();
+      probes = /* @__PURE__ */ new Map();
+      hapWindowStart = 0;
+      hapPrinted = 0;
+      hapSuppressed = 0;
+      if (typeof window !== "undefined") {
+        window.__trussalText = {
+          state: textState,
+          on() {
+            window.__trussalTextDebug = true;
+            return "text-cycles tracing ON";
+          },
+          off() {
+            window.__trussalTextDebug = false;
+            return "text-cycles tracing OFF (state() still records)";
+          }
+        };
+      }
+    }
+  });
+
   // src/peer-state.js
   function emit2(event, payload) {
     subscribers2.forEach((fn) => {
@@ -505,7 +764,18 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function applyPatch(peer, patch) {
     if (!patch) return;
-    if (typeof patch.pattern === "string") peer.pattern = patch.pattern;
+    if (typeof patch.pattern === "string") {
+      if (patch.pattern !== peer.pattern && (hasTextCycles(patch.pattern) || hasTextCycles(peer.pattern))) {
+        textLog("peer-state:pattern-in", {
+          peer: peer.peerId,
+          jitsiId: peer.jitsiId,
+          isBot: peer.isBot,
+          declaresText: hasTextCycles(patch.pattern),
+          code: clip(patch.pattern)
+        });
+      }
+      peer.pattern = patch.pattern;
+    }
     if (typeof patch.compiledCss === "string") peer.compiledCss = patch.compiledCss;
     if (patch.effects) peer.effects = {
       distortion: !!patch.effects.distortion,
@@ -553,14 +823,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       canWriteModulation: true
     };
   }
-  function upsertPeer(record) {
-    const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
-    if (record.roomIndex !== void 0) existing.roomIndex = record.roomIndex;
-    if (record.jitsiId !== void 0) existing.jitsiId = record.jitsiId;
-    if (record.displayName !== void 0) existing.displayName = record.displayName;
-    if (record.isBot !== void 0) existing.isBot = !!record.isBot;
-    if (record.isAggregator !== void 0) existing.isAggregator = !!record.isAggregator;
-    applyPatch(existing, record);
+  function upsertPeer(record2) {
+    const existing = peersByPeerId.get(record2.peerId) || defaultPeer(record2.peerId);
+    if (record2.roomIndex !== void 0) existing.roomIndex = record2.roomIndex;
+    if (record2.jitsiId !== void 0) existing.jitsiId = record2.jitsiId;
+    if (record2.displayName !== void 0) existing.displayName = record2.displayName;
+    if (record2.isBot !== void 0) existing.isBot = !!record2.isBot;
+    if (record2.isAggregator !== void 0) existing.isAggregator = !!record2.isAggregator;
+    applyPatch(existing, record2);
     peersByPeerId.set(existing.peerId, existing);
     if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
     return existing;
@@ -739,7 +1009,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     emit2("peer-upsert", localPeer);
   }
   function sendLocalPattern(code2) {
-    localPeer.pattern = typeof code2 === "string" ? code2 : "";
+    const next = typeof code2 === "string" ? code2 : "";
+    if (next !== localPeer.pattern && (hasTextCycles(next) || hasTextCycles(localPeer.pattern))) {
+      textLog("peer-state:pattern-out", {
+        declaresText: hasTextCycles(next),
+        playing: localPeer.playing,
+        roomIndex: localPeer.roomIndex,
+        code: clip(next)
+      });
+    }
+    localPeer.pattern = next;
     safeSend({ type: "pattern", code: localPeer.pattern });
     emit2("peer-upsert", localPeer);
   }
@@ -817,6 +1096,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       init_jamulus();
       init_participants();
       init_data_ref();
+      init_text_cycles_core();
+      init_text_debug();
       subscribers2 = /* @__PURE__ */ new Set();
       peersByPeerId = /* @__PURE__ */ new Map();
       peerIdByJitsiId = /* @__PURE__ */ new Map();
@@ -2055,7 +2336,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     cleanupUi: () => cleanupUi,
     clearHydra: () => clearHydra,
     clearScope: () => clearScope,
-    clip: () => clip,
+    clip: () => clip2,
     coarse: () => coarse,
     code2hash: () => code2hash,
     color: () => color,
@@ -12395,7 +12676,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const l = new Blob([e30], { type: o }), d = document.createElement("a");
     d.href = window.URL.createObjectURL(l), d.download = t, d.click();
   }
-  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext2, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
+  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip2, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext2, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
     "strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
@@ -15227,7 +15508,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
       ({ uid } = registerControl("uid"));
       ({ val } = registerControl("val"));
       ({ cps } = registerControl("cps"));
-      ({ clip, legato } = registerControl("clip", "legato"));
+      ({ clip: clip2, legato } = registerControl("clip", "legato"));
       ({ duration, dur } = registerControl("duration", "dur"));
       ({ zrand } = registerControl("zrand"));
       ({ curve } = registerControl("curve"));
@@ -15451,7 +15732,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
         channels,
         chord: chord$1,
         chorus,
-        clip,
+        clip: clip2,
         coarse,
         color,
         colour,
@@ -16553,7 +16834,7 @@ Please check with "npm ls @strudel/core".`
         clamp: clamp$1,
         cleanupUi,
         clearScope,
-        clip,
+        clip: clip2,
         coarse,
         code2hash,
         color,
@@ -50698,7 +50979,7 @@ ${SHORTCUT_LINES[fn]}
   function setBufferReplayEnabled(v2) {
     bufferReplayEnabled = !!v2;
   }
-  function startLocalCapture(sourceNode2, localToken) {
+  function startLocalCapture(sourceNode2, localToken2) {
     if (!bufferReplayEnabled || recorder || typeof MediaRecorder === "undefined") return;
     const ctx2 = getAudioContext();
     if (!ctx2 || !sourceNode2) return;
@@ -50712,7 +50993,7 @@ ${SHORTCUT_LINES[fn]}
     rec.onstop = () => {
       if (chunks.length) {
         const blob = new Blob(chunks.splice(0), { type: "audio/webm" });
-        captureTakes.set(localToken, { blob, bytes: blob.size });
+        captureTakes.set(localToken2, { blob, bytes: blob.size });
       }
       if (recorder === rec) {
         try {
@@ -51639,14 +51920,14 @@ ${SHORTCUT_LINES[fn]}
       const records = parsed.filter((v2) => v2 && typeof v2 === "object" && !Array.isArray(v2));
       if (records.length === parsed.length && records.length > 0) {
         const keys3 = [];
-        for (const record of records) {
-          for (const key of Object.keys(record)) if (!keys3.includes(key)) keys3.push(key);
+        for (const record2 of records) {
+          for (const key of Object.keys(record2)) if (!keys3.includes(key)) keys3.push(key);
         }
         return keys3.map((key) => {
           const ordinals3 = /* @__PURE__ */ new Map();
           const values = [];
-          for (const record of records) {
-            const flat2 = flattenValues(record[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals3);
+          for (const record2 of records) {
+            const flat2 = flattenValues(record2[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals3);
             values.push(...flat2.values);
           }
           return { label: key, values, truncated: false };
@@ -51752,11 +52033,11 @@ ${SHORTCUT_LINES[fn]}
       return [];
     });
   }
-  function bankOf(record) {
-    const parts = record.id.split("/");
-    return parts.length >= 2 ? parts[parts.length - 2] : record.id.split(/\W+/)[0] ?? "user";
+  function bankOf(record2) {
+    const parts = record2.id.split("/");
+    return parts.length >= 2 ? parts[parts.length - 2] : record2.id.split(/\W+/)[0] ?? "user";
   }
-  var isDataRecord = (record) => record?.kind === "data" && !!record.pack;
+  var isDataRecord = (record2) => record2?.kind === "data" && !!record2.pack;
   async function registerSamplesFromDB(registerSampleSource2) {
     const soundFiles = await readAll();
     if (!soundFiles?.length) return;
@@ -51785,26 +52066,26 @@ ${SHORTCUT_LINES[fn]}
     const records = await readAll();
     if (!records?.length) return [];
     const banks = /* @__PURE__ */ new Map();
-    for (const record of records) {
-      if (isDataRecord(record)) {
-        banks.set(record.pack.name, {
-          name: record.pack.name,
-          kind: record.pack.kind,
-          count: record.pack.samples.length,
-          truncated: record.pack.truncatedSamples > 0 || record.pack.droppedSamples > 0,
-          samples: record.pack.samples.map((s2, i) => ({
+    for (const record2 of records) {
+      if (isDataRecord(record2)) {
+        banks.set(record2.pack.name, {
+          name: record2.pack.name,
+          kind: record2.pack.kind,
+          count: record2.pack.samples.length,
+          truncated: record2.pack.truncatedSamples > 0 || record2.pack.droppedSamples > 0,
+          samples: record2.pack.samples.map((s2, i) => ({
             label: s2.label,
-            id: `${record.id}#${i}`,
+            id: `${record2.id}#${i}`,
             length: s2.values.length,
             truncated: s2.truncated
           }))
         });
         continue;
       }
-      if (!isAudioFile(record.title)) continue;
-      const name3 = bankOf(record);
+      if (!isAudioFile(record2.title)) continue;
+      const name3 = bankOf(record2);
       const bank2 = banks.get(name3) ?? { name: name3, kind: "audio", count: 0, truncated: false, samples: [] };
-      bank2.samples.push({ label: record.title, id: record.id });
+      bank2.samples.push({ label: record2.title, id: record2.id });
       bank2.count = bank2.samples.length;
       banks.set(name3, bank2);
     }
@@ -51840,14 +52121,14 @@ ${SHORTCUT_LINES[fn]}
     const recordId = id3.slice(0, hash);
     const index2 = Number(id3.slice(hash + 1));
     await withStore("readwrite", async (store) => {
-      const record = await req(store.get(recordId));
-      if (!isDataRecord(record) || !Number.isInteger(index2)) return;
-      const samples2 = record.pack.samples.filter((_3, i) => i !== index2);
+      const record2 = await req(store.get(recordId));
+      if (!isDataRecord(record2) || !Number.isInteger(index2)) return;
+      const samples2 = record2.pack.samples.filter((_3, i) => i !== index2);
       if (!samples2.length) {
         await req(store.delete(recordId));
         return;
       }
-      await req(store.put({ ...record, pack: { ...record.pack, samples: samples2 } }));
+      await req(store.put({ ...record2, pack: { ...record2.pack, samples: samples2 } }));
     });
   }
   async function uploadSamplesToDB(files2, onDone) {
@@ -51866,7 +52147,7 @@ ${SHORTCUT_LINES[fn]}
     })));
     const existing = await getSampleBanks();
     const taken = new Set(existing.map((b) => b.name));
-    for (const record of blobRecords) taken.add(bankOf(record));
+    for (const record2 of blobRecords) taken.add(bankOf(record2));
     let budget = MAX_VALUES_TOTAL - (await getDataPacks()).reduce((sum, pack) => sum + pack.samples.reduce((n2, s2) => n2 + s2.values.length, 0), 0);
     const errors = [];
     const dataRecords = [];
@@ -51918,11 +52199,11 @@ ${SHORTCUT_LINES[fn]}
       req2.onerror = () => reject(req2.error);
     });
     let count = 0;
-    for (const record of stored) {
-      if (!record || !isImageFile(record.title || record.id)) continue;
-      const folder = folderOf(record.id) || (record.title || "").replace(/\.[^.]+$/, "");
+    for (const record2 of stored) {
+      if (!record2 || !isImageFile(record2.title || record2.id)) continue;
+      const folder = folderOf(record2.id) || (record2.title || "").replace(/\.[^.]+$/, "");
       if (!imageUrls.has(folder)) imageUrls.set(folder, []);
-      imageUrls.get(folder).push({ title: record.title, url: URL.createObjectURL(record.blob) });
+      imageUrls.get(folder).push({ title: record2.title, url: URL.createObjectURL(record2.blob) });
       count++;
     }
     for (const entries2 of imageUrls.values()) {
@@ -52202,165 +52483,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
 
   // src/text-cycles.js
   init_peer_state();
-
-  // src/text-cycles-core.js
-  var TEXT_PARAMS = [
-    "word",
-    "w",
-    "typeface",
-    "t",
-    "weight",
-    "spacing",
-    "slant",
-    "hover",
-    "hyperlink",
-    "underline"
-  ];
-  var TEXT_VALUE_PARAMS = [...TEXT_PARAMS, "size", "color"].sort((a2, b) => b.length - a2.length);
-  var STRUCTURAL = /* @__PURE__ */ new Set(["<", ">", "[", "]", "{", "}", ",", "|", "~"]);
-  var NUM_ARG_OPS = /* @__PURE__ */ new Set(["*", "/", "!", "@", "%", "?"]);
-  var STRING_LITERAL = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
-  var LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
-  var WORD_CALL_RE = /(?:^|[^\w$])(?:word|w)\s*\(/;
-  var INIT_TEXT_CYCLES_RE = /^\s*await\s+initTextCycles\s*\(/m;
-  var INIT_TEXT_CYCLES_PATTERN = {
-    source: INIT_TEXT_CYCLES_RE.source,
-    flags: INIT_TEXT_CYCLES_RE.flags
-  };
-  function hasTextCycles(code2) {
-    return INIT_TEXT_CYCLES_RE.test(String(code2 ?? ""));
-  }
-  function splitStatements(code2) {
-    const lines = String(code2 ?? "").split("\n");
-    const out = [];
-    let cur = [];
-    for (const line of lines) {
-      if (LABEL_RE.test(line) && cur.length) {
-        out.push(cur.join("\n"));
-        cur = [];
-      }
-      cur.push(line);
-    }
-    if (cur.length) out.push(cur.join("\n"));
-    return out.map((text2) => ({ text: text2, hasWord: WORD_CALL_RE.test(text2) }));
-  }
-  function encodeMiniText(src2, mint) {
-    let out = "";
-    let atom2 = "";
-    const flush = () => {
-      if (atom2 === "") return;
-      out += atom2 === "." ? "." : mint(atom2);
-      atom2 = "";
-    };
-    for (let i = 0; i < src2.length; i++) {
-      const c2 = src2[i];
-      if (c2 === "\\") {
-        if (i + 1 < src2.length) atom2 += src2[++i];
-        else atom2 += "\\";
-        continue;
-      }
-      if (/\s/.test(c2)) {
-        flush();
-        out += c2;
-        continue;
-      }
-      if (STRUCTURAL.has(c2)) {
-        flush();
-        out += c2;
-        continue;
-      }
-      if (NUM_ARG_OPS.has(c2)) {
-        flush();
-        out += c2;
-        let j2 = i + 1;
-        while (j2 < src2.length && /[0-9.]/.test(src2[j2])) out += src2[j2++];
-        i = j2 - 1;
-        continue;
-      }
-      if (c2 === "(") {
-        flush();
-        let depth = 0;
-        let j2 = i;
-        for (; j2 < src2.length; j2++) {
-          out += src2[j2];
-          if (src2[j2] === "(") depth++;
-          else if (src2[j2] === ")" && --depth === 0) break;
-        }
-        i = j2;
-        continue;
-      }
-      atom2 += c2;
-    }
-    flush();
-    return out;
-  }
-  function literalBody(raw) {
-    return { quote: raw[0], body: raw.slice(1, -1) };
-  }
-  function rewriteTextCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
-    const atoms3 = {};
-    const mint = (text2) => {
-      const token = `tc${counter.n++}`;
-      atoms3[token] = { text: text2, peer };
-      return token;
-    };
-    const re2 = new RegExp(
-      `((?:^|[^\\w$])(?:${TEXT_VALUE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL}`,
-      "g"
-    );
-    const rewritten = splitStatements(code2).map(({ text: text2, hasWord }) => {
-      if (!hasWord) return text2;
-      const out = text2.replace(re2, (match2, head, raw) => {
-        if (raw[0] === "`" && raw.includes("${")) return match2;
-        const { quote, body } = literalBody(raw);
-        const encoded = quote === "'" ? mint(body) : encodeMiniText(body, mint);
-        return `${head}"${encoded}"`;
-      });
-      return `${out.replace(/[\s;]+$/, "")}
-._tcRender()`;
-    }).join("\n");
-    return { code: rewritten, atoms: atoms3 };
-  }
-  var CSS_VALUE_BLOCK = /url\s*\(|expression\s*\(|javascript\s*:|@import|<\/|[{}<>;]/i;
-  var CSS_PROP_OK = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/;
-  var CSS_PROP_BLOCK = /* @__PURE__ */ new Set(["behavior", "-moz-binding"]);
-  function sanitizeDeclarations(input) {
-    if (!input) return [];
-    const pairs2 = [];
-    if (typeof input === "object") {
-      for (const [prop, value2] of Object.entries(input)) pairs2.push([prop, value2]);
-    } else {
-      for (const chunk2 of String(input).split(";")) {
-        if (!chunk2.trim()) continue;
-        const idx = chunk2.indexOf(":");
-        if (idx === -1) continue;
-        pairs2.push([chunk2.slice(0, idx), chunk2.slice(idx + 1)]);
-      }
-    }
-    const out = [];
-    for (const [rawProp, rawValue] of pairs2) {
-      const prop = String(rawProp).trim().toLowerCase();
-      const value2 = String(rawValue ?? "").trim();
-      if (!prop || !value2) continue;
-      if (!CSS_PROP_OK.test(prop) || CSS_PROP_BLOCK.has(prop)) continue;
-      if (CSS_VALUE_BLOCK.test(value2)) continue;
-      out.push([prop, value2]);
-    }
-    return out;
-  }
-  function sanitizeHref(url2) {
-    const raw = String(url2 ?? "").trim();
-    if (!raw || /[\s<>"']/.test(raw)) return null;
-    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) ? raw : `https://${raw}`;
-    if (!/^(https?|mailto):/i.test(withScheme)) return null;
-    return withScheme;
-  }
-  function peerTextClass(jitsiId) {
-    const safe = String(jitsiId ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    return `tc-p-${safe || "anon"}`;
-  }
-
-  // src/text-cycles.js
+  init_text_cycles_core();
+  init_text_debug();
   init_TextState();
   var CONTAINER_ID = "trussal-text-cycles";
   var STYLE_ID = "trussal-text-cycles-style";
@@ -52383,6 +52507,10 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   ];
   function setTextAtoms(table) {
     atoms = table || {};
+    textLogChanged("atoms", {
+      count: Object.keys(atoms).length,
+      table: Object.fromEntries(Object.entries(atoms).map(([t, a2]) => [t, `${a2.text} (${a2.peer ?? "no peer"})`]))
+    });
   }
   function resolve(value2) {
     if (value2 == null) return null;
@@ -52420,7 +52548,41 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container, sentinel);
       else log3.appendChild(container);
     }
+    textLogChanged("container", {
+      attached: container.parentNode === log3 && !!log3,
+      chatLogInDocument: !!log3,
+      bubbles: bubbles.size,
+      ...log3 ? {} : { why: chatAbsenceReason() }
+    });
     return container;
+  }
+  function chatAbsenceReason() {
+    const state = jitsiState();
+    if (!state) return "no Jitsi store yet";
+    const local2 = state["features/base/participants"]?.local;
+    if (!local2?.name) {
+      return "the local participant has no display name \u2014 Jitsi is showing the chat nickname prompt instead of the message list";
+    }
+    return "the chat panel is closed (words are collecting in a detached container and appear when it reopens)";
+  }
+  function jitsiState() {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    return store && typeof store.getState === "function" ? store.getState() : null;
+  }
+  function localParticipantName() {
+    const state = jitsiState();
+    const name3 = state?.["features/base/participants"]?.local?.name;
+    return typeof name3 === "string" && name3.trim() ? name3 : null;
+  }
+  function localToken() {
+    const index2 = getLocalPeer()?.roomIndex;
+    return index2 == null || index2 === "" ? null : String(index2);
+  }
+  function setNickname(name3) {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    if (!store || typeof store.dispatch !== "function") return false;
+    store.dispatch({ type: "SETTINGS_UPDATED", settings: { displayName: name3 } });
+    return true;
   }
   function openChatPanel() {
     try {
@@ -52428,6 +52590,58 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     } catch (e30) {
       console.warn("[text-cycles] could not open the chat panel", e30);
     }
+  }
+  var chatEntryTimer = null;
+  var chatEntryTries = 0;
+  var CHAT_ENTRY_MAX_TRIES = 40;
+  var CHAT_ENTRY_INTERVAL_MS = 500;
+  function ensureChatEntry() {
+    if (chatEntryTimer !== null) return;
+    chatEntryTries = 0;
+    const attempt = () => {
+      chatEntryTimer = null;
+      if (!active2) {
+        textLog("chat-entry:abandoned", { reason: "text cycles stopped before the chat opened" });
+        return;
+      }
+      chatEntryTries++;
+      const name3 = localParticipantName();
+      const token = localToken();
+      if (!name3) {
+        if (token) {
+          const dispatched = setNickname(token);
+          textLog("chat-entry:nickname", {
+            token,
+            dispatched,
+            note: dispatched ? "set as the display name \u2014 this is what dismisses the chat nickname prompt" : "no Jitsi store to dispatch to"
+          });
+        } else {
+          textLog("chat-entry:waiting", {
+            try: chatEntryTries,
+            reason: "the sidecar has not assigned a room index yet, so there is no token to use as the nickname"
+          });
+        }
+      }
+      openChatPanel();
+      const attached = ensureContainer().parentNode != null;
+      textLog("chat-entry", {
+        try: chatEntryTries,
+        participantName: localParticipantName(),
+        token,
+        chatLogInDocument: !!document.getElementById("chatconversation"),
+        attached
+      });
+      if (attached) return;
+      if (chatEntryTries >= CHAT_ENTRY_MAX_TRIES) {
+        textWarn("chat-entry", "gave up opening the chat; words are collecting in a detached container and will appear if it opens later", {
+          tries: chatEntryTries,
+          why: chatAbsenceReason()
+        });
+        return;
+      }
+      chatEntryTimer = setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS);
+    };
+    attempt();
   }
   function hoverClassFor(peerClass, declarations) {
     const decls = sanitizeDeclarations(declarations);
@@ -52545,7 +52759,10 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   function paint(value2, cycle) {
     ensureContainer();
     let text2 = resolve(value2.word);
-    if (text2 == null || text2 === "") return;
+    if (text2 == null || text2 === "") {
+      textHapLog("paint:empty", { token: value2.word, note: "token resolved to nothing \u2014 it is not in the atom table for the program that is running" });
+      return;
+    }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
     const fx = typeof window !== "undefined" && window._ncText || null;
@@ -52554,8 +52771,12 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const seedPeer = peerSeed(peerId);
     const wordIndex = nextWordIndex(peerId, cycle);
     if (active4) {
+      const authored = text2;
       text2 = crushWord(text2, active4.text.dropChance, seedCycle, seedPeer, wordIndex);
-      if (!text2) return;
+      if (!text2) {
+        textHapLog("paint:crushed-away", { authored, seedCycle, wordIndex, note: "the room `#` chain dropped every character \u2014 the effect working, not a failure" });
+        return;
+      }
       text2 = noiseWord(text2, active4.text, seedCycle, seedPeer, wordIndex);
     }
     const bubble = bubbleFor(peerId, cycle, peerClass);
@@ -52597,6 +52818,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (line.childNodes.length) line.appendChild(document.createTextNode(" "));
     line.appendChild(node);
+    textHapLog("paint", {
+      text: text2,
+      peer: peerId,
+      cycle,
+      visible: !!container.parentNode,
+      style: span.style.cssText || "(inherited from Jitsi chat)"
+    });
     if (active4 && active4.text.repeats > 0 && active4.text.repeatAlpha > 0) {
       lastWordOfTurn.set(String(peerId), {
         text: text2,
@@ -52612,13 +52840,20 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
   }
   function handleTrigger(hap, currentTime, cps2, targetTime) {
-    if (!active2) return;
+    if (!active2) {
+      textHapLog("trigger:inactive", { note: "a hap arrived but initTextCycles() has not run in this evaluate", value: hap?.value });
+      return;
+    }
     const value2 = hap?.value;
-    if (!value2 || value2.word == null) return;
+    if (!value2 || value2.word == null) {
+      textHapLog("trigger:no-word", { value: value2 });
+      return;
+    }
     const begin2 = hap.whole?.begin ?? hap.part?.begin;
     const cycle = Math.floor(Number(begin2?.valueOf?.() ?? begin2 ?? 0));
     const lead = Number(targetTime) - Number(currentTime);
     const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    textHapLog("trigger", { token: value2.word, text: resolve(value2.word), cycle, delayMs: Math.round(delayMs) });
     setTimeout(() => {
       try {
         paint(value2, cycle);
@@ -52642,9 +52877,15 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     };
     register2("_tcRender", (pat) => pat.onTrigger(handleTrigger, true));
     scope2.initTextCycles = async () => {
-      if (!active2) {
-        active2 = true;
-        openChatPanel();
+      const wasActive = active2;
+      active2 = true;
+      if (!wasActive) {
+        textLog("init", {
+          note: "a program declared text presence \u2014 taking a nickname and opening the chat",
+          participantName: localParticipantName(),
+          token: localToken()
+        });
+        ensureChatEntry();
       }
       ensureContainer();
       return true;
@@ -52652,16 +52893,39 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return scope2;
   }
   function stopTextCycles() {
+    textLog("stop", { bubblesKept: bubbles.size });
     active2 = false;
+    if (chatEntryTimer !== null) {
+      clearTimeout(chatEntryTimer);
+      chatEntryTimer = null;
+    }
     lastWordOfTurn.clear();
     previousTurnStyle.clear();
     wordCounters.clear();
   }
+  registerTextProbe("renderer", () => ({
+    active: active2,
+    atoms: Object.keys(atoms).length,
+    bubbles: bubbles.size,
+    containerAttached: !!(container && container.parentNode),
+    chatLogInDocument: !!document.getElementById("chatconversation"),
+    chatAbsenceReason: document.getElementById("chatconversation") ? null : chatAbsenceReason(),
+    participantName: localParticipantName(),
+    token: localToken(),
+    wordsPainted: container ? container.querySelectorAll(".tc-word").length : 0,
+    // The characters currently in the chat, so a page can be asked what it is
+    // showing without reading the DOM by hand.
+    lines: container ? Array.from(container.querySelectorAll(".tc-line")).slice(-5).map((el) => clip(el.textContent, 120)) : []
+  }));
+
+  // src/strudel.js
+  init_text_cycles_core();
 
   // src/css-cycles.js
   init_peer_state();
 
   // src/css-cycles-core.js
+  init_text_cycles_core();
   var CSS_PROPERTIES = /* @__PURE__ */ new Set([
     "accent-color",
     "align-content",
@@ -53835,6 +54099,7 @@ ${full}
   }
 
   // src/css-cycles.js
+  init_text_cycles_core();
   var STYLE_PREFIX = "trussal-css-cycles-";
   var atoms2 = {};
   var active3 = false;
@@ -54510,6 +54775,7 @@ ${full}
   }
 
   // src/strudel.js
+  init_text_debug();
   var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
@@ -54585,13 +54851,14 @@ ${full}
     };
   }
   var DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
-  var INIT_SILENT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(/;
   function splitSilentCode(code2) {
-    if (!code2 || !INIT_SILENT_RE.test(code2)) return null;
+    if (!code2) return null;
     const blank = code2.match(/\n\n+/);
+    const preamble = blank ? code2.slice(0, blank.index) : code2;
+    if (!hasTextCycles(preamble) && !hasCssCycles(preamble)) return null;
     if (!blank) return { preamble: code2, strudel: "" };
     return {
-      preamble: code2.slice(0, blank.index).trim(),
+      preamble: preamble.trim(),
       strudel: code2.slice(blank.index).trim()
     };
   }
@@ -54603,6 +54870,13 @@ ${full}
       counter: textCounter
     });
     Object.assign(textAtoms, atoms3);
+    textLogChanged(`rewrite:${peer.jitsiId ?? "local"}`, {
+      minted: Object.keys(atoms3).length,
+      words: Object.fromEntries(Object.entries(atoms3).map(([t, a2]) => [t, a2.text])),
+      rendererAttached: rewritten.includes("._tcRender()"),
+      before: clip(code2),
+      after: clip(rewritten)
+    });
     return rewritten;
   }
   var cssAtoms = {};
@@ -54624,6 +54898,11 @@ ${full}
     );
     if (!code2 || !peer.playing || !hasTextCycles(code2)) return null;
     const split = splitSilentCode(code2);
+    textLogChanged(`peer-block:bot:${peer.jitsiId ?? peer.peerId}`, {
+      playing: peer.playing,
+      split: !!split,
+      ...split ? {} : { why: "declares initTextCycles() but no preamble could be split off \u2014 it must sit on its own line before the first blank line" }
+    });
     if (!split) return null;
     const textOnly = keepSilentStatements(split.strudel);
     if (!textOnly) return split.preamble;
@@ -54669,7 +54948,16 @@ $: (${split.expr})${fx}`;
     const netCycles = isNetCyclesActive();
     const source2 = netCycles ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
     let code2 = normalizePeerCode(source2);
-    if (!code2 || !peer.playing) return null;
+    if (!code2 || !peer.playing) {
+      if (hasTextCycles(code2)) {
+        textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
+          contributes: false,
+          playing: peer.playing,
+          why: "declares text but is not playing \u2014 press Play; text flows only while the performer does"
+        });
+      }
+      return null;
+    }
     if (code2.includes("live")) {
       code2 = rewriteLiveCalls(code2, { silent: !peer.isLocal });
     }
@@ -54680,11 +54968,28 @@ $: (${split.expr})${fx}`;
     const isText = hasTextCycles(code2);
     const isCss = hasCssCycles(code2);
     const split = splitHydraCode(code2) || splitSilentCode(code2);
+    if (isText && !split) {
+      textWarn(
+        `peer-block:${peer.jitsiId ?? peer.peerId}`,
+        "declares initTextCycles() but no preamble could be split off, so nothing will be rewritten or rendered",
+        { why: "the declaration must be on its own line before the first blank line, with the patterns after it", code: clip(code2) }
+      );
+    }
     if (split) {
       const preamble = split.preamble;
       let strudelCode = split.strudel;
       if (isText || isCss) {
         if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+        if (isText) {
+          textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
+            contributes: true,
+            isLocal: peer.isLocal,
+            remoteVoiceExcluded,
+            preamble: clip(preamble, 120),
+            statements: clip(strudelCode),
+            ...strudelCode ? {} : { why: remoteVoiceExcluded ? "the aggregator exclusion kept no silent statements \u2014 no word() or css() survived" : "the preamble declares text but there are no statements after the blank line" }
+          });
+        }
         if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
         if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
       } else if (remoteVoiceExcluded) {
@@ -54913,6 +55218,13 @@ ${next}`;
       setTextAtoms(textAtoms);
       setCssAtoms(cssAtoms);
       publishCssSheets(cssSheets);
+      if (hasTextCycles(next)) {
+        textLog("program", {
+          atoms: Object.keys(textAtoms).length,
+          renderers: (next.match(/\._tcRender\(\)/g) || []).length,
+          program: clip(next, 1500)
+        });
+      }
       await evaluate3(next);
       releaseUnusedCaptures();
       anyPlaying = true;
@@ -54922,8 +55234,29 @@ ${next}`;
       }));
     } catch (e30) {
       console.warn("[strudel] evaluate failed", e30, "\nprogram:", next);
+      if (hasTextCycles(next)) {
+        textWarn("program", "evaluate() threw \u2014 no part of this program is running, including its words", {
+          error: String(e30 && e30.message || e30),
+          program: clip(next, 1500)
+        });
+      }
     }
   }
+  registerTextProbe("program", () => ({
+    netCyclesActive: isNetCyclesActive(),
+    aggregatorPresent: !!getAggregatorPeer(),
+    peers: getAllPeers().map((p) => ({
+      jitsiId: p.jitsiId,
+      roomIndex: p.roomIndex,
+      isLocal: !!p.isLocal,
+      isBot: p.isBot,
+      playing: p.playing,
+      declaresText: hasTextCycles(normalizePeerCode(p.pattern))
+    })),
+    atoms: Object.keys(textAtoms).length,
+    renderers: (String(lastEvaluated ?? "").match(/\._tcRender\(\)/g) || []).length,
+    lastEvaluated: clip(lastEvaluated, 1500)
+  }));
   async function bootStrudelOnUserGesture() {
     await ensureStrudel();
   }

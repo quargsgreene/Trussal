@@ -25,6 +25,7 @@ import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from '
 import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
+import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
@@ -133,17 +134,30 @@ const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
 // text or styling peer paints into each viewer's own page and publishes no
 // video, so it earns no mosaic cell, and teaching the mosaic's membership rule
 // about them would hand one out. Same shape of split, different question.
-const INIT_SILENT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(/;
-
+//
 // Split already-normalized code into its silent-capability preamble and Strudel
 // remainder, or null when the block does not declare one. A preamble-only
 // block is legal and yields an empty `strudel`, exactly as for Hydra.
+//
+// The declaration is recognised by hasTextCycles/hasCssCycles THEMSELVES,
+// asked of the preamble, rather than by a third regex of this module's own.
+// That is not tidiness: buildPeerBlock uses those two predicates to decide a
+// block is text (isText) and uses this function to decide whether to rewrite
+// it, so when the rules disagree the block is treated as text and never
+// rewritten — no minted atoms, no ._tcRender(), hence no renderer, no sound
+// and no words, with nothing anywhere saying why. The private regex here was
+// anchored to the start of the BLOCK while the predicates anchor to a line, so
+// a single comment above `await initTextCycles()` was enough to split them.
 function splitSilentCode(code) {
-  if (!code || !INIT_SILENT_RE.test(code)) return null;
+  if (!code) return null;
   const blank = code.match(/\n\n+/);
+  // Before the first blank line — the preamble is where a declaration counts,
+  // exactly as for Hydra.
+  const preamble = blank ? code.slice(0, blank.index) : code;
+  if (!hasTextCycles(preamble) && !hasCssCycles(preamble)) return null;
   if (!blank) return { preamble: code, strudel: '' };
   return {
-    preamble: code.slice(0, blank.index).trim(),
+    preamble: preamble.trim(),
     strudel: code.slice(blank.index).trim()
   };
 }
@@ -163,6 +177,17 @@ function applyTextRewrite(code, peer) {
     counter: textCounter,
   });
   Object.assign(textAtoms, atoms);
+  // STORAGE POINT 3: the rewrite. `minted: 0` means no literal word() argument
+  // was found (an interpolated template, or a statement the scanner did not
+  // see as carrying a word), and a result with no ._tcRender() has no renderer
+  // attached at all — both paint nothing.
+  textLogChanged(`rewrite:${peer.jitsiId ?? 'local'}`, {
+    minted: Object.keys(atoms).length,
+    words: Object.fromEntries(Object.entries(atoms).map(([t, a]) => [t, a.text])),
+    rendererAttached: rewritten.includes('._tcRender()'),
+    before: clip(code),
+    after: clip(rewritten),
+  });
   return rewritten;
 }
 
@@ -205,6 +230,13 @@ function buildBotTextBlock(peer) {
   if (!code || !peer.playing || !hasTextCycles(code)) return null;
 
   const split = splitSilentCode(code);
+  // STORAGE POINT 2 (bots): a bot's words reach the room only through this,
+  // because the only page running its program is its own headless Chromium.
+  textLogChanged(`peer-block:bot:${peer.jitsiId ?? peer.peerId}`, {
+    playing: peer.playing,
+    split: !!split,
+    ...(split ? {} : { why: 'declares initTextCycles() but no preamble could be split off — it must sit on its own line before the first blank line' }),
+  });
   if (!split) return null;
 
   // Audio statements are dropped, not silenced: the bot is already playing them
@@ -302,7 +334,18 @@ function buildPeerBlock(peer) {
   // stripped by the shared normalizer — the same one the aggregator's mosaic
   // runs before asking whether this peer is running Hydra.
   let code = normalizePeerCode(source);
-  if (!code || !peer.playing) return null;
+  if (!code || !peer.playing) {
+    // Text flows only while the performer is playing, the same as audio — so
+    // "I pressed nothing and nothing happened" is a state worth naming.
+    if (hasTextCycles(code)) {
+      textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
+        contributes: false,
+        playing: peer.playing,
+        why: 'declares text but is not playing — press Play; text flows only while the performer does',
+      });
+    }
+    return null;
+  }
 
   // live(): re-emit the device name as a transpiler-proof literal, and for
   // remote peers swap in the silent stub — capture belongs to the authoring
@@ -343,12 +386,33 @@ function buildPeerBlock(peer) {
   // which peers are running Hydra, or the silent capabilities split by their
   // own.
   const split = splitHydraCode(code) || splitSilentCode(code);
+  // STORAGE POINT 2: this peer's contribution to the program, as decided. The
+  // one way a text block silently produces nothing is landing here unsplit:
+  // isText is true, so the code is text, but with no preamble to split off the
+  // rewrite below never runs and the renderer is never attached.
+  if (isText && !split) {
+    textWarn(`peer-block:${peer.jitsiId ?? peer.peerId}`,
+      'declares initTextCycles() but no preamble could be split off, so nothing will be rewritten or rendered',
+      { why: 'the declaration must be on its own line before the first blank line, with the patterns after it', code: clip(code) });
+  }
   if (split) {
     const preamble = split.preamble;
     let strudelCode = split.strudel;
     if (isText || isCss) {
       // Excluded remote peer: keep the silent statements, drop the audio ones.
       if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+      if (isText) {
+        textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
+          contributes: true,
+          isLocal: peer.isLocal,
+          remoteVoiceExcluded,
+          preamble: clip(preamble, 120),
+          statements: clip(strudelCode),
+          ...(strudelCode ? {} : { why: remoteVoiceExcluded
+            ? 'the aggregator exclusion kept no silent statements — no word() or css() survived'
+            : 'the preamble declares text but there are no statements after the blank line' }),
+        });
+      }
       // CSS first: the text rewrite appends `._tcRender()` on its own line,
       // which would otherwise land between a css() call and its chain.
       if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
@@ -583,6 +647,16 @@ async function rebuildAndEvaluate() {
     // hot path on purpose: this is one compile per edit, while the patterned
     // values inside those sheets are reassigned per hap as custom properties.
     publishCssSheets(cssSheets);
+    // STORAGE POINT 5: the program actually handed to Strudel. If the words
+    // are here and nothing appears, the failure is downstream — the trigger or
+    // the container.
+    if (hasTextCycles(next)) {
+      textLog('program', {
+        atoms: Object.keys(textAtoms).length,
+        renderers: (next.match(/\._tcRender\(\)/g) || []).length,
+        program: clip(next, 1500),
+      });
+    }
     await evaluate(next);
     // Every live() in this program has now re-stamped the epoch; whatever
     // didn't is no longer referenced, so release its device.
@@ -596,8 +670,36 @@ async function rebuildAndEvaluate() {
     }));
   } catch (e) {
     console.warn('[strudel] evaluate failed', e, '\nprogram:', next);
+    // An evaluate that throws takes the WHOLE room's program down, words
+    // included, so a text program that never paints is often someone else's
+    // syntax error. Say so from this side too.
+    if (hasTextCycles(next)) {
+      textWarn('program', 'evaluate() threw — no part of this program is running, including its words', {
+        error: String(e && e.message || e),
+        program: clip(next, 1500),
+      });
+    }
   }
 }
+
+// The program side of __trussalText.state(): who is contributing words, and
+// what the last evaluated program looked like. Pulled, so it costs nothing
+// until something has gone wrong and someone asks.
+registerTextProbe('program', () => ({
+  netCyclesActive: isNetCyclesActive(),
+  aggregatorPresent: !!getAggregatorPeer(),
+  peers: getAllPeers().map((p) => ({
+    jitsiId: p.jitsiId,
+    roomIndex: p.roomIndex,
+    isLocal: !!p.isLocal,
+    isBot: p.isBot,
+    playing: p.playing,
+    declaresText: hasTextCycles(normalizePeerCode(p.pattern)),
+  })),
+  atoms: Object.keys(textAtoms).length,
+  renderers: (String(lastEvaluated ?? '').match(/\._tcRender\(\)/g) || []).length,
+  lastEvaluated: clip(lastEvaluated, 1500),
+}));
 
 // Strudel needs a user-gesture to bootstrap the audio context. The studio UI
 // must call this from the Play click handler before anything is enqueued.

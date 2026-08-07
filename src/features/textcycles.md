@@ -5,7 +5,7 @@ Strudel patterns that play into the Jitsi chat window instead of the speakers.
 ```js
 await initTextCycles()
 
-$: typeface("Times New Roman").word("<I like@2 ~ squirrels\?>")
+$: typeface('Times New Roman').word("<I like@2 ~ squirrels\?>")
      .weight("400 200 100 800")
      .slant("<italic none>")
      .size("<12px 24px 10px 1px>*2")
@@ -34,6 +34,26 @@ the room's saved message history.
 With no CSS specified, words inherit Jitsi's own chat typography. Only
 properties you set are applied.
 
+## Entering the chat
+
+Jitsi gates the message **log** behind a nickname: with no display name on the
+local participant the panel renders its nickname prompt *instead of* the message
+list, so `#chatconversation` is not in the document at all. Words painted then
+land in a detached container and nobody sees them — a working pipeline that
+looks exactly like a broken one.
+
+So `await initTextCycles()` enters the chat on the performer's behalf: it takes
+their **Net Cycles room index** as the nickname — the same token the metaprogram
+addresses them by, which is also what labels their bubbles — and opens the
+panel. A performer who already chose a name keeps it; the prompt is satisfied,
+which was the only thing in the way. The token arrives with the sidecar
+handshake, so the entry retries for ~20s rather than giving up on the first miss.
+
+Nothing is lost while the chat is shut. The container is the same element every
+time, so words collect in it while it is detached and the whole backlog appears
+the moment it attaches — whether that is the nickname landing, the performer
+opening chat by hand, or a later paint finding the log.
+
 ## No sound, by construction
 
 The renderer attaches with `onTrigger(fn, dominant = true)`, and `repl.mjs`
@@ -61,6 +81,13 @@ and `.` are ordinary text. Case is preserved exactly.
 
 Single quotes opt out of mini entirely, so no escaping is needed at all:
 `word('I like ~ squirrels?')` is one whole phrase, one hap.
+
+The same rule applies to every text param, not just `word`/`w`: a bare space
+inside a double-quoted value is a mini sequence separator, so
+`.typeface("Times New Roman")` mints three one-third-cycle steps
+(`Times`, `New`, `Roman`) rather than one font name — exactly the mistake this
+doc used to make in its own example above. A value that must stay one atom
+despite its own spaces needs single quotes: `.typeface('Times New Roman')`.
 
 **Why escaping needs a Trussal rewrite.** JS itself discards unknown escapes
 (`"\~"` is just `"~"`), and Strudel's transpiler reads the post-escape string,
@@ -173,3 +200,24 @@ directive is dropping samples out of the audio at that moment.
 
 Echo's repeats are appended when the turn **ends**, since that is the first
 moment its last word is known to have been last.
+
+## When nothing appears
+
+The text is held in six places between the editor and a bubble, and each can
+drop it without raising anything, so each one prints what it is holding
+(`text-debug.js`, console prefix `[text-cycles]`):
+
+| stage | question it answers |
+|---|---|
+| `peer-state:pattern-out` / `-in` | did the program leave this browser / arrive from that peer? |
+| `peer-block:<jitsiId>` | is the peer playing, was a preamble split off, did the statements survive the aggregator exclusion? |
+| `rewrite:<jitsiId>` | were the atoms minted, is `._tcRender()` attached? (without it there is no renderer) |
+| `atoms` | does the token resolve back to characters? |
+| `program` | what was handed to `evaluate()`, and did it throw? |
+| `trigger` / `paint` | did the hap arrive, and did the span land somewhere **visible**? |
+| `container` / `chat-entry` | is the chat log in the document, and if not, why |
+
+Hap-rate lines are capped per second. `__trussalText.state()` dumps the last
+record from every stage plus live probes (atom table, chat DOM, what the panel
+is currently showing); `__trussalText.off()` silences the printing and keeps
+the recording.
