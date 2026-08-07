@@ -38,21 +38,23 @@ function injectStyleOnce() {
   if (document.getElementById('nc-play-style')) return;
   const style = document.createElement('style');
   style.id = 'nc-play-style';
-  // The Trussal theme sets `body, body * { background: <panel-green> !important }`,
-  // so every element's background is forced opaque unless we beat it with our own
-  // !important. Without this the overlay would paint over the whole editor (hiding
-  // the metaprogram text) and the box fill would hide the token inside the outline.
+  // No !important: `body, body * { background: <panel-green> }` (custom.css) is a
+  // default, not a forced override (fixed in 0f02e39), and every class selector
+  // here already outspecifies the bare `body *` it used to need beating. This host
+  // mounts inside #trussal-studio-overlay, a Trussal root, so leaving these plain
+  // lets a CSS Cycles sheet targeting .nc-play-overlay/.nc-play-box win normally
+  // through the cascade instead of being unconditionally refused.
   style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent !important; }
+    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
     .nc-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
-      background:transparent !important;
+      background:transparent;
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:2.25px solid #1ff466; border-radius:0;
-      background:transparent !important;
+      background:transparent;
     }
   `;
   document.head.appendChild(style);

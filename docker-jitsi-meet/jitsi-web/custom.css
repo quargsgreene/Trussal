@@ -38,24 +38,34 @@ body.welcome-page .header-container::after {
 body.welcome-page .header {
   position: relative;
 }
+/* Welcome-page green theme (this block down to the recent-meeting rows below):
+   no !important on background/border. Same reasoning as `body, body *` and
+   `button` further down — these are the app's DEFAULT colours for these
+   elements, not a forced override, so a CSS Cycles sheet (or Jitsi's own
+   component CSS) targeting the same selector wins normally through the
+   cascade instead of being unconditionally beaten. See TRUSSAL_ROOTS in
+   css-cycles-core.js for where a performer's styling is allowed to reach —
+   the welcome page is outside every Trussal root, so only the allowlisted
+   properties (background/border/filter/text colour) are reachable here. */
+
 /* Outer area behind the recent-meeting card */
 body.welcome-page .welcome-page-content {
-  background: #06371f !important;           /* dark green */
+  background: #06371f;           /* dark green */
   padding-bottom: 4rem;          /* breathing room at bottom */
 }
 
 /* The card container itself (the big blue block in your screenshot) */
 body.welcome-page .welcome-page-content > div {
-  background-color: #0e3b29 !important;   /* mid green */
+  background-color: #0e3b29;   /* mid green */
   border-radius: 18px;
   padding: 24px;
 }
 
 /* The individual recent-room row/card */
 body.welcome-page .welcome-page-content [class*="recent"] {
-  background-color: #198754 !important;   /* lighter green */
+  background-color: #198754;   /* lighter green */
   border-radius: 12px;
-  border: none !important;
+  border: none;
 }
 
 
@@ -72,7 +82,7 @@ body.welcome-page #welcome_page .welcome-page-header-text {
 
 /* Mid-green container block around the recent meetings list */
 body.welcome-page #welcome_page .welcome-page-content > * {
-  background-color: #0f5132 !important;
+  background-color: #0f5132;
   border-radius: 18px;
   padding: 24px;
 }
@@ -86,9 +96,9 @@ body.welcome-page #welcome_page .welcome-page-controls {
 body.welcome-page #welcome_page .welcome-page-content .recent-list,
 body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
 body.welcome-page #welcome_page .welcome-page-content [class*="recent"] {
-  background-color: #198754 !important;
+  background-color: #198754;
   border-radius: 16px;
-  border: none !important;
+  border: none;
 }
 
 /* Hide mobile-app download strip & footer on welcome page */
@@ -111,11 +121,13 @@ body, body * {
 }
 
 
+/* No !important, same reasoning as body, body * below: this is the default
+   welcome-page background, not a forced override. */
 body.welcome-page div
 {
 
   background: #000 url("../images/welcome-background.png")
-              center center / cover no-repeat !important;
+              center center / cover no-repeat;
 
 }
 
@@ -128,16 +140,19 @@ button{
 
 }
 
-/* Make the welcome-page meeting input text + placeholder the same bright green */
+/* Make the welcome-page meeting input text + placeholder the same bright green.
+   No !important on the colour itself, same default-not-override reasoning as
+   the rest of this theme — opacity stays forced since it isn't a property CSS
+   Cycles can reach outside a Trussal root anyway. */
 body.welcome-page #enter_room_field,
 body.welcome-page #trussal-room-field {
-  color: #1ff466 !important;  /* or whatever exact green you used above */
+  color: #1ff466;  /* or whatever exact green you used above */
 }
 
 /* Placeholder text color */
 body.welcome-page #enter_room_field::placeholder,
 body.welcome-page #trussal-room-field::placeholder {
-  color: #1ff466 !important;
+  color: #1ff466;
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
 
@@ -195,7 +210,14 @@ body.welcome-page #trussal-room-field::placeholder {
    `body *` lost its !important (see above — it's now a default, not a
    forced override), but this still needs its own: video/canvas elements can
    pick up an opaque background from Jitsi's own component CSS at higher
-   specificity than a bare type selector. */
+   specificity than a bare type selector.
+
+   Unlike every other rule in this file, this !important is a DELIBERATE
+   exception to the default-not-override pattern: it exists to defeat Jitsi's
+   OWN upstream component CSS (outside this repo, specificity unknown), not to
+   theme the app. That also means it is out of CSS Cycles' reach — a
+   performer's background() on a video tile is refused by this rule the same
+   way it would be by Jitsi's own styling if this fix did not exist. */
 #videospace .videocontainer,
 #videospace .videocontainer *,
 .tile-view .videocontainer,

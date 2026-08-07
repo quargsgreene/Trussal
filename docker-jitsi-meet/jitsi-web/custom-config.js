@@ -56821,16 +56821,16 @@ ${s2}${BTN_MARKER}`)
     const style = document.createElement("style");
     style.id = "nc-play-style";
     style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent !important; }
+    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
     .nc-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
-      background:transparent !important;
+      background:transparent;
     }
     .nc-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:2.25px solid #1ff466; border-radius:0;
-      background:transparent !important;
+      background:transparent;
     }
   `;
     document.head.appendChild(style);

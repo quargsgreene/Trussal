@@ -93,6 +93,20 @@ So `css(\`body\`).backgroundImage("^url(https://…)^")` works; `css(\`body\`)
 Each statement compiles to two rules: one nested under the Trussal roots, whose
 extra id gives it the specificity to win there, and one bare with the allowlist.
 
+The framework side of this holds for any selector, including `body` — but it
+only works if the app's own default styling plays fair with the cascade. A
+default value written with `!important` (in `docker-jitsi-meet/jitsi-web/custom.css`,
+or a Trussal panel's own injected `<style>`) beats a same- or higher-specificity
+CSS Cycles rule unconditionally, regardless of source order, and reads as "CSS
+Cycles doesn't change anything" with no error anywhere. The fix is never to
+add a matching `!important` to the sheet — it is to drop `!important` from the
+app's own rule, since it is a default, not a forced override; the app CSS this
+repo owns should never need `!important` outside of two genuine exceptions: an
+intentional `display: none`/hide (which CSS Cycles is refused from touching
+anyway), or defeating upstream Jitsi's own component CSS whose specificity this
+repo does not control (the video-tile transparency rules in `custom.css` are
+the one place that applies).
+
 ## Guardrails
 
 A statement is **refused whole** if any value its pattern can produce is

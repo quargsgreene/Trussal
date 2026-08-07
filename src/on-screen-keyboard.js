@@ -422,7 +422,10 @@ function _injectStyles() {
       border-color: rgba(31,244,102,0.4);
       color: #1ff466;
     }
-    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3) !important; }
+    /* No !important: default flash colour, not a forced override — #trussal-kbd-panel
+       is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
+       through the cascade (its wrapping id selector already out-specifies this). */
+    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3); }
     .ts-kbd-key[data-k="Eval"] {
       background: rgba(31,244,102,0.1);
       border-color: rgba(31,244,102,0.35);
