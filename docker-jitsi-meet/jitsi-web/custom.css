@@ -97,9 +97,17 @@ body.welcome-page .welcome-page-mobile-apps {
   display: none !important;
 }
 
+/* No !important: this is the app's DEFAULT green theme, not a forced
+   override. Any selector-based rule (Jitsi's own component styles, or a
+   dynamically-injected CSS Cycles / Text Cycles sheet) wins normally through
+   the cascade — same specificity as `body *` and it comes later in source
+   order, since css-cycles/text-cycles style elements are appended to <head>
+   at runtime, after this stylesheet. Only genuinely unstyled elements fall
+   back to this. See TRUSSAL_ROOTS in css-cycles-core.js for where performer
+   styling is allowed to reach. */
 body, body * {
- color: #1ff466 !important;
- background-color: #0f5132 !important;
+ color: #1ff466;
+ background-color: #0f5132;
 }
 
 
@@ -179,8 +187,11 @@ body.welcome-page #trussal-room-field::placeholder {
 /* Trussal: the global `body *` / `div` theme rules above paint green (and the
    welcome background) over the in-call video tiles, so the grid showed solid
    green panels instead of camera/Hydra video. Force every conference video
-   surface and its tile wrappers transparent so the actual video shows. Higher
-   specificity + !important beats the `body *` rule. */
+   surface and its tile wrappers transparent so the actual video shows.
+   `body *` lost its !important (see above — it's now a default, not a
+   forced override), but this still needs its own: video/canvas elements can
+   pick up an opaque background from Jitsi's own component CSS at higher
+   specificity than a bare type selector. */
 #videospace .videocontainer,
 #videospace .videocontainer *,
 .tile-view .videocontainer,
