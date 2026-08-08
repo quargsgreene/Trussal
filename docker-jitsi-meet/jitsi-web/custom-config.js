@@ -50847,8 +50847,8 @@ ${err.toString()}`);
     return parseInt(me2.roomIndex, 10) === Math.min(...humanIndices);
   }
   function maybeSeedDefaultProgram() {
-    if (!caughtUp) return;
     const sync = ensureMetaprogramSync();
+    if (!caughtUp) return;
     const docText = sync.getText();
     if (docText && docText.trim()) return;
     if (programText != null && programText.trim()) return;

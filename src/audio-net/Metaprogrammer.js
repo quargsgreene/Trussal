@@ -254,8 +254,18 @@ function isRosterEditLeader() {
 // newcomer stays unlisted (silent) until an edit adds them, and a leaver
 // stays listed as a ghost until an edit drops them.
 function maybeSeedDefaultProgram() {
-  if (!caughtUp) return; // don't know yet whether real history is still in flight
+  // Establish the doc (and its crdt-state subscription) unconditionally and
+  // FIRST: this runs synchronously off the very first peer-upsert, which
+  // fires while handling the sidecar's 'roster' message — the message
+  // immediately before 'crdt-state' on the same socket. Bailing out early
+  // when !caughtUp without calling ensureMetaprogramSync() would mean, on a
+  // session where nothing else has called it yet, that no listener exists
+  // when 'crdt-state' arrives moments later — the bus has no replay buffer
+  // (peer-state.js's emit is fire-and-forget), so that one-shot catch-up is
+  // lost forever, caughtUp never flips true, and the room's real history (or
+  // the default seed) never lands: an empty, permanently-unseeded doc.
   const sync = ensureMetaprogramSync();
+  if (!caughtUp) return; // don't know yet whether real history is still in flight
   const docText = sync.getText();
   if (docText && docText.trim()) return;
   if (programText != null && programText.trim()) return;
