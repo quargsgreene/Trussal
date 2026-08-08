@@ -26,6 +26,7 @@ import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycle
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
+import { wrapAsVoice } from './strudel-voice.js';
 
 export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
@@ -98,30 +99,6 @@ function effectChainFor(params) {
   if (params.reverb)              chain += `.room(2)`;
   return chain;
 }
-
-// Split code that has top-level declarations from its trailing expression.
-// Finds the last declaration line then returns everything before as preamble
-// and everything after (first non-blank line onward) as the expression.
-function splitDeclAndExpr(code) {
-  const lines = code.split('\n');
-  const DECL = /^\s*(let|const|var|function\b|class\b)/;
-  let lastDeclLine = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (DECL.test(lines[i])) lastDeclLine = i;
-  }
-  if (lastDeclLine === -1) return null;
-  let exprStart = -1;
-  for (let i = lastDeclLine + 1; i < lines.length; i++) {
-    if (lines[i].trim()) { exprStart = i; break; }
-  }
-  if (exprStart === -1) return null;
-  return {
-    preamble: lines.slice(0, exprStart).join('\n').trim(),
-    expr:     lines.slice(exprStart).join('\n').trim(),
-  };
-}
-
-const DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
 
 // A program declares its non-audio capabilities with an `await initX()` line
 // before the first blank line — visuals with initHydra, chat text with
@@ -249,51 +226,19 @@ function buildBotTextBlock(peer) {
 // Build a labeled Strudel voice string from code that is known to be a Strudel
 // pattern (no hydra preamble).  Used by buildPeerBlock for both the plain case
 // and the post-preamble section of a hydra peer.
+//
+// The label-aware wrapping itself lives in strudel-voice.js, shared with the
+// bot fleet's variation.js — see that module's doc for why a naive "wrap the
+// whole thing in one (...)" or "only handle code before the first label"
+// approach breaks the moment a performer's code combines an audio voice with
+// a separate $: css(...)/$: word(...) voice.
 function buildStrudelVoice(rawCode, fx) {
   // Data packs: "Weather:3" → _data('Weather',3,…) before the transpiler can
   // mini-parse it into a sound:index object. Applied here rather than in
   // buildPeerBlock so it only ever sees Strudel code — a Hydra or Text Cycles
   // preamble has already been split off, and its H("Weather:3") is resolved by
   // hydra-params instead.
-  const code = rewriteDataRefs(rawCode);
-
-  // Detect labeled-statement syntax ("name: expr" / "$: expr").
-  const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code);
-  if (hasLabels) {
-    const firstLabelPos = code.search(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
-    let unlabeled = '';
-    let labeled = code;
-    if (firstLabelPos > 0) {
-      unlabeled = code.slice(0, firstLabelPos).trim();
-      labeled   = code.slice(firstLabelPos);
-    }
-    if (fx) {
-      labeled = labeled.replace(
-        /^([a-zA-Z_$][a-zA-Z0-9_$]*\s*:\s*)(.+)$/mg,
-        (_, label, expr) => `${label}(${expr.trim()})${fx}`,
-      );
-    }
-    if (unlabeled) {
-      // Declarations are statements — wrapping them in $: (...) is a SyntaxError.
-      // Emit at top level so they are in scope for the labeled voices below.
-      if (DECL_RE.test(unlabeled)) return `${unlabeled}\n${labeled}`;
-      return `$: (${unlabeled})${fx}\n${labeled}`;
-    }
-    return labeled;
-  }
-
-  // If code has top-level variable/function declarations, split preamble from
-  // the trailing expression and label only the expression.  Wrapping a declaration
-  // inside $: (...) produces a SyntaxError in acorn because declarations are
-  // statements, not expressions.
-  if (DECL_RE.test(code)) {
-    const split = splitDeclAndExpr(code);
-    if (split) return `${split.preamble}\n$: (${split.expr})${fx}`;
-    // Declarations only, no trailing expression — emit as-is (nothing plays).
-    return code;
-  }
-
-  return `$: (${code})${fx}`;
+  return wrapAsVoice(rewriteDataRefs(rawCode), fx);
 }
 
 // Builds the code block for one peer's contribution to the combined program.

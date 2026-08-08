@@ -22,6 +22,7 @@
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
 import { hasTextCycles, splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
+import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { randomMasterScript } from './generator.js';
 import {
   applyParamFactor,
@@ -230,9 +231,13 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   }
 
   // Pitch. Appended to the whole expression rather than rewritten into it, so
-  // it composes with whatever the author wrote (see variation.js).
+  // it composes with whatever the author wrote (see variation.js). Goes
+  // through wrapAsVoice, not a bare `(strudel)` wrap — the code is more than
+  // one expression once it carries a separate $: css(...)/$: word(...) voice
+  // alongside the audio pattern, and wrapping THAT in one grouping expression
+  // is a SyntaxError (see strudel-voice.js).
   const harmony = harmonySuffix(config.harmony, index, base.strudel, seed);
-  if (harmony && strudel.trim()) strudel = `(\n${strudel}\n)${harmony}`;
+  if (harmony && strudel.trim()) strudel = wrapAsVoice(strudel, harmony);
 
   // Colour. A postlude reading o0 and writing back to it, exactly as the band
   // and tile roles do, so it stacks with them instead of replacing them.

@@ -120,3 +120,21 @@ test('every variation output is itself syntactically valid', () => {
     assert.equal(validateCode(v.hydra).ok, true, `bot ${i} hydra valid`);
   }
 });
+
+// Reproduces a live incident: a performer combining an audio voice with a
+// separate $: css(...) voice (exactly what CSS Cycles' own docs show) made
+// every bot in the fleet crash-loop with "pattern did not start after
+// evaluation" — variationFor used to wrap the whole multi-voice master in one
+// `(...)` grouping expression, which is a SyntaxError once the master is more
+// than one top-level statement.
+test('a master with a separate css() voice alongside the audio voice still produces valid, playable code', () => {
+  const multiVoiceMaster = {
+    strudel: '$: css(`.foo {\n     &:hover { color: red }\n   }`)\n     .fast(3)\n\n$: n("<0 1 2 3 4>*8").s("gm_lead_6_voice")',
+    hydra: 'await initHydra()\nosc(10).out(o0)',
+  };
+  const v = variationFor(1, multiVoiceMaster, { ...baseOpts, roles: { unison: true } });
+  assert.equal(validateCode(v.strudel).ok, true, v.strudel);
+  assert.match(v.strudel, /\$: \(css\(/, 'the css voice survives, still its own labeled statement');
+  assert.match(v.strudel, /\$: \(n\(/, 'the audio voice survives, still its own labeled statement');
+  assert.match(v.strudel, /\.gain\(/, 'gain staging still applied');
+});

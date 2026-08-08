@@ -18,6 +18,7 @@
 
 import { gainForBotCount, effectsChain } from '../shared/audio-math.js';
 import { staggerOffsetMs } from '../shared/stats.js';
+import { wrapAsVoice } from '../../../src/strudel-voice.js';
 
 // Audible band edges for role 1. 80 Hz spares the band-split from sub rumble
 // every bot would otherwise share; 8 kHz keeps the top band musical.
@@ -102,7 +103,12 @@ export function variationFor(botId, master, opts) {
 
   return {
     botId,
-    strudel: `(\n${master.strudel}\n)${strudelChain.join('')}`,
+    // wrapAsVoice, not a bare `(master.strudel)` wrap: the master code is
+    // often more than one expression once it combines an audio voice with a
+    // separate $: css(...)/$: word(...) voice (see strudel-voice.js's doc) —
+    // wrapping THAT in one grouping expression is a SyntaxError that took
+    // every bot down the moment a performer's repertoire did this.
+    strudel: wrapAsVoice(master.strudel, strudelChain.join('')),
     hydra: [master.hydra, ...hydraPostlude].join('\n'),
     entryDelayMs,
   };

@@ -49,6 +49,11 @@ COPY src/bot-config.js /repo/src/bot-config.js
 # capability rules to its page scripts, which are serialised function bodies and
 # cannot import anything themselves. A third src/-root file, same two entries.
 COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
+# The label-aware voice/fx wrapper (cluster-source.js and variation.js import
+# it), shared with the browser so a bot's per-bot mix chain wraps a performer's
+# code the same safe way strudel.js does. A fourth src/-root file, same two
+# entries.
+COPY src/strudel-voice.js /repo/src/strudel-voice.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules
