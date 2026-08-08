@@ -57255,6 +57255,7 @@ ${s2}${BTN_MARKER}`)
   var sampleBanks = [];
   var expandedBank = null;
   var currentSliders = [];
+  var uploadPending = false;
   async function refreshSampleBanks() {
     sampleBanks = await getSampleBanks().catch(() => []);
     sendLocalDataPacks(await getDataPacks().catch(() => []));
@@ -57903,26 +57904,36 @@ ${s2}${BTN_MARKER}`)
       const button = container2.querySelector(buttonSelector);
       const input = container2.querySelector(inputSelector);
       if (!button || !input) return;
-      button.addEventListener("click", () => input.click());
+      button.addEventListener("click", () => {
+        uploadPending = true;
+        input.click();
+      });
+      input.addEventListener("cancel", () => {
+        uploadPending = false;
+      });
       input.addEventListener("change", async () => {
-        const files2 = input.files;
-        if (!files2 || !files2.length) return;
-        setStatus("Loading\u2026");
-        await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
-          if (!audio && !images && !packs) {
-            setStatus(errors.length ? errors[0] : "No audio, image or data files found");
-            return;
-          }
-          if (audio || images) await refreshLocalSamples();
-          await refreshSampleBanks();
-          const parts = [];
-          if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
-          if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
-          if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
-          const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
-          setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
-        });
-        input.value = "";
+        try {
+          const files2 = input.files;
+          if (!files2 || !files2.length) return;
+          setStatus("Loading\u2026");
+          await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
+            if (!audio && !images && !packs) {
+              setStatus(errors.length ? errors[0] : "No audio, image or data files found");
+              return;
+            }
+            if (audio || images) await refreshLocalSamples();
+            await refreshSampleBanks();
+            const parts = [];
+            if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
+            if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
+            if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
+            const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
+            setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
+          });
+          input.value = "";
+        } finally {
+          uploadPending = false;
+        }
       });
     };
     wireUpload('[data-action="load-samples"]', ".ts-samples-input");
@@ -58113,7 +58124,7 @@ ${voiceCode}${BTN_MARKER2}`);
       const strip = overlay.querySelector(".ts-strip");
       const detail = overlay.querySelector(".ts-detail");
       if (strip) renderStrip(strip);
-      if (detail) {
+      if (detail && !uploadPending) {
         const existingCodeEl = detail.querySelector("textarea.ts-code");
         const active4 = document.activeElement;
         const isCodeFocused = active4 && active4 === existingCodeEl;

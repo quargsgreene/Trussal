@@ -83,6 +83,10 @@ let routedSet = new Set();
 let sampleBanks = [];
 let expandedBank = null; // which bank's per-sample list is open, if any
 let currentSliders = []; // most recent slider configs from strudel eval
+// True while a native file picker opened by wireUpload is on screen, or while
+// the files it returned are still being read. renderAll() skips rebuilding
+// the detail panel during this window — see the guard there for why.
+let uploadPending = false;
 
 async function refreshSampleBanks() {
   sampleBanks = await getSampleBanks().catch(() => []);
@@ -837,33 +841,47 @@ function renderDetail(container) {
     const button = container.querySelector(buttonSelector);
     const input = container.querySelector(inputSelector);
     if (!button || !input) return;
-    button.addEventListener('click', () => input.click());
+    // uploadPending must be set BEFORE input.click() opens the native picker:
+    // that dialog can sit open for as long as the user takes to find a file,
+    // and a peer-state tick landing in that window would otherwise have
+    // renderAll() tear out this very input from under the open dialog (see
+    // the guard in renderAll), silently killing the upload with no console
+    // output — Chromium never fires 'change' on a detached input.
+    button.addEventListener('click', () => { uploadPending = true; input.click(); });
+    // Modern Chromium fires 'cancel' when the user dismisses the picker
+    // without choosing a file; without this the flag would stay stuck true
+    // and freeze the detail panel until the next successful upload.
+    input.addEventListener('cancel', () => { uploadPending = false; });
     input.addEventListener('change', async () => {
-      const files = input.files;
-      if (!files || !files.length) return;
-      setStatus('Loading…');
-      await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
-        if (!audio && !images && !packs) {
-          setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
-          return;
-        }
-        // Images are re-minted by the same refresh as the sounds, so an
-        // image-only upload has to trigger it too or img() resolves to nothing.
-        if (audio || images) await refreshLocalSamples();
-        await refreshSampleBanks();
-        const parts = [];
-        if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
-        if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
-        if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
-        const hint = packs
-          ? ' — reference a column as "Name:3"'
-          : images && !audio
-            ? ' — use img("foldername") in a Hydra preamble'
-            : ' — use s("foldername") in patterns';
-        setStatus(`Loaded ${parts.join(', ')}${hint}`
-          + (errors.length ? ` (${errors.length} rejected)` : ''));
-      });
-      input.value = '';
+      try {
+        const files = input.files;
+        if (!files || !files.length) return;
+        setStatus('Loading…');
+        await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
+          if (!audio && !images && !packs) {
+            setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
+            return;
+          }
+          // Images are re-minted by the same refresh as the sounds, so an
+          // image-only upload has to trigger it too or img() resolves to nothing.
+          if (audio || images) await refreshLocalSamples();
+          await refreshSampleBanks();
+          const parts = [];
+          if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
+          if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
+          if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
+          const hint = packs
+            ? ' — reference a column as "Name:3"'
+            : images && !audio
+              ? ' — use img("foldername") in a Hydra preamble'
+              : ' — use s("foldername") in patterns';
+          setStatus(`Loaded ${parts.join(', ')}${hint}`
+            + (errors.length ? ` (${errors.length} rejected)` : ''));
+        });
+        input.value = '';
+      } finally {
+        uploadPending = false;
+      }
     });
   };
   wireUpload('[data-action="load-samples"]', '.ts-samples-input');
@@ -1101,7 +1119,14 @@ function renderAll() {
     const strip = overlay.querySelector('.ts-strip');
     const detail = overlay.querySelector('.ts-detail');
     if (strip) renderStrip(strip);
-    if (detail) {
+    // A native file picker opened by wireUpload's Samples/Data button holds a
+    // reference to the .ts-data-input/.ts-samples-input node inside this very
+    // panel. Rebuilding the panel's innerHTML while that dialog is still open
+    // would detach that node, and Chromium never fires 'change' on a detached
+    // input — the upload silently goes nowhere. The panel is behind a modal OS
+    // dialog for that whole window anyway, so skipping the rebuild costs
+    // nothing visible.
+    if (detail && !uploadPending) {
       const existingCodeEl = detail.querySelector('textarea.ts-code');
       const active = document.activeElement;
       const isCodeFocused = active && active === existingCodeEl;
