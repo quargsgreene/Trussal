@@ -53,6 +53,9 @@ import {
   parseColor,
 } from './css-cycles-core.js';
 import { peerTextClass } from './text-cycles-core.js';
+// The same per-peer turn gate Strudel voices read via _ncGate — 1 whenever Net
+// Cycles isn't running at all, 0|1 per current slot once it is.
+import { getGateLevel } from './audio-net/Metaprogrammer.js';
 
 const STYLE_PREFIX = 'trussal-css-cycles-';
 
@@ -63,6 +66,12 @@ let refused = new Set();    // tokens whose statement failed a guardrail
 let styleEls = new Map();   // peerId → <style>
 let lastSentScss = '';      // dedupes the sidecar round-trip
 let bgCache = new Map();    // selector → { color, at } — throttles the contrast pass
+// "selector||prop" → the room's own computed value, captured from the DOM the
+// FIRST time any CSS Cycles hap ever targets that pair — before this module
+// has ever called setProperty for it. A benched peer's property is pinned
+// here instead of their pattern's value, so mutual exclusion always resolves
+// to a known baseline rather than whichever peer happened to write last.
+let baselineValues = new Map();
 
 const BG_CACHE_MS = 250;
 
@@ -225,6 +234,23 @@ function selectorOf(sheet) {
   return (brace === -1 ? src : src.slice(0, brace)).trim();
 }
 
+// The room's own value for a selector+prop, read off the live DOM before this
+// module has ever overridden it. Cached forever per pair: capturing it again
+// after an override has been applied would just record our own prior hap.
+function captureBaseline(selector, prop) {
+  const key = `${selector}||${prop}`;
+  if (baselineValues.has(key)) return baselineValues.get(key);
+  let value = null;
+  try {
+    const el = selector ? document.querySelector(selector) : null;
+    if (el) value = getComputedStyle(el).getPropertyValue(prop) || null;
+  } catch (e) {
+    console.warn('[css-cycles] could not capture baseline for', selector, prop, e);
+  }
+  baselineValues.set(key, value);
+  return value;
+}
+
 // --- Trigger -----------------------------------------------------------------
 
 function applyHap(value) {
@@ -232,10 +258,25 @@ function applyHap(value) {
   const sheet = sheetsByToken.get(token);
   if (!sheet || refused.has(token)) return;
 
+  // Mutual exclusion: only the peer currently holding the scheduler's slot
+  // gets their pattern's values on screen. Everyone else's custom properties
+  // are pinned at the room's captured default instead of drifting stale from
+  // whatever they last painted before their turn closed.
+  const gateOpen = getGateLevel(sheet.peer) > 0;
+  const selector = selectorOf(sheet);
+
   for (const [key, raw] of Object.entries(value)) {
     if (!key.startsWith('_cc_')) continue;
     const prop = cssPropForMethod(key.slice(4));
     if (!prop) continue;
+
+    const varName = cssVarName(token, prop);
+    const baseline = captureBaseline(selector, prop);
+
+    if (!gateOpen) {
+      if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
+      continue;
+    }
 
     let resolved = resolve(raw);
     if (resolved == null || resolved === '') continue;
@@ -252,11 +293,11 @@ function applyHap(value) {
     // background instead of being refused — the collision is a two-party
     // accident and neither statement is illegal alone.
     if (prop === 'color') {
-      const bg = backgroundForSelector(selectorOf(sheet));
+      const bg = backgroundForSelector(selector);
       if (bg) resolved = adjustColorForBackground(resolved, bg);
     }
 
-    document.documentElement.style.setProperty(cssVarName(token, prop), resolved);
+    document.documentElement.style.setProperty(varName, resolved);
   }
 }
 
@@ -326,4 +367,5 @@ export function stopCssCycles() {
   refused = new Set();
   lastSentScss = '';
   bgCache.clear();
+  baselineValues.clear();
 }

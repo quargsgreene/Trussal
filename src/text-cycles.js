@@ -32,6 +32,11 @@
 import { getPeerByJitsiId, getLocalPeer } from './peer-state.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
 import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip } from './text-debug.js';
+// The same per-peer turn gate Strudel voices read via _ncGate — 1 whenever Net
+// Cycles isn't running at all, 0|1 per current slot once it is. Text has no
+// gain to multiply, so a closed gate means the word is not painted at all,
+// the same hard cut the aggregator's mosaic gives a non-active Hydra tile.
+import { getGateLevel } from './audio-net/Metaprogrammer.js';
 // The room's `#` effects, as they apply to words and their styling. The
 // mutations are pure and SEEDED there, so every browser paints the same
 // characters from the same shared program.
@@ -450,6 +455,15 @@ function paint(value, cycle) {
 
   const peerId = peerOf(value.word);
   const peerClass = peerTextClass(peerId);
+
+  if (getGateLevel(peerId) <= 0) {
+    textHapLog('paint:gated', {
+      token: value.word,
+      peer: peerId,
+      note: "not this peer's turn — Net Cycles scheduling is active and their gate is closed",
+    });
+    return;
+  }
 
   // The room's `#` chain, as it applies to words and their styling. Published
   // by the Effects Service (av-effects/index.js) rather than computed here,

@@ -52522,6 +52522,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   init_peer_state();
   init_text_cycles_core();
   init_text_debug();
+  init_Metaprogrammer();
   init_TextState();
   var CONTAINER_ID = "trussal-text-cycles";
   var STYLE_ID = "trussal-text-cycles-style";
@@ -52802,6 +52803,14 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
+    if (getGateLevel(peerId) <= 0) {
+      textHapLog("paint:gated", {
+        token: value2.word,
+        peer: peerId,
+        note: "not this peer's turn \u2014 Net Cycles scheduling is active and their gate is closed"
+      });
+      return;
+    }
     const fx = typeof window !== "undefined" && window._ncText || null;
     const active4 = fx && fx.active ? fx : null;
     const seedCycle = active4 ? active4.cycle : 0;
@@ -54130,6 +54139,7 @@ ${full}
 
   // src/css-cycles.js
   init_text_cycles_core();
+  init_Metaprogrammer();
   var STYLE_PREFIX = "trussal-css-cycles-";
   var atoms2 = {};
   var active3 = false;
@@ -54138,6 +54148,7 @@ ${full}
   var styleEls = /* @__PURE__ */ new Map();
   var lastSentScss = "";
   var bgCache = /* @__PURE__ */ new Map();
+  var baselineValues = /* @__PURE__ */ new Map();
   var BG_CACHE_MS = 250;
   function setCssAtoms(table) {
     atoms2 = table || {};
@@ -54241,14 +54252,35 @@ ${full}
     const brace = src2.indexOf("{");
     return (brace === -1 ? src2 : src2.slice(0, brace)).trim();
   }
+  function captureBaseline(selector, prop) {
+    const key = `${selector}||${prop}`;
+    if (baselineValues.has(key)) return baselineValues.get(key);
+    let value2 = null;
+    try {
+      const el = selector ? document.querySelector(selector) : null;
+      if (el) value2 = getComputedStyle(el).getPropertyValue(prop) || null;
+    } catch (e30) {
+      console.warn("[css-cycles] could not capture baseline for", selector, prop, e30);
+    }
+    baselineValues.set(key, value2);
+    return value2;
+  }
   function applyHap(value2) {
     const token = String(value2.css);
     const sheet = sheetsByToken.get(token);
     if (!sheet || refused.has(token)) return;
+    const gateOpen = getGateLevel(sheet.peer) > 0;
+    const selector = selectorOf(sheet);
     for (const [key, raw] of Object.entries(value2)) {
       if (!key.startsWith("_cc_")) continue;
       const prop = cssPropForMethod(key.slice(4));
       if (!prop) continue;
+      const varName = cssVarName(token, prop);
+      const baseline = captureBaseline(selector, prop);
+      if (!gateOpen) {
+        if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
+        continue;
+      }
       let resolved = resolve2(raw);
       if (resolved == null || resolved === "") continue;
       const declared = sheet.props.find((p) => p.prop === prop);
@@ -54257,10 +54289,10 @@ ${full}
         if (resolved == null) continue;
       }
       if (prop === "color") {
-        const bg = backgroundForSelector(selectorOf(sheet));
+        const bg = backgroundForSelector(selector);
         if (bg) resolved = adjustColorForBackground(resolved, bg);
       }
-      document.documentElement.style.setProperty(cssVarName(token, prop), resolved);
+      document.documentElement.style.setProperty(varName, resolved);
     }
   }
   function handleTrigger2(hap, currentTime, cps2, targetTime) {
@@ -54309,6 +54341,7 @@ ${full}
     refused = /* @__PURE__ */ new Set();
     lastSentScss = "";
     bgCache.clear();
+    baselineValues.clear();
   }
 
   // src/hydra-video.js
