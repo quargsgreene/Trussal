@@ -1156,6 +1156,13 @@ function renderAll() {
       // ping/pong keeps ticking regardless of roster size) was rebuilding this
       // node from scratch and silently snapping an unfocused scroll back to 0.
       const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
+      // .ts-detail itself (the whole scrollable panel: metrics, bot cluster,
+      // then the Strudel section) is also reset to scrollTop 0 by the same
+      // innerHTML replacement — a container's own scroll position is not just
+      // its children's, so scrolling the panel down to reach the editor was
+      // getting silently snapped back to the top on every tick too. Restore
+      // it whenever we're about to restore the same peer's editor state.
+      const detailScrollTop = detail.scrollTop;
 
       renderDetail(detail);
       refreshFacialGestureButtons();
@@ -1164,6 +1171,7 @@ function renderAll() {
       // Only carry the old text over when it's the same peer's editor — switching
       // selected tiles must show the newly-selected peer's pattern, not the old one.
       const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
+      if (samePeer) detail.scrollTop = detailScrollTop;
       if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
         nextCodeEl.value = codeValue;
         if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
