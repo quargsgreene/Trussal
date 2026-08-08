@@ -133,21 +133,67 @@ test('colorScheme on a bot with no hydra adds nothing', () => {
   assert.equal(botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 }).hydra, '');
 });
 
-// --- textParrot --------------------------------------------------------------
+// --- textParrot / cssParrot ---------------------------------------------------
+//
+// script.strudel is what the bot's OWN REPL evaluates — that REPL is a
+// separate, minimal Strudel instance with neither Text nor CSS Cycles
+// installed, so word()/css() must ALWAYS be stripped from it, parrot flag or
+// not. script.announceStrudel is the separate string peer-state broadcasts,
+// which is what parroting actually controls: it is picked up and painted by
+// every OTHER performer's own browser (buildBotSilentBlock in strudel.js).
 
-test('text statements are dropped unless textParrot is set', () => {
+test('text statements are dropped from eval AND announce unless textParrot is set', () => {
   const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('word('), 'a cluster must not repeat its author\'s words');
   assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
+  assert.ok(!script.announceStrudel.includes('word('), 'not parroted by default');
 });
 
-test('textParrot:true keeps them', () => {
+test('textParrot:true keeps word() in announce but NEVER in eval', () => {
   const code = 'botConfig({ textParrot: true })\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
-  assert.match(script.strudel, /word\("hello"\)/);
+  assert.match(script.announceStrudel, /word\("hello"\)/, 'other viewers can paint it');
+  assert.ok(!script.strudel.includes('word('), 'the bot\'s own REPL has no word() — it would crash');
+  assert.equal(validateCode(script.strudel).ok, true);
+});
+
+test('css statements are dropped from eval AND announce unless cssParrot is set', () => {
+  const code = 'botConfig()\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.ok(!script.strudel.includes('css('), 'the bot\'s own REPL has no css() — it would crash');
+  assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
+  assert.ok(!script.announceStrudel.includes('css('), 'not parroted by default');
+});
+
+test('cssParrot:true keeps css() in announce but NEVER in eval', () => {
+  const code = 'botConfig({ cssParrot: true })\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.match(script.announceStrudel, /css\(`\.x\{color:red\}`\)/, 'other viewers can paint it');
+  assert.ok(!script.strudel.includes('css('), 'the bot\'s own REPL has no css() — it would crash');
+  assert.equal(validateCode(script.strudel).ok, true);
+});
+
+test('textParrot and cssParrot compose: each controls only its own capability', () => {
+  const code = [
+    'botConfig({ textParrot: true })',
+    'await initTextCycles()',
+    '$: word("hi")',
+    '',
+    'await initCss()',
+    '$: css(`.x{color:red}`)',
+    '',
+    's("bd sd")',
+  ].join('\n');
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.match(script.announceStrudel, /word\("hi"\)/, 'textParrot kept the word() voice');
+  assert.ok(!script.announceStrudel.includes('css('), 'cssParrot was not set — css() still dropped');
+  assert.ok(!script.strudel.includes('word(') && !script.strudel.includes('css('), 'eval always strips both');
 });
 
 test('dropTextStatements leaves a wordless pattern untouched', () => {
@@ -192,15 +238,16 @@ test('word() chained directly onto a pattern (no stack) still drops whole', () =
   assert.equal(dropTextStatements('s("bd").word("x")'), '');
 });
 
-// --- CSS: always stripped, unlike word()/textParrot ---------------------------
+// --- CSS: dropCssStatements, the css() sibling of dropTextStatements ---------
 //
 // A bot's own audio-producing REPL is a separate, vanilla @strudel/repl
 // fetched fresh from unpkg (see page-scripts.js pageStrudelBoot) — it never
 // gets Trussal's installCssCycles the way the main Jitsi page does, so `css(`
-// and `await initCss()` are undefined there. Unlike text (which has a real,
-// working destination via buildBotTextBlock on every OTHER viewer's page and
-// so can be kept when textParrot asks for it), nothing forwards a bot's own
-// css() anywhere — so it is always dropped, with no opt-in.
+// and `await initCss()` are undefined there and dropCssStatements always
+// strips it from what that REPL evaluates. `cssParrot` (tested further below,
+// alongside textParrot) still gets css() to the room by keeping it in
+// announceStrudel instead — the separate string peer-state broadcasts, which
+// every OTHER viewer's own page paints (buildBotSilentBlock in strudel.js).
 
 test('dropCssStatements leaves css-free code untouched', () => {
   assert.equal(dropCssStatements('s("bd sd")'), 's("bd sd")');
@@ -297,6 +344,7 @@ test('every generated script parses, across the property matrix', () => {
     'botConfig({ colorScheme: "square" })',
     'botConfig({ colorScheme: "monochromatic" })',
     'botConfig({ textParrot: true })',
+    'botConfig({ cssParrot: true })',
   ];
   const body = 'await initHydra()\nosc(10, 0.1).out(o0)\n\nn("0 2 4").scale("C:minor").cutoff(600)';
 
@@ -306,6 +354,7 @@ test('every generated script parses, across the property matrix', () => {
       const script = botScriptFor(source, { index, count: 3, seed: 7, botId: index });
       assert.equal(validateCode(script.strudel).ok, true, `${decl} bot ${index} strudel`);
       assert.equal(validateCode(script.hydra).ok, true, `${decl} bot ${index} hydra`);
+      assert.equal(validateCode(script.announceStrudel).ok, true, `${decl} bot ${index} announceStrudel`);
     }
   }
 });

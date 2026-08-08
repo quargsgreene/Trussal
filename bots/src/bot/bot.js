@@ -108,6 +108,10 @@ export class Bot {
       await this.page.evaluate(pageStrudelBoot, {
         strudel: script.strudel,
         hydra: script.hydra,
+        // What gets announced to peer-state differs from what this REPL
+        // evaluates whenever textParrot/cssParrot kept a word()/css() voice
+        // this REPL can't run — see cluster-source.js's botScriptFor.
+        announceStrudel: script.announceStrudel ?? script.strudel,
         samples: this.cfg.samples || {},
       });
     } catch (err) {

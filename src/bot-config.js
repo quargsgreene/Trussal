@@ -41,6 +41,7 @@ export const BOT_CONFIG_PROPS = {
     ],
   },
   textParrot: { type: 'boolean' },
+  cssParrot: { type: 'boolean' },
   retroactive: { type: 'boolean' },
   samples: { type: 'boolean' },
 };

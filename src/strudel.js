@@ -190,37 +190,58 @@ function applyCssRewrite(code, peer) {
   return rewritten;
 }
 
-// A bot's contribution to this page's program: its Text Cycles statements, or
-// nothing at all.
+// A bot's contribution to this page's program: its Text/CSS Cycles
+// statements, or nothing at all.
 //
 // A bot's audio arrives as audio (its own headless browser plays it into Jitsi
 // or Jamulus), so folding its pattern in here would play it twice. Its WORDS
-// are the opposite case — text is painted per-page from the program and never
-// rides any track, so a bot's words reach a viewer only if that viewer's own
-// program carries them. This is the whole mechanism behind `textParrot`: the
-// fleet decides whether a bot's script keeps its author's word() statements,
+// and STYLING are the opposite case — both are painted per-page from the
+// program and never ride any track, so a bot's words/CSS reach a viewer only
+// if that viewer's own program carries them. This is the whole mechanism
+// behind `textParrot`/`cssParrot`: the fleet decides whether a bot's
+// announced script keeps its author's word()/css() statements (its own eval
+// never does — see cluster-source.js's dropTextStatements/dropCssStatements,
+// which strip both unconditionally from what the bot's REPL actually runs),
 // and this decides whether the room can see them.
-function buildBotTextBlock(peer) {
+function buildBotSilentBlock(peer) {
   const code = normalizePeerCode(
     isNetCyclesActive() ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern,
   );
-  if (!code || !peer.playing || !hasTextCycles(code)) return null;
+  if (!code || !peer.playing || (!hasTextCycles(code) && !hasCssCycles(code))) return null;
 
-  const split = splitSilentCode(code);
-  // STORAGE POINT 2 (bots): a bot's words reach the room only through this,
-  // because the only page running its program is its own headless Chromium.
-  textLogChanged(`peer-block:bot:${peer.jitsiId ?? peer.peerId}`, {
-    playing: peer.playing,
-    split: !!split,
-    ...(split ? {} : { why: 'declares initTextCycles() but no preamble could be split off — it must sit on its own line before the first blank line' }),
-  });
-  if (!split) return null;
+  // A bot's own Hydra preamble, if it has one, is never forwarded here — it
+  // is per-peer visual state the aggregator's mosaic handles instead, and
+  // re-running it inside every OTHER viewer's own program would draw the
+  // bot's pattern onto a canvas that isn't its own. Strip it via the shared
+  // rule first, exactly as buildPeerBlock does for a human running Hydra
+  // alongside Text/CSS Cycles, so a preceding preamble can't hide the
+  // capabilities declared after it (the whole reason splitSilentCode alone
+  // used to fail here whenever a bot also carried Hydra).
+  const hydraSplit = splitHydraCode(code);
+  const afterHydra = hydraSplit ? hydraSplit.strudel : code;
+  if (!afterHydra || (!hasTextCycles(afterHydra) && !hasCssCycles(afterHydra))) return null;
+
+  // Rewritten over the WHOLE remainder, same as buildPeerBlock — the rewrite
+  // mints tokens and attaches the dominant trigger regardless of which
+  // statement a declaration happens to share a line group with, so it must
+  // run before anything gets split into kept/dropped statements.
+  let rewritten = afterHydra;
+  if (hasCssCycles(afterHydra)) rewritten = applyCssRewrite(rewritten, peer);
+  if (hasTextCycles(afterHydra)) rewritten = applyTextRewrite(rewritten, peer);
 
   // Audio statements are dropped, not silenced: the bot is already playing them
   // for real, and a muted copy here would still cost a voice in every browser.
-  const textOnly = keepSilentStatements(split.strudel);
-  if (!textOnly) return split.preamble;
-  return `${split.preamble}\n\n${buildStrudelVoice(applyTextRewrite(textOnly, peer), '')}`;
+  const silentOnly = keepSilentStatements(rewritten);
+  // STORAGE POINT 2 (bots): a bot's words/CSS reach the room only through
+  // this, because the only page running its program is its own headless
+  // Chromium.
+  textLogChanged(`peer-block:bot:${peer.jitsiId ?? peer.peerId}`, {
+    playing: peer.playing,
+    kept: !!silentOnly,
+    ...(silentOnly ? {} : { why: 'declares Text/CSS Cycles but nothing silent survived the split' }),
+  });
+  if (!silentOnly) return null;
+  return buildStrudelVoice(silentOnly, '');
 }
 
 // Build a labeled Strudel voice string from code that is known to be a Strudel
@@ -260,14 +281,15 @@ function buildPeerBlock(peer) {
   // mix, which would play it a second time on top of the bot's incoming audio.
   // Under Net Cycles their incoming audio is slot-gated at the chain instead.
   //
-  // Text Cycles are the one exception, and for the same reason the aggregator
-  // exclusion below carves them out: words are painted into each viewer's own
-  // chat panel from that viewer's program, and make no sound. A bot's words
-  // would otherwise appear NOWHERE — the only page running its program is its
-  // own headless Chromium, whose chat panel nobody sees. So keep a bot's text
-  // statements (silent by construction) and drop everything else, which is
-  // exactly what `textParrot` asks for.
-  if (peer.isBot) return buildBotTextBlock(peer);
+  // Text and CSS Cycles are the one exception, and for the same reason the
+  // aggregator exclusion below carves them out: both are painted into each
+  // viewer's own page (chat panel, stylesheet) from that viewer's program,
+  // and make no sound. A bot's words/styling would otherwise appear NOWHERE —
+  // the only page running its program is its own headless Chromium, whose
+  // chat panel and stylesheet nobody sees. So keep a bot's silent statements
+  // and drop everything else, which is exactly what `textParrot`/`cssParrot`
+  // ask for.
+  if (peer.isBot) return buildBotSilentBlock(peer);
 
   // Net Cycles: the pattern that plays is the one the scheduler last dequeued
   // from this performer's buffer queue, so editor changes land at their next

@@ -1119,7 +1119,11 @@ export class FleetService {
       : this.master;
 
     const master = this.cfg.varyHydra
-      ? { strudel: configured.strudel, hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra }
+      ? {
+        strudel: configured.strudel,
+        hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra,
+        announceStrudel: configured.announceStrudel,
+      }
       : configured;
     return variationFor(botId, master, {
       // The bot being started is not yet in `bots` (see #startBot), matching the

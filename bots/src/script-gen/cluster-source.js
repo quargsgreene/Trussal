@@ -13,10 +13,14 @@
  * would rewrite every bot's part mid-phrase every time its author typed.
  *
  * This module is pure so the whole matrix is testable without containers: it
- * takes code and a config and returns the {strudel, hydra} pair the bot boots
- * with. Everything about how that pair sits in the MIX — band, stereo position,
- * entry offset, gain staging, link fx — stays in variation.js and is applied
- * afterwards, unchanged.
+ * takes code and a config and returns the {strudel, hydra, announceStrudel}
+ * triple the bot boots with. `strudel`/`hydra` are what its own REPL
+ * evaluates; `announceStrudel` is the separate string peer-state broadcasts
+ * as this bot's pattern, which is what lets `textParrot`/`cssParrot` reach
+ * other viewers even though the bot's own REPL can run neither (see
+ * dropTextStatements/dropCssStatements). Everything about how the eval pair
+ * sits in the MIX — band, stereo position, entry offset, gain staging, link
+ * fx — stays in variation.js and is applied afterwards, unchanged.
  */
 
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
@@ -235,21 +239,20 @@ export function dropTextStatements(strudel) {
 }
 
 /**
- * Strip the statements that restyle the page — unconditionally, unlike
- * word()/textParrot. There is no "cssParrot" opt-in because there is nowhere
- * for a bot's CSS to go: a bot's WORDS reach the room through buildPeerBlock
- * on every OTHER viewer's own page (buildBotTextBlock forwards them because
- * text is per-page and never rides an audio track), but nothing forwards a
- * bot's css() the same way — buildBotTextBlock only ever asks hasTextCycles —
- * and the bot's own headless page is never looked at by anyone.
+ * Strip the statements that restyle the page. Always applied to what the
+ * bot's OWN REPL evaluates (see botScriptFor) — `css(`/`await initCss()` are
+ * undefined there: bots boot a separate, vanilla `@strudel/repl` fetched
+ * fresh from unpkg (pageStrudelBoot) rather than the Trussal bundle's engine,
+ * so it never gets `installCssCycles`'s controls the way the main Jitsi page
+ * does. A bot whose captured code carries a css() voice fails evaluation
+ * outright otherwise — the "pattern did not start after evaluation" crash the
+ * moment a performer's repertoire combines CSS Cycles with a bot spawn.
  *
- * Left in, `css(`/`await initCss()` are undefined in the bot's own REPL: bots
- * boot a separate, vanilla `@strudel/repl` fetched fresh from unpkg
- * (pageStrudelBoot) rather than the Trussal bundle's engine, so it never gets
- * `installCssCycles`'s controls the way the main Jitsi page does. A bot whose
- * captured code carries a css() voice fails evaluation outright — this is the
- * "pattern did not start after evaluation" crash the moment a performer's
- * repertoire combines CSS Cycles with a bot spawn.
+ * Also applied to `announceStrudel` unless `cssParrot` is set — mirrors
+ * dropTextStatements/textParrot: css() never rides the bot's own eval, but it
+ * DOES reach the room a different way when parroted, through every OTHER
+ * viewer's own page (buildBotSilentBlock in strudel.js extracts it from the
+ * announced pattern), the same as a bot's words already do.
  */
 export function dropCssStatements(strudel) {
   return dropCapabilityParagraphs(strudel, {
@@ -281,11 +284,23 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   let strudel = base.strudel;
   let hydra = base.hydra;
 
-  if (!flag(config.textParrot)) strudel = dropTextStatements(strudel);
-  // Always, not gated by any config: the bot's own REPL has nowhere to send
-  // CSS Cycles output (see dropCssStatements), so a css() voice left in
-  // isn't a stylistic choice to opt in or out of — it is always a crash.
-  strudel = dropCssStatements(strudel);
+  // What OTHER viewers see this bot declare — text/css statements survive
+  // here per `textParrot`/`cssParrot`, because that is how they actually
+  // reach the room: peer-state announces this string as the bot's `pattern`,
+  // and every OTHER peer's own page extracts word()/css() statements out of
+  // it (buildBotSilentBlock in strudel.js). Computed from the unshaped base,
+  // before numeric shaping/harmony/the mix chain below — those are
+  // audible-only details that path never looks at.
+  let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
+  announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
+
+  // What the bot's OWN REPL evaluates. ALWAYS stripped of both, regardless of
+  // textParrot/cssParrot: that REPL is a separate, vanilla @strudel/repl
+  // instance (see page-scripts.js's pageStrudelBoot) that never gets
+  // Trussal's installTextCycles/installCssCycles, so `word`/`css`/their init
+  // calls are undefined there. Parroting is a broadcast-only concept — the
+  // bot's own eval can never run either, parrot flag or not.
+  strudel = dropCssStatements(dropTextStatements(strudel));
 
   // Numeric shaping. paramFactor is the deterministic sibling of
   // random:"params"; when both are set the factor is applied first so the
@@ -313,5 +328,5 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
   if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
 
-  return { strudel, hydra };
+  return { strudel, hydra, announceStrudel };
 }

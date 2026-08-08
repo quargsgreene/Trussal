@@ -110,6 +110,13 @@ export function variationFor(botId, master, opts) {
     // every bot down the moment a performer's repertoire did this.
     strudel: wrapAsVoice(master.strudel, strudelChain.join('')),
     hydra: [master.hydra, ...hydraPostlude].join('\n'),
+    // What peer-state broadcasts as this bot's pattern — passed through
+    // as-is, not wrapped in the per-bot mix chain: the chain is an audible
+    // shaping detail, invisible to the OTHER viewers who only ever extract
+    // word()/css() statements from this string (buildBotSilentBlock). Falls
+    // back to the eval master when a source has none (the fleet-wide random
+    // master has no human text/css to parrot in the first place).
+    announceStrudel: master.announceStrudel ?? master.strudel,
     entryDelayMs,
   };
 }

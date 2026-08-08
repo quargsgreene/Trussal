@@ -781,16 +781,36 @@ export function splitCssStatements(code) {
   return splitStatements(code).map((s) => ({ ...s, hasCss: CSS_CALL_RE.test(s.text) }));
 }
 
-// Keep only the statements that make no sound — words and styling. Both are
-// per-page and neither rides the published track, so an excluded remote peer's
-// text and CSS must survive the exclusion that drops their audio; otherwise
-// you would only ever see your own.
+// A bare `await initTextCycles()`/`await initCss()` declaration, with nothing
+// else on its statement — splitStatements always gives one of these its own
+// chunk when it precedes a labeled voice with no blank line before it (the
+// shape every capability's own docs use), so keeping only hasWord/hasCss
+// chunks below would drop the declaration and leave the voice it activates
+// never turned on.
+const BARE_INIT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(\s*\)\s*;?\s*$/;
+
+// Keep only the statements that make no sound — words and styling, plus the
+// capability declarations that turn them on. Both are per-page and neither
+// rides the published track, so an excluded remote peer's text and CSS must
+// survive the exclusion that drops their audio; otherwise you would only
+// ever see your own.
+//
+// Paragraph-aware (blank-line-separated, the same unit hydra-code.js and
+// strudel-voice.js split on), not just label-aware: splitStatements has no
+// notion of a blank line, so a trailing plain audio pattern with no label of
+// its own gets grouped into whichever labeled text/css statement precedes it
+// and would otherwise be kept — and forwarded as a SECOND voice for that
+// peer's audio, playing it twice.
 export function keepSilentStatements(code) {
-  return splitCssStatements(code)
-    .filter((s) => s.hasWord || s.hasCss)
-    .map((s) => s.text)
-    .join('\n')
-    .trim();
+  const src = String(code ?? '');
+  const kept = src.split(/\n\n+/).map((paragraph) => {
+    if (!paragraph.trim()) return null;
+    const survivors = splitCssStatements(paragraph)
+      .filter((s) => s.hasWord || s.hasCss || BARE_INIT_RE.test(s.text.trim()))
+      .map((s) => s.text);
+    return survivors.length ? survivors.join('\n') : null;
+  }).filter((p) => p !== null);
+  return kept.join('\n\n').trim();
 }
 
 // The custom property carrying one patterned declaration. Derived from the

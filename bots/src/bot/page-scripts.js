@@ -609,7 +609,7 @@ export async function pageEnsureVideoPublished() {
  * incorrect code → terminate and replace" policy when an error slips past
  * static validation.
  */
-export async function pageStrudelBoot({ strudel, hydra, samples }) {
+export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples }) {
   window.__trussalErrors = window.__trussalErrors || [];
   window.__trussalReportError = (e) => window.__trussalErrors.push(String((e && e.stack) || e));
   // The owner's shared sample banks, registered under the SAME folder names
@@ -623,6 +623,13 @@ export async function pageStrudelBoot({ strudel, hydra, samples }) {
   // call: `out(o0)(stack(...))`, which throws inside Strudel's own error
   // handling ("no pattern yet") where our reporter can't see it.
   const code = `${hydra};\n${strudel}`;
+  // What gets ANNOUNCED to peer-state (so other viewers can extract a
+  // parroted word()/css() voice via buildBotSilentBlock) differs from what
+  // THIS REPL evaluates whenever textParrot/cssParrot kept one — this REPL is
+  // a separate, vanilla @strudel/repl instance that never gets Trussal's
+  // installTextCycles/installCssCycles, so it can only ever run the
+  // capability-free `strudel`, never the parroted one.
+  const announcedStrudel = typeof announceStrudel === 'string' ? announceStrudel : strudel;
   try {
     if (!customElements.get('strudel-editor')) {
       await new Promise((resolve, reject) => {
@@ -707,8 +714,13 @@ export async function pageStrudelBoot({ strudel, hydra, samples }) {
       // The blank line is load-bearing: it is where hydra-code.js splits the
       // preamble from the Strudel remainder. This does not reach any human's
       // combined program — strudel.js drops bot peers outright
-      // (buildPeerBlock) so their audio is not played twice.
-      const announced = hydra ? `${hydra}\n\n${strudel}` : strudel;
+      // (buildPeerBlock) so their audio is not played twice; only a parroted
+      // word()/css() voice is extracted from it, by buildBotSilentBlock.
+      //
+      // announcedStrudel, not the `strudel` this REPL evaluated: they differ
+      // exactly when textParrot/cssParrot asked to keep a voice this REPL
+      // can't run (see pageStrudelBoot's top).
+      const announced = hydra ? `${hydra}\n\n${announcedStrudel}` : announcedStrudel;
       try { window.__trussalAnnounceLocalPattern(announced); } catch (err) {
         window.__trussalReportError(err);
       }

@@ -39,6 +39,7 @@ Spawn reads the box.
 | `mcp` | string | A prompt. The cluster's code is composed by a model instead of copied from you |
 | `colorScheme` | string | `complementary`, `monochromatic`, `analogous`, `triadic`, `tetradic`, `split-complementary`, `square`, `random` |
 | `textParrot` | boolean | `true` keeps your Text Cycles statements, so the bots repeat your words |
+| `cssParrot` | boolean | `true` keeps your CSS Cycles statements, so the bots repeat your styling |
 | `retroactive` | boolean | `true` applies later edits to bots already running, at each one's next turn |
 | `samples` | boolean | `true` shares your uploaded sample folders with your bots |
 
@@ -75,11 +76,17 @@ Cluster member 0 always keeps your hue and the scheme opens up from there.
 `monochromatic` separates members by brightness, since rotating hue by zero
 would make them identical.
 
-**textParrot** is off by default, which means bot scripts have their `word()`
-statements stripped: without that, every bot in a cluster repeats its author's
-words in every viewer's chat panel. Note that a bot's words reach the room
-through *your* browser's program, not the bot's — text is painted per page and
-never rides an audio track.
+**textParrot** and **cssParrot** are off by default, which means bot scripts
+have their `word()`/`css()` statements stripped from what each bot ANNOUNCES —
+without that, every bot in a cluster repeats its author's words or restyling
+in every viewer's chat panel/page. Setting either to `true` keeps that voice in
+what a bot announces, which every OTHER performer's own browser then paints —
+text and CSS are per-page and never ride an audio track, so this is true
+regardless of parroting: what changes is only whether OTHER viewers ever see
+it. Note that a bot's own REPL never runs `word()`/`css()` either way — a
+separate, minimal Strudel instance boots each bot's audio and has neither
+capability installed, so both are always stripped from what it actually
+evaluates, parrot or not.
 
 **samples** ships your uploaded folders to the fleet, which serves them to your
 bots over its own HTTP surface. The bots register them under the same folder
