@@ -5,6 +5,7 @@ import {
   botScriptFor,
   captureClusterSource,
   dropTextStatements,
+  dropCssStatements,
   masterFromPerformerCode,
 } from '../src/script-gen/cluster-source.js';
 import { validateCode } from '../src/script-gen/validate.js';
@@ -189,6 +190,78 @@ test('word() chained directly onto a pattern (no stack) still drops whole', () =
   // Per the docs, a dominant text trigger already silences this hap, so
   // nothing salvageable is left once word() is gone.
   assert.equal(dropTextStatements('s("bd").word("x")'), '');
+});
+
+// --- CSS: always stripped, unlike word()/textParrot ---------------------------
+//
+// A bot's own audio-producing REPL is a separate, vanilla @strudel/repl
+// fetched fresh from unpkg (see page-scripts.js pageStrudelBoot) — it never
+// gets Trussal's installCssCycles the way the main Jitsi page does, so `css(`
+// and `await initCss()` are undefined there. Unlike text (which has a real,
+// working destination via buildBotTextBlock on every OTHER viewer's page and
+// so can be kept when textParrot asks for it), nothing forwards a bot's own
+// css() anywhere — so it is always dropped, with no opt-in.
+
+test('dropCssStatements leaves css-free code untouched', () => {
+  assert.equal(dropCssStatements('s("bd sd")'), 's("bd sd")');
+});
+
+test('dropCssStatements drops a css() voice entirely, including its declaration', () => {
+  const code = 'await initCss()\n$: css(`.foo{color:red}`).fast(3)\n\nn("<0 1>").s("piano")';
+  const out = dropCssStatements(code);
+  assert.ok(!out.includes('css('), 'the css() call is gone');
+  // initCss() alone does nothing useful without a css() to drive — it is a
+  // capability declaration for a capability this REPL cannot run, and the
+  // fewer half-declarations left behind, the fewer surprises later.
+  assert.ok(!/await\s+initCss/.test(out));
+  assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(out).ok, true);
+});
+
+test('css() inside a stack() loses only its own branch, not its siblings', () => {
+  const code = [
+    'await initCss()',
+    '',
+    'stack(',
+    '  s("bd sd").room(.3),',
+    '  css(`.foo{color:red}`).fast(3)',
+    ')',
+  ].join('\n');
+  const out = dropCssStatements(code);
+  assert.match(out, /s\("bd sd"\)\.room\(\.3\)/, 'the audio branch survives');
+  assert.ok(!out.includes('css('), 'the css() branch is gone');
+  assert.equal(validateCode(out).ok, true);
+});
+
+// The exact shape captured live: Hydra split off by masterFromPerformerCode,
+// text and css each declared inline with their own $: voice, and a trailing
+// UNLABELED audio pattern — the combination that was crash-looping every bot
+// in the room with "pattern did not start after evaluation" until both the
+// wrapAsVoice fix and dropCssStatements landed.
+test('botScriptFor never hands the bot REPL a css() voice, end to end', () => {
+  const code = [
+    'await initHydra()',
+    'osc(100)',
+    '.out()',
+    '',
+    'await initTextCycles()',
+    '$: typeface(\'Times New Roman\').word("<I like squirrels>")',
+    '     .weight("400 200")',
+    '',
+    'await initCss()',
+    '$: css(`.foo { color: red }`)',
+    '     .fast(4)',
+    '',
+    'n("<0 1 2 3 4>*8").s("gm_lead_6_voice")',
+  ].join('\n');
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 0, count: 1, seed: 7, botId: 1 });
+  assert.ok(!script.strudel.includes('css('), 'no css() reaches the bot REPL');
+  assert.ok(!/await\s+initCss/.test(script.strudel));
+  assert.ok(!script.strudel.includes('word('), 'textParrot is off by default — no word() either');
+  assert.match(script.strudel, /n\("<0 1 2 3 4>\*8"\)\.s\("gm_lead_6_voice"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(script.strudel).ok, true);
+  assert.equal(validateCode(script.hydra).ok, true);
 });
 
 // --- Composition -------------------------------------------------------------

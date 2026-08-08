@@ -775,7 +775,7 @@ export function hasCssCycles(code) {
 }
 
 // `css(` in any position, including chained.
-const CSS_CALL_RE = /(?:^|[^\w$])css\s*\(/;
+export const CSS_CALL_RE = /(?:^|[^\w$])css\s*\(/;
 
 export function splitCssStatements(code) {
   return splitStatements(code).map((s) => ({ ...s, hasCss: CSS_CALL_RE.test(s.text) }));

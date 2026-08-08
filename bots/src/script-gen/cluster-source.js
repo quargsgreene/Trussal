@@ -20,7 +20,8 @@
  */
 
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
-import { hasTextCycles, splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
+import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
+import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { randomMasterScript } from './generator.js';
@@ -156,22 +157,22 @@ function splitStackArgs(argsText) {
 }
 
 /**
- * A statement that names `word(`/`w(` loses only its word-painting part, not
- * everything in it. Vanilla Strudel's own idiom for combining layers is
- * `stack(...)`, and a performer routinely writes their audio and their words
- * as siblings inside one `stack(...)` rather than as separate `$:` voices —
- * dropping the whole statement in that case would silence the audio too, even
- * though `stack()`'s own siblings never depended on each other. Only a
- * top-level `stack(...)` gets this treatment; `s("bd").word("x")` genuinely
- * has nothing left once its word() is gone (the docs are explicit that a
- * dominant text trigger already silences that whole hap), so that case still
- * drops the statement outright.
+ * A chunk of code that names a call matching `callRe` (`word(`/`w(`, or
+ * `css(`) loses only that branch, not everything in it. Vanilla Strudel's own
+ * idiom for combining layers is `stack(...)`, and a performer routinely
+ * writes their audio alongside their words or styling as siblings inside one
+ * `stack(...)` rather than as separate `$:` voices — dropping the whole thing
+ * in that case would silence the audio too, even though `stack()`'s own
+ * siblings never depended on each other. Only a top-level `stack(...)` gets
+ * this treatment; `s("bd").word("x")` genuinely has nothing left once its
+ * word() is gone (the docs are explicit that a dominant trigger already
+ * silences that whole hap), so that case still drops the whole thing.
  */
-function stripWordBranches(text) {
+function stripBranchesMatching(text, callRe) {
   const call = findStackCall(text);
   if (!call) return null;
   const survivors = splitStackArgs(call.argsText)
-    .filter((arg) => !WORD_CALL_RE.test(arg))
+    .filter((arg) => !callRe.test(arg))
     .map((arg) => arg.trim())
     .filter(Boolean);
   if (!survivors.length) return null;
@@ -180,17 +181,81 @@ function stripWordBranches(text) {
 }
 
 /**
+ * Drop every unit of code that declares or calls a capability, keeping
+ * everything else untouched — including a sibling that shares a line group
+ * with it. A capability's declaration/voice can sit next to something that
+ * must survive in either of two shapes real code uses, so both have to be
+ * split independently:
+ *
+ *   - blank-line paragraphs (the unit hydra-code.js and strudel-voice.js
+ *     split on) — a trailing plain audio pattern in ITS OWN paragraph right
+ *     after a text/css one, exactly how the capability docs show combining
+ *     Hydra/Text/CSS with a final pattern;
+ *   - label lines with NO blank line between them (`$: word(...)\n$: s(...)`)
+ *     — splitStatements' unit, the shape a performer gets by writing two
+ *     `$:` voices back to back.
+ *
+ * Paragraph-splitting alone loses the second shape (a sibling voice with no
+ * call of its own gets swept into the same paragraph and dropped with it);
+ * label-splitting alone loses the first (it has no notion of a blank line, so
+ * a trailing unlabeled pattern is swept into whichever labeled statement
+ * precedes it). Doing both, outer-then-inner, loses neither.
+ */
+function dropCapabilityParagraphs(strudel, { initRe, callRe }) {
+  const src = String(strudel ?? '');
+  if (!initRe.test(src) && !callRe.test(src)) return src;
+  const dropChunk = (chunk) => {
+    const stripped = stripBranchesMatching(chunk, callRe);
+    if (stripped !== null) return stripped;
+    // No stack() to salvage a sibling from: drop the whole chunk only if IT
+    // is what declares or calls this capability.
+    if (initRe.test(chunk) || callRe.test(chunk)) return null;
+    return chunk;
+  };
+  const kept = src.split(/\n\n+/).map((paragraph) => {
+    if (!paragraph.trim()) return null;
+    const survivors = splitStatements(paragraph)
+      .map((s) => dropChunk(s.text))
+      .filter((c) => c !== null);
+    return survivors.length ? survivors.join('\n') : null;
+  }).filter((p) => p !== null);
+  return kept.join('\n\n').trim();
+}
+
+/**
  * Strip the statements that paint words, for a bot whose human did not ask for
  * `textParrot`. Without this every bot in a cluster would repeat its author's
  * words, N times over, in every viewer's chat panel.
  */
 export function dropTextStatements(strudel) {
-  const src = String(strudel ?? '');
-  if (!hasTextCycles(src) && !WORD_CALL_RE.test(src)) return src;
-  const kept = splitStatements(src)
-    .map((s) => (s.hasWord ? stripWordBranches(s.text) : s.text))
-    .filter((text) => text !== null);
-  return kept.join('\n').trim();
+  return dropCapabilityParagraphs(strudel, {
+    initRe: /^\s*await\s+initTextCycles\s*\(/m,
+    callRe: WORD_CALL_RE,
+  });
+}
+
+/**
+ * Strip the statements that restyle the page — unconditionally, unlike
+ * word()/textParrot. There is no "cssParrot" opt-in because there is nowhere
+ * for a bot's CSS to go: a bot's WORDS reach the room through buildPeerBlock
+ * on every OTHER viewer's own page (buildBotTextBlock forwards them because
+ * text is per-page and never rides an audio track), but nothing forwards a
+ * bot's css() the same way — buildBotTextBlock only ever asks hasTextCycles —
+ * and the bot's own headless page is never looked at by anyone.
+ *
+ * Left in, `css(`/`await initCss()` are undefined in the bot's own REPL: bots
+ * boot a separate, vanilla `@strudel/repl` fetched fresh from unpkg
+ * (pageStrudelBoot) rather than the Trussal bundle's engine, so it never gets
+ * `installCssCycles`'s controls the way the main Jitsi page does. A bot whose
+ * captured code carries a css() voice fails evaluation outright — this is the
+ * "pattern did not start after evaluation" crash the moment a performer's
+ * repertoire combines CSS Cycles with a bot spawn.
+ */
+export function dropCssStatements(strudel) {
+  return dropCapabilityParagraphs(strudel, {
+    initRe: /^\s*await\s+initCss\s*\(/m,
+    callRe: CSS_CALL_RE,
+  });
 }
 
 /**
@@ -217,6 +282,10 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   let hydra = base.hydra;
 
   if (!flag(config.textParrot)) strudel = dropTextStatements(strudel);
+  // Always, not gated by any config: the bot's own REPL has nowhere to send
+  // CSS Cycles output (see dropCssStatements), so a css() voice left in
+  // isn't a stylistic choice to opt in or out of — it is always a crash.
+  strudel = dropCssStatements(strudel);
 
   // Numeric shaping. paramFactor is the deterministic sibling of
   // random:"params"; when both are set the factor is applied first so the
