@@ -451,7 +451,10 @@ function paint(value, cycle) {
   const peerId = peerOf(value.word);
   const peerClass = peerTextClass(peerId);
 
-  if (!isPeerNetCyclesTurn(peerId)) {
+  // Bots are exempt from the turn gate — they are operator-puppeted via
+  // remote-control rather than live turn-taking performers, so an edit
+  // should paint the moment it lands rather than waiting on the ring.
+  if (!getPeerByJitsiId(peerId)?.isBot && !isPeerNetCyclesTurn(peerId)) {
     textHapLog('paint:gated', {
       token: value.word,
       peer: peerId,

@@ -204,9 +204,14 @@ function applyCssRewrite(code, peer) {
 // which strip both unconditionally from what the bot's REPL actually runs),
 // and this decides whether the room can see them.
 function buildBotSilentBlock(peer) {
-  const code = normalizePeerCode(
-    isNetCyclesActive() ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern,
-  );
+  // Unlike a human's own live editing, a bot is operator-puppeted via the
+  // studio's remote-control path — it never holds a Net Cycles buffer queue
+  // slot the way a performer typing along with the rotation does, so its
+  // code always reflects the latest remote-eval edit rather than staging
+  // behind the ring's next-turn dequeue (getActivePattern would otherwise
+  // replay whatever the ring last picked up, which could be several
+  // rotations stale).
+  const code = normalizePeerCode(peer.pattern);
   if (!code || !peer.playing || (!hasTextCycles(code) && !hasCssCycles(code))) return null;
 
   // A bot's own Hydra preamble, if it has one, is never forwarded here — it

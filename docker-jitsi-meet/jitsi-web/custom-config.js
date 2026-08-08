@@ -52812,7 +52812,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
-    if (!isPeerNetCyclesTurn(peerId)) {
+    if (!getPeerByJitsiId(peerId)?.isBot && !isPeerNetCyclesTurn(peerId)) {
       textHapLog("paint:gated", {
         token: value2.word,
         peer: peerId,
@@ -54289,7 +54289,7 @@ ${full}
     const token = String(value2.css);
     const sheet = sheetsByToken.get(token);
     if (!sheet || refused.has(token)) return;
-    const gateOpen = isPeerNetCyclesTurn(sheet.peer);
+    const gateOpen = getPeerByJitsiId(sheet.peer)?.isBot || isPeerNetCyclesTurn(sheet.peer);
     const selector = selectorOf(sheet);
     for (const [key, raw] of Object.entries(value2)) {
       if (!key.startsWith("_cc_")) continue;
@@ -55035,9 +55035,7 @@ $: (${split.expr})${fx}`;
     return rewritten;
   }
   function buildBotSilentBlock(peer) {
-    const code2 = normalizePeerCode(
-      isNetCyclesActive() ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern
-    );
+    const code2 = normalizePeerCode(peer.pattern);
     if (!code2 || !peer.playing || !hasTextCycles(code2) && !hasCssCycles(code2)) return null;
     const hydraSplit = splitHydraCode(code2);
     const afterHydra = hydraSplit ? hydraSplit.strudel : code2;
