@@ -174,6 +174,36 @@ test('a broken edit leaves the running cluster alone', async () => {
   });
 });
 
+test('a broken edit is reported, not silently ignored', async () => {
+  // Without this, a botConfig() typo (e.g. an unrecognized property name)
+  // looks exactly like "my edit had no effect" or "reverted" — the studio's
+  // only feedback is a fleet-status broadcast, and the retroactive edit path
+  // used to skip it entirely (only the spawn path reported parse errors).
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, 'botConfig({ retroactive: true })\ns("cp:3")');
+    await joinBots(fleet);
+
+    await edit(fleet, 'botConfig({ parrotText: true })\ns("rim:7")');
+
+    const errors = sent.filter((m) => m.type === 'fleet-status' && m.action === 'config-error');
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].ownerIndex, HUMAN.index);
+    assert.match(errors[0].reason, /unknown property "parrotText"/);
+  });
+});
+
+test('a broken edit is reported even without retroactive set', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, 's("cp:3")');
+    await joinBots(fleet);
+
+    await edit(fleet, 'botConfig({ cssParrot: "yes" })\ns("rim:7")');
+
+    const errors = sent.filter((m) => m.type === 'fleet-status' && m.action === 'config-error');
+    assert.equal(errors.length, 1, 'the same typo would silently produce a copy-cluster at the next spawn otherwise');
+  });
+});
+
 test('one human\'s retroactive edit does not touch another\'s cluster', async () => {
   await withFleet(async ({ fleet, sent }) => {
     await fleet.handleBusMessage(

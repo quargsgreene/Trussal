@@ -971,7 +971,21 @@ export class FleetService {
     if (!who || who.isBot) return;
 
     const parsed = parseBotConfig(code);
-    if (!parsed.ok || !flag(parsed.config.retroactive)) return;
+    if (!parsed.ok) {
+      // Surfaced here too, not just on spawn (#handleFleetRequest) — otherwise
+      // a typo in botConfig()'s properties (e.g. a key that isn't one of
+      // BOT_CONFIG_KEYS) makes an evaluate silently do nothing: no bots
+      // re-latch, no reason is ever sent, and the performer sees only their
+      // cluster keep playing what it always was, indistinguishable from
+      // "my edit had no effect" or "reverted". Reported regardless of
+      // whether `retroactive` parsed too — the same typo will silently
+      // produce a copy-cluster at the NEXT spawn otherwise.
+      this.#busSend(room, {
+        type: 'fleet-status', action: 'config-error', ownerIndex: who.index, reason: parsed.error,
+      });
+      return;
+    }
+    if (!flag(parsed.config.retroactive)) return;
 
     this.#captureOwnerSource(room, who.index, code);
     const state = this.#existingRoom(room);

@@ -435,7 +435,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       `((?:^|[^\\w$])(?:${TEXT_VALUE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL}`,
       "g"
     );
-    const rewritten = splitStatements(code2).map(({ text: text2, hasWord }) => {
+    const rewriteStatement = ({ text: text2, hasWord }) => {
       if (!hasWord) return text2;
       const out = text2.replace(re2, (match2, head, raw) => {
         if (raw[0] === "`" && raw.includes("${")) return match2;
@@ -445,7 +445,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       });
       return `${out.replace(/[\s;]+$/, "")}
 ._tcRender()`;
-    }).join("\n");
+    };
+    const rewritten = String(code2 ?? "").split(/\n\n+/).map((paragraph) => splitStatements(paragraph).map(rewriteStatement).join("\n")).join("\n\n");
     return { code: rewritten, atoms: atoms3 };
   }
   function sanitizeDeclarations(input) {
@@ -53864,8 +53865,15 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   function splitCssStatements(code2) {
     return splitStatements(code2).map((s2) => ({ ...s2, hasCss: CSS_CALL_RE.test(s2.text) }));
   }
+  var BARE_INIT_RE = /^\s*await\s+init(?:TextCycles|Css)\s*\(\s*\)\s*;?\s*$/;
   function keepSilentStatements(code2) {
-    return splitCssStatements(code2).filter((s2) => s2.hasWord || s2.hasCss).map((s2) => s2.text).join("\n").trim();
+    const src2 = String(code2 ?? "");
+    const kept = src2.split(/\n\n+/).map((paragraph) => {
+      if (!paragraph.trim()) return null;
+      const survivors = splitCssStatements(paragraph).filter((s2) => s2.hasWord || s2.hasCss || BARE_INIT_RE.test(s2.text.trim())).map((s2) => s2.text);
+      return survivors.length ? survivors.join("\n") : null;
+    }).filter((p) => p !== null);
+    return kept.join("\n\n").trim();
   }
   function cssVarName(token, prop) {
     return `--cc-${token}-${prop}`;
@@ -53927,7 +53935,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       atoms3[token] = { text: text2, peer, kind };
       return token;
     };
-    const rewritten = splitCssStatements(code2).map(({ text: text2, hasCss }) => {
+    const rewriteStatement = ({ text: text2, hasCss }) => {
       if (!hasCss) return text2;
       const call = CSS_CALL_RE.exec(text2);
       const open = text2.indexOf("(", call.index);
@@ -53962,7 +53970,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       sheets.push({ token: scssToken, scss: arg.body, props, peer });
       return `${out.replace(/[\s;]+$/, "")}
 ._ccRender()`;
-    }).join("\n");
+    };
+    const rewritten = String(code2 ?? "").split(/\n\n+/).map((paragraph) => splitCssStatements(paragraph).map(rewriteStatement).join("\n")).join("\n\n");
     return { code: rewritten, atoms: atoms3, sheets, errors };
   }
   function checkSheet(sheet) {
@@ -54591,6 +54600,7 @@ ${full}
       ]
     },
     textParrot: { type: "boolean" },
+    cssParrot: { type: "boolean" },
     retroactive: { type: "boolean" },
     samples: { type: "boolean" }
   };
@@ -54804,6 +54814,78 @@ ${full}
 
   // src/strudel.js
   init_text_debug();
+
+  // src/strudel-voice.js
+  var LABEL_AT_START_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/;
+  var LABEL_ANYWHERE_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m;
+  var DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
+  var LINE_DECL_RE = /^\s*(let|const|var|function\b|class\b)/;
+  var CAPABILITY_DECL_LINE_RE = /^await\s+init(?:TextCycles|Css)\s*\(\s*\)\s*;?$/;
+  function isBareDeclaration(text2) {
+    if (DECL_RE.test(text2)) return true;
+    return text2.split("\n").every((line) => {
+      const t = line.trim();
+      return t === "" || CAPABILITY_DECL_LINE_RE.test(t);
+    });
+  }
+  function splitDeclAndExpr(code2) {
+    const lines = code2.split("\n");
+    let lastDeclLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (LINE_DECL_RE.test(lines[i])) lastDeclLine = i;
+    }
+    if (lastDeclLine === -1) return null;
+    let exprStart = -1;
+    for (let i = lastDeclLine + 1; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        exprStart = i;
+        break;
+      }
+    }
+    if (exprStart === -1) return null;
+    return {
+      preamble: lines.slice(0, exprStart).join("\n").trim(),
+      expr: lines.slice(exprStart).join("\n").trim()
+    };
+  }
+  function wrapLabeledParagraph(text2, fx) {
+    if (!fx) return text2;
+    const m2 = text2.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*\s*:\s*)([\s\S]+)$/);
+    if (!m2) return text2;
+    const [, label2, body] = m2;
+    return `${label2}(${body.trim()})${fx}`;
+  }
+  function wrapParagraph(text2, fx) {
+    const trimmed = text2.trim();
+    if (!trimmed) return "";
+    if (isBareDeclaration(trimmed)) return trimmed;
+    if (LABEL_AT_START_RE.test(trimmed)) return wrapLabeledParagraph(trimmed, fx);
+    const labelPos = trimmed.search(LABEL_ANYWHERE_RE);
+    if (labelPos > 0) {
+      const decl = trimmed.slice(0, labelPos).trim();
+      const rest = trimmed.slice(labelPos);
+      const declPart = isBareDeclaration(decl) ? decl : `$: (${decl})${fx}`;
+      return `${declPart}
+${wrapLabeledParagraph(rest, fx)}`;
+    }
+    return `$: (${trimmed})${fx}`;
+  }
+  function wrapAsVoice(rawCode, fx = "") {
+    const code2 = String(rawCode ?? "");
+    if (!code2.trim()) return code2;
+    if (LABEL_ANYWHERE_RE.test(code2)) {
+      return code2.split(/\n\n+/).map((p) => wrapParagraph(p, fx)).filter(Boolean).join("\n\n");
+    }
+    if (DECL_RE.test(code2)) {
+      const split = splitDeclAndExpr(code2);
+      if (split) return `${split.preamble}
+$: (${split.expr})${fx}`;
+      return code2;
+    }
+    return `$: (${code2})${fx}`;
+  }
+
+  // src/strudel.js
   var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
@@ -54857,28 +54939,6 @@ ${full}
     if (params2.reverb) chain += `.room(2)`;
     return chain;
   }
-  function splitDeclAndExpr(code2) {
-    const lines = code2.split("\n");
-    const DECL = /^\s*(let|const|var|function\b|class\b)/;
-    let lastDeclLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (DECL.test(lines[i])) lastDeclLine = i;
-    }
-    if (lastDeclLine === -1) return null;
-    let exprStart = -1;
-    for (let i = lastDeclLine + 1; i < lines.length; i++) {
-      if (lines[i].trim()) {
-        exprStart = i;
-        break;
-      }
-    }
-    if (exprStart === -1) return null;
-    return {
-      preamble: lines.slice(0, exprStart).join("\n").trim(),
-      expr: lines.slice(exprStart).join("\n").trim()
-    };
-  }
-  var DECL_RE = /^\s*(let|const|var|function\b|class\b)/m;
   function splitSilentCode(code2) {
     if (!code2) return null;
     const blank = code2.match(/\n\n+/);
@@ -54920,59 +54980,31 @@ ${full}
     if (errors.length) console.error("[css-cycles]", errors.join("; "));
     return rewritten;
   }
-  function buildBotTextBlock(peer) {
+  function buildBotSilentBlock(peer) {
     const code2 = normalizePeerCode(
       isNetCyclesActive() ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern
     );
-    if (!code2 || !peer.playing || !hasTextCycles(code2)) return null;
-    const split = splitSilentCode(code2);
+    if (!code2 || !peer.playing || !hasTextCycles(code2) && !hasCssCycles(code2)) return null;
+    const hydraSplit = splitHydraCode(code2);
+    const afterHydra = hydraSplit ? hydraSplit.strudel : code2;
+    if (!afterHydra || !hasTextCycles(afterHydra) && !hasCssCycles(afterHydra)) return null;
+    let rewritten = afterHydra;
+    if (hasCssCycles(afterHydra)) rewritten = applyCssRewrite(rewritten, peer);
+    if (hasTextCycles(afterHydra)) rewritten = applyTextRewrite(rewritten, peer);
+    const silentOnly = keepSilentStatements(rewritten);
     textLogChanged(`peer-block:bot:${peer.jitsiId ?? peer.peerId}`, {
       playing: peer.playing,
-      split: !!split,
-      ...split ? {} : { why: "declares initTextCycles() but no preamble could be split off \u2014 it must sit on its own line before the first blank line" }
+      kept: !!silentOnly,
+      ...silentOnly ? {} : { why: "declares Text/CSS Cycles but nothing silent survived the split" }
     });
-    if (!split) return null;
-    const textOnly = keepSilentStatements(split.strudel);
-    if (!textOnly) return split.preamble;
-    return `${split.preamble}
-
-${buildStrudelVoice(applyTextRewrite(textOnly, peer), "")}`;
+    if (!silentOnly) return null;
+    return buildStrudelVoice(silentOnly, "");
   }
   function buildStrudelVoice(rawCode, fx) {
-    const code2 = rewriteDataRefs(rawCode);
-    const hasLabels = /^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m.test(code2);
-    if (hasLabels) {
-      const firstLabelPos = code2.search(/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*:/m);
-      let unlabeled = "";
-      let labeled = code2;
-      if (firstLabelPos > 0) {
-        unlabeled = code2.slice(0, firstLabelPos).trim();
-        labeled = code2.slice(firstLabelPos);
-      }
-      if (fx) {
-        labeled = labeled.replace(
-          /^([a-zA-Z_$][a-zA-Z0-9_$]*\s*:\s*)(.+)$/mg,
-          (_3, label2, expr) => `${label2}(${expr.trim()})${fx}`
-        );
-      }
-      if (unlabeled) {
-        if (DECL_RE.test(unlabeled)) return `${unlabeled}
-${labeled}`;
-        return `$: (${unlabeled})${fx}
-${labeled}`;
-      }
-      return labeled;
-    }
-    if (DECL_RE.test(code2)) {
-      const split = splitDeclAndExpr(code2);
-      if (split) return `${split.preamble}
-$: (${split.expr})${fx}`;
-      return code2;
-    }
-    return `$: (${code2})${fx}`;
+    return wrapAsVoice(rewriteDataRefs(rawCode), fx);
   }
   function buildPeerBlock(peer) {
-    if (peer.isBot) return buildBotTextBlock(peer);
+    if (peer.isBot) return buildBotSilentBlock(peer);
     const netCycles = isNetCyclesActive();
     const source2 = netCycles ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
     let code2 = normalizePeerCode(source2);
@@ -57745,6 +57777,8 @@ ${s2}${BTN_MARKER}`)
       lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.botConfig ? ` \u2014 ${status.botConfig}` : "") + (status.reason ? ` \u2014 ${status.reason}` : "");
     } else if (status.action === "remove") {
       lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` \u2014 ${status.reason}` : ""}`;
+    } else if (status.action === "config-error") {
+      lastFleetStatus = `botConfig rejected (${status.ownerIndex}) \u2014 ${status.reason || "invalid config"}`;
     } else if (status.action === "teardown") {
       lastFleetStatus = `fleet teardown \u2014 ${status.reason || ""}`;
     }
@@ -57826,7 +57860,7 @@ ${s2}${BTN_MARKER}`)
     const extLabel = getExternalStreamLabel(peer.jitsiId);
     const nodeLabel = getExternalNodeLabel(peer.jitsiId);
     const captureBtn = "";
-    const peerKeyAttr = ` data-peer-key="${escapeHtml(String(peer.jitsiId || ""))}"`;
+    const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? "local" : String(peer.jitsiId || ""))}"`;
     const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
     const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
     const strudelControls = isLocal ? `
@@ -58186,10 +58220,12 @@ ${voiceCode}${BTN_MARKER2}`);
         const selStart = isCodeFocused ? active4.selectionStart : null;
         const selEnd = isCodeFocused ? active4.selectionEnd : null;
         const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
+        const detailScrollTop = detail.scrollTop;
         renderDetail(detail);
         refreshFacialGestureButtons();
         const nextCodeEl = detail.querySelector(".ts-code");
         const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
+        if (samePeer) detail.scrollTop = detailScrollTop;
         if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
           nextCodeEl.value = codeValue;
           if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;

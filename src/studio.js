@@ -591,6 +591,11 @@ subscribeFleetStatus((status) => {
       (status.reason ? ` — ${status.reason}` : '');
   } else if (status.action === 'remove') {
     lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
+  } else if (status.action === 'config-error') {
+    // A botConfig() typo on a retroactive-or-not edit — see
+    // fleet-service.js's #handlePerformerEdit. Without this the edit just
+    // silently fails to apply, indistinguishable from "reverted".
+    lastFleetStatus = `botConfig rejected (${status.ownerIndex}) — ${status.reason || 'invalid config'}`;
   } else if (status.action === 'teardown') {
     lastFleetStatus = `fleet teardown — ${status.reason || ''}`;
   }
@@ -697,9 +702,22 @@ function renderDetail(container) {
   // Remote tiles are editable too: an operator can drive a participant's pattern
   // from here. The server only applies edits/mutes to bots (humans own their own
   // state), so for a human peer the textarea is a no-op scratchpad.
-  // data-peer-key (the stable jitsiId, set for both local and remote) lets the
-  // re-render guard tell whether the same peer's editor is still on screen.
-  const peerKeyAttr = ` data-peer-key="${escapeHtml(String(peer.jitsiId || ''))}"`;
+  // data-peer-key lets the re-render guard (renderAll) tell whether the same
+  // peer's editor is still on screen, to decide whether to restore the live DOM
+  // text over whatever this render just rebuilt from `peer.pattern`. For the
+  // LOCAL peer this must be a constant, NOT peer.jitsiId: participants.js polls
+  // window.APP.conference and emits 'local-update' with a new id across a P2P↔JVB
+  // renegotiation (room crossing the 2↔3-participant boundary — see
+  // pageEnsureAudioPublished's watchdog for the same underlying flip on the bot
+  // side), which is a real, observed mid-session event with nothing to do with
+  // the editor. Keying local on jitsiId made that moment's guard see "a
+  // different peer" and skip the restore, silently reverting the box to
+  // peer.pattern (the last EVALUATED text) and losing everything typed since —
+  // a continuous loss from wherever eval last left off, indistinguishable from
+  // "the editor spontaneously deleted my text" while idle-typing. A remote
+  // tile's key still has to be the real jitsiId: switching between two
+  // different peers' tiles is exactly the case samePeer must say "no" to.
+  const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? 'local' : String(peer.jitsiId || ''))}"`;
   const codeBlock = isLocal
     ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
     : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
