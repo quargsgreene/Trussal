@@ -543,6 +543,23 @@ export function getActiveNetCyclesIndex() { return activeNetCyclesIndex; }
 // and the index addresses the rests), null otherwise.
 export function getActiveNetCyclesKind() { return activeNetCyclesKind; }
 
+// The one rule for "is it this peer's turn right now" — shared by every
+// silent-by-construction renderer (Text Cycles, CSS Cycles) that needs to
+// mirror the mutual exclusion Strudel/Hydra already give audio and video.
+// Compares against roomIndex the same way Metaprogrammer.js#peerByToken does
+// on the audio side, so a browser rendering both Strudel and these voices
+// never disagrees with itself about whose turn it is.
+//
+// Fails OPEN (true) when there is no live turn signal yet (no aggregator has
+// reported, or the peer has no roomIndex) — an unknown state must not hide a
+// performer's own output before their token is even assigned.
+export function isPeerNetCyclesTurn(jitsiId) {
+  if (activeNetCyclesToken == null) return true;
+  const peer = getPeerByJitsiId(jitsiId);
+  if (!peer || peer.roomIndex == null) return true;
+  return String(peer.roomIndex) === String(activeNetCyclesToken);
+}
+
 export function getAllPeers() {
   const all = [];
   const seenJitsiIds = new Set();

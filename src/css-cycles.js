@@ -39,7 +39,7 @@
 // visibility stay Trussal-surface-only. Both copies pass every guardrail; see
 // css-cycles-core.js for the rules themselves.
 
-import { subscribePeerState, getAllPeers, getLocalPeer, sendLocalScss } from './peer-state.js';
+import { subscribePeerState, getAllPeers, getLocalPeer, sendLocalScss, isPeerNetCyclesTurn } from './peer-state.js';
 import {
   CSS_PROPERTY_LIST,
   adjustColorForBackground,
@@ -53,9 +53,6 @@ import {
   parseColor,
 } from './css-cycles-core.js';
 import { peerTextClass } from './text-cycles-core.js';
-// The same per-peer turn gate Strudel voices read via _ncGate — 1 whenever Net
-// Cycles isn't running at all, 0|1 per current slot once it is.
-import { getGateLevel } from './audio-net/Metaprogrammer.js';
 
 const STYLE_PREFIX = 'trussal-css-cycles-';
 
@@ -262,7 +259,7 @@ function applyHap(value) {
   // gets their pattern's values on screen. Everyone else's custom properties
   // are pinned at the room's captured default instead of drifting stale from
   // whatever they last painted before their turn closed.
-  const gateOpen = getGateLevel(sheet.peer) > 0;
+  const gateOpen = isPeerNetCyclesTurn(sheet.peer);
   const selector = selectorOf(sheet);
 
   for (const [key, raw] of Object.entries(value)) {

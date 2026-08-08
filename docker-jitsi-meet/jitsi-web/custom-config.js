@@ -971,6 +971,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getActiveNetCyclesKind() {
     return activeNetCyclesKind;
   }
+  function isPeerNetCyclesTurn(jitsiId) {
+    if (activeNetCyclesToken == null) return true;
+    const peer = getPeerByJitsiId(jitsiId);
+    if (!peer || peer.roomIndex == null) return true;
+    return String(peer.roomIndex) === String(activeNetCyclesToken);
+  }
   function getAllPeers() {
     const all3 = [];
     const seenJitsiIds = /* @__PURE__ */ new Set();
@@ -52522,7 +52528,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   init_peer_state();
   init_text_cycles_core();
   init_text_debug();
-  init_Metaprogrammer();
   init_TextState();
   var CONTAINER_ID = "trussal-text-cycles";
   var STYLE_ID = "trussal-text-cycles-style";
@@ -52803,7 +52808,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
-    if (getGateLevel(peerId) <= 0) {
+    if (!isPeerNetCyclesTurn(peerId)) {
       textHapLog("paint:gated", {
         token: value2.word,
         peer: peerId,
@@ -54139,7 +54144,6 @@ ${full}
 
   // src/css-cycles.js
   init_text_cycles_core();
-  init_Metaprogrammer();
   var STYLE_PREFIX = "trussal-css-cycles-";
   var atoms2 = {};
   var active3 = false;
@@ -54269,7 +54273,7 @@ ${full}
     const token = String(value2.css);
     const sheet = sheetsByToken.get(token);
     if (!sheet || refused.has(token)) return;
-    const gateOpen = getGateLevel(sheet.peer) > 0;
+    const gateOpen = isPeerNetCyclesTurn(sheet.peer);
     const selector = selectorOf(sheet);
     for (const [key, raw] of Object.entries(value2)) {
       if (!key.startsWith("_cc_")) continue;
