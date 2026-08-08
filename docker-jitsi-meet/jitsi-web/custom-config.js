@@ -56706,14 +56706,19 @@ ${s2}${BTN_MARKER}`)
       /[&<>"']/g,
       (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
     );
+    let btnsKey = null;
     function renderButtons() {
       const buttons = parseNetCyclesButtons(ta.value);
-      btnsEl.innerHTML = buttons.map(
-        (b) => `<button class="ts-voice-btn nc-head-btn${b.active ? " on" : ""}" type="button" data-netcycles-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
-      ).join("");
-      btnsEl.querySelectorAll(".nc-head-btn").forEach((btn) => {
-        btn.addEventListener("click", () => press2(btn.dataset.netcyclesCode));
-      });
+      const key = buttons.map((b) => `${b.snippet}${b.label}${b.active ? 1 : 0}`).join("\0");
+      if (key !== btnsKey) {
+        btnsKey = key;
+        btnsEl.innerHTML = buttons.map(
+          (b) => `<button class="ts-voice-btn nc-head-btn${b.active ? " on" : ""}" type="button" data-netcycles-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
+        ).join("");
+        btnsEl.querySelectorAll(".nc-head-btn").forEach((btn) => {
+          btn.addEventListener("click", () => press2(btn.dataset.netcyclesCode));
+        });
+      }
       refreshFacialGestureButtons();
     }
     function press2(snippet) {
