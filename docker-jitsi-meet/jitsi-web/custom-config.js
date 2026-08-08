@@ -58116,13 +58116,14 @@ ${voiceCode}${BTN_MARKER2}`);
         const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === "1" || isCodeFocused);
         const selStart = isCodeFocused ? active4.selectionStart : null;
         const selEnd = isCodeFocused ? active4.selectionEnd : null;
-        const scrollTop = isCodeFocused ? active4.scrollTop : null;
+        const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
         renderDetail(detail);
         refreshFacialGestureButtons();
         const nextCodeEl = detail.querySelector(".ts-code");
         const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
         if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
           nextCodeEl.value = codeValue;
+          if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
           if (isCodeFocused) {
             nextCodeEl.focus();
             if (selStart != null && selEnd != null) {
@@ -58131,7 +58132,6 @@ ${voiceCode}${BTN_MARKER2}`);
               } catch (e30) {
               }
             }
-            if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
           }
         }
         if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);

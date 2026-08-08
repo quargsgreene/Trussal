@@ -1113,7 +1113,12 @@ function renderAll() {
       const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === '1' || isCodeFocused);
       const selStart = isCodeFocused ? active.selectionStart : null;
       const selEnd   = isCodeFocused ? active.selectionEnd   : null;
-      const scrollTop = isCodeFocused ? active.scrollTop : null;
+      // Captured whenever the value is going to be preserved, not just while
+      // focused: a mouse-wheel scroll doesn't focus the textarea, and every
+      // peer-state tick (every few seconds, even alone in a room — the sidecar
+      // ping/pong keeps ticking regardless of roster size) was rebuilding this
+      // node from scratch and silently snapping an unfocused scroll back to 0.
+      const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
 
       renderDetail(detail);
       refreshFacialGestureButtons();
@@ -1124,12 +1129,12 @@ function renderAll() {
       const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
       if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
         nextCodeEl.value = codeValue;
+        if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
         if (isCodeFocused) {
           nextCodeEl.focus();
           if (selStart != null && selEnd != null) {
             try { nextCodeEl.setSelectionRange(selStart, selEnd); } catch (e) {}
           }
-          if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
         }
       }
 
