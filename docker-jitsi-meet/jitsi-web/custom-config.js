@@ -54776,6 +54776,7 @@ ${full}
 
   // src/hydra-code.js
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+  var HYDRA_RENDER_RE = /\.out\s*\(/;
   var PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
   var INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
   function normalizePeerCode(code2) {
@@ -54784,11 +54785,17 @@ ${full}
   function splitHydraCode(code2) {
     const normalized = normalizePeerCode(code2);
     if (!normalized || !INIT_HYDRA_RE.test(normalized)) return null;
-    const blank = normalized.match(/\n\n+/);
-    if (!blank) return { preamble: normalized, strudel: "" };
+    const blanks = [...normalized.matchAll(/\n\n+/g)];
+    if (!blanks.length) return { preamble: normalized, strudel: "" };
+    let cut2 = blanks[0];
+    for (let i = 1; i < blanks.length; i++) {
+      const paragraph = normalized.slice(cut2.index + cut2[0].length, blanks[i].index);
+      if (!HYDRA_RENDER_RE.test(paragraph)) break;
+      cut2 = blanks[i];
+    }
     return {
-      preamble: normalized.slice(0, blank.index).trim(),
-      strudel: normalized.slice(blank.index).trim()
+      preamble: normalized.slice(0, cut2.index).trim(),
+      strudel: normalized.slice(cut2.index).trim()
     };
   }
   function programDeclaresHydra(code2) {

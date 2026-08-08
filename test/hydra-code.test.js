@@ -72,6 +72,23 @@ test('hydra-code: a non-Hydra block splits to null', () => {
   assert.equal(splitHydraCode('s("bd")'), null);
 });
 
+test('hydra-code: a blank line between two rendering Hydra layers stays in the preamble', () => {
+  const code = 'await initHydra()\nvoronoi(8, 0.4).out(o0)\n\nosc(10)\n.out()\n\nn("0 1").s("piano")';
+  const split = splitHydraCode(code);
+  assert.equal(split.preamble, 'await initHydra()\nvoronoi(8, 0.4).out(o0)\n\nosc(10)\n.out()');
+  assert.equal(split.strudel, 'n("0 1").s("piano")');
+});
+
+test('hydra-code: a blank line before a NON-rendering paragraph still ends the preamble there', () => {
+  // Only paragraphs that render (.out(...)) extend the preamble — this is what
+  // keeps a genuine Strudel pattern from being swallowed just because it
+  // happens to sit after a multi-layer Hydra preamble.
+  const code = 'await initHydra()\nosc(10).out(o0)\n\nn("0 1").s("piano")\n\nnote("c e g")';
+  const split = splitHydraCode(code);
+  assert.equal(split.preamble, 'await initHydra()\nosc(10).out(o0)');
+  assert.equal(split.strudel, 'n("0 1").s("piano")\n\nnote("c e g")');
+});
+
 test('hydra-code: normalization strips trailing noise and widget lines', () => {
   assert.equal(normalizePeerCode('s("bd")  ;;\n'), 's("bd")');
   assert.equal(normalizePeerCode('*go: s("bd")\ns("sd")'), 's("sd")');

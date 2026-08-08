@@ -11,11 +11,23 @@
 //
 // The rule is the convention the room already writes to: a block whose first
 // statement is `await initHydra(...)` is Hydra, and the preamble runs until
-// the first blank line. Everything after that blank line is Strudel.
+// the first blank line that isn't followed by more Hydra. A performer who
+// lays out several Hydra layers as their own blank-line-separated paragraphs
+// — a common Hydra idiom — keeps every one of them in the preamble; Strudel
+// begins at the first paragraph that doesn't render anything.
 
 import { stripBotConfig } from './bot-config.js';
 
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+
+// A paragraph after the first still belongs to the Hydra preamble if it
+// contains a render call — `.out(...)`, bare or targeting o0-o3 — which is
+// Hydra's defining shape and something a Strudel pattern never writes. This
+// is what lets splitHydraCode keep walking past a blank line a performer put
+// between two Hydra statements instead of handing the second one to Strudel,
+// where it fails to parse (or means something else entirely) and takes the
+// whole room's program down with it.
+const HYDRA_RENDER_RE = /\.out\s*\(/;
 
 // The same marker, asked of a COMBINED program rather than one performer's
 // block. strudel.js stacks every playing peer into a single program, so the
@@ -56,11 +68,23 @@ export function normalizePeerCode(code) {
 export function splitHydraCode(code) {
   const normalized = normalizePeerCode(code);
   if (!normalized || !INIT_HYDRA_RE.test(normalized)) return null;
-  const blank = normalized.match(/\n\n+/);
-  if (!blank) return { preamble: normalized, strudel: '' };
+  const blanks = [...normalized.matchAll(/\n\n+/g)];
+  if (!blanks.length) return { preamble: normalized, strudel: '' };
+
+  // The first blank line always ends at least the opening paragraph (the one
+  // `await initHydra(...)` itself opens). Every blank line after that is only
+  // included if the paragraph it closes off still renders — walk forward
+  // through blanks, extending the cut past any that do, and stop at the first
+  // that doesn't. That paragraph, and everything after it, is Strudel.
+  let cut = blanks[0];
+  for (let i = 1; i < blanks.length; i++) {
+    const paragraph = normalized.slice(cut.index + cut[0].length, blanks[i].index);
+    if (!HYDRA_RENDER_RE.test(paragraph)) break;
+    cut = blanks[i];
+  }
   return {
-    preamble: normalized.slice(0, blank.index).trim(),
-    strudel: normalized.slice(blank.index).trim()
+    preamble: normalized.slice(0, cut.index).trim(),
+    strudel: normalized.slice(cut.index).trim()
   };
 }
 
