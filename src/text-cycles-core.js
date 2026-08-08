@@ -170,7 +170,7 @@ export function rewriteTextCalls(code, { peer = null, counter = { n: 0 } } = {})
     'g',
   );
 
-  const rewritten = splitStatements(code).map(({ text, hasWord }) => {
+  const rewriteStatement = ({ text, hasWord }) => {
     if (!hasWord) return text;
     const out = text.replace(re, (match, head, raw) => {
       // An interpolated template literal cannot be decoded statically.
@@ -185,7 +185,21 @@ export function rewriteTextCalls(code, { peer = null, counter = { n: 0 } } = {})
     // whole block (the way effects are appended) would silence audio voices
     // sharing the program. On its own line so a trailing // comment is safe.
     return `${out.replace(/[\s;]+$/, '')}\n._tcRender()`;
-  }).join('\n');
+  };
+
+  // Paragraph-aware (blank-line-separated), not just label-aware: splitStatements
+  // has no notion of a blank line, so anything that follows a word()/typeface()
+  // voice with no `$:` label of its own — a bare capability declaration, or an
+  // unlabeled trailing audio pattern — is swept into the SAME statement and
+  // gets `._tcRender()` appended directly onto it instead of onto the voice
+  // alone. On a declaration (`await initTextCycles()._tcRender()`) that throws
+  // outright, taking the WHOLE program's evaluate() down; on a bare pattern it
+  // silently mutes it, since the dominant trigger it never asked for now sits
+  // on its hap too. Splitting into paragraphs first keeps each on its own line,
+  // exactly as it reads on the page.
+  const rewritten = String(code ?? '').split(/\n\n+/)
+    .map((paragraph) => splitStatements(paragraph).map(rewriteStatement).join('\n'))
+    .join('\n\n');
 
   return { code: rewritten, atoms };
 }

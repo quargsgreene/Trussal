@@ -179,6 +179,28 @@ test('a trailing comment does not swallow the renderer', () => {
   assert.match(code, /\/\/ a note\n\._tcRender\(\)/);
 });
 
+// Same class of bug as rewriteCssCalls' capability-declaration test: a bare
+// `await initCss()` sitting in its own paragraph right after a word() voice
+// used to be swept into the SAME statement (splitStatements has no notion of
+// a blank line), so `._tcRender()` landed on the declaration itself —
+// `await initCss()._tcRender()` throws outright, taking the whole program
+// down.
+test('a capability declaration in the next paragraph is never swept into the word() statement', () => {
+  const src = [
+    'await initTextCycles()',
+    '',
+    '$: word("hi")',
+    '',
+    'await initCss()',
+    '',
+    '$: s("bd sd")',
+  ].join('\n');
+  const { code } = rewriteTextCalls(src);
+  assert.doesNotMatch(code, /await\s+initCss\(\)\._tcRender/, 'the declaration never gets the text renderer appended');
+  assert.match(code, /\n\._tcRender\(\)\n\nawait initCss\(\)/, 'the word voice keeps its own renderer, cleanly separated');
+  assert.match(code, /\$: s\("bd sd"\)$/, 'rewriteTextCalls leaves the audio pattern untouched');
+});
+
 test('w and t aliases rewrite; longer names are not eaten by shorter ones', () => {
   const { code, atoms } = rewriteTextCalls('$: t("Courier").w("hey")');
   assert.match(code, /t\("tc0"\)\.w\("tc1"\)/);

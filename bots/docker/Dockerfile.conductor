@@ -27,12 +27,16 @@ COPY bots/src ./src
 # bare specifiers resolve by walking up from /repo/src, as the dev checkout's
 # root node_modules does locally.
 COPY src/bot-config.js /repo/src/bot-config.js
-# The other two rules cluster-source.js reads a performer's editor with: where a
-# Hydra preamble ends, and which statements paint words. Shared with the browser
-# for the same reason as bot-config.js — the fleet must split a block exactly
-# the way the page that wrote it does.
+# The other rules cluster-source.js/variation.js read a performer's editor
+# with: where a Hydra preamble ends, which statements paint words or restyle
+# the page, and how to append a per-bot fx/mix chain to code that may already
+# be one or more $:-labeled voices without breaking it. Shared with the
+# browser for the same reason as bot-config.js — the fleet must split/wrap a
+# block exactly the way the page that wrote it does.
 COPY src/hydra-code.js /repo/src/hydra-code.js
 COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
+COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
+COPY src/strudel-voice.js /repo/src/strudel-voice.js
 RUN ln -s bots/node_modules /repo/node_modules
 
 # Import guard: fail the BUILD if anything the conductor runs cannot load inside

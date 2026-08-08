@@ -112,6 +112,36 @@ test('a non-css statement is untouched', () => {
   assert.equal(code, '$: s("bd*4").gain(0.8)');
 });
 
+// Reproduces a live incident: a capability declaration in its own paragraph
+// right after a css() voice (`await initCss()\n\n$: css(...)\n\nawait
+// initTextCycles()\n\n...`) used to get swept into the SAME statement as the
+// css() chain — splitCssStatements has no notion of a blank line, only `$:`
+// lines start a new one — so `._ccRender()` landed on the declaration itself:
+// `await initTextCycles()._ccRender()`. That throws (a boolean has no such
+// method), which took the WHOLE program's evaluate() down: no audio, no text,
+// no CSS, for everyone, with Hydra frozen at whatever it last drew.
+test('a capability declaration in the next paragraph is never swept into the css() statement', () => {
+  const src = [
+    'await initCss()',
+    '',
+    '$: css(`*div {',
+    '     &:hover { border-color: #ffffff }',
+    '   }`)',
+    '     .color("<#ffffff #eeeeee #34e3df>/4")',
+    '     .backgroundColor("<#101014 #16161c>")',
+    '   ',
+    '',
+    'await initTextCycles()',
+    '',
+    '$: word("hi")',
+  ].join('\n');
+  const { code, errors } = rewriteCssCalls(src);
+  assert.deepEqual(errors, []);
+  assert.doesNotMatch(code, /await\s+initTextCycles\(\)\._ccRender/, 'the declaration never gets the css renderer appended');
+  assert.match(code, /\n\._ccRender\(\)\n\nawait initTextCycles\(\)/, 'the css voice keeps its own renderer, cleanly separated');
+  assert.match(code, /\$: word\("hi"\)$/, 'rewriteCssCalls leaves word() untouched — hasCss is false for that statement');
+});
+
 test('css() without backticks is refused with an explanation', () => {
   const { errors } = rewriteCssCalls('$: css(".example").color("red")');
   assert.equal(errors.length, 1);

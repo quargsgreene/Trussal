@@ -882,7 +882,7 @@ export function rewriteCssCalls(code, { peer = null, counter = { n: 0 } } = {}) 
     return token;
   };
 
-  const rewritten = splitCssStatements(code).map(({ text, hasCss }) => {
+  const rewriteStatement = ({ text, hasCss }) => {
     if (!hasCss) return text;
 
     const call = CSS_CALL_RE.exec(text);
@@ -927,7 +927,22 @@ export function rewriteCssCalls(code, { peer = null, counter = { n: 0 } } = {}) 
     // and is attached per statement so an audio voice sharing the program is
     // never muted by it.
     return `${out.replace(/[\s;]+$/, '')}\n._ccRender()`;
-  }).join('\n');
+  };
+
+  // Paragraph-aware (blank-line-separated), not just label-aware: splitCssStatements
+  // has no notion of a blank line, so a bare capability declaration sitting in
+  // its own paragraph right after a css() voice — `await initCss()\n\n$: css(...)`
+  // followed later by `await initTextCycles()` — gets swept into the SAME
+  // statement as the css() chain (nothing but a `$:` line starts a new one).
+  // `out += text.slice(chainEnd)` then appends that declaration directly onto
+  // the chain, and `._ccRender()` lands on it too: `await initTextCycles()
+  // ._ccRender()` throws (a boolean has no such method), which took the
+  // WHOLE program's evaluate() down — Hydra frozen, no audio, no text, no CSS,
+  // for everyone. Splitting into paragraphs first keeps that declaration in
+  // its own statement, exactly as it reads on the page.
+  const rewritten = String(code ?? '').split(/\n\n+/)
+    .map((paragraph) => splitCssStatements(paragraph).map(rewriteStatement).join('\n'))
+    .join('\n\n');
 
   return { code: rewritten, atoms, sheets, errors };
 }

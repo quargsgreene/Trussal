@@ -54,6 +54,9 @@ COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
 # code the same safe way strudel.js does. A fourth src/-root file, same two
 # entries.
 COPY src/strudel-voice.js /repo/src/strudel-voice.js
+# dropCssStatements' CSS_CALL_RE (cluster-source.js imports it) — the css()
+# sibling of WORD_CALL_RE above. A fifth src/-root file, same two entries.
+COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules
