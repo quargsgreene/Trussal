@@ -32,8 +32,9 @@
 //
 // A rule reaches the full property set only where it matches inside a Trussal
 // root. Everywhere else in the page it is re-emitted carrying the allowlist
-// alone: background colour/image, border, filter, and text colour/family/size.
-// Both copies are subject to every guardrail.
+// alone: every colour, border and font property — layout, position, size and
+// visibility stay Trussal-surface-only. Both copies are subject to every
+// guardrail.
 
 import { splitStatements } from './text-cycles-core.js';
 
@@ -98,24 +99,34 @@ const CSS_PROPERTIES = new Set([
   '-webkit-text-stroke-width', '-webkit-background-clip', '-webkit-backdrop-filter',
 ]);
 
-// Properties that keep their full meaning anywhere on the page. Everything
-// else is Trussal-surface-only: background colour/image, borders, filters, and
-// text colour/family/size, per the reach decision.
-const OUTSIDE_TRUSSAL_ALLOW = new Set([
-  'background', 'background-attachment', 'background-blend-mode', 'background-clip',
-  'background-color', 'background-image', 'background-origin', 'background-position',
-  'background-repeat', 'background-size',
-  'border', 'border-block', 'border-bottom', 'border-bottom-color', 'border-bottom-left-radius',
-  'border-bottom-right-radius', 'border-bottom-style', 'border-bottom-width', 'border-color',
-  'border-image', 'border-image-outset', 'border-image-repeat', 'border-image-slice',
-  'border-image-source', 'border-image-width', 'border-inline', 'border-left', 'border-left-color',
-  'border-left-style', 'border-left-width', 'border-radius', 'border-right', 'border-right-color',
-  'border-right-style', 'border-right-width', 'border-style', 'border-top', 'border-top-color',
-  'border-top-left-radius', 'border-top-right-radius', 'border-top-style', 'border-top-width',
-  'border-width',
-  'backdrop-filter', 'filter', '-webkit-backdrop-filter',
-  'color', 'font-family', 'font-size', '-webkit-text-fill-color',
+// Properties that keep their full meaning anywhere on the page: every colour,
+// border and font property CSS_PROPERTIES defines. A performer's css() may
+// fully dictate how the room's native UI looks and reads — paint, border,
+// typeface — wherever their selector reaches, not only inside a Trussal root.
+// Everything else (layout, position, size, visibility…) stays Trussal-surface-
+// only, per the reach decision; the guardrails below apply identically either
+// way, so widening this set only widens WHERE a rule may land, never what
+// values it may carry.
+const EXPLICIT_COLOR_PROPS = new Set([
+  'accent-color', 'caret-color', 'color', 'color-scheme', 'scrollbar-color',
+  'box-shadow', 'text-shadow',
+  'filter', 'backdrop-filter', '-webkit-backdrop-filter', '-webkit-background-clip',
+  '-webkit-text-fill-color',
 ]);
+const EXPLICIT_FONT_PROPS = new Set([
+  'letter-spacing', 'line-height', 'word-spacing', 'text-transform', 'text-emphasis',
+  'text-decoration', 'text-decoration-color', 'text-decoration-line',
+  'text-decoration-style', 'text-decoration-thickness', 'text-underline-offset', 'text-wrap',
+  '-webkit-text-stroke', '-webkit-text-stroke-color', '-webkit-text-stroke-width',
+]);
+const isColorProp = (p) => p.startsWith('background') || EXPLICIT_COLOR_PROPS.has(p);
+const isBorderProp = (p) => p === 'border' || p.startsWith('border-')
+  || p.startsWith('outline') || p.startsWith('column-rule');
+const isFontProp = (p) => p === 'font' || p.startsWith('font-') || EXPLICIT_FONT_PROPS.has(p);
+
+const OUTSIDE_TRUSSAL_ALLOW = new Set(
+  [...CSS_PROPERTIES].filter((p) => isColorProp(p) || isBorderProp(p) || isFontProp(p)),
+);
 
 // The Trussal-owned roots. A rule gets the full property set only where it
 // matches inside one of these; the scoping wrapper is built from this list.

@@ -34,9 +34,10 @@
 // --- Reach -------------------------------------------------------------------
 //
 // The full property set applies only where a rule matches inside a Trussal
-// root. The same rule is re-emitted bare for the rest of the page carrying only
-// background colour/image, border, filter and text colour/family/size. Both
-// copies pass every guardrail; see css-cycles-core.js for the rules themselves.
+// root. The same rule is re-emitted bare for the rest of the page carrying
+// every colour, border and font property — layout, position, size and
+// visibility stay Trussal-surface-only. Both copies pass every guardrail; see
+// css-cycles-core.js for the rules themselves.
 
 import { subscribePeerState, getAllPeers, getLocalPeer, sendLocalScss } from './peer-state.js';
 import {

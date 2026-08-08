@@ -80,14 +80,26 @@ The **full property set** applies only where a rule matches inside a Trussal
 root (`#trussal-studio-overlay`, `#trussal-text-cycles`, the Hydra and keyboard
 panels, the facial-gesture panel, the welcome overlays — see `TRUSSAL_ROOTS`).
 
-Everywhere else on the page, the same rule is re-emitted carrying only:
+Everywhere else on the page, the same rule is re-emitted carrying every
+**colour**, **border** and **font** property — a performer may fully dictate
+how the room's native UI (not only their own Trussal surfaces) is painted,
+bordered and set:
 
-- background colour and image properties
-- border properties (including radius and border-image)
-- `filter` and `backdrop-filter`
-- text `color`, `font-family`, `font-size`
+- every `background*`, `color`, `filter`/`backdrop-filter`, `*-shadow`,
+  `accent-color`, `caret-color`, `scrollbar-color`, `color-scheme`, and the
+  `-webkit-text-fill/stroke-color` pair
+- every `border*`, `outline*` and `column-rule*` property — width, style,
+  colour, radius, `border-image`, all included
+- every `font*` property, plus `letter-spacing`, `line-height`,
+  `word-spacing`, `text-transform`, `text-decoration*`, `text-emphasis`,
+  `text-underline-offset`, `text-wrap` and `-webkit-text-stroke-width`
 
-So `css(\`body\`).backgroundImage("^url(https://…)^")` works; `css(\`body\`)
+Layout, position, size and visibility (`width`, `display`, `position`,
+`opacity`, `margin`…) stay Trussal-surface-only — a performer can repaint the
+whole page but cannot move or hide anything outside their own panel.
+
+So `css(\`body\`).backgroundImage("^url(https://…)^")` and
+`css(\`.watermark\`).fontWeight("700")` both work; `css(\`body\`)
 .display("flex")` is refused. Every guardrail below applies to both copies.
 
 Each statement compiles to two rules: one nested under the Trussal roots, whose
