@@ -124,6 +124,19 @@ test('pageStrudelBoot loads the REPL, takes code as a structured arg, reports ev
   assert.match(js, /__trussalSamples/, 'shared sample banks reach the page');
 });
 
+test('pageStrudelBoot substitutes a valid pattern when strudel is empty, so pure Text/CSS Cycles bots still announce', () => {
+  const js = String(pageStrudelBoot);
+  // A bot whose captured code is pure Text/CSS Cycles has both stripped from
+  // `strudel` by cluster-source.js (dropTextStatements/dropCssStatements),
+  // leaving it empty. Evaluating empty code never starts the REPL's
+  // scheduler, which used to throw BEFORE __trussalAnnounceLocalPattern —
+  // the one path that gets a parroted word()/css() voice to the room at all
+  // — ran. `strudel.trim() ? strudel : 'silence'` (or equivalent) keeps the
+  // scheduler starting normally so the announce call is always reached.
+  assert.match(js, /strudel\.trim\(\)\s*\?\s*strudel\s*:\s*['"]silence['"]/,
+    'empty eval-side strudel falls back to a real pattern, not empty code');
+});
+
 test('pageFpsSampler counts rAF frames; pageReadSamples drains errors', () => {
   assert.match(String(pageFpsSampler), /requestAnimationFrame/);
   assert.match(String(pageReadSamples), /__trussalErrors/);

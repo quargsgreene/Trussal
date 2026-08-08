@@ -618,11 +618,23 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // registerSampleSource but before the bot's code is evaluated — a pattern
   // naming a bank Strudel doesn't know yet just plays nothing.
   window.__trussalSamples = samples && typeof samples === 'object' ? samples : {};
+  // A bot whose captured source is PURE Text/CSS Cycles (no audio pattern at
+  // all — the documented "silent by construction" shape those capabilities
+  // are built for) has both stripped from `strudel` by cluster-source.js's
+  // dropTextStatements/dropCssStatements, leaving it empty. Evaluating empty
+  // code registers no pattern, so `repl.scheduler.started` below never flips
+  // true and this function throws BEFORE reaching the announce call — the
+  // words/styling never reach the room even with textParrot/cssParrot on,
+  // since that announce call is the only way they get there (see
+  // buildBotSilentBlock in strudel.js). `silence` is a real, always-valid
+  // Strudel pattern, so substituting it here lets the scheduler start
+  // normally without producing any audio.
+  const strudelSafe = strudel.trim() ? strudel : 'silence';
   // The ';' is load-bearing: hydra ends in an expression and the strudel
   // wrapper starts with '(' — joined by bare newline, ASI reads it as a
   // call: `out(o0)(stack(...))`, which throws inside Strudel's own error
   // handling ("no pattern yet") where our reporter can't see it.
-  const code = `${hydra};\n${strudel}`;
+  const code = `${hydra};\n${strudelSafe}`;
   // What gets ANNOUNCED to peer-state (so other viewers can extract a
   // parroted word()/css() voice via buildBotSilentBlock) differs from what
   // THIS REPL evaluates whenever textParrot/cssParrot kept one — this REPL is
