@@ -50787,6 +50787,10 @@ ${err.toString()}`);
     crdt.onRemoteChange((text2, payload) => {
       const applied = !!payload && (payload.catchUp === true || payload.modality === "apply" || payload.modality === "roster");
       if (applied) programText = text2;
+      if (payload && payload.catchUp === true) {
+        caughtUp = true;
+        maybeSeedDefaultProgram();
+      }
       document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, remote: true, applied } }));
     });
     crdt.onModulationChange(() => pushEffectiveMetrics());
@@ -50843,6 +50847,7 @@ ${err.toString()}`);
     return parseInt(me2.roomIndex, 10) === Math.min(...humanIndices);
   }
   function maybeSeedDefaultProgram() {
+    if (!caughtUp) return;
     const sync = ensureMetaprogramSync();
     const docText = sync.getText();
     if (docText && docText.trim()) return;
@@ -51143,7 +51148,7 @@ ${SHORTCUT_LINES[fn]}
     }
     document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
   }
-  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, caughtUp, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
@@ -51179,6 +51184,7 @@ ${SHORTCUT_LINES[fn]}
       slotSubscribers = /* @__PURE__ */ new Set();
       slotTimers = /* @__PURE__ */ new Set();
       crdt = null;
+      caughtUp = false;
       SHORTCUT_LINES = { room: "# room wcl 2", echo: "# echo", crush: "# crush wcl 1", noise: "# noise" };
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();

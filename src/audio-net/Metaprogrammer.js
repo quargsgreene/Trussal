@@ -111,6 +111,16 @@ function emitSlot(event) {
 // --- Shared doc ------------------------------------------------------------------
 
 let crdt = null;
+// Whether this session's crdt-state catch-up (the sidecar's full history for
+// the room, sent unconditionally right after roster — see server.js) has
+// landed yet. Until it has, maybeSeedDefaultProgram() must not write: a
+// peer-upsert fires synchronously off the 'roster' message, which the
+// sidecar sends BEFORE crdt-state, so without this gate a client that is
+// briefly its own roster leader can seed a default program into its still-
+// empty local Y.Doc a moment before the real history merges in — two
+// causally-unrelated inserts at the same position, which Yjs concatenates
+// rather than overwrites, leaving two `# cycles` lines and a parse error.
+let caughtUp = false;
 
 // The metaprogram doc lives for the whole meeting so edits are shared even
 // before Net Cycles playback is switched on.
@@ -128,6 +138,13 @@ export function ensureMetaprogramSync() {
     const applied = !!payload && (payload.catchUp === true ||
       payload.modality === 'apply' || payload.modality === 'roster');
     if (applied) programText = text;
+    if (payload && payload.catchUp === true) {
+      caughtUp = true;
+      // The seed check that ran (or was skipped) off the roster's own
+      // peer-upsert already happened before this landed — retry now that
+      // it's safe to tell an empty doc from one that just hasn't caught up.
+      maybeSeedDefaultProgram();
+    }
     document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true, applied } }));
   });
   // Induced network conditions (and VLAN changes) alter the effective WC
@@ -237,6 +254,7 @@ function isRosterEditLeader() {
 // newcomer stays unlisted (silent) until an edit adds them, and a leaver
 // stays listed as a ghost until an edit drops them.
 function maybeSeedDefaultProgram() {
+  if (!caughtUp) return; // don't know yet whether real history is still in flight
   const sync = ensureMetaprogramSync();
   const docText = sync.getText();
   if (docText && docText.trim()) return;

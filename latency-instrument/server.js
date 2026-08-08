@@ -442,11 +442,15 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // `you` carries the client's own assigned index (the server never
           // echoes a peer's own record in later broadcasts).
           send(ws, { type: 'roster', peers: roster, you: publicView(record) });
-          // Late-joiner catch-up: the full metaprogram doc history.
+          // Late-joiner catch-up: the full metaprogram doc history. Sent
+          // unconditionally (even with an empty log) — the client needs this
+          // as a definitive "no history is coming" signal before it may seed
+          // a default program; otherwise a client that is briefly its own
+          // roster leader can seed into a fresh local doc that a moment
+          // later gets a real history merged into it, duplicating every line
+          // (see Metaprogrammer.js maybeSeedDefaultProgram).
           const meta = getRoomMeta(roomName);
-          if (meta.crdtLog.length) {
-            send(ws, { type: 'crdt-state', updates: meta.crdtLog.map(e => e.update) });
-          }
+          send(ws, { type: 'crdt-state', updates: meta.crdtLog.map(e => e.update) });
           // …and the aggregator's current ring turn, which is only broadcast on
           // change (so a joiner that missed the last change needs the cache).
           // A REST is a turn too — it has no token, so it is recognised by its
