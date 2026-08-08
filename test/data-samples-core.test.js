@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   parseDataFile, parseDelimited, looksLikeHeader, castValue, parseLenientNumber,
   flattenValues, packNameFromFilename, uniquePackName, isDataFile, roundValue,
-  isRecognizedStrudelValue,
+  isRecognizedStrudelValue, buildPreview,
   MAX_VALUES_PER_SAMPLE, MAX_SAMPLES_PER_PACK,
 } from '../src/data-samples-core.js';
 
@@ -83,6 +83,28 @@ test('recognized Strudel values pass through uncast', () => {
   assert.equal(o.size, 0, 'recognized values never consume an ordinal');
 });
 
+test('a bare letter a-g is a category, not a note — only an octave or accidental is unambiguous', () => {
+  // "A".."F" is the classic case: a grade column reads exactly like Strudel's
+  // own note-letter alphabet, but a grade left as a raw string turns into NaN
+  // the moment it reaches a numeric control. Without an octave digit or an
+  // accidental attached, treat it as ordinary category text instead.
+  assert.equal(isRecognizedStrudelValue('A'), false);
+  assert.equal(isRecognizedStrudelValue('F'), false);
+  assert.equal(isRecognizedStrudelValue('c'), false);
+  assert.equal(isRecognizedStrudelValue('g'), false);
+
+  // An octave digit or an accidental still makes it unambiguous.
+  assert.equal(isRecognizedStrudelValue('c4'), true);
+  assert.equal(isRecognizedStrudelValue('a#'), true);
+  assert.equal(isRecognizedStrudelValue('a#3'), true);
+  assert.equal(isRecognizedStrudelValue('bb'), true, 'b (flat) is an accidental, not a second letter');
+  assert.equal(isRecognizedStrudelValue('ces'), true, 'German-style flat suffix');
+  assert.equal(isRecognizedStrudelValue('g-1'), true, 'negative octave');
+
+  const pack = parseDataFile('Grades.csv', 'student,grade\nAda,A\nGrace,B\nAlan,F\nAda,A\n');
+  assert.deepEqual(pack.samples[1].values, [0, 1, 2, 0], 'grades become stable ordinals, not raw strings');
+});
+
 test('unparseable values become stable per-sample ordinals', () => {
   const o = ords();
   assert.equal(castValue('sunny', o), 0);
@@ -103,6 +125,30 @@ test('empties, booleans and nulls cast to numbers', () => {
   assert.equal(castValue(undefined, o), 0);
   assert.equal(castValue(true, o), 1);
   assert.equal(castValue(false, o), 0);
+});
+
+test('buildPreview shows raw→cast pairs and caps at 8 rows', () => {
+  assert.equal(
+    buildPreview(['sunny', 'rain', '', 'c4'], [0, 1, 0, 'c4']),
+    'sunny → 0\nrain → 1\n(empty) → 0\nc4 → "c4"',
+  );
+
+  const raw = Array.from({ length: 12 }, (_, i) => `v${i}`);
+  const cast = Array.from({ length: 12 }, (_, i) => i);
+  const preview = buildPreview(raw, cast);
+  assert.equal(preview.split('\n').length, 9, '8 rows plus a "+more" line');
+  assert.match(preview, /\(\+4 more\)$/);
+});
+
+test('every sample from a parsed file carries a raw→cast preview for its tooltip', () => {
+  const csv = parseDataFile('Weather.csv', 'city,weather\nNYC,sunny\nLA,rain\n');
+  assert.equal(csv.samples[1].preview, 'sunny → 0\nrain → 1');
+
+  const json = parseDataFile('Weather.json', JSON.stringify({ weather: ['sunny', 'rain'] }));
+  assert.equal(json.samples[0].preview, 'sunny → 0\nrain → 1');
+
+  const scalar = parseDataFile('Temp.json', '72.5');
+  assert.equal(scalar.samples[0].preview, '72.5 → 72.5');
 });
 
 test('values are rounded at parse time so every peer holds the same numbers', () => {

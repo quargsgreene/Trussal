@@ -52,7 +52,15 @@ export function extensionOf(filename) {
 // mini-notation rest. The spec is explicit that these pass through uncast: a
 // column of note names should stay usable in .note(), and casting "c4" through
 // the numeric path below would silently yield 4.
-const NOTE_RE = /^[a-gA-G](?:[#bs]|es|is)*-?[0-9]?$/;
+//
+// A bare single letter a–g is NOT enough on its own: Strudel itself would read
+// it as a note, but so would a column of letter grades ("A".."F") or any other
+// single-letter category, and a grade that silently stays the string "F"
+// instead of becoming an ordinal turns into NaN the moment it reaches a
+// numeric control several layers downstream. An octave digit or an accidental
+// is what makes a token unambiguously a note ("c4", "a#", "ces"); without
+// either, it falls through to the ordinal path below like any other category.
+const NOTE_RE = /^[a-gA-G](?:(?:[#bs]|es|is)+(?:-?[0-9])?|-?[0-9])$/;
 const REST = '~';
 
 export function isRecognizedStrudelValue(text) {
@@ -73,6 +81,26 @@ export function parseLenientNumber(text) {
   const cleaned = m[1].replace(/[,_ ]/g, '');
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
+}
+
+// How many raw→cast pairs the column-name tooltip shows. A sample can hold up
+// to MAX_VALUES_PER_SAMPLE values; the tooltip only needs enough to show the
+// casting rule in action, not the whole column.
+const PREVIEW_ROWS = 8;
+
+// "sunny → 0\nrain → 1\n… (+9 more)" — exactly what castValue did to this
+// column's first few rows, so a performer can see why a value they typed as
+// text became a number (or stayed a string) without opening devtools.
+export function buildPreview(rawValues, castValues) {
+  const rows = [];
+  for (let i = 0; i < rawValues.length && rows.length < PREVIEW_ROWS; i++) {
+    const raw = rawValues[i];
+    const rawText = raw === null || raw === undefined || raw === '' ? '(empty)' : String(raw);
+    const cast = castValues[i];
+    rows.push(`${rawText} → ${typeof cast === 'string' ? `"${cast}"` : cast}`);
+  }
+  if (rawValues.length > rows.length) rows.push(`… (+${rawValues.length - rows.length} more)`);
+  return rows.join('\n');
 }
 
 export function roundValue(n) {
@@ -175,21 +203,24 @@ export function looksLikeHeader(rows) {
 // Depth-first flatten of an array/object value into a single dimension. Keys
 // are dropped — the spec asks for the VALUES to be extracted into a pattern —
 // and the walk stops at `limit` so a huge nested blob cannot blow the cap.
-// Returns { values, truncated }.
+// Returns { values, rawValues, truncated }, `rawValues` being the pre-cast
+// leaves in the same order, for the column-name tooltip preview.
 export function flattenValues(value, limit, ordinals) {
   const values = [];
+  const rawValues = [];
   let truncated = false;
 
   const walk = (node) => {
     if (values.length >= limit) { truncated = true; return; }
     if (Array.isArray(node)) { for (const v of node) walk(v); return; }
     if (node && typeof node === 'object') { for (const v of Object.values(node)) walk(v); return; }
+    rawValues.push(node);
     values.push(castValue(node, ordinals));
   };
 
   walk(value);
-  if (values.length > limit) { values.length = limit; truncated = true; }
-  return { values, truncated };
+  if (values.length > limit) { values.length = limit; rawValues.length = limit; truncated = true; }
+  return { values, rawValues, truncated };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +274,7 @@ function applyPackCaps(samples, budget) {
     const truncated = sample.truncated || values.length < sample.values.length;
     if (truncated) notes.truncatedSamples++;
     remaining -= values.length;
-    out.push({ label: sample.label, values, truncated });
+    out.push({ label: sample.label, values, truncated, preview: sample.preview });
   }
   return { samples: out, ...notes };
 }
@@ -257,8 +288,9 @@ function samplesFromRows(rows) {
   for (let col = 0; col < width; col++) {
     const ordinals = new Map();
     const label = header?.[col]?.trim() || `column ${col + 1}`;
-    const values = body.map((row) => castValue(row[col], ordinals));
-    samples.push({ label, values, truncated: false });
+    const rawValues = body.map((row) => row[col]);
+    const values = rawValues.map((cell) => castValue(cell, ordinals));
+    samples.push({ label, values, truncated: false, preview: buildPreview(rawValues, values) });
   }
   return samples;
 }
@@ -276,37 +308,48 @@ function samplesFromJson(parsed, packName) {
       return keys.map((key) => {
         const ordinals = new Map();
         const values = [];
+        const rawValues = [];
         for (const record of records) {
           const flat = flattenValues(record[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals);
           values.push(...flat.values);
+          rawValues.push(...flat.rawValues);
         }
-        return { label: key, values, truncated: false };
+        return { label: key, values, truncated: false, preview: buildPreview(rawValues, values) };
       });
     }
     // A plain array of scalars is one sample under the pack's own name.
     const ordinals = new Map();
     const flat = flattenValues(parsed, MAX_VALUES_PER_SAMPLE, ordinals);
-    return [{ label: packName, values: flat.values, truncated: flat.truncated }];
+    return [{
+      label: packName, values: flat.values, truncated: flat.truncated,
+      preview: buildPreview(flat.rawValues, flat.values),
+    }];
   }
 
   if (parsed && typeof parsed === 'object') {
     return Object.entries(parsed).map(([key, value]) => {
       const ordinals = new Map();
       const flat = flattenValues(value, MAX_VALUES_PER_SAMPLE, ordinals);
-      return { label: key, values: flat.values, truncated: flat.truncated };
+      return {
+        label: key, values: flat.values, truncated: flat.truncated,
+        preview: buildPreview(flat.rawValues, flat.values),
+      };
     });
   }
 
   // A bare scalar document: one sample, one value.
   const ordinals = new Map();
-  return [{ label: packName, values: [castValue(parsed, ordinals)], truncated: false }];
+  const cast = castValue(parsed, ordinals);
+  return [{ label: packName, values: [cast], truncated: false, preview: buildPreview([parsed], [cast]) }];
 }
 
 /**
  * Parse an uploaded file into a pack.
  *
- * Returns { name, kind, samples: [{label, values, truncated}], droppedSamples,
- * truncatedSamples }, or throws if the file cannot be read as its extension.
+ * Returns { name, kind, samples: [{label, values, truncated, preview}],
+ * droppedSamples, truncatedSamples }, or throws if the file cannot be read as
+ * its extension. `preview` is a short "raw → cast" string for the column-name
+ * tooltip — see buildPreview.
  * `budget` is the browser-wide value allowance left for this pack.
  */
 export function parseDataFile(filename, text, { budget = MAX_VALUES_TOTAL, taken } = {}) {

@@ -164,7 +164,9 @@ export async function readSampleBanks() {
  * Returns [{ name, kind, count, samples: [{ label, id }] }] sorted by name,
  * where `kind` is 'audio' or one of 'csv' | 'tsv' | 'json'. `count` is the
  * number of samples — for a data pack that is its column/property count, not
- * its row count. Each sample carries the `id` its own delete needs.
+ * its row count. Each sample carries the `id` its own delete needs. A data
+ * pack's sample also carries `preview`, the raw→cast tooltip text built at
+ * upload time (undefined for audio samples).
  */
 export async function getSampleBanks() {
   const records = await readAll();
@@ -183,6 +185,7 @@ export async function getSampleBanks() {
           id: `${record.id}#${i}`,
           length: s.values.length,
           truncated: s.truncated,
+          preview: s.preview,
         })),
       });
       continue;

@@ -51758,7 +51758,7 @@ ${SHORTCUT_LINES[fn]}
     const dot = base.lastIndexOf(".");
     return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
   }
-  var NOTE_RE = /^[a-gA-G](?:[#bs]|es|is)*-?[0-9]?$/;
+  var NOTE_RE = /^[a-gA-G](?:(?:[#bs]|es|is)+(?:-?[0-9])?|-?[0-9])$/;
   var REST = "~";
   function isRecognizedStrudelValue(text2) {
     return text2 === REST || NOTE_RE.test(text2);
@@ -51769,6 +51769,18 @@ ${SHORTCUT_LINES[fn]}
     const cleaned = m2[1].replace(/[,_ ]/g, "");
     const n2 = Number(cleaned);
     return Number.isFinite(n2) ? n2 : null;
+  }
+  var PREVIEW_ROWS = 8;
+  function buildPreview(rawValues, castValues) {
+    const rows = [];
+    for (let i = 0; i < rawValues.length && rows.length < PREVIEW_ROWS; i++) {
+      const raw = rawValues[i];
+      const rawText = raw === null || raw === void 0 || raw === "" ? "(empty)" : String(raw);
+      const cast = castValues[i];
+      rows.push(`${rawText} \u2192 ${typeof cast === "string" ? `"${cast}"` : cast}`);
+    }
+    if (rawValues.length > rows.length) rows.push(`\u2026 (+${rawValues.length - rows.length} more)`);
+    return rows.join("\n");
   }
   function roundValue(n2) {
     if (!Number.isFinite(n2)) return 0;
@@ -51846,6 +51858,7 @@ ${SHORTCUT_LINES[fn]}
   }
   function flattenValues(value2, limit, ordinals) {
     const values = [];
+    const rawValues = [];
     let truncated = false;
     const walk2 = (node) => {
       if (values.length >= limit) {
@@ -51860,14 +51873,16 @@ ${SHORTCUT_LINES[fn]}
         for (const v2 of Object.values(node)) walk2(v2);
         return;
       }
+      rawValues.push(node);
       values.push(castValue(node, ordinals));
     };
     walk2(value2);
     if (values.length > limit) {
       values.length = limit;
+      rawValues.length = limit;
       truncated = true;
     }
-    return { values, truncated };
+    return { values, rawValues, truncated };
   }
   function packNameFromFilename(filename) {
     const base = String(filename ?? "").split("/").pop();
@@ -51904,7 +51919,7 @@ ${SHORTCUT_LINES[fn]}
       const truncated = sample.truncated || values.length < sample.values.length;
       if (truncated) notes2.truncatedSamples++;
       remaining -= values.length;
-      out.push({ label: sample.label, values, truncated });
+      out.push({ label: sample.label, values, truncated, preview: sample.preview });
     }
     return { samples: out, ...notes2 };
   }
@@ -51916,8 +51931,9 @@ ${SHORTCUT_LINES[fn]}
     for (let col = 0; col < width; col++) {
       const ordinals = /* @__PURE__ */ new Map();
       const label2 = header?.[col]?.trim() || `column ${col + 1}`;
-      const values = body.map((row) => castValue(row[col], ordinals));
-      samples2.push({ label: label2, values, truncated: false });
+      const rawValues = body.map((row) => row[col]);
+      const values = rawValues.map((cell) => castValue(cell, ordinals));
+      samples2.push({ label: label2, values, truncated: false, preview: buildPreview(rawValues, values) });
     }
     return samples2;
   }
@@ -51932,26 +51948,39 @@ ${SHORTCUT_LINES[fn]}
         return keys3.map((key) => {
           const ordinals3 = /* @__PURE__ */ new Map();
           const values = [];
+          const rawValues = [];
           for (const record2 of records) {
             const flat2 = flattenValues(record2[key], MAX_VALUES_PER_SAMPLE - values.length, ordinals3);
             values.push(...flat2.values);
+            rawValues.push(...flat2.rawValues);
           }
-          return { label: key, values, truncated: false };
+          return { label: key, values, truncated: false, preview: buildPreview(rawValues, values) };
         });
       }
       const ordinals2 = /* @__PURE__ */ new Map();
       const flat = flattenValues(parsed, MAX_VALUES_PER_SAMPLE, ordinals2);
-      return [{ label: packName, values: flat.values, truncated: flat.truncated }];
+      return [{
+        label: packName,
+        values: flat.values,
+        truncated: flat.truncated,
+        preview: buildPreview(flat.rawValues, flat.values)
+      }];
     }
     if (parsed && typeof parsed === "object") {
       return Object.entries(parsed).map(([key, value2]) => {
         const ordinals2 = /* @__PURE__ */ new Map();
         const flat = flattenValues(value2, MAX_VALUES_PER_SAMPLE, ordinals2);
-        return { label: key, values: flat.values, truncated: flat.truncated };
+        return {
+          label: key,
+          values: flat.values,
+          truncated: flat.truncated,
+          preview: buildPreview(flat.rawValues, flat.values)
+        };
       });
     }
     const ordinals = /* @__PURE__ */ new Map();
-    return [{ label: packName, values: [castValue(parsed, ordinals)], truncated: false }];
+    const cast = castValue(parsed, ordinals);
+    return [{ label: packName, values: [cast], truncated: false, preview: buildPreview([parsed], [cast]) }];
   }
   function parseDataFile(filename, text2, { budget = MAX_VALUES_TOTAL, taken } = {}) {
     const kind = extensionOf(filename);
@@ -52083,7 +52112,8 @@ ${SHORTCUT_LINES[fn]}
             label: s2.label,
             id: `${record2.id}#${i}`,
             length: s2.values.length,
-            truncated: s2.truncated
+            truncated: s2.truncated,
+            preview: s2.preview
           }))
         });
         continue;
@@ -57807,7 +57837,7 @@ ${s2}${BTN_MARKER}`)
       ${openBank.samples.map((s2, i) => `
         <span class="ts-sample-item">
           <span class="ts-sample-idx">${openBank.kind === "audio" ? i : i + 1}</span>
-          <span class="ts-sample-label">${escapeHtml(s2.label)}</span>
+          <span class="ts-sample-label"${s2.preview ? ` title="${escapeHtml(s2.preview)}"` : ""}>${escapeHtml(s2.label)}</span>
           ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? "\u26A0" : ""}</span>` : ""}
           <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s2.id)}"
             title="delete this sample">\xD7</button>

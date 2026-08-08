@@ -737,7 +737,7 @@ function renderDetail(container) {
       ${openBank.samples.map((s, i) => `
         <span class="ts-sample-item">
           <span class="ts-sample-idx">${openBank.kind === 'audio' ? i : i + 1}</span>
-          <span class="ts-sample-label">${escapeHtml(s.label)}</span>
+          <span class="ts-sample-label"${s.preview ? ` title="${escapeHtml(s.preview)}"` : ''}>${escapeHtml(s.label)}</span>
           ${s.length != null ? `<span class="ts-sample-len">${s.length}${s.truncated ? '⚠' : ''}</span>` : ''}
           <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s.id)}"
             title="delete this sample">×</button>
