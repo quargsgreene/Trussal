@@ -105,15 +105,26 @@ So `css(\`body\`).backgroundImage("^url(https://…)^")` and
 Each statement compiles to two rules: one nested under the Trussal roots, whose
 extra id gives it the specificity to win there, and one bare with the allowlist.
 
-The framework side of this holds for any selector, including `body` — but it
-only works if the app's own default styling plays fair with the cascade. A
-default value written with `!important` (in `docker-jitsi-meet/jitsi-web/custom.css`,
-or a Trussal panel's own injected `<style>`) beats a same- or higher-specificity
-CSS Cycles rule unconditionally, regardless of source order, and reads as "CSS
-Cycles doesn't change anything" with no error anywhere. The fix is never to
-add a matching `!important` to the sheet — it is to drop `!important` from the
-app's own rule, since it is a default, not a forced override; the app CSS this
-repo owns should never need `!important` outside of two genuine exceptions: an
+**Patterned declarations — the ones a `.color()`/`.backgroundColor()`/
+`.fontFamily()`/`.fontSize()`/… call puts on the chain — carry `!important`.**
+That is the entire point of chaining a property onto `css()`: the performer set
+it precisely so it visibly tracks the pattern, and losing it to an app default
+is indistinguishable from the pipeline being broken. Specificity and source
+order are not enough to guarantee that on their own — most of Trussal's own UI
+gives its text/background/font colour a direct, non-inherited rule on the
+*exact* element (`.ts-name`, `.ts-chip`, `.ts-title`, …), and CSS always prefers
+a directly-declared property over one inherited from a same- or
+higher-specificity ancestor rule, `!important` or not. A performer's `css()`
+selector has to still match a real element for anything to happen (an
+ancestor-only match has nothing to override, per the silent-selector note
+above) — `!important` fixes losing the cascade, not losing the match.
+
+Hand-authored declarations written directly in the backticked SCSS (not
+chained) are unaffected and keep the normal cascade — for those, the fix for
+"stuck at defaults" is still to drop `!important` from the app's own rule
+(in `docker-jitsi-meet/jitsi-web/custom.css`, or a Trussal panel's own injected
+`<style>`), since it is a default, not a forced override; the app CSS this repo
+owns should never need `!important` outside of two genuine exceptions: an
 intentional `display: none`/hide (which CSS Cycles is refused from touching
 anyway), or defeating upstream Jitsi's own component CSS whose specificity this
 repo does not control (the video-tile transparency rules in `custom.css` are

@@ -53956,7 +53956,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return out;
   }
   function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
-    const decls = sheet.props.filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop)).map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)});`).join("\n");
+    const decls = sheet.props.filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop)).map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)}) !important;`).join("\n");
     if (!decls) return scss;
     const src2 = String(scss).trim();
     const brace = src2.indexOf("{");

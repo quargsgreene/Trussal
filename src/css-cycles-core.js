@@ -953,10 +953,21 @@ function filterToAllowlist(src) {
 // Inject the patterned declarations into a block's first top-level selector.
 // Each becomes a var() reference the hap trigger reassigns, so a value change
 // never needs another compile.
+//
+// !important: unlike the hand-written SCSS around it, a patterned declaration
+// is the entire point of chaining `.color()`/`.backgroundColor()`/… onto a
+// css() call — a performer set it precisely so it tracks the pattern. Losing
+// it to an app default of equal-or-lower specificity (most of Trussal's own
+// UI gives its text/background/font a direct, non-inherited rule per element,
+// which a same-specificity or ancestor-targeting Cycles rule cannot out-cascade
+// by source order or specificity alone) is indistinguishable from the pipeline
+// being broken, so it may never lose. Hand-authored declarations in the
+// backticked SCSS itself keep the normal cascade — the fix for those staying
+// unreachable is still to drop `!important` from the app's own rule.
 function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
   const decls = sheet.props
     .filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop))
-    .map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)});`)
+    .map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)}) !important;`)
     .join('\n');
   if (!decls) return scss;
 
@@ -1075,6 +1086,11 @@ export function checkCompiledCss(css) {
 // set applies and the extra id gives it the specificity to win; once bare,
 // carrying the allowlist alone, for the rest of the page. @keyframes are
 // lifted out (they cannot nest inside a selector) and namespaced per peer.
+// Either copy's patterned declarations (see withPatternedProps) carry
+// !important, since specificity and source order alone are not enough: most
+// of Trussal's own UI declares colour/background/font directly on the exact
+// element rather than an ancestor, which no amount of specificity on a
+// same-property, different-selector Cycles rule can out-cascade.
 export function buildPeerScss(sheets, { peerClass = 'anon' } = {}) {
   const parts = [];
   for (const sheet of sheets) {
