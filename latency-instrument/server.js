@@ -690,18 +690,35 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // installing it (see sanitizeCompiledCss), because nothing here can
           // tell an honest client from a patched one.
           if (typeof msg.source !== 'string') break;
+          const room = rooms.get(roomName);
+          // A bot's own connection never runs the CSS Cycles pipeline (its REPL
+          // is a bare @strudel/repl with none of Trussal's controls), so no
+          // browser is ever "local" to a bot's peer id — every viewer's own
+          // program parrots the bot's css() statements instead and any of them
+          // may compile+send on its behalf. Only a peer already recorded as a
+          // bot may be targeted this way; a human's compiledCss can only ever
+          // come from their own connection.
+          let target = record;
+          if (typeof msg.targetPeerId === 'string' && msg.targetPeerId !== peerId) {
+            const candidate = room && room.get(msg.targetPeerId);
+            if (!candidate || !candidate.isBot) break;
+            target = candidate;
+          }
           const { css, error } = compileScss(msg.source);
           if (error) {
             send(ws, { type: 'scss-error', message: error });
             break;
           }
-          record.compiledCss = css;
-          const room = rooms.get(roomName);
-          if (room) broadcast(room, peerId, { type: 'peer-update', peerId, patch: { compiledCss: css } });
+          target.compiledCss = css;
+          // Self case: exclude the sender from the broadcast (they get the
+          // direct echo below instead). Bot-target case: the sender has no
+          // local record of the bot's compiledCss, so they need the broadcast
+          // like every other viewer — nobody is excluded.
+          if (room) broadcast(room, target === record ? peerId : null, { type: 'peer-update', peerId: target.peerId, patch: { compiledCss: css } });
           // The author needs it too, but their own roster echo is skipped
           // client-side in favour of the local record, so a peer-update back
           // to the sender would land where nothing reads it.
-          send(ws, { type: 'scss-compiled', css });
+          if (target === record) send(ws, { type: 'scss-compiled', css });
           break;
         }
 

@@ -39,7 +39,7 @@
 // visibility stay Trussal-surface-only. Both copies pass every guardrail; see
 // css-cycles-core.js for the rules themselves.
 
-import { subscribePeerState, getAllPeers, getLocalPeer, sendLocalScss, isPeerNetCyclesTurn } from './peer-state.js';
+import { subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId, sendLocalScss, sendPeerScss, isPeerNetCyclesTurn } from './peer-state.js';
 import {
   CSS_PROPERTY_LIST,
   adjustColorForBackground,
@@ -62,6 +62,7 @@ let sheetsByToken = new Map(); // token → sheet record for the running program
 let refused = new Set();    // tokens whose statement failed a guardrail
 let styleEls = new Map();   // peerId → <style>
 let lastSentScss = '';      // dedupes the sidecar round-trip
+let lastSentScssByBot = new Map(); // botJitsiId → last SCSS this browser sent for it
 let bgCache = new Map();    // selector → { color, at } — throttles the contrast pass
 // "selector||prop" → the room's own computed value, captured from the DOM the
 // FIRST time any CSS Cycles hap ever targets that pair — before this module
@@ -117,9 +118,28 @@ export function publishCssSheets(sheets) {
   const mine = sheets.filter((s) => s.peer === local?.jitsiId);
   const scss = buildPeerScss(mine, { peerClass: peerTextClass(local?.jitsiId) });
   // A rebuild that changed only an audio voice must not cost a compile.
-  if (scss === lastSentScss) return;
-  lastSentScss = scss;
-  sendLocalScss(scss);
+  if (scss !== lastSentScss) {
+    lastSentScss = scss;
+    sendLocalScss(scss);
+  }
+
+  // A bot's own connection never runs this pipeline (its REPL is a bare
+  // @strudel/repl with none of Trussal's controls — see
+  // bots/src/bot/page-scripts.js), so no browser is ever "local" to a bot's
+  // peer id. Every human viewer's own program builds the same parroted sheets
+  // for that bot (buildBotSilentBlock in strudel.js), so this browser
+  // compiles and sends on the bot's behalf too — redundant sends from
+  // multiple viewers converge on the same SCSS and are harmless.
+  const botIds = new Set(sheets.map((s) => s.peer).filter((p) => p && p !== local?.jitsiId));
+  for (const botId of botIds) {
+    const peer = getPeerByJitsiId(botId);
+    if (!peer?.isBot || !peer.peerId) continue;
+    const botSheets = sheets.filter((s) => s.peer === botId);
+    const botScss = buildPeerScss(botSheets, { peerClass: peerTextClass(botId) });
+    if (botScss === lastSentScssByBot.get(botId)) continue;
+    lastSentScssByBot.set(botId, botScss);
+    sendPeerScss(peer.peerId, botScss);
+  }
 }
 
 // Install one peer's compiled CSS. Sheets are ordered by jitsiId so the cascade
@@ -363,6 +383,7 @@ export function stopCssCycles() {
   sheetsByToken = new Map();
   refused = new Set();
   lastSentScss = '';
+  lastSentScssByBot = new Map();
   bgCache.clear();
   baselineValues.clear();
 }

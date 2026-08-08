@@ -1032,6 +1032,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function sendLocalScss(scss) {
     safeSend({ type: "scss", source: typeof scss === "string" ? scss : "" });
   }
+  function sendPeerScss(targetPeerId, scss) {
+    if (!targetPeerId) return;
+    safeSend({ type: "scss", targetPeerId, source: typeof scss === "string" ? scss : "" });
+  }
   function sendLocalDataPacks(packs) {
     const list = Array.isArray(packs) ? packs : [];
     localPeer.dataPacks = list;
@@ -54151,6 +54155,7 @@ ${full}
   var refused = /* @__PURE__ */ new Set();
   var styleEls = /* @__PURE__ */ new Map();
   var lastSentScss = "";
+  var lastSentScssByBot = /* @__PURE__ */ new Map();
   var bgCache = /* @__PURE__ */ new Map();
   var baselineValues = /* @__PURE__ */ new Map();
   var BG_CACHE_MS = 250;
@@ -54180,9 +54185,20 @@ ${full}
     }
     const mine = sheets.filter((s2) => s2.peer === local2?.jitsiId);
     const scss = buildPeerScss(mine, { peerClass: peerTextClass(local2?.jitsiId) });
-    if (scss === lastSentScss) return;
-    lastSentScss = scss;
-    sendLocalScss(scss);
+    if (scss !== lastSentScss) {
+      lastSentScss = scss;
+      sendLocalScss(scss);
+    }
+    const botIds = new Set(sheets.map((s2) => s2.peer).filter((p) => p && p !== local2?.jitsiId));
+    for (const botId of botIds) {
+      const peer = getPeerByJitsiId(botId);
+      if (!peer?.isBot || !peer.peerId) continue;
+      const botSheets = sheets.filter((s2) => s2.peer === botId);
+      const botScss = buildPeerScss(botSheets, { peerClass: peerTextClass(botId) });
+      if (botScss === lastSentScssByBot.get(botId)) continue;
+      lastSentScssByBot.set(botId, botScss);
+      sendPeerScss(peer.peerId, botScss);
+    }
   }
   function installPeerCss(peerId, css) {
     let el = styleEls.get(peerId);
@@ -54344,6 +54360,7 @@ ${full}
     sheetsByToken = /* @__PURE__ */ new Map();
     refused = /* @__PURE__ */ new Set();
     lastSentScss = "";
+    lastSentScssByBot = /* @__PURE__ */ new Map();
     bgCache.clear();
     baselineValues.clear();
   }
@@ -57897,7 +57914,7 @@ ${s2}${BTN_MARKER}`)
     const extLabel = getExternalStreamLabel(peer.jitsiId);
     const nodeLabel = getExternalNodeLabel(peer.jitsiId);
     const captureBtn = "";
-    const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? "local" : String(peer.jitsiId || ""))}"`;
+    const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? "local" : String(peer.peerId || peer.jitsiId || ""))}"`;
     const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
     const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
     const strudelControls = isLocal ? `

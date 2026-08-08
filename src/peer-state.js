@@ -652,6 +652,18 @@ export function sendLocalScss(scss) {
   safeSend({ type: 'scss', source: typeof scss === 'string' ? scss : '' });
 }
 
+// CSS Cycles for a bot: a bot's own connection never runs installCssCycles
+// (its REPL is a bare @strudel/repl, see bots/src/bot/page-scripts.js), so no
+// browser is ever "local" to a bot's peer id and its SCSS would otherwise
+// never be sent. Every human's browser builds the same bot sheets from its
+// parroted css() statements (buildBotSilentBlock), so any of them may compile
+// and send on the bot's behalf — the server only accepts this for a peer it
+// has recorded as a bot, never for a human.
+export function sendPeerScss(targetPeerId, scss) {
+  if (!targetPeerId) return;
+  safeSend({ type: 'scss', targetPeerId, source: typeof scss === 'string' ? scss : '' });
+}
+
 // Mirror our JSON/CSV/TSV packs to the room. They ride the bus rather than
 // staying local because the combined program is evaluated in EVERY browser and
 // by the aggregator: a peer without the values would evaluate a different

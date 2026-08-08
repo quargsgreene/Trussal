@@ -715,9 +715,12 @@ function renderDetail(container) {
   // peer.pattern (the last EVALUATED text) and losing everything typed since —
   // a continuous loss from wherever eval last left off, indistinguishable from
   // "the editor spontaneously deleted my text" while idle-typing. A remote
-  // tile's key still has to be the real jitsiId: switching between two
-  // different peers' tiles is exactly the case samePeer must say "no" to.
-  const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? 'local' : String(peer.jitsiId || ''))}"`;
+  // tile has the exact same flip on the bot side (pageEnsureAudioPublished's
+  // watchdog), so its key is peer.peerId — the websocket-assigned id that
+  // never changes for the life of the connection — rather than jitsiId.
+  // peerId still distinguishes one peer's tile from another's just as well,
+  // since it's unique and never reused.
+  const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? 'local' : String(peer.peerId || peer.jitsiId || ''))}"`;
   const codeBlock = isLocal
     ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
     : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
