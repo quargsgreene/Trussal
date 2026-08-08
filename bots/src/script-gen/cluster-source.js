@@ -20,7 +20,7 @@
  */
 
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
-import { hasTextCycles, splitStatements } from '../../../src/text-cycles-core.js';
+import { hasTextCycles, splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { randomMasterScript } from './generator.js';
 import {
@@ -99,14 +99,96 @@ export function scriptToEditorCode(script) {
 }
 
 /**
+ * Locate a top-level `stack(` call by balancing parens from the opening one,
+ * skipping string/template contents (mirrors findBotConfigCall). Returns
+ * `{ start, close, argsText }` for the FIRST such call, or null.
+ */
+function findStackCall(text) {
+  const match = /(^|[^\w$.])stack\s*\(/.exec(text);
+  if (!match) return null;
+  const start = match.index + match[1].length;
+  const open = text.indexOf('(', start);
+  let depth = 0;
+  let quote = null;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) return { start, close: i, argsText: text.slice(open + 1, i) };
+    }
+  }
+  return null; // unbalanced — leave the statement to the whole-statement fallback
+}
+
+/**
+ * Split a `stack(...)` call's arguments on top-level commas only, respecting
+ * nested parens/brackets/braces and string/template contents.
+ */
+function splitStackArgs(argsText) {
+  const args = [];
+  let depth = 0;
+  let quote = null;
+  let cur = '';
+  for (let i = 0; i < argsText.length; i++) {
+    const ch = argsText[i];
+    if (quote) {
+      cur += ch;
+      if (ch === '\\') { cur += argsText[i + 1] ?? ''; i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; cur += ch; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; cur += ch; continue; }
+    if (ch === ',' && depth === 0) { args.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim() !== '') args.push(cur);
+  return args;
+}
+
+/**
+ * A statement that names `word(`/`w(` loses only its word-painting part, not
+ * everything in it. Vanilla Strudel's own idiom for combining layers is
+ * `stack(...)`, and a performer routinely writes their audio and their words
+ * as siblings inside one `stack(...)` rather than as separate `$:` voices —
+ * dropping the whole statement in that case would silence the audio too, even
+ * though `stack()`'s own siblings never depended on each other. Only a
+ * top-level `stack(...)` gets this treatment; `s("bd").word("x")` genuinely
+ * has nothing left once its word() is gone (the docs are explicit that a
+ * dominant text trigger already silences that whole hap), so that case still
+ * drops the statement outright.
+ */
+function stripWordBranches(text) {
+  const call = findStackCall(text);
+  if (!call) return null;
+  const survivors = splitStackArgs(call.argsText)
+    .filter((arg) => !WORD_CALL_RE.test(arg))
+    .map((arg) => arg.trim())
+    .filter(Boolean);
+  if (!survivors.length) return null;
+  const rebuilt = `stack(\n  ${survivors.join(',\n  ')}\n)`;
+  return text.slice(0, call.start) + rebuilt + text.slice(call.close + 1);
+}
+
+/**
  * Strip the statements that paint words, for a bot whose human did not ask for
  * `textParrot`. Without this every bot in a cluster would repeat its author's
  * words, N times over, in every viewer's chat panel.
  */
 export function dropTextStatements(strudel) {
   const src = String(strudel ?? '');
-  if (!hasTextCycles(src) && !/(^|[^\w$.])(word|w)\s*\(/.test(src)) return src;
-  const kept = splitStatements(src).filter((s) => !s.hasWord).map((s) => s.text);
+  if (!hasTextCycles(src) && !WORD_CALL_RE.test(src)) return src;
+  const kept = splitStatements(src)
+    .map((s) => (s.hasWord ? stripWordBranches(s.text) : s.text))
+    .filter((text) => text !== null);
   return kept.join('\n').trim();
 }
 

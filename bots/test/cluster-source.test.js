@@ -153,6 +153,44 @@ test('dropTextStatements leaves a wordless pattern untouched', () => {
   assert.equal(dropTextStatements('s("bd sd")'), 's("bd sd")');
 });
 
+// A performer combining audio and words in ONE stack(), vanilla Strudel's own
+// idiom for layering — not the two-`$:`-voices convention above — must not
+// lose its audio: dropping the whole statement here left bots with an empty
+// program (no code, no sound) any time a human wrote it this way.
+test('word() inside a stack() loses only its own branch, not its siblings', () => {
+  const code = [
+    'botConfig()',
+    'await initTextCycles()',
+    '',
+    'stack(',
+    '  s("bd sd").room(.3),',
+    '  word("come dance").color("#ffffff")',
+    ')',
+  ].join('\n');
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.ok(script.strudel.trim() !== '', 'the cluster must still have something to play');
+  assert.match(script.strudel, /s\("bd sd"\)\.room\(\.3\)/, 'the audio branch survives');
+  assert.ok(!script.strudel.includes('word('), 'the word() branch is gone');
+  assert.equal(validateCode(script.strudel).ok, true);
+});
+
+test('a stack() of nothing but words still drops the whole statement', () => {
+  const code = [
+    'stack(',
+    '  word("hello"),',
+    '  w("world")',
+    ')',
+  ].join('\n');
+  assert.equal(dropTextStatements(code), '');
+});
+
+test('word() chained directly onto a pattern (no stack) still drops whole', () => {
+  // Per the docs, a dominant text trigger already silences this hap, so
+  // nothing salvageable is left once word() is gone.
+  assert.equal(dropTextStatements('s("bd").word("x")'), '');
+});
+
 // --- Composition -------------------------------------------------------------
 
 test('properties compose, and the result is still valid code', () => {
