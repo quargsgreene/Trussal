@@ -56999,15 +56999,28 @@ ${s2}${BTN_MARKER}`)
   function myClusterBots() {
     return clusterBotsOf(getAllPeers(), getLocalPeer().roomIndex);
   }
-  function spawnBots(count) {
+  function spawnBots(count, editorCode) {
     const n2 = Math.max(1, Math.floor(count) || 1);
-    const code2 = localPerformerCode();
-    shareSamplesIfAsked(code2).catch((err) => {
+    const code2 = typeof editorCode === "string" ? editorCode : localPerformerCode();
+    const parsed = parseBotConfig(code2);
+    logSpawn(n2, code2, parsed);
+    shareSamplesIfAsked(parsed).catch((err) => {
       console.error("[trussal] sharing samples with bots failed", err);
     }).finally(() => sendFleetRequest("spawn", { count: n2, code: code2 }));
   }
-  async function shareSamplesIfAsked(code2) {
-    const parsed = parseBotConfig(code2);
+  function logSpawn(count, code2, parsed) {
+    const what = `[trussal] spawn ${count} \u2014 sending ${code2.length} chars of code`;
+    if (!parsed.present) {
+      console.log(`${what}, no botConfig() declared (bots play exact copies)`);
+      return;
+    }
+    if (!parsed.ok) {
+      console.warn(`${what}, botConfig REJECTED: ${parsed.error} (bots play exact copies)`);
+      return;
+    }
+    console.log(`${what}, botConfig parsed:`, parsed.config);
+  }
+  async function shareSamplesIfAsked(parsed) {
     if (!parsed.ok || !flag(parsed.config.samples)) return;
     const banks = await readSampleBanks();
     for (const { bank: bank2, name: name3, blob } of banks) {
@@ -57722,7 +57735,7 @@ ${s2}${BTN_MARKER}`)
   var lastFleetStatus = "";
   subscribeFleetStatus((status) => {
     if (status.action === "spawn") {
-      lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.reason ? ` \u2014 ${status.reason}` : "");
+      lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.botConfig ? ` \u2014 ${status.botConfig}` : "") + (status.reason ? ` \u2014 ${status.reason}` : "");
     } else if (status.action === "remove") {
       lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` \u2014 ${status.reason}` : ""}`;
     } else if (status.action === "teardown") {
@@ -57764,8 +57777,10 @@ ${s2}${BTN_MARKER}`)
         const action = btn.dataset.botAction;
         const row = btn.closest("[data-bot-index]");
         const idx = row ? row.dataset.botIndex : null;
-        if (action === "spawn") spawnBots(parseInt(countEl && countEl.value, 10) || 1);
-        else if (action === "remove-all") removeBots("all");
+        if (action === "spawn") {
+          const codeEl = container2.querySelector(".ts-code:not(.nc-code)");
+          spawnBots(parseInt(countEl && countEl.value, 10) || 1, codeEl ? codeEl.value : void 0);
+        } else if (action === "remove-all") removeBots("all");
         else if (action === "mute-all") muteBots("all", true);
         else if (action === "remove" && idx) removeBots([idx]);
         else if (action === "removeOne" && idx) removeOneBot(idx);

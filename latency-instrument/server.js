@@ -556,7 +556,18 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             // generic bots instead of the ones the performer configured.
             code: typeof msg.code === 'string' ? msg.code : undefined
           });
-          logEvent(roomName, 'fleet-request', { fromIndex: record.roomIndex, action: msg.action, count: msg.count });
+          // The middle of the three botConfig prints (the browser logs what it
+          // sent, the fleet logs what it built). This relay is the one hop that
+          // can drop `code` — an old bundle omits the field, and only the
+          // explicit forward above carries it — so log its size rather than its
+          // content: the declaration itself is free text the author may not
+          // want in the video VM's logs, and a length is enough to bracket the
+          // hop against the browser's own line.
+          const codeChars = typeof msg.code === 'string' ? `${msg.code.length} chars` : 'ABSENT';
+          console.log(`[latency] fleet-request ${msg.action} from ${record.roomIndex} — code ${codeChars}`);
+          logEvent(roomName, 'fleet-request', {
+            fromIndex: record.roomIndex, action: msg.action, count: msg.count, codeChars
+          });
           break;
         }
 

@@ -89,6 +89,26 @@ function requireRoom(room, where) {
   return String(room);
 }
 
+// One line a performer can read in their own studio saying what the fleet took
+// from their declaration. Every way a botConfig can come to nothing — never
+// typed, never sent, rejected — ends in the same visible outcome, a cluster of
+// plain copies, and the studio is the only surface the author has: the fleet's
+// log lives on a VM they are not looking at while playing.
+//
+// Only the properties they actually set. A config is mostly nulls by
+// construction, so listing all eight would bury the two that matter. Values are
+// truncated because `mcp` carries a whole prompt.
+export function describeBotConfig(source) {
+  if (!source || !source.declared) return 'no botConfig() declared — bots play exact copies';
+  const set = Object.entries(source.config ?? {}).filter(([, value]) => value !== null);
+  if (!set.length) return 'botConfig() set nothing — bots play exact copies';
+  const shown = set.map(([key, value]) => {
+    const text = String(value);
+    return `${key}=${text.length > 40 ? `${text.slice(0, 39)}…` : text}`;
+  });
+  return `botConfig applied: ${shown.join(', ')}`;
+}
+
 export class FleetService {
   constructor(cfg, { runner, connectSidecar, controlToken = null, compose = null }) {
     if (!runner) throw new TypeError('a container runner {start, stop} is required');
@@ -537,24 +557,23 @@ export class FleetService {
       // config that fails to parse is surfaced to every studio rather than
       // swallowed — the performer typed it expecting it to take effect.
       const captured = this.#captureOwnerSource(room, ownerIndex, msg.code);
-      if (!captured.ok) {
-        this.#busSend(room, {
-          type: 'fleet-status', action: 'spawn', ownerIndex, reason: captured.error,
-        });
-      }
+      // Both of these ride WITH the spawn's own status rather than as messages
+      // of their own. Sent separately they were true but invisible: the studio
+      // keeps the last fleet-status it saw, and spawnCluster's "spawned 2/2"
+      // landed a moment later and replaced them — so a rejected config looked
+      // exactly like a config that took, which is the whole difficulty of
+      // debugging one. `reason` stays what went wrong; `botConfig` is the
+      // running commentary that is worth saying even when nothing did.
+      const notes = captured.ok ? [] : [captured.error];
+      const configNote = captured.ok ? describeBotConfig(captured.source) : null;
       // An `mcp` prompt is composed before any container starts, so every bot
       // in the cluster boots with the finished code rather than starting on the
       // palette and being rewritten a moment later.
       const composed = await this.#composeOwnerSource(room, ownerIndex, captured.source);
       if (composed && !composed.ok) {
-        this.#busSend(room, {
-          type: 'fleet-status',
-          action: 'spawn',
-          ownerIndex,
-          reason: `mcp prompt fell back to the built-in palette — ${composed.error}`,
-        });
+        notes.push(`mcp prompt fell back to the built-in palette — ${composed.error}`);
       }
-      await this.spawnCluster(ownerIndex, count, { room });
+      await this.spawnCluster(ownerIndex, count, { room, notes, configNote });
     } else if (msg.action === 'remove') {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request', room });
     } else if (msg.action === 'removeOne') {
@@ -598,14 +617,23 @@ export class FleetService {
    * interrupt: the active ceiling caps the total fleet ACROSS rooms (it is a
    * VM-wide resource budget, derived from fps/RAM), and a partial spawn reports
    * why.
+   *
+   * `notes` is what else went wrong on the way here (a rejected botConfig, an
+   * mcp prompt that fell back); `configNote` is what the config parsed to, said
+   * even when it parsed fine. Both travel in this one status because the studio
+   * shows the last fleet-status only.
    */
-  async spawnCluster(ownerIndex, count, { room } = {}) {
+  async spawnCluster(ownerIndex, count, { room, notes = [], configNote = null } = {}) {
     requireRoom(room, 'spawnCluster');
     const headroom = Math.max(0, this.activeCeiling - this.bots.size);
     const toSpawn = Math.min(count, headroom);
     for (let i = 0; i < toSpawn; i++) {
       const botId = this.#nextBotId();
       await this.#startBot(botId, room, ownerIndex);
+    }
+    const reason = notes.filter(Boolean);
+    if (toSpawn < count) {
+      reason.push(`host ceiling ${this.activeCeiling} reached — ${this.bots.size} bots running across all rooms`);
     }
     const status = {
       type: 'fleet-status',
@@ -617,12 +645,14 @@ export class FleetService {
       // count that silently included other meetings' bots is just wrong.
       fleetSize: this.#clusterSize(room),
       ceiling: this.activeCeiling,
+      // What the requester's botConfig came to. Its own field, not folded into
+      // `reason`: a config that applied cleanly is not a problem report, and
+      // `reason` is what the studio and the sidecar's log both read as one.
+      ...(configNote ? { botConfig: configNote } : {}),
       // The ceiling is a VM-wide resource budget shared by every meeting, so
       // say so: otherwise a user whose room holds two bots is told "ceiling 10
       // reached" with nothing in their room to explain it.
-      ...(toSpawn < count
-        ? { reason: `host ceiling ${this.activeCeiling} reached — ${this.bots.size} bots running across all rooms` }
-        : {})
+      ...(reason.length ? { reason: reason.join(' — ') } : {})
     };
     this.#busSend(room, status);
     return status;
@@ -874,7 +904,18 @@ export class FleetService {
     // bot's own owner and cluster position, which #variationFor reads back out
     // of the map. Computed in the object literal it would look itself up before
     // the entry existed and silently fall back to the fleet-wide master.
-    this.bots.get(botId).script = this.#variationFor(botId, room);
+    const script = this.#variationFor(botId, room);
+    this.bots.get(botId).script = script;
+    // The code the container is about to boot with, once — this is the only
+    // place it can be read before the bot fetches its assignment, and "the
+    // config parsed but the bot plays the plain master" is a different bug from
+    // "the config never parsed". Logged per bot because the shaping (harmony
+    // voicing, colour position) is measured along the cluster: two bots of the
+    // same owner SHOULD differ here.
+    const bot = this.bots.get(botId);
+    console.log(`[fleet] bot ${botId} (${bot.clusterIndex}) boots with:\n` +
+      `  strudel: ${JSON.stringify(script.strudel)}\n` +
+      `  hydra:   ${JSON.stringify(script.hydra)}`);
     try {
       await this.runner.start(botId, {
         BOT_OWNER_INDEX: ownerIndex,
@@ -986,6 +1027,22 @@ export class FleetService {
       seed: this.cfg.sessionSeed,
     });
     this.ownerSources.set(this.#ownerSourceKey(room, ownerIndex), captured.source);
+    // The last of the three botConfig prints (the browser logs what it sent,
+    // the relay logs whether `code` survived the hop). Every way this can go
+    // wrong ends in the same visible outcome — a cluster of plain copies — so
+    // name which one happened: no code arrived, a code with no declaration, a
+    // declaration that was rejected, or a config that took.
+    const chars = typeof code === 'string' ? code.length : 0;
+    if (!chars) {
+      console.log(`[fleet] ${room}/${ownerIndex} spawn carried NO code — falling back to the fleet master`);
+    } else if (!captured.ok) {
+      console.warn(`[fleet] ${room}/${ownerIndex} spawn: ${captured.error} — cluster falls back to exact copies`);
+    } else if (!captured.source.declared) {
+      console.log(`[fleet] ${room}/${ownerIndex} spawn: ${chars} chars, no botConfig() declared — exact copies`);
+    } else {
+      console.log(`[fleet] ${room}/${ownerIndex} spawn: ${chars} chars, botConfig`,
+        JSON.stringify(captured.source.config));
+    }
     return captured;
   }
 

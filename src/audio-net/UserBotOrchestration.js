@@ -59,23 +59,51 @@ export function myClusterBots() {
 // and the carrier of the `botConfig(...)` declaration that shapes it. Sent at
 // spawn and only at spawn — a bot plays what its author was playing when it
 // arrived, and only a `retroactive: true` config re-captures later.
-export function spawnBots(count) {
+//
+// `editorCode` is what the author currently has in the box, which the caller
+// passes because it is NOT the same thing as `peer.pattern`: the pattern only
+// advances when a block is evaluated, and a botConfig declaration is stripped
+// before evaluation and makes no sound, so an author has no reason to re-run
+// their block after typing one. Reading the last-evaluated pattern instead is
+// what made a freshly typed config spawn a cluster of plain copies. Callers
+// with no editor to read (tests, anything driving a spawn programmatically)
+// omit it and get the published pattern as before.
+export function spawnBots(count, editorCode) {
   const n = Math.max(1, Math.floor(count) || 1);
-  const code = localPerformerCode();
+  const code = typeof editorCode === 'string' ? editorCode : localPerformerCode();
+  const parsed = parseBotConfig(code);
+  logSpawn(n, code, parsed);
   // Samples first, spawn second: the fleet builds each bot's assignment when
   // the spawn arrives, and a bank that lands after that is one the bot has
   // already been told does not exist.
-  shareSamplesIfAsked(code)
+  shareSamplesIfAsked(parsed)
     .catch((err) => { console.error('[trussal] sharing samples with bots failed', err); })
     .finally(() => sendFleetRequest('spawn', { count: n, code }));
+}
+
+// The first of the three prints that bracket a botConfig's journey (the sidecar
+// logs the relay hop, the fleet logs what it built). A config that fails to
+// parse still spawns a cluster of exact copies, and so does a stale editor
+// snapshot that never carried the declaration at all — from the outside those
+// are the same bots, so say which one this is at the moment we send it.
+function logSpawn(count, code, parsed) {
+  const what = `[trussal] spawn ${count} — sending ${code.length} chars of code`;
+  if (!parsed.present) {
+    console.log(`${what}, no botConfig() declared (bots play exact copies)`);
+    return;
+  }
+  if (!parsed.ok) {
+    console.warn(`${what}, botConfig REJECTED: ${parsed.error} (bots play exact copies)`);
+    return;
+  }
+  console.log(`${what}, botConfig parsed:`, parsed.config);
 }
 
 // Ship the local performer's uploaded samples to the fleet when their config
 // asks for it. Sent as base64 over the peer-state bus — the only channel a
 // browser has to the bots VM — and capped fleet-side, which reports anything it
 // refuses as a fleet-status the studio surfaces.
-async function shareSamplesIfAsked(code) {
-  const parsed = parseBotConfig(code);
+async function shareSamplesIfAsked(parsed) {
   if (!parsed.ok || !flag(parsed.config.samples)) return;
 
   const banks = await readSampleBanks();

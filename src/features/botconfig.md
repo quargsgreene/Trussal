@@ -20,8 +20,14 @@ way around the hue circle.
 ## Defaults
 
 `botConfig()` with no argument, or no declaration at all, means **each bot plays
-exactly what you were playing when it spawned**. Every property left out is
+exactly what is in your editor when you spawn it**. Every property left out is
 `null`, which always means "no effect".
+
+Your editor, not your last evaluation: the declaration is stripped before
+Strudel runs and makes no sound, so nothing would prompt you to re-run your
+block after typing one — and a spawn that read the last-evaluated pattern
+instead sent code with no declaration in it, quietly spawning plain copies.
+Spawn reads the box.
 
 ## Properties
 
@@ -39,6 +45,13 @@ exactly what you were playing when it spawned**. Every property left out is
 A value outside these sets is rejected and reported back to your studio as a
 `fleet-status` reason. The cluster still spawns, playing exact copies — a typo
 costs you the config, not the bots.
+
+Every spawn says what the fleet took, on the same status line as the spawn
+itself: `spawned 2/2 for 1 — botConfig applied: harmony=diatonic`, or
+`— no botConfig() declared`, or the rejection. It rides on that one line
+deliberately: your studio shows the last `fleet-status` it saw, so a reason sent
+as a message of its own was buried by the spawn's own status a moment later —
+which is what made a config that never arrived look identical to one that did.
 
 ## How each property behaves
 

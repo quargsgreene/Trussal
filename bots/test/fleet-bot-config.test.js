@@ -113,6 +113,49 @@ test('a broken botConfig surfaces a reason and still spawns copies', async () =>
   });
 });
 
+// The studio keeps only the LAST fleet-status it saw, so a reason that arrives
+// as a message of its own is overwritten by the spawn's own "spawned 2/2" a
+// moment later — and a rejected config then looks exactly like one that took.
+test('the rejection rides on the spawn status itself, not a message it outlives', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, {
+      count: 2, fromIndex: '1',
+      code: 'botConfig({ colorScheme: "greenish" })\ns("cp:3")',
+    });
+
+    const statuses = sent.filter((m) => m.type === 'fleet-status' && m.action === 'spawn');
+    assert.equal(statuses.length, 1, 'one status per spawn, or the last one wins and buries the rest');
+    assert.equal(statuses[0].spawned, 2);
+    assert.match(statuses[0].reason, /colorScheme/);
+  });
+});
+
+test('a config that took says so, so "applied" is visible from the studio', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, {
+      count: 1, fromIndex: '1',
+      code: 'botConfig({ harmony: "+4", colorScheme: "triadic" })\nnote("c3")',
+    });
+
+    const status = sent.find((m) => m.type === 'fleet-status' && m.action === 'spawn');
+    assert.match(status.botConfig, /botConfig applied/);
+    assert.match(status.botConfig, /harmony=\+4/);
+    assert.match(status.botConfig, /colorScheme=triadic/);
+    // Only what the author set: the other six properties are null by default.
+    assert.ok(!/random=/.test(status.botConfig), 'unset properties stay out of the line');
+    assert.equal(status.reason, undefined, 'a config that applied is not a problem report');
+  });
+});
+
+test('a spawn that carried no declaration says that too', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, { count: 1, fromIndex: '1', code: 's("cp:3")' });
+
+    const status = sent.find((m) => m.type === 'fleet-status' && m.action === 'spawn');
+    assert.match(status.botConfig, /no botConfig\(\) declared/);
+  });
+});
+
 test('the snapshot is per room, so the same index in two rooms stays separate', async () => {
   await withFleet(async ({ fleet }) => {
     const OTHER = 'other-room';

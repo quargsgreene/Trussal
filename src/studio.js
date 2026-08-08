@@ -582,7 +582,12 @@ let monitorSelection = 'master';
 let lastFleetStatus = '';
 subscribeFleetStatus((status) => {
   if (status.action === 'spawn') {
+    // `botConfig` is what the fleet made of the declaration in the code we sent
+    // — "applied: harmony=…", "no botConfig() declared", or absent when it was
+    // rejected (then `reason` says why). It is the only place an author can see
+    // whether their declaration crossed three processes intact.
     lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` +
+      (status.botConfig ? ` — ${status.botConfig}` : '') +
       (status.reason ? ` — ${status.reason}` : '');
   } else if (status.action === 'remove') {
     lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
@@ -627,7 +632,14 @@ function bindBotClusterBlock(container) {
       const action = btn.dataset.botAction;
       const row = btn.closest('[data-bot-index]');
       const idx = row ? row.dataset.botIndex : null;
-      if (action === 'spawn') spawnBots(parseInt(countEl && countEl.value, 10) || 1);
+      // The editor box itself, not the last-evaluated pattern: a botConfig(...)
+      // makes no sound, so nothing prompts an author to re-run their block after
+      // typing one, and peer.pattern only advances on eval. `:not(.nc-code)` is
+      // load-bearing — the shared Net Cycles textarea also carries .ts-code.
+      if (action === 'spawn') {
+        const codeEl = container.querySelector('.ts-code:not(.nc-code)');
+        spawnBots(parseInt(countEl && countEl.value, 10) || 1, codeEl ? codeEl.value : undefined);
+      }
       else if (action === 'remove-all') removeBots('all');
       else if (action === 'mute-all') muteBots('all', true);
       else if (action === 'remove' && idx) removeBots([idx]);
