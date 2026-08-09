@@ -44,7 +44,7 @@ function createRandomDrumPattern() {
   const drumOptions = ['bd', 'sd', 'hh', 'cp', 'rim'];
   let pattern = '';
   for( let i = 0; i < repeats; i++) {
-    pattern += `${pick(rand, drumOptions)} `;
+    pattern += `${drumOptions[Math.floor(Math.random() * drumOptions.length)]}*${Math.floor(Math.random() * 4) + 1} ${Math.random() < 0.5 ? '~' : ''} `;
   }
   return pattern;
 }
