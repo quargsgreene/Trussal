@@ -12,19 +12,7 @@
  * master script to a replacement bot mid-session.
  */
 
-const DRUMS = [
-  's("bd sd [~ bd] sd")',
-  's("bd*2 [~ sd] hh*4 sd")',
-  's("[bd ~]*2 sd:2 [hh hh] sd")',
-  's("bd <sd cp> hh*2 <sd rim>")',
-];
 
-const MELODIES = [
-  'note("c3 eb3 g3 bb3").s("sawtooth")',
-  'n("0 3 5 7").scale("C:minor").s("triangle")',
-  'note("<c2 f2 g2 bb1>").s("square").slow(2)',
-  'n("0 2 4 [6 7]").scale("D:dorian").s("sine")',
-];
 
 // Headless-safe only. superdough builds reverb (.room) and the "damage"
 // effects (.shape/.crush/.distort) as AudioWorkletNodes, and headless
@@ -37,19 +25,7 @@ const FX = [
   '.cutoff(sine.range(300, 2000).slow(4))',
 ];
 
-const HYDRA_SOURCES = [
-  'osc(10, 0.1, 1.2)',
-  'noise(3, 0.2)',
-  'voronoi(8, 0.4)',
-  'shape(4, 0.4, 0.01)',
-];
 
-const HYDRA_MODS = [
-  '.rotate(0.1, 0.05)',
-  '.kaleid(4)',
-  '.modulate(noise(2), 0.2)',
-  '.colorama(0.05)',
-];
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -65,6 +41,35 @@ const pick = (rand, arr) => arr[Math.floor(rand() * arr.length)];
 
 export function randomMasterScript(seed = Date.now()) {
   const rand = mulberry32(seed);
+
+
+  const HYDRA_SOURCES = [
+  `osc(${500 * Math.random() + 1}, ${10 * Math.random() + 1}, ${Math.random() + 0.001})`,
+  `noise(${100 * Math.random() + 1}, ${Math.random() + 0.001})`,
+  `voronoi(${109 * Math.random() + 1}, 0.4)`,
+  `shape(4, 0.4, 0.01)`,
+];
+
+const HYDRA_MODS = [
+  `.rotate(${Math.random() * 2 - 1}, 0.05)`,
+  `.kaleid(4)`,
+  `.modulate(noise(2), 0.2)`,
+  `.colorama(0.05)`,
+];
+
+const DRUMS = [
+  `s("bd sd [~ bd] sd")`,
+  `s("bd*2 [~ sd] hh*${Math.random() * 10 + 1} sd")`,
+  `s("[bd ~]*${Math.random() * 10 + 1} sd:2 [hh hh] sd")`,
+  `s("bd <sd cp> hh*2 <sd rim>")`,
+];
+
+const MELODIES = [
+  `note("c3 eb3 g3 bb3").s("sawtooth")`,
+  `n("0 3 5 7").scale("C:minor").s("triangle")`,
+  `note("<c2 f2 g2 bb1>").s("square").slow(2)`,
+  `n("0 2 4 [6 7]").scale("D:dorian").s("sine")`,
+];
   const strudel = [
     'stack(',
     `  ${pick(rand, DRUMS)},`,
