@@ -229,14 +229,14 @@ function injectStyles() {
       display: flex; flex-direction: column; gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:center; justify-content:space-between;
+      display:flex; align-items:center; justify-content: right;
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
       font-size: 10px; letter-spacing: 1px; 
       color: #7aa68a; font-weight: 600;
     }
-    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:none; }
+    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     #${OVERLAY_ID} .ts-btn {
       padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
       font-weight: 600; font-size: 12px;
