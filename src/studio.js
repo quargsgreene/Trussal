@@ -233,7 +233,7 @@ function injectStyles() {
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
-      font-size: 8px; letter-spacing: 1px; 
+      font-size: 10px; letter-spacing: 1px; 
       color: #7aa68a; font-weight: 600;
     }
     #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
@@ -795,7 +795,7 @@ function renderDetail(container) {
 
     <div class="ts-section">
       <div class="ts-section-head">
-        <div class="ts-section-title">Participant Program</div>
+        <div class="ts-section-title">Local Program</div>
         ${strudelControls}
       </div>
       ${sampleBanksRow}
