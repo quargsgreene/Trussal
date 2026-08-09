@@ -89,7 +89,7 @@ const FX = [
 ];
 
 const MELODIES = [
-  `freq("${createRandomMelody}").s("sawtooth")`,
+  `freq("${createRandomMelody()}").s("sawtooth")`,
   `n("0 3 5 7").scale("C:minor").s("triangle")`,
   `freq("<${createRandomMelody()}>").s("square").slow(2)`,
   `n("0 2 4 [6 7]").scale("D:dorian").s("sine")`,
