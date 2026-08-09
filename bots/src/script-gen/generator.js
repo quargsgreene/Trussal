@@ -20,10 +20,6 @@
 // reports an eval error, and the conductor replaces it — so the bot's video
 // tile drops out (see shouldReplace in ../orchestrator/health.js and the same
 // note in ../shared/audio-math.js). Keep only native-node effects here.
-const FX = [
-  '.vowel("<a e i o>")',
-  '.cutoff(sine.range(300, 2000).slow(4))',
-];
 
 
 
@@ -46,6 +42,19 @@ function createRandomDrumPattern() {
   for( let i = 0; i < repeats; i++) {
     pattern += `${drumOptions[Math.floor(Math.random() * drumOptions.length)]}*${Math.floor(Math.random() * 4) + 1} ${Math.random() < 0.5 ? '~' : ''} `;
   }
+  return pattern;
+}
+
+function createRandomMelody() {
+  let freqs = 0;
+  let patternLength = Math.floor(23 * Math.random()) + 1;
+  let pattern = '';
+
+  for(let i = 0; i < patternLength; i++){
+    let currentFreq = Math.max(20000, Math.floor(20000 * Math.random()) + 20);
+    pattern += currentFreq + ' ';
+  }
+
   return pattern;
 }
 
@@ -74,10 +83,15 @@ const DRUMS = [
   `s("${createRandomDrumPattern()}")`,
 ];
 
+const FX = [
+  '.vowel("<a e i o>")',
+  '.cutoff(sine.range(300, 2000).slow(4))',
+];
+
 const MELODIES = [
-  `note("c3 eb3 g3 bb3").s("sawtooth")`,
+  `freq("${createRandomMelody}").s("sawtooth")`,
   `n("0 3 5 7").scale("C:minor").s("triangle")`,
-  `note("<c2 f2 g2 bb1>").s("square").slow(2)`,
+  `freq("<${createRandomMelody()}>").s("square").slow(2)`,
   `n("0 2 4 [6 7]").scale("D:dorian").s("sine")`,
 ];
   const strudel = [
