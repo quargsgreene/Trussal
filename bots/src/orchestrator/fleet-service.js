@@ -1136,6 +1136,7 @@ export class FleetService {
       ? {
         strudel: configured.strudel,
         hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra,
+        text: configured.text,
         announceStrudel: configured.announceStrudel,
       }
       : configured;

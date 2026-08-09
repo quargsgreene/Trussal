@@ -19,7 +19,7 @@ import {
 
 export class Bot {
   /**
-   * @param {object} cfg  { botId, name, jitsiUrl, script: {strudel, hydra, entryDelayMs}, executablePath? }
+   * @param {object} cfg  { botId, name, jitsiUrl, script: {strudel, hydra, text, entryDelayMs}, executablePath? }
    * @param {object} deps { launcher } — anything with launch(opts) → browser
    */
   constructor(cfg, { launcher } = {}) {
@@ -108,6 +108,7 @@ export class Bot {
       await this.page.evaluate(pageStrudelBoot, {
         strudel: script.strudel,
         hydra: script.hydra,
+        text: script.text,
         // What gets announced to peer-state differs from what this REPL
         // evaluates whenever textParrot/cssParrot kept a word()/css() voice
         // this REPL can't run — see cluster-source.js's botScriptFor.

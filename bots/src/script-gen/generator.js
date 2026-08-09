@@ -46,7 +46,6 @@ function createRandomDrumPattern() {
 }
 
 function createRandomMelody() {
-  let freqs = 0;
   let patternLength = Math.floor(23 * Math.random()) + 1;
   let pattern = '';
 
@@ -57,6 +56,22 @@ function createRandomMelody() {
 
   return pattern;
 }
+
+function createRandomText() {
+  let patternLength = Math.floor(100 * Math.random()) + 1;
+  let chars = 'abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ ';
+  let numChars = chars.length;
+  let pattern = '';
+
+  for(let i = 0; i < patternLength; i++){
+    let currentCharIndex = Math.floor(numChars * Math.random());
+    let currentChar = chars[currentCharIndex];
+    pattern += currentChar;
+  }
+
+  return pattern;
+}
+
 
 export function randomMasterScript(seed = Date.now()) {
   const rand = mulberry32(seed);
@@ -94,15 +109,31 @@ const MELODIES = [
   `freq("<${createRandomMelody()}>").s("square").slow(2)`,
   `n("0 2 4 [6 7]").scale("D:dorian").s("sine")`,
 ];
-  const strudel = [
+
+const strudel = [
     'stack(',
     `  ${pick(rand, DRUMS)},`,
     `  ${pick(rand, MELODIES)}${pick(rand, FX)}`,
     ')',
   ].join('\n');
-  const hydra = [
+const hydra = [
     'await initHydra()',
     `${pick(rand, HYDRA_SOURCES)}${pick(rand, HYDRA_MODS)}${pick(rand, HYDRA_MODS)}.out(o0)`,
   ].join('\n');
-  return { strudel, hydra };
+
+const text = [
+  'await initTextCycles()',
+  `
+    $: typeface('Times New Roman').word("<${createRandomText()}>")
+        .weight("400 200 100 800")
+        .slant("<italic none>")
+        .size("<12px 24px 10px 1px>*2")
+        .color("<#346234 #bfe968>")
+        .underline("underline")
+        .spacing("<3px 6px 9px 12px>")
+        .hover("color:#ffffff")
+        .hyperlink("<google.com reddit.com ca.gov devry.edu>")
+`
+].join('\n')
+  return { strudel, hydra, text };
 }

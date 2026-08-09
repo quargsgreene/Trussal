@@ -271,7 +271,7 @@ export function dropCssStatements(strudel) {
  */
 export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } = {}) {
   const config = source?.config ?? defaultBotConfig();
-  const master = source?.master ?? { strudel: '', hydra: '' };
+  const master = source?.master ?? { strudel: '', hydra: '' , text: ''};
 
   // `random: "full"` replaces the human's code outright — "fully randomizes the
   // code of each bot within existing constraints", and the curated palette in
@@ -279,10 +279,11 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // container rebuilds the identical script.
   const base = config.random === 'full'
     ? randomMasterScript(seed + botId + 1)
-    : { strudel: master.strudel || '', hydra: master.hydra || '' };
+    : { strudel: master.strudel || '', hydra: master.hydra || '' , text: master.text || ''};
 
   let strudel = base.strudel;
   let hydra = base.hydra;
+  let text = base.text;
 
   // What OTHER viewers see this bot declare — text/css statements survive
   // here per `textParrot`/`cssParrot`, because that is how they actually
@@ -328,5 +329,5 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
   if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
 
-  return { strudel, hydra, announceStrudel };
+  return { strudel, hydra, text, announceStrudel };
 }
