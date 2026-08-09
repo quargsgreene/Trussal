@@ -226,10 +226,10 @@ function injectStyles() {
       border-radius: 8px;
       background: rgba(255,255,255,0.02);
       padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 8px;
+      display: flex; flex-direction: row; gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:center; justify-content: right;
+      display:flex; align-items:right; justify-content: right;
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
