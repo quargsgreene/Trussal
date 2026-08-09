@@ -233,10 +233,10 @@ function injectStyles() {
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
-      font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+      font-size: 8px; letter-spacing: 1px; 
       color: #7aa68a; font-weight: 600;
     }
-    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:right; flex-wrap:wrap; }
+    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     #${OVERLAY_ID} .ts-btn {
       padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
       font-weight: 600; font-size: 12px;
