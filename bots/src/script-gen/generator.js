@@ -84,7 +84,7 @@ const DRUMS = [
 ];
 
 const FX = [
-  '.vowel("<a e i o>")',
+  '.vib(20)',
   '.cutoff(sine.range(300, 2000).slow(4))',
 ];
 
