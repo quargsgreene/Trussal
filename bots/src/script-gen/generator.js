@@ -51,7 +51,7 @@ function createRandomMelody() {
   let pattern = '';
 
   for(let i = 0; i < patternLength; i++){
-    let currentFreq = Math.max(20000, Math.floor(20000 * Math.random()) + 20);
+    let currentFreq = Math.min(20000, Math.floor(20000 * Math.random()) + 20);
     pattern += currentFreq + ' ';
   }
 
