@@ -39,6 +39,16 @@ function mulberry32(seed) {
 
 const pick = (rand, arr) => arr[Math.floor(rand() * arr.length)];
 
+function createRandomDrumPattern() {
+  const repeats = Math.floor(Math.random() * 10) + 1;
+  const drumOptions = ['bd', 'sd', 'hh', 'cp', 'rim'];
+  let pattern = '';
+  for( let i = 0; i < repeats; i++) {
+    pattern += `${pick(rand, drumOptions)} `;
+  }
+  return pattern.trim();
+}
+
 export function randomMasterScript(seed = Date.now()) {
   const rand = mulberry32(seed);
 
@@ -58,10 +68,10 @@ const HYDRA_MODS = [
 ];
 
 const DRUMS = [
-  `s("bd sd [~ bd] sd")`,
+  `${createRandomDrumPattern()}`,
   `s("bd*2 [~ sd] hh*${Math.random() * 10 + 1} sd")`,
   `s("[bd ~]*${Math.random() * 10 + 1} sd:2 [hh hh] sd")`,
-  `s("bd <sd cp> hh*2 <sd rim>")`,
+  `${createRandomDrumPattern()}`,
 ];
 
 const MELODIES = [
