@@ -795,7 +795,7 @@ function renderDetail(container) {
 
     <div class="ts-section">
       <div class="ts-section-head">
-        <div class="ts-section-title">Strudel</div>
+        <div class="ts-section-title">Participant Program</div>
         ${strudelControls}
       </div>
       ${sampleBanksRow}
