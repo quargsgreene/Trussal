@@ -46,7 +46,7 @@ function createRandomDrumPattern() {
   for( let i = 0; i < repeats; i++) {
     pattern += `${pick(rand, drumOptions)} `;
   }
-  return pattern.trim();
+  return pattern;
 }
 
 export function randomMasterScript(seed = Date.now()) {
@@ -68,10 +68,10 @@ const HYDRA_MODS = [
 ];
 
 const DRUMS = [
-  `${createRandomDrumPattern()}`,
+  `s("${createRandomDrumPattern()}")`,
   `s("bd*2 [~ sd] hh*${Math.random() * 10 + 1} sd")`,
   `s("[bd ~]*${Math.random() * 10 + 1} sd:2 [hh hh] sd")`,
-  `${createRandomDrumPattern()}`,
+  `s("${createRandomDrumPattern()}")`,
 ];
 
 const MELODIES = [
