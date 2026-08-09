@@ -86,15 +86,15 @@ export function mapNumericLiterals(code, fn) {
   while (i < src.length) {
     const ch = src[i];
 
-    // if (quote) {
-    //   out += ch;
-    //   if (ch === '\\') { out += src[i + 1] ?? ''; i += 2; continue; }
-    //   if (ch === quote) quote = null;
-    //   i++;
-    //   continue;
-    // }
+    if (quote) {
+      out += ch;
+      if (ch === '\\') { out += src[i + 1] ?? ''; i += 2; continue; }
+      if (ch === quote) quote = null;
+      i++;
+      continue;
+    }
 
-    // if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; i++; continue; }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; i++; continue; }
 
     // Line and block comments pass through verbatim.
     if (ch === '/' && src[i + 1] === '/') {
@@ -114,7 +114,7 @@ export function mapNumericLiterals(code, fn) {
 
     const prev = src[i - 1] ?? '';
     // Attached to a name (o0, s0, hpf2) or a property access — not a literal.
-    if (/[\w$]/.test(prev) || (ch !== '.' && prev === '.')) { out += ch; i++; continue; }
+    // if (/[\w$]/.test(prev) || (ch !== '.' && prev === '.')) { out += ch; i++; continue; }
 
     let j = i;
     while (j < src.length && src[j] >= '0' && src[j] <= '9') j++;
