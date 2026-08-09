@@ -301,7 +301,7 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // Trussal's installTextCycles/installCssCycles, so `word`/`css`/their init
   // calls are undefined there. Parroting is a broadcast-only concept — the
   // bot's own eval can never run either, parrot flag or not.
-  strudel = dropCssStatements(dropTextStatements(strudel));
+  // strudel = dropCssStatements(dropTextStatements(strudel));
 
   // Numeric shaping. paramFactor is the deterministic sibling of
   // random:"params"; when both are set the factor is applied first so the
