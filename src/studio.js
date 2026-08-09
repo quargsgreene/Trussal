@@ -226,14 +226,14 @@ function injectStyles() {
       border-radius: 8px;
       background: rgba(255,255,255,0.02);
       padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 6px;
+      display: flex; flex-direction: column; gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-head {
       display:flex; align-items:center; justify-content:space-between;
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
-      font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+      font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
       color: #7aa68a; font-weight: 600;
     }
     #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
@@ -796,7 +796,7 @@ function renderDetail(container) {
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Participant Program</div>
-        ${srudelControls}
+        ${strudelControls}
       </div>
       ${sampleBanksRow}
       ${codeBlock}
