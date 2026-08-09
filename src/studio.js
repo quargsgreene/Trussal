@@ -800,8 +800,6 @@ function renderDetail(container) {
       </div>
       ${sampleBanksRow}
       ${codeBlock}
-      ${isLocal ? '<div class="ts-sliders ts-strudel-sliders"></div>' : ''}
-      ${isLocal ? '<div class="ts-voice-btns"></div>' : ''}
     </div>
 
     <div class="ts-status">${escapeHtml(status)}</div>
