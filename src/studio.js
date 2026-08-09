@@ -225,8 +225,8 @@ function injectStyles() {
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
       background: rgba(255,255,255,0.02);
-      padding: 10px 12px;
-      display: flex; flex-direction: column; gap: 8px;
+      padding: 8px 10px;
+      display: flex; flex-direction: column; gap: 6px;
     }
     #${OVERLAY_ID} .ts-section-head {
       display:flex; align-items:center; justify-content:space-between;
@@ -796,7 +796,7 @@ function renderDetail(container) {
     <div class="ts-section">
       <div class="ts-section-head">
         <div class="ts-section-title">Participant Program</div>
-        ${strudelControls}
+        ${srudelControls}
       </div>
       ${sampleBanksRow}
       ${codeBlock}
