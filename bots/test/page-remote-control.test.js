@@ -16,7 +16,11 @@ import { INIT_TEXT_CYCLES_PATTERN } from '../../src/text-cycles-core.js';
  * prepended the bot's stored Hydra, which produced two preambles and a REPL
  * that threw instead of playing.
  */
-function installControl({ hydra = '', patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_CYCLES_PATTERN] } = {}) {
+function installControl({
+  hydra = '',
+  patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_CYCLES_PATTERN],
+  evaluateThrows = false,
+} = {}) {
   const listeners = new Map();
   const evaluated = [];
   const errors = [];
@@ -24,7 +28,9 @@ function installControl({ hydra = '', patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_
   const editor = {
     editor: {
       setCode(code) { evaluated.push(code); },
-      async evaluate() {},
+      async evaluate() {
+        if (evaluateThrows) throw new Error('bad pattern');
+      },
     },
     setAttribute() {},
   };
@@ -113,4 +119,17 @@ test('a malformed pattern is reported and does not disable editing', async () =>
 
   assert.equal(ctl.errors.length, 1, 'the bad pattern must surface, not pass silently');
   assert.equal(ctl.evaluated.length, 1, 'the edit must still be applied');
+});
+
+test('a failing operator edit does not feed the fleet-health replace channel', async () => {
+  const ctl = installControl({ hydra: '', evaluateThrows: true });
+  await ctl.push('s("bd sd")'); // throws inside evaluate(), must not escape the handler
+
+  assert.equal(ctl.evaluated.length, 1, 'setCode still ran with the pasted code');
+  assert.equal(ctl.errors.length, 0,
+    'an eval failure on a live operator edit must not be reported via ' +
+    '__trussalReportError — that array is healthTick\'s "replace this bot" ' +
+    'signal, and routing edit failures there gets the bot killed and ' +
+    'respawned with its original script within one health tick, which reads ' +
+    'as the pasted code reverting');
 });

@@ -240,7 +240,18 @@ export function pageRemoteControl(preamblePatterns) {
         if (ed && typeof ed.evaluate === 'function') await ed.evaluate();
       }
     } catch (err) {
-      if (window.__trussalReportError) window.__trussalReportError(err);
+      // Deliberately NOT window.__trussalReportError: that array feeds
+      // healthTick's "bot executed syntactically incorrect code → terminate
+      // and replace" policy (see pageStrudelBoot), meant for a broken SPAWN
+      // script — a fleet-generation bug worth killing the bot over. An
+      // operator's live edit throwing (routine — the bot's REPL is bare
+      // vanilla @strudel/repl with no Trussal capabilities registered, so
+      // anything using word()/css()/botConfig()/data-pack refs/etc. throws)
+      // is not that: reporting it there got the bot replaced within one
+      // healthTick (5s), silently discarding the edit and restoring the
+      // fleet-generated script — reading as "pasted code immediately
+      // reverts" with the edit never actually rejected, just erased.
+      console.error('[trussal] remote pattern eval failed', err);
     }
   });
   document.addEventListener('trussal-remote-mute', (e) => {
