@@ -125,10 +125,9 @@ const text = textPatternFrom(rand);
   return { strudel, hydra, text };
 }
 
-// The word()-voice template, shared by randomMasterScript (which already has
-// a live `rand`) and randomTextPattern (a standalone seed for a bot that has
-// no other reason to call randomMasterScript at all — see cluster-source.js's
-// botScriptFor, which gives every bot its own text voice by default).
+// The word()-voice template for randomMasterScript's `text` field — the
+// curated palette's own words, which only a `random: "full"` cluster ever
+// plays (see cluster-source.js's botScriptFor).
 function textPatternFrom(rand) {
   return [
     'await initTextCycles()',
@@ -153,9 +152,4 @@ function textPatternFrom(rand) {
         .hover("color:#ffffff")
         .hyperlink("<google.com reddit.com ca.gov devry.edu>")`,
   ].join('\n');
-}
-
-/** A standalone, seeded word() voice — see textPatternFrom. */
-export function randomTextPattern(seed = Date.now()) {
-  return textPatternFrom(mulberry32(seed));
 }

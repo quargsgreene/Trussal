@@ -29,7 +29,7 @@ import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
-import { randomMasterScript, randomTextPattern } from './generator.js';
+import { randomMasterScript } from './generator.js';
 import {
   applyParamFactor,
   colorHydraSuffix,
@@ -338,23 +338,19 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
   announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
 
-  // Every bot gets a word() voice of its own to take its turn with — that is
-  // the whole point of a cluster having text scheduling at all, and it can't
-  // depend on the human opting into textParrot (repeating THEIR words) or
-  // random:"full" (replacing their whole cluster). `generatedText` already
-  // covers the latter; the former is `WORD_CALL_RE.test(announceStrudel)` —
-  // if the performer's own words already survived the parrot gate above,
-  // this bot already has something to show and doesn't need an invented one
-  // stacked alongside it. Seeded per bot (offset clear of every other
-  // seed+botId use in this function) so a replacement bot repeats the same
-  // words rather than drawing new ones.
-  const ownText = generatedText.trim() ? generatedText
-    : WORD_CALL_RE.test(announceStrudel) ? ''
-    : randomTextPattern(seed + botId + 401);
-  if (ownText.trim()) {
+  // A cluster built from a performer's own code plays only what is actually
+  // in their editor — the same rule the audio side already follows. Only
+  // `random: "full"` invents anything: it abandons the human's code for the
+  // curated palette outright, and `generatedText` is that palette's word()
+  // voice riding along with it. Every other cluster (identical copy,
+  // paramFactor, random:"params", harmony, ...) carries no words unless the
+  // performer wrote some and textParrot kept them alive above — inventing a
+  // voice for those would mean a bot's announced pattern no longer matches
+  // what was in the human's editor when they spawned it.
+  if (generatedText.trim()) {
     announceStrudel = announceStrudel.trim()
-      ? `${announceStrudel}\n\n${ownText}`
-      : ownText;
+      ? `${announceStrudel}\n\n${generatedText}`
+      : generatedText;
   }
 
   // What the bot's OWN REPL evaluates. ALWAYS stripped of both, regardless of

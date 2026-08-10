@@ -80,6 +80,12 @@ test('no declaration at all also makes exact copies', () => {
   assert.equal(script.strudel, 's("bd sd")');
 });
 
+test('an exact-copy bot announces exactly what was in the human editor, not an invented word() voice', () => {
+  const source = capture('botConfig()\ns("bd sd").cutoff(800)');
+  const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
+  assert.equal(script.announceStrudel, 's("bd sd").cutoff(800)');
+});
+
 // --- Individual properties ---------------------------------------------------
 
 test('paramFactor scales parameters but not mini notation', () => {
@@ -116,6 +122,10 @@ test('random:"full" abandons the human code for the curated palette', () => {
   assert.ok(!script.strudel.includes('1234'), 'including its parameters');
   assert.equal(validateCode(script.strudel).ok, true, 'and the replacement is valid');
   assert.equal(validateCode(script.hydra).ok, true);
+  // The curated palette's own word() voice rides along too — the whole point
+  // of "full" is that nothing about the human's editor survives, words
+  // included, so this is the one mode that still gets an invented voice.
+  assert.match(script.announceStrudel, /\bword\(/);
 });
 
 test('harmony spreads a cluster into a voicing, leaving bot 0 at pitch', () => {
@@ -152,12 +162,11 @@ test('announceStrudel reflects random:"params", identically to what plays', () =
   const source = capture('botConfig({ random: "params" })\ns("bd").cutoff(400)');
   const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
   assert.notEqual(script.announceStrudel, 's("bd").cutoff(400)', 'must not be the unshaped original');
-  // No textParrot/cssParrot in play, so the announced text must OPEN with the
-  // exact audio the bot's own REPL evaluates — the editor showing exactly
-  // what is streaming. (Every bot also gets its own generated word() voice
-  // appended after, unrelated to this fix — see the "own word() voice"
-  // comment in botScriptFor — so this is startsWith, not full equality.)
-  assert.ok(script.announceStrudel.startsWith(script.strudel));
+  // No textParrot/cssParrot in play and nothing generated (random:"params"
+  // reshapes the human's own code, it doesn't invent a voice), so the
+  // announced text must be exactly the audio the bot's own REPL evaluates —
+  // the editor showing exactly what is streaming.
+  assert.equal(script.announceStrudel, script.strudel);
 });
 
 test('announceStrudel reflects harmony', () => {
@@ -197,14 +206,13 @@ test('colorScheme on a bot with no hydra adds nothing', () => {
 // which is what parroting actually controls: it is picked up and painted by
 // every OTHER performer's own browser (buildBotSilentBlock in strudel.js).
 
-test('text statements are dropped from eval; the performer\'s own words are not parroted unless textParrot is set, but the bot still gets its own word() voice for its turn', () => {
+test('text statements are dropped from eval; the performer\'s own words are not parroted unless textParrot is set, and no invented voice replaces them', () => {
   const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('word('), 'a cluster must not repeat its author\'s words');
   assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
-  assert.ok(!script.announceStrudel.includes('word("hello")'), 'the performer\'s own words are not parroted by default');
-  assert.match(script.announceStrudel, /\bword\(/, 'the bot still gets a word() voice of its own to take its turn with');
+  assert.ok(!script.announceStrudel.includes('word('), 'the performer\'s own words are not parroted by default, and none are invented in their place');
 });
 
 test('textParrot:true keeps word() in announce but NEVER in eval', () => {
