@@ -721,9 +721,19 @@ function renderDetail(container) {
   // peerId still distinguishes one peer's tile from another's just as well,
   // since it's unique and never reused.
   const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? 'local' : String(peer.peerId || peer.jitsiId || ''))}"`;
+  // data-pattern-baseline is the peer.pattern this render just painted the box
+  // FROM — renderAll's focused-remote-tile guard compares the live DOM value
+  // against it to tell "the operator is mid-edit, not yet sent" (diverged from
+  // baseline: preserve their typing) apart from "nothing typed since the last
+  // sync" (still equals baseline: a genuinely new peer.pattern — e.g. a
+  // retroactive botConfig relatch changing what the bot is actually playing —
+  // is safe to show even while the tile is focused). Without this, watching a
+  // bot's tile while its owner's retroactive edit lands showed the bot's audio
+  // audibly change while the box kept displaying the old text indefinitely.
+  const patternBaselineAttr = ` data-pattern-baseline="${escapeHtml(peer.pattern || '')}"`;
   const codeBlock = isLocal
-    ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
-    : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
+    ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
+    : `<textarea class="ts-code"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
 
   const muteBtn = (!isLocal && peer.isBot)
     ? `<button class="ts-btn mute${peer.muted ? ' on' : ''}" data-action="mute">${peer.muted ? '🔇 Muted' : '🔈 Mute'}</button>`
@@ -1171,15 +1181,39 @@ function renderAll() {
       // code above the cursor; (2) on mobile, swapping the focused node's
       // identity mid-keystroke resets the virtual keyboard's autocomplete/
       // composition state, flickering the prediction bar and occasionally
-      // dropping a character. Skip the rebuild outright while typing — the
-      // panel catches back up to fresh metrics/state on the next tick after
-      // the user blurs.
-      if (isCodeFocused) return;
+      // dropping a character. Skip the FULL rebuild outright while typing —
+      // the panel catches back up to fresh metrics/state on the next tick
+      // after the user blurs.
+      if (isCodeFocused) {
+        // A remote/bot tile is still allowed ONE kind of update while
+        // focused: syncing its value in place (no DOM node churn, so none of
+        // the above breaks) when peer.pattern has genuinely changed AND the
+        // operator hasn't started an unsent edit of their own — still equal
+        // to data-pattern-baseline, the peer.pattern this box was last
+        // painted from. Without this, watching a bot's tile while a
+        // retroactive botConfig relatch (or another operator's edit) lands
+        // showed the box frozen on old text next to audibly different audio,
+        // with no way to tell the two had diverged.
+        const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
+        if (existingCodeEl && !isLocalEditor
+            && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
+          const peer = getPeerByJitsiId(selectedJitsiId);
+          const peerKey = peer ? String(peer.peerId || peer.jitsiId || '') : null;
+          const live = peer && peerKey === existingCodeEl.dataset.peerKey ? (peer.pattern || '') : null;
+          if (live != null && live !== existingCodeEl.value) {
+            existingCodeEl.value = live;
+            existingCodeEl.dataset.patternBaseline = live;
+            renderVoiceButtons(detail, live);
+          }
+        }
+        return;
+      }
       const codeValue = existingCodeEl ? existingCodeEl.value : null;
       const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
       // Local edits are kept across re-renders (they only hit the bus on eval).
       // isCodeFocused is always false here (the focused case already returned
-      // above), so this only covers the unfocused-but-scrolled local editor.
+      // above), so this only covers the unfocused-but-scrolled local editor —
+      // an unfocused remote tile always refreshes to the live peer.pattern.
       const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
       // Captured whenever the value is going to be preserved: a mouse-wheel
       // scroll doesn't focus the textarea, and every peer-state tick (every
@@ -1203,6 +1237,9 @@ function renderAll() {
       // selected tiles must show the newly-selected peer's pattern, not the old one.
       const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
       if (samePeer) detail.scrollTop = detailScrollTop;
+      // isCodeFocused is always false past this point (the focused case
+      // returned above), so there is no cursor/selection to restore here —
+      // only the unfocused-but-scrolled local editor's value and scroll.
       if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
         nextCodeEl.value = codeValue;
         if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;

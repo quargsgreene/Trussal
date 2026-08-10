@@ -770,8 +770,16 @@ export function extractKeyframes(src) {
 
 // --- Statement rewriting -----------------------------------------------------
 
+const INIT_CSS_RE = /^\s*await\s+initCss\s*\(/m;
+
+// The declaration rule as a serialisable descriptor, for consumers that
+// cannot import a module — mirrors INIT_TEXT_CYCLES_PATTERN/INIT_HYDRA_PATTERN
+// for the bot's page scripts, which are function bodies handed to Chromium by
+// puppeteer and can only receive JSON.
+export const INIT_CSS_PATTERN = { source: INIT_CSS_RE.source, flags: INIT_CSS_RE.flags };
+
 export function hasCssCycles(code) {
-  return /^\s*await\s+initCss\s*\(/m.test(String(code ?? ''));
+  return INIT_CSS_RE.test(String(code ?? ''));
 }
 
 // `css(` in any position, including chained.

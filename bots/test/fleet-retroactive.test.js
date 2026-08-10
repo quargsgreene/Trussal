@@ -240,3 +240,37 @@ test('an edit from a bot is ignored', async () => {
     assert.equal(drives(sent).length, 0, 'a bot cannot re-source its own cluster');
   });
 });
+
+test('a direct edit to one bot cancels its stale queued relatch, without touching its sibling', async () => {
+  // Reproduces "eval button still reverts the code": an operator pastes new
+  // code straight into one bot's own tile (a peer-update for THAT bot's own
+  // peerId — what the server broadcasts back after a studio remote-control
+  // edit, or after #relatchToken's own send). If a retroactive edit from
+  // earlier in the session already queued a relatch for that same bot
+  // (pendingRelatch, not yet consumed because its ring turn hadn't come up),
+  // the queued relatch must not survive to clobber the fresh, more-recent
+  // state on the bot's next turn.
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, 'botConfig({ retroactive: true })\ns("cp:3")');
+    await joinBots(fleet);
+
+    await edit(fleet, 'botConfig({ retroactive: true })\ns("rim:7")'); // queues 1a AND 1b
+
+    // The operator directly pastes into 1a's own tile and evals — the server
+    // round-trips this back as a peer-update for peer-1a.
+    await fleet.handleBusMessage(
+      { type: 'peer-update', peerId: 'peer-1a', patch: { pattern: 's("hh*8")' } },
+      ROOM,
+    );
+
+    await turn(fleet, '1a');
+    assert.equal(drives(sent).length, 0,
+      'the stale queued relatch for 1a must not fire and overwrite the manual edit');
+
+    // 1b's queued relatch was untouched by an edit that only named 1a.
+    await turn(fleet, '1b');
+    assert.equal(drives(sent).length, 1);
+    assert.equal(drives(sent)[0].targetPeerId, 'peer-1b');
+    assert.match(drives(sent)[0].code, /rim:7/);
+  });
+});

@@ -9,7 +9,8 @@
  */
 
 import { INIT_HYDRA_PATTERN } from '../../../src/hydra-code.js';
-import { INIT_TEXT_CYCLES_PATTERN } from '../../../src/text-cycles-core.js';
+import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
+import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
@@ -55,7 +56,18 @@ export class Bot {
     await this.page.evaluateOnNewDocument(pageRemoteControl, [
       INIT_HYDRA_PATTERN,
       INIT_TEXT_CYCLES_PATTERN,
-    ]);
+    ], {
+      // Same reasoning, same JSON-only constraint: the bot's own REPL is bare
+      // vanilla Strudel (see pageStrudelBoot), so word()/css() and their init
+      // calls are undefined there. cluster-source.js strips these from a
+      // bot's GENERATED script before it ever reaches this REPL
+      // (dropTextStatements/dropCssStatements) — pageRemoteControl needs the
+      // same patterns to do the same strip on a manually-pushed edit.
+      word: { source: WORD_CALL_RE.source, flags: WORD_CALL_RE.flags },
+      css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
+      initTextCycles: INIT_TEXT_CYCLES_PATTERN,
+      initCss: INIT_CSS_PATTERN,
+    });
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);

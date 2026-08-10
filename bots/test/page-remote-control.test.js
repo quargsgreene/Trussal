@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 
 import { pageRemoteControl } from '../src/bot/page-scripts.js';
 import { INIT_HYDRA_PATTERN } from '../../src/hydra-code.js';
-import { INIT_TEXT_CYCLES_PATTERN } from '../../src/text-cycles-core.js';
+import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../src/text-cycles-core.js';
+import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../src/css-cycles-core.js';
+
+const DEFAULT_CAPABILITY_PATTERNS = {
+  word: { source: WORD_CALL_RE.source, flags: WORD_CALL_RE.flags },
+  css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
+  initTextCycles: INIT_TEXT_CYCLES_PATTERN,
+  initCss: INIT_CSS_PATTERN,
+};
 
 /**
  * Runs the page-side operator-control listener outside a browser: a fake
@@ -14,11 +22,15 @@ import { INIT_TEXT_CYCLES_PATTERN } from '../../src/text-cycles-core.js';
  * medium its human's is, so an edit carrying its own `await initHydra(` /
  * `await initTextCycles(` preamble must land verbatim — the old handler always
  * prepended the bot's stored Hydra, which produced two preambles and a REPL
- * that threw instead of playing.
+ * that threw instead of playing. They also pin the capability strip: the
+ * bot's own REPL is bare vanilla Strudel with no word()/css(), so a pushed
+ * edit carrying either must be stripped before this REPL evaluates it, the
+ * same way cluster-source.js strips a bot's GENERATED script.
  */
 function installControl({
   hydra = '',
   patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_CYCLES_PATTERN],
+  capabilityPatterns = DEFAULT_CAPABILITY_PATTERNS,
   evaluateThrows = false,
 } = {}) {
   const listeners = new Map();
@@ -45,7 +57,7 @@ function installControl({
   };
   global.console = console;
 
-  pageRemoteControl(patterns);
+  pageRemoteControl(patterns, capabilityPatterns);
 
   return {
     evaluated,
@@ -80,13 +92,47 @@ test('an edit with its own Hydra preamble lands verbatim, not doubled', async ()
   assert.equal(preambles.length, 1, 'exactly one preamble must survive');
 });
 
-test('an edit declaring Text Cycles lands verbatim', async () => {
+test('a pure Text Cycles edit is stripped to silence, not evaluated verbatim', async () => {
+  // Unlike the Hydra preamble case, this REPL is bare vanilla Strudel — it has
+  // no word()/initTextCycles() registered at all, so evaluating this verbatim
+  // throws. The text itself still reaches other viewers' parrot mechanism via
+  // the ANNOUNCED peer.pattern (unaffected by this function, which only
+  // controls what this bot's own REPL runs), so nothing is lost by stripping
+  // it here — just made safe to evaluate.
   const ctl = installControl({ hydra: 'await initHydra()\nosc(10).out(o0)' });
   const pushed = 'await initTextCycles()\n\nword("hello world")';
   await ctl.push(pushed);
 
-  assert.equal(ctl.evaluated[0], pushed);
-  assert.ok(!ctl.evaluated[0].includes('initHydra'), 'the bot Hydra must not be prepended');
+  assert.equal(ctl.evaluated[0], 'silence');
+  assert.equal(ctl.storedHydra(), '', 'a self-describing edit still forgets the stored hydra');
+});
+
+test('a mixed edit keeps its audio and drops only the word() voice', async () => {
+  const ctl = installControl({ hydra: '' });
+  const pushed = 'word("hello")\n\ns("bd sd")';
+  await ctl.push(pushed);
+
+  assert.equal(ctl.evaluated[0], 's("bd sd")');
+});
+
+test('a mixed edit keeps its audio and drops only the css() voice', async () => {
+  const ctl = installControl({ hydra: '' });
+  const pushed = 'css(`body { color: red }`)\n\ns("bd sd")';
+  await ctl.push(pushed);
+
+  assert.equal(ctl.evaluated[0], 's("bd sd")');
+});
+
+test('a text/css voice is stripped from the pushed audio before it is recombined with the stored hydra', async () => {
+  const ctl = installControl({ hydra: 'await initHydra()\nosc(10).out(o0)' });
+  // No blank line between the word() call and the audio pattern — stripping
+  // pre-combine (see forBotRepl) is what keeps this from merging the hydra
+  // preamble into the same dropped unit.
+  await ctl.push('word("hi")\n\ns("bd sd")');
+
+  assert.match(ctl.evaluated[0], /initHydra/);
+  assert.match(ctl.evaluated[0], /s\("bd sd"\)/);
+  assert.ok(!ctl.evaluated[0].includes('word('), 'the word() voice must not reach the bare REPL');
 });
 
 test('a self-describing edit clears the stored Hydra so it cannot come back', async () => {

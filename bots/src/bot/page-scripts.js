@@ -201,19 +201,77 @@ export function pageIsActiveAggregator() {
  * bot's stored Hydra there would produce two preambles and a dead REPL. An edit
  * that is only Strudel still recombines, so tweaking a bot's audio doesn't
  * silently take away the visual it was given at spawn.
+ *
+ * `capabilityPatterns` ({word, css, initTextCycles, initCss}, each a
+ * {source,flags} descriptor — same JSON-only constraint) is what a pushed edit
+ * gets stripped of before this REPL ever sees it. The bot's own REPL is bare
+ * vanilla @strudel/repl (see pageStrudelBoot) — word()/css()/their init calls
+ * are undefined there, exactly why cluster-source.js's
+ * dropTextStatements/dropCssStatements strip the same statements from a bot's
+ * GENERATED script before it ever reaches this REPL. A manual edit skipped
+ * that step entirely: pasting anything with a text/css voice (likely, since
+ * it's naturally copied from a performer's own full-featured editor) threw on
+ * evaluate() — silently now that the catch below no longer feeds healthTick,
+ * which read as "the audio never follows what I typed." dropCapability below
+ * mirrors dropCapabilityParagraphs' paragraph/label-line splitting, without
+ * its stack()-sibling-salvage refinement: a manual edit to one bot's tile
+ * isn't the multi-voice cluster-authoring shape that refinement exists for.
  */
-export function pageRemoteControl(preamblePatterns) {
+export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   const patterns = Array.isArray(preamblePatterns) ? preamblePatterns : [];
-  const declaresOwnPreamble = (code) => patterns.some(({ source, flags }) => {
+  const toRegex = (p) => {
+    if (!p || typeof p.source !== 'string') return null;
     try {
-      return new RegExp(source, flags || '').test(code);
+      return new RegExp(p.source, p.flags || '');
     } catch (err) {
       // A malformed pattern must not silently disable remote editing.
       if (window.__trussalReportError) window.__trussalReportError(err);
-      else console.error('[trussal] bad preamble pattern', err);
-      return false;
+      else console.error('[trussal] bad capability pattern', err);
+      return null;
     }
+  };
+  const declaresOwnPreamble = (code) => patterns.some(({ source, flags }) => {
+    const re = toRegex({ source, flags });
+    return re ? re.test(code) : false;
   });
+
+  const cap = capabilityPatterns || {};
+  const dropPairs = [
+    [toRegex(cap.initTextCycles), toRegex(cap.word)],
+    [toRegex(cap.initCss), toRegex(cap.css)],
+  ].filter(([initRe, callRe]) => initRe && callRe);
+  const LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
+  const splitLabelUnits = (text) => {
+    const lines = text.split('\n');
+    const out = [];
+    let cur = [];
+    for (const line of lines) {
+      if (LABEL_RE.test(line) && cur.length) { out.push(cur.join('\n')); cur = []; }
+      cur.push(line);
+    }
+    if (cur.length) out.push(cur.join('\n'));
+    return out;
+  };
+  const dropCapability = (src, initRe, callRe) => {
+    if (!initRe.test(src) && !callRe.test(src)) return src;
+    const kept = src.split(/\n\n+/).map((paragraph) => {
+      if (!paragraph.trim()) return null;
+      const survivors = splitLabelUnits(paragraph)
+        .filter((unit) => !initRe.test(unit) && !callRe.test(unit));
+      return survivors.length ? survivors.join('\n') : null;
+    }).filter((p) => p !== null);
+    return kept.join('\n\n').trim();
+  };
+  // Strip BEFORE joining with the stored hydra preamble, not after: that join
+  // is a bare ';\n' rather than a blank line, so a paragraph/label split run
+  // on the already-combined text could merge the hydra preamble into a
+  // dropped unit whenever the pushed audio has no blank-line separation of
+  // its own from a leading word()/css() statement.
+  const forBotRepl = (pushed) => {
+    let out = pushed;
+    for (const [initRe, callRe] of dropPairs) out = dropCapability(out, initRe, callRe);
+    return out.trim() ? out : 'silence';
+  };
 
   document.addEventListener('trussal-remote-pattern', async (e) => {
     const pushed = e && e.detail && e.detail.code;
@@ -226,7 +284,8 @@ export function pageRemoteControl(preamblePatterns) {
     // edits in the studio is that whole program — prepending the stored
     // preamble to it would evaluate two of them.
     const ownPreamble = declaresOwnPreamble(pushed);
-    const code = hydra && !ownPreamble ? `${hydra};\n${pushed}` : pushed;
+    const playable = forBotRepl(pushed);
+    const code = hydra && !ownPreamble ? `${hydra};\n${playable}` : playable;
     // Once an edit brings its own preamble, the pushed text is the whole
     // program and the spawn-time Hydra is no longer part of it. Forget it, so a
     // later audio-only edit doesn't resurrect a visual the operator replaced.

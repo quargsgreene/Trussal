@@ -405,11 +405,26 @@ export class FleetService {
         break;
       }
       case 'peer-update':
-        // A human edited their editor. Only a `retroactive: true` config acts on
-        // it; every other edit is left for the next spawn to capture, so a bot
-        // keeps playing what its author was playing when it arrived.
         if (msg.patch && typeof msg.patch.pattern === 'string') {
-          this.#handlePerformerEdit(room, msg.peerId, msg.patch.pattern);
+          const who = this.#indexForPeerId(room, msg.peerId);
+          if (who && who.isBot) {
+            // Whatever just set THIS bot's pattern — an operator's direct
+            // remote-eval on its own tile, or #relatchToken's own echo of a
+            // relatch it just sent — is that bot's authoritative state now.
+            // A relatch queued earlier (from some other retroactive edit,
+            // not yet consumed because this bot's ring turn hadn't come up)
+            // would otherwise land on the NEXT turn and silently clobber
+            // whichever of those just took effect — reading as "my manual
+            // edit to this bot reverted" with no edit of its own involved.
+            const state = this.#existingRoom(room);
+            if (state) state.pendingRelatch.delete(who.index);
+          } else {
+            // A human edited their editor. Only a `retroactive: true` config
+            // acts on it; every other edit is left for the next spawn to
+            // capture, so a bot keeps playing what its author was playing
+            // when it arrived.
+            this.#handlePerformerEdit(room, msg.peerId, msg.patch.pattern);
+          }
         }
         break;
       case 'nc-active':
