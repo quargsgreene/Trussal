@@ -22,14 +22,15 @@ test('rewrites numeric parameters outside strings', () => {
   assert.equal(out, 'osc(20, 0.2, 2.4).out(o0)');
 });
 
-test('leaves mini notation alone', () => {
-  const code = 's("bd*2 [~ sd] hh*4")';
+test('leaves pattern structure inside mini notation alone', () => {
+  // *2/*4 (repeat), :3 (sample-bank index) are structure, not values.
+  const code = 's("bd*2 [~ sd] hh*4 cp:3")';
   assert.equal(applyParamFactor(code, 3), code);
 });
 
-test('leaves note names and scales alone', () => {
-  const code = 'n("0 3 5 7").scale("C:minor")';
-  assert.equal(applyParamFactor(code, 5), code);
+test('leaves note names alone but scales bare degrees inside a string', () => {
+  assert.equal(applyParamFactor('note("c3 e3 g3")', 5), 'note("c3 e3 g3")');
+  assert.equal(applyParamFactor('n("0 3 5 7").scale("C:minor")', 5), 'n("0 15 25 35").scale("C:minor")');
 });
 
 test('rewrites the parameter but not the mini string beside it', () => {
@@ -48,8 +49,23 @@ test('does not touch digits inside a comment', () => {
 });
 
 test('handles an escaped quote without losing string state', () => {
+  // The escaped quotes don't stop the "2" inside from being a value token.
   const code = 'word("say \\"2\\" twice").cutoff(100)';
-  assert.equal(applyParamFactor(code, 2), 'word("say \\"2\\" twice").cutoff(200)');
+  assert.equal(applyParamFactor(code, 2), 'word("say \\"4\\" twice").cutoff(200)');
+});
+
+test('rewrites bare value tokens inside a quoted pattern, keeping them quoted', () => {
+  assert.equal(applyParamFactor('.cutoff("800 1200")', 2), '.cutoff("1600 2400")');
+});
+
+test('a range operator inside mini notation is not swallowed as a decimal point', () => {
+  const out = applyParamFactor('n("0..7")', 2);
+  assert.equal(out, 'n("0..14")');
+});
+
+test('leaves polymeter step counts, weights, slow and degrade operators alone', () => {
+  const code = 's("bd@3 hh%8 sd/2 cp?0.3")';
+  assert.equal(applyParamFactor(code, 9), code);
 });
 
 test('preserves integer-ness and never collapses a non-zero to zero', () => {

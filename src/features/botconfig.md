@@ -57,9 +57,15 @@ which is what made a config that never arrived look identical to one that did.
 ## How each property behaves
 
 **Numeric shaping.** `paramFactor` and `random: "params"` rewrite numeric
-*literals* only, and only outside strings. `s("bd*2 sd").cutoff(800)` keeps its
-`*2` — that is pattern structure — while the cutoff moves. When both are set the
-factor applies first, and the jitter is measured around the scaled value.
+*literals*, including bare values inside a quoted mini-notation string —
+`n("0 2 4")`'s scale degrees and `.cutoff("800 1200")`'s pattern values move
+exactly like `.cutoff(800)` does, staying inside their original quotes. What
+stays put is pattern *structure*: `s("bd*2 sd:3").cutoff(800)` keeps its `*2`
+(repeat count) and `:3` (sample-bank index) — along with `!` (replicate), `@`
+(weight), `%` (polymeter steps), `/` (slow) and `?` (degrade probability) —
+while the cutoff moves; and `note("c3 e3")`/`src(s0).out(o1)` keep their note
+names and channel identifiers, quoted or not. When both are set the factor
+applies first, and the jitter is measured around the scaled value.
 
 **Harmony** is measured along your cluster: bot 0 stays at pitch and each
 subsequent bot moves one step further, so a cluster of four spells a four-note

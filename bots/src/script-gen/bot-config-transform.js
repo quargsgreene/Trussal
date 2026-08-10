@@ -3,10 +3,14 @@
  *
  * Same strategy as variation.js and for the same reason: never rewrite the
  * master's structure, wrap it. The one exception is the numeric transforms
- * (`random: "params"`, `paramFactor`), which by definition have to reach inside
- * — they rewrite numeric LITERALS only, and only outside string literals, so
- * mini notation survives untouched. `s("bd*2 sd")` keeps its *2 (that is
- * pattern structure, not a parameter) while `.cutoff(800)` is fair game.
+ * (`random: "params"`, `paramFactor`), which by definition have to reach
+ * inside — they rewrite numeric LITERALS, both outside strings and, inside a
+ * quoted mini-notation string, standalone value tokens: `n("0 2 4")`'s scale
+ * degrees and `.cutoff("800 1200")`'s pattern values move exactly like
+ * `.cutoff(800)` does, staying inside their original quotes. What survives
+ * untouched inside a string is pattern STRUCTURE: `s("bd*2 sd:3")` keeps its
+ * *2 (repeat count) and :3 (sample-bank index), and `note("c3 e3")` keeps its
+ * note names — none of those are parameter values.
  *
  * Determinism: every randomised transform is driven by a seed derived from the
  * session seed and the bot's id, so the fleet can rebuild an identical script
@@ -67,14 +71,26 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 
 // --- Numeric literal rewriting ----------------------------------------------
 
+// A digit run right after a mini-notation operator is a count, not a value:
+// bd*2 (repeat), hh!4 (replicate), bd@3 (weight), x%8 (polymeter steps),
+// bd/2 (slow), bd?0.3 (degrade probability), sd:3 (sample-bank index), and
+// c#4 (sharp accidental — the only one of these that can also appear
+// outside a string, e.g. note("c#4") vs plain note names never do). None of
+// the others are reachable outside a string, so this set only ever matters
+// while `quote` is set.
+const MINI_OPERATOR_PREFIX = /[*!@%/?:#]/;
+
 /**
- * Rewrite every numeric literal that is real code, leaving string contents
- * alone. `fn(value, ordinal)` returns the replacement number.
+ * Rewrite every numeric literal that is real code OR a bare value inside a
+ * quoted mini-notation string — `n("0 2 4")`'s scale degrees are as much a
+ * "numeric parameter" as `.cutoff(800)`'s argument, so both are fair game.
+ * `fn(value, ordinal)` returns the replacement number.
  *
  * Skipped deliberately:
- *  - anything inside '', "" or `` — that is mini notation or a label
- *  - a digit run attached to an identifier (o0, s0, hpf2) — part of a name
- *  - a digit run after "." that follows an identifier (x.0) — property access
+ *  - a digit run attached to an identifier (o0, s0, hpf2) — part of a name —
+ *    or, inside a string, a note name or sample word (c3, eb4, bd2)
+ *  - inside a string: a digit run right after a mini-notation operator
+ *    (*, !, @, %, /, ?, :, #) — pattern structure, not a value
  */
 export function mapNumericLiterals(code, fn) {
   const src = String(code ?? '');
@@ -87,34 +103,30 @@ export function mapNumericLiterals(code, fn) {
     const ch = src[i];
 
     if (quote) {
-      out += ch;
-      if (ch === '\\') { out += src[i + 1] ?? ''; i += 2; continue; }
-      if (ch === quote) quote = null;
-      i++;
-      continue;
-    }
+      if (ch === '\\') { out += ch + (src[i + 1] ?? ''); i += 2; continue; }
+      if (ch === quote) { out += ch; quote = null; i++; continue; }
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; i++; continue; }
 
-    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; i++; continue; }
-
-    // Line and block comments pass through verbatim.
-    if (ch === '/' && src[i + 1] === '/') {
-      const end = src.indexOf('\n', i);
-      const stop = end === -1 ? src.length : end;
-      out += src.slice(i, stop); i = stop; continue;
+      // Line and block comments pass through verbatim.
+      if (ch === '/' && src[i + 1] === '/') {
+        const end = src.indexOf('\n', i);
+        const stop = end === -1 ? src.length : end;
+        out += src.slice(i, stop); i = stop; continue;
+      }
+      if (ch === '/' && src[i + 1] === '*') {
+        const end = src.indexOf('*/', i + 2);
+        const stop = end === -1 ? src.length : end + 2;
+        out += src.slice(i, stop); i = stop; continue;
+      }
     }
-    if (ch === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2);
-      const stop = end === -1 ? src.length : end + 2;
-      out += src.slice(i, stop); i = stop; continue;
-    }
-
-    const isDigit = ch >= '0' && ch <= '9';
-    const startsDecimal = ch === '.' && src[i + 1] >= '0' && src[i + 1] <= '9';
-    if (!isDigit && !startsDecimal) { out += ch; i++; continue; }
 
     const prev = src[i - 1] ?? '';
-    // Attached to a name (o0, s0, hpf2) or a property access — not a literal.
-    // if (/[\w$]/.test(prev) || (ch !== '.' && prev === '.')) { out += ch; i++; continue; }
+    const isDigit = ch >= '0' && ch <= '9';
+    // A lone '.' right after another '.' is the second half of mini
+    // notation's range operator ("0..7"), never a decimal point.
+    const startsDecimal = ch === '.' && src[i + 1] >= '0' && src[i + 1] <= '9' && prev !== '.';
+    if (!isDigit && !startsDecimal) { out += ch; i++; continue; }
 
     let j = i;
     while (j < src.length && src[j] >= '0' && src[j] <= '9') j++;
@@ -122,8 +134,15 @@ export function mapNumericLiterals(code, fn) {
       j++;
       while (j < src.length && src[j] >= '0' && src[j] <= '9') j++;
     }
-    // A trailing identifier char means this was a name after all (2x, 3n).
-    if (/[\w$]/.test(src[j] ?? '')) { out += src.slice(i, j); i = j; continue; }
+    // The whole run — not just its first character — is structure rather
+    // than a value when it opens right on an identifier (o0, s0, hpf2) or,
+    // inside a string, a mini-notation operator (bd*2, cp?0.3); or when it
+    // closes into one: a trailing name char means this was a name after all
+    // (2x, 3n), or, inside a string, a unit suffix (10px) or a name run on
+    // with no gap (3c).
+    if (/[\w$]/.test(prev) || (quote && MINI_OPERATOR_PREFIX.test(prev)) || /[\w$]/.test(src[j] ?? '')) {
+      out += src.slice(i, j); i = j; continue;
+    }
 
     const literal = src.slice(i, j);
     const value = Number(literal);

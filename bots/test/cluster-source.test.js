@@ -97,6 +97,16 @@ test('random:"params" varies per bot but rebuilds identically for one bot', () =
   assert.deepEqual(botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 }), a);
 });
 
+test('random:"params" reaches scale degrees inside a quoted pattern, not just bare Hydra args', () => {
+  const source = capture('botConfig({ random: "params" })\nn("0 2 4").scale("C:minor")');
+  const a = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 }).strudel;
+  const b = botScriptFor(source, { index: 2, count: 3, seed: 7, botId: 2 }).strudel;
+  assert.notEqual(a, 'n("0 2 4").scale("C:minor")', 'the quoted degrees must move too');
+  assert.notEqual(b, 'n("0 2 4").scale("C:minor")');
+  assert.notEqual(a, b, 'different bots must differ');
+  assert.match(a, /^n\("0 -?\d+(\.\d+)? -?\d+(\.\d+)?"\)\.scale\("C:minor"\)$/);
+});
+
 test('random:"full" abandons the human code for the curated palette', () => {
   // A patch with a signature the palette cannot coincidentally contain — the
   // palette does include "bd sd", so testing for that would pass either way.
