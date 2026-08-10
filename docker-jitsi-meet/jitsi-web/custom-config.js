@@ -54743,7 +54743,7 @@ ${full}
         key = src2.slice(start, i);
       }
       ws3();
-      if (src2[i] !== ":") return fail(`expected ":" after "${key}"`);
+      if (src2[i] !== ":") return fail(`expected ":" after ${key}`);
       i++;
       ws3();
       const value2 = readValue();
@@ -54800,25 +54800,28 @@ ${full}
       return { ok: false, error: `unquoted value "${word2}" at position ${start}` };
     }
   }
+  function propError(key, message) {
+    return `${key} ${message}`;
+  }
   function propertyError(key, value2) {
     const spec = BOT_CONFIG_PROPS[key];
-    if (!spec) return `unknown property "${key}" (expected one of: ${BOT_CONFIG_KEYS.join(", ")})`;
+    if (!spec) return propError(key, `is not a known property (expected one of: ${BOT_CONFIG_KEYS.join(", ")})`);
     if (value2 === null) return null;
     if (spec.type === "number") {
-      return Number.isFinite(value2) ? null : `"${key}" must be a number`;
+      return Number.isFinite(value2) ? null : propError(key, "must be a number");
     }
     if (spec.type === "boolean") {
-      return typeof value2 === "boolean" ? null : `"${key}" must be true or false`;
+      return typeof value2 === "boolean" ? null : propError(key, "must be true or false");
     }
-    if (typeof value2 !== "string") return `"${key}" must be a string`;
+    if (typeof value2 !== "string") return propError(key, "must be a string");
     if (spec.values && !spec.values.includes(value2)) {
-      return `"${key}" must be one of: ${spec.values.join(", ")}`;
+      return propError(key, `must be one of: ${spec.values.join(", ")}`);
     }
     if (spec.pattern && !spec.pattern.test(value2)) {
-      return `"${key}" must be "diatonic", "random", or a signed semitone count like "+2" or "-13"`;
+      return propError(key, 'must be "diatonic", "random", or a signed semitone count like "+2" or "-13"');
     }
     if (spec.values == null && spec.pattern == null && value2.trim() === "") {
-      return `"${key}" must be a non-empty string`;
+      return propError(key, "must be a non-empty string");
     }
     return null;
   }
