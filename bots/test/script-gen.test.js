@@ -84,6 +84,12 @@ test('frequencyBands role applies the bot\'s band and a matching hydra hue shift
   assert.match(v.hydra, /hue\(/, 'visual EM band mirrors the audio band');
 });
 
+test('frequencyBands role never emits .hue(0) for the lowest-band bot', () => {
+  const v = variationFor(0, master, { ...baseOpts, roles: { frequencyBands: true } });
+  assert.ok(!v.hydra.includes('.hue(0)'), '.hue(0) is a Hydra no-op and must not appear in generated code');
+  assert.equal(v.hydra, master.hydra, 'no other transform applies, so the pipeline is unchanged');
+});
+
 test('staggeredRound role delays entry by index × WCL subdivision', () => {
   const v0 = variationFor(0, master, { ...baseOpts, roles: { staggeredRound: true } });
   const v3 = variationFor(3, master, { ...baseOpts, roles: { staggeredRound: true } });

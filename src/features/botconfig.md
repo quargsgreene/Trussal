@@ -80,7 +80,11 @@ fixed interval rather than a scale-following one.
 before its `.out(o0)`, so it stacks with the fleet's own band and tile roles
 instead of replacing them (a second `.out(o0)` statement would rebind the
 buffer, not tint it). Cluster member 0 always keeps your hue and the scheme
-opens up from there.
+opens up from there — reached by omitting the `.hue()` call rather than
+writing `.hue(0)`, since a zero rotation is a Hydra no-op and would be dead
+syntax. The same omission applies wherever else a hue is computed (the
+`frequencyBands` role's band→hue mirror, `colorScheme: "random"` landing on
+0 by chance): a hue is never emitted as literally `.hue(0)`.
 `monochromatic` separates members by brightness, since rotating hue by zero
 would make them identical.
 

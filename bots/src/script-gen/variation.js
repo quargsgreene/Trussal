@@ -69,8 +69,12 @@ export function variationFor(botId, master, opts) {
     // Visual EM mirror: map the bot's audio band position onto the hue
     // circle, so low bots glow red-ish and high bots violet-ish. Chained
     // onto the master's own pipeline (see hydra-chain.js), not a separate
-    // src(o0) statement — that would rebind o0 instead of tinting it.
-    hydraSuffix.push(`.hue(${round2(index / botCount)})`);
+    // src(o0) statement — that would rebind o0 instead of tinting it. The
+    // lowest-band bot (index 0) always computes 0/botCount — skip pushing a
+    // `.hue(0)` for it, since that rotation is a Hydra no-op and would be
+    // dead syntax rather than an actual colour shift.
+    const bandHue = round2(index / botCount);
+    if (bandHue !== 0) hydraSuffix.push(`.hue(${bandHue})`);
   }
 
   if (roles.staggeredRound) {

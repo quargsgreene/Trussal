@@ -309,6 +309,11 @@ export function colorHydraSuffix(scheme, index, count, seed = 0) {
     const brightness = round3(-0.25 + (index / steps) * 0.5);
     return `.brightness(${brightness})`;
   }
+  // hue 0 is a no-op rotation in Hydra — every scheme's own index 0 lands
+  // here by design (cluster member 0 keeps the human's own colour), so
+  // emitting `.hue(0)` would just be dead syntax. Leaving it out reaches the
+  // identical no-op without writing a call that does nothing.
+  if (hue === 0) return '';
   return `.hue(${hue})`;
 }
 
