@@ -424,6 +424,12 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
     publishCanvas = document.createElement('canvas');
     publishCanvas.width = pubWidth;
     publishCanvas.height = pubHeight;
+    // A detached (never-appended) canvas is not guaranteed to actually
+    // produce captureStream() frames — same reasoning as published-video.js's
+    // ensureCanvas. Kept out of sight but composited: off-screen, not
+    // display:none.
+    publishCanvas.style.cssText = 'position:fixed;left:-20000px;top:0;pointer-events:none;';
+    (document.body || document.documentElement).appendChild(publishCanvas);
     publishCtx = publishCanvas.getContext('2d');
     drawPublishFrame();
     return publishCanvas;
