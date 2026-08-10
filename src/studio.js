@@ -1161,19 +1161,31 @@ function renderAll() {
       const existingCodeEl = detail.querySelector('textarea.ts-code');
       const active = document.activeElement;
       const isCodeFocused = active && active === existingCodeEl;
+      // Rebuilding the panel while the textarea is focused destroys and
+      // recreates that DOM node on every peer-state tick (ping/pong fires
+      // every ~2s regardless of roster size, see peer-state.js), even though
+      // value/selection/scroll are restored on the new node afterward. Two
+      // symptoms traced back to that node churn: (1) the post-rebuild
+      // setSelectionRange scrolls the caret back into view, fighting any
+      // scroll the user just did by hand and making it impossible to read
+      // code above the cursor; (2) on mobile, swapping the focused node's
+      // identity mid-keystroke resets the virtual keyboard's autocomplete/
+      // composition state, flickering the prediction bar and occasionally
+      // dropping a character. Skip the rebuild outright while typing — the
+      // panel catches back up to fresh metrics/state on the next tick after
+      // the user blurs.
+      if (isCodeFocused) return;
       const codeValue = existingCodeEl ? existingCodeEl.value : null;
       const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
-      // Local edits are kept across re-renders (they only hit the bus on eval);
-      // a remote tile only keeps its text while actively focused, so it otherwise
-      // refreshes to the live pattern when another operator/the bot changes it.
-      const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === '1' || isCodeFocused);
-      const selStart = isCodeFocused ? active.selectionStart : null;
-      const selEnd   = isCodeFocused ? active.selectionEnd   : null;
-      // Captured whenever the value is going to be preserved, not just while
-      // focused: a mouse-wheel scroll doesn't focus the textarea, and every
-      // peer-state tick (every few seconds, even alone in a room — the sidecar
-      // ping/pong keeps ticking regardless of roster size) was rebuilding this
-      // node from scratch and silently snapping an unfocused scroll back to 0.
+      // Local edits are kept across re-renders (they only hit the bus on eval).
+      // isCodeFocused is always false here (the focused case already returned
+      // above), so this only covers the unfocused-but-scrolled local editor.
+      const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
+      // Captured whenever the value is going to be preserved: a mouse-wheel
+      // scroll doesn't focus the textarea, and every peer-state tick (every
+      // few seconds, even alone in a room — the sidecar ping/pong keeps
+      // ticking regardless of roster size) was rebuilding this node from
+      // scratch and silently snapping an unfocused scroll back to 0.
       const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
       // .ts-detail itself (the whole scrollable panel: metrics, bot cluster,
       // then the Strudel section) is also reset to scrollTop 0 by the same
@@ -1194,12 +1206,6 @@ function renderAll() {
       if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
         nextCodeEl.value = codeValue;
         if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
-        if (isCodeFocused) {
-          nextCodeEl.focus();
-          if (selStart != null && selEnd != null) {
-            try { nextCodeEl.setSelectionRange(selStart, selEnd); } catch (e) {}
-          }
-        }
       }
 
       if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
