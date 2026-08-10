@@ -188,7 +188,7 @@ test('a broken edit is reported, not silently ignored', async () => {
     const errors = sent.filter((m) => m.type === 'fleet-status' && m.action === 'config-error');
     assert.equal(errors.length, 1);
     assert.equal(errors[0].ownerIndex, HUMAN.index);
-    assert.match(errors[0].reason, /unknown property "parrotText"/);
+    assert.match(errors[0].reason, /parrotText is not a known property/);
   });
 });
 

@@ -159,7 +159,7 @@ export function parseObjectLiteral(text) {
     }
 
     ws();
-    if (src[i] !== ':') return fail(`expected ":" after "${key}"`);
+    if (src[i] !== ':') return fail(`expected ":" after ${key}`);
     i++;
     ws();
 
@@ -211,26 +211,33 @@ export function parseObjectLiteral(text) {
   }
 }
 
+// One formatting rule for every property-error message: the property name
+// leads, unquoted — it is a code identifier, not string data, so quoting it
+// would read as though it were just another enum value like "diatonic".
+function propError(key, message) {
+  return `${key} ${message}`;
+}
+
 // Check one property against BOT_CONFIG_PROPS. Returns null when it passes.
 function propertyError(key, value) {
   const spec = BOT_CONFIG_PROPS[key];
-  if (!spec) return `unknown property "${key}" (expected one of: ${BOT_CONFIG_KEYS.join(', ')})`;
+  if (!spec) return propError(key, `is not a known property (expected one of: ${BOT_CONFIG_KEYS.join(', ')})`);
   if (value === null) return null;
   if (spec.type === 'number') {
-    return Number.isFinite(value) ? null : `"${key}" must be a number`;
+    return Number.isFinite(value) ? null : propError(key, 'must be a number');
   }
   if (spec.type === 'boolean') {
-    return typeof value === 'boolean' ? null : `"${key}" must be true or false`;
+    return typeof value === 'boolean' ? null : propError(key, 'must be true or false');
   }
-  if (typeof value !== 'string') return `"${key}" must be a string`;
+  if (typeof value !== 'string') return propError(key, 'must be a string');
   if (spec.values && !spec.values.includes(value)) {
-    return `"${key}" must be one of: ${spec.values.join(', ')}`;
+    return propError(key, `must be one of: ${spec.values.join(', ')}`);
   }
   if (spec.pattern && !spec.pattern.test(value)) {
-    return `"${key}" must be "diatonic", "random", or a signed semitone count like "+2" or "-13"`;
+    return propError(key, 'must be "diatonic", "random", or a signed semitone count like "+2" or "-13"');
   }
   if (spec.values == null && spec.pattern == null && value.trim() === '') {
-    return `"${key}" must be a non-empty string`;
+    return propError(key, 'must be a non-empty string');
   }
   return null;
 }

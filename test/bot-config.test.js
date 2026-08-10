@@ -114,7 +114,7 @@ test('parses a negative number', () => {
 test('rejects an unknown property by name', () => {
   const parsed = parseBotConfig('botConfig({ randomize: "full" })');
   assert.equal(parsed.ok, false);
-  assert.match(parsed.error, /unknown property "randomize"/);
+  assert.match(parsed.error, /randomize is not a known property/);
 });
 
 test('rejects an out-of-range enum value and lists the valid ones', () => {
