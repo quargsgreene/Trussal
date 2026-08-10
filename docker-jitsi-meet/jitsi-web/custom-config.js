@@ -58271,11 +58271,10 @@ ${voiceCode}${BTN_MARKER2}`);
         const existingCodeEl = detail.querySelector("textarea.ts-code");
         const active4 = document.activeElement;
         const isCodeFocused = active4 && active4 === existingCodeEl;
+        if (isCodeFocused) return;
         const codeValue = existingCodeEl ? existingCodeEl.value : null;
         const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
-        const preserveValue = existingCodeEl && (existingCodeEl.dataset.peerLocal === "1" || isCodeFocused);
-        const selStart = isCodeFocused ? active4.selectionStart : null;
-        const selEnd = isCodeFocused ? active4.selectionEnd : null;
+        const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
         const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
         const detailScrollTop = detail.scrollTop;
         renderDetail(detail);
@@ -58286,15 +58285,6 @@ ${voiceCode}${BTN_MARKER2}`);
         if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
           nextCodeEl.value = codeValue;
           if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
-          if (isCodeFocused) {
-            nextCodeEl.focus();
-            if (selStart != null && selEnd != null) {
-              try {
-                nextCodeEl.setSelectionRange(selStart, selEnd);
-              } catch (e30) {
-              }
-            }
-          }
         }
         if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
         renderSliders(detail, currentSliders);
