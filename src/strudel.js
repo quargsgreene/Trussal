@@ -500,7 +500,18 @@ async function ensureStrudel() {
       }
     };
 
-    await initStrudel({ audioContext: audioCtx, prebake: runPrebake });
+    await initStrudel({ audioContext: audioCtx });
+    // runPrebake fetches every CDN sample pack (piano, VCSL, drum machines,
+    // Dirt-Samples, …) — tens of MB. Passing it as initStrudel's `prebake`
+    // would block on the whole download before evaluate() below can run: on
+    // a mobile connection that's a sustained bulk-download burst competing
+    // with the meeting's own RTP/STUN traffic for long enough that the JVB's
+    // periodic connectivity checks to the client time out and the endpoint
+    // gets expired mid-download — every "edit, hit play" reproduces it.
+    // Firing it in the background instead lets evaluate() start immediately
+    // on whatever defaultPrebake() already registered (synths, ZZFX); each
+    // sample pack becomes available as its own registration resolves.
+    runPrebake().catch((e) => console.warn('[strudel] prebake failed', e));
     _sliderRef = mod.ref;
     // _ncGate: reactive per-performer slot gate for Net Cycles (same ref
     // machinery as sliders — pattern events read the current level live).

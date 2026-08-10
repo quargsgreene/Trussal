@@ -628,7 +628,18 @@ export function resetChainGates() {
 }
 
 export async function bootAudioEngine() {
-  if (bootPromise) return bootPromise;
+  if (bootPromise) {
+    const result = await bootPromise;
+    // The first call is often this module's own eager warm-up at page load
+    // (before any user gesture), so its resume() attempt can be silently
+    // ignored by browsers that require resume() to happen inside a gesture.
+    // Retry it on every later call so a gesture-backed one (Play) gets a
+    // real shot at unlocking audio, instead of only ever trying once.
+    if (audioCtx && audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) { /* still blocked */ }
+    }
+    return result;
+  }
   bootPromise = (async () => {
     await ensureAudioContext();
     await loadReverbBuffer();

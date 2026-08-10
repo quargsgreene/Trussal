@@ -1644,7 +1644,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   }
   async function bootAudioEngine() {
-    if (bootPromise) return bootPromise;
+    if (bootPromise) {
+      const result = await bootPromise;
+      if (audioCtx && audioCtx.state === "suspended") {
+        try {
+          await audioCtx.resume();
+        } catch (e30) {
+        }
+      }
+      return result;
+    }
     bootPromise = (async () => {
       await ensureAudioContext();
       await loadReverbBuffer();
@@ -55264,7 +55273,8 @@ ${buildStrudelVoice(strudelCode, fx)}`;
           safe(aliasBank2(`${baseCDN}/tidal-drum-machines-alias.json`));
         }
       };
-      await initStrudel2({ audioContext: audioCtx3, prebake: runPrebake });
+      await initStrudel2({ audioContext: audioCtx3 });
+      runPrebake().catch((e30) => console.warn("[strudel] prebake failed", e30));
       _sliderRef = mod2.ref;
       const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
       const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
@@ -57520,15 +57530,15 @@ ${s2}${BTN_MARKER}`)
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 8px;
       background: rgba(255,255,255,0.02);
-      padding: 10px 12px;
+      padding: 8px 10px;
       display: flex; flex-direction: column; gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:center; justify-content:space-between;
+      display:flex; align-items:right; justify-content: right;
       gap: 8px;
     }
     #${OVERLAY_ID} .ts-section-title {
-      font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+      font-size: 10px; letter-spacing: 1px; 
       color: #7aa68a; font-weight: 600;
     }
     #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
@@ -57968,13 +57978,11 @@ ${s2}${BTN_MARKER}`)
 
     <div class="ts-section">
       <div class="ts-section-head">
-        <div class="ts-section-title">Strudel</div>
+        <div class="ts-section-title">Local Program</div>
         ${strudelControls}
       </div>
       ${sampleBanksRow}
       ${codeBlock}
-      ${isLocal ? '<div class="ts-sliders ts-strudel-sliders"></div>' : ""}
-      ${isLocal ? '<div class="ts-voice-btns"></div>' : ""}
     </div>
 
     <div class="ts-status">${escapeHtml(status)}</div>
