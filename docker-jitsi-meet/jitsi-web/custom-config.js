@@ -53882,8 +53882,10 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     return { frames: frames2, rest };
   }
+  var INIT_CSS_RE = /^\s*await\s+initCss\s*\(/m;
+  var INIT_CSS_PATTERN = { source: INIT_CSS_RE.source, flags: INIT_CSS_RE.flags };
   function hasCssCycles(code2) {
-    return /^\s*await\s+initCss\s*\(/m.test(String(code2 ?? ""));
+    return INIT_CSS_RE.test(String(code2 ?? ""));
   }
   var CSS_CALL_RE = /(?:^|[^\w$])css\s*\(/;
   function splitCssStatements(code2) {
@@ -56794,7 +56796,7 @@ ${s2}${BTN_MARKER}`)
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
   init_MetaprogrammerParser();
-  var PARSE_IDLE_MS = 300;
+  var APPLIED_FADE_MS = 5e3;
   function mountMetaprogrammerEditor(container2) {
     if (!container2 || container2.querySelector(".nc-editor")) return null;
     const wrap = document.createElement("div");
@@ -56825,16 +56827,23 @@ ${s2}${BTN_MARKER}`)
       applyBtn.disabled = true;
     }
     ta.value = sync.getText() || getProgramText() || "";
-    let parseTimer = null;
     function showErrors(text2) {
       const { errors } = parseMetaprogram(text2);
       errorsEl.textContent = errors.length ? errors.map((e30) => `${e30.line}:${e30.col} ${e30.message}`).join("  \xB7  ") : "";
-      applyBtn.disabled = readOnly || errors.length > 0;
       return errors;
     }
-    function parseOnIdle() {
-      clearTimeout(parseTimer);
-      parseTimer = setTimeout(() => showErrors(ta.value), PARSE_IDLE_MS);
+    let fadeTimer = null;
+    function setByline(text2, fade) {
+      clearTimeout(fadeTimer);
+      bylineEl.style.transition = "";
+      bylineEl.style.opacity = "1";
+      bylineEl.textContent = text2;
+      if (fade) {
+        fadeTimer = setTimeout(() => {
+          bylineEl.style.transition = "opacity 0.6s ease";
+          bylineEl.style.opacity = "0";
+        }, APPLIED_FADE_MS);
+      }
     }
     const esc = (s2) => String(s2).replace(
       /[&<>"']/g,
@@ -56859,12 +56868,12 @@ ${s2}${BTN_MARKER}`)
       if (readOnly) return;
       const errors = toggleNetCyclesButtonCode(snippet);
       showErrors(ta.value);
-      bylineEl.textContent = errors.length ? "button left the program invalid \u2014 fix it above, then apply" : "applied \u2014 takes effect at the next cycle boundary";
+      if (errors.length) setByline("button left the program invalid \u2014 fix it above, then apply", false);
+      else setByline("applied \u2014 takes effect at the next cycle boundary", true);
     }
     ta.addEventListener("input", () => {
       if (readOnly) return;
       sync.setText(ta.value);
-      parseOnIdle();
       renderButtons();
     });
     const refreshFromDoc = () => {
@@ -56880,13 +56889,12 @@ ${s2}${BTN_MARKER}`)
         } catch (e30) {
         }
       }
-      parseOnIdle();
       renderButtons();
     };
     sync.onRemoteChange((_3, payload) => {
       refreshFromDoc();
       if (payload && payload.authorIndex != null) {
-        bylineEl.textContent = `last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`;
+        setByline(`last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`, false);
       }
     });
     document.addEventListener("trussal-netcycles-program", () => {
@@ -56896,11 +56904,9 @@ ${s2}${BTN_MARKER}`)
     const apply2 = () => {
       if (readOnly) return;
       const errors = applyProgramText(ta.value);
-      if (errors.length) showErrors(ta.value);
-      else {
-        errorsEl.textContent = "";
-        bylineEl.textContent = "applied \u2014 takes effect at the next cycle boundary";
-      }
+      showErrors(ta.value);
+      if (errors.length) setByline("invalid \u2014 fix it above, then apply", false);
+      else setByline("applied \u2014 takes effect at the next cycle boundary", true);
       renderButtons();
     };
     applyBtn.addEventListener("click", apply2);
@@ -56910,7 +56916,6 @@ ${s2}${BTN_MARKER}`)
         apply2();
       }
     });
-    showErrors(ta.value);
     renderButtons();
     return wrap;
   }
@@ -57920,7 +57925,8 @@ ${s2}${BTN_MARKER}`)
     const nodeLabel = getExternalNodeLabel(peer.jitsiId);
     const captureBtn = "";
     const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? "local" : String(peer.peerId || peer.jitsiId || ""))}"`;
-    const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
+    const patternBaselineAttr = ` data-pattern-baseline="${escapeHtml(peer.pattern || "")}"`;
+    const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
     const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
     const strudelControls = isLocal ? `
       <div class="ts-section-controls">
@@ -58271,7 +58277,20 @@ ${voiceCode}${BTN_MARKER2}`);
         const existingCodeEl = detail.querySelector("textarea.ts-code");
         const active4 = document.activeElement;
         const isCodeFocused = active4 && active4 === existingCodeEl;
-        if (isCodeFocused) return;
+        if (isCodeFocused) {
+          const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
+          if (existingCodeEl && !isLocalEditor && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
+            const peer = getPeerByJitsiId(selectedJitsiId);
+            const peerKey = peer ? String(peer.peerId || peer.jitsiId || "") : null;
+            const live = peer && peerKey === existingCodeEl.dataset.peerKey ? peer.pattern || "" : null;
+            if (live != null && live !== existingCodeEl.value) {
+              existingCodeEl.value = live;
+              existingCodeEl.dataset.patternBaseline = live;
+              renderVoiceButtons(detail, live);
+            }
+          }
+          return;
+        }
         const codeValue = existingCodeEl ? existingCodeEl.value : null;
         const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
         const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
