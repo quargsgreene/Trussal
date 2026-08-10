@@ -629,16 +629,20 @@ export function resetChainGates() {
 
 export async function bootAudioEngine() {
   if (bootPromise) {
-    const result = await bootPromise;
     // The first call is often this module's own eager warm-up at page load
-    // (before any user gesture), so its resume() attempt can be silently
-    // ignored by browsers that require resume() to happen inside a gesture.
-    // Retry it on every later call so a gesture-backed one (Play) gets a
-    // real shot at unlocking audio, instead of only ever trying once.
+    // (before any user gesture), whose resume() can be left permanently
+    // pending by browsers that require resume() to run synchronously inside
+    // a real gesture's call stack (mobile Safari, strict mobile Chrome) —
+    // awaiting bootPromise first would either hang forever on that stuck
+    // promise or, once past it, fire this retry too late (after an await,
+    // no longer inside the gesture). Fire it immediately instead, before
+    // awaiting anything, so a gesture-backed call (Play) gets a real shot
+    // at unlocking audio. Both resolve on the same underlying transition,
+    // so this also unblocks the original pending resume() if it was stuck.
     if (audioCtx && audioCtx.state === 'suspended') {
-      try { await audioCtx.resume(); } catch (e) { /* still blocked */ }
+      audioCtx.resume().catch(() => { /* still blocked */ });
     }
-    return result;
+    return bootPromise;
   }
   bootPromise = (async () => {
     await ensureAudioContext();

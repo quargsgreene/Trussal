@@ -1645,14 +1645,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   async function bootAudioEngine() {
     if (bootPromise) {
-      const result = await bootPromise;
       if (audioCtx && audioCtx.state === "suspended") {
-        try {
-          await audioCtx.resume();
-        } catch (e30) {
-        }
+        audioCtx.resume().catch(() => {
+        });
       }
-      return result;
+      return bootPromise;
     }
     bootPromise = (async () => {
       await ensureAudioContext();
