@@ -4,8 +4,11 @@
  * Strategy: never rewrite the master code's internals — wrap it. The master
  * strudel code must evaluate to a pattern expression, so `(master).hpf(...)`
  * style chaining lets us layer any combination of the four stratification
- * roles without parsing user code. Hydra is varied the same way: the master
- * renders to o0, and we append a post-transform reading from o0.
+ * roles without parsing user code. Hydra is varied the same way in spirit,
+ * but Hydra has no such wrapper: a second top-level `.out(o0)` REBINDS the
+ * buffer rather than compositing with it, so a role's visual has to be
+ * spliced into the master's own chain, before its one `.out(o0)` (see
+ * ../shared/hydra-chain.js).
  *
  * The roles are non mutually exclusive (spec): each enabled role contributes
  * its own chain suffix / hydra postlude / entry delay, and they compose.
@@ -18,6 +21,7 @@
 
 import { gainForBotCount, effectsChain } from '../shared/audio-math.js';
 import { staggerOffsetMs } from '../shared/stats.js';
+import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 
 // Audible band edges for role 1. 80 Hz spares the band-split from sub rumble
@@ -56,15 +60,17 @@ export function variationFor(botId, master, opts) {
   const index = botId % botCount;
 
   const strudelChain = [];
-  const hydraPostlude = [];
+  const hydraSuffix = [];
   let entryDelayMs = 0;
 
   if (roles.frequencyBands) {
     const { lo, hi } = frequencyBand(index, botCount);
     strudelChain.push(`.hpf(${round2(lo)}).lpf(${round2(hi)})`);
     // Visual EM mirror: map the bot's audio band position onto the hue
-    // circle, so low bots glow red-ish and high bots violet-ish.
-    hydraPostlude.push(`src(o0).hue(${round2(index / botCount)}).out(o0)`);
+    // circle, so low bots glow red-ish and high bots violet-ish. Chained
+    // onto the master's own pipeline (see hydra-chain.js), not a separate
+    // src(o0) statement — that would rebind o0 instead of tinting it.
+    hydraSuffix.push(`.hue(${round2(index / botCount)})`);
   }
 
   if (roles.staggeredRound) {
@@ -84,9 +90,7 @@ export function variationFor(botId, master, opts) {
     strudelChain.push(`.pan(${round2(pan)})`);
     // Hydra: zoom into this bot's 1/N-wide column and shift it so the fleet's
     // tiles recompose the whole master image across the Jitsi grid.
-    hydraPostlude.push(
-      `src(o0).scale(${botCount}, 1).scrollX(${round2(index / botCount)}).out(o0)`,
-    );
+    hydraSuffix.push(`.scale(${botCount}, 1).scrollX(${round2(index / botCount)})`);
   }
 
   // Universal stages: own-link fx chain, then gain staging last so nothing
@@ -109,7 +113,7 @@ export function variationFor(botId, master, opts) {
     // wrapping THAT in one grouping expression is a SyntaxError that took
     // every bot down the moment a performer's repertoire did this.
     strudel: wrapAsVoice(master.strudel, strudelChain.join('')),
-    hydra: [master.hydra, ...hydraPostlude].join('\n'),
+    hydra: insertBeforeHydraOut(master.hydra, hydraSuffix.join('')),
     // What peer-state broadcasts as this bot's pattern — passed through
     // as-is, not wrapped in the per-bot mix chain: the chain is an audible
     // shaping detail, invisible to the OTHER viewers who only ever extract

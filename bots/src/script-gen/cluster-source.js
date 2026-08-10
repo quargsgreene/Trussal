@@ -28,10 +28,11 @@ import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js'
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
+import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
 import { randomMasterScript, randomTextPattern } from './generator.js';
 import {
   applyParamFactor,
-  colorHydraPostlude,
+  colorHydraSuffix,
   harmonySuffix,
   randomizeParams,
 } from './bot-config-transform.js';
@@ -321,10 +322,11 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // suffix to every voice in a mix like this without breaking any of them.
   const harmony = harmonySuffix(config.harmony, index, base.strudel, seed);
   if (harmony && strudel.trim()) strudel = wrapAsVoice(strudel, harmony);
-  // Colour. A postlude reading o0 and writing back to it, exactly as the band
-  // and tile roles do, so it stacks with them instead of replacing them.
-  const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
-  if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
+  // Colour. Spliced into the pipeline before its own `.out(o0)`, exactly as
+  // the band and tile roles do (see ../shared/hydra-chain.js), so it stacks
+  // with them instead of rebinding o0 and discarding whatever they drew.
+  const colour = colorHydraSuffix(config.colorScheme, index, count, seed);
+  if (colour && hydra.trim()) hydra = insertBeforeHydraOut(hydra, colour);
 
   // What OTHER viewers see this bot declare — text/css statements survive
   // here per `textParrot`/`cssParrot`, because that is how they actually

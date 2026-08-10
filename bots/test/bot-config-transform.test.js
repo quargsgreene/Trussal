@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyParamFactor,
   colorForText,
-  colorHydraPostlude,
+  colorHydraSuffix,
   degreesToSemitones,
   detectScale,
   harmonySuffix,
@@ -190,19 +190,19 @@ test('random hue is deterministic per seed and in range', () => {
   assert.ok(h >= 0 && h <= 1);
 });
 
-test('an unset scheme yields no hue and no postlude', () => {
+test('an unset scheme yields no hue and no suffix', () => {
   assert.equal(hueForScheme(null, 1), null);
-  assert.equal(colorHydraPostlude(null, 1, 4), '');
+  assert.equal(colorHydraSuffix(null, 1, 4), '');
 });
 
-test('the hydra postlude reads o0 and writes back to it', () => {
-  const out = colorHydraPostlude('triadic', 1, 3);
-  assert.equal(out, 'src(o0).hue(0.333).out(o0)');
+test('the hydra suffix chains onto the pipeline, no src(o0)/out(o0) of its own', () => {
+  const out = colorHydraSuffix('triadic', 1, 3);
+  assert.equal(out, '.hue(0.333)');
 });
 
 test('monochromatic separates members by brightness, not hue', () => {
-  const a = colorHydraPostlude('monochromatic', 0, 4);
-  const b = colorHydraPostlude('monochromatic', 2, 4);
+  const a = colorHydraSuffix('monochromatic', 0, 4);
+  const b = colorHydraSuffix('monochromatic', 2, 4);
   assert.match(a, /brightness/);
   assert.notEqual(a, b, 'members must stay distinguishable');
   assert.ok(!a.includes('hue'), 'monochromatic must not rotate hue');

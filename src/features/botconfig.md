@@ -76,9 +76,11 @@ converted to semitones in the scale you declared (C major if you declared none),
 which keeps a cluster spelling the right chord but moves individual notes by a
 fixed interval rather than a scale-following one.
 
-**colorScheme** appends a Hydra postlude that reads `o0` and writes back to it,
-so it stacks with the fleet's own band and tile roles instead of replacing them.
-Cluster member 0 always keeps your hue and the scheme opens up from there.
+**colorScheme** chains a colour transform onto the master's own Hydra pipeline,
+before its `.out(o0)`, so it stacks with the fleet's own band and tile roles
+instead of replacing them (a second `.out(o0)` statement would rebind the
+buffer, not tint it). Cluster member 0 always keeps your hue and the scheme
+opens up from there.
 `monochromatic` separates members by brightness, since rotating hue by zero
 would make them identical.
 

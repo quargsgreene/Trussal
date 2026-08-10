@@ -283,7 +283,7 @@ export function hueForScheme(scheme, index, seed = 0) {
     return round3(rand());
   }
   // One hue for the whole cluster; members are separated by brightness instead
-  // (see colorHydraPostlude), since rotating by zero would make them identical.
+  // (see colorHydraSuffix), since rotating by zero would make them identical.
   if (scheme === 'monochromatic') return 0;
 
   const offsets = COLOR_SCHEMES[scheme];
@@ -293,20 +293,23 @@ export function hueForScheme(scheme, index, seed = 0) {
 }
 
 /**
- * Hydra postlude implementing the colour scheme, appended after the master's
- * own `.out(o0)` exactly as variation.js does for band and tile roles.
- * Monochromatic varies luminance instead of hue, since rotating by zero would
- * be a no-op and every bot would look identical.
+ * Hydra chain suffix implementing the colour scheme — spliced into the
+ * master's own pipeline before its `.out(o0)` (see ../shared/hydra-chain.js),
+ * exactly as variation.js does for band and tile roles. Not a standalone
+ * `src(o0)...out(o0)` statement: a second `.out(o0)` would rebind the buffer
+ * instead of tinting what's already there. Monochromatic varies luminance
+ * instead of hue, since rotating by zero would be a no-op and every bot would
+ * look identical.
  */
-export function colorHydraPostlude(scheme, index, count, seed = 0) {
+export function colorHydraSuffix(scheme, index, count, seed = 0) {
   const hue = hueForScheme(scheme, index, seed);
   if (hue == null) return '';
   if (scheme === 'monochromatic') {
     const steps = Math.max(1, count);
     const brightness = round3(-0.25 + (index / steps) * 0.5);
-    return `src(o0).brightness(${brightness}).out(o0)`;
+    return `.brightness(${brightness})`;
   }
-  return `src(o0).hue(${hue}).out(o0)`;
+  return `.hue(${hue})`;
 }
 
 /**

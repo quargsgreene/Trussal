@@ -175,11 +175,12 @@ test('composed properties (paramFactor + harmony) all reach announceStrudel toge
   assert.ok(script.announceStrudel.startsWith(script.strudel));
 });
 
-test('colorScheme appends a hydra postlude without disturbing the preamble', () => {
+test('colorScheme chains onto the master pipeline, before its own .out(o0)', () => {
   const source = capture('botConfig({ colorScheme: "triadic" })\nawait initHydra()\nosc(10).out(o0)\n\ns("bd")');
   const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
   assert.match(script.hydra, /^await initHydra\(\)/);
-  assert.match(script.hydra, /src\(o0\)\.hue\(0\.333\)\.out\(o0\)$/);
+  assert.match(script.hydra, /osc\(10\)\.hue\(0\.333\)\.out\(o0\)$/);
+  assert.ok(!script.hydra.includes('src(o0)'), 'no separate src(o0) statement');
 });
 
 test('colorScheme on a bot with no hydra adds nothing', () => {
