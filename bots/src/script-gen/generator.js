@@ -132,8 +132,18 @@ const text = textPatternFrom(rand);
 function textPatternFrom(rand) {
   return [
     'await initTextCycles()',
-    `
-    $: typeface('Times New Roman').word("<${createRandomText(rand)}>")
+    '',
+    // The label MUST start at column 0: strudel-voice.js's wrapAsVoice finds
+    // a paragraph's label with an anchored-at-line-start regex (no leading-
+    // whitespace tolerance), the same way a performer's own `$:` line must.
+    // An indented label here isn't recognized as one at all, so wrapAsVoice
+    // falls through to its "no label anywhere" branch and wraps this ENTIRE
+    // block — including the nested `$:` — inside `$: (...)`, which is a
+    // SyntaxError the combined program's evaluate() throws on for every
+    // OTHER viewer, taking their whole page's Strudel down with it (not just
+    // this bot's words) — see wrapAsVoice's own doc for this exact failure
+    // shape happening with performer-authored code.
+    `$: typeface('Times New Roman').word("<${createRandomText(rand)}>")
         .weight("400 200 100 800")
         .slant("<italic none>")
         .size("<12px 24px 10px 1px>*2")
@@ -141,8 +151,7 @@ function textPatternFrom(rand) {
         .underline("underline")
         .spacing("<3px 6px 9px 12px>")
         .hover("color:#ffffff")
-        .hyperlink("<google.com reddit.com ca.gov devry.edu>")
-`,
+        .hyperlink("<google.com reddit.com ca.gov devry.edu>")`,
   ].join('\n');
 }
 
