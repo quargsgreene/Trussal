@@ -278,11 +278,11 @@ function applyHap(value) {
   // Mutual exclusion: only the peer currently holding the scheduler's slot
   // gets their pattern's values on screen. Everyone else's custom properties
   // are pinned at the room's captured default instead of drifting stale from
-  // whatever they last painted before their turn closed. Bots are exempt —
-  // they are operator-puppeted via remote-control rather than live turn-taking
-  // performers, so an edit should be visible the moment it lands rather than
-  // waiting on the ring to reach their slot.
-  const gateOpen = getPeerByJitsiId(sheet.peer)?.isBot || isPeerNetCyclesTurn(sheet.peer);
+  // whatever they last painted before their turn closed. Bots take their turn
+  // on the ring exactly like a human performer — see text-cycles.js's paint()
+  // for the sibling fix and why the old operator-puppeted exemption no longer
+  // holds once a bot has a voice of its own to schedule.
+  const gateOpen = isPeerNetCyclesTurn(sheet.peer);
   const selector = selectorOf(sheet);
 
   for (const [key, raw] of Object.entries(value)) {

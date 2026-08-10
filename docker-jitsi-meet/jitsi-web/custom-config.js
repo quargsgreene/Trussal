@@ -52821,7 +52821,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
-    if (!getPeerByJitsiId(peerId)?.isBot && !isPeerNetCyclesTurn(peerId)) {
+    if (!isPeerNetCyclesTurn(peerId)) {
       textHapLog("paint:gated", {
         token: value2.word,
         peer: peerId,
@@ -54298,7 +54298,7 @@ ${full}
     const token = String(value2.css);
     const sheet = sheetsByToken.get(token);
     if (!sheet || refused.has(token)) return;
-    const gateOpen = getPeerByJitsiId(sheet.peer)?.isBot || isPeerNetCyclesTurn(sheet.peer);
+    const gateOpen = isPeerNetCyclesTurn(sheet.peer);
     const selector = selectorOf(sheet);
     for (const [key, raw] of Object.entries(value2)) {
       if (!key.startsWith("_cc_")) continue;
