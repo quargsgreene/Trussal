@@ -28,7 +28,7 @@ import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js'
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
-import { randomMasterScript } from './generator.js';
+import { randomMasterScript, randomTextPattern } from './generator.js';
 import {
   applyParamFactor,
   colorHydraPostlude,
@@ -283,11 +283,11 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
 
   let strudel = base.strudel;
   let hydra = base.hydra;
-  // The bot's OWN word() voice — generated (random:"full", or the no-code
-  // fallback) rather than copied from a performer, so it never rides
+  // A generated word() voice — random:"full", or the no-code fallback —
+  // rather than one copied from a performer, so it never rides
   // `strudel`/`hydra` in the first place (see generator.js's `text`). Only
   // `randomMasterScript` ever populates this; a normal cluster derived from a
-  // performer's real code has none, and any word()/css() THEY wrote is
+  // performer's real code has none here, and any word()/css() THEY wrote is
   // already embedded in `base.strudel`, governed by textParrot/cssParrot below.
   const generatedText = base.text || '';
 
@@ -301,15 +301,23 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
   announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
 
-  // The bot's own generated word() voice always announces, textParrot or not:
-  // that flag decides whether to repeat the PERFORMER's words, and this isn't
-  // theirs — appended as its own paragraph (blank-line separated, the unit
-  // keepSilentStatements/buildBotSilentBlock split on) so its bare
-  // `await initTextCycles()` declaration survives the extraction intact.
-  if (generatedText.trim()) {
+  // Every bot gets a word() voice of its own to take its turn with — that is
+  // the whole point of a cluster having text scheduling at all, and it can't
+  // depend on the human opting into textParrot (repeating THEIR words) or
+  // random:"full" (replacing their whole cluster). `generatedText` already
+  // covers the latter; the former is `WORD_CALL_RE.test(announceStrudel)` —
+  // if the performer's own words already survived the parrot gate above,
+  // this bot already has something to show and doesn't need an invented one
+  // stacked alongside it. Seeded per bot (offset clear of every other
+  // seed+botId use in this function) so a replacement bot repeats the same
+  // words rather than drawing new ones.
+  const ownText = generatedText.trim() ? generatedText
+    : WORD_CALL_RE.test(announceStrudel) ? ''
+    : randomTextPattern(seed + botId + 401);
+  if (ownText.trim()) {
     announceStrudel = announceStrudel.trim()
-      ? `${announceStrudel}\n\n${generatedText}`
-      : generatedText;
+      ? `${announceStrudel}\n\n${ownText}`
+      : ownText;
   }
 
   // What the bot's OWN REPL evaluates. ALWAYS stripped of both, regardless of

@@ -121,9 +121,18 @@ const hydra = [
     `${pick(rand, HYDRA_SOURCES)}${pick(rand, HYDRA_MODS)}${pick(rand, HYDRA_MODS)}.out(o0)`,
   ].join('\n');
 
-const text = [
-  'await initTextCycles()',
-  `
+const text = textPatternFrom(rand);
+  return { strudel, hydra, text };
+}
+
+// The word()-voice template, shared by randomMasterScript (which already has
+// a live `rand`) and randomTextPattern (a standalone seed for a bot that has
+// no other reason to call randomMasterScript at all — see cluster-source.js's
+// botScriptFor, which gives every bot its own text voice by default).
+function textPatternFrom(rand) {
+  return [
+    'await initTextCycles()',
+    `
     $: typeface('Times New Roman').word("<${createRandomText(rand)}>")
         .weight("400 200 100 800")
         .slant("<italic none>")
@@ -133,7 +142,11 @@ const text = [
         .spacing("<3px 6px 9px 12px>")
         .hover("color:#ffffff")
         .hyperlink("<google.com reddit.com ca.gov devry.edu>")
-`
-].join('\n')
-  return { strudel, hydra, text };
+`,
+  ].join('\n');
+}
+
+/** A standalone, seeded word() voice — see textPatternFrom. */
+export function randomTextPattern(seed = Date.now()) {
+  return textPatternFrom(mulberry32(seed));
 }

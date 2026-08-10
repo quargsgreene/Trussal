@@ -142,13 +142,14 @@ test('colorScheme on a bot with no hydra adds nothing', () => {
 // which is what parroting actually controls: it is picked up and painted by
 // every OTHER performer's own browser (buildBotSilentBlock in strudel.js).
 
-test('text statements are dropped from eval AND announce unless textParrot is set', () => {
+test('text statements are dropped from eval; the performer\'s own words are not parroted unless textParrot is set, but the bot still gets its own word() voice for its turn', () => {
   const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('word('), 'a cluster must not repeat its author\'s words');
   assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
-  assert.ok(!script.announceStrudel.includes('word('), 'not parroted by default');
+  assert.ok(!script.announceStrudel.includes('word("hello")'), 'the performer\'s own words are not parroted by default');
+  assert.match(script.announceStrudel, /\bword\(/, 'the bot still gets a word() voice of its own to take its turn with');
 });
 
 test('textParrot:true keeps word() in announce but NEVER in eval', () => {
