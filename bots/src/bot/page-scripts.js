@@ -361,13 +361,20 @@ export function pageForcePreserveDrawingBuffer() {
 
 /**
  * getUserMedia override, installed via evaluateOnNewDocument so it exists
- * before Jitsi's first device enumeration. Video requests resolve to the
- * Hydra canvas stream (polling until initHydra() has created the canvas);
- * audio requests resolve to the Strudel tap from pageAudioBridge (falling
- * back to silence if the bridge is unavailable).
+ * before Jitsi's first device enumeration. Video requests resolve to a
+ * FIXED-size canvas that mirrors the Hydra/mosaic output (see
+ * ensurePublishCanvas below — never the source canvas directly); audio
+ * requests resolve to the Strudel tap from pageAudioBridge (falling back to
+ * silence if the bridge is unavailable).
+ *
+ * videoHeight matches the SAME default (360, 16:9) published-video.js uses
+ * for human clients' compositor, so a bot's tile is the same size as a
+ * human's unless the deployment overrides JITSI_VIDEO_HEIGHT.
  */
-export function pageGumOverride(captureFps = 15) {
+export function pageGumOverride(captureFps = 15, videoHeight = 360) {
   const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  const pubHeight = Math.max(2, Math.round(videoHeight));
+  const pubWidth = Math.round((pubHeight * 16) / 9 / 2) * 2;
 
   function hydraCanvas() {
     // The aggregator publishes its composited mosaic, never a single Hydra
@@ -402,13 +409,50 @@ export function pageGumOverride(captureFps = 15) {
     return dst.stream.getAudioTracks()[0];
   }
 
+  // strudel-fork's getDrawContext() resizes #hydra-canvas to
+  // window.innerWidth/innerHeight on every `resize` event, so publishing it
+  // directly makes a bot's video track change resolution mid-call — every
+  // viewer's grid then resizes that tile. Human clients never hit this
+  // because published-video.js composites through a fixed canvas instead of
+  // publishing #hydra-canvas raw; mirror that here so a bot's published
+  // resolution never changes after the track is created.
+  let publishCanvas = null;
+  let publishCtx = null;
+
+  function ensurePublishCanvas() {
+    if (publishCanvas) return publishCanvas;
+    publishCanvas = document.createElement('canvas');
+    publishCanvas.width = pubWidth;
+    publishCanvas.height = pubHeight;
+    publishCtx = publishCanvas.getContext('2d');
+    drawPublishFrame();
+    return publishCanvas;
+  }
+
+  function drawPublishFrame() {
+    requestAnimationFrame(drawPublishFrame);
+    const source = hydraCanvas();
+    publishCtx.fillStyle = '#000';
+    publishCtx.fillRect(0, 0, pubWidth, pubHeight);
+    if (!source || !source.width || !source.height) return;
+    const scale = Math.min(pubWidth / source.width, pubHeight / source.height);
+    const w = source.width * scale;
+    const h = source.height * scale;
+    try {
+      publishCtx.drawImage(source, (pubWidth - w) / 2, (pubHeight - h) / 2, w, h);
+    } catch (e) {
+      // A source canvas mid-teardown throws; the next frame picks up the new one.
+      console.error('[trussal] could not draw the bot\'s source canvas', e);
+    }
+  }
+
   navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
     const stream = new MediaStream();
     if (constraints.video) {
-      const canvas = await waitForCanvas();
+      await waitForCanvas();
       // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
       // vs 30 with little visual loss for slow-evolving Hydra patterns.
-      for (const t of canvas.captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
+      for (const t of ensurePublishCanvas().captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
     }
     if (constraints.audio) {
       const mic = window.__trussalMicStream;

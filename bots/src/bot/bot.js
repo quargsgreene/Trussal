@@ -70,7 +70,7 @@ export class Bot {
     });
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
-    await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
+    await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15, bandwidth.videoHeight ?? 360);
     await this.page.evaluateOnNewDocument(pageInstallVideoPublisher);
     await this.page.evaluateOnNewDocument(pageFpsSampler);
 

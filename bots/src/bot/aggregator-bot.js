@@ -418,7 +418,7 @@ export class AggregatorBot extends Bot {
         // a regular bot's captured canvas used to.
         await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
         await this.page.evaluateOnNewDocument(pageMosaic, this.#mosaicFrame());
-        await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15);
+        await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15, bandwidth.videoHeight ?? 360);
         // The ingest tap: accumulates every remote <audio> element's PCM.
         await this.page.evaluateOnNewDocument(pageAggregatorCapture);
         // The return-path sink: streams the assembled master mix back out through
