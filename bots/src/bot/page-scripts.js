@@ -741,6 +741,46 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
     const ed = editor.editor;
     if (!ed) throw new Error('strudel editor failed to mount within 30s');
 
+    // Load the bot's OWN AudioWorklet processors and register its synth/
+    // noise palette BEFORE the first evaluation, exactly as strudel.js's
+    // ensureStrudel() does for a human's browser (loadWorklets, then
+    // registerSynthSounds/registerZZFXSounds/registerSoundfonts, alongside
+    // registerSampleSource below).
+    //
+    // loadWorklets is the load-bearing one, confirmed live: an advanced
+    // synth (e.g. s("supersaw")) is implemented as a named AudioWorkletNode
+    // (superdough/worklets.mjs's registerProcessor('supersaw-oscillator',
+    // ...)), and that processor only exists in an AudioContext that has run
+    // `audioContext.audioWorklet.addModule(...)` on it — which is exactly
+    // what loadWorklets does, and what @strudel/repl's own bootstrap never
+    // calls for its bare REPL's context. Without it every hap naming such a
+    // synth fails PER-TRIGGER inside Strudel's own trigger code: no thrown
+    // error (evaluate() resolves, the scheduler starts, nothing reaches
+    // window.__trussalErrors) — just that one voice never making a sound,
+    // confirmed via a live room where a bot edited from s("sine") (fine) to
+    // s("supersaw") (silent) read fanRms 0 until loadWorklets() ran.
+    // registerSynthSounds/ZZFX/Soundfonts cover the REST of a human's sound
+    // palette the same way — a copy of a human's own code (the whole point
+    // of random:"params" and manual bot edits) can name any of them.
+    try {
+      const loadWorklets = window.loadWorklets
+        || (window.strudel && window.strudel.loadWorklets);
+      const registerSynths = window.registerSynthSounds
+        || (window.strudel && window.strudel.registerSynthSounds);
+      const registerZzfx = window.registerZZFXSounds
+        || (window.strudel && window.strudel.registerZZFXSounds);
+      const registerFonts = window.registerSoundfonts
+        || (window.strudel && window.strudel.registerSoundfonts);
+      await Promise.all([
+        typeof loadWorklets === 'function' ? loadWorklets() : null,
+        typeof registerSynths === 'function' ? registerSynths() : null,
+        typeof registerZzfx === 'function' ? registerZzfx() : null,
+        typeof registerFonts === 'function' ? registerFonts() : null,
+      ]);
+    } catch (err) {
+      window.__trussalReportError(err);
+    }
+
     // Register the owner's shared banks BEFORE the first evaluation, or the
     // opening cycle of any pattern naming one plays silence. prebake:false
     // matches how the browser registers a performer's own uploads, so the two

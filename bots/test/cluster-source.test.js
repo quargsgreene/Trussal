@@ -131,6 +131,50 @@ test('diatonic harmony reads the human scale', () => {
   assert.match(script.strudel, /\.add\(n\(2\)\)/);
 });
 
+// --- announceStrudel reflects what the bot actually plays --------------------
+//
+// announceStrudel is peer-state's `pattern` for a bot — what the studio shows
+// in its editor and what a late joiner sees. It used to be computed from the
+// unshaped human original: paramFactor/random:"params"/harmony changed what
+// the bot's own REPL played but never touched announceStrudel, so a bot's
+// editor showed a plain copy of the human's code no matter what botConfig
+// asked for — "the bot's editor should always display exactly what it's
+// streaming" was violated by construction, not by any turn-taking or
+// remote-edit path.
+
+test('announceStrudel reflects paramFactor, not the unshaped human original', () => {
+  const source = capture('botConfig({ paramFactor: 2 })\ns("bd").cutoff(400)');
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.match(script.announceStrudel, /cutoff\(800\)/);
+});
+
+test('announceStrudel reflects random:"params", identically to what plays', () => {
+  const source = capture('botConfig({ random: "params" })\ns("bd").cutoff(400)');
+  const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
+  assert.notEqual(script.announceStrudel, 's("bd").cutoff(400)', 'must not be the unshaped original');
+  // No textParrot/cssParrot in play, so the announced text must OPEN with the
+  // exact audio the bot's own REPL evaluates — the editor showing exactly
+  // what is streaming. (Every bot also gets its own generated word() voice
+  // appended after, unrelated to this fix — see the "own word() voice"
+  // comment in botScriptFor — so this is startsWith, not full equality.)
+  assert.ok(script.announceStrudel.startsWith(script.strudel));
+});
+
+test('announceStrudel reflects harmony', () => {
+  const source = capture('botConfig({ harmony: "+3" })\nnote("c3")');
+  const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
+  assert.match(script.announceStrudel, /\.add\(note\(3\)\)/);
+  assert.ok(script.announceStrudel.startsWith(script.strudel));
+});
+
+test('composed properties (paramFactor + harmony) all reach announceStrudel together', () => {
+  const source = capture('botConfig({ paramFactor: 2, harmony: "+5" })\nnote("c3").cutoff(400)');
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.match(script.announceStrudel, /cutoff\(800\)/, 'paramFactor reached the announce');
+  assert.match(script.announceStrudel, /\.add\(note\(5\)\)/, 'harmony reached the announce');
+  assert.ok(script.announceStrudel.startsWith(script.strudel));
+});
+
 test('colorScheme appends a hydra postlude without disturbing the preamble', () => {
   const source = capture('botConfig({ colorScheme: "triadic" })\nawait initHydra()\nosc(10).out(o0)\n\ns("bd")');
   const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });

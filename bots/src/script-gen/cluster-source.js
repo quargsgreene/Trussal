@@ -291,13 +291,48 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // already embedded in `base.strudel`, governed by textParrot/cssParrot below.
   const generatedText = base.text || '';
 
+  // Numeric shaping and pitch/colour run FIRST, on the code that may still
+  // carry text/css statements — BEFORE the announce/eval split below — so
+  // announceStrudel (what peer-state broadcasts, what the studio shows) and
+  // the bot's own eval `strudel` agree on every randomised/shaped choice.
+  // Applying these AFTER the split (as this used to) shaped only what the
+  // bot's REPL played: the audio was randomised/harmonised but the announced
+  // text stayed the unmodified human original, so a bot's editor never
+  // reflected what it was actually streaming — random:"params" (or
+  // paramFactor/harmony) looked like it had no effect at all.
+  //
+  // paramFactor is the deterministic sibling of random:"params"; when both
+  // are set the factor is applied first so the jitter is measured around the
+  // scaled value the author asked for.
+  if (config.paramFactor != null) {
+    strudel = applyParamFactor(strudel, config.paramFactor);
+    hydra = applyParamFactor(hydra, config.paramFactor);
+  }
+  if (config.random === 'params') {
+    strudel = randomizeParams(strudel, seed + botId + 1);
+    hydra = randomizeParams(hydra, seed + botId + 101);
+  }
+  // Pitch. Appended to the whole expression rather than rewritten into it, so
+  // it composes with whatever the author wrote (see variation.js). Goes
+  // through wrapAsVoice, not a bare `(strudel)` wrap — the code is more than
+  // one expression once it carries a separate $: css(...)/$: word(...) voice
+  // alongside the audio pattern, and wrapping THAT in one grouping expression
+  // is a SyntaxError (see strudel-voice.js); wrapAsVoice is built to append a
+  // suffix to every voice in a mix like this without breaking any of them.
+  const harmony = harmonySuffix(config.harmony, index, base.strudel, seed);
+  if (harmony && strudel.trim()) strudel = wrapAsVoice(strudel, harmony);
+  // Colour. A postlude reading o0 and writing back to it, exactly as the band
+  // and tile roles do, so it stacks with them instead of replacing them.
+  const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
+  if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
+
   // What OTHER viewers see this bot declare — text/css statements survive
   // here per `textParrot`/`cssParrot`, because that is how they actually
   // reach the room: peer-state announces this string as the bot's `pattern`,
   // and every OTHER peer's own page extracts word()/css() statements out of
-  // it (buildBotSilentBlock in strudel.js). Computed from the unshaped base,
-  // before numeric shaping/harmony/the mix chain below — those are
-  // audible-only details that path never looks at.
+  // it (buildBotSilentBlock in strudel.js). Derived from the SHAPED `strudel`
+  // above, not the raw human original, so this is exactly what the bot is
+  // actually playing — optionally with its text/css voice(s) kept.
   let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
   announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
 
@@ -327,34 +362,10 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // calls are undefined there. Parroting is a broadcast-only concept — the
   // bot's own eval can never run either, parrot flag or not. `generatedText`
   // never reaches `strudel` to begin with, so there is nothing of it to strip
-  // here.
+  // here. Derived from the SAME shaped `strudel` announceStrudel came from,
+  // so the two never diverge on what audio they describe — only on whether a
+  // text/css voice rides along.
   strudel = dropCssStatements(dropTextStatements(strudel));
-
-  // Numeric shaping. paramFactor is the deterministic sibling of
-  // random:"params"; when both are set the factor is applied first so the
-  // jitter is measured around the scaled value the author asked for.
-  if (config.paramFactor != null) {
-    strudel = applyParamFactor(strudel, config.paramFactor);
-    hydra = applyParamFactor(hydra, config.paramFactor);
-  }
-  if (config.random === 'params') {
-    strudel = randomizeParams(strudel, seed + botId + 1);
-    hydra = randomizeParams(hydra, seed + botId + 101);
-  }
-
-  // Pitch. Appended to the whole expression rather than rewritten into it, so
-  // it composes with whatever the author wrote (see variation.js). Goes
-  // through wrapAsVoice, not a bare `(strudel)` wrap — the code is more than
-  // one expression once it carries a separate $: css(...)/$: word(...) voice
-  // alongside the audio pattern, and wrapping THAT in one grouping expression
-  // is a SyntaxError (see strudel-voice.js).
-  const harmony = harmonySuffix(config.harmony, index, base.strudel, seed);
-  if (harmony && strudel.trim()) strudel = wrapAsVoice(strudel, harmony);
-
-  // Colour. A postlude reading o0 and writing back to it, exactly as the band
-  // and tile roles do, so it stacks with them instead of replacing them.
-  const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
-  if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
 
   return { strudel, hydra, announceStrudel };
 }
