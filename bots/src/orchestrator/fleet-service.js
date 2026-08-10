@@ -1136,7 +1136,6 @@ export class FleetService {
       ? {
         strudel: configured.strudel,
         hydra: randomMasterScript(this.cfg.sessionSeed + botId + 1).hydra,
-        text: configured.text,
         announceStrudel: configured.announceStrudel,
       }
       : configured;
@@ -1159,7 +1158,7 @@ export class FleetService {
   setMasterScript(json) {
     const res = validateMasterScript(json);
     if (!res.ok) return res;
-    this.master = { strudel: json.strudel, hydra: json.hydra };
+    this.master = { strudel: json.strudel, hydra: json.hydra, text: json.text || '' };
     this.#redistribute();
     return { ok: true };
   }

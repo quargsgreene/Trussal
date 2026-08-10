@@ -35,36 +35,36 @@ function mulberry32(seed) {
 
 const pick = (rand, arr) => arr[Math.floor(rand() * arr.length)];
 
-function createRandomDrumPattern() {
-  const repeats = Math.floor(Math.random() * 10) + 1;
+function createRandomDrumPattern(rand) {
+  const repeats = Math.floor(rand() * 10) + 1;
   const drumOptions = ['bd', 'sd', 'hh', 'cp', 'rim'];
   let pattern = '';
   for( let i = 0; i < repeats; i++) {
-    pattern += `${drumOptions[Math.floor(Math.random() * drumOptions.length)]}*${Math.floor(Math.random() * 4) + 1} ${Math.random() < 0.5 ? '~' : ''} `;
+    pattern += `${drumOptions[Math.floor(rand() * drumOptions.length)]}*${Math.floor(rand() * 4) + 1} ${rand() < 0.5 ? '~' : ''} `;
   }
   return pattern;
 }
 
-function createRandomMelody() {
-  let patternLength = Math.floor(23 * Math.random()) + 1;
+function createRandomMelody(rand) {
+  let patternLength = Math.floor(23 * rand()) + 1;
   let pattern = '';
 
   for(let i = 0; i < patternLength; i++){
-    let currentFreq = Math.min(20000, Math.floor(20000 * Math.random()) + 20);
+    let currentFreq = Math.min(20000, Math.floor(20000 * rand()) + 20);
     pattern += currentFreq + ' ';
   }
 
   return pattern;
 }
 
-function createRandomText() {
-  let patternLength = Math.floor(100 * Math.random()) + 1;
+function createRandomText(rand) {
+  let patternLength = Math.floor(100 * rand()) + 1;
   let chars = 'abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ ';
   let numChars = chars.length;
   let pattern = '';
 
   for(let i = 0; i < patternLength; i++){
-    let currentCharIndex = Math.floor(numChars * Math.random());
+    let currentCharIndex = Math.floor(numChars * rand());
     let currentChar = chars[currentCharIndex];
     pattern += currentChar;
   }
@@ -78,24 +78,24 @@ export function randomMasterScript(seed = Date.now()) {
 
 
   const HYDRA_SOURCES = [
-  `osc(${500 * Math.random() + 1}, ${10 * Math.random() + 1}, ${Math.random() + 0.001})`,
-  `noise(${100 * Math.random() + 1}, ${Math.random() + 0.001})`,
-  `voronoi(${109 * Math.random() + 1}, 0.4)`,
+  `osc(${500 * rand() + 1}, ${10 * rand() + 1}, ${rand() + 0.001})`,
+  `noise(${100 * rand() + 1}, ${rand() + 0.001})`,
+  `voronoi(${109 * rand() + 1}, 0.4)`,
   `shape(4, 0.4, 0.01)`,
 ];
 
 const HYDRA_MODS = [
-  `.rotate(${Math.random() * 2 - 1}, 0.05)`,
+  `.rotate(${rand() * 2 - 1}, 0.05)`,
   `.kaleid(4)`,
   `.modulate(noise(2), 0.2)`,
   `.colorama(0.05)`,
 ];
 
 const DRUMS = [
-  `s("${createRandomDrumPattern()}")`,
-  `s("bd*2 [~ sd] hh*${Math.random() * 10 + 1} sd")`,
-  `s("[bd ~]*${Math.random() * 10 + 1} sd:2 [hh hh] sd")`,
-  `s("${createRandomDrumPattern()}")`,
+  `s("${createRandomDrumPattern(rand)}")`,
+  `s("bd*2 [~ sd] hh*${rand() * 10 + 1} sd")`,
+  `s("[bd ~]*${rand() * 10 + 1} sd:2 [hh hh] sd")`,
+  `s("${createRandomDrumPattern(rand)}")`,
 ];
 
 const FX = [
@@ -104,9 +104,9 @@ const FX = [
 ];
 
 const MELODIES = [
-  `freq("${createRandomMelody()}").s("sawtooth")`,
+  `freq("${createRandomMelody(rand)}").s("sawtooth")`,
   `n("0 3 5 7").scale("C:minor").s("triangle")`,
-  `freq("<${createRandomMelody()}>").s("square").slow(2)`,
+  `freq("<${createRandomMelody(rand)}>").s("square").slow(2)`,
   `n("0 2 4 [6 7]").scale("D:dorian").s("sine")`,
 ];
 
@@ -124,7 +124,7 @@ const hydra = [
 const text = [
   'await initTextCycles()',
   `
-    $: typeface('Times New Roman').word("<${createRandomText()}>")
+    $: typeface('Times New Roman').word("<${createRandomText(rand)}>")
         .weight("400 200 100 800")
         .slant("<italic none>")
         .size("<12px 24px 10px 1px>*2")

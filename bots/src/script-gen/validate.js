@@ -25,8 +25,10 @@ export function validateCode(code) {
 /**
  * JSON contract for a user-provided master script (spec): an object with
  * `strudel` and `hydra` string fields, hydra starting with `await
- * initHydra(`. Returns { ok, error? } rather than throwing so the config API
- * can surface the message straight to the admin page.
+ * initHydra(`, plus an optional `text` string field (a bot's own word()
+ * voice — see cluster-source.js's botScriptFor). Returns { ok, error? }
+ * rather than throwing so the config API can surface the message straight to
+ * the admin page.
  */
 export function validateMasterScript(obj) {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -37,16 +39,23 @@ export function validateMasterScript(obj) {
       return { ok: false, error: `"${field}" must be a non-empty string` };
     }
   }
+  if ('text' in obj && typeof obj.text !== 'string') {
+    return { ok: false, error: '"text" must be a string' };
+  }
   if (!obj.hydra.trimStart().startsWith('await initHydra(')) {
     return { ok: false, error: 'hydra code must start with `await initHydra(` (spec requirement)' };
   }
-  const unknown = Object.keys(obj).filter((k) => !['strudel', 'hydra'].includes(k));
+  const unknown = Object.keys(obj).filter((k) => !['strudel', 'hydra', 'text'].includes(k));
   if (unknown.length > 0) {
     return { ok: false, error: `unknown fields: ${unknown.join(', ')}` };
   }
   for (const field of ['strudel', 'hydra']) {
     const res = validateCode(obj[field]);
     if (!res.ok) return { ok: false, error: `${field}: ${res.error}` };
+  }
+  if (obj.text && obj.text.trim() !== '') {
+    const res = validateCode(obj.text);
+    if (!res.ok) return { ok: false, error: `text: ${res.error}` };
   }
   return { ok: true };
 }

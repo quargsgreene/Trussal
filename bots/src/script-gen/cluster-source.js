@@ -283,7 +283,13 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
 
   let strudel = base.strudel;
   let hydra = base.hydra;
-  let text = base.text;
+  // The bot's OWN word() voice — generated (random:"full", or the no-code
+  // fallback) rather than copied from a performer, so it never rides
+  // `strudel`/`hydra` in the first place (see generator.js's `text`). Only
+  // `randomMasterScript` ever populates this; a normal cluster derived from a
+  // performer's real code has none, and any word()/css() THEY wrote is
+  // already embedded in `base.strudel`, governed by textParrot/cssParrot below.
+  const generatedText = base.text || '';
 
   // What OTHER viewers see this bot declare — text/css statements survive
   // here per `textParrot`/`cssParrot`, because that is how they actually
@@ -295,13 +301,26 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
   announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
 
+  // The bot's own generated word() voice always announces, textParrot or not:
+  // that flag decides whether to repeat the PERFORMER's words, and this isn't
+  // theirs — appended as its own paragraph (blank-line separated, the unit
+  // keepSilentStatements/buildBotSilentBlock split on) so its bare
+  // `await initTextCycles()` declaration survives the extraction intact.
+  if (generatedText.trim()) {
+    announceStrudel = announceStrudel.trim()
+      ? `${announceStrudel}\n\n${generatedText}`
+      : generatedText;
+  }
+
   // What the bot's OWN REPL evaluates. ALWAYS stripped of both, regardless of
   // textParrot/cssParrot: that REPL is a separate, vanilla @strudel/repl
   // instance (see page-scripts.js's pageStrudelBoot) that never gets
   // Trussal's installTextCycles/installCssCycles, so `word`/`css`/their init
   // calls are undefined there. Parroting is a broadcast-only concept — the
-  // bot's own eval can never run either, parrot flag or not.
-  // strudel = dropCssStatements(dropTextStatements(strudel));
+  // bot's own eval can never run either, parrot flag or not. `generatedText`
+  // never reaches `strudel` to begin with, so there is nothing of it to strip
+  // here.
+  strudel = dropCssStatements(dropTextStatements(strudel));
 
   // Numeric shaping. paramFactor is the deterministic sibling of
   // random:"params"; when both are set the factor is applied first so the
@@ -329,5 +348,5 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   const colour = colorHydraPostlude(config.colorScheme, index, count, seed);
   if (colour && hydra.trim()) hydra = `${hydra}\n${colour}`;
 
-  return { strudel, hydra, text, announceStrudel };
+  return { strudel, hydra, announceStrudel };
 }
