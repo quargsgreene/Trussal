@@ -18,6 +18,37 @@ services:
       - PROXIED=false
       - UPDATE_CRON=@every 5m
 
+  # STUN/TURN relay. Mobile clients (carrier-grade NAT, tower handoffs) lose
+  # their direct UDP path to the jvb mid-call far more often than clients on
+  # stable networks; TURN gives ICE a relayed fallback candidate instead of
+  # just failing. Auth is the same shared-secret scheme prosody already
+  # speaks (TURN_CREDENTIALS below == prosody's external_service_secret):
+  # prosody mints ephemeral username/password pairs, coturn validates them
+  # against the same secret via --use-auth-secret. Host networking because
+  # docker's userland-proxy NATing a large UDP port range per-port is both
+  # slow to start and unreliable for relayed media.
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - turnserver
+      - --no-cli
+      - --listening-port=${TURN_PORT:-3478}
+      - --min-port=${TURN_RELAY_MIN_PORT:-49160}
+      - --max-port=${TURN_RELAY_MAX_PORT:-49200}
+      - --realm=${TURN_HOST:-meet.trussal.com}
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_CREDENTIALS}
+      - --external-ip=${TURN_EXTERNAL_IP}
+      - --no-multicast-peers
+      - --no-tlsv1
+      - --no-tlsv1_1
+      - --fingerprint
+      - --log-file=stdout
+    labels:
+      service: "jitsi-coturn"
+
   # Peer-state signalling sidecar
   latency:
     build:
