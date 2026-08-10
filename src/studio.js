@@ -74,6 +74,14 @@ const STYLE_ID   = 'trussal-studio-style';
 const STORAGE_KEY = 'trussal.studio.pattern';
 
 let selectedJitsiId = null;
+// The stable identity behind selectedJitsiId ('local', or a peer.peerId) —
+// jitsiId is what selection is KEYED by (it's what a chip's click handler
+// has on hand), but it isn't stable: a P2P<->JVB renegotiation re-keys it
+// for any participant. selectedPeerKey is what renderDetail's fallback
+// recovers the CORRECT selection with when that happens, instead of
+// silently snapping to the local peer. Kept in sync with selectedJitsiId
+// everywhere the latter is assigned.
+let selectedPeerKey = null;
 let initedRoom = null;
 let codeDebounce = null;
 let lastStatus = 'Idle';
@@ -429,8 +437,11 @@ function renderChip(peer, selected) {
   const color = chipColor(peer.jitsiId, isLocal);
   const e = peer.effects || {};
   const routed = routedSet.has(peer.jitsiId);
+  // data-peer-key is the stable id (see selectedPeerKey) a click hands to
+  // the selection alongside the jitsiId a chip render always has on hand.
+  const peerKey = isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
   return `
-    <button class="ts-chip${selected ? ' selected' : ''}" data-jid="${peer.jitsiId || ''}" style="--ts-chip-color:${color};">
+    <button class="ts-chip${selected ? ' selected' : ''}" data-jid="${peer.jitsiId || ''}" data-peer-key="${escapeHtml(peerKey)}" style="--ts-chip-color:${color};">
       <div class="ts-chip-row">
         <div class="ts-avatar">${initial(peer.displayName)}</div>
         <div class="ts-name${isLocal ? ' you' : ''}">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
@@ -448,6 +459,7 @@ function renderStrip(container) {
       const jid = el.getAttribute('data-jid');
       if (!jid) return;
       selectedJitsiId = jid;
+      selectedPeerKey = el.getAttribute('data-peer-key') || null;
       renderAll();
     });
   });
@@ -666,8 +678,34 @@ function bindBotClusterBlock(container) {
   });
 }
 
-function renderDetail(container) {
+// Resolves whichever peer is currently selected, repairing selectedJitsiId
+// if it's gone stale (see selectedPeerKey's declaration comment) rather than
+// letting a caller fall back to the local peer on a merely-renamed jitsiId.
+// Callers that DO want a "nothing selected yet" fallback to the local peer
+// (only renderDetail, which must always show SOMETHING) do that themselves
+// afterward; a caller that should do nothing when the selection is
+// unresolvable (the in-place remote-tile sync in renderAll) can just check
+// the return value.
+function resolveSelectedPeer() {
   let peer = getPeerByJitsiId(selectedJitsiId);
+  // selectedJitsiId can go stale out from under an otherwise-unchanged
+  // selection: a P2P<->JVB renegotiation re-keys jitsiId for ANY
+  // participant (human or bot — see peerKeyAttr's comment on the remote-tile
+  // textarea), never peerId. Recover by the stable id instead of silently
+  // treating the selection as gone, which used to make renderDetail snap
+  // back to the local peer with no indication anything happened — reading
+  // as "my bot edit reverted" when what actually happened is the studio
+  // quietly switched to showing an unrelated (the operator's own) tile, and
+  // any further edits/evals were going to THAT tile instead.
+  if (!peer && selectedPeerKey && selectedPeerKey !== 'local') {
+    peer = getAllPeers().find(p => p.peerId === selectedPeerKey) || null;
+    if (peer) selectedJitsiId = peer.jitsiId;
+  }
+  return peer;
+}
+
+function renderDetail(container) {
+  let peer = resolveSelectedPeer();
   if (!peer) {
     const local = getLocalPeer();
     if (local && local.jitsiId) {
@@ -681,6 +719,10 @@ function renderDetail(container) {
   }
 
   const isLocal = !!peer.isLocal;
+  // Track the stable id behind whatever jitsiId ended up selected, so the
+  // NEXT jitsiId flip (this peer's or anyone else's) can recover the same
+  // way rather than only the first one.
+  selectedPeerKey = isLocal ? 'local' : (peer.peerId || null);
   const color = chipColor(peer.jitsiId, isLocal);
   container.style.setProperty('--ts-detail-color', color);
 
@@ -1197,7 +1239,7 @@ function renderAll() {
         const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
         if (existingCodeEl && !isLocalEditor
             && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
-          const peer = getPeerByJitsiId(selectedJitsiId);
+          const peer = resolveSelectedPeer();
           const peerKey = peer ? String(peer.peerId || peer.jitsiId || '') : null;
           const live = peer && peerKey === existingCodeEl.dataset.peerKey ? (peer.pattern || '') : null;
           if (live != null && live !== existingCodeEl.value) {
@@ -1359,7 +1401,7 @@ function tickUi() {
   if (initedRoom !== room) {
     initedRoom = room;
     const local = getLocalParticipant();
-    if (local && !selectedJitsiId) selectedJitsiId = local.id;
+    if (local && !selectedJitsiId) { selectedJitsiId = local.id; selectedPeerKey = 'local'; }
   }
   const btn = ensureToggle();
   if (btn) btn.style.display = 'block';
@@ -1402,7 +1444,7 @@ document.addEventListener('trussal-eval', () => {
 });
 
 subscribeParticipants((event, payload) => {
-  if (event === 'local' && payload && !selectedJitsiId) selectedJitsiId = payload.id;
+  if (event === 'local' && payload && !selectedJitsiId) { selectedJitsiId = payload.id; selectedPeerKey = 'local'; }
   renderAll();
 });
 
