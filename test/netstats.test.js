@@ -17,10 +17,24 @@ test('first poll: RTT from selected candidate pair, jitter is worst AUDIO stream
   // end's 0.006 s on our outbound. The video stream's 0.011 s is EXCLUDED —
   // see the audio-only test below for why that matters.
   assert.equal(sample.rtcJitter, 6);
-  // Lifetime totals on the first poll: (100+400) / (100+400+9000+45000)
-  assert.ok(Math.abs(sample.packetLoss - 500 / 54500) < 1e-9);
+  // Downlink lifetime loss (100+400)/(100+400+9000+45000) ≈ 0.00917 loses to
+  // the fixture's uplink fractionLost of 0.01 — packetLoss is the WORSE of
+  // the two directions.
+  assert.ok(Math.abs(sample.packetLoss - 0.01) < 1e-9);
   assert.deepEqual(totals, { lost: 500, received: 54000, jbDelay: 0, jbEmitted: 0 });
   assert.equal(sample.jitterBufferMs, null, 'fixture reports no buffer stats');
+});
+
+test('uplink loss (remote-inbound-rtp fractionLost) counts even with a clean downlink', () => {
+  // The scenario a downlink-only computation misses entirely: a mobile sender
+  // whose OWN audio is dropping packets on the way to the JVB — visible only
+  // via what the far end's RTCP receiver report says it lost of our upload —
+  // while everything we ourselves receive arrives intact.
+  const entries = [
+    { type: 'inbound-rtp', kind: 'audio', packetsReceived: 1000, packetsLost: 0 },
+    { type: 'remote-inbound-rtp', kind: 'audio', fractionLost: 0.15 }
+  ];
+  assert.equal(deriveNetSample(entries, null).sample.packetLoss, 0.15);
 });
 
 test('rtcJitter is audio-only, so turning a camera on cannot change WCJ', () => {
@@ -63,9 +77,12 @@ test('candidate pair missing → falls back to remote-inbound-rtp roundTripTime'
   assert.equal(sample.rtcRtt, 58); // 0.058 s from remote-inbound-rtp
 });
 
-test('no packets moved in the interval → loss is null (not a fake 0%)', () => {
-  const { totals: prev } = deriveNetSample(poll1, null);
-  const { sample } = deriveNetSample(poll1, prev); // identical report again
+test('no downlink packets moved in the interval → downlink leg is null (not a fake 0%)', () => {
+  // Strip the fixture's uplink fractionLost so this isolates the downlink
+  // delta-vs-lifetime behaviour from the uplink leg covered above.
+  const noUplink = poll1.map(s => s.type === 'remote-inbound-rtp' ? { ...s, fractionLost: undefined } : s);
+  const { totals: prev } = deriveNetSample(noUplink, null);
+  const { sample } = deriveNetSample(noUplink, prev); // identical report again
   assert.equal(sample.packetLoss, null);
   assert.equal(sample.rtcRtt, 62); // RTT still derived
 });

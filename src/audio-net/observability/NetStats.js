@@ -34,9 +34,17 @@ const POLL_INTERVAL_MS = 2000;
 //              actually exposes — encode, decode and device buffering are not
 //              measurable from getStats and are carried as a constant
 //              allowance in the worst-case model instead.
-//   packetLoss fraction [0,1] — lost / (lost + received) over the delta
-//              since `prevTotals` so it tracks *current* loss, not the
-//              lifetime average. First call (no prev) uses lifetime totals.
+//   packetLoss fraction [0,1] — the WORSE of two directions, since either one
+//              can be the bottleneck a performer's audio actually suffers:
+//                downlink (what we received): lost / (lost + received) over
+//                  the delta since `prevTotals`, from our own inbound-rtp.
+//                  First call (no prev) uses lifetime totals.
+//                uplink (what the far end told us it received of OUR audio):
+//                  remote-inbound-rtp's `fractionLost`, an RTCP-receiver-report
+//                  ratio the browser already normalizes per report interval —
+//                  no delta bookkeeping needed. This is the direction a
+//                  cellular/mobile sender typically struggles on (constrained
+//                  uplink), and downlink-only accounting was blind to it.
 //
 // Returns { sample: { rtcRtt, rtcJitter, packetLoss } | null, totals } where
 // each field may be null when the report had nothing usable for it.
@@ -45,6 +53,7 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
 
   let rtcRtt = null;
   let rtcJitter = null;
+  let uplinkLoss = null;
   let lost = 0;
   let received = 0;
   let jbDelay = 0;      // cumulative seconds, summed over emitted samples
@@ -77,6 +86,9 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
       if (typeof s.jitter === 'number' && isAudio(s)) {
         rtcJitter = Math.max(rtcJitter ?? 0, s.jitter * 1000);
       }
+      if (typeof s.fractionLost === 'number' && isAudio(s)) {
+        uplinkLoss = Math.max(uplinkLoss ?? 0, s.fractionLost);
+      }
     } else if (s.type === 'inbound-rtp') {
       sawInbound = true;
       if (typeof s.jitter === 'number' && isAudio(s)) {
@@ -103,6 +115,10 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
     } else {
       packetLoss = 0;
     }
+  }
+  if (uplinkLoss != null) {
+    const clamped = Math.min(1, Math.max(0, uplinkLoss));
+    packetLoss = packetLoss == null ? clamped : Math.max(packetLoss, clamped);
   }
 
   // Average buffer delay over THIS interval: both fields are cumulative, so

@@ -56568,6 +56568,7 @@ ${s2}${BTN_MARKER}`)
     const entries2 = Array.isArray(statsEntries) ? statsEntries : [];
     let rtcRtt = null;
     let rtcJitter = null;
+    let uplinkLoss = null;
     let lost = 0;
     let received = 0;
     let jbDelay = 0;
@@ -56587,6 +56588,9 @@ ${s2}${BTN_MARKER}`)
         }
         if (typeof s2.jitter === "number" && isAudio(s2)) {
           rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
+        }
+        if (typeof s2.fractionLost === "number" && isAudio(s2)) {
+          uplinkLoss = Math.max(uplinkLoss ?? 0, s2.fractionLost);
         }
       } else if (s2.type === "inbound-rtp") {
         sawInbound = true;
@@ -56612,6 +56616,10 @@ ${s2}${BTN_MARKER}`)
       } else {
         packetLoss = 0;
       }
+    }
+    if (uplinkLoss != null) {
+      const clamped = Math.min(1, Math.max(0, uplinkLoss));
+      packetLoss = packetLoss == null ? clamped : Math.max(packetLoss, clamped);
     }
     let jitterBufferMs = null;
     const dDelay = prevTotals ? jbDelay - prevTotals.jbDelay : jbDelay;
