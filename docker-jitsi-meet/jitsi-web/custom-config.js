@@ -57405,6 +57405,7 @@ ${s2}${BTN_MARKER}`)
   var STYLE_ID4 = "trussal-studio-style";
   var STORAGE_KEY = "trussal.studio.pattern";
   var selectedJitsiId = null;
+  var selectedPeerKey = null;
   var initedRoom = null;
   var codeDebounce = null;
   var lastStatus = "Idle";
@@ -57745,8 +57746,9 @@ ${s2}${BTN_MARKER}`)
     const color2 = chipColor(peer.jitsiId, isLocal);
     const e30 = peer.effects || {};
     const routed = routedSet.has(peer.jitsiId);
+    const peerKey = isLocal ? "local" : String(peer.peerId || peer.jitsiId || "");
     return `
-    <button class="ts-chip${selected ? " selected" : ""}" data-jid="${peer.jitsiId || ""}" style="--ts-chip-color:${color2};">
+    <button class="ts-chip${selected ? " selected" : ""}" data-jid="${peer.jitsiId || ""}" data-peer-key="${escapeHtml(peerKey)}" style="--ts-chip-color:${color2};">
       <div class="ts-chip-row">
         <div class="ts-avatar">${initial(peer.displayName)}</div>
         <div class="ts-name${isLocal ? " you" : ""}">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
@@ -57763,6 +57765,7 @@ ${s2}${BTN_MARKER}`)
         const jid = el.getAttribute("data-jid");
         if (!jid) return;
         selectedJitsiId = jid;
+        selectedPeerKey = el.getAttribute("data-peer-key") || null;
         renderAll();
       });
     });
@@ -57916,8 +57919,16 @@ ${s2}${BTN_MARKER}`)
       });
     });
   }
-  function renderDetail(container2) {
+  function resolveSelectedPeer() {
     let peer = getPeerByJitsiId(selectedJitsiId);
+    if (!peer && selectedPeerKey && selectedPeerKey !== "local") {
+      peer = getAllPeers().find((p) => p.peerId === selectedPeerKey) || null;
+      if (peer) selectedJitsiId = peer.jitsiId;
+    }
+    return peer;
+  }
+  function renderDetail(container2) {
+    let peer = resolveSelectedPeer();
     if (!peer) {
       const local2 = getLocalPeer();
       if (local2 && local2.jitsiId) {
@@ -57930,6 +57941,7 @@ ${s2}${BTN_MARKER}`)
       return;
     }
     const isLocal = !!peer.isLocal;
+    selectedPeerKey = isLocal ? "local" : peer.peerId || null;
     const color2 = chipColor(peer.jitsiId, isLocal);
     container2.style.setProperty("--ts-detail-color", color2);
     const extLabel = getExternalStreamLabel(peer.jitsiId);
@@ -58291,7 +58303,7 @@ ${voiceCode}${BTN_MARKER2}`);
         if (isCodeFocused) {
           const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
           if (existingCodeEl && !isLocalEditor && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
-            const peer = getPeerByJitsiId(selectedJitsiId);
+            const peer = resolveSelectedPeer();
             const peerKey = peer ? String(peer.peerId || peer.jitsiId || "") : null;
             const live = peer && peerKey === existingCodeEl.dataset.peerKey ? peer.pattern || "" : null;
             if (live != null && live !== existingCodeEl.value) {
@@ -58415,7 +58427,10 @@ ${voiceCode}${BTN_MARKER2}`);
     if (initedRoom !== room2) {
       initedRoom = room2;
       const local2 = getLocalParticipant();
-      if (local2 && !selectedJitsiId) selectedJitsiId = local2.id;
+      if (local2 && !selectedJitsiId) {
+        selectedJitsiId = local2.id;
+        selectedPeerKey = "local";
+      }
     }
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
@@ -58445,7 +58460,10 @@ ${voiceCode}${BTN_MARKER2}`);
     }
   });
   subscribeParticipants((event, payload) => {
-    if (event === "local" && payload && !selectedJitsiId) selectedJitsiId = payload.id;
+    if (event === "local" && payload && !selectedJitsiId) {
+      selectedJitsiId = payload.id;
+      selectedPeerKey = "local";
+    }
     renderAll();
   });
   subscribePeerState(() => renderAll());
