@@ -32,6 +32,7 @@ import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCod
 import { toggleLineComment } from './editor-router-core.js';
 import { injectHydraVideoToggle } from './hydra-video.js';
 import { tickKbdUi } from './on-screen-keyboard.js';
+import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
   bootAudioEngine,
   subscribeAudioRouting,
@@ -652,6 +653,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // patchLocalProgramSection never overwrites this value; it only reaches
     // peer-state on eval (sendLocalPattern), exactly as before.
     codeEl.value = peer.pattern || '';
+    attachUndoHistory(codeEl);
 
     codeEl.addEventListener('input', () => {
       clearTimeout(codeDebounce);
@@ -741,6 +743,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // Remote tile: editing drives the participant (bots only, enforced server-side).
     codeEl.value = peer.pattern || '';
     codeEl.dataset.lastSynced = codeEl.value;
+    attachUndoHistory(codeEl);
     const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -820,6 +823,7 @@ function patchLocalProgramSection(el, peer, isLocal) {
     const live = peer.pattern || '';
     if (codeEl.value !== live) {
       codeEl.value = live;
+      resetUndoBaseline(codeEl);
     }
     codeEl.dataset.lastSynced = live;
   }
