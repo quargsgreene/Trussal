@@ -1444,14 +1444,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     const presence = audioCtx.createGain();
     presence.gain.value = presenceLevelFor(jitsiId);
-    const monitor = audioCtx.createGain();
-    monitor.gain.value = monitorLevelFor(jitsiId);
     input.connect(presence);
-    presence.connect(monitor);
-    monitor.connect(worklet2);
+    presence.connect(worklet2);
     worklet2.connect(limiter);
     limiter.connect(realDestination);
-    return { jitsiId, input, presence, monitor, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
+    return { jitsiId, input, presence, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
   }
   async function ensureChain(jitsiId) {
     if (!jitsiId) return null;
@@ -1585,23 +1582,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     g2.cancelScheduledValues(t);
     g2.setTargetAtTime(level, t, rampS);
     return true;
-  }
-  function monitorLevelFor(jitsiId) {
-    if (monitorMode === "master") return 1;
-    if (monitorMode === "self") return 0;
-    return jitsiId === monitorMode ? 1 : 0;
-  }
-  function setMonitorMix(mode2) {
-    monitorMode = mode2 || "master";
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    for (const chain of chains.values()) {
-      chain.monitor.gain.setTargetAtTime(monitorLevelFor(chain.jitsiId), now, 0.05);
-    }
-    if (masterStrudelGain) {
-      const strudelLevel = monitorMode === "master" || monitorMode === "self" ? 1 : 0;
-      masterStrudelGain.gain.setTargetAtTime(strudelLevel, now, 0.05);
-    }
   }
   function insertMasterChain(endpoints) {
     if (!audioCtx || !realDestination || !endpoints) return false;
@@ -1989,7 +1969,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, monitorMode, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -2059,7 +2039,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           refreshAggregatorPeer();
         }
       });
-      monitorMode = "master";
       jitsiMixState = null;
       JitsiMicMixEffect = class {
         constructor(audioCtx3, externalStream) {
@@ -51919,12 +51898,6 @@ ${SHORTCUT_LINES[fn]}
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
 #trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
-#trussal-studio-overlay select.ts-select {
-  background: #050f0a; color: #d6f5e2;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 4px; padding: 3px 6px; font-size: 11px;
-  max-width: min(220px, 56vw);
-}
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
@@ -58021,15 +57994,10 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-title">Network Metrics</div>
       <div class="ts-section-controls">
         <span class="ts-metrics-controls"></span>
-        <select class="ts-select ts-monitor-mix" title="mix output monitoring"></select>
       </div>
     </div>
     <div class="ts-metrics-body"></div>
   `;
-    el.querySelector(".ts-monitor-mix").addEventListener("change", (e30) => {
-      monitorSelection = e30.target.value;
-      setMonitorMix(monitorSelection);
-    });
     return el;
   }
   function updateMetricsSection(el, peer, controls2 = "") {
@@ -58038,14 +58006,6 @@ ${s2}${BTN_MARKER}`)
     const body = el.querySelector(".ts-metrics-body");
     try {
       const wc = effectiveWorstCase();
-      const peers = getAllPeers();
-      const mixOptions = [
-        `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
-        `<option value="self"${monitorSelection === "self" ? " selected" : ""}>ipsilateral (own mix)</option>`,
-        ...peers.filter((p) => !p.isLocal && p.jitsiId).map((p) => `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? " selected" : ""}>\u2194 ${escapeHtml(String(p.roomIndex ?? p.displayName ?? "peer"))}</option>`)
-      ].join("");
-      const mixSel = el.querySelector(".ts-monitor-mix");
-      if (mixSel.innerHTML !== mixOptions) mixSel.innerHTML = mixOptions;
       body.innerHTML = `
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
@@ -58061,7 +58021,6 @@ ${s2}${BTN_MARKER}`)
       body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>`;
     }
   }
-  var monitorSelection = "master";
   var lastFleetStatus = "";
   subscribeFleetStatus((status) => {
     if (status.action === "spawn") {

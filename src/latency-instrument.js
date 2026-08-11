@@ -346,24 +346,17 @@ async function buildChain(jitsiId) {
 
   // Presence gain: aggregator-mode solo. Silences this peer locally when a
   // remote aggregator is the sole audio source, independent of the Net Cycles
-  // slot gate (chain.input) and the monitor-mix gain (chain.monitor), so the
-  // three multiply cleanly. 1 (audible) unless aggregator mode mutes this peer.
+  // slot gate (chain.input), so the two multiply cleanly. 1 (audible) unless
+  // aggregator mode mutes this peer.
   const presence = audioCtx.createGain();
   presence.gain.value = presenceLevelFor(jitsiId);
 
-  // Monitor gain: mix-output selection (master / ipsilateral / a chosen
-  // contralateral peer) without touching the Net Cycles slot gate on
-  // chain.input.
-  const monitor = audioCtx.createGain();
-  monitor.gain.value = monitorLevelFor(jitsiId);
-
   input.connect(presence);
-  presence.connect(monitor);
-  monitor.connect(worklet);
+  presence.connect(worklet);
   worklet.connect(limiter);
   limiter.connect(realDestination); // dry path by default
 
-  return { jitsiId, input, presence, monitor, worklet, limiter, reverb, reverbGain, reverbOn: false };
+  return { jitsiId, input, presence, worklet, limiter, reverb, reverbGain, reverbOn: false };
 }
 
 async function ensureChain(jitsiId) {
@@ -567,37 +560,6 @@ export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
   g.setTargetAtTime(level, t, rampS);
   return true;
 }
-
-// ---- Mix output monitoring -----------------------------------------------
-//
-// 'master' hears everything (default); 'self' is the ipsilateral mix (own
-// instrument only — every remote chain muted); a jitsiId monitors that
-// peer's contralateral mix (their chain solo, local instrument muted). The
-// remote chain already applies that peer's deterministic effects locally,
-// so soloing it reproduces their processed view.
-
-let monitorMode = 'master';
-
-function monitorLevelFor(jitsiId) {
-  if (monitorMode === 'master') return 1;
-  if (monitorMode === 'self') return 0;
-  return jitsiId === monitorMode ? 1 : 0;
-}
-
-export function setMonitorMix(mode) {
-  monitorMode = mode || 'master';
-  if (!audioCtx) return;
-  const now = audioCtx.currentTime;
-  for (const chain of chains.values()) {
-    chain.monitor.gain.setTargetAtTime(monitorLevelFor(chain.jitsiId), now, 0.05);
-  }
-  if (masterStrudelGain) {
-    const strudelLevel = (monitorMode === 'master' || monitorMode === 'self') ? 1 : 0;
-    masterStrudelGain.gain.setTargetAtTime(strudelLevel, now, 0.05);
-  }
-}
-
-export function getMonitorMix() { return monitorMode; }
 
 // Net Cycles master effects: splice a {input, output} pair between the
 // master bus and the real context destination — "after all other effects".

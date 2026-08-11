@@ -47,7 +47,6 @@ import {
   isPropagatingToRoom,
   setJamulusMode,
   isJamulusMode,
-  setMonitorMix,
   getAudioContext,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
@@ -271,9 +270,9 @@ function metricsLine(peer) {
 
 // The one network panel: this peer's measured link and the room-wide
 // worst-case basis every client shares (identical everywhere — it sets Net
-// Cycles cycle lengths). `controls` is dropped into the header next to the
-// mix-monitor select; the Jamulus capture buttons live there when re-enabled,
-// since routing them is exactly what the peer line's `routed` state reports.
+// Cycles cycle lengths). `controls` is dropped into the header; the Jamulus
+// capture buttons live there when re-enabled, since routing them is exactly
+// what the peer line's `routed` state reports.
 //
 // effectiveWorstCase() layers the CRDT induced floors over the measured
 // roster metrics, and carries measured's own `sampleCount` through the
@@ -327,15 +326,10 @@ function createMetricsSection() {
       <div class="ts-section-title">Network Metrics</div>
       <div class="ts-section-controls">
         <span class="ts-metrics-controls"></span>
-        <select class="ts-select ts-monitor-mix" title="mix output monitoring"></select>
       </div>
     </div>
     <div class="ts-metrics-body"></div>
   `;
-  el.querySelector('.ts-monitor-mix').addEventListener('change', (e) => {
-    monitorSelection = e.target.value;
-    setMonitorMix(monitorSelection);
-  });
   return el;
 }
 
@@ -349,15 +343,6 @@ function updateMetricsSection(el, peer, controls = '') {
   const body = el.querySelector('.ts-metrics-body');
   try {
     const wc = effectiveWorstCase();
-    const peers = getAllPeers();
-    const mixOptions = [
-      `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
-      `<option value="self"${monitorSelection === 'self' ? ' selected' : ''}>ipsilateral (own mix)</option>`,
-      ...peers.filter(p => !p.isLocal && p.jitsiId).map(p =>
-        `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? ' selected' : ''}>↔ ${escapeHtml(String(p.roomIndex ?? p.displayName ?? 'peer'))}</option>`)
-    ].join('');
-    const mixSel = el.querySelector('.ts-monitor-mix');
-    if (mixSel.innerHTML !== mixOptions) mixSel.innerHTML = mixOptions;
     body.innerHTML = `
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
@@ -373,8 +358,6 @@ function updateMetricsSection(el, peer, controls = '') {
     body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String((e && e.message) || e))}</div>`;
   }
 }
-
-let monitorSelection = 'master';
 
 let lastFleetStatus = '';
 subscribeFleetStatus((status) => {

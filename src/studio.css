@@ -162,12 +162,6 @@
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
 #trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
-#trussal-studio-overlay select.ts-select {
-  background: #050f0a; color: #d6f5e2;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 4px; padding: 3px 6px; font-size: 11px;
-  max-width: min(220px, 56vw);
-}
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;

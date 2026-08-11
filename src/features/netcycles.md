@@ -179,9 +179,6 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 ### AV Buffer Object
 AV is an object with audio and video samples, as well as the corresponding o2lite messages and XMPP stanzas requisite to transmit and receive each participant's code and performance status.
 
-## Mix Output
-By highlighting different participants within Trussal Studio, one can hear the entire master bus, one's own ipsilateral mix, or any contralateral mix of one's choosing.
-
 ## Room Health
 All prior conductor health functionality persists (i.e. removing bots to avoid server overload) with the added functionality that it also by default adjusts the decoupling of timing between audio and visual buffers for each user (with a default of one cycle length) according to network conditions, prevents deadlock, and further compresses any output signal according to current server load globally, and locally according to a client's CPU, RAM, and GPU usage, possibly also scaling down MediaPipe landmark density.
 
