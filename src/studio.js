@@ -619,7 +619,6 @@ function createLocalProgramSection(isLocal) {
     </div>
     <div class="ts-sample-banks-host"></div>
     <textarea class="ts-code" spellcheck="false"></textarea>
-    <div class="ts-voice-btns"></div>
     <div class="ts-strudel-sliders ts-sliders"></div>
   `;
   return el;
@@ -641,14 +640,12 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // patchLocalProgramSection never overwrites this value; it only reaches
     // peer-state on eval (sendLocalPattern), exactly as before.
     codeEl.value = peer.pattern || '';
-    renderVoiceButtons(el, codeEl.value);
 
     codeEl.addEventListener('input', () => {
       clearTimeout(codeDebounce);
       codeDebounce = setTimeout(() => {
         try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
       }, 200);
-      renderVoiceButtons(el, codeEl.value);
     });
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -729,7 +726,6 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // Remote tile: editing drives the participant (bots only, enforced server-side).
     codeEl.value = peer.pattern || '';
     codeEl.dataset.lastSynced = codeEl.value;
-    renderVoiceButtons(el, codeEl.value);
     const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
@@ -808,7 +804,6 @@ function patchLocalProgramSection(el, peer, isLocal) {
     const live = peer.pattern || '';
     if (codeEl.value !== live) {
       codeEl.value = live;
-      renderVoiceButtons(el, live);
     }
     codeEl.dataset.lastSynced = live;
   }

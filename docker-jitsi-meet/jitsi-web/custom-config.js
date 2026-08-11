@@ -58099,7 +58099,6 @@ ${s2}${BTN_MARKER}`)
     </div>
     <div class="ts-sample-banks-host"></div>
     <textarea class="ts-code" spellcheck="false"></textarea>
-    <div class="ts-voice-btns"></div>
     <div class="ts-strudel-sliders ts-sliders"></div>
   `;
     return el;
@@ -58109,7 +58108,6 @@ ${s2}${BTN_MARKER}`)
     const targetPeerId = peer.peerId;
     if (isLocal) {
       codeEl.value = peer.pattern || "";
-      renderVoiceButtons(el, codeEl.value);
       codeEl.addEventListener("input", () => {
         clearTimeout(codeDebounce);
         codeDebounce = setTimeout(() => {
@@ -58118,7 +58116,6 @@ ${s2}${BTN_MARKER}`)
           } catch (e30) {
           }
         }, 200);
-        renderVoiceButtons(el, codeEl.value);
       });
       codeEl.addEventListener("keydown", (e30) => {
         const meta = e30.ctrlKey || e30.metaKey;
@@ -58178,7 +58175,6 @@ ${s2}${BTN_MARKER}`)
     } else {
       codeEl.value = peer.pattern || "";
       codeEl.dataset.lastSynced = codeEl.value;
-      renderVoiceButtons(el, codeEl.value);
       const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
       codeEl.addEventListener("keydown", (e30) => {
         const meta = e30.ctrlKey || e30.metaKey;
@@ -58236,7 +58232,6 @@ ${s2}${BTN_MARKER}`)
       const live = peer.pattern || "";
       if (codeEl.value !== live) {
         codeEl.value = live;
-        renderVoiceButtons(el, live);
       }
       codeEl.dataset.lastSynced = live;
     }
@@ -58385,40 +58380,6 @@ ${s2}${BTN_MARKER}`)
       console.error("[studio] capture failed", e30);
       setStatus("Capture failed: " + (e30 && e30.message ? e30.message : e30));
     }
-  }
-  var BTN_MARKER2 = " // strudel-btn";
-  function parseVoiceButtons(code2) {
-    const buttons = [];
-    const re2 = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
-    let m2;
-    while ((m2 = re2.exec(code2)) !== null) {
-      const voiceCode = `${m2[1]}: ${m2[2].trim()}`;
-      const isActive = code2.includes(`
-${voiceCode}${BTN_MARKER2}`);
-      buttons.push({ name: m2[1], voiceCode, isActive });
-    }
-    return buttons;
-  }
-  function renderVoiceButtons(container2, code2) {
-    const area = container2.querySelector(".ts-voice-btns");
-    if (!area) return;
-    const buttons = parseVoiceButtons(code2);
-    if (!buttons.length) {
-      area.innerHTML = "";
-      return;
-    }
-    const esc = (s2) => String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
-    area.innerHTML = buttons.map((b) => {
-      const label2 = b.name.length > 18 ? b.name.slice(0, 18) + "\u2026" : b.name;
-      return `<button class="ts-voice-btn${b.isActive ? " on" : ""}" data-voice-code="${esc(b.voiceCode).replace(/"/g, "&quot;")}">\u25B6 ${esc(label2)}</button>`;
-    }).join("");
-    area.querySelectorAll(".ts-voice-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        toggleButtonCode(btn.dataset.voiceCode);
-        const ta = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
-        if (ta) renderVoiceButtons(container2, ta.value);
-      });
-    });
   }
   function deriveSliderLabels(sliders) {
     const local2 = getLocalPeer();
