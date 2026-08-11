@@ -73,6 +73,17 @@ docker compose build --no-cache web && docker compose rm -sf web && docker compo
 docker compose build --no-cache latency && docker compose rm -sf latency && docker compose up -d latency
 docker compose down && docker compose up -d
 
+# Keep coturn's TURN_EXTERNAL_IP self-healing on this dynamic/residential WAN
+# IP (see scripts/refresh-turn-external-ip.sh for why coturn can't just resolve
+# a hostname itself). No root on this box, so cron rather than a systemd timer.
+# Idempotent: drop any prior entry for this script before re-adding it, so a
+# moved checkout doesn't leave a stale path running alongside the new one.
+REFRESH_TURN_SCRIPT="$REPO/scripts/refresh-turn-external-ip.sh"
+REFRESH_TURN_CRON="*/5 * * * * $REFRESH_TURN_SCRIPT >> \$HOME/turn-ip-refresh.log 2>&1"
+( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh"; echo "$REFRESH_TURN_CRON" ) | crontab -
+echo "Installed cron: $REFRESH_TURN_CRON"
+"$REFRESH_TURN_SCRIPT"
+
 # Fleet control-channel secret, checked LAST so it lands at the bottom of the
 # screen rather than under a full docker build, and after the stack is up so it
 # can read the value the fresh container actually got. Deliberately non-fatal:
