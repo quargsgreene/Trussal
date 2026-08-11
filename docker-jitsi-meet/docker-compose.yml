@@ -41,6 +41,12 @@ services:
       - --use-auth-secret
       - --static-auth-secret=${TURN_CREDENTIALS}
       - --external-ip=${TURN_EXTERNAL_IP}
+      # Caps how long an orphaned allocation can squat a relay port when a
+      # client vanishes without a clean TURN teardown (e.g. a flapping WAN
+      # client retrying ICE every ~18s) — without this, coturn's default
+      # 600s lifetime lets a single flapping client exhaust a narrow
+      # TURN_RELAY_MIN_PORT/MAX_PORT range (see run.sh's port-forward note).
+      - --max-allocate-lifetime=120
       - --no-multicast-peers
       - --no-tlsv1
       - --no-tlsv1_1
