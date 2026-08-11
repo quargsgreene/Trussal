@@ -213,9 +213,14 @@ export function pageIsActiveAggregator() {
  * it's naturally copied from a performer's own full-featured editor) threw on
  * evaluate() — silently now that the catch below no longer feeds healthTick,
  * which read as "the audio never follows what I typed." dropCapability below
- * mirrors dropCapabilityParagraphs' paragraph/label-line splitting, without
- * its stack()-sibling-salvage refinement: a manual edit to one bot's tile
- * isn't the multi-voice cluster-authoring shape that refinement exists for.
+ * mirrors dropCapabilityParagraphs' paragraph/label-line splitting AND its
+ * stack()-sibling-salvage refinement (stripBranchesMatching there): the text
+ * being edited here is a bot's own peer.pattern, which is exactly the
+ * multi-voice cluster-authored shape that refinement exists for — a
+ * performer routinely writes `stack(word("x"), s("bd sd"))` rather than
+ * separate `$:` voices, and without the salvage the whole stack(), audio
+ * sibling included, was dropped to 'silence' any time a bot's own tile was
+ * pushed back unedited (or edited without touching the word()/css() voice).
  */
 export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   const patterns = Array.isArray(preamblePatterns) ? preamblePatterns : [];
@@ -252,12 +257,80 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     if (cur.length) out.push(cur.join('\n'));
     return out;
   };
+  // Mirrors cluster-source.js's findStackCall/splitStackArgs/
+  // stripBranchesMatching verbatim — can't import it in-page (see the
+  // file-level JSON-only note), so it's duplicated here rather than shared.
+  const findStackCall = (text) => {
+    const match = /(^|[^\w$.])stack\s*\(/.exec(text);
+    if (!match) return null;
+    const start = match.index + match[1].length;
+    const open = text.indexOf('(', start);
+    let depth = 0;
+    let quote = null;
+    for (let i = open; i < text.length; i++) {
+      const ch = text[i];
+      if (quote) {
+        if (ch === '\\') { i++; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+      if (ch === '(') depth++;
+      else if (ch === ')') {
+        depth--;
+        if (depth === 0) return { start, close: i, argsText: text.slice(open + 1, i) };
+      }
+    }
+    return null; // unbalanced — leave the statement to the whole-statement fallback
+  };
+  const splitStackArgs = (argsText) => {
+    const args = [];
+    let depth = 0;
+    let quote = null;
+    let cur = '';
+    for (let i = 0; i < argsText.length; i++) {
+      const ch = argsText[i];
+      if (quote) {
+        cur += ch;
+        if (ch === '\\') { cur += argsText[i + 1] ?? ''; i++; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; cur += ch; continue; }
+      if (ch === '(' || ch === '[' || ch === '{') { depth++; cur += ch; continue; }
+      if (ch === ')' || ch === ']' || ch === '}') { depth--; cur += ch; continue; }
+      if (ch === ',' && depth === 0) { args.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim() !== '') args.push(cur);
+    return args;
+  };
+  const stripBranchesMatching = (text, callRe) => {
+    const call = findStackCall(text);
+    if (!call) return null;
+    const survivors = splitStackArgs(call.argsText)
+      .filter((arg) => !callRe.test(arg))
+      .map((arg) => arg.trim())
+      .filter(Boolean);
+    if (!survivors.length) return null;
+    const rebuilt = `stack(\n  ${survivors.join(',\n  ')}\n)`;
+    return text.slice(0, call.start) + rebuilt + text.slice(call.close + 1);
+  };
   const dropCapability = (src, initRe, callRe) => {
     if (!initRe.test(src) && !callRe.test(src)) return src;
+    const dropChunk = (chunk) => {
+      const stripped = stripBranchesMatching(chunk, callRe);
+      if (stripped !== null) return stripped;
+      // No stack() to salvage a sibling from: drop the whole chunk only if IT
+      // is what declares or calls this capability.
+      if (initRe.test(chunk) || callRe.test(chunk)) return null;
+      return chunk;
+    };
     const kept = src.split(/\n\n+/).map((paragraph) => {
       if (!paragraph.trim()) return null;
       const survivors = splitLabelUnits(paragraph)
-        .filter((unit) => !initRe.test(unit) && !callRe.test(unit));
+        .map(dropChunk)
+        .filter((c) => c !== null);
       return survivors.length ? survivors.join('\n') : null;
     }).filter((p) => p !== null);
     return kept.join('\n\n').trim();

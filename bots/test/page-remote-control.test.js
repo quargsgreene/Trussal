@@ -123,6 +123,20 @@ test('a mixed edit keeps its audio and drops only the css() voice', async () => 
   assert.equal(ctl.evaluated[0], 's("bd sd")');
 });
 
+test('word() as a stack() sibling loses only its own branch, not the audio next to it', async () => {
+  // The shape a bot's own peer.pattern is routinely in: a performer combines
+  // audio and words as stack() siblings rather than separate $: voices (see
+  // cluster-source.js's stripBranchesMatching, which this mirrors). Without
+  // salvaging the sibling, the whole stack() — audio included — used to drop
+  // to 'silence' any time a bot's own tile was pushed back, even unedited.
+  const ctl = installControl({ hydra: '' });
+  const pushed = 'stack(\n  word("hello world"),\n  s("bd sd")\n)';
+  await ctl.push(pushed);
+
+  assert.match(ctl.evaluated[0], /s\("bd sd"\)/);
+  assert.ok(!ctl.evaluated[0].includes('word('), 'the word() voice must not reach the bare REPL');
+});
+
 test('a text/css voice is stripped from the pushed audio before it is recombined with the stored hydra', async () => {
   const ctl = installControl({ hydra: 'await initHydra()\nosc(10).out(o0)' });
   // No blank line between the word() call and the audio pattern — stripping
