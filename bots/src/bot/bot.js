@@ -40,6 +40,19 @@ export class Bot {
     this.browser = await this.launcher.launch(browserLaunchOptions(executablePath));
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(spoofedUserAgent(botId));
+    // In-page console.error/console.warn is otherwise invisible outside the
+    // Chromium process — pageRemoteControl's eval-failure catch deliberately
+    // logs there instead of window.__trussalReportError (see its comment: that
+    // array feeds healthTick's replace-the-bot policy, wrong for a routine
+    // operator-edit failure). Without this forward there is no way to see why
+    // a manual edit didn't take. Filtered to the '[trussal]' prefix so this
+    // doesn't also dump Jitsi's own noisy internal console traffic.
+    if (typeof this.page.on === 'function') {
+      this.page.on('console', (msg) => {
+        const text = msg.text();
+        if (text.startsWith('[trussal]')) console.log(`[bot ${botId}] ${text}`);
+      });
+    }
 
     // Must be installed before navigation: Jitsi enumerates devices on load.
     // pageMarkBot first — it sets window.__trussalIsBot before the Trussal bundle

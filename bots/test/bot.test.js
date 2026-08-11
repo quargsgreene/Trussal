@@ -256,6 +256,7 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
     evaluate: async (js) => { calls.evaluate.push(String(js)); return { fps: 30 }; },
     metrics: async () => { calls.metrics++; return { JSHeapUsedSize: 100e6 }; },
     setUserAgent: async () => {},
+    on: () => {},
   };
   const fakeBrowser = { newPage: async () => fakePage, close: async () => { calls.closed = true; } };
   const fakeLauncher = { launch: async (opts) => { calls.launchOpts = opts; return fakeBrowser; } };
