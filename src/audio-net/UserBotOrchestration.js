@@ -1,11 +1,9 @@
 // Per-user bot cluster orchestration (browser side).
 //
-// Users spawn/focus/mute/remove bots in their *own* cluster and grant or
-// revoke metaprogram-edit and modulation-write permissions. Spawn/remove go
+// Users spawn/focus/mute/remove bots in their *own* cluster. Spawn/remove go
 // through the fleet service (fleet-request over the sidecar); mute rides the
-// existing remote-control path; permissions ride bot-permission. Selection
-// helpers are pure so conditional focus ("every other bot", "index > 1c")
-// stays unit-testable.
+// existing remote-control path. Selection helpers are pure so conditional
+// focus ("every other bot", "index > 1c") stays unit-testable.
 
 import {
   getAllPeers,
@@ -13,7 +11,6 @@ import {
   sendFleetRequest,
   sendRemoteMute,
   sendRemoteVideo,
-  sendBotPermission,
   sendSampleFile,
   subscribePeerState
 } from '../peer-state.js';
@@ -165,13 +162,6 @@ export function muteBots(selector, muted) {
 export function setBotsVideo(selector, videoOn) {
   for (const bot of selectBots(myClusterBots(), selector)) {
     sendRemoteVideo(bot.peerId, !!videoOn);
-  }
-}
-
-// Grant/revoke metaprogram read-edit and network-modulation write permission.
-export function setBotPermissions(selector, perms) {
-  for (const bot of selectBots(myClusterBots(), selector)) {
-    sendBotPermission(bot.peerId, perms);
   }
 }
 

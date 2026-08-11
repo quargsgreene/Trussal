@@ -758,12 +758,3 @@ export function sendSampleFile({ bank, name, data }) {
   if (typeof bank !== 'string' || typeof name !== 'string' || typeof data !== 'string') return;
   safeSend({ type: 'sample-file', bank, name, data });
 }
-
-// Owner-side permission grant for a bot in one's cluster.
-export function sendBotPermission(targetPeerId, perms) {
-  if (!targetPeerId || !perms) return;
-  const msg = { type: 'bot-permission', targetPeerId };
-  if (typeof perms.canEditMetaprogram === 'boolean') msg.canEditMetaprogram = perms.canEditMetaprogram;
-  if (typeof perms.canWriteModulation === 'boolean') msg.canWriteModulation = perms.canWriteModulation;
-  safeSend(msg);
-}

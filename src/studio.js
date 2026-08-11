@@ -65,7 +65,6 @@ import {
   removeOneBot,
   muteBots,
   setBotsVideo,
-  setBotPermissions,
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
 import { startBotClusterVideo } from '../components/BotClusterVideo.js';
@@ -410,8 +409,6 @@ function createBotRow() {
     <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
   `;
   // idx comes off the row's own reconcile key at click time, not a closed-over
@@ -426,8 +423,6 @@ function createBotRow() {
       const bot = myClusterBots().find(b => b.roomIndex === idx);
       if (action === 'mute') muteBots([idx], !(bot && bot.muted));
       else if (action === 'video') setBotsVideo([idx], !(bot && bot.videoOn));
-      else if (action === 'edit-perm') setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
-      else if (action === 'mod-perm') setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
     });
   });
   return el;
@@ -440,8 +435,6 @@ function updateBotRow(el, bot) {
   muteBtn.textContent = bot.muted ? 'unmute' : 'mute';
   muteBtn.classList.toggle('on', !!bot.muted);
   el.querySelector('[data-bot-action="video"]').classList.toggle('on', !!bot.videoOn);
-  el.querySelector('[data-bot-action="edit-perm"]').classList.toggle('on', !!bot.canEditMetaprogram);
-  el.querySelector('[data-bot-action="mod-perm"]').classList.toggle('on', !!bot.canWriteModulation);
 }
 
 // Built once per peer selection. The count input is a stable node from here

@@ -1094,13 +1094,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof bank2 !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
     safeSend({ type: "sample-file", bank: bank2, name: name3, data: data3 });
   }
-  function sendBotPermission(targetPeerId, perms) {
-    if (!targetPeerId || !perms) return;
-    const msg = { type: "bot-permission", targetPeerId };
-    if (typeof perms.canEditMetaprogram === "boolean") msg.canEditMetaprogram = perms.canEditMetaprogram;
-    if (typeof perms.canWriteModulation === "boolean") msg.canWriteModulation = perms.canWriteModulation;
-    safeSend(msg);
-  }
   var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, activeNetCyclesIndex, activeNetCyclesKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
@@ -57601,11 +57594,6 @@ ${s2}${BTN_MARKER}`)
       sendRemoteVideo(bot.peerId, !!videoOn);
     }
   }
-  function setBotPermissions(selector, perms) {
-    for (const bot of selectBots(myClusterBots(), selector)) {
-      sendBotPermission(bot.peerId, perms);
-    }
-  }
   var statusSubscribers = /* @__PURE__ */ new Set();
   subscribePeerState((event, payload) => {
     if (event !== "fleet-status") return;
@@ -58058,8 +58046,6 @@ ${s2}${BTN_MARKER}`)
     <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>
   `;
     el.querySelectorAll("[data-bot-action]").forEach((btn) => {
@@ -58073,8 +58059,6 @@ ${s2}${BTN_MARKER}`)
         const bot = myClusterBots().find((b) => b.roomIndex === idx);
         if (action === "mute") muteBots([idx], !(bot && bot.muted));
         else if (action === "video") setBotsVideo([idx], !(bot && bot.videoOn));
-        else if (action === "edit-perm") setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
-        else if (action === "mod-perm") setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
       });
     });
     return el;
@@ -58086,8 +58070,6 @@ ${s2}${BTN_MARKER}`)
     muteBtn.textContent = bot.muted ? "unmute" : "mute";
     muteBtn.classList.toggle("on", !!bot.muted);
     el.querySelector('[data-bot-action="video"]').classList.toggle("on", !!bot.videoOn);
-    el.querySelector('[data-bot-action="edit-perm"]').classList.toggle("on", !!bot.canEditMetaprogram);
-    el.querySelector('[data-bot-action="mod-perm"]').classList.toggle("on", !!bot.canWriteModulation);
   }
   function createBotClusterSection() {
     const el = document.createElement("div");
