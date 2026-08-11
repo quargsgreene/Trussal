@@ -1180,7 +1180,7 @@ export class FleetService {
   setMasterScript(json) {
     const res = validateMasterScript(json);
     if (!res.ok) return res;
-    this.master = { strudel: json.strudel, hydra: json.hydra, text: json.text || '' };
+    this.master = { strudel: json.strudel, hydra: json.hydra, text: json.text || '', css: json.css || '' };
     this.#redistribute();
     return { ok: true };
   }

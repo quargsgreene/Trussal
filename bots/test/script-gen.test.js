@@ -31,6 +31,21 @@ test('validateMasterScript enforces the JSON contract from the spec', () => {
     false,
     'syntactically broken strudel rejected',
   );
+  assert.equal(
+    validateMasterScript({ ...good, css: 'await initCss()\n\n$: css(`.x{color:red}`)' }).ok,
+    true,
+    'css is an optional string field, same as text',
+  );
+  assert.equal(
+    validateMasterScript({ ...good, css: 42 }).ok,
+    false,
+    'css must be a string when present',
+  );
+  assert.equal(
+    validateMasterScript({ ...good, css: 'css(`.x{' }).ok,
+    false,
+    'syntactically broken css rejected',
+  );
 });
 
 // ---------- random generation ----------
@@ -43,6 +58,15 @@ test('randomMasterScript is deterministic per seed and always self-valid', () =>
   assert.notDeepEqual(a, c, 'different seed → different script');
   assert.equal(validateMasterScript(a).ok, true, 'generated scripts must pass our own validator');
   assert.ok(a.hydra.startsWith('await initHydra('));
+});
+
+test('randomMasterScript also invents a css() voice, on the same footing as text', () => {
+  const a = randomMasterScript(7);
+  assert.match(a.css, /await initCss\(\)/);
+  assert.match(a.css, /\bcss\(/);
+  assert.equal(validateCode(a.css).ok, true);
+  const c = randomMasterScript(8);
+  assert.notEqual(a.css, c.css, 'different seed → different styling');
 });
 
 // ---------- per-bot variation ----------

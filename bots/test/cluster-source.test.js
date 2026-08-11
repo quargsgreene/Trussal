@@ -122,10 +122,16 @@ test('random:"full" abandons the human code for the curated palette', () => {
   assert.ok(!script.strudel.includes('1234'), 'including its parameters');
   assert.equal(validateCode(script.strudel).ok, true, 'and the replacement is valid');
   assert.equal(validateCode(script.hydra).ok, true);
-  // The curated palette's own word() voice rides along too — the whole point
-  // of "full" is that nothing about the human's editor survives, words
-  // included, so this is the one mode that still gets an invented voice.
+  // The curated palette's own word() and css() voices ride along too — the
+  // whole point of "full" is that nothing about the human's editor survives,
+  // words and styling included, so this is the one mode that still gets
+  // invented voices, regardless of textParrot/cssParrot (neither was set).
   assert.match(script.announceStrudel, /\bword\(/);
+  assert.match(script.announceStrudel, /\bcss\(/);
+  // Neither ever reaches the bot's own REPL — same rule as a parroted human
+  // voice, since that REPL has neither capability installed.
+  assert.ok(!script.strudel.includes('word('));
+  assert.ok(!script.strudel.includes('css('));
 });
 
 test('harmony spreads a cluster into a voicing, leaving bot 0 at pitch', () => {

@@ -72,6 +72,11 @@ function createRandomText(rand) {
   return pattern;
 }
 
+function createRandomCssColor(rand) {
+  const byte = () => Math.floor(rand() * 256).toString(16).padStart(2, '0');
+  return `#${byte()}${byte()}${byte()}`;
+}
+
 
 export function randomMasterScript(seed = Date.now()) {
   const rand = mulberry32(seed);
@@ -122,7 +127,8 @@ const hydra = [
   ].join('\n');
 
 const text = textPatternFrom(rand);
-  return { strudel, hydra, text };
+const css = cssPatternFrom(rand);
+  return { strudel, hydra, text, css };
 }
 
 // The word()-voice template for randomMasterScript's `text` field — the
@@ -151,5 +157,29 @@ function textPatternFrom(rand) {
         .spacing("<3px 6px 9px 12px>")
         .hover("color:#ffffff")
         .hyperlink("<google.com reddit.com ca.gov devry.edu>")`,
+  ].join('\n');
+}
+
+// The css()-voice template for randomMasterScript's `css` field — mirrors
+// textPatternFrom above, same label-at-column-0 constraint (see its comment),
+// same "only random: 'full' ever plays this" scope. Restyles `.ts-chip`, the
+// same real, paste-able selector csscycles.md's own example uses, so a
+// generated cluster is guaranteed to land on an element that exists.
+function cssPatternFrom(rand) {
+  const c1 = createRandomCssColor(rand);
+  const c2 = createRandomCssColor(rand);
+  const c3 = createRandomCssColor(rand);
+  const hover = createRandomCssColor(rand);
+  const speed = Math.floor(rand() * 4) + 1;
+  return [
+    'await initCss()',
+    '',
+    `$: css(\`.ts-chip {
+         &:hover { border-color: ${hover} }
+       }\`)
+        .color("<${c1} ${c2}>/4")
+        .borderRadius("<^2em / 1em 3em 0.5em^ ^0.2em 1em 4em 1em^>")
+        .backgroundColor("<${c2} ${c3}>")
+        .fast(${speed})`,
   ].join('\n');
 }
