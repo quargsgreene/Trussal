@@ -789,11 +789,22 @@ export function pageInstallVideoPublisher() {
     const room = () => conf._room || conf.room;
     const localTrack = () => { try { const r = room(); return r && r.getLocalVideoTrack && r.getLocalVideoTrack(); } catch (e) { return null; } };
 
+    // Already publishing — nothing to do. Without this, a toggle landing
+    // while a track is already live (e.g. a second click, or this same call
+    // re-entering) falls through to step 2 and creates a SECOND track on top
+    // of the first, forcing jitsi-meet to replace one SSRC with another —
+    // visible to every viewer as the tile dropping to its avatar placeholder
+    // and back (the "expands then contracts" glitch).
+    if (localTrack()) return;
+
     // 1) Ask jitsi-meet to unmute video; if it had no/muted track this triggers
-    //    a gUM (→ our Hydra canvas stream) and publishes it.
+    //    a gUM (→ our Hydra canvas stream) and publishes it. Poll for the
+    //    resulting track rather than a fixed sleep: a wait shorter than the
+    //    real renegotiation lets step 2 fire while step 1's publish is still
+    //    in flight, which is the same double-track race described above.
     if (typeof conf.muteVideo === 'function') {
       try { await conf.muteVideo(false); } catch (e) {}
-      await sleep(1500);
+      for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
     }
 
     // 2) Fallback: explicitly create the video track and attach it.
