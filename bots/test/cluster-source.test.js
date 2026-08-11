@@ -233,6 +233,22 @@ test('css statements are dropped from eval AND announce unless cssParrot is set'
   assert.ok(!script.announceStrudel.includes('css('), 'not parroted by default');
 });
 
+test('no botConfig() at all announces the performer\'s own words and styling — a true exact copy, no textParrot/cssParrot needed', () => {
+  const code = 'await initTextCycles()\nawait initCss()\n\n$: word("hello")\n$: css(`.x{color:red}`)\n$: s("bd sd")';
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.ok(!script.strudel.includes('word(') && !script.strudel.includes('css('), 'still never in eval — that REPL has neither capability');
+  assert.match(script.announceStrudel, /word\("hello"\)/, 'undeclared means an exact copy includes the performer\'s words');
+  assert.match(script.announceStrudel, /css\(`\.x\{color:red\}`\)/, 'and their styling too');
+});
+
+test('an explicit but empty botConfig() is still a declaration — textParrot/cssParrot stay off by default', () => {
+  const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
+  const source = capture(code);
+  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
+  assert.ok(!script.announceStrudel.includes('word('), 'declaring botConfig() at all opts out of the undeclared mirror');
+});
+
 test('cssParrot:true keeps css() in announce but NEVER in eval', () => {
   const code = 'botConfig({ cssParrot: true })\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
   const source = capture(code);

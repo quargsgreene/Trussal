@@ -273,6 +273,13 @@ export function dropCssStatements(strudel) {
 export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } = {}) {
   const config = source?.config ?? defaultBotConfig();
   const master = source?.master ?? { strudel: '', hydra: '' , text: ''};
+  // No `botConfig()` call at all is the literal case the docs call an "exact
+  // copy" — nothing was declared, so there is no `textParrot: true` a
+  // performer could have typed to ask for their words to carry over. A
+  // `botConfig()` call (even an empty one) is a declaration, and textParrot
+  // stays off by default there per its own documented default. `declared` is
+  // `parsed.present` from bot-config.js, threaded through captureClusterSource.
+  const undeclared = !source?.declared;
 
   // `random: "full"` replaces the human's code outright — "fully randomizes the
   // code of each bot within existing constraints", and the curated palette in
@@ -335,8 +342,15 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // it (buildBotSilentBlock in strudel.js). Derived from the SHAPED `strudel`
   // above, not the raw human original, so this is exactly what the bot is
   // actually playing — optionally with its text/css voice(s) kept.
-  let announceStrudel = flag(config.textParrot) ? strudel : dropTextStatements(strudel);
-  announceStrudel = flag(config.cssParrot) ? announceStrudel : dropCssStatements(announceStrudel);
+  //
+  // `undeclared` (no `botConfig()` call at all) always keeps both: with
+  // nothing declared there is no `textParrot: true` a performer could have
+  // typed, and the docs call this case an "exact copy" — an exact copy that
+  // silently drops the words/styling actually in the editor isn't one.
+  // `botConfig()` (even empty) IS a declaration, so from there textParrot and
+  // cssParrot each keep their own documented off-by-default.
+  let announceStrudel = (undeclared || flag(config.textParrot)) ? strudel : dropTextStatements(strudel);
+  announceStrudel = (undeclared || flag(config.cssParrot)) ? announceStrudel : dropCssStatements(announceStrudel);
 
   // A cluster built from a performer's own code plays only what is actually
   // in their editor — the same rule the audio side already follows. Only
@@ -344,9 +358,9 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // curated palette outright, and `generatedText` is that palette's word()
   // voice riding along with it. Every other cluster (identical copy,
   // paramFactor, random:"params", harmony, ...) carries no words unless the
-  // performer wrote some and textParrot kept them alive above — inventing a
-  // voice for those would mean a bot's announced pattern no longer matches
-  // what was in the human's editor when they spawned it.
+  // performer wrote some and textParrot (or being undeclared) kept them alive
+  // above — inventing a voice for those would mean a bot's announced pattern
+  // no longer matches what was in the human's editor when they spawned it.
   if (generatedText.trim()) {
     announceStrudel = announceStrudel.trim()
       ? `${announceStrudel}\n\n${generatedText}`

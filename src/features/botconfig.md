@@ -23,6 +23,10 @@ way around the hue circle.
 exactly what is in your editor when you spawn it**. Every property left out is
 `null`, which always means "no effect".
 
+Text and CSS are the one place these two "exact copy" spellings diverge: no
+`botConfig()` at all is a true exact copy, words and styling included — see
+`textParrot`/`cssParrot` below.
+
 Your editor, not your last evaluation: the declaration is stripped before
 Strudel runs and makes no sound, so nothing would prompt you to re-run your
 block after typing one — and a spawn that read the last-evaluated pattern
@@ -88,17 +92,26 @@ syntax. The same omission applies wherever else a hue is computed (the
 `monochromatic` separates members by brightness, since rotating hue by zero
 would make them identical.
 
-**textParrot** and **cssParrot** are off by default, which means bot scripts
-have their `word()`/`css()` statements stripped from what each bot ANNOUNCES —
-without that, every bot in a cluster repeats its author's words or restyling
-in every viewer's chat panel/page. Setting either to `true` keeps that voice in
-what a bot announces, which every OTHER performer's own browser then paints —
-text and CSS are per-page and never ride an audio track, so this is true
-regardless of parroting: what changes is only whether OTHER viewers ever see
-it. Note that a bot's own REPL never runs `word()`/`css()` either way — a
-separate, minimal Strudel instance boots each bot's audio and has neither
-capability installed, so both are always stripped from what it actually
-evaluates, parrot or not.
+**textParrot** and **cssParrot** are off by default under a `botConfig(...)`
+declaration, which means bot scripts have their `word()`/`css()` statements
+stripped from what each bot ANNOUNCES — without that, every bot in a cluster
+repeats its author's words or restyling in every viewer's chat panel/page.
+Setting either to `true` keeps that voice in what a bot announces, which every
+OTHER performer's own browser then paints — text and CSS are per-page and
+never ride an audio track, so this is true regardless of parroting: what
+changes is only whether OTHER viewers ever see it.
+
+**No `botConfig()` call at all** is the exception: with nothing declared,
+words and styling are announced exactly as written, as if both were `true` —
+that is what makes an undeclared spawn an *exact* copy rather than a copy that
+silently drops two of its voices. `botConfig()` — even with no argument — is
+still a declaration, so from there `textParrot`/`cssParrot` each keep their
+own off-by-default.
+
+Note that a bot's own REPL never runs `word()`/`css()` either way — a separate,
+minimal Strudel instance boots each bot's audio and has neither capability
+installed, so both are always stripped from what it actually evaluates,
+parrot, undeclared, or not.
 
 **samples** ships your uploaded folders to the fleet, which serves them to your
 bots over its own HTTP surface. The bots register them under the same folder
