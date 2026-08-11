@@ -57210,6 +57210,7 @@ ${s2}${BTN_MARKER}`)
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
   init_MetaprogrammerParser();
+  init_peer_state();
   var APPLIED_FADE_MS = 5e3;
   function mountMetaprogrammerEditor(container2) {
     if (!container2 || container2.querySelector(".nc-editor")) return null;
@@ -57220,7 +57221,8 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
         <button class="ts-btn eval ts-dwell-btn nc-apply" type="button">\u25B6 Apply</button>
-        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply</span>
+        <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
+        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply \xB7 Ctrl+. to stop</span>
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
@@ -57233,6 +57235,7 @@ ${s2}${BTN_MARKER}`)
     const errorsEl = wrap.querySelector(".nc-errors");
     const bylineEl = wrap.querySelector(".nc-byline");
     const applyBtn = wrap.querySelector(".nc-apply");
+    const stopBtn = wrap.querySelector(".nc-stop");
     const btnsEl = wrap.querySelector(".nc-voice-btns");
     const sync = ensureMetaprogramSync();
     const readOnly = metaprogramReadOnly();
@@ -57240,7 +57243,7 @@ ${s2}${BTN_MARKER}`)
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
     } else {
-      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment";
+      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
     }
     ta.value = sync.getText() || getProgramText() || "";
     attachUndoHistory(ta);
@@ -57329,12 +57332,25 @@ ${s2}${BTN_MARKER}`)
       else setByline("applied \u2014 takes effect at the next cycle boundary", true);
       renderButtons();
     };
+    const stop2 = async () => {
+      try {
+        sendLocalPlaying(false);
+        await stopStrudel();
+        setByline("Stopped", false);
+      } catch (e30) {
+        console.error("[netcycles] stop failed", e30);
+      }
+    };
     applyBtn.addEventListener("click", apply2);
+    stopBtn.addEventListener("click", stop2);
     ta.addEventListener("keydown", (e30) => {
       const meta = e30.ctrlKey || e30.metaKey;
       if (meta && e30.key === "Enter") {
         e30.preventDefault();
         apply2();
+      } else if (meta && e30.key === ".") {
+        e30.preventDefault();
+        stop2();
       } else if (meta && e30.key === "/") {
         if (readOnly) return;
         e30.preventDefault();
