@@ -1075,9 +1075,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (!targetPeerId) return;
     safeSend({ type: "remote-control", targetPeerId, action: "video", videoOn: !!videoOn });
   }
-  function sendCrdtUpdate(update, { snapshot = false, modality = "keyboard", channel: channel2 = "metaprogram" } = {}) {
+  function sendCrdtUpdate(update, { snapshot: snapshot2 = false, modality = "keyboard", channel: channel2 = "metaprogram" } = {}) {
     if (typeof update !== "string" || !update) return;
-    safeSend({ type: "crdt-update", update, snapshot, modality, channel: channel2 });
+    safeSend({ type: "crdt-update", update, snapshot: snapshot2, modality, channel: channel2 });
   }
   function sendResearchEvent(kind, data3 = null) {
     if (typeof kind !== "string" || !kind) return;
@@ -44712,19 +44712,19 @@ ${err.toString()}`);
       };
       createSnapshot = (ds2, sm) => new Snapshot(ds2, sm);
       emptySnapshot = createSnapshot(createDeleteSet(), /* @__PURE__ */ new Map());
-      isVisible = (item, snapshot) => snapshot === void 0 ? !item.deleted : snapshot.sv.has(item.id.client) && (snapshot.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot.ds, item.id);
-      splitSnapshotAffectedStructs = (transaction, snapshot) => {
+      isVisible = (item, snapshot2) => snapshot2 === void 0 ? !item.deleted : snapshot2.sv.has(item.id.client) && (snapshot2.sv.get(item.id.client) || 0) > item.id.clock && !isDeleted(snapshot2.ds, item.id);
+      splitSnapshotAffectedStructs = (transaction, snapshot2) => {
         const meta = setIfUndefined(transaction.meta, splitSnapshotAffectedStructs, create2);
         const store = transaction.doc.store;
-        if (!meta.has(snapshot)) {
-          snapshot.sv.forEach((clock2, client) => {
+        if (!meta.has(snapshot2)) {
+          snapshot2.sv.forEach((clock2, client) => {
             if (clock2 < getState(store, client)) {
               getItemCleanStart(transaction, createID(client, clock2));
             }
           });
-          iterateDeletedStructs(transaction, snapshot.ds, (_item) => {
+          iterateDeletedStructs(transaction, snapshot2.ds, (_item) => {
           });
-          meta.add(snapshot);
+          meta.add(snapshot2);
         }
       };
       StructStore = class {
@@ -46106,14 +46106,14 @@ ${err.toString()}`);
         const val2 = parent._map.get(key);
         return val2 !== void 0 && !val2.deleted;
       };
-      typeMapGetAllSnapshot = (parent, snapshot) => {
+      typeMapGetAllSnapshot = (parent, snapshot2) => {
         const res = {};
         parent._map.forEach((value2, key) => {
           let v2 = value2;
-          while (v2 !== null && (!snapshot.sv.has(v2.id.client) || v2.id.clock >= (snapshot.sv.get(v2.id.client) || 0))) {
+          while (v2 !== null && (!snapshot2.sv.has(v2.id.client) || v2.id.clock >= (snapshot2.sv.get(v2.id.client) || 0))) {
             v2 = v2.left;
           }
-          if (v2 !== null && isVisible(v2, snapshot)) {
+          if (v2 !== null && isVisible(v2, snapshot2)) {
             res[key] = v2.content.getContent()[v2.length - 1];
           }
         });
@@ -47366,7 +47366,7 @@ ${err.toString()}`);
          *
          * @public
          */
-        toDelta(snapshot, prevSnapshot, computeYChange) {
+        toDelta(snapshot2, prevSnapshot, computeYChange) {
           this.doc ?? warnPrematureAccess();
           const ops = [];
           const currentAttributes = /* @__PURE__ */ new Map();
@@ -47394,11 +47394,11 @@ ${err.toString()}`);
           }
           const computeDelta = () => {
             while (n2 !== null) {
-              if (isVisible(n2, snapshot) || prevSnapshot !== void 0 && isVisible(n2, prevSnapshot)) {
+              if (isVisible(n2, snapshot2) || prevSnapshot !== void 0 && isVisible(n2, prevSnapshot)) {
                 switch (n2.content.constructor) {
                   case ContentString: {
                     const cur = currentAttributes.get("ychange");
-                    if (snapshot !== void 0 && !isVisible(n2, snapshot)) {
+                    if (snapshot2 !== void 0 && !isVisible(n2, snapshot2)) {
                       if (cur === void 0 || cur.user !== n2.id.client || cur.type !== "removed") {
                         packStr();
                         currentAttributes.set("ychange", computeYChange ? computeYChange("removed", n2.id) : { type: "removed" });
@@ -47436,7 +47436,7 @@ ${err.toString()}`);
                     break;
                   }
                   case ContentFormat:
-                    if (isVisible(n2, snapshot)) {
+                    if (isVisible(n2, snapshot2)) {
                       packStr();
                       updateCurrentAttributes(
                         currentAttributes,
@@ -47451,10 +47451,10 @@ ${err.toString()}`);
             }
             packStr();
           };
-          if (snapshot || prevSnapshot) {
+          if (snapshot2 || prevSnapshot) {
             transact(doc2, (transaction) => {
-              if (snapshot) {
-                splitSnapshotAffectedStructs(transaction, snapshot);
+              if (snapshot2) {
+                splitSnapshotAffectedStructs(transaction, snapshot2);
               }
               if (prevSnapshot) {
                 splitSnapshotAffectedStructs(transaction, prevSnapshot);
@@ -48161,10 +48161,10 @@ ${err.toString()}`);
          *
          * @public
          */
-        getAttributes(snapshot) {
+        getAttributes(snapshot2) {
           return (
             /** @type {any} */
-            snapshot ? typeMapGetAllSnapshot(this, snapshot) : typeMapGetAll(this)
+            snapshot2 ? typeMapGetAllSnapshot(this, snapshot2) : typeMapGetAll(this)
           );
         }
         /**
@@ -56929,6 +56929,46 @@ ${s2}${BTN_MARKER}`)
     if (e30.target?.classList?.contains("ts-code")) _lastTA = e30.target;
   });
 
+  // src/editor-undo.js
+  var HISTORY_LIMIT = 200;
+  var handles = /* @__PURE__ */ new WeakMap();
+  function snapshot(ta) {
+    return { value: ta.value, selStart: ta.selectionStart, selEnd: ta.selectionEnd };
+  }
+  function attachUndoHistory(ta) {
+    const undo = [];
+    const redo = [];
+    let last2 = snapshot(ta);
+    let restoring = false;
+    ta.addEventListener("input", () => {
+      if (restoring) return;
+      undo.push(last2);
+      if (undo.length > HISTORY_LIMIT) undo.shift();
+      redo.length = 0;
+      last2 = snapshot(ta);
+    });
+    ta.addEventListener("keydown", (e30) => {
+      if (!(e30.ctrlKey || e30.metaKey) || e30.key.toLowerCase() !== "z") return;
+      e30.preventDefault();
+      const [from2, to] = e30.shiftKey ? [redo, undo] : [undo, redo];
+      const state = from2.pop();
+      if (!state) return;
+      to.push(last2);
+      restoring = true;
+      ta.value = state.value;
+      ta.setSelectionRange(state.selStart, state.selEnd);
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      restoring = false;
+      last2 = state;
+    });
+    handles.set(ta, { resetBaseline: () => {
+      last2 = snapshot(ta);
+    } });
+  }
+  function resetUndoBaseline(ta) {
+    handles.get(ta)?.resetBaseline();
+  }
+
   // src/studio.js
   init_latency_instrument();
 
@@ -57210,6 +57250,7 @@ ${s2}${BTN_MARKER}`)
       wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment";
     }
     ta.value = sync.getText() || getProgramText() || "";
+    attachUndoHistory(ta);
     function showErrors(text2) {
       const { errors } = parseMetaprogram(text2);
       errorsEl.textContent = errors.length ? errors.map((e30) => `${e30.line}:${e30.col} ${e30.message}`).join("  \xB7  ") : "";
@@ -57265,11 +57306,14 @@ ${s2}${BTN_MARKER}`)
       const hadFocus = document.activeElement === ta;
       const selStart = ta.selectionStart, selEnd = ta.selectionEnd;
       ta.value = next;
+      resetUndoBaseline(ta);
       if (hadFocus) {
         const clamp3 = (n2) => Math.min(n2, next.length);
         try {
           ta.setSelectionRange(clamp3(selStart), clamp3(selEnd));
         } catch (e30) {
+          console.error("[netcycles] setSelectionRange failed", e30);
+          throw e30;
         }
       }
       renderButtons();
@@ -58172,6 +58216,7 @@ ${s2}${BTN_MARKER}`)
     const targetPeerId = peer.peerId;
     if (isLocal) {
       codeEl.value = peer.pattern || "";
+      attachUndoHistory(codeEl);
       codeEl.addEventListener("input", () => {
         clearTimeout(codeDebounce);
         codeDebounce = setTimeout(() => {
@@ -58242,6 +58287,7 @@ ${s2}${BTN_MARKER}`)
     } else {
       codeEl.value = peer.pattern || "";
       codeEl.dataset.lastSynced = codeEl.value;
+      attachUndoHistory(codeEl);
       const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
       codeEl.addEventListener("keydown", (e30) => {
         const meta = e30.ctrlKey || e30.metaKey;
@@ -58302,6 +58348,7 @@ ${s2}${BTN_MARKER}`)
       const live = peer.pattern || "";
       if (codeEl.value !== live) {
         codeEl.value = live;
+        resetUndoBaseline(codeEl);
       }
       codeEl.dataset.lastSynced = live;
     }
