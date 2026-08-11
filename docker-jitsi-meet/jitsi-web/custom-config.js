@@ -785,6 +785,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     };
     if (typeof patch.playing === "boolean") peer.playing = patch.playing;
     if (typeof patch.muted === "boolean") peer.muted = patch.muted;
+    if (typeof patch.videoOn === "boolean") peer.videoOn = patch.videoOn;
     if (typeof patch.rtt === "number" || patch.rtt === null) peer.rtt = patch.rtt;
     if (typeof patch.jitter === "number" || patch.jitter === null) peer.jitter = patch.jitter;
     if (typeof patch.packetLoss === "number" || patch.packetLoss === null) peer.packetLoss = patch.packetLoss;
@@ -808,6 +809,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       isBot: false,
       isAggregator: false,
       muted: false,
+      videoOn: false,
       pattern: "",
       compiledCss: "",
       dataPacks: [],

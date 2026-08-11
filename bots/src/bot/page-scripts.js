@@ -423,17 +423,20 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     const fan = window.__trussalFanGain;
     if (fan && fan.gain) { try { fan.gain.value = muted ? 0 : 1; } catch (_) {} }
   });
-  // The bot's owner turning its tile on or off. Turning it ON is a publish,
-  // not just an unmute: a bot that joined dark has no video track at all, so
-  // the first toggle has to go through the same gUM-driven publish the bot
-  // used to do at startup (which is exactly what pageEnsureVideoPublished is).
+  // The bot's owner turning its tile on or off. A regular bot joins muted
+  // (videoMuted: true), exactly like a human joins with startWithVideoMuted —
+  // so the very same single conf.muteVideo() call a human's own toolbar
+  // camera button makes is enough here too: lib-jitsi-meet acquires the
+  // (canvas-backed, via pageGumOverride) track on the first unmute and just
+  // flips the existing track's mute state on every toggle after that. No
+  // bespoke publish/fallback path, and no separate on/off code shapes to
+  // drift out of sync with each other.
   document.addEventListener('trussal-remote-video', async (e) => {
     const on = !!(e && e.detail && e.detail.videoOn);
     try {
       const conf = window.APP && window.APP.conference;
-      if (!conf) return;
-      if (on) await window.__trussalEnsureVideoPublished();
-      else if (typeof conf.muteVideo === 'function') await conf.muteVideo(true);
+      if (!conf || typeof conf.muteVideo !== 'function') return;
+      await conf.muteVideo(!on);
     } catch (err) {
       if (window.__trussalReportError) window.__trussalReportError(err);
       else console.error('[trussal] bot video toggle failed', err);
