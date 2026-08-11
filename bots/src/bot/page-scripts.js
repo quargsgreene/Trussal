@@ -364,6 +364,38 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     // later audio-only edit doesn't resurrect a visual the operator replaced.
     if (ownPreamble) window.__trussalHydra = '';
     try {
+      // pageStrudelBoot runs this same registration once before its FIRST
+      // evaluate(), and its own comment documents exactly why a re-eval needs
+      // it too: a synth/sample this REPL hasn't loaded yet fails PER-TRIGGER
+      // inside Strudel's own trigger code — no thrown error, the scheduler
+      // still starts, fanRms just stays 0 for that voice (confirmed live:
+      // s("sine")→s("supersaw") went silent until loadWorklets() ran). The
+      // spawn-time registration only ever covers what the bot's ORIGINAL
+      // script happened to name; an edit naming anything else — a different
+      // synth, a sample bank not in the owner's registered set — hits this
+      // exact gap. All of these are idempotent against what boot already
+      // registered, so re-calling them on every edit is safe.
+      const loadWorklets = window.loadWorklets || (window.strudel && window.strudel.loadWorklets);
+      const registerSynths = window.registerSynthSounds || (window.strudel && window.strudel.registerSynthSounds);
+      const registerZzfx = window.registerZZFXSounds || (window.strudel && window.strudel.registerZZFXSounds);
+      const registerFonts = window.registerSoundfonts || (window.strudel && window.strudel.registerSoundfonts);
+      await Promise.all([
+        typeof loadWorklets === 'function' ? loadWorklets() : null,
+        typeof registerSynths === 'function' ? registerSynths() : null,
+        typeof registerZzfx === 'function' ? registerZzfx() : null,
+        typeof registerFonts === 'function' ? registerFonts() : null,
+      ]).catch((err) => console.error('[trussal] re-registering synth capabilities before remote eval failed', err));
+      const registerSample = window.registerSampleSource || (window.strudel && window.strudel.registerSampleSource);
+      if (typeof registerSample === 'function') {
+        const banks = window.__trussalSamples || {};
+        for (const [bank, urls] of Object.entries(banks)) {
+          if (Array.isArray(urls) && urls.length) {
+            try { registerSample(bank, urls, { prebake: false }); } catch (err) {
+              console.error('[trussal] re-registering sample bank before remote eval failed', bank, err);
+            }
+          }
+        }
+      }
       if (ed && typeof ed.setCode === 'function') {
         ed.setCode(code);
         if (typeof ed.evaluate === 'function') await ed.evaluate();

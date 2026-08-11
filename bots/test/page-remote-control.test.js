@@ -32,10 +32,12 @@ function installControl({
   patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_CYCLES_PATTERN],
   capabilityPatterns = DEFAULT_CAPABILITY_PATTERNS,
   evaluateThrows = false,
+  sampleBanks = {},
 } = {}) {
   const listeners = new Map();
   const evaluated = [];
   const errors = [];
+  const registrationCalls = [];
 
   const editor = {
     editor: {
@@ -54,6 +56,12 @@ function installControl({
     __trussalStrudelEditor: editor,
     __trussalHydra: hydra,
     __trussalReportError: (err) => errors.push(err),
+    __trussalSamples: sampleBanks,
+    loadWorklets: async () => { registrationCalls.push('loadWorklets'); },
+    registerSynthSounds: async () => { registrationCalls.push('registerSynthSounds'); },
+    registerZZFXSounds: async () => { registrationCalls.push('registerZZFXSounds'); },
+    registerSoundfonts: async () => { registrationCalls.push('registerSoundfonts'); },
+    registerSampleSource: (bank) => { registrationCalls.push(`registerSampleSource:${bank}`); },
   };
   global.console = console;
 
@@ -62,6 +70,7 @@ function installControl({
   return {
     evaluated,
     errors,
+    registrationCalls,
     async push(code) {
       await listeners.get('trussal-remote-pattern')({ detail: { code } });
     },
@@ -80,6 +89,26 @@ test('a Strudel-only edit still recombines with the bot\'s Hydra', async () => {
   assert.equal(ctl.evaluated.length, 1);
   assert.match(ctl.evaluated[0], /initHydra/);
   assert.match(ctl.evaluated[0], /s\("bd sd"\)/);
+});
+
+test('a pushed edit re-registers worklets/synths/samples before evaluating, same as boot', async () => {
+  // pageStrudelBoot's own comment documents the failure this guards: a synth
+  // or sample this REPL hasn't loaded fails PER-TRIGGER with no thrown error
+  // (scheduler still starts, fanRms just stays 0) — confirmed live via
+  // s("sine")→s("supersaw") going silent until loadWorklets() ran. The
+  // spawn-time registration only covers what the ORIGINAL script named; an
+  // edit naming something else needs the same registration repeated.
+  const ctl = installControl({ hydra: '', sampleBanks: { mykit: ['a.wav', 'b.wav'] } });
+  await ctl.push('s("supersaw")');
+
+  assert.ok(ctl.registrationCalls.includes('loadWorklets'));
+  assert.ok(ctl.registrationCalls.includes('registerSynthSounds'));
+  assert.ok(ctl.registrationCalls.includes('registerZZFXSounds'));
+  assert.ok(ctl.registrationCalls.includes('registerSoundfonts'));
+  assert.ok(ctl.registrationCalls.includes('registerSampleSource:mykit'));
+  // Registration must land before evaluate(), not after — otherwise the
+  // first post-edit cycle still races the worklet load.
+  assert.equal(ctl.evaluated.length, 1, 'registration must not block the eval itself');
 });
 
 test('an edit with its own Hydra preamble lands verbatim, not doubled', async () => {
