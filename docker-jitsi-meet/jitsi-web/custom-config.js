@@ -51351,7 +51351,13 @@ ${SHORTCUT_LINES[fn]}
   }
   function startPrejoinRender() {
     patchPrejoinButton();
-    const obs = new MutationObserver(patchPrejoinButton);
+    const obs = new MutationObserver(() => {
+      if (document.getElementById("largeVideoContainer")) {
+        obs.disconnect();
+        return;
+      }
+      patchPrejoinButton();
+    });
     obs.observe(document.documentElement || document.body, {
       childList: true,
       subtree: true
@@ -51441,10 +51447,12 @@ ${SHORTCUT_LINES[fn]}
       }
     });
   }
+  var NO_AUDIO_TOAST_WINDOW_MS = 2e4;
   function startNoAudioToastRender() {
     removeNoAudioToast();
     const obs = new MutationObserver(removeNoAudioToast);
     obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => obs.disconnect(), NO_AUDIO_TOAST_WINDOW_MS);
   }
   function renderNoAudioToast() {
     if (document.readyState === "complete" || document.readyState === "interactive") {
@@ -51604,10 +51612,12 @@ ${SHORTCUT_LINES[fn]}
   // src/published-video.js
   var CANVAS_ID = "trussal-published-video";
   var CAPTURE_FPS = 15;
+  var FRAME_INTERVAL_MS = 1e3 / CAPTURE_FPS;
   var realGetUserMedia = null;
   var canvas = null;
   var ctx = null;
   var rafId = null;
+  var lastDrawMs = -Infinity;
   function openCamera(constraints = { video: true }) {
     const gum = realGetUserMedia || navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     return gum(constraints);
@@ -51624,9 +51634,11 @@ ${SHORTCUT_LINES[fn]}
     startCompositing();
     return canvas;
   }
-  function drawFrame() {
+  function drawFrame(now) {
     rafId = requestAnimationFrame(drawFrame);
     if (!ctx) return;
+    if (now - lastDrawMs < FRAME_INTERVAL_MS) return;
+    lastDrawMs = now;
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const hydra2 = document.getElementById("hydra-canvas");
@@ -56144,6 +56156,18 @@ ${code2}${BTN_MARKER}`;
   var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
   var _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
   var _barKey = null;
+  var DWELL_TARGETS_REFRESH_MS = 300;
+  var _dwellCandidates = [];
+  var _dwellCandidatesAt = -Infinity;
+  function _dwellCandidateEls(now) {
+    if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
+      _dwellCandidatesAt = now;
+      _dwellCandidates = Array.from(document.querySelectorAll(
+        '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]'
+      ));
+    }
+    return _dwellCandidates;
+  }
   var _regexTrigger = "mouthOpen";
   var _regexPattern = "";
   var _regexReplacement = "";
@@ -56311,7 +56335,7 @@ ${code2}${BTN_MARKER}`;
     let hoveredKey = null;
     let hoveredType = null;
     let hoveredEl = null;
-    for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]')) {
+    for (const btn of _dwellCandidateEls(ts)) {
       const r2 = btn.getBoundingClientRect();
       if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
         if (btn.classList.contains("ts-fx-dwell-btn")) {
