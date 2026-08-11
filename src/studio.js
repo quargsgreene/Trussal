@@ -29,6 +29,7 @@ import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
+import { toggleLineComment } from './editor-router-core.js';
 import { injectHydraVideoToggle } from './hydra-video.js';
 import { tickKbdUi } from './on-screen-keyboard.js';
 import {
@@ -604,13 +605,13 @@ function createLocalProgramSection(isLocal) {
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">⬆ Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
-        <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop</span>
+        <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop · Ctrl+/ to comment</span>
       </div>`
     : `
       <div class="ts-section-controls">
         <button class="ts-btn eval" data-action="remote-eval">▶ Eval</button>
         <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
-        <span class="ts-shortcuts">Ctrl+Enter to send</span>
+        <span class="ts-shortcuts">Ctrl+Enter to send · Ctrl+/ to comment</span>
       </div>`;
   el.innerHTML = `
     <div class="ts-section-head">
@@ -631,6 +632,17 @@ function createLocalProgramSection(isLocal) {
 // can change while the shell is alive (peer.muted, peer.pattern) re-reads it
 // fresh at the point of use instead — see the mute handler and
 // patchLocalProgramSection.
+// Ctrl+/ line-comment toggle for a plain textarea: replacing .value resets
+// the caret to the end, so the pure toggle's remapped selection has to be
+// restored explicitly afterward.
+function applyCommentToggle(codeEl) {
+  const { value, selectionStart, selectionEnd } =
+    toggleLineComment(codeEl.value, codeEl.selectionStart, codeEl.selectionEnd);
+  codeEl.value = value;
+  codeEl.setSelectionRange(selectionStart, selectionEnd);
+  codeEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function bindLocalProgramSection(el, peer, isLocal) {
   const codeEl = el.querySelector('.ts-code');
   const targetPeerId = peer.peerId;
@@ -655,6 +667,9 @@ function bindLocalProgramSection(el, peer, isLocal) {
       } else if (meta && e.key === '.') {
         e.preventDefault();
         onStopClick();
+      } else if (meta && e.key === '/') {
+        e.preventDefault();
+        applyCommentToggle(codeEl);
       }
     });
 
@@ -730,6 +745,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
     codeEl.addEventListener('keydown', (e) => {
       const meta = e.ctrlKey || e.metaKey;
       if (meta && e.key === 'Enter') { e.preventDefault(); sendRemoteEval(); }
+      else if (meta && e.key === '/') { e.preventDefault(); applyCommentToggle(codeEl); }
     });
     el.querySelector('[data-action="remote-eval"]').addEventListener('click', sendRemoteEval);
     el.querySelector('.ts-remote-mute-btn').addEventListener('click', () => {

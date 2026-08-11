@@ -30,6 +30,74 @@ export function applyRegexMutation(code, pattern, replacement) {
   try { return code.replace(new RegExp(pattern, 'g'), replacement ?? ''); } catch { return code; }
 }
 
+// Ctrl+/ line-comment toggle, shared by every textarea editor (personal
+// Strudel, remote bot pattern, Net Cycles metaprogram). Operates on whichever
+// lines the selection touches — the current line for a collapsed cursor —
+// and comments them on unless every non-blank line touched is already
+// commented, in which case it uncomments. Returns the new value plus a
+// remapped selection so the caller can restore the caret/selection after
+// replacing textarea.value (which otherwise resets it to the end).
+export function toggleLineComment(value, selectionStart, selectionEnd) {
+  const text = String(value ?? '');
+  const start = Math.max(0, Math.min(selectionStart ?? 0, text.length));
+  let end = Math.max(start, Math.min(selectionEnd ?? start, text.length));
+
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  // A multi-line selection ending right at column 0 of a line shouldn't pull
+  // that line into the block — mirrors how editors treat a trailing newline
+  // at the end of a selection.
+  let blockEnd = end;
+  if (blockEnd > start && text[blockEnd - 1] === '\n') blockEnd -= 1;
+  let lineEnd = text.indexOf('\n', blockEnd);
+  if (lineEnd === -1) lineEnd = text.length;
+
+  const oldLines = text.slice(lineStart, lineEnd).split('\n');
+  const nonBlank = oldLines.filter(l => l.trim() !== '');
+  const uncomment = nonBlank.length > 0 && nonBlank.every(l => /^\s*\/\//.test(l));
+
+  const newLines = oldLines.map(line => {
+    if (uncomment) return line.replace(/^(\s*)\/\/ ?/, '$1');
+    if (line.trim() === '') return line;
+    return line.replace(/^(\s*)/, '$1// ');
+  });
+  const newBlock = newLines.join('\n');
+  const newText = text.slice(0, lineStart) + newBlock + text.slice(lineEnd);
+
+  // Remap an old absolute offset to its new position: unaffected before the
+  // block, shifted by the block's total length change after it, and mapped
+  // line-by-line (preserving column relative to the inserted/removed prefix)
+  // inside it.
+  const mapOffset = (offset) => {
+    if (offset <= lineStart) return offset;
+    if (offset >= lineEnd) return offset + (newBlock.length - (lineEnd - lineStart));
+    let lineIdx = 0;
+    let cursor = lineStart;
+    for (; lineIdx < oldLines.length - 1; lineIdx++) {
+      const lineLen = oldLines[lineIdx].length;
+      if (offset <= cursor + lineLen) break;
+      cursor += lineLen + 1;
+    }
+    const col = offset - cursor;
+    const oldLine = oldLines[lineIdx];
+    const newLine = newLines[lineIdx];
+    const wsLen = (oldLine.match(/^\s*/) || [''])[0].length;
+    let newCol;
+    if (uncomment) {
+      const removedLen = oldLine.length - newLine.length;
+      if (col <= wsLen) newCol = col;
+      else if (col >= wsLen + removedLen) newCol = col - removedLen;
+      else newCol = wsLen;
+    } else {
+      newCol = col <= wsLen ? col : col + (newLine.length - oldLine.length);
+    }
+    let newLineStartAbs = lineStart;
+    for (let i = 0; i < lineIdx; i++) newLineStartAbs += newLines[i].length + 1;
+    return newLineStartAbs + newCol;
+  };
+
+  return { value: newText, selectionStart: mapOffset(start), selectionEnd: mapOffset(end) };
+}
+
 // NetCyclesButton snippet toggling on metaprogram text: first dwell adds the
 // line, next dwell comments it out, next re-activates (mirrors the Strudel
 // voice-button marker convention).

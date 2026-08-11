@@ -55776,6 +55776,54 @@ ${next}`;
     if (set2.has("ts-code")) return "strudel";
     return null;
   }
+  function toggleLineComment(value2, selectionStart, selectionEnd) {
+    const text2 = String(value2 ?? "");
+    const start = Math.max(0, Math.min(selectionStart ?? 0, text2.length));
+    let end2 = Math.max(start, Math.min(selectionEnd ?? start, text2.length));
+    const lineStart = text2.lastIndexOf("\n", start - 1) + 1;
+    let blockEnd = end2;
+    if (blockEnd > start && text2[blockEnd - 1] === "\n") blockEnd -= 1;
+    let lineEnd = text2.indexOf("\n", blockEnd);
+    if (lineEnd === -1) lineEnd = text2.length;
+    const oldLines = text2.slice(lineStart, lineEnd).split("\n");
+    const nonBlank = oldLines.filter((l) => l.trim() !== "");
+    const uncomment = nonBlank.length > 0 && nonBlank.every((l) => /^\s*\/\//.test(l));
+    const newLines = oldLines.map((line) => {
+      if (uncomment) return line.replace(/^(\s*)\/\/ ?/, "$1");
+      if (line.trim() === "") return line;
+      return line.replace(/^(\s*)/, "$1// ");
+    });
+    const newBlock = newLines.join("\n");
+    const newText = text2.slice(0, lineStart) + newBlock + text2.slice(lineEnd);
+    const mapOffset = (offset2) => {
+      if (offset2 <= lineStart) return offset2;
+      if (offset2 >= lineEnd) return offset2 + (newBlock.length - (lineEnd - lineStart));
+      let lineIdx = 0;
+      let cursor = lineStart;
+      for (; lineIdx < oldLines.length - 1; lineIdx++) {
+        const lineLen = oldLines[lineIdx].length;
+        if (offset2 <= cursor + lineLen) break;
+        cursor += lineLen + 1;
+      }
+      const col = offset2 - cursor;
+      const oldLine = oldLines[lineIdx];
+      const newLine = newLines[lineIdx];
+      const wsLen = (oldLine.match(/^\s*/) || [""])[0].length;
+      let newCol;
+      if (uncomment) {
+        const removedLen = oldLine.length - newLine.length;
+        if (col <= wsLen) newCol = col;
+        else if (col >= wsLen + removedLen) newCol = col - removedLen;
+        else newCol = wsLen;
+      } else {
+        newCol = col <= wsLen ? col : col + (newLine.length - oldLine.length);
+      }
+      let newLineStartAbs = lineStart;
+      for (let i = 0; i < lineIdx; i++) newLineStartAbs += newLines[i].length + 1;
+      return newLineStartAbs + newCol;
+    };
+    return { value: newText, selectionStart: mapOffset(start), selectionEnd: mapOffset(end2) };
+  }
   var NC_BTN_MARKER = " // netcycles-btn";
   var NC_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
   function parseNetCyclesButtons(text2) {
@@ -57139,7 +57187,7 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
         <button class="ts-btn eval ts-dwell-btn nc-apply" type="button">\u25B6 Apply</button>
-        <span class="ts-shortcuts">Ctrl+Enter to apply</span>
+        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply</span>
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
@@ -57158,6 +57206,8 @@ ${s2}${BTN_MARKER}`)
     if (readOnly) {
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
+    } else {
+      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment";
     }
     ta.value = sync.getText() || getProgramText() || "";
     function showErrors(text2) {
@@ -57244,9 +57294,17 @@ ${s2}${BTN_MARKER}`)
     };
     applyBtn.addEventListener("click", apply2);
     ta.addEventListener("keydown", (e30) => {
-      if ((e30.ctrlKey || e30.metaKey) && e30.key === "Enter") {
+      const meta = e30.ctrlKey || e30.metaKey;
+      if (meta && e30.key === "Enter") {
         e30.preventDefault();
         apply2();
+      } else if (meta && e30.key === "/") {
+        if (readOnly) return;
+        e30.preventDefault();
+        const { value: value2, selectionStart, selectionEnd } = toggleLineComment(ta.value, ta.selectionStart, ta.selectionEnd);
+        ta.value = value2;
+        ta.setSelectionRange(selectionStart, selectionEnd);
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
       }
     });
     renderButtons();
@@ -58085,12 +58143,12 @@ ${s2}${BTN_MARKER}`)
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">\u2B06 Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
-        <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop</span>
+        <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop \xB7 Ctrl+/ to comment</span>
       </div>` : `
       <div class="ts-section-controls">
         <button class="ts-btn eval" data-action="remote-eval">\u25B6 Eval</button>
         <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
-        <span class="ts-shortcuts">Ctrl+Enter to send</span>
+        <span class="ts-shortcuts">Ctrl+Enter to send \xB7 Ctrl+/ to comment</span>
       </div>`;
     el.innerHTML = `
     <div class="ts-section-head">
@@ -58102,6 +58160,12 @@ ${s2}${BTN_MARKER}`)
     <div class="ts-strudel-sliders ts-sliders"></div>
   `;
     return el;
+  }
+  function applyCommentToggle(codeEl) {
+    const { value: value2, selectionStart, selectionEnd } = toggleLineComment(codeEl.value, codeEl.selectionStart, codeEl.selectionEnd);
+    codeEl.value = value2;
+    codeEl.setSelectionRange(selectionStart, selectionEnd);
+    codeEl.dispatchEvent(new Event("input", { bubbles: true }));
   }
   function bindLocalProgramSection(el, peer, isLocal) {
     const codeEl = el.querySelector(".ts-code");
@@ -58125,6 +58189,9 @@ ${s2}${BTN_MARKER}`)
         } else if (meta && e30.key === ".") {
           e30.preventDefault();
           onStopClick();
+        } else if (meta && e30.key === "/") {
+          e30.preventDefault();
+          applyCommentToggle(codeEl);
         }
       });
       el.querySelector('[data-action="play"]').addEventListener("click", () => {
@@ -58181,6 +58248,9 @@ ${s2}${BTN_MARKER}`)
         if (meta && e30.key === "Enter") {
           e30.preventDefault();
           sendRemoteEval();
+        } else if (meta && e30.key === "/") {
+          e30.preventDefault();
+          applyCommentToggle(codeEl);
         }
       });
       el.querySelector('[data-action="remote-eval"]').addEventListener("click", sendRemoteEval);

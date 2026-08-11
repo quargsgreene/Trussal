@@ -8,6 +8,7 @@ import {
   parseNetCyclesButtons,
   participantTokensIn,
   isNetCyclesSnippetActive,
+  toggleLineComment,
   NC_BTN_MARKER
 } from '../src/editor-router-core.js';
 
@@ -168,4 +169,45 @@ test('a voice keeps its modifiers through both halves of the toggle', () => {
   assert.match(on, /\$ participants <0 1@2>/);
   assert.equal(isNetCyclesSnippetActive(on, snippet), true);
   assert.match(toggleNetCyclesSnippet(on, snippet), /\$ participants <0>/);
+});
+
+// --- Ctrl+/ line-comment toggle ---------------------------------------------
+
+test('toggleLineComment: collapsed cursor comments/uncomments just the current line', () => {
+  const r1 = toggleLineComment('a\nb\nc', 2, 2);
+  assert.equal(r1.value, 'a\n// b\nc');
+  const r2 = toggleLineComment(r1.value, r1.selectionStart, r1.selectionEnd);
+  assert.equal(r2.value, 'a\nb\nc');
+  assert.equal(r2.selectionStart, 2);
+  assert.equal(r2.selectionEnd, 2);
+});
+
+test('toggleLineComment: comments every line a multi-line selection touches, preserving indentation', () => {
+  const text = '  foo\n  bar\nbaz';
+  const r = toggleLineComment(text, 0, text.length);
+  assert.equal(r.value, '  // foo\n  // bar\n// baz');
+  // Selection remaps to cover the whole (now-commented) block.
+  assert.equal(r.value.slice(r.selectionStart, r.selectionEnd), r.value);
+  const back = toggleLineComment(r.value, r.selectionStart, r.selectionEnd);
+  assert.equal(back.value, text);
+});
+
+test('toggleLineComment: a selection ending at column 0 of the next line excludes that line', () => {
+  const text = 'a\nb\nc\nd';
+  const r = toggleLineComment(text, 0, 6); // ends right before 'd', at col 0
+  assert.equal(r.value, '// a\n// b\n// c\nd');
+  // The remapped selection still doesn't reach into 'd'.
+  assert.equal(r.value.slice(r.selectionStart, r.selectionEnd), '// a\n// b\n// c\n');
+});
+
+test('toggleLineComment: comments (not uncomments) when only some touched lines are already commented', () => {
+  const mixed = '// a\nb';
+  const r = toggleLineComment(mixed, 0, mixed.length);
+  assert.equal(r.value, '// // a\n// b');
+});
+
+test('toggleLineComment: blank lines are left alone and ignored by the uncomment-eligibility check', () => {
+  const text = '// a\n\n// b';
+  const r = toggleLineComment(text, 0, text.length);
+  assert.equal(r.value, 'a\n\nb');
 });
