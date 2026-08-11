@@ -637,6 +637,21 @@ test('jitsiUrlForRoom swaps the room segment the bundle and bots key on', () => 
   assert.equal(jitsiUrlForRoom('not a url', 'gig'), 'not a url');
 });
 
+// Jitsi's XMPP layer lowercases the MUC room name regardless of URL casing,
+// so /sdA and /sda are the same physical meeting. The sidecar normalizes for
+// this too (server.js), but requireRoom lowercases independently — every
+// entry point that names a room funnels through it, so this is the fleet's
+// own backstop against ever minting two `this.rooms` entries for one meeting.
+test('attachRoom normalizes case, so a differently-cased announcement joins the same room', async () => {
+  await withDiscoveringFleet(async ({ fleet, bus }) => {
+    fleet.attachRoom('sdA');
+    fleet.attachRoom('sda');
+    assert.equal(bus.conns.filter((c) => c.url.includes('role=fleet')).length, 1,
+      'one fleet bus for the meeting, not two');
+    assert.deepEqual(fleet.roomsStatus().map((s) => s.room), ['sda']);
+  });
+});
+
 // Fake sidecar connector: records every URL the fleet opens and lets a test
 // deliver messages on it, standing in for the relay.
 function makeFakeConnector() {

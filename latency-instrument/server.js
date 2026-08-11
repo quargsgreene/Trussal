@@ -255,7 +255,14 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
     let connRole = 'player';
     try {
       const url = new URL(req.url, 'http://localhost');
-      roomName = url.searchParams.get('room') || 'default';
+      // Jitsi's XMPP layer lowercases the MUC room name regardless of the URL's
+      // casing, so two people who load /sdA and /sda land in the identical
+      // meeting. Lowercasing here is what makes every Map key, the fleet's
+      // room-discovery announcements, and every broadcast agree on that same
+      // one room — without it, differently-cased URLs to the same meeting
+      // silently split into two rosters and two independently-spawned bot
+      // clusters fighting over one real conference.
+      roomName = (url.searchParams.get('room') || 'default').toLowerCase();
       connRole = url.searchParams.get('role') || 'player';
     } catch (e) {
       console.warn('[latency] bad request url:', req.url);

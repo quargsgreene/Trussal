@@ -2179,7 +2179,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getRoomNameFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     const roomName = parts.length ? parts[parts.length - 1] : null;
-    return roomName;
+    return roomName ? roomName.toLowerCase() : roomName;
   }
   var JAMULUS_ROOM_MAP;
   var init_jamulus = __esm({

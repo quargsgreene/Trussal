@@ -100,6 +100,30 @@ test('control channel: announced on every join, so a late watcher still learns t
   });
 });
 
+// Jitsi's XMPP layer lowercases the MUC room name regardless of URL casing,
+// so /sdA and /sda are the same physical meeting to every real participant.
+// Before this was normalized here, the sidecar (and everything the fleet
+// derives from it) tracked them as two unrelated rooms — two rosters, two
+// independently-spawned bot clusters colliding in one real conference.
+test('control channel: differently-cased room names are the same room', async () => {
+  await withServer(async (port) => {
+    const upper = await connect(port, { room: 'sdA' });
+    const upperRoster = await hello(upper, { jitsiId: 'j1' });
+    assert.equal(upperRoster.you.roomIndex, '0');
+
+    const lower = await connect(port, { room: 'sda' });
+    const lowerRoster = await hello(lower, { jitsiId: 'j2' });
+    assert.equal(lowerRoster.peers.length, 1, 'sda sees the peer that joined as sdA');
+    assert.equal(lowerRoster.peers[0].jitsiId, 'j1');
+
+    const control = await connect(port, { role: 'control', token: TOKEN });
+    const snapshot = await waitFor(control, m => m.type === 'rooms');
+    assert.deepEqual(snapshot.rooms, ['sda'], 'one canonical room name, not two');
+
+    upper.ws.close(); lower.ws.close(); control.ws.close();
+  });
+});
+
 test('control channel: a watcher is not a participant — no index, no roster, no broadcast', async () => {
   await withServer(async (port) => {
     const control = await connect(port, { role: 'control', token: TOKEN });

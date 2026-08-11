@@ -86,7 +86,14 @@ export function jitsiUrlForRoom(baseUrl, room) {
 // instead of failing where the mistake is.
 function requireRoom(room, where) {
   if (room == null || room === '') throw new TypeError(`${where}: a room name is required`);
-  return String(room);
+  // Lowercased so every entry point agrees on one room key regardless of
+  // casing — matches the sidecar's own normalization (server.js), which is
+  // what makes /sdA and /sda the same meeting to Jitsi's XMPP layer in the
+  // first place. Without matching it here, a caller that reaches this
+  // directly (bypassing control-channel discovery) could still mint a second,
+  // differently-cased `this.rooms` entry for the meeting the sidecar already
+  // unified.
+  return String(room).toLowerCase();
 }
 
 // One line a performer can read in their own studio saying what the fleet took
