@@ -1928,6 +1928,11 @@ export function pageReadSamples() {
   // shared context exists (e.g. an aggregator that has not built it yet).
   const audio = {
     fanRms: typeof readFanRms === 'function' ? readFanRms() : null,
+    // A muted bot (or a mute/unmute message applied out of order) reads
+    // fanRms==0 with schedulerStarted true too — this distinguishes "gain is
+    // zeroed" from "the pattern itself produces nothing" without either one
+    // masquerading as the other in the admin API.
+    fanGainValue: fan ? fan.gain.value : null,
     fanChannelCount: fan ? fan.channelCount : null,
     fanMaxChannelCount: fan ? fan.maxChannelCount : null,
     hardwareMaxChannelCount: window.__trussalHardwareMaxChannelCount ?? null,
