@@ -45,7 +45,7 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
-function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
+function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [] } = {}) {
   const calls = {
     evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false,
     roomPushes: [], noisePushes: [], crushPushes: [], echoPushes: [],
@@ -60,6 +60,7 @@ function makeFakes({ pageCaptures = [], pageLeaves = [] } = {}) {
       const s = String(fn);
       calls.evaluate.push(s);
       if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
+      if (/\.drainStopped\(\)/.test(s)) return pageStopped;                  // pageDrainParticipantStopped
       if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
       // The four master-bus effect pushes. Matched ahead of the enqueue arm
       // because every pageSetMaster* body names __trussalMasterPlayer too.
@@ -287,6 +288,48 @@ test('ingestTick: a stood-down aggregator does not act on page-reported departur
 
   await bot.ingestTick();
   assert.deepEqual(bot.order.order(), ['0'], 'a stood-down aggregator leaves the ring untouched');
+
+  await bot.stop();
+});
+
+// --- ingestTick <-> page-reported stops (Stop must not defeat itself via ghosting) ---
+// A "stop" (peer still in the conference, just not playing — page-scripts.js's
+// markStopped/drainStopped) used to be reported through the SAME queue as a
+// real departure, which under an active metaprogram (the production default)
+// ghosts the still-listed token and loops its last few seconds of pre-stop
+// audio forever — the live bug this pins a regression test for.
+
+test('ingestTick: under an active metaprogram, a page-reported stop does not ghost the participant', async () => {
+  const { fakeLauncher } = makeFakes({ pageStopped: ['human-0'] });
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+  await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: [0.5] }]);
+  bot.applyProgramText('$ participants <0>');
+  assert.ok(bot.order.hasValidMetaprogram(), 'a metaprogram is in force');
+
+  await bot.ingestTick(); // page reports human-0 stopped playing (still connected)
+  assert.deepEqual(bot.order.order(), ['0'], 'the ring slot is untouched — no removal, no gap');
+  assert.ok(bot.buffers['0'], 'its buffer survives — a stop is not a departure');
+  assert.equal(bot.order.serve().departed, false,
+    'a stop must not ghost the participant — that loops stale pre-stop audio forever, defeating Stop');
+
+  await bot.stop();
+});
+
+test('ingestTick: without a metaprogram, a page-reported stop still frees the ring slot (legacy join-order behaviour)', async () => {
+  const { fakeLauncher } = makeFakes({ pageStopped: ['human-0'] });
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+  await bot.start();
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+    { jitsiId: 'human-1', token: '1', samples: [0.25] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1']);
+  assert.ok(!bot.order.hasValidMetaprogram(), 'no metaprogram applied — join-order mode');
+
+  await bot.ingestTick(); // page reports human-0 stopped playing
+  assert.deepEqual(bot.order.order(), ['1'], 'stop frees the ring slot exactly like a departure, as before');
+  assert.equal(bot.buffers['0'], undefined, 'its buffer is dropped too, matching the pre-existing behaviour');
 
   await bot.stop();
 });

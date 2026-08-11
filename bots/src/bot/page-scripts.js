@@ -1061,21 +1061,35 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  *
  * Ring membership is additionally gated on PLAY STATE
  * (window.__trussalPeerIsPlaying, backed by the peer-state bus's playing
- * flag): a peer merely present in the conference publishes silence, so scan()
- * compacts the slot of anyone who stops playing and drain() discards (never
- * delivers) captures from anyone not playing — a joined-but-not-yet-playing
- * peer never claims a turn, and a stopped peer's slot closes just like a
- * departure. Pressing play (re)registers them at the tail of the rotation.
+ * flag): a peer merely present in the conference publishes silence, so
+ * drain() discards (never delivers) captures from anyone not playing — a
+ * joined-but-not-yet-playing peer never claims a turn. Pressing play
+ * (re)registers them the moment fresh audio arrives.
+ *
+ * A play->stop transition is deliberately NOT routed through markDeparted /
+ * leftQueue — it used to be (see git history), and the shared path was the
+ * bug: under an always-on Net Cycles metaprogram (the production default —
+ * see MetaprogrammerParser.buildDefaultProgram), AggregatorBot.
+ * removeParticipant's mode-aware depart() treats every arrival at leftQueue
+ * as "gone, might come back" and GHOSTS the still-listed token — looping its
+ * last few seconds of pre-stop audio forever, which is the opposite of what
+ * an intentional Stop asks for. A genuine departure SHOULD ghost (the room
+ * shouldn't go silent on a network blip); an intentional Stop should not — so
+ * a stop now only frees playingOnce (markStopped) and lets drain()'s existing
+ * playing-gate above starve that peer's live RingBuffer to empty, which
+ * readAndAssembleMasterBuffer already renders as clean, un-ghosted silence
+ * (the `!currentRingBuffer` / departed===false branch) with no ring-topology
+ * change of its own. The Node side (AggregatorBot.#handleStoppedParticipants)
+ * still calls removeParticipant for a stop when NO metaprogram is in force,
+ * matching the original join-order-mode behaviour this queue split from.
  *
  * drain() is ALSO gated on current ROSTER MEMBERSHIP (scan()'s lastSeen
- * snapshot), because the two gates above lag a hangup: the Jitsi presence
- * leave arrives before the sidecar peer-leave, and in that window the
- * departed peer's tap emits one final tail frame that would otherwise be
+ * snapshot), because the departure gate above lags a hangup: the Jitsi
+ * presence leave arrives before the sidecar peer-leave, and in that window
+ * the departed peer's tap emits one final tail frame that would otherwise be
  * delivered and re-register the slot the leave just compacted — permanently,
  * since markDeparted has already consumed every leave signal. The roster gate
- * discards that tail; the playing gate covers the opposite ordering (tab
- * close: peer-leave instant, Jitsi roster ICE-slow), so between them every
- * leave sequence is closed.
+ * discards that tail.
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
@@ -1165,26 +1179,42 @@ export function pageAggregatorCapture() {
   // room-index token at least once (the prerequisite for the fast resolver-
   // regression check below — an id that has NEVER resolved yet must not be
   // mistaken for a departure), ids observed PLAYING at least once (the same
-  // prerequisite for the play-state check below), and the queue of ids that
-  // have left since the last drainLeaves() — the leave-detection state a
-  // departed participant's ring slot needs to be compacted on the Node side
-  // (AggregatorBot.removeParticipant) instead of left as a silent gap.
+  // prerequisite for the play-state check below), the queue of ids that have
+  // left since the last drainLeaves() — the leave-detection state a departed
+  // participant's ring slot needs to be compacted on the Node side
+  // (AggregatorBot.removeParticipant) instead of left as a silent gap — and
+  // the separate queue of ids that have merely STOPPED playing since the last
+  // drainStopped(): these must not share leftQueue (see the module doc above
+  // for why routing a stop through removeParticipant's ghost path defeated
+  // intentional Stop).
   let lastSeen = new Set();
   const resolvedOnce = new Set();
   const playingOnce = new Set();
   const leftQueue = [];
+  const stoppedQueue = [];
 
-  // NOTE: markDeparted is shared by two DIFFERENT signals and must not tear
-  // down the audio tap itself — see the roster-diff sweep in scan() for that.
-  // The play-state fast path below calls this for a peer who is still fully
-  // present (just not playing); tearing down their AudioContext here would be
-  // permanent, since tapTrack's WeakSet guard means their unchanged JitsiTrack
-  // is never re-tapped, and they'd never be heard from again after resuming.
+  // NOTE: markDeparted must not tear down the audio tap itself — see the
+  // roster-diff sweep in scan() for that.
   function markDeparted(jitsiId) {
     leftQueue.push(jitsiId);
     store.delete(jitsiId);
     lastSeen.delete(jitsiId);
     resolvedOnce.delete(jitsiId);
+    playingOnce.delete(jitsiId);
+  }
+
+  // The play-state fast path below calls this for a peer who is still fully
+  // present (just not playing) — deliberately lighter than markDeparted: it
+  // does NOT touch lastSeen or resolvedOnce, since this peer hasn't actually
+  // left (lastSeen is rebuilt from the live roster moments later in this same
+  // scan() tick anyway, and resolvedOnce should stay live so Fast path #1
+  // keeps working for them the instant they do leave for real). It also does
+  // NOT tear down the audio tap — tapTrack's WeakSet guard means their
+  // unchanged JitsiTrack is never re-tapped, so that would be permanent, and
+  // they'd never be heard from again after resuming.
+  function markStopped(jitsiId) {
+    stoppedQueue.push(jitsiId);
+    store.delete(jitsiId);
     playingOnce.delete(jitsiId);
   }
 
@@ -1210,14 +1240,15 @@ export function pageAggregatorCapture() {
       [...resolvedOnce].filter((jitsiId) => resolve(jitsiId) == null).forEach(markDeparted);
     }
 
-    // Fast path #2: an id that WAS playing but has stopped frees its turn
-    // immediately — the same "no dead slot" guarantee a departure gets,
-    // applied to play/stop, so a present-but-silent peer never holds a turn.
-    // The drain() gate below is this check's other half: it keeps a
-    // non-playing peer from re-registering on the Node side the moment its
-    // next (silent) capture batch lands.
+    // Fast path #2: an id that WAS playing but has stopped is queued via
+    // markStopped, NOT markDeparted — see the module doc above for why a stop
+    // must not enter removeParticipant's ghost path. The drain() gate below
+    // is this check's other half: it keeps a non-playing peer's captures from
+    // reaching the Node side at all, so their live RingBuffer starves to
+    // empty on its own (clean, un-ghosted silence) without any ring-topology
+    // change here.
     if (playingReady) {
-      [...playingOnce].filter((jitsiId) => !isPlaying(jitsiId)).forEach(markDeparted);
+      [...playingOnce].filter((jitsiId) => !isPlaying(jitsiId)).forEach(markStopped);
     }
 
     const conf = globalThis.APP && globalThis.APP.conference;
@@ -1308,6 +1339,14 @@ export function pageAggregatorCapture() {
     drainLeaves() {
       return leftQueue.splice(0);
     },
+    // Endpoint ids that have merely STOPPED playing (still in the conference)
+    // since the last call. Kept separate from drainLeaves() — see the module
+    // doc above — because feeding these into removeParticipant would ghost
+    // them under an active metaprogram instead of letting them go quietly
+    // silent.
+    drainStopped() {
+      return stoppedQueue.splice(0);
+    },
     // Localizes an empty drain to a stage: participantCount 0 -> no remote peers;
     // store empty -> no audio tapped from any member (no audio track / capture
     // failing); store has keys but resolved null -> jitsiId↔roomIndex not announced
@@ -1340,6 +1379,11 @@ export function pageDrainParticipantAudio() {
 /** Drain the endpoint ids that have left the conference since the last call. */
 export function pageDrainParticipantLeaves() {
   return (window.__trussalAggCapture && window.__trussalAggCapture.drainLeaves()) || [];
+}
+
+/** Drain the endpoint ids that have merely stopped playing since the last call. */
+export function pageDrainParticipantStopped() {
+  return (window.__trussalAggCapture && window.__trussalAggCapture.drainStopped()) || [];
 }
 
 /** Snapshot of the capture tap's state, for diagnosing an empty drain. */

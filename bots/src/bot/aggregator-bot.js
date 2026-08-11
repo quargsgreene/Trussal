@@ -3,6 +3,7 @@ import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium
 import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
   pageAggregatorCapture, pageDrainParticipantAudio, pageDrainParticipantLeaves,
+  pageDrainParticipantStopped,
   pageAggregatorCaptureDiag, pageFpsSampler,
   pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
@@ -489,6 +490,7 @@ export class AggregatorBot extends Bot {
         // Compact departed participants out of the rotation BEFORE ingesting new
         // audio, so a slot freed this tick can't briefly reappear as an empty turn.
         await this.#removeDepartedParticipants();
+        await this.#handleStoppedParticipants();
         // #drainPageCaptures already swallows page errors; nothing to write when
         // the room is silent.
         await this.writeToIndividualParticipantBufferQueues();
@@ -505,6 +507,30 @@ export class AggregatorBot extends Bot {
     async #removeDepartedParticipants() {
         const departed = await this.#drainPageLeaves();
         for (const jitsiId of departed) this.removeParticipant(jitsiId);
+    }
+
+    /**
+     * A participant the page tap has seen STOP playing (still in the
+     * conference — see page-scripts.js's markStopped/drainStopped) is
+     * deliberately NOT routed through removeParticipant: under an active Net
+     * Cycles metaprogram (the production default), that call's depart() would
+     * ghost the still-listed token and loop its last few seconds of pre-stop
+     * audio forever, defeating an intentional Stop. Instead, doing nothing
+     * here is enough — drain()'s playing-gate on the page side already stops
+     * delivering this peer's captures, so their live RingBuffer starves to
+     * empty and readAndAssembleMasterBuffer already renders an un-ghosted
+     * empty ring buffer as clean silence.
+     *
+     * Only WITHOUT a metaprogram in force does this replicate the original
+     * (pre-split) behaviour: join-order mode's ring membership tracks who is
+     * currently playing, so a stop there really should free the ring slot via
+     * removeParticipant, exactly as a departure would.
+     */
+    async #handleStoppedParticipants() {
+        const stopped = await this.#drainPageStopped();
+        if (!stopped.length) return;
+        if (this.order.hasValidMetaprogram()) return;
+        for (const jitsiId of stopped) this.removeParticipant(jitsiId);
     }
 
     /**
@@ -2332,6 +2358,17 @@ export class AggregatorBot extends Bot {
             return Array.isArray(left) ? left : [];
         } catch (e) {
             console.error(`[aggregator-bot] failed to drain participant leaves: ${e.message}`);
+            return [];
+        }
+    }
+
+    async #drainPageStopped() {
+        if (!this.page || typeof this.page.evaluate !== 'function') return [];
+        try {
+            const stopped = await this.page.evaluate(pageDrainParticipantStopped);
+            return Array.isArray(stopped) ? stopped : [];
+        } catch (e) {
+            console.error(`[aggregator-bot] failed to drain stopped participants: ${e.message}`);
             return [];
         }
     }

@@ -188,7 +188,14 @@ test('tab close: the playing gate discards the tail while the Jitsi roster is st
 
 // The documented stop -> play rejoin must survive the roster gate: a peer who
 // stays in the meeting keeps its roster membership, so the moment the playing
-// flag reopens its captures deliver (and re-register at the tail) again.
+// flag reopens its captures deliver again.
+//
+// A stop must NOT be reported via drainLeaves() — that queue feeds
+// AggregatorBot.removeParticipant, which ghosts a still-listed token under an
+// active Net Cycles metaprogram (the production default) instead of letting
+// it go quietly silent, defeating an intentional Stop. It goes through the
+// separate drainStopped() queue instead (see page-scripts.js's module doc and
+// markStopped/markDeparted split).
 test('a present peer that stops and resumes playing delivers again (no roster-gate false positive)', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
@@ -199,10 +206,12 @@ test('a present peer that stops and resumes playing delivers again (no roster-ga
   assert.equal(tap.cap.drain().length, 1, 'delivers while playing');
 
   // Stops playing but stays in the meeting: the play-state fast path frees
-  // the slot, and the (silent) captures deliver nothing…
+  // the slot via drainStopped (NOT drainLeaves), and the (silent) captures
+  // deliver nothing…
   tap.playingSet.delete('human-a');
   tap.scan();
-  assert.deepEqual(tap.cap.drainLeaves(), ['human-a'], 'stop frees the turn like a departure');
+  assert.deepEqual(tap.cap.drainLeaves(), [], 'a stop is not a departure — leftQueue stays empty');
+  assert.deepEqual(tap.cap.drainStopped(), ['human-a'], 'stop is queued separately from a departure');
   tap.pushFrame('human-a', 0);
   assert.deepEqual(tap.cap.drain(), [], 'a stopped peer delivers nothing');
 
