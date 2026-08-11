@@ -57209,6 +57209,7 @@ ${s2}${BTN_MARKER}`)
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
   init_MetaprogrammerParser();
+  init_latency_instrument();
   init_peer_state();
   var APPLIED_FADE_MS = 5e3;
   function mountMetaprogrammerEditor(container2) {
@@ -57219,9 +57220,9 @@ ${s2}${BTN_MARKER}`)
     <div class="ts-section-head">
       <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
-        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button">\u25B6 Apply</button>
+        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">\u25B6 Apply &amp; Start</button>
         <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
-        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply \xB7 Ctrl+. to stop</span>
+        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply &amp; start \xB7 Ctrl+. to stop</span>
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
@@ -57242,7 +57243,7 @@ ${s2}${BTN_MARKER}`)
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
     } else {
-      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
+      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply & start \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
     }
     ta.value = sync.getText() || getProgramText() || "";
     attachUndoHistory(ta);
@@ -57323,12 +57324,24 @@ ${s2}${BTN_MARKER}`)
       refreshFromDoc();
       renderButtons();
     });
-    const apply2 = () => {
+    const apply2 = async () => {
       if (readOnly) return;
       const errors = applyProgramText(ta.value);
       showErrors(ta.value);
-      if (errors.length) setByline("invalid \u2014 fix it above, then apply", false);
-      else setByline("applied \u2014 takes effect at the next cycle boundary", true);
+      if (errors.length) {
+        setByline("invalid \u2014 fix it above, then apply", false);
+        renderButtons();
+        return;
+      }
+      try {
+        await bootAudioEngine();
+        await bootStrudelOnUserGesture();
+        sendLocalPlaying(true);
+        setByline("applied \u2014 takes effect at the next cycle boundary", true);
+      } catch (e30) {
+        console.error("[netcycles] apply: starting playback failed", e30);
+        setByline("applied, but starting playback failed \u2014 see console", false);
+      }
       renderButtons();
     };
     const stop2 = async () => {
