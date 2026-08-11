@@ -58603,6 +58603,8 @@ ${s2}${BTN_MARKER}`)
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
+    overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
+    overlay.addEventListener("click", (e30) => e30.stopPropagation());
     const ncHost = overlay.querySelector(".ts-netcycles");
     try {
       mountMetaprogrammerEditor(ncHost);
@@ -58649,6 +58651,7 @@ ${s2}${BTN_MARKER}`)
     btn.id = BUTTON_ID;
     btn.type = "button";
     btn.textContent = "Studio";
+    btn.addEventListener("mousedown", (e30) => e30.stopPropagation());
     btn.addEventListener("click", (e30) => {
       e30.preventDefault();
       e30.stopPropagation();

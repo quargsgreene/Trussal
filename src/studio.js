@@ -1167,6 +1167,16 @@ function ensureOverlay() {
   `;
   document.body.appendChild(overlay);
 
+  // Jitsi's own toolbar popovers (hangup menu, "..." overflow menu, etc.)
+  // close themselves on any mousedown/click that bubbles to document and
+  // doesn't land inside their own DOM. Trussal Studio is a separate DOM
+  // subtree, so without this guard every interaction inside it — collapsing,
+  // closing, clicking a button — reads to Jitsi as an outside click and
+  // closes whatever Jitsi menu happens to be open. Stop both event types
+  // here so nothing from within Studio ever reaches document.
+  overlay.addEventListener('mousedown', (e) => e.stopPropagation());
+  overlay.addEventListener('click', (e) => e.stopPropagation());
+
   // The Net Cycles card mounts once, outside the re-rendered detail panel,
   // so the live CRDT-bound textarea survives roster/metrics re-renders.
   const ncHost = overlay.querySelector('.ts-netcycles');
@@ -1223,6 +1233,7 @@ function ensureToggle() {
   btn.id = BUTTON_ID;
   btn.type = 'button';
   btn.textContent = 'Studio';
+  btn.addEventListener('mousedown', (e) => e.stopPropagation());
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
