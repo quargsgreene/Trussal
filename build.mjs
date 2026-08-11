@@ -81,6 +81,11 @@ const options = {
 		'process.env.JAMULUS_HOST': JSON.stringify(process.env.JAMULUS_HOST || 'jamulus.example.com'),
 		'import.meta.url': '__TRUSSAL_BUNDLE_URL'
 	},
+	// Modules inject their own <style> tags at runtime (no <link> mechanism
+	// exists for this bundle to hook into Jitsi's page with), so a .css
+	// import is pulled in as a plain string rather than esbuild's own CSS
+	// loader (which would try to bundle/emit it as a separate stylesheet).
+	loader: { '.css': 'text' },
 	plugins: [postBuild],
 };
 

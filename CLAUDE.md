@@ -56,7 +56,7 @@ The overlay UI lives in `src/studio.js` (participant strip, Latency Effects, Str
 1. **Call site** — where it's started/wired (e.g. the `ensureX()` call in `tickUi()`). When you delete a `.then(() => ensureX())` off a promise chain, **keep the `.catch()`** — dropping it turns a handled failure into an unhandled promise rejection.
 2. **Handler code** — the function(s) and any module-level state (`let x = null;`, the `drawXFrame`/`ensureX` pair).
 3. **DOM node** — the element in the template literal (e.g. `<canvas class="ts-x">`).
-4. **CSS** — the matching rule in `injectStyles()`.
+4. **CSS** — the matching rule in `src/studio.css` (imported as raw text and injected by `injectStyles()`).
 5. **Imports + orphaned modules** — remove now-unused imports; then `grep -rn <exportName> src/ --include=*.js` — if a module has no importers left, delete it **and its tests** (`test/*.js`), and fix any prose references (other module comments, `src/features/*.md`).
 
 Then rebuild and verify before committing:

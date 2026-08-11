@@ -5,6 +5,7 @@
 // chip with effect indicators, play state, and an "audio routed" dot — making
 // it obvious that each person owns their own chain and editor.
 
+import studioStyles from './studio.css';
 import { getRoomNameFromUrl, connectJamulusRelay, disconnectJamulusRelay, isRelayConnected } from './jamulus.js';
 import {
   subscribeParticipants,
@@ -93,7 +94,7 @@ let expandedBank = null; // which bank's per-sample list is open, if any
 let currentSliders = []; // most recent slider configs from strudel eval
 // True while a native file picker opened by wireUpload is on screen, or while
 // the files it returned are still being read. renderAll() skips rebuilding
-// the detail panel during this window — see the guard there for why.
+// the detail shell during this window — see the guard there for why.
 let uploadPending = false;
 
 async function refreshSampleBanks() {
@@ -141,290 +142,53 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
+// Keeps `container`'s children in sync with `items` without recreating a node
+// for any item whose key is still present. A full teardown-and-rebuild (the
+// previous design here) needed a click's mousedown and mouseup to land on the
+// SAME node, dropped a focused input's cursor whenever its node got replaced,
+// and reset a container's scroll position on every replacement — all because
+// nothing survived the rebuild except by value. Reconciling by key means an
+// unrelated data refresh never touches a node the user is mid-gesture with.
+//
+// keyFn(item) must return a stable identity for that item. createFn(item)
+// builds a fresh node and binds ITS OWN listeners once, reading current values
+// off the node's dataset/DOM at call time rather than closing over `item` (a
+// later update replaces the node's content, not the node, so a closure over
+// the original item would go stale). updateFn(node, item) patches an existing
+// (or just-created) node's live-changing content in place.
+function reconcileList(container, items, keyFn, createFn, updateFn) {
+  const existing = new Map();
+  for (const child of Array.from(container.children)) {
+    const key = child.dataset ? child.dataset.reconcileKey : undefined;
+    if (key != null) existing.set(key, child);
+  }
+  let prevNode = null;
+  for (const item of items) {
+    const key = String(keyFn(item));
+    let node = existing.get(key);
+    if (node) {
+      existing.delete(key);
+    } else {
+      node = createFn(item);
+      node.dataset.reconcileKey = key;
+    }
+    updateFn(node, item);
+    const wantSibling = prevNode ? prevNode.nextSibling : container.firstChild;
+    if (wantSibling !== node) container.insertBefore(node, wantSibling);
+    prevNode = node;
+  }
+  for (const node of existing.values()) node.remove();
+}
+
+// Styles live in studio.css (imported as raw text — see build.mjs's '.css':
+// 'text' loader) rather than a template literal here. #trussal-studio-overlay
+// and #trussal-studio-toggle in that file are OVERLAY_ID/BUTTON_ID hardcoded
+// as literal strings; keep them in sync if either constant is ever renamed.
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = `
-    #${OVERLAY_ID} {
-      position: fixed; right: 16px; bottom: 88px;
-      width: min(640px, 92vw); max-height: 78vh;
-      background: rgba(8, 14, 12, 0.96);
-      color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      z-index: 999999;
-      font-family: sans-serif;
-      display: flex; flex-direction: column;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.5);
-    }
-    #${OVERLAY_ID} .ts-header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    #${OVERLAY_ID} .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
-    #${OVERLAY_ID} .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
-    #${OVERLAY_ID} .ts-collapse-btn { margin-left: auto; }
-    #${OVERLAY_ID} .ts-strip {
-      display:flex; gap:8px; padding: 10px 12px;
-      overflow-x:auto; overflow-y:hidden;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      scrollbar-width: thin;
-    }
-    #${OVERLAY_ID} .ts-chip {
-      flex: 0 0 auto;
-      display:flex; flex-direction:column; align-items:stretch; gap:4px;
-      min-width: 104px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      font-family: inherit; color: inherit;
-      text-align: left;
-    }
-    #${OVERLAY_ID} .ts-chip:hover { background: rgba(255,255,255,0.07); }
-    #${OVERLAY_ID} .ts-chip.selected {
-      border-color: var(--ts-chip-color, #1ff466);
-      background: rgba(31,244,102,0.08);
-    }
-    #${OVERLAY_ID} .ts-chip-row { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-avatar {
-      width: 24px; height: 24px; border-radius: 50%;
-      background: var(--ts-chip-color, #1ff466);
-      color: #050f0a; font-weight: 700; font-size: 12px;
-      display:flex; align-items:center; justify-content:center; flex-shrink: 0;
-    }
-    #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
-    #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
-    #${OVERLAY_ID} .ts-idx {
-      margin-left: auto;
-      font-size: 10px; font-family: monospace; padding: 1px 5px;
-      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
-    }
-    #${OVERLAY_ID} .ts-routed {
-      font-size: 10px; padding: 1px 4px; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #5d7264;
-    }
-    #${OVERLAY_ID} .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-play { font-size: 10px; color: #5d7264; }
-    #${OVERLAY_ID} .ts-play.on { color: #1ff466; }
-
-    #${OVERLAY_ID} .ts-detail {
-      padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
-      overflow-y:auto; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-detail-header { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-readonly-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px;
-      background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-bot-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-      background: rgba(125,207,255,0.15); color: #7dcfff;
-    }
-    #${OVERLAY_ID} .ts-btn.eval { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
-    #${OVERLAY_ID} .ts-section {
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.02);
-      padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:right; justify-content: right;
-      gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-title {
-      font-size: 10px; letter-spacing: 1px; 
-      color: #7aa68a; font-weight: 600;
-    }
-    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    #${OVERLAY_ID} .ts-btn {
-      padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
-      font-weight: 600; font-size: 12px;
-    }
-    #${OVERLAY_ID} .ts-btn.play  { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
-    #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    /* .ts-fx / .ts-fx-btn outlived the effects block — the bot cluster block styles its rows with them. */
-    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
-    #${OVERLAY_ID} .ts-fx-btn {
-      padding:3px 10px; border-radius:999px;
-      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
-      font-size:11px; cursor:pointer;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-    #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
-    #${OVERLAY_ID} .ts-dim { opacity: 0.72; }
-    #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
-    #${OVERLAY_ID} .ts-code, #${OVERLAY_ID} .ts-pre {
-      background: #050f0a; color:#1ff466;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
-      padding: 8px; box-sizing: border-box;
-      min-height: 160px; max-height: 280px;
-      width: 100%; resize: vertical;
-      white-space: pre-wrap; overflow:auto;
-    }
-    #${OVERLAY_ID} .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
-    @keyframes ts-eval-pulse {
-      0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
-      100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
-    }
-    #${OVERLAY_ID} .ts-code.ts-eval-flash {
-      animation: ts-eval-pulse 0.55s ease-out forwards;
-    }
-    #${OVERLAY_ID} .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} select.ts-select {
-      background: #050f0a; color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 4px; padding: 3px 6px; font-size: 11px;
-      max-width: 220px;
-    }
-
-    #${OVERLAY_ID} .ts-voice-btns {
-      display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-voice-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.15);
-      background: transparent; color: #7aa68a;
-      font-size: 11px; font-family: monospace; cursor: pointer;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
-    #${OVERLAY_ID} .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
-    /* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
-       yellow-fills-then-green as every other dwell target. */
-    #${OVERLAY_ID} .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    #${OVERLAY_ID} .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
-
-    #${OVERLAY_ID} .ts-sample-banks {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-bank {
-      padding: 1px 7px; border-radius: 3px;
-      background: rgba(31,244,102,0.1); color: #1ff466;
-      border: 1px solid rgba(31,244,102,0.25);
-      white-space: nowrap;
-      font-size: 11px; font-family: monospace; cursor: pointer;
-    }
-    #${OVERLAY_ID} .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
-    /* Data packs read as a different kind of thing from sound banks. */
-    #${OVERLAY_ID} .ts-sample-bank.data {
-      background: rgba(120,180,255,0.1); color: #7ab4ff;
-      border-color: rgba(120,180,255,0.3);
-    }
-    #${OVERLAY_ID} .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
-    #${OVERLAY_ID} .ts-sample-bank.open { border-style: dashed; }
-
-    #${OVERLAY_ID} .ts-sample-list {
-      display: flex; flex-wrap: wrap; gap: 4px;
-      margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-      background: rgba(255,255,255,0.04);
-      font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-item {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 1px 3px 1px 6px; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #cfd8e3;
-      max-width: 100%;
-    }
-    #${OVERLAY_ID} .ts-sample-idx { color: #7ab4ff; }
-    #${OVERLAY_ID} .ts-sample-label {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
-    }
-    #${OVERLAY_ID} .ts-sample-len { color: #8a94a3; }
-    #${OVERLAY_ID} .ts-sample-x {
-      border: none; background: transparent; cursor: pointer; padding: 0 3px;
-      color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
-    #${OVERLAY_ID} .ts-sample-banks-del {
-      margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
-      background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
-
-    #${OVERLAY_ID} .ts-sliders {
-      display: flex; flex-wrap: wrap; gap: 10px 16px;
-    }
-    #${OVERLAY_ID} .ts-slider-row {
-      display: flex; flex-direction: column; gap: 3px;
-      min-width: 100px; flex: 1 1 100px;
-    }
-    #${OVERLAY_ID} .ts-slider-label {
-      font-size: 10px; font-family: monospace; color: #7aa68a;
-      display: flex; justify-content: space-between; gap: 6px;
-    }
-    #${OVERLAY_ID} .ts-slider-input {
-      width: 100%; cursor: pointer; accent-color: #1ff466;
-      height: 16px;
-    }
-
-    /* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
-       their own page — it should behave like a bot's, whose visuals reach the
-       room only through the aggregator's mosaic.
-
-       @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
-       (width and height 100%, position fixed at top 0 left 0) prepended to
-       <body>, which covered the whole Jitsi UI. Park it off-screen instead.
-
-       Off-screen, NOT display:none: the canvas has to keep compositing.
-       published-video.js mirrors it into the published track every frame, and
-       a src(s0) cell is blitted from that track rather than re-executed, so a
-       canvas the browser stops painting publishes black. Same reasoning, and
-       the same spelling, as the aggregator's own off-screen mosaic container
-       in bots/src/bot/page-scripts.js.
-
-       The backing store is unaffected by any of this — it is sized from
-       window.innerWidth/innerHeight in getDrawContext — so the published
-       frame keeps its full resolution.
-
-       The !important is load-bearing: getDrawContext writes those properties
-       as an INLINE style, which beats a plain rule. The old z-index: 100 here
-       only ever worked because z-index is the one property that inline style
-       does not set.
-
-       Note for editors: this whole block sits inside a JS template literal, so
-       it must contain neither a backtick nor a dollar-brace interpolation —
-       both terminate or evaluate inside the string rather than staying CSS
-       comment text. */
-    #hydra-canvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: -20000px !important;
-      pointer-events: none !important;
-    }
-
-    #${BUTTON_ID} {
-      position: fixed; bottom: 80px; right: 20px;
-      z-index: 9999;
-      padding: 0.5rem 0.9rem;
-      border-radius: 999px;
-      border: none;
-      background: #1ff466;
-      color: #050f0a;
-      font-weight: 600;
-      cursor: pointer;
-      display: none;
-    }
-  `;
+  style.textContent = studioStyles;
   document.head.appendChild(style);
 }
 
@@ -432,37 +196,46 @@ function chipColor(jitsiId, isLocal) {
   return isLocal ? '#1ff466' : `hsl(${hueFor(jitsiId)}, 60%, 60%)`;
 }
 
-function renderChip(peer, selected) {
-  const isLocal = !!peer.isLocal;
-  const color = chipColor(peer.jitsiId, isLocal);
-  const e = peer.effects || {};
-  const routed = routedSet.has(peer.jitsiId);
-  // data-peer-key is the stable id (see selectedPeerKey) a click hands to
-  // the selection alongside the jitsiId a chip render always has on hand.
-  const peerKey = isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
-  return `
-    <button class="ts-chip${selected ? ' selected' : ''}" data-jid="${peer.jitsiId || ''}" data-peer-key="${escapeHtml(peerKey)}" style="--ts-chip-color:${color};">
-      <div class="ts-chip-row">
-        <div class="ts-avatar">${initial(peer.displayName)}</div>
-        <div class="ts-name${isLocal ? ' you' : ''}">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
-        <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : '·'}</span>
-      </div>
-    </button>
+// The stable id (see selectedPeerKey) a chip's click hands to the selection.
+function chipKey(peer) {
+  return peer.isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
+}
+
+function createChip() {
+  const el = document.createElement('button');
+  el.className = 'ts-chip';
+  el.innerHTML = `
+    <div class="ts-chip-row">
+      <div class="ts-avatar"></div>
+      <div class="ts-name"></div>
+      <span class="ts-idx" title="Net Cycles room index"></span>
+    </div>
   `;
+  el.addEventListener('click', () => {
+    const jid = el.dataset.jid;
+    if (!jid) return;
+    selectedJitsiId = jid;
+    selectedPeerKey = el.dataset.peerKey || null;
+    renderAll();
+  });
+  return el;
+}
+
+function updateChip(el, peer) {
+  const isLocal = !!peer.isLocal;
+  el.dataset.jid = peer.jitsiId || '';
+  el.dataset.peerKey = chipKey(peer);
+  el.style.setProperty('--ts-chip-color', chipColor(peer.jitsiId, isLocal));
+  el.classList.toggle('selected', peer.jitsiId === selectedJitsiId);
+  el.querySelector('.ts-avatar').textContent = initial(peer.displayName);
+  const name = el.querySelector('.ts-name');
+  name.textContent = isLocal ? 'You' : (peer.displayName || 'Participant');
+  name.classList.toggle('you', isLocal);
+  el.querySelector('.ts-idx').textContent = peer.roomIndex != null ? String(peer.roomIndex) : '·';
 }
 
 function renderStrip(container) {
-  const peers = getAllPeers();
-  container.innerHTML = peers.map(p => renderChip(p, p.jitsiId === selectedJitsiId)).join('');
-  container.querySelectorAll('.ts-chip').forEach(el => {
-    el.addEventListener('click', () => {
-      const jid = el.getAttribute('data-jid');
-      if (!jid) return;
-      selectedJitsiId = jid;
-      selectedPeerKey = el.getAttribute('data-peer-key') || null;
-      renderAll();
-    });
-  });
+  reconcileList(container, getAllPeers(), chipKey, createChip, updateChip);
 }
 
 function metricsLine(peer) {
@@ -541,43 +314,50 @@ function preciseMs(v) {
   return `${n.toFixed(2)}ms`;
 }
 
-// The whole detail panel is one innerHTML assignment, so ANY throw while this
-// template is being built takes the metrics, the bot cluster AND the Strudel
-// editor down with it and leaves a blank card — a bad reference in a readout
-// should not be able to hide the instrument. This has now cost two live
-// outages, so the metrics section degrades to a visible error line instead of
-// propagating. Everything genuinely required to render is computed inside.
-function networkMetricsBlock(peer, controls = '') {
-  try {
-    return networkMetricsBlockUnsafe(peer, controls);
-  } catch (e) {
-    console.error('[studio] network metrics block failed to render', e);
-    return `
-    <div class="ts-section">
-      <div class="ts-section-head"><div class="ts-section-title">Network Metrics</div></div>
-      <div class="ts-meta">unavailable &mdash; ${escapeHtml(String((e && e.message) || e))}</div>
-    </div>`;
-  }
+// Built once per peer selection; updateMetricsSection patches it on every
+// peer-state tick (every ~2s per peer — the busiest data source in the whole
+// panel) without touching anything outside .ts-metrics-body, so a metrics
+// refresh can no longer disturb the bot cluster or the Strudel editor.
+function createMetricsSection() {
+  const el = document.createElement('div');
+  el.className = 'ts-section ts-metrics-section';
+  el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Network Metrics</div>
+      <div class="ts-section-controls">
+        <span class="ts-metrics-controls"></span>
+        <select class="ts-select ts-monitor-mix" title="mix output monitoring"></select>
+      </div>
+    </div>
+    <div class="ts-metrics-body"></div>
+  `;
+  el.querySelector('.ts-monitor-mix').addEventListener('change', (e) => {
+    monitorSelection = e.target.value;
+    setMonitorMix(monitorSelection);
+  });
+  return el;
 }
 
-function networkMetricsBlockUnsafe(peer, controls = '') {
-  const wc = effectiveWorstCase();
-  const peers = getAllPeers();
-  const mixOptions = [
-    `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
-    `<option value="self"${monitorSelection === 'self' ? ' selected' : ''}>ipsilateral (own mix)</option>`,
-    ...peers.filter(p => !p.isLocal && p.jitsiId).map(p =>
-      `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? ' selected' : ''}>↔ ${escapeHtml(String(p.roomIndex ?? p.displayName ?? 'peer'))}</option>`)
-  ].join('');
-  return `
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Network Metrics</div>
-        <div class="ts-section-controls">
-          ${controls}
-          <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
-        </div>
-      </div>
+// A throw here used to take the metrics, the bot cluster AND the Strudel
+// editor down with it (one shared innerHTML assignment) — this has cost two
+// live outages. Now that metrics own their own subtree, the try/catch only
+// has to protect that subtree; nothing else in the panel can be affected.
+function updateMetricsSection(el, peer, controls = '') {
+  const controlsHost = el.querySelector('.ts-metrics-controls');
+  if (controlsHost.innerHTML !== controls) controlsHost.innerHTML = controls;
+  const body = el.querySelector('.ts-metrics-body');
+  try {
+    const wc = effectiveWorstCase();
+    const peers = getAllPeers();
+    const mixOptions = [
+      `<option value="master"${monitorSelection === 'master' ? ' selected' : ''}>master bus</option>`,
+      `<option value="self"${monitorSelection === 'self' ? ' selected' : ''}>ipsilateral (own mix)</option>`,
+      ...peers.filter(p => !p.isLocal && p.jitsiId).map(p =>
+        `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? ' selected' : ''}>↔ ${escapeHtml(String(p.roomIndex ?? p.displayName ?? 'peer'))}</option>`)
+    ].join('');
+    const mixSel = el.querySelector('.ts-monitor-mix');
+    if (mixSel.innerHTML !== mixOptions) mixSel.innerHTML = mixOptions;
+    body.innerHTML = `
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
@@ -586,7 +366,11 @@ function networkMetricsBlockUnsafe(peer, controls = '') {
         <span title="worst value of each term across the room — an upper bound, so no real path exceeds it">(upper bound)</span>
         <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
-    </div>`;
+    `;
+  } catch (e) {
+    console.error('[studio] network metrics block failed to render', e);
+    body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String((e && e.message) || e))}</div>`;
+  }
 }
 
 let monitorSelection = 'master';
@@ -614,68 +398,97 @@ subscribeFleetStatus((status) => {
   renderAll();
 });
 
-function botClusterBlock() {
-  const bots = myClusterBots();
-  const rows = bots.map(b => `
-    <div class="ts-fx" data-bot-index="${escapeHtml(b.roomIndex)}">
-      <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
-      <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || 'bot')}</span>
-      <button class="ts-fx-btn ts-dwell-btn${b.muted ? ' on' : ''}" data-bot-action="mute">${b.muted ? 'unmute' : 'mute'}</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.videoOn ? ' on' : ''}" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? ' on' : ''}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? ' on' : ''}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
-      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
-    </div>`).join('');
-  return `
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Bot Cluster</div>
-        <div class="ts-section-controls">
-          <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">🔇 all</button>
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">× all</button>
-        </div>
-      </div>
-      ${rows || '<div class="ts-meta">no bots in your cluster</div>'}
-      ${lastFleetStatus ? `<div class="ts-meta">${escapeHtml(lastFleetStatus)}</div>` : ''}
-    </div>`;
-}
+function botRowKey(bot) { return bot.roomIndex; }
 
-function bindBotClusterBlock(container) {
-  const countEl = container.querySelector('.ts-bot-count');
-  container.querySelectorAll('[data-bot-action]').forEach(btn => {
+function createBotRow() {
+  const el = document.createElement('div');
+  el.className = 'ts-fx';
+  el.innerHTML = `
+    <span class="ts-idx"></span>
+    <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
+  `;
+  // idx comes off the row's own reconcile key at click time, not a closed-over
+  // `bot` — this node is reused across ticks, so a stale closure would still
+  // read whatever roomIndex this bot happened to have when the row was first
+  // created. myClusterBots() is re-queried fresh per click for the same reason.
+  el.querySelectorAll('[data-bot-action]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const action = btn.dataset.botAction;
-      const row = btn.closest('[data-bot-index]');
-      const idx = row ? row.dataset.botIndex : null;
-      // The editor box itself, not the last-evaluated pattern: a botConfig(...)
-      // makes no sound, so nothing prompts an author to re-run their block after
-      // typing one, and peer.pattern only advances on eval. `:not(.nc-code)` is
-      // load-bearing — the shared Net Cycles textarea also carries .ts-code.
-      if (action === 'spawn') {
-        const codeEl = container.querySelector('.ts-code:not(.nc-code)');
-        spawnBots(parseInt(countEl && countEl.value, 10) || 1, codeEl ? codeEl.value : undefined);
-      }
-      else if (action === 'remove-all') removeBots('all');
-      else if (action === 'mute-all') muteBots('all', true);
-      else if (action === 'remove' && idx) removeBots([idx]);
-      else if (action === 'removeOne' && idx) removeOneBot(idx);
-      else if (action === 'mute' && idx) {
-        const bot = myClusterBots().find(b => b.roomIndex === idx);
-        muteBots([idx], !(bot && bot.muted));
-      } else if (action === 'video' && idx) {
-        const bot = myClusterBots().find(b => b.roomIndex === idx);
-        setBotsVideo([idx], !(bot && bot.videoOn));
-      } else if (action === 'edit-perm' && idx) {
-        const bot = myClusterBots().find(b => b.roomIndex === idx);
-        setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
-      } else if (action === 'mod-perm' && idx) {
-        const bot = myClusterBots().find(b => b.roomIndex === idx);
-        setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
-      }
+      const idx = el.dataset.reconcileKey;
+      if (action === 'removeOne') { removeOneBot(idx); return; }
+      const bot = myClusterBots().find(b => b.roomIndex === idx);
+      if (action === 'mute') muteBots([idx], !(bot && bot.muted));
+      else if (action === 'video') setBotsVideo([idx], !(bot && bot.videoOn));
+      else if (action === 'edit-perm') setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
+      else if (action === 'mod-perm') setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
     });
   });
+  return el;
+}
+
+function updateBotRow(el, bot) {
+  el.querySelector('.ts-idx').textContent = bot.roomIndex;
+  el.querySelector('.ts-bot-name').textContent = bot.displayName || 'bot';
+  const muteBtn = el.querySelector('[data-bot-action="mute"]');
+  muteBtn.textContent = bot.muted ? 'unmute' : 'mute';
+  muteBtn.classList.toggle('on', !!bot.muted);
+  el.querySelector('[data-bot-action="video"]').classList.toggle('on', !!bot.videoOn);
+  el.querySelector('[data-bot-action="edit-perm"]').classList.toggle('on', !!bot.canEditMetaprogram);
+  el.querySelector('[data-bot-action="mod-perm"]').classList.toggle('on', !!bot.canWriteModulation);
+}
+
+// Built once per peer selection. The count input is a stable node from here
+// on — nothing ever rewrites its .value except the operator's own typing, so
+// the "spawn count silently reverts to 2" bug (botClusterBlock used to
+// hardcode value="2" into a template re-rendered on every peer-state tick)
+// cannot recur structurally, not just by a preserve/restore patch on top.
+function createBotClusterSection() {
+  const el = document.createElement('div');
+  el.className = 'ts-section ts-bot-cluster-section';
+  el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Bot Cluster</div>
+      <div class="ts-section-controls">
+        <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">🔇 all</button>
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">× all</button>
+      </div>
+    </div>
+    <div class="ts-bot-rows"></div>
+    <div class="ts-meta ts-bot-empty">no bots in your cluster</div>
+    <div class="ts-meta ts-bot-status" style="display:none;"></div>
+  `;
+  const countEl = el.querySelector('.ts-bot-count');
+  el.querySelector('[data-bot-action="spawn"]').addEventListener('click', () => {
+    // The editor box itself, not the last-evaluated pattern: a botConfig(...)
+    // makes no sound, so nothing prompts an author to re-run their block after
+    // typing one, and peer.pattern only advances on eval. `:not(.nc-code)` is
+    // load-bearing — the shared Net Cycles textarea also carries .ts-code.
+    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+    spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : undefined);
+  });
+  el.querySelector('[data-bot-action="remove-all"]').addEventListener('click', () => removeBots('all'));
+  el.querySelector('[data-bot-action="mute-all"]').addEventListener('click', () => muteBots('all', true));
+  return el;
+}
+
+function updateBotClusterSection(el) {
+  const bots = myClusterBots();
+  reconcileList(el.querySelector('.ts-bot-rows'), bots, botRowKey, createBotRow, updateBotRow);
+  el.querySelector('.ts-bot-empty').style.display = bots.length ? 'none' : '';
+  const statusEl = el.querySelector('.ts-bot-status');
+  if (lastFleetStatus) {
+    statusEl.textContent = lastFleetStatus;
+    statusEl.style.display = '';
+  } else {
+    statusEl.style.display = 'none';
+  }
 }
 
 // Resolves whichever peer is currently selected, repairing selectedJitsiId
@@ -704,6 +517,11 @@ function resolveSelectedPeer() {
   return peer;
 }
 
+// Top-level entry point, called every tick. Decides whether the selected
+// peer's identity actually changed (rare — a deliberate chip click, or the
+// very first render) and only rebuilds structure then; otherwise it just
+// patches the existing structure with fresh data. See buildDetailShell and
+// patchDetailForPeer for what each half does.
 function renderDetail(container) {
   let peer = resolveSelectedPeer();
   if (!peer) {
@@ -714,7 +532,10 @@ function renderDetail(container) {
     }
   }
   if (!peer) {
-    container.innerHTML = `<div class="ts-meta">Waiting for participant data…</div>`;
+    if (container.dataset.peerKey) delete container.dataset.peerKey;
+    if (!container.querySelector('.ts-meta')) {
+      container.innerHTML = `<div class="ts-meta">Waiting for participant data…</div>`;
+    }
     return;
   }
 
@@ -723,64 +544,58 @@ function renderDetail(container) {
   // NEXT jitsiId flip (this peer's or anyone else's) can recover the same
   // way rather than only the first one.
   selectedPeerKey = isLocal ? 'local' : (peer.peerId || null);
-  const color = chipColor(peer.jitsiId, isLocal);
-  container.style.setProperty('--ts-detail-color', color);
+  // The LOCAL peer's key must be the constant 'local', NOT peer.jitsiId:
+  // participants.js polls window.APP.conference and emits 'local-update' with
+  // a new id across a P2P<->JVB renegotiation (room crossing the 2<->3-
+  // participant boundary — see pageEnsureAudioPublished's watchdog for the
+  // same underlying flip on the bot side), which is a real, observed
+  // mid-session event with nothing to do with the editor. Keying local on
+  // jitsiId used to make that moment look like "a different peer" and
+  // rebuild the shell, silently reverting the box to peer.pattern (the last
+  // EVALUATED text) and losing everything typed since. A remote tile has the
+  // same flip on the bot side, so its key is peer.peerId — the
+  // websocket-assigned id that never changes for the life of the connection
+  // — rather than jitsiId.
+  const peerKey = isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
 
-  const extLabel   = getExternalStreamLabel(peer.jitsiId);
-  const nodeLabel  = getExternalNodeLabel(peer.jitsiId);
-  // Jamulus capture + relay UI detached for now (kept for later use). It is
-  // passed to networkMetricsBlock as that panel's header controls, and the
-  // template interpolates it unconditionally, so this MUST stay defined — any
-  // reference that throws mid-template aborts the whole innerHTML assignment
-  // and takes the entire detail panel (metrics, bot cluster, Strudel editor)
-  // down with it, leaving a blank card. To re-enable, restore the block.
-  const captureBtn = '';
-  // const relayOn    = isLocal && isRelayConnected();
-  // const captureBtn = isLocal
-  //   ? `<button class="ts-btn ghost${extLabel ? ' on' : ''}" data-action="capture">${extLabel ? '⏏ Detach Jamulus' : '🎙 Route Jamulus audio'}</button>
-  //      <button class="ts-btn ghost${relayOn ? ' on' : ''}" data-action="relay">${relayOn ? '⏏ Disconnect relay' : '📡 Jamulus relay'}</button>`
-  //   : '';
+  if (container.dataset.peerKey !== peerKey) {
+    buildDetailShell(container, peer, peerKey, isLocal);
+  }
+  patchDetailForPeer(container, peer, isLocal);
+}
 
-  // Remote tiles are editable too: an operator can drive a participant's pattern
-  // from here. The server only applies edits/mutes to bots (humans own their own
-  // state), so for a human peer the textarea is a no-op scratchpad.
-  // data-peer-key lets the re-render guard (renderAll) tell whether the same
-  // peer's editor is still on screen, to decide whether to restore the live DOM
-  // text over whatever this render just rebuilt from `peer.pattern`. For the
-  // LOCAL peer this must be a constant, NOT peer.jitsiId: participants.js polls
-  // window.APP.conference and emits 'local-update' with a new id across a P2P↔JVB
-  // renegotiation (room crossing the 2↔3-participant boundary — see
-  // pageEnsureAudioPublished's watchdog for the same underlying flip on the bot
-  // side), which is a real, observed mid-session event with nothing to do with
-  // the editor. Keying local on jitsiId made that moment's guard see "a
-  // different peer" and skip the restore, silently reverting the box to
-  // peer.pattern (the last EVALUATED text) and losing everything typed since —
-  // a continuous loss from wherever eval last left off, indistinguishable from
-  // "the editor spontaneously deleted my text" while idle-typing. A remote
-  // tile has the exact same flip on the bot side (pageEnsureAudioPublished's
-  // watchdog), so its key is peer.peerId — the websocket-assigned id that
-  // never changes for the life of the connection — rather than jitsiId.
-  // peerId still distinguishes one peer's tile from another's just as well,
-  // since it's unique and never reused.
-  const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? 'local' : String(peer.peerId || peer.jitsiId || ''))}"`;
-  // data-pattern-baseline is the peer.pattern this render just painted the box
-  // FROM — renderAll's focused-remote-tile guard compares the live DOM value
-  // against it to tell "the operator is mid-edit, not yet sent" (diverged from
-  // baseline: preserve their typing) apart from "nothing typed since the last
-  // sync" (still equals baseline: a genuinely new peer.pattern — e.g. a
-  // retroactive botConfig relatch changing what the bot is actually playing —
-  // is safe to show even while the tile is focused). Without this, watching a
-  // bot's tile while its owner's retroactive edit lands showed the bot's audio
-  // audibly change while the box kept displaying the old text indefinitely.
-  const patternBaselineAttr = ` data-pattern-baseline="${escapeHtml(peer.pattern || '')}"`;
-  const codeBlock = isLocal
-    ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`
-    : `<textarea class="ts-code"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || '')}</textarea>`;
+function buildDetailShell(container, peer, peerKey, isLocal) {
+  container.innerHTML = '';
+  container.dataset.peerKey = peerKey;
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
 
-  const muteBtn = (!isLocal && peer.isBot)
-    ? `<button class="ts-btn mute${peer.muted ? ' on' : ''}" data-action="mute">${peer.muted ? '🔇 Muted' : '🔈 Mute'}</button>`
-    : '';
-  const strudelControls = isLocal
+  const header = document.createElement('div');
+  header.className = 'ts-detail-header';
+  header.innerHTML = `<div class="ts-detail-name"></div>`;
+  container.appendChild(header);
+
+  container.appendChild(createMetricsSection());
+
+  if (isLocal) container.appendChild(createBotClusterSection());
+
+  const localProgram = createLocalProgramSection(isLocal);
+  container.appendChild(localProgram);
+  bindLocalProgramSection(localProgram, peer, isLocal);
+
+  const status = document.createElement('div');
+  status.className = 'ts-status';
+  container.appendChild(status);
+}
+
+function createLocalProgramSection(isLocal) {
+  const el = document.createElement('div');
+  el.className = 'ts-section ts-local-program-section';
+  // Remote tiles are editable too: an operator can drive a participant's
+  // pattern from here. The server only applies edits/mutes to bots (humans
+  // own their own state), so for a human peer the textarea is a no-op
+  // scratchpad. The mute button only makes sense for a bot, so it starts
+  // hidden and patchLocalProgramSection shows it when peer.isBot.
+  const controls = isLocal
     ? `
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">▶ Play</button>
@@ -794,17 +609,264 @@ function renderDetail(container) {
     : `
       <div class="ts-section-controls">
         <button class="ts-btn eval" data-action="remote-eval">▶ Eval</button>
-        ${muteBtn}
+        <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
         <span class="ts-shortcuts">Ctrl+Enter to send</span>
       </div>`;
+  el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Local Program</div>
+      ${controls}
+    </div>
+    <div class="ts-sample-banks-host"></div>
+    <textarea class="ts-code" spellcheck="false"></textarea>
+    <div class="ts-voice-btns"></div>
+    <div class="ts-strudel-sliders ts-sliders"></div>
+  `;
+  return el;
+}
 
-  const playing = peer.playing ? 'Playing' : 'Idle';
-  const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : playing);
+// Binds everything that only needs binding once per peer selection — this
+// runs a single time when buildDetailShell creates the section, not on every
+// data tick, so it's safe to close over `peer`/`isLocal`/`targetPeerId`
+// (fixed for the shell's whole lifetime). Anything that needs a value that
+// can change while the shell is alive (peer.muted, peer.pattern) re-reads it
+// fresh at the point of use instead — see the mute handler and
+// patchLocalProgramSection.
+function bindLocalProgramSection(el, peer, isLocal) {
+  const codeEl = el.querySelector('.ts-code');
+  const targetPeerId = peer.peerId;
 
-  // A bank chip opens a list of its own samples, each deletable on its own.
-  // Audio banks read `name (n)` as they always have; a data pack reads
-  // `Name:n` — the same spelling a reference to it uses, with n the number of
-  // columns/properties it holds.
+  if (isLocal) {
+    // Seed once. Local edits are authoritative in the DOM from here on —
+    // patchLocalProgramSection never overwrites this value; it only reaches
+    // peer-state on eval (sendLocalPattern), exactly as before.
+    codeEl.value = peer.pattern || '';
+    renderVoiceButtons(el, codeEl.value);
+
+    codeEl.addEventListener('input', () => {
+      clearTimeout(codeDebounce);
+      codeDebounce = setTimeout(() => {
+        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
+      }, 200);
+      renderVoiceButtons(el, codeEl.value);
+    });
+    codeEl.addEventListener('keydown', (e) => {
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && e.key === 'Enter') {
+        e.preventDefault();
+        onEvalAndPlay(codeEl.value);
+      } else if (meta && e.key === '.') {
+        e.preventDefault();
+        onStopClick();
+      }
+    });
+
+    el.querySelector('[data-action="play"]').addEventListener('click', () => {
+      onEvalAndPlay(codeEl.value);
+    });
+    el.querySelector('[data-action="stop"]').addEventListener('click', onStopClick);
+    const captureBtnEl = el.querySelector('[data-action="capture"]');
+    if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
+    // const relayBtnEl = el.querySelector('[data-action="relay"]');
+    // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
+
+    // One ingest path for both buttons: the folder picker takes audio and any
+    // data files sitting alongside it, the file picker takes data files chosen
+    // directly. uploadSamplesToDB sorts them out by extension either way.
+    const wireUpload = (buttonSelector, inputSelector) => {
+      const button = el.querySelector(buttonSelector);
+      const input = el.querySelector(inputSelector);
+      if (!button || !input) return;
+      // uploadPending must be set BEFORE input.click() opens the native
+      // picker: that dialog can sit open for as long as the user takes to
+      // find a file. This section is now stable across peer-state ticks (it
+      // only rebuilds on a deliberate peer-selection change), so the old "a
+      // background tick tears the input out mid-dialog" race is gone; this
+      // still guards the one remaining path — switching the selected peer
+      // while the dialog is open.
+      button.addEventListener('click', () => { uploadPending = true; input.click(); });
+      // Modern Chromium fires 'cancel' when the user dismisses the picker
+      // without choosing a file; without this the flag would stay stuck true
+      // and freeze the shell rebuild path until the next successful upload.
+      input.addEventListener('cancel', () => { uploadPending = false; });
+      input.addEventListener('change', async () => {
+        try {
+          const files = input.files;
+          if (!files || !files.length) return;
+          setStatus('Loading…');
+          await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
+            if (!audio && !images && !packs) {
+              setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
+              return;
+            }
+            // Images are re-minted by the same refresh as the sounds, so an
+            // image-only upload has to trigger it too or img() resolves to nothing.
+            if (audio || images) await refreshLocalSamples();
+            await refreshSampleBanks();
+            const parts = [];
+            if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
+            if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
+            if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
+            const hint = packs
+              ? ' — reference a column as "Name:3"'
+              : images && !audio
+                ? ' — use img("foldername") in a Hydra preamble'
+                : ' — use s("foldername") in patterns';
+            setStatus(`Loaded ${parts.join(', ')}${hint}`
+              + (errors.length ? ` (${errors.length} rejected)` : ''));
+          });
+          input.value = '';
+        } finally {
+          uploadPending = false;
+        }
+      });
+    };
+    wireUpload('[data-action="load-samples"]', '.ts-samples-input');
+    wireUpload('[data-action="load-data"]', '.ts-data-input');
+
+    el.querySelector('.ts-sample-banks-host').appendChild(createSampleBanksArea());
+  } else {
+    // Remote tile: editing drives the participant (bots only, enforced server-side).
+    codeEl.value = peer.pattern || '';
+    codeEl.dataset.lastSynced = codeEl.value;
+    renderVoiceButtons(el, codeEl.value);
+    const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
+    codeEl.addEventListener('keydown', (e) => {
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && e.key === 'Enter') { e.preventDefault(); sendRemoteEval(); }
+    });
+    el.querySelector('[data-action="remote-eval"]').addEventListener('click', sendRemoteEval);
+    el.querySelector('.ts-remote-mute-btn').addEventListener('click', () => {
+      // Read fresh state at click time — this closure outlives any single
+      // peer-state tick, so a captured peer.muted would go stale.
+      const current = resolveSelectedPeer();
+      sendRemoteMute(targetPeerId, !(current && current.muted));
+    });
+  }
+}
+
+// Runs on every peer-state tick (far more often than buildDetailShell —
+// every ~2s per peer) and only ever touches text/classes/values inside the
+// existing structure, never the structure itself.
+function patchDetailForPeer(container, peer, isLocal) {
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
+
+  const header = container.querySelector('.ts-detail-header');
+  header.querySelector('.ts-detail-name').textContent = isLocal ? 'You' : (peer.displayName || 'Participant');
+  let botBadge = header.querySelector('.ts-bot-badge');
+  const showBadge = !isLocal && peer.isBot;
+  if (showBadge && !botBadge) {
+    botBadge = document.createElement('span');
+    botBadge.className = 'ts-bot-badge';
+    botBadge.textContent = 'BOT';
+    header.appendChild(botBadge);
+  } else if (!showBadge && botBadge) {
+    botBadge.remove();
+  }
+
+  // Jamulus capture + relay controls are detached for now (kept for later
+  // use — see the commented-out block in createLocalProgramSection). This is
+  // what used to feed networkMetricsBlock's header controls.
+  updateMetricsSection(container.querySelector('.ts-metrics-section'), peer, '');
+
+  if (isLocal) {
+    const botCluster = container.querySelector('.ts-bot-cluster-section');
+    if (botCluster) updateBotClusterSection(botCluster);
+  }
+
+  patchLocalProgramSection(container.querySelector('.ts-local-program-section'), peer, isLocal);
+
+  const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : (peer.playing ? 'Playing' : 'Idle'));
+  container.querySelector('.ts-status').textContent = status;
+
+  refreshFacialGestureButtons();
+}
+
+function patchLocalProgramSection(el, peer, isLocal) {
+  if (isLocal) {
+    const banksHost = el.querySelector('.ts-sample-banks-host');
+    const area = banksHost.firstElementChild;
+    if (area) updateSampleBanksArea(area);
+    return;
+  }
+
+  const muteBtnEl = el.querySelector('.ts-remote-mute-btn');
+  muteBtnEl.style.display = peer.isBot ? '' : 'none';
+  muteBtnEl.textContent = peer.muted ? '🔇 Muted' : '🔈 Mute';
+  muteBtnEl.classList.toggle('on', !!peer.muted);
+
+  // Never stomp an unsent edit: while focused, only follow a live pattern
+  // change if nothing has been typed since the last sync (still equal to
+  // what this box was last painted from — a genuinely new peer.pattern, e.g.
+  // a retroactive botConfig relatch changing what the bot is actually
+  // playing, is still safe to show even while focused). Unfocused always
+  // follows live — there's no in-progress edit to lose.
+  const codeEl = el.querySelector('.ts-code');
+  const active = document.activeElement === codeEl;
+  const hasUnsentEdit = active && codeEl.value !== codeEl.dataset.lastSynced;
+  if (!hasUnsentEdit) {
+    const live = peer.pattern || '';
+    if (codeEl.value !== live) {
+      codeEl.value = live;
+      renderVoiceButtons(el, live);
+    }
+    codeEl.dataset.lastSynced = live;
+  }
+}
+
+// Delegated: bank chips and their delete buttons are fully regenerated on
+// every upload/delete anyway (low-frequency, user-initiated), so one
+// listener on the wrapper avoids rebinding per-chip on every refresh.
+function createSampleBanksArea() {
+  const el = document.createElement('div');
+  el.className = 'ts-sample-banks-area';
+  el.addEventListener('click', async (e) => {
+    const bankChip = e.target.closest('[data-action="toggle-bank"]');
+    if (bankChip) {
+      const name = bankChip.getAttribute('data-bank');
+      expandedBank = expandedBank === name ? null : name;
+      updateSampleBanksArea(el);
+      return;
+    }
+    const delSample = e.target.closest('[data-action="delete-sample"]');
+    if (delSample) {
+      const id = delSample.getAttribute('data-sample');
+      setStatus('Deleting sample…');
+      await deleteSample(id);
+      await refreshLocalSamples();
+      await refreshSampleBanks();
+      // The pack may have been emptied by that delete, which removes it.
+      if (!sampleBanks.some(b => b.name === expandedBank)) expandedBank = null;
+      await rebakeStrudel();
+      setStatus('Sample deleted');
+      updateSampleBanksArea(el);
+      return;
+    }
+    const delAll = e.target.closest('[data-action="delete-samples"]');
+    if (delAll) {
+      if (!window.confirm('Delete all imported user samples and data packs?')) return;
+      setStatus('Deleting samples…');
+      await clearSamplesDB();
+      sampleBanks = [];
+      expandedBank = null;
+      // Withdraw them from the room too, or peers would keep resolving
+      // references to packs this browser no longer has.
+      sendLocalDataPacks([]);
+      await rebakeStrudel();
+      setStatus('User samples deleted');
+      updateSampleBanksArea(el);
+    }
+  });
+  updateSampleBanksArea(el);
+  return el;
+}
+
+// A bank chip opens a list of its own samples, each deletable on its own.
+// Audio banks read `name (n)` as they always have; a data pack reads
+// `Name:n` — the same spelling a reference to it uses, with n the number of
+// columns/properties it holds.
+function updateSampleBanksArea(el) {
+  if (!sampleBanks.length) { el.innerHTML = ''; return; }
   const bankChip = (b) => {
     const label = b.kind === 'audio'
       ? `${escapeHtml(b.name)} (${b.count})`
@@ -815,7 +877,6 @@ function renderDetail(container) {
       title="${b.kind === 'audio' ? 'audio bank' : `${b.kind.toUpperCase()} data pack`}${
         b.truncated ? ' — truncated to fit the memory budget' : ''}">${label}${b.truncated ? ' ⚠' : ''}</button>`;
   };
-
   const openBank = sampleBanks.find(b => b.name === expandedBank);
   const sampleList = openBank ? `
     <div class="ts-sample-list">
@@ -828,187 +889,12 @@ function renderDetail(container) {
             title="delete this sample">×</button>
         </span>`).join('')}
     </div>` : '';
-
-  const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
+  el.innerHTML = `
     <div class="ts-sample-banks">
       ${sampleBanks.map(bankChip).join('')}
       <button class="ts-sample-banks-del" data-action="delete-samples">× delete all user samples</button>
     </div>
-    ${sampleList}` : '';
-
-  container.innerHTML = `
-    <div class="ts-detail-header">
-      <div class="ts-detail-name">${isLocal ? 'You' : escapeHtml(peer.displayName || 'Participant')}</div>
-      ${(!isLocal && peer.isBot) ? '<span class="ts-bot-badge">BOT</span>' : ''}
-    </div>
-
-    ${networkMetricsBlock(peer, captureBtn)}
-    ${isLocal ? botClusterBlock() : ''}
-
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Local Program</div>
-        ${strudelControls}
-      </div>
-      ${sampleBanksRow}
-      ${codeBlock}
-    </div>
-
-    <div class="ts-status">${escapeHtml(status)}</div>
-  `;
-
-  // Mix output monitoring: master / ipsilateral / a contralateral peer.
-  const mixSel = container.querySelector('.ts-monitor-mix');
-  if (mixSel) mixSel.addEventListener('change', () => {
-    monitorSelection = mixSel.value;
-    setMonitorMix(monitorSelection);
-  });
-
-  if (!isLocal) {
-    // Remote tile: editing drives the participant (bots only, enforced server-side).
-    const targetPeerId = peer.peerId;
-    const remoteCodeEl = container.querySelector('.ts-code');
-    const sendRemoteEval = () => {
-      if (remoteCodeEl) sendRemotePattern(targetPeerId, remoteCodeEl.value);
-    };
-    if (remoteCodeEl) {
-      remoteCodeEl.addEventListener('keydown', (e) => {
-        const meta = e.ctrlKey || e.metaKey;
-        if (meta && e.key === 'Enter') { e.preventDefault(); sendRemoteEval(); }
-      });
-    }
-    const remoteEvalBtn = container.querySelector('[data-action="remote-eval"]');
-    if (remoteEvalBtn) remoteEvalBtn.addEventListener('click', sendRemoteEval);
-    const muteBtnEl = container.querySelector('[data-action="mute"]');
-    if (muteBtnEl) muteBtnEl.addEventListener('click', () => sendRemoteMute(targetPeerId, !peer.muted));
-    return;
-  }
-
-  const codeEl = container.querySelector('.ts-code');
-  if (codeEl) {
-    codeEl.addEventListener('input', () => {
-      clearTimeout(codeDebounce);
-      codeDebounce = setTimeout(() => {
-        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
-      }, 200);
-      renderVoiceButtons(container, codeEl.value);
-    });
-    codeEl.addEventListener('keydown', (e) => {
-      const meta = e.ctrlKey || e.metaKey;
-      if (meta && e.key === 'Enter') {
-        e.preventDefault();
-        onEvalAndPlay(codeEl.value);
-      } else if (meta && e.key === '.') {
-        e.preventDefault();
-        onStopClick();
-      }
-    });
-  }
-  bindBotClusterBlock(container);
-  const playBtn = container.querySelector('[data-action="play"]');
-  if (playBtn) playBtn.addEventListener('click', () => {
-    const code = container.querySelector('.ts-code');
-    onEvalAndPlay(code ? code.value : peer.pattern || '');
-  });
-  const stopBtn = container.querySelector('[data-action="stop"]');
-  if (stopBtn) stopBtn.addEventListener('click', onStopClick);
-  const captureBtnEl = container.querySelector('[data-action="capture"]');
-  if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
-  // const relayBtnEl = container.querySelector('[data-action="relay"]');
-  // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
-
-  // One ingest path for both buttons: the folder picker takes audio and any
-  // data files sitting alongside it, the file picker takes data files chosen
-  // directly. uploadSamplesToDB sorts them out by extension either way.
-  const wireUpload = (buttonSelector, inputSelector) => {
-    const button = container.querySelector(buttonSelector);
-    const input = container.querySelector(inputSelector);
-    if (!button || !input) return;
-    // uploadPending must be set BEFORE input.click() opens the native picker:
-    // that dialog can sit open for as long as the user takes to find a file,
-    // and a peer-state tick landing in that window would otherwise have
-    // renderAll() tear out this very input from under the open dialog (see
-    // the guard in renderAll), silently killing the upload with no console
-    // output — Chromium never fires 'change' on a detached input.
-    button.addEventListener('click', () => { uploadPending = true; input.click(); });
-    // Modern Chromium fires 'cancel' when the user dismisses the picker
-    // without choosing a file; without this the flag would stay stuck true
-    // and freeze the detail panel until the next successful upload.
-    input.addEventListener('cancel', () => { uploadPending = false; });
-    input.addEventListener('change', async () => {
-      try {
-        const files = input.files;
-        if (!files || !files.length) return;
-        setStatus('Loading…');
-        await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
-          if (!audio && !images && !packs) {
-            setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
-            return;
-          }
-          // Images are re-minted by the same refresh as the sounds, so an
-          // image-only upload has to trigger it too or img() resolves to nothing.
-          if (audio || images) await refreshLocalSamples();
-          await refreshSampleBanks();
-          const parts = [];
-          if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
-          if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
-          if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
-          const hint = packs
-            ? ' — reference a column as "Name:3"'
-            : images && !audio
-              ? ' — use img("foldername") in a Hydra preamble'
-              : ' — use s("foldername") in patterns';
-          setStatus(`Loaded ${parts.join(', ')}${hint}`
-            + (errors.length ? ` (${errors.length} rejected)` : ''));
-        });
-        input.value = '';
-      } finally {
-        uploadPending = false;
-      }
-    });
-  };
-  wireUpload('[data-action="load-samples"]', '.ts-samples-input');
-  wireUpload('[data-action="load-data"]', '.ts-data-input');
-
-  container.querySelectorAll('[data-action="toggle-bank"]').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const name = chip.getAttribute('data-bank');
-      expandedBank = expandedBank === name ? null : name;
-      renderAll();
-    });
-  });
-
-  container.querySelectorAll('[data-action="delete-sample"]').forEach((x) => {
-    x.addEventListener('click', async () => {
-      const id = x.getAttribute('data-sample');
-      setStatus('Deleting sample…');
-      await deleteSample(id);
-      await refreshLocalSamples();
-      await refreshSampleBanks();
-      // The pack may have been emptied by that delete, which removes it.
-      if (!sampleBanks.some(b => b.name === expandedBank)) expandedBank = null;
-      await rebakeStrudel();
-      setStatus('Sample deleted');
-      renderAll();
-    });
-  });
-
-  const deleteBtn = container.querySelector('[data-action="delete-samples"]');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', async () => {
-      if (!window.confirm('Delete all imported user samples and data packs?')) return;
-      setStatus('Deleting samples…');
-      await clearSamplesDB();
-      sampleBanks = [];
-      expandedBank = null;
-      // Withdraw them from the room too, or peers would keep resolving
-      // references to packs this browser no longer has.
-      sendLocalDataPacks([]);
-      await rebakeStrudel();
-      setStatus('User samples deleted');
-      renderAll();
-    });
-  }
+    ${sampleList}`;
 }
 
 async function onEvalAndPlay(code) {
@@ -1160,14 +1046,39 @@ function renderVoiceButtons(container, code) {
 // Target .ts-strudel-sliders, not bare .ts-sliders: any other panel that later
 // reuses the .ts-sliders styling class would get blanked out (the empty-list
 // early return below) on every render.
+// Strudel's slider() carries no name of its own — the transpiler keys each
+// one by its character range in the (multi-peer, combined) evaluated program,
+// not anything human-readable (strudel-fork/packages/transpiler/plugin-
+// widgets.mjs). The only signal studio.js has for "what does this control" is
+// the LOCAL peer's own last-evaluated pattern text: find the identifier
+// immediately wrapping each slider(...) call — ".gain(slider(...))" -> "gain"
+// — and pair the matches up positionally against `sliders` (both are
+// left-to-right source order, and currentSliders is only ever refreshed right
+// after THIS text was what got evaluated, so the two can't be out of sync).
+// Only trusted when the counts match exactly; any mismatch (a slider nested
+// in something this regex can't see through, e.g.) falls back to the plain
+// "slider N" label rather than risk mislabeling one.
+function deriveSliderLabels(sliders) {
+  const local = getLocalPeer();
+  const text = (local && local.pattern) || '';
+  const matches = [...text.matchAll(/\bslider\s*\(/g)];
+  if (matches.length !== sliders.length) return sliders.map((_, i) => `slider ${i + 1}`);
+  return matches.map((m, i) => {
+    const before = text.slice(0, m.index).trimEnd();
+    const named = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\($/.exec(before);
+    return named ? named[1] : `slider ${i + 1}`;
+  });
+}
+
 function renderSliders(container, sliders) {
   const area = container.querySelector('.ts-strudel-sliders');
   if (!area) return;
   if (!sliders || !sliders.length) { area.innerHTML = ''; return; }
+  const labels = deriveSliderLabels(sliders);
   area.innerHTML = sliders.map((s, i) => `
     <div class="ts-slider-row" data-slider-id="${escapeHtml(String(s.id))}">
       <div class="ts-slider-label">
-        <span>slider ${i + 1}</span>
+        <span>${escapeHtml(labels[i])}</span>
         <span class="ts-slider-val">${Number(s.value).toFixed(3)}</span>
       </div>
       <input class="ts-slider-input" type="range"
@@ -1191,6 +1102,13 @@ function setStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
+// Every entry point in this file that used to mean "something changed, tear
+// down and rebuild" now just means "resync" — renderStrip/renderDetail patch
+// their existing DOM in place (see reconcileList and buildDetailShell's
+// comment) rather than blowing it away, so calling this on every peer-state
+// broadcast (every ~2s per peer) or click no longer costs a focused input's
+// cursor, a click gesture in flight, or a scroll position. rAF-batched so a
+// burst of updates in one frame only patches once.
 let renderQueued = false;
 function renderAll() {
   if (renderQueued) return;
@@ -1204,92 +1122,13 @@ function renderAll() {
     if (strip) renderStrip(strip);
     // A native file picker opened by wireUpload's Samples/Data button holds a
     // reference to the .ts-data-input/.ts-samples-input node inside this very
-    // panel. Rebuilding the panel's innerHTML while that dialog is still open
-    // would detach that node, and Chromium never fires 'change' on a detached
-    // input — the upload silently goes nowhere. The panel is behind a modal OS
-    // dialog for that whole window anyway, so skipping the rebuild costs
-    // nothing visible.
-    if (detail && !uploadPending) {
-      const existingCodeEl = detail.querySelector('textarea.ts-code');
-      const active = document.activeElement;
-      const isCodeFocused = active && active === existingCodeEl;
-      // Rebuilding the panel while the textarea is focused destroys and
-      // recreates that DOM node on every peer-state tick (ping/pong fires
-      // every ~2s regardless of roster size, see peer-state.js), even though
-      // value/selection/scroll are restored on the new node afterward. Two
-      // symptoms traced back to that node churn: (1) the post-rebuild
-      // setSelectionRange scrolls the caret back into view, fighting any
-      // scroll the user just did by hand and making it impossible to read
-      // code above the cursor; (2) on mobile, swapping the focused node's
-      // identity mid-keystroke resets the virtual keyboard's autocomplete/
-      // composition state, flickering the prediction bar and occasionally
-      // dropping a character. Skip the FULL rebuild outright while typing —
-      // the panel catches back up to fresh metrics/state on the next tick
-      // after the user blurs.
-      if (isCodeFocused) {
-        // A remote/bot tile is still allowed ONE kind of update while
-        // focused: syncing its value in place (no DOM node churn, so none of
-        // the above breaks) when peer.pattern has genuinely changed AND the
-        // operator hasn't started an unsent edit of their own — still equal
-        // to data-pattern-baseline, the peer.pattern this box was last
-        // painted from. Without this, watching a bot's tile while a
-        // retroactive botConfig relatch (or another operator's edit) lands
-        // showed the box frozen on old text next to audibly different audio,
-        // with no way to tell the two had diverged.
-        const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
-        if (existingCodeEl && !isLocalEditor
-            && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
-          const peer = resolveSelectedPeer();
-          const peerKey = peer ? String(peer.peerId || peer.jitsiId || '') : null;
-          const live = peer && peerKey === existingCodeEl.dataset.peerKey ? (peer.pattern || '') : null;
-          if (live != null && live !== existingCodeEl.value) {
-            existingCodeEl.value = live;
-            existingCodeEl.dataset.patternBaseline = live;
-            renderVoiceButtons(detail, live);
-          }
-        }
-        return;
-      }
-      const codeValue = existingCodeEl ? existingCodeEl.value : null;
-      const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
-      // Local edits are kept across re-renders (they only hit the bus on eval).
-      // isCodeFocused is always false here (the focused case already returned
-      // above), so this only covers the unfocused-but-scrolled local editor —
-      // an unfocused remote tile always refreshes to the live peer.pattern.
-      const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === '1';
-      // Captured whenever the value is going to be preserved: a mouse-wheel
-      // scroll doesn't focus the textarea, and every peer-state tick (every
-      // few seconds, even alone in a room — the sidecar ping/pong keeps
-      // ticking regardless of roster size) was rebuilding this node from
-      // scratch and silently snapping an unfocused scroll back to 0.
-      const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
-      // .ts-detail itself (the whole scrollable panel: metrics, bot cluster,
-      // then the Strudel section) is also reset to scrollTop 0 by the same
-      // innerHTML replacement — a container's own scroll position is not just
-      // its children's, so scrolling the panel down to reach the editor was
-      // getting silently snapped back to the top on every tick too. Restore
-      // it whenever we're about to restore the same peer's editor state.
-      const detailScrollTop = detail.scrollTop;
-
-      renderDetail(detail);
-      refreshFacialGestureButtons();
-
-      const nextCodeEl = detail.querySelector('.ts-code');
-      // Only carry the old text over when it's the same peer's editor — switching
-      // selected tiles must show the newly-selected peer's pattern, not the old one.
-      const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
-      if (samePeer) detail.scrollTop = detailScrollTop;
-      // isCodeFocused is always false past this point (the focused case
-      // returned above), so there is no cursor/selection to restore here —
-      // only the unfocused-but-scrolled local editor's value and scroll.
-      if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
-        nextCodeEl.value = codeValue;
-        if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
-      }
-
-      if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
-      renderSliders(detail, currentSliders);
-    }
+    // panel. That node is now stable across ordinary patches (see
+    // buildDetailShell), so the only remaining way to detach it from under an
+    // open dialog is a genuine peer-selection change landing in that window —
+    // still worth guarding against, since Chromium never fires 'change' on a
+    // detached input and the upload would silently go nowhere.
+    if (detail && !uploadPending) renderDetail(detail);
+    if (detail) renderSliders(detail, currentSliders);
   });
 }
 

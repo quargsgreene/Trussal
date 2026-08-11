@@ -51749,6 +51749,328 @@ ${SHORTCUT_LINES[fn]}
   init_data_ref();
   init_ValuePattern();
 
+  // src/studio.css
+  var studio_default = `/* Styles for the Trussal Studio overlay (src/studio.js). Imported as raw text
+   (see build.mjs's '.css': 'text' loader) and injected via injectStyles() \u2014
+   Jitsi's page has no <link> mechanism this bundle can hook into, so the CSS
+   still ships inside custom-config.js, just authored here instead of inside
+   a JS template literal.
+
+   #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
+   from studio.js hardcoded as literal strings \u2014 safe because those are
+   build-time constants that never change at runtime. If either constant is
+   ever renamed in studio.js, update the matching selectors here too. */
+
+#trussal-studio-overlay {
+  position: fixed; right: 16px; bottom: 88px;
+  width: min(640px, 92vw); max-height: 78vh;
+  background: rgba(8, 14, 12, 0.96);
+  color: #d6f5e2;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  z-index: 999999;
+  font-family: sans-serif;
+  display: flex; flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+}
+#trussal-studio-overlay .ts-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#trussal-studio-overlay .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-collapse-btn { margin-left: auto; }
+#trussal-studio-overlay .ts-strip {
+  display:flex; gap:8px; padding: 10px 12px;
+  overflow-x:auto; overflow-y:hidden;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  scrollbar-width: thin;
+}
+#trussal-studio-overlay .ts-chip {
+  flex: 0 0 auto;
+  display:flex; flex-direction:column; align-items:stretch; gap:4px;
+  min-width: 104px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit; color: inherit;
+  text-align: left;
+}
+#trussal-studio-overlay .ts-chip:hover { background: rgba(255,255,255,0.07); }
+#trussal-studio-overlay .ts-chip.selected {
+  border-color: var(--ts-chip-color, #1ff466);
+  background: rgba(31,244,102,0.08);
+}
+#trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
+#trussal-studio-overlay .ts-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--ts-chip-color, #1ff466);
+  color: #050f0a; font-weight: 700; font-size: 12px;
+  display:flex; align-items:center; justify-content:center; flex-shrink: 0;
+}
+#trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
+#trussal-studio-overlay .ts-name.you { color: #1ff466; font-weight: 600; }
+#trussal-studio-overlay .ts-idx {
+  margin-left: auto;
+  font-size: 10px; font-family: monospace; padding: 1px 5px;
+  border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+}
+#trussal-studio-overlay .ts-routed {
+  font-size: 10px; padding: 1px 4px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); color: #5d7264;
+}
+#trussal-studio-overlay .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: #5d7264; }
+#trussal-studio-overlay .ts-play.on { color: #1ff466; }
+
+#trussal-studio-overlay .ts-detail {
+  padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
+  overflow-y:auto; min-height: 0;
+}
+#trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
+#trussal-studio-overlay .ts-readonly-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
+}
+#trussal-studio-overlay .ts-bot-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
+  background: rgba(125,207,255,0.15); color: #7dcfff;
+}
+#trussal-studio-overlay .ts-btn.eval { background: #1ff466; color: #050f0a; }
+#trussal-studio-overlay .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+#trussal-studio-overlay .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
+#trussal-studio-overlay .ts-section {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+  /* 8px read as barely-there against the header's 10px 14px and the detail
+     panel's 12px 14px \u2014 the section title sat almost flush against its own
+     top border. */
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#trussal-studio-overlay .ts-section-head {
+  /* align-items only takes flex-start/flex-end/center/etc \u2014 "right" isn't a
+     legal cross-axis value and was silently dropped, and with no flex-wrap
+     here a title + a full button row (Play/Stop/Samples/Data, or Spawn/mute-
+     all/remove-all) had nowhere to go but overflow the panel on a narrow
+     viewport instead of wrapping onto a second line. */
+  display:flex; align-items:center; justify-content: space-between; flex-wrap: wrap;
+  gap: 8px;
+}
+#trussal-studio-overlay .ts-section-title {
+  font-size: 10px; letter-spacing: 1px;
+  color: #7aa68a; font-weight: 600;
+}
+#trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+#trussal-studio-overlay .ts-btn {
+  padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
+  font-weight: 600; font-size: 12px;
+}
+#trussal-studio-overlay .ts-btn.play  { background: #1ff466; color: #050f0a; }
+#trussal-studio-overlay .ts-btn.stop  { background: #2a2a2a; color: #fff; }
+#trussal-studio-overlay .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+#trussal-studio-overlay .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
+/* .ts-fx / .ts-fx-btn outlived the effects block \u2014 the bot cluster block styles its rows with them. */
+#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+#trussal-studio-overlay .ts-fx-btn {
+  padding:3px 10px; border-radius:999px;
+  border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+  font-size:11px; cursor:pointer;
+  transition:border-color 0.15s, color 0.15s, background 0.15s;
+}
+#trussal-studio-overlay .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
+#trussal-studio-overlay .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
+#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay .ts-meta b { color: #b9d1c1; font-weight: 600; }
+#trussal-studio-overlay .ts-dim { opacity: 0.72; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
+#trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
+  background: #050f0a; color:#1ff466;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
+  padding: 8px; box-sizing: border-box;
+  /* A fixed 160-280px fought short viewports (a phone in landscape, or the
+     on-screen keyboard eating half the screen) \u2014 the overlay's own
+     max-height is 78vh, so pin the editor to a share of THAT instead of an
+     absolute floor/ceiling that doesn't know how much room is actually left. */
+  min-height: min(160px, 26vh); max-height: min(280px, 42vh);
+  width: 100%; resize: vertical;
+  white-space: pre-wrap; overflow:auto;
+}
+#trussal-studio-overlay .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+@keyframes ts-eval-pulse {
+  0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
+  100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+}
+#trussal-studio-overlay .ts-code.ts-eval-flash {
+  animation: ts-eval-pulse 0.55s ease-out forwards;
+}
+#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay select.ts-select {
+  background: #050f0a; color: #d6f5e2;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px; padding: 3px 6px; font-size: 11px;
+  max-width: min(220px, 56vw);
+}
+
+#trussal-studio-overlay .ts-voice-btns {
+  display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
+}
+#trussal-studio-overlay .ts-voice-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent; color: #7aa68a;
+  font-size: 11px; font-family: monospace; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+#trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
+#trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
+/* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+   yellow-fills-then-green as every other dwell target. */
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+
+#trussal-studio-overlay .ts-sample-banks {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-bank {
+  padding: 1px 7px; border-radius: 3px;
+  background: rgba(31,244,102,0.1); color: #1ff466;
+  border: 1px solid rgba(31,244,102,0.25);
+  white-space: nowrap;
+  font-size: 11px; font-family: monospace; cursor: pointer;
+}
+#trussal-studio-overlay .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
+/* Data packs read as a different kind of thing from sound banks. */
+#trussal-studio-overlay .ts-sample-bank.data {
+  background: rgba(120,180,255,0.1); color: #7ab4ff;
+  border-color: rgba(120,180,255,0.3);
+}
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+#trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
+
+#trussal-studio-overlay .ts-sample-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px; padding: 5px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-item {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 3px 1px 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); color: #cfd8e3;
+  max-width: 100%;
+}
+#trussal-studio-overlay .ts-sample-idx { color: #7ab4ff; }
+#trussal-studio-overlay .ts-sample-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
+}
+#trussal-studio-overlay .ts-sample-len { color: #8a94a3; }
+#trussal-studio-overlay .ts-sample-x {
+  border: none; background: transparent; cursor: pointer; padding: 0 3px;
+  color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-banks-del {
+  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
+  background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+
+#trussal-studio-overlay .ts-sliders {
+  display: flex; flex-wrap: wrap; gap: 10px 16px;
+}
+#trussal-studio-overlay .ts-slider-row {
+  display: flex; flex-direction: column; gap: 3px;
+  min-width: min(100px, 42vw); flex: 1 1 100px;
+}
+#trussal-studio-overlay .ts-slider-label {
+  font-size: 10px; font-family: monospace; color: #7aa68a;
+  display: flex; justify-content: space-between; gap: 6px;
+}
+#trussal-studio-overlay .ts-slider-input {
+  width: 100%; cursor: pointer; accent-color: #1ff466;
+  height: 16px;
+}
+
+/* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
+   their own page \u2014 it should behave like a bot's, whose visuals reach the
+   room only through the aggregator's mosaic.
+
+   @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
+   (width and height 100%, position fixed at top 0 left 0) prepended to
+   <body>, which covered the whole Jitsi UI. Park it off-screen instead.
+
+   Off-screen, NOT display:none: the canvas has to keep compositing.
+   published-video.js mirrors it into the published track every frame, and
+   a src(s0) cell is blitted from that track rather than re-executed, so a
+   canvas the browser stops painting publishes black. Same reasoning, and
+   the same spelling, as the aggregator's own off-screen mosaic container
+   in bots/src/bot/page-scripts.js.
+
+   The backing store is unaffected by any of this \u2014 it is sized from
+   window.innerWidth/innerHeight in getDrawContext \u2014 so the published
+   frame keeps its full resolution.
+
+   The !important is load-bearing: getDrawContext writes those properties
+   as an INLINE style, which beats a plain rule. The old z-index: 100 here
+   only ever worked because z-index is the one property that inline style
+   does not set. */
+#hydra-canvas {
+  position: fixed !important;
+  top: 0 !important;
+  left: -20000px !important;
+  pointer-events: none !important;
+}
+
+#trussal-studio-toggle {
+  position: fixed; bottom: 80px; right: 20px;
+  z-index: 9999;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: none;
+  background: #1ff466;
+  color: #050f0a;
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+}
+
+/* Below the phone/small-tablet boundary, \`width: min(640px, 92vw)\` on the
+   overlay is still doing its job \u2014 the panel already shrinks with the
+   viewport. What breaks at that width is layout that assumes there's room to
+   spare: the floating card's own side margins get proportionally bigger the
+   narrower the screen gets, and keyboard-shortcut hints are dead weight on a
+   touch device that has no Ctrl key to hold. */
+@media (max-width: 480px) {
+  #trussal-studio-overlay {
+    right: 6px; left: 6px; bottom: 6px;
+    width: auto;
+    max-height: 85vh;
+  }
+  #trussal-studio-overlay .ts-header { padding: 8px 10px; }
+  #trussal-studio-overlay .ts-strip { padding: 8px 10px; }
+  #trussal-studio-overlay .ts-detail { padding: 10px; }
+  #trussal-studio-overlay .ts-chip { min-width: 88px; padding: 6px 8px; }
+  #trussal-studio-overlay .ts-section-controls { gap: 4px; }
+  /* "Ctrl+Enter to eval" etc \u2014 meaningless without a physical keyboard, and
+     one of the things crowding the section-head row into overflowing. */
+  #trussal-studio-overlay .ts-shortcuts { display: none; }
+  #trussal-studio-toggle { right: 10px; bottom: 70px; }
+}
+`;
+
   // src/studio.js
   init_jamulus();
   init_participants();
@@ -57452,323 +57774,75 @@ ${s2}${BTN_MARKER}`)
   function escapeHtml(s2) {
     return String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
   }
+  function reconcileList(container2, items, keyFn, createFn, updateFn) {
+    const existing = /* @__PURE__ */ new Map();
+    for (const child of Array.from(container2.children)) {
+      const key = child.dataset ? child.dataset.reconcileKey : void 0;
+      if (key != null) existing.set(key, child);
+    }
+    let prevNode = null;
+    for (const item of items) {
+      const key = String(keyFn(item));
+      let node = existing.get(key);
+      if (node) {
+        existing.delete(key);
+      } else {
+        node = createFn(item);
+        node.dataset.reconcileKey = key;
+      }
+      updateFn(node, item);
+      const wantSibling = prevNode ? prevNode.nextSibling : container2.firstChild;
+      if (wantSibling !== node) container2.insertBefore(node, wantSibling);
+      prevNode = node;
+    }
+    for (const node of existing.values()) node.remove();
+  }
   function injectStyles2() {
     if (document.getElementById(STYLE_ID4)) return;
     const style = document.createElement("style");
     style.id = STYLE_ID4;
-    style.textContent = `
-    #${OVERLAY_ID} {
-      position: fixed; right: 16px; bottom: 88px;
-      width: min(640px, 92vw); max-height: 78vh;
-      background: rgba(8, 14, 12, 0.96);
-      color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      z-index: 999999;
-      font-family: sans-serif;
-      display: flex; flex-direction: column;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.5);
-    }
-    #${OVERLAY_ID} .ts-header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    #${OVERLAY_ID} .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
-    #${OVERLAY_ID} .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
-    #${OVERLAY_ID} .ts-collapse-btn { margin-left: auto; }
-    #${OVERLAY_ID} .ts-strip {
-      display:flex; gap:8px; padding: 10px 12px;
-      overflow-x:auto; overflow-y:hidden;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      scrollbar-width: thin;
-    }
-    #${OVERLAY_ID} .ts-chip {
-      flex: 0 0 auto;
-      display:flex; flex-direction:column; align-items:stretch; gap:4px;
-      min-width: 104px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      font-family: inherit; color: inherit;
-      text-align: left;
-    }
-    #${OVERLAY_ID} .ts-chip:hover { background: rgba(255,255,255,0.07); }
-    #${OVERLAY_ID} .ts-chip.selected {
-      border-color: var(--ts-chip-color, #1ff466);
-      background: rgba(31,244,102,0.08);
-    }
-    #${OVERLAY_ID} .ts-chip-row { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-avatar {
-      width: 24px; height: 24px; border-radius: 50%;
-      background: var(--ts-chip-color, #1ff466);
-      color: #050f0a; font-weight: 700; font-size: 12px;
-      display:flex; align-items:center; justify-content:center; flex-shrink: 0;
-    }
-    #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
-    #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
-    #${OVERLAY_ID} .ts-idx {
-      margin-left: auto;
-      font-size: 10px; font-family: monospace; padding: 1px 5px;
-      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
-    }
-    #${OVERLAY_ID} .ts-routed {
-      font-size: 10px; padding: 1px 4px; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #5d7264;
-    }
-    #${OVERLAY_ID} .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-play { font-size: 10px; color: #5d7264; }
-    #${OVERLAY_ID} .ts-play.on { color: #1ff466; }
-
-    #${OVERLAY_ID} .ts-detail {
-      padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
-      overflow-y:auto; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-detail-header { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-readonly-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px;
-      background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-bot-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-      background: rgba(125,207,255,0.15); color: #7dcfff;
-    }
-    #${OVERLAY_ID} .ts-btn.eval { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
-    #${OVERLAY_ID} .ts-section {
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.02);
-      padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:right; justify-content: right;
-      gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-title {
-      font-size: 10px; letter-spacing: 1px; 
-      color: #7aa68a; font-weight: 600;
-    }
-    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    #${OVERLAY_ID} .ts-btn {
-      padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
-      font-weight: 600; font-size: 12px;
-    }
-    #${OVERLAY_ID} .ts-btn.play  { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
-    #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    /* .ts-fx / .ts-fx-btn outlived the effects block \u2014 the bot cluster block styles its rows with them. */
-    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
-    #${OVERLAY_ID} .ts-fx-btn {
-      padding:3px 10px; border-radius:999px;
-      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
-      font-size:11px; cursor:pointer;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-    #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
-    #${OVERLAY_ID} .ts-dim { opacity: 0.72; }
-    #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
-    #${OVERLAY_ID} .ts-code, #${OVERLAY_ID} .ts-pre {
-      background: #050f0a; color:#1ff466;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
-      padding: 8px; box-sizing: border-box;
-      min-height: 160px; max-height: 280px;
-      width: 100%; resize: vertical;
-      white-space: pre-wrap; overflow:auto;
-    }
-    #${OVERLAY_ID} .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
-    @keyframes ts-eval-pulse {
-      0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
-      100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
-    }
-    #${OVERLAY_ID} .ts-code.ts-eval-flash {
-      animation: ts-eval-pulse 0.55s ease-out forwards;
-    }
-    #${OVERLAY_ID} .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} select.ts-select {
-      background: #050f0a; color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 4px; padding: 3px 6px; font-size: 11px;
-      max-width: 220px;
-    }
-
-    #${OVERLAY_ID} .ts-voice-btns {
-      display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-voice-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.15);
-      background: transparent; color: #7aa68a;
-      font-size: 11px; font-family: monospace; cursor: pointer;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
-    #${OVERLAY_ID} .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
-    /* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
-       yellow-fills-then-green as every other dwell target. */
-    #${OVERLAY_ID} .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    #${OVERLAY_ID} .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
-
-    #${OVERLAY_ID} .ts-sample-banks {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-bank {
-      padding: 1px 7px; border-radius: 3px;
-      background: rgba(31,244,102,0.1); color: #1ff466;
-      border: 1px solid rgba(31,244,102,0.25);
-      white-space: nowrap;
-      font-size: 11px; font-family: monospace; cursor: pointer;
-    }
-    #${OVERLAY_ID} .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
-    /* Data packs read as a different kind of thing from sound banks. */
-    #${OVERLAY_ID} .ts-sample-bank.data {
-      background: rgba(120,180,255,0.1); color: #7ab4ff;
-      border-color: rgba(120,180,255,0.3);
-    }
-    #${OVERLAY_ID} .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
-    #${OVERLAY_ID} .ts-sample-bank.open { border-style: dashed; }
-
-    #${OVERLAY_ID} .ts-sample-list {
-      display: flex; flex-wrap: wrap; gap: 4px;
-      margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-      background: rgba(255,255,255,0.04);
-      font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-item {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 1px 3px 1px 6px; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #cfd8e3;
-      max-width: 100%;
-    }
-    #${OVERLAY_ID} .ts-sample-idx { color: #7ab4ff; }
-    #${OVERLAY_ID} .ts-sample-label {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px;
-    }
-    #${OVERLAY_ID} .ts-sample-len { color: #8a94a3; }
-    #${OVERLAY_ID} .ts-sample-x {
-      border: none; background: transparent; cursor: pointer; padding: 0 3px;
-      color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
-    #${OVERLAY_ID} .ts-sample-banks-del {
-      margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
-      background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
-
-    #${OVERLAY_ID} .ts-sliders {
-      display: flex; flex-wrap: wrap; gap: 10px 16px;
-    }
-    #${OVERLAY_ID} .ts-slider-row {
-      display: flex; flex-direction: column; gap: 3px;
-      min-width: 100px; flex: 1 1 100px;
-    }
-    #${OVERLAY_ID} .ts-slider-label {
-      font-size: 10px; font-family: monospace; color: #7aa68a;
-      display: flex; justify-content: space-between; gap: 6px;
-    }
-    #${OVERLAY_ID} .ts-slider-input {
-      width: 100%; cursor: pointer; accent-color: #1ff466;
-      height: 16px;
-    }
-
-    /* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
-       their own page \u2014 it should behave like a bot's, whose visuals reach the
-       room only through the aggregator's mosaic.
-
-       @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
-       (width and height 100%, position fixed at top 0 left 0) prepended to
-       <body>, which covered the whole Jitsi UI. Park it off-screen instead.
-
-       Off-screen, NOT display:none: the canvas has to keep compositing.
-       published-video.js mirrors it into the published track every frame, and
-       a src(s0) cell is blitted from that track rather than re-executed, so a
-       canvas the browser stops painting publishes black. Same reasoning, and
-       the same spelling, as the aggregator's own off-screen mosaic container
-       in bots/src/bot/page-scripts.js.
-
-       The backing store is unaffected by any of this \u2014 it is sized from
-       window.innerWidth/innerHeight in getDrawContext \u2014 so the published
-       frame keeps its full resolution.
-
-       The !important is load-bearing: getDrawContext writes those properties
-       as an INLINE style, which beats a plain rule. The old z-index: 100 here
-       only ever worked because z-index is the one property that inline style
-       does not set.
-
-       Note for editors: this whole block sits inside a JS template literal, so
-       it must contain neither a backtick nor a dollar-brace interpolation \u2014
-       both terminate or evaluate inside the string rather than staying CSS
-       comment text. */
-    #hydra-canvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: -20000px !important;
-      pointer-events: none !important;
-    }
-
-    #${BUTTON_ID} {
-      position: fixed; bottom: 80px; right: 20px;
-      z-index: 9999;
-      padding: 0.5rem 0.9rem;
-      border-radius: 999px;
-      border: none;
-      background: #1ff466;
-      color: #050f0a;
-      font-weight: 600;
-      cursor: pointer;
-      display: none;
-    }
-  `;
+    style.textContent = studio_default;
     document.head.appendChild(style);
   }
   function chipColor(jitsiId, isLocal) {
     return isLocal ? "#1ff466" : `hsl(${hueFor(jitsiId)}, 60%, 60%)`;
   }
-  function renderChip(peer, selected) {
-    const isLocal = !!peer.isLocal;
-    const color2 = chipColor(peer.jitsiId, isLocal);
-    const e30 = peer.effects || {};
-    const routed = routedSet.has(peer.jitsiId);
-    const peerKey = isLocal ? "local" : String(peer.peerId || peer.jitsiId || "");
-    return `
-    <button class="ts-chip${selected ? " selected" : ""}" data-jid="${peer.jitsiId || ""}" data-peer-key="${escapeHtml(peerKey)}" style="--ts-chip-color:${color2};">
-      <div class="ts-chip-row">
-        <div class="ts-avatar">${initial(peer.displayName)}</div>
-        <div class="ts-name${isLocal ? " you" : ""}">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
-        <span class="ts-idx" title="Net Cycles room index">${peer.roomIndex != null ? escapeHtml(String(peer.roomIndex)) : "\xB7"}</span>
-      </div>
-    </button>
+  function chipKey(peer) {
+    return peer.isLocal ? "local" : String(peer.peerId || peer.jitsiId || "");
+  }
+  function createChip() {
+    const el = document.createElement("button");
+    el.className = "ts-chip";
+    el.innerHTML = `
+    <div class="ts-chip-row">
+      <div class="ts-avatar"></div>
+      <div class="ts-name"></div>
+      <span class="ts-idx" title="Net Cycles room index"></span>
+    </div>
   `;
+    el.addEventListener("click", () => {
+      const jid = el.dataset.jid;
+      if (!jid) return;
+      selectedJitsiId = jid;
+      selectedPeerKey = el.dataset.peerKey || null;
+      renderAll();
+    });
+    return el;
+  }
+  function updateChip(el, peer) {
+    const isLocal = !!peer.isLocal;
+    el.dataset.jid = peer.jitsiId || "";
+    el.dataset.peerKey = chipKey(peer);
+    el.style.setProperty("--ts-chip-color", chipColor(peer.jitsiId, isLocal));
+    el.classList.toggle("selected", peer.jitsiId === selectedJitsiId);
+    el.querySelector(".ts-avatar").textContent = initial(peer.displayName);
+    const name3 = el.querySelector(".ts-name");
+    name3.textContent = isLocal ? "You" : peer.displayName || "Participant";
+    name3.classList.toggle("you", isLocal);
+    el.querySelector(".ts-idx").textContent = peer.roomIndex != null ? String(peer.roomIndex) : "\xB7";
   }
   function renderStrip(container2) {
-    const peers = getAllPeers();
-    container2.innerHTML = peers.map((p) => renderChip(p, p.jitsiId === selectedJitsiId)).join("");
-    container2.querySelectorAll(".ts-chip").forEach((el) => {
-      el.addEventListener("click", () => {
-        const jid = el.getAttribute("data-jid");
-        if (!jid) return;
-        selectedJitsiId = jid;
-        selectedPeerKey = el.getAttribute("data-peer-key") || null;
-        renderAll();
-      });
-    });
+    reconcileList(container2, getAllPeers(), chipKey, createChip, updateChip);
   }
   function metricsLine(peer) {
     const ms = (v2) => typeof v2 === "number" ? preciseMs(v2) : "\u2013";
@@ -57809,35 +57883,40 @@ ${s2}${BTN_MARKER}`)
     if (n2 >= 10) return `${n2.toFixed(1)}ms`;
     return `${n2.toFixed(2)}ms`;
   }
-  function networkMetricsBlock(peer, controls2 = "") {
-    try {
-      return networkMetricsBlockUnsafe(peer, controls2);
-    } catch (e30) {
-      console.error("[studio] network metrics block failed to render", e30);
-      return `
-    <div class="ts-section">
-      <div class="ts-section-head"><div class="ts-section-title">Network Metrics</div></div>
-      <div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>
-    </div>`;
-    }
-  }
-  function networkMetricsBlockUnsafe(peer, controls2 = "") {
-    const wc = effectiveWorstCase();
-    const peers = getAllPeers();
-    const mixOptions = [
-      `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
-      `<option value="self"${monitorSelection === "self" ? " selected" : ""}>ipsilateral (own mix)</option>`,
-      ...peers.filter((p) => !p.isLocal && p.jitsiId).map((p) => `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? " selected" : ""}>\u2194 ${escapeHtml(String(p.roomIndex ?? p.displayName ?? "peer"))}</option>`)
-    ].join("");
-    return `
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Network Metrics</div>
-        <div class="ts-section-controls">
-          ${controls2}
-          <select class="ts-select ts-monitor-mix" title="mix output monitoring">${mixOptions}</select>
-        </div>
+  function createMetricsSection() {
+    const el = document.createElement("div");
+    el.className = "ts-section ts-metrics-section";
+    el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Network Metrics</div>
+      <div class="ts-section-controls">
+        <span class="ts-metrics-controls"></span>
+        <select class="ts-select ts-monitor-mix" title="mix output monitoring"></select>
       </div>
+    </div>
+    <div class="ts-metrics-body"></div>
+  `;
+    el.querySelector(".ts-monitor-mix").addEventListener("change", (e30) => {
+      monitorSelection = e30.target.value;
+      setMonitorMix(monitorSelection);
+    });
+    return el;
+  }
+  function updateMetricsSection(el, peer, controls2 = "") {
+    const controlsHost = el.querySelector(".ts-metrics-controls");
+    if (controlsHost.innerHTML !== controls2) controlsHost.innerHTML = controls2;
+    const body = el.querySelector(".ts-metrics-body");
+    try {
+      const wc = effectiveWorstCase();
+      const peers = getAllPeers();
+      const mixOptions = [
+        `<option value="master"${monitorSelection === "master" ? " selected" : ""}>master bus</option>`,
+        `<option value="self"${monitorSelection === "self" ? " selected" : ""}>ipsilateral (own mix)</option>`,
+        ...peers.filter((p) => !p.isLocal && p.jitsiId).map((p) => `<option value="${escapeHtml(p.jitsiId)}"${monitorSelection === p.jitsiId ? " selected" : ""}>\u2194 ${escapeHtml(String(p.roomIndex ?? p.displayName ?? "peer"))}</option>`)
+      ].join("");
+      const mixSel = el.querySelector(".ts-monitor-mix");
+      if (mixSel.innerHTML !== mixOptions) mixSel.innerHTML = mixOptions;
+      body.innerHTML = `
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
@@ -57846,7 +57925,11 @@ ${s2}${BTN_MARKER}`)
         <span title="worst value of each term across the room \u2014 an upper bound, so no real path exceeds it">(upper bound)</span>
         <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
-    </div>`;
+    `;
+    } catch (e30) {
+      console.error("[studio] network metrics block failed to render", e30);
+      body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>`;
+    }
   }
   var monitorSelection = "master";
   var lastFleetStatus = "";
@@ -57862,62 +57945,85 @@ ${s2}${BTN_MARKER}`)
     }
     renderAll();
   });
-  function botClusterBlock() {
-    const bots = myClusterBots();
-    const rows = bots.map((b) => `
-    <div class="ts-fx" data-bot-index="${escapeHtml(b.roomIndex)}">
-      <span class="ts-idx">${escapeHtml(b.roomIndex)}</span>
-      <span style="font-size:11px;color:#b9d1c1;">${escapeHtml(b.displayName || "bot")}</span>
-      <button class="ts-fx-btn ts-dwell-btn${b.muted ? " on" : ""}" data-bot-action="mute">${b.muted ? "unmute" : "mute"}</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.videoOn ? " on" : ""}" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.canEditMetaprogram ? " on" : ""}" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
-      <button class="ts-fx-btn ts-dwell-btn${b.canWriteModulation ? " on" : ""}" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
-      <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>
-    </div>`).join("");
-    return `
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Bot Cluster</div>
-        <div class="ts-section-controls">
-          <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">\u{1F507} all</button>
-          <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">\xD7 all</button>
-        </div>
-      </div>
-      ${rows || '<div class="ts-meta">no bots in your cluster</div>'}
-      ${lastFleetStatus ? `<div class="ts-meta">${escapeHtml(lastFleetStatus)}</div>` : ""}
-    </div>`;
+  function botRowKey(bot) {
+    return bot.roomIndex;
   }
-  function bindBotClusterBlock(container2) {
-    const countEl = container2.querySelector(".ts-bot-count");
-    container2.querySelectorAll("[data-bot-action]").forEach((btn) => {
+  function createBotRow() {
+    const el = document.createElement("div");
+    el.className = "ts-fx";
+    el.innerHTML = `
+    <span class="ts-idx"></span>
+    <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="edit-perm" title="metaprogram edit permission">edit</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mod-perm" title="network modulation write permission">mod</button>
+    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>
+  `;
+    el.querySelectorAll("[data-bot-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const action = btn.dataset.botAction;
-        const row = btn.closest("[data-bot-index]");
-        const idx = row ? row.dataset.botIndex : null;
-        if (action === "spawn") {
-          const codeEl = container2.querySelector(".ts-code:not(.nc-code)");
-          spawnBots(parseInt(countEl && countEl.value, 10) || 1, codeEl ? codeEl.value : void 0);
-        } else if (action === "remove-all") removeBots("all");
-        else if (action === "mute-all") muteBots("all", true);
-        else if (action === "remove" && idx) removeBots([idx]);
-        else if (action === "removeOne" && idx) removeOneBot(idx);
-        else if (action === "mute" && idx) {
-          const bot = myClusterBots().find((b) => b.roomIndex === idx);
-          muteBots([idx], !(bot && bot.muted));
-        } else if (action === "video" && idx) {
-          const bot = myClusterBots().find((b) => b.roomIndex === idx);
-          setBotsVideo([idx], !(bot && bot.videoOn));
-        } else if (action === "edit-perm" && idx) {
-          const bot = myClusterBots().find((b) => b.roomIndex === idx);
-          setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
-        } else if (action === "mod-perm" && idx) {
-          const bot = myClusterBots().find((b) => b.roomIndex === idx);
-          setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
+        const idx = el.dataset.reconcileKey;
+        if (action === "removeOne") {
+          removeOneBot(idx);
+          return;
         }
+        const bot = myClusterBots().find((b) => b.roomIndex === idx);
+        if (action === "mute") muteBots([idx], !(bot && bot.muted));
+        else if (action === "video") setBotsVideo([idx], !(bot && bot.videoOn));
+        else if (action === "edit-perm") setBotPermissions([idx], { canEditMetaprogram: !(bot && bot.canEditMetaprogram) });
+        else if (action === "mod-perm") setBotPermissions([idx], { canWriteModulation: !(bot && bot.canWriteModulation) });
       });
     });
+    return el;
+  }
+  function updateBotRow(el, bot) {
+    el.querySelector(".ts-idx").textContent = bot.roomIndex;
+    el.querySelector(".ts-bot-name").textContent = bot.displayName || "bot";
+    const muteBtn = el.querySelector('[data-bot-action="mute"]');
+    muteBtn.textContent = bot.muted ? "unmute" : "mute";
+    muteBtn.classList.toggle("on", !!bot.muted);
+    el.querySelector('[data-bot-action="video"]').classList.toggle("on", !!bot.videoOn);
+    el.querySelector('[data-bot-action="edit-perm"]').classList.toggle("on", !!bot.canEditMetaprogram);
+    el.querySelector('[data-bot-action="mod-perm"]').classList.toggle("on", !!bot.canWriteModulation);
+  }
+  function createBotClusterSection() {
+    const el = document.createElement("div");
+    el.className = "ts-section ts-bot-cluster-section";
+    el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Bot Cluster</div>
+      <div class="ts-section-controls">
+        <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">\u{1F507} all</button>
+        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">\xD7 all</button>
+      </div>
+    </div>
+    <div class="ts-bot-rows"></div>
+    <div class="ts-meta ts-bot-empty">no bots in your cluster</div>
+    <div class="ts-meta ts-bot-status" style="display:none;"></div>
+  `;
+    const countEl = el.querySelector(".ts-bot-count");
+    el.querySelector('[data-bot-action="spawn"]').addEventListener("click", () => {
+      const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+      spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : void 0);
+    });
+    el.querySelector('[data-bot-action="remove-all"]').addEventListener("click", () => removeBots("all"));
+    el.querySelector('[data-bot-action="mute-all"]').addEventListener("click", () => muteBots("all", true));
+    return el;
+  }
+  function updateBotClusterSection(el) {
+    const bots = myClusterBots();
+    reconcileList(el.querySelector(".ts-bot-rows"), bots, botRowKey, createBotRow, updateBotRow);
+    el.querySelector(".ts-bot-empty").style.display = bots.length ? "none" : "";
+    const statusEl = el.querySelector(".ts-bot-status");
+    if (lastFleetStatus) {
+      statusEl.textContent = lastFleetStatus;
+      statusEl.style.display = "";
+    } else {
+      statusEl.style.display = "none";
+    }
   }
   function resolveSelectedPeer() {
     let peer = getPeerByJitsiId(selectedJitsiId);
@@ -57937,21 +58043,41 @@ ${s2}${BTN_MARKER}`)
       }
     }
     if (!peer) {
-      container2.innerHTML = `<div class="ts-meta">Waiting for participant data\u2026</div>`;
+      if (container2.dataset.peerKey) delete container2.dataset.peerKey;
+      if (!container2.querySelector(".ts-meta")) {
+        container2.innerHTML = `<div class="ts-meta">Waiting for participant data\u2026</div>`;
+      }
       return;
     }
     const isLocal = !!peer.isLocal;
     selectedPeerKey = isLocal ? "local" : peer.peerId || null;
-    const color2 = chipColor(peer.jitsiId, isLocal);
-    container2.style.setProperty("--ts-detail-color", color2);
-    const extLabel = getExternalStreamLabel(peer.jitsiId);
-    const nodeLabel = getExternalNodeLabel(peer.jitsiId);
-    const captureBtn = "";
-    const peerKeyAttr = ` data-peer-key="${escapeHtml(isLocal ? "local" : String(peer.peerId || peer.jitsiId || ""))}"`;
-    const patternBaselineAttr = ` data-pattern-baseline="${escapeHtml(peer.pattern || "")}"`;
-    const codeBlock = isLocal ? `<textarea class="ts-code" data-peer-local="1"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>` : `<textarea class="ts-code"${peerKeyAttr}${patternBaselineAttr} spellcheck="false">${escapeHtml(peer.pattern || "")}</textarea>`;
-    const muteBtn = !isLocal && peer.isBot ? `<button class="ts-btn mute${peer.muted ? " on" : ""}" data-action="mute">${peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute"}</button>` : "";
-    const strudelControls = isLocal ? `
+    const peerKey = isLocal ? "local" : String(peer.peerId || peer.jitsiId || "");
+    if (container2.dataset.peerKey !== peerKey) {
+      buildDetailShell(container2, peer, peerKey, isLocal);
+    }
+    patchDetailForPeer(container2, peer, isLocal);
+  }
+  function buildDetailShell(container2, peer, peerKey, isLocal) {
+    container2.innerHTML = "";
+    container2.dataset.peerKey = peerKey;
+    container2.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
+    const header = document.createElement("div");
+    header.className = "ts-detail-header";
+    header.innerHTML = `<div class="ts-detail-name"></div>`;
+    container2.appendChild(header);
+    container2.appendChild(createMetricsSection());
+    if (isLocal) container2.appendChild(createBotClusterSection());
+    const localProgram = createLocalProgramSection(isLocal);
+    container2.appendChild(localProgram);
+    bindLocalProgramSection(localProgram, peer, isLocal);
+    const status = document.createElement("div");
+    status.className = "ts-status";
+    container2.appendChild(status);
+  }
+  function createLocalProgramSection(isLocal) {
+    const el = document.createElement("div");
+    el.className = "ts-section ts-local-program-section";
+    const controls2 = isLocal ? `
       <div class="ts-section-controls">
         <button class="ts-btn play" data-action="play">\u25B6 Play</button>
         <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
@@ -57963,11 +58089,203 @@ ${s2}${BTN_MARKER}`)
       </div>` : `
       <div class="ts-section-controls">
         <button class="ts-btn eval" data-action="remote-eval">\u25B6 Eval</button>
-        ${muteBtn}
+        <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
         <span class="ts-shortcuts">Ctrl+Enter to send</span>
       </div>`;
-    const playing = peer.playing ? "Playing" : "Idle";
-    const status = isLocal ? lastStatus : peer.muted ? "Muted" : playing;
+    el.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Local Program</div>
+      ${controls2}
+    </div>
+    <div class="ts-sample-banks-host"></div>
+    <textarea class="ts-code" spellcheck="false"></textarea>
+    <div class="ts-voice-btns"></div>
+    <div class="ts-strudel-sliders ts-sliders"></div>
+  `;
+    return el;
+  }
+  function bindLocalProgramSection(el, peer, isLocal) {
+    const codeEl = el.querySelector(".ts-code");
+    const targetPeerId = peer.peerId;
+    if (isLocal) {
+      codeEl.value = peer.pattern || "";
+      renderVoiceButtons(el, codeEl.value);
+      codeEl.addEventListener("input", () => {
+        clearTimeout(codeDebounce);
+        codeDebounce = setTimeout(() => {
+          try {
+            localStorage.setItem(STORAGE_KEY, codeEl.value);
+          } catch (e30) {
+          }
+        }, 200);
+        renderVoiceButtons(el, codeEl.value);
+      });
+      codeEl.addEventListener("keydown", (e30) => {
+        const meta = e30.ctrlKey || e30.metaKey;
+        if (meta && e30.key === "Enter") {
+          e30.preventDefault();
+          onEvalAndPlay(codeEl.value);
+        } else if (meta && e30.key === ".") {
+          e30.preventDefault();
+          onStopClick();
+        }
+      });
+      el.querySelector('[data-action="play"]').addEventListener("click", () => {
+        onEvalAndPlay(codeEl.value);
+      });
+      el.querySelector('[data-action="stop"]').addEventListener("click", onStopClick);
+      const captureBtnEl = el.querySelector('[data-action="capture"]');
+      if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
+      const wireUpload = (buttonSelector, inputSelector) => {
+        const button = el.querySelector(buttonSelector);
+        const input = el.querySelector(inputSelector);
+        if (!button || !input) return;
+        button.addEventListener("click", () => {
+          uploadPending = true;
+          input.click();
+        });
+        input.addEventListener("cancel", () => {
+          uploadPending = false;
+        });
+        input.addEventListener("change", async () => {
+          try {
+            const files2 = input.files;
+            if (!files2 || !files2.length) return;
+            setStatus("Loading\u2026");
+            await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
+              if (!audio && !images && !packs) {
+                setStatus(errors.length ? errors[0] : "No audio, image or data files found");
+                return;
+              }
+              if (audio || images) await refreshLocalSamples();
+              await refreshSampleBanks();
+              const parts = [];
+              if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
+              if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
+              if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
+              const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
+              setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
+            });
+            input.value = "";
+          } finally {
+            uploadPending = false;
+          }
+        });
+      };
+      wireUpload('[data-action="load-samples"]', ".ts-samples-input");
+      wireUpload('[data-action="load-data"]', ".ts-data-input");
+      el.querySelector(".ts-sample-banks-host").appendChild(createSampleBanksArea());
+    } else {
+      codeEl.value = peer.pattern || "";
+      codeEl.dataset.lastSynced = codeEl.value;
+      renderVoiceButtons(el, codeEl.value);
+      const sendRemoteEval = () => sendRemotePattern(targetPeerId, codeEl.value);
+      codeEl.addEventListener("keydown", (e30) => {
+        const meta = e30.ctrlKey || e30.metaKey;
+        if (meta && e30.key === "Enter") {
+          e30.preventDefault();
+          sendRemoteEval();
+        }
+      });
+      el.querySelector('[data-action="remote-eval"]').addEventListener("click", sendRemoteEval);
+      el.querySelector(".ts-remote-mute-btn").addEventListener("click", () => {
+        const current = resolveSelectedPeer();
+        sendRemoteMute(targetPeerId, !(current && current.muted));
+      });
+    }
+  }
+  function patchDetailForPeer(container2, peer, isLocal) {
+    container2.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
+    const header = container2.querySelector(".ts-detail-header");
+    header.querySelector(".ts-detail-name").textContent = isLocal ? "You" : peer.displayName || "Participant";
+    let botBadge = header.querySelector(".ts-bot-badge");
+    const showBadge = !isLocal && peer.isBot;
+    if (showBadge && !botBadge) {
+      botBadge = document.createElement("span");
+      botBadge.className = "ts-bot-badge";
+      botBadge.textContent = "BOT";
+      header.appendChild(botBadge);
+    } else if (!showBadge && botBadge) {
+      botBadge.remove();
+    }
+    updateMetricsSection(container2.querySelector(".ts-metrics-section"), peer, "");
+    if (isLocal) {
+      const botCluster = container2.querySelector(".ts-bot-cluster-section");
+      if (botCluster) updateBotClusterSection(botCluster);
+    }
+    patchLocalProgramSection(container2.querySelector(".ts-local-program-section"), peer, isLocal);
+    const status = isLocal ? lastStatus : peer.muted ? "Muted" : peer.playing ? "Playing" : "Idle";
+    container2.querySelector(".ts-status").textContent = status;
+    refreshFacialGestureButtons();
+  }
+  function patchLocalProgramSection(el, peer, isLocal) {
+    if (isLocal) {
+      const banksHost = el.querySelector(".ts-sample-banks-host");
+      const area = banksHost.firstElementChild;
+      if (area) updateSampleBanksArea(area);
+      return;
+    }
+    const muteBtnEl = el.querySelector(".ts-remote-mute-btn");
+    muteBtnEl.style.display = peer.isBot ? "" : "none";
+    muteBtnEl.textContent = peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute";
+    muteBtnEl.classList.toggle("on", !!peer.muted);
+    const codeEl = el.querySelector(".ts-code");
+    const active4 = document.activeElement === codeEl;
+    const hasUnsentEdit = active4 && codeEl.value !== codeEl.dataset.lastSynced;
+    if (!hasUnsentEdit) {
+      const live = peer.pattern || "";
+      if (codeEl.value !== live) {
+        codeEl.value = live;
+        renderVoiceButtons(el, live);
+      }
+      codeEl.dataset.lastSynced = live;
+    }
+  }
+  function createSampleBanksArea() {
+    const el = document.createElement("div");
+    el.className = "ts-sample-banks-area";
+    el.addEventListener("click", async (e30) => {
+      const bankChip = e30.target.closest('[data-action="toggle-bank"]');
+      if (bankChip) {
+        const name3 = bankChip.getAttribute("data-bank");
+        expandedBank = expandedBank === name3 ? null : name3;
+        updateSampleBanksArea(el);
+        return;
+      }
+      const delSample = e30.target.closest('[data-action="delete-sample"]');
+      if (delSample) {
+        const id3 = delSample.getAttribute("data-sample");
+        setStatus("Deleting sample\u2026");
+        await deleteSample(id3);
+        await refreshLocalSamples();
+        await refreshSampleBanks();
+        if (!sampleBanks.some((b) => b.name === expandedBank)) expandedBank = null;
+        await rebakeStrudel();
+        setStatus("Sample deleted");
+        updateSampleBanksArea(el);
+        return;
+      }
+      const delAll = e30.target.closest('[data-action="delete-samples"]');
+      if (delAll) {
+        if (!window.confirm("Delete all imported user samples and data packs?")) return;
+        setStatus("Deleting samples\u2026");
+        await clearSamplesDB();
+        sampleBanks = [];
+        expandedBank = null;
+        sendLocalDataPacks([]);
+        await rebakeStrudel();
+        setStatus("User samples deleted");
+        updateSampleBanksArea(el);
+      }
+    });
+    updateSampleBanksArea(el);
+    return el;
+  }
+  function updateSampleBanksArea(el) {
+    if (!sampleBanks.length) {
+      el.innerHTML = "";
+      return;
+    }
     const bankChip = (b) => {
       const label2 = b.kind === "audio" ? `${escapeHtml(b.name)} (${b.count})` : `${escapeHtml(b.name)}:${b.count}`;
       const open = expandedBank === b.name;
@@ -57987,163 +58305,12 @@ ${s2}${BTN_MARKER}`)
             title="delete this sample">\xD7</button>
         </span>`).join("")}
     </div>` : "";
-    const sampleBanksRow = isLocal && sampleBanks.length > 0 ? `
+    el.innerHTML = `
     <div class="ts-sample-banks">
       ${sampleBanks.map(bankChip).join("")}
       <button class="ts-sample-banks-del" data-action="delete-samples">\xD7 delete all user samples</button>
     </div>
-    ${sampleList}` : "";
-    container2.innerHTML = `
-    <div class="ts-detail-header">
-      <div class="ts-detail-name">${isLocal ? "You" : escapeHtml(peer.displayName || "Participant")}</div>
-      ${!isLocal && peer.isBot ? '<span class="ts-bot-badge">BOT</span>' : ""}
-    </div>
-
-    ${networkMetricsBlock(peer, captureBtn)}
-    ${isLocal ? botClusterBlock() : ""}
-
-    <div class="ts-section">
-      <div class="ts-section-head">
-        <div class="ts-section-title">Local Program</div>
-        ${strudelControls}
-      </div>
-      ${sampleBanksRow}
-      ${codeBlock}
-    </div>
-
-    <div class="ts-status">${escapeHtml(status)}</div>
-  `;
-    const mixSel = container2.querySelector(".ts-monitor-mix");
-    if (mixSel) mixSel.addEventListener("change", () => {
-      monitorSelection = mixSel.value;
-      setMonitorMix(monitorSelection);
-    });
-    if (!isLocal) {
-      const targetPeerId = peer.peerId;
-      const remoteCodeEl = container2.querySelector(".ts-code");
-      const sendRemoteEval = () => {
-        if (remoteCodeEl) sendRemotePattern(targetPeerId, remoteCodeEl.value);
-      };
-      if (remoteCodeEl) {
-        remoteCodeEl.addEventListener("keydown", (e30) => {
-          const meta = e30.ctrlKey || e30.metaKey;
-          if (meta && e30.key === "Enter") {
-            e30.preventDefault();
-            sendRemoteEval();
-          }
-        });
-      }
-      const remoteEvalBtn = container2.querySelector('[data-action="remote-eval"]');
-      if (remoteEvalBtn) remoteEvalBtn.addEventListener("click", sendRemoteEval);
-      const muteBtnEl = container2.querySelector('[data-action="mute"]');
-      if (muteBtnEl) muteBtnEl.addEventListener("click", () => sendRemoteMute(targetPeerId, !peer.muted));
-      return;
-    }
-    const codeEl = container2.querySelector(".ts-code");
-    if (codeEl) {
-      codeEl.addEventListener("input", () => {
-        clearTimeout(codeDebounce);
-        codeDebounce = setTimeout(() => {
-          try {
-            localStorage.setItem(STORAGE_KEY, codeEl.value);
-          } catch (e30) {
-          }
-        }, 200);
-        renderVoiceButtons(container2, codeEl.value);
-      });
-      codeEl.addEventListener("keydown", (e30) => {
-        const meta = e30.ctrlKey || e30.metaKey;
-        if (meta && e30.key === "Enter") {
-          e30.preventDefault();
-          onEvalAndPlay(codeEl.value);
-        } else if (meta && e30.key === ".") {
-          e30.preventDefault();
-          onStopClick();
-        }
-      });
-    }
-    bindBotClusterBlock(container2);
-    const playBtn = container2.querySelector('[data-action="play"]');
-    if (playBtn) playBtn.addEventListener("click", () => {
-      const code2 = container2.querySelector(".ts-code");
-      onEvalAndPlay(code2 ? code2.value : peer.pattern || "");
-    });
-    const stopBtn = container2.querySelector('[data-action="stop"]');
-    if (stopBtn) stopBtn.addEventListener("click", onStopClick);
-    const captureBtnEl = container2.querySelector('[data-action="capture"]');
-    if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
-    const wireUpload = (buttonSelector, inputSelector) => {
-      const button = container2.querySelector(buttonSelector);
-      const input = container2.querySelector(inputSelector);
-      if (!button || !input) return;
-      button.addEventListener("click", () => {
-        uploadPending = true;
-        input.click();
-      });
-      input.addEventListener("cancel", () => {
-        uploadPending = false;
-      });
-      input.addEventListener("change", async () => {
-        try {
-          const files2 = input.files;
-          if (!files2 || !files2.length) return;
-          setStatus("Loading\u2026");
-          await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
-            if (!audio && !images && !packs) {
-              setStatus(errors.length ? errors[0] : "No audio, image or data files found");
-              return;
-            }
-            if (audio || images) await refreshLocalSamples();
-            await refreshSampleBanks();
-            const parts = [];
-            if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
-            if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
-            if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
-            const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
-            setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
-          });
-          input.value = "";
-        } finally {
-          uploadPending = false;
-        }
-      });
-    };
-    wireUpload('[data-action="load-samples"]', ".ts-samples-input");
-    wireUpload('[data-action="load-data"]', ".ts-data-input");
-    container2.querySelectorAll('[data-action="toggle-bank"]').forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const name3 = chip.getAttribute("data-bank");
-        expandedBank = expandedBank === name3 ? null : name3;
-        renderAll();
-      });
-    });
-    container2.querySelectorAll('[data-action="delete-sample"]').forEach((x2) => {
-      x2.addEventListener("click", async () => {
-        const id3 = x2.getAttribute("data-sample");
-        setStatus("Deleting sample\u2026");
-        await deleteSample(id3);
-        await refreshLocalSamples();
-        await refreshSampleBanks();
-        if (!sampleBanks.some((b) => b.name === expandedBank)) expandedBank = null;
-        await rebakeStrudel();
-        setStatus("Sample deleted");
-        renderAll();
-      });
-    });
-    const deleteBtn = container2.querySelector('[data-action="delete-samples"]');
-    if (deleteBtn) {
-      deleteBtn.addEventListener("click", async () => {
-        if (!window.confirm("Delete all imported user samples and data packs?")) return;
-        setStatus("Deleting samples\u2026");
-        await clearSamplesDB();
-        sampleBanks = [];
-        expandedBank = null;
-        sendLocalDataPacks([]);
-        await rebakeStrudel();
-        setStatus("User samples deleted");
-        renderAll();
-      });
-    }
+    ${sampleList}`;
   }
   async function onEvalAndPlay(code2) {
     setStatus("Starting\u2026");
@@ -58253,6 +58420,17 @@ ${voiceCode}${BTN_MARKER2}`);
       });
     });
   }
+  function deriveSliderLabels(sliders) {
+    const local2 = getLocalPeer();
+    const text2 = local2 && local2.pattern || "";
+    const matches = [...text2.matchAll(/\bslider\s*\(/g)];
+    if (matches.length !== sliders.length) return sliders.map((_3, i) => `slider ${i + 1}`);
+    return matches.map((m2, i) => {
+      const before = text2.slice(0, m2.index).trimEnd();
+      const named = /([A-Za-z_$][A-Za-z0-9_$]*)\s*\($/.exec(before);
+      return named ? named[1] : `slider ${i + 1}`;
+    });
+  }
   function renderSliders(container2, sliders) {
     const area = container2.querySelector(".ts-strudel-sliders");
     if (!area) return;
@@ -58260,10 +58438,11 @@ ${voiceCode}${BTN_MARKER2}`);
       area.innerHTML = "";
       return;
     }
+    const labels = deriveSliderLabels(sliders);
     area.innerHTML = sliders.map((s2, i) => `
     <div class="ts-slider-row" data-slider-id="${escapeHtml(String(s2.id))}">
       <div class="ts-slider-label">
-        <span>slider ${i + 1}</span>
+        <span>${escapeHtml(labels[i])}</span>
         <span class="ts-slider-val">${Number(s2.value).toFixed(3)}</span>
       </div>
       <input class="ts-slider-input" type="range"
@@ -58296,41 +58475,8 @@ ${voiceCode}${BTN_MARKER2}`);
       const strip = overlay.querySelector(".ts-strip");
       const detail = overlay.querySelector(".ts-detail");
       if (strip) renderStrip(strip);
-      if (detail && !uploadPending) {
-        const existingCodeEl = detail.querySelector("textarea.ts-code");
-        const active4 = document.activeElement;
-        const isCodeFocused = active4 && active4 === existingCodeEl;
-        if (isCodeFocused) {
-          const isLocalEditor = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
-          if (existingCodeEl && !isLocalEditor && existingCodeEl.value === existingCodeEl.dataset.patternBaseline) {
-            const peer = resolveSelectedPeer();
-            const peerKey = peer ? String(peer.peerId || peer.jitsiId || "") : null;
-            const live = peer && peerKey === existingCodeEl.dataset.peerKey ? peer.pattern || "" : null;
-            if (live != null && live !== existingCodeEl.value) {
-              existingCodeEl.value = live;
-              existingCodeEl.dataset.patternBaseline = live;
-              renderVoiceButtons(detail, live);
-            }
-          }
-          return;
-        }
-        const codeValue = existingCodeEl ? existingCodeEl.value : null;
-        const existingPeerKey = existingCodeEl ? existingCodeEl.dataset.peerKey : null;
-        const preserveValue = existingCodeEl && existingCodeEl.dataset.peerLocal === "1";
-        const scrollTop = preserveValue ? existingCodeEl.scrollTop : null;
-        const detailScrollTop = detail.scrollTop;
-        renderDetail(detail);
-        refreshFacialGestureButtons();
-        const nextCodeEl = detail.querySelector(".ts-code");
-        const samePeer = nextCodeEl && existingPeerKey != null && nextCodeEl.dataset.peerKey === existingPeerKey;
-        if (samePeer) detail.scrollTop = detailScrollTop;
-        if (nextCodeEl && codeValue != null && preserveValue && samePeer) {
-          nextCodeEl.value = codeValue;
-          if (scrollTop != null) nextCodeEl.scrollTop = scrollTop;
-        }
-        if (nextCodeEl) renderVoiceButtons(detail, nextCodeEl.value);
-        renderSliders(detail, currentSliders);
-      }
+      if (detail && !uploadPending) renderDetail(detail);
+      if (detail) renderSliders(detail, currentSliders);
     });
   }
   document.addEventListener("trussal-sliders-updated", (e30) => {

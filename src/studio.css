@@ -1,241 +1,319 @@
-/*function injectStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
-    #${OVERLAY_ID} {
-      position: fixed; right: 16px; bottom: 88px;
-      width: min(640px, 92vw); max-height: 78vh;
-      background: rgba(8, 14, 12, 0.96);
-      color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 10px;
-      z-index: 999999;
-      font-family: sans-serif;
-      display: flex; flex-direction: column;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.5);
-    }
-    #${OVERLAY_ID} .ts-header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    #${OVERLAY_ID} .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
-    #${OVERLAY_ID} .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
-    #${OVERLAY_ID} .ts-collapse-btn { margin-left: auto; }
-    #${OVERLAY_ID} .ts-strip {
-      display:flex; gap:8px; padding: 10px 12px;
-      overflow-x:auto; overflow-y:hidden;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      scrollbar-width: thin;
-    }
-    #${OVERLAY_ID} .ts-chip {
-      flex: 0 0 auto;
-      display:flex; flex-direction:column; align-items:stretch; gap:4px;
-      min-width: 104px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      font-family: inherit; color: inherit;
-      text-align: left;
-    }
-    #${OVERLAY_ID} .ts-chip:hover { background: rgba(255,255,255,0.07); }
-    #${OVERLAY_ID} .ts-chip.selected {
-      border-color: var(--ts-chip-color, #1ff466);
-      background: rgba(31,244,102,0.08);
-    }
-    #${OVERLAY_ID} .ts-chip-row { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-avatar {
-      width: 24px; height: 24px; border-radius: 50%;
-      background: var(--ts-chip-color, #1ff466);
-      color: #050f0a; font-weight: 700; font-size: 12px;
-      display:flex; align-items:center; justify-content:center; flex-shrink: 0;
-    }
-    #${OVERLAY_ID} .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 84px; }
-    #${OVERLAY_ID} .ts-name.you { color: #1ff466; font-weight: 600; }
-    #${OVERLAY_ID} .ts-idx {
-      margin-left: auto;
-      font-size: 10px; font-family: monospace; padding: 1px 5px;
-      border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
-    }
-    #${OVERLAY_ID} .ts-routed {
-      font-size: 10px; padding: 1px 4px; border-radius: 3px;
-      background: rgba(255,255,255,0.06); color: #5d7264;
-    }
-    #${OVERLAY_ID} .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-indicators { display:flex; gap:4px; font-family: monospace; font-size: 10px; align-items:center; }
-    #${OVERLAY_ID} .ts-ind {
-      padding: 1px 5px; border-radius: 3px;
-      background: rgba(255,255,255,0.05); color: #5d7264;
-      letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-ind.on { background: rgba(31,244,102,0.2); color: #1ff466; }
-    #${OVERLAY_ID} .ts-play { font-size: 10px; color: #5d7264; }
-    #${OVERLAY_ID} .ts-play.on { color: #1ff466; }
+/* Styles for the Trussal Studio overlay (src/studio.js). Imported as raw text
+   (see build.mjs's '.css': 'text' loader) and injected via injectStyles() —
+   Jitsi's page has no <link> mechanism this bundle can hook into, so the CSS
+   still ships inside custom-config.js, just authored here instead of inside
+   a JS template literal.
 
-    #${OVERLAY_ID} .ts-detail {
-      padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
-      overflow-y:auto; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-detail-header { display:flex; align-items:center; gap:8px; }
-    #${OVERLAY_ID} .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
-    #${OVERLAY_ID} .ts-readonly-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px;
-      background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
-    }
-    #${OVERLAY_ID} .ts-bot-badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-      background: rgba(125,207,255,0.15); color: #7dcfff;
-    }
-    #${OVERLAY_ID} .ts-btn.eval { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
-    #${OVERLAY_ID} .ts-section {
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.02);
-      padding: 10px 12px;
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-head {
-      display:flex; align-items:center; justify-content:space-between;
-      gap: 8px;
-    }
-    #${OVERLAY_ID} .ts-section-title {
-      font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
-      color: #7aa68a; font-weight: 600;
-    }
-    #${OVERLAY_ID} .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    #${OVERLAY_ID} .ts-btn {
-      padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
-      font-weight: 600; font-size: 12px;
-    }
-    #${OVERLAY_ID} .ts-btn.play  { background: #1ff466; color: #050f0a; }
-    #${OVERLAY_ID} .ts-btn.stop  { background: #2a2a2a; color: #fff; }
-    #${OVERLAY_ID} .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-    #${OVERLAY_ID} .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
-    #${OVERLAY_ID} .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
-    #${OVERLAY_ID} .ts-fx-btn {
-      padding:3px 10px; border-radius:999px;
-      border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
-      font-size:11px; cursor:pointer;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    #${OVERLAY_ID} .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-    #${OVERLAY_ID} .ts-hv-mode-btn {
-      padding:2px 8px; border-radius:999px;
-      border:1px solid rgba(255,255,255,0.12); background:transparent; color:#5d7264;
-      font-size:10px; cursor:pointer;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-hv-mode-btn:hover { color:#d6f5e2; }
-    #${OVERLAY_ID} .ts-hv-mode-btn.on { color:#7dcfff; border-color:rgba(125,207,255,0.4); background:rgba(125,207,255,0.08); }
-    #${OVERLAY_ID} .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} .ts-meta b { color: #b9d1c1; font-weight: 600; }
-    #${OVERLAY_ID} .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
-    #${OVERLAY_ID} .ts-code, #${OVERLAY_ID} .ts-pre {
-      background: #050f0a; color:#1ff466;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
-      padding: 8px; box-sizing: border-box;
-      min-height: 160px; max-height: 280px;
-      width: 100%; resize: vertical;
-      white-space: pre-wrap; overflow:auto;
-    }
-    #${OVERLAY_ID} .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
-    @keyframes ts-eval-pulse {
-      0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
-      100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
-    }
-    #${OVERLAY_ID} .ts-code.ts-eval-flash {
-      animation: ts-eval-pulse 0.55s ease-out forwards;
-    }
-    #${OVERLAY_ID} .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
-    #${OVERLAY_ID} select.ts-select {
-      background: #050f0a; color: #d6f5e2;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 4px; padding: 3px 6px; font-size: 11px;
-      max-width: 220px;
-    }
+   #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
+   from studio.js hardcoded as literal strings — safe because those are
+   build-time constants that never change at runtime. If either constant is
+   ever renamed in studio.js, update the matching selectors here too. */
 
-    #${OVERLAY_ID} .ts-voice-btns {
-      display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
-    }
-    #${OVERLAY_ID} .ts-voice-btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 8px; border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.15);
-      background: transparent; color: #7aa68a;
-      font-size: 11px; font-family: monospace; cursor: pointer;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    #${OVERLAY_ID} .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
-    #${OVERLAY_ID} .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+#trussal-studio-overlay {
+  position: fixed; right: 16px; bottom: 88px;
+  width: min(640px, 92vw); max-height: 78vh;
+  background: rgba(8, 14, 12, 0.96);
+  color: #d6f5e2;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  z-index: 999999;
+  font-family: sans-serif;
+  display: flex; flex-direction: column;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+}
+#trussal-studio-overlay .ts-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#trussal-studio-overlay .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-collapse-btn { margin-left: auto; }
+#trussal-studio-overlay .ts-strip {
+  display:flex; gap:8px; padding: 10px 12px;
+  overflow-x:auto; overflow-y:hidden;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  scrollbar-width: thin;
+}
+#trussal-studio-overlay .ts-chip {
+  flex: 0 0 auto;
+  display:flex; flex-direction:column; align-items:stretch; gap:4px;
+  min-width: 104px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit; color: inherit;
+  text-align: left;
+}
+#trussal-studio-overlay .ts-chip:hover { background: rgba(255,255,255,0.07); }
+#trussal-studio-overlay .ts-chip.selected {
+  border-color: var(--ts-chip-color, #1ff466);
+  background: rgba(31,244,102,0.08);
+}
+#trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
+#trussal-studio-overlay .ts-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--ts-chip-color, #1ff466);
+  color: #050f0a; font-weight: 700; font-size: 12px;
+  display:flex; align-items:center; justify-content:center; flex-shrink: 0;
+}
+#trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
+#trussal-studio-overlay .ts-name.you { color: #1ff466; font-weight: 600; }
+#trussal-studio-overlay .ts-idx {
+  margin-left: auto;
+  font-size: 10px; font-family: monospace; padding: 1px 5px;
+  border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+}
+#trussal-studio-overlay .ts-routed {
+  font-size: 10px; padding: 1px 4px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); color: #5d7264;
+}
+#trussal-studio-overlay .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: #5d7264; }
+#trussal-studio-overlay .ts-play.on { color: #1ff466; }
 
-    #${OVERLAY_ID} .ts-sample-banks {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-      font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-bank {
-      padding: 1px 7px; border-radius: 3px;
-      background: rgba(31,244,102,0.1); color: #1ff466;
-      border: 1px solid rgba(31,244,102,0.25);
-      white-space: nowrap;
-    }
-    #${OVERLAY_ID} .ts-sample-banks-del {
-      margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
-      background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
-    }
-    #${OVERLAY_ID} .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+#trussal-studio-overlay .ts-detail {
+  padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
+  overflow-y:auto; min-height: 0;
+}
+#trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
+#trussal-studio-overlay .ts-readonly-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
+}
+#trussal-studio-overlay .ts-bot-badge {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
+  background: rgba(125,207,255,0.15); color: #7dcfff;
+}
+#trussal-studio-overlay .ts-btn.eval { background: #1ff466; color: #050f0a; }
+#trussal-studio-overlay .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+#trussal-studio-overlay .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
+#trussal-studio-overlay .ts-section {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+  /* 8px read as barely-there against the header's 10px 14px and the detail
+     panel's 12px 14px — the section title sat almost flush against its own
+     top border. */
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#trussal-studio-overlay .ts-section-head {
+  /* align-items only takes flex-start/flex-end/center/etc — "right" isn't a
+     legal cross-axis value and was silently dropped, and with no flex-wrap
+     here a title + a full button row (Play/Stop/Samples/Data, or Spawn/mute-
+     all/remove-all) had nowhere to go but overflow the panel on a narrow
+     viewport instead of wrapping onto a second line. */
+  display:flex; align-items:center; justify-content: space-between; flex-wrap: wrap;
+  gap: 8px;
+}
+#trussal-studio-overlay .ts-section-title {
+  font-size: 10px; letter-spacing: 1px;
+  color: #7aa68a; font-weight: 600;
+}
+#trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+#trussal-studio-overlay .ts-btn {
+  padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
+  font-weight: 600; font-size: 12px;
+}
+#trussal-studio-overlay .ts-btn.play  { background: #1ff466; color: #050f0a; }
+#trussal-studio-overlay .ts-btn.stop  { background: #2a2a2a; color: #fff; }
+#trussal-studio-overlay .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
+#trussal-studio-overlay .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
+/* .ts-fx / .ts-fx-btn outlived the effects block — the bot cluster block styles its rows with them. */
+#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+#trussal-studio-overlay .ts-fx-btn {
+  padding:3px 10px; border-radius:999px;
+  border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+  font-size:11px; cursor:pointer;
+  transition:border-color 0.15s, color 0.15s, background 0.15s;
+}
+#trussal-studio-overlay .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
+#trussal-studio-overlay .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
+#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay .ts-meta b { color: #b9d1c1; font-weight: 600; }
+#trussal-studio-overlay .ts-dim { opacity: 0.72; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
+#trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
+  background: #050f0a; color:#1ff466;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
+  padding: 8px; box-sizing: border-box;
+  /* A fixed 160-280px fought short viewports (a phone in landscape, or the
+     on-screen keyboard eating half the screen) — the overlay's own
+     max-height is 78vh, so pin the editor to a share of THAT instead of an
+     absolute floor/ceiling that doesn't know how much room is actually left. */
+  min-height: min(160px, 26vh); max-height: min(280px, 42vh);
+  width: 100%; resize: vertical;
+  white-space: pre-wrap; overflow:auto;
+}
+#trussal-studio-overlay .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+@keyframes ts-eval-pulse {
+  0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
+  100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+}
+#trussal-studio-overlay .ts-code.ts-eval-flash {
+  animation: ts-eval-pulse 0.55s ease-out forwards;
+}
+#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay select.ts-select {
+  background: #050f0a; color: #d6f5e2;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px; padding: 3px 6px; font-size: 11px;
+  max-width: min(220px, 56vw);
+}
 
-    #${OVERLAY_ID} .ts-sliders {
-      display: flex; flex-wrap: wrap; gap: 10px 16px;
-    }
-    #${OVERLAY_ID} .ts-slider-row {
-      display: flex; flex-direction: column; gap: 3px;
-      min-width: 100px; flex: 1 1 100px;
-    }
-    #${OVERLAY_ID} .ts-slider-label {
-      font-size: 10px; font-family: monospace; color: #7aa68a;
-      display: flex; justify-content: space-between; gap: 6px;
-    }
-    #${OVERLAY_ID} .ts-slider-input {
-      width: 100%; cursor: pointer; accent-color: #1ff466;
-      height: 16px;
-    }
+#trussal-studio-overlay .ts-voice-btns {
+  display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
+}
+#trussal-studio-overlay .ts-voice-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent; color: #7aa68a;
+  font-size: 11px; font-family: monospace; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+#trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
+#trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
+/* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+   yellow-fills-then-green as every other dwell target. */
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
 
-    #${OVERLAY_ID} .ts-spectrum {
-      width: 100%; height: 36px; display: block;
-      background: #050f0a; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 4px;
-    }
+#trussal-studio-overlay .ts-sample-banks {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-bank {
+  padding: 1px 7px; border-radius: 3px;
+  background: rgba(31,244,102,0.1); color: #1ff466;
+  border: 1px solid rgba(31,244,102,0.25);
+  white-space: nowrap;
+  font-size: 11px; font-family: monospace; cursor: pointer;
+}
+#trussal-studio-overlay .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
+/* Data packs read as a different kind of thing from sound banks. */
+#trussal-studio-overlay .ts-sample-bank.data {
+  background: rgba(120,180,255,0.1); color: #7ab4ff;
+  border-color: rgba(120,180,255,0.3);
+}
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+#trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
 
-    #hydra-canvas {
-      z-index: 100;
-    }
+#trussal-studio-overlay .ts-sample-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px; padding: 5px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-item {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 3px 1px 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); color: #cfd8e3;
+  max-width: 100%;
+}
+#trussal-studio-overlay .ts-sample-idx { color: #7ab4ff; }
+#trussal-studio-overlay .ts-sample-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
+}
+#trussal-studio-overlay .ts-sample-len { color: #8a94a3; }
+#trussal-studio-overlay .ts-sample-x {
+  border: none; background: transparent; cursor: pointer; padding: 0 3px;
+  color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-banks-del {
+  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
+  background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+}
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
 
-    #${BUTTON_ID} {
-      position: fixed; bottom: 80px; right: 20px;
-      z-index: 9999;
-      padding: 0.5rem 0.9rem;
-      border-radius: 999px;
-      border: none;
-      background: #1ff466;
-      color: #050f0a;
-      font-weight: 600;
-      cursor: pointer;
-      display: none;
-    }
-  `;
-  document.head.appendChild(style);
-}*/
+#trussal-studio-overlay .ts-sliders {
+  display: flex; flex-wrap: wrap; gap: 10px 16px;
+}
+#trussal-studio-overlay .ts-slider-row {
+  display: flex; flex-direction: column; gap: 3px;
+  min-width: min(100px, 42vw); flex: 1 1 100px;
+}
+#trussal-studio-overlay .ts-slider-label {
+  font-size: 10px; font-family: monospace; color: #7aa68a;
+  display: flex; justify-content: space-between; gap: 6px;
+}
+#trussal-studio-overlay .ts-slider-input {
+  width: 100%; cursor: pointer; accent-color: #1ff466;
+  height: 16px;
+}
 
-.trussal-studio-overlay {
-    
+/* A performer's Hydra is a SOURCE for the room's stage, not a takeover of
+   their own page — it should behave like a bot's, whose visuals reach the
+   room only through the aggregator's mosaic.
+
+   @strudel/draw's getDrawContext hardcodes a fullscreen fixed canvas
+   (width and height 100%, position fixed at top 0 left 0) prepended to
+   <body>, which covered the whole Jitsi UI. Park it off-screen instead.
+
+   Off-screen, NOT display:none: the canvas has to keep compositing.
+   published-video.js mirrors it into the published track every frame, and
+   a src(s0) cell is blitted from that track rather than re-executed, so a
+   canvas the browser stops painting publishes black. Same reasoning, and
+   the same spelling, as the aggregator's own off-screen mosaic container
+   in bots/src/bot/page-scripts.js.
+
+   The backing store is unaffected by any of this — it is sized from
+   window.innerWidth/innerHeight in getDrawContext — so the published
+   frame keeps its full resolution.
+
+   The !important is load-bearing: getDrawContext writes those properties
+   as an INLINE style, which beats a plain rule. The old z-index: 100 here
+   only ever worked because z-index is the one property that inline style
+   does not set. */
+#hydra-canvas {
+  position: fixed !important;
+  top: 0 !important;
+  left: -20000px !important;
+  pointer-events: none !important;
+}
+
+#trussal-studio-toggle {
+  position: fixed; bottom: 80px; right: 20px;
+  z-index: 9999;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: none;
+  background: #1ff466;
+  color: #050f0a;
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+}
+
+/* Below the phone/small-tablet boundary, `width: min(640px, 92vw)` on the
+   overlay is still doing its job — the panel already shrinks with the
+   viewport. What breaks at that width is layout that assumes there's room to
+   spare: the floating card's own side margins get proportionally bigger the
+   narrower the screen gets, and keyboard-shortcut hints are dead weight on a
+   touch device that has no Ctrl key to hold. */
+@media (max-width: 480px) {
+  #trussal-studio-overlay {
+    right: 6px; left: 6px; bottom: 6px;
+    width: auto;
+    max-height: 85vh;
+  }
+  #trussal-studio-overlay .ts-header { padding: 8px 10px; }
+  #trussal-studio-overlay .ts-strip { padding: 8px 10px; }
+  #trussal-studio-overlay .ts-detail { padding: 10px; }
+  #trussal-studio-overlay .ts-chip { min-width: 88px; padding: 6px 8px; }
+  #trussal-studio-overlay .ts-section-controls { gap: 4px; }
+  /* "Ctrl+Enter to eval" etc — meaningless without a physical keyboard, and
+     one of the things crowding the section-head row into overflowing. */
+  #trussal-studio-overlay .ts-shortcuts { display: none; }
+  #trussal-studio-toggle { right: 10px; bottom: 70px; }
 }
