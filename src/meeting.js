@@ -17,6 +17,12 @@ function removeNoAudioToast() {
     });
   }
 
+  // The toast is a one-shot warning tied to having just joined with no audio
+  // output device — nothing shows it again later in the session, so bound how
+  // long the observer scans the whole document on every mutation rather than
+  // running the [class*="notification"] wildcard match for the rest of the call.
+  const NO_AUDIO_TOAST_WINDOW_MS = 20_000;
+
   function startNoAudioToastRender() {
     // One immediate pass
     removeNoAudioToast();
@@ -24,6 +30,7 @@ function removeNoAudioToast() {
     // Watch for future notifications (React re-renders, etc.)
     const obs = new MutationObserver(removeNoAudioToast);
     obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => obs.disconnect(), NO_AUDIO_TOAST_WINDOW_MS);
   }
 
   export function renderNoAudioToast() {

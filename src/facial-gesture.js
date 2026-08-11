@@ -253,6 +253,23 @@ const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false 
 // What the dwell bar currently shows, so an unchanged rebuild is skipped.
 let _barKey = null;
 
+// Dwell-hoverable elements, refreshed on a throttle rather than re-querying the
+// whole document every animation frame (60fps) — the query itself (a five-part
+// compound selector walking the full tree) is the expensive part, not the
+// getBoundingClientRect() check against a handful of cached candidates.
+const DWELL_TARGETS_REFRESH_MS = 300;
+let _dwellCandidates = [];
+let _dwellCandidatesAt = -Infinity;
+function _dwellCandidateEls(now) {
+  if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
+    _dwellCandidatesAt = now;
+    _dwellCandidates = Array.from(document.querySelectorAll(
+      '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]'
+    ));
+  }
+  return _dwellCandidates;
+}
+
 // Regex mutator UI state — mirrors FacialGestureControl.jsx's useState for
 // triggerGesture / regex / replacement.
 let _regexTrigger      = 'mouthOpen';
@@ -457,7 +474,7 @@ function _detectionLoop() {
   let hoveredKey  = null;
   let hoveredType = null;
   let hoveredEl   = null;
-  for (const btn of document.querySelectorAll('.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]')) {
+  for (const btn of _dwellCandidateEls(ts)) {
     const r = btn.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       if (btn.classList.contains('ts-fx-dwell-btn')) {

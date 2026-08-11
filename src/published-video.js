@@ -17,11 +17,13 @@
 
 const CANVAS_ID = 'trussal-published-video';
 const CAPTURE_FPS = 15;
+const FRAME_INTERVAL_MS = 1000 / CAPTURE_FPS;
 
 let realGetUserMedia = null;
 let canvas = null;
 let ctx = null;
 let rafId = null;
+let lastDrawMs = -Infinity;
 
 // The camera, for the code that legitimately wants it: hydra-video.js's `s0`
 // feed and its local panel. Bypasses the override below — that exists to stop
@@ -51,9 +53,14 @@ function ensureCanvas(width, height) {
 // paint black when there is none. Reading `#hydra-canvas` per frame rather
 // than caching it is deliberate: initHydra() REPLACES the element on every
 // re-init, so a cached reference would silently freeze on a dead canvas.
-function drawFrame() {
+function drawFrame(now) {
   rafId = requestAnimationFrame(drawFrame);
   if (!ctx) return;
+  // captureStream(CAPTURE_FPS) only ever samples this canvas at 15fps, so
+  // compositing it at display refresh rate (~60fps) draws roughly 4x more
+  // than any consumer reads. Match the draw rate to the capture rate instead.
+  if (now - lastDrawMs < FRAME_INTERVAL_MS) return;
+  lastDrawMs = now;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const hydra = document.getElementById('hydra-canvas');

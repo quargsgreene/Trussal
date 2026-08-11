@@ -140,7 +140,6 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `jamulus.js` | Jamulus room map + welcome panel/banner injection; `JAMULUS_ROOM_MAP` is exported to `window` |
 | `welcome-page.js` | Jitsi welcome-page and prejoin-screen customizations |
 | `meeting.js` | In-meeting customizations (e.g. no-audio toast) |
-| `prejoin.js` | Prejoin screen logic |
 | `editor-router.js` | Routes head-cursor/keyboard input to whichever editor is focused (personal Strudel vs shared Net Cycles) |
 | `audio-net/MosaicLayout.js` | Pure slot + geometry math for the aggregator's video mosaic: who holds which cell, and where that cell sits in the frame |
 | `audio-net/MosaicCells.js` | Which peers earn a mosaic cell, and whether it is re-executed locally or blitted from their published track |

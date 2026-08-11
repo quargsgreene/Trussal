@@ -176,8 +176,14 @@ function patchPrejoinButton() {
 function startPrejoinRender() {
     patchPrejoinButton();
 
-    // React re-renders a lot, so keep re-patching when DOM changes
-    const obs = new MutationObserver(patchPrejoinButton);
+    // React re-renders a lot, so keep re-patching when DOM changes. The prejoin
+    // screen can never come back once the meeting itself has mounted, so stop
+    // scanning the whole document on every mutation the moment that happens —
+    // otherwise this runs for the rest of the session for no purpose.
+    const obs = new MutationObserver(() => {
+      if (document.getElementById('largeVideoContainer')) { obs.disconnect(); return; }
+      patchPrejoinButton();
+    });
     obs.observe(document.documentElement || document.body, {
       childList: true,
       subtree: true
