@@ -239,6 +239,44 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     const re = toRegex({ source, flags });
     return re ? re.test(code) : false;
   });
+  // Mirrors src/hydra-code.js's INIT_HYDRA_RE/splitHydraCode verbatim (can't
+  // import either in-page, same reason findStackCall/splitStackArgs below are
+  // duplicated). A hardcoded local regex rather than reusing
+  // declaresOwnPreamble/toRegex above: `patterns` also carries
+  // INIT_TEXT_CYCLES_PATTERN (bot.js passes both — a self-describing Text
+  // Cycles edit brings its own preamble too, for declaresOwnPreamble's
+  // purposes below), which has no External Source calls to guard and would
+  // wrap plain `silence`/Strudel text for nothing. Reusing toRegex would also
+  // double-report an operator's malformed capability pattern, once from
+  // declaresOwnPreamble's own check and again here.
+  const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+  const HYDRA_RENDER_RE = /\.out\s*\(/;
+  const hydraPreambleEnd = (text) => {
+    const blanks = [...text.matchAll(/\n\n+/g)];
+    if (!blanks.length) return text.length;
+    let cut = blanks[0];
+    for (let i = 1; i < blanks.length; i++) {
+      const paragraph = text.slice(cut.index + cut[0].length, blanks[i].index);
+      if (!HYDRA_RENDER_RE.test(paragraph)) break;
+      cut = blanks[i];
+    }
+    return cut.index;
+  };
+  // Strudel's transpiler mini-notation-parses EVERY double-quoted string, so
+  // a preamble's own s0.initImage("folder")/initVideo("url") needs the same
+  // mini-off/mini-on guard pageStrudelBoot applies at boot — whether that
+  // preamble is the bot's STORED one, or (the common case: studio.js seeds a
+  // bot's remote-edit textarea with its WHOLE announced pattern, preamble
+  // included, so a routine edit round-trips one right back here) embedded
+  // directly in what was just pushed. No-ops on text with no Hydra preamble
+  // of its own. Wrapping only the preamble prefix, not the whole text, is why
+  // this can't just wrap unconditionally — the Strudel voice after it
+  // legitimately needs mini notation.
+  const wrapPreambleMini = (text) => {
+    if (!INIT_HYDRA_RE.test(text)) return text;
+    const end = hydraPreambleEnd(text);
+    return `/* mini-off */\n${text.slice(0, end)}\n/* mini-on */${text.slice(end)}`;
+  };
 
   const cap = capabilityPatterns || {};
   const dropPairs = [
@@ -358,7 +396,15 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     // preamble to it would evaluate two of them.
     const ownPreamble = declaresOwnPreamble(pushed);
     const playable = forBotRepl(pushed);
-    const code = hydra && !ownPreamble ? `${hydra};\n${playable}` : playable;
+    // wrapPreambleMini no-ops on text with no HYDRA preamble of its own (a
+    // Text-Cycles-only self-describing edit still takes the `ownPreamble`
+    // branch below but has nothing for it to wrap), so this covers both
+    // shapes uniformly: `playable` when the push carries its own preamble
+    // (the common case — see the comment above), `hydra` when it doesn't and
+    // the stored one is prepended instead.
+    const code = ownPreamble
+      ? wrapPreambleMini(playable)
+      : (hydra ? `${wrapPreambleMini(hydra)};\n${playable}` : playable);
     // Once an edit brings its own preamble, the pushed text is the whole
     // program and the spawn-time Hydra is no longer part of it. Forget it, so a
     // later audio-only edit doesn't resurrect a visual the operator replaced.
@@ -436,7 +482,23 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
     try {
       const conf = window.APP && window.APP.conference;
       if (!conf || typeof conf.muteVideo !== 'function') return;
-      await conf.muteVideo(!on);
+      const withGum = window.__trussalWithGumForJitsi || ((fn) => fn());
+      await withGum(async () => {
+        await conf.muteVideo(!on);
+        // conf.muteVideo() resolving does not mean the gUM call it can
+        // trigger has actually fired yet — pageInstallVideoPublisher's own
+        // poll loop exists for the exact same gap (its comment there has the
+        // full reasoning). Only relevant when turning ON: muting never
+        // acquires a track, so there is nothing to wait for.
+        if (on) {
+          const room = () => conf._room || conf.room;
+          const localTrack = () => {
+            try { const r = room(); return r && r.getLocalVideoTrack && r.getLocalVideoTrack(); }
+            catch (_) { return null; }
+          };
+          for (let i = 0; i < 20 && !localTrack(); i++) await new Promise((res) => setTimeout(res, 150));
+        }
+      });
     } catch (err) {
       if (window.__trussalReportError) window.__trussalReportError(err);
       else console.error('[trussal] bot video toggle failed', err);
@@ -502,13 +564,43 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
 
   function waitForCanvas() {
     return new Promise((resolve) => {
+      // Bounded: an audio-only bot (no Hydra preamble at all) never gets a
+      // #hydra-canvas, and neither does a mosaic-less regular bot before
+      // pageStrudelBoot's initHydra() has run yet. Resolving anyway once the
+      // deadline passes just means ensurePublishCanvas() starts capturing a
+      // black canvas — drawPublishFrame's own rAF loop re-checks
+      // hydraCanvas() every frame after that regardless, so nothing is lost
+      // by not waiting forever; an unbounded wait, by contrast, would hang
+      // this whole async function forever, which — now that a caller can be
+      // running inside the __trussalGumForJitsi bracket below — would leave
+      // that counter stuck incremented for the rest of the page's life.
+      const deadline = Date.now() + 10000;
       const tick = () => {
         const c = hydraCanvas();
-        if (c) resolve(c); else setTimeout(tick, 250);
+        if (c || Date.now() > deadline) resolve(c); else setTimeout(tick, 250);
       };
       tick();
     });
   }
+
+  // Shared by every page-side caller that publishes THIS bot's own tile
+  // (pageInstallVideoPublisher, pageRemoteControl's video toggle): marks the
+  // gUM their own call triggers as "ours" so the video branch below hands
+  // back the mirrored canvas instead of treating it as a copied preamble's
+  // own s0-s3 External Source call. A counter, not a boolean: two overlapping
+  // legitimate calls (e.g. two video-toggle events in quick succession) must
+  // not have one's completion clear the marker while the other's own
+  // internal gUM is still in flight — that would misroute the still-pending
+  // one to the real fake-device camera, publishing it to the room raw.
+  window.__trussalGumForJitsi = window.__trussalGumForJitsi || 0;
+  window.__trussalWithGumForJitsi = async function withGumForJitsi(fn) {
+    window.__trussalGumForJitsi++;
+    try {
+      return await fn();
+    } finally {
+      window.__trussalGumForJitsi = Math.max(0, window.__trussalGumForJitsi - 1);
+    }
+  };
 
   function silentAudioTrack() {
     const ctx = new AudioContext();
@@ -563,10 +655,29 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
   navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
     const stream = new MediaStream();
     if (constraints.video) {
-      await waitForCanvas();
-      // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
-      // vs 30 with little visual loss for slow-evolving Hydra patterns.
-      for (const t of ensurePublishCanvas().captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
+      // Two different callers ask for `video` here: jitsi-meet publishing
+      // THIS bot's own tile (wants the mirrored canvas below — see
+      // pageInstallVideoPublisher/pageRemoteControl's video toggle, which
+      // route their own calls through __trussalWithGumForJitsi above), and a
+      // copied preamble's own s0-s3 .initCam() (hydra-source.js calling
+      // straight into this same global, same as it does in a real browser).
+      // Handing the second one the self-mirrored canvas is a feedback loop:
+      // the canvas starts black, and black fed back into itself stays black
+      // forever — the bot's own s0 has nothing else to draw. Treat any
+      // unbracketed video request as an External Source and give it
+      // Chromium's real --use-fake-device-for-media-stream camera instead,
+      // the same escape hatch openCamera() is for a human's browser. Only
+      // the video half is redirected this way — audio (below) always goes
+      // through our own tap regardless, so a request bundling both never
+      // loses its mic half to this branch.
+      if (!(window.__trussalGumForJitsi > 0)) {
+        for (const t of (await realGUM({ ...constraints, audio: false })).getVideoTracks()) stream.addTrack(t);
+      } else {
+        await waitForCanvas();
+        // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
+        // vs 30 with little visual loss for slow-evolving Hydra patterns.
+        for (const t of ensurePublishCanvas().captureStream(captureFps).getVideoTracks()) stream.addTrack(t);
+      }
     }
     if (constraints.audio) {
       const mic = window.__trussalMicStream;
@@ -575,6 +686,14 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
     }
     return stream.getTracks().length ? stream : realGUM(constraints);
   };
+
+  // Hydra's s0.initScreen() reaches straight for getDisplayMedia
+  // (lib/screenmedia.js) — a completely different API this override never
+  // touched. A headless bot has no real desktop to share; an unpatched call
+  // just rejects in this environment (screenmedia.js swallows the error) and
+  // leaves that source permanently black. Hand it the same synthetic camera
+  // initCam gets instead of nothing.
+  navigator.mediaDevices.getDisplayMedia = () => realGUM({ video: true });
 }
 
 /**
@@ -800,28 +919,35 @@ export function pageInstallVideoPublisher() {
     // and back (the "expands then contracts" glitch).
     if (localTrack()) return;
 
-    // 1) Ask jitsi-meet to unmute video; if it had no/muted track this triggers
-    //    a gUM (→ our Hydra canvas stream) and publishes it. Poll for the
-    //    resulting track rather than a fixed sleep: a wait shorter than the
-    //    real renegotiation lets step 2 fire while step 1's publish is still
-    //    in flight, which is the same double-track race described above.
-    if (typeof conf.muteVideo === 'function') {
-      try { await conf.muteVideo(false); } catch (e) {}
-      for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
-    }
+    // Marks this function's own internal gUM as publishing the bot's OWN
+    // tile (see pageGumOverride) rather than a copied preamble's own s0-s3
+    // External Source call.
+    const withGum = window.__trussalWithGumForJitsi || ((fn) => fn());
+    await withGum(async () => {
+      // 1) Ask jitsi-meet to unmute video; if it had no/muted track this
+      //    triggers a gUM (→ our Hydra canvas stream) and publishes it. Poll
+      //    for the resulting track rather than a fixed sleep: a wait shorter
+      //    than the real renegotiation lets step 2 fire while step 1's
+      //    publish is still in flight, which is the same double-track race
+      //    described above.
+      if (typeof conf.muteVideo === 'function') {
+        try { await conf.muteVideo(false); } catch (e) {}
+        for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
+      }
 
-    // 2) Fallback: explicitly create the video track and attach it.
-    //    createLocalTracks(['video']) runs through our gUM override → canvas.
-    if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
-      try {
-        const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['video'] });
-        const vt = tracks && tracks[0];
-        if (vt) {
-          if (typeof conf.useVideoStream === 'function') await conf.useVideoStream(vt);
-          else { const r = room(); if (r && r.addTrack) await r.addTrack(vt); }
-        }
-      } catch (e) {console.error(e)}
-    }
+      // 2) Fallback: explicitly create the video track and attach it.
+      //    createLocalTracks(['video']) runs through our gUM override → canvas.
+      if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+        try {
+          const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['video'] });
+          const vt = tracks && tracks[0];
+          if (vt) {
+            if (typeof conf.useVideoStream === 'function') await conf.useVideoStream(vt);
+            else { const r = room(); if (r && r.addTrack) await r.addTrack(vt); }
+          }
+        } catch (e) {console.error(e)}
+      }
+    });
   } catch (e) {console.error(e)}
   };
 }
@@ -869,11 +995,21 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // Strudel pattern, so substituting it here lets the scheduler start
   // normally without producing any audio.
   const strudelSafe = strudel.trim() ? strudel : 'silence';
+  // Strudel's transpiler mini-notation-parses EVERY double-quoted string in
+  // the evaluated program, with no notion of which function it is an
+  // argument to — so `s0.initImage("folder")` or `s0.initVideo("url")` would
+  // silently receive a parsed Pattern instead of the plain string Hydra
+  // expects, and never load anything (same bug src/strudel.js's buildPeerBlock
+  // fixes for the browser's own combined program). A Hydra preamble never
+  // needs mini notation itself, so disable it for the whole preamble via
+  // Strudel's own `mini-off`/`mini-on` comment-range convention rather than
+  // asking every performer to remember single quotes for every URL argument.
+  const hydraSafe = hydra.trim() ? `/* mini-off */\n${hydra}\n/* mini-on */` : hydra;
   // The ';' is load-bearing: hydra ends in an expression and the strudel
   // wrapper starts with '(' — joined by bare newline, ASI reads it as a
   // call: `out(o0)(stack(...))`, which throws inside Strudel's own error
   // handling ("no pattern yet") where our reporter can't see it.
-  const code = `${hydra};\n${strudelSafe}`;
+  const code = `${hydraSafe};\n${strudelSafe}`;
   // What gets ANNOUNCED to peer-state (so other viewers can extract a
   // parroted word()/css() voice via buildBotSilentBlock) differs from what
   // THIS REPL evaluates whenever textParrot/cssParrot kept one — this REPL is

@@ -111,12 +111,20 @@ test('a pushed edit re-registers worklets/synths/samples before evaluating, same
   assert.equal(ctl.evaluated.length, 1, 'registration must not block the eval itself');
 });
 
-test('an edit with its own Hydra preamble lands verbatim, not doubled', async () => {
+test('an edit with its own Hydra preamble lands verbatim (mini-guarded), not doubled', async () => {
   const ctl = installControl({ hydra: 'await initHydra()\nosc(10).out(o0)' });
   const pushed = 'await initHydra()\nnoise(3).out(o0)\n\ns("bd sd")';
   await ctl.push(pushed);
 
-  assert.equal(ctl.evaluated[0], pushed);
+  // Wrapped in mini-off/mini-on (see hydraPreambleEnd/wrapPreambleMini) so a
+  // double-quoted External Source argument in the preamble — e.g.
+  // s0.initImage("folder") — is not mini-notation-parsed into a Pattern, the
+  // same guard pageStrudelBoot applies at boot. Everything else, including
+  // the Strudel voice after the blank line, survives untouched.
+  assert.equal(
+    ctl.evaluated[0],
+    '/* mini-off */\nawait initHydra()\nnoise(3).out(o0)\n/* mini-on */\n\ns("bd sd")',
+  );
   const preambles = ctl.evaluated[0].match(/initHydra/g) || [];
   assert.equal(preambles.length, 1, 'exactly one preamble must survive');
 });
