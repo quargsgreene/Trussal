@@ -242,11 +242,21 @@ forever, regardless of who actually played most recently."
 
 Instead, only ONE peer's declared values for a given statement are ever
 live at a time — everyone else's custom properties are pinned to the room's own
-captured default (the value `getComputedStyle` reported for that selector+
-property the FIRST time any performer's CSS Cycles hap ever touched it, cached
-forever). A benched peer's styling behaves exactly as if their program had
-never run: their contribution reverts to the untouched page, not to some other
-peer's current value.
+captured default: what `getComputedStyle` reported for that selector+property
+the moment BEFORE any CSS Cycles rule ever referencing it was installed,
+cached forever from there. That timing matters — a compiled rule's declaration
+always carries `!important` on a `var()` reference (see Trust below), and a
+property computed from a still-unset custom property resolves to CSS's own
+*initial* value, not to whatever lower-priority rule (Trussal's own studio
+styling, say) would otherwise apply. Capturing "the default" from a page that
+already has such a rule installed — even one that has never fired a real
+value yet — would silently record that initial value instead of the room's
+actual original look, so the capture happens at INSTALL time (`installPeerCss`
+warms every property a peer's sheet is about to declare, for every peer, not
+just whichever one's own hap happens to fire first), never later. A benched
+peer's styling behaves exactly as if their program had never run: their
+contribution reverts to the untouched page, not to some other peer's current
+value or to CSS's own defaults.
 
 Ownership is decided by the same rule Strudel/Hydra/Text Cycles already use:
 whoever the Net Cycles ring's current slot belongs to. That rule **fails
@@ -258,6 +268,17 @@ specifically: with it in force, exclusivity holds even with no ring running,
 falling back to the room's own default schedule (`$ participants <0>`) rather
 than opening every peer's styling to the shared cascade. `# disjointCss false`
 restores the plain shared-cascade behaviour this section opens with.
+
+Pinning a benched peer's properties back to their baseline normally only
+happens the next time THAT peer's own hap fires — fine for a fast pattern, but
+a slow or sparse one could keep showing what they last painted well after
+their turn actually ended, reading as "the styling froze where the previous
+performer left it" rather than resetting. Under `# disjointCss`, every
+currently-declared property is proactively re-pinned to its baseline the
+instant the ring's token changes (`resetAllCssToBaseline`, fired off the same
+event the turn highlighter uses) rather than waiting on each peer's own next
+cycle — so a turn handoff always starts from the room's original CSS, and the
+new owner's own next hap is what moves it on from there.
 
 ## Play state
 

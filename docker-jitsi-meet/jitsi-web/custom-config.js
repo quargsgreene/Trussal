@@ -54547,6 +54547,7 @@ ${full}
       styleEls.delete(peerId);
       return;
     }
+    warmBaselinesFor(peerId);
     let added = false;
     if (!el) {
       el = document.createElement("style");
@@ -54618,6 +54619,13 @@ ${full}
     baselineValues.set(key, value2);
     return value2;
   }
+  function warmBaselinesFor(peerId) {
+    for (const sheet of sheetsByToken.values()) {
+      if (sheet.peer !== peerId) continue;
+      const selector = selectorOf(sheet);
+      for (const p of sheet.props) captureBaseline(selector, p.prop);
+    }
+  }
   function ownsCssTurn(jitsiId) {
     if (!isDisjointCssEnabled()) return isPeerNetCyclesTurn(jitsiId);
     const token = getActiveNetCyclesToken() ?? "0";
@@ -54654,6 +54662,20 @@ ${full}
       document.documentElement.style.setProperty(varName, resolved);
     }
   }
+  function resetAllCssToBaseline() {
+    for (const sheet of sheetsByToken.values()) {
+      if (refused.has(sheet.token)) continue;
+      const selector = selectorOf(sheet);
+      for (const p of sheet.props) {
+        const varName = cssVarName(sheet.token, p.prop);
+        const baseline = captureBaseline(selector, p.prop);
+        if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
+      }
+    }
+  }
+  function handleNetCyclesTokenChange() {
+    if (isDisjointCssEnabled()) resetAllCssToBaseline();
+  }
   function handleTrigger2(hap, currentTime, cps2, targetTime) {
     if (!active3) return;
     const value2 = hap?.value;
@@ -54683,6 +54705,7 @@ ${full}
         cssSubscribed = true;
         subscribePeerState(syncFromPeers);
         syncFromPeers();
+        document.addEventListener("trussal-netcycles-active", handleNetCyclesTokenChange);
       }
       return true;
     };

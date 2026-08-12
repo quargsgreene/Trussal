@@ -167,6 +167,19 @@ function installPeerCss(peerId, css) {
     styleEls.delete(peerId);
     return;
   }
+  // A CSS Cycles rule always carries `!important` on a var() reference (see
+  // css-cycles-core.js's withPatternedProps), and a property computed from an
+  // UNSET custom property resolves to CSS's own initial value, not to
+  // whatever lower-priority rule (e.g. studio.css) would otherwise apply —
+  // per the custom-properties spec, an invalid-at-computed-value-time
+  // declaration never falls through the cascade, it just goes to initial.
+  // Reading "the room's own default" AFTER this sheet installs would
+  // therefore risk capturing that initial value instead of the true default.
+  // Warm every (selector, prop) pair this peer's sheet is about to declare
+  // BEFORE the rule referencing it ever exists in the document, so whichever
+  // hap eventually reads it (applyHap's own captureBaseline call, memoized)
+  // gets what the page actually looked like when the meeting opened.
+  warmBaselinesFor(peerId);
   let added = false;
   if (!el) {
     el = document.createElement('style');
@@ -272,6 +285,19 @@ function captureBaseline(selector, prop) {
   return value;
 }
 
+// Called from installPeerCss, before that peer's compiled sheet ever touches
+// the document — see the caller's comment for why the timing matters. Reads
+// straight off sheetsByToken rather than the compiled CSS text, so it shares
+// the exact same selector string captureBaseline itself keys on (the raw SCSS
+// before the sidecar's Trussal-root nesting expands it into something wider).
+function warmBaselinesFor(peerId) {
+  for (const sheet of sheetsByToken.values()) {
+    if (sheet.peer !== peerId) continue;
+    const selector = selectorOf(sheet);
+    for (const p of sheet.props) captureBaseline(selector, p.prop);
+  }
+}
+
 // --- Trigger -----------------------------------------------------------------
 
 // isPeerNetCyclesTurn fails OPEN — every peer's CSS is simultaneously live —
@@ -345,6 +371,32 @@ function applyHap(value) {
   }
 }
 
+// Pinning a benched peer back to baseline (applyHap's `!gateOpen` branch)
+// only happens when THAT peer's own hap next fires — which, for a sparse or
+// slow pattern, can lag well behind the moment their turn actually ended, so
+// the room keeps showing whatever they last painted instead of "the meeting's
+// original CSS" the instant ownership changes. Under `# disjointCss`, every
+// peer's declared values should start from that original state the moment
+// the ring's token moves — not whenever their own pattern next happens to
+// tick — so this proactively re-pins every currently-known sheet's
+// properties to their captured baseline as soon as the token changes; the new
+// owner's own next hap then moves theirs on from there, same as always.
+function resetAllCssToBaseline() {
+  for (const sheet of sheetsByToken.values()) {
+    if (refused.has(sheet.token)) continue;
+    const selector = selectorOf(sheet);
+    for (const p of sheet.props) {
+      const varName = cssVarName(sheet.token, p.prop);
+      const baseline = captureBaseline(selector, p.prop);
+      if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
+    }
+  }
+}
+
+function handleNetCyclesTokenChange() {
+  if (isDisjointCssEnabled()) resetAllCssToBaseline();
+}
+
 // Strudel calls this ahead of time so audio can be sampled accurately; the
 // restyle is deferred by the same lead so it lands on the beat rather than
 // early.
@@ -390,6 +442,11 @@ export function installCssCycles(mod) {
       cssSubscribed = true;
       subscribePeerState(syncFromPeers);
       syncFromPeers();
+      // The same 'trussal-netcycles-active' event isPeerNetCyclesTurn's
+      // callers already outline the ring to — peer-state.js dispatches it on
+      // every nc-active broadcast, so this fires exactly when ownership could
+      // have changed, not on some separate poll of its own.
+      document.addEventListener('trussal-netcycles-active', handleNetCyclesTokenChange);
     }
     return true;
   };
