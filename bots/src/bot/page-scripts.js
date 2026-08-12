@@ -2303,10 +2303,34 @@ export function pageMosaic(options = {}) {
       });
   }
 
+  // JVB only forwards a remote participant's video to a receiver that has
+  // asked for it — normally jitsi-meet's own React UI does this implicitly,
+  // driven by which tiles are actually visible on screen. This page never
+  // mounts that grid at all (it composites its own mosaic canvas instead), so
+  // that signal never fires and every blit `<video>` sits forever at
+  // `readyState 0` / a natively-muted track: srcObject assigns cleanly, but
+  // no frame ever arrives. Ask explicitly, for everyone, since the mosaic
+  // always wants every Hydra-running peer's real video and never fewer.
+  // Cheap to call repeatedly — lib-jitsi-meet no-ops an unchanged constraints
+  // object — so every retry tick just re-asserts it rather than tracking
+  // whether the first call actually landed.
+  function ensureReceiverConstraints(room) {
+    try {
+      if (typeof room.setReceiverConstraints === 'function') {
+        room.setReceiverConstraints({ defaultConstraints: { maxHeight: 360 }, lastN: -1 });
+      } else if (typeof room.setReceiverVideoConstraint === 'function') {
+        room.setReceiverVideoConstraint(360);
+      }
+    } catch (e) {
+      noteError('receiver constraints', e);
+    }
+  }
+
   function attachRemoteVideo(entry, jitsiId) {
     try {
       const room = window.APP && window.APP.conference && window.APP.conference._room;
       if (!room || typeof room.getParticipants !== 'function') return;
+      ensureReceiverConstraints(room);
       const participant = room.getParticipants().find((p) => p.getId() === jitsiId);
       if (!participant || typeof participant.getTracks !== 'function') return;
       const track = participant.getTracks().find((t) => t.getType() === 'video');
@@ -2578,7 +2602,17 @@ export function pageMosaic(options = {}) {
     // A blit cell's track may arrive after the cell does (the peer toggles
     // video on later), so retry attachment for any blit cell still without a
     // stream. Called on the same cadence as the roster scan.
+    //
+    // Re-asserting the receiver constraints here too (not just inside
+    // attachRemoteVideo) matters because a cell can have `srcObject` set —
+    // and so never reach attachRemoteVideo again — while its track sits
+    // natively muted at readyState 0 forever: assigning srcObject doesn't
+    // depend on JVB actually forwarding frames, so a constraints call that
+    // arrived too early (before the bridge channel was ready) would
+    // otherwise never get retried for an already-"attached" cell.
     retryAttachments() {
+      const room = window.APP && window.APP.conference && window.APP.conference._room;
+      if (room && cells.some((c) => c.source === 'blit')) ensureReceiverConstraints(room);
       for (const cell of cells) {
         if (cell.source !== 'blit') continue;
         const entry = instances.get(cell.token);
