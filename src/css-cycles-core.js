@@ -822,14 +822,70 @@ export function keepSilentStatements(code) {
 }
 
 // The selector a statement's patterned declarations land on — everything in
-// the SCSS before its first brace. Shared between the compile-time SCSS
-// builder (withPatternedProps, below) and the hot-path trigger
-// (css-cycles.js's applyHap/resetAllCssToBaseline) so both land on the exact
-// same cssVarName for a given sheet without having to coordinate.
+// the SCSS before its first brace, MINUS a leading run of comments and
+// `$var: value;` declarations (both documented supported SCSS syntax — see
+// this file's header). Shared between the compile-time SCSS builder
+// (withPatternedProps, below) and the hot-path trigger (css-cycles.js's
+// applyHap/resetAllCssToBaseline/selectorSyntaxError) so both land on the
+// exact same cssVarName for a given sheet without having to coordinate, and
+// so a leading `$brand: #f00;` or `// note` ahead of the real selector
+// doesn't get mistaken for the selector itself.
+//
+// Known gap, not attempted here: SCSS interpolation (`#{...}`) and a
+// statement that opens with an at-rule wrapping the real selector
+// (`@media (...) { .x {...} }`, rather than the more idiomatic `.x { @media
+// (...) {...} }`) both introduce a `{` before the real selector's own, so
+// this still stops early for those. Neither is common for a css() argument
+// in practice, and correctly walking either would mean making this function
+// (and withPatternedProps' separate insertion-point search below, and
+// scanBlocks/parseScssDeclarations elsewhere in this file) fully at-rule- and
+// interpolation-aware — a bigger change than this fix's scope.
 export function selectorOf(sheet) {
-  const src = String(sheet?.scss ?? '').trim();
-  const brace = src.indexOf('{');
-  return (brace === -1 ? src : src.slice(0, brace)).trim();
+  const text = String(sheet?.scss ?? '');
+  let i = 0;
+  let quote = null;
+  let segmentStart = 0; // where the candidate selector text starts
+  let inDollarDecl = false; // inside a $var: value; declaration's value
+
+  while (i < text.length) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') { i += 2; continue; }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; i++; continue; }
+    if (inDollarDecl) {
+      if (c === ';') { inDollarDecl = false; i++; segmentStart = i; continue; }
+      i++;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i);
+      i = nl === -1 ? text.length : nl + 1;
+      segmentStart = i;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : end + 2;
+      segmentStart = i;
+      continue;
+    }
+    // A `$` reachable with nothing but whitespace between it and the current
+    // segment start opens a variable declaration, not the selector — the
+    // quote-tracking above already keeps a `;` inside its quoted value (e.g.
+    // `$label: "a; b";`) from ending it early.
+    if (c === '$' && text.slice(segmentStart, i).trim() === '') {
+      inDollarDecl = true;
+      i++;
+      continue;
+    }
+    if (c === '{') break;
+    i++;
+  }
+  return text.slice(segmentStart, i).trim();
 }
 
 // A CSS custom-property name can't contain most selector characters (`.`,

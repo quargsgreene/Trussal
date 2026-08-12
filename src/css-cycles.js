@@ -93,6 +93,49 @@ function resolve(value) {
 
 // --- Sheet installation ------------------------------------------------------
 
+// A written selector that is syntactically invalid CSS — e.g. `*span`, the
+// universal selector glued directly onto a type selector with no combinator
+// (should be `span` or `* span`) — throws instead of matching nothing.
+// captureBaseline and backgroundForSelector already catch that throw and log
+// a warning, but swallowing it there means baseline can NEVER be captured for
+// that pair: applyHap's `!gateOpen` branch and resetAllCssToBaseline both
+// only write when baseline is non-null, so with an unparseable selector
+// neither ever has anything to pin a benched peer back to — whichever peer's
+// hap last wrote a real value is stuck there permanently. That reads exactly
+// like broken mutual exclusion (confirmed live: room "lgfj", 2026-08-12) when
+// the actual defect is one performer's selector typo. Checked here, at the
+// same accept-or-refuse point every other guardrail runs at, so it becomes a
+// clear refusal instead of a silent, permanent freeze.
+//
+// Deliberately DOM-based rather than a hand-rolled selector grammar check:
+// every other guardrail in this feature is pure precisely so refusal is
+// identical across every peer's independently-evaluating browser (see
+// css-cycles-core.js's own header), and this one trades a sliver of that —
+// selector-syntax support can differ at the margins across engines/versions
+// (newer functional pseudo-classes, native nesting `&`) — for using the one
+// parser that is always exactly right for THIS browser, rather than
+// reimplementing CSS selector grammar to keep it pure. Selectors this narrow
+// almost never reach that margin in practice.
+function selectorSyntaxError(sheet) {
+  const selector = selectorOf(sheet);
+  if (!selector) return null;
+  // selectorOf gives up before a leading at-rule (`@media (...) { .x {...} }`
+  // instead of the supported `.x { @media (...) {...} }`) or SCSS
+  // interpolation (`#{...}`) — text.querySelector would reject either as
+  // "invalid", which is true of the fragment but not necessarily of what the
+  // performer actually wrote. Name the real gap instead of guessing wrong.
+  if (selector.startsWith('@')) {
+    return `an at-rule ('${selector}') can't open a css() statement — put the selector first, e.g. '.x { ${selector} {...} }'`;
+  }
+  try {
+    document.querySelector(selector);
+    return null;
+  } catch (e) {
+    console.warn('[css-cycles] selector syntax check failed for', selector, e);
+    return `'${selector}' is not a valid CSS selector`;
+  }
+}
+
 // Register the running program's stylesheets and hand the local peer's SCSS to
 // the sidecar. Called by strudel.js after every rebuild with EVERY peer's
 // sheets, not just ours: this browser evaluates every peer's program, so it is
@@ -106,6 +149,8 @@ export function publishCssSheets(sheets) {
   const problems = [];
   for (const sheet of sheets) {
     const errors = checkSheet(sheet);
+    const selectorError = selectorSyntaxError(sheet);
+    if (selectorError) errors.push(selectorError);
     if (!errors.length) continue;
     refused.add(sheet.token);
     // Only our own refusals are reported. A remote peer's broken statement is

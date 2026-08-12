@@ -177,6 +177,48 @@ test('selectorOf reads everything before a sheet\'s first brace', () => {
   assert.equal(selectorOf({}), '');
 });
 
+test('selectorOf skips leading comments and $variable declarations, not just the first brace', () => {
+  // Both are documented supported SCSS syntax (this file's own header:
+  // "nesting, &, $variables, @media, ..."), so a leading one of either must
+  // not be mistaken for the selector — that fed a false "invalid CSS
+  // selector" refusal into selectorSyntaxError (css-cycles.js) for otherwise
+  // legal code.
+  assert.equal(
+    selectorOf({ scss: '$primary: #fff;\n.example { color: $primary }' }),
+    '.example',
+  );
+  assert.equal(
+    selectorOf({ scss: '// tweak the chip border\n.ts-chip { border-color: red }' }),
+    '.ts-chip',
+  );
+  assert.equal(
+    selectorOf({ scss: '/* note */ .ts-chip { color: red }' }),
+    '.ts-chip',
+  );
+  // A `;` inside a quoted $variable value must not end the skip early.
+  assert.equal(
+    selectorOf({ scss: '$label: "a; b"; .ts-chip { content: $label }' }),
+    '.ts-chip',
+  );
+});
+
+test('selectorOf: known gap — a leading at-rule or SCSS interpolation still stops early', () => {
+  // Documented limitation, not a regression: fixing either means making this
+  // function, withPatternedProps' separate insertion-point search, AND
+  // scanBlocks/parseScssDeclarations all at-rule/interpolation-aware — out of
+  // scope for the selector-validation fix this guards. selectorSyntaxError
+  // (css-cycles.js) at least gives the at-rule case a clearer message instead
+  // of a flat "invalid selector" claim.
+  assert.equal(
+    selectorOf({ scss: '@media (max-width: 600px) { .example { color: red } }' }),
+    '@media (max-width: 600px)',
+  );
+  assert.equal(
+    selectorOf({ scss: '.icon-#{$size} { width: 10px }' }),
+    '.icon-#',
+  );
+});
+
 test('two peers writing the identical selector land on the identical variable', () => {
   // The whole point: mutual exclusion has to control the value the room
   // renders, not just which peer's own custom property holds what — if two

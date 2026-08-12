@@ -54230,9 +54230,58 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return kept.join("\n\n").trim();
   }
   function selectorOf(sheet) {
-    const src2 = String(sheet?.scss ?? "").trim();
-    const brace = src2.indexOf("{");
-    return (brace === -1 ? src2 : src2.slice(0, brace)).trim();
+    const text2 = String(sheet?.scss ?? "");
+    let i = 0;
+    let quote = null;
+    let segmentStart = 0;
+    let inDollarDecl = false;
+    while (i < text2.length) {
+      const c2 = text2[i];
+      if (quote) {
+        if (c2 === "\\") {
+          i += 2;
+          continue;
+        }
+        if (c2 === quote) quote = null;
+        i++;
+        continue;
+      }
+      if (c2 === '"' || c2 === "'") {
+        quote = c2;
+        i++;
+        continue;
+      }
+      if (inDollarDecl) {
+        if (c2 === ";") {
+          inDollarDecl = false;
+          i++;
+          segmentStart = i;
+          continue;
+        }
+        i++;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "/") {
+        const nl = text2.indexOf("\n", i);
+        i = nl === -1 ? text2.length : nl + 1;
+        segmentStart = i;
+        continue;
+      }
+      if (c2 === "/" && text2[i + 1] === "*") {
+        const end2 = text2.indexOf("*/", i + 2);
+        i = end2 === -1 ? text2.length : end2 + 2;
+        segmentStart = i;
+        continue;
+      }
+      if (c2 === "$" && text2.slice(segmentStart, i).trim() === "") {
+        inDollarDecl = true;
+        i++;
+        continue;
+      }
+      if (c2 === "{") break;
+      i++;
+    }
+    return text2.slice(segmentStart, i).trim();
   }
   function safeIdent(text2) {
     return String(text2 ?? "").replace(/[^a-zA-Z0-9-]/g, (ch2) => `_${ch2.charCodeAt(0).toString(16)}`);
@@ -54513,6 +54562,20 @@ ${full}
     const atom2 = atoms2[key];
     return atom2 ? atom2.text : key;
   }
+  function selectorSyntaxError(sheet) {
+    const selector = selectorOf(sheet);
+    if (!selector) return null;
+    if (selector.startsWith("@")) {
+      return `an at-rule ('${selector}') can't open a css() statement \u2014 put the selector first, e.g. '.x { ${selector} {...} }'`;
+    }
+    try {
+      document.querySelector(selector);
+      return null;
+    } catch (e30) {
+      console.warn("[css-cycles] selector syntax check failed for", selector, e30);
+      return `'${selector}' is not a valid CSS selector`;
+    }
+  }
   function publishCssSheets(sheets) {
     sheetsByToken = new Map(sheets.map((s2) => [s2.token, s2]));
     refused = /* @__PURE__ */ new Set();
@@ -54520,6 +54583,8 @@ ${full}
     const problems = [];
     for (const sheet of sheets) {
       const errors = checkSheet(sheet);
+      const selectorError = selectorSyntaxError(sheet);
+      if (selectorError) errors.push(selectorError);
       if (!errors.length) continue;
       refused.add(sheet.token);
       if (sheet.peer === local2?.jitsiId) problems.push(...errors);
