@@ -38886,9 +38886,21 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       // entirely; only an explicit `false` drops to the single streaming cell.
       case "mosaic":
         return { enabled: args2[0] ?? true };
+      // `# disjointCss [bool]` — a bare `# disjointCss` is disjoint, same as
+      // omitting it entirely; only an explicit `false` restores the shared
+      // cascade.
+      case "disjointCss":
+        return { enabled: args2[0] ?? true };
       default:
         return { args: args2 };
     }
+  }
+  function disjointCssEnabled(ast2) {
+    const chain = ast2 && ast2.chain || [];
+    for (let i = chain.length - 1; i >= 0; i--) {
+      if (chain[i].fn === "disjointCss") return !!resolveEffectParams(chain[i]).enabled;
+    }
+    return DISJOINT_CSS_ENABLED_BY_DEFAULT;
   }
   function buildDefaultProgram() {
     return `$ participants <0>
@@ -38927,7 +38939,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }).join(" ");
     return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
   }
-  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
+  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, DISJOINT_CSS_ENABLED_BY_DEFAULT, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
@@ -38936,6 +38948,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       init_EffectMedia();
       TIMING_METRICS = ["wcl", "wcj", "wcpl"];
       EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
+      DISJOINT_CSS_ENABLED_BY_DEFAULT = true;
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       VALUE_ELEMENT_OPS = /* @__PURE__ */ new Set(["@", "?", "!", "*", "/"]);
       MAX_VALUE_REPEATS = 1024;
@@ -38967,7 +38980,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         // false shows only whoever is streaming, full-frame. Unwritten means the
         // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
         // rather than in an injected directive nobody typed.
-        mosaic: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
+        mosaic: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true },
+        // Whether CSS Cycles' mutual exclusion (css-cycles.js) is in force room-wide
+        // rather than only while a Net Cycles ring is actively scheduling turns.
+        // True (or bare) is the default — see DISJOINT_CSS_ENABLED_BY_DEFAULT —
+        // false restores the pre-existing shared-cascade behaviour.
+        disjointCss: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
       };
       PATTERN_FNS = {
         ply: { minArgs: 1, maxArgs: 1 },
@@ -50740,6 +50758,7 @@ ${err.toString()}`);
     getQueueDepth: () => getQueueDepth,
     getVlans: () => getVlans,
     hasEffectShortcut: () => hasEffectShortcut,
+    isDisjointCssEnabled: () => isDisjointCssEnabled,
     isNetCyclesActive: () => isNetCyclesActive,
     removeVlan: () => removeVlan,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
@@ -50876,6 +50895,9 @@ ${err.toString()}`);
   }
   function getProgramText() {
     return programText;
+  }
+  function isDisjointCssEnabled() {
+    return disjointCssEnabled(currentAst);
   }
   function hasEffectShortcut(fn) {
     if (!programText) return false;
@@ -53286,6 +53308,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
 
   // src/css-cycles.js
   init_peer_state();
+  init_Metaprogrammer();
 
   // src/css-cycles-core.js
   init_text_cycles_core();
@@ -54595,11 +54618,17 @@ ${full}
     baselineValues.set(key, value2);
     return value2;
   }
+  function ownsCssTurn(jitsiId) {
+    if (!isDisjointCssEnabled()) return isPeerNetCyclesTurn(jitsiId);
+    const token = getActiveNetCyclesToken() ?? "0";
+    const peer = getPeerByJitsiId(jitsiId);
+    return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
+  }
   function applyHap(value2) {
     const token = String(value2.css);
     const sheet = sheetsByToken.get(token);
     if (!sheet || refused.has(token)) return;
-    const gateOpen = isPeerNetCyclesTurn(sheet.peer);
+    const gateOpen = ownsCssTurn(sheet.peer);
     const selector = selectorOf(sheet);
     for (const [key, raw] of Object.entries(value2)) {
       if (!key.startsWith("_cc_")) continue;
