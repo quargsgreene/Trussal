@@ -432,7 +432,19 @@ export class AggregatorBot extends Bot {
         // pageMosaic built its output canvas at document-start, so the gUM
         // override resolves immediately rather than hanging the join waiting
         // for a canvas (which is why this used to join video-muted).
-        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, videoMuted: false }), {
+        //
+        // channelLastN: -1 overrides jitsiRoomUrl's own default of 0 (right
+        // for a regular bot, which never needs inbound video). The aggregator
+        // is the one role that does — blit cells draw a peer's published
+        // track directly — and this page never mounts jitsi-meet's own tile
+        // grid, so its receiver-constraints reconciler has nothing to derive
+        // a nonzero lastN from and keeps resetting it back to the joined
+        // value: every blit <video> sat at readyState 0 with a natively
+        // muted track, srcObject assigned but no frame ever arriving, until
+        // this was fixed. Confirmed live via CDP against a running
+        // aggregator: JVB was holding every peer's video at lastN 0 even
+        // moments after an explicit runtime setReceiverConstraints override.
+        await this.page.goto(jitsiRoomUrl(jitsiUrl, name, { ...bandwidth, channelLastN: -1, videoMuted: false }), {
             waitUntil: 'networkidle2',
             timeout: 60000,
         });
