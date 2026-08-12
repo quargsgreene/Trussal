@@ -23,7 +23,7 @@ import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.j
 import { hasTextCycles, rewriteTextCalls } from './text-cycles-core.js';
 import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from './css-cycles.js';
 import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
-import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync } from './hydra-video.js';
+import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCameraBypass } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
 import { wrapAsVoice } from './strudel-voice.js';
@@ -357,7 +357,8 @@ function buildPeerBlock(peer) {
   // shared rule, so this page and the aggregator's mosaic never disagree about
   // which peers are running Hydra, or the silent capabilities split by their
   // own.
-  const split = splitHydraCode(code) || splitSilentCode(code);
+  const hydraSplit = splitHydraCode(code);
+  const split = hydraSplit || splitSilentCode(code);
   // STORAGE POINT 2: this peer's contribution to the program, as decided. The
   // one way a text block silently produces nothing is landing here unsplit:
   // isText is true, so the code is text, but with no preamble to split off the
@@ -369,6 +370,17 @@ function buildPeerBlock(peer) {
   }
   if (split) {
     const preamble = split.preamble;
+    // Strudel's transpiler mini-notation-parses EVERY double-quoted string in
+    // the evaluated program — plugin-mini.mjs's isStringWithDoubleQuotes has
+    // no notion of which function it is an argument to — so
+    // `s0.initImage("folder")` or `img("folder")` would silently receive a
+    // parsed Pattern instead of the plain string it expects, and never load
+    // anything. A Hydra preamble never needs mini-notation itself (that's
+    // what the Strudel voice after the blank line is for), so disable it for
+    // the whole preamble via Strudel's own `mini-off`/`mini-on` comment-range
+    // convention, rather than asking every performer to remember single
+    // quotes for every URL/folder argument.
+    const outPreamble = hydraSplit ? `/* mini-off */\n${preamble}\n/* mini-on */` : preamble;
     let strudelCode = split.strudel;
     if (isText || isCss) {
       // Excluded remote peer: keep the silent statements, drop the audio ones.
@@ -390,11 +402,11 @@ function buildPeerBlock(peer) {
       if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
       if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
     } else if (remoteVoiceExcluded) {
-      return preamble;
+      return outPreamble;
     }
     // A preamble-only block has no Strudel voice to build.
-    if (!strudelCode) return preamble;
-    return `${preamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
+    if (!strudelCode) return outPreamble;
+    return `${outPreamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
   }
 
   if (remoteVoiceExcluded) return null;
@@ -530,7 +542,20 @@ async function ensureStrudel() {
     // notation when the name is not a loaded pack, so a rewritten sound
     // reference behaves exactly as it did before data packs existed.
     const _data = makeDataFn(mod);
-    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, ...textScope, ...cssScope });
+    // Wrap Hydra's own initHydra() so s0-s3's .initCam() is patched the
+    // MOMENT they exist, before any user code runs. Doing this from
+    // hydra-video.js's RAF loop instead loses the race: a preamble's very
+    // next line is routinely `s0.initCam()` itself, called synchronously
+    // right after `await initHydra()` and well before the next animation
+    // frame — patching later leaves that first call hitting the unpatched,
+    // getUserMedia-intercepted original.
+    const realInitHydra = mod.initHydra;
+    const initHydra = async (...args) => {
+      const result = await realInitHydra(...args);
+      try { ensureCameraBypass(); } catch (e) { console.warn('[strudel] camera bypass failed', e); }
+      return result;
+    };
+    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, initHydra, ...textScope, ...cssScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }

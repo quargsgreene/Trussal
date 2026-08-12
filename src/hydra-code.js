@@ -102,14 +102,21 @@ export function hasHydraCode(code) {
   return splitHydraCode(code) != null;
 }
 
-// Does the preamble read the camera texture? Such a cell cannot be reproduced
-// from the code alone — the aggregator has no camera for that performer — so
-// the mosaic blits their published track instead of re-executing. Matches `s0`
-// as a whole word so `s01` or `foos0` don't trip it.
-export function usesCameraSource(code) {
+// Does the preamble reference an External Source slot (s0-s3)? In Hydra those
+// exist ONLY to hold external media — initCam, initScreen, initImage,
+// initVideo, or a raw init({src}) — never a procedural generator, which
+// Hydra always exposes as a bare function (osc, noise, shape…) rather than
+// through a source slot. So naming sN at all — however it got populated: an
+// explicit call in this preamble, or hydra-video.js's own direct-mode camera
+// feed into s0 with no call visible here — means this cell shows something
+// the aggregator has no way to reproduce itself: no camera, no screen to
+// share, and no access to a URL that lives only in the performer's own
+// browser. The mosaic blits their published track instead of re-executing.
+// Matches s0-s3 as a whole word so `s01` or `foos0` don't trip it.
+export function usesExternalSource(code) {
   const split = splitHydraCode(code);
   if (!split) return false;
-  return /(^|[^\w$])s0($|[^\w$])/.test(split.preamble);
+  return /(^|[^\w$])s[0-3]($|[^\w$])/.test(split.preamble);
 }
 
 // Does the preamble bind Hydra parameters to Strudel patterns via `H(...)`?
@@ -140,5 +147,5 @@ export function usesLocalImage(code) {
 
 export function mosaicCellSource(code) {
   if (!hasHydraCode(code)) return null;
-  return (usesCameraSource(code) || usesLocalImage(code)) ? 'blit' : 'reexecute';
+  return (usesExternalSource(code) || usesLocalImage(code)) ? 'blit' : 'reexecute';
 }

@@ -54767,7 +54767,6 @@ ${full}
     }
   }
   function _syncHydraSource() {
-    _ensureCameraBypass();
     if (typeof globalThis.s0 === "undefined") {
       _lastSyncedVideoEl = void 0;
       _ownsS0 = false;
@@ -54812,7 +54811,7 @@ ${full}
       });
     });
   }
-  function _ensureCameraBypass() {
+  function ensureCameraBypass() {
     for (let i = 0; i < 4; i++) {
       const source2 = globalThis["s" + i];
       if (!source2 || typeof source2.initCam !== "function" || _camPatched.has(source2)) continue;
@@ -55490,7 +55489,8 @@ $: (${split.expr})${fx}`;
     if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
     const isText = hasTextCycles(code2);
     const isCss = hasCssCycles(code2);
-    const split = splitHydraCode(code2) || splitSilentCode(code2);
+    const hydraSplit = splitHydraCode(code2);
+    const split = hydraSplit || splitSilentCode(code2);
     if (isText && !split) {
       textWarn(
         `peer-block:${peer.jitsiId ?? peer.peerId}`,
@@ -55500,6 +55500,9 @@ $: (${split.expr})${fx}`;
     }
     if (split) {
       const preamble = split.preamble;
+      const outPreamble = hydraSplit ? `/* mini-off */
+${preamble}
+/* mini-on */` : preamble;
       let strudelCode = split.strudel;
       if (isText || isCss) {
         if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
@@ -55516,10 +55519,10 @@ $: (${split.expr})${fx}`;
         if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
         if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
       } else if (remoteVoiceExcluded) {
-        return preamble;
+        return outPreamble;
       }
-      if (!strudelCode) return preamble;
-      return `${preamble}
+      if (!strudelCode) return outPreamble;
+      return `${outPreamble}
 
 ${buildStrudelVoice(strudelCode, fx)}`;
     }
@@ -55683,7 +55686,17 @@ ${buildStrudelVoice(strudelCode, fx)}`;
       const textScope = installTextCycles(mod2);
       const cssScope = installCssCycles(mod2);
       const _data = makeDataFn(mod2);
-      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, ...textScope, ...cssScope });
+      const realInitHydra = mod2.initHydra;
+      const initHydra2 = async (...args2) => {
+        const result = await realInitHydra(...args2);
+        try {
+          ensureCameraBypass();
+        } catch (e30) {
+          console.warn("[strudel] camera bypass failed", e30);
+        }
+        return result;
+      };
+      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, initHydra: initHydra2, ...textScope, ...cssScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });

@@ -5,7 +5,7 @@ import {
   normalizePeerCode,
   splitHydraCode,
   hasHydraCode,
-  usesCameraSource,
+  usesExternalSource,
   usesPatternParams,
   mosaicCellSource,
   programDeclaresHydra
@@ -97,16 +97,23 @@ test('hydra-code: normalization strips trailing noise and widget lines', () => {
 // --- what the aggregator can reproduce ----------------------------------------
 
 test('hydra-code: a camera-fed preamble is detected', () => {
-  assert.equal(usesCameraSource('await initHydra()\nsrc(s0).out()'), true);
+  assert.equal(usesExternalSource('await initHydra()\nsrc(s0).out()'), true);
 });
 
-test('hydra-code: s0 is matched as a whole word', () => {
-  assert.equal(usesCameraSource('await initHydra()\nosc(10).out(s01)'), false);
-  assert.equal(usesCameraSource('await initHydra()\nfoos0.out()'), false);
+test('hydra-code: any of s0-s3 counts, not just s0', () => {
+  assert.equal(usesExternalSource('await initHydra()\ns1.initCam()\nsrc(s1).out()'), true);
+  assert.equal(usesExternalSource('await initHydra()\ns2.initScreen()\nsrc(s2).out()'), true);
+  assert.equal(usesExternalSource('await initHydra()\ns3.initVideo(\'x\')\nsrc(s3).out()'), true);
 });
 
-test('hydra-code: s0 below the blank line is Strudel, not a camera source', () => {
-  assert.equal(usesCameraSource('await initHydra()\nosc(10).out()\n\ns("s0")'), false);
+test('hydra-code: sN is matched as a whole word', () => {
+  assert.equal(usesExternalSource('await initHydra()\nosc(10).out(s01)'), false);
+  assert.equal(usesExternalSource('await initHydra()\nfoos0.out()'), false);
+  assert.equal(usesExternalSource('await initHydra()\nosc(10).out(s14)'), false);
+});
+
+test('hydra-code: sN below the blank line is Strudel, not an external source', () => {
+  assert.equal(usesExternalSource('await initHydra()\nosc(10).out()\n\ns("s0")'), false);
 });
 
 test('hydra-code: H() pattern binding is detected', () => {
@@ -114,8 +121,9 @@ test('hydra-code: H() pattern binding is detected', () => {
   assert.equal(usesPatternParams('await initHydra()\nosc(10).out()'), false);
 });
 
-test('hydra-code: camera cells are blitted, everything else re-executed', () => {
+test('hydra-code: external-source cells are blitted, everything else re-executed', () => {
   assert.equal(mosaicCellSource('await initHydra()\nsrc(s0).out()'), 'blit');
+  assert.equal(mosaicCellSource('await initHydra()\ns2.initScreen()\nsrc(s2).out()'), 'blit');
   assert.equal(mosaicCellSource('await initHydra()\nosc(10).out()'), 'reexecute');
   assert.equal(mosaicCellSource('s("bd")'), null);
 });

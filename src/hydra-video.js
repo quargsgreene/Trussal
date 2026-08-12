@@ -7,12 +7,17 @@
 // (split mode only) via CSS filters + canvas noise overlays, driven by the local
 // peer's rtt/jitter when the corresponding effect toggle is on.
 //
-// Also patches Hydra's own External Sources API (s0-s3 .initCam()) so a
-// performer's own code can pull in a real camera. Hydra's initCam() calls
-// navigator.mediaDevices.getUserMedia directly, which published-video.js's
-// publish override intercepts and hands back the (black, self-referential)
-// published canvas instead — see _ensureCameraBypass. initImage/initVideo/
-// initScreen/init don't touch getUserMedia and need no such bypass.
+// Also exports ensureCameraBypass(), which patches Hydra's own External
+// Sources API (s0-s3 .initCam()) so a performer's own code can pull in a real
+// camera. Hydra's initCam() calls navigator.mediaDevices.getUserMedia
+// directly, which published-video.js's publish override intercepts and hands
+// back the (black, self-referential) published canvas instead. strudel.js
+// calls this synchronously from its own wrapped initHydra(), right after the
+// real one resolves and before any user code runs — patching it lazily from
+// this module's own RAF loop loses the race: a preamble's very next line is
+// often `s0.initCam()`, called before the next animation frame ever fires.
+// initImage/initVideo/initScreen/init don't touch getUserMedia and need no
+// such bypass.
 
 import { subscribePeerState } from './peer-state.js';
 // The REAL camera. A plain getUserMedia here would be intercepted by the
@@ -42,7 +47,7 @@ let _lastSyncedVideoEl = undefined; // undefined = "needs sync"; null = "synced 
 let _ownsS0 = false;
 
 // Sources (s0-s3) whose .initCam has already been patched to bypass the
-// publish-video getUserMedia override — see _ensureCameraBypass.
+// publish-video getUserMedia override — see ensureCameraBypass.
 const _camPatched = new WeakSet();
 
 // Globals read by Hydra's dynamic-parameter callbacks for the s0 blend.
@@ -90,7 +95,6 @@ export function setVideoStream(stream) {
 // ---------------------------------------------------------------------------
 
 function _syncHydraSource() {
-  _ensureCameraBypass();
   if (typeof globalThis.s0 === 'undefined') {
     _lastSyncedVideoEl = undefined;
     _ownsS0 = false;
@@ -156,7 +160,12 @@ function _videoFromStream(stream) {
 // camera. Route it through openCamera(), the same real-camera escape hatch
 // the split/direct panel uses, then hand the resulting video to Hydra's own
 // (untouched) init() so the rest of the External Sources contract is unchanged.
-function _ensureCameraBypass() {
+//
+// Must run SYNCHRONOUSLY (from strudel.js's wrapped initHydra) right after
+// initHydra() creates s0-s3 and before any user code runs — a preamble's next
+// line is routinely `s0.initCam()` itself, called before this module's own
+// RAF loop ever gets a turn.
+export function ensureCameraBypass() {
   for (let i = 0; i < 4; i++) {
     const source = globalThis['s' + i];
     if (!source || typeof source.initCam !== 'function' || _camPatched.has(source)) continue;
