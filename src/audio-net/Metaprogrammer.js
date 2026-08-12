@@ -138,7 +138,22 @@ export function ensureMetaprogramSync() {
     // only on an explicit apply, the roster seed, or the late-join catch-up.
     const applied = !!payload && (payload.catchUp === true ||
       payload.modality === 'apply' || payload.modality === 'roster');
-    if (applied) programText = text;
+    if (applied) {
+      programText = text;
+      // currentAst (and everything derived from it — the Effects Service
+      // chain driving text/css's network-modulated degradation,
+      // isDisjointCssEnabled, the local dormant scheduler) used to move only
+      // when THIS browser's own applyProgramText() ran it through here —
+      // meaning any OTHER peer applying a program left every other viewer's
+      // currentAst stale (often still null) until they happened to apply one
+      // themselves. Re-parsing on every remote apply too keeps it in sync
+      // with whatever the room is actually running, regardless of who
+      // pressed Apply. Skip an empty catch-up/roster text exactly as
+      // applyProgramText's own `valid` guard would — maybeSeedDefaultProgram
+      // (below) is what seeds a genuinely empty doc, and parsing '' here
+      // first would just log a spurious refusal ahead of that.
+      if (text && text.trim()) pushProgramToScheduler();
+    }
     if (payload && payload.catchUp === true) {
       caughtUp = true;
       // The seed check that ran (or was skipped) off the roster's own

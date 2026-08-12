@@ -50796,7 +50796,10 @@ ${err.toString()}`);
     });
     crdt.onRemoteChange((text2, payload) => {
       const applied = !!payload && (payload.catchUp === true || payload.modality === "apply" || payload.modality === "roster");
-      if (applied) programText = text2;
+      if (applied) {
+        programText = text2;
+        if (text2 && text2.trim()) pushProgramToScheduler();
+      }
       if (payload && payload.catchUp === true) {
         caughtUp = true;
         maybeSeedDefaultProgram();
@@ -54226,8 +54229,16 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }).filter((p) => p !== null);
     return kept.join("\n\n").trim();
   }
-  function cssVarName(token, prop) {
-    return `--cc-${token}-${prop}`;
+  function selectorOf(sheet) {
+    const src2 = String(sheet?.scss ?? "").trim();
+    const brace = src2.indexOf("{");
+    return (brace === -1 ? src2 : src2.slice(0, brace)).trim();
+  }
+  function safeIdent(text2) {
+    return String(text2 ?? "").replace(/[^a-zA-Z0-9-]/g, (ch2) => `_${ch2.charCodeAt(0).toString(16)}`);
+  }
+  function cssVarName(selector, prop) {
+    return `--cc-${safeIdent(selector)}-${prop}`;
   }
   function readTemplateArg(text2, open) {
     let i = open + 1;
@@ -54352,7 +54363,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return out;
   }
   function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
-    const decls = sheet.props.filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop)).map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)}) !important;`).join("\n");
+    const selector = selectorOf(sheet);
+    const decls = sheet.props.filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop)).map((p) => `  ${p.prop}: var(${cssVarName(selector, p.prop)}) !important;`).join("\n");
     if (!decls) return scss;
     const src2 = String(scss).trim();
     const brace = src2.indexOf("{");
@@ -54601,11 +54613,6 @@ ${full}
     bgCache.set(selector, { color: color2, at: now });
     return color2;
   }
-  function selectorOf(sheet) {
-    const src2 = String(sheet?.scss ?? "").trim();
-    const brace = src2.indexOf("{");
-    return (brace === -1 ? src2 : src2.slice(0, brace)).trim();
-  }
   function captureBaseline(selector, prop) {
     const key = `${selector}||${prop}`;
     if (baselineValues.has(key)) return baselineValues.get(key);
@@ -54642,7 +54649,7 @@ ${full}
       if (!key.startsWith("_cc_")) continue;
       const prop = cssPropForMethod(key.slice(4));
       if (!prop) continue;
-      const varName = cssVarName(token, prop);
+      const varName = cssVarName(selector, prop);
       const baseline = captureBaseline(selector, prop);
       if (!gateOpen) {
         if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
@@ -54667,7 +54674,7 @@ ${full}
       if (refused.has(sheet.token)) continue;
       const selector = selectorOf(sheet);
       for (const p of sheet.props) {
-        const varName = cssVarName(sheet.token, p.prop);
+        const varName = cssVarName(selector, p.prop);
         const baseline = captureBaseline(selector, p.prop);
         if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
       }
@@ -54715,8 +54722,9 @@ ${full}
     active3 = false;
     for (const [peerId] of [...styleEls]) installPeerCss(peerId, "");
     for (const sheet of sheetsByToken.values()) {
+      const selector = selectorOf(sheet);
       for (const p of sheet.props) {
-        document.documentElement.style.removeProperty(cssVarName(sheet.token, p.prop));
+        document.documentElement.style.removeProperty(cssVarName(selector, p.prop));
       }
     }
     sheetsByToken = /* @__PURE__ */ new Map();

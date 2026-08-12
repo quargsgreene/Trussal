@@ -53,6 +53,7 @@ import {
   clampValue,
   cssPropForMethod,
   cssVarName,
+  selectorOf,
   methodForCssProp,
   parseColor,
 } from './css-cycles-core.js';
@@ -258,16 +259,6 @@ function backgroundForSelector(selector) {
   return color;
 }
 
-// The selector a statement's patterned declarations land on — everything in the
-// SCSS before its first brace. A rule can match many elements sitting on
-// different backgrounds; the first match is sampled as a representative, since
-// one custom property serves the whole rule.
-function selectorOf(sheet) {
-  const src = String(sheet?.scss ?? '').trim();
-  const brace = src.indexOf('{');
-  return (brace === -1 ? src : src.slice(0, brace)).trim();
-}
-
 // The room's own value for a selector+prop, read off the live DOM before this
 // module has ever overridden it. Cached forever per pair: capturing it again
 // after an override has been applied would just record our own prior hap.
@@ -340,7 +331,7 @@ function applyHap(value) {
     const prop = cssPropForMethod(key.slice(4));
     if (!prop) continue;
 
-    const varName = cssVarName(token, prop);
+    const varName = cssVarName(selector, prop);
     const baseline = captureBaseline(selector, prop);
 
     if (!gateOpen) {
@@ -386,7 +377,7 @@ function resetAllCssToBaseline() {
     if (refused.has(sheet.token)) continue;
     const selector = selectorOf(sheet);
     for (const p of sheet.props) {
-      const varName = cssVarName(sheet.token, p.prop);
+      const varName = cssVarName(selector, p.prop);
       const baseline = captureBaseline(selector, p.prop);
       if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
     }
@@ -460,8 +451,9 @@ export function stopCssCycles() {
   active = false;
   for (const [peerId] of [...styleEls]) installPeerCss(peerId, '');
   for (const sheet of sheetsByToken.values()) {
+    const selector = selectorOf(sheet);
     for (const p of sheet.props) {
-      document.documentElement.style.removeProperty(cssVarName(sheet.token, p.prop));
+      document.documentElement.style.removeProperty(cssVarName(selector, p.prop));
     }
   }
   sheetsByToken = new Map();

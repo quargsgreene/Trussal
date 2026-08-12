@@ -821,11 +821,47 @@ export function keepSilentStatements(code) {
   return kept.join('\n\n').trim();
 }
 
-// The custom property carrying one patterned declaration. Derived from the
-// statement's own token so the sheet the sidecar compiled and the hap trigger
-// running in every browser agree on the name without coordinating.
-export function cssVarName(token, prop) {
-  return `--cc-${token}-${prop}`;
+// The selector a statement's patterned declarations land on — everything in
+// the SCSS before its first brace. Shared between the compile-time SCSS
+// builder (withPatternedProps, below) and the hot-path trigger
+// (css-cycles.js's applyHap/resetAllCssToBaseline) so both land on the exact
+// same cssVarName for a given sheet without having to coordinate.
+export function selectorOf(sheet) {
+  const src = String(sheet?.scss ?? '').trim();
+  const brace = src.indexOf('{');
+  return (brace === -1 ? src : src.slice(0, brace)).trim();
+}
+
+// A CSS custom-property name can't contain most selector characters (`.`,
+// `#`, `[`, spaces, `:`, …), so a performer's selector text is escaped into
+// one — losslessly, character by character, rather than hashed to a short
+// fixed-width digest: a hash would let a hostile peer brute-force a selector
+// that collides with another peer's, hijacking their mutual-exclusion slot
+// (see cssVarName below for why that slot is shared in the first place).
+// The literal underscore is escaped too, not just the disallowed set, so an
+// `_XX` sequence in the output is always unambiguously one escaped
+// character — never a literal `_` that happens to already sit next to two
+// hex digits in the source selector.
+function safeIdent(text) {
+  return String(text ?? '').replace(/[^a-zA-Z0-9-]/g, (ch) => `_${ch.charCodeAt(0).toString(16)}`);
+}
+
+// The custom property carrying one patterned declaration for a given
+// selector+property pair — shared by every performer who writes that exact
+// same pair, not scoped to any one statement's own token. That is
+// deliberate: two performers' compiled rules for the identical selector text
+// now reference the IDENTICAL variable, so whichever peer's <style> element
+// happens to sort later in the document (css-cycles.js's reorderSheets,
+// fixed by jitsiId, unrelated to whose turn it is) can no longer
+// structurally out-cascade the other regardless of ownership — the room's
+// mutual exclusion (applyHap / resetAllCssToBaseline, gated by
+// isPeerNetCyclesTurn / ownsCssTurn) is what decides the rendered value, not
+// source order. Keying by selector rather than by token is what makes the
+// sidecar-compiled sheet and the hot-path trigger — running independently,
+// in every browser, for every peer who ever writes this same pair — agree on
+// the name without coordinating.
+export function cssVarName(selector, prop) {
+  return `--cc-${safeIdent(selector)}-${prop}`;
 }
 
 // Find the backticked argument of a css( call starting at `open` (the index of
@@ -1008,9 +1044,10 @@ function filterToAllowlist(src) {
 // backticked SCSS itself keep the normal cascade — the fix for those staying
 // unreachable is still to drop `!important` from the app's own rule.
 function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
+  const selector = selectorOf(sheet);
   const decls = sheet.props
     .filter((p) => !allowlistOnly || isOutsideTrussalAllowed(p.prop))
-    .map((p) => `  ${p.prop}: var(${cssVarName(sheet.token, p.prop)}) !important;`)
+    .map((p) => `  ${p.prop}: var(${cssVarName(selector, p.prop)}) !important;`)
     .join('\n');
   if (!decls) return scss;
 

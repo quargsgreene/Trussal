@@ -20,6 +20,7 @@ import {
   parseColor,
   parseScssDeclarations,
   rewriteCssCalls,
+  selectorOf,
 } from '../src/css-cycles-core.js';
 
 // --- declaring the capability -----------------------------------------------
@@ -162,10 +163,39 @@ test('tokens are unique across peers sharing one rebuild', () => {
   assert.notDeepEqual(Object.keys(a.atoms), Object.keys(b.atoms));
 });
 
-test('the custom property name is derived from the statement token', () => {
+test('the custom property name is derived from the selector, not the statement token', () => {
   // Both the sheet the sidecar compiled and the trigger running in every
-  // browser have to arrive at this name without coordinating.
+  // browser have to arrive at this name without coordinating. A selector
+  // made only of already-safe characters passes through unescaped.
+  assert.equal(cssVarName('.ts-chip', 'border-radius'), '--cc-_2ets-chip-border-radius');
   assert.equal(cssVarName('cc0', 'border-radius'), '--cc-cc0-border-radius');
+});
+
+test('selectorOf reads everything before a sheet\'s first brace', () => {
+  assert.equal(selectorOf({ scss: '.ts-chip { color: red }' }), '.ts-chip');
+  assert.equal(selectorOf({ scss: '  body  ' }), 'body');
+  assert.equal(selectorOf({}), '');
+});
+
+test('two peers writing the identical selector land on the identical variable', () => {
+  // The whole point: mutual exclusion has to control the value the room
+  // renders, not just which peer's own custom property holds what — if two
+  // performers' compiled rules referenced different variables, whichever
+  // <style> element happened to sort later in the document would always win
+  // the cascade regardless of turn. Same selector -> same variable closes
+  // that gap, since both peers' rules end up identical for the property.
+  assert.equal(cssVarName('.ts-chip', 'color'), cssVarName('.ts-chip', 'color'));
+});
+
+test('selector characters a custom property name cannot hold are escaped losslessly', () => {
+  // Distinct selectors must never collapse onto the same variable name —
+  // hijacking another peer's slot would otherwise be one crafted selector
+  // away. Escaping every non-alnum/hyphen character (underscore included)
+  // keeps every `_XX` sequence unambiguous.
+  const a = cssVarName('#trussal-studio-overlay .ts-chip', 'color');
+  const b = cssVarName('#trussal-studio-overlay.ts-chip', 'color');
+  assert.notEqual(a, b);
+  assert.match(a, /^--cc-[a-z0-9_-]+-color$/);
 });
 
 // --- SCSS scanning -----------------------------------------------------------
@@ -352,10 +382,12 @@ test('a sheet is emitted scoped for Trussal and allowlisted for the page', () =>
   const scss = buildPeerScss(sheets, { peerClass: 'tc-p-abc' });
 
   // Scoped copy carries everything, with the id that gives it the specificity.
-  assert.match(scss, /#trussal-studio-overlay[\s\S]*\.example \{[\s\S]*width: var\(--cc-cc0-width\)/);
+  // The variable name is derived from the selector (.example), not the
+  // statement's own token — see cssVarName's own doc for why.
+  assert.match(scss, /#trussal-studio-overlay[\s\S]*\.example \{[\s\S]*width: var\(--cc-_2eexample-width\)/);
   // The bare copy carries colour but not width.
   const bare = scss.slice(scss.lastIndexOf('}') + 1);
-  assert.match(scss, /color: var\(--cc-cc0-color\)/);
+  assert.match(scss, /color: var\(--cc-_2eexample-color\)/);
   assert.doesNotMatch(bare, /width/);
 });
 
