@@ -54684,6 +54684,8 @@ ${full}
   var _running = false;
   var _rafId = null;
   var _lastSyncedVideoEl = void 0;
+  var _ownsS0 = false;
+  var _camPatched = /* @__PURE__ */ new WeakSet();
   window._hvBlendAmt = 0.5;
   window._hvR = 1;
   window._hvG = 1;
@@ -54713,8 +54715,10 @@ ${full}
     }
   }
   function _syncHydraSource() {
+    _ensureCameraBypass();
     if (typeof globalThis.s0 === "undefined") {
       _lastSyncedVideoEl = void 0;
+      _ownsS0 = false;
       return;
     }
     const target = _mode === MODE_DIRECT && _videoEl?.srcObject ? _videoEl : null;
@@ -54722,13 +54726,55 @@ ${full}
     try {
       if (target) {
         globalThis.s0.init({ src: target });
-      } else {
+        _ownsS0 = true;
+      } else if (_ownsS0) {
         globalThis.s0.clear?.();
+        _ownsS0 = false;
       }
       _lastSyncedVideoEl = target;
     } catch (e30) {
       console.warn("[hydra-video] s0 sync failed", e30);
       _lastSyncedVideoEl = void 0;
+    }
+  }
+  async function _camConstraintsForIndex(index2) {
+    const constraints = { audio: false, video: true };
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput");
+      if (cams[index2]) constraints.video = { deviceId: { exact: cams[index2].deviceId } };
+    } catch (e30) {
+      console.warn("[hydra-video] camera enumeration failed, using default camera", e30);
+    }
+    return constraints;
+  }
+  function _videoFromStream(stream) {
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    return new Promise((resolve3) => {
+      video.addEventListener("loadedmetadata", () => {
+        video.play().then(() => resolve3(video)).catch(() => resolve3(video));
+      });
+    });
+  }
+  function _ensureCameraBypass() {
+    for (let i = 0; i < 4; i++) {
+      const source2 = globalThis["s" + i];
+      if (!source2 || typeof source2.initCam !== "function" || _camPatched.has(source2)) continue;
+      source2.initCam = async (index2, params2) => {
+        try {
+          const constraints = await _camConstraintsForIndex(index2);
+          const stream = await openCamera(constraints);
+          const video = await _videoFromStream(stream);
+          source2.init({ src: video, dynamic: true }, params2);
+        } catch (e30) {
+          console.warn("[hydra-video] initCam failed", e30);
+        }
+      };
+      _camPatched.add(source2);
     }
   }
   function resetHydraSync() {

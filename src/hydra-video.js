@@ -6,6 +6,13 @@
 // Visual effects are applied to #hydra-canvas (always) and to the video element
 // (split mode only) via CSS filters + canvas noise overlays, driven by the local
 // peer's rtt/jitter when the corresponding effect toggle is on.
+//
+// Also patches Hydra's own External Sources API (s0-s3 .initCam()) so a
+// performer's own code can pull in a real camera. Hydra's initCam() calls
+// navigator.mediaDevices.getUserMedia directly, which published-video.js's
+// publish override intercepts and hands back the (black, self-referential)
+// published canvas instead — see _ensureCameraBypass. initImage/initVideo/
+// initScreen/init don't touch getUserMedia and need no such bypass.
 
 import { subscribePeerState } from './peer-state.js';
 // The REAL camera. A plain getUserMedia here would be intercepted by the
@@ -27,6 +34,16 @@ let _panelOpen = false;  // tracks whether the HV panel is visible
 // against this avoids calling s0.init() or s0.clear() every RAF frame, which
 // was causing the Hydra canvas to freeze when clicking "split".
 let _lastSyncedVideoEl = undefined; // undefined = "needs sync"; null = "synced to cleared state"
+
+// Whether s0's current content is something THIS module put there (the direct
+// mode camera-blend feed). Only true when we last called s0.init() ourselves —
+// gates s0.clear() so leaving direct mode never wipes out a performer's own
+// s0.initCam()/initImage()/initVideo()/init() from their own Hydra code.
+let _ownsS0 = false;
+
+// Sources (s0-s3) whose .initCam has already been patched to bypass the
+// publish-video getUserMedia override — see _ensureCameraBypass.
+const _camPatched = new WeakSet();
 
 // Globals read by Hydra's dynamic-parameter callbacks for the s0 blend.
 // Initialized here so the blend line in the evaluated program never sees undefined.
@@ -73,8 +90,10 @@ export function setVideoStream(stream) {
 // ---------------------------------------------------------------------------
 
 function _syncHydraSource() {
+  _ensureCameraBypass();
   if (typeof globalThis.s0 === 'undefined') {
     _lastSyncedVideoEl = undefined;
+    _ownsS0 = false;
     return;
   }
   // Only call s0.init/clear when the target actually changes — calling every
@@ -84,13 +103,74 @@ function _syncHydraSource() {
   try {
     if (target) {
       globalThis.s0.init({ src: target });
-    } else {
+      _ownsS0 = true;
+    } else if (_ownsS0) {
+      // Only release what THIS module put into s0 — never clear a source a
+      // performer populated themselves via s0.initCam()/initImage()/init().
       globalThis.s0.clear?.();
+      _ownsS0 = false;
     }
     _lastSyncedVideoEl = target;
   } catch (e) {
     console.warn('[hydra-video] s0 sync failed', e);
     _lastSyncedVideoEl = undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// External Sources: real-camera bypass for s0-s3 .initCam()
+// ---------------------------------------------------------------------------
+
+// Mirrors hydra-synth's own webcam.js device-selection behaviour (an index
+// picks the Nth enumerated video input; omitted/unmatched falls back to the
+// default camera) so the patched initCam behaves like the documented one.
+async function _camConstraintsForIndex(index) {
+  const constraints = { audio: false, video: true };
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter((d) => d.kind === 'videoinput');
+    if (cams[index]) constraints.video = { deviceId: { exact: cams[index].deviceId } };
+  } catch (e) {
+    console.warn('[hydra-video] camera enumeration failed, using default camera', e);
+  }
+  return constraints;
+}
+
+function _videoFromStream(stream) {
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  return new Promise((resolve) => {
+    video.addEventListener('loadedmetadata', () => {
+      video.play().then(() => resolve(video)).catch(() => resolve(video));
+    });
+  });
+}
+
+// Hydra's own s*.initCam() calls navigator.mediaDevices.getUserMedia
+// directly, which published-video.js intercepts for every video request so a
+// performer's raw camera never reaches the wire — s*.initCam() would get back
+// the published canvas (their own Hydra output, or black) instead of a real
+// camera. Route it through openCamera(), the same real-camera escape hatch
+// the split/direct panel uses, then hand the resulting video to Hydra's own
+// (untouched) init() so the rest of the External Sources contract is unchanged.
+function _ensureCameraBypass() {
+  for (let i = 0; i < 4; i++) {
+    const source = globalThis['s' + i];
+    if (!source || typeof source.initCam !== 'function' || _camPatched.has(source)) continue;
+    source.initCam = async (index, params) => {
+      try {
+        const constraints = await _camConstraintsForIndex(index);
+        const stream = await openCamera(constraints);
+        const video = await _videoFromStream(stream);
+        source.init({ src: video, dynamic: true }, params);
+      } catch (e) {
+        console.warn('[hydra-video] initCam failed', e);
+      }
+    };
+    _camPatched.add(source);
   }
 }
 
