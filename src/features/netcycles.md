@@ -647,5 +647,26 @@ $ participants <0 9 1 4 2>*2
 # grid true
 ```
 
+### disjointCss
+- Description
+CSS Cycles' own mutual exclusion, unbound from the Net Cycles ring. Every browser paints its own CSS Cycles output locally (see "What each effect does to each medium" above), and normally only the peer currently holding the ring's slot has their declared properties live — everyone else's are pinned at the room's own captured default (see [csscycles.md](csscycles.md)'s "Mutual exclusion" section). That pin-to-default gate reads `isPeerNetCyclesTurn`, which **fails open** (every peer visible at once, ordinary CSS cascade decides who wins a shared selector) whenever no ring is actively scheduling turns — correct for Strudel/Hydra/Text Cycles, whose own gates share that fallback, but not what a room wants from CSS specifically when nobody has typed a `$ participants` schedule yet. `# disjointCss` closes that gap: on, the gate never fails open, so exactly one participant's CSS is ever visible — as if every OTHER participant's `css()` program had been applied to its own private copy of the room's original, untouched styling rather than to the shared page. With no live ring signal to defer to, ownership falls back to the room's own default schedule (`$ participants <0>` — participant roomIndex `'0'`) rather than a separate rotation with no clock of its own.
+
+Unlike every other directive in this document, **on is the default** — the one line a room needs is `# disjointCss false`, to opt back into the plain shared cascade (every participant's CSS simultaneously live, collisions resolved by cascade order). Aggregator- and bot-side code needs no counterpart: CSS Cycles has no aggregator application point at all (browser-only, per the media table above), so this directive is read only by each browser's own `css-cycles.js`.
+- Syntax
+`# disjointCss [bool]`
+- Parameters
+A boolean, or bare for `true`. Unwritten also means `true` — see above.
+- Return value
+None — a room-wide config flag, not a modulated effect.
+- Examples:
+```
+$ participants <0>
+# disjointCss
+```
+```
+$ participants <0 1>
+# disjointCss false   // restore the shared cascade
+```
+
 ## Artificial Network Modulation
 In addition to upward adjustments from o2lite-estimated wcl, wcj, wcpl, and wcrtt, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the NetCycles metaprogramming editor, is governed by CRDT.

@@ -231,6 +231,34 @@ The renderer is attached **per statement**, never per block, since landing a
 dominant trigger on an audio voice would silence it. A program can mix audio,
 text and css voices freely.
 
+## Mutual exclusion
+
+Two performers' `css()` statements can both target the same selector — nothing
+stops two people from both writing `css('.ts-chip')`. Left alone, the room's
+ordinary cascade would decide the winner (sheets install in a fixed order, both
+copies carry `!important` — see Trust below), which is not "the last performer
+to touch it wins" so much as "whichever peer's jitsiId sorts last always wins,
+forever, regardless of who actually played most recently."
+
+Instead, only ONE peer's declared values for a given statement are ever
+live at a time — everyone else's custom properties are pinned to the room's own
+captured default (the value `getComputedStyle` reported for that selector+
+property the FIRST time any performer's CSS Cycles hap ever touched it, cached
+forever). A benched peer's styling behaves exactly as if their program had
+never run: their contribution reverts to the untouched page, not to some other
+peer's current value.
+
+Ownership is decided by the same rule Strudel/Hydra/Text Cycles already use:
+whoever the Net Cycles ring's current slot belongs to. That rule **fails
+open** — every peer visible at once, ordinary cascade resolves collisions —
+whenever no ring is actively scheduling turns (no aggregator has reported in
+yet, or the room has no `$ participants` schedule). `# disjointCss` (see
+[netcycles.md](netcycles.md), default **on**) closes that gap for CSS
+specifically: with it in force, exclusivity holds even with no ring running,
+falling back to the room's own default schedule (`$ participants <0>`) rather
+than opening every peer's styling to the shared cascade. `# disjointCss false`
+restores the plain shared-cascade behaviour this section opens with.
+
 ## Play state
 
 Styling flows only while the performer is playing, and — unlike text, which

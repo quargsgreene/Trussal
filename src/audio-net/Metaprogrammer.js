@@ -41,7 +41,8 @@
 
 import {
   parseMetaprogram,
-  buildDefaultProgram
+  buildDefaultProgram,
+  disjointCssEnabled
 } from './MetaprogrammerParser.js';
 import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
@@ -323,6 +324,13 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 }
 
 export function getProgramText() { return programText; }
+
+// Whether the currently APPLIED program (not whatever is mid-edit in the
+// textarea — see pushProgramToScheduler, the only writer of currentAst) has
+// CSS Cycles' mutual exclusion in force. css-cycles.js is the only consumer;
+// there is no aggregator or bot counterpart to keep in sync (see
+// disjointCssEnabled's own doc in MetaprogrammerParser.js).
+export function isDisjointCssEnabled() { return disjointCssEnabled(currentAst); }
 
 // Studio effect toggles double as metaprogram shortcuts under Net Cycles:
 // toggling adds/removes the corresponding # line and applies it, so the

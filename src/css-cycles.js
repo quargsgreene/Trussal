@@ -39,7 +39,11 @@
 // visibility stay Trussal-surface-only. Both copies pass every guardrail; see
 // css-cycles-core.js for the rules themselves.
 
-import { subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId, sendLocalScss, sendPeerScss, isPeerNetCyclesTurn } from './peer-state.js';
+import {
+  subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId,
+  sendLocalScss, sendPeerScss, isPeerNetCyclesTurn, getActiveNetCyclesToken,
+} from './peer-state.js';
+import { isDisjointCssEnabled } from './audio-net/Metaprogrammer.js';
 import {
   CSS_PROPERTY_LIST,
   adjustColorForBackground,
@@ -270,19 +274,39 @@ function captureBaseline(selector, prop) {
 
 // --- Trigger -----------------------------------------------------------------
 
+// isPeerNetCyclesTurn fails OPEN — every peer's CSS is simultaneously live —
+// whenever no Net Cycles ring is actively scheduling turns (no aggregator has
+// reported yet, or none is running at all) OR the peer in question has no
+// roomIndex yet. That is correct for Strudel/Hydra and for Text Cycles, which
+// stay on that rule, but `# disjointCss` (default true — see
+// DISJOINT_CSS_ENABLED_BY_DEFAULT) asks CSS Cycles specifically to never fail
+// open, on either count: exactly one *verified* peer's declared values should
+// ever be visible, ring or no ring, known peer or not. With no live ring
+// signal to defer to, this falls back to the room's own default schedule
+// (`$ participants <0>`, see buildDefaultProgram) — roomIndex '0' — rather
+// than inventing a separate rotation with no clock of its own to run on.
+function ownsCssTurn(jitsiId) {
+  if (!isDisjointCssEnabled()) return isPeerNetCyclesTurn(jitsiId);
+  const token = getActiveNetCyclesToken() ?? '0';
+  const peer = getPeerByJitsiId(jitsiId);
+  return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
+}
+
 function applyHap(value) {
   const token = String(value.css);
   const sheet = sheetsByToken.get(token);
   if (!sheet || refused.has(token)) return;
 
   // Mutual exclusion: only the peer currently holding the scheduler's slot
-  // gets their pattern's values on screen. Everyone else's custom properties
-  // are pinned at the room's captured default instead of drifting stale from
-  // whatever they last painted before their turn closed. Bots take their turn
-  // on the ring exactly like a human performer — see text-cycles.js's paint()
-  // for the sibling fix and why the old operator-puppeted exemption no longer
-  // holds once a bot has a voice of its own to schedule.
-  const gateOpen = isPeerNetCyclesTurn(sheet.peer);
+  // (or, under `# disjointCss`, the room's fallback owner — see ownsCssTurn
+  // above) gets their pattern's values on screen. Everyone else's custom
+  // properties are pinned at the room's captured default instead of drifting
+  // stale from whatever they last painted before their turn closed. Bots take
+  // their turn on the ring exactly like a human performer — see
+  // text-cycles.js's paint() for the sibling fix and why the old
+  // operator-puppeted exemption no longer holds once a bot has a voice of its
+  // own to schedule.
+  const gateOpen = ownsCssTurn(sheet.peer);
   const selector = selectorOf(sheet);
 
   for (const [key, raw] of Object.entries(value)) {

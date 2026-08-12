@@ -5,7 +5,8 @@ import {
   parseMetaprogram,
   resolveEffectParams,
   buildDefaultProgram,
-  mosaicEnabled
+  mosaicEnabled,
+  disjointCssEnabled
 } from '../src/audio-net/MetaprogrammerParser.js';
 
 function ok(text) {
@@ -174,6 +175,48 @@ test('mosaic: takes a boolean, not a bare word or a pattern', () => {
 test('mosaic: an unparseable program falls back to the default rather than dark', () => {
   assert.equal(mosaicEnabled(null), true);
   assert.equal(mosaicEnabled({}), true);
+});
+
+// --- # disjointCss -----------------------------------------------------------
+//
+// Same shape as # mosaic, but the default is inverted: unwritten and bare both
+// mean disjoint (true), so an explicit `false` is the one way to opt back into
+// the pre-existing shared-cascade behaviour.
+
+test('disjointCss: on unless the program says otherwise', () => {
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n')), true);
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n# disjointCss\n')), true);
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n# disjointCss true\n')), true);
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n# disjointCss false\n')), false);
+});
+
+test('disjointCss: the default program leaves the directive unwritten', () => {
+  const text = buildDefaultProgram();
+  assert.ok(!text.includes('disjointCss'), 'default program should not inject a directive nobody typed');
+  assert.equal(disjointCssEnabled(ok(text)), true);
+});
+
+test('disjointCss: a re-typed directive wins over the earlier one', () => {
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n# disjointCss true\n# disjointCss false\n')), false);
+  assert.equal(disjointCssEnabled(ok('$ participants <0>\n# disjointCss false\n# disjointCss true\n')), true);
+});
+
+test('disjointCss: it is its own directive, leaving # mosaic alone', () => {
+  const ast = ok('$ participants <0>\n# mosaic false\n# disjointCss false\n');
+  assert.deepEqual(ast.chain.map(c => c.fn), ['mosaic', 'disjointCss']);
+  assert.deepEqual(resolveEffectParams(ast.chain[0]), { enabled: false });
+  assert.deepEqual(resolveEffectParams(ast.chain[1]), { enabled: false });
+});
+
+test('disjointCss: takes a boolean, not a bare word or a pattern', () => {
+  bad('$ participants <0>\n# disjointCss maybe\n', /unexpected argument 'maybe'/);
+  bad('$ participants <0>\n# disjointCss <1 2>\n', /unexpected argument '<'/);
+  bad('$ participants <0>\n# disjointCss true false\n', /takes 0–1 argument/);
+});
+
+test('disjointCss: an unparseable program falls back to the default rather than the shared cascade', () => {
+  assert.equal(disjointCssEnabled(null), true);
+  assert.equal(disjointCssEnabled({}), true);
 });
 
 // --- Index grammar in sequences ---------------------------------------------

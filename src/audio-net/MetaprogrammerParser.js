@@ -58,6 +58,12 @@ export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 // AST should report the directives performers actually typed.
 export const MOSAIC_ENABLED_BY_DEFAULT = true;
 
+// A room with no `# disjointCss` directive still runs disjoint: unlike every
+// other directive here, CSS Cycles' own mutual-exclusion gate (css-cycles.js)
+// defaults to ON rather than off, so `# disjointCss false` is the deviation —
+// the one line that opts BACK into the pre-existing shared-cascade behaviour.
+export const DISJOINT_CSS_ENABLED_BY_DEFAULT = true;
+
 // Whether a parsed pattern holds metric keywords or numbers, taken from its
 // first leaf. `# noise`'s slots are positional, so which of the two a `<…>`
 // carries is only known once it has been read.
@@ -125,7 +131,12 @@ const EFFECTS = {
   // false shows only whoever is streaming, full-frame. Unwritten means the
   // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
   // rather than in an injected directive nobody typed.
-  mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
+  mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true },
+  // Whether CSS Cycles' mutual exclusion (css-cycles.js) is in force room-wide
+  // rather than only while a Net Cycles ring is actively scheduling turns.
+  // True (or bare) is the default — see DISJOINT_CSS_ENABLED_BY_DEFAULT —
+  // false restores the pre-existing shared-cascade behaviour.
+  disjointCss: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
 };
 
 const PATTERN_FNS = {
@@ -159,7 +170,8 @@ export const EFFECT_DEFAULTS = {
     volume: { metric: 'wcl', factor: 0, fixed: null }
   },
   grid: { landmarks: false },
-  mosaic: { enabled: MOSAIC_ENABLED_BY_DEFAULT }
+  mosaic: { enabled: MOSAIC_ENABLED_BY_DEFAULT },
+  disjointCss: { enabled: DISJOINT_CSS_ENABLED_BY_DEFAULT }
 };
 
 // ---------------------------------------------------------------------------
@@ -1574,6 +1586,10 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     // `# mosaic [bool]` — a bare `# mosaic` is the mosaic, same as omitting it
     // entirely; only an explicit `false` drops to the single streaming cell.
     case 'mosaic': return { enabled: args[0] ?? true };
+    // `# disjointCss [bool]` — a bare `# disjointCss` is disjoint, same as
+    // omitting it entirely; only an explicit `false` restores the shared
+    // cascade.
+    case 'disjointCss': return { enabled: args[0] ?? true };
     default: return { args };
   }
 }
@@ -1587,6 +1603,21 @@ export function mosaicEnabled(ast) {
     if (chain[i].fn === 'mosaic') return !!resolveEffectParams(chain[i]).enabled;
   }
   return MOSAIC_ENABLED_BY_DEFAULT;
+}
+
+// Whether CSS Cycles' mutual exclusion is in force room-wide, for a parsed
+// program — same last-write-wins/fallback shape as mosaicEnabled above.
+// Consumed browser-side only (Metaprogrammer.js#isDisjointCssEnabled); no
+// aggregator or bot code needs it, since CSS Cycles has no aggregator
+// application point (see netcycles.md's "What each effect does to each
+// medium" — css and text are painted per-browser, not on the master bus or
+// composited frame).
+export function disjointCssEnabled(ast) {
+  const chain = (ast && ast.chain) || [];
+  for (let i = chain.length - 1; i >= 0; i--) {
+    if (chain[i].fn === 'disjointCss') return !!resolveEffectParams(chain[i]).enabled;
+  }
+  return DISJOINT_CSS_ENABLED_BY_DEFAULT;
 }
 
 // The default program every room starts under (Net Cycles is always on):
