@@ -166,8 +166,7 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │       └── o2lite-web.js           # The browser-compatible O2lite client
 ├── components/
 │   ├──MetaprogrammerEditor.jsx
-│   ├──MetaprogrammerCycleHighlighter.jsx # Highlights which user's buffer is currently playing
-│   └──BotClusterVideo.jsx         # Make the video cluster of bots attached to each user smaller and surround user
+│   └──MetaprogrammerCycleHighlighter.jsx # Highlights which user's buffer is currently playing
 └── server/
     └── O2Relay.js                  # WebSocket relay for O2lite clients
 ```
@@ -217,10 +216,10 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
  | ├── Room.js                           |<------[AV]-- UserBotOrchestr..| |
  | ├── Crush.js                          | | src/mcp-agent/              | |
  | ├── Noise.js                          | | ├── server.js               | |
- | ├── Grid .js                          | | └── tools/* | |
- | └── Echo.js                           | | components/                 | |
- +---------------------------------------+ | └── BotClusterVideo.jsx     | |
-       |                 ^                 +-----------------------------+ |
+ | ├── Grid .js                          | | └── tools/*                 | |
+ | └── Echo.js                           | |                             | |
+ +---------------------------------------+ +-----------------------------+ |
+       |                 ^                                               |
        |                 |                               ^                 |
        | [processed AV]  | [AV]                          | [AV]            |
        v                 |                               |                 |

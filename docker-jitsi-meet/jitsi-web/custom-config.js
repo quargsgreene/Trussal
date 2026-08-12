@@ -50931,12 +50931,12 @@ ${SHORTCUT_LINES[fn]}
     const delayMs = Math.max(0, (atNetworkT - nowNet) * 1e3);
     const audioT = clock && clock.isSynced() ? clock.toAudioTime(atNetworkT) : null;
     setChainGate(jitsiId, level, audioT);
-    const timer3 = setTimeout(() => {
-      slotTimers.delete(timer3);
+    const timer2 = setTimeout(() => {
+      slotTimers.delete(timer2);
       if (!active) return;
       gateLevels.set(jitsiId, level);
     }, delayMs);
-    slotTimers.add(timer3);
+    slotTimers.add(timer2);
   }
   function onSchedulerEvent(ev) {
     emitSlot(ev);
@@ -51301,11 +51301,11 @@ ${SHORTCUT_LINES[fn]}
   function startWelcomeOverlayPoll() {
     let tries = 0;
     const maxTries = 40;
-    const timer3 = setInterval(function() {
+    const timer2 = setInterval(function() {
       renderTrussalWelcomeOverlay();
       tries += 1;
       if (document.getElementById("trussal-welcome-overlay") || tries >= maxTries) {
-        clearInterval(timer3);
+        clearInterval(timer2);
         console.log("[Trussal] stop polling for welcome overlay, tries =", tries);
       }
     }, 250);
@@ -54684,6 +54684,8 @@ ${full}
   var _running = false;
   var _rafId = null;
   var _lastSyncedVideoEl = void 0;
+  var _ownsS0 = false;
+  var _camPatched = /* @__PURE__ */ new WeakSet();
   window._hvBlendAmt = 0.5;
   window._hvR = 1;
   window._hvG = 1;
@@ -54713,8 +54715,10 @@ ${full}
     }
   }
   function _syncHydraSource() {
+    _ensureCameraBypass();
     if (typeof globalThis.s0 === "undefined") {
       _lastSyncedVideoEl = void 0;
+      _ownsS0 = false;
       return;
     }
     const target = _mode === MODE_DIRECT && _videoEl?.srcObject ? _videoEl : null;
@@ -54722,13 +54726,55 @@ ${full}
     try {
       if (target) {
         globalThis.s0.init({ src: target });
-      } else {
+        _ownsS0 = true;
+      } else if (_ownsS0) {
         globalThis.s0.clear?.();
+        _ownsS0 = false;
       }
       _lastSyncedVideoEl = target;
     } catch (e30) {
       console.warn("[hydra-video] s0 sync failed", e30);
       _lastSyncedVideoEl = void 0;
+    }
+  }
+  async function _camConstraintsForIndex(index2) {
+    const constraints = { audio: false, video: true };
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput");
+      if (cams[index2]) constraints.video = { deviceId: { exact: cams[index2].deviceId } };
+    } catch (e30) {
+      console.warn("[hydra-video] camera enumeration failed, using default camera", e30);
+    }
+    return constraints;
+  }
+  function _videoFromStream(stream) {
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    return new Promise((resolve3) => {
+      video.addEventListener("loadedmetadata", () => {
+        video.play().then(() => resolve3(video)).catch(() => resolve3(video));
+      });
+    });
+  }
+  function _ensureCameraBypass() {
+    for (let i = 0; i < 4; i++) {
+      const source2 = globalThis["s" + i];
+      if (!source2 || typeof source2.initCam !== "function" || _camPatched.has(source2)) continue;
+      source2.initCam = async (index2, params2) => {
+        try {
+          const constraints = await _camConstraintsForIndex(index2);
+          const stream = await openCamera(constraints);
+          const video = await _videoFromStream(stream);
+          source2.init({ src: video, dynamic: true }, params2);
+        } catch (e30) {
+          console.warn("[hydra-video] initCam failed", e30);
+        }
+      };
+      _camPatched.add(source2);
     }
   }
   function resetHydraSync() {
@@ -57209,6 +57255,7 @@ ${s2}${BTN_MARKER}`)
   // components/MetaprogrammerEditor.js
   init_Metaprogrammer();
   init_MetaprogrammerParser();
+  init_latency_instrument();
   init_peer_state();
   var APPLIED_FADE_MS = 5e3;
   function mountMetaprogrammerEditor(container2) {
@@ -57219,9 +57266,9 @@ ${s2}${BTN_MARKER}`)
     <div class="ts-section-head">
       <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
-        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button">\u25B6 Apply</button>
+        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">\u25B6 Apply &amp; Start</button>
         <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
-        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply \xB7 Ctrl+. to stop</span>
+        <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply &amp; start \xB7 Ctrl+. to stop</span>
       </div>
     </div>
     <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
@@ -57242,7 +57289,7 @@ ${s2}${BTN_MARKER}`)
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
     } else {
-      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
+      wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply & start \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
     }
     ta.value = sync.getText() || getProgramText() || "";
     attachUndoHistory(ta);
@@ -57323,12 +57370,24 @@ ${s2}${BTN_MARKER}`)
       refreshFromDoc();
       renderButtons();
     });
-    const apply2 = () => {
+    const apply2 = async () => {
       if (readOnly) return;
       const errors = applyProgramText(ta.value);
       showErrors(ta.value);
-      if (errors.length) setByline("invalid \u2014 fix it above, then apply", false);
-      else setByline("applied \u2014 takes effect at the next cycle boundary", true);
+      if (errors.length) {
+        setByline("invalid \u2014 fix it above, then apply", false);
+        renderButtons();
+        return;
+      }
+      try {
+        await bootAudioEngine();
+        await bootStrudelOnUserGesture();
+        sendLocalPlaying(true);
+        setByline("applied \u2014 takes effect at the next cycle boundary", true);
+      } catch (e30) {
+        console.error("[netcycles] apply: starting playback failed", e30);
+        setByline("applied, but starting playback failed \u2014 see console", false);
+      }
       renderButtons();
     };
     const stop2 = async () => {
@@ -57624,68 +57683,6 @@ ${s2}${BTN_MARKER}`)
     return () => statusSubscribers.delete(fn);
   }
 
-  // components/BotClusterVideo.js
-  init_peer_state();
-  var STYLE_ID3 = "trussal-bot-cluster-style";
-  var timer = null;
-  function ownerHue(ownerIndex) {
-    let h2 = 0;
-    const s2 = `owner-${ownerIndex}`;
-    for (let i = 0; i < s2.length; i++) h2 = h2 * 31 + s2.charCodeAt(i) >>> 0;
-    return h2 % 360;
-  }
-  function injectStyles() {
-    if (document.getElementById(STYLE_ID3)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID3;
-    style.textContent = `
-    .trussal-cluster-tile {
-      transform: scale(0.62);
-      transform-origin: top left;
-      border-radius: 8px;
-      outline: 2px solid hsl(var(--trussal-owner-hue, 140), 70%, 55%);
-      outline-offset: -2px;
-    }
-    .trussal-cluster-tile::after {
-      content: attr(data-cluster-index);
-      position: absolute; top: 2px; right: 4px;
-      font: 700 10px monospace;
-      color: hsl(var(--trussal-owner-hue, 140), 70%, 65%);
-      z-index: 5;
-    }
-  `;
-    document.head.appendChild(style);
-  }
-  function findTile(jitsiId) {
-    return document.getElementById(`participant_${jitsiId}`) || document.querySelector(`[data-participant-id="${jitsiId}"]`) || null;
-  }
-  function restyle() {
-    const peers = getAllPeers();
-    for (const peer of peers) {
-      if (!peer.isBot || !peer.jitsiId || typeof peer.roomIndex !== "string") continue;
-      const m2 = peer.roomIndex.match(/^(\d+)([a-z]+)$/);
-      if (!m2) continue;
-      const tile = findTile(peer.jitsiId);
-      if (!tile) continue;
-      tile.classList.add("trussal-cluster-tile");
-      tile.style.setProperty("--trussal-owner-hue", String(ownerHue(m2[1])));
-      tile.dataset.clusterIndex = peer.roomIndex;
-      const owner = peers.find((p) => String(p.roomIndex) === m2[1]);
-      const ownerTile = owner && owner.jitsiId ? findTile(owner.jitsiId) : null;
-      if (ownerTile && ownerTile.parentElement && ownerTile.parentElement === tile.parentElement && ownerTile.nextSibling !== tile) {
-        try {
-          ownerTile.parentElement.insertBefore(tile, ownerTile.nextSibling);
-        } catch (e30) {
-        }
-      }
-    }
-  }
-  function startBotClusterVideo() {
-    if (timer) return;
-    injectStyles();
-    timer = setInterval(restyle, 1500);
-  }
-
   // src/audio-net/RoomHealth.js
   function avDecouplingSeconds(cycleSeconds, metrics = {}) {
     const base = Math.max(0, cycleSeconds || 0);
@@ -57742,7 +57739,7 @@ ${s2}${BTN_MARKER}`)
   init_Metaprogrammer();
   init_peer_state();
   var SAMPLE_MS = 5e3;
-  var timer2 = null;
+  var timer = null;
   var compressor2 = null;
   var frameCount = 0;
   var fpsWindowStart = 0;
@@ -57812,11 +57809,11 @@ ${s2}${BTN_MARKER}`)
     if (seconds2 > 0) lastCycleSeconds = seconds2;
   }
   function startRoomHealth() {
-    if (timer2) return;
+    if (timer) return;
     rafRunning = true;
     fpsWindowStart = performance.now();
     requestAnimationFrame(sampleFrame);
-    timer2 = setInterval(tick2, SAMPLE_MS);
+    timer = setInterval(tick2, SAMPLE_MS);
     subscribeSlotEvents((ev) => {
       if (ev.type !== "cycle-start") return;
       noteCycleSeconds(ev.seconds);
@@ -57829,7 +57826,7 @@ ${s2}${BTN_MARKER}`)
   // src/studio.js
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
-  var STYLE_ID4 = "trussal-studio-style";
+  var STYLE_ID3 = "trussal-studio-style";
   var STORAGE_KEY = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var selectedPeerKey = null;
@@ -57902,10 +57899,10 @@ ${s2}${BTN_MARKER}`)
     }
     for (const node of existing.values()) node.remove();
   }
-  function injectStyles2() {
-    if (document.getElementById(STYLE_ID4)) return;
+  function injectStyles() {
+    if (document.getElementById(STYLE_ID3)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID4;
+    style.id = STYLE_ID3;
     style.textContent = studio_default;
     document.head.appendChild(style);
   }
@@ -58549,7 +58546,7 @@ ${s2}${BTN_MARKER}`)
     let overlay = document.getElementById(OVERLAY_ID);
     if (overlay) return overlay;
     if (!document.body) return null;
-    injectStyles2();
+    injectStyles();
     overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
     overlay.style.display = "none";
@@ -58607,7 +58604,7 @@ ${s2}${BTN_MARKER}`)
     let btn = document.getElementById(BUTTON_ID);
     if (btn) return btn;
     if (!document.body) return null;
-    injectStyles2();
+    injectStyles();
     btn = document.createElement("button");
     btn.id = BUTTON_ID;
     btn.type = "button";
@@ -58646,7 +58643,6 @@ ${s2}${BTN_MARKER}`)
     if (btn) btn.style.display = "block";
     startNetStatsPolling(sendLocalNetStats);
     startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext);
-    startBotClusterVideo();
     startRoomHealth();
     bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }

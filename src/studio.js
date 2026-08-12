@@ -66,7 +66,6 @@ import {
   setBotsVideo,
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
-import { startBotClusterVideo } from '../components/BotClusterVideo.js';
 import { startRoomHealth } from './audio-net/RoomHealthService.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
@@ -1253,7 +1252,6 @@ function tickUi() {
   // publishes it, so the room's worst-case bound is built from real hardware
   // rather than one constant standing in for every machine.
   startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext);
-  startBotClusterVideo();
   startRoomHealth();
   bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
 }
