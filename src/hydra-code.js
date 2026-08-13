@@ -79,8 +79,28 @@ export function splitHydraCode(code) {
   let cut = blanks[0];
   for (let i = 1; i < blanks.length; i++) {
     const paragraph = normalized.slice(cut.index + cut[0].length, blanks[i].index);
-    if (!HYDRA_RENDER_RE.test(paragraph)) break;
+    if (!HYDRA_RENDER_RE.test(paragraph)) {
+      return {
+        preamble: normalized.slice(0, cut.index).trim(),
+        strudel: normalized.slice(cut.index).trim()
+      };
+    }
     cut = blanks[i];
+  }
+  // Every blank walked past closed off a paragraph that rendered — the loop
+  // above only ever tests a paragraph BOUNDED by a following blank, so the
+  // trailing paragraph (after the last blank, nothing to bound it) still
+  // needs the same check. Left unchecked, a single blank line right after
+  // `await initHydra()` followed by more Hydra (e.g. `s0.initCam()` then
+  // `src(s0).out()`, with nothing else) was silently handed to Strudel,
+  // which fails a `usesExternalSource` peer both the aggregator's mosaic
+  // (never blits their cell) and, for a bot, the join-time channelLastN
+  // override in bots/src/bot/index.js needs (bot never receives ANY inbound
+  // video at all, no matter how many times a runtime setReceiverConstraints
+  // asks for it — see that file's own comment on why it must be set at join).
+  const trailing = normalized.slice(cut.index + cut[0].length);
+  if (HYDRA_RENDER_RE.test(trailing)) {
+    return { preamble: normalized.trim(), strudel: '' };
   }
   return {
     preamble: normalized.slice(0, cut.index).trim(),

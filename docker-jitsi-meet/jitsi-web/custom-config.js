@@ -55364,8 +55364,17 @@ ${full}
     let cut2 = blanks[0];
     for (let i = 1; i < blanks.length; i++) {
       const paragraph = normalized.slice(cut2.index + cut2[0].length, blanks[i].index);
-      if (!HYDRA_RENDER_RE.test(paragraph)) break;
+      if (!HYDRA_RENDER_RE.test(paragraph)) {
+        return {
+          preamble: normalized.slice(0, cut2.index).trim(),
+          strudel: normalized.slice(cut2.index).trim()
+        };
+      }
       cut2 = blanks[i];
+    }
+    const trailing = normalized.slice(cut2.index + cut2[0].length);
+    if (HYDRA_RENDER_RE.test(trailing)) {
+      return { preamble: normalized.trim(), strudel: "" };
     }
     return {
       preamble: normalized.slice(0, cut2.index).trim(),
