@@ -1024,7 +1024,7 @@ export function pageInstallVideoPublisher() {
       //    publish is still in flight, which is the same double-track race
       //    described above.
       if (typeof conf.muteVideo === 'function') {
-        try { await conf.muteVideo(true); } catch (e) {console.error("Failed to start video")}
+        try { await conf.muteVideo(false); } catch (e) {console.error("Failed to start video")}
         for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
       }
 
