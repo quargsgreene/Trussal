@@ -37,6 +37,14 @@ window.__trussalAnnounceLocalPattern = (code) => {
 // the jitsiId ↔ roomIndex bijection current, so expose the lookup to the page.
 window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
 
+// The inverse: a player bot copying its owner's Hydra code needs the
+// OWNER's jitsiId to blit their published video into an External Source
+// (s0-s3) it has no camera of its own to satisfy — pageMarkBot already
+// stamps window.__trussalBotOwnerIndex with the owner's room-index token
+// before this bundle loads, so the bot's own gUM override (page-scripts.js's
+// pageGumOverride) can resolve it to a live participant via this lookup.
+window.__trussalJitsiIdForRoomIndex = (roomIndex) => roomMapper.jitsiIdForIndex(roomIndex);
+
 // The aggregator bot's capture tap also needs to know whether a peer is
 // ACTUALLY playing (vs merely present in the Jitsi conference) so a peer who
 // has joined but not yet pressed play — or who has paused — never claims a

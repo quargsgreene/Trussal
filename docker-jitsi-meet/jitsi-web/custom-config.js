@@ -58875,6 +58875,7 @@ ${s2}${BTN_MARKER}`)
     sendLocalPlaying(true);
   };
   window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
+  window.__trussalJitsiIdForRoomIndex = (roomIndex) => roomMapper.jitsiIdForIndex(roomIndex);
   window.__trussalPeerIsPlaying = (jitsiId) => {
     const peer = getPeerByJitsiId(jitsiId);
     return !!(peer && peer.playing);

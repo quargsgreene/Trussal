@@ -621,6 +621,69 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
     }
   };
 
+  // A copied preamble's own s0-s3 External Source call (initCam/initScreen)
+  // has no camera or screen of its own to satisfy. The aggregator's mosaic
+  // answers the exact same situation by blitting the ORIGINATING peer's own
+  // published video track instead of trying to reproduce it locally
+  // (src/hydra-code.js's usesExternalSource — the same rule bots/src/bot/
+  // index.js used to decide THIS bot needs inbound video at all, since a
+  // regular bot otherwise joins with channelLastN=0). Do the same here:
+  // window.__trussalBotOwnerIndex (pageMarkBot) names the spawning human's
+  // Net Cycles room-index token; window.__trussalJitsiIdForRoomIndex is the
+  // Trussal bundle's own reverse lookup (src/index.js) — this bot's page
+  // navigated to the same Jitsi room URL a human does, so the full bundle,
+  // roomMapper included, is already running here alongside the bare REPL.
+  async function ownerVideoStream() {
+    const ownerIndex = window.__trussalBotOwnerIndex;
+    const resolveJitsiId = window.__trussalJitsiIdForRoomIndex;
+    if (!ownerIndex || typeof resolveJitsiId !== 'function') return null;
+    const jitsiId = resolveJitsiId(ownerIndex);
+    if (!jitsiId) return null;
+
+    // JVB only forwards a remote participant's video to a receiver that has
+    // asked for it — normally driven by jitsi-meet's own tile-grid
+    // visibility, which this page never mounts. Same fix the aggregator's
+    // mosaic needed (2f17129/d8bb978): ask explicitly, and keep re-asserting
+    // it on every retry tick since lib-jitsi-meet no-ops an unchanged
+    // constraints object, so a call that raced the bridge channel not being
+    // ready yet just gets retried for free.
+    const ensureReceiverConstraints = (room) => {
+      try {
+        if (typeof room.setReceiverConstraints === 'function') {
+          room.setReceiverConstraints({ defaultConstraints: { maxHeight: 360 }, lastN: -1 });
+        } else if (typeof room.setReceiverVideoConstraint === 'function') {
+          room.setReceiverVideoConstraint(360);
+        }
+      } catch (e) {
+        console.error('[trussal] owner video: receiver constraints failed', e);
+      }
+    };
+
+    // Bounded: the owner may not have published video yet (still joining,
+    // their own video toggled off) by the moment this preamble's initCam()
+    // fires. Poll rather than give up on the first miss — same reasoning as
+    // waitForCanvas above — and fall through to the caller's own fallback
+    // once the deadline passes rather than hang forever.
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      const conf = window.APP && window.APP.conference;
+      const room = conf && (conf._room || conf.room);
+      if (room && typeof room.getParticipants === 'function') {
+        ensureReceiverConstraints(room);
+        const participant = room.getParticipants().find((p) => p.getId() === jitsiId);
+        const track = participant && typeof participant.getTracks === 'function'
+          ? participant.getTracks().find((t) => t.getType() === 'video')
+          : null;
+        const stream = track && typeof track.getOriginalStream === 'function'
+          ? track.getOriginalStream()
+          : null;
+        if (stream && stream.getVideoTracks().length) return stream;
+      }
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    return null;
+  }
+
   function silentAudioTrack() {
     const ctx = new AudioContext();
     const dst = ctx.createMediaStreamDestination();
@@ -683,14 +746,23 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
       // Handing the second one the self-mirrored canvas is a feedback loop:
       // the canvas starts black, and black fed back into itself stays black
       // forever — the bot's own s0 has nothing else to draw. Treat any
-      // unbracketed video request as an External Source and give it
-      // Chromium's real --use-fake-device-for-media-stream camera instead,
-      // the same escape hatch openCamera() is for a human's browser. Only
-      // the video half is redirected this way — audio (below) always goes
-      // through our own tap regardless, so a request bundling both never
-      // loses its mic half to this branch.
+      // unbracketed video request as an External Source: give it the
+      // spawning human's own published video (ownerVideoStream — the same
+      // blit the aggregator's mosaic does for a camera-fed cell), falling
+      // back to Chromium's real --use-fake-device-for-media-stream camera
+      // only if that peer has no video to blit (never published, or the
+      // bot has no resolvable owner at all — e.g. `random: "full"`, which
+      // replaces the human's code outright and was never a copy of anyone's
+      // camera use to begin with). Only the video half is redirected this
+      // way — audio (below) always goes through our own tap regardless, so
+      // a request bundling both never loses its mic half to this branch.
       if (!(window.__trussalGumForJitsi > 0)) {
-        for (const t of (await realGUM({ ...constraints, audio: false })).getVideoTracks()) stream.addTrack(t);
+        const owned = await ownerVideoStream();
+        if (owned) {
+          for (const t of owned.getVideoTracks()) stream.addTrack(t);
+        } else {
+          for (const t of (await realGUM({ ...constraints, audio: false })).getVideoTracks()) stream.addTrack(t);
+        }
       } else {
         await waitForCanvas();
         // captureFps is a bandwidth guard: 15 fps halves encode + uplink cost
@@ -710,9 +782,11 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
   // (lib/screenmedia.js) — a completely different API this override never
   // touched. A headless bot has no real desktop to share; an unpatched call
   // just rejects in this environment (screenmedia.js swallows the error) and
-  // leaves that source permanently black. Hand it the same synthetic camera
-  // initCam gets instead of nothing.
-  navigator.mediaDevices.getDisplayMedia = () => realGUM({ video: true });
+  // leaves that source permanently black. Same fallback chain as initCam:
+  // the owner's own published video first (whatever they are actually
+  // showing — this page cannot tell initScreen apart from initCam any more
+  // than the aggregator's mosaic can), then the synthetic camera.
+  navigator.mediaDevices.getDisplayMedia = async () => (await ownerVideoStream()) || realGUM({ video: true });
 }
 
 /**

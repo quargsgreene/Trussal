@@ -23,6 +23,7 @@ import { breedNameFor } from '../shared/dog-breeds.js';
 import { gainForBotCount } from '../shared/audio-math.js';
 import { frequencyBand } from '../script-gen/variation.js';
 import { absoluteSampleUrls } from '../shared/sample-urls.js';
+import { usesExternalSource } from '../../../src/hydra-code.js';
 
 const env = (key, fallback) => process.env[key] ?? fallback;
 
@@ -153,10 +154,22 @@ async function playerMain() {
   const { script, botCount, samples } = await fetchAssignment();
   const sidecars = startSidecars(botCount);
   const ownerIndex = env('BOT_OWNER_INDEX', '');
+  const bandwidth = bandwidthFromEnv();
+  // A copied preamble that reads an External Source (s0-s3) can't be
+  // reproduced from a bot's own headless Chromium — no camera, no screen —
+  // so pageGumOverride blits the owner's own published video into it
+  // instead. That needs inbound video at all, which channelLastN=0 (right
+  // for every other bot, which never watches anyone) forbids outright — and,
+  // per the aggregator's own channelLastN=0 bug (d8bb978), a runtime
+  // setReceiverConstraints override can't undo a lastN joined at 0; it has to
+  // be set here, at the join URL itself.
+  if (usesExternalSource(script.hydra) && !bandwidth.channelLastN) {
+    bandwidth.channelLastN = -1;
+  }
   const bot = new Bot(
     {
       botId, name, jitsiUrl, script, executablePath,
-      bandwidth: bandwidthFromEnv(), ownerIndex,
+      bandwidth, ownerIndex,
       // Bank → absolute URLs. The fleet hands out paths because it cannot know
       // how this container addresses it; resolving them here is what makes
       // CONDUCTOR_URL the single answer to that question.
