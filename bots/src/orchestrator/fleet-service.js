@@ -496,7 +496,7 @@ export class FleetService {
           type: 'remote-control',
           targetPeerId: peer.peerId,
           action: 'video',
-          videoOn: true,
+          videoOn: false,
         });
       }
     }
