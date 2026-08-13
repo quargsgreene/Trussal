@@ -40,6 +40,7 @@ import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
 import { botScriptFor, captureClusterSource, scriptToEditorCode } from '../script-gen/cluster-source.js';
 import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
+import { usesExternalSource } from '../../../src/hydra-code.js';
 import { shouldReplace, computeMaxBots } from './health.js';
 import { SampleStore } from './sample-store.js';
 
@@ -479,6 +480,25 @@ export class FleetService {
       this.#ensureAggregator(room).catch((e) => {
         console.error(`[fleet] failed to start aggregator for room ${room}:`, e.message);
       });
+    }
+    // A copied preamble that reads an External Source has nothing to show
+    // without its video tile live — unlike a regular bot, whose whole point
+    // is its audio, blitting the owner's video IS the point, so it shouldn't
+    // need the operator to remember a manual per-bot 'vid' click that the
+    // owner's own equivalent (running Hydra locally) never required either.
+    // Reuses the exact remote-control path a human's own click sends
+    // (peer-state.js's sendRemoteVideo), so the sidecar's videoOn record and
+    // every studio's toggle stay correct without a second code path.
+    if (peer.isBot && peer.peerId) {
+      const bot = this.#botsInRoom(room).find((b) => b.clusterIndex === idx);
+      if (bot && bot.script && usesExternalSource(bot.script.hydra)) {
+        this.#busSend(room, {
+          type: 'remote-control',
+          targetPeerId: peer.peerId,
+          action: 'video',
+          videoOn: true,
+        });
+      }
     }
     // A present human cancels any pending meeting-end teardown (recomputed here).
     this.#evaluateMeetingEnd(room);
