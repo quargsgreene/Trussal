@@ -503,7 +503,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
       if (!conf || typeof conf.muteVideo !== 'function') return;
       const withGum = window.__trussalWithGumForJitsi || ((fn) => fn());
       await withGum(async () => {
-        // await conf.muteVideo(!on);
+        await conf.muteVideo(!on);
         // conf.muteVideo() resolving does not mean the gUM call it can
         // trigger has actually fired yet — pageInstallVideoPublisher's own
         // poll loop exists for the exact same gap (its comment there has the
@@ -1024,7 +1024,7 @@ export function pageInstallVideoPublisher() {
       //    publish is still in flight, which is the same double-track race
       //    described above.
       if (typeof conf.muteVideo === 'function') {
-        try { await conf.muteVideo(false); } catch (e) {console.error("Failed to start video")}
+        try { await conf.muteVideo(true); } catch (e) {console.error("Failed to start video")}
         for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
       }
 
