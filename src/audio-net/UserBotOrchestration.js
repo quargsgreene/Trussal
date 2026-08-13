@@ -10,6 +10,7 @@ import {
   getLocalPeer,
   sendFleetRequest,
   sendRemoteMute,
+  sendRemoteStop,
   sendRemoteVideo,
   sendSampleFile,
   subscribePeerState
@@ -153,6 +154,18 @@ export function removeOneBot(index) {
 export function muteBots(selector, muted) {
   for (const bot of selectBots(myClusterBots(), selector)) {
     sendRemoteMute(bot.peerId, !!muted);
+  }
+}
+
+// Room-wide, unlike mute/removeBots/setBotsVideo above: every bot in the
+// room, regardless of owner, since the Net Cycles ■ Stop it backs is a
+// room-wide "everyone go silent" rather than a per-cluster action. Rides the
+// SAME remote-control channel as mute but a separate 'stop' action/gate (see
+// sendRemoteStop, page-scripts.js's trussal-remote-stop) so a Stop/Apply
+// cycle never touches anyone's deliberately-set individual bot mute.
+export function stopAllBots(stopped) {
+  for (const bot of getAllPeers().filter(p => p.isBot)) {
+    sendRemoteStop(bot.peerId, stopped);
   }
 }
 

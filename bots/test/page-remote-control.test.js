@@ -57,6 +57,7 @@ function installControl({
     __trussalHydra: hydra,
     __trussalReportError: (err) => errors.push(err),
     __trussalSamples: sampleBanks,
+    __trussalFanGain: { gain: { value: 1 } },
     loadWorklets: async () => { registrationCalls.push('loadWorklets'); },
     registerSynthSounds: async () => { registrationCalls.push('registerSynthSounds'); },
     registerZZFXSounds: async () => { registrationCalls.push('registerZZFXSounds'); },
@@ -75,6 +76,9 @@ function installControl({
       await listeners.get('trussal-remote-pattern')({ detail: { code } });
     },
     storedHydra: () => global.window.__trussalHydra,
+    mute(muted) { listeners.get('trussal-remote-mute')({ detail: { muted } }); },
+    stop(stopped) { listeners.get('trussal-remote-stop')({ detail: { stopped } }); },
+    fanGain: () => global.window.__trussalFanGain.gain.value,
   };
 }
 
@@ -216,6 +220,34 @@ test('a malformed pattern is reported and does not disable editing', async () =>
 
   assert.equal(ctl.errors.length, 1, 'the bad pattern must surface, not pass silently');
   assert.equal(ctl.evaluated.length, 1, 'the edit must still be applied');
+});
+
+test('mute and stop are independent gates multiplied into one fan gain', () => {
+  // This bot's own REPL is a standalone @strudel/repl instance the Studio's
+  // stopStrudel()/CRDT 'stop' broadcast never reaches (see pageStrudelBoot) —
+  // trussal-remote-stop is the only signal that silences it, and it must not
+  // clobber (or be clobbered by) a separately-toggled manual mute.
+  const ctl = installControl({ hydra: '' });
+  assert.equal(ctl.fanGain(), 1, 'starts unmuted and unstopped');
+
+  ctl.mute(true);
+  assert.equal(ctl.fanGain(), 0, 'mute alone silences');
+  ctl.mute(false);
+  assert.equal(ctl.fanGain(), 1, 'unmute alone restores');
+
+  ctl.stop(true);
+  assert.equal(ctl.fanGain(), 0, 'stop alone silences');
+  ctl.stop(false);
+  assert.equal(ctl.fanGain(), 1, 'un-stop alone restores');
+
+  // Both engaged, then released one at a time: gain stays 0 until BOTH clear.
+  ctl.mute(true);
+  ctl.stop(true);
+  assert.equal(ctl.fanGain(), 0, 'both gates closed');
+  ctl.mute(false);
+  assert.equal(ctl.fanGain(), 0, 'still stopped — unmuting must not un-stop');
+  ctl.stop(false);
+  assert.equal(ctl.fanGain(), 1, 'both gates now open');
 });
 
 test('a failing operator edit does not feed the fleet-health replace channel', async () => {

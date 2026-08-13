@@ -340,11 +340,14 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 
 export function getProgramText() { return programText; }
 
-// Tell every other peer running the shared metaprogram — bots' own pages
-// especially, since nothing ever clicks a button in a headless one — to
-// silence their local ensemble the same way this browser's ■ Stop does.
-// Leaves programText/the CRDT text untouched, so a later Apply resumes
-// exactly what was running. Local silencing is the caller's job (see
+// Tell every other HUMAN peer running the shared metaprogram to silence
+// their local ensemble the same way this browser's ■ Stop does. Does NOT
+// reach bots — a bot's page never mounts components/MetaprogrammerEditor.js
+// (nothing ever opens the Studio overlay there), and its actual audio is a
+// separate standalone @strudel/repl instance this signal couldn't touch
+// anyway; see stopAllBots (UserBotOrchestration.js) for that path. Leaves
+// programText/the CRDT text untouched, so a later Apply resumes exactly what
+// was running. Local silencing is the caller's job (see
 // components/MetaprogrammerEditor.js, which also owns stopStrudel() and
 // would create an import cycle if that call lived here instead).
 export function broadcastStopSignal() {

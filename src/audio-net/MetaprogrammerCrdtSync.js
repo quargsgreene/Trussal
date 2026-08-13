@@ -133,11 +133,12 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
     },
 
     // Another zero-diff signal, stamped 'stop' instead of 'apply': the
-    // program text is untouched (a later Apply resumes it unchanged), but
-    // every receiver — bots' own pages included, since they run the same
-    // bundle and publish their own Strudel voice the same way a human does —
-    // is told to silence its local ensemble. Without this, only whichever
-    // peer physically clicked Stop ever went quiet.
+    // program text is untouched (a later Apply resumes it unchanged), and
+    // every receiving HUMAN is told to silence its local ensemble. Bots don't
+    // react to this at all — see Metaprogrammer.js's broadcastStopSignal for
+    // why, and UserBotOrchestration.js's stopAllBots for how they're reached
+    // instead. Without this, only whichever human physically clicked Stop
+    // ever went quiet.
     broadcastStop() {
       bus.sendUpdate(encodeFullState(doc), { snapshot: true, modality: 'stop', channel: 'metaprogram' });
     },

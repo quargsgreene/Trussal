@@ -926,6 +926,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           localPeer.videoOn = !!msg.videoOn;
           document.dispatchEvent(new CustomEvent("trussal-remote-video", { detail: { videoOn: localPeer.videoOn } }));
           emit2("peer-upsert", localPeer);
+        } else if (msg.action === "stop") {
+          document.dispatchEvent(new CustomEvent("trussal-remote-stop", { detail: { stopped: !!msg.stopped } }));
         }
         break;
       }
@@ -1072,6 +1074,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function sendRemoteMute(targetPeerId, muted) {
     if (!targetPeerId) return;
     safeSend({ type: "remote-control", targetPeerId, action: "mute", muted: !!muted });
+  }
+  function sendRemoteStop(targetPeerId, stopped) {
+    if (!targetPeerId) return;
+    safeSend({ type: "remote-control", targetPeerId, action: "stop", stopped: !!stopped });
   }
   function sendRemoteVideo(targetPeerId, videoOn) {
     if (!targetPeerId) return;
@@ -49886,11 +49892,12 @@ ${err.toString()}`);
         bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: "apply", channel: "metaprogram" });
       },
       // Another zero-diff signal, stamped 'stop' instead of 'apply': the
-      // program text is untouched (a later Apply resumes it unchanged), but
-      // every receiver — bots' own pages included, since they run the same
-      // bundle and publish their own Strudel voice the same way a human does —
-      // is told to silence its local ensemble. Without this, only whichever
-      // peer physically clicked Stop ever went quiet.
+      // program text is untouched (a later Apply resumes it unchanged), and
+      // every receiving HUMAN is told to silence its local ensemble. Bots don't
+      // react to this at all — see Metaprogrammer.js's broadcastStopSignal for
+      // why, and UserBotOrchestration.js's stopAllBots for how they're reached
+      // instead. Without this, only whichever human physically clicked Stop
+      // ever went quiet.
       broadcastStop() {
         bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: "stop", channel: "metaprogram" });
       },
@@ -57415,6 +57422,114 @@ ${s2}${BTN_MARKER}`)
   init_MetaprogrammerParser();
   init_latency_instrument();
   init_peer_state();
+
+  // src/audio-net/UserBotOrchestration.js
+  init_peer_state();
+  function clusterBotsOf(peers, ownerIndex) {
+    if (ownerIndex == null) return [];
+    const owner = String(ownerIndex);
+    return (peers || []).filter((p) => p.isBot && typeof p.roomIndex === "string" && p.roomIndex.startsWith(owner) && /^[a-z]+$/.test(p.roomIndex.slice(owner.length))).sort((a2, b) => {
+      const sa = a2.roomIndex.slice(owner.length), sb = b.roomIndex.slice(owner.length);
+      return sa.length - sb.length || (sa < sb ? -1 : sa > sb ? 1 : 0);
+    });
+  }
+  function selectBots(bots, selector) {
+    if (selector === "all" || selector == null) return bots.slice();
+    if (typeof selector === "function") return bots.filter(selector);
+    if (Array.isArray(selector)) {
+      const set2 = new Set(selector.map(String));
+      return bots.filter((b) => set2.has(b.roomIndex));
+    }
+    return [];
+  }
+  function myClusterBots() {
+    return clusterBotsOf(getAllPeers(), getLocalPeer().roomIndex);
+  }
+  function spawnBots(count, editorCode) {
+    const n2 = Math.max(1, Math.floor(count) || 1);
+    const code2 = typeof editorCode === "string" ? editorCode : localPerformerCode();
+    const parsed = parseBotConfig(code2);
+    logSpawn(n2, code2, parsed);
+    shareSamplesIfAsked(parsed).catch((err) => {
+      console.error("[trussal] sharing samples with bots failed", err);
+    }).finally(() => sendFleetRequest("spawn", { count: n2, code: code2 }));
+  }
+  function logSpawn(count, code2, parsed) {
+    const what = `[trussal] spawn ${count} \u2014 sending ${code2.length} chars of code`;
+    if (!parsed.present) {
+      console.log(`${what}, no botConfig() declared (bots play exact copies)`);
+      return;
+    }
+    if (!parsed.ok) {
+      console.warn(`${what}, botConfig REJECTED: ${parsed.error} (bots play exact copies)`);
+      return;
+    }
+    console.log(`${what}, botConfig parsed:`, parsed.config);
+  }
+  async function shareSamplesIfAsked(parsed) {
+    if (!parsed.ok || !flag(parsed.config.samples)) return;
+    const banks = await readSampleBanks();
+    for (const { bank: bank2, name: name3, blob } of banks) {
+      const buffer = await blob.arrayBuffer();
+      sendSampleFile({ bank: bank2, name: name3, data: base64FromBuffer(buffer) });
+    }
+  }
+  function base64FromBuffer(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary2 = "";
+    const CHUNK = 32768;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary2 += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary2);
+  }
+  function localPerformerCode() {
+    const local2 = getLocalPeer();
+    return typeof local2?.pattern === "string" ? local2.pattern : "";
+  }
+  function removeBots(selector = "all") {
+    if (selector === "all") {
+      sendFleetRequest("remove", { targets: "all" });
+      return;
+    }
+    const targets = selectBots(myClusterBots(), selector).map((b) => b.roomIndex);
+    if (targets.length) sendFleetRequest("remove", { targets });
+  }
+  function removeOneBot(index2) {
+    if (index2 == null) return;
+    sendFleetRequest("removeOne", { targets: [String(index2)] });
+  }
+  function muteBots(selector, muted) {
+    for (const bot of selectBots(myClusterBots(), selector)) {
+      sendRemoteMute(bot.peerId, !!muted);
+    }
+  }
+  function stopAllBots(stopped) {
+    for (const bot of getAllPeers().filter((p) => p.isBot)) {
+      sendRemoteStop(bot.peerId, stopped);
+    }
+  }
+  function setBotsVideo(selector, videoOn) {
+    for (const bot of selectBots(myClusterBots(), selector)) {
+      sendRemoteVideo(bot.peerId, !!videoOn);
+    }
+  }
+  var statusSubscribers = /* @__PURE__ */ new Set();
+  subscribePeerState((event, payload) => {
+    if (event !== "fleet-status") return;
+    statusSubscribers.forEach((fn) => {
+      try {
+        fn(payload);
+      } catch (e30) {
+      }
+    });
+  });
+  function subscribeFleetStatus(fn) {
+    statusSubscribers.add(fn);
+    return () => statusSubscribers.delete(fn);
+  }
+
+  // components/MetaprogrammerEditor.js
   var APPLIED_FADE_MS = 5e3;
   function mountMetaprogrammerEditor(container2) {
     if (!container2 || container2.querySelector(".nc-editor")) return null;
@@ -57545,6 +57660,7 @@ ${s2}${BTN_MARKER}`)
         await bootAudioEngine();
         await bootStrudelOnUserGesture();
         sendLocalPlaying(true);
+        stopAllBots(false);
         setByline("applied \u2014 takes effect at the next cycle boundary", true);
       } catch (e30) {
         console.error("[netcycles] apply: starting playback failed", e30);
@@ -57563,6 +57679,7 @@ ${s2}${BTN_MARKER}`)
     };
     const stop2 = async () => {
       broadcastStopSignal();
+      stopAllBots(true);
       await silenceLocally();
     };
     applyBtn.addEventListener("click", apply2);
@@ -57746,107 +57863,6 @@ ${s2}${BTN_MARKER}`)
     }
     renderOutline();
     return overlay;
-  }
-
-  // src/audio-net/UserBotOrchestration.js
-  init_peer_state();
-  function clusterBotsOf(peers, ownerIndex) {
-    if (ownerIndex == null) return [];
-    const owner = String(ownerIndex);
-    return (peers || []).filter((p) => p.isBot && typeof p.roomIndex === "string" && p.roomIndex.startsWith(owner) && /^[a-z]+$/.test(p.roomIndex.slice(owner.length))).sort((a2, b) => {
-      const sa = a2.roomIndex.slice(owner.length), sb = b.roomIndex.slice(owner.length);
-      return sa.length - sb.length || (sa < sb ? -1 : sa > sb ? 1 : 0);
-    });
-  }
-  function selectBots(bots, selector) {
-    if (selector === "all" || selector == null) return bots.slice();
-    if (typeof selector === "function") return bots.filter(selector);
-    if (Array.isArray(selector)) {
-      const set2 = new Set(selector.map(String));
-      return bots.filter((b) => set2.has(b.roomIndex));
-    }
-    return [];
-  }
-  function myClusterBots() {
-    return clusterBotsOf(getAllPeers(), getLocalPeer().roomIndex);
-  }
-  function spawnBots(count, editorCode) {
-    const n2 = Math.max(1, Math.floor(count) || 1);
-    const code2 = typeof editorCode === "string" ? editorCode : localPerformerCode();
-    const parsed = parseBotConfig(code2);
-    logSpawn(n2, code2, parsed);
-    shareSamplesIfAsked(parsed).catch((err) => {
-      console.error("[trussal] sharing samples with bots failed", err);
-    }).finally(() => sendFleetRequest("spawn", { count: n2, code: code2 }));
-  }
-  function logSpawn(count, code2, parsed) {
-    const what = `[trussal] spawn ${count} \u2014 sending ${code2.length} chars of code`;
-    if (!parsed.present) {
-      console.log(`${what}, no botConfig() declared (bots play exact copies)`);
-      return;
-    }
-    if (!parsed.ok) {
-      console.warn(`${what}, botConfig REJECTED: ${parsed.error} (bots play exact copies)`);
-      return;
-    }
-    console.log(`${what}, botConfig parsed:`, parsed.config);
-  }
-  async function shareSamplesIfAsked(parsed) {
-    if (!parsed.ok || !flag(parsed.config.samples)) return;
-    const banks = await readSampleBanks();
-    for (const { bank: bank2, name: name3, blob } of banks) {
-      const buffer = await blob.arrayBuffer();
-      sendSampleFile({ bank: bank2, name: name3, data: base64FromBuffer(buffer) });
-    }
-  }
-  function base64FromBuffer(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary2 = "";
-    const CHUNK = 32768;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary2 += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(binary2);
-  }
-  function localPerformerCode() {
-    const local2 = getLocalPeer();
-    return typeof local2?.pattern === "string" ? local2.pattern : "";
-  }
-  function removeBots(selector = "all") {
-    if (selector === "all") {
-      sendFleetRequest("remove", { targets: "all" });
-      return;
-    }
-    const targets = selectBots(myClusterBots(), selector).map((b) => b.roomIndex);
-    if (targets.length) sendFleetRequest("remove", { targets });
-  }
-  function removeOneBot(index2) {
-    if (index2 == null) return;
-    sendFleetRequest("removeOne", { targets: [String(index2)] });
-  }
-  function muteBots(selector, muted) {
-    for (const bot of selectBots(myClusterBots(), selector)) {
-      sendRemoteMute(bot.peerId, !!muted);
-    }
-  }
-  function setBotsVideo(selector, videoOn) {
-    for (const bot of selectBots(myClusterBots(), selector)) {
-      sendRemoteVideo(bot.peerId, !!videoOn);
-    }
-  }
-  var statusSubscribers = /* @__PURE__ */ new Set();
-  subscribePeerState((event, payload) => {
-    if (event !== "fleet-status") return;
-    statusSubscribers.forEach((fn) => {
-      try {
-        fn(payload);
-      } catch (e30) {
-      }
-    });
-  });
-  function subscribeFleetStatus(fn) {
-    statusSubscribers.add(fn);
-    return () => statusSubscribers.delete(fn);
   }
 
   // src/audio-net/RoomHealth.js

@@ -787,6 +787,11 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             target.videoOn = !!msg.videoOn;
             send(target.ws, { type: 'remote-control', action: 'video', videoOn: target.videoOn });
             broadcast(room, target.peerId, { type: 'peer-update', peerId: target.peerId, patch: { videoOn: target.videoOn } });
+          } else if (msg.action === 'stop') {
+            // Room-wide ■ Stop reaching a bot's audio (independent of the
+            // durable 'mute' toggle above). Transient — relay only, nothing to
+            // persist for a late joiner to catch up on.
+            send(target.ws, { type: 'remote-control', action: 'stop', stopped: !!msg.stopped });
           }
           break;
         }

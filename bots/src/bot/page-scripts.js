@@ -191,6 +191,14 @@ export function pageIsActiveAggregator() {
  *     brings a preamble of its own.
  *   - trussal-remote-mute: zero/restore the shared audio fan gain, muting the
  *     bot on both the Jitsi and Jamulus paths at once.
+ *   - trussal-remote-stop: a room-wide ■ Stop reaching this bot. Same fan gain
+ *     as mute, but a SEPARATE gate multiplied in alongside it (applyFanGain)
+ *     — this bot's own REPL is a standalone @strudel/repl instance the
+ *     Studio's stopStrudel()/CRDT 'stop' broadcast never touches (see
+ *     pageStrudelBoot), so this is the only signal that reaches it. Keeping
+ *     it independent of the manual mute toggle means a Stop/Apply cycle can
+ *     never clobber an operator's own deliberate per-bot mute, and unmuting
+ *     one gate never un-stops the other.
  * Installed at document-start; it reads the editor/fan globals lazily at event
  * time, so ordering against pageStrudelBoot / pageAudioBridge doesn't matter.
  *
@@ -464,10 +472,21 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
       console.error('[trussal] remote pattern eval failed', err);
     }
   });
-  document.addEventListener('trussal-remote-mute', (e) => {
-    const muted = !!(e && e.detail && e.detail.muted);
+  // Two independent boolean gates multiplied into one gain value, so muting
+  // and stopping never fight each other regardless of order or combination.
+  let __trussalMuteGate = 1;
+  let __trussalStopGate = 1;
+  const applyFanGain = () => {
     const fan = window.__trussalFanGain;
-    if (fan && fan.gain) { try { fan.gain.value = muted ? 0 : 1; } catch (_) {} }
+    if (fan && fan.gain) { try { fan.gain.value = __trussalMuteGate * __trussalStopGate; } catch (_) {} }
+  };
+  document.addEventListener('trussal-remote-mute', (e) => {
+    __trussalMuteGate = (e && e.detail && e.detail.muted) ? 0 : 1;
+    applyFanGain();
+  });
+  document.addEventListener('trussal-remote-stop', (e) => {
+    __trussalStopGate = (e && e.detail && e.detail.stopped) ? 0 : 1;
+    applyFanGain();
   });
   // The bot's owner turning its tile on or off. A regular bot joins muted
   // (videoMuted: true), exactly like a human joins with startWithVideoMuted —
