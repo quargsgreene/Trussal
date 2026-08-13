@@ -503,7 +503,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
       if (!conf || typeof conf.muteVideo !== 'function') return;
       const withGum = window.__trussalWithGumForJitsi || ((fn) => fn());
       await withGum(async () => {
-        await conf.muteVideo(!on);
+        // await conf.muteVideo(!on);
         // conf.muteVideo() resolving does not mean the gUM call it can
         // trigger has actually fired yet — pageInstallVideoPublisher's own
         // poll loop exists for the exact same gap (its comment there has the
