@@ -133,6 +133,51 @@ test('typing never runs the metaprogram; applies (diff or empty-diff) and catch-
   }
 });
 
+test('a stop broadcast leaves the running program and ring untouched (silencing is presence-gated, not scheduler-driven)', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const human = await connectHuman(port);
+
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true
+    }
+  );
+
+  try {
+    human.sync.setText('$ participants <0 0a>', 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    assert.equal(bot.programText, '$ participants <0 0a>');
+    assert.deepEqual(bot.order.order(), ['0', '0a']);
+
+    // A human's ■ Stop: broadcastStopSignal ships this exact zero-diff
+    // snapshot (modality 'stop', text unchanged) — see
+    // src/audio-net/Metaprogrammer.js broadcastStopSignal /
+    // MetaprogrammerCrdtSync.js broadcastStop. The aggregator's own
+    // silencing is presence-gated (each stopped peer's `playing` flag going
+    // false, read by page-scripts.js), not something the Node-side scheduler
+    // reacts to directly — so this broadcast must be a no-op here.
+    human.sync.broadcastStop();
+    await sleep(300);
+    assert.equal(bot.programText, '$ participants <0 0a>', 'stop did not touch the running program');
+    assert.deepEqual(bot.order.order(), ['0', '0a'], 'stop did not touch the ring');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
+
 test('aggregator broadcasts nc-active on each ring turn change; the browser receives it deduped', { timeout: 30000 }, async () => {
   const { wss } = createLatencyServer({ port: 0 });
   await new Promise(r => wss.once('listening', r));

@@ -90,6 +90,34 @@ test('apply/roster origins ride the wire as their modality; typing stays keyboar
   sync.disconnect();
 });
 
+test('broadcastStop ships a zero-diff snapshot stamped stop, leaving the text unchanged', () => {
+  const a = createMetaprogramDoc();
+  const sent = [];
+  const bus = {
+    subscribe: () => () => {},
+    sendUpdate: (update, opts) => sent.push({ update, ...opts })
+  };
+  const sync = connectMetaprogramSync(a, bus);
+
+  sync.setText('$ participants <0 1>', 'apply');
+  assert.equal(sent.length, 1);
+  const before = sync.getText();
+
+  sync.broadcastStop();
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].modality, 'stop');
+  assert.equal(sent[1].snapshot, true);
+  assert.equal(sent[1].channel, 'metaprogram');
+  // No text mutation — a receiver merging this snapshot ends up with the
+  // exact same program, ready for the next Apply to resume unchanged.
+  assert.equal(sync.getText(), before);
+
+  const b = createMetaprogramDoc();
+  applyRemoteUpdate(b.doc, sent[1].update);
+  assert.equal(b.text.toString(), before);
+  sync.disconnect();
+});
+
 test('applyTextDiff produces minimal edits and no-ops on identical text', () => {
   const { text } = createMetaprogramDoc();
   assert.equal(applyTextDiff(text, 'hello world'), true);

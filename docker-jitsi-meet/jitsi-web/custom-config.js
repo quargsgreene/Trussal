@@ -49885,6 +49885,15 @@ ${err.toString()}`);
       broadcastApplied() {
         bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: "apply", channel: "metaprogram" });
       },
+      // Another zero-diff signal, stamped 'stop' instead of 'apply': the
+      // program text is untouched (a later Apply resumes it unchanged), but
+      // every receiver — bots' own pages included, since they run the same
+      // bundle and publish their own Strudel voice the same way a human does —
+      // is told to silence its local ensemble. Without this, only whichever
+      // peer physically clicked Stop ever went quiet.
+      broadcastStop() {
+        bus2.sendUpdate(encodeFullState(doc2), { snapshot: true, modality: "stop", channel: "metaprogram" });
+      },
       // Artificial network modulation (upward-only floors, shared room-wide).
       getInduced() {
         if (!modulation) return {};
@@ -50748,6 +50757,7 @@ ${err.toString()}`);
   var Metaprogrammer_exports = {};
   __export(Metaprogrammer_exports, {
     applyProgramText: () => applyProgramText,
+    broadcastStopSignal: () => broadcastStopSignal,
     bufferReplayEnabled: () => bufferReplayEnabled,
     effectiveWorstCase: () => effectiveWorstCase,
     ensureMetaprogramSync: () => ensureMetaprogramSync,
@@ -50898,6 +50908,9 @@ ${err.toString()}`);
   }
   function getProgramText() {
     return programText;
+  }
+  function broadcastStopSignal() {
+    ensureMetaprogramSync().broadcastStop();
   }
   function isDisjointCssEnabled() {
     return disjointCssEnabled(currentAst);
@@ -57500,6 +57513,10 @@ ${s2}${BTN_MARKER}`)
     };
     sync.onRemoteChange((_3, payload) => {
       refreshFromDoc();
+      if (payload && payload.modality === "stop") {
+        silenceLocally();
+        return;
+      }
       if (payload && payload.authorIndex != null) {
         setByline(`last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`, false);
       }
@@ -57528,7 +57545,7 @@ ${s2}${BTN_MARKER}`)
       }
       renderButtons();
     };
-    const stop2 = async () => {
+    const silenceLocally = async () => {
       try {
         sendLocalPlaying(false);
         await stopStrudel();
@@ -57536,6 +57553,10 @@ ${s2}${BTN_MARKER}`)
       } catch (e30) {
         console.error("[netcycles] stop failed", e30);
       }
+    };
+    const stop2 = async () => {
+      broadcastStopSignal();
+      await silenceLocally();
     };
     applyBtn.addEventListener("click", apply2);
     stopBtn.addEventListener("click", stop2);

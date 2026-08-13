@@ -340,6 +340,17 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 
 export function getProgramText() { return programText; }
 
+// Tell every other peer running the shared metaprogram — bots' own pages
+// especially, since nothing ever clicks a button in a headless one — to
+// silence their local ensemble the same way this browser's ■ Stop does.
+// Leaves programText/the CRDT text untouched, so a later Apply resumes
+// exactly what was running. Local silencing is the caller's job (see
+// components/MetaprogrammerEditor.js, which also owns stopStrudel() and
+// would create an import cycle if that call lived here instead).
+export function broadcastStopSignal() {
+  ensureMetaprogramSync().broadcastStop();
+}
+
 // Whether the currently APPLIED program (not whatever is mid-edit in the
 // textarea — see pushProgramToScheduler, the only writer of currentAst) has
 // CSS Cycles' mutual exclusion in force. css-cycles.js is the only consumer;
