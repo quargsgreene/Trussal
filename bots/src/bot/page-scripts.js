@@ -1024,7 +1024,7 @@ export function pageInstallVideoPublisher() {
       //    publish is still in flight, which is the same double-track race
       //    described above.
       if (typeof conf.muteVideo === 'function') {
-        try { await conf.muteVideo(true); } catch (e) {console.error("Failed to start video")}
+        try { await conf.muteVideo(false); } catch (e) {console.error("Failed to start video")}
         for (let i = 0; i < 20 && !localTrack(); i++) await sleep(150);
       }
 
@@ -1033,7 +1033,7 @@ export function pageInstallVideoPublisher() {
       if (!localTrack() && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
         try {
           const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['video'] });
-          const vt = tracks && tracks[0];
+          const vt = tracks;
           if (vt) {
             if (typeof conf.useVideoStream === 'function') await conf.useVideoStream(vt);
             else { const r = room(); if (r && r.addTrack) await r.addTrack(vt); }
