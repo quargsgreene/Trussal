@@ -429,8 +429,27 @@ function resetAllCssToBaseline() {
   }
 }
 
-function handleNetCyclesTokenChange() {
-  if (isDisjointCssEnabled()) resetAllCssToBaseline();
+// 'trussal-netcycles-active' fires on every nc-active broadcast, which the
+// aggregator sends periodically (roughly every couple of seconds) to replay
+// the current turn to a late joiner — NOT only when ownership actually
+// changes (confirmed live: room "lgfj", 2026-08-12 — the event fired every
+// ~2s with an unchanged token). Calling resetAllCssToBaseline unconditionally
+// on every firing meant the room's OWN owner got stomped back to baseline
+// every couple of seconds regardless of whose turn it still was — for any
+// pattern whose own haps don't outrace that interval, CSS Cycles reads as
+// "barely applying anything", which is worse than the bug this was meant to
+// fix. Reset only when the turn identity (token + index + kind, matching how
+// a repeated token at a different ring position is told apart elsewhere)
+// actually differs from the last-seen one.
+let lastNetCyclesTurnKey = null;
+
+function handleNetCyclesTokenChange(e) {
+  if (!isDisjointCssEnabled()) return;
+  const detail = e?.detail || {};
+  const key = `${detail.token}|${detail.index}|${detail.kind}`;
+  if (key === lastNetCyclesTurnKey) return;
+  lastNetCyclesTurnKey = key;
+  resetAllCssToBaseline();
 }
 
 // Strudel calls this ahead of time so audio can be sampled accurately; the
@@ -507,4 +526,5 @@ export function stopCssCycles() {
   lastSentScssByBot = new Map();
   bgCache.clear();
   baselineValues.clear();
+  lastNetCyclesTurnKey = null;
 }

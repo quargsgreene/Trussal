@@ -54758,8 +54758,14 @@ ${full}
       }
     }
   }
-  function handleNetCyclesTokenChange() {
-    if (isDisjointCssEnabled()) resetAllCssToBaseline();
+  var lastNetCyclesTurnKey = null;
+  function handleNetCyclesTokenChange(e30) {
+    if (!isDisjointCssEnabled()) return;
+    const detail = e30?.detail || {};
+    const key = `${detail.token}|${detail.index}|${detail.kind}`;
+    if (key === lastNetCyclesTurnKey) return;
+    lastNetCyclesTurnKey = key;
+    resetAllCssToBaseline();
   }
   function handleTrigger2(hap, currentTime, cps2, targetTime) {
     if (!active3) return;
@@ -54811,6 +54817,7 @@ ${full}
     lastSentScssByBot = /* @__PURE__ */ new Map();
     bgCache.clear();
     baselineValues.clear();
+    lastNetCyclesTurnKey = null;
   }
 
   // src/hydra-video.js
