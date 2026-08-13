@@ -24,7 +24,7 @@ import { hasTextCycles, rewriteTextCalls } from './text-cycles-core.js';
 import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from './css-cycles.js';
 import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCameraBypass } from './hydra-video.js';
-import { normalizePeerCode, splitHydraCode, programDeclaresHydra } from './hydra-code.js';
+import { normalizePeerCode, splitHydraCode, programDeclaresHydra, usesExternalSource } from './hydra-code.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
 import { wrapAsVoice } from './strudel-voice.js';
 
@@ -334,7 +334,9 @@ function buildPeerBlock(peer) {
   // during our turn. Dropping their audio loses nothing locally: remote humans
   // reach us through the aggregator's master (their chains and the local
   // monitor are muted in aggregator mode anyway). Their hydra preamble still
-  // renders below — visuals are per-page and never ride the published track.
+  // renders below — visuals are per-page and never ride the published track —
+  // except an External Source preamble, which is dropped below regardless of
+  // this flag; see the dropPreamble comment.
   const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
 
   const params = computePeerStrudelParams(peer);
@@ -370,6 +372,18 @@ function buildPeerBlock(peer) {
   }
   if (split) {
     const preamble = split.preamble;
+    // s0-s3 are ONE page-global Hydra object (ensureCameraBypass patches
+    // THIS page's own s0-s3 the moment initHydra() runs), so literally
+    // executing another peer's initCam/initScreen/initImage/initVideo/init
+    // statement here would silently reassign the shared source for every
+    // `src(sN)` layer on this page — including the local performer's own —
+    // to whichever remote peer's statement happened to run last. That is
+    // exactly the hazard usesExternalSource exists to flag for the
+    // aggregator's mosaic (which blits instead of re-executing); this combined
+    // per-viewer program has no track to blit into a texture, so a remote
+    // peer's External Source preamble is dropped instead of run. Their
+    // Strudel voice (audio) below is unaffected.
+    const dropPreamble = !peer.isLocal && !!hydraSplit && usesExternalSource(code);
     // Strudel's transpiler mini-notation-parses EVERY double-quoted string in
     // the evaluated program — plugin-mini.mjs's isStringWithDoubleQuotes has
     // no notion of which function it is an argument to — so
@@ -380,7 +394,7 @@ function buildPeerBlock(peer) {
     // the whole preamble via Strudel's own `mini-off`/`mini-on` comment-range
     // convention, rather than asking every performer to remember single
     // quotes for every URL/folder argument.
-    const outPreamble = hydraSplit ? `/* mini-off */\n${preamble}\n/* mini-on */` : preamble;
+    const outPreamble = dropPreamble ? '' : (hydraSplit ? `/* mini-off */\n${preamble}\n/* mini-on */` : preamble);
     let strudelCode = split.strudel;
     if (isText || isCss) {
       // Excluded remote peer: keep the silent statements, drop the audio ones.
@@ -404,9 +418,12 @@ function buildPeerBlock(peer) {
     } else if (remoteVoiceExcluded) {
       return outPreamble;
     }
-    // A preamble-only block has no Strudel voice to build.
+    // A preamble-only block has no Strudel voice to build. (When dropPreamble
+    // emptied outPreamble, this is also the "nothing left to contribute" case
+    // — an External Source Hydra-only block from a remote peer — and the
+    // empty string is filtered out by rebuildAndEvaluate's Boolean filter.)
     if (!strudelCode) return outPreamble;
-    return `${outPreamble}\n\n${buildStrudelVoice(strudelCode, fx)}`;
+    return outPreamble ? `${outPreamble}\n\n${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
   }
 
   if (remoteVoiceExcluded) return null;

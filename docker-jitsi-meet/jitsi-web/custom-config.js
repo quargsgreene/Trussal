@@ -55384,6 +55384,11 @@ ${full}
   function programDeclaresHydra(code2) {
     return PROGRAM_INIT_HYDRA_RE.test(code2 || "");
   }
+  function usesExternalSource(code2) {
+    const split = splitHydraCode(code2);
+    if (!split) return false;
+    return /(^|[^\w$])s[0-3]($|[^\w$])/.test(split.preamble);
+  }
 
   // src/strudel.js
   init_text_debug();
@@ -55609,7 +55614,8 @@ $: (${split.expr})${fx}`;
     }
     if (split) {
       const preamble = split.preamble;
-      const outPreamble = hydraSplit ? `/* mini-off */
+      const dropPreamble = !peer.isLocal && !!hydraSplit && usesExternalSource(code2);
+      const outPreamble = dropPreamble ? "" : hydraSplit ? `/* mini-off */
 ${preamble}
 /* mini-on */` : preamble;
       let strudelCode = split.strudel;
@@ -55631,9 +55637,9 @@ ${preamble}
         return outPreamble;
       }
       if (!strudelCode) return outPreamble;
-      return `${outPreamble}
+      return outPreamble ? `${outPreamble}
 
-${buildStrudelVoice(strudelCode, fx)}`;
+${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
     }
     if (remoteVoiceExcluded) return null;
     return buildStrudelVoice(code2, fx);
