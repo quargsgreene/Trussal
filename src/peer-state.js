@@ -583,7 +583,6 @@ export function getAllPeers() {
   return all;
 }
 
-export function getMyPeerId() { return myPeerId; }
 export function getLocalMetrics() {
   return {
     rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss,

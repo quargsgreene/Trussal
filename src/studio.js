@@ -6,11 +6,10 @@
 // it obvious that each person owns their own chain and editor.
 
 import studioStyles from './studio.css';
-import { getRoomNameFromUrl, connectJamulusRelay, disconnectJamulusRelay, isRelayConnected } from './jamulus.js';
+import { getRoomNameFromUrl } from './jamulus.js';
 import {
   subscribeParticipants,
-  getLocalParticipant,
-  getRemoteParticipants
+  getLocalParticipant
 } from './participants.js';
 import {
   subscribePeerState,
@@ -28,15 +27,12 @@ import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrud
 import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
-import { injectFacialGestureToggle, refreshFacialGestureButtons, toggleButtonCode } from './facial-gesture.js';
+import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial-gesture.js';
 import { toggleLineComment } from './editor-router-core.js';
-import { injectHydraVideoToggle } from './hydra-video.js';
-import { tickKbdUi } from './on-screen-keyboard.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
   bootAudioEngine,
   subscribeAudioRouting,
-  isAudioRoutedFor,
   attachExternalStreamForPeer,
   detachExternalStreamForPeer,
   getExternalStreamLabel,
@@ -46,7 +42,6 @@ import {
   stopPropagatingExternalStream,
   isPropagatingToRoom,
   setJamulusMode,
-  isJamulusMode,
   getAudioContext,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
@@ -977,61 +972,6 @@ async function onCaptureClick() {
   }
 }
 
-// async function onRelayClick() {
-//   if (isRelayConnected()) {
-//     disconnectJamulusRelay();
-//     setStatus('Relay disconnected');
-//     renderAll();
-//     return;
-//   }
-//   try {
-//     setStatus('Connecting to Jamulus relay…');
-//     await connectJamulusRelay();
-//     setStatus('Relay connected — Jamulus audio through effects chain');
-//     renderAll();
-//   } catch (e) {
-//     console.error('[studio] relay connect failed', e);
-//     setStatus('Relay failed: ' + (e && e.message ? e.message : e));
-//     renderAll();
-//   }
-// }
-
-const BTN_MARKER = ' // strudel-btn';
-
-function parseVoiceButtons(code) {
-  const buttons = [];
-  const re = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
-  let m;
-  while ((m = re.exec(code)) !== null) {
-    const voiceCode = `${m[1]}: ${m[2].trim()}`;
-    const isActive = code.includes(`\n${voiceCode}${BTN_MARKER}`);
-    buttons.push({ name: m[1], voiceCode, isActive });
-  }
-  return buttons;
-}
-
-function renderVoiceButtons(container, code) {
-  const area = container.querySelector('.ts-voice-btns');
-  if (!area) return;
-  const buttons = parseVoiceButtons(code);
-  if (!buttons.length) { area.innerHTML = ''; return; }
-  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-  area.innerHTML = buttons.map(b => {
-    const label = b.name.length > 18 ? b.name.slice(0, 18) + '…' : b.name;
-    return `<button class="ts-voice-btn${b.isActive ? ' on' : ''}" data-voice-code="${esc(b.voiceCode).replace(/"/g,'&quot;')}">▶ ${esc(label)}</button>`;
-  }).join('');
-  area.querySelectorAll('.ts-voice-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      toggleButtonCode(btn.dataset.voiceCode);
-      // :not(.nc-code) — the Net Cycles textarea is also a .ts-code and comes
-      // FIRST in the overlay, so a bare selector re-reads the personal
-      // buttons out of the shared metaprogram.
-      const ta = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
-      if (ta) renderVoiceButtons(container, ta.value);
-    });
-  });
-}
-
 // Strudel's own `slider()` controls, re-rendered on every trussal-sliders-updated.
 // Target .ts-strudel-sliders, not bare .ts-sliders: any other panel that later
 // reuses the .ts-sliders styling class would get blanked out (the empty-list
@@ -1187,7 +1127,6 @@ function ensureOverlay() {
   }
 
   injectFacialGestureToggle(overlay.querySelector('.ts-header'));
-  // injectHydraVideoToggle(overlay.querySelector('.ts-header'));
 
   refreshSampleBanks();
 
@@ -1246,7 +1185,6 @@ function tickUi() {
   const btn = ensureToggle();
   if (btn) btn.style.display = 'block';
 
-  // tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
   // This rig measures its own capture/codec/playout latency by loopback and
   // publishes it, so the room's worst-case bound is built from real hardware

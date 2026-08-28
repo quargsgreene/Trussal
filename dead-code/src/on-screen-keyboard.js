@@ -1,3 +1,17 @@
+// ARCHIVED 2026-08-28 — moved (whole file) out of src/ as dead code.
+//
+// The module's single export, `tickKbdUi()`, was imported by src/studio.js but
+// its one call site there (`// tickKbdUi();` in tickUi) was commented out, so
+// the panel was never built and none of this ran. `trussal-kbd-eval` — the
+// event this keyboard used to fire — is still produced by jitsi-bot.js and
+// handled in studio.js, so that path is unaffected. The `#trussal-kbd-panel` /
+// `#trussal-kbd-btn` entries in css-cycles-core.js's selector lists are now
+// inert but were left in place (defensive guardrail list).
+//
+// To revive: move this file back to src/, re-add
+//   import { tickKbdUi } from './on-screen-keyboard.js';
+// to src/studio.js and un-comment the `tickKbdUi();` call in tickUi().
+
 // on-screen-keyboard.js
 // On-screen QWERTY keyboard with head-cursor dwell, drag, collapse, and trie autocomplete.
 

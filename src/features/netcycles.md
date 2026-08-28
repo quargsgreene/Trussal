@@ -424,7 +424,7 @@ That is why **every text and css mutation is seeded** (`SeededRandom.js`), never
 
 Each mapping is capped, at the point where more of the effect stops reading as the effect: blur at 24 px (3 px on text, which has to stay readable), pixel blocks at 32, grain at 0.6, crossfades at 2 s, letter-spacing at 14 px, letter-dropping at 60 %, injected glyphs at 4 per word, and word repeats at 3. `VideoState.js` and `TextState.js` hold those ceilings beside the mappings that need them.
 
-**Uploaded material is never rewritten.** `# crush` compresses a render-time copy of an image (`compressImage`), so turning the directive off restores the picture — a set cannot slowly destroy its own material. Uploaded images live in the performer's own IndexedDB and are addressed by an object URL minted there, so a preamble calling `img(...)` earns a **blit** cell rather than a re-executed one, exactly as a camera preamble does: the aggregator never had the file and would draw a broken image.
+**Uploaded material is never rewritten.** Any effect that "compresses" an image does so to a render-time copy, so turning the directive off restores the picture — a set cannot slowly destroy its own material. Uploaded images live in the performer's own IndexedDB and are addressed by an object URL minted there, so a preamble calling `img(...)` earns a **blit** cell rather than a re-executed one, exactly as a camera preamble does: the aggregator never had the file and would draw a broken image.
 
 Effect parameters are plain positive numbers, except where the effect says otherwise: `room`, `crush`, `echo` and `noise` each accept mini-notation patterns in their argument slots, sampled from the room's cycle position.
 

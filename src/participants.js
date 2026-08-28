@@ -114,7 +114,6 @@ export function subscribeParticipants(fn) {
 }
 
 export function getLocalParticipant() { return local; }
-export function getRemoteParticipants() { return Array.from(remotes.values()); }
 
 // Resolve the owner of a remote audio tag by TRACK IDENTITY: match the tag's
 // srcObject audio track ids against each remote participant's audio

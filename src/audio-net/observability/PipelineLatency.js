@@ -164,7 +164,3 @@ export function startPipelineLatencyMeasurement(send, getContext) {
   runOnce();
   measureTimer = setInterval(runOnce, REMEASURE_INTERVAL_MS);
 }
-
-export function stopPipelineLatencyMeasurement() {
-  if (measureTimer) { clearInterval(measureTimer); measureTimer = null; }
-}

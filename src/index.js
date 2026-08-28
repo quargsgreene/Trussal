@@ -1,4 +1,4 @@
-import { JAMULUS_ROOM_MAP , renderJamulusWelcomePanelAndBanner, getRoomNameFromUrl} from './jamulus.js';
+import { JAMULUS_ROOM_MAP } from './jamulus.js';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
@@ -90,7 +90,6 @@ if (!window.__trussalIsBot) {
 }
 
 renderAudioConfigCheck();
-// renderJamulusWelcomePanelAndBanner();
 renderRecentListText();
 // The overlay is the ONLY way into a room from the welcome page, because
 // renderHideStartMeetingButton() below hides Jitsi's native "Start meeting"

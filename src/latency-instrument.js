@@ -70,14 +70,6 @@ export function subscribeAudioRouting(fn) {
   return () => routingSubscribers.delete(fn);
 }
 
-export function getRoutedPeerIds() {
-  return Array.from(audioRouted);
-}
-
-export function isAudioRoutedFor(jitsiId) {
-  return audioRouted.has(jitsiId);
-}
-
 function applyJamulusMuteToAllTags() {
   document.querySelectorAll('audio').forEach(tag => {
     if (!tag.srcObject) return;
@@ -105,8 +97,6 @@ export function setJamulusMode(enabled) {
     jamulasMutedTags.clear();
   }
 }
-
-export function isJamulusMode() { return jamulusMode; }
 
 // Aggregator mode: gain for a peer's chain given the current aggregator. 1 when
 // no aggregator is present (normal mix) or for the aggregator's own chain; 0 for

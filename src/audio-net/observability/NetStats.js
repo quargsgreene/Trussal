@@ -197,7 +197,3 @@ export function startNetStatsPolling(send) {
   if (pollTimer || typeof send !== 'function') return;
   pollTimer = setInterval(() => { pollOnce(send); }, POLL_INTERVAL_MS);
 }
-
-export function stopNetStatsPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-}

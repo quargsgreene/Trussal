@@ -36,7 +36,6 @@ const GESTURE_MODEL_URL =
 const MP_ESM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm';
 
 // Detection thresholds — identical to strudel-fork's useFacialGestures.jsx.
-const BLINK_THRESHOLD      = 0.8;
 const WINK_THRESHOLD       = 0.6;  // single-eye blink threshold; both eyes must differ to qualify
 const SMILE_THRESHOLD      = 0.7;  // bilateral smile → play
 const SMILE_ASYMMETRY_MAX  = 0.2;  // max difference between left/right smile scores; perspective artifacts are asymmetric
@@ -44,9 +43,7 @@ const HEAD_YAW_THRESHOLD   = 0.25; // suppress smile when head is turned sideway
 const THUMBS_UP_THRESHOLD  = 0.6;  // GestureRecognizer confidence for Thumb_Up → stop
 const BROW_INNER_THRESHOLD = 0.6;
 const BROW_OUTER_THRESHOLD = 0.45;
-const JAW_OPEN_THRESHOLD   = 0.5;
 const HEAD_TILT_THRESHOLD  = 0.3;
-const COOLDOWN_MS          = 1500;
 const EMA_ALPHA            = 0.15;
 const LATCH_RESET          = 0.4;
 const DWELL_MS             = 1000;
@@ -247,7 +244,6 @@ const _ema = {
   cursorY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
 };
 const _latch      = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
-const _lastFired  = { play: 0, stop: 0 };
 // _dwell.type: 'strudel' | 'fx' | null.  key is strudelCode or fx name.
 const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false };
 // What the dwell bar currently shows, so an unchanged rebuild is skipped.

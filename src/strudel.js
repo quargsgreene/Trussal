@@ -14,7 +14,7 @@
 import { getStrudelAudioContext, getAggregatorPeer } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
 import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
-import { subscribeParticipants, getLocalParticipant } from './participants.js';
+import { subscribeParticipants } from './participants.js';
 import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { rewriteDataRefs, makeDataFn } from './data-ref.js';
 import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
@@ -742,13 +742,6 @@ export async function bootStrudelOnUserGesture() {
   await ensureStrudel();
 }
 
-export async function syncStrudelFromPeers() {
-  // Don't auto-boot; rebuild eagerly so the program is fresh when a user does
-  // hit Play. If Strudel is already booted, evaluate immediately.
-  if (!strudelBoot) return;
-  await rebuildAndEvaluate();
-}
-
 export async function stopStrudel() {
   if (!strudelBoot) return;
   const { hush, clearHydra } = await loadStrudel();
@@ -767,8 +760,6 @@ export async function stopStrudel() {
   activeSliders = {};
   document.dispatchEvent(new CustomEvent('trussal-sliders-updated', { detail: [] }));
 }
-
-export function isStrudelPlaying() { return anyPlaying; }
 
 // Re-register local IDB samples with the already-loaded Strudel module.
 // Call this after uploading new samples so they become available immediately

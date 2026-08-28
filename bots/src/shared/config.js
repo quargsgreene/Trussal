@@ -8,13 +8,6 @@
  * ignoring an operator's setting.
  */
 
-export const STRATIFICATION_ROLES = Object.freeze({
-  FREQUENCY_BANDS: 'frequencyBands',
-  STAGGERED_ROUND: 'staggeredRound',
-  UNISON: 'unison',
-  STEREO_TILES: 'stereoTiles',
-});
-
 export const defaultConfig = Object.freeze({
   // Network endpoints (spec)
   jitsiUrl: 'http://localhost/0',

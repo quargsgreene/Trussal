@@ -153,27 +153,6 @@ const PATTERN_FNS = {
   superimpose: { minArgs: 0, maxArgs: 0, stacking: true, takesSequence: true }
 };
 
-export const EFFECT_DEFAULTS = {
-  room: { metric: 'wcl', scale: 1, fixedMetric: null },
-  // Bare `# echo`: wcl drives all three parameters, at half a cycle of delay,
-  // half feedback and unity gain — each still normalized against wcl's default
-  // upper bound, so these are the values reached at that bound rather than
-  // fixed outputs. Bounds default per metric (av-effects/Echo.js, which owns
-  // this table; echoParams falls back to the very same objects).
-  echo: { slots: ECHO_DEFAULT_SLOTS },
-  crush: { metric: 'wcl', scale: 1, fixedMetric: null },
-  // Both noise axes default to wcl but to factor 0 — nothing modulates until
-  // a factor (or the metric keyword that implies one) is written, which is
-  // what makes a bare `# noise` the unmodulated floor.
-  noise: {
-    spectrum: { metric: 'wcl', factor: 0, fixed: null },
-    volume: { metric: 'wcl', factor: 0, fixed: null }
-  },
-  grid: { landmarks: false },
-  mosaic: { enabled: MOSAIC_ENABLED_BY_DEFAULT },
-  disjointCss: { enabled: DISJOINT_CSS_ENABLED_BY_DEFAULT }
-};
-
 // ---------------------------------------------------------------------------
 // Tokenizer
 

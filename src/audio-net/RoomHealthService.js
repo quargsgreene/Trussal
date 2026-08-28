@@ -111,8 +111,3 @@ export function startRoomHealth() {
     }
   });
 }
-
-export function stopRoomHealth() {
-  if (timer) { clearInterval(timer); timer = null; }
-  rafRunning = false;
-}

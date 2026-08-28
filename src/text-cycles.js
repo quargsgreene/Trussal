@@ -76,8 +76,6 @@ export function setTextAtoms(table) {
   });
 }
 
-export function isTextCyclesActive() { return active; }
-
 // Token → the characters the performer actually typed. A value that is not a
 // token (a runtime string from an uninterpolatable template) is used as-is.
 function resolve(value) {
