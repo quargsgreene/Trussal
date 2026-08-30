@@ -38634,11 +38634,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var init_Echo = __esm({
     "src/audio-net/av-effects/Echo.js"() {
       init_ValuePattern();
-      ECHO_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
+      ECHO_METRICS = ["wcl", "wcpl"];
       ECHO_METRIC_BOUNDS = Object.freeze({
         wcl: 500,
-        wcj: 50,
-        wcrtt: 500,
         wcpl: 20
       });
       ECHO_SLOTS = ["length", "feedback", "gain"];
@@ -38835,7 +38833,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       // `# room <metric> [scale] [fixed metric amount]` — decay = scale × the
       // named metric; the optional third token pins it (0.4 = 400 ms) instead of
       // reading live metrics. Any of the three may be a valueSeq node
-      // (`# room <wcl wcj> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
+      // (`# room <wcl wcpl> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
       case "room":
         return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedMetric: args2[1] ?? null };
       // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
@@ -38857,7 +38855,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       }
       // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
       // halved as the metric climbs. Any of the three may be a valueSeq node
-      // (`# crush <wcl wcj> <2 4>`); crushParams reads them per cycle.
+      // (`# crush <wcl wcpl> <2 4>`); crushParams reads them per cycle.
       case "crush":
         return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedMetric: args2[1] ?? null };
       // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
@@ -38890,21 +38888,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       // entirely; only an explicit `false` drops to the single streaming cell.
       case "mosaic":
         return { enabled: args2[0] ?? true };
-      // `# disjointCss [bool]` — a bare `# disjointCss` is disjoint, same as
-      // omitting it entirely; only an explicit `false` restores the shared
-      // cascade.
-      case "disjointCss":
-        return { enabled: args2[0] ?? true };
       default:
         return { args: args2 };
     }
-  }
-  function disjointCssEnabled(ast2) {
-    const chain = ast2 && ast2.chain || [];
-    for (let i = chain.length - 1; i >= 0; i--) {
-      if (chain[i].fn === "disjointCss") return !!resolveEffectParams(chain[i]).enabled;
-    }
-    return DISJOINT_CSS_ENABLED_BY_DEFAULT;
   }
   function buildDefaultProgram() {
     return `$ participants <0>
@@ -38943,23 +38929,22 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }).join(" ");
     return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
   }
-  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, DISJOINT_CSS_ENABLED_BY_DEFAULT, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
+  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
       init_Echo();
       init_ValuePattern();
       init_EffectMedia();
-      TIMING_METRICS = ["wcl", "wcj", "wcpl"];
-      EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
-      DISJOINT_CSS_ENABLED_BY_DEFAULT = true;
+      TIMING_METRICS = ["wcl", "wcpl"];
+      EFFECT_METRICS = ["wcl", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       VALUE_ELEMENT_OPS = /* @__PURE__ */ new Set(["@", "?", "!", "*", "/"]);
       MAX_VALUE_REPEATS = 1024;
-      CRUSH_METRICS = ["wcl", "wcj", "wcpl", "wcrtt"];
+      CRUSH_METRICS = ["wcl", "wcpl"];
       EFFECTS = {
         // scale=1, fixed metric amount=live. Any worst-case metric may drive the
-        // decay, and all three arguments pattern — `# room <wcl wcj> <1 2 ~ 2 3>*2`.
+        // decay, and all three arguments pattern — `# room <wcl wcpl> <1 2 ~ 2 3>*2`.
         room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
         echo: {
           kind: "effect",
@@ -38984,12 +38969,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         // false shows only whoever is streaming, full-frame. Unwritten means the
         // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
         // rather than in an injected directive nobody typed.
-        mosaic: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true },
-        // Whether CSS Cycles' mutual exclusion (css-cycles.js) is in force room-wide
-        // rather than only while a Net Cycles ring is actively scheduling turns.
-        // True (or bare) is the default — see DISJOINT_CSS_ENABLED_BY_DEFAULT —
-        // false restores the pre-existing shared-cascade behaviour.
-        disjointCss: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
+        mosaic: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
       };
       PATTERN_FNS = {
         ply: { minArgs: 1, maxArgs: 1 },
@@ -39364,8 +39344,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
         // With no amount the metric evolves with the live worst-case measurement;
         // an amount PINS it there regardless of network conditions (seconds for
-        // wcl/wcj, loss fraction for wcpl), pinning timing only — measured
-        // metrics still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
+        // wcl, loss fraction for wcpl), pinning timing only — measured metrics
+        // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
           if (metricTok.type !== "word" || !TIMING_METRICS.includes(metricTok.value)) {
@@ -39463,7 +39443,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         // ValuePattern.js reads back unchanged and each effect's params function
         // already treats as "use the default", so a rest leaves the parameter alone
         // for as long as it is in force. Rests settle nothing about the leaf kind:
-        // `<wcl ~ wcj>` is still a pattern of metrics.
+        // `<wcl ~ wcpl>` is still a pattern of metrics.
         parseValueSequence(name3, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
           const open = this.next();
           const close = open.value === "<" ? ">" : "]";
@@ -39915,8 +39895,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         //          [<amount for metric 1>] [<amount for metric 2>]`
         //
         // Positional, with the two metric keywords optional and interleaved: a
-        // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
-        // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
+        // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcpl 10`
+        // reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers fill
         // the spectrum factor, the volume factor, then the two pinned amounts — in
         // the order the metrics were written. Any slot may instead be a `<…>`
         // pattern, sampled one element per cycle.
@@ -40133,8 +40113,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
     const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
     switch (cycles && cycles.metric) {
-      case "wcj":
-        return (fixed ?? (m2.wcj || 0) / 1e3) * factor;
       case "wcpl":
         return (fixed ?? (m2.wcpl || 0)) * WCPL_FULL_SCALE_S * factor;
       case "wcl":
@@ -40156,7 +40134,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const targetS = timingTargetSeconds(cycles, metrics);
     const source2 = fixed != null ? `# cycles ${metric} ${factor} ${fixed} (pinned)` : `# cycles ${metric} ${factor}`;
     const m2 = metrics || {};
-    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcj ${(m2.wcj || 0).toFixed(1)}ms, wcrtt ${(m2.wcrtt || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
+    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
   }
   function clampRate(rate) {
     if (!(rate > 0) || !isFinite(rate)) return 1;
@@ -40405,7 +40383,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           this._clearInterval = clearIntervalFn;
           this._ast = null;
           this._pendingAst = null;
-          this._metrics = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
+          this._metrics = { wcl: 0, wcpl: 0 };
           this._pendingMetrics = null;
           this._running = false;
           this._timer = null;
@@ -40617,52 +40595,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
-  // src/audio-net/network-modulation/IncreaseJitter.js
-  var IncreaseJitter;
-  var init_IncreaseJitter = __esm({
-    "src/audio-net/network-modulation/IncreaseJitter.js"() {
-      IncreaseJitter = Object.freeze({
-        key: "wcj",
-        label: "Induce jitter",
-        unit: "ms",
-        min: 0,
-        max: 1e3,
-        step: 1,
-        clamp(value2) {
-          const v2 = Number(value2);
-          if (!isFinite(v2)) return 0;
-          return Math.min(this.max, Math.max(this.min, v2));
-        },
-        applyTo(measured, induced) {
-          return Math.max(measured || 0, this.clamp(induced));
-        }
-      });
-    }
-  });
-
-  // src/audio-net/network-modulation/IncreaseRTT.js
-  var IncreaseRTT;
-  var init_IncreaseRTT = __esm({
-    "src/audio-net/network-modulation/IncreaseRTT.js"() {
-      IncreaseRTT = Object.freeze({
-        key: "wcrtt",
-        label: "Induce RTT",
-        unit: "ms",
-        min: 0,
-        max: 1e4,
-        step: 10,
-        clamp(value2) {
-          const v2 = Number(value2);
-          if (!isFinite(v2)) return 0;
-          return Math.min(this.max, Math.max(this.min, v2));
-        },
-        applyTo(measured, induced) {
-          return Math.max(measured || 0, this.clamp(induced));
-        }
-      });
-    }
-  });
-
   // src/audio-net/network-modulation/IncreasePacketLoss.js
   var IncreasePacketLoss;
   var init_IncreasePacketLoss = __esm({
@@ -40698,11 +40630,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
     return null;
   }
-  function peerJitter(peer) {
-    if (typeof peer.rtcJitter === "number" && isFinite(peer.rtcJitter)) return peer.rtcJitter;
-    if (typeof peer.jitter === "number" && isFinite(peer.jitter)) return peer.jitter;
-    return null;
-  }
   function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
     const sorted = [...rtts].sort((a2, b) => b - a2);
     if (!sorted.length) return 0;
@@ -40715,7 +40642,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function computeWorstCaseMetrics(peers) {
     const list = Array.isArray(peers) ? peers : [];
     const rtts = [];
-    const jitters = [];
     const losses = [];
     const jitterBuffers = [];
     const pipelines = [];
@@ -40723,8 +40649,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       if (!peer) continue;
       const rtt = peerRtt(peer);
       if (rtt != null) rtts.push(rtt);
-      const jitter = peerJitter(peer);
-      if (jitter != null) jitters.push(jitter);
       if (typeof peer.jitterBufferMs === "number" && isFinite(peer.jitterBufferMs)) {
         jitterBuffers.push(peer.jitterBufferMs);
       }
@@ -40735,13 +40659,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         losses.push(Math.min(1, Math.max(0, peer.packetLoss)));
       }
     }
-    const wcrtt = worstCase(rtts) ?? 0;
     const wcjb = worstCase(jitterBuffers) ?? 0;
     const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
     return {
       wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
-      wcj: worstCase(jitters) ?? 0,
-      wcrtt,
       wcjb,
       wcpipe,
       // How many rigs actually measured their own pipeline, so a readout can say
@@ -40764,14 +40685,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
-      init_IncreaseJitter();
-      init_IncreaseRTT();
       init_IncreasePacketLoss();
       PIPELINE_ALLOWANCE_MS = 40;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
-        wcj: IncreaseJitter,
-        wcrtt: IncreaseRTT,
         wcpl: IncreasePacketLoss
       });
     }
@@ -49903,7 +49820,7 @@ ${err.toString()}`);
       getInduced() {
         if (!modulation) return {};
         const out = {};
-        for (const key of ["wcl", "wcj", "wcrtt", "wcpl"]) {
+        for (const key of ["wcl", "wcpl"]) {
           const v2 = modulation.get(key);
           if (typeof v2 === "number") out[key] = v2;
         }
@@ -49986,11 +49903,9 @@ ${err.toString()}`);
     const scaleRaw = evaluateValuePattern(user.scale ?? 1, cyclePos);
     const scale2 = Number.isFinite(scaleRaw) && scaleRaw > 0 ? scaleRaw : 1;
     const fixedRaw = evaluateValuePattern(user.fixedMetric ?? null, cyclePos);
-    const wcrttFactor = user.wcrttFactor ?? 1;
     const metricS = roomMetricSeconds(metric, metrics, Number.isFinite(fixedRaw) ? fixedRaw : null);
-    const wcrtt = Math.max(0, metrics && metrics.wcrtt || 0);
     const decayS = scale2 * metricS;
-    const rawCutoff = wcrtt * wcrttFactor * 100;
+    const rawCutoff = decayS > 0 ? CUTOFF_MAX_HZ / (1 + decayS * LOWPASS_PER_SECOND) : CUTOFF_MAX_HZ;
     const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
     return {
       // Which metric is driving, so a readout (and the aggregator's push
@@ -50073,7 +49988,7 @@ ${err.toString()}`);
       }
     };
   }
-  var COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ, MAX_COMB_FEEDBACK, WET_GAIN, METRIC_PER_SECOND, DEFAULT_METRIC;
+  var COMB_BASES_S, ALLPASS_BASES_S, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ, LOWPASS_PER_SECOND, MAX_COMB_FEEDBACK, WET_GAIN, METRIC_PER_SECOND, DEFAULT_METRIC;
   var init_Room = __esm({
     "src/audio-net/av-effects/Room.js"() {
       init_ValuePattern();
@@ -50081,9 +49996,10 @@ ${err.toString()}`);
       ALLPASS_BASES_S = [5e-3, 17e-4];
       CUTOFF_MIN_HZ = 40;
       CUTOFF_MAX_HZ = 18e3;
+      LOWPASS_PER_SECOND = 12;
       MAX_COMB_FEEDBACK = 0.98;
       WET_GAIN = 0.5;
-      METRIC_PER_SECOND = { wcl: 1e3, wcj: 1e3, wcrtt: 1e3, wcpl: 1 };
+      METRIC_PER_SECOND = { wcl: 1e3, wcpl: 1 };
       DEFAULT_METRIC = "wcl";
     }
   });
@@ -50159,7 +50075,7 @@ ${err.toString()}`);
       MIN_BIT_DEPTH = 1;
       MAX_BIT_DEPTH = 16;
       MAX_SR_DIVISOR = 64;
-      HALVING_AMOUNTS = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
+      HALVING_AMOUNTS = { wcl: 100, wcpl: 0.25 };
       DEFAULT_METRIC2 = "wcl";
     }
   });
@@ -50773,7 +50689,6 @@ ${err.toString()}`);
     getQueueDepth: () => getQueueDepth,
     getVlans: () => getVlans,
     hasEffectShortcut: () => hasEffectShortcut,
-    isDisjointCssEnabled: () => isDisjointCssEnabled,
     isNetCyclesActive: () => isNetCyclesActive,
     removeVlan: () => removeVlan,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
@@ -50916,9 +50831,6 @@ ${err.toString()}`);
   }
   function broadcastStopSignal() {
     ensureMetaprogramSync().broadcastStop();
-  }
-  function isDisjointCssEnabled() {
-    return disjointCssEnabled(currentAst);
   }
   function hasEffectShortcut(fn) {
     if (!programText) return false;
@@ -53329,7 +53241,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
 
   // src/css-cycles.js
   init_peer_state();
-  init_Metaprogrammer();
 
   // src/css-cycles-core.js
   init_text_cycles_core();
@@ -54716,7 +54627,6 @@ ${full}
     }
   }
   function ownsCssTurn(jitsiId) {
-    if (!isDisjointCssEnabled()) return isPeerNetCyclesTurn(jitsiId);
     const token = getActiveNetCyclesToken() ?? "0";
     const peer = getPeerByJitsiId(jitsiId);
     return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
@@ -54764,7 +54674,6 @@ ${full}
   }
   var lastNetCyclesTurnKey = null;
   function handleNetCyclesTokenChange(e30) {
-    if (!isDisjointCssEnabled()) return;
     const detail = e30?.detail || {};
     const key = `${detail.token}|${detail.index}|${detail.kind}`;
     if (key === lastNetCyclesTurnKey) return;
@@ -55143,7 +55052,6 @@ ${full}
     random: { type: "string", values: ["params", "full"] },
     paramFactor: { type: "number" },
     harmony: { type: "string", pattern: /^(diatonic|random|[+-]\d+)$/ },
-    mcp: { type: "string" },
     colorScheme: {
       type: "string",
       values: [
@@ -55152,13 +55060,10 @@ ${full}
         "analogous",
         "triadic",
         "tetradic",
-        "split-complementary",
         "square",
         "random"
       ]
     },
-    textParrot: { type: "boolean" },
-    cssParrot: { type: "boolean" },
     retroactive: { type: "boolean" },
     samples: { type: "boolean" }
   };
@@ -58554,8 +58459,8 @@ ${s2}${BTN_MARKER}`)
   // src/audio-net/RoomHealth.js
   function avDecouplingSeconds(cycleSeconds, metrics = {}) {
     const base = Math.max(0, cycleSeconds || 0);
-    const wcj = Math.max(0, metrics.wcj || 0);
-    const stretch2 = Math.min(2, 1 + wcj / 500);
+    const wcl = Math.max(0, metrics.wcl || 0);
+    const stretch2 = Math.min(2, 1 + wcl / 500);
     return base * stretch2;
   }
   function compressionParams(load2 = {}) {
@@ -58834,7 +58739,7 @@ ${s2}${BTN_MARKER}`)
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCRTT/WCJ prefer">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 media jitter <b>${rtcJitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
+    return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCL is built from">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 media jitter <b>${rtcJitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
   }
   function cycleLengthReadout(wc) {
     const text2 = getProgramText();
@@ -58875,7 +58780,7 @@ ${s2}${BTN_MARKER}`)
       const wc = effectiveWorstCase();
       body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
         + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}

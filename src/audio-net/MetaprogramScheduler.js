@@ -32,7 +32,7 @@ export function beatSeconds(tempo) {
 export const WCPL_FULL_SCALE_S = 10;
 
 // The minimum waiting period the timing mode demands, in seconds. A fixed
-// amount on the cycles directive pins the metric there (seconds for wcl/wcj,
+// amount on the cycles directive pins the metric there (seconds for wcl,
 // loss fraction for wcpl) regardless of the live measurement — the pin only
 // reaches timing, never the effects/readouts that consume metrics directly.
 export function timingTargetSeconds(cycles, metrics) {
@@ -40,7 +40,6 @@ export function timingTargetSeconds(cycles, metrics) {
   const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
   const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
   switch (cycles && cycles.metric) {
-    case 'wcj': return (fixed ?? (m.wcj || 0) / 1000) * factor;
     case 'wcpl': return (fixed ?? (m.wcpl || 0)) * WCPL_FULL_SCALE_S * factor;
     case 'wcl':
     default: return (fixed ?? (m.wcl || 0) / 1000) * factor;
@@ -73,8 +72,8 @@ export function describeCycleLength({ cycles, tempo, metrics }) {
     : `# cycles ${metric} ${factor}`;
   const m = metrics || {};
   return `${seconds.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] ← ${source} ` +
-    `target ${targetS.toFixed(3)}s (wcl ${(m.wcl || 0).toFixed(1)}ms, wcj ${(m.wcj || 0).toFixed(1)}ms, ` +
-    `wcrtt ${(m.wcrtt || 0).toFixed(1)}ms, wcpl ${((m.wcpl || 0) * 100).toFixed(1)}%)`;
+    `target ${targetS.toFixed(3)}s (wcl ${(m.wcl || 0).toFixed(1)}ms, ` +
+    `wcpl ${((m.wcpl || 0) * 100).toFixed(1)}%)`;
 }
 
 // --- Cycle expansion -----------------------------------------------------------
@@ -460,7 +459,7 @@ export class MetaprogramScheduler {
 
     this._ast = null;
     this._pendingAst = null;
-    this._metrics = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
+    this._metrics = { wcl: 0, wcpl: 0 };
     this._pendingMetrics = null;
 
     this._running = false;

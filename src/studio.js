@@ -236,7 +236,7 @@ function renderStrip(container) {
 function metricsLine(peer) {
   // preciseMs, not toFixed(0): these are the samples the WC readout directly
   // below is computed from, and at LAN scale a fixed 0-decimal render printed
-  // a 0.4 ms RTT as "0ms" next to a WCRTT of "0.40ms" — the same number,
+  // a 0.4 ms RTT as "0ms" next to a WCL of "0.40ms" — the same number,
   // contradicting itself two lines apart. It coerces null to 0, so the
   // unmeasured guard stays.
   const ms = (v) => (typeof v === 'number' ? preciseMs(v) : '–');
@@ -260,7 +260,7 @@ function metricsLine(peer) {
   } else {
     routedTxt = 'no live audio';
   }
-  return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCRTT/WCJ prefer">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · media jitter <b>${rtcJitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
+  return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCL is built from">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · media jitter <b>${rtcJitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
 }
 
 // The one network panel: this peer's measured link and the room-wide
@@ -340,7 +340,7 @@ function updateMetricsSection(el, peer, controls = '') {
     const wc = effectiveWorstCase();
     body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
         + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}

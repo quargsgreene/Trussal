@@ -21,9 +21,9 @@ function chainOf(directive) {
 }
 
 const CYCLE = { cycleSeconds: 2, cyclePos: 0 };
-// A lossy, slow room: a low wcrtt is what closes room's cutoff (and so opens
-// the blur), and wcl drives the decay.
-const METRICS = { wcl: 400, wcj: 40, wcrtt: 1, wcpl: 0.1 };
+// A lossy, slow room: wcl drives room's decay, and the decay closes the
+// cascaded lowpass (and so opens the blur).
+const METRICS = { wcl: 400, wcpl: 0.1 };
 
 test('video: an empty chain touches no pixel', () => {
   const state = videoStateFor([], METRICS, CYCLE);
@@ -33,8 +33,9 @@ test('video: an empty chain touches no pixel', () => {
 
 test('video: room blurs, with radius from the cutoff and mix from the decay', () => {
   const state = videoStateFor(chainOf('# room wcl 2'), METRICS, CYCLE);
-  // wcrtt of 1 ms closes the cutoff to 100 Hz of 18 kHz, so the radius is
-  // nearly the ceiling; the decay is well past the half-strength point.
+  // A 0.8 s tail (2 × 400 ms) closes the cascaded lowpass to ~1.7 kHz of
+  // 18 kHz, so the radius is near the ceiling; the decay is past the
+  // half-strength point.
   assert.ok(state.blurPx > MAX_BLUR_PX * 0.9, `blurPx ${state.blurPx}`);
   assert.ok(state.blurWet > 0.4 && state.blurWet <= 1, `blurWet ${state.blurWet}`);
   assert.equal(videoStateIsNeutral(state), false);
@@ -43,7 +44,7 @@ test('video: room blurs, with radius from the cutoff and mix from the decay', ()
 test('video: a wide-open room leaves the image alone', () => {
   // No decay and no cutoff to speak of: nothing to blur, so nothing is drawn
   // twice. The state must be neutral rather than "blur of zero pixels".
-  const state = videoStateFor(chainOf('# room wcl 2'), { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 }, CYCLE);
+  const state = videoStateFor(chainOf('# room wcl 2'), { wcl: 0, wcpl: 0 }, CYCLE);
   assert.equal(state.blurPx, 0);
   assert.equal(state.blurWet, 0);
   assert.equal(videoStateIsNeutral(state), true);
@@ -57,7 +58,7 @@ test('video: crush decimates pixels, bounded by the block ceiling', () => {
 });
 
 test('video: noise lays grain on, bounded by its ceiling', () => {
-  const state = videoStateFor(chainOf('# noise wcl 20 wcrtt 10'), METRICS, CYCLE);
+  const state = videoStateFor(chainOf('# noise wcl 20 wcpl 10'), METRICS, CYCLE);
   assert.ok(state.grain > 0, `grain ${state.grain}`);
   assert.ok(state.grain <= MAX_GRAIN);
 });

@@ -23,10 +23,9 @@
 
 import { parseHarmony } from '../../../src/bot-config.js';
 
-// Mirrors SCALE_INTERVALS in src/mcp-agent/tools/theory_utils.js. Duplicated
-// rather than imported because mcp-agent is a separate package with its own
-// dependencies and is not in the conductor image; the table is a fact about
-// music, not a shared decision, so a second copy cannot drift into a bug.
+// The seven diatonic modes plus the common non-diatonic scales, as semitone
+// offsets from the tonic. A plain fact about music rather than a shared
+// decision, so it is spelled out here rather than imported.
 const SCALE_INTERVALS = Object.freeze({
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
@@ -53,7 +52,6 @@ const COLOR_SCHEMES = {
   analogous: [0, 1 / 12, -1 / 12, 2 / 12, -2 / 12],
   triadic: [0, 1 / 3, 2 / 3],
   tetradic: [0, 1 / 4, 1 / 2, 3 / 4],
-  'split-complementary': [0, 5 / 12, 7 / 12],
   square: [0, 1 / 4, 1 / 2, 3 / 4],
 };
 

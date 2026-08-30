@@ -22,10 +22,11 @@ const POLL_INTERVAL_MS = 2000;
 //   rtcRtt     ms — selected candidate-pair currentRoundTripTime, falling
 //              back to remote-inbound-rtp roundTripTime (both arrive in s).
 //   rtcJitter  ms — worst AUDIO-only inbound/remote-inbound-rtp jitter
-//              (arrives in s). Audio-only because this is what WCJ is built
-//              from, and video jitter on the same connection would otherwise
-//              dominate the max. Note jitterBufferMs below is NOT filtered
-//              this way — it still sums every kind.
+//              (arrives in s). A studio diagnostic ("media jitter"); audio-only
+//              so video jitter on the same connection cannot dominate the max
+//              and make the figure track whether cameras are on. Note
+//              jitterBufferMs below is NOT filtered this way — it still sums
+//              every kind.
 //   jitterBufferMs ms — receive-side de-jitter buffer delay, measured as the
 //              DELTA of inbound-rtp jitterBufferDelay / jitterBufferEmittedCount
 //              since prevTotals. This is normally the single largest term in
@@ -68,12 +69,12 @@ export function deriveNetSample(statsEntries, prevTotals = null) {
     rtcRtt = selected.currentRoundTripTime * 1000;
   }
 
-  // rtcJitter drives WCJ, which paces turns and tunes the echo — musical
-  // timing, so it must describe the AUDIO a performer hears. Video streams
-  // routinely jitter an order of magnitude more than Opus on the same
-  // connection, and unfiltered they win the max: WCJ would then track whether
-  // cameras are on. `kind` is the modern field, `mediaType` the legacy alias;
-  // a stat carrying neither is not assumed to be audio.
+  // rtcJitter is the studio's "media jitter" readout, so it must describe the
+  // AUDIO a performer hears. Video streams routinely jitter an order of
+  // magnitude more than Opus on the same connection, and unfiltered they win
+  // the max: the figure would then track whether cameras are on. `kind` is the
+  // modern field, `mediaType` the legacy alias; a stat carrying neither is not
+  // assumed to be audio.
   const isAudio = (s) => (s.kind ?? s.mediaType) === 'audio';
 
   for (const s of entries) {

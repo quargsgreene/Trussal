@@ -201,7 +201,7 @@ test('the hydra suffix chains onto the pipeline, no src(o0)/out(o0) of its own',
 });
 
 test('a hue of 0 is never emitted: cluster member 0 keeps its colour via omission, not .hue(0)', () => {
-  for (const scheme of ['complementary', 'triadic', 'tetradic', 'analogous', 'square', 'split-complementary']) {
+  for (const scheme of ['complementary', 'triadic', 'tetradic', 'analogous', 'square']) {
     assert.equal(hueForScheme(scheme, 0), 0, `${scheme} index 0 is the human's own hue`);
     assert.equal(colorHydraSuffix(scheme, 0, 4), '', `${scheme} must not emit .hue(0)`);
   }

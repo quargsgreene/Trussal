@@ -93,7 +93,7 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Allow reading from network metrics
             - Write to artificial network modulation
                 - Steps:
-                    - Raise the artificial latency, jitter, RTT, packet loss percentage induction floors (no control surface at present — the induction sliders were removed; the CRDT 'modulation' channel and the merge into effective worst-case remain)
+                    - Raise the artificial latency and packet-loss-percentage induction floors (no control surface at present — the induction sliders were removed; the CRDT 'modulation' channel and the merge into effective worst-case remain)
             - Allow or disallow bots in cluser to write to artificial network modulation
                 - Steps:
                     - Focus on a subset of bots in personal cluster fleet
@@ -110,16 +110,16 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Join as Puppeteer instance 
             - Update personal Hydra-integrated Strudel script via simulated keyboard and originating user input
                 - Steps:
-                    - Update current code editor with latest MCP-generated buffer updates depending on order in update queue
+                    - Update current code editor with the latest buffer updates depending on order in update queue
             - Update global metaprogramming script if allowed by user
                 - Steps:
-                    - Update current Net Cycles code with latest MCP-generated buffer updates depending on order in update cycle buffer queue
+                    - Update current Net Cycles code with the latest buffer updates depending on order in update cycle buffer queue
             - Expose network performance metrics and frequency response over time
                 - Steps:
                     - Allow reading from network metrics
             - Write to artificial network modulation
                 - Steps:
-                    - Raise the artificial latency, jitter, RTT, packet loss percentage induction floors according to originating user permissions (no control surface at present — see the same capability above)
+                    - Raise the artificial latency and packet-loss-percentage induction floors according to originating user permissions (no control surface at present — see the same capability above)
             - Leave meeting room
                 - Steps:
                     - Destroy all Puppeteer instances after meeting ends according to standard XMPP constraints
@@ -142,9 +142,7 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │   │   ├── observability/
 │   │   │   └── NetStats.js         # Store network metrics
 │   │   ├── network-modulation/
-│   │       ├── IncreaseJitter.js   # Increase above minimum Worst-Case Jitter (WCJ)
 │   │       ├── IncreaseLatency.js  # Increase above minimum Worst-Case Latency (WCL)
-│   │       ├── IncreaseRTT.js      # Increase above minimunm Worst-Case RTT (WCRTT)
 │   │       ├── IncreasePacketLoss.js # Increase above minimum Wost-Case Packet Loss (WCPL)
 │   │       └── WorstCaseCalculationUtils.js # Calculate and set all Worst-Case Network Metrics
 │   │   │            
@@ -154,13 +152,8 @@ Below is the directory structure supporting O2lite bridging and Strudel AI contr
 │   │       ├── Noise.js
 │   │       ├── Grid.js
 │   │       └── Echo.js
-│   ├── bridges/
-│   │   └── XMPPtoO2Mapper.js       # Maps XMPP JIDs to O2 Service Names
-│   └── mcp-agent/
-│       ├── tools/
-│       │   ├── instrument_defs.json # Defines valid Strudel instruments for the AI
-│       │   └── theory_utils.js      # Helpers for the AI (scales, chord progressions)
-│       └── server.js                # The MCP server exposing Strudel control to Claude
+│   └── bridges/
+│       └── XMPPtoO2Mapper.js       # Maps XMPP JIDs to O2 Service Names
 ├── public/
 │   └── lib/
 │       └── o2lite-web.js           # The browser-compatible O2lite client
@@ -200,9 +193,7 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
  |       Network Modulator Service       |                                 |
  |---------------------------------------|                                 |
  | src/audio-net/network-modulation/     |                                 |
- | ├── IncreaseJitter.js                 |                                 |
  | ├── IncreaseLatency.js                |                                 |
- | ├── IncreaseRTT.js                    |                                 |
  | ├── IncreasePacketLoss.js             |                                 |
  | └── WorstCaseCalculationUtils.js      |                                 |
  +---------------------------------------+                                 |
@@ -214,9 +205,9 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
  |---------------------------------------| |-----------------------------| |
  | src/audio-net/av-effects/             | | src/audio-net/              | |
  | ├── Room.js                           |<------[AV]-- UserBotOrchestr..| |
- | ├── Crush.js                          | | src/mcp-agent/              | |
- | ├── Noise.js                          | | ├── server.js               | |
- | ├── Grid .js                          | | └── tools/*                 | |
+ | ├── Crush.js                          | |                             | |
+ | ├── Noise.js                          | |                             | |
+ | ├── Grid .js                          | |                             | |
  | └── Echo.js                           | |                             | |
  +---------------------------------------+ +-----------------------------+ |
        |                 ^                                               |
@@ -291,9 +282,9 @@ Each rig measures its own audio pipeline by loopback — a local RTCPeerConnecti
 
 That cycle length is also the length of each performer's TURN: the aggregator paces its rotation off the scheduler's `slot-open`/`slot-close` grid, so a degrading room stretches every solo and a recovering one tightens them. The join-order write pointer's fixed `slotMs` remains only as the fallback before the first slot arrives, and in standalone runs with no metaprogram sync.
 
-WCJ is the worst-case **audio** RTP inter-arrival jitter across the room, read from RTCStats on the media path — the same path WCL's own terms come from. (It falls back to the WebSocket ping/pong RTT stdev, a different and much noisier leg, only for a peer that has not produced an RTCStats sample yet.) Video streams are excluded, so WCJ does not move when a camera is switched on. On a LAN this puts WCJ in the low single-digit milliseconds, an order of magnitude below the WS figure that preceded it — scale factors calibrated against the old value, including Echo's `n_samples_factor`, produce correspondingly shorter results.
+The two worst-case metrics the language reads are **WCL** (worst-case mouth-to-ear latency, ms) and **WCPL** (worst-case packet loss, a fraction in [0, 1]). Both are computed identically on every client from the same peer-state broadcast, so all browsers derive identical cycle lengths and effect parameters.
 
-The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl`/`wcj` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
+The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
 
 Examples:
 
@@ -331,7 +322,7 @@ Below is an example of an invalid program.
 ```
 $ participants [0 2 ~ 3 1]
 # cycles wcl
-# cycles wcj
+# cycles wcpl
 ```
 
 The infix operators @, !, ?, .., |, %, /, *, and : each apply as usual. What they apply to here is a TURN — the stretch of the room's output that belongs to one participant — so read them that way:
@@ -454,7 +445,7 @@ Examples:
 - Good:
 ```
 $ participants [0 1 _ 4? 10 2a - 2za ~]
-# cycles wcj 3
+# cycles wcpl 3
 # tempo 90/4 cpm
 # room wcl 2.5
 # noise
@@ -463,7 +454,7 @@ $ participants [0 1 _ 4? 10 2a - 2za ~]
 - Bad:
 ```
 $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exactly as mondo notation repeats or lengthens an element in the sequence.
-# cycles wcj 3
+# cycles wcpl 3
 # tempo 90/4 cpm
 # room wcl (pink # range 0 1)
 ```
@@ -473,24 +464,24 @@ Upon addition of a supported function via valid syntax in the NetCycles editor, 
 
 #### room
 - Description
-The room function is a Schroeder reverb whose decay time (RT60) is a multiple of wcl, with a lowpass filter with a dynamic cutoff frequency cascaded at the end of the filter chain according to wcrtt.
+The room function is a Schroeder reverb whose decay time (RT60) is a multiple of the driving metric, with a lowpass filter cascaded at the end of the filter chain whose cutoff CLOSES as that decay lengthens — a longer tail is a darker one, the way a real room's high frequencies die away first.
 
 Like every other audio effect, room runs on the **aggregator's master bus** (see the chainable-function preamble for the fixed `crush` → `echo` → `room` → `noise` path), so everyone hears one reverb on the shared mix rather than one per client stacked on top of it. The same normalized cutoff drives the blur radius on the aggregator's composited frame and on the styled spans Text Cycles paints, while the decay pushes letter-spacing apart.
 - Syntax
 `# room <metric> [scale factor] [amount for metric]`
 
-The metric keyword is required; the bare-number form (`# room 2 3`) is not valid. As with `# crush`, and unlike `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
+The metric keyword is required; the bare-number form (`# room 2 3`) is not valid. As with `# crush`, and like `# cycles`, either worst-case metric may drive it — `wcl` or `wcpl`.
 - Input
 AV buffer object
 - Parameters
 scale factor: A positive real number multiplying the metric to give the reverb decay time: decay = scale_factor * metric, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
-amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl/wcj/wcrtt, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions, and a loss fraction for wcpl. Defaults to unset (live metrics).
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions, and a loss fraction for wcpl. Defaults to unset (live metrics).
 
 Metrics are read in seconds, and wcpl — a fraction — as it stands, so `# room wcpl 2` is a 200 ms tail at 10 % loss. Note that wcl models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room wcl 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
 - Parameters as patterns
 Each of the three may be written as a mini-notation sequence instead of a constant, with rests, rates, weights and chances (see *Valid Chainable Functions* above). A rest in the metric or scale slot leaves that argument at its default — `wcl` and 1 — for as long as it is in force, rather than silencing the tail. Both the browser's Hydra counterpart and the aggregator's master reverb re-read the pattern on a 50 ms tick, so a sub-cycle step is heard where it is written.
 
-The cascaded cutoff is `wcrtt * 100 Hz` (wcrtt in ms), clamped to [40, 18000]. It also applies a lowpass filter to the Hydra signal.
+The cascaded cutoff is `CUTOFF_MAX_HZ / (1 + decay_seconds * 12)`, clamped to [40, 18000]: no tail leaves it wide open, a 1 s tail closes it to ~1.4 kHz. It also applies a lowpass filter to the Hydra signal.
 - Return value
 Updated AV buffer object
 - Examples:
@@ -500,7 +491,7 @@ $ participants [0 2 1 4 3]
 ```
 ```
 $ participants [0 2 1 4 3]
-# room <wcl wcj> <1 2 ~ 2 3>*2   // metric turns over per cycle, scale twice per cycle
+# room <wcl wcpl> <1 2 ~ 2 3>*2   // metric turns over per cycle, scale twice per cycle
 ```
 ```
 $ participants [0 2 1 4 3]
@@ -521,7 +512,7 @@ A feedback delay whose three parameters — echo length, feedback and gain — a
 - Syntax
 `# echo <metric> <length> <metric> <feedback> <metric> <gain> [<bound 1> [<bound 2> [<bound 3>]]]`
 
-Six arguments (three metric/scale pairs), or none at all; a half-written chain is a parse error rather than a partial default. The three upper bounds are individually optional and fill their slots left to right. Legal metrics are `wcl`, `wcj`, `wcrtt` and `wcpl` — wcrtt is admitted here even though `# cycles` has no use for it, since an echo tracking the round trip rather than mouth-to-ear latency is a different musical choice.
+Six arguments (three metric/scale pairs), or none at all; a half-written chain is a parse error rather than a partial default. The three upper bounds are individually optional and fill their slots left to right. Legal metrics are `wcl` and `wcpl` — the same set every effect and `# cycles` accept.
 - Input
 AV buffer object
 - Parameters
@@ -535,7 +526,7 @@ length: the delay time in **cycles**, not seconds. The echo rides the room's cyc
 feedback: the recirculated proportion, clamped strictly below unity (0.95) — the one place a user's scale factor is overruled, because a self-oscillating delay line never gets quiet again. It also modulates the brightness of the synthesized video output: `brightness = 1 − feedback`, so an echo doing nothing audible leaves the image untouched and thicker repeats darken it. Default scale 0.5.
 gain: the level of the wet (echoed) path against the dry signal. Default scale 1.
 
-upper bound for each: a positive real in the unit its metric is *written* in — milliseconds for wcl/wcj/wcrtt, **percent for wcpl** (`20` means 20 % loss, while the metric itself is broadcast as the fraction 0.2). Omitted bounds default per metric: wcl 500 ms, wcj 50 ms, wcrtt 500 ms, wcpl 20 %. These sit near the worst a real algorave room reaches rather than at each metric's theoretical ceiling, so the effect audibly moves without anyone having to induce degradation first.
+upper bound for each: a positive real in the unit its metric is *written* in — milliseconds for wcl, **percent for wcpl** (`20` means 20 % loss, while the metric itself is broadcast as the fraction 0.2). Omitted bounds default per metric: wcl 500 ms, wcpl 20 %. These sit near the worst a real algorave room reaches rather than at each metric's theoretical ceiling, so the effect audibly moves without anyone having to induce degradation first.
 
 A bare `# echo` is `wcl` driving all three at scales 0.5 / 0.5 / 1 — still normalized against wcl's default bound, so even the default echo follows the network rather than sitting at fixed values. A new meeting starts with no `# echo` line at all, i.e. bypassed.
 
@@ -561,16 +552,16 @@ This effect reduces the bit-depth and sample rate for both the incoming audio an
 - Syntax
 `# crush <metric> [scale factor] [amount for metric]`
 
-The metric keyword is required; the bare-number form (`# crush 2`) is not valid. As with `# room`, and unlike `# cycles`, any worst-case metric may drive it — `wcl`, `wcj`, `wcpl`, or `wcrtt`.
+The metric keyword is required; the bare-number form (`# crush 2`) is not valid. As with `# room`, and like `# cycles`, either worst-case metric may drive it — `wcl` or `wcpl`.
 - Input
 AV buffer object
 - Parameters
 scale factor: A positive real number multiplying the 8-bit resting depth: bit_depth = clamp(8 * scale_factor / 2^(metric / halving_amount), 1, 16). Defaults to 1. Raising it crushes **less** (a 2 gives a 16-bit base); a value below 1 crushes harder.
-amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl/wcj/wcrtt (`# crush wcl 2 0.4` is a fixed 400 ms whatever the network does), a loss fraction for wcpl, clamped to [0, 1].
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl (`# crush wcl 2 0.4` is a fixed 400 ms whatever the network does), a loss fraction for wcpl, clamped to [0, 1].
 
-The halving amounts are per metric, because the metrics are not on one scale: 100 ms of wcl, 20 ms of wcj, 100 ms of wcrtt, or 0.25 of wcpl each halve the depth. The wcpl figure preserves the "a factor of 2 per 25 % packet loss" this effect was first specified with.
+The halving amounts are per metric, because the metrics are not on one scale: 100 ms of wcl or 0.25 of wcpl each halve the depth. The wcpl figure preserves the "a factor of 2 per 25 % packet loss" this effect was first specified with.
 
-**The resting depth is a ceiling, not a typical reading.** wcl is mouth-to-ear — both network legs plus the de-jitter buffer plus each rig's own capture/encode/playout pipeline (40 ms assumed until a rig measures itself) — so a healthy LAN room already sits around 90-150 ms. `# crush wcl 1` therefore rests near 4 bits rather than 8, and `# crush wcl 2` is the line that puts a typical room near 8. wcrtt runs the other way: single-digit on a LAN, so it barely crushes until a room is spread over a WAN.
+**The resting depth is a ceiling, not a typical reading.** wcl is mouth-to-ear — both network legs plus the de-jitter buffer plus each rig's own capture/encode/playout pipeline (40 ms assumed until a rig measures itself) — so a healthy LAN room already sits around 90-150 ms. `# crush wcl 1` therefore rests near 4 bits rather than 8, and `# crush wcl 2` is the line that puts a typical room near 8.
 
 Sample rate follows the metric alone, not the scale factor: sr_divisor = clamp(round(2^(metric / halving_amount)), 1, 64), a sample-and-hold period that is also the pixel-block edge for the Hydra counterpart. A clean room therefore decimates nothing whatever base depth the performer asked for.
 - Parameters as patterns
@@ -589,7 +580,7 @@ $ participants [0 2 1 4 3]
 ```
 ```
 $ participants [0 2 1 4 3]
-# crush <wcl wcj> <2 4>   // metric and base depth both turn over per cycle
+# crush <wcl wcpl> <2 4>   // metric and base depth both turn over per cycle
 ```
 
 #### noise
@@ -600,15 +591,15 @@ A meeting opens **bypassed**: the default program carries no `# noise` line, so 
 - Syntax
 `# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount for metric 1] [amount for metric 2]`
 
-Both metric keywords are optional and default to `wcl`; either may be `wcl`, `wcj`, `wcrtt` or `wcpl`. A keyword binds to the factor that *follows* it, so `# noise wcl 20 wcrtt 10` reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers are positional: spectrum factor, volume factor, then the two pinned amounts in the same order the metrics were written.
+Both metric keywords are optional and default to `wcl`; either may be `wcl` or `wcpl`. A keyword binds to the factor that *follows* it, so `# noise wcl 20 wcpl 10` reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers are positional: spectrum factor, volume factor, then the two pinned amounts in the same order the metrics were written.
 - Input
 AV buffer object
 - Parameters
-spectrum factor: A positive real number multiplying its metric to give the bed's position on the colour axis, clamped to [0, 1]: 0 is brown, 0.5 pink, 1 white, with an equal-power crossfade between the two adjacent colours (the generators are normalized to a common level, so a sweep changes colour without changing level). Metrics are read in seconds for `wcl`/`wcj`/`wcrtt` and as a loss fraction for `wcpl`, so at 100 ms wcl a factor of 5 lands exactly on pink and a factor of 10 or more saturates at white. Defaults to 0 — an unmodulated bed sits at brown.
+spectrum factor: A positive real number multiplying its metric to give the bed's position on the colour axis, clamped to [0, 1]: 0 is brown, 0.5 pink, 1 white, with an equal-power crossfade between the two adjacent colours (the generators are normalized to a common level, so a sweep changes colour without changing level). Metrics are read in seconds for `wcl` and as a loss fraction for `wcpl`, so at 100 ms wcl a factor of 5 lands exactly on pink and a factor of 10 or more saturates at white. Defaults to 0 — an unmodulated bed sits at brown.
 volume factor: A positive real number multiplying its metric the same way, mapping [0, 1] onto 25 dB … 75 dB. The bed's gain is `0.12 × 10^((dB − 25) / 20)`, so 25 dB is the level the effect has always run at and each further 6 dB doubles it. **Clamped at 75 dB** — 50 dB above the base, i.e. 316× the base gain, an absolute linear gain of ~38. The clamp bounds the modulation; it does not promise the bed stays inside the mix's headroom. 0 dBFS arrives at about 43 dB, and there is no limiter between the bed and the published track, so the upper part of the range clips the master by design. Defaults to 0, leaving the bed at 25 dB.
-amount for metric 1 / metric 2: Positive real numbers that *pin* the corresponding metric instead of reading it live — seconds for `wcl`/`wcj`/`wcrtt`, a loss fraction for `wcpl` — exactly as `# room wcl 2 0.4` pins room's. Being positional, pinning the first metric means writing a volume factor first. Default unset (live metrics).
+amount for metric 1 / metric 2: Positive real numbers that *pin* the corresponding metric instead of reading it live — seconds for `wcl`, a loss fraction for `wcpl` — exactly as `# room wcl 2 0.4` pins room's. Being positional, pinning the first metric means writing a volume factor first. Default unset (live metrics).
 
-A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise wcj` is "spectrum from live wcj at scale 1", the same shape as `# room wcl`.
+A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise wcpl` is "spectrum from live wcpl at scale 1", the same shape as `# room wcl`.
 
 Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, and a rate above 1 (`*2`) steps within one; neither is something a per-cycle argument can express, so both are parse errors, as is mixing metric keywords and numbers in one pattern. A rate of 1 or slower (`/2`) is fine, and so are rests, `@` weights (which hold an element for whole cycles) and `?` chances. Nested groups advance once per visit of their parent, as in mondo.
 
@@ -622,15 +613,15 @@ $ participants [0 2 1 4 3]
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise wcl 20 wcrtt 10
+# noise wcl 20 wcpl 10
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise wcl 20 wcrtt 10 0.4 0.06
+# noise wcl 20 wcpl 10 0.4 0.06
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise <wcl wcpl> <20 5> wcrtt 10
+# noise <wcl wcpl> <20 5> wcpl 10
 ```
 
 ### grid
@@ -646,26 +637,5 @@ $ participants <0 9 1 4 2>*2
 # grid true
 ```
 
-### disjointCss
-- Description
-CSS Cycles' own mutual exclusion, unbound from the Net Cycles ring. Every browser paints its own CSS Cycles output locally (see "What each effect does to each medium" above), and normally only the peer currently holding the ring's slot has their declared properties live — everyone else's are pinned at the room's own captured default (see [csscycles.md](csscycles.md)'s "Mutual exclusion" section). That pin-to-default gate reads `isPeerNetCyclesTurn`, which **fails open** (every peer visible at once, ordinary CSS cascade decides who wins a shared selector) whenever no ring is actively scheduling turns — correct for Strudel/Hydra/Text Cycles, whose own gates share that fallback, but not what a room wants from CSS specifically when nobody has typed a `$ participants` schedule yet. `# disjointCss` closes that gap: on, the gate never fails open, so exactly one participant's CSS is ever visible — as if every OTHER participant's `css()` program had been applied to its own private copy of the room's original, untouched styling rather than to the shared page. With no live ring signal to defer to, ownership falls back to the room's own default schedule (`$ participants <0>` — participant roomIndex `'0'`) rather than a separate rotation with no clock of its own.
-
-Unlike every other directive in this document, **on is the default** — the one line a room needs is `# disjointCss false`, to opt back into the plain shared cascade (every participant's CSS simultaneously live, collisions resolved by cascade order). Aggregator- and bot-side code needs no counterpart: CSS Cycles has no aggregator application point at all (browser-only, per the media table above), so this directive is read only by each browser's own `css-cycles.js`.
-- Syntax
-`# disjointCss [bool]`
-- Parameters
-A boolean, or bare for `true`. Unwritten also means `true` — see above.
-- Return value
-None — a room-wide config flag, not a modulated effect.
-- Examples:
-```
-$ participants <0>
-# disjointCss
-```
-```
-$ participants <0 1>
-# disjointCss false   // restore the shared cascade
-```
-
 ## Artificial Network Modulation
-In addition to upward adjustments from o2lite-estimated wcl, wcj, wcpl, and wcrtt, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the NetCycles metaprogramming editor, is governed by CRDT.
+In addition to upward adjustments from o2lite-estimated wcl and wcpl, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the NetCycles metaprogramming editor, is governed by CRDT.

@@ -24,8 +24,9 @@ exactly what is in your editor when you spawn it**. Every property left out is
 `null`, which always means "no effect".
 
 Text and CSS are the one place these two "exact copy" spellings diverge: no
-`botConfig()` at all is a true exact copy, words and styling included — see
-`textParrot`/`cssParrot` below.
+`botConfig()` at all is a true exact copy, words and styling included, while any
+`botConfig(...)` declaration drops your Text/CSS Cycles voices from what the bots
+announce — see "Words and styling" below.
 
 Your editor, not your last evaluation: the declaration is stripped before
 Strudel runs and makes no sound, so nothing would prompt you to re-run your
@@ -40,10 +41,7 @@ Spawn reads the box.
 | `random` | string | `"params"` jitters every numeric parameter of your code (±50%); `"full"` replaces it with a fresh patch from the built-in palette |
 | `paramFactor` | number | Scales every numeric parameter of your code by this factor |
 | `harmony` | string | `"diatonic"`, `"random"`, or a signed semitone count like `"+2"` / `"-13"` |
-| `mcp` | string | A prompt. The cluster's code is composed by a model instead of copied from you |
-| `colorScheme` | string | `complementary`, `monochromatic`, `analogous`, `triadic`, `tetradic`, `split-complementary`, `square`, `random` |
-| `textParrot` | boolean | `true` keeps your Text Cycles statements, so the bots repeat your words |
-| `cssParrot` | boolean | `true` keeps your CSS Cycles statements, so the bots repeat your styling |
+| `colorScheme` | string | `complementary`, `monochromatic`, `analogous`, `triadic`, `tetradic`, `square`, `random` |
 | `retroactive` | boolean | `true` applies later edits to bots already running, at each one's next turn |
 | `samples` | boolean | `true` shares your uploaded sample folders with your bots |
 
@@ -92,26 +90,20 @@ syntax. The same omission applies wherever else a hue is computed (the
 `monochromatic` separates members by brightness, since rotating hue by zero
 would make them identical.
 
-**textParrot** and **cssParrot** are off by default under a `botConfig(...)`
-declaration, which means bot scripts have their `word()`/`css()` statements
-stripped from what each bot ANNOUNCES — without that, every bot in a cluster
-repeats its author's words or restyling in every viewer's chat panel/page.
-Setting either to `true` keeps that voice in what a bot announces, which every
-OTHER performer's own browser then paints — text and CSS are per-page and
-never ride an audio track, so this is true regardless of parroting: what
-changes is only whether OTHER viewers ever see it.
-
-**No `botConfig()` call at all** is the exception: with nothing declared,
-words and styling are announced exactly as written, as if both were `true` —
-that is what makes an undeclared spawn an *exact* copy rather than a copy that
-silently drops two of its voices. `botConfig()` — even with no argument — is
-still a declaration, so from there `textParrot`/`cssParrot` each keep their
-own off-by-default.
+**Words and styling.** A `botConfig(...)` declaration — even an empty
+`botConfig()` — strips your `word()`/`css()` statements from what each bot
+ANNOUNCES. Without that a cluster of N bots repeats one author's words or
+restyling N times over in every viewer's chat panel/page. Only **no
+`botConfig()` call at all** keeps them: with nothing declared, words and
+styling are announced exactly as written, which is what makes an undeclared
+spawn an *exact* copy rather than a copy that silently drops two of its
+voices. When a voice is kept in the announce, every OTHER performer's own
+browser paints it — text and CSS are per-page and never ride an audio track.
 
 Note that a bot's own REPL never runs `word()`/`css()` either way — a separate,
 minimal Strudel instance boots each bot's audio and has neither capability
 installed, so both are always stripped from what it actually evaluates,
-parrot, undeclared, or not.
+declared or not.
 
 **samples** ships your uploaded folders to the fleet, which serves them to your
 bots over its own HTTP surface. The bots register them under the same folder
@@ -125,11 +117,6 @@ that governs is the one you just typed — turning `retroactive` on is itself an
 edit that takes effect. With it off (the default), a bot plays what you were
 playing when it spawned, for as long as it lives.
 
-**mcp** hands the prompt to a model along with your current code as context, and
-uses the answer as the cluster's master — every other property still shapes it
-from there. Composition happens once, at spawn, before any container starts, so
-it is never on the path of a turn boundary.
-
 ## Where the code runs
 
 Three processes have to agree about a performer's editor text, and each reads it
@@ -142,22 +129,3 @@ with the same shared modules rather than its own copy of the rule:
   (`bots/src/script-gen/cluster-source.js`);
 - the **bot page** uses the same Hydra and Text Cycles rules to decide whether an
   edit pushed into its editor replaces its whole program or just its audio.
-
-## Model access for `mcp`
-
-Claude answers by default; a locally hosted TinyLlama answers when Claude is
-unreachable or unkeyed, so an isolated network still spawns configured bots.
-Every answer is validated before it can reach a container, retried once, and
-falls back to the built-in palette — a cluster always spawns.
-
-| Variable | Where | Effect |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | conductor | Enables Claude. Absent → TinyLlama only |
-| `TINYLLAMA_URL` | conductor | Ollama-compatible host (default `http://localhost:11434`) |
-| `TINYLLAMA_MODEL` | conductor | Model tag (default `tinyllama`) |
-| `MCP_EVERYTHING_COMMAND` / `_ARGS` | conductor | How to start the Everything MCP server (default `npx -y @modelcontextprotocol/server-everything`) |
-
-Everything MCP is the protocol's reference server — echo, add, printEnv and
-friends. It exposes no music capability, so a model composing a part rarely
-calls it; it is wired so that attaching a server that *is* useful later is a
-config change rather than a code change.

@@ -104,8 +104,9 @@ function requireRoom(room, where) {
 // log lives on a VM they are not looking at while playing.
 //
 // Only the properties they actually set. A config is mostly nulls by
-// construction, so listing all eight would bury the two that matter. Values are
-// truncated because `mcp` carries a whole prompt.
+// construction, so listing every one would bury the one or two that matter.
+// Values are truncated so a single long one cannot run the status line off the
+// studio.
 export function describeBotConfig(source) {
   if (!source || !source.declared) return 'no botConfig() declared — bots play exact copies';
   const set = Object.entries(source.config ?? {}).filter(([, value]) => value !== null);
@@ -118,12 +119,8 @@ export function describeBotConfig(source) {
 }
 
 export class FleetService {
-  constructor(cfg, { runner, connectSidecar, controlToken = null, compose = null }) {
+  constructor(cfg, { runner, connectSidecar, controlToken = null }) {
     if (!runner) throw new TypeError('a container runner {start, stop} is required');
-    // Composes a cluster's code from an `mcp` prompt. Injected — and null on a
-    // deployment with no model reachable — so the fleet never depends on an LLM
-    // being present; a config with `mcp` simply keeps the performer's own code.
-    this.compose = compose;
     this.cfg = cfg;
     this.runner = runner;
     this.connectSidecar = connectSidecar || null; // (url, handlers) → { send, close }
@@ -608,13 +605,6 @@ export class FleetService {
       // running commentary that is worth saying even when nothing did.
       const notes = captured.ok ? [] : [captured.error];
       const configNote = captured.ok ? describeBotConfig(captured.source) : null;
-      // An `mcp` prompt is composed before any container starts, so every bot
-      // in the cluster boots with the finished code rather than starting on the
-      // palette and being rewritten a moment later.
-      const composed = await this.#composeOwnerSource(room, ownerIndex, captured.source);
-      if (composed && !composed.ok) {
-        notes.push(`mcp prompt fell back to the built-in palette — ${composed.error}`);
-      }
       await this.spawnCluster(ownerIndex, count, { room, notes, configNote });
     } else if (msg.action === 'remove') {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request', room });
@@ -660,10 +650,10 @@ export class FleetService {
    * VM-wide resource budget, derived from fps/RAM), and a partial spawn reports
    * why.
    *
-   * `notes` is what else went wrong on the way here (a rejected botConfig, an
-   * mcp prompt that fell back); `configNote` is what the config parsed to, said
-   * even when it parsed fine. Both travel in this one status because the studio
-   * shows the last fleet-status only.
+   * `notes` is what else went wrong on the way here (a rejected botConfig);
+   * `configNote` is what the config parsed to, said even when it parsed fine.
+   * Both travel in this one status because the studio shows the last
+   * fleet-status only.
    */
   async spawnCluster(ownerIndex, count, { room, notes = [], configNote = null } = {}) {
     requireRoom(room, 'spawnCluster');
@@ -1100,32 +1090,6 @@ export class FleetService {
         JSON.stringify(captured.source.config));
     }
     return captured;
-  }
-
-  /**
-   * Replace a snapshot's master with model-composed code, for a config that
-   * carries an `mcp` prompt.
-   *
-   * Awaited on the spawn path and nowhere else. A rotation slot is a few
-   * seconds and a model round-trip is not reliably shorter, so generation never
-   * sits on a turn boundary — a retroactive edit reuses whatever was composed
-   * at spawn rather than re-prompting mid-set.
-   *
-   * Failure is reported and survivable: composeScript always returns a script,
-   * falling back to the palette, so a cluster spawns either way.
-   */
-  async #composeOwnerSource(room, ownerIndex, source) {
-    const prompt = source?.config?.mcp;
-    if (!prompt || !this.compose) return null;
-
-    const result = await this.compose({
-      prompt,
-      master: source.master,
-      seed: this.cfg.sessionSeed,
-    }).catch((err) => ({ ok: false, source: 'palette', error: String(err.message || err) }));
-
-    if (result.script) source.master = result.script;
-    return result;
   }
 
   // The snapshot a bot's script is built from, or a default one wrapping the

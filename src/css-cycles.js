@@ -41,9 +41,8 @@
 
 import {
   subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId,
-  sendLocalScss, sendPeerScss, isPeerNetCyclesTurn, getActiveNetCyclesToken,
+  sendLocalScss, sendPeerScss, getActiveNetCyclesToken,
 } from './peer-state.js';
-import { isDisjointCssEnabled } from './audio-net/Metaprogrammer.js';
 import {
   CSS_PROPERTY_LIST,
   adjustColorForBackground,
@@ -336,19 +335,16 @@ function warmBaselinesFor(peerId) {
 
 // --- Trigger -----------------------------------------------------------------
 
-// isPeerNetCyclesTurn fails OPEN — every peer's CSS is simultaneously live —
-// whenever no Net Cycles ring is actively scheduling turns (no aggregator has
-// reported yet, or none is running at all) OR the peer in question has no
-// roomIndex yet. That is correct for Strudel/Hydra and for Text Cycles, which
-// stay on that rule, but `# disjointCss` (default true — see
-// DISJOINT_CSS_ENABLED_BY_DEFAULT) asks CSS Cycles specifically to never fail
-// open, on either count: exactly one *verified* peer's declared values should
-// ever be visible, ring or no ring, known peer or not. With no live ring
-// signal to defer to, this falls back to the room's own default schedule
-// (`$ participants <0>`, see buildDefaultProgram) — roomIndex '0' — rather
-// than inventing a separate rotation with no clock of its own to run on.
+// CSS Cycles' mutual exclusion never fails open: exactly one *verified* peer's
+// declared values are ever visible, ring or no ring, known peer or not —
+// unlike Strudel/Hydra/Text Cycles, whose gate (isPeerNetCyclesTurn) shows
+// every peer at once whenever no ring is actively scheduling turns. Opening
+// every peer's styling to the shared cascade at once is rarely what a room
+// wants from CSS specifically. With no live ring signal to defer to, ownership
+// falls back to the room's own default schedule (`$ participants <0>`, see
+// buildDefaultProgram) — roomIndex '0' — rather than inventing a separate
+// rotation with no clock of its own to run on.
 function ownsCssTurn(jitsiId) {
-  if (!isDisjointCssEnabled()) return isPeerNetCyclesTurn(jitsiId);
   const token = getActiveNetCyclesToken() ?? '0';
   const peer = getPeerByJitsiId(jitsiId);
   return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
@@ -359,9 +355,9 @@ function applyHap(value) {
   const sheet = sheetsByToken.get(token);
   if (!sheet || refused.has(token)) return;
 
-  // Mutual exclusion: only the peer currently holding the scheduler's slot
-  // (or, under `# disjointCss`, the room's fallback owner — see ownsCssTurn
-  // above) gets their pattern's values on screen. Everyone else's custom
+  // Mutual exclusion: only the peer currently holding the ring's slot (or the
+  // room's fallback owner when no ring is scheduling — see ownsCssTurn above)
+  // gets their pattern's values on screen. Everyone else's custom
   // properties are pinned at the room's captured default instead of drifting
   // stale from whatever they last painted before their turn closed. Bots take
   // their turn on the ring exactly like a human performer — see
@@ -411,10 +407,10 @@ function applyHap(value) {
 // only happens when THAT peer's own hap next fires — which, for a sparse or
 // slow pattern, can lag well behind the moment their turn actually ended, so
 // the room keeps showing whatever they last painted instead of "the meeting's
-// original CSS" the instant ownership changes. Under `# disjointCss`, every
-// peer's declared values should start from that original state the moment
-// the ring's token moves — not whenever their own pattern next happens to
-// tick — so this proactively re-pins every currently-known sheet's
+// original CSS" the instant ownership changes. Every peer's declared values
+// should start from that original state the moment the ring's token moves —
+// not whenever their own pattern next happens to tick — so this proactively
+// re-pins every currently-known sheet's
 // properties to their captured baseline as soon as the token changes; the new
 // owner's own next hap then moves theirs on from there, same as always.
 function resetAllCssToBaseline() {
@@ -444,7 +440,6 @@ function resetAllCssToBaseline() {
 let lastNetCyclesTurnKey = null;
 
 function handleNetCyclesTokenChange(e) {
-  if (!isDisjointCssEnabled()) return;
   const detail = e?.detail || {};
   const key = `${detail.token}|${detail.index}|${detail.kind}`;
   if (key === lastNetCyclesTurnKey) return;

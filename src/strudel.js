@@ -197,12 +197,13 @@ function applyCssRewrite(code, peer) {
 // or Jamulus), so folding its pattern in here would play it twice. Its WORDS
 // and STYLING are the opposite case — both are painted per-page from the
 // program and never ride any track, so a bot's words/CSS reach a viewer only
-// if that viewer's own program carries them. This is the whole mechanism
-// behind `textParrot`/`cssParrot`: the fleet decides whether a bot's
-// announced script keeps its author's word()/css() statements (its own eval
-// never does — see cluster-source.js's dropTextStatements/dropCssStatements,
-// which strip both unconditionally from what the bot's REPL actually runs),
-// and this decides whether the room can see them.
+// if that viewer's own program carries them. This is the whole mechanism by
+// which a bot's words/styling reach the room: an undeclared (exact-copy)
+// cluster keeps its author's word()/css() statements in the bot's announced
+// script (a `botConfig(...)` declaration strips them, and the bot's own eval
+// never runs them either — see cluster-source.js's
+// dropTextStatements/dropCssStatements), and this decides whether the room can
+// see them.
 function buildBotSilentBlock(peer) {
   // Unlike a human's own live editing, a bot is operator-puppeted via the
   // studio's remote-control path — it never holds a Net Cycles buffer queue
@@ -292,8 +293,7 @@ function buildPeerBlock(peer) {
   // and make no sound. A bot's words/styling would otherwise appear NOWHERE —
   // the only page running its program is its own headless Chromium, whose
   // chat panel and stylesheet nobody sees. So keep a bot's silent statements
-  // and drop everything else, which is exactly what `textParrot`/`cssParrot`
-  // ask for.
+  // and drop everything else — its audio already arrives as audio.
   if (peer.isBot) return buildBotSilentBlock(peer);
 
   // Net Cycles: the pattern that plays is the one the scheduler last dequeued

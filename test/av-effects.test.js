@@ -24,22 +24,28 @@ import { parseMetaprogram, resolveEffectParams } from '../src/audio-net/Metaprog
 
 // --- room ---------------------------------------------------------------------
 
-test('room: decay = scale × wcl (RT60) sets per-comb feedback; cutoff = wcrtt × factor × 100 Hz', () => {
-  const p = roomParams({ wcl: 500, wcrtt: 60 }, { scale: 2 });
+test('room: decay = scale × metric (RT60) sets per-comb feedback; cutoff closes as the tail grows', () => {
+  const p = roomParams({ wcl: 500 }, { scale: 2 });
   assert.equal(p.decayS, 1); // 2 × 500 ms
   // After decayS the recirculated signal is down 60 dB: g = 0.001^(delay/decay).
   p.combFeedbacks.forEach((g, i) => {
     assert.ok(Math.abs(g - Math.pow(0.001, COMB_BASES_S[i] / 1)) < 1e-12);
   });
   assert.deepEqual(p.combDelaysS, COMB_BASES_S, 'comb tunings no longer stretch');
-  assert.equal(p.cutoffHz, 6000); // 60 ms × 1 × 100
-  assert.ok(Math.abs(p.visualLowpass - 6000 / CUTOFF_MAX_HZ) < 1e-12);
+  // A 1 s tail closes the cascaded lowpass to CUTOFF_MAX_HZ / (1 + 1 × 12).
+  assert.ok(Math.abs(p.cutoffHz - CUTOFF_MAX_HZ / 13) < 1e-9, `cutoffHz ${p.cutoffHz}`);
+  assert.ok(Math.abs(p.visualLowpass - p.cutoffHz / CUTOFF_MAX_HZ) < 1e-12);
+
+  // No decay → the lowpass is wide open, so nothing is blurred.
+  const dry = roomParams({ wcl: 0 }, { scale: 2 });
+  assert.equal(dry.cutoffHz, CUTOFF_MAX_HZ);
+  assert.equal(dry.visualLowpass, 1);
 });
 
 test('room: fixedMetric pins the metric — live wcl is ignored', () => {
-  const pinned = roomParams({ wcl: 9999, wcrtt: 60 }, { scale: 2, fixedMetric: 0.4 });
+  const pinned = roomParams({ wcl: 9999 }, { scale: 2, fixedMetric: 0.4 });
   assert.equal(pinned.decayS, 0.8); // 2 × 0.4 s, regardless of metrics.wcl
-  const live = roomParams({ wcl: 400, wcrtt: 60 }, { scale: 2 });
+  const live = roomParams({ wcl: 400 }, { scale: 2 });
   assert.deepEqual(pinned.combFeedbacks, live.combFeedbacks, '400 ms pinned ≡ 400 ms measured');
 });
 
@@ -53,10 +59,9 @@ test('room: feedback clamps — no decay silences the tail, huge decay stays bel
   assert.ok(huge.wetGain > 0);
 });
 
-test('room: cutoff clamps — zero RTT opens fully, huge RTT caps at max', () => {
-  assert.equal(roomParams({ wcl: 0, wcrtt: 0 }).cutoffHz, CUTOFF_MAX_HZ);
-  assert.equal(roomParams({ wcrtt: 1e6 }).cutoffHz, CUTOFF_MAX_HZ);
-  assert.equal(roomParams({ wcrtt: 0.1 }).cutoffHz, CUTOFF_MIN_HZ); // 10 Hz → floor
+test('room: cutoff clamps — no tail opens fully, an enormous tail floors at the minimum', () => {
+  assert.equal(roomParams({ wcl: 0 }).cutoffHz, CUTOFF_MAX_HZ);
+  assert.equal(roomParams({ wcl: 1e6 }, { scale: 100 }).cutoffHz, CUTOFF_MIN_HZ); // decay → ∞, cutoff → floor
 });
 
 // Minimal recording stand-in for an AudioContext: enough surface for
@@ -90,7 +95,7 @@ function recordingCtx() {
 
 test('room: allpass stages are chained in series, each feeding the next', () => {
   const ctx = recordingCtx();
-  createRoomNode(ctx, roomParams({ wcl: 200, wcrtt: 60 }, { scale: 2 }));
+  createRoomNode(ctx, roomParams({ wcl: 200 }, { scale: 2 }));
 
   // Delay nodes are created combs-first, so the allpasses are the last ones.
   const allpassIds = [...new Set(ctx.edges.flat())]
@@ -188,11 +193,11 @@ test('echo: feedback clamps below unity; a dead metric mutes the wet path', () =
 
 test('echo: a length below one render quantum mutes the wet path, however high the feedback', () => {
   // Each slot reads its own metric, so a dead length does not imply dead
-  // feedback: wcj is flat while wcl is high. Below the quantum the DelayNode
+  // feedback: wcpl is flat while wcl is high. Below the quantum the DelayNode
   // would ring as a fixed ~375 Hz comb at near-unity feedback.
-  const sliver = echoParams({ wcj: 0.001, wcl: 500 }, {
+  const sliver = echoParams({ wcpl: 0.00001, wcl: 500 }, {
     slots: [
-      { param: 'length', metric: 'wcj', scale: 0.000001, bound: 50 },
+      { param: 'length', metric: 'wcpl', scale: 0.000001, bound: 50 },
       { param: 'feedback', metric: 'wcl', scale: 4, bound: 500 },
       { param: 'gain', metric: 'wcl', scale: 1, bound: 500 }
     ]
@@ -281,14 +286,14 @@ test('crush: the scale factor multiplies the resting depth (higher = less crush)
 });
 
 test('crush: every worst-case metric can drive it, each on its own scale', () => {
-  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcj', 'wcl', 'wcpl', 'wcrtt']);
-  const metrics = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
+  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcl', 'wcpl']);
+  const metrics = { wcl: 100, wcpl: 0.25 };
   // One halving of the 8-bit base for each metric at its own halving amount.
   for (const metric of Object.keys(HALVING_AMOUNTS)) {
     assert.equal(crushParams(metrics, { metric }).bitDepth, 4, metric);
   }
   // A metric the room has not measured yet reads as 0 — no crush, not NaN.
-  assert.equal(crushParams({}, { metric: 'wcrtt' }).bitDepth, BASE_BIT_DEPTH);
+  assert.equal(crushParams({}, { metric: 'wcpl' }).bitDepth, BASE_BIT_DEPTH);
 });
 
 test('crush: a fixed third argument pins the metric, in the metric\'s own unit', () => {
@@ -325,7 +330,7 @@ test('crush: a bogus metric falls back rather than poisoning the numbers', () =>
 });
 
 test('crush: mini-notation arguments are read off the cycle grid', () => {
-  const metrics = { wcl: 100, wcj: 20 };
+  const metrics = { wcl: 100, wcpl: 0 };
   const alt = { type: 'valueSeq', mode: 'alternate', terms: [1, 2] };
   // <1 2> on the scale: cycle 0 → 8-bit base, cycle 1 → 16-bit base.
   assert.equal(crushParams(metrics, { scale: alt }, 0).bitDepth, 4);
@@ -335,9 +340,9 @@ test('crush: mini-notation arguments are read off the cycle grid', () => {
   assert.equal(crushParams(metrics, { scale: alt }, 1.75).bitDepth, 8);
 
   // A patterned METRIC switches what is driving the crush.
-  const metricPat = { type: 'valueSeq', mode: 'alternate', terms: ['wcl', 'wcj'] };
+  const metricPat = { type: 'valueSeq', mode: 'alternate', terms: ['wcl', 'wcpl'] };
   assert.equal(crushParams(metrics, { metric: metricPat }, 0).metric, 'wcl');
-  assert.equal(crushParams(metrics, { metric: metricPat }, 1).metric, 'wcj');
+  assert.equal(crushParams(metrics, { metric: metricPat }, 1).metric, 'wcpl');
 
   // [] subdivides the cycle instead of alternating across cycles.
   const sub = { type: 'valueSeq', mode: 'subdivide', terms: [1, 2] };
@@ -365,7 +370,7 @@ function noiseFor(line, metrics, cycle = 0) {
 }
 
 test('noise: a bare directive is the unmodulated floor — brown at the base dB', () => {
-  const p = noiseFor('# noise', { wcl: 500, wcrtt: 60, wcpl: 0.9 });
+  const p = noiseFor('# noise', { wcl: 500, wcpl: 0.9 });
   assert.equal(p.tilt, 0);
   assert.equal(p.gainDb, NOISE_BASE_DB);
   assert.equal(p.gain, NOISE_BASE_GAIN, 'the level the fixed-gain implementation ran at');
@@ -395,12 +400,12 @@ test('noise: the spectrum factor sweeps brown → pink → white', () => {
 });
 
 test('noise: the volume factor rides its own metric from the base dB to the clamp', () => {
-  // wcrtt 60 ms = 0.06 s × 10 = 0.6 of the way from 25 dB to 75 dB.
-  const p = noiseFor('# noise wcl 1 wcrtt 10', { wcl: 500, wcrtt: 60 });
+  // wcpl 0.06 (a loss fraction) × 10 = 0.6 of the way from 25 dB to 75 dB.
+  const p = noiseFor('# noise wcl 1 wcpl 10', { wcl: 500, wcpl: 0.06 });
   assert.equal(p.gainDb, 55);
   assert.ok(Math.abs(p.gain - NOISE_BASE_GAIN * Math.pow(10, 30 / 20)) < 1e-12);
 
-  const loud = noiseFor('# noise wcl 1 wcrtt 1000', { wcl: 500, wcrtt: 60 });
+  const loud = noiseFor('# noise wcl 1 wcpl 1000', { wcl: 500, wcpl: 0.06 });
   assert.equal(loud.gainDb, NOISE_MAX_DB, 'clamped at 75 dB');
   assert.ok(Math.abs(loud.gain - NOISE_BASE_GAIN * Math.pow(10, 50 / 20)) < 1e-12);
   assert.equal(noiseGainForDb(1e6), noiseGainForDb(NOISE_MAX_DB), 'the clamp is the ceiling');
@@ -408,22 +413,22 @@ test('noise: the volume factor rides its own metric from the base dB to the clam
 
 test('noise: each axis modulates only when its own factor is written', () => {
   // Spectrum named, volume not: the bed brightens but stays at the floor.
-  const p = noiseFor('# noise wcl 1', { wcl: 500, wcrtt: 60 });
+  const p = noiseFor('# noise wcl 1', { wcl: 500 });
   assert.equal(p.tilt, 0.5);
   assert.equal(p.gainDb, NOISE_BASE_DB);
   // A metric keyword alone implies factor 1, as `# room wcl` does.
   assert.equal(noiseFor('# noise wcl', { wcl: 500 }).tilt, 0.5);
   // Bare numbers take the default metric, wcl, for both axes.
-  const both = noiseFor('# noise 1 1', { wcl: 500, wcrtt: 60 });
+  const both = noiseFor('# noise 1 1', { wcl: 500 });
   assert.equal(both.tilt, 0.5);
-  assert.equal(both.gainDb, 50); // 25 + 0.5 × 50, from wcl again — not wcrtt
+  assert.equal(both.gainDb, 50); // 25 + 0.5 × 50, from wcl
 });
 
 test('noise: the 5th and 6th arguments pin the metrics in written order', () => {
-  const pinned = noiseFor('# noise wcl 1 wcrtt 10 0.5 0.06', { wcl: 9999, wcrtt: 9999 });
-  const live = noiseFor('# noise wcl 1 wcrtt 10', { wcl: 500, wcrtt: 60 });
+  const pinned = noiseFor('# noise wcl 1 wcpl 10 0.5 0.06', { wcl: 9999, wcpl: 9999 });
+  const live = noiseFor('# noise wcl 1 wcpl 10', { wcl: 500, wcpl: 0.06 });
   assert.equal(pinned.tilt, live.tilt, '0.5 s pinned ≡ 500 ms measured');
-  assert.equal(pinned.gainDb, live.gainDb, '0.06 s pinned ≡ 60 ms measured');
+  assert.equal(pinned.gainDb, live.gainDb, '0.06 pinned ≡ 0.06 measured');
   // The amounts are positional, so pinning the spectrum metric means writing
   // a volume factor first — as `# cycles wcl 10 0.3` needs its scale first.
   // wcpl is a fraction, not seconds, and pins on its own scale.
@@ -512,19 +517,19 @@ test('grid: self is white, farthest peer is black, perspective is local', () => 
 
 test('parsed # chain resolves to full parameter sets and a merged visual state', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0 1>\n# room wcl 2\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# crush wcpl 1\n# noise wcl 1 wcrtt 10 0.5\n# grid true\n# ply 2\n'
+    '$ participants <0 1>\n# room wcl 2\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# crush wcpl 1\n# noise wcl 1 wcpl 10 0.5\n# grid true\n# ply 2\n'
   );
   assert.deepEqual(errors, []);
-  const metrics = { wcl: 750, wcj: 5, wcrtt: 60, wcpl: 0.5 };
+  const metrics = { wcl: 750, wcpl: 0.5 };
   const chain = computeChainParams(ast.chain, metrics, { cycleSeconds: 2, cyclePos: 0 });
   assert.deepEqual(chain.map(c => c.fn), ['room', 'echo', 'crush', 'noise', 'grid'], 'ply is scheduling, not a bus node');
-  assert.equal(chain[0].params.decayS, 1.5);     // 2 × 750 ms
-  assert.equal(chain[0].params.cutoffHz, 6000);  // 60 ms × 100; wcrtt_factor is no longer settable
-  assert.equal(chain[1].params.lengthCycles, 1); // 2 × 750/1500
-  assert.equal(chain[1].params.delayS, 2);       // 1 cycle × 2 s
-  assert.equal(chain[1].params.feedback, 0.3);   // 50 % loss is past the 20 % bound → clamped
-  assert.equal(chain[3].params.type, 'pink');    // wcl pinned at 0.5 s × 1 → halfway along the colour axis
-  assert.equal(chain[3].params.gainDb, 55);      // wcrtt 0.06 s × 10 → 0.6 of 25…75 dB
+  assert.equal(chain[0].params.decayS, 1.5);          // 2 × 750 ms
+  assert.ok(Math.abs(chain[0].params.cutoffHz - CUTOFF_MAX_HZ / 19) < 1e-9); // 1.5 s tail → MAX / (1 + 1.5 × 12)
+  assert.equal(chain[1].params.lengthCycles, 1);      // 2 × 750/1500
+  assert.equal(chain[1].params.delayS, 2);            // 1 cycle × 2 s
+  assert.equal(chain[1].params.feedback, 0.3);        // 50 % loss is past the 20 % bound → clamped
+  assert.equal(chain[3].params.type, 'pink');         // wcl pinned at 0.5 s × 1 → halfway along the colour axis
+  assert.equal(chain[3].params.gainDb, NOISE_MAX_DB); // wcpl 0.5 × 10 → clamped at the ceiling
   assert.equal(chain[4].params.landmarks, true);
 
   // The Hydra tint is the ONE channel anything reads, so it is the only one
@@ -537,9 +542,9 @@ test('parsed # chain resolves to full parameter sets and a merged visual state',
   assert.equal(vis.brightness, 0.7);   // 1 − echo feedback
   // The params those image effects are computed FROM are still produced here.
   assert.equal(chain[2].params.visualPixelate, 4);
-  assert.equal(chain[0].params.visualLowpass, 6000 / CUTOFF_MAX_HZ);
-  assert.ok(Math.abs(chain[3].params.visualNoise - 0.35 * (55 / NOISE_MAX_DB)) < 1e-12,
-    'pink grain, scaled by level');
+  assert.ok(Math.abs(chain[0].params.visualLowpass - 1 / 19) < 1e-12, 'a 1.5 s tail closes the lowpass to 1/19 open');
+  assert.ok(Math.abs(chain[3].params.visualNoise - 0.35) < 1e-12,
+    'pink grain, at full level (gain clamped at the ceiling)');
 });
 
 // Minimal WebAudio stand-in: enough surface for the crush and echo nodes, and
@@ -595,7 +600,7 @@ test('no audio effect builds a node in the local browser chain — the aggregato
   const inserted = [];
   const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
   try {
-    mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60, wcpl: 0.5 });
+    mgr.setChain(ast.chain, { wcl: 500, wcpl: 0.5 });
     assert.equal(ctx.calls.createDelay, 0, 'no local Schroeder combs and no local echo line');
     assert.equal(ctx.calls.createBufferSource, 0, 'no local noise generators');
     // A second copy of any of these on the local bus is the bug this guards:
@@ -604,7 +609,7 @@ test('no audio effect builds a node in the local browser chain — the aggregato
     assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
 
     // Re-deriving must not fall out of step now that every entry is skipped.
-    mgr.updateMetrics({ wcl: 900, wcrtt: 60, wcpl: 0.25 });
+    mgr.updateMetrics({ wcl: 900, wcpl: 0.25 });
     assert.equal(ctx.calls.createDelay, 0);
     assert.equal(ctx.calls.createBufferSource, 0);
   } finally {
@@ -619,7 +624,7 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
   // same `reduction` the old pixelate channel did. A patterned METRIC rather
   // than a patterned scale, because reduction is driven by the metric and
   // deliberately not by the scale.
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <wcl wcj> 1\n');
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <wcl wcpl> 1\n');
   assert.deepEqual(errors, []);
   let cyclePos = 0;
   withStubWindow((visual, text) => {
@@ -632,19 +637,19 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
     // below would leave it running and `node --test` would never exit.
     t.after(() => mgr.dispose());
 
-    mgr.setChain(ast.chain, { wcl: 300, wcj: 0 });
+    mgr.setChain(ast.chain, { wcl: 300, wcpl: 0 });
     assert.equal(mgr.patternTicking(), true, 'a patterned chain arms the tick');
     assert.ok(drop() > 0, 'cycle 0 reads wcl — 300 ms is three halvings, so letters go');
 
     cyclePos = 1;
     mgr.refresh();
-    assert.equal(drop(), 0, 'cycle 1 takes the second element, wcj, which is clean');
+    assert.equal(drop(), 0, 'cycle 1 takes the second element, wcpl, which is clean');
     cyclePos = 2;
     mgr.refresh();
     assert.ok(drop() > 0, 'and wraps');
 
     // Metrics still move it within a cycle.
-    mgr.updateMetrics({ wcl: 0, wcj: 0 });
+    mgr.updateMetrics({ wcl: 0, wcpl: 0 });
     assert.equal(drop(), 0, 'a clean wcl decimates nothing either');
 
     mgr.dispose();
@@ -676,7 +681,7 @@ test('a master-bus-only chain inserts nothing locally but still publishes the vi
   const inserted = [];
   withStubWindow((visual, text) => {
     const mgr = new EffectsChainManager({ audioCtx: ctx, insert: (e) => inserted.push(e), remove: () => {} });
-    mgr.setChain(ast.chain, { wcl: 500, wcrtt: 60 });
+    mgr.setChain(ast.chain, { wcl: 500 });
     assert.deepEqual(inserted, [], 'nothing spliced into the local master bus');
     // Read through the state this manager actually publishes: noise's bed
     // reaches the words as injected glyphs, room's decay as letter-spacing.

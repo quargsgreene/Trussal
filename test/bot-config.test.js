@@ -40,11 +40,10 @@ test('finds the call across multiple lines', () => {
   assert.match(found.argText, /paramFactor/);
 });
 
-test('a closing paren inside an mcp prompt does not end the argument', () => {
-  const code = 'botConfig({ mcp: "make it spooky :) and slow" })';
-  const parsed = parseBotConfig(code);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.config.mcp, 'make it spooky :) and slow');
+test('a closing paren inside a quoted value does not end the argument', () => {
+  const found = findBotConfigCall('botConfig({ harmony: "diatonic :) slow" })\ns("bd")');
+  assert.equal(found.unbalanced, false);
+  assert.equal(found.argText, '{ harmony: "diatonic :) slow" }');
 });
 
 test('stripping removes the declaration and its line', () => {
@@ -98,10 +97,10 @@ test('accepts editor-habit object literals', () => {
 });
 
 test('parses every scalar type', () => {
-  const parsed = parseObjectLiteral('{ paramFactor: 1.5, textParrot: true, retroactive: false, mcp: null }');
+  const parsed = parseObjectLiteral('{ paramFactor: 1.5, retroactive: true, samples: false, harmony: null }');
   assert.equal(parsed.ok, true);
   assert.deepEqual(parsed.value, {
-    paramFactor: 1.5, textParrot: true, retroactive: false, mcp: null,
+    paramFactor: 1.5, retroactive: true, samples: false, harmony: null,
   });
 });
 
@@ -125,7 +124,7 @@ test('rejects an out-of-range enum value and lists the valid ones', () => {
 
 test('rejects a wrong-typed property', () => {
   assert.equal(parseBotConfig('botConfig({ paramFactor: "two" })').ok, false);
-  assert.equal(parseBotConfig('botConfig({ textParrot: "yes" })').ok, false);
+  assert.equal(parseBotConfig('botConfig({ retroactive: "yes" })').ok, false);
   assert.equal(parseBotConfig('botConfig({ random: true })').ok, false);
 });
 
@@ -135,7 +134,7 @@ test('accepts every documented random and colorScheme value', () => {
   }
   const schemes = [
     'complementary', 'monochromatic', 'analogous', 'triadic',
-    'tetradic', 'split-complementary', 'square', 'random',
+    'tetradic', 'square', 'random',
   ];
   for (const value of schemes) {
     assert.equal(parseBotConfig(`botConfig({ colorScheme: "${value}" })`).ok, true, value);

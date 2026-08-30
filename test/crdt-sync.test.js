@@ -188,7 +188,7 @@ test('edits from A appear at B; a late joiner receives the full doc history', as
     assert.equal(docB.text.toString(), '$ participants <0 1>\n');
 
     // Second edit, then a late joiner must be able to rebuild the whole doc.
-    applyTextDiff(docA.text, '$ participants <0 1>\n# cycles wcj\n');
+    applyTextDiff(docA.text, '$ participants <0 1>\n# cycles wcpl\n');
     send(a, { type: 'crdt-update', update: pendingUpdate });
     send(a, { type: 'ping', sentAt: Date.now() });
     await waitFor(a, m => m.type === 'pong');
@@ -199,7 +199,7 @@ test('edits from A appear at B; a late joiner receives the full doc history', as
     assert.equal(state.updates.length, 2);
     const docL = createMetaprogramDoc();
     for (const u of state.updates) applyRemoteUpdate(docL.doc, u);
-    assert.equal(docL.text.toString(), '$ participants <0 1>\n# cycles wcj\n');
+    assert.equal(docL.text.toString(), '$ participants <0 1>\n# cycles wcpl\n');
 
     a.ws.close(); b.ws.close(); late.ws.close();
   });

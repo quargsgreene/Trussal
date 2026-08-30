@@ -1082,9 +1082,9 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // dropTextStatements/dropCssStatements, leaving it empty. Evaluating empty
   // code registers no pattern, so `repl.scheduler.started` below never flips
   // true and this function throws BEFORE reaching the announce call — the
-  // words/styling never reach the room even with textParrot/cssParrot on,
-  // since that announce call is the only way they get there (see
-  // buildBotSilentBlock in strudel.js). `silence` is a real, always-valid
+  // words/styling never reach the room, since that announce call is the only
+  // way they get there (see buildBotSilentBlock in strudel.js). `silence` is a
+  // real, always-valid
   // Strudel pattern, so substituting it here lets the scheduler start
   // normally without producing any audio.
   const strudelSafe = strudel.trim() ? strudel : 'silence';
@@ -1104,11 +1104,11 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // handling ("no pattern yet") where our reporter can't see it.
   const code = `${hydraSafe};\n${strudelSafe}`;
   // What gets ANNOUNCED to peer-state (so other viewers can extract a
-  // parroted word()/css() voice via buildBotSilentBlock) differs from what
-  // THIS REPL evaluates whenever textParrot/cssParrot kept one — this REPL is
-  // a separate, vanilla @strudel/repl instance that never gets Trussal's
+  // word()/css() voice via buildBotSilentBlock) differs from what THIS REPL
+  // evaluates whenever an undeclared (exact-copy) cluster kept one — this REPL
+  // is a separate, vanilla @strudel/repl instance that never gets Trussal's
   // installTextCycles/installCssCycles, so it can only ever run the
-  // capability-free `strudel`, never the parroted one.
+  // capability-free `strudel`, never the announced one.
   const announcedStrudel = typeof announceStrudel === 'string' ? announceStrudel : strudel;
   try {
     if (!customElements.get('strudel-editor')) {
@@ -1238,7 +1238,7 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
       // word()/css() voice is extracted from it, by buildBotSilentBlock.
       //
       // announcedStrudel, not the `strudel` this REPL evaluated: they differ
-      // exactly when textParrot/cssParrot asked to keep a voice this REPL
+      // exactly when an undeclared (exact-copy) cluster kept a voice this REPL
       // can't run (see pageStrudelBoot's top).
       const announced = hydra ? `${hydra}\n\n${announcedStrudel}` : announcedStrudel;
       try { window.__trussalAnnounceLocalPattern(announced); } catch (err) {

@@ -37,11 +37,11 @@ test('uplink loss (remote-inbound-rtp fractionLost) counts even with a clean dow
   assert.equal(deriveNetSample(entries, null).sample.packetLoss, 0.15);
 });
 
-test('rtcJitter is audio-only, so turning a camera on cannot change WCJ', () => {
-  // rtcJitter drives WCJ, which paces turns and tunes the echo. Video on the
-  // same connection routinely jitters an order of magnitude more than Opus;
-  // unfiltered it wins the max and the room's musical timing would track
-  // whether cameras happen to be on.
+test('rtcJitter is audio-only, so turning a camera on cannot change the media-jitter readout', () => {
+  // rtcJitter is the studio's "media jitter" diagnostic. Video on the same
+  // connection routinely jitters an order of magnitude more than Opus;
+  // unfiltered it wins the max and the readout would track whether cameras
+  // happen to be on.
   const audioOnly = [
     { type: 'inbound-rtp', kind: 'audio', jitter: 0.003, packetsReceived: 500, packetsLost: 0 }
   ];
@@ -51,7 +51,7 @@ test('rtcJitter is audio-only, so turning a camera on cannot change WCJ', () => 
   ];
   assert.equal(deriveNetSample(audioOnly, null).sample.rtcJitter, 3);
   assert.equal(deriveNetSample(withVideo, null).sample.rtcJitter, 3,
-    'a 90 ms video stream must not become the room worst-case jitter');
+    'a 90 ms video stream must not drive the media-jitter readout');
 
   // Legacy reports label the stream `mediaType` instead of `kind`.
   const legacy = [{ type: 'inbound-rtp', mediaType: 'audio', jitter: 0.005, packetsReceived: 10, packetsLost: 0 }];

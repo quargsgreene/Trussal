@@ -45,11 +45,10 @@ import {
 // validates against the same list the four consumers gate on.
 import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
 
-export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
-// Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
-// cannot set a cycle length (it is a round trip, not a turn) but it is a
-// perfectly good modulation source, and room already reads it for its cutoff.
-export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
+export const TIMING_METRICS = ['wcl', 'wcpl'];
+// Metrics an effect may be modulated by. The same set as TIMING_METRICS: wcl
+// (mouth-to-ear latency, a duration) and wcpl (packet-loss fraction).
+export const EFFECT_METRICS = ['wcl', 'wcpl'];
 
 // A room with no `# mosaic` directive still tiles: the mosaic is the resting
 // state of the aggregator's video, and `# mosaic false` is the deviation from
@@ -57,12 +56,6 @@ export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 // buildDefaultProgram, for the same reason `# tempo` is left unwritten — the
 // AST should report the directives performers actually typed.
 export const MOSAIC_ENABLED_BY_DEFAULT = true;
-
-// A room with no `# disjointCss` directive still runs disjoint: unlike every
-// other directive here, CSS Cycles' own mutual-exclusion gate (css-cycles.js)
-// defaults to ON rather than off, so `# disjointCss false` is the deviation —
-// the one line that opts BACK into the pre-existing shared-cascade behaviour.
-export const DISJOINT_CSS_ENABLED_BY_DEFAULT = true;
 
 // Whether a parsed pattern holds metric keywords or numbers, taken from its
 // first leaf. `# noise`'s slots are positional, so which of the two a `<…>`
@@ -93,9 +86,9 @@ const VALUE_ELEMENT_OPS = new Set(['@', '?', '!', '*', '/']);
 // with MAX_EXPANSION_STEPS; this is that bound applied to one written element.
 export const MAX_VALUE_REPEATS = 1024;
 
-// crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
-// which turns its metric into a duration and has no meaning for a round trip.
-export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
+// crush reads any worst-case metric — the same set `# cycles` and every other
+// effect accept.
+export const CRUSH_METRICS = ['wcl', 'wcpl'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted. `metricKeywords`
@@ -103,13 +96,13 @@ export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
 // `metricPairs` instead takes that many <metric> <scale> pairs, one per
 // parameter, followed by that many optional upper bounds (`# echo`, below).
 // `patternArgs` additionally lets the metric and the numbers be written as
-// mini-notation sequences (`# crush <wcl wcj> <2 4>`), read per cycle — rests
+// mini-notation sequences (`# crush <wcl wcpl> <2 4>`), read per cycle — rests
 // and a trailing `*n` / `/n` rate included. `mediaArg` allows the trailing
 // medium set (`# crush wcl 2 ["audio" "video"]`), which narrows the effect
 // from its whole-room default and patterns like any other argument.
 const EFFECTS = {
   // scale=1, fixed metric amount=live. Any worst-case metric may drive the
-  // decay, and all three arguments pattern — `# room <wcl wcj> <1 2 ~ 2 3>*2`.
+  // decay, and all three arguments pattern — `# room <wcl wcpl> <1 2 ~ 2 3>*2`.
   room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   echo: {
     kind: 'effect',
@@ -131,12 +124,7 @@ const EFFECTS = {
   // false shows only whoever is streaming, full-frame. Unwritten means the
   // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
   // rather than in an injected directive nobody typed.
-  mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true },
-  // Whether CSS Cycles' mutual exclusion (css-cycles.js) is in force room-wide
-  // rather than only while a Net Cycles ring is actively scheduling turns.
-  // True (or bare) is the default — see DISJOINT_CSS_ENABLED_BY_DEFAULT —
-  // false restores the pre-existing shared-cascade behaviour.
-  disjointCss: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
+  mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
 };
 
 const PATTERN_FNS = {
@@ -651,8 +639,8 @@ class Parser {
   // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
   // With no amount the metric evolves with the live worst-case measurement;
   // an amount PINS it there regardless of network conditions (seconds for
-  // wcl/wcj, loss fraction for wcpl), pinning timing only — measured
-  // metrics still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
+  // wcl, loss fraction for wcpl), pinning timing only — measured metrics
+  // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
     if (metricTok.type !== 'word' || !TIMING_METRICS.includes(metricTok.value)) {
@@ -758,7 +746,7 @@ class Parser {
   // ValuePattern.js reads back unchanged and each effect's params function
   // already treats as "use the default", so a rest leaves the parameter alone
   // for as long as it is in force. Rests settle nothing about the leaf kind:
-  // `<wcl ~ wcj>` is still a pattern of metrics.
+  // `<wcl ~ wcpl>` is still a pattern of metrics.
   parseValueSequence(name, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
     const open = this.next(); // '<' or '['
     const close = open.value === '<' ? '>' : ']';
@@ -1276,8 +1264,8 @@ class Parser {
   //          [<amount for metric 1>] [<amount for metric 2>]`
   //
   // Positional, with the two metric keywords optional and interleaved: a
-  // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
-  // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
+  // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcpl 10`
+  // reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers fill
   // the spectrum factor, the volume factor, then the two pinned amounts — in
   // the order the metrics were written. Any slot may instead be a `<…>`
   // pattern, sampled one element per cycle.
@@ -1514,7 +1502,7 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     // `# room <metric> [scale] [fixed metric amount]` — decay = scale × the
     // named metric; the optional third token pins it (0.4 = 400 ms) instead of
     // reading live metrics. Any of the three may be a valueSeq node
-    // (`# room <wcl wcj> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
+    // (`# room <wcl wcpl> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
     case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
     // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
     // per parameter, each carrying its own metric, scale (number or pattern)
@@ -1535,7 +1523,7 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     }
     // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
     // halved as the metric climbs. Any of the three may be a valueSeq node
-    // (`# crush <wcl wcj> <2 4>`); crushParams reads them per cycle.
+    // (`# crush <wcl wcpl> <2 4>`); crushParams reads them per cycle.
     case 'crush': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
     // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
     // [<amount 1>] [<amount 2>]` — one slot per axis, each naming the metric
@@ -1565,10 +1553,6 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     // `# mosaic [bool]` — a bare `# mosaic` is the mosaic, same as omitting it
     // entirely; only an explicit `false` drops to the single streaming cell.
     case 'mosaic': return { enabled: args[0] ?? true };
-    // `# disjointCss [bool]` — a bare `# disjointCss` is disjoint, same as
-    // omitting it entirely; only an explicit `false` restores the shared
-    // cascade.
-    case 'disjointCss': return { enabled: args[0] ?? true };
     default: return { args };
   }
 }
@@ -1582,21 +1566,6 @@ export function mosaicEnabled(ast) {
     if (chain[i].fn === 'mosaic') return !!resolveEffectParams(chain[i]).enabled;
   }
   return MOSAIC_ENABLED_BY_DEFAULT;
-}
-
-// Whether CSS Cycles' mutual exclusion is in force room-wide, for a parsed
-// program — same last-write-wins/fallback shape as mosaicEnabled above.
-// Consumed browser-side only (Metaprogrammer.js#isDisjointCssEnabled); no
-// aggregator or bot code needs it, since CSS Cycles has no aggregator
-// application point (see netcycles.md's "What each effect does to each
-// medium" — css and text are painted per-browser, not on the master bus or
-// composited frame).
-export function disjointCssEnabled(ast) {
-  const chain = (ast && ast.chain) || [];
-  for (let i = chain.length - 1; i >= 0; i--) {
-    if (chain[i].fn === 'disjointCss') return !!resolveEffectParams(chain[i]).enabled;
-  }
-  return DISJOINT_CSS_ENABLED_BY_DEFAULT;
 }
 
 // The default program every room starts under (Net Cycles is always on):

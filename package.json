@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "npm --prefix src/mcp-agent install",
     "test": "node --test test/*.test.js",
     "build": "node build.mjs",
     "deploy:local": "npm run build && cp dist/custom-config.js docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/",

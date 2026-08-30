@@ -145,7 +145,6 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `audio-net/MosaicCells.js` | Which peers earn a mosaic cell, and whether it is re-executed locally or blitted from their published track |
 | `audio-net/` | Net Cycles: metaprogram parser + deterministic scheduler + AV buffer queues (`Metaprogrammer*.js`, `MetaprogramScheduler.js`), O2lite/ClockSync, CRDT sync (Yjs over the sidecar), worst-case metrics + artificial modulation (`network-modulation/`), RTCStats + spectrum observability (`observability/`), network-modulated effects (`av-effects/`), bot cluster orchestration, room health |
 | `bridges/XMPPtoO2Mapper.js` | jitsiId ↔ room index ↔ O2 service name |
-| `mcp-agent/` | Standalone MCP server (own package.json): AI-composed pattern updates via per-bot ordered queues + metaprogram apply |
 
 Top-level: `components/` (vanilla-DOM Net Cycles editor/highlighter/cluster video), `public/lib/o2lite-web.js` (O2lite WS client), `server/O2Relay.js` (re-export of the sidecar's O2 relay).
 

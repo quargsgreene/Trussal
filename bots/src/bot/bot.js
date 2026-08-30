@@ -134,8 +134,9 @@ export class Bot {
         strudel: script.strudel,
         hydra: script.hydra,
         // What gets announced to peer-state differs from what this REPL
-        // evaluates whenever textParrot/cssParrot kept a word()/css() voice
-        // this REPL can't run — see cluster-source.js's botScriptFor. Any
+        // evaluates whenever an undeclared (exact-copy) cluster kept a
+        // word()/css() voice this REPL can't run — see cluster-source.js's
+        // botScriptFor. Any
         // generated word() voice of the bot's own is already folded in here
         // too, never into `strudel` — that REPL can't run it either.
         announceStrudel: script.announceStrudel ?? script.strudel,

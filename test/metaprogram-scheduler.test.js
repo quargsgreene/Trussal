@@ -111,7 +111,7 @@ test('describeCycleLength reports the length, the beat grid, and the metrics beh
   const live = describeCycleLength({
     cycles: { metric: 'wcl', factor: 2, fixed: null },
     tempo: { value: 120, unit: 'bpm' },
-    metrics: { wcl: 1500, wcj: 3, wcrtt: 6, wcpl: 0.02 }
+    metrics: { wcl: 1500, wcpl: 0.02 }
   });
   assert.match(live, /^3\.000s \[6 beat\(s\) @ 0\.500s\] ← # cycles wcl 2 target 3\.000s /);
   assert.match(live, /wcl 1500\.0ms/);
@@ -163,8 +163,8 @@ test('tempo units: bpm and cpm are per minute, cps per second', () => {
   assert.equal(beatSeconds({ value: 2, unit: 'cps' }), 0.5);
 });
 
-test('wcj uses ms; wcpl maps loss fraction onto the 10 s full scale', () => {
-  assert.equal(timingTargetSeconds({ metric: 'wcj', factor: 2 }, { wcj: 250 }), 0.5);
+test('wcl uses ms; wcpl maps loss fraction onto the 10 s full scale', () => {
+  assert.equal(timingTargetSeconds({ metric: 'wcl', factor: 2 }, { wcl: 250 }), 0.5);
   assert.equal(timingTargetSeconds({ metric: 'wcpl', factor: 1 }, { wcpl: 0.5 }), 0.5 * WCPL_FULL_SCALE_S);
 });
 
@@ -713,7 +713,7 @@ test('append/remove helpers edit the sequence text; user text is preserved', () 
   text = removeParticipantFromProgram(text, '1');
   assert.match(text, /\$ participants <0 2 1a>/);
   // Removing a token also removes its modifier-decorated occurrences.
-  let custom = '$ participants [0@2 3? 0a]\n# cycles wcj\n# room 2\n';
+  let custom = '$ participants [0@2 3? 0a]\n# cycles wcl\n# room 2\n';
   custom = removeParticipantFromProgram(custom, '3');
   assert.match(custom, /\$ participants \[0@2 0a\]/);
   assert.match(custom, /# room 2/, 'user directives untouched');

@@ -598,10 +598,10 @@ const NET_STAT_FIELDS = ['rtcRtt', 'rtcJitter', 'packetLoss', 'jitterBufferMs', 
 // identical worst-case values.
 //
 // rtcJitter is the RTP inter-arrival jitter of the audio actually being
-// played, so it belongs to the same media path as rtcRtt and the de-jitter
-// buffer that WCL is built from. The WS ping/pong `jitter` measures the
-// signalling leg to the sidecar instead, and stays only as the fallback for
-// a peer with no RTCStats sample yet.
+// played, on the same media path as rtcRtt and the de-jitter buffer that WCL
+// is built from; it is a studio diagnostic ("media jitter") and drives no
+// worst-case metric of its own. The WS ping/pong `jitter` measures the
+// signalling leg to the sidecar instead.
 //
 // Each field is three-state. A NUMBER sets it; an explicit `null` means
 // "looked, nothing there" and CLEARS it, locally and over the wire; an ABSENT
@@ -614,8 +614,8 @@ const NET_STAT_FIELDS = ['rtcRtt', 'rtcJitter', 'packetLoss', 'jitterBufferMs', 
 // Without the clear, a value that stops being measured is rebroadcast
 // forever: a peer left alone in a room has no inbound-rtp at all, but the
 // candidate pair still yields rtcRtt, so every poll would keep re-sending the
-// last jitter reading and pin the room's WCJ — and so its turn length — to a
-// measurement with nothing behind it.
+// last jitter reading and show a stale "media jitter" for a peer with nothing
+// behind it.
 export function sendLocalNetStats(sample = {}) {
   const msg = { type: 'metrics' };
   let reported = false;

@@ -16,9 +16,11 @@
  * takes code and a config and returns the {strudel, hydra, announceStrudel}
  * triple the bot boots with. `strudel`/`hydra` are what its own REPL
  * evaluates; `announceStrudel` is the separate string peer-state broadcasts
- * as this bot's pattern, which is what lets `textParrot`/`cssParrot` reach
- * other viewers even though the bot's own REPL can run neither (see
- * dropTextStatements/dropCssStatements). Everything about how the eval pair
+ * as this bot's pattern, which is what lets an undeclared (exact-copy)
+ * cluster's word()/css() statements reach other viewers even though the bot's
+ * own REPL can run neither (see dropTextStatements/dropCssStatements — the
+ * bot's eval is stripped of both unconditionally, and a `botConfig(...)`
+ * declaration strips them from the announce too). Everything about how the eval pair
  * sits in the MIX — band, stereo position, entry offset, gain staging, link
  * fx — stays in variation.js and is applied afterwards, unchanged.
  */
@@ -26,7 +28,7 @@
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
 import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
-import { defaultBotConfig, flag, parseBotConfig } from '../../../src/bot-config.js';
+import { defaultBotConfig, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
 import { randomMasterScript } from './generator.js';
@@ -228,8 +230,9 @@ function dropCapabilityParagraphs(strudel, { initRe, callRe }) {
 }
 
 /**
- * Strip the statements that paint words, for a bot whose human did not ask for
- * `textParrot`. Without this every bot in a cluster would repeat its author's
+ * Strip the statements that paint words. Always applied to what the bot's own
+ * REPL evaluates, and to the announce for any cluster with a `botConfig(...)`
+ * declaration. Without this every bot in a cluster would repeat its author's
  * words, N times over, in every viewer's chat panel.
  */
 export function dropTextStatements(strudel) {
@@ -249,11 +252,12 @@ export function dropTextStatements(strudel) {
  * outright otherwise — the "pattern did not start after evaluation" crash the
  * moment a performer's repertoire combines CSS Cycles with a bot spawn.
  *
- * Also applied to `announceStrudel` unless `cssParrot` is set — mirrors
- * dropTextStatements/textParrot: css() never rides the bot's own eval, but it
- * DOES reach the room a different way when parroted, through every OTHER
- * viewer's own page (buildBotSilentBlock in strudel.js extracts it from the
- * announced pattern), the same as a bot's words already do.
+ * Also applied to `announceStrudel` for any cluster with a `botConfig(...)`
+ * declaration — mirrors dropTextStatements: css() never rides the bot's own
+ * eval, but it DOES reach the room a different way for an undeclared
+ * (exact-copy) cluster, through every OTHER viewer's own page
+ * (buildBotSilentBlock in strudel.js extracts it from the announced pattern),
+ * the same as a bot's words already do.
  */
 export function dropCssStatements(strudel) {
   return dropCapabilityParagraphs(strudel, {
@@ -274,11 +278,11 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   const config = source?.config ?? defaultBotConfig();
   const master = source?.master ?? { strudel: '', hydra: '' , text: '', css: ''};
   // No `botConfig()` call at all is the literal case the docs call an "exact
-  // copy" — nothing was declared, so there is no `textParrot: true` a
-  // performer could have typed to ask for their words to carry over. A
-  // `botConfig()` call (even an empty one) is a declaration, and textParrot
-  // stays off by default there per its own documented default. `declared` is
-  // `parsed.present` from bot-config.js, threaded through captureClusterSource.
+  // copy" — nothing was declared, so the performer's own word()/css() voices
+  // carry over into the announce. A `botConfig()` call (even an empty one) is a
+  // declaration, and any declared cluster has both stripped from the announce.
+  // `declared` is `parsed.present` from bot-config.js, threaded through
+  // captureClusterSource.
   const undeclared = !source?.declared;
 
   // `random: "full"` replaces the human's code outright — "fully randomizes the
@@ -296,8 +300,8 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // `strudel`/`hydra` in the first place (see generator.js's `text`/`css`).
   // Only `randomMasterScript` ever populates these; a normal cluster derived
   // from a performer's real code has neither here, and any word()/css() THEY
-  // wrote is already embedded in `base.strudel`, governed by
-  // textParrot/cssParrot below.
+  // wrote is already embedded in `base.strudel`, kept in the announce only for
+  // an undeclared (exact-copy) cluster (see the announce/eval split below).
   const generatedText = base.text || '';
   const generatedCss = base.css || '';
 
@@ -337,22 +341,21 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   const colour = colorHydraSuffix(config.colorScheme, index, count, seed);
   if (colour && hydra.trim()) hydra = insertBeforeHydraOut(hydra, colour);
 
-  // What OTHER viewers see this bot declare — text/css statements survive
-  // here per `textParrot`/`cssParrot`, because that is how they actually
-  // reach the room: peer-state announces this string as the bot's `pattern`,
-  // and every OTHER peer's own page extracts word()/css() statements out of
-  // it (buildBotSilentBlock in strudel.js). Derived from the SHAPED `strudel`
-  // above, not the raw human original, so this is exactly what the bot is
-  // actually playing — optionally with its text/css voice(s) kept.
+  // What OTHER viewers see this bot declare — an undeclared (exact-copy)
+  // cluster's text/css statements survive here, because that is how they
+  // actually reach the room: peer-state announces this string as the bot's
+  // `pattern`, and every OTHER peer's own page extracts word()/css() statements
+  // out of it (buildBotSilentBlock in strudel.js). Derived from the SHAPED
+  // `strudel` above, not the raw human original, so this is exactly what the
+  // bot is actually playing.
   //
-  // `undeclared` (no `botConfig()` call at all) always keeps both: with
-  // nothing declared there is no `textParrot: true` a performer could have
-  // typed, and the docs call this case an "exact copy" — an exact copy that
-  // silently drops the words/styling actually in the editor isn't one.
-  // `botConfig()` (even empty) IS a declaration, so from there textParrot and
-  // cssParrot each keep their own documented off-by-default.
-  let announceStrudel = (undeclared || flag(config.textParrot)) ? strudel : dropTextStatements(strudel);
-  announceStrudel = (undeclared || flag(config.cssParrot)) ? announceStrudel : dropCssStatements(announceStrudel);
+  // `undeclared` (no `botConfig()` call at all) keeps both: the docs call this
+  // case an "exact copy" — an exact copy that silently drops the words/styling
+  // actually in the editor isn't one. `botConfig()` (even empty) IS a
+  // declaration, and any declared cluster has word()/css() stripped from the
+  // announce — a cluster of N bots repeating one author's words in every
+  // viewer's chat panel is rarely what a configured spawn wants.
+  let announceStrudel = undeclared ? strudel : dropCssStatements(dropTextStatements(strudel));
 
   // A cluster built from a performer's own code plays only what is actually
   // in their editor — the same rule the audio side already follows. Only
@@ -360,10 +363,10 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
   // curated palette outright, and `generatedText`/`generatedCss` are that
   // palette's word()/css() voices riding along with it. Every other cluster
   // (identical copy, paramFactor, random:"params", harmony, ...) carries no
-  // words/styling unless the performer wrote some and textParrot/cssParrot
-  // (or being undeclared) kept them alive above — inventing a voice for
-  // those would mean a bot's announced pattern no longer matches what was in
-  // the human's editor when they spawned it.
+  // words/styling unless the performer wrote some and the cluster was
+  // undeclared, keeping them alive above — inventing a voice for those would
+  // mean a bot's announced pattern no longer matches what was in the human's
+  // editor when they spawned it.
   if (generatedText.trim()) {
     announceStrudel = announceStrudel.trim()
       ? `${announceStrudel}\n\n${generatedText}`
@@ -375,12 +378,12 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
       : generatedCss;
   }
 
-  // What the bot's OWN REPL evaluates. ALWAYS stripped of both, regardless of
-  // textParrot/cssParrot: that REPL is a separate, vanilla @strudel/repl
-  // instance (see page-scripts.js's pageStrudelBoot) that never gets
-  // Trussal's installTextCycles/installCssCycles, so `word`/`css`/their init
-  // calls are undefined there. Parroting is a broadcast-only concept — the
-  // bot's own eval can never run either, parrot flag or not. `generatedText`/
+  // What the bot's OWN REPL evaluates. ALWAYS stripped of both, declared or
+  // not: that REPL is a separate, vanilla @strudel/repl instance (see
+  // page-scripts.js's pageStrudelBoot) that never gets Trussal's
+  // installTextCycles/installCssCycles, so `word`/`css`/their init calls are
+  // undefined there. Announcing a word()/css() voice is a broadcast-only
+  // concept — the bot's own eval can never run either. `generatedText`/
   // `generatedCss` never reach `strudel` to begin with, so there is nothing
   // of them to strip here. Derived from the SAME shaped `strudel`
   // announceStrudel came from, so the two never diverge on what audio they

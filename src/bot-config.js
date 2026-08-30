@@ -21,8 +21,8 @@
 //
 // Double quotes are safe *inside* the call for the same reason the call is
 // stripped: it never reaches Strudel's transpiler, whose double-quote plugin
-// would otherwise mini-parse `"make it spooky"` into a syntax error that kills
-// the whole room's program.
+// would otherwise mini-parse a quoted value into a syntax error that kills the
+// whole room's program.
 
 // Every property, its accepted type, and its accepted values. `null` — the
 // value of any property the author leaves out — always means "no effect on the
@@ -32,16 +32,13 @@ export const BOT_CONFIG_PROPS = {
   random: { type: 'string', values: ['params', 'full'] },
   paramFactor: { type: 'number' },
   harmony: { type: 'string', pattern: /^(diatonic|random|[+-]\d+)$/ },
-  mcp: { type: 'string' },
   colorScheme: {
     type: 'string',
     values: [
       'complementary', 'monochromatic', 'analogous', 'triadic',
-      'tetradic', 'split-complementary', 'square', 'random',
+      'tetradic', 'square', 'random',
     ],
   },
-  textParrot: { type: 'boolean' },
-  cssParrot: { type: 'boolean' },
   retroactive: { type: 'boolean' },
   samples: { type: 'boolean' },
 };
@@ -67,7 +64,7 @@ export function hasBotConfig(code) {
 }
 
 // Locate the call and its argument text by balancing parentheses from the
-// opening one. String literals are skipped so a `)` inside an mcp prompt does
+// opening one. String literals are skipped so a `)` inside a quoted value does
 // not end the argument early.
 export function findBotConfigCall(code) {
   const src = String(code ?? '');
@@ -286,9 +283,9 @@ export function parseHarmony(value) {
   return { type: 'interval', semitones };
 }
 
-// `retroactive`, `textParrot` and `samples` are booleans whose unset value is
-// null. Null reads as false everywhere: an unwritten property has no effect,
-// and "no effect" for these three is the same as "off".
+// `retroactive` and `samples` are booleans whose unset value is null. Null
+// reads as false everywhere: an unwritten property has no effect, and "no
+// effect" for these two is the same as "off".
 export function flag(value) {
   return value === true;
 }

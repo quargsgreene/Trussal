@@ -21,7 +21,7 @@ function chainOf(directive) {
 }
 
 const CYCLE = { cycleSeconds: 2, cyclePos: 0 };
-const METRICS = { wcl: 400, wcj: 40, wcrtt: 1, wcpl: 0.1 };
+const METRICS = { wcl: 400, wcpl: 0.1 };
 
 test('text: an empty chain leaves words and styling alone', () => {
   const { text, css } = textAndCssStateFor([], METRICS, CYCLE);
@@ -42,7 +42,7 @@ test('text: crush drops letters and quantizes styling', () => {
 });
 
 test('text: noise injects glyphs and jitters styling', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# noise wcl 20 wcrtt 10'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# noise wcl 20 wcpl 10'), METRICS, CYCLE);
   assert.ok(text.noiseChars > 0);
   assert.ok(text.noiseBand >= 0 && text.noiseBand < NOISE_GLYPHS.length);
   assert.ok(css.jitter > 0);

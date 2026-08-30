@@ -1,9 +1,11 @@
 // room — Schroeder reverb whose DECAY TIME follows a worst-case network
-// metric, with a cascaded lowpass whose cutoff tracks worst-case RTT.
+// metric, with a cascaded lowpass whose cutoff closes as that decay grows —
+// a longer tail is a darker one, the way a real room's high frequencies die
+// away first.
 //
 //   decay (RT60, s) = scale × metric_s   metric_s = fixed ?? metric / its units
 //   comb feedback_i = 0.001^(base_i / decay)   (clamped below unity)
-//   cutoff          = wcrtt × wcrttFactor × 100 Hz   (wcrtt in ms)
+//   cutoff          = CUTOFF_MAX_HZ / (1 + decay × LOWPASS_PER_SECOND)
 //
 // `# room <metric> [<scale>] [<fixed metric amount>]` — with the optional third
 // token the metric is pinned (0.4 = 400 ms) and live metrics no longer move it.
@@ -26,6 +28,11 @@ export const ALLPASS_BASES_S = [0.005, 0.0017];
 
 export const CUTOFF_MIN_HZ = 40;
 export const CUTOFF_MAX_HZ = 18000;
+
+// How hard the cascaded lowpass closes per second of decay: at a 1 s tail the
+// cutoff is CUTOFF_MAX_HZ / 13 ≈ 1.4 kHz, so a typical algorave reverb is
+// audibly (and visibly) dark without a runaway metric.
+export const LOWPASS_PER_SECOND = 12;
 
 // Feedback ceiling: RT60 → gain solves g = 0.001^(delay/decay), which walks
 // toward 1 as decay grows; at 1 the combs self-oscillate forever.
@@ -50,7 +57,7 @@ export function rt60CombFeedback(delayS, decayS) {
 // exact where 43 * 0.001 is not, and the decay feeds an exponent — every
 // client solving the same comb gains from the same metrics should land on the
 // same float, not one an ulp apart.
-export const METRIC_PER_SECOND = { wcl: 1000, wcj: 1000, wcrtt: 1000, wcpl: 1 };
+export const METRIC_PER_SECOND = { wcl: 1000, wcpl: 1 };
 
 export const DEFAULT_METRIC = 'wcl';
 
@@ -75,12 +82,14 @@ export function roomParams(metrics, user = {}, cyclePos = 0) {
   const scaleRaw = evaluateValuePattern(user.scale ?? 1, cyclePos);
   const scale = (Number.isFinite(scaleRaw) && scaleRaw > 0) ? scaleRaw : 1;
   const fixedRaw = evaluateValuePattern(user.fixedMetric ?? null, cyclePos);
-  const wcrttFactor = user.wcrttFactor ?? 1;
 
   const metricS = roomMetricSeconds(metric, metrics, Number.isFinite(fixedRaw) ? fixedRaw : null);
-  const wcrtt = Math.max(0, (metrics && metrics.wcrtt) || 0);
   const decayS = scale * metricS;
-  const rawCutoff = wcrtt * wcrttFactor * 100;
+  // The cascaded lowpass closes as the tail lengthens: no decay leaves it wide
+  // open (no tone shaping, no image blur), and a long reverb is a dark one.
+  const rawCutoff = decayS > 0
+    ? CUTOFF_MAX_HZ / (1 + decayS * LOWPASS_PER_SECOND)
+    : CUTOFF_MAX_HZ;
   const cutoffHz = Math.min(CUTOFF_MAX_HZ, Math.max(CUTOFF_MIN_HZ, rawCutoff || CUTOFF_MAX_HZ));
   return {
     // Which metric is driving, so a readout (and the aggregator's push

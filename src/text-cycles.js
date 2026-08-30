@@ -450,8 +450,9 @@ function paint(value, cycle) {
   const peerClass = peerTextClass(peerId);
 
   // Bots take their turn on the ring exactly like a human performer — a
-  // word() voice a bot announces (its own, when textParrot/random:"full" is
-  // set — see cluster-source.js's botScriptFor) is gated the same way. They
+  // word() voice a bot announces (its own generated one when random:"full" is
+  // set, or its author's under an undeclared exact-copy cluster — see
+  // cluster-source.js's botScriptFor) is gated the same way. They
   // used to be exempt here (an operator-puppeted edit painted the moment it
   // landed, rather than waiting on the ring), but that predates bots having a
   // voice of their own to schedule at all.

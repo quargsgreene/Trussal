@@ -1,4 +1,14 @@
 /**
+ * ARCHIVED 2026-08-29 — the whole `bots/src/llm/` directory (script-composer,
+ * claude-client, tinyllama-client, everything-mcp) was moved out when the MCP
+ * Cycles feature was removed. Removed alongside it: the `mcp` property in
+ * src/bot-config.js's BOT_CONFIG_PROPS, the `compose` wiring in
+ * bots/src/orchestrator/index.js + fleet-service.js (#composeOwnerSource,
+ * this.compose), bots/test/fleet-mcp.test.js, and the `mcp` rows/sections in
+ * src/features/botconfig.md. Revive by moving the directory back, re-adding
+ * `mcp: { type: 'string' }` to BOT_CONFIG_PROPS, and re-wiring `compose` into
+ * FleetService.
+ *
  * `botConfig({ mcp: "<prompt>" })` — composing a cluster's code from a prompt.
  *
  * Two models, one contract. Claude answers by default; a locally hosted

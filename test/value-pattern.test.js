@@ -206,7 +206,7 @@ test('chains report whether anything in them needs a per-cycle re-read', () => {
   const chainOf = (text) => parseMetaprogram(text).ast.chain;
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# crush wcl 2\n')), false);
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# crush wcl <2 4>\n')), true);
-  assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# crush <wcl wcj> 2\n')), true,
+  assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# crush <wcl wcpl> 2\n')), true,
     'a patterned metric counts too');
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room wcl 2\n# noise\n')), false);
   assert.equal(chainHasValuePattern([]), false);
@@ -226,7 +226,7 @@ test('patterns round-trip back to source text', () => {
 
 test('room, crush and echo report a patterned argument; a rate alone is not one', () => {
   const chainOf = (text) => parseMetaprogram(text).ast.chain;
-  assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room <wcl wcj> <1 2 ~ 2 3>*2\n')), true);
+  assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room <wcl wcpl> <1 2 ~ 2 3>*2\n')), true);
   assert.equal(chainHasValuePattern(chainOf('$ participants <0>\n# room wcl 2 [0.1 0.4]\n')), true,
     'a patterned pinned amount counts');
 });

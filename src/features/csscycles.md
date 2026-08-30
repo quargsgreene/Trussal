@@ -258,27 +258,25 @@ peer's styling behaves exactly as if their program had never run: their
 contribution reverts to the untouched page, not to some other peer's current
 value or to CSS's own defaults.
 
-Ownership is decided by the same rule Strudel/Hydra/Text Cycles already use:
-whoever the Net Cycles ring's current slot belongs to. That rule **fails
-open** — every peer visible at once, ordinary cascade resolves collisions —
-whenever no ring is actively scheduling turns (no aggregator has reported in
-yet, or the room has no `$ participants` schedule). `# disjointCss` (see
-[netcycles.md](netcycles.md), default **on**) closes that gap for CSS
-specifically: with it in force, exclusivity holds even with no ring running,
-falling back to the room's own default schedule (`$ participants <0>`) rather
-than opening every peer's styling to the shared cascade. `# disjointCss false`
-restores the plain shared-cascade behaviour this section opens with.
+Ownership is decided by whoever the Net Cycles ring's current slot belongs to —
+the same ring Strudel/Hydra/Text Cycles use. But unlike those three, CSS
+Cycles' gate **never fails open**: those three show every peer at once whenever
+no ring is actively scheduling turns (no aggregator has reported in yet, or the
+room has no `$ participants` schedule), whereas CSS Cycles keeps exclusivity
+even then, falling back to the room's own default schedule (`$ participants
+<0>`) rather than opening every peer's styling to the shared cascade. Opening
+every peer's CSS at once is rarely what a room wants.
 
 Pinning a benched peer's properties back to their baseline normally only
 happens the next time THAT peer's own hap fires — fine for a fast pattern, but
 a slow or sparse one could keep showing what they last painted well after
 their turn actually ended, reading as "the styling froze where the previous
-performer left it" rather than resetting. Under `# disjointCss`, every
-currently-declared property is proactively re-pinned to its baseline the
-instant the ring's token changes (`resetAllCssToBaseline`, fired off the same
-event the turn highlighter uses) rather than waiting on each peer's own next
-cycle — so a turn handoff always starts from the room's original CSS, and the
-new owner's own next hap is what moves it on from there.
+performer left it" rather than resetting. So every currently-declared property
+is proactively re-pinned to its baseline the instant the ring's token changes
+(`resetAllCssToBaseline`, fired off the same event the turn highlighter uses)
+rather than waiting on each peer's own next cycle — so a turn handoff always
+starts from the room's original CSS, and the new owner's own next hap is what
+moves it on from there.
 
 ## Play state
 

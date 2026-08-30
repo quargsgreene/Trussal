@@ -14,13 +14,14 @@
 // on a boundary, and the sidecar's CRDT log is capped and snapshot-subsumed.
 // This module only computes parameters; RoomHealthService applies them.
 
-// Audio/video decoupling offset in seconds. Baseline one cycle; jitter
-// stretches it (worse timing certainty → wider decoupling) up to two cycles.
+// Audio/video decoupling offset in seconds. Baseline one cycle; worst-case
+// latency stretches it (worse timing certainty → wider decoupling) up to two
+// cycles.
 export function avDecouplingSeconds(cycleSeconds, metrics = {}) {
   const base = Math.max(0, cycleSeconds || 0);
-  const wcj = Math.max(0, metrics.wcj || 0);
-  // +1 cycle at 500 ms worst-case jitter, saturating at 2 cycles total.
-  const stretch = Math.min(2, 1 + wcj / 500);
+  const wcl = Math.max(0, metrics.wcl || 0);
+  // +1 cycle at 500 ms worst-case latency, saturating at 2 cycles total.
+  const stretch = Math.min(2, 1 + wcl / 500);
   return base * stretch;
 }
 

@@ -26,8 +26,8 @@ test('regex mutators apply globally to metaprogram text and never throw', () => 
     applyRegexMutation(program, '\\b0\\b', '3'),
     '$ participants <3 1 3 2>\n# cycles wcl\n'
   );
-  assert.equal(applyRegexMutation(program, 'cycles wcl', 'cycles wcj'),
-    '$ participants <0 1 0 2>\n# cycles wcj\n');
+  assert.equal(applyRegexMutation(program, 'cycles wcl', 'cycles wcpl'),
+    '$ participants <0 1 0 2>\n# cycles wcpl\n');
   // Invalid pattern → unchanged, no throw mid-performance.
   assert.equal(applyRegexMutation(program, '([', 'x'), program);
   // Empty replacement deletes.

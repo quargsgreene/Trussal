@@ -8,7 +8,7 @@
 //   [a b]   subdivide — the cycle split into equal parts
 //
 // Leaves are numbers (a scale factor, a pinned metric amount) or metric words
-// (`# crush <wcl wcj> 2`), and the two nest freely. A leaf may also be a REST
+// (`# crush <wcl wcpl> 2`), and the two nest freely. A leaf may also be a REST
 // (`~`), which is `null` here: no value for that span, so the parameter falls
 // back to whatever default its effect uses for a missing one.
 //

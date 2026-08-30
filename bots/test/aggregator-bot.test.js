@@ -1877,7 +1877,7 @@ test('room and crush sample one cycle position, including off a stale grid', asy
     // Pinned 6 s cycles (wcl 300 ms x 20), so the alternation's boundaries are
     // not chasing the metrics.
     bot.applyProgramText(
-      '$ participants <0 1>\n# cycles wcl 20 0.3\n# room <wcl wcj>\n# crush <wcl wcj>\n');
+      '$ participants <0 1>\n# cycles wcl 20 0.3\n# room <wcl wcpl>\n# crush <wcl wcpl>\n');
     clockRef.ms += 1000; bot.scheduler.tick();
 
     const [room0, crush0] = bothMetrics();

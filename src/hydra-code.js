@@ -52,9 +52,9 @@ export const INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HY
 // hide an otherwise-valid preamble.
 //
 // botConfig has to go before Strudel's transpiler sees the block, not just to
-// keep it out of the program: its argument is free text, and the transpiler
-// mini-parses every double-quoted string, so one `mcp: "make it spooky"` left
-// in place would throw and stop the whole room's program.
+// keep it out of the program: the transpiler mini-parses every double-quoted
+// string, so a quoted value left in place would throw and stop the whole
+// room's program.
 export function normalizePeerCode(code) {
   return stripBotConfig(code || '')
     .replace(/[\s;]+$/g, '')

@@ -197,7 +197,7 @@ test('a broken edit is reported even without retroactive set', async () => {
     await spawn(fleet, 's("cp:3")');
     await joinBots(fleet);
 
-    await edit(fleet, 'botConfig({ cssParrot: "yes" })\ns("rim:7")');
+    await edit(fleet, 'botConfig({ retroactive: "yes" })\ns("rim:7")');
 
     const errors = sent.filter((m) => m.type === 'fleet-status' && m.action === 'config-error');
     assert.equal(errors.length, 1, 'the same typo would silently produce a copy-cluster at the next spawn otherwise');

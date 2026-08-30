@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+// ARCHIVED 2026-08-29 — the whole `src/mcp-agent/` package (this server, its
+// queues/validate/theory_utils helpers and instrument_defs) was moved out when
+// the MCP Cycles feature was removed. It was a standalone MCP server started by
+// an external LLM client (`claude mcp add`), never imported by the bundle, the
+// sidecar or the bots. Removed alongside it: the root package.json `pretest`
+// hook (`npm --prefix src/mcp-agent install`), `test/mcp-agent.test.js`, and the
+// architecture-diagram references in src/features/netcycles.md + CLAUDE.md.
+// Revive by moving the directory back and restoring the `pretest` hook.
+//
 // MCP server exposing Strudel control to Claude.
 //
 // Tools compose/update patterns for a target bot (cluster index like '1a')

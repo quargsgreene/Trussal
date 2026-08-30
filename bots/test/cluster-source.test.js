@@ -125,10 +125,10 @@ test('random:"full" abandons the human code for the curated palette', () => {
   // The curated palette's own word() and css() voices ride along too — the
   // whole point of "full" is that nothing about the human's editor survives,
   // words and styling included, so this is the one mode that still gets
-  // invented voices, regardless of textParrot/cssParrot (neither was set).
+  // invented voices even though the cluster is declared.
   assert.match(script.announceStrudel, /\bword\(/);
   assert.match(script.announceStrudel, /\bcss\(/);
-  // Neither ever reaches the bot's own REPL — same rule as a parroted human
+  // Neither ever reaches the bot's own REPL — same rule as an announced human
   // voice, since that REPL has neither capability installed.
   assert.ok(!script.strudel.includes('word('));
   assert.ok(!script.strudel.includes('css('));
@@ -168,10 +168,10 @@ test('announceStrudel reflects random:"params", identically to what plays', () =
   const source = capture('botConfig({ random: "params" })\ns("bd").cutoff(400)');
   const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
   assert.notEqual(script.announceStrudel, 's("bd").cutoff(400)', 'must not be the unshaped original');
-  // No textParrot/cssParrot in play and nothing generated (random:"params"
-  // reshapes the human's own code, it doesn't invent a voice), so the
-  // announced text must be exactly the audio the bot's own REPL evaluates —
-  // the editor showing exactly what is streaming.
+  // Nothing generated (random:"params" reshapes the human's own code, it
+  // doesn't invent a voice) and no word()/css() to drop, so the announced text
+  // must be exactly the audio the bot's own REPL evaluates — the editor
+  // showing exactly what is streaming.
   assert.equal(script.announceStrudel, script.strudel);
 });
 
@@ -203,43 +203,37 @@ test('colorScheme on a bot with no hydra adds nothing', () => {
   assert.equal(botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 }).hydra, '');
 });
 
-// --- textParrot / cssParrot ---------------------------------------------------
+// --- word()/css() in a bot's announce --------------------------------------
 //
 // script.strudel is what the bot's OWN REPL evaluates — that REPL is a
 // separate, minimal Strudel instance with neither Text nor CSS Cycles
-// installed, so word()/css() must ALWAYS be stripped from it, parrot flag or
-// not. script.announceStrudel is the separate string peer-state broadcasts,
-// which is what parroting actually controls: it is picked up and painted by
-// every OTHER performer's own browser (buildBotSilentBlock in strudel.js).
+// installed, so word()/css() must ALWAYS be stripped from it. script.
+// announceStrudel is the separate string peer-state broadcasts, picked up and
+// painted by every OTHER performer's own browser (buildBotSilentBlock in
+// strudel.js). An undeclared (exact-copy) cluster keeps the author's
+// word()/css() voices there; any `botConfig(...)` declaration strips them, so
+// a cluster of N bots does not repeat one author's words N times over in
+// every viewer's chat panel.
 
-test('text statements are dropped from eval; the performer\'s own words are not parroted unless textParrot is set, and no invented voice replaces them', () => {
-  const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
+test('a declared cluster drops the author\'s words from eval AND announce, and invents none', () => {
+  const code = 'botConfig({ harmony: "+2" })\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('word('), 'a cluster must not repeat its author\'s words');
   assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
-  assert.ok(!script.announceStrudel.includes('word('), 'the performer\'s own words are not parroted by default, and none are invented in their place');
+  assert.ok(!script.announceStrudel.includes('word('), 'a declared cluster does not carry the author\'s words, and none are invented in their place');
 });
 
-test('textParrot:true keeps word() in announce but NEVER in eval', () => {
-  const code = 'botConfig({ textParrot: true })\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
-  const source = capture(code);
-  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
-  assert.match(script.announceStrudel, /word\("hello"\)/, 'other viewers can paint it');
-  assert.ok(!script.strudel.includes('word('), 'the bot\'s own REPL has no word() — it would crash');
-  assert.equal(validateCode(script.strudel).ok, true);
-});
-
-test('css statements are dropped from eval AND announce unless cssParrot is set', () => {
-  const code = 'botConfig()\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
+test('a declared cluster drops css() from eval AND announce', () => {
+  const code = 'botConfig({ harmony: "+2" })\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('css('), 'the bot\'s own REPL has no css() — it would crash');
   assert.match(script.strudel, /s\("bd sd"\)/, 'the audio voice survives');
-  assert.ok(!script.announceStrudel.includes('css('), 'not parroted by default');
+  assert.ok(!script.announceStrudel.includes('css('), 'a declared cluster does not carry the author\'s styling');
 });
 
-test('no botConfig() at all announces the performer\'s own words and styling — a true exact copy, no textParrot/cssParrot needed', () => {
+test('no botConfig() at all announces the performer\'s own words and styling — a true exact copy', () => {
   const code = 'await initTextCycles()\nawait initCss()\n\n$: word("hello")\n$: css(`.x{color:red}`)\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
@@ -248,38 +242,11 @@ test('no botConfig() at all announces the performer\'s own words and styling —
   assert.match(script.announceStrudel, /css\(`\.x\{color:red\}`\)/, 'and their styling too');
 });
 
-test('an explicit but empty botConfig() is still a declaration — textParrot/cssParrot stay off by default', () => {
+test('an explicit but empty botConfig() is still a declaration — words and styling are dropped from the announce', () => {
   const code = 'botConfig()\nawait initTextCycles()\n\n$: word("hello")\n$: s("bd sd")';
   const source = capture(code);
   const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
   assert.ok(!script.announceStrudel.includes('word('), 'declaring botConfig() at all opts out of the undeclared mirror');
-});
-
-test('cssParrot:true keeps css() in announce but NEVER in eval', () => {
-  const code = 'botConfig({ cssParrot: true })\nawait initCss()\n\n$: css(`.x{color:red}`)\n$: s("bd sd")';
-  const source = capture(code);
-  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
-  assert.match(script.announceStrudel, /css\(`\.x\{color:red\}`\)/, 'other viewers can paint it');
-  assert.ok(!script.strudel.includes('css('), 'the bot\'s own REPL has no css() — it would crash');
-  assert.equal(validateCode(script.strudel).ok, true);
-});
-
-test('textParrot and cssParrot compose: each controls only its own capability', () => {
-  const code = [
-    'botConfig({ textParrot: true })',
-    'await initTextCycles()',
-    '$: word("hi")',
-    '',
-    'await initCss()',
-    '$: css(`.x{color:red}`)',
-    '',
-    's("bd sd")',
-  ].join('\n');
-  const source = capture(code);
-  const script = botScriptFor(source, { index: 1, count: 2, seed: 7, botId: 1 });
-  assert.match(script.announceStrudel, /word\("hi"\)/, 'textParrot kept the word() voice');
-  assert.ok(!script.announceStrudel.includes('css('), 'cssParrot was not set — css() still dropped');
-  assert.ok(!script.strudel.includes('word(') && !script.strudel.includes('css('), 'eval always strips both');
 });
 
 test('dropTextStatements leaves a wordless pattern untouched', () => {
@@ -330,10 +297,10 @@ test('word() chained directly onto a pattern (no stack) still drops whole', () =
 // fetched fresh from unpkg (see page-scripts.js pageStrudelBoot) — it never
 // gets Trussal's installCssCycles the way the main Jitsi page does, so `css(`
 // and `await initCss()` are undefined there and dropCssStatements always
-// strips it from what that REPL evaluates. `cssParrot` (tested further below,
-// alongside textParrot) still gets css() to the room by keeping it in
-// announceStrudel instead — the separate string peer-state broadcasts, which
-// every OTHER viewer's own page paints (buildBotSilentBlock in strudel.js).
+// strips it from what that REPL evaluates. An undeclared (exact-copy) cluster
+// still gets css() to the room by keeping it in announceStrudel instead — the
+// separate string peer-state broadcasts, which every OTHER viewer's own page
+// paints (buildBotSilentBlock in strudel.js).
 
 test('dropCssStatements leaves css-free code untouched', () => {
   assert.equal(dropCssStatements('s("bd sd")'), 's("bd sd")');
@@ -391,7 +358,7 @@ test('botScriptFor never hands the bot REPL a css() voice, end to end', () => {
   const script = botScriptFor(source, { index: 0, count: 1, seed: 7, botId: 1 });
   assert.ok(!script.strudel.includes('css('), 'no css() reaches the bot REPL');
   assert.ok(!/await\s+initCss/.test(script.strudel));
-  assert.ok(!script.strudel.includes('word('), 'textParrot is off by default — no word() either');
+  assert.ok(!script.strudel.includes('word('), 'the bot REPL never gets word() either');
   assert.match(script.strudel, /n\("<0 1 2 3 4>\*8"\)\.s\("gm_lead_6_voice"\)/, 'the audio pattern survives');
   assert.equal(validateCode(script.strudel).ok, true);
   assert.equal(validateCode(script.hydra).ok, true);
@@ -429,8 +396,6 @@ test('every generated script parses, across the property matrix', () => {
     'botConfig({ harmony: "random" })',
     'botConfig({ colorScheme: "square" })',
     'botConfig({ colorScheme: "monochromatic" })',
-    'botConfig({ textParrot: true })',
-    'botConfig({ cssParrot: true })',
   ];
   const body = 'await initHydra()\nosc(10, 0.1).out(o0)\n\nn("0 2 4").scale("C:minor").cutoff(600)';
 

@@ -15,14 +15,13 @@ const require = createRequire(import.meta.url);
 const { createLatencyServer } = require('../latency-instrument/server.js');
 
 test('effective metric merge is strictly upward: induced below measured is a no-op', () => {
-  const measured = { wcl: 200, wcj: 5, wcrtt: 400, wcpl: 0.1 };
-  const below = mergeInducedMetrics(measured, { wcl: 50, wcj: 1, wcrtt: 100, wcpl: 0.01 });
+  const measured = { wcl: 200, wcpl: 0.1, wcjb: 55 };
+  const below = mergeInducedMetrics(measured, { wcl: 50, wcpl: 0.01 });
   assert.deepEqual(below, measured);
-  const above = mergeInducedMetrics(measured, { wcl: 900, wcpl: 0.7 });
+  const above = mergeInducedMetrics(measured, { wcl: 900 });
   assert.equal(above.wcl, 900);
-  assert.equal(above.wcpl, 0.7);
-  assert.equal(above.wcj, 5, 'untouched metrics keep their measured value');
-  assert.equal(above.wcrtt, 400);
+  assert.equal(above.wcpl, 0.1, 'untouched metrics keep their measured value');
+  assert.equal(above.wcjb, 55, 'wcl\'s broken-out terms pass through unchanged');
 });
 
 test('induction sliders clamp to their ranges (packet loss ≤ 1, nothing negative)', () => {
@@ -35,15 +34,17 @@ test('induction sliders clamp to their ranges (packet loss ≤ 1, nothing negati
 
 test('per-VLAN worst case: members only, VLAN-local induced conditions', () => {
   const peers = [
-    { roomIndex: '0', rtt: 40, jitter: 1, packetLoss: 0.01 },
-    { roomIndex: '1', rtt: 400, jitter: 9, packetLoss: 0.5 },
-    { roomIndex: '2', rtt: 80, jitter: 2, packetLoss: 0.05 }
+    { roomIndex: '0', rtt: 40, packetLoss: 0.01 },
+    { roomIndex: '1', rtt: 400, packetLoss: 0.5 },
+    { roomIndex: '2', rtt: 80, packetLoss: 0.05 }
   ];
-  const vlan = { members: ['0', '2'], induced: { wcj: 20 } };
-  const wc = computeVlanWorstCase(peers, vlan);
-  assert.equal(wc.wcrtt, 80, "member 1's terrible link doesn't leak into this VLAN");
-  assert.equal(wc.wcj, 20, 'VLAN-local induced jitter floor applies');
-  assert.equal(wc.wcpl, 0.05);
+  // Members only: member 1's 400 ms link and 0.5 loss must not leak in.
+  const local = computeVlanWorstCase(peers, { members: ['0', '2'] });
+  assert.equal(local.wcl, 80 / 2 + 40 / 2 + 40, "member 1's terrible link doesn't leak into this VLAN");
+  assert.equal(local.wcpl, 0.05, "nor its packet loss");
+  // VLAN-local induced floor applies on top of the members-only measurement.
+  const floored = computeVlanWorstCase(peers, { members: ['0', '2'], induced: { wcpl: 0.3 } });
+  assert.equal(floored.wcpl, 0.3, 'VLAN-local induced loss floor applies');
 });
 
 test('VLAN mix-down gains: equal power, defaulting to one mutual VLAN', () => {

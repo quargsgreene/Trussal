@@ -1,6 +1,6 @@
 # dead-code/
 
-Quarantined dead and unreachable code, moved out of the live tree on
+Quarantined dead and unreachable code, moved out of the live tree starting
 2026-08-28.
 
 Nothing in this directory is imported, built, or tested. `src/index.js`
@@ -8,8 +8,14 @@ Nothing in this directory is imported, built, or tested. `src/index.js`
 runtime, the MCP servers and `test/*.test.js` were all traced transitively;
 every symbol below had **zero reachable callers** — either never referenced
 at all, or only from a call site that is itself commented out. The files
-here mirror their original paths under `src/` and `bots/` so a symbol can be
-put back where it came from.
+here mirror their original paths under `src/`, `bots/` and `test/` so a
+symbol can be put back where it came from.
+
+The 2026-08-29 batch is different from the rest: those features were live,
+not dead. They were removed on request. See "Removed features (2026-08-29)"
+below — the archived files there import from live-tree relative paths that no
+longer resolve from `dead-code/`, which is fine (nothing here runs); each
+file's header lists what to restore alongside it.
 
 These archived files are **not** standalone modules — most of the moved
 functions closed over module-private state (`_mode`, `anyPlaying`,
@@ -62,3 +68,21 @@ module. Each file's header lists what it needs if it is ever revived.
 - **`src/published-video.js` `resetPublishedVideo`** looks unused to a
   static import scan but `test/published-video.test.js` calls it via a
   namespace import in `afterEach`.
+
+## Removed features (2026-08-29)
+
+Five live features removed on request. Most of the change was scattered edits
+across the metaprogram parser, the av-effects, the studio readout and the
+bot-config surface (see the git diff for those); only the whole modules and
+test files are archived here.
+
+| Archived here | Feature | What else was removed / changed |
+|---|---|---|
+| `src/mcp-agent/` (whole package), `test/mcp-agent.test.js` | **MCP Cycles** — the standalone MCP server exposing Strudel control to an external Claude, with per-bot ordered update queues | root `package.json` `pretest` hook (`npm --prefix src/mcp-agent install`); the `mcp-agent/` row in `CLAUDE.md`; the `mcp-agent/` subtree + diagram box in `src/features/netcycles.md` |
+| `bots/src/llm/` (script-composer, claude-client, tinyllama-client, everything-mcp), `bots/test/fleet-mcp.test.js`, `bots/test/script-composer.test.js` | **`botConfig({ mcp: "…" })`** — fleet-side LLM composition of a cluster's master from a prompt | `mcp` dropped from `BOT_CONFIG_PROPS` (`src/bot-config.js`); `compose` / `#composeOwnerSource` / the spawn-path `composed` block removed from `bots/src/orchestrator/{index,fleet-service}.js`; the `mcp` rows + "Model access for `mcp`" section in `src/features/botconfig.md` |
+| `src/audio-net/network-modulation/IncreaseJitter.js`, `IncreaseRTT.js` | **WCJ and WCRTT** — removed as metrics from Net Cycles entirely | dropped from `TIMING_METRICS` / `EFFECT_METRICS` / `CRUSH_METRICS` / `ECHO_METRICS` (parser + av-effects); `computeWorstCaseMetrics` no longer returns `wcj`/`wcrtt`; `INDUCTIONS` and the CRDT `modulation` channel lose them; `RoomHealth.avDecouplingSeconds` repointed to `wcl`; `Room.js`'s cascaded lowpass cutoff repointed from `wcrtt` to the room's own decay length; the studio "Network Metrics" readout drops the `WCJ`/`WCRTT` fields (the raw per-peer `jitter` / `media jitter` readings stay). WCL and WCPL remain. |
+| — (scattered edits only) | **`# disjointCss`** — the metaprogram directive toggling CSS Cycles' room-wide mutual exclusion | the `disjointCss` entry in `EFFECTS`, `disjointCssEnabled` / `DISJOINT_CSS_ENABLED_BY_DEFAULT` (`MetaprogrammerParser.js`), `isDisjointCssEnabled` (`Metaprogrammer.js`); `css-cycles.js`'s `ownsCssTurn` / `handleNetCyclesTokenChange` drop the `isDisjointCssEnabled()` guard, so the disjoint (never-fail-open) behaviour — which was the default — is now unconditional; the `### disjointCss` section in `netcycles.md`, the `# disjointCss` mentions in `csscycles.md`, and the parser test section |
+| — (scattered edits only) | **`colorScheme: "split-complementary"`** — one value of the bot-cluster `colorScheme` enum | dropped from `BOT_CONFIG_PROPS.colorScheme.values` (`src/bot-config.js`), the `COLOR_SCHEMES` map (`bots/src/script-gen/bot-config-transform.js`), the `botconfig.md` value list, and the accept/loop tests. The other schemes are unchanged. |
+
+To revive any of these, move the archived files back and reverse the
+corresponding edits above (each archived file's header repeats them).

@@ -19,13 +19,12 @@
 // PIPELINE_ALLOWANCE_MS = 40 ms for a rig that has not measured itself), so
 // even a healthy LAN room reads roughly 90-150 ms. `# crush wcl 1` therefore
 // rests near 4 bits, and `# crush wcl 2` — the studio toggle's line — near 8.
-// wcrtt is the opposite: single-digit on a LAN, so it barely crushes until a
-// room is spread over a WAN. Both follow from one halving amount per metric;
-// move HALVING_AMOUNTS if a room wants a different resting point, and note
-// that a scale below 1 crushes harder rather than less.
+// This follows from one halving amount per metric; move HALVING_AMOUNTS if a
+// room wants a different resting point, and note that a scale below 1 crushes
+// harder rather than less.
 //
 // `# crush <metric> <scale> [<fixed metric amount>]` — with the optional third
-// token the metric is pinned (seconds for wcl/wcj/wcrtt, a loss fraction for
+// token the metric is pinned (seconds for wcl, a loss fraction for
 // wcpl) and live metrics no longer move it, exactly as `# room`'s third token
 // pins wcl. Any of the three may be a mini-notation pattern instead of a
 // constant, read at the caller's position on the cycle grid.
@@ -50,11 +49,10 @@ export const MAX_SR_DIVISOR = 64;
 
 // How much of a metric halves the bit depth. One constant per metric because
 // the metrics are not on one scale: mouth-to-ear latency runs to hundreds of
-// ms, jitter rarely past tens, and loss is a fraction. Each is set so the
-// metric's real operating range spends the bit budget rather than sitting at
-// either rail — the wcpl figure keeps the "a factor of 2 per 25 % packet
-// loss" this effect has always had.
-export const HALVING_AMOUNTS = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
+// ms, loss is a fraction. Each is set so the metric's real operating range
+// spends the bit budget rather than sitting at either rail — the wcpl figure
+// keeps the "a factor of 2 per 25 % packet loss" this effect has always had.
+export const HALVING_AMOUNTS = { wcl: 100, wcpl: 0.25 };
 
 export const DEFAULT_METRIC = 'wcl';
 

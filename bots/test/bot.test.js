@@ -433,9 +433,9 @@ test('pageMasterPlayer: the noise bed runs after the room on the master path', (
     const roomAt = state.next;
     player.setRoom(ROOM_PARAMS);
     const noiseAt = state.next;
-    const params = noiseParams({ wcl: 500, wcrtt: 60 }, {
+    const params = noiseParams({ wcl: 500, wcpl: 0.6 }, {
       spectrum: { metric: 'wcl', factor: 1, fixed: null },
-      volume: { metric: 'wcrtt', factor: 10, fixed: null },
+      volume: { metric: 'wcpl', factor: 10, fixed: null },
     });
     player.setNoise(params);
 

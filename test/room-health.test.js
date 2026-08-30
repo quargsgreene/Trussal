@@ -8,12 +8,12 @@ import {
   healthActions
 } from '../src/audio-net/RoomHealth.js';
 
-test('AV decoupling defaults to one cycle and widens with jitter, capped at two', () => {
-  assert.equal(avDecouplingSeconds(2, { wcj: 0 }), 2);          // default: one cycle length
-  assert.equal(avDecouplingSeconds(2, { wcj: 250 }), 3);        // +½ cycle at 250 ms WCJ
-  assert.equal(avDecouplingSeconds(2, { wcj: 500 }), 4);        // +1 cycle at 500 ms
-  assert.equal(avDecouplingSeconds(2, { wcj: 5000 }), 4);       // saturates at 2×
-  assert.equal(avDecouplingSeconds(0, { wcj: 500 }), 0);
+test('AV decoupling defaults to one cycle and widens with latency, capped at two', () => {
+  assert.equal(avDecouplingSeconds(2, { wcl: 0 }), 2);          // default: one cycle length
+  assert.equal(avDecouplingSeconds(2, { wcl: 250 }), 3);        // +½ cycle at 250 ms WCL
+  assert.equal(avDecouplingSeconds(2, { wcl: 500 }), 4);        // +1 cycle at 500 ms
+  assert.equal(avDecouplingSeconds(2, { wcl: 5000 }), 4);       // saturates at 2×
+  assert.equal(avDecouplingSeconds(0, { wcl: 500 }), 0);
 });
 
 test('compression mapping: transparent when healthy, monotonic in pressure, bounded', () => {
@@ -47,7 +47,7 @@ test('healthActions names what a load snapshot makes the room do', () => {
   assert.deepEqual(healthActions({}), []);
   const acts = healthActions(
     { serverLoad: 0.8 },
-    { cycleSeconds: 2, metrics: { wcj: 400 } }
+    { cycleSeconds: 2, metrics: { wcl: 400 } }
   );
   const types = acts.map(a => a.type);
   assert.ok(types.includes('compress-global'));

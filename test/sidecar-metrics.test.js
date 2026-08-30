@@ -92,8 +92,8 @@ test('metrics broadcast carries packetLoss and rtcRtt to other peers', async () 
 
 test('an explicit null CLEARS a stored metric rather than being ignored', async () => {
   // A peer that stops receiving media reports rtcJitter: null. If the sidecar
-  // ignored the null the last reading would be rebroadcast forever, pinning
-  // the room's WCJ (and so its turn length) to a dead measurement.
+  // ignored the null the last reading would be rebroadcast forever, showing a
+  // stale "media jitter" for a peer with nothing behind it.
   await withServer(async (port) => {
     const a = await connect(port, 'r3');
     send(a, { type: 'hello', jitsiId: 'jit-a', displayName: 'A' });
