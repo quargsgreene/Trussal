@@ -14,8 +14,8 @@ if (subdomain) {
     subdomain = subdomain.substring(0,subdomain.length-1).split('.').join('_').toLowerCase() + '.';
 }
 config.hosts.muc = 'muc.' + subdomain + 'meet.jitsi';
-config.bosh = 'https://meet.trussal.com/' + subdir + 'http-bind';
-config.websocket = 'wss://meet.trussal.com/' + subdir + 'xmpp-websocket';
+config.bosh = 'https://trussal.com/' + subdir + 'http-bind';
+config.websocket = 'wss://trussal.com/' + subdir + 'xmpp-websocket';
 config.bridgeChannel = {
     preferSctp: true
 };

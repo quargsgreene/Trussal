@@ -177,7 +177,7 @@ Copy `docker-jitsi-meet/env.example` to `docker-jitsi-meet/.env`. The minimum re
 
 | Variable | Purpose |
 |---|---|
-| `PUBLIC_URL` | Public HTTPS URL of your Jitsi instance, e.g. `https://meet.trussal.com` |
+| `PUBLIC_URL` | Public HTTPS URL of your Jitsi instance, e.g. `https://trussal.com` |
 | `JVB_ADVERTISE_IPS` | Public IP(s) of the video VM for WebRTC ICE |
 | `LETSENCRYPT_EMAIL` | Email for Let's Encrypt cert auto-renewal |
 | `CF_API_TOKEN` | Cloudflare API token for the DDNS updater |
@@ -200,7 +200,7 @@ Copy `bots/.env.example` to `bots/.env`:
 
 | Variable | Purpose |
 |---|---|
-| `JITSI_URL` | Full URL to the Jitsi room, e.g. `https://meet.trussal.com/0` |
+| `JITSI_URL` | Full URL to the Jitsi room, e.g. `https://trussal.com/0` |
 | `JAMULUS_SERVER` | `host:port` of the Jamulus server, e.g. `audio.example.com:22000` |
 
 ---

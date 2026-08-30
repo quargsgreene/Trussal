@@ -1,6 +1,7 @@
 services:
-  # Dynamic DNS updater — keeps meet.trussal.com pointed at this machine's
-  # current public IP via the Cloudflare API.
+  # Dynamic DNS updater — keeps trussal.com (and the legacy meet.trussal.com,
+  # which now 301-redirects to it) pointed at this machine's current public IP
+  # via the Cloudflare API.
   ddns:
     image: favonia/cloudflare-ddns:latest
     restart: unless-stopped
@@ -14,7 +15,7 @@ services:
       - PUID=1000
       - PGID=1000
       - CF_API_TOKEN=${CF_API_TOKEN}
-      - DOMAINS=meet.trussal.com
+      - DOMAINS=trussal.com,meet.trussal.com
       - PROXIED=false
       - UPDATE_CRON=@every 5m
 
@@ -37,7 +38,7 @@ services:
       - --listening-port=${TURN_PORT:-3478}
       - --min-port=${TURN_RELAY_MIN_PORT:-49160}
       - --max-port=${TURN_RELAY_MAX_PORT:-49200}
-      - --realm=${TURN_HOST:-meet.trussal.com}
+      - --realm=${TURN_HOST:-trussal.com}
       - --use-auth-secret
       - --static-auth-secret=${TURN_CREDENTIALS}
       - --external-ip=${TURN_EXTERNAL_IP}

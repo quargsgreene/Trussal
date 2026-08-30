@@ -12,7 +12,7 @@
 //   node jitsi-bot.js [options]
 //
 // Options:
-//   --url      Jitsi base URL  (default: https://meet.trussal.com)
+//   --url      Jitsi base URL  (default: https://trussal.com)
 //   --room     Room name        (default: 0)
 //   --name     Display name     (default: strudel-bot)
 //   --pattern  Strudel code     (default: s("bd ~ sd ~"))
@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CHROME_PATH = join(__dirname, 'chrome/opt/google/chrome/chrome');
 
 const args = parseArgs(process.argv.slice(2));
-const baseUrl = args.url     ?? 'https://meet.trussal.com';
+const baseUrl = args.url     ?? 'https://trussal.com';
 const room    = args.room    ?? '0';
 const name    = args.name    ?? 'strudel-bot';
 const pattern = args.pattern ?? 's("bd ~ sd ~")';

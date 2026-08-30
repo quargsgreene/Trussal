@@ -33,7 +33,7 @@ ENV_FILE="$REPO/docker-jitsi-meet/.env"
 [ -f "$ENV_FILE" ] || { echo "[turn-ip] $ENV_FILE missing, nothing to do"; exit 0; }
 
 TURN_HOST=$(sed -n 's/^TURN_HOST=//p' "$ENV_FILE" | tail -n1)
-TURN_HOST=${TURN_HOST:-meet.trussal.com}
+TURN_HOST=${TURN_HOST:-trussal.com}
 
 current_ip=$(getent ahostsv4 "$TURN_HOST" 2>/dev/null | awk '{print $1; exit}')
 if [ -z "$current_ip" ]; then

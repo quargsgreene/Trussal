@@ -74,7 +74,7 @@ Commit `src/` **and** the regenerated `docker-jitsi-meet/jitsi-web/custom-config
 
 Trussal runs across three SSH-reachable VMs; addresses live in gitignored `.env.deploy` (the `Makefile` falls back to LAN-IP defaults):
 
-- **video** `trussal-video@192.168.1.254` — Jitsi Docker stack in `~/Trussal/docker-jitsi-meet` (`web`, `jvb`, `jicofo`, `prosody`, and the `latency` sidecar). Serves the bundle. Public name `meet.trussal.com`.
+- **video** `trussal-video@192.168.1.254` — Jitsi Docker stack in `~/Trussal/docker-jitsi-meet` (`web`, `jvb`, `jicofo`, `prosody`, and the `latency` sidecar). Serves the bundle. Public name `trussal.com` (the legacy `meet.trussal.com` 301-redirects to it).
 - **audio** `trussal-audio@192.168.1.120` — Jamulus servers as systemd units (`jamulus@22000`–`22010`, room N → port 22000+N).
 - **bots** `trussal-bot-vm@192.168.1.232` — the conductor + dynamically-spawned `trussal-bot-*` containers (including one aggregator per active room; the first gets `trussal-bot-99999` and further rooms count down).
 

@@ -624,7 +624,7 @@ test('aggregator: role-tagged metrics are recorded but kept out of the health ma
 
 test('jitsiUrlForRoom swaps the room segment the bundle and bots key on', () => {
   assert.equal(jitsiUrlForRoom('http://localhost/0', 'myroom'), 'http://localhost/myroom');
-  assert.equal(jitsiUrlForRoom('https://meet.trussal.com/0', '0'), 'https://meet.trussal.com/0');
+  assert.equal(jitsiUrlForRoom('https://trussal.com/0', '0'), 'https://trussal.com/0');
   // A base URL carrying a path prefix keeps it; only the last segment is the room.
   assert.equal(jitsiUrlForRoom('https://host/jitsi/0', 'gig'), 'https://host/jitsi/gig');
   // No path at all — the room is simply appended rather than replacing nothing.
