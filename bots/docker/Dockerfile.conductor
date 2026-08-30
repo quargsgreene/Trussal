@@ -34,6 +34,11 @@ COPY src/bot-config.js /repo/src/bot-config.js
 # browser for the same reason as bot-config.js — the fleet must split/wrap a
 # block exactly the way the page that wrote it does.
 COPY src/hydra-code.js /repo/src/hydra-code.js
+# hydra-code.js imports it: the program-kind directive rule ('personal
+# program' / 'metaprogram' / 'bot program'), stripped by the same normalizer
+# that finds a Hydra preamble. A src/-root file, so it needs its own COPY and
+# its own .dockerignore whitelist entry (Dockerfile.bot mirrors this).
+COPY src/program-directive.js /repo/src/program-directive.js
 COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
 COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
 COPY src/strudel-voice.js /repo/src/strudel-voice.js
