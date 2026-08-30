@@ -53,7 +53,7 @@ deploy can skip it entirely.
 node strudel-bot.js --url ws://localhost:32769 --room myroom --pattern 's("bd ~ sd ~")'
 
 # Against a deployed instance (via nginx proxy)
-node strudel-bot.js --url wss://trussal.com/ws --room 0 --name "drone"
+node strudel-bot.js --url wss://meet.trussal.com/ws --room 0 --name "drone"
 ```
 
 SIGINT sends `stop` and closes cleanly.

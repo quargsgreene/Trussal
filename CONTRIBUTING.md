@@ -200,7 +200,8 @@ Copy `bots/.env.example` to `bots/.env`:
 
 | Variable | Purpose |
 |---|---|
-| `JITSI_URL` | Full URL to the Jitsi room, e.g. `https://trussal.com/0` |
+| `JITSI_URL` | Full URL to the Jitsi room, e.g. `https://trussal.com/0` (bot Chromium; cert errors ignored) |
+| `SIDECAR_WS_URL` | `wss://<host>/ws` — the peer-state bus. This is a strict-TLS Node client, so `<host>` must be a name the **origin's own** cert covers (`meet.trussal.com`), not an apex that only a CDN/edge cert covers. See `bots/.env.example`. |
 | `JAMULUS_SERVER` | `host:port` of the Jamulus server, e.g. `audio.example.com:22000` |
 
 ---
