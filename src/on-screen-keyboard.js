@@ -103,7 +103,13 @@ function _updatePredictions() {
   const text  = ta ? ta.value : '';
   const caret = ta ? (ta.selectionStart ?? text.length) : 0;
   const preds = predictCompletions(text, caret);
-  if (!preds.length) { if (row.childElementCount) row.innerHTML = ''; return; }
+  // Hide the row entirely when there is nothing to suggest — an always-present
+  // empty strip below the title bar is the "rectangle that does nothing".
+  if (!preds.length) {
+    row.style.display = 'none';
+    if (row.childElementCount) row.innerHTML = '';
+    return;
+  }
   row.innerHTML = preds.map(p =>
     `<button class="ts-kbd-pred-btn" data-completion="${_esc(p)}">${_esc(p)}</button>`
   ).join('');
@@ -111,6 +117,7 @@ function _updatePredictions() {
     btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => _insertCompletion(btn.dataset.completion));
   });
+  row.style.display = 'flex';
 }
 
 function _insertCompletion(word) {
@@ -308,6 +315,13 @@ function _injectStyles() {
       font-family: sans-serif;
       overflow: hidden;
     }
+    /* The deployed Trussal theme (all.css) carries a blunt
+       "body, body star { background-color: #0f5132 }" rule. Every structural
+       container below therefore has to state its OWN background or it paints
+       solid green over the panel's near-black -- which reads as a big dead
+       rectangle behind the keys. A bare class selector (0,1,0) already
+       out-ranks that rule (0,0,1), so transparent is enough here; the keys
+       and chips keep their own fills. */
     .ts-kbd-header {
       display: flex;
       align-items: center;
@@ -315,6 +329,7 @@ function _injectStyles() {
       padding: 6px 10px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       cursor: grab;
+      background: transparent;
     }
     .ts-kbd-header:active { cursor: grabbing; }
     .ts-kbd-title {
@@ -354,14 +369,19 @@ function _injectStyles() {
       flex-direction: column;
       gap: 3px;
       padding: 8px;
+      background: transparent;
     }
+    /* Shown only when it holds suggestions (see _updatePredictions) — an empty
+       row here was the "rectangle that does nothing" between the title bar and
+       the keys. min-height keeps the keys from jumping when it appears. */
     .ts-kbd-pred-row {
-      display: flex;
+      display: none;
       gap: 4px;
       overflow-x: auto;
-      min-height: 24px;
+      min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
+      background: transparent;
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
@@ -392,6 +412,7 @@ function _injectStyles() {
     .ts-kbd-row {
       display: flex;
       gap: 3px;
+      background: transparent;
     }
     .ts-kbd-key {
       min-height: 38px;
@@ -400,8 +421,8 @@ function _injectStyles() {
       align-items: center;
       justify-content: center;
       border-radius: 5px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.1);
       color: #d6f5e2;
       font-size: 12px;
       cursor: pointer;
@@ -410,8 +431,8 @@ function _injectStyles() {
       transition: background 0.05s;
     }
     .ts-kbd-key:hover {
-      background: rgba(255,255,255,0.12);
-      border-color: rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.18);
+      border-color: rgba(255,255,255,0.28);
     }
     .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
     .ts-kbd-key.ts-kbd-mod-on {
@@ -440,7 +461,7 @@ function _injectStyles() {
       background: rgba(255,204,0,0.3);
       pointer-events: none;
     }
-    .ts-kbd-label { pointer-events: none; font-size: 11px; }
+    .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
 
     /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the ⌨ button
        sits flush beside the Face button whether or not the facial-gesture
