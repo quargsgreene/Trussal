@@ -33,6 +33,31 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     mod2
   ));
 
+  // src/jamulus.js
+  function getRoomNameFromUrl() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const roomName = parts.length ? parts[parts.length - 1] : null;
+    return roomName ? roomName.toLowerCase() : roomName;
+  }
+  var JAMULUS_ROOM_MAP;
+  var init_jamulus = __esm({
+    "src/jamulus.js"() {
+      JAMULUS_ROOM_MAP = {
+        "0": { host: "jamulus.trussal.com", port: 22e3 },
+        "1": { host: "jamulus.trussal.com", port: 22001 },
+        "2": { host: "jamulus.trussal.com", port: 22002 },
+        "3": { host: "jamulus.trussal.com", port: 22003 },
+        "4": { host: "jamulus.trussal.com", port: 22004 },
+        "5": { host: "jamulus.trussal.com", port: 22005 },
+        "6": { host: "jamulus.trussal.com", port: 22006 },
+        "7": { host: "jamulus.trussal.com", port: 22007 },
+        "8": { host: "jamulus.trussal.com", port: 22008 },
+        "9": { host: "jamulus.trussal.com", port: 22009 },
+        "10": { host: "jamulus.trussal.com", port: 22010 }
+      };
+    }
+  });
+
   // src/participants.js
   function emit(event, payload) {
     subscribers.forEach((fn) => {
@@ -1238,950 +1263,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
-  // src/latency-instrument.js
-  function notifyRoutingChange() {
-    routingSubscribers.forEach((fn) => {
-      try {
-        fn(new Set(audioRouted));
-      } catch (e30) {
-        console.warn("[latency] routing subscriber threw", e30);
-      }
-    });
-  }
-  function subscribeAudioRouting(fn) {
-    routingSubscribers.add(fn);
-    try {
-      fn(new Set(audioRouted));
-    } catch (e30) {
-    }
-    return () => routingSubscribers.delete(fn);
-  }
-  function applyJamulusMuteToAllTags() {
-    document.querySelectorAll("audio").forEach((tag) => {
-      if (!tag.srcObject) return;
-      if (tag.id === "userAudio") return;
-      const jitsiId = getParticipantIdForAudioTag(tag);
-      if (jitsiId && remoteSources.has(jitsiId)) return;
-      if (jamulasMutedTags.has(tag)) return;
-      tag.muted = true;
-      tag.volume = 0;
-      jamulasMutedTags.add(tag);
-    });
-  }
-  function setJamulusMode(enabled) {
-    if (enabled === jamulusMode) return;
-    jamulusMode = enabled;
-    if (enabled) {
-      applyJamulusMuteToAllTags();
-    } else {
-      for (const tag of jamulasMutedTags) {
-        tag.muted = false;
-        tag.volume = 1;
-      }
-      jamulasMutedTags.clear();
-    }
-  }
-  function presenceLevelFor(jitsiId) {
-    if (!aggregatorJitsiId) return 1;
-    return jitsiId === aggregatorJitsiId ? 1 : 0;
-  }
-  function localStrudelLevel() {
-    return aggregatorJitsiId ? 0 : 1;
-  }
-  function setAggregatorPeer(jitsiId) {
-    const next = jitsiId || null;
-    if (next === aggregatorJitsiId) return;
-    aggregatorJitsiId = next;
-    if (next) publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish failed", e30));
-    else unpublishLocalStrudelFromRoom().catch((e30) => console.warn("[latency] strudel unpublish failed", e30));
-    document.dispatchEvent(new CustomEvent("trussal-aggregator-mode-change"));
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    for (const chain of chains.values()) {
-      if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
-    }
-    if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
-  }
-  function getAggregatorPeer() {
-    return aggregatorJitsiId;
-  }
-  function refreshAggregatorPeer() {
-    const winner = electAggregator(getAllPeers());
-    setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);
-  }
-  function ensureAudioContext() {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return Promise.reject(new Error("WebAudio not supported"));
-    if (!audioCtx) {
-      audioCtx = new Ctor({ sampleRate: 48e3 });
-      const masterBus = audioCtx.createGain();
-      masterBus.gain.value = 1;
-      masterBus.connect(audioCtx.destination);
-      realDestination = masterBus;
-    }
-    if (!audioCtx.audioWorklet) return Promise.reject(new Error("AudioWorklet not supported"));
-    if (!workletLoaded) {
-      workletLoaded = audioCtx.audioWorklet.addModule("/latency-worklet-v2.js");
-    }
-    const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
-    return resume.then(() => workletLoaded);
-  }
-  async function loadReverbBuffer() {
-    if (reverbBuffer) return reverbBuffer;
-    try {
-      const resp = await fetch("trussal-impulse.wav");
-      const ct2 = resp.headers.get("content-type");
-      if (ct2 && ct2.includes("text/html")) throw new Error("impulse file returned HTML");
-      const ab = await resp.arrayBuffer();
-      reverbBuffer = await audioCtx.decodeAudioData(ab);
-    } catch (e30) {
-      console.warn("[latency] reverb buffer load failed", e30);
-      reverbBuffer = null;
-    }
-    return reverbBuffer;
-  }
-  function makeDistortionCurve(amount) {
-    const n2 = 512;
-    const curve2 = new Float32Array(n2);
-    for (let i = 0; i < n2; i++) {
-      const x2 = i * 2 / n2 - 1;
-      if (amount < 1e-3) {
-        curve2[i] = x2;
-        continue;
-      }
-      const k2 = amount * 24 + 1e-3;
-      curve2[i] = (Math.PI + k2) * x2 / (Math.PI + k2 * Math.abs(x2));
-    }
-    return curve2;
-  }
-  function updateStrudelFx(effects2, rtt, jitter) {
-    if (!strudelFx || !audioCtx) return;
-    const e30 = effects2 || {};
-    const r2 = rtt || 0;
-    const j2 = jitter || 0;
-    const now = audioCtx.currentTime;
-    if (e30.distortion) {
-      const base = 0.2;
-      const extra = Math.max(0, Math.min(0.8, (r2 - 5) / 55 + j2 / 6));
-      strudelFx.distWS.curve = makeDistortionCurve(base + extra);
-    } else {
-      strudelFx.distWS.curve = null;
-    }
-    const targetNoise = e30.noise ? 0.12 : 0;
-    strudelFx.noiseGain.gain.cancelScheduledValues(now);
-    strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
-    if (e30.noise) {
-      const targetFreq = j2 < 1 ? 2e4 : j2 < 3 ? 200 : 1200;
-      strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
-      strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
-    }
-    if (strudelFx.convGain) {
-      const targetRev = e30.reverb ? 1.8 : 0;
-      strudelFx.convGain.gain.cancelScheduledValues(now);
-      strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
-    }
-  }
-  function computeEffectParams(effects2, metrics) {
-    const rtt = metrics && typeof metrics.rtt === "number" ? metrics.rtt : 0;
-    const jitter = metrics && typeof metrics.jitter === "number" ? metrics.jitter : 0;
-    let glitchIntensity = 0;
-    if (effects2 && effects2.distortion) {
-      const base = 0.05;
-      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
-      glitchIntensity = base + extra;
-    }
-    let noiseType = 0;
-    if (effects2 && effects2.noise) {
-      if (jitter < 1) noiseType = 1;
-      else if (jitter < 3) noiseType = 2;
-      else noiseType = 3;
-    }
-    return { glitchIntensity, noiseType, reverb: !!(effects2 && effects2.reverb) };
-  }
-  function applyParams(chain, params2) {
-    if (!chain || !audioCtx) return;
-    const now = audioCtx.currentTime;
-    const glitch = chain.worklet.parameters.get("glitchIntensity");
-    if (glitch) glitch.setValueAtTime(params2.glitchIntensity, now);
-    const noise2 = chain.worklet.parameters.get("noiseType");
-    if (noise2) noise2.setValueAtTime(params2.noiseType, now);
-    const noiseAmt = chain.worklet.parameters.get("noiseAmount");
-    if (noiseAmt) {
-      const target = params2.noiseType > 0 ? 1 : 0;
-      noiseAmt.cancelScheduledValues(now);
-      noiseAmt.linearRampToValueAtTime(target, now + 0.8);
-    }
-    if (chain.reverbOn === params2.reverb) return;
-    chain.reverbOn = params2.reverb;
-    try {
-      chain.limiter.disconnect();
-    } catch (e30) {
-    }
-    if (params2.reverb && chain.reverb) {
-      chain.limiter.connect(chain.reverb);
-    } else {
-      chain.limiter.connect(realDestination);
-    }
-  }
-  async function buildChain(jitsiId) {
-    await ensureAudioContext();
-    await loadReverbBuffer();
-    const input = audioCtx.createGain();
-    input.channelCount = 2;
-    input.channelCountMode = "explicit";
-    Object.defineProperty(input, "maxChannelCount", { value: 2, configurable: true });
-    const worklet2 = new AudioWorkletNode(audioCtx, "latency-processor-v2", {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-      channelCount: 2,
-      channelCountMode: "explicit",
-      channelInterpretation: "speakers"
-    });
-    const limiter = audioCtx.createDynamicsCompressor();
-    limiter.threshold.value = -1;
-    let reverb = null;
-    let reverbGain = null;
-    if (reverbBuffer) {
-      reverb = audioCtx.createConvolver();
-      reverb.buffer = reverbBuffer;
-      reverbGain = audioCtx.createGain();
-      reverbGain.gain.value = 1.8;
-      reverb.connect(reverbGain);
-      reverbGain.connect(realDestination);
-    }
-    const presence = audioCtx.createGain();
-    presence.gain.value = presenceLevelFor(jitsiId);
-    input.connect(presence);
-    presence.connect(worklet2);
-    worklet2.connect(limiter);
-    limiter.connect(realDestination);
-    return { jitsiId, input, presence, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
-  }
-  async function ensureChain(jitsiId) {
-    if (!jitsiId) return null;
-    if (chains.has(jitsiId)) return chains.get(jitsiId);
-    const chain = await buildChain(jitsiId);
-    chains.set(jitsiId, chain);
-    const peer = getPeerByJitsiId(jitsiId);
-    if (peer) applyParams(chain, computeEffectParams(peer.effects, { rtt: peer.rtt, jitter: peer.jitter }));
-    return chain;
-  }
-  function destroyChain(jitsiId) {
-    const chain = chains.get(jitsiId);
-    if (!chain) return;
-    try {
-      chain.input.disconnect();
-    } catch (e30) {
-    }
-    if (chain.presence) {
-      try {
-        chain.presence.disconnect();
-      } catch (e30) {
-      }
-    }
-    try {
-      chain.worklet.disconnect();
-    } catch (e30) {
-    }
-    try {
-      chain.limiter.disconnect();
-    } catch (e30) {
-    }
-    if (chain.reverb) {
-      try {
-        chain.reverb.disconnect();
-      } catch (e30) {
-      }
-    }
-    if (chain.reverbGain) {
-      try {
-        chain.reverbGain.disconnect();
-      } catch (e30) {
-      }
-    }
-    chains.delete(jitsiId);
-  }
-  function captureJitsiAudio() {
-    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
-    if (!audioCtx) return;
-    const local2 = getLocalParticipant();
-    const localJitsiId = local2 ? local2.id : null;
-    const tags = document.querySelectorAll("audio");
-    tags.forEach(async (tag) => {
-      if (!tag.srcObject) return;
-      if (tag.id === "userAudio") return;
-      const jitsiId = getParticipantIdForAudioTag(tag);
-      if (!jitsiId) {
-        if (!tag.dataset.trussalUnmatched) {
-          console.warn("[latency] unmatched audio tag (no participant id)", { id: tag.id, srcTracks: tag.srcObject.getAudioTracks?.().length });
-          tag.dataset.trussalUnmatched = "1";
-        }
-        return;
-      }
-      if (localJitsiId && jitsiId === localJitsiId) return;
-      try {
-        const conf = window.APP && window.APP.conference;
-        const member = conf && typeof conf.getParticipantById === "function" ? conf.getParticipantById(jitsiId) : null;
-        if (member && typeof member.isHidden === "function" && member.isHidden()) return;
-      } catch (e30) {
-      }
-      if (!getPeerByJitsiId(jitsiId)) return;
-      if (pendingCaptures.has(jitsiId)) return;
-      const existing = remoteSources.get(jitsiId);
-      if (existing) {
-        const live = existing.tag && existing.tag.isConnected && existing.tag.srcObject === existing.stream && existing.track && existing.track.readyState === "live";
-        if (live) return;
-        try {
-          existing.source.disconnect();
-        } catch (e30) {
-        }
-        remoteSources.delete(jitsiId);
-        if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
-          if (audioRouted.delete(jitsiId)) notifyRoutingChange();
-        }
-        console.log("[latency] audio wiring for", jitsiId, "went stale (track replaced) \u2014 re-wiring");
-      }
-      pendingCaptures.add(jitsiId);
-      try {
-        const chain = await ensureChain(jitsiId);
-        if (!chain) return;
-        if (remoteSources.has(jitsiId)) return;
-        const stream = tag.srcObject;
-        if (!stream) return;
-        const source2 = audioCtx.createMediaStreamSource(stream);
-        source2.connect(chain.input);
-        tag.muted = true;
-        tag.volume = 0;
-        const audioTracks = stream.getAudioTracks?.() || [];
-        const trackLabels = audioTracks.map((t) => t.label || "audio");
-        remoteSources.set(jitsiId, { tag, stream, track: audioTracks[0] || null, source: source2, label: trackLabels.join(",") || "mic" });
-        audioRouted.add(jitsiId);
-        console.log("[latency] routed Jitsi audio \u2192", jitsiId, "tracks:", trackLabels);
-        notifyRoutingChange();
-      } catch (e30) {
-        console.warn("[latency] failed to wire audio tag for", jitsiId, e30);
-      } finally {
-        pendingCaptures.delete(jitsiId);
-      }
-    });
-  }
-  function startAudioTagsObserver() {
-    if (audioTagObserver) return;
-    audioTagObserver = new MutationObserver(() => {
-      captureJitsiAudio();
-      if (jamulusMode) applyJamulusMuteToAllTags();
-    });
-    audioTagObserver.observe(document.body, { childList: true, subtree: true });
-    setInterval(captureJitsiAudio, 1e3);
-    captureJitsiAudio();
-  }
-  function getMasterBus() {
-    return realDestination;
-  }
-  function getAudioContext() {
-    return audioCtx;
-  }
-  function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
-    const chain = chains.get(jitsiId);
-    if (!chain || !audioCtx) return false;
-    const t = atAudioTime != null ? Math.max(atAudioTime, audioCtx.currentTime) : audioCtx.currentTime;
-    const g2 = chain.input.gain;
-    g2.cancelScheduledValues(t);
-    g2.setTargetAtTime(level, t, rampS);
-    return true;
-  }
-  function insertMasterChain(endpoints) {
-    if (!audioCtx || !realDestination || !endpoints) return false;
-    try {
-      realDestination.disconnect(audioCtx.destination);
-    } catch (e30) {
-    }
-    realDestination.connect(endpoints.input);
-    endpoints.output.connect(audioCtx.destination);
-    return true;
-  }
-  function removeMasterChain(endpoints) {
-    if (!audioCtx || !realDestination || !endpoints) return;
-    try {
-      realDestination.disconnect(endpoints.input);
-    } catch (e30) {
-    }
-    try {
-      endpoints.output.disconnect(audioCtx.destination);
-    } catch (e30) {
-    }
-    try {
-      realDestination.connect(audioCtx.destination);
-    } catch (e30) {
-    }
-  }
-  function resetChainGates() {
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    for (const chain of chains.values()) {
-      chain.input.gain.cancelScheduledValues(now);
-      chain.input.gain.setTargetAtTime(1, now, 0.03);
-    }
-  }
-  async function bootAudioEngine() {
-    if (bootPromise) {
-      if (audioCtx && audioCtx.state === "suspended") {
-        audioCtx.resume().catch(() => {
-        });
-      }
-      return bootPromise;
-    }
-    bootPromise = (async () => {
-      await ensureAudioContext();
-      await loadReverbBuffer();
-      startAudioTagsObserver();
-      const local2 = getLocalParticipant();
-      if (local2) await ensureChain(local2.id);
-      return { audioCtx, realDestination };
-    })();
-    return bootPromise;
-  }
-  async function ensureMasterStrudelInput() {
-    await bootAudioEngine();
-    await loadReverbBuffer();
-    if (!masterStrudelGain) {
-      masterStrudelGain = audioCtx.createGain();
-      masterStrudelGain.channelCount = 2;
-      masterStrudelGain.channelCountMode = "explicit";
-      Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
-      masterStrudelGain.gain.value = 1;
-      strudelOut = audioCtx.createGain();
-      strudelOut.gain.value = localStrudelLevel();
-      strudelOut.connect(realDestination);
-      const distWS = audioCtx.createWaveShaper();
-      distWS.oversample = "4x";
-      distWS.curve = null;
-      masterStrudelGain.connect(distWS);
-      distWS.connect(strudelOut);
-      let convolver = null, convGain = null;
-      if (reverbBuffer) {
-        convolver = audioCtx.createConvolver();
-        convolver.buffer = reverbBuffer;
-        convGain = audioCtx.createGain();
-        convGain.gain.value = 0;
-        masterStrudelGain.connect(convolver);
-        convolver.connect(convGain);
-        convGain.connect(strudelOut);
-      }
-      const bufLen = Math.floor(audioCtx.sampleRate * 2);
-      const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
-      const nd = noiseBuf.getChannelData(0);
-      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
-      const noiseSrc = audioCtx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-      noiseSrc.loop = true;
-      const noiseFilter = audioCtx.createBiquadFilter();
-      noiseFilter.type = "lowpass";
-      noiseFilter.frequency.value = 2e4;
-      const noiseGain = audioCtx.createGain();
-      noiseGain.gain.value = 0;
-      noiseSrc.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(strudelOut);
-      noiseSrc.start();
-      strudelFx = { distWS, noiseFilter, noiseGain, convGain };
-    }
-    return { audioCtx, masterStrudelGain, realDestination };
-  }
-  async function getStrudelAudioContext() {
-    const { audioCtx: ctx2, masterStrudelGain: out, realDestination: rd } = await ensureMasterStrudelInput();
-    return { audioCtx: ctx2, destinationNode: out, realDestination: rd };
-  }
-  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external", { monitorLocally = true } = {}) {
-    if (!jitsiId || !stream) return null;
-    await bootAudioEngine();
-    const chain = await ensureChain(jitsiId);
-    if (!chain) return null;
-    const existing = externalSources.get(jitsiId);
-    if (existing) {
-      try {
-        existing.source && existing.source.disconnect();
-      } catch (e30) {
-      }
-      try {
-        existing.stream.getTracks().forEach((t) => t.stop());
-      } catch (e30) {
-      }
-    }
-    let source2 = null;
-    if (monitorLocally) {
-      source2 = audioCtx.createMediaStreamSource(stream);
-      source2.connect(chain.input);
-    }
-    externalSources.set(jitsiId, { source: source2, stream, label: label2 });
-    audioRouted.add(jitsiId);
-    console.log("[latency] attached external stream \u2192", jitsiId, label2, monitorLocally ? "(monitored)" : "(room only)", "tracks:", stream.getAudioTracks().map((t) => t.label));
-    notifyRoutingChange();
-    return source2;
-  }
-  function detachExternalStreamForPeer(jitsiId) {
-    const ext = externalSources.get(jitsiId);
-    if (!ext) return;
-    try {
-      ext.source && ext.source.disconnect();
-    } catch (e30) {
-    }
-    try {
-      ext.stream.getTracks().forEach((t) => t.stop());
-    } catch (e30) {
-    }
-    externalSources.delete(jitsiId);
-    if (!remoteSources.has(jitsiId)) {
-      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
-    }
-  }
-  function getExternalStreamLabel(jitsiId) {
-    const ext = externalSources.get(jitsiId);
-    return ext ? ext.label : null;
-  }
-  function findLocalJitsiAudioTrack() {
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf) return null;
-      if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === "function") return conf.localAudioTrack;
-      if (typeof conf.getLocalAudioTrack === "function") {
-        const t = conf.getLocalAudioTrack();
-        if (t) return t;
-      }
-      if (conf._room && typeof conf._room.getLocalAudioTrack === "function") {
-        const t = conf._room.getLocalAudioTrack();
-        if (t) return t;
-      }
-      if (Array.isArray(conf._localTracks)) {
-        const t = conf._localTracks.find((t2) => t2 && (t2.isAudioTrack?.() || t2.type === "audio"));
-        if (t) return t;
-      }
-    } catch (e30) {
-    }
-    return null;
-  }
-  function findOutgoingAudioSender() {
-    try {
-      const conf = window.APP && window.APP.conference;
-      if (!conf) return null;
-      const pcWrapper = conf._room?.rtc?.peerConnections;
-      if (pcWrapper) {
-        const iter2 = pcWrapper.values && pcWrapper.values() || pcWrapper;
-        for (const tpc of iter2) {
-          const pc = tpc?.peerconnection;
-          if (pc && pc.getSenders) {
-            const sender = pc.getSenders().find((s2) => s2.track && s2.track.kind === "audio");
-            if (sender) return sender;
-          }
-        }
-      }
-    } catch (e30) {
-    }
-    return null;
-  }
-  async function propagateViaSetEffect(stream) {
-    const track = findLocalJitsiAudioTrack();
-    if (!track || typeof track.setEffect !== "function") return false;
-    const effect = new JitsiMicMixEffect(audioCtx, stream);
-    try {
-      await track.setEffect(effect);
-      jitsiMixState = { track, effect };
-      console.log("[latency] propagation: setEffect on local audio track");
-      return true;
-    } catch (e30) {
-      console.warn("[latency] setEffect failed", e30);
-      return false;
-    }
-  }
-  async function propagateViaReplaceTrack(stream) {
-    const sender = findOutgoingAudioSender();
-    if (!sender || typeof sender.replaceTrack !== "function") return false;
-    const dest = audioCtx.createMediaStreamDestination();
-    let micSource = null;
-    if (sender.track) {
-      try {
-        const micStream = new MediaStream([sender.track]);
-        micSource = audioCtx.createMediaStreamSource(micStream);
-        micSource.connect(dest);
-      } catch (e30) {
-        console.warn("[latency] replaceTrack: cannot tap mic", e30);
-      }
-    }
-    let extSource = null;
-    try {
-      extSource = audioCtx.createMediaStreamSource(stream);
-      extSource.connect(dest);
-    } catch (e30) {
-      console.warn("[latency] replaceTrack: ext source failed", e30);
-    }
-    const mixedTrack = dest.stream.getAudioTracks()[0];
-    if (!mixedTrack) return false;
-    const originalTrack = sender.track;
-    try {
-      await sender.replaceTrack(mixedTrack);
-      jitsiMixState = {
-        replacedSender: sender,
-        originalTrack,
-        mixedTrack,
-        _disposers: [
-          () => {
-            try {
-              micSource && micSource.disconnect();
-            } catch (e30) {
-            }
-          },
-          () => {
-            try {
-              extSource && extSource.disconnect();
-            } catch (e30) {
-            }
-          }
-        ]
-      };
-      console.log("[latency] propagation: replaceTrack on outgoing sender");
-      return true;
-    } catch (e30) {
-      console.warn("[latency] replaceTrack failed", e30);
-      return false;
-    }
-  }
-  async function propagateExternalStreamToRoom(stream) {
-    if (!stream) return false;
-    await bootAudioEngine();
-    if (jitsiMixState) await stopPropagatingExternalStream();
-    if (await propagateViaSetEffect(stream)) return true;
-    if (await propagateViaReplaceTrack(stream)) return true;
-    console.warn("[latency] could not propagate external stream \u2014 no compatible Jitsi audio surface");
-    return false;
-  }
-  async function stopPropagatingExternalStream() {
-    if (!jitsiMixState) return;
-    const s2 = jitsiMixState;
-    jitsiMixState = null;
-    if (s2.track && typeof s2.track.setEffect === "function") {
-      try {
-        await s2.track.setEffect(void 0);
-      } catch (e30) {
-        console.warn("[latency] setEffect undo failed", e30);
-      }
-    } else if (s2.replacedSender) {
-      try {
-        if (s2.originalTrack) await s2.replacedSender.replaceTrack(s2.originalTrack);
-      } catch (e30) {
-        console.warn("[latency] replaceTrack restore failed", e30);
-      }
-      if (Array.isArray(s2._disposers)) s2._disposers.forEach((fn) => fn());
-    }
-    console.log("[latency] external propagation stopped");
-  }
-  function isPropagatingToRoom() {
-    return !!jitsiMixState;
-  }
-  function stopStrudelPublishRetry() {
-    if (strudelPublishRetryTimer) {
-      clearInterval(strudelPublishRetryTimer);
-      strudelPublishRetryTimer = null;
-    }
-  }
-  function ensureStrudelPublishGuard() {
-    if (strudelPublishRetryTimer) return;
-    strudelPublishRetryTimer = setInterval(() => {
-      if (!aggregatorJitsiId) {
-        stopStrudelPublishRetry();
-        return;
-      }
-      if (strudelRoomEffect) {
-        const current = findLocalJitsiAudioTrack();
-        if (current === strudelRoomEffect.track) return;
-        try {
-          strudelRoomEffect.effect.stopEffect();
-        } catch (e30) {
-        }
-        strudelRoomEffect = null;
-        console.warn("[latency] published Strudel track was replaced (renegotiation?) \u2014 re-publishing");
-      }
-      publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish retry failed", e30));
-    }, 1e3);
-  }
-  async function publishLocalStrudelToRoom() {
-    if (window.__trussalIsBot || window.__trussalIsAggregator) return false;
-    if (strudelRoomEffect) return true;
-    await ensureMasterStrudelInput();
-    if (!masterStrudelGain) return false;
-    const track = findLocalJitsiAudioTrack();
-    if (!track || typeof track.setEffect !== "function") {
-      console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track (mic muted?); will retry when the mic is enabled");
-      ensureStrudelPublishGuard();
-      return false;
-    }
-    const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
-    try {
-      await track.setEffect(effect);
-    } catch (e30) {
-      console.warn("[latency] publish Strudel setEffect failed", e30);
-      ensureStrudelPublishGuard();
-      return false;
-    }
-    strudelRoomEffect = { track, effect };
-    ensureStrudelPublishGuard();
-    console.log("[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap");
-    return true;
-  }
-  async function unpublishLocalStrudelFromRoom() {
-    stopStrudelPublishRetry();
-    if (!strudelRoomEffect) return;
-    const s2 = strudelRoomEffect;
-    strudelRoomEffect = null;
-    try {
-      if (s2.track && typeof s2.track.setEffect === "function") await s2.track.setEffect(void 0);
-    } catch (e30) {
-      console.warn("[latency] stop publishing Strudel failed", e30);
-    }
-    console.log("[latency] stopped publishing local Strudel to room");
-  }
-  async function attachNodeToChain(jitsiId, node, label2 = "relay") {
-    if (!jitsiId || !node) return;
-    await bootAudioEngine();
-    const chain = await ensureChain(jitsiId);
-    if (!chain) return;
-    const existing = externalNodes.get(jitsiId);
-    if (existing) {
-      try {
-        existing.node.disconnect(chain.input);
-      } catch (_3) {
-      }
-    }
-    node.connect(chain.input);
-    externalNodes.set(jitsiId, { node, label: label2 });
-    audioRouted.add(jitsiId);
-    console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
-    notifyRoutingChange();
-  }
-  function getExternalNodeLabel(jitsiId) {
-    return externalNodes.get(jitsiId)?.label ?? null;
-  }
-  async function listAudioInputDevices() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
-    let devices = await navigator.mediaDevices.enumerateDevices();
-    let inputs = devices.filter((d) => d.kind === "audioinput");
-    const labelsMissing = inputs.length && inputs.every((d) => !d.label);
-    if (labelsMissing) {
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-        probe.getTracks().forEach((t) => t.stop());
-        devices = await navigator.mediaDevices.enumerateDevices();
-        inputs = devices.filter((d) => d.kind === "audioinput");
-      } catch (e30) {
-      }
-    }
-    return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
-  }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer;
-  var init_latency_instrument = __esm({
-    "src/latency-instrument.js"() {
-      init_participants();
-      init_peer_state();
-      init_aggregator_election();
-      audioCtx = null;
-      realDestination = null;
-      workletLoaded = null;
-      reverbBuffer = null;
-      masterStrudelGain = null;
-      bootPromise = null;
-      strudelFx = null;
-      strudelOut = null;
-      chains = /* @__PURE__ */ new Map();
-      remoteSources = /* @__PURE__ */ new Map();
-      pendingCaptures = /* @__PURE__ */ new Set();
-      externalSources = /* @__PURE__ */ new Map();
-      externalNodes = /* @__PURE__ */ new Map();
-      audioRouted = /* @__PURE__ */ new Set();
-      routingSubscribers = /* @__PURE__ */ new Set();
-      jamulusMode = false;
-      jamulasMutedTags = /* @__PURE__ */ new Set();
-      audioTagObserver = null;
-      aggregatorJitsiId = null;
-      subscribePeerState((event, payload) => {
-        if (event !== "peer-upsert") return;
-        if (!payload.jitsiId) return;
-        refreshAggregatorPeer();
-        const chain = chains.get(payload.jitsiId);
-        if (chain) {
-          applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
-        } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
-          captureJitsiAudio();
-        }
-        if (payload.isLocal) {
-          updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
-        }
-      });
-      subscribeParticipants((event, payload) => {
-        if (event === "leave" && payload && payload.id) {
-          const src2 = remoteSources.get(payload.id);
-          if (src2) {
-            try {
-              src2.source.disconnect();
-            } catch (e30) {
-            }
-            if (src2.tag) {
-              src2.tag.muted = false;
-              src2.tag.volume = 1;
-            }
-            remoteSources.delete(payload.id);
-          }
-          const ext = externalSources.get(payload.id);
-          if (ext) {
-            try {
-              ext.source && ext.source.disconnect();
-            } catch (e30) {
-            }
-            try {
-              ext.stream.getTracks().forEach((t) => t.stop());
-            } catch (e30) {
-            }
-            externalSources.delete(payload.id);
-          }
-          if (audioRouted.delete(payload.id)) notifyRoutingChange();
-          destroyChain(payload.id);
-          refreshAggregatorPeer();
-        }
-      });
-      jitsiMixState = null;
-      JitsiMicMixEffect = class {
-        constructor(audioCtx3, externalStream) {
-          this._audioCtx = audioCtx3;
-          this._externalStream = externalStream;
-          this._dest = audioCtx3.createMediaStreamDestination();
-          this._micSource = null;
-          this._extSource = null;
-        }
-        isEnabled() {
-          return true;
-        }
-        startEffect(stream) {
-          try {
-            this._micSource = this._audioCtx.createMediaStreamSource(stream);
-            this._micSource.connect(this._dest);
-          } catch (e30) {
-            console.warn("[latency] mix effect: mic source failed", e30);
-          }
-          try {
-            this._extSource = this._audioCtx.createMediaStreamSource(this._externalStream);
-            this._extSource.connect(this._dest);
-          } catch (e30) {
-            console.warn("[latency] mix effect: external source failed", e30);
-          }
-          return this._dest.stream;
-        }
-        stopEffect() {
-          try {
-            if (this._micSource) this._micSource.disconnect();
-          } catch (e30) {
-          }
-          try {
-            if (this._extSource) this._extSource.disconnect();
-          } catch (e30) {
-          }
-        }
-      };
-      NodeOutputEffect = class {
-        constructor(audioCtx3, node) {
-          this._node = node;
-          this._dest = audioCtx3.createMediaStreamDestination();
-        }
-        isEnabled() {
-          return true;
-        }
-        startEffect(_micStream) {
-          try {
-            this._node.connect(this._dest);
-          } catch (e30) {
-            console.warn("[latency] NodeOutputEffect connect failed", e30);
-          }
-          return this._dest.stream;
-        }
-        stopEffect() {
-          try {
-            this._node.disconnect(this._dest);
-          } catch (e30) {
-          }
-        }
-      };
-      strudelRoomEffect = null;
-      strudelPublishRetryTimer = null;
-      if (typeof window !== "undefined") {
-        window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
-        window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
-        window.__trussalAudioDiag = async () => {
-          const out = {
-            aggregatorJitsiId,
-            // non-null => in aggregator mode
-            strudelOutGain: strudelOut ? strudelOut.gain.value : null,
-            // 0 => local monitor muted
-            ctxState: audioCtx ? audioCtx.state : "no-ctx",
-            sampleRate: audioCtx ? audioCtx.sampleRate : null
-          };
-          if (audioCtx && masterStrudelGain) {
-            const t0 = audioCtx.currentTime;
-            const an = audioCtx.createAnalyser();
-            an.fftSize = 2048;
-            masterStrudelGain.connect(an);
-            const buf = new Float32Array(an.fftSize);
-            let peak = 0, sumSq = 0, n2 = 0;
-            const end2 = performance.now() + 500;
-            while (performance.now() < end2) {
-              await new Promise((r2) => setTimeout(r2, 40));
-              an.getFloatTimeDomainData(buf);
-              for (const v2 of buf) {
-                const a2 = v2 < 0 ? -v2 : v2;
-                if (a2 > peak) peak = a2;
-                sumSq += v2 * v2;
-                n2++;
-              }
-            }
-            try {
-              masterStrudelGain.disconnect(an);
-            } catch (e30) {
-            }
-            out.strudelPeak = +peak.toFixed(5);
-            out.strudelRms = +Math.sqrt(sumSq / (n2 || 1)).toFixed(5);
-            out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3);
-          }
-          console.log("[trussal] audio diag", out);
-          return out;
-        };
-      }
-    }
-  });
-
-  // src/jamulus.js
-  function getRoomNameFromUrl() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const roomName = parts.length ? parts[parts.length - 1] : null;
-    return roomName ? roomName.toLowerCase() : roomName;
-  }
-  var JAMULUS_ROOM_MAP;
-  var init_jamulus = __esm({
-    "src/jamulus.js"() {
-      init_latency_instrument();
-      init_peer_state();
-      JAMULUS_ROOM_MAP = {
-        "0": { host: "jamulus.trussal.com", port: 22e3 },
-        "1": { host: "jamulus.trussal.com", port: 22001 },
-        "2": { host: "jamulus.trussal.com", port: 22002 },
-        "3": { host: "jamulus.trussal.com", port: 22003 },
-        "4": { host: "jamulus.trussal.com", port: 22004 },
-        "5": { host: "jamulus.trussal.com", port: 22005 },
-        "6": { host: "jamulus.trussal.com", port: 22006 },
-        "7": { host: "jamulus.trussal.com", port: 22007 },
-        "8": { host: "jamulus.trussal.com", port: 22008 },
-        "9": { host: "jamulus.trussal.com", port: 22009 },
-        "10": { host: "jamulus.trussal.com", port: 22010 }
-      };
-    }
-  });
-
   // strudel-fork/packages/web/dist/index.mjs
   var dist_exports = {};
   __export(dist_exports, {
@@ -2619,7 +1700,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getAccidentalsOffset: () => getAccidentalsOffset$1,
     getAnalyserById: () => getAnalyserById,
     getAnalyzerData: () => getAnalyzerData,
-    getAudioContext: () => getAudioContext2,
+    getAudioContext: () => getAudioContext,
     getAudioContextCurrentTime: () => getAudioContextCurrentTime,
     getAudioDevices: () => getAudioDevices,
     getCachedBuffer: () => getCachedBuffer,
@@ -4125,13 +3206,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     typeof o == "number" ? l.voice = d[o % d.length] : typeof o == "string" && (l.voice = d.find((p) => p.name === p)), speechSynthesis.speak(l);
   }
   function getAudioContextCurrentTime() {
-    return getAudioContext2().currentTime;
+    return getAudioContext().currentTime;
   }
   function errorLogger(e30, t = "superdough") {
     logger$1(`[${t}] error: ${e30.message}`);
   }
   function getNoiseBuffer(e30, t) {
-    const o = getAudioContext2();
+    const o = getAudioContext();
     if (noiseCache[e30])
       return noiseCache[e30];
     const l = 2 * o.sampleRate, d = o.createBuffer(1, l, o.sampleRate), p = d.getChannelData(0);
@@ -4153,7 +3234,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return e30 !== "crackle" && (noiseCache[e30] = d), d;
   }
   function getNoiseOscillator(e30 = "white", t, o = 0.02) {
-    const d = getAudioContext2().createBufferSource();
+    const d = getAudioContext().createBufferSource();
     return d.buffer = getNoiseBuffer(e30, o), d.loop = true, d.start(t), {
       node: d,
       stop: (p) => d.stop(p)
@@ -4191,7 +3272,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { transpose: p, url: b, index: R, midi: d, label: I };
   }
   function gainNode(e30) {
-    const t = getAudioContext2().createGain();
+    const t = getAudioContext().createGain();
     return t.gain.value = e30, t;
   }
   function effectSend(e30, t, o) {
@@ -4324,7 +3405,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { filter: hn, lfo: Rn };
   }
   function drywet(e30, t, o = 0) {
-    const l = getAudioContext2();
+    const l = getAudioContext();
     if (!o)
       return e30;
     let d = l.createGain(), p = l.createGain();
@@ -4353,14 +3434,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const { vibmod: l = 0.5, vib: d } = t;
     let p;
     if (d > 0) {
-      p = getAudioContext2().createOscillator(), p.frequency.value = d;
-      const b = getAudioContext2().createGain();
+      p = getAudioContext().createOscillator(), p.frequency.value = d;
+      const b = getAudioContext().createGain();
       return b.gain.value = l * 100, p.connect(b), b.connect(e30), onceEnded(p, () => {
         releaseAudioNode(b), releaseAudioNode(p);
       }), p.start(o), { stop: (R) => p.stop(R), nodes: { vib: [p], vib_gain: [b] } };
     }
   }
-  function scheduleAtTime(e30, t, o = getAudioContext2()) {
+  function scheduleAtTime(e30, t, o = getAudioContext()) {
     const l = o.currentTime;
     webAudioTimeout(o, e30, l, t);
   }
@@ -4371,7 +3452,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), d.start(o), d.stop(l), d;
   }
   function applyFM(e30, t, o) {
-    const l = getAudioContext2(), d = [], p = {}, b = {};
+    const l = getAudioContext(), d = [], p = {}, b = {};
     for (let R = 1; R <= 8; R++)
       for (let I = 0; I <= 8; I++) {
         let z;
@@ -4446,7 +3527,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { transpose: l, url: d, index: p, midi: b, label: R, playbackRate: I };
   }
   function reverseBuffer(e30) {
-    const t = getAudioContext2(), o = t.createBuffer(e30.numberOfChannels, e30.length, t.sampleRate);
+    const t = getAudioContext(), o = t.createBuffer(e30.numberOfChannels, e30.length, t.sampleRate);
     for (let l = 0; l < e30.numberOfChannels; l++)
       o.copyToChannel(e30.getChannelData(l).slice().reverse(), l, l);
     return o;
@@ -4514,7 +3595,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     } = t;
     if (le === 0)
       return;
-    const tn = getAudioContext2();
+    const tn = getAudioContext();
     let [an, on, ln, pn] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
     const { bufferSource: _n, sliceDuration: Mn, offset: mn } = await getSampleBufferSource(t, l, d);
     if (!_n) {
@@ -4613,7 +3694,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     );
   }
   async function onTriggerSynth(e30, t, o, l, d, p) {
-    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext2(), [le, rn, tn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
+    const { s: b, n: R = 0, duration: I, clip: z } = t, se = getAudioContext(), [le, rn, tn, an] = getADSRValues([t.attack, t.decay, t.sustain, t.release]);
     let { warpmode: on } = t;
     typeof on == "string" && (on = Warpmode[on.toUpperCase()] ?? Warpmode.NONE);
     const ln = getFrequencyFromValue(t), { url: pn, label: _n } = getCommonSampleInfo(t, l), Mn = await getPayload(pn, _n, p);
@@ -4796,7 +3877,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function loadWorklets() {
     if (!workletsLoading) {
-      const e30 = getAudioContext2(), t = externalWorklets.concat([workletsUrl]);
+      const e30 = getAudioContext(), t = externalWorklets.concat([workletsUrl]);
       workletsLoading = Promise.all(t.map((o) => e30.audioWorklet.addModule(o))).then(
         () => workletsLoading = void 0
       );
@@ -4816,7 +3897,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     } = e30;
     if (setMaxPolyphony(o), setMultiChannelOrbits(d), resetSeenKeys(), typeof window > "u")
       return;
-    const p = getAudioContext2();
+    const p = getAudioContext();
     if (l != null && l != DEFAULT_AUDIO_DEVICE_NAME)
       try {
         const R = (await getAudioDevices()).get(l), I = (R ?? "").length > 0;
@@ -4845,7 +3926,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     })), audioReady;
   }
   function getSuperdoughAudioController() {
-    return controller == null && (controller = new SuperdoughAudioController(getAudioContext2())), controller;
+    return controller == null && (controller = new SuperdoughAudioController(getAudioContext())), controller;
   }
   function setSuperdoughAudioController(e30) {
     return controller = e30, controller;
@@ -4854,7 +3935,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     getSuperdoughAudioController().output.connectToDestination(e30, t);
   }
   function getPhaser(e30, t, o = 1, l = 0.5, d = 1e3, p = 2e3) {
-    const b = getAudioContext2(), R = getLfo(b, { frequency: o, depth: p * 2, begin: e30, end: t }), I = 1;
+    const b = getAudioContext(), R = getLfo(b, { frequency: o, depth: p * 2, begin: e30, end: t }), I = 1;
     let z = 282;
     const se = [];
     for (let le = 0; le < I; le++) {
@@ -4869,8 +3950,8 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return typeof e30 == "number" ? t[Math.floor(_mod$1(e30, t.length))] : e30;
   }
   function getAnalyserById(e30, t = 1024, o = 0.5) {
-    if (!analysers[e30] || analysers[e30].context != getAudioContext2()) {
-      const l = getAudioContext2().createAnalyser();
+    if (!analysers[e30] || analysers[e30].context != getAudioContext()) {
+      const l = getAudioContext().createAnalyser();
       l.fftSize = t, l.smoothingTimeConstant = o, analysers[e30] = l, analysersData[e30] = new Float32Array(analysers[e30].frequencyBinCount);
     }
     return analysers[e30].fftSize !== t && (analysers[e30].fftSize = t, analysersData[e30] = new Float32Array(analysers[e30].frequencyBinCount)), analysers[e30];
@@ -4925,7 +4006,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }), registerSound(
       "sbd",
       (e30, t, o) => {
-        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext2(), z = 0.02, se = 1.2, le = 0.025, rn = 1, tn = I.createOscillator();
+        const { duration: l, decay: d = 0.5, pdecay: p = 0.5, penv: b = 36, clip: R } = t, I = getAudioContext(), z = 0.02, se = 1.2, le = 0.025, rn = 1, tn = I.createOscillator();
         tn.type = "triangle", tn.frequency.value = getFrequencyFromValue(t, 29), tn.detune.setValueAtTime(b * 100, 0), tn.detune.setValueAtTime(b * 100, e30), tn.detune.exponentialRampToValueAtTime(1e-3, e30 + p);
         const an = gainNode(1);
         an.gain.setValueAtTime(1, e30 + z), an.gain.exponentialRampToValueAtTime(1e-3, e30 + z + d), tn.start(e30);
@@ -4952,7 +4033,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "supersaw",
       (e30, t, o) => {
-        const l = getAudioContext2();
+        const l = getAudioContext();
         let { duration: d, n: p, unison: b = 5, spread: R = 0.6, detune: I } = t;
         I = I ?? p ?? 0.18;
         const z = getFrequencyFromValue(t), [se, le, rn, tn] = getADSRValues(
@@ -5014,7 +4095,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
           "((t^t/2+t+64)%128*2)",
           "(((t * .25)^(t * .25)/100+(t * .25))%128)*2",
           "((t^t/2+t+64)%7 * 24)"
-        ], { n: d = 0 } = t, p = getFrequencyFromValue(t), { byteBeatExpression: b = l[d % l.length], byteBeatStartTime: R } = t, I = getAudioContext2();
+        ], { n: d = 0 } = t, p = getFrequencyFromValue(t), { byteBeatExpression: b = l[d % l.length], byteBeatStartTime: R } = t, I = getAudioContext();
         let { duration: z } = t;
         const [se, le, rn, tn] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
@@ -5056,7 +4137,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "pulse",
       (e30, t, o) => {
-        const l = getAudioContext2();
+        const l = getAudioContext();
         let { pwrate: d, pwsweep: p } = t;
         p == null && (d != null ? p = 0.3 : p = 0), d == null && p != null && (d = 1);
         let { duration: b, pw: R = 0.5 } = t;
@@ -5104,7 +4185,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     ), registerSound(
       "bus",
       (e30, t, o) => {
-        const l = getAudioContext2(), [d, p, b, R] = getADSRValues(
+        const l = getAudioContext(), [d, p, b, R] = getADSRValues(
           [t.attack, t.decay, t.sustain, t.release],
           "linear",
           [1e-3, 0.05, 1, 0.01]
@@ -5162,7 +4243,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function waveformN(e30, t, o) {
     e30 = typeof e30 == "object" ? e30 : new Float32Array(e30).fill(1);
-    const d = e30.length, p = new Float32Array(d + 1), b = new Float32Array(d + 1), R = getAudioContext2(), I = R.createOscillator(), z = {
+    const d = e30.length, p = new Float32Array(d + 1), b = new Float32Array(d + 1), R = getAudioContext(), I = R.createOscillator(), z = {
       sawtooth: (le) => [0, -1 / le],
       square: (le) => [0, le % 2 === 0 ? 0 : 1 / le],
       triangle: (le) => [le % 2 === 0 ? 0 : 1 / (le * le), 0],
@@ -5188,12 +4269,12 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (e30 === "user" && !b && (logger$1(
       "[superdough] Synth 'user' was selected, but partials not specified. Defaulting to triangle. Use pat.partials to setup custom waveform"
     ), e30 = "triangle"), e30 = e30 === "user" && !b ? "triangle" : e30, e30 === "one")
-      return R = new ConstantSourceNode(getAudioContext2(), { offset: 1 }), R.start(t), {
+      return R = new ConstantSourceNode(getAudioContext(), { offset: 1 }), R.start(t), {
         node: R,
         nodes: { source: R },
         stop: (le) => R?.stop(le)
       };
-    !b || b?.length === 0 || e30 === "sine" ? (R = getAudioContext2().createOscillator(), R.type = e30 || "triangle") : R = waveformN(b, o.phases, e30), R.frequency.value = getFrequencyFromValue(o);
+    !b || b?.length === 0 || e30 === "sine" ? (R = getAudioContext().createOscillator(), R.type = e30 || "triangle") : R = waveformN(b, o.phases, e30), R.frequency.value = getFrequencyFromValue(o);
     const I = getVibratoOscillator(R.detune, o, t);
     getPitchEnvelope(R.detune, o, t, t + d);
     const z = applyFM(R.frequency, o, t);
@@ -5211,7 +4292,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     };
   }
   function buildSamples(e30 = 1, t = 0.05, o = 220, l = 0, d = 0, p = 0.1, b = 0, R = 1, I = 0, z = 0, se = 0, le = 0, rn = 0, tn = 0, an = 0, on = 0, ln = 0, pn = 1, _n = 0, Mn = 0) {
-    let mn = Math.PI * 2, hn = getAudioContext2().sampleRate, yn = (ls) => ls > 0 ? 1 : -1, Gn = I *= 500 * mn / hn / hn, Sn = o *= (1 + t * 2 * Math.random() - t) * mn / hn, En = [], vn = 0, Nn = 0, xn = 0, Rn = 1, Xn = 0, $n = 0, Bn = 0, Wn, Vn;
+    let mn = Math.PI * 2, hn = getAudioContext().sampleRate, yn = (ls) => ls > 0 ? 1 : -1, Gn = I *= 500 * mn / hn / hn, Sn = o *= (1 + t * 2 * Math.random() - t) * mn / hn, En = [], vn = 0, Nn = 0, xn = 0, Rn = 1, Xn = 0, $n = 0, Bn = 0, Wn, Vn;
     for (l = l * hn + 9, _n *= hn, d *= hn, p *= hn, ln *= hn, z *= 500 * mn / hn ** 3, an *= mn / hn, se *= mn / hn, le *= hn, rn = rn * hn | 0, Vn = l + _n + d + p + ln | 0; xn < Vn; En[xn++] = Bn)
       ++$n % (on * 100 | 0) || (Bn = b ? b > 1 ? b > 2 ? b > 3 ? Math.sin((vn % mn) ** 3) : Math.max(Math.min(Math.tan(vn), 1), -1) : 1 - (2 * vn / mn % 2 + 2) % 2 : 1 - 4 * Math.abs(Math.round(vn / mn) - vn / mn) : Math.sin(vn), Bn = (rn ? 1 - Mn + Mn * Math.sin(mn * xn / rn) : 1) * yn(Bn) * Math.abs(Bn) ** R * // curve 0=square, 2=pointy
       e30 * 1 * // envelope
@@ -5289,7 +4370,7 @@ registerProcessor('${o}', MyProcessor);
     window.postMessage({ time: l, dough: e30.value, currentTime: t, duration: e30.duration, cps: o });
   }
   function initDoughWorklet() {
-    const e30 = getAudioContext2();
+    const e30 = getAudioContext();
     doughWorklet = getWorklet(
       e30,
       "dough-processor",
@@ -5327,7 +4408,7 @@ registerProcessor('${o}', MyProcessor);
     return [o, o._base || t];
   }
   async function fetchSample(e30) {
-    const t = await fetch(e30).then((l) => l.arrayBuffer()).then((l) => getAudioContext2().decodeAudioData(l));
+    const t = await fetch(e30).then((l) => l.arrayBuffer()).then((l) => getAudioContext().decodeAudioData(l));
     let o = [];
     for (let l = 0; l < t.numberOfChannels; l++)
       o.push(t.getChannelData(l));
@@ -5343,7 +4424,7 @@ registerProcessor('${o}', MyProcessor);
     });
   }
   async function renderPatternAudio(e30, t, o, l, d, p, b, R = void 0) {
-    let I = getAudioContext2();
+    let I = getAudioContext();
     await I.close(), I = new OfflineAudioContext(2, (l - o) / t * d, d), setAudioContext(I), setSuperdoughAudioController(new SuperdoughAudioController(I)), await initAudio({
       maxPolyphony: p,
       multiChannelOrbits: b
@@ -5370,7 +4451,7 @@ registerProcessor('${o}', MyProcessor);
     });
   }
   function webaudioRepl(e30 = {}) {
-    const t = e30.audioContext ?? getAudioContext2();
+    const t = e30.audioContext ?? getAudioContext();
     return setAudioContext(t), e30 = {
       getTime: () => t.currentTime,
       defaultOutput: webaudioOutput,
@@ -5831,7 +4912,7 @@ registerProcessor('${o}', MyProcessor);
             l.decay,
             l.sustain,
             l.release
-          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), le = t[se], rn = getAudioContext2(), tn = await getFontBufferSource(le, l, rn);
+          ]), { duration: z } = l, se = getSoundIndex$1(l.n, t.length), le = t[se], rn = getAudioContext(), tn = await getFontBufferSource(le, l, rn);
           tn.start(o);
           const an = rn.createGain(), on = tn.connect(an), ln = o + z;
           getParamADSR(on.gain, p, b, R, I, 0, 0.3, o, ln, "linear");
@@ -12444,7 +11525,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const d = getPattern(), p = getTriggerFunc();
     if (!d || !p)
       return false;
-    const b = o + l, R = 1e-6, z = d.queryArc(b - R, b + R, { _cps: t }).filter((le) => le.value?.midikey?.startsWith(`${e30}_`)), se = getAudioContext2().currentTime;
+    const b = o + l, R = 1e-6, z = d.queryArc(b - R, b + R, { _cps: t }).filter((le) => le.value?.midikey?.startsWith(`${e30}_`)), se = getAudioContext().currentTime;
     return z.length ? (z.forEach((le) => {
       if (!le.hasOnset())
         return;
@@ -12673,7 +11754,7 @@ Defaulting to 2020, but this will stop working in the future.`)), t.ecmaVersion 
     const l = new Blob([e30], { type: o }), d = document.createElement("a");
     d.href = window.URL.createObjectURL(l), d.download = t, d.click();
   }
-  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip2, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext2, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
+  var logKey, debounce, lastMessage, lastTime, C_ZERO, C_ONE, C_TWO, C_FIVE, C_TEN, MAX_CYCLE_LEN, P$1, parse$7, DivisionByZero, InvalidParameter, NonIntegerParameter, isNoteWithOctave, isNote, tokenizeNote$3, chromas$2, accs$2, getAccidentalsOffset$1, noteToMidi$1, midiToFreq$2, freqToMidi$2, valueToMidi$1, getEventOffsetMs, getFreq, pcs$1, midi2note$1, _mod$2, averageArray, getSoundIndex$1, getPlayableNoteValue, getFrequency, rotate$2, pipe, compose, removeUndefineds, flatten, id, constant, listRange, fractionalArgs, splitAt, zipWith, pairs, clamp$1, solfeggio, indian, german, byzantine, japanese, english, sol2note, ClockCollator, keyAlias, keyState, fraction$1, gcd, lcm, isFraction, TimeSpan, Hap, State, strudelScope, userDefinedKeys, clearScope, evalScope, evaluate$1, stringParser, __steps, calculateSteps, setStringParser, Pattern$1, congruent, arpWith, arp, COMPOSERS, _setupAlignments, DEFAULT_ALIGNMENT, ALIGNMENTS, ALIGNMENT_KEYS, setDefaultJoin, polyrhythm, pr, pm, gap, silence, nothing, mask, struct, superimpose, withValue, bind, innerBind, outerBind, squeezeBind, stepBind, polyBind, set, keep, keepif, add$6, sub, mul, div, mod$3, pow, band, bor, bxor, blshift, brshift, lt$1, gt$1, lte, gte, eq, eqt, ne$1, net, and, or, func, round, floor, log2, ceil, toBipolar, fromBipolar, range$2, rangex, range2, ratio$2, compress, compressSpan, compressspan, fastGap, fastgap, focus, focusSpan, focusspan, ply, fast, density$1, hurry, slow, sparsity, inside, outside, lastOf, firstOf, every, apply, cpm, early, late, zoom, zoomArc, zoomarc, bite, linger, segment, seg, swingBy, swing, invert$1, inv, when, off, brak, rev, revv, pressBy, press, palindrome, juxBy, juxby, juxFlipBy, juxflipby, fluxBy, fluxby, jux, juxFlip, flux, echoWith, echowith, stutWith, stutwith, echo, stut, applyN, plyWith, plyForEach, _iter, iter, iterBack, iterback, repeatCycles, _chunk, chunk, slowchunk, slowChunk, chunkBack, chunkback, fastchunk, fastChunk, chunkinto, chunkInto, chunkbackinto, chunkBackInto, bypass, ribbon, rib, hsla, hsl, filter$1, filterWhen, within, pace, take, drop, extend, replicate, expand, contract, shrinklist, shrink, grow, tour, zip, timecat, timeCat, s_cat, s_alt, s_polymeter, s_taper, s_taperlist, s_add, s_sub, s_expand, s_extend, s_contract, s_tour, s_zip, steps$2, chop, striate, _loopAt, loopAt, loopat, slice, splice, fit, loopAtCps, loopatcps, ref$1, fadeGain, xfade, __beat, beat, _morph, morph, _distortWithAlg, soft, hard, cubic, diode, asym, fold, sinefold, chebyshev, parray, _ensureListPattern, partials, phases, _asArrayPattern, worklet$1, controlAlias, s$1, sound, wt$1, wavetablePosition, wtenv, wtattack, wtatt, wtdecay, wtdec, wtsustain, wtsus, wtrelease, wtrel, wtrate, wtsync, wtdepth, wtshape, wtdc, wtskew, warp, wavetableWarp, warpattack, warpatt, warpdecay, warpdec, warpsustain, warpsus, warprelease, warprel, warprate, warpdepth, warpshape, warpdc, warpskew, warpmode, wavetableWarpMode, wtphaserand, wavetablePhaseRand, warpenv, warpsync, source, src, n, i$1, note$2, accelerate, velocity, vel, gain, postgain, amp, fmh, fmh1, fmh2, fmh3, fmh4, fmh5, fmh6, fmh7, fmh8, fmi, fmi1, fmi2, fmi3, fmi4, fmi5, fmi6, fmi7, fmi8, fm$1, fm1, fm2, fm3, fm4, fm5, fm6, fm7, fm8, fmenv, fmenv1, fmenv2, fmenv3, fmenv4, fmenv5, fmenv6, fmenv7, fmenv8, fme, fmattack, fmattack1, fmattack2, fmattack3, fmattack4, fmattack5, fmattack6, fmattack7, fmattack8, fmatt, fmatt1, fmatt2, fmatt3, fmatt4, fmatt5, fmatt6, fmatt7, fmatt8, fmwave, fmwave1, fmwave2, fmwave3, fmwave4, fmwave5, fmwave6, fmwave7, fmwave8, fmdecay, fmdecay1, fmdecay2, fmdecay3, fmdecay4, fmdecay5, fmdecay6, fmdecay7, fmdecay8, fmdec, fmdec1, fmdec2, fmdec3, fmdec4, fmdec5, fmdec6, fmdec7, fmdec8, fmsustain, fmsustain1, fmsustain2, fmsustain3, fmsustain4, fmsustain5, fmsustain6, fmsustain7, fmsustain8, fmsus, fmsus1, fmsus2, fmsus3, fmsus4, fmsus5, fmsus6, fmsus7, fmsus8, fmrelease, fmrelease1, fmrelease2, fmrelease3, fmrelease4, fmrelease5, fmrelease6, fmrelease7, fmrelease8, fmrel, fmrel1, fmrel2, fmrel3, fmrel4, fmrel5, fmrel6, fmrel7, fmrel8, bank, chorus, analyze, fft, attack, att, decay, dec, sustain, sus, release, rel, hold, bandf, bpf, bp, bandq, bpq, begin, end, loop, loopBegin, loopb, loopEnd, loope, crush, coarse, tremolo, trem, tremolosync, tremolodepth, tremoloskew, tremolophase, tremoloshape, drive, duck, duckdepth, duckonset, duckattack, byteBeatExpression, bbexpr, byteBeatStartTime, bbst, channels, ch, pw, pwrate, pwsweep, phaserrate, ph, phaser, phasersweep, phs, phasercenter, phc, phaserdepth, phd, phasdp, channel, cut, cutoff, ctf, lpf, lp, lpenv, lpe, hpenv, hpe, bpenv, bpe, lpattack, lpa, hpattack, hpa, bpattack, bpa, lpdecay, lpd, hpdecay, hpd, bpdecay, bpd, lpsustain, lps, hpsustain, hps, bpsustain, bps, lprelease, lpr, hprelease, hpr, bprelease, bpr, ftype, fanchor, lprate, lpsync, lpdepth, lpdepthfrequency, lpdepthfreq, lpshape, lpdc, lpskew, bprate, bpsync, bpdepth, bpdepthfrequency, bpdepthfreq, bpshape, bpdc, bpskew, hprate, hpsync, hpdepth, hpdepthfrequency, hpdepthfreq, hpshape, hpdc, hpskew, vib, vibrato, v, noise, vibmod, vmod, hcutoff, hpf, hp, hresonance, hpq, resonance, lpq, djf, delay, delayfeedback, delayfb, dfb, delayspeed, delaytime, delayt, dt$1, delaysync, lock, detune, det, unison, spread, dry, fadeTime, fadeOutTime, fadeInTime, freq$1, pattack, patt, pdecay, pdec, psustain, psus, prelease, prel, penv, pcurve, panchor, gate, gat, leslie, lrate, lsize, activeLabel, label, degree, mtranspose, ctranspose, harmonic, stepsPerOctave, octaveR, nudge, octave$1, oct, orbit, bus, busgain, bgain, overgain, overshape, pan, panspan, pansplay, panwidth, panorient, slide, semitone, voice, chord$1, dictionary$3, dict, anchor, offset, octaves, mode$1, room, roomlp, rlp, roomdim, rdim, roomfade, rfade, ir, iresponse, irspeed, irbegin, roomsize, size, sz, rsize, shape, distort, dist$2, distortvol, distorttype, compressor, compressorKnee, compressorRatio, compressorAttack, compressorRelease, speed, stretch, unit, squiz, vowel, waveloss, density, expression, sustainpedal, fshift, fshiftnote, fshiftphase, triode, krush, kcutoff, octer, octersub, octersubsub, ring, ringf, ringdf, freeze, xsdelay, tsdelay, real, imag, enhance, comb, smear$1, scram, binshift, hbrick, lbrick, frameRate, frames, hours, minutes, seconds, songPtr, uid, val, cps, clip2, legato, duration, dur, zrand, curve, deltaSlide, pitchJump, pitchJumpTime, znoise, zmod, zcrush, zdelay, zzfx, color, colour, createParams, adsr, ad, ds, ar, midichan, midimap, midiport, midicmd, control, ccn, ccv, ctlNum, nrpnn, nrpv, progNum, sysex, sysexid, sysexdata, midibend, miditouch, polyTouch, oschost, oscport, getControlName, as, scrub, subControlAliases, registerSubControl, registerSubControls, getMainSubcontrolName, lfo, env, bmod, transient, FXrelease, FXrel, FXr, fxr, controls, left, right, _bjorklund, bjorklund, _euclidRot, euclid, bjork, euclidrot, euclidRot, _euclidLegato, euclidLegato, euclidLegatoRot, euclidish, eish, Cyclist, timelines, reset_state, reset_timelines, timeline, _pick, pick, __pick, pickmod, pickF, pickmodF, pickOut, pickmodOut, pickRestart, pickmodRestart, pickReset, pickmodReset, inhabit, pickSqueeze, inhabitmod, pickmodSqueeze, squeeze, NeoCyclist, time$1, cpsFunc, pattern, triggerFunc, isStarted, getTrigger, signal, saw, saw2, isaw, isaw2, sine2, sine, cosine, cosine2, square, square2, tri, tri2, itri, itri2, time, _mouseY, _mouseX, mousey, mouseY, mousex, mouseX, _murmurHashFinalizer, _tToT, _decorrelate, randAt, timeToRands, __xorwise, __frac, __timeToIntSeed, __intSeedToRand, __timeToRandsPrime, __timeToRands, RNG_MODE, getRandsAtTime, useRNG, run, binary, binaryN, binaryL, binaryNL, randL, randrun, _rearrangeWith, shuffle$2, scramble, withSeed, seed, rand, rand2, _brandBy, brandBy, brand, _irand, irand, __chooseWith, chooseWith, chooseInWith, choose, chooseIn, chooseOut, chooseCycles, randcat, _wchooseWith, wchooseWith, wchoose, wchooseCycles, wrandcat, perlin, berlin, degradeByWith, degradeBy, degrade, undegradeBy, undegrade, sometimesBy, sometimes, someCyclesBy, someCycles, often, rarely, almostNever, almostAlways, never, always, whenKey, keyDown, cyclesPer, per, perCycle, perx, synth, allVoices, speak, backgroundImage, cleanupUi, strudel, audioContext, setDefaultAudioContext, setAudioContext, getAudioContext, log, logger$1, setLogger, noiseCache, nodePools, POOL_KEY, isPoolable, getNodeTime, getParams, releaseNodeToPool, isNodeAlive, getNodeFromPool, tokenizeNote$2, chromas$1, accs$1, getAccidentalsOffset, noteToMidi, midiToFreq$1, clamp, freqToMidi$1, valueToMidi, _mod$1, getSoundIndex, pickAndRename, getBaseURL, noises, getSlope, getParamADSR, getADSRValues, wetfade, curves, mod$2, fm, __squash, _mod, _scurve, _soft, _hard, _fold, _sineFold, _cubic, _diode, _asym, _chebyshev, distortionAlgorithms, _algoNames, getDistortionAlgorithm, getDistortion, getFrequencyFromValue, onceEnded, releaseAudioNode, cleanupOnEnd, reverbGen, applyGradualLowpass, getAllChannelData, randomSample, vowelFormant, workletsUrl, listenerQueue, lqIndex, QUEUE_ITEMS_PER_LISTENER, atom, map, CONTROL_TARGETS, getNodeParam, controlTargets, getControlData, getRangeForParam, clampWithWaveShaper, getTargetParamsForControl, connectLFO, connectEnvelope, connectBusModulator, bufferCache$1, loadCache$3, getCachedBuffer, getDuration, getDur, getSampleBuffer, getSampleBufferSource, loadBuffer$1, getLoadedBuffer, processSampleMap, resourcePrefixHandlers, samples, cutGroups, hasChanged, getStereoNode, Orbit, SuperdoughOutput, SuperdoughAudioController, Warpmode, seenKeys, loadCache$2, loadBuffer, _processTables, tables, DEFAULT_MAX_POLYPHONY, DEFAULT_AUDIO_DEVICE_NAME, maxPolyphony, multiChannelOrbits, soundMap$1, gainCurveFunc, getAudioDevices, defaultDefaultValues, defaultDefaultDefaultValues, defaultControls, resetLoadedSounds, externalWorklets, workletsLoading, kabel, audioReady, audioInitialized, controller, analysers, analysersData, activeSoundSources, Chain, compileKabel, superdough, superdoughTrigger, waveforms, waveformAliases, PI2, getZZFX, worklet, stop, dough, doughWorklet, soundMap, loadedSounds, _workletUrl, workletUrl, Pattern, logger, repl$1, hap2value, webaudioOutput, getDrawContext, animationFrames, memory, cleanupDraw, cleanupDrawContext, Framer, Drawer, theme, clearColor, x$2, y$1, w$1, h$1, angle, r, fill, smear, rescale, moveXY, zoomIn, colorMap, scale$2, getValue, getPunchcardPainter, xyOnSpiral, c$1, circlePos, freq2angle, index$b, latestColor, lastFrames, index$a, gm, defaultSoundfontUrl, soundfontUrl, loadCache$1, bufferCache, instruments, drums, instrumentNames, list$1, commonjsGlobal, SoundFont2, hasRequiredSoundFont2, SoundFont2Exports, m$1, Q$1, G, T$1, D$1, J$1, W$1, C$1, x$1, ce$1, soundfontCache, astralIdentifierCodes, astralIdentifierStartCodes, nonASCIIidentifierChars, nonASCIIidentifierStartChars, reservedWords, ecma5AndLessKeywords, keywords$1, keywordRelationalOperator, nonASCIIidentifierStart, nonASCIIidentifier, TokenType, beforeExpr, startsExpr, keywords, types$1, lineBreak, lineBreakG, nonASCIIwhitespace, skipWhiteSpace, ref, hasOwnProperty, toString, hasOwn, isArray, regexpCache, loneSurrogate, Position, SourceLocation, defaultOptions, warnedAboutEcmaVersion, SCOPE_TOP, SCOPE_FUNCTION, SCOPE_ASYNC, SCOPE_GENERATOR, SCOPE_ARROW, SCOPE_SIMPLE_CATCH, SCOPE_SUPER, SCOPE_DIRECT_SUPER, SCOPE_CLASS_STATIC_BLOCK, SCOPE_VAR, BIND_NONE, BIND_VAR, BIND_LEXICAL, BIND_FUNCTION, BIND_SIMPLE_CATCH, BIND_OUTSIDE, Parser, prototypeAccessors, pp$9, literal, DestructuringErrors, pp$8, loopLabel, switchLabel, empty$1, FUNC_STATEMENT, FUNC_HANGING_STATEMENT, FUNC_NULLABLE_ID, pp$7, TokContext, types, pp$6, pp$5, empty, pp$4, pp$3, Scope, Node, pp$2, scriptValuesAddedInUnicode, ecma9BinaryProperties, ecma10BinaryProperties, ecma11BinaryProperties, ecma12BinaryProperties, ecma13BinaryProperties, ecma14BinaryProperties, unicodeBinaryProperties, ecma14BinaryPropertiesOfStrings, unicodeBinaryPropertiesOfStrings, unicodeGeneralCategoryValues, ecma9ScriptValues, ecma10ScriptValues, ecma11ScriptValues, ecma12ScriptValues, ecma13ScriptValues, ecma14ScriptValues, unicodeScriptValues, data2, ecmaVersion, i, list, pp$1, BranchID, RegExpValidationState, CharSetNone, CharSetOk, CharSetString, Token, pp, INVALID_TEMPLATE_ESCAPE_ERROR, version$1, escodegen$1, estraverse, hasRequiredEstraverse, utils, ast, hasRequiredAst, code, hasRequiredCode, keyword, hasRequiredKeyword, hasRequiredUtils, sourceMap, sourceMapGenerator, base64Vlq, base64, hasRequiredBase64, hasRequiredBase64Vlq, util, hasRequiredUtil, arraySet, hasRequiredArraySet, mappingList, hasRequiredMappingList, hasRequiredSourceMapGenerator, sourceMapConsumer, binarySearch, hasRequiredBinarySearch, quickSort, hasRequiredQuickSort, hasRequiredSourceMapConsumer, sourceNode, hasRequiredSourceNode, hasRequiredSourceMap, name$2, description, homepage, main, bin, files, version, engines, maintainers, repository, dependencies, optionalDependencies, devDependencies, license, scripts, require$$3, hasRequiredEscodegen, escodegenExports, escodegen, WalkerBase, SyncWalker, languages, plugins, nonInlineWidgets, transpilerPlugin, peg$allowedStartRules, randOffset, applyOptions, getLeafLocation, mini2ast, getLeaves, getLeafLocations, mini, m, h, index$9, languageLiteral, tidal, backtick, doublequotes, collectMiniLocations, bareSample, widgetMethods, widgetTranspilerPlugin, sliderTranspilerPlugin, widgetTranspilerPlugins, M$1, L$1, S$1, LABELS, EdoScale, ratiointervals, Intervals, denom, Pitches, pitchesCache, edoScale, packageName$1, index$8, FIFTHS$1, STEPS_TO_OCTS$1, FIFTHS_TO_STEPS$1, fillStr$5, NoInterval$1, INTERVAL_TONAL_REGEX$1, INTERVAL_SHORTHAND_REGEX$1, REGEX$8, cache$5, SIZES$2, TYPES$1, fillStr$4, NoNote$1, cache$4, stepToLetter$1, altToAcc$1, accToAlt$1, REGEX$7, mod$1, SEMI$1, fillStr$3, REGEX$6, abc_notation_default, index$7, collection_default, EmptyPcset, setNumToChroma, chromaToNumber, REGEX$5, isPcsetNum, isPcset, cache$3, pcset$1, chroma$3, intervals, num$1, IVLS, pcset_default, CHORDS$1, data_default$3, dictionary$2, index$6, namedSet, BITMASK, testChromaNumber, hasAnyThird, hasPerfectFifth, hasAnySeventh, hasNonPerfectFifth, SIZES$1, chroma$2, height, midi$2, FIFTHS, STEPS_TO_OCTS, FIFTHS_TO_STEPS, fillStr$2, NoInterval, INTERVAL_TONAL_REGEX, INTERVAL_SHORTHAND_REGEX, REGEX$4, cache$2, SIZES, TYPES, fillStr$1, NoNote, cache$1, stepToLetter, altToAcc, accToAlt, REGEX$3, mod, SEMI, fillStr, isNamed, Core, CHORDS, data_default$2, NoChordType, dictionary$1, index$5, chordType, entries$2, chord_type_default, SCALES, data_default$1, NoScaleType, dictionary, index$4, scaleType, entries$1, scale_type_default, NoChord, chord, chord_default, DATA, data_default, VALUES, NoDuration, REGEX$2, value, fraction, duration_value_default, get$6, name$1, semitones, quality, num, IN, IQ, distance$2, add$1, addTo, substract, interval_default, L2, L440, SHARPS, FLATS, midi_default, NAMES$2, toName, onlyNotes, get$5, name2, pitchClass, accidentals, octave, midi$1, freq, chroma, distance$1, transpose$1, tr, transposeBy, trBy, transposeFrom, trFrom, trFifths, ascending, descending, simplify$1, note_default, NoRomanNumeral, cache, romanNumeral, REGEX$1, ROMANS, NAMES$1, NAMES_MINOR, roman_numeral_default, Empty, NoKey, NoKeyScale, NoMajorKey, NoMinorKey, mapScaleToType, supertonics, distInFifths, MajorScale, NaturalScale, HarmonicScale, MelodicScale, key_default, get$3, MODES, NoMode, modes, index$3, mode, entries, triads$1, seventhChords, mode_default, progression_default, range_default, NoScale, names$1, scale$1, scale_default, NONE, NAMES, REGEX, CACHE, time_signature_default, isPowerOfTwo, Tonal, PcSet, ChordDictionary, ScaleDictionary, dist$1, flats, pcs, sharps, accs, pc2chroma, midi2chroma, step2semitones, x2midi, midi2note, scaleSteps, modeTarget, octavesInterval, transpose, trans, scaleTranspose, scaleTrans, strans, scaleToMidisAndNotes, scale, dist, dictionaryVoicing$1, getBestVoicing, hasRequiredGetBestVoicing, voicingsInRange, require$$0, tokenizeChord, hasRequiredTokenizeChord, hasRequiredVoicingsInRange, hasRequiredDictionaryVoicing, minTopNoteDiff$1, hasRequiredMinTopNoteDiff, hasRequiredDist, distExports, _voicings, simple, complex, dictionaryVoicing, minTopNoteDiff, lefthand, guidetones, triads, defaultDictionary, voicingRegistry, defaultDict, setDefaultVoicings, setVoicingRange, addVoicings, registerVoicings, getVoicing, lastVoicing, voicings, rootNotes, voicing, packageName, index$2, latestOptions, hydra, H$1, hydra$1, EventEmitter, Listener, Enumerations, Note, Utilities, OutputChannel, Output, Forwarder, InputChannel, Message, Input, WebMidi$1, wm, _WebMidi, MidiInput, WebMidi, midicontrolMap, loadCache, midisoundMap, midiInputs, kHaps, kListeners, index$1, initDone, repl, c, x, y, Z, Y, a, u, de, J, S, U, Q, me, he, Ge, ye, k, Xe, Ze, be, xe, Re, Le, B, w, Me, ze, Ve, We, Ye, Ne, He, Se, Te, we, Ke, Ce, ve, L, Ie, Ue, ke, Pe, Fe, je, Qe, Be, Ee, Oe, $e, De, N, Ae, qe, _e, et, tt, it, nt, st, lt, at, ot, dt, ct, M, pt, ut, mt, rt, s, E, ht, Gt, yt, ft, gt, Xt, Zt, bt, xt, Rt, O, Lt, Mt, zt, Vt, $, Wt, Yt, Nt, Ht, St, Tt, wt, Kt, D, Ct, vt, It, Ut, kt, Pt, Ft, Jt, K, jt, H, A, Qt, q, _2, Bt, Et, Ot, $t, Dt, C, At, qt, _t, ei, ti, ii, ni, si, li, ai, oi, di, ci, ee, te, pi, ui, mi, ri, hi, Gi, yi, fi, gi, Xi, Zi, bi, xi, Ri, Li, ie, ne, Mi, zi, Vi, Wi, Yi, Ni, Hi, Si, Ti, wi, Ki, Ci, vi, Ii, Ui, ki, Pi, Fi, Ji, ji, Qi, Bi, Ei, Oi, $i, Di, Ai, qi, P, en, index;
   var init_dist = __esm({
     "strudel-fork/packages/web/dist/index.mjs"() {
       logKey = "strudel.log";
@@ -17613,7 +16694,7 @@ Please check with "npm ls @strudel/core".`
       }
       setDefaultAudioContext = () => (audioContext = new AudioContext(), audioContext);
       setAudioContext = (e30) => (audioContext = e30, audioContext);
-      getAudioContext2 = () => audioContext || setDefaultAudioContext();
+      getAudioContext = () => audioContext || setDefaultAudioContext();
       log = (e30) => console.log(e30);
       logger$1 = (...e30) => log(...e30);
       setLogger = (e30) => {
@@ -17722,7 +16803,7 @@ Please check with "npm ls @strudel/core".`
       wetfade = (e30) => e30 < 0.5 ? 1 : 1 - (e30 - 0.5) / 0.5;
       curves = ["linear", "exponential"];
       mod$2 = (e30, t = "sine") => {
-        const o = getAudioContext2();
+        const o = getAudioContext();
         let l;
         return noises.includes(t) ? (l = o.createBufferSource(), l.buffer = getNoiseBuffer(t, 2), l.loop = true) : (l = o.createOscillator(), l.type = t, l.frequency.value = e30), l.start(), l;
       };
@@ -17782,7 +16863,7 @@ Please check with "npm ls @strudel/core".`
         const o = _algoNames[t % _algoNames.length];
         return distortionAlgorithms[o];
       };
-      getDistortion = (e30, t, o) => getWorklet(getAudioContext2(), "distort-processor", { distort: e30, postgain: t }, { processorOptions: { algorithm: o } });
+      getDistortion = (e30, t, o) => getWorklet(getAudioContext(), "distort-processor", { distort: e30, postgain: t }, { processorOptions: { algorithm: o } });
       getFrequencyFromValue = (e30, t = 36) => {
         let { note: o, freq: l, octave: d = 0 } = e30;
         return o = o || t, typeof o == "string" && (o = noteToMidi(o)), !l && typeof o == "number" && (l = midiToFreq$1(o)), l *= Math.pow(2, d), Number(l);
@@ -18150,7 +17231,7 @@ Please check with "npm ls @strudel/core".`
       };
       getRangeForParam = (e30, t) => e30 === "frequency" && t >= 30 ? { min: 20 - t, max: 24e3 - t } : { min: void 0, max: void 0 };
       clampWithWaveShaper = (e30, t, o) => {
-        const l = getAudioContext2(), d = new Float32Array(256);
+        const l = getAudioContext(), d = new Float32Array(256);
         for (let R = 0; R < d.length; R++) {
           const I = R / (d.length - 1) * 2 - 1;
           d[R] = clamp(I * o, t, o);
@@ -18203,7 +17284,7 @@ Please check with "npm ls @strudel/core".`
           depth: Mn,
           min: pn,
           max: _n
-        }, hn = getLfo(getAudioContext2(), mn);
+        }, hn = getLfo(getAudioContext(), mn);
         return o.main[`lfo_${e30}`] = [hn], an.forEach((yn) => hn.connect(yn)), hn;
       };
       connectEnvelope = (e30, t, o) => {
@@ -18211,7 +17292,7 @@ Please check with "npm ls @strudel/core".`
         if (!rn.length) return;
         let an = rn[0].value;
         an = an === 0 ? 1 : an;
-        const { min: on, max: ln } = getRangeForParam(tn, an), pn = z ?? I * an, _n = getEnvelope(getAudioContext2(), {
+        const { min: on, max: ln } = getRangeForParam(tn, an), pn = z ?? I * an, _n = getEnvelope(getAudioContext(), {
           ...le,
           depth: pn,
           min: on,
@@ -18223,7 +17304,7 @@ Please check with "npm ls @strudel/core".`
         return o.main[`env_${e30}`] = [_n], rn.forEach((Mn) => _n.connect(Mn)), _n;
       };
       connectBusModulator = (e30, t, o) => {
-        const l = getAudioContext2(), { control: d, subControl: p, depth: b = 1, depthabs: R, fxi: I = "main" } = e30, { targetParams: z, paramName: se } = getTargetParamsForControl(d, t[I], p);
+        const l = getAudioContext(), { control: d, subControl: p, depth: b = 1, depthabs: R, fxi: I = "main" } = e30, { targetParams: z, paramName: se } = getTargetParamsForControl(d, t[I], p);
         if (!z.length) return { toCleanup: [] };
         const le = o.getBus(e30.bus), rn = new ConstantSourceNode(l, { offset: e30.dc ?? 0 });
         rn.start(e30.begin);
@@ -18254,13 +17335,13 @@ Please check with "npm ls @strudel/core".`
       getSampleBuffer = async (e30, t, o) => {
         let { url: l, label: d, playbackRate: p } = getSampleInfo(e30, t);
         o && (l = await o(l));
-        const b = getAudioContext2(), R = await loadBuffer$1(l, b, d);
+        const b = getAudioContext(), R = await loadBuffer$1(l, b, d);
         return e30.unit === "c" && (p = p * R.duration), { buffer: R, playbackRate: p };
       };
       getSampleBufferSource = async (e30, t, o) => {
         let { buffer: l, playbackRate: d } = await getSampleBuffer(e30, t, o);
         e30.speed < 0 && (l = reverseBuffer(l));
-        const b = getAudioContext2().createBufferSource();
+        const b = getAudioContext().createBufferSource();
         b.buffer = l, b.playbackRate.value = d;
         const { loopBegin: R = 0, loopEnd: I = 1, begin: z = 0, end: se = 1 } = e30, le = b.buffer.duration, rn = z * le;
         e30.loop && (b.loop = true, b.loopStart = R * le, b.loopEnd = I * le);
@@ -18539,7 +17620,7 @@ Please check with "npm ls @strudel/core".`
         return kabel.evaluate(e30).compile({ log: false });
       };
       superdough = async (e30, t, o, l = 0.5, d = 0.5) => {
-        const p = { main: {} }, b = getAudioContext2(), R = getSuperdoughAudioController();
+        const p = { main: {} }, b = getAudioContext(), R = getSuperdoughAudioController();
         let { stretch: I } = e30;
         if (I != null && (t = t - 0.04), typeof e30 != "object")
           throw new Error(
@@ -18988,9 +18069,9 @@ Please check with "npm ls @strudel/core".`
             R,
             mn
           ])
-        ), Nn = getAudioContext2(), xn = Nn.createBuffer(1, vn.length, Nn.sampleRate);
+        ), Nn = getAudioContext(), xn = Nn.createBuffer(1, vn.length, Nn.sampleRate);
         xn.getChannelData(0).set(vn);
-        const Rn = getAudioContext2().createBufferSource();
+        const Rn = getAudioContext().createBufferSource();
         return Rn.buffer = xn, Rn.start(t), {
           node: Rn
         };
@@ -19002,7 +18083,7 @@ Please check with "npm ls @strudel/core".`
         e30.data === "strudel-stop" ? stop() : e30.data?.dough && worklet?.node.port.postMessage(e30.data);
       });
       dough = async (e30) => {
-        const t = getAudioContext2();
+        const t = getAudioContext();
         stop(), worklet = await dspWorklet(t, e30), worklet.node.connect(t.destination);
       };
       soundMap = /* @__PURE__ */ new Map();
@@ -19522,7 +18603,7 @@ Please check with "npm ls @strudel/core".`
         getADSRValues,
         getAnalyserById,
         getAnalyzerData,
-        getAudioContext: getAudioContext2,
+        getAudioContext,
         getAudioContextCurrentTime,
         getAudioDevices,
         getCachedBuffer,
@@ -23577,7 +22658,7 @@ Please check with "npm ls @strudel/core".`
       };
       Pattern$1.prototype.soundfont = function(e30, t = 0) {
         return this.onTrigger((o, l, d, p) => {
-          const b = getAudioContext2(), R = getPlayableNoteValue(o), I = e30.presets[t % e30.presets.length], z = p, se = [b, I, noteToMidi$1(R), z];
+          const b = getAudioContext(), R = getPlayableNoteValue(o), I = e30.presets[t % e30.presets.length], z = p, se = [b, I, noteToMidi$1(R), z];
           ce$1(...se)(z + o.duration);
         });
       };
@@ -38502,6 +37583,923 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/latency-instrument.js
+  function notifyRoutingChange() {
+    routingSubscribers.forEach((fn) => {
+      try {
+        fn(new Set(audioRouted));
+      } catch (e30) {
+        console.warn("[latency] routing subscriber threw", e30);
+      }
+    });
+  }
+  function subscribeAudioRouting(fn) {
+    routingSubscribers.add(fn);
+    try {
+      fn(new Set(audioRouted));
+    } catch (e30) {
+    }
+    return () => routingSubscribers.delete(fn);
+  }
+  function applyJamulusMuteToAllTags() {
+    document.querySelectorAll("audio").forEach((tag) => {
+      if (!tag.srcObject) return;
+      if (tag.id === "userAudio") return;
+      const jitsiId = getParticipantIdForAudioTag(tag);
+      if (jitsiId && remoteSources.has(jitsiId)) return;
+      if (jamulasMutedTags.has(tag)) return;
+      tag.muted = true;
+      tag.volume = 0;
+      jamulasMutedTags.add(tag);
+    });
+  }
+  function setJamulusMode(enabled) {
+    if (enabled === jamulusMode) return;
+    jamulusMode = enabled;
+    if (enabled) {
+      applyJamulusMuteToAllTags();
+    } else {
+      for (const tag of jamulasMutedTags) {
+        tag.muted = false;
+        tag.volume = 1;
+      }
+      jamulasMutedTags.clear();
+    }
+  }
+  function presenceLevelFor(jitsiId) {
+    if (!aggregatorJitsiId) return 1;
+    return jitsiId === aggregatorJitsiId ? 1 : 0;
+  }
+  function localStrudelLevel() {
+    return aggregatorJitsiId ? 0 : 1;
+  }
+  function setAggregatorPeer(jitsiId) {
+    const next = jitsiId || null;
+    if (next === aggregatorJitsiId) return;
+    aggregatorJitsiId = next;
+    if (next) publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish failed", e30));
+    else unpublishLocalStrudelFromRoom().catch((e30) => console.warn("[latency] strudel unpublish failed", e30));
+    document.dispatchEvent(new CustomEvent("trussal-aggregator-mode-change"));
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const chain of chains.values()) {
+      if (chain.presence) chain.presence.gain.setTargetAtTime(presenceLevelFor(chain.jitsiId), now, 0.05);
+    }
+    if (strudelOut) strudelOut.gain.setTargetAtTime(localStrudelLevel(), now, 0.05);
+  }
+  function getAggregatorPeer() {
+    return aggregatorJitsiId;
+  }
+  function refreshAggregatorPeer() {
+    const winner = electAggregator(getAllPeers());
+    setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);
+  }
+  function ensureAudioContext() {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return Promise.reject(new Error("WebAudio not supported"));
+    if (!audioCtx) {
+      audioCtx = new Ctor({ sampleRate: 48e3 });
+      const masterBus = audioCtx.createGain();
+      masterBus.gain.value = 1;
+      masterBus.connect(audioCtx.destination);
+      realDestination = masterBus;
+    }
+    if (!audioCtx.audioWorklet) return Promise.reject(new Error("AudioWorklet not supported"));
+    if (!workletLoaded) {
+      workletLoaded = audioCtx.audioWorklet.addModule("/latency-worklet-v2.js");
+    }
+    const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
+    return resume.then(() => workletLoaded);
+  }
+  async function loadReverbBuffer() {
+    if (reverbBuffer) return reverbBuffer;
+    try {
+      const resp = await fetch("trussal-impulse.wav");
+      const ct2 = resp.headers.get("content-type");
+      if (ct2 && ct2.includes("text/html")) throw new Error("impulse file returned HTML");
+      const ab = await resp.arrayBuffer();
+      reverbBuffer = await audioCtx.decodeAudioData(ab);
+    } catch (e30) {
+      console.warn("[latency] reverb buffer load failed", e30);
+      reverbBuffer = null;
+    }
+    return reverbBuffer;
+  }
+  function makeDistortionCurve(amount) {
+    const n2 = 512;
+    const curve2 = new Float32Array(n2);
+    for (let i = 0; i < n2; i++) {
+      const x2 = i * 2 / n2 - 1;
+      if (amount < 1e-3) {
+        curve2[i] = x2;
+        continue;
+      }
+      const k2 = amount * 24 + 1e-3;
+      curve2[i] = (Math.PI + k2) * x2 / (Math.PI + k2 * Math.abs(x2));
+    }
+    return curve2;
+  }
+  function updateStrudelFx(effects2, rtt, jitter) {
+    if (!strudelFx || !audioCtx) return;
+    const e30 = effects2 || {};
+    const r2 = rtt || 0;
+    const j2 = jitter || 0;
+    const now = audioCtx.currentTime;
+    if (e30.distortion) {
+      const base = 0.2;
+      const extra = Math.max(0, Math.min(0.8, (r2 - 5) / 55 + j2 / 6));
+      strudelFx.distWS.curve = makeDistortionCurve(base + extra);
+    } else {
+      strudelFx.distWS.curve = null;
+    }
+    const targetNoise = e30.noise ? 0.12 : 0;
+    strudelFx.noiseGain.gain.cancelScheduledValues(now);
+    strudelFx.noiseGain.gain.linearRampToValueAtTime(targetNoise, now + 0.8);
+    if (e30.noise) {
+      const targetFreq = j2 < 1 ? 2e4 : j2 < 3 ? 200 : 1200;
+      strudelFx.noiseFilter.frequency.cancelScheduledValues(now);
+      strudelFx.noiseFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.3);
+    }
+    if (strudelFx.convGain) {
+      const targetRev = e30.reverb ? 1.8 : 0;
+      strudelFx.convGain.gain.cancelScheduledValues(now);
+      strudelFx.convGain.gain.linearRampToValueAtTime(targetRev, now + 0.5);
+    }
+  }
+  function computeEffectParams(effects2, metrics) {
+    const rtt = metrics && typeof metrics.rtt === "number" ? metrics.rtt : 0;
+    const jitter = metrics && typeof metrics.jitter === "number" ? metrics.jitter : 0;
+    let glitchIntensity = 0;
+    if (effects2 && effects2.distortion) {
+      const base = 0.05;
+      const extra = Math.max(0, Math.min(1 - base, (rtt - 5) / 55 + jitter / 6));
+      glitchIntensity = base + extra;
+    }
+    let noiseType = 0;
+    if (effects2 && effects2.noise) {
+      if (jitter < 1) noiseType = 1;
+      else if (jitter < 3) noiseType = 2;
+      else noiseType = 3;
+    }
+    return { glitchIntensity, noiseType, reverb: !!(effects2 && effects2.reverb) };
+  }
+  function applyParams(chain, params2) {
+    if (!chain || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    const glitch = chain.worklet.parameters.get("glitchIntensity");
+    if (glitch) glitch.setValueAtTime(params2.glitchIntensity, now);
+    const noise2 = chain.worklet.parameters.get("noiseType");
+    if (noise2) noise2.setValueAtTime(params2.noiseType, now);
+    const noiseAmt = chain.worklet.parameters.get("noiseAmount");
+    if (noiseAmt) {
+      const target = params2.noiseType > 0 ? 1 : 0;
+      noiseAmt.cancelScheduledValues(now);
+      noiseAmt.linearRampToValueAtTime(target, now + 0.8);
+    }
+    if (chain.reverbOn === params2.reverb) return;
+    chain.reverbOn = params2.reverb;
+    try {
+      chain.limiter.disconnect();
+    } catch (e30) {
+    }
+    if (params2.reverb && chain.reverb) {
+      chain.limiter.connect(chain.reverb);
+    } else {
+      chain.limiter.connect(realDestination);
+    }
+  }
+  async function buildChain(jitsiId) {
+    await ensureAudioContext();
+    await loadReverbBuffer();
+    const input = audioCtx.createGain();
+    input.channelCount = 2;
+    input.channelCountMode = "explicit";
+    Object.defineProperty(input, "maxChannelCount", { value: 2, configurable: true });
+    const worklet2 = new AudioWorkletNode(audioCtx, "latency-processor-v2", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: "explicit",
+      channelInterpretation: "speakers"
+    });
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -1;
+    let reverb = null;
+    let reverbGain = null;
+    if (reverbBuffer) {
+      reverb = audioCtx.createConvolver();
+      reverb.buffer = reverbBuffer;
+      reverbGain = audioCtx.createGain();
+      reverbGain.gain.value = 1.8;
+      reverb.connect(reverbGain);
+      reverbGain.connect(realDestination);
+    }
+    const presence = audioCtx.createGain();
+    presence.gain.value = presenceLevelFor(jitsiId);
+    input.connect(presence);
+    presence.connect(worklet2);
+    worklet2.connect(limiter);
+    limiter.connect(realDestination);
+    return { jitsiId, input, presence, worklet: worklet2, limiter, reverb, reverbGain, reverbOn: false };
+  }
+  async function ensureChain(jitsiId) {
+    if (!jitsiId) return null;
+    if (chains.has(jitsiId)) return chains.get(jitsiId);
+    const chain = await buildChain(jitsiId);
+    chains.set(jitsiId, chain);
+    const peer = getPeerByJitsiId(jitsiId);
+    if (peer) applyParams(chain, computeEffectParams(peer.effects, { rtt: peer.rtt, jitter: peer.jitter }));
+    return chain;
+  }
+  function destroyChain(jitsiId) {
+    const chain = chains.get(jitsiId);
+    if (!chain) return;
+    try {
+      chain.input.disconnect();
+    } catch (e30) {
+    }
+    if (chain.presence) {
+      try {
+        chain.presence.disconnect();
+      } catch (e30) {
+      }
+    }
+    try {
+      chain.worklet.disconnect();
+    } catch (e30) {
+    }
+    try {
+      chain.limiter.disconnect();
+    } catch (e30) {
+    }
+    if (chain.reverb) {
+      try {
+        chain.reverb.disconnect();
+      } catch (e30) {
+      }
+    }
+    if (chain.reverbGain) {
+      try {
+        chain.reverbGain.disconnect();
+      } catch (e30) {
+      }
+    }
+    chains.delete(jitsiId);
+  }
+  function captureJitsiAudio() {
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+    if (!audioCtx) return;
+    const local2 = getLocalParticipant();
+    const localJitsiId = local2 ? local2.id : null;
+    const tags = document.querySelectorAll("audio");
+    tags.forEach(async (tag) => {
+      if (!tag.srcObject) return;
+      if (tag.id === "userAudio") return;
+      const jitsiId = getParticipantIdForAudioTag(tag);
+      if (!jitsiId) {
+        if (!tag.dataset.trussalUnmatched) {
+          console.warn("[latency] unmatched audio tag (no participant id)", { id: tag.id, srcTracks: tag.srcObject.getAudioTracks?.().length });
+          tag.dataset.trussalUnmatched = "1";
+        }
+        return;
+      }
+      if (localJitsiId && jitsiId === localJitsiId) return;
+      try {
+        const conf = window.APP && window.APP.conference;
+        const member = conf && typeof conf.getParticipantById === "function" ? conf.getParticipantById(jitsiId) : null;
+        if (member && typeof member.isHidden === "function" && member.isHidden()) return;
+      } catch (e30) {
+      }
+      if (!getPeerByJitsiId(jitsiId)) return;
+      if (pendingCaptures.has(jitsiId)) return;
+      const existing = remoteSources.get(jitsiId);
+      if (existing) {
+        const live = existing.tag && existing.tag.isConnected && existing.tag.srcObject === existing.stream && existing.track && existing.track.readyState === "live";
+        if (live) return;
+        try {
+          existing.source.disconnect();
+        } catch (e30) {
+        }
+        remoteSources.delete(jitsiId);
+        if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
+          if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+        }
+        console.log("[latency] audio wiring for", jitsiId, "went stale (track replaced) \u2014 re-wiring");
+      }
+      pendingCaptures.add(jitsiId);
+      try {
+        const chain = await ensureChain(jitsiId);
+        if (!chain) return;
+        if (remoteSources.has(jitsiId)) return;
+        const stream = tag.srcObject;
+        if (!stream) return;
+        const source2 = audioCtx.createMediaStreamSource(stream);
+        source2.connect(chain.input);
+        tag.muted = true;
+        tag.volume = 0;
+        const audioTracks = stream.getAudioTracks?.() || [];
+        const trackLabels = audioTracks.map((t) => t.label || "audio");
+        remoteSources.set(jitsiId, { tag, stream, track: audioTracks[0] || null, source: source2, label: trackLabels.join(",") || "mic" });
+        audioRouted.add(jitsiId);
+        console.log("[latency] routed Jitsi audio \u2192", jitsiId, "tracks:", trackLabels);
+        notifyRoutingChange();
+      } catch (e30) {
+        console.warn("[latency] failed to wire audio tag for", jitsiId, e30);
+      } finally {
+        pendingCaptures.delete(jitsiId);
+      }
+    });
+  }
+  function startAudioTagsObserver() {
+    if (audioTagObserver) return;
+    audioTagObserver = new MutationObserver(() => {
+      captureJitsiAudio();
+      if (jamulusMode) applyJamulusMuteToAllTags();
+    });
+    audioTagObserver.observe(document.body, { childList: true, subtree: true });
+    setInterval(captureJitsiAudio, 1e3);
+    captureJitsiAudio();
+  }
+  function getMasterBus() {
+    return realDestination;
+  }
+  function getAudioContext2() {
+    return audioCtx;
+  }
+  function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
+    const chain = chains.get(jitsiId);
+    if (!chain || !audioCtx) return false;
+    const t = atAudioTime != null ? Math.max(atAudioTime, audioCtx.currentTime) : audioCtx.currentTime;
+    const g2 = chain.input.gain;
+    g2.cancelScheduledValues(t);
+    g2.setTargetAtTime(level, t, rampS);
+    return true;
+  }
+  function insertMasterChain(endpoints) {
+    if (!audioCtx || !realDestination || !endpoints) return false;
+    try {
+      realDestination.disconnect(audioCtx.destination);
+    } catch (e30) {
+    }
+    realDestination.connect(endpoints.input);
+    endpoints.output.connect(audioCtx.destination);
+    return true;
+  }
+  function removeMasterChain(endpoints) {
+    if (!audioCtx || !realDestination || !endpoints) return;
+    try {
+      realDestination.disconnect(endpoints.input);
+    } catch (e30) {
+    }
+    try {
+      endpoints.output.disconnect(audioCtx.destination);
+    } catch (e30) {
+    }
+    try {
+      realDestination.connect(audioCtx.destination);
+    } catch (e30) {
+    }
+  }
+  function resetChainGates() {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    for (const chain of chains.values()) {
+      chain.input.gain.cancelScheduledValues(now);
+      chain.input.gain.setTargetAtTime(1, now, 0.03);
+    }
+  }
+  async function bootAudioEngine() {
+    if (bootPromise) {
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {
+        });
+      }
+      return bootPromise;
+    }
+    bootPromise = (async () => {
+      await ensureAudioContext();
+      await loadReverbBuffer();
+      startAudioTagsObserver();
+      const local2 = getLocalParticipant();
+      if (local2) await ensureChain(local2.id);
+      return { audioCtx, realDestination };
+    })();
+    return bootPromise;
+  }
+  async function ensureMasterStrudelInput() {
+    await bootAudioEngine();
+    await loadReverbBuffer();
+    if (!masterStrudelGain) {
+      masterStrudelGain = audioCtx.createGain();
+      masterStrudelGain.channelCount = 2;
+      masterStrudelGain.channelCountMode = "explicit";
+      Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
+      masterStrudelGain.gain.value = 1;
+      strudelOut = audioCtx.createGain();
+      strudelOut.gain.value = localStrudelLevel();
+      strudelOut.connect(realDestination);
+      const distWS = audioCtx.createWaveShaper();
+      distWS.oversample = "4x";
+      distWS.curve = null;
+      masterStrudelGain.connect(distWS);
+      distWS.connect(strudelOut);
+      let convolver = null, convGain = null;
+      if (reverbBuffer) {
+        convolver = audioCtx.createConvolver();
+        convolver.buffer = reverbBuffer;
+        convGain = audioCtx.createGain();
+        convGain.gain.value = 0;
+        masterStrudelGain.connect(convolver);
+        convolver.connect(convGain);
+        convGain.connect(strudelOut);
+      }
+      const bufLen = Math.floor(audioCtx.sampleRate * 2);
+      const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+      const nd = noiseBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) nd[i] = Math.random() * 2 - 1;
+      const noiseSrc = audioCtx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = "lowpass";
+      noiseFilter.frequency.value = 2e4;
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0;
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(strudelOut);
+      noiseSrc.start();
+      strudelFx = { distWS, noiseFilter, noiseGain, convGain };
+    }
+    return { audioCtx, masterStrudelGain, realDestination };
+  }
+  async function getStrudelAudioContext() {
+    const { audioCtx: ctx2, masterStrudelGain: out, realDestination: rd } = await ensureMasterStrudelInput();
+    return { audioCtx: ctx2, destinationNode: out, realDestination: rd };
+  }
+  async function attachExternalStreamForPeer(jitsiId, stream, label2 = "external", { monitorLocally = true } = {}) {
+    if (!jitsiId || !stream) return null;
+    await bootAudioEngine();
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return null;
+    const existing = externalSources.get(jitsiId);
+    if (existing) {
+      try {
+        existing.source && existing.source.disconnect();
+      } catch (e30) {
+      }
+      try {
+        existing.stream.getTracks().forEach((t) => t.stop());
+      } catch (e30) {
+      }
+    }
+    let source2 = null;
+    if (monitorLocally) {
+      source2 = audioCtx.createMediaStreamSource(stream);
+      source2.connect(chain.input);
+    }
+    externalSources.set(jitsiId, { source: source2, stream, label: label2 });
+    audioRouted.add(jitsiId);
+    console.log("[latency] attached external stream \u2192", jitsiId, label2, monitorLocally ? "(monitored)" : "(room only)", "tracks:", stream.getAudioTracks().map((t) => t.label));
+    notifyRoutingChange();
+    return source2;
+  }
+  function detachExternalStreamForPeer(jitsiId) {
+    const ext = externalSources.get(jitsiId);
+    if (!ext) return;
+    try {
+      ext.source && ext.source.disconnect();
+    } catch (e30) {
+    }
+    try {
+      ext.stream.getTracks().forEach((t) => t.stop());
+    } catch (e30) {
+    }
+    externalSources.delete(jitsiId);
+    if (!remoteSources.has(jitsiId)) {
+      if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+    }
+  }
+  function getExternalStreamLabel(jitsiId) {
+    const ext = externalSources.get(jitsiId);
+    return ext ? ext.label : null;
+  }
+  function findLocalJitsiAudioTrack() {
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return null;
+      if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === "function") return conf.localAudioTrack;
+      if (typeof conf.getLocalAudioTrack === "function") {
+        const t = conf.getLocalAudioTrack();
+        if (t) return t;
+      }
+      if (conf._room && typeof conf._room.getLocalAudioTrack === "function") {
+        const t = conf._room.getLocalAudioTrack();
+        if (t) return t;
+      }
+      if (Array.isArray(conf._localTracks)) {
+        const t = conf._localTracks.find((t2) => t2 && (t2.isAudioTrack?.() || t2.type === "audio"));
+        if (t) return t;
+      }
+    } catch (e30) {
+    }
+    return null;
+  }
+  function findOutgoingAudioSender() {
+    try {
+      const conf = window.APP && window.APP.conference;
+      if (!conf) return null;
+      const pcWrapper = conf._room?.rtc?.peerConnections;
+      if (pcWrapper) {
+        const iter2 = pcWrapper.values && pcWrapper.values() || pcWrapper;
+        for (const tpc of iter2) {
+          const pc = tpc?.peerconnection;
+          if (pc && pc.getSenders) {
+            const sender = pc.getSenders().find((s2) => s2.track && s2.track.kind === "audio");
+            if (sender) return sender;
+          }
+        }
+      }
+    } catch (e30) {
+    }
+    return null;
+  }
+  async function propagateViaSetEffect(stream) {
+    const track = findLocalJitsiAudioTrack();
+    if (!track || typeof track.setEffect !== "function") return false;
+    const effect = new JitsiMicMixEffect(audioCtx, stream);
+    try {
+      await track.setEffect(effect);
+      jitsiMixState = { track, effect };
+      console.log("[latency] propagation: setEffect on local audio track");
+      return true;
+    } catch (e30) {
+      console.warn("[latency] setEffect failed", e30);
+      return false;
+    }
+  }
+  async function propagateViaReplaceTrack(stream) {
+    const sender = findOutgoingAudioSender();
+    if (!sender || typeof sender.replaceTrack !== "function") return false;
+    const dest = audioCtx.createMediaStreamDestination();
+    let micSource = null;
+    if (sender.track) {
+      try {
+        const micStream = new MediaStream([sender.track]);
+        micSource = audioCtx.createMediaStreamSource(micStream);
+        micSource.connect(dest);
+      } catch (e30) {
+        console.warn("[latency] replaceTrack: cannot tap mic", e30);
+      }
+    }
+    let extSource = null;
+    try {
+      extSource = audioCtx.createMediaStreamSource(stream);
+      extSource.connect(dest);
+    } catch (e30) {
+      console.warn("[latency] replaceTrack: ext source failed", e30);
+    }
+    const mixedTrack = dest.stream.getAudioTracks()[0];
+    if (!mixedTrack) return false;
+    const originalTrack = sender.track;
+    try {
+      await sender.replaceTrack(mixedTrack);
+      jitsiMixState = {
+        replacedSender: sender,
+        originalTrack,
+        mixedTrack,
+        _disposers: [
+          () => {
+            try {
+              micSource && micSource.disconnect();
+            } catch (e30) {
+            }
+          },
+          () => {
+            try {
+              extSource && extSource.disconnect();
+            } catch (e30) {
+            }
+          }
+        ]
+      };
+      console.log("[latency] propagation: replaceTrack on outgoing sender");
+      return true;
+    } catch (e30) {
+      console.warn("[latency] replaceTrack failed", e30);
+      return false;
+    }
+  }
+  async function propagateExternalStreamToRoom(stream) {
+    if (!stream) return false;
+    await bootAudioEngine();
+    if (jitsiMixState) await stopPropagatingExternalStream();
+    if (await propagateViaSetEffect(stream)) return true;
+    if (await propagateViaReplaceTrack(stream)) return true;
+    console.warn("[latency] could not propagate external stream \u2014 no compatible Jitsi audio surface");
+    return false;
+  }
+  async function stopPropagatingExternalStream() {
+    if (!jitsiMixState) return;
+    const s2 = jitsiMixState;
+    jitsiMixState = null;
+    if (s2.track && typeof s2.track.setEffect === "function") {
+      try {
+        await s2.track.setEffect(void 0);
+      } catch (e30) {
+        console.warn("[latency] setEffect undo failed", e30);
+      }
+    } else if (s2.replacedSender) {
+      try {
+        if (s2.originalTrack) await s2.replacedSender.replaceTrack(s2.originalTrack);
+      } catch (e30) {
+        console.warn("[latency] replaceTrack restore failed", e30);
+      }
+      if (Array.isArray(s2._disposers)) s2._disposers.forEach((fn) => fn());
+    }
+    console.log("[latency] external propagation stopped");
+  }
+  function isPropagatingToRoom() {
+    return !!jitsiMixState;
+  }
+  function stopStrudelPublishRetry() {
+    if (strudelPublishRetryTimer) {
+      clearInterval(strudelPublishRetryTimer);
+      strudelPublishRetryTimer = null;
+    }
+  }
+  function ensureStrudelPublishGuard() {
+    if (strudelPublishRetryTimer) return;
+    strudelPublishRetryTimer = setInterval(() => {
+      if (!aggregatorJitsiId) {
+        stopStrudelPublishRetry();
+        return;
+      }
+      if (strudelRoomEffect) {
+        const current = findLocalJitsiAudioTrack();
+        if (current === strudelRoomEffect.track) return;
+        try {
+          strudelRoomEffect.effect.stopEffect();
+        } catch (e30) {
+        }
+        strudelRoomEffect = null;
+        console.warn("[latency] published Strudel track was replaced (renegotiation?) \u2014 re-publishing");
+      }
+      publishLocalStrudelToRoom().catch((e30) => console.warn("[latency] strudel publish retry failed", e30));
+    }, 1e3);
+  }
+  async function publishLocalStrudelToRoom() {
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return false;
+    if (strudelRoomEffect) return true;
+    await ensureMasterStrudelInput();
+    if (!masterStrudelGain) return false;
+    const track = findLocalJitsiAudioTrack();
+    if (!track || typeof track.setEffect !== "function") {
+      console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track (mic muted?); will retry when the mic is enabled");
+      ensureStrudelPublishGuard();
+      return false;
+    }
+    const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
+    try {
+      await track.setEffect(effect);
+    } catch (e30) {
+      console.warn("[latency] publish Strudel setEffect failed", e30);
+      ensureStrudelPublishGuard();
+      return false;
+    }
+    strudelRoomEffect = { track, effect };
+    ensureStrudelPublishGuard();
+    console.log("[latency] publishing local Strudel to room (Strudel-only, direct node) for the aggregator to tap");
+    return true;
+  }
+  async function unpublishLocalStrudelFromRoom() {
+    stopStrudelPublishRetry();
+    if (!strudelRoomEffect) return;
+    const s2 = strudelRoomEffect;
+    strudelRoomEffect = null;
+    try {
+      if (s2.track && typeof s2.track.setEffect === "function") await s2.track.setEffect(void 0);
+    } catch (e30) {
+      console.warn("[latency] stop publishing Strudel failed", e30);
+    }
+    console.log("[latency] stopped publishing local Strudel to room");
+  }
+  async function attachNodeToChain(jitsiId, node, label2 = "relay") {
+    if (!jitsiId || !node) return;
+    await bootAudioEngine();
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return;
+    const existing = externalNodes.get(jitsiId);
+    if (existing) {
+      try {
+        existing.node.disconnect(chain.input);
+      } catch (_3) {
+      }
+    }
+    node.connect(chain.input);
+    externalNodes.set(jitsiId, { node, label: label2 });
+    audioRouted.add(jitsiId);
+    console.log("[latency] attached WebAudio node \u2192", jitsiId, label2);
+    notifyRoutingChange();
+  }
+  function getExternalNodeLabel(jitsiId) {
+    return externalNodes.get(jitsiId)?.label ?? null;
+  }
+  async function listAudioInputDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    let inputs = devices.filter((d) => d.kind === "audioinput");
+    const labelsMissing = inputs.length && inputs.every((d) => !d.label);
+    if (labelsMissing) {
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+        probe.getTracks().forEach((t) => t.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+        inputs = devices.filter((d) => d.kind === "audioinput");
+      } catch (e30) {
+      }
+    }
+    return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
+  }
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer;
+  var init_latency_instrument = __esm({
+    "src/latency-instrument.js"() {
+      init_participants();
+      init_peer_state();
+      init_aggregator_election();
+      audioCtx = null;
+      realDestination = null;
+      workletLoaded = null;
+      reverbBuffer = null;
+      masterStrudelGain = null;
+      bootPromise = null;
+      strudelFx = null;
+      strudelOut = null;
+      chains = /* @__PURE__ */ new Map();
+      remoteSources = /* @__PURE__ */ new Map();
+      pendingCaptures = /* @__PURE__ */ new Set();
+      externalSources = /* @__PURE__ */ new Map();
+      externalNodes = /* @__PURE__ */ new Map();
+      audioRouted = /* @__PURE__ */ new Set();
+      routingSubscribers = /* @__PURE__ */ new Set();
+      jamulusMode = false;
+      jamulasMutedTags = /* @__PURE__ */ new Set();
+      audioTagObserver = null;
+      aggregatorJitsiId = null;
+      subscribePeerState((event, payload) => {
+        if (event !== "peer-upsert") return;
+        if (!payload.jitsiId) return;
+        refreshAggregatorPeer();
+        const chain = chains.get(payload.jitsiId);
+        if (chain) {
+          applyParams(chain, computeEffectParams(payload.effects, { rtt: payload.rtt, jitter: payload.jitter }));
+        } else if (!payload.isLocal && !remoteSources.has(payload.jitsiId)) {
+          captureJitsiAudio();
+        }
+        if (payload.isLocal) {
+          updateStrudelFx(payload.effects, payload.rtt, payload.jitter);
+        }
+      });
+      subscribeParticipants((event, payload) => {
+        if (event === "leave" && payload && payload.id) {
+          const src2 = remoteSources.get(payload.id);
+          if (src2) {
+            try {
+              src2.source.disconnect();
+            } catch (e30) {
+            }
+            if (src2.tag) {
+              src2.tag.muted = false;
+              src2.tag.volume = 1;
+            }
+            remoteSources.delete(payload.id);
+          }
+          const ext = externalSources.get(payload.id);
+          if (ext) {
+            try {
+              ext.source && ext.source.disconnect();
+            } catch (e30) {
+            }
+            try {
+              ext.stream.getTracks().forEach((t) => t.stop());
+            } catch (e30) {
+            }
+            externalSources.delete(payload.id);
+          }
+          if (audioRouted.delete(payload.id)) notifyRoutingChange();
+          destroyChain(payload.id);
+          refreshAggregatorPeer();
+        }
+      });
+      jitsiMixState = null;
+      JitsiMicMixEffect = class {
+        constructor(audioCtx3, externalStream) {
+          this._audioCtx = audioCtx3;
+          this._externalStream = externalStream;
+          this._dest = audioCtx3.createMediaStreamDestination();
+          this._micSource = null;
+          this._extSource = null;
+        }
+        isEnabled() {
+          return true;
+        }
+        startEffect(stream) {
+          try {
+            this._micSource = this._audioCtx.createMediaStreamSource(stream);
+            this._micSource.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] mix effect: mic source failed", e30);
+          }
+          try {
+            this._extSource = this._audioCtx.createMediaStreamSource(this._externalStream);
+            this._extSource.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] mix effect: external source failed", e30);
+          }
+          return this._dest.stream;
+        }
+        stopEffect() {
+          try {
+            if (this._micSource) this._micSource.disconnect();
+          } catch (e30) {
+          }
+          try {
+            if (this._extSource) this._extSource.disconnect();
+          } catch (e30) {
+          }
+        }
+      };
+      NodeOutputEffect = class {
+        constructor(audioCtx3, node) {
+          this._node = node;
+          this._dest = audioCtx3.createMediaStreamDestination();
+        }
+        isEnabled() {
+          return true;
+        }
+        startEffect(_micStream) {
+          try {
+            this._node.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] NodeOutputEffect connect failed", e30);
+          }
+          return this._dest.stream;
+        }
+        stopEffect() {
+          try {
+            this._node.disconnect(this._dest);
+          } catch (e30) {
+          }
+        }
+      };
+      strudelRoomEffect = null;
+      strudelPublishRetryTimer = null;
+      if (typeof window !== "undefined") {
+        window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
+        window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
+        window.__trussalAudioDiag = async () => {
+          const out = {
+            aggregatorJitsiId,
+            // non-null => in aggregator mode
+            strudelOutGain: strudelOut ? strudelOut.gain.value : null,
+            // 0 => local monitor muted
+            ctxState: audioCtx ? audioCtx.state : "no-ctx",
+            sampleRate: audioCtx ? audioCtx.sampleRate : null
+          };
+          if (audioCtx && masterStrudelGain) {
+            const t0 = audioCtx.currentTime;
+            const an = audioCtx.createAnalyser();
+            an.fftSize = 2048;
+            masterStrudelGain.connect(an);
+            const buf = new Float32Array(an.fftSize);
+            let peak = 0, sumSq = 0, n2 = 0;
+            const end2 = performance.now() + 500;
+            while (performance.now() < end2) {
+              await new Promise((r2) => setTimeout(r2, 40));
+              an.getFloatTimeDomainData(buf);
+              for (const v2 of buf) {
+                const a2 = v2 < 0 ? -v2 : v2;
+                if (a2 > peak) peak = a2;
+                sumSq += v2 * v2;
+                n2++;
+              }
+            }
+            try {
+              masterStrudelGain.disconnect(an);
+            } catch (e30) {
+            }
+            out.strudelPeak = +peak.toFixed(5);
+            out.strudelRms = +Math.sqrt(sumSq / (n2 || 1)).toFixed(5);
+            out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3);
+          }
+          console.log("[trussal] audio diag", out);
+          return out;
+        };
+      }
+    }
+  });
+
   // latency-instrument/room-indices.js
   var require_room_indices = __commonJS({
     "latency-instrument/room-indices.js"(exports, module) {
@@ -50787,7 +50785,7 @@ ${err.toString()}`);
     toggleEffectShortcut: () => toggleEffectShortcut
   });
   function localSeconds() {
-    const ctx2 = getAudioContext();
+    const ctx2 = getAudioContext2();
     if (ctx2) return ctx2.currentTime;
     if (localSecondsFallbackT0 == null) localSecondsFallbackT0 = performance.now();
     return (performance.now() - localSecondsFallbackT0) / 1e3;
@@ -51022,7 +51020,7 @@ ${SHORTCUT_LINES[fn]}
   }
   function startLocalCapture(sourceNode2, localToken2) {
     if (!bufferReplayEnabled || recorder || typeof MediaRecorder === "undefined") return;
-    const ctx2 = getAudioContext();
+    const ctx2 = getAudioContext2();
     if (!ctx2 || !sourceNode2) return;
     const dest = ctx2.createMediaStreamDestination();
     sourceNode2.connect(dest);
@@ -51055,7 +51053,7 @@ ${SHORTCUT_LINES[fn]}
     });
   }
   async function replayCapturedAudio(jitsiId, take2, ev) {
-    const ctx2 = getAudioContext();
+    const ctx2 = getAudioContext2();
     if (!ctx2 || !take2 || !take2.blob) return;
     try {
       const buf = await take2.blob.arrayBuffer();
@@ -51126,7 +51124,7 @@ ${SHORTCUT_LINES[fn]}
       }
       clock.start();
       effects = new EffectsChainManager({
-        audioCtx: getAudioContext(),
+        audioCtx: getAudioContext2(),
         insert: insertMasterChain,
         remove: removeMasterChain,
         getPeers: getAllPeers,
@@ -53647,7 +53645,6 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     "#trussal-hv-toggle",
     "#trussal-hv-backdrop",
     "#trussal-kbd-panel",
-    "#trussal-kbd-btn",
     "#trussal-fg-panel",
     "#trussal-fg-cursor",
     "#trussal-welcome-overlay",
@@ -57021,10 +57018,10 @@ ${s2}${BTN_MARKER}`)
     }
   }
 
-  // src/on-screen-keyboard.js
+  // src/on-screen-keyboard-core.js
   var TrieNode = class {
     constructor() {
-      this.ch = {};
+      this.ch = /* @__PURE__ */ Object.create(null);
       this.end = false;
       this.w = 0;
     }
@@ -57042,8 +57039,9 @@ ${s2}${BTN_MARKER}`)
       n2.end = true;
       n2.w = Math.max(n2.w, weight || 1);
     }
-    predict(prefix, limit) {
-      limit = limit || 5;
+    // Every stored word that begins with `prefix`, most-weighted first, capped
+    // at `limit`. An empty prefix predicts nothing (the shell shows no row).
+    predict(prefix, limit = 5) {
       if (!prefix) return [];
       let n2 = this.root;
       for (const c2 of prefix) {
@@ -57059,8 +57057,7 @@ ${s2}${BTN_MARKER}`)
       return out.sort((a2, b) => b.w - a2.w).slice(0, limit).map((x2) => x2.s);
     }
   };
-  var TRIE = new Trie();
-  [
+  var KEYWORDS = [
     ["note", 10],
     ["n", 9],
     ["s", 10],
@@ -57141,11 +57138,685 @@ ${s2}${BTN_MARKER}`)
     ["mask", 4],
     ["modulateScale", 3],
     ["modulateRotate", 3]
-  ].forEach(([w2, wt2]) => TRIE.insert(w2, wt2));
+  ];
+  function buildKeywordTrie() {
+    const t = new Trie();
+    for (const [w2, wt2] of KEYWORDS) t.insert(w2, wt2);
+    return t;
+  }
+  var KEYWORD_TRIE = buildKeywordTrie();
+  function wordPrefixAt(text2, caret) {
+    const upto = String(text2 ?? "").slice(0, caret ?? (text2 ? text2.length : 0));
+    const m2 = upto.match(/[A-Za-z_$][A-Za-z0-9_$]*$/);
+    return m2 ? m2[0] : "";
+  }
+  function predictCompletions(text2, caret, { limit = 5, trie = KEYWORD_TRIE } = {}) {
+    const prefix = wordPrefixAt(text2, caret);
+    if (!prefix) return [];
+    return trie.predict(prefix, limit + 1).filter((w2) => w2 !== prefix).slice(0, limit);
+  }
+
+  // src/on-screen-keyboard.js
+  var KBD_STYLE_ID = "trussal-kbd-style";
+  var KBD_PANEL_ID = "trussal-kbd-panel";
+  var KBD_TOGGLE_ID = "trussal-kbd-toggle";
+  var DWELL_MS2 = 1e3;
+  var ROWS = [
+    [
+      { l: "`", k: "`", s: "~" },
+      { l: "1", k: "1", s: "!" },
+      { l: "2", k: "2", s: "@" },
+      { l: "3", k: "3", s: "#" },
+      { l: "4", k: "4", s: "$" },
+      { l: "5", k: "5", s: "%" },
+      { l: "6", k: "6", s: "^" },
+      { l: "7", k: "7", s: "&" },
+      { l: "8", k: "8", s: "*" },
+      { l: "9", k: "9", s: "(" },
+      { l: "0", k: "0", s: ")" },
+      { l: "-", k: "-", s: "_" },
+      { l: "=", k: "=", s: "+" },
+      { l: "\u232B", k: "Backspace", w: 1.5 }
+    ],
+    [
+      { l: "\u21E5", k: "Tab", w: 1.5 },
+      { l: "q", k: "q", s: "Q" },
+      { l: "w", k: "w", s: "W" },
+      { l: "e", k: "e", s: "E" },
+      { l: "r", k: "r", s: "R" },
+      { l: "t", k: "t", s: "T" },
+      { l: "y", k: "y", s: "Y" },
+      { l: "u", k: "u", s: "U" },
+      { l: "i", k: "i", s: "I" },
+      { l: "o", k: "o", s: "O" },
+      { l: "p", k: "p", s: "P" },
+      { l: "[", k: "[", s: "{" },
+      { l: "]", k: "]", s: "}" },
+      { l: "\\", k: "\\", s: "|" }
+    ],
+    [
+      { l: "\u21EA", k: "CapsLock", w: 1.5 },
+      { l: "a", k: "a", s: "A" },
+      { l: "s", k: "s", s: "S" },
+      { l: "d", k: "d", s: "D" },
+      { l: "f", k: "f", s: "F" },
+      { l: "g", k: "g", s: "G" },
+      { l: "h", k: "h", s: "H" },
+      { l: "j", k: "j", s: "J" },
+      { l: "k", k: "k", s: "K" },
+      { l: "l", k: "l", s: "L" },
+      { l: ";", k: ";", s: ":" },
+      { l: "'", k: "'", s: '"' },
+      { l: "\u21B5", k: "Enter", w: 2 }
+    ],
+    [
+      { l: "\u21E7", k: "ShiftLeft", w: 2.25 },
+      { l: "z", k: "z", s: "Z" },
+      { l: "x", k: "x", s: "X" },
+      { l: "c", k: "c", s: "C" },
+      { l: "v", k: "v", s: "V" },
+      { l: "b", k: "b", s: "B" },
+      { l: "n", k: "n", s: "N" },
+      { l: "m", k: "m", s: "M" },
+      { l: ",", k: ",", s: "<" },
+      { l: ".", k: ".", s: ">" },
+      { l: "/", k: "/", s: "?" },
+      { l: "\u21E7", k: "ShiftRight", w: 2.25 }
+    ],
+    [
+      { l: "\u2190", k: "ArrowLeft", w: 1.5 },
+      { l: "\u2191", k: "ArrowUp", w: 1.5 },
+      { l: "\u2193", k: "ArrowDown", w: 1.5 },
+      { l: "space", k: " ", w: 6.5 },
+      { l: "\u2192", k: "ArrowRight", w: 1.5 },
+      { l: "\u21B5eval", k: "Eval", w: 2 }
+    ]
+  ];
+  var _shift = false;
+  var _caps = false;
+  var _visible = false;
+  var _collapsed = false;
   var _lastTA = null;
+  var _dwellEl = null;
+  var _dwellStart = 0;
+  var _dwellFired = false;
+  var _rafId3 = null;
+  var _activityBound = false;
   document.addEventListener("focusin", (e30) => {
-    if (e30.target?.classList?.contains("ts-code")) _lastTA = e30.target;
+    if (e30.target?.classList?.contains("ts-code")) {
+      _lastTA = e30.target;
+      _updatePredictions();
+    }
   });
+  function _esc(s2) {
+    return String(s2).replace(
+      /[&<>"']/g,
+      (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
+    );
+  }
+  function _getTA() {
+    if (_lastTA && _lastTA.isConnected) return _lastTA;
+    _lastTA = null;
+    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)");
+  }
+  function _updatePredictions() {
+    const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
+    if (!row || !_visible) return;
+    const ta = _getTA();
+    const text2 = ta ? ta.value : "";
+    const caret = ta ? ta.selectionStart ?? text2.length : 0;
+    const preds = predictCompletions(text2, caret);
+    if (!preds.length) {
+      if (row.childElementCount) row.innerHTML = "";
+      return;
+    }
+    row.innerHTML = preds.map(
+      (p) => `<button class="ts-kbd-pred-btn" data-completion="${_esc(p)}">${_esc(p)}</button>`
+    ).join("");
+    row.querySelectorAll(".ts-kbd-pred-btn").forEach((btn) => {
+      btn.addEventListener("mousedown", (e30) => e30.preventDefault());
+      btn.addEventListener("click", () => _insertCompletion(btn.dataset.completion));
+    });
+  }
+  function _insertCompletion(word2) {
+    const ta = _getTA();
+    if (!ta) return;
+    const pos = ta.selectionStart ?? ta.value.length;
+    const prefix = wordPrefixAt(ta.value, pos);
+    const start = pos - prefix.length;
+    ta.value = ta.value.slice(0, start) + word2 + ta.value.slice(pos);
+    ta.setSelectionRange(start + word2.length, start + word2.length);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    _updatePredictions();
+  }
+  function _bindEditorActivity() {
+    if (_activityBound) return;
+    _activityBound = true;
+    const refresh = (e30) => {
+      if (!_visible) return;
+      const t = e30.target;
+      if (t?.classList?.contains("ts-code")) {
+        _lastTA = t;
+        _updatePredictions();
+      }
+    };
+    document.addEventListener("input", refresh, true);
+    document.addEventListener("keyup", refresh, true);
+    document.addEventListener("selectionchange", () => {
+      if (!_visible) return;
+      const a2 = document.activeElement;
+      if (a2?.classList?.contains("ts-code")) {
+        _lastTA = a2;
+        _updatePredictions();
+      }
+    });
+  }
+  function _renderModState() {
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel) return;
+    const upper = _shift || _caps;
+    panel.querySelectorAll(".ts-kbd-key[data-lower]").forEach((el) => {
+      el.querySelector(".ts-kbd-label").textContent = upper ? el.dataset.shiftedLabel : el.dataset.lower;
+    });
+    panel.querySelectorAll('.ts-kbd-key[data-k="ShiftLeft"],.ts-kbd-key[data-k="ShiftRight"]').forEach((el) => {
+      el.classList.toggle("ts-kbd-mod-on", _shift);
+    });
+    panel.querySelectorAll('.ts-kbd-key[data-k="CapsLock"]').forEach((el) => {
+      el.classList.toggle("ts-kbd-mod-on", _caps);
+    });
+  }
+  function _activateKeyDef(kd) {
+    const upper = _shift || _caps;
+    _typeKey(upper && kd.s ? kd.s : kd.k);
+  }
+  function _typeKey(key) {
+    if (key === "CapsLock") {
+      _caps = !_caps;
+      _renderModState();
+      return;
+    }
+    if (key === "ShiftLeft" || key === "ShiftRight") {
+      _shift = !_shift;
+      _renderModState();
+      return;
+    }
+    if (key === "Eval") {
+      const ta2 = _getTA();
+      document.dispatchEvent(new CustomEvent("trussal-kbd-eval", {
+        detail: {
+          code: ta2 ? ta2.value : "",
+          editor: ta2 && ta2.classList.contains("nc-code") ? "netcycles" : "strudel"
+        }
+      }));
+      return;
+    }
+    const ta = _getTA();
+    if (!ta) return;
+    const s2 = ta.selectionStart ?? ta.value.length;
+    const e30 = ta.selectionEnd ?? ta.value.length;
+    const val2 = ta.value;
+    if (key === "Backspace") {
+      if (s2 !== e30) {
+        ta.value = val2.slice(0, s2) + val2.slice(e30);
+        ta.setSelectionRange(s2, s2);
+      } else if (s2 > 0) {
+        ta.value = val2.slice(0, s2 - 1) + val2.slice(s2);
+        ta.setSelectionRange(s2 - 1, s2 - 1);
+      }
+    } else if (key === "Enter") {
+      ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
+      ta.setSelectionRange(s2 + 1, s2 + 1);
+    } else if (key === "Tab") {
+      ta.value = val2.slice(0, s2) + "  " + val2.slice(e30);
+      ta.setSelectionRange(s2 + 2, s2 + 2);
+    } else if (key === "ArrowLeft") {
+      const p = Math.max(0, s2 - 1);
+      ta.setSelectionRange(p, p);
+    } else if (key === "ArrowRight") {
+      const p = Math.min(val2.length, e30 + 1);
+      ta.setSelectionRange(p, p);
+    } else if (key === "ArrowUp" || key === "ArrowDown") {
+      _moveLine(ta, key === "ArrowUp" ? -1 : 1);
+    } else if (key.length === 1) {
+      ta.value = val2.slice(0, s2) + key + val2.slice(e30);
+      ta.setSelectionRange(s2 + 1, s2 + 1);
+      if (_shift) {
+        _shift = false;
+        _renderModState();
+      }
+    }
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    _updatePredictions();
+  }
+  function _moveLine(ta, dir) {
+    const val2 = ta.value;
+    const pos = ta.selectionStart ?? val2.length;
+    const lineStart = val2.lastIndexOf("\n", pos - 1) + 1;
+    const col = pos - lineStart;
+    if (dir === -1) {
+      if (lineStart === 0) return;
+      const prevEnd = lineStart - 1;
+      const prevStart = val2.lastIndexOf("\n", prevEnd - 1) + 1;
+      ta.setSelectionRange(
+        prevStart + Math.min(col, prevEnd - prevStart),
+        prevStart + Math.min(col, prevEnd - prevStart)
+      );
+    } else {
+      const lineEnd = val2.indexOf("\n", pos);
+      if (lineEnd === -1) return;
+      const nextStart = lineEnd + 1;
+      const nextEnd = val2.indexOf("\n", nextStart);
+      const nextLen = (nextEnd === -1 ? val2.length : nextEnd) - nextStart;
+      ta.setSelectionRange(
+        nextStart + Math.min(col, nextLen),
+        nextStart + Math.min(col, nextLen)
+      );
+    }
+  }
+  function _setCollapsed(val2) {
+    _collapsed = val2;
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel) return;
+    const body = panel.querySelector(".ts-kbd-body");
+    const btn = panel.querySelector(".ts-kbd-collapse-btn");
+    if (body) body.style.display = _collapsed ? "none" : "flex";
+    if (btn) btn.textContent = _collapsed ? "\u25B2" : "\u25BC";
+  }
+  function _makeDraggable(panel, handle) {
+    handle.style.cursor = "grab";
+    handle.addEventListener("mousedown", (e30) => {
+      if (e30.target.closest("button")) return;
+      e30.preventDefault();
+      handle.style.cursor = "grabbing";
+      const rect = panel.getBoundingClientRect();
+      const startX = e30.clientX;
+      const startY = e30.clientY;
+      panel.style.bottom = "";
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      const origL = rect.left;
+      const origT = rect.top;
+      function onMove(ev) {
+        panel.style.left = `${origL + ev.clientX - startX}px`;
+        panel.style.top = `${origT + ev.clientY - startY}px`;
+      }
+      function onUp() {
+        handle.style.cursor = "grab";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      }
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+  }
+  function _injectStyles3() {
+    if (document.getElementById(KBD_STYLE_ID)) return;
+    const s2 = document.createElement("style");
+    s2.id = KBD_STYLE_ID;
+    s2.textContent = `
+    #${KBD_PANEL_ID} {
+      position: fixed;
+      bottom: 60px; left: 10px;
+      width: min(840px, calc(100vw - 20px));
+      z-index: 1000001;
+      background: rgba(5, 10, 8, 0.97);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      display: none;
+      flex-direction: column;
+      user-select: none;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    .ts-kbd-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      cursor: grab;
+    }
+    .ts-kbd-header:active { cursor: grabbing; }
+    .ts-kbd-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #7aa68a;
+      letter-spacing: 0.5px;
+      pointer-events: none;
+    }
+    .ts-kbd-collapse-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #7aa68a;
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 10px;
+      line-height: 1.5;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s;
+    }
+    .ts-kbd-collapse-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    .ts-kbd-collapse-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-kbd-collapse-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
+    .ts-kbd-body {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 8px;
+    }
+    .ts-kbd-pred-row {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      min-height: 24px;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+    .ts-kbd-pred-btn {
+      flex: 0 0 auto;
+      padding: 1px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(31,244,102,0.35);
+      background: rgba(31,244,102,0.08);
+      color: #1ff466;
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.08s;
+    }
+    .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
+      background: rgba(31,244,102,0.2);
+    }
+    .ts-kbd-pred-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.4);
+      pointer-events: none;
+    }
+    .ts-kbd-row {
+      display: flex;
+      gap: 3px;
+    }
+    .ts-kbd-key {
+      min-height: 38px;
+      padding: 0 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: #d6f5e2;
+      font-size: 12px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.05s;
+    }
+    .ts-kbd-key:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.22);
+    }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
+    .ts-kbd-key.ts-kbd-mod-on {
+      background: rgba(31,244,102,0.15);
+      border-color: rgba(31,244,102,0.4);
+      color: #1ff466;
+    }
+    /* No !important: default flash colour, not a forced override \u2014 #trussal-kbd-panel
+       is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
+       through the cascade (its wrapping id selector already out-specifies this). */
+    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3); }
+    .ts-kbd-key[data-k="Eval"] {
+      background: rgba(31,244,102,0.1);
+      border-color: rgba(31,244,102,0.35);
+      color: #1ff466;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .ts-kbd-key[data-k="Eval"]:hover { background: rgba(31,244,102,0.22); }
+    .ts-kbd-key::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: rgba(255,204,0,0.3);
+      pointer-events: none;
+    }
+    .ts-kbd-label { pointer-events: none; font-size: 11px; }
+
+    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the \u2328 button
+       sits flush beside the Face button whether or not the facial-gesture
+       panel (which injects the shared .ts-dwell-btn base rules) has ever
+       been opened. */
+    #${KBD_TOGGLE_ID} {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #7aa68a;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      line-height: 1; display: flex; align-items: center; gap: 4px;
+      font-size: 11px; font-family: sans-serif; white-space: nowrap;
+      position: relative; overflow: hidden;
+    }
+    #${KBD_TOGGLE_ID}:hover { color: #d6f5e2; background: rgba(255,255,255,0.1); }
+    #${KBD_TOGGLE_ID}.on    { color: #1ff466; background: rgba(31,244,102,0.12); border-color: rgba(31,244,102,0.3); }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    #${KBD_TOGGLE_ID}::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell-prog, 0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
+  `;
+    document.head.appendChild(s2);
+  }
+  function _buildPanel() {
+    const panel = document.createElement("div");
+    panel.id = KBD_PANEL_ID;
+    const header = document.createElement("div");
+    header.className = "ts-kbd-header";
+    const title = document.createElement("span");
+    title.className = "ts-kbd-title";
+    title.textContent = "\u2328 keyboard";
+    const collapseBtn = document.createElement("button");
+    collapseBtn.className = "ts-kbd-collapse-btn";
+    collapseBtn.type = "button";
+    collapseBtn.title = "Collapse / expand keyboard";
+    collapseBtn.textContent = "\u25BC";
+    collapseBtn.addEventListener("mousedown", (e30) => e30.preventDefault());
+    collapseBtn.addEventListener("click", () => _setCollapsed(!_collapsed));
+    header.appendChild(title);
+    header.appendChild(collapseBtn);
+    panel.appendChild(header);
+    const body = document.createElement("div");
+    body.className = "ts-kbd-body";
+    const predRow = document.createElement("div");
+    predRow.className = "ts-kbd-pred-row";
+    body.appendChild(predRow);
+    ROWS.forEach((row, ri2) => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "ts-kbd-row";
+      row.forEach((kd, ki2) => {
+        const btn = document.createElement("button");
+        btn.className = "ts-kbd-key";
+        btn.type = "button";
+        btn.dataset.k = kd.k;
+        btn.dataset.row = ri2;
+        btn.dataset.key = ki2;
+        btn.style.flex = String(kd.w || 1);
+        if (kd.s) {
+          btn.dataset.lower = kd.l;
+          btn.dataset.shiftedLabel = kd.s;
+        }
+        const label2 = document.createElement("span");
+        label2.className = "ts-kbd-label";
+        label2.textContent = kd.l;
+        btn.appendChild(label2);
+        btn.addEventListener("mousedown", (e30) => e30.preventDefault());
+        btn.addEventListener("click", () => {
+          _activateKeyDef(kd);
+          _flash2(btn);
+        });
+        rowEl.appendChild(btn);
+      });
+      body.appendChild(rowEl);
+    });
+    panel.appendChild(body);
+    document.body.appendChild(panel);
+    _makeDraggable(panel, header);
+  }
+  function _flash2(el) {
+    el.classList.add("ts-kbd-flash");
+    setTimeout(() => el.classList.remove("ts-kbd-flash"), 150);
+  }
+  function _ensureDOM2() {
+    if (document.getElementById(KBD_PANEL_ID)) return;
+    _injectStyles3();
+    _buildPanel();
+    _bindEditorActivity();
+  }
+  function _startDwellLoop() {
+    if (_rafId3) return;
+    _rafId3 = requestAnimationFrame(_dwellTick);
+  }
+  function _stopDwellLoop() {
+    if (_rafId3) {
+      cancelAnimationFrame(_rafId3);
+      _rafId3 = null;
+    }
+    if (_dwellEl) {
+      _dwellEl.style.setProperty("--dwell", "0");
+      _dwellEl.classList.remove("ts-kbd-dwelling");
+      _dwellEl = null;
+    }
+  }
+  function _dwellTick() {
+    if (!_visible) {
+      _rafId3 = null;
+      return;
+    }
+    _rafId3 = requestAnimationFrame(_dwellTick);
+    const ctx2 = window.faceCtx;
+    if (!ctx2 || ctx2.cursorX === window.innerWidth / 2 && ctx2.cursorY === window.innerHeight / 2) return;
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (!panel || panel.style.display === "none") return;
+    const cx = ctx2.cursorX;
+    const cy = ctx2.cursorY;
+    let hoveredEl = null;
+    for (const el of panel.querySelectorAll(".ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn")) {
+      const r2 = el.getBoundingClientRect();
+      if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
+        hoveredEl = el;
+        break;
+      }
+    }
+    const now = performance.now();
+    if (hoveredEl !== _dwellEl) {
+      if (_dwellEl) {
+        _dwellEl.style.setProperty("--dwell", "0");
+        _dwellEl.classList.remove("ts-kbd-dwelling");
+      }
+      _dwellEl = hoveredEl;
+      _dwellStart = hoveredEl ? now : 0;
+      _dwellFired = false;
+    }
+    if (hoveredEl && !_dwellFired) {
+      const p = Math.min((now - _dwellStart) / DWELL_MS2, 1);
+      hoveredEl.style.setProperty("--dwell", p.toFixed(3));
+      hoveredEl.classList.toggle("ts-kbd-dwelling", p > 0.05);
+      if (p >= 1) {
+        _dwellFired = true;
+        hoveredEl.style.setProperty("--dwell", "0");
+        hoveredEl.classList.remove("ts-kbd-dwelling");
+        _activateDwelled(hoveredEl);
+      }
+    }
+  }
+  function _activateDwelled(el) {
+    _flash2(el);
+    if (el.classList.contains("ts-kbd-collapse-btn")) {
+      _setCollapsed(!_collapsed);
+      return;
+    }
+    if (el.classList.contains("ts-kbd-pred-btn")) {
+      _insertCompletion(el.dataset.completion);
+      return;
+    }
+    const ri2 = parseInt(el.dataset.row);
+    const ki2 = parseInt(el.dataset.key);
+    if (!isNaN(ri2) && !isNaN(ki2)) _activateKeyDef(ROWS[ri2][ki2]);
+  }
+  function _inMeeting() {
+    if (document.getElementById("trussal-welcome-overlay")) return false;
+    if (document.querySelector('.prejoin-screen,.premeeting-screen,[class*="premeeting"],[class*="prejoin"]')) return false;
+    const lv = document.getElementById("largeVideoContainer");
+    if (!lv) return false;
+    const r2 = lv.getBoundingClientRect();
+    return r2.width > 0 && r2.height > 0;
+  }
+  function _showPanel(on) {
+    _visible = on;
+    const panel = document.getElementById(KBD_PANEL_ID);
+    if (panel) panel.style.display = on ? "flex" : "none";
+    const toggle = document.getElementById(KBD_TOGGLE_ID);
+    if (toggle) toggle.classList.toggle("on", on);
+    if (on) {
+      _startDwellLoop();
+      _updatePredictions();
+    } else {
+      _stopDwellLoop();
+    }
+  }
+  function injectKeyboardToggle(headerEl) {
+    if (!headerEl || document.getElementById(KBD_TOGGLE_ID)) return;
+    _injectStyles3();
+    const btn = document.createElement("button");
+    btn.id = KBD_TOGGLE_ID;
+    btn.type = "button";
+    btn.className = "ts-dwell-btn";
+    btn.title = "Toggle the on-screen keyboard";
+    btn.textContent = "\u2328 Keys";
+    btn.addEventListener("mousedown", (e30) => e30.preventDefault());
+    btn.addEventListener("click", () => {
+      try {
+        _ensureDOM2();
+      } catch (e30) {
+        console.error("[on-screen-keyboard] panel init failed", e30);
+        return;
+      }
+      _showPanel(!_visible);
+    });
+    const closeBtn = headerEl.querySelector(".ts-close");
+    if (closeBtn) headerEl.insertBefore(btn, closeBtn);
+    else headerEl.appendChild(btn);
+  }
+  function tickKbdUi() {
+    if (!_visible) return;
+    const overlay = document.getElementById("trussal-studio-overlay");
+    const studioOpen = !!overlay && overlay.style.display !== "none";
+    if (!studioOpen || !_inMeeting()) _showPanel(false);
+  }
 
   // src/editor-undo.js
   var HISTORY_LIMIT = 200;
@@ -57967,7 +58638,7 @@ ${s2}${BTN_MARKER}`)
     };
   }
   function ensureCompressor() {
-    const ctx2 = getAudioContext();
+    const ctx2 = getAudioContext2();
     const bus2 = getMasterBus();
     if (!ctx2 || !bus2 || compressor2) return;
     compressor2 = ctx2.createDynamicsCompressor();
@@ -57983,7 +58654,7 @@ ${s2}${BTN_MARKER}`)
   }
   function tick2() {
     const load2 = localLoad();
-    const ctx2 = getAudioContext();
+    const ctx2 = getAudioContext2();
     ensureCompressor();
     const comp = compressionParams(load2);
     if (compressor2 && ctx2) {
@@ -58769,6 +59440,7 @@ ${s2}${BTN_MARKER}`)
     }
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
+      tickKbdUi();
     });
     const studioCollapseBtn = overlay.querySelector("#trussal-studio-collapse");
     if (studioCollapseBtn) {
@@ -58783,6 +59455,7 @@ ${s2}${BTN_MARKER}`)
       });
     }
     injectFacialGestureToggle(overlay.querySelector(".ts-header"));
+    injectKeyboardToggle(overlay.querySelector(".ts-header"));
     refreshSampleBanks();
     const localPeer2 = getLocalPeer();
     if (localPeer2.jitsiId && !localPeer2.pattern) {
@@ -58814,6 +59487,7 @@ ${s2}${BTN_MARKER}`)
       if (!overlay) return;
       overlay.style.display = overlay.style.display === "none" ? "flex" : "none";
       if (overlay.style.display === "flex") renderAll();
+      else tickKbdUi();
     });
     document.body.appendChild(btn);
     return btn;
@@ -58825,6 +59499,7 @@ ${s2}${BTN_MARKER}`)
       const overlay = document.getElementById(OVERLAY_ID);
       if (btn2) btn2.style.display = "none";
       if (overlay) overlay.style.display = "none";
+      tickKbdUi();
       initedRoom = null;
       return;
     }
@@ -58838,8 +59513,9 @@ ${s2}${BTN_MARKER}`)
     }
     const btn = ensureToggle();
     if (btn) btn.style.display = "block";
+    tickKbdUi();
     startNetStatsPolling(sendLocalNetStats);
-    startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext);
+    startPipelineLatencyMeasurement(sendLocalNetStats, getAudioContext2);
     startRoomHealth();
     bootAudioEngine().catch((e30) => console.warn("[studio] audio boot deferred", e30));
   }

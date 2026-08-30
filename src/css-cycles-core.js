@@ -138,7 +138,6 @@ export const TRUSSAL_ROOTS = [
   '#trussal-hv-toggle',
   '#trussal-hv-backdrop',
   '#trussal-kbd-panel',
-  '#trussal-kbd-btn',
   '#trussal-fg-panel',
   '#trussal-fg-cursor',
   '#trussal-welcome-overlay',

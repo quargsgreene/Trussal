@@ -20,7 +20,6 @@ module. Each file's header lists what it needs if it is ever revived.
 
 | Original | Symbols | Reason |
 |---|---|---|
-| `src/on-screen-keyboard.js` | **whole file** | Its only export `tickKbdUi` was imported by `studio.js`, but the one call (`// tickKbdUi();`) is commented out — the panel was never built. `trussal-kbd-eval` (the event it fired) is still produced by `jitsi-bot.js` and handled in `studio.js`. |
 | `src/hydra-video.js` (panel UI) | `injectHydraVideoToggle`, `setMode`, `_autoStartVideo`, `_clearAllEffects`, `_stream`, `_panelOpen` | `injectHydraVideoToggle`'s call in `studio.js` is commented out. `setMode` had no caller. `getMode` / `setVideoStream` / the `_ensurePanel`+`_injectStyles`+`_updatePanelStatus` panel builders stayed — `strudel.js` uses `getMode`, and `facial-gesture.js` calls `setVideoStream` (which lazily builds the panel). |
 | `src/jamulus.js` | `addJamulusWelcomePanel`, `startJamulusWelcomePanel`, `startJamulusBannerPolling`, `attachJamulusBanner`, `renderJamulusWelcomePanelAndBanner`, `ensureRelayWorklet`, `connectJamulusRelay`, `disconnectJamulusRelay`, `isRelayConnected`, `_relayWs`, `_relayWorklet`, `_relayWorkletLoaded` | Jamulus welcome-panel + in-page relay client. The panel call in `index.js` and the relay UI handler in `studio.js` are both commented out. `getRoomNameFromUrl` and `JAMULUS_ROOM_MAP` stayed — they are still used. |
 | `src/latency-instrument.js` | `getRoutedPeerIds`, `isAudioRoutedFor`, `isJamulusMode` | No callers. `studio.js` imported `isAudioRoutedFor`/`isJamulusMode` but never called them. |
@@ -37,6 +36,14 @@ module. Each file's header lists what it needs if it is ever revived.
 | `src/audio-net/observability/NetStats.js` | `stopNetStatsPolling` | Teardown counterpart to `startNetStatsPolling`; never called. |
 | `src/audio-net/observability/PipelineLatency.js` | `stopPipelineLatencyMeasurement` | Teardown counterpart to `startPipelineLatencyMeasurement`; never called. |
 | `bots/src/shared/config.js` | `STRATIFICATION_ROLES` | Frozen enum with no importers; the role flags actually used are the lowercase keys of `defaultConfig.roles`. |
+
+## Revived
+
+- **`src/on-screen-keyboard.js`** — brought back to `src/`. The toggle now
+  lives in the Trussal Studio header (`injectKeyboardToggle`, beside the Face
+  button) instead of a page-corner button, and `studio.js`'s `tickUi()` calls
+  `tickKbdUi()` again. Word autocomplete moved to a pure `on-screen-keyboard-core.js`
+  (trie + prefix + prediction) with tests.
 
 ## Deliberately NOT moved
 

@@ -1,66 +1,22 @@
-// ARCHIVED 2026-08-28 — moved (whole file) out of src/ as dead code.
-//
-// The module's single export, `tickKbdUi()`, was imported by src/studio.js but
-// its one call site there (`// tickKbdUi();` in tickUi) was commented out, so
-// the panel was never built and none of this ran. `trussal-kbd-eval` — the
-// event this keyboard used to fire — is still produced by jitsi-bot.js and
-// handled in studio.js, so that path is unaffected. The `#trussal-kbd-panel` /
-// `#trussal-kbd-btn` entries in css-cycles-core.js's selector lists are now
-// inert but were left in place (defensive guardrail list).
-//
-// To revive: move this file back to src/, re-add
-//   import { tickKbdUi } from './on-screen-keyboard.js';
-// to src/studio.js and un-comment the `tickKbdUi();` call in tickUi().
-
 // on-screen-keyboard.js
-// On-screen QWERTY keyboard with head-cursor dwell, drag, collapse, and trie autocomplete.
+// On-screen QWERTY keyboard with head-cursor dwell, drag, collapse, and word
+// autocomplete ("autopredict"). It types into whichever Trussal Studio code
+// editor was last focused — the personal Strudel textarea or the shared Net
+// Cycles editor — and its Eval key routes the same way studio.js's own eval
+// does.
+//
+// The toggle lives IN the Studio header (injectKeyboardToggle), next to the
+// Face button, rather than as a free-floating button pinned to a page corner.
+// The panel itself stays a body-level fixed element so it can be dragged
+// anywhere and span the full width; tickKbdUi() retracts it when Studio is
+// closed or the meeting ends.
 
-const KBD_STYLE_ID = 'trussal-kbd-style';
-const KBD_PANEL_ID = 'trussal-kbd-panel';
-const KBD_BTN_ID   = 'trussal-kbd-btn';
-const DWELL_MS     = 1000;
+import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 
-// ── Trie ───────────────────────────────────────────────────────────────────────
-class TrieNode { constructor() { this.ch = {}; this.end = false; this.w = 0; } }
-class Trie {
-  constructor() { this.root = new TrieNode(); }
-  insert(word, weight) {
-    let n = this.root;
-    for (const c of word) { if (!n.ch[c]) n.ch[c] = new TrieNode(); n = n.ch[c]; }
-    n.end = true; n.w = Math.max(n.w, weight || 1);
-  }
-  predict(prefix, limit) {
-    limit = limit || 5;
-    if (!prefix) return [];
-    let n = this.root;
-    for (const c of prefix) { if (!n.ch[c]) return []; n = n.ch[c]; }
-    const out = [];
-    (function dfs(node, s) {
-      if (out.length >= limit * 4) return;
-      if (node.end) out.push({ s, w: node.w });
-      for (const c in node.ch) dfs(node.ch[c], s + c);
-    })(n, prefix);
-    return out.sort((a, b) => b.w - a.w).slice(0, limit).map(x => x.s);
-  }
-}
-
-const TRIE = new Trie();
-[
-  ['note',10],['n',9],['s',10],['sound',7],['stack',9],['cat',7],['seq',6],
-  ['chord',7],['scale',6],['arp',5],['gain',9],['cutoff',7],['resonance',5],
-  ['pan',6],['room',6],['size',5],['delay',7],['orbit',5],['slow',8],['fast',8],
-  ['rev',7],['jux',6],['add',7],['transpose',6],['speed',5],['every',8],
-  ['sometimes',7],['often',6],['rarely',5],['degradeBy',5],['struct',5],
-  ['euclid',6],['crush',4],['shape',5],['coarse',4],['vowel',5],['hcutoff',4],
-  ['begin',5],['end',5],['loop',5],['pitch',5],['silence',5],['rest',5],['live',6],
-  ['bd',8],['sd',8],['hh',9],['cp',7],['bass',7],['piano',6],['violin',5],
-  ['tabla',4],['crow',4],['jazz',4],['psr',3],
-  ['osc',8],['noise',7],['voronoi',6],['solid',6],['gradient',5],
-  ['out',8],['color',7],['colorama',5],['rotate',6],['pixelate',5],
-  ['kaleid',5],['invert',6],['contrast',5],['brightness',5],['saturate',5],
-  ['hue',5],['modulate',6],['blend',6],['diff',5],['mult',5],['luma',5],
-  ['thresh',4],['mask',4],['modulateScale',3],['modulateRotate',3],
-].forEach(([w, wt]) => TRIE.insert(w, wt));
+const KBD_STYLE_ID  = 'trussal-kbd-style';
+const KBD_PANEL_ID  = 'trussal-kbd-panel';
+const KBD_TOGGLE_ID = 'trussal-kbd-toggle';
+const DWELL_MS      = 1000;
 
 // ── Layout (total = 14.5 flex-units per row) ────────────────────────────────────
 const ROWS = [
@@ -100,18 +56,25 @@ const ROWS = [
 ];
 
 // ── State ──────────────────────────────────────────────────────────────────────
-let _shift      = false;
-let _caps       = false;
-let _visible    = false;
-let _collapsed  = false;
-let _lastTA     = null;
-let _dwellEl    = null;
-let _dwellStart = 0;
-let _dwellFired = false;
-let _rafId      = null;
+let _shift        = false;
+let _caps         = false;
+let _visible      = false;
+let _collapsed    = false;
+let _lastTA       = null;
+let _dwellEl      = null;
+let _dwellStart   = 0;
+let _dwellFired   = false;
+let _rafId        = null;
+let _activityBound = false;
 
+// Latch the editor the user last touched so on-screen keys and completions
+// target it. Detached nodes (a peer switch rebuilds the detail panel) are
+// rejected in _getTA(), so this can safely hold whatever was focused last.
 document.addEventListener('focusin', (e) => {
-  if (e.target?.classList?.contains('ts-code')) _lastTA = e.target;
+  if (e.target?.classList?.contains('ts-code')) {
+    _lastTA = e.target;
+    _updatePredictions();
+  }
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -119,28 +82,28 @@ function _esc(s) {
   return String(s).replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
+
 function _getTA() {
-  // :not(.nc-code) — the shared Net Cycles textarea is also a .ts-code and
-  // comes FIRST in the overlay, so before anything has been focused a bare
-  // selector puts every keystroke into the room's program rather than into
-  // this user's own editor.
-  return _lastTA || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)');
-}
-function _wordPrefix() {
-  const ta = _getTA();
-  if (!ta) return '';
-  const m = ta.value.slice(0, ta.selectionStart ?? ta.value.length)
-    .match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
-  return m ? m[0] : '';
+  // A stale _lastTA is the classic autopredict failure: switching the selected
+  // participant rebuilds the detail panel, so the textarea it pointed at is
+  // now detached — reads see empty/old text and writes land nowhere. Drop it
+  // the moment it leaves the document and fall back to the live personal
+  // editor. :not(.nc-code) — the shared Net Cycles textarea is also a .ts-code.
+  if (_lastTA && _lastTA.isConnected) return _lastTA;
+  _lastTA = null;
+  return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)')
+      || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)');
 }
 
 // ── Predictions ────────────────────────────────────────────────────────────────
 function _updatePredictions() {
   const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
-  if (!row) return;
-  const prefix = _wordPrefix();
-  const preds  = prefix.length >= 1 ? TRIE.predict(prefix) : [];
-  if (!preds.length) { row.innerHTML = ''; return; }
+  if (!row || !_visible) return;
+  const ta    = _getTA();
+  const text  = ta ? ta.value : '';
+  const caret = ta ? (ta.selectionStart ?? text.length) : 0;
+  const preds = predictCompletions(text, caret);
+  if (!preds.length) { if (row.childElementCount) row.innerHTML = ''; return; }
   row.innerHTML = preds.map(p =>
     `<button class="ts-kbd-pred-btn" data-completion="${_esc(p)}">${_esc(p)}</button>`
   ).join('');
@@ -154,13 +117,33 @@ function _insertCompletion(word) {
   const ta = _getTA();
   if (!ta) return;
   const pos    = ta.selectionStart ?? ta.value.length;
-  const before = ta.value.slice(0, pos);
-  const m      = before.match(/[a-zA-Z_$][a-zA-Z0-9_$]*$/);
-  const start  = pos - (m ? m[0].length : 0);
+  const prefix = wordPrefixAt(ta.value, pos);
+  const start  = pos - prefix.length;
   ta.value = ta.value.slice(0, start) + word + ta.value.slice(pos);
   ta.setSelectionRange(start + word.length, start + word.length);
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   _updatePredictions();
+}
+
+// Refresh predictions on ordinary typing too — physically at the keyboard, an
+// arrow key moving the caret, or a click repositioning it. Without this the
+// row only ever updated when a key was pressed ON the on-screen keyboard,
+// which read as "autopredict isn't happening" for anyone typing normally.
+function _bindEditorActivity() {
+  if (_activityBound) return;
+  _activityBound = true;
+  const refresh = (e) => {
+    if (!_visible) return;
+    const t = e.target;
+    if (t?.classList?.contains('ts-code')) { _lastTA = t; _updatePredictions(); }
+  };
+  document.addEventListener('input', refresh, true);
+  document.addEventListener('keyup', refresh, true);
+  document.addEventListener('selectionchange', () => {
+    if (!_visible) return;
+    const a = document.activeElement;
+    if (a?.classList?.contains('ts-code')) { _lastTA = a; _updatePredictions(); }
+  });
 }
 
 // ── Modifier display ────────────────────────────────────────────────────────────
@@ -458,24 +441,32 @@ function _injectStyles() {
       pointer-events: none;
     }
     .ts-kbd-label { pointer-events: none; font-size: 11px; }
-    #${KBD_BTN_ID} {
-      position: fixed;
-      bottom: 80px; left: 20px;
-      z-index: 9999;
-      padding: 0.45rem 0.85rem;
-      border-radius: 999px;
-      border: 1px solid rgba(31,244,102,0.4);
-      background: rgba(31,244,102,0.12);
-      color: #1ff466;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-      display: none;
-      font-family: sans-serif;
-      transition: background 0.1s;
+
+    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the ⌨ button
+       sits flush beside the Face button whether or not the facial-gesture
+       panel (which injects the shared .ts-dwell-btn base rules) has ever
+       been opened. */
+    #${KBD_TOGGLE_ID} {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #7aa68a;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      line-height: 1; display: flex; align-items: center; gap: 4px;
+      font-size: 11px; font-family: sans-serif; white-space: nowrap;
+      position: relative; overflow: hidden;
     }
-    #${KBD_BTN_ID}:hover { background: rgba(31,244,102,0.22); }
-    #${KBD_BTN_ID}.on    { background: rgba(31,244,102,0.28); }
+    #${KBD_TOGGLE_ID}:hover { color: #d6f5e2; background: rgba(255,255,255,0.1); }
+    #${KBD_TOGGLE_ID}.on    { color: #1ff466; background: rgba(31,244,102,0.12); border-color: rgba(31,244,102,0.3); }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    #${KBD_TOGGLE_ID}::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell-prog, 0) * 100%);
+      background: rgba(255,204,0,0.35);
+      pointer-events: none;
+    }
   `;
   document.head.appendChild(s);
 }
@@ -552,29 +543,7 @@ function _ensureDOM() {
   if (document.getElementById(KBD_PANEL_ID)) return;
   _injectStyles();
   _buildPanel();
-}
-
-function _ensureToggleBtn() {
-  let btn = document.getElementById(KBD_BTN_ID);
-  if (btn) return btn;
-  if (!document.body) return null;
-  _injectStyles();
-  btn = document.createElement('button');
-  btn.id    = KBD_BTN_ID;
-  btn.type  = 'button';
-  btn.title = 'Toggle on-screen keyboard';
-  btn.textContent = '⌨';
-  btn.addEventListener('click', () => {
-    _ensureDOM();
-    _visible = !_visible;
-    btn.classList.toggle('on', _visible);
-    const panel = document.getElementById(KBD_PANEL_ID);
-    if (panel) panel.style.display = _visible ? 'flex' : 'none';
-    if (_visible) _startDwellLoop();
-    else          _stopDwellLoop();
-  });
-  document.body.appendChild(btn);
-  return btn;
+  _bindEditorActivity();
 }
 
 // ── Dwell loop (head-cursor) ────────────────────────────────────────────────────
@@ -663,20 +632,49 @@ function _inMeeting() {
   return r.width > 0 && r.height > 0;
 }
 
+function _showPanel(on) {
+  _visible = on;
+  const panel = document.getElementById(KBD_PANEL_ID);
+  if (panel) panel.style.display = on ? 'flex' : 'none';
+  const toggle = document.getElementById(KBD_TOGGLE_ID);
+  if (toggle) toggle.classList.toggle('on', on);
+  if (on) { _startDwellLoop(); _updatePredictions(); }
+  else    { _stopDwellLoop(); }
+}
+
+/**
+ * Inject the ⌨ toggle into the Studio header. Called once from ensureOverlay()
+ * in studio.js, right after injectFacialGestureToggle(). The button carries
+ * .ts-dwell-btn so facial-gesture.js's head-cursor dwell loop clicks it for
+ * free, exactly like the Face and collapse buttons beside it.
+ */
+export function injectKeyboardToggle(headerEl) {
+  if (!headerEl || document.getElementById(KBD_TOGGLE_ID)) return;
+  _injectStyles();
+  const btn = document.createElement('button');
+  btn.id    = KBD_TOGGLE_ID;
+  btn.type  = 'button';
+  btn.className = 'ts-dwell-btn';
+  btn.title = 'Toggle the on-screen keyboard';
+  btn.textContent = '⌨ Keys';
+  btn.addEventListener('mousedown', e => e.preventDefault());
+  btn.addEventListener('click', () => {
+    try { _ensureDOM(); } catch (e) { console.error('[on-screen-keyboard] panel init failed', e); return; }
+    _showPanel(!_visible);
+  });
+  const closeBtn = headerEl.querySelector('.ts-close');
+  if (closeBtn) headerEl.insertBefore(btn, closeBtn);
+  else headerEl.appendChild(btn);
+}
+
+/**
+ * Housekeeping tick from studio.js's tickUi(). The toggle lives in the Studio
+ * header and comes and goes with the overlay on its own; this only has to
+ * retract the body-level panel when Studio is closed or the meeting ends.
+ */
 export function tickKbdUi() {
-  const inMeeting = _inMeeting();
-  const btn = _ensureToggleBtn();
-  if (!btn) return;
-  if (!inMeeting) {
-    btn.style.display = 'none';
-    if (_visible) {
-      _visible = false;
-      btn.classList.remove('on');
-      const panel = document.getElementById(KBD_PANEL_ID);
-      if (panel) panel.style.display = 'none';
-      _stopDwellLoop();
-    }
-    return;
-  }
-  btn.style.display = 'block';
+  if (!_visible) return;
+  const overlay   = document.getElementById('trussal-studio-overlay');
+  const studioOpen = !!overlay && overlay.style.display !== 'none';
+  if (!studioOpen || !_inMeeting()) _showPanel(false);
 }

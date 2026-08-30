@@ -28,6 +28,7 @@ import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial-gesture.js';
+import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
 import { toggleLineComment } from './editor-router-core.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
@@ -1111,6 +1112,7 @@ function ensureOverlay() {
 
   overlay.querySelector('.ts-close').addEventListener('click', () => {
     overlay.style.display = 'none';
+    tickKbdUi(); // and take the body-level keyboard panel down with it
   });
 
   const studioCollapseBtn = overlay.querySelector('#trussal-studio-collapse');
@@ -1127,6 +1129,7 @@ function ensureOverlay() {
   }
 
   injectFacialGestureToggle(overlay.querySelector('.ts-header'));
+  injectKeyboardToggle(overlay.querySelector('.ts-header'));
 
   refreshSampleBanks();
 
@@ -1162,6 +1165,7 @@ function ensureToggle() {
     if (!overlay) return;
     overlay.style.display = (overlay.style.display === 'none') ? 'flex' : 'none';
     if (overlay.style.display === 'flex') renderAll();
+    else tickKbdUi(); // hiding Studio from its toggle takes the keyboard panel too
   });
   document.body.appendChild(btn);
   return btn;
@@ -1174,6 +1178,7 @@ function tickUi() {
     const overlay = document.getElementById(OVERLAY_ID);
     if (btn) btn.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
+    tickKbdUi(); // retract the body-level keyboard panel once Studio is hidden
     initedRoom = null;
     return;
   }
@@ -1185,6 +1190,7 @@ function tickUi() {
   const btn = ensureToggle();
   if (btn) btn.style.display = 'block';
 
+  tickKbdUi(); // retract the keyboard panel if Studio was closed while it was open
   startNetStatsPolling(sendLocalNetStats);
   // This rig measures its own capture/codec/playout latency by loopback and
   // publishes it, so the room's worst-case bound is built from real hardware
