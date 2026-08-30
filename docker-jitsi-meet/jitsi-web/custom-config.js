@@ -926,15 +926,15 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       case "crdt-state":
         if (Array.isArray(msg.updates)) emit2("crdt-state", { updates: msg.updates });
         break;
-      case "nc-active":
-        activeNetCyclesToken = typeof msg.token === "string" ? msg.token : null;
-        activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
-        activeNetCyclesKind = msg.kind === "rest" ? "rest" : null;
-        document.dispatchEvent(new CustomEvent("trussal-netcycles-active", {
+      case "jp-active":
+        activeJPatternToken = typeof msg.token === "string" ? msg.token : null;
+        activeJPatternIndex = Number.isInteger(msg.index) ? msg.index : null;
+        activeJPatternKind = msg.kind === "rest" ? "rest" : null;
+        document.dispatchEvent(new CustomEvent("trussal-jpattern-active", {
           detail: {
-            token: activeNetCyclesToken,
-            index: activeNetCyclesIndex,
-            kind: activeNetCyclesKind
+            token: activeJPatternToken,
+            index: activeJPatternIndex,
+            kind: activeJPatternKind
           }
         }));
         break;
@@ -991,20 +991,20 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function getLocalPeer() {
     return localPeer;
   }
-  function getActiveNetCyclesToken() {
-    return activeNetCyclesToken;
+  function getActiveJPatternToken() {
+    return activeJPatternToken;
   }
-  function getActiveNetCyclesIndex() {
-    return activeNetCyclesIndex;
+  function getActiveJPatternIndex() {
+    return activeJPatternIndex;
   }
-  function getActiveNetCyclesKind() {
-    return activeNetCyclesKind;
+  function getActiveJPatternKind() {
+    return activeJPatternKind;
   }
-  function isPeerNetCyclesTurn(jitsiId) {
-    if (activeNetCyclesToken == null) return true;
+  function isPeerJPatternTurn(jitsiId) {
+    if (activeJPatternToken == null) return true;
     const peer = getPeerByJitsiId(jitsiId);
     if (!peer || peer.roomIndex == null) return true;
-    return String(peer.roomIndex) === String(activeNetCyclesToken);
+    return String(peer.roomIndex) === String(activeJPatternToken);
   }
   function getAllPeers() {
     const all3 = [];
@@ -1127,7 +1127,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof bank2 !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
     safeSend({ type: "sample-file", bank: bank2, name: name3, data: data3 });
   }
-  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeNetCyclesToken, activeNetCyclesIndex, activeNetCyclesKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
+  var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeJPatternToken, activeJPatternIndex, activeJPatternKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
       init_jamulus();
@@ -1176,9 +1176,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       reconnectDelay = 1e3;
       lastPongAt = 0;
       currentRoom = null;
-      activeNetCyclesToken = null;
-      activeNetCyclesIndex = null;
-      activeNetCyclesKind = null;
+      activeJPatternToken = null;
+      activeJPatternIndex = null;
+      activeJPatternKind = null;
       MAX_RECONNECT_DELAY = 15e3;
       PONG_TIMEOUT_MS = 8e3;
       rttSamples = [];
@@ -38681,6 +38681,64 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/program-directive.js
+  function splitLines(text2) {
+    return String(text2 ?? "").split("\n");
+  }
+  function firstRealLine(lines) {
+    for (let i = 0; i < lines.length; i++) {
+      if (!SKIPPABLE_RE.test(lines[i])) return i;
+    }
+    return -1;
+  }
+  function readDirective(text2) {
+    const lines = splitLines(text2);
+    const idx = firstRealLine(lines);
+    if (idx === -1) {
+      return { kind: null, reason: "empty program \u2014 expected a leading directive line", lineIndex: 0 };
+    }
+    const m2 = lines[idx].match(DIRECTIVE_RE);
+    if (!m2) {
+      return {
+        kind: null,
+        reason: "missing directive \u2014 the first line must be 'personal program', 'metaprogram' or 'bot program'",
+        lineIndex: idx
+      };
+    }
+    return { kind: KIND_BY_TEXT[m2[2]], phrase: m2[2], lineIndex: idx };
+  }
+  function stripDirective(text2) {
+    const info = readDirective(text2);
+    if (info.kind == null) return String(text2 ?? "");
+    const lines = splitLines(text2);
+    lines[info.lineIndex] = "";
+    return lines.join("\n");
+  }
+  function ensureDirective(text2, kind) {
+    const phrase = Object.keys(KIND_BY_TEXT).find((p) => KIND_BY_TEXT[p] === kind);
+    if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
+    const s2 = String(text2 ?? "");
+    if (readDirective(s2).kind === kind) return s2;
+    return `'${phrase}'
+${s2}`;
+  }
+  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
+  var init_program_directive = __esm({
+    "src/program-directive.js"() {
+      PERSONAL = "personal program";
+      METAPROGRAM = "metaprogram";
+      BOT = "bot program";
+      KIND_BY_TEXT = {
+        [PERSONAL]: "personal",
+        [METAPROGRAM]: "metaprogram",
+        [BOT]: "bot"
+      };
+      SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
+      DIRECTIVE_RE = /^\s*(['"])(personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+      DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
+    }
+  });
+
   // src/audio-net/MetaprogrammerParser.js
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
@@ -38821,7 +38879,17 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     return String(t.raw != null ? t.raw : t.value ?? "");
   }
   function parseMetaprogram(text2) {
-    const { tokens, errors } = tokenize2(typeof text2 === "string" ? text2 : "");
+    const src2 = typeof text2 === "string" ? text2 : "";
+    const dir = readDirective(src2);
+    const body = dir.kind === "metaprogram" ? stripDirective(src2) : src2;
+    const { tokens, errors } = tokenize2(body);
+    if (dir.kind !== "metaprogram") {
+      errors.push({
+        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram'`,
+        line: (dir.lineIndex ?? 0) + 1,
+        col: 1
+      });
+    }
     const parser = new Parser2(tokens, errors);
     const ast2 = parser.parseProgram();
     errors.sort((a2, b) => a2.line - b.line || a2.col - b.col);
@@ -38893,7 +38961,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   }
   function buildDefaultProgram() {
-    return `$ participants <0>
+    return `'metaprogram'
+$ participants <0>
 # cycles wcl 20
 `;
   }
@@ -38936,6 +39005,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       init_Echo();
       init_ValuePattern();
       init_EffectMedia();
+      init_program_directive();
       TIMING_METRICS = ["wcl", "wcpl"];
       EFFECT_METRICS = ["wcl", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
@@ -39051,7 +39121,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             this.skipNewlines();
           }
           if (!program.participants) {
-            this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
+            this.errors.push({ message: "missing '$' scheduling sequence", line: 1, col: 1 });
           }
           if (!program.cycles) program.cycles = { metric: "wcl", factor: 20, fixed: null, defaulted: true };
           return program;
@@ -39059,14 +39129,16 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         parseDollar(program) {
           const sigil = this.next();
           const name3 = this.peek();
-          if (name3.type !== "word" || name3.value !== "participants") {
-            this.error(`unknown '$' statement '${name3.value}' (only 'participants' exists)`, name3);
-            this.recover();
-            return;
+          if (name3.type === "word") {
+            if (name3.value !== "participants") {
+              this.error(`unknown '$' statement '${name3.value}' \u2014 '$' takes an optional 'participants' label then a sequence`, name3);
+              this.recover();
+              return;
+            }
+            this.next();
           }
-          this.next();
           if (program.participants) {
-            this.error("duplicate '$ participants' statement", sigil);
+            this.error("duplicate '$' scheduling sequence", sigil);
             this.recover();
             return;
           }
@@ -39078,11 +39150,14 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           this.parseModifiers(seq2);
           program.participants = seq2;
         }
-        // <...> (alternate: one element per cycle) or [...] (subdivide the cycle).
+        // <...> (alternate: one element per cycle), [...] (subdivide the cycle), or a
+        // Mondo s-expression `(head …)` — mini and mondo are both accepted here, told
+        // apart by the opening bracket.
         parseSequenceGroup() {
           const open = this.peek();
+          if (open.type === "punct" && open.value === "(") return this.parseMondoGroup();
           if (open.type !== "punct" || open.value !== "<" && open.value !== "[") {
-            this.error(`expected '<' or '[' to open a sequence, got '${open.value ?? "end of input"}'`, open);
+            this.error(`expected '<', '[' or '(' to open a sequence, got '${open.value ?? "end of input"}'`, open);
             return null;
           }
           this.next();
@@ -39171,6 +39246,128 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
           return { type: "sequence", mode: mode2, stacks, modifiers: [], endLine: end2?.line, endCol: end2?.col };
         }
+        // A Mondo s-expression sequence: `(head elem elem …)`. Mini and mondo are
+        // both accepted for a scheduling sequence — `(cat 0 1a 2zzz)` and
+        // `(fast 2 (seq 0 1))` mean exactly what `<0 1a 2zzz>` and `[0 1]*2` do.
+        // The head names the combinator; without one the list subdivides, as `[…]`
+        // does. Elements reuse the same participant/rest/nested-group grammar and the
+        // same glued postfix modifiers as `<…>`/`[…]`, so nothing about a turn
+        // changes — only the spelling of the group around it.
+        parseMondoGroup() {
+          const open = this.next();
+          const HEADS = {
+            cat: "alternate",
+            slowcat: "alternate",
+            alt: "alternate",
+            seq: "subdivide",
+            fastcat: "subdivide",
+            stepcat: "subdivide",
+            sub: "subdivide",
+            stack: "stack",
+            fast: "fast",
+            slow: "slow"
+          };
+          let mode2 = "subdivide";
+          let head = null;
+          const h2 = this.peek();
+          if (h2.type === "word" && Object.prototype.hasOwnProperty.call(HEADS, h2.value)) {
+            head = h2.value;
+            this.next();
+            if (HEADS[head] === "alternate" || HEADS[head] === "subdivide") mode2 = HEADS[head];
+          } else if (h2.type === "word") {
+            this.error(`unknown Mondo head '${h2.value}' \u2014 use cat, seq, fastcat, slowcat, stack, fast or slow`, h2);
+            this.recover();
+            return null;
+          }
+          if (head === "fast" || head === "slow") {
+            const nTok = this.peek();
+            if (nTok.type !== "number" && nTok.type !== "intlike") {
+              this.error(`'${head}' needs a number then one group: (${head} 2 (seq 0 1))`, nTok);
+              this.recover();
+              return null;
+            }
+            this.next();
+            const n2 = parseFloat(tokenText(nTok));
+            const inner = this.parseElement();
+            const closeTok = this.peek();
+            if (closeTok.type === "punct" && closeTok.value === ")") this.next();
+            else this.error("unclosed Mondo sequence \u2014 expected ')'", closeTok);
+            if (!inner) return null;
+            const seq2 = inner.type === "sequence" ? inner : { type: "sequence", mode: "subdivide", stacks: [{ elements: [inner], cycleOffset: 0 }], modifiers: [] };
+            seq2.modifiers = [...seq2.modifiers || [], { op: head === "fast" ? "*" : "/", value: n2 }];
+            return { ...seq2, line: open.line, col: open.col };
+          }
+          const stacks = [];
+          let run2 = [];
+          const flush = () => {
+            if (head === "stack") {
+              for (const el of run2) stacks.push({ elements: [el], cycleOffset: stacks.length });
+            } else {
+              stacks.push({ elements: run2, cycleOffset: 0 });
+            }
+            run2 = [];
+          };
+          let close = null;
+          for (; ; ) {
+            const t = this.peek();
+            if (t.type === "eof") {
+              this.error("unclosed Mondo sequence \u2014 expected ')'", t);
+              return null;
+            }
+            if (t.type === "newline") {
+              this.next();
+              continue;
+            }
+            if (t.type === "punct" && t.value === ")") {
+              close = this.next();
+              break;
+            }
+            const el = this.parseElement();
+            if (!el) {
+              this.next();
+              continue;
+            }
+            if (this.peek().type === "op" && this.peek().value === "..") {
+              const dots = this.next();
+              const hi2 = this.parseElement();
+              if (!el.token || !hi2 || !hi2.token || el.suffix || hi2.suffix || !/^\d+$/.test(el.token) || !/^\d+$/.test(hi2.token)) {
+                this.error("'..' ranges need plain integer participant indices on both sides", dots);
+                continue;
+              }
+              const lo = parseInt(el.token, 10), high = parseInt(hi2.token, 10);
+              if (high < lo) {
+                this.error("'..' range upper bound below lower bound", dots);
+                continue;
+              }
+              for (let v2 = lo; v2 <= high; v2++) {
+                run2.push({
+                  type: "participant",
+                  token: String(v2),
+                  ownerIndex: v2,
+                  suffix: null,
+                  modifiers: [],
+                  line: el.line,
+                  col: el.col,
+                  endLine: el.endLine,
+                  endCol: el.endCol
+                });
+              }
+              continue;
+            }
+            this.parseModifiers(el);
+            run2.push(el);
+          }
+          flush();
+          if (stacks.every((s2) => s2.elements.length === 0)) this.error("empty Mondo sequence", open);
+          return {
+            type: "sequence",
+            mode: head === "stack" ? "alternate" : mode2,
+            stacks,
+            modifiers: [],
+            endLine: close ? close.line : open.line,
+            endCol: close ? close.col + 1 : open.col + 1
+          };
+        }
         parseElement() {
           const t = this.peek();
           if (t.type === "rest") {
@@ -39185,7 +39382,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               endCol: t.col + 1
             };
           }
-          if (t.type === "punct" && (t.value === "<" || t.value === "[")) {
+          if (t.type === "punct" && (t.value === "<" || t.value === "[" || t.value === "(")) {
             const group = this.parseSequenceGroup();
             if (!group) return null;
             return { ...group, line: t.line, col: t.col };
@@ -39302,12 +39499,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             }
             accept({ op: t.value, value: val2 });
           }
-          node.modifiers = mods;
+          node.modifiers = [...node.modifiers || [], ...mods];
           if (extent) {
             node.endLine = extent.line;
             node.endCol = extent.col;
           }
-          return mods;
+          return node.modifiers;
         }
         parseDirective(program) {
           const sigil = this.next();
@@ -39338,7 +39535,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
             else this.parseChainFn(program, name3, nameTok, sig);
             return;
           }
-          this.error(`'${name3}' is not a NetCycles function \u2014 Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
+          this.error(`'${name3}' is not a JPattern function \u2014 Strudel and Hydra functions cannot be executed in the JPattern editor`, nameTok);
           this.recover();
         }
         // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
@@ -40031,7 +40228,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
               return;
             }
             if (t.type === "punct" && t.value === "(") {
-              this.error(sig.patternArgs ? `'${name3}' arguments are positive numbers or mini-notation patterns like <2 4> \u2014 parenthesized expressions cannot be executed in the NetCycles editor` : `'${name3}' cannot take Strudel-call arguments \u2014 parameters are plain positive numbers`, t);
+              this.error(sig.patternArgs ? `'${name3}' arguments are positive numbers or mini-notation patterns like <2 4> \u2014 parenthesized expressions cannot be executed in the JPattern editor` : `'${name3}' cannot take Strudel-call arguments \u2014 parameters are plain positive numbers`, t);
               this.skipParenBlob();
               return;
             }
@@ -40091,7 +40288,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           program.chain.push(entry);
         }
       };
-      SEQUENCE_RE = /^([ \t]*\$[ \t]*participants[ \t]*)([<[])([^\]>]*)([\]>])/m;
+      SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
     }
   });
 
@@ -40360,7 +40557,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           // (event) → void
           lookaheadS = 0.2,
           tickMs = 50,
-          label: label2 = "netcycles",
+          label: label2 = "jpattern",
           // tags this scheduler's log lines (browser vs aggregator)
           log: log3 = null,
           // (line) => void; null = console.log, false = silent
@@ -41115,7 +41312,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           return this;
         }
         // Fan a message out to the room. Silently no-ops until the socket is open —
-        // Net Cycles tolerates running unsynced, so a pre-connect send is dropped
+        // JPattern tolerates running unsynced, so a pre-connect send is dropped
         // rather than thrown.
         send(address, typespec = ",", args2 = [], timestamp = 0) {
           if (!this.ws || this.ws.readyState !== WS_OPEN) return false;
@@ -49922,7 +50119,7 @@ ${err.toString()}`);
       // The image counterpart: 1 = no blur, 0 = fully lowpassed. Consumed by
       // av-effects/VideoState.js, which turns it into the blur RADIUS on the
       // aggregator's composited frame, and by TextState.js for the blur on a
-      // styled span. Not published to window._ncVisual — that carries only the
+      // styled span. Not published to window._jpVisual — that carries only the
       // one channel anything reads (the Hydra tint).
       visualLowpass: cutoffHz / CUTOFF_MAX_HZ
     };
@@ -50296,11 +50493,11 @@ ${err.toString()}`);
       mark.title = `\u2248${entry.distanceKm.toFixed(0)} km`;
       const peer = peers.find((p) => p.jitsiId === entry.jitsiId);
       const vec = displacement && displacement[entry.jitsiId];
-      let arrow = panel.querySelector(".nc-grid-vec");
+      let arrow = panel.querySelector(".jp-grid-vec");
       if (landmarks && vec && peer && !peer.isBot) {
         if (!arrow) {
           arrow = document.createElement("div");
-          arrow.className = "nc-grid-vec";
+          arrow.className = "jp-grid-vec";
           arrow.style.cssText = "position:absolute;bottom:4px;right:4px;width:18px;height:18px;z-index:20;pointer-events:none;font-size:14px;line-height:18px;text-align:center;";
           panel.appendChild(arrow);
         }
@@ -50315,13 +50512,13 @@ ${err.toString()}`);
     return view.matrix;
   }
   function clearGridOverlays() {
-    document.querySelectorAll(`.${OVERLAY_CLASS}, .nc-grid-vec`).forEach((el) => el.remove());
+    document.querySelectorAll(`.${OVERLAY_CLASS}, .jp-grid-vec`).forEach((el) => el.remove());
   }
   var KM_PER_ONE_WAY_MS, OVERLAY_CLASS;
   var init_Grid = __esm({
     "src/audio-net/av-effects/Grid.js"() {
       KM_PER_ONE_WAY_MS = 100;
-      OVERLAY_CLASS = "nc-grid-mark";
+      OVERLAY_CLASS = "jp-grid-mark";
     }
   });
 
@@ -50609,10 +50806,10 @@ ${err.toString()}`);
         }
         _publishVisual(resolved) {
           if (typeof window === "undefined") return;
-          window._ncVisual = visualStateFor(resolved);
+          window._jpVisual = visualStateFor(resolved);
           const cycle = this.cycleContext();
           const { text: text2, css } = textAndCssStateFor(this._chainEntries, this._metrics, cycle);
-          window._ncText = {
+          window._jpText = {
             text: text2,
             css,
             cycle: Math.floor(cycle.cyclePos),
@@ -50629,7 +50826,7 @@ ${err.toString()}`);
         // one: a constant-argument chain keeps re-deriving on metrics updates alone.
         //
         // With every audio node on the aggregator, what this tick keeps current is
-        // the VISUAL side — a patterned `# crush` still has to step _ncVisual.
+        // the VISUAL side — a patterned `# crush` still has to step _jpVisual.
         // pixelate on the grid. The aggregator runs its own tick, off the same
         // PATTERN_TICK_MS, for the audio.
         _syncPatternLoop() {
@@ -50666,8 +50863,8 @@ ${err.toString()}`);
           this._syncGridLoop();
           this._syncPatternLoop();
           if (typeof window !== "undefined") {
-            window._ncVisual = { brightness: 1 };
-            window._ncText = null;
+            window._jpVisual = { brightness: 1 };
+            window._jpText = null;
           }
         }
       };
@@ -50689,11 +50886,11 @@ ${err.toString()}`);
     getQueueDepth: () => getQueueDepth,
     getVlans: () => getVlans,
     hasEffectShortcut: () => hasEffectShortcut,
-    isNetCyclesActive: () => isNetCyclesActive,
+    isJPatternActive: () => isJPatternActive,
     removeVlan: () => removeVlan,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
     setInducedMetric: () => setInducedMetric,
-    setNetCyclesActive: () => setNetCyclesActive,
+    setJPatternActive: () => setJPatternActive,
     setVlan: () => setVlan,
     startLocalCapture: () => startLocalCapture,
     subscribeSlotEvents: () => subscribeSlotEvents,
@@ -50734,7 +50931,7 @@ ${err.toString()}`);
         caughtUp = true;
         maybeSeedDefaultProgram();
       }
-      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, remote: true, applied } }));
+      document.dispatchEvent(new CustomEvent("trussal-jpattern-program", { detail: { text: text2, remote: true, applied } }));
     });
     crdt.onModulationChange(() => pushEffectiveMetrics());
     crdt.onVlansChange(() => pushEffectiveMetrics());
@@ -50799,7 +50996,7 @@ ${err.toString()}`);
     programText = buildDefaultProgram();
     sync.setText(programText, "roster");
     pushProgramToScheduler();
-    document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: programText } }));
+    document.dispatchEvent(new CustomEvent("trussal-jpattern-program", { detail: { text: programText } }));
   }
   function pushProgramToScheduler() {
     if (programText == null) return;
@@ -50822,7 +51019,7 @@ ${err.toString()}`);
       }
       pushProgramToScheduler();
       if (broadcast && o2) o2.send(APPLY_ADDR, ",s", [text2]);
-      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: text2, applied: true } }));
+      document.dispatchEvent(new CustomEvent("trussal-jpattern-program", { detail: { text: text2, applied: true } }));
     }
     return errors;
   }
@@ -50909,7 +51106,7 @@ ${SHORTCUT_LINES[fn]}
       if (av) {
         if (typeof av.pattern === "string") {
           activePatterns.set(peer.jitsiId, av.pattern);
-          document.dispatchEvent(new CustomEvent("trussal-netcycles-apply", {
+          document.dispatchEvent(new CustomEvent("trussal-jpattern-apply", {
             detail: { jitsiId: peer.jitsiId, token: ev.token }
           }));
         }
@@ -50972,7 +51169,7 @@ ${SHORTCUT_LINES[fn]}
       const audioBuf = await ctx2.decodeAudioData(buf);
       const src2 = ctx2.createBufferSource();
       src2.buffer = audioBuf;
-      await attachNodeToChain(jitsiId, src2, "nc-replay");
+      await attachNodeToChain(jitsiId, src2, "jp-replay");
       const atAudio = clock && clock.isSynced() ? Math.max(clock.toAudioTime(ev.t), ctx2.currentTime) : ctx2.currentTime;
       src2.start(atAudio);
       src2.stop(atAudio + ev.dur);
@@ -50993,7 +51190,7 @@ ${SHORTCUT_LINES[fn]}
     if (epoch != null && remoteEpoch >= epoch - 0.05) return;
     const now = networkSeconds();
     if (!(clock && clock.isSynced()) || remoteEpoch > now || now - remoteEpoch > EPOCH_PLAUSIBLE_PAST_S) {
-      console.warn(`[metaprogrammer] refused /nc/epoch ${remoteEpoch} (local now ${now})`);
+      console.warn(`[metaprogrammer] refused /jp/epoch ${remoteEpoch} (local now ${now})`);
       return;
     }
     epoch = remoteEpoch;
@@ -51012,10 +51209,10 @@ ${SHORTCUT_LINES[fn]}
     scheduler.setMetrics(effectiveWorstCase());
     scheduler.start(epoch);
   }
-  function isNetCyclesActive() {
+  function isJPatternActive() {
     return active;
   }
-  async function setNetCyclesActive(enable) {
+  async function setJPatternActive(enable) {
     if (enable === active) return;
     active = !!enable;
     if (active) {
@@ -51092,7 +51289,7 @@ ${SHORTCUT_LINES[fn]}
       pendingEditorUpdates.clear();
       resetChainGates();
     }
-    document.dispatchEvent(new CustomEvent("trussal-netcycles-mode", { detail: { active } }));
+    document.dispatchEvent(new CustomEvent("trussal-jpattern-mode", { detail: { active } }));
   }
   var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, caughtUp, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
@@ -51107,8 +51304,8 @@ ${SHORTCUT_LINES[fn]}
       init_jamulus();
       init_latency_instrument();
       init_av_effects();
-      EPOCH_ADDR = "/nc/epoch";
-      APPLY_ADDR = "/nc/apply";
+      EPOCH_ADDR = "/jp/epoch";
+      APPLY_ADDR = "/jp/apply";
       EPOCH_REBROADCAST_MS = 1e4;
       EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
       QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
@@ -51870,7 +52067,7 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
 #trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
-/* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+/* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
    yellow-fills-then-green as every other dwell target. */
 #trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
 #trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
@@ -53075,15 +53272,15 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     const peerId = peerOf(value2.word);
     const peerClass = peerTextClass(peerId);
-    if (!isPeerNetCyclesTurn(peerId)) {
+    if (!isPeerJPatternTurn(peerId)) {
       textHapLog("paint:gated", {
         token: value2.word,
         peer: peerId,
-        note: "not this peer's turn \u2014 Net Cycles scheduling is active and their gate is closed"
+        note: "not this peer's turn \u2014 JPattern scheduling is active and their gate is closed"
       });
       return;
     }
-    const fx = typeof window !== "undefined" && window._ncText || null;
+    const fx = typeof window !== "undefined" && window._jpText || null;
     const active4 = fx && fx.active ? fx : null;
     const seedCycle = active4 ? active4.cycle : 0;
     const seedPeer = peerSeed(peerId);
@@ -54031,8 +54228,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       }
       i++;
     }
-    const tail = text2.slice(start).trim();
-    if (tail) blocks.push({ text: text2.slice(start), start, end: text2.length, bare: true });
+    const tail2 = text2.slice(start).trim();
+    if (tail2) blocks.push({ text: text2.slice(start), start, end: text2.length, bare: true });
     return blocks;
   }
   function parseScssDeclarations(src2) {
@@ -54627,7 +54824,7 @@ ${full}
     }
   }
   function ownsCssTurn(jitsiId) {
-    const token = getActiveNetCyclesToken() ?? "0";
+    const token = getActiveJPatternToken() ?? "0";
     const peer = getPeerByJitsiId(jitsiId);
     return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
   }
@@ -54672,12 +54869,12 @@ ${full}
       }
     }
   }
-  var lastNetCyclesTurnKey = null;
-  function handleNetCyclesTokenChange(e30) {
+  var lastJPatternTurnKey = null;
+  function handleJPatternTokenChange(e30) {
     const detail = e30?.detail || {};
     const key = `${detail.token}|${detail.index}|${detail.kind}`;
-    if (key === lastNetCyclesTurnKey) return;
-    lastNetCyclesTurnKey = key;
+    if (key === lastJPatternTurnKey) return;
+    lastJPatternTurnKey = key;
     resetAllCssToBaseline();
   }
   function handleTrigger2(hap, currentTime, cps2, targetTime) {
@@ -54709,7 +54906,7 @@ ${full}
         cssSubscribed = true;
         subscribePeerState(syncFromPeers);
         syncFromPeers();
-        document.addEventListener("trussal-netcycles-active", handleNetCyclesTokenChange);
+        document.addEventListener("trussal-jpattern-active", handleJPatternTokenChange);
       }
       return true;
     };
@@ -54730,7 +54927,7 @@ ${full}
     lastSentScssByBot = /* @__PURE__ */ new Map();
     bgCache.clear();
     baselineValues.clear();
-    lastNetCyclesTurnKey = null;
+    lastJPatternTurnKey = null;
   }
 
   // src/hydra-video.js
@@ -55251,12 +55448,40 @@ ${full}
   }
 
   // src/hydra-code.js
+  init_program_directive();
+  init_text_cycles_core();
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+  var INIT_TEXT_CYCLES_RE2 = /(^|\n)\s*await\s+initTextCycles\s*\(/;
+  var INIT_CSS_RE2 = /(^|\n)\s*await\s+initCss\s*\(/;
+  var HYDRA_SHAPE_RE = /\.out\s*\(|(?:^|[^\w$.])(?:osc|shape|gradient|solid|voronoi|src)\s*\(|(?:^|[^\w$])init(?:Cam|Screen|Image|Video)\s*\(/;
+  function ensureCapabilityPreambles(code2) {
+    let s2 = String(code2 ?? "");
+    if (!s2.trim()) return s2;
+    const needHydra = !PROGRAM_INIT_HYDRA_RE.test(s2) && HYDRA_SHAPE_RE.test(s2);
+    const needText = !INIT_TEXT_CYCLES_RE2.test(s2) && WORD_CALL_RE.test(s2);
+    const needCss = !INIT_CSS_RE2.test(s2) && CSS_CALL_RE.test(s2);
+    if (!needHydra && !needText && !needCss) return s2;
+    const adds = [];
+    if (needHydra) adds.push("await initHydra()");
+    if (needText) adds.push("await initTextCycles()");
+    if (needCss) adds.push("await initCss()");
+    const hasPreamble = PROGRAM_INIT_HYDRA_RE.test(s2) || INIT_TEXT_CYCLES_RE2.test(s2) || INIT_CSS_RE2.test(s2);
+    if (!hasPreamble) return `${adds.join("\n")}
+
+${s2}`;
+    const blank = s2.match(/\n\n+/);
+    const cut2 = blank ? blank.index : s2.length;
+    return `${s2.slice(0, cut2).replace(/\s*$/, "")}
+${adds.join("\n")}${s2.slice(cut2)}`;
+  }
   var HYDRA_RENDER_RE = /\.out\s*\(/;
   var PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
   var INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
+  var HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
   function normalizePeerCode(code2) {
-    return stripBotConfig(code2 || "").replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
+    return ensureCapabilityPreambles(
+      stripBotConfig(stripDirective(code2 || "")).replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim()
+    );
   }
   function splitHydraCode(code2) {
     const normalized = normalizePeerCode(code2);
@@ -55293,6 +55518,7 @@ ${full}
   }
 
   // src/strudel.js
+  init_program_directive();
   init_text_debug();
 
   // src/strudel-voice.js
@@ -55365,8 +55591,535 @@ $: (${split.expr})${fx}`;
     return `$: (${code2})${fx}`;
   }
 
+  // src/mondo-notation.js
+  init_dist();
+
+  // src/audio-net/mondo.mjs
+  var MondoParser = class {
+    // these are the tokens we expect
+    token_types = {
+      comment: /^\/\/(.*?)(?=\n|$)/,
+      quotes_double: /^"(.*?)"/,
+      quotes_single: /^'(.*?)'/,
+      open_list: /^\(/,
+      close_list: /^\)/,
+      open_angle: /^</,
+      close_angle: /^>/,
+      open_square: /^\[/,
+      close_square: /^\]/,
+      open_curly: /^\{/,
+      close_curly: /^\}/,
+      number: /^-?[0-9]*\.?[0-9]+/,
+      // before pipe!
+      // TODO: better error handling when "-" is used as rest, e.g "s [- bd]"
+      op: /^[*/:!@%?+\-&]|^\.{2}/,
+      // * / : ! @ % ? ..
+      // dollar: /^\$/,
+      pipe: /^#/,
+      stack: /^[,$]/,
+      or: /^[|]/,
+      plain: /^[a-zA-Z0-9-~_^#]+/
+    };
+    op_precedence = [["*", "/", ":", "!", "@", "%", "?", "+", "-", ".."], ["&"]];
+    // matches next token
+    next_token(code2, offset2 = 0) {
+      for (let type in this.token_types) {
+        const match2 = code2.match(this.token_types[type]);
+        if (match2) {
+          let token = { type, value: match2[0] };
+          if (offset2 !== -1) {
+            token.loc = [offset2, offset2 + match2[0].length];
+          }
+          return token;
+        }
+      }
+      throw new Error(`mondo: could not match '${code2}'`);
+    }
+    // takes code string, returns list of matched tokens (if valid)
+    tokenize(code2, offset2 = 0) {
+      let tokens = [];
+      let locEnabled = offset2 !== -1;
+      let trim = () => {
+        offset2 += code2.length - code2.trimStart().length;
+        return code2.trim();
+      };
+      code2 = trim();
+      while (code2.length > 0) {
+        code2 = trim();
+        const token = this.next_token(code2, locEnabled ? offset2 : -1);
+        code2 = code2.slice(token.value.length);
+        offset2 += token.value.length;
+        tokens.push(token);
+      }
+      return tokens;
+    }
+    // take code, return abstract syntax tree
+    parse(code2, offset2) {
+      this.code = code2;
+      this.offset = offset2;
+      this.tokens = this.tokenize(code2, offset2);
+      const expressions = [];
+      while (this.tokens.length) {
+        expressions.push(this.parse_expr());
+      }
+      if (expressions.length === 0) {
+        return { type: "list", children: [] };
+      }
+      if (expressions.length > 1 || expressions[0].type !== "list") {
+        return {
+          type: "list",
+          children: this.desugar(expressions)
+        };
+      }
+      return expressions[0];
+    }
+    // parses any valid expression
+    parse_expr() {
+      if (!this.tokens[0]) {
+        throw new Error(`unexpected end of file`);
+      }
+      let next = this.tokens[0]?.type;
+      if (next === "open_list") {
+        return this.parse_list();
+      }
+      if (next === "open_angle") {
+        return this.parse_angle();
+      }
+      if (next === "open_square") {
+        return this.parse_square();
+      }
+      if (next === "open_curly") {
+        return this.parse_curly();
+      }
+      return this.consume(next);
+    }
+    // Token[] => Token[][], e.g. (x , y z) => [['x'],['y','z']]
+    split_children(children, split_type) {
+      const chunks = [];
+      while (true) {
+        let splitIndex = children.findIndex((child) => child.type === split_type);
+        if (splitIndex === -1) break;
+        const chunk2 = children.slice(0, splitIndex);
+        chunks.push(chunk2);
+        children = children.slice(splitIndex + 1);
+      }
+      chunks.push(children);
+      return chunks;
+    }
+    desugar_split(children, split_type, next) {
+      const chunks = this.split_children(children, split_type);
+      if (chunks.length === 1) {
+        return next(children);
+      }
+      const args2 = chunks.map((chunk2) => {
+        if (!chunk2.length) {
+          return;
+        }
+        if (chunk2.length === 1) {
+          return chunk2[0];
+        }
+        chunk2 = next(chunk2);
+        return { type: "list", children: chunk2 };
+      }).filter(Boolean);
+      return [{ type: "plain", value: split_type }, ...args2];
+    }
+    // prevents to get a list, e.g. ((x y)) => (x y)
+    unwrap_children(children) {
+      if (children.length === 1) {
+        return children[0].children;
+      }
+      return children;
+    }
+    desugar_ops(children, types2) {
+      while (true) {
+        let opIndex = children.findIndex((child) => child.type === "op" && types2.includes(child.value));
+        if (opIndex === -1) break;
+        const op = { type: "plain", value: children[opIndex].value };
+        if (opIndex === children.length - 1) {
+          children[opIndex] = op;
+          continue;
+        }
+        if (opIndex === 0) {
+          children[opIndex] = op;
+          continue;
+        }
+        const left2 = children[opIndex - 1];
+        const right2 = children[opIndex + 1];
+        if (left2.type === "pipe") {
+          children[opIndex] = op;
+          continue;
+        }
+        if (left2.type === "op") {
+          throw new Error(`got 2 ops in a row: "${left2.value}${op.value}"`);
+        }
+        if (right2.type === "op") {
+          let err = `got 2 ops in a row: "${op.value}${right2.value}"`;
+          if (op.value === "-") {
+            err += '. you probably want a rest, which is "_" in mondo!';
+          }
+          throw new Error(err);
+        }
+        const call = { type: "list", children: [op, right2, left2] };
+        children = [...children.slice(0, opIndex - 1), call, ...children.slice(opIndex + 2)];
+        children = this.unwrap_children(children);
+      }
+      return children;
+    }
+    get_lambda(args2, children) {
+      children = this.desugar(children);
+      const body = children.length === 1 ? children[0] : { type: "list", children };
+      return [{ type: "plain", value: "fn" }, { type: "list", children: args2 }, body];
+    }
+    // returns location range of given ast (even if desugared)
+    get_range(ast2, range4 = [Infinity, 0]) {
+      let union = (a2, b) => [Math.min(a2[0], b[0]), Math.max(a2[1], b[1])];
+      if (ast2.loc) {
+        return union(range4, ast2.loc);
+      }
+      if (ast2.type !== "list") {
+        return range4;
+      }
+      return ast2.children.reduce((range5, child) => {
+        const childrange = this.get_range(child, range5);
+        return union(range5, childrange);
+      }, range4);
+    }
+    errorhead(ast2) {
+      return `[mondo ${this.get_range(ast2)?.join(":") || "?"}]`;
+    }
+    // returns original user code where the given ast originates (even if desugared)
+    get_code_snippet(ast2) {
+      const [min2, max2] = this.get_range(ast2);
+      return this.code.slice(min2 - this.offset, max2 - this.offset);
+    }
+    desugar_pipes(children) {
+      let chunks = this.split_children(children, "pipe");
+      while (chunks.length > 1) {
+        let [left2, right2, ...rest] = chunks;
+        if (!left2.length) {
+          const arg = { type: "plain", value: "_" };
+          return this.get_lambda([arg], [arg, ...children]);
+        }
+        const call = left2.length > 1 ? { type: "list", children: left2 } : left2[0];
+        chunks = [[...right2, call], ...rest];
+      }
+      return chunks[0];
+    }
+    parse_pair(open_type, close_type) {
+      const begin2 = this.tokens[0].loc?.[0];
+      this.consume(open_type);
+      const children = [];
+      while (this.tokens[0]?.type !== close_type) {
+        children.push(this.parse_expr());
+      }
+      const end2 = this.tokens[0].loc?.[1];
+      this.consume(close_type);
+      const node = { type: "list", children };
+      if (begin2 !== void 0) {
+        node.loc = [begin2, end2];
+        node.raw = this.code.slice(begin2, end2);
+      }
+      return node;
+    }
+    desugar(children, type) {
+      children = type ? children.slice(1) : children;
+      children = this.desugar_split(
+        children,
+        "stack",
+        (children2) => this.desugar_split(children2, "or", (children3) => {
+          if (type) {
+            children3 = [{ type: "plain", value: type }, ...children3];
+          }
+          this.op_precedence.forEach((ops) => {
+            children3 = this.desugar_ops(children3, ops);
+          });
+          children3 = this.desugar_pipes(children3);
+          return children3;
+        })
+      );
+      return children;
+    }
+    parse_list() {
+      let node = this.parse_pair("open_list", "close_list");
+      node.children = this.desugar(node.children);
+      return node;
+    }
+    parse_angle() {
+      let node = this.parse_pair("open_angle", "close_angle");
+      node.children.unshift({ type: "plain", value: "angle" });
+      node.children = this.desugar(node.children, "angle");
+      return node;
+    }
+    parse_square() {
+      let node = this.parse_pair("open_square", "close_square");
+      node.children.unshift({ type: "plain", value: "square" });
+      node.children = this.desugar(node.children, "square");
+      return node;
+    }
+    parse_curly() {
+      let node = this.parse_pair("open_curly", "close_curly");
+      node.children.unshift({ type: "plain", value: "curly" });
+      node.children = this.desugar(node.children, "curly");
+      return node;
+    }
+    consume(type) {
+      const token = this.tokens.shift();
+      if (token.type !== type) {
+        throw new Error(`expected token type ${type}, got ${token.type}`);
+      }
+      return token;
+    }
+    get_locations(code2, offset2 = 0) {
+      let walk2 = (ast3, locations2 = []) => {
+        if (ast3.type === "list") {
+          return ast3.children.forEach((child) => walk2(child, locations2));
+        }
+        if (ast3.loc) {
+          locations2.push(ast3.loc);
+        }
+      };
+      const ast2 = this.parse(code2, offset2);
+      let locations = [];
+      walk2(ast2, locations);
+      return locations;
+    }
+  };
+  var MondoRunner = class {
+    constructor({ evaluator: evaluator2 } = {}) {
+      this.parser = new MondoParser();
+      this.evaluator = evaluator2;
+      this.assert(typeof evaluator2 === "function", `expected an evaluator function to be passed to new MondoRunner`);
+    }
+    // a helper to check conditions and throw if they are not met
+    assert(condition, error) {
+      if (!condition) {
+        throw new Error(error);
+      }
+    }
+    run(code2, scope2, offset2 = 0) {
+      const ast2 = this.parser.parse(code2, offset2);
+      return this.evaluate(ast2, scope2);
+    }
+    evaluate_let(ast2, scope2) {
+      const defs = ast2.children[1].children;
+      const args2 = defs.map((pair) => pair.children[0]);
+      const vals = defs.map((pair) => pair.children[1]);
+      const body = ast2.children.slice(2);
+      const lambda = {
+        type: "list",
+        children: [{ type: "plain", value: "fn" }, { type: "list", children: args2 }, ...body]
+      };
+      return this.evaluate({ type: "list", children: [lambda, ...vals] }, scope2);
+    }
+    evaluate_def(ast2, scope2) {
+      if (ast2.children[1].type === "list") {
+        const args2 = ast2.children[1].children.slice(1);
+        const lambda = {
+          // lambda
+          type: "list",
+          children: [
+            { type: "plain", value: "fn" },
+            { type: "list", children: args2 },
+            ...ast2.children.slice(2)
+            // body
+          ]
+        };
+        ast2.children[1] = ast2.children[1].children[0];
+        ast2.children[2] = lambda;
+        ast2.children = ast2.children.slice(0, 3);
+      }
+      if (ast2.children.length !== 3) {
+        throw new Error(`expected "def" to have 3 children, but got ${ast2.children.length}`);
+      }
+      const name3 = ast2.children[1].value;
+      const body = this.evaluate(ast2.children[2], scope2);
+      scope2[name3] = body;
+    }
+    evaluate_match(ast2, scope2) {
+      if (ast2.children.length < 2) {
+        return;
+      }
+      const [_3, ...body] = ast2.children;
+      for (let i = 0; i < body.length; ++i) {
+        const [predicate, exp] = body[i].children;
+        if (predicate.value === "else") {
+          return this.evaluate(exp, scope2);
+        }
+        const outcome = this.evaluate(predicate, scope2);
+        if (outcome) {
+          return this.evaluate(exp, scope2);
+        }
+      }
+      return void 0;
+    }
+    evaluate_if(ast2, scope2) {
+      if (ast2.children.length !== 4) {
+        return;
+      }
+      const [_3, predicate, consequent, alternative] = ast2.children;
+      const matcher = {
+        type: "list",
+        children: [
+          { type: "plain", value: "match" },
+          { type: "list", children: [predicate, consequent] },
+          { type: "list", children: [{ type: "plain", value: "else" }, alternative] }
+        ]
+      };
+      return this.evaluate_match(matcher, scope2);
+    }
+    evaluate_lambda(ast2, scope2) {
+      const [_3, formalArgs, ...body] = ast2.children;
+      return (...args2) => {
+        const params2 = Object.fromEntries(formalArgs.children.map((arg, i) => [arg.value, args2[i]]));
+        const closure = {
+          ...scope2,
+          ...params2
+        };
+        const res = body.map((exp) => this.evaluate(exp, closure));
+        return res[res.length - 1];
+      };
+    }
+    evaluate_list(ast2, scope2) {
+      const args2 = ast2.children.filter((child) => child.type !== "comment").map((arg) => this.evaluate(arg, scope2));
+      const node = { type: "list", children: args2 };
+      return this.evaluator(node, scope2);
+    }
+    evaluate_leaf(ast2, scope2) {
+      if (ast2.type === "number") {
+        ast2.value = Number(ast2.value);
+      } else if (["quotes_double", "quotes_single"].includes(ast2.type)) {
+        ast2.value = ast2.value.slice(1, -1);
+        ast2.type = "string";
+      }
+      return this.evaluator(ast2, scope2);
+    }
+    evaluate(ast2, scope2 = {}) {
+      if (ast2.type !== "list") {
+        return this.evaluate_leaf(ast2, scope2);
+      }
+      const name3 = ast2.children[0]?.value;
+      if (name3 === "fn") {
+        return this.evaluate_lambda(ast2, scope2);
+      }
+      if (name3 === "match") {
+        return this.evaluate_match(ast2, scope2);
+      }
+      if (name3 === "if") {
+        return this.evaluate_if(ast2, scope2);
+      }
+      if (name3 === "let") {
+        return this.evaluate_let(ast2, scope2);
+      }
+      if (name3 === "def") {
+        this.evaluate_def(ast2, scope2);
+      }
+      return this.evaluate_list(ast2, scope2);
+    }
+  };
+
+  // src/mondo-notation.js
+  var withMarkcss = (pat) => pat && typeof pat.markcss === "function" ? pat.markcss("color: var(--caret,--foreground);text-decoration:underline") : pat;
+  var tail = (friend, pat) => pat.fmap((a2) => (b) => Array.isArray(a2) ? [...a2, b] : [a2, b]).appLeft(friend);
+  var arrayRange = (start, stop2, step = 1) => Array.from(
+    { length: Math.abs(stop2 - start) / step + 1 },
+    (_3, index2) => start < stop2 ? start + index2 * step : start - index2 * step
+  );
+  var range3 = (max2, min2) => min2.squeezeBind((a2) => max2.bind((b) => seq(...arrayRange(a2, b))));
+  var nope = (...args2) => args2[args2.length - 1];
+  var lib = {};
+  lib["nope"] = nope;
+  lib["-"] = (a2, b) => b.early(a2);
+  lib["+"] = (a2, b) => b.late(a2);
+  lib["_"] = silence;
+  lib["~"] = silence;
+  lib.curly = stepcat;
+  lib.square = (...args2) => stepcat(...args2).setSteps(1);
+  lib.angle = (...args2) => stepcat(...args2).pace(1);
+  lib["*"] = fast;
+  lib["/"] = slow;
+  lib["!"] = replicate;
+  lib["@"] = expand;
+  lib["%"] = pace;
+  lib["?"] = degradeBy;
+  lib["&"] = bjork;
+  lib[":"] = tail;
+  lib[".."] = range3;
+  lib["def"] = () => silence;
+  lib["or"] = (...children) => chooseIn(...children);
+  lib["cat"] = slowcat;
+  lib["slowcat"] = slowcat;
+  lib["fastcat"] = fastcat;
+  lib["seq"] = seq;
+  lib["fastseq"] = fastcat;
+  lib["stack"] = stack;
+  lib["stepcat"] = stepcat;
+  lib["fast"] = fast;
+  lib["slow"] = slow;
+  lib["silence"] = silence;
+  var control2 = (fn) => (...as2) => fn(as2.length > 1 ? seq(...as2) : as2[0]);
+  lib["s"] = control2(s$1);
+  lib["sound"] = control2(sound);
+  lib["n"] = control2(n);
+  lib["note"] = control2(note$2);
+  function evaluator(node, scope2) {
+    const { type } = node;
+    if (type === "list") {
+      const { children } = node;
+      const [name3, ...args2] = children;
+      if (typeof name3 === "function") {
+        return name3(...args2);
+      }
+      if (name3.value === "def") {
+        return silence;
+      }
+      const first = name3.firstCycle(true)[0];
+      const t = typeof first?.value;
+      if (t !== "function") {
+        throw new Error(`[mondo] expected function, got "${first?.value}"`);
+      }
+      return name3.fmap((fn) => {
+        if (typeof fn !== "function") {
+          throw new Error(`[mondo] "${fn}" is not a function`);
+        }
+        return fn(...args2);
+      }).innerJoin();
+    }
+    let { value: value2 } = node;
+    if (type === "plain" && scope2[value2]) {
+      return reify(scope2[value2]);
+    }
+    const variable = lib[value2] ?? strudelScope[value2];
+    let pat;
+    if (type === "plain" && typeof variable !== "undefined") {
+      if (["!", "extend", "@", "expand", "square", "angle", "all", "setcpm", "setcps"].includes(value2)) {
+        return variable;
+      }
+      pat = reify(variable);
+    } else {
+      pat = reify(value2);
+    }
+    if (node.loc && typeof pat.withLoc === "function") {
+      pat = pat.withLoc(node.loc[0], node.loc[1]);
+    }
+    return pat;
+  }
+  var runner = new MondoRunner({ evaluator });
+  function mondo(code2, offset2 = 0) {
+    if (Array.isArray(code2)) {
+      code2 = code2.join("");
+    }
+    const pat = runner.run(code2, void 0, offset2);
+    return withMarkcss(pat);
+  }
+  var getLocations = (code2, offset2) => runner.parser.get_locations(code2, offset2);
+  var mondi = (str, offset2) => mondo(`[${str}]`, offset2);
+  registerLanguage("mondo", { getLocations });
+  var mondolang = (code2) => mondo(code2, 0);
+  registerLanguage("mondolang", { getLocations: (code2) => getLocations(code2, 0) });
+
   // src/strudel.js
-  var DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
+  var DEFAULT_PATTERN = `'personal program'
+n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
   .room(2)
@@ -55461,6 +56214,8 @@ $: (${split.expr})${fx}`;
     return rewritten;
   }
   function buildBotSilentBlock(peer) {
+    const botDir = readDirective(peer.pattern).kind;
+    if (botDir !== "bot" && botDir !== "personal") return null;
     const code2 = normalizePeerCode(peer.pattern);
     if (!code2 || !peer.playing || !hasTextCycles(code2) && !hasCssCycles(code2)) return null;
     const hydraSplit = splitHydraCode(code2);
@@ -55483,8 +56238,12 @@ $: (${split.expr})${fx}`;
   }
   function buildPeerBlock(peer) {
     if (peer.isBot) return buildBotSilentBlock(peer);
-    const netCycles = isNetCyclesActive();
-    const source2 = netCycles ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
+    const jPattern = isJPatternActive();
+    const source2 = jPattern ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
+    if (source2 && readDirective(source2).kind !== "personal") {
+      if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal program' directive \u2014 dropped`);
+      return null;
+    }
     let code2 = normalizePeerCode(source2);
     if (!code2 || !peer.playing) {
       if (hasTextCycles(code2)) {
@@ -55502,7 +56261,7 @@ $: (${split.expr})${fx}`;
     const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
     const params2 = computePeerStrudelParams(peer);
     let fx = peer.isLocal ? "" : effectChainFor(params2);
-    if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
+    if (jPattern && peer.jitsiId) fx += `.gain(_jpGate(${JSON.stringify(peer.jitsiId)}))`;
     const isText = hasTextCycles(code2);
     const isCss = hasCssCycles(code2);
     const hydraSplit = splitHydraCode(code2);
@@ -55698,7 +56457,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
       await initStrudel2({ audioContext: audioCtx3 });
       runPrebake().catch((e30) => console.warn("[strudel] prebake failed", e30));
       _sliderRef = mod2.ref;
-      const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
+      const _jpGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
       const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
       const textScope = installTextCycles(mod2);
       const cssScope = installCssCycles(mod2);
@@ -55713,7 +56472,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
         }
         return result;
       };
-      await mod2.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, initHydra: initHydra2, ...textScope, ...cssScope });
+      await mod2.evalScope({ sliderWithID, _jpGate, live, _liveSilent, _data, initHydra: initHydra2, mondo, mondi, mondolang, ...textScope, ...cssScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -55745,7 +56504,7 @@ ${next}`;
         const preamble = next.slice(0, blankIdx).replace(/\.out\s*\(\s*o0\s*\)/g, ".out(o1)").replace(/\.out\s*\(\s*\)/g, ".out(o1)");
         next = preamble + next.slice(blankIdx);
       }
-      next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)";
+      next += "\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt).color(()=>window._hvR*((window._jpVisual&&window._jpVisual.brightness)||1),()=>window._hvG*((window._jpVisual&&window._jpVisual.brightness)||1),()=>window._hvB*((window._jpVisual&&window._jpVisual.brightness)||1)).out(o0)";
     }
     if (next) {
       setTextAtoms(textAtoms);
@@ -55799,7 +56558,7 @@ ${next}`;
     }
   }
   registerTextProbe("program", () => ({
-    netCyclesActive: isNetCyclesActive(),
+    jPatternActive: isJPatternActive(),
     aggregatorPresent: !!getAggregatorPeer(),
     peers: getAllPeers().map((p) => ({
       jitsiId: p.jitsiId,
@@ -55866,10 +56625,10 @@ ${next}`;
   document.addEventListener("trussal-aggregator-mode-change", () => {
     if (strudelBoot) rebuildAndEvaluate();
   });
-  document.addEventListener("trussal-netcycles-mode", () => {
+  document.addEventListener("trussal-jpattern-mode", () => {
     if (strudelBoot) rebuildAndEvaluate();
   });
-  document.addEventListener("trussal-netcycles-apply", () => {
+  document.addEventListener("trussal-jpattern-apply", () => {
     if (strudelBoot) rebuildAndEvaluate();
   });
 
@@ -55880,7 +56639,7 @@ ${next}`;
   init_MetaprogrammerParser();
   function classifyEditor(classNames) {
     const set2 = new Set(classNames || []);
-    if (set2.has("nc-code")) return "netcycles";
+    if (set2.has("jp-code")) return "jpattern";
     if (set2.has("ts-code")) return "strudel";
     return null;
   }
@@ -55932,13 +56691,13 @@ ${next}`;
     };
     return { value: newText, selectionStart: mapOffset(start), selectionEnd: mapOffset(end2) };
   }
-  var NC_BTN_MARKER = " // netcycles-btn";
-  var NC_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
-  function parseNetCyclesButtons(text2) {
+  var JP_BTN_MARKER = " // jpattern-btn";
+  var JP_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
+  function parseJPatternButtons(text2) {
     const buttons = [];
     const seen = /* @__PURE__ */ new Set();
     for (const line of String(text2 ?? "").split("\n")) {
-      const m2 = NC_BTN_DECL_RE.exec(line);
+      const m2 = JP_BTN_DECL_RE.exec(line);
       if (!m2) continue;
       const body = m2[2].replace(/\s*\/\/.*$/, "").trimEnd();
       if (!body) continue;
@@ -55949,7 +56708,7 @@ ${next}`;
       buttons.push({
         snippet,
         label: buttonLabel(m2[1], body),
-        active: isNetCyclesSnippetActive(text2, snippet)
+        active: isJPatternSnippetActive(text2, snippet)
       });
     }
     return buttons;
@@ -55959,19 +56718,19 @@ ${next}`;
     return compact2.length > 20 ? `${compact2.slice(0, 20)}\u2026` : compact2;
   }
   function participantTokensIn(snippet) {
-    const m2 = /^\$\s*participants\s*[<[]([^\]>]*)[\]>]\s*$/.exec(String(snippet ?? "").trim());
+    const m2 = /^\$\s*(?:participants\s*)?[<[]([^\]>]*)[\]>]\s*$/.exec(String(snippet ?? "").trim());
     if (!m2) return null;
     const tokens = m2[1].split(/\s+/).filter(Boolean);
     return tokens.length ? tokens : null;
   }
-  function isNetCyclesSnippetActive(text2, snippet) {
+  function isJPatternSnippetActive(text2, snippet) {
     const cur = text2 || "";
     const tokens = participantTokensIn(snippet);
     if (tokens) return hasParticipantSequence(cur) && tokens.every((t) => programHasParticipant(cur, t));
     return cur.includes(`
-${snippet}${NC_BTN_MARKER}`);
+${snippet}${JP_BTN_MARKER}`);
   }
-  function toggleNetCyclesSnippet(text2, snippet) {
+  function toggleJPatternSnippet(text2, snippet) {
     const cur = text2 || "";
     const tokens = participantTokensIn(snippet);
     if (tokens) {
@@ -55989,9 +56748,9 @@ ${snippet}
       );
     }
     const active4 = `
-${snippet}${NC_BTN_MARKER}`;
+${snippet}${JP_BTN_MARKER}`;
     const commented = `
-// ${snippet}${NC_BTN_MARKER}`;
+// ${snippet}${JP_BTN_MARKER}`;
     if (cur.includes(commented)) return cur.replace(commented, active4);
     if (cur.includes(active4)) return cur.replace(active4, commented);
     return cur + active4;
@@ -56018,13 +56777,13 @@ ${snippet}${NC_BTN_MARKER}`;
     return !!peer.isBot && peer.canEditMetaprogram === false;
   }
   function strudelTextarea() {
-    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)");
+    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.jp-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.jp-code)");
   }
-  function netcyclesTextarea() {
-    return document.querySelector("#trussal-studio-overlay .nc-code");
+  function jpatternTextarea() {
+    return document.querySelector("#trussal-studio-overlay .jp-code");
   }
   function readActiveEditor() {
-    if (lastKind === "netcycles") {
+    if (lastKind === "jpattern") {
       const sync = ensureMetaprogramSync();
       return sync.getText() || getProgramText() || "";
     }
@@ -56032,38 +56791,38 @@ ${snippet}${NC_BTN_MARKER}`;
     return ta ? ta.value : getLocalPeer()?.pattern ?? "";
   }
   function writeActiveEditor(code2, { modality = "head-cursor" } = {}) {
-    if (lastKind === "netcycles") {
+    if (lastKind === "jpattern") {
       const sync = ensureMetaprogramSync();
       sync.setText(code2, "local");
-      const ta2 = netcyclesTextarea();
+      const ta2 = jpatternTextarea();
       if (ta2 && ta2.value !== code2) ta2.value = code2;
-      document.dispatchEvent(new CustomEvent("trussal-netcycles-program", { detail: { text: code2, modality } }));
+      document.dispatchEvent(new CustomEvent("trussal-jpattern-program", { detail: { text: code2, modality } }));
       return;
     }
     const ta = strudelTextarea();
     if (ta) ta.value = code2;
   }
-  function applyIfNetCycles() {
-    if (lastKind !== "netcycles") return null;
+  function applyIfJPattern() {
+    if (lastKind !== "jpattern") return null;
     const errors = applyProgramText(readActiveEditor());
-    return { kind: "netcycles", errors };
+    return { kind: "jpattern", errors };
   }
   function applyMetaprogramNow() {
-    return applyProgramText(readNetCyclesText());
+    return applyProgramText(readJPatternText());
   }
-  function toggleNetCyclesButtonCode(snippet) {
+  function toggleJPatternButtonCode(snippet) {
     if (metaprogramReadOnly()) return [];
-    const next = toggleNetCyclesSnippet(readNetCyclesText(), snippet);
+    const next = toggleJPatternSnippet(readJPatternText(), snippet);
     const sync = ensureMetaprogramSync();
     sync.setText(next, "local");
-    const ta = netcyclesTextarea();
+    const ta = jpatternTextarea();
     if (ta) ta.value = next;
-    document.dispatchEvent(new CustomEvent("trussal-netcycles-program", {
+    document.dispatchEvent(new CustomEvent("trussal-jpattern-program", {
       detail: { text: next, modality: "button" }
     }));
     return applyProgramText(next);
   }
-  function readNetCyclesText() {
+  function readJPatternText() {
     const sync = ensureMetaprogramSync();
     return sync.getText() || getProgramText() || "";
   }
@@ -56115,17 +56874,17 @@ ${snippet}${NC_BTN_MARKER}`;
     } catch {
     }
     globalThis.StrudelButton = StrudelButton;
-    class NetCyclesButton extends HTMLButtonElement {
+    class JPatternButton extends HTMLButtonElement {
       constructor(code2) {
         super();
-        this._netCyclesCode = code2;
+        this._jPatternCode = code2;
       }
     }
     try {
-      customElements.define("net-cycles-button", NetCyclesButton, { extends: "button" });
+      customElements.define("j-pattern-button", JPatternButton, { extends: "button" });
     } catch {
     }
-    globalThis.NetCyclesButton = NetCyclesButton;
+    globalThis.JPatternButton = JPatternButton;
   }
   trackEditorFocus();
   if (typeof document !== "undefined") {
@@ -56138,7 +56897,7 @@ ${snippet}${NC_BTN_MARKER}`;
     writeActiveEditor(code2, { modality: "head-cursor" });
   }
   async function evaluate2() {
-    if (applyIfNetCycles()) return;
+    if (applyIfJPattern()) return;
     try {
       sendLocalPattern(getCode());
       await bootStrudelOnUserGesture();
@@ -56266,7 +57025,7 @@ ${code2}${BTN_MARKER}`;
     if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
       _dwellCandidatesAt = now;
       _dwellCandidates = Array.from(document.querySelectorAll(
-        '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]'
+        '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
       ));
     }
     return _dwellCandidates;
@@ -56415,7 +57174,7 @@ ${code2}${BTN_MARKER}`;
       _rafId2 = requestAnimationFrame(_detectionLoop);
       return;
     }
-    const densityScale = typeof window !== "undefined" && window._ncLandmarkScale || 1;
+    const densityScale = typeof window !== "undefined" && window._jpLandmarkScale || 1;
     if (densityScale < 1) {
       _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
       if (_densitySkip !== 0) {
@@ -56444,9 +57203,9 @@ ${code2}${BTN_MARKER}`;
         if (btn.classList.contains("ts-fx-dwell-btn")) {
           hoveredKey = btn.dataset.fx;
           hoveredType = "fx";
-        } else if (btn.classList.contains("nc-head-btn") || btn._netCyclesCode !== void 0) {
-          hoveredKey = btn.dataset.netcyclesCode ?? btn._netCyclesCode;
-          hoveredType = "netcycles";
+        } else if (btn.classList.contains("jp-head-btn") || btn._jPatternCode !== void 0) {
+          hoveredKey = btn.dataset.jpatternCode ?? btn._jPatternCode;
+          hoveredType = "jpattern";
         } else if (btn.classList.contains("ts-dwell-btn")) {
           hoveredKey = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
           hoveredType = "action";
@@ -56491,8 +57250,8 @@ ${code2}${BTN_MARKER}`;
           _toggleFxEffect(_dwell.key);
         } else if (_dwell.type === "action") {
           if (_dwell.el) _dwell.el.click();
-        } else if (_dwell.type === "netcycles") {
-          toggleNetCyclesButtonCode(_dwell.key);
+        } else if (_dwell.type === "jpattern") {
+          toggleJPatternButtonCode(_dwell.key);
         } else {
           toggleButtonCode(_dwell.key);
         }
@@ -56781,9 +57540,9 @@ ${code2}${BTN_MARKER}`;
       </div>
 
       <div class="fg-section">
-        <div class="fg-section-title">NetCyclesButton</div>
+        <div class="fg-section-title">JPatternButton</div>
         <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-          write in the Net Cycles editor:<br>
+          write in the JPattern editor:<br>
           <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
           <code style="font-size:9px">*# crush wcl 2</code><br>
           dwell to put that voice in the ring (or that effect in the chain)
@@ -56893,11 +57652,11 @@ ${code2}${BTN_MARKER}`;
       return true;
     };
     const truncate = (s2) => s2.length > 20 ? s2.slice(0, 20) + "\u2026" : s2;
-    if (activeEditorKind() === "netcycles") {
-      const buttons2 = parseNetCyclesButtons(code2).map((b) => ({ code: b.snippet, label: b.label, on: b.active }));
-      if (render(buttons2, " nc-head-btn", "data-netcycles-code")) {
-        bar.querySelectorAll("[data-netcycles-code]").forEach((btn) => {
-          btn.addEventListener("click", () => toggleNetCyclesButtonCode(btn.dataset.netcyclesCode));
+    if (activeEditorKind() === "jpattern") {
+      const buttons2 = parseJPatternButtons(code2).map((b) => ({ code: b.snippet, label: b.label, on: b.active }));
+      if (render(buttons2, " jp-head-btn", "data-jpattern-code")) {
+        bar.querySelectorAll("[data-jpattern-code]").forEach((btn) => {
+          btn.addEventListener("click", () => toggleJPatternButtonCode(btn.dataset.jpatternCode));
         });
       }
       return;
@@ -57147,6 +57906,7 @@ ${s2}${BTN_MARKER}`)
   var _dwellFired = false;
   var _rafId3 = null;
   var _activityBound = false;
+  var _savedHeight = "";
   document.addEventListener("focusin", (e30) => {
     if (e30.target?.classList?.contains("ts-code")) {
       _lastTA = e30.target;
@@ -57326,21 +58086,34 @@ ${s2}${BTN_MARKER}`)
     if (!panel) return;
     const body = panel.querySelector(".ts-kbd-body");
     const btn = panel.querySelector(".ts-kbd-collapse-btn");
-    if (body) body.style.display = _collapsed ? "none" : "flex";
-    if (btn) btn.textContent = _collapsed ? "\u25B2" : "\u25BC";
+    panel.classList.toggle("ts-kbd-collapsed", val2);
+    if (val2) {
+      _savedHeight = panel.style.height || "";
+      panel.style.height = "auto";
+    } else {
+      panel.style.height = _savedHeight;
+    }
+    if (body) body.style.display = val2 ? "none" : "flex";
+    if (btn) btn.textContent = val2 ? "\u25B2" : "\u25BC";
+  }
+  var MIN_W = 320;
+  var MIN_H = 170;
+  function _pinTopLeft(panel, rect) {
+    panel.style.bottom = "auto";
+    panel.style.right = "auto";
+    panel.style.top = `${rect.top}px`;
+    panel.style.left = `${rect.left}px`;
   }
   function _makeDraggable(panel, handle) {
     handle.style.cursor = "grab";
     handle.addEventListener("mousedown", (e30) => {
-      if (e30.target.closest("button")) return;
+      if (e30.target.closest("button, .ts-kbd-resize")) return;
       e30.preventDefault();
       handle.style.cursor = "grabbing";
       const rect = panel.getBoundingClientRect();
       const startX = e30.clientX;
       const startY = e30.clientY;
-      panel.style.bottom = "";
-      panel.style.left = `${rect.left}px`;
-      panel.style.top = `${rect.top}px`;
+      _pinTopLeft(panel, rect);
       const origL = rect.left;
       const origT = rect.top;
       function onMove(ev) {
@@ -57356,6 +58129,46 @@ ${s2}${BTN_MARKER}`)
       window.addEventListener("mouseup", onUp);
     });
   }
+  function _makeResizable(panel) {
+    panel.querySelectorAll(".ts-kbd-resize").forEach((h2) => {
+      const west = h2.classList.contains("ts-kbd-resize-nw") || h2.classList.contains("ts-kbd-resize-sw");
+      const north = h2.classList.contains("ts-kbd-resize-nw") || h2.classList.contains("ts-kbd-resize-ne");
+      h2.addEventListener("mousedown", (e30) => {
+        e30.preventDefault();
+        e30.stopPropagation();
+        const r2 = panel.getBoundingClientRect();
+        const sx = e30.clientX, sy = e30.clientY;
+        _pinTopLeft(panel, r2);
+        panel.style.width = `${r2.width}px`;
+        panel.style.height = `${r2.height}px`;
+        const maxW = window.innerWidth - 20;
+        const maxH = window.innerHeight - 20;
+        function onMove(ev) {
+          const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          if (west) {
+            const w2 = Math.min(maxW, Math.max(MIN_W, r2.width - dx));
+            panel.style.width = `${w2}px`;
+            panel.style.left = `${r2.left + (r2.width - w2)}px`;
+          } else {
+            panel.style.width = `${Math.min(maxW, Math.max(MIN_W, r2.width + dx))}px`;
+          }
+          if (north) {
+            const ht2 = Math.min(maxH, Math.max(MIN_H, r2.height - dy));
+            panel.style.height = `${ht2}px`;
+            panel.style.top = `${r2.top + (r2.height - ht2)}px`;
+          } else {
+            panel.style.height = `${Math.min(maxH, Math.max(MIN_H, r2.height + dy))}px`;
+          }
+        }
+        function onUp() {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        }
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+    });
+  }
   function _injectStyles3() {
     if (document.getElementById(KBD_STYLE_ID)) return;
     const s2 = document.createElement("style");
@@ -57365,6 +58178,11 @@ ${s2}${BTN_MARKER}`)
       position: fixed;
       bottom: 60px; left: 10px;
       width: min(840px, calc(100vw - 20px));
+      /* Explicit height so the flex:1 rows below have something to divide \u2014
+         drag and resize only ever touch top/left/width/height, never bottom. */
+      height: 264px;
+      min-width: 320px; min-height: 170px;
+      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
       background: rgba(5, 10, 8, 0.97);
       border: 1px solid rgba(255,255,255,0.15);
@@ -57375,6 +58193,29 @@ ${s2}${BTN_MARKER}`)
       user-select: none;
       font-family: sans-serif;
       overflow: hidden;
+    }
+    /* Collapsed = title bar only: drop the height floor so it can shrink to
+       the header (JS also clears the inline height while collapsed). */
+    #${KBD_PANEL_ID}.ts-kbd-collapsed { min-height: 0; }
+    #${KBD_PANEL_ID}.ts-kbd-collapsed .ts-kbd-resize { display: none; }
+    .ts-kbd-resize {
+      position: absolute;
+      width: 18px; height: 18px;
+      z-index: 6;
+      background: transparent;
+    }
+    .ts-kbd-resize-nw { top: 0;    left: 0;  cursor: nwse-resize; }
+    .ts-kbd-resize-ne { top: 0;    right: 0; cursor: nesw-resize; }
+    .ts-kbd-resize-sw { bottom: 0; left: 0;  cursor: nesw-resize; }
+    .ts-kbd-resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
+    /* Faint diagonal grip so the bottom-right corner reads as resizable. */
+    .ts-kbd-resize-se::after {
+      content: '';
+      position: absolute;
+      right: 3px; bottom: 3px;
+      width: 8px; height: 8px;
+      border-right: 2px solid rgba(255,255,255,0.28);
+      border-bottom: 2px solid rgba(255,255,255,0.28);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
        "body, body star { background-color: #0f5132 }" rule. Every structural
@@ -57426,6 +58267,8 @@ ${s2}${BTN_MARKER}`)
       pointer-events: none;
     }
     .ts-kbd-body {
+      flex: 1 1 auto;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       gap: 3px;
@@ -57436,6 +58279,7 @@ ${s2}${BTN_MARKER}`)
        row here was the "rectangle that does nothing" between the title bar and
        the keys. min-height keeps the keys from jumping when it appears. */
     .ts-kbd-pred-row {
+      flex: 0 0 auto;
       display: none;
       gap: 4px;
       overflow-x: auto;
@@ -57471,12 +58315,14 @@ ${s2}${BTN_MARKER}`)
       pointer-events: none;
     }
     .ts-kbd-row {
+      flex: 1 1 0;
+      min-height: 0;
       display: flex;
       gap: 3px;
       background: transparent;
     }
     .ts-kbd-key {
-      min-height: 38px;
+      min-height: 22px;
       padding: 0 2px;
       display: flex;
       align-items: center;
@@ -57604,8 +58450,14 @@ ${s2}${BTN_MARKER}`)
       body.appendChild(rowEl);
     });
     panel.appendChild(body);
+    for (const corner of ["nw", "ne", "sw", "se"]) {
+      const grip = document.createElement("div");
+      grip.className = `ts-kbd-resize ts-kbd-resize-${corner}`;
+      panel.appendChild(grip);
+    }
     document.body.appendChild(panel);
     _makeDraggable(panel, header);
+    _makeResizable(panel);
   }
   function _flash2(el) {
     el.classList.add("ts-kbd-flash");
@@ -57738,6 +58590,9 @@ ${s2}${BTN_MARKER}`)
     const studioOpen = !!overlay && overlay.style.display !== "none";
     if (!studioOpen || !_inMeeting()) _showPanel(false);
   }
+
+  // src/studio.js
+  init_program_directive();
 
   // src/editor-undo.js
   var HISTORY_LIMIT = 200;
@@ -58144,20 +58999,20 @@ ${s2}${BTN_MARKER}`)
     wrap.className = "ts-section nc-editor";
     wrap.innerHTML = `
     <div class="ts-section-head">
-      <div class="ts-section-title">Net Cycles \u2014 shared metaprogram</div>
+      <div class="ts-section-title">JPattern \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
         <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">\u25B6 Apply &amp; Start</button>
         <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
         <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply &amp; start \xB7 Ctrl+. to stop</span>
       </div>
     </div>
-    <textarea class="ts-code nc-code" spellcheck="false" style="min-height:96px;"></textarea>
+    <textarea class="ts-code jp-code" spellcheck="false" style="min-height:96px;"></textarea>
     <div class="ts-voice-btns nc-voice-btns"></div>
     <div class="ts-meta nc-errors" style="color:#ff8a8a;"></div>
     <div class="ts-meta nc-byline"></div>
   `;
     container2.appendChild(wrap);
-    const ta = wrap.querySelector(".nc-code");
+    const ta = wrap.querySelector(".jp-code");
     const errorsEl = wrap.querySelector(".nc-errors");
     const bylineEl = wrap.querySelector(".nc-byline");
     const applyBtn = wrap.querySelector(".nc-apply");
@@ -58197,22 +59052,22 @@ ${s2}${BTN_MARKER}`)
     );
     let btnsKey = null;
     function renderButtons() {
-      const buttons = parseNetCyclesButtons(ta.value);
+      const buttons = parseJPatternButtons(ta.value);
       const key = buttons.map((b) => `${b.snippet}${b.label}${b.active ? 1 : 0}`).join("\0");
       if (key !== btnsKey) {
         btnsKey = key;
         btnsEl.innerHTML = buttons.map(
-          (b) => `<button class="ts-voice-btn nc-head-btn${b.active ? " on" : ""}" type="button" data-netcycles-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
+          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
         ).join("");
-        btnsEl.querySelectorAll(".nc-head-btn").forEach((btn) => {
-          btn.addEventListener("click", () => press2(btn.dataset.netcyclesCode));
+        btnsEl.querySelectorAll(".jp-head-btn").forEach((btn) => {
+          btn.addEventListener("click", () => press2(btn.dataset.jpatternCode));
         });
       }
       refreshFacialGestureButtons();
     }
     function press2(snippet) {
       if (readOnly) return;
-      const errors = toggleNetCyclesButtonCode(snippet);
+      const errors = toggleJPatternButtonCode(snippet);
       showErrors(ta.value);
       if (errors.length) setByline("button left the program invalid \u2014 fix it above, then apply", false);
       else setByline("applied \u2014 takes effect at the next cycle boundary", true);
@@ -58234,7 +59089,7 @@ ${s2}${BTN_MARKER}`)
         try {
           ta.setSelectionRange(clamp3(selStart), clamp3(selEnd));
         } catch (e30) {
-          console.error("[netcycles] setSelectionRange failed", e30);
+          console.error("[jpattern] setSelectionRange failed", e30);
           throw e30;
         }
       }
@@ -58250,7 +59105,7 @@ ${s2}${BTN_MARKER}`)
         setByline(`last edit by ${payload.authorIndex} (${payload.modality || "keyboard"})`, false);
       }
     });
-    document.addEventListener("trussal-netcycles-program", () => {
+    document.addEventListener("trussal-jpattern-program", () => {
       refreshFromDoc();
       renderButtons();
     });
@@ -58270,7 +59125,7 @@ ${s2}${BTN_MARKER}`)
         stopAllBots(false);
         setByline("applied \u2014 takes effect at the next cycle boundary", true);
       } catch (e30) {
-        console.error("[netcycles] apply: starting playback failed", e30);
+        console.error("[jpattern] apply: starting playback failed", e30);
         setByline("applied, but starting playback failed \u2014 see console", false);
       }
       renderButtons();
@@ -58281,7 +59136,7 @@ ${s2}${BTN_MARKER}`)
         await stopStrudel();
         setByline("Stopped", false);
       } catch (e30) {
-        console.error("[netcycles] stop failed", e30);
+        console.error("[jpattern] stop failed", e30);
       }
     };
     const stop2 = async () => {
@@ -58338,17 +59193,17 @@ ${s2}${BTN_MARKER}`)
     "boxSizing"
   ];
   function injectStyleOnce() {
-    if (document.getElementById("nc-play-style")) return;
+    if (document.getElementById("jp-play-style")) return;
     const style = document.createElement("style");
-    style.id = "nc-play-style";
+    style.id = "jp-play-style";
     style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
-    .nc-play-mirror {
+    .jp-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
+    .jp-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
       background:transparent;
     }
-    .nc-play-box {
+    .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:2.25px solid #1ff466; border-radius:0;
       background:transparent;
@@ -58392,24 +59247,24 @@ ${s2}${BTN_MARKER}`)
   }
   function mountMetaprogrammerCycleHighlighter(container2) {
     if (!container2) return null;
-    const ta = container2.querySelector(".nc-code");
+    const ta = container2.querySelector(".jp-code");
     if (!ta) return null;
     const host = ta.parentElement;
-    if (!host || host.querySelector(".nc-play-overlay")) return null;
+    if (!host || host.querySelector(".jp-play-overlay")) return null;
     injectStyleOnce();
     if (getComputedStyle(host).position === "static") host.style.position = "relative";
     const overlay = document.createElement("div");
-    overlay.className = "nc-play-overlay";
+    overlay.className = "jp-play-overlay";
     const mirror = document.createElement("div");
-    mirror.className = "nc-play-mirror";
+    mirror.className = "jp-play-mirror";
     const box = document.createElement("div");
-    box.className = "nc-play-box";
+    box.className = "jp-play-box";
     box.style.display = "none";
     overlay.appendChild(box);
     host.append(overlay, mirror);
-    let activeToken = getActiveNetCyclesToken();
-    let activeIndex = getActiveNetCyclesIndex();
-    let activeKind = getActiveNetCyclesKind();
+    let activeToken = getActiveJPatternToken();
+    let activeIndex = getActiveJPatternIndex();
+    let activeKind = getActiveJPatternKind();
     function syncMetrics() {
       const cs = getComputedStyle(ta);
       for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
@@ -58456,7 +59311,7 @@ ${s2}${BTN_MARKER}`)
       box.style.height = m2.height + 2 + "px";
       box.style.transform = `translate(${m2.left - ta.scrollLeft - PAD}px, ${m2.top - ta.scrollTop - 1}px)`;
     }
-    document.addEventListener("trussal-netcycles-active", (e30) => {
+    document.addEventListener("trussal-jpattern-active", (e30) => {
       activeToken = e30.detail ? e30.detail.token : null;
       activeIndex = e30.detail ? e30.detail.index : null;
       activeKind = e30.detail ? e30.detail.kind : null;
@@ -58464,7 +59319,7 @@ ${s2}${BTN_MARKER}`)
     });
     ta.addEventListener("input", renderOutline);
     ta.addEventListener("scroll", renderOutline);
-    document.addEventListener("trussal-netcycles-program", renderOutline);
+    document.addEventListener("trussal-jpattern-program", renderOutline);
     if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(renderOutline).observe(ta);
     }
@@ -58584,9 +59439,9 @@ ${s2}${BTN_MARKER}`)
       compressor2.threshold.setTargetAtTime(comp.thresholdDb, now, 0.5);
       compressor2.knee.setTargetAtTime(comp.kneeDb, now, 0.5);
     }
-    window._ncLandmarkScale = landmarkDensityScale(load2);
+    window._jpLandmarkScale = landmarkDensityScale(load2);
     const metrics = effectiveWorstCase();
-    window._ncAvDecouplingS = avDecouplingSeconds(lastCycleSeconds, metrics);
+    window._jpAvDecouplingS = avDecouplingSeconds(lastCycleSeconds, metrics);
     const actions = healthActions(load2, { cycleSeconds: lastCycleSeconds, metrics });
     const json = JSON.stringify(actions);
     if (json !== lastActionsJson) {
@@ -58708,7 +59563,7 @@ ${s2}${BTN_MARKER}`)
     <div class="ts-chip-row">
       <div class="ts-avatar"></div>
       <div class="ts-name"></div>
-      <span class="ts-idx" title="Net Cycles room index"></span>
+      <span class="ts-idx" title="JPattern room index"></span>
     </div>
   `;
     el.addEventListener("click", () => {
@@ -58877,7 +59732,7 @@ ${s2}${BTN_MARKER}`)
   `;
     const countEl = el.querySelector(".ts-bot-count");
     el.querySelector('[data-bot-action="spawn"]').addEventListener("click", () => {
-      const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+      const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
       spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : void 0);
     });
     el.querySelector('[data-bot-action="remove-all"]').addEventListener("click", () => removeBots("all"));
@@ -59194,6 +60049,13 @@ ${s2}${BTN_MARKER}`)
     ${sampleList}`;
   }
   async function onEvalAndPlay(code2) {
+    if (typeof code2 === "string") {
+      const dir = readDirective(code2);
+      if (dir.kind !== "personal") {
+        setStatus(dir.kind == null ? "Add 'personal program' as the first line of your editor" : `This editor opens with '${dir.phrase}', not 'personal program'`);
+        return;
+      }
+    }
     setStatus("Starting\u2026");
     try {
       await bootAudioEngine();
@@ -59346,18 +60208,18 @@ ${s2}${BTN_MARKER}`)
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-netcycles" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
+    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
     overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
     overlay.addEventListener("click", (e30) => e30.stopPropagation());
-    const ncHost = overlay.querySelector(".ts-netcycles");
+    const ncHost = overlay.querySelector(".ts-jpattern");
     try {
       mountMetaprogrammerEditor(ncHost);
       mountMetaprogrammerCycleHighlighter(ncHost);
     } catch (e30) {
-      console.warn("[studio] Net Cycles card mount failed", e30);
+      console.warn("[studio] JPattern card mount failed", e30);
     }
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
@@ -59383,7 +60245,7 @@ ${s2}${BTN_MARKER}`)
       let seed2 = DEFAULT_PATTERN;
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved && saved.trim()) seed2 = saved;
+        if (saved && saved.trim()) seed2 = ensureDirective(saved, "personal");
       } catch (e30) {
       }
       sendLocalPattern(seed2);
@@ -59442,7 +60304,7 @@ ${s2}${BTN_MARKER}`)
   }
   document.addEventListener("trussal-kbd-eval", (e30) => {
     const code2 = e30.detail?.code;
-    if (e30.detail?.editor === "netcycles") {
+    if (e30.detail?.editor === "jpattern") {
       Promise.resolve().then(() => (init_Metaprogrammer(), Metaprogrammer_exports)).then((m2) => {
         const errors = m2.applyProgramText(typeof code2 === "string" ? code2 : "");
         setStatus(errors.length ? `metaprogram: ${errors[0].line}:${errors[0].col} ${errors[0].message}` : "metaprogram applied");
@@ -59452,7 +60314,7 @@ ${s2}${BTN_MARKER}`)
     onEvalAndPlay(typeof code2 === "string" ? code2 : getLocalPeer()?.pattern ?? "");
   });
   document.addEventListener("trussal-eval", () => {
-    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
     if (codeEl) {
       codeEl.classList.remove("ts-eval-flash");
       void codeEl.offsetWidth;

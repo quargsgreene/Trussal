@@ -66,6 +66,7 @@ let _dwellStart   = 0;
 let _dwellFired   = false;
 let _rafId        = null;
 let _activityBound = false;
+let _savedHeight  = ''; // panel height stashed while collapsed, restored on expand
 
 // Latch the editor the user last touched so on-screen keys and completions
 // target it. Detached nodes (a peer switch rebuilds the detail panel) are
@@ -260,24 +261,46 @@ function _setCollapsed(val) {
   if (!panel) return;
   const body = panel.querySelector('.ts-kbd-body');
   const btn  = panel.querySelector('.ts-kbd-collapse-btn');
-  if (body) body.style.display = _collapsed ? 'none' : 'flex';
-  if (btn)  btn.textContent    = _collapsed ? '▲' : '▼';
+  panel.classList.toggle('ts-kbd-collapsed', val);
+  // A body-less panel must not keep a resized (or default) height, or the
+  // hidden body becomes dead space below the title bar. Drop the height while
+  // collapsed and put the user's size back on expand.
+  if (val) {
+    _savedHeight = panel.style.height || '';
+    panel.style.height = 'auto';
+  } else {
+    panel.style.height = _savedHeight;
+  }
+  if (body) body.style.display = val ? 'none' : 'flex';
+  if (btn)  btn.textContent    = val ? '▲' : '▼';
+}
+
+const MIN_W = 320;
+const MIN_H = 170;
+
+// Pin the panel to a top/left box: clear the CSS bottom/right anchors so an
+// inline top/left is the ONLY constraint. `style.bottom = ''` removes the
+// inline value but leaves the stylesheet's `bottom: 60px` in force — a fixed
+// element then honours BOTH top and bottom and stretches vertically, which is
+// the "dead space grows as you drag it up" bug. `'auto'` actually cancels it.
+function _pinTopLeft(panel, rect) {
+  panel.style.bottom = 'auto';
+  panel.style.right  = 'auto';
+  panel.style.top    = `${rect.top}px`;
+  panel.style.left   = `${rect.left}px`;
 }
 
 // ── Drag ───────────────────────────────────────────────────────────────────────
 function _makeDraggable(panel, handle) {
   handle.style.cursor = 'grab';
   handle.addEventListener('mousedown', (e) => {
-    if (e.target.closest('button')) return;
+    if (e.target.closest('button, .ts-kbd-resize')) return;
     e.preventDefault();
     handle.style.cursor = 'grabbing';
     const rect   = panel.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
-    // Switch from bottom/left anchor to top/left so drag works in all positions.
-    panel.style.bottom = '';
-    panel.style.left   = `${rect.left}px`;
-    panel.style.top    = `${rect.top}px`;
+    _pinTopLeft(panel, rect);
     const origL = rect.left;
     const origT = rect.top;
     function onMove(ev) {
@@ -294,6 +317,50 @@ function _makeDraggable(panel, handle) {
   });
 }
 
+// ── Resize (four corner handles) ───────────────────────────────────────────────
+// Each corner moves its own two edges and leaves the opposite corner fixed.
+// The body/rows are flex:1, so a taller panel means taller keys, not padding.
+function _makeResizable(panel) {
+  panel.querySelectorAll('.ts-kbd-resize').forEach((h) => {
+    const west  = h.classList.contains('ts-kbd-resize-nw') || h.classList.contains('ts-kbd-resize-sw');
+    const north = h.classList.contains('ts-kbd-resize-nw') || h.classList.contains('ts-kbd-resize-ne');
+    h.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r  = panel.getBoundingClientRect();
+      const sx = e.clientX, sy = e.clientY;
+      _pinTopLeft(panel, r);
+      panel.style.width  = `${r.width}px`;
+      panel.style.height = `${r.height}px`;
+      const maxW = window.innerWidth  - 20;
+      const maxH = window.innerHeight - 20;
+      function onMove(ev) {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (west) {
+          const w = Math.min(maxW, Math.max(MIN_W, r.width - dx));
+          panel.style.width = `${w}px`;
+          panel.style.left  = `${r.left + (r.width - w)}px`;
+        } else {
+          panel.style.width = `${Math.min(maxW, Math.max(MIN_W, r.width + dx))}px`;
+        }
+        if (north) {
+          const ht = Math.min(maxH, Math.max(MIN_H, r.height - dy));
+          panel.style.height = `${ht}px`;
+          panel.style.top    = `${r.top + (r.height - ht)}px`;
+        } else {
+          panel.style.height = `${Math.min(maxH, Math.max(MIN_H, r.height + dy))}px`;
+        }
+      }
+      function onUp() {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
 // ── DOM construction ───────────────────────────────────────────────────────────
 function _injectStyles() {
   if (document.getElementById(KBD_STYLE_ID)) return;
@@ -304,6 +371,11 @@ function _injectStyles() {
       position: fixed;
       bottom: 60px; left: 10px;
       width: min(840px, calc(100vw - 20px));
+      /* Explicit height so the flex:1 rows below have something to divide —
+         drag and resize only ever touch top/left/width/height, never bottom. */
+      height: 264px;
+      min-width: 320px; min-height: 170px;
+      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
       background: rgba(5, 10, 8, 0.97);
       border: 1px solid rgba(255,255,255,0.15);
@@ -314,6 +386,29 @@ function _injectStyles() {
       user-select: none;
       font-family: sans-serif;
       overflow: hidden;
+    }
+    /* Collapsed = title bar only: drop the height floor so it can shrink to
+       the header (JS also clears the inline height while collapsed). */
+    #${KBD_PANEL_ID}.ts-kbd-collapsed { min-height: 0; }
+    #${KBD_PANEL_ID}.ts-kbd-collapsed .ts-kbd-resize { display: none; }
+    .ts-kbd-resize {
+      position: absolute;
+      width: 18px; height: 18px;
+      z-index: 6;
+      background: transparent;
+    }
+    .ts-kbd-resize-nw { top: 0;    left: 0;  cursor: nwse-resize; }
+    .ts-kbd-resize-ne { top: 0;    right: 0; cursor: nesw-resize; }
+    .ts-kbd-resize-sw { bottom: 0; left: 0;  cursor: nesw-resize; }
+    .ts-kbd-resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
+    /* Faint diagonal grip so the bottom-right corner reads as resizable. */
+    .ts-kbd-resize-se::after {
+      content: '';
+      position: absolute;
+      right: 3px; bottom: 3px;
+      width: 8px; height: 8px;
+      border-right: 2px solid rgba(255,255,255,0.28);
+      border-bottom: 2px solid rgba(255,255,255,0.28);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
        "body, body star { background-color: #0f5132 }" rule. Every structural
@@ -365,6 +460,8 @@ function _injectStyles() {
       pointer-events: none;
     }
     .ts-kbd-body {
+      flex: 1 1 auto;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       gap: 3px;
@@ -375,6 +472,7 @@ function _injectStyles() {
        row here was the "rectangle that does nothing" between the title bar and
        the keys. min-height keeps the keys from jumping when it appears. */
     .ts-kbd-pred-row {
+      flex: 0 0 auto;
       display: none;
       gap: 4px;
       overflow-x: auto;
@@ -410,12 +508,14 @@ function _injectStyles() {
       pointer-events: none;
     }
     .ts-kbd-row {
+      flex: 1 1 0;
+      min-height: 0;
       display: flex;
       gap: 3px;
       background: transparent;
     }
     .ts-kbd-key {
-      min-height: 38px;
+      min-height: 22px;
       padding: 0 2px;
       display: flex;
       align-items: center;
@@ -551,8 +651,17 @@ function _buildPanel() {
   });
 
   panel.appendChild(body);
+
+  // ── Corner resize handles ──
+  for (const corner of ['nw', 'ne', 'sw', 'se']) {
+    const grip = document.createElement('div');
+    grip.className = `ts-kbd-resize ts-kbd-resize-${corner}`;
+    panel.appendChild(grip);
+  }
+
   document.body.appendChild(panel);
   _makeDraggable(panel, header);
+  _makeResizable(panel);
 }
 
 function _flash(el) {
