@@ -2,7 +2,7 @@
 //
 // The one place that knows what a data-pack reference MEANS, shared by all four
 // contexts that can hold one: Strudel and Text Cycles (via the string-literal
-// rewrite in strudel.js), Hydra (via H() in hydra-params.js), and Net Cycles
+// rewrite in strudel.js), Hydra (via H() in hydra-params.js), and JPattern
 // (via the metaprogram parser). They must not disagree, for the same reason
 // hydra-code.js exists.
 //
@@ -207,7 +207,7 @@ function buildPattern(values, strudel, seedParts) {
       value: fn, writable: true, configurable: true, enumerable: false,
     });
   }
-  // The values themselves, for Net Cycles and the mosaic — they sample against
+  // The values themselves, for JPattern and the mosaic — they sample against
   // the room's cycle grid rather than running a Strudel scheduler.
   Object.defineProperty(pattern, 'dataValues', {
     value: values, writable: false, configurable: true, enumerable: false,
@@ -284,7 +284,7 @@ export function makeDataFn(strudel) {
 
 /**
  * Sample a reference's values at a cycle position, for the contexts that have
- * no Strudel scheduler: the aggregator's mosaic and Net Cycles. One cycle
+ * no Strudel scheduler: the aggregator's mosaic and JPattern. One cycle
  * walks the whole sample, matching what buildPattern lays out.
  */
 export function sampleDataRefAt(text, cyclePos) {

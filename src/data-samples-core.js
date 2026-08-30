@@ -5,7 +5,7 @@
 // properties (JSON) becomes one sample holding a list of values. A performer
 // references them exactly like an audio bank — `"Weather:3"` — except a data
 // sample is never a sound; it is a pattern of values that can drive a Strudel
-// parameter, a Hydra parameter, Text Cycles or Net Cycles.
+// parameter, a Hydra parameter, Text Cycles or JPattern.
 //
 // Everything here is pure: no DOM, no IndexedDB, no Strudel. Storage lives in
 // user-samples.js and pattern construction in data-ref.js, so the parsing and

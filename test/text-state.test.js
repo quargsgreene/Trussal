@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram } from './helpers/metaprogram.js';
 import {
   textAndCssStateFor,
   textStateIsNeutral,

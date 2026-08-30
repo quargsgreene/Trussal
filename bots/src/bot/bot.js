@@ -8,7 +8,8 @@
  * reason `puppeteer-core` is only imported lazily in index.js, never here.
  */
 
-import { INIT_HYDRA_PATTERN } from '../../../src/hydra-code.js';
+import { INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN } from '../../../src/hydra-code.js';
+import { DIRECTIVE_LINE_PATTERN } from '../../../src/program-directive.js';
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
@@ -68,6 +69,9 @@ export class Bot {
     // them and drift from the browser's answer.
     await this.page.evaluateOnNewDocument(pageRemoteControl, [
       INIT_HYDRA_PATTERN,
+      // The preamble is now optional: a pushed edit that only shows Hydra's
+      // SHAPE (a render/source call) still brings its own program.
+      HYDRA_SHAPE_PATTERN,
       INIT_TEXT_CYCLES_PATTERN,
     ], {
       // Same reasoning, same JSON-only constraint: the bot's own REPL is bare
@@ -80,6 +84,10 @@ export class Bot {
       css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
       initTextCycles: INIT_TEXT_CYCLES_PATTERN,
       initCss: INIT_CSS_PATTERN,
+      // The 'personal program' / 'bot program' directive a pushed edit opens
+      // with — a bare string literal the bare REPL has no use for, stripped
+      // the same way the browser's normalizePeerCode strips it.
+      directive: DIRECTIVE_LINE_PATTERN,
     });
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);

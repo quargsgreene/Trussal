@@ -18,7 +18,7 @@ import {
   removeParticipantFromProgram,
   programHasParticipant,
   hasParticipantSequence
-} from '../src/audio-net/MetaprogrammerParser.js';
+} from './helpers/metaprogram.js';
 
 function astOf(text) {
   const { ast, errors } = parseMetaprogram(text);

@@ -8,8 +8,44 @@ import {
   usesExternalSource,
   usesPatternParams,
   mosaicCellSource,
-  programDeclaresHydra
+  programDeclaresHydra,
+  ensureCapabilityPreambles,
+  looksLikeHydra
 } from '../src/hydra-code.js';
+
+// --- optional preambles (auto-inject) --------------------------------------
+
+test('hydra-code: preamble-less Hydra is recognised and gets its await initHydra()', () => {
+  assert.equal(looksLikeHydra('osc(10).out()'), true);
+  assert.equal(looksLikeHydra('src(s0).out()'), true);
+  assert.equal(looksLikeHydra('s("bd sd").fast(2)'), false);
+  assert.equal(hasHydraCode('osc(10).out()'), true);
+  const split = splitHydraCode('osc(10).out()\n\ns("bd sd")');
+  assert.ok(split);
+  assert.match(split.preamble, /await initHydra\(\)/);
+  assert.equal(split.strudel, 's("bd sd")');
+  // camera preamble-less still earns a blit cell
+  assert.equal(mosaicCellSource('src(s0).out()'), 'blit');
+  assert.equal(mosaicCellSource('osc(10).out()'), 'reexecute');
+});
+
+test('hydra-code: an explicit preamble is left exactly as written', () => {
+  const explicit = 'await initHydra()\nosc(10).out()';
+  assert.equal(ensureCapabilityPreambles(explicit), explicit);
+});
+
+test('hydra-code: a word()/css() voice gets its own init line supplied', () => {
+  assert.match(ensureCapabilityPreambles('word("hi there")'), /^await initTextCycles\(\)\n\nword/);
+  assert.match(ensureCapabilityPreambles('css(`body{color:red}`)'), /^await initCss\(\)\n\ncss/);
+  // shared preamble when several capabilities are present
+  const both = ensureCapabilityPreambles('osc(4).out()\n\nword("x")');
+  assert.match(both, /await initHydra\(\)\nawait initTextCycles\(\)\n\n/);
+  // spliced into the existing preamble (before its first blank), not stacked
+  // ahead of it
+  const spliced = ensureCapabilityPreambles('await initHydra()\nosc(4).out()\n\nword("x")');
+  assert.equal(spliced, 'await initHydra()\nosc(4).out()\nawait initTextCycles()\n\nword("x")');
+  assert.ok(splitHydraCode(spliced).preamble.includes('await initTextCycles()'));
+});
 
 // --- detection ----------------------------------------------------------------
 

@@ -3,7 +3,7 @@
 // Samples local pressure (requestAnimationFrame-derived fps + navigator
 // heuristics), applies the RoomHealth compression policy to a master-bus
 // DynamicsCompressor, publishes the MediaPipe landmark-density scale
-// (window._ncLandmarkScale — consumed by facial-gesture's detection loop),
+// (window._jpLandmarkScale — consumed by facial-gesture's detection loop),
 // and exposes the current audio/video decoupling for the video pipeline.
 
 import { compressionParams, landmarkDensityScale, avDecouplingSeconds, healthActions } from './RoomHealth.js';
@@ -79,9 +79,9 @@ function tick() {
     compressor.threshold.setTargetAtTime(comp.thresholdDb, now, 0.5);
     compressor.knee.setTargetAtTime(comp.kneeDb, now, 0.5);
   }
-  window._ncLandmarkScale = landmarkDensityScale(load);
+  window._jpLandmarkScale = landmarkDensityScale(load);
   const metrics = effectiveWorstCase();
-  window._ncAvDecouplingS = avDecouplingSeconds(lastCycleSeconds, metrics);
+  window._jpAvDecouplingS = avDecouplingSeconds(lastCycleSeconds, metrics);
 
   const actions = healthActions(load, { cycleSeconds: lastCycleSeconds, metrics });
   const json = JSON.stringify(actions);

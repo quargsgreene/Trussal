@@ -335,7 +335,7 @@ async function buildChain(jitsiId) {
   }
 
   // Presence gain: aggregator-mode solo. Silences this peer locally when a
-  // remote aggregator is the sole audio source, independent of the Net Cycles
+  // remote aggregator is the sole audio source, independent of the JPattern
   // slot gate (chain.input), so the two multiply cleanly. 1 (audible) unless
   // aggregator mode mutes this peer.
   const presence = audioCtx.createGain();
@@ -538,7 +538,7 @@ subscribeParticipants((event, payload) => {
 export function getMasterBus() { return realDestination; }
 export function getAudioContext() { return audioCtx; }
 
-// Net Cycles slot gating: ramp a peer's whole chain (mic + external sources
+// JPattern slot gating: ramp a peer's whole chain (mic + external sources
 // all flow through chain.input) open/closed at an audio-clock time. Short
 // ramp avoids clicks without smearing the slot boundary.
 export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
@@ -551,7 +551,7 @@ export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
   return true;
 }
 
-// Net Cycles master effects: splice a {input, output} pair between the
+// JPattern master effects: splice a {input, output} pair between the
 // master bus and the real context destination — "after all other effects".
 // The spectrum analyser's parallel tap on the master bus is unaffected.
 export function insertMasterChain(endpoints) {
@@ -569,7 +569,7 @@ export function removeMasterChain(endpoints) {
   try { realDestination.connect(audioCtx.destination); } catch (e) {}
 }
 
-// Leaving Net Cycles mode: every chain back to unity immediately.
+// Leaving JPattern mode: every chain back to unity immediately.
 export function resetChainGates() {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;

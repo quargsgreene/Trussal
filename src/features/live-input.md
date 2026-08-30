@@ -70,9 +70,9 @@ sidecar does gate the one path that writes a *human's* pattern from the
 network (`remote-control` requires `target.isBot`, `server.js`), so this is
 peer-authored code, not operator-injected.
 
-## Metaprogrammer / Net Cycles
+## Metaprogrammer / JPattern
 
-`live()` needs no special handling: Net Cycles stores, queues, rotates, and
+`live()` needs no special handling: JPattern stores, queues, rotates, and
 slot-gates pattern text opaquely, so a pattern containing `live()` flows
 through the metaprogram scheduler exactly like any other Strudel code.
 

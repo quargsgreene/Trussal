@@ -309,7 +309,7 @@ function emitSequence(ctx, node, elements, mode, start, span, phaseCycle) {
 //
 // Version skew degrades, but a rest highlight still needs all THREE hops
 // deployed — the aggregator emits it, the SIDECAR relays it (an older
-// latency-instrument rebuilds the nc-active message field by field and drops
+// latency-instrument rebuilds the jp-active message field by field and drops
 // `kind`), and the bundle draws it. New bots alone show no rests anywhere.
 function indexNodes(participants) {
   const nodeIds = new Map();
@@ -438,7 +438,7 @@ export class MetaprogramScheduler {
     onEvent,                   // (event) → void
     lookaheadS = 0.2,
     tickMs = 50,
-    label = 'netcycles',       // tags this scheduler's log lines (browser vs aggregator)
+    label = 'jpattern',       // tags this scheduler's log lines (browser vs aggregator)
     log = null,                // (line) => void; null = console.log, false = silent
     setIntervalFn = (typeof setInterval !== 'undefined' ? setInterval : null),
     clearIntervalFn = (typeof clearInterval !== 'undefined' ? clearInterval : null)

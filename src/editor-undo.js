@@ -3,7 +3,7 @@
 // The browser's native undo stack only records keystrokes that go through
 // real user typing (or execCommand). Two things in this app bypass that: the
 // on-screen keyboard (head-cursor dwell) splices `.value` directly, and the
-// remote/Net Cycles editors periodically overwrite `.value` from live peer
+// remote/JPattern editors periodically overwrite `.value` from live peer
 // state. Both leave native Ctrl+Z with nothing to undo, so history is tracked
 // here instead, keyed off the 'input' event (which fires for both real
 // typing and the on-screen keyboard's dispatched Event('input'), but not for

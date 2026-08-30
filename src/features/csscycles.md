@@ -258,7 +258,7 @@ peer's styling behaves exactly as if their program had never run: their
 contribution reverts to the untouched page, not to some other peer's current
 value or to CSS's own defaults.
 
-Ownership is decided by whoever the Net Cycles ring's current slot belongs to —
+Ownership is decided by whoever the JPattern ring's current slot belongs to —
 the same ring Strudel/Hydra/Text Cycles use. But unlike those three, CSS
 Cycles' gate **never fails open**: those three show every peer at once whenever
 no ring is actively scheduling turns (no aggregator has reported in yet, or the

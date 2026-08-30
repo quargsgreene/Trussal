@@ -141,7 +141,7 @@ test('writeToIndividualParticipantBufferQueues: buffers keyed by room index, evi
   const { fakeLauncher } = makeFakes();
   const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
 
-  // human 0, their first bot 0a, and human 1 — the Net Cycles token space.
+  // human 0, their first bot 0a, and human 1 — the JPattern token space.
   const summary = await bot.writeToIndividualParticipantBufferQueues([
     { token: '0', samples: new Array(500).fill(0.5) },
     { token: '0a', samples: new Array(300).fill(0.25) },
@@ -1565,7 +1565,7 @@ test('a rest names the `~` it is resting at, and leaves the master output path a
     assert.equal(calls.roomPushes.at(-1), installedRoom, '# room still in force after the rest');
     assert.ok(calls.roomPushes.every((p) => p != null), '# room never cleared');
 
-    const active = bus.rec.sent.filter((m) => m.type === 'nc-active');
+    const active = bus.rec.sent.filter((m) => m.type === 'jp-active');
     const rest = active.find((m) => m.kind === 'rest');
     assert.ok(rest, 'the rest is broadcast so the editor can outline it');
     assert.equal(rest.token, null, 'a rest names no participant');
@@ -1612,7 +1612,7 @@ test('a `?` that degrades to a rest still reports resting, with no glyph to name
     assert.ok(degradedRests > 0, 'some cycles degrade to a rest and say so');
     // Broadcast as a rest with a null index: the room is resting, and there is
     // nothing in the source for the editor to outline.
-    const active = bus.rec.sent.filter((m) => m.type === 'nc-active');
+    const active = bus.rec.sent.filter((m) => m.type === 'jp-active');
     const rest = active.find((m) => m.kind === 'rest');
     assert.ok(rest, 'the degraded rest is still broadcast as a rest');
     assert.equal(rest.index, null, 'and addresses no written rest');

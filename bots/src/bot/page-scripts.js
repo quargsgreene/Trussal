@@ -148,7 +148,7 @@ export function pageAudioBridge() {
  */
 export function pageMarkBot(ownerIndex) {
   window.__trussalIsBot = true;
-  // Owner's room index (Net Cycles): peer-state.js sends it in the hello so
+  // Owner's room index (JPattern): peer-state.js sends it in the hello so
   // the sidecar assigns this bot a cluster index like 1a, 1b, …
   if (typeof ownerIndex === 'string' && ownerIndex) {
     window.__trussalBotOwnerIndex = ownerIndex;
@@ -287,6 +287,15 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   };
 
   const cap = capabilityPatterns || {};
+  // The leading 'personal program' / 'bot program' directive a pushed edit
+  // carries (studio seeds the textarea with the bot's whole announced program,
+  // directive included). It is a bare string literal the bare REPL has no use
+  // for — strip it exactly as the browser's normalizePeerCode does, using the
+  // pattern the shared module handed over rather than a re-typed local copy.
+  const directiveRe = cap.directive && typeof cap.directive.source === 'string'
+    ? toRegex({ source: cap.directive.source, flags: (cap.directive.flags || '') + (String(cap.directive.flags || '').includes('m') ? '' : 'm') })
+    : null;
+  const stripDirectiveLine = (text) => (directiveRe ? String(text).replace(directiveRe, '') : text);
   const dropPairs = [
     [toRegex(cap.initTextCycles), toRegex(cap.word)],
     [toRegex(cap.initCss), toRegex(cap.css)],
@@ -393,8 +402,9 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   };
 
   document.addEventListener('trussal-remote-pattern', async (e) => {
-    const pushed = e && e.detail && e.detail.code;
-    if (typeof pushed !== 'string') return;
+    const raw = e && e.detail && e.detail.code;
+    if (typeof raw !== 'string') return;
+    const pushed = stripDirectiveLine(raw);
     const editor = window.__trussalStrudelEditor;
     const ed = editor && editor.editor;
     const hydra = window.__trussalHydra || '';
@@ -629,7 +639,7 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
   // index.js used to decide THIS bot needs inbound video at all, since a
   // regular bot otherwise joins with channelLastN=0). Do the same here:
   // window.__trussalBotOwnerIndex (pageMarkBot) names the spawning human's
-  // Net Cycles room-index token; window.__trussalJitsiIdForRoomIndex is the
+  // JPattern room-index token; window.__trussalJitsiIdForRoomIndex is the
   // Trussal bundle's own reverse lookup (src/index.js) — this bot's page
   // navigated to the same Jitsi room URL a human does, so the full bundle,
   // roomMapper included, is already running here alongside the bare REPL.
@@ -1265,7 +1275,7 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  * lib-jitsi-meet participant/track model is authoritative — a remote audio track's
  * owner IS the real endpoint id, which the room-index resolver knows.
  *
- * Each buffer is identified by the peer's Net Cycles room-index token (0 for the
+ * Each buffer is identified by the peer's JPattern room-index token (0 for the
  * first human, 0a/0b/… for that human's bots, 1 for the next human, …). The tap
  * stores under the endpoint id and resolves to the token at drain time via
  * window.__trussalRoomIndexForJitsiId (exposed by the Trussal bundle) — so buffers
@@ -1297,7 +1307,7 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  *
  * A play->stop transition is deliberately NOT routed through markDeparted /
  * leftQueue — it used to be (see git history), and the shared path was the
- * bug: under an always-on Net Cycles metaprogram (the production default —
+ * bug: under an always-on JPattern metaprogram (the production default —
  * see MetaprogrammerParser.buildDefaultProgram), AggregatorBot.
  * removeParticipant's mode-aware depart() treats every arrival at leftQueue
  * as "gone, might come back" and GHOSTS the still-listed token — looping its

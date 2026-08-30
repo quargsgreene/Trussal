@@ -910,7 +910,7 @@ function safeIdent(text) {
 // fixed by jitsiId, unrelated to whose turn it is) can no longer
 // structurally out-cascade the other regardless of ownership — the room's
 // mutual exclusion (applyHap / resetAllCssToBaseline, gated by
-// isPeerNetCyclesTurn / ownsCssTurn) is what decides the rendered value, not
+// isPeerJPatternTurn / ownsCssTurn) is what decides the rendered value, not
 // source order. Keying by selector rather than by token is what makes the
 // sidecar-compiled sheet and the hot-path trigger — running independently,
 // in every browser, for every peer who ever writes this same pair — agree on

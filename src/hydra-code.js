@@ -17,8 +17,62 @@
 // begins at the first paragraph that doesn't render anything.
 
 import { stripBotConfig } from './bot-config.js';
+import { stripDirective } from './program-directive.js';
+// The word()/css() call shapes — imported rather than re-typed so the
+// auto-preamble rule below cannot drift from the rewriters that act on them.
+// Neither core imports this module, so there is no cycle.
+import { WORD_CALL_RE } from './text-cycles-core.js';
+import { CSS_CALL_RE } from './css-cycles-core.js';
 
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
+const INIT_TEXT_CYCLES_RE = /(^|\n)\s*await\s+initTextCycles\s*\(/;
+const INIT_CSS_RE = /(^|\n)\s*await\s+initCss\s*\(/;
+
+// The three capability preambles are now OPTIONAL: a block that only shows the
+// shape of a capability — a Hydra render/source call, a word() voice, a css()
+// voice — gets the matching `await initX()` line supplied for it. Writing the
+// line explicitly still works and is left untouched, so nothing that already
+// declared a capability changes. The Hydra half of this has to live here, in
+// the module both the browser and the aggregator's mosaic ask, so the two go
+// on agreeing about which peers run Hydra.
+//
+// Hydra shape: a call that exists only in Hydra. `.out(` is the render; the
+// listed generators/`src` are Hydra sources a Strudel pattern never writes;
+// initCam/initScreen/initImage/initVideo populate an External Source slot.
+const HYDRA_SHAPE_RE =
+  /\.out\s*\(|(?:^|[^\w$.])(?:osc|shape|gradient|solid|voronoi|src)\s*\(|(?:^|[^\w$])init(?:Cam|Screen|Image|Video)\s*\(/;
+
+// Does this block write Hydra without declaring it?
+export function looksLikeHydra(code) {
+  const s = String(code ?? '');
+  return !PROGRAM_INIT_HYDRA_RE.test(s) && HYDRA_SHAPE_RE.test(s);
+}
+
+// Prepend / splice the `await initX()` lines a block's shape implies but its
+// text leaves out. Back-compatible: a block that already writes every preamble
+// its shape needs is returned unchanged.
+export function ensureCapabilityPreambles(code) {
+  let s = String(code ?? '');
+  if (!s.trim()) return s;
+  const needHydra = !PROGRAM_INIT_HYDRA_RE.test(s) && HYDRA_SHAPE_RE.test(s);
+  const needText = !INIT_TEXT_CYCLES_RE.test(s) && WORD_CALL_RE.test(s);
+  const needCss = !INIT_CSS_RE.test(s) && CSS_CALL_RE.test(s);
+  if (!needHydra && !needText && !needCss) return s;
+
+  const adds = [];
+  if (needHydra) adds.push('await initHydra()');
+  if (needText) adds.push('await initTextCycles()');
+  if (needCss) adds.push('await initCss()');
+
+  const hasPreamble =
+    PROGRAM_INIT_HYDRA_RE.test(s) || INIT_TEXT_CYCLES_RE.test(s) || INIT_CSS_RE.test(s);
+  if (!hasPreamble) return `${adds.join('\n')}\n\n${s}`;
+
+  // Splice the missing lines into the existing preamble, before its first blank.
+  const blank = s.match(/\n\n+/);
+  const cut = blank ? blank.index : s.length;
+  return `${s.slice(0, cut).replace(/\s*$/, '')}\n${adds.join('\n')}${s.slice(cut)}`;
+}
 
 // A paragraph after the first still belongs to the Hydra preamble if it
 // contains a render call — `.out(...)`, bare or targeting o0-o3 — which is
@@ -44,22 +98,31 @@ const PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
 // letting them re-type the literal is what keeps this the single rule.
 export const INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
 
-// Editor text minus the noise that is never part of either language: trailing
+// The Hydra SHAPE marker as a serialisable descriptor, for the bot's page
+// scripts: with the preamble now optional, "does this text bring its own Hydra"
+// is answered by either the init line OR the shape.
+export const HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
+
+// Editor text minus the noise that is never part of either language: the
+// leading `'personal program'` / `'bot program'` directive line, trailing
 // whitespace/semicolons, `*name: code` lines (studio button widgets, not
 // patterns), and `botConfig(...)` declarations (bot-cluster settings, not
 // patterns). buildPeerBlock strips exactly these before testing for a
 // preamble, so the mosaic has to strip them too or a leading widget line would
 // hide an otherwise-valid preamble.
 //
-// botConfig has to go before Strudel's transpiler sees the block, not just to
-// keep it out of the program: the transpiler mini-parses every double-quoted
-// string, so a quoted value left in place would throw and stop the whole
-// room's program.
+// The directive and botConfig both have to go before Strudel's transpiler sees
+// the block: botConfig's argument is free text and the transpiler mini-parses
+// every double-quoted string, so a quoted value left in place would throw and
+// stop the whole room's program; the directive is a bare string literal that
+// would otherwise evaluate as a stray pattern.
 export function normalizePeerCode(code) {
-  return stripBotConfig(code || '')
-    .replace(/[\s;]+$/g, '')
-    .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
-    .trim();
+  return ensureCapabilityPreambles(
+    stripBotConfig(stripDirective(code || ''))
+      .replace(/[\s;]+$/g, '')
+      .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
+      .trim()
+  );
 }
 
 // Split normalized code into its Hydra preamble and Strudel remainder, or null

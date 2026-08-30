@@ -45,7 +45,7 @@ const DEFAULT_SLOT_MS = 4000;
 // spacing commit), so this allows several attempts on a slow start.
 const CLOCK_SYNC_WAIT_MS = 5000;
 const CLOCK_SYNC_POLL_MS = 100;
-// How far in the past a remote /nc/epoch may sit and still be believable as
+// How far in the past a remote /jp/epoch may sit and still be believable as
 // the same clock we are reading. A room that started earlier today is minutes
 // old; a value further back than this is another timebase, not an older room.
 const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
@@ -64,10 +64,10 @@ const SLOT_HORIZON_MIN_S = 30;
 // Rate limit for the empty-turn diagnostic: often enough to characterise a
 // persistent silence within seconds, rare enough not to flood a quiet room.
 const EMPTY_TURN_LOG_MS = 3000;
-// Re-announce the current nc-active turn at least this often even when it hasn't
+// Re-announce the current jp-active turn at least this often even when it hasn't
 // changed, so a late joiner (or a sidecar whose per-room cache was cleared by a
 // session reset) learns it without waiting for the ring to rotate.
-const NC_ACTIVE_HEARTBEAT_MS = 2000;
+const JP_ACTIVE_HEARTBEAT_MS = 2000;
 // Sample rate the page-side taps run at (the shared AudioContext defaults to
 // 48 kHz on Chrome). Used only to convert a cfg.holdMs hold window into a
 // per-participant RingBuffer capacity in samples.
@@ -88,8 +88,8 @@ const DEFAULT_ACTIVE_GRACE_MS = 10000;
 // Shared metaprogram O2 addresses — same wire contract as
 // src/audio-net/Metaprogrammer.js so the bot and every browser client agree
 // on one cycle grid and one program text.
-const EPOCH_ADDR = '/nc/epoch';
-const APPLY_ADDR = '/nc/apply';
+const EPOCH_ADDR = '/jp/epoch';
+const APPLY_ADDR = '/jp/apply';
 // How long to wait for the O2 relay handshake before running unsynced — a
 // hung connection must not stall start() (same fail-open spirit as
 // CLAIM_TIMEOUT_MS).
@@ -149,7 +149,7 @@ export const AGGREGATOR_SLOT_TAKEN = 'AGGREGATOR_SLOT_TAKEN';
  * The per-participant dimension is a fixed-capacity RingBuffer with oldest-
  * sample eviction:
  *   - this.buffers[token]  each participant's own concatenated audio, keyed by
- *                          Net Cycles room index: 0 for the first human, 0a/0b/…
+ *                          JPattern room index: 0 for the first human, 0a/0b/…
  *                          for that human's bots, 1 for the next human, and so on
  * The master is NOT a second ring buffer: readAndAssembleMasterBuffer writes one
  * playback tick's rate-matched slice into #pendingMaster, and
@@ -175,8 +175,8 @@ export class AggregatorBot extends Bot {
     #masterWritten = 0;
     // Which token is currently streaming (the queue owns the turn timing).
     #activeToken = null;
-    // Last active token+ring-index broadcast over nc-active, and when, so we emit
-    // on change OR on the NC_ACTIVE_HEARTBEAT_MS heartbeat rather than every audio
+    // Last active token+ring-index broadcast over jp-active, and when, so we emit
+    // on change OR on the JP_ACTIVE_HEARTBEAT_MS heartbeat rather than every audio
     // tick. The index distinguishes repeated tokens (`<0 1 0>` — same token, two
     // ring slots) so the browser outlines the occurrence actually playing.
     // `undefined` (not null) so the first real value — including null — is sent.
@@ -611,7 +611,7 @@ export class AggregatorBot extends Bot {
      * Wire up the room's shared metaprogram on the Node side (called from
      * start() once the audio loops are live): O2 (epoch agreement + clock
      * sync), the CRDT program-text doc, and the pure MetaprogramScheduler —
-     * mirroring src/audio-net/Metaprogrammer.js's setNetCyclesActive()/
+     * mirroring src/audio-net/Metaprogrammer.js's setJPatternActive()/
      * startScheduler() (browser side), NOT importing it, since that module is
      * a per-BROWSER-TAB singleton wired to window/document and the page's own
      * peer-state connection; the aggregator is its own process and needs its
@@ -620,7 +620,7 @@ export class AggregatorBot extends Bot {
      *
      * Idempotent, and deliberately does the heavy construction ONCE: after
      * this returns, a metaprogram edit arrives via crdt.onRemoteChange or the
-     * /nc/apply O2 method and flows through applyProgramText →
+     * /jp/apply O2 method and flows through applyProgramText →
      * #pushProgramToScheduler, which updates the EXISTING scheduler in place
      * (scheduler.setProgram) and hands the ring its new order/membership
      * (this.order.applyMetaprogramOrder) rather than rebuilding anything. The
@@ -680,7 +680,7 @@ export class AggregatorBot extends Bot {
         }
 
         // Wait for ClockSync to converge before declaring an epoch, and give
-        // /nc/epoch a beat to arrive — an already-running room's epoch should
+        // /jp/epoch a beat to arrive — an already-running room's epoch should
         // win a race against a freshly-joined aggregator's guess.
         //
         // Waiting for the sync is the point: an epoch declared on the unsynced
@@ -697,7 +697,7 @@ export class AggregatorBot extends Bot {
             console.log(`[aggregator-bot] epoch ${this.epoch} declared on the ` +
                 `${this.clock.isSynced() ? 'synced network' : 'local (UNSYNCED)'} clock`);
         }
-        // Net Cycles is always on: if no shared program reached us during the
+        // JPattern is always on: if no shared program reached us during the
         // grace (empty room, or nothing in the CRDT catch-up), start under the
         // default — participant 0 streams continuously — instead of the
         // join-order rotation. The browser leader seeds the same default into
@@ -748,7 +748,7 @@ export class AggregatorBot extends Bot {
     }
 
     /**
-     * Adopt new program text (an /nc/apply broadcast, or a direct call in
+     * Adopt new program text (an /jp/apply broadcast, or a direct call in
      * tests): parse, keep only if valid, then push into the scheduler and the
      * ring. Returns the parse errors (empty array = adopted), like the
      * browser's applyProgramText.
@@ -1225,7 +1225,7 @@ export class AggregatorBot extends Bot {
 
     /**
      * Cross-client agreement: adopt the smaller of our epoch and one just
-     * heard on /nc/epoch. Only this — not a program edit — rebuilds the
+     * heard on /jp/epoch. Only this — not a program edit — rebuilds the
      * scheduler, because the epoch anchors the cycle grid every client's
      * scheduler must agree on. Non-finite input (a malformed message) is
      * ignored — NaN would poison every later comparison and silently freeze
@@ -1246,7 +1246,7 @@ export class AggregatorBot extends Bot {
         const now = this.networkSeconds();
         const synced = !!(this.clock && this.clock.isSynced());
         if (!synced || remoteEpoch > now || (now - remoteEpoch) > EPOCH_PLAUSIBLE_PAST_S) {
-            console.warn(`[aggregator-bot] refused /nc/epoch ${remoteEpoch} — ` +
+            console.warn(`[aggregator-bot] refused /jp/epoch ${remoteEpoch} — ` +
                 `${synced ? `implausible against local now ${now.toFixed(1)}` : 'clock not synced yet'}`);
             return;
         }
@@ -1268,7 +1268,7 @@ export class AggregatorBot extends Bot {
         this.scheduler = new MetaprogramScheduler({
             now: () => this.networkSeconds(),
             onEvent: (ev) => this.#onSchedulerEvent(ev),
-            label: 'netcycles/aggregator',
+            label: 'jpattern/aggregator',
         });
         this.#pushProgramToScheduler();
         this.scheduler.setMetrics(this.#worstCase);
@@ -1554,7 +1554,7 @@ export class AggregatorBot extends Bot {
         const sidecar = this.connectSidecar(url, {
             onOpen: (send) => {
                 // A (re)connect — including after a sidecar restart — drops the
-                // sidecar's cached nc-active. Reset the dedup so the next tick
+                // sidecar's cached jp-active. Reset the dedup so the next tick
                 // re-broadcasts the current turn and refills that cache.
                 this.#lastBroadcastActive = undefined;
                 this.#lastBroadcastIndex = undefined;
@@ -1622,14 +1622,14 @@ export class AggregatorBot extends Bot {
         const now = Date.now();
         if (t === this.#lastBroadcastActive && i === this.#lastBroadcastIndex &&
             k === this.#lastBroadcastKind &&
-            (now - this.#lastBroadcastActiveAt) < NC_ACTIVE_HEARTBEAT_MS) return;
+            (now - this.#lastBroadcastActiveAt) < JP_ACTIVE_HEARTBEAT_MS) return;
         this.#lastBroadcastActive = t;
         this.#lastBroadcastIndex = i;
         this.#lastBroadcastKind = k;
         this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
-        try { conn.send({ type: 'nc-active', token: t, index: i, kind: k }); } catch (e) { /* cosmetic */ }
+        try { conn.send({ type: 'jp-active', token: t, index: i, kind: k }); } catch (e) { /* cosmetic */ }
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {

@@ -20,12 +20,12 @@ import {
   trackEditorFocus,
   readActiveEditor,
   writeActiveEditor,
-  applyIfNetCycles,
+  applyIfJPattern,
   applyMetaprogramNow,
-  toggleNetCyclesButtonCode,
+  toggleJPatternButtonCode,
   activeEditorKind
 } from './editor-router.js';
-import { parseNetCyclesButtons } from './editor-router-core.js';
+import { parseJPatternButtons } from './editor-router-core.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -79,19 +79,19 @@ function initStrudelButton() {
   try { customElements.define('strudel-button', StrudelButton, { extends: 'button' }); } catch {}
   globalThis.StrudelButton = StrudelButton;
 
-  // NetCyclesButton — same shape, but its code targets the shared
-  // metaprogram doc: dwell toggles the snippet in the Net Cycles editor and
-  // re-applies the program (see toggleNetCyclesButtonCode).
-  class NetCyclesButton extends HTMLButtonElement {
-    constructor(code) { super(); this._netCyclesCode = code; }
+  // JPatternButton — same shape, but its code targets the shared
+  // metaprogram doc: dwell toggles the snippet in the JPattern editor and
+  // re-applies the program (see toggleJPatternButtonCode).
+  class JPatternButton extends HTMLButtonElement {
+    constructor(code) { super(); this._jPatternCode = code; }
   }
-  try { customElements.define('net-cycles-button', NetCyclesButton, { extends: 'button' }); } catch {}
-  globalThis.NetCyclesButton = NetCyclesButton;
+  try { customElements.define('j-pattern-button', JPatternButton, { extends: 'button' }); } catch {}
+  globalThis.JPatternButton = JPatternButton;
 }
 
 // ---------------------------------------------------------------------------
 // Editor shim — resolves to whichever editor is focused: the personal
-// Strudel textarea (pattern → sendLocalPattern) or the global Net Cycles
+// Strudel textarea (pattern → sendLocalPattern) or the global JPattern
 // editor (CRDT doc). editor-router.js owns the resolution.
 // ---------------------------------------------------------------------------
 trackEditorFocus();
@@ -114,9 +114,9 @@ function setCode(code) {
 }
 
 async function evaluate() {
-  // Focus in the Net Cycles card → "evaluate" means applying the shared
+  // Focus in the JPattern card → "evaluate" means applying the shared
   // metaprogram, not booting Strudel.
-  if (applyIfNetCycles()) return;
+  if (applyIfJPattern()) return;
   try {
     // Sync the current textarea code into localPeer.pattern so rebuildAndEvaluate
     // picks up changes made since the last explicit eval (typing is no longer
@@ -260,7 +260,7 @@ function _dwellCandidateEls(now) {
   if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
     _dwellCandidatesAt = now;
     _dwellCandidates = Array.from(document.querySelectorAll(
-      '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .nc-head-btn, button[is="net-cycles-button"]'
+      '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
     ));
   }
   return _dwellCandidates;
@@ -440,9 +440,9 @@ function _detectionLoop() {
   }
 
   // Room-health landmark-density scale-down: under load (RoomHealthService
-  // sets window._ncLandmarkScale to 0.5 / 0.25) run detection on every 2nd /
+  // sets window._jpLandmarkScale to 0.5 / 0.25) run detection on every 2nd /
   // 4th frame — the cursor EMA smooths over the gaps.
-  const densityScale = (typeof window !== 'undefined' && window._ncLandmarkScale) || 1;
+  const densityScale = (typeof window !== 'undefined' && window._jpLandmarkScale) || 1;
   if (densityScale < 1) {
     _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
     if (_densitySkip !== 0) {
@@ -476,10 +476,10 @@ function _detectionLoop() {
       if (btn.classList.contains('ts-fx-dwell-btn')) {
         hoveredKey  = btn.dataset.fx;
         hoveredType = 'fx';
-      } else if (btn.classList.contains('nc-head-btn') || btn._netCyclesCode !== undefined) {
-        // NetCyclesButton: dwell toggles its snippet in the shared metaprogram.
-        hoveredKey  = btn.dataset.netcyclesCode ?? btn._netCyclesCode;
-        hoveredType = 'netcycles';
+      } else if (btn.classList.contains('jp-head-btn') || btn._jPatternCode !== undefined) {
+        // JPatternButton: dwell toggles its snippet in the shared metaprogram.
+        hoveredKey  = btn.dataset.jpatternCode ?? btn._jPatternCode;
+        hoveredType = 'jpattern';
       } else if (btn.classList.contains('ts-dwell-btn')) {
         hoveredKey  = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
         hoveredType = 'action';
@@ -526,8 +526,8 @@ function _detectionLoop() {
         _toggleFxEffect(_dwell.key);
       } else if (_dwell.type === 'action') {
         if (_dwell.el) _dwell.el.click();
-      } else if (_dwell.type === 'netcycles') {
-        toggleNetCyclesButtonCode(_dwell.key);
+      } else if (_dwell.type === 'jpattern') {
+        toggleJPatternButtonCode(_dwell.key);
       } else {
         toggleButtonCode(_dwell.key);
       }
@@ -832,9 +832,9 @@ function _ensureDOM() {
       </div>
 
       <div class="fg-section">
-        <div class="fg-section-title">NetCyclesButton</div>
+        <div class="fg-section-title">JPatternButton</div>
         <div style="font-size:10px;color:#5d7264;line-height:1.5;">
-          write in the Net Cycles editor:<br>
+          write in the JPattern editor:<br>
           <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
           <code style="font-size:9px">*# crush wcl 2</code><br>
           dwell to put that voice in the ring (or that effect in the chain)
@@ -938,7 +938,7 @@ export function injectFacialGestureToggle(headerEl) {
 
 /**
  * Rebuild the dwell-bar from the focused editor's button declarations —
- * StrudelButtons (`*name: code`) for the personal editor, NetCyclesButtons
+ * StrudelButtons (`*name: code`) for the personal editor, JPatternButtons
  * (`*$ participants <2a>`, `*# crush wcl 2`) for the shared metaprogram.
  * Call this after renderDetail() whenever the pattern or overlay is refreshed.
  */
@@ -968,17 +968,17 @@ export function refreshFacialGestureButtons() {
   const truncate = (s) => (s.length > 20 ? s.slice(0, 20) + '…' : s);
 
   // The bar follows the focused editor, because so does the dwell action.
-  // `.nc-head-btn` is what routes a dwell to the metaprogram toggle instead of
+  // `.jp-head-btn` is what routes a dwell to the metaprogram toggle instead of
   // the pattern one (see the dwell classification in _detectionLoop).
-  if (activeEditorKind() === 'netcycles') {
+  if (activeEditorKind() === 'jpattern') {
     // Same label and same on/off state as the editor card's own row — one
     // button named two ways in two places is two buttons as far as the
     // performer can tell.
-    const buttons = parseNetCyclesButtons(code)
+    const buttons = parseJPatternButtons(code)
       .map(b => ({ code: b.snippet, label: b.label, on: b.active }));
-    if (render(buttons, ' nc-head-btn', 'data-netcycles-code')) {
-      bar.querySelectorAll('[data-netcycles-code]').forEach((btn) => {
-        btn.addEventListener('click', () => toggleNetCyclesButtonCode(btn.dataset.netcyclesCode));
+    if (render(buttons, ' jp-head-btn', 'data-jpattern-code')) {
+      bar.querySelectorAll('[data-jpattern-code]').forEach((btn) => {
+        btn.addEventListener('click', () => toggleJPatternButtonCode(btn.dataset.jpatternCode));
       });
     }
     return;

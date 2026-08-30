@@ -43,7 +43,7 @@ land in a detached container and nobody sees them — a working pipeline that
 looks exactly like a broken one.
 
 So `await initTextCycles()` enters the chat on the performer's behalf: it takes
-their **Net Cycles room index** as the nickname — the same token the metaprogram
+their **JPattern room index** as the nickname — the same token the metaprogram
 addresses them by, which is also what labels their bubbles — and opens the
 panel. A performer who already chose a name keeps it; the prompt is satisfied,
 which was the only thing in the way. The token arrives with the sidecar
@@ -170,11 +170,11 @@ chat as history.
 
 ## The room's effects, applied to words
 
-A Net Cycles `#` directive reaches text and styling as well as sound. By
+A JPattern `#` directive reaches text and styling as well as sound. By
 default every effect acts on all four media, so `# room wcl 2` in the shared
 metaprogram stretches the letter-spacing of every word this panel paints while
 it reverberates the mix; `# room wcl 2 ["audio"]` leaves the words alone. See
-`netcycles.md` for the medium argument and the full effect-by-medium table.
+`jpattern.md` for the medium argument and the full effect-by-medium table.
 
 | effect | what happens to a word | what happens to its styling |
 |---|---|---|
@@ -186,7 +186,7 @@ it reverberates the mix; `# room wcl 2 ["audio"]` leaves the words alone. See
 Two properties are worth knowing when a mutation looks wrong:
 
 **Every mutation is seeded, so all clients paint the same characters.** The
-seed names the occurrence — the Net Cycles cycle, the performer, and the word's
+seed names the occurrence — the JPattern cycle, the performer, and the word's
 position in the turn — so the third word of a turn mutates identically in every
 browser while the first and second do not follow it. It is deliberately *not*
 seeded from the Strudel cycle number: each browser starts its own scheduler at

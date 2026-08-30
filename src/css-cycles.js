@@ -41,7 +41,7 @@
 
 import {
   subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId,
-  sendLocalScss, sendPeerScss, getActiveNetCyclesToken,
+  sendLocalScss, sendPeerScss, getActiveJPatternToken,
 } from './peer-state.js';
 import {
   CSS_PROPERTY_LIST,
@@ -337,7 +337,7 @@ function warmBaselinesFor(peerId) {
 
 // CSS Cycles' mutual exclusion never fails open: exactly one *verified* peer's
 // declared values are ever visible, ring or no ring, known peer or not —
-// unlike Strudel/Hydra/Text Cycles, whose gate (isPeerNetCyclesTurn) shows
+// unlike Strudel/Hydra/Text Cycles, whose gate (isPeerJPatternTurn) shows
 // every peer at once whenever no ring is actively scheduling turns. Opening
 // every peer's styling to the shared cascade at once is rarely what a room
 // wants from CSS specifically. With no live ring signal to defer to, ownership
@@ -345,7 +345,7 @@ function warmBaselinesFor(peerId) {
 // buildDefaultProgram) — roomIndex '0' — rather than inventing a separate
 // rotation with no clock of its own to run on.
 function ownsCssTurn(jitsiId) {
-  const token = getActiveNetCyclesToken() ?? '0';
+  const token = getActiveJPatternToken() ?? '0';
   const peer = getPeerByJitsiId(jitsiId);
   return !!peer && peer.roomIndex != null && String(peer.roomIndex) === String(token);
 }
@@ -425,7 +425,7 @@ function resetAllCssToBaseline() {
   }
 }
 
-// 'trussal-netcycles-active' fires on every nc-active broadcast, which the
+// 'trussal-jpattern-active' fires on every jp-active broadcast, which the
 // aggregator sends periodically (roughly every couple of seconds) to replay
 // the current turn to a late joiner — NOT only when ownership actually
 // changes (confirmed live: room "lgfj", 2026-08-12 — the event fired every
@@ -437,13 +437,13 @@ function resetAllCssToBaseline() {
 // fix. Reset only when the turn identity (token + index + kind, matching how
 // a repeated token at a different ring position is told apart elsewhere)
 // actually differs from the last-seen one.
-let lastNetCyclesTurnKey = null;
+let lastJPatternTurnKey = null;
 
-function handleNetCyclesTokenChange(e) {
+function handleJPatternTokenChange(e) {
   const detail = e?.detail || {};
   const key = `${detail.token}|${detail.index}|${detail.kind}`;
-  if (key === lastNetCyclesTurnKey) return;
-  lastNetCyclesTurnKey = key;
+  if (key === lastJPatternTurnKey) return;
+  lastJPatternTurnKey = key;
   resetAllCssToBaseline();
 }
 
@@ -492,11 +492,11 @@ export function installCssCycles(mod) {
       cssSubscribed = true;
       subscribePeerState(syncFromPeers);
       syncFromPeers();
-      // The same 'trussal-netcycles-active' event isPeerNetCyclesTurn's
+      // The same 'trussal-jpattern-active' event isPeerJPatternTurn's
       // callers already outline the ring to — peer-state.js dispatches it on
-      // every nc-active broadcast, so this fires exactly when ownership could
+      // every jp-active broadcast, so this fires exactly when ownership could
       // have changed, not on some separate poll of its own.
-      document.addEventListener('trussal-netcycles-active', handleNetCyclesTokenChange);
+      document.addEventListener('trussal-jpattern-active', handleJPatternTokenChange);
     }
     return true;
   };
@@ -521,5 +521,5 @@ export function stopCssCycles() {
   lastSentScssByBot = new Map();
   bgCache.clear();
   baselineValues.clear();
-  lastNetCyclesTurnKey = null;
+  lastJPatternTurnKey = null;
 }

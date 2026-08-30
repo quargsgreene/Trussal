@@ -1,4 +1,4 @@
-// O2lite message serialization — the JS protocol subset for Net Cycles.
+// O2lite message serialization — the JS protocol subset for JPattern.
 //
 // CommonJS on purpose: the O2 relay runs inside the sidecar container
 // (CJS, node:20); the browser imports this through the ESM facade at

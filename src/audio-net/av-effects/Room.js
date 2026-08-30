@@ -106,7 +106,7 @@ export function roomParams(metrics, user = {}, cyclePos = 0) {
     // The image counterpart: 1 = no blur, 0 = fully lowpassed. Consumed by
     // av-effects/VideoState.js, which turns it into the blur RADIUS on the
     // aggregator's composited frame, and by TextState.js for the blur on a
-    // styled span. Not published to window._ncVisual — that carries only the
+    // styled span. Not published to window._jpVisual — that carries only the
     // one channel anything reads (the Hydra tint).
     visualLowpass: cutoffHz / CUTOFF_MAX_HZ
   };

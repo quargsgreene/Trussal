@@ -192,7 +192,7 @@ test('tab close: the playing gate discards the tail while the Jitsi roster is st
 //
 // A stop must NOT be reported via drainLeaves() — that queue feeds
 // AggregatorBot.removeParticipant, which ghosts a still-listed token under an
-// active Net Cycles metaprogram (the production default) instead of letting
+// active JPattern metaprogram (the production default) instead of letting
 // it go quietly silent, defeating an intentional Stop. It goes through the
 // separate drainStopped() queue instead (see page-scripts.js's module doc and
 // markStopped/markDeparted split).

@@ -1,4 +1,4 @@
-// Room health for Net Cycles — pure policy functions.
+// Room health for JPattern — pure policy functions.
 //
 // All prior conductor health behavior persists in the fleet service
 // (shouldReplace / computeMaxBots, unchanged). This module adds the room-side

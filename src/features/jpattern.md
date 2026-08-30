@@ -1,4 +1,4 @@
-# Net Cycles
+# JPattern
 
 Status: Implemented. The Fleet Service (`bots/src/orchestrator/fleet-service.js`)
 has replaced the conductor as primary orchestrator: fleet membership is
@@ -27,7 +27,7 @@ To be updated as this feature's implementation changes.
 
 ## Scope
 
-The Net Cycles feature (`net-cycles`) holds primary bot and end user audiovisual signal orchestration responsibilities. In addition to receiving the transfer of all of the conductor's responsibilities without duplication, and replacing the conductor completely, the Net Cycles editor allows each user to edit and update a metaprogramming script shared among all meeting participants that dictates how the audiovisual output of the user and accompanying bots, which consists of the first stored multimedia buffer in each performer's respective multimedia buffer queues, are scheduled and transformed according to Jitsi's RTCStatsReport, which is displayed to the user by the Network Metrics service.
+The JPattern feature (`j-pattern`) holds primary bot and end user audiovisual signal orchestration responsibilities. In addition to receiving the transfer of all of the conductor's responsibilities without duplication, and replacing the conductor completely, the JPattern editor allows each user to edit and update a metaprogramming script shared among all meeting participants that dictates how the audiovisual output of the user and accompanying bots, which consists of the first stored multimedia buffer in each performer's respective multimedia buffer queues, are scheduled and transformed according to Jitsi's RTCStatsReport, which is displayed to the user by the Network Metrics service.
 
 The metaprogramming script executes metapatterns that dictate when each performer's (whether user or bot) individual scripts will execute as determined by the minimum number of beats that exceed a positive real multiple of the worst case latency, where the multiplying factor is chosen by the user, and the execution pattern stipulated by the users.
 
@@ -62,11 +62,11 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Stop, start, and apply personal metapatterns using choice of supported facial gestures
             - Update global metaprogramming script via keyboard input
                 - Steps:
-                    - Focus the global Net Cycles editor in order to update the global metaprogramming script
-                    - Using correct Net Cycles syntax, update the metaprogramming script
+                    - Focus the global JPattern editor in order to update the global metaprogramming script
+                    - Using correct JPattern syntax, update the metaprogramming script
             - Update global metaprogramming script via MediaPipe landmark and gesture detection
                 - Steps:
-                    - Focusing, running and deleting code injected by NetCyclesButton objects and user-defined regular expressions using the head cursor integration
+                    - Focusing, running and deleting code injected by JPatternButton objects and user-defined regular expressions using the head cursor integration
             - Adjust room settings
                 - Steps:
                     - Adjusting standard Jitsi room settings
@@ -113,7 +113,7 @@ The further down the task is within a given epic's bullet points, the lower the 
                     - Update current code editor with the latest buffer updates depending on order in update queue
             - Update global metaprogramming script if allowed by user
                 - Steps:
-                    - Update current Net Cycles code with the latest buffer updates depending on order in update cycle buffer queue
+                    - Update current JPattern code with the latest buffer updates depending on order in update cycle buffer queue
             - Expose network performance metrics and frequency response over time
                 - Steps:
                     - Allow reading from network metrics
@@ -243,7 +243,36 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
        +-------------------------------------------------------------------+
 
 ## Metaprogramming Syntax
-The NetCycles metaprogramming language foundationally uses the Mondo pattern language syntax (https://strudel.cc/learn/mondo-notation/).
+The JPattern metaprogramming language foundationally uses the Mondo pattern language syntax (https://strudel.cc/learn/mondo-notation/).
+
+### The `'metaprogram'` directive
+
+Every JPattern buffer opens with a bare `'metaprogram'` string literal on its
+first real line, the way a module opens with `"use strict"` — one of the three
+program-kind directives (`'metaprogram'`, `'personal program'`, `'bot program'`)
+that `src/program-directive.js` defines. It is **required**, with no heuristic
+fallback: a buffer that does not carry it is not a metaprogram and the parser
+reports it as invalid. Making the kind explicit is what lets `participants` stop
+being a reserved word — the parser knows it is reading a metaprogram from the
+directive, not from spotting a `$ participants` line.
+
+### mini and mondo, both accepted
+
+A scheduling sequence may be written in either notation, told apart by the
+bracket:
+
+- mini — `$ <0 1 2>` (alternate, one turn per cycle), `$ [0 1 ~ 3]` (subdivide),
+  nesting and the glued `@ ! ? * / % :` operators as documented below.
+- mondo — `$ (cat 0 1 2)` ≡ `<0 1 2>`, `$ (seq 0 1 ~ 3)` ≡ `[0 1 ~ 3]`, a
+  headless `$ (0 1 2)` subdivides, `$ (stack 0 1)` offsets each element by a
+  cycle as the comma does, and `$ (fast N X)` / `$ (slow N X)` are `X*N` / `X/N`.
+  Elements inside a mondo group use the same participant/rest/modifier grammar
+  and may nest `<…>` / `[…]` / `(…)`.
+
+The `participants` label is now optional — `$ <0 1>` and `$ participants <0 1>`
+are the same statement. The `*$` button roster helpers only edit mini-bracket
+sequences; a room written with `$ (cat …)` parses but its per-token buttons do
+not act on it.
 
 ## Metaprogramming Semantics
 Each Jitsi room participant is assigned a sequential identifying index upon first joining the room that is immutable for the duration of the meeting. 
@@ -274,7 +303,7 @@ Examples:
     9fae
 
 ### Scheduling
-A minimal valid NetCycles program consists of a scheduling sequence of the audiovisual buffers of all room participants' outputs. As soon as a meeting starts, this is auto-populated and a new AudioContext is instantiated. Each entering participant is automatically added to the end of the sequence array, and each leaving participant is removed from it. Multiple bots may be appended at once. Each user, including bots may rearrange the buffer sequence.
+A minimal valid JPattern program consists of a scheduling sequence of the audiovisual buffers of all room participants' outputs. As soon as a meeting starts, this is auto-populated and a new AudioContext is instantiated. Each entering participant is automatically added to the end of the sequence array, and each leaving participant is removed from it. Multiple bots may be appended at once. Each user, including bots may rearrange the buffer sequence.
 
 The length of each cycle is defined according to a multiple of the worst-case latency, worst-case jitter, or length computed by the worst-case percentage of packet loss.
 
@@ -345,9 +374,9 @@ The , (stack) operator, as well as the semantics of the `jux` and `superimpose` 
 
 The `ply`,`chop`, and `shuffle`, `degrade`, `hush`, `undegrade`, `undegradeBy`, and `degradeBy` functions function as in Strudel in that they split and/or omit each buffer into the specified subdivision and/or probability.
 
-Otherwise, Strudel functions cannot be executed in the NetCycles editor. No Hydra functions can be executed within the NetCycles metaprogramming editor.
+Otherwise, Strudel functions cannot be executed in the JPattern editor. No Hydra functions can be executed within the JPattern metaprogramming editor.
 
-### Button Declarations (NetCyclesButton)
+### Button Declarations (JPatternButton)
 
 The personal Strudel editor declares a voice it is not yet playing by writing `*name: code`: the line is stripped before evaluation and appears as a button under the editor instead, and pressing it — with the mouse, or by holding the head cursor on it for a second — writes `name: code` into the pattern and re-evaluates. Pressing again comments it back out.
 
@@ -362,14 +391,14 @@ $ participants <0 1>
 
 The parser skips declaration lines whole — including when it is recovering from a syntax error somewhere above them — so nothing in a declaration runs and nothing in it is validated until a button writes it into the program, where it is parsed like any other statement. A declaration is one line, it may carry a trailing comment, and the same statement declared twice is one button. A declaration commented out (`// *$ …`) declares nothing, and neither does one with nothing after its sigil (`*$`, `*$ participants`, `*#`) — those show no button at all.
 
-Every declaration renders as a button under the Net Cycles editor, marked as a head-cursor dwell target, and — while that editor holds focus — in the facial-control panel's dwell bar alongside the StrudelButtons. Pressing one applies the resulting program immediately, exactly as ▶ Apply does.
+Every declaration renders as a button under the JPattern editor, marked as a head-cursor dwell target, and — while that editor holds focus — in the facial-control panel's dwell bar alongside the StrudelButtons. Pressing one applies the resulting program immediately, exactly as ▶ Apply does.
 
 What "pressing" writes depends on the statement:
 
 | Declaration | Pressed on | Pressed off |
 |---|---|---|
 | `*$ participants <2a 2b>` | its tokens join the live scheduling sequence (`<0 1>` → `<0 1 2a 2b>`) | those same tokens leave it |
-| `*# crush wcl 2` | the directive is appended as its own line, marked `// netcycles-btn` | that line is commented out |
+| `*# crush wcl 2` | the directive is appended as its own line, marked `// jpattern-btn` | that line is commented out |
 
 A scheduling voice MERGES into the one sequence the language allows rather than appending a second `$ participants` statement, which would be a duplicate-statement error. A voice counts as on only when every one of its tokens is in the ring, so pressing a half-listed voice adds what is missing rather than removing what is there. Tokens keep whatever modifiers they are declared with (`*$ participants <1@2>` puts `1@2` in the ring and takes `1@2` back out). In a program with no `$ participants` statement at all there is nothing to merge into, so the voice becomes the sequence — written plain, without the marker, so that from then on it is an ordinary statement the same button goes on editing token by token. Turning off the last voice in the ring therefore leaves `$ participants <>`, which is an invalid program and reported as one, but a recoverable one: pressing the button again puts the voice straight back.
 
@@ -379,11 +408,11 @@ Only the live statement is ever edited. A declaration and a commented-out line b
 Each individual participant automatically enqueues AV buffer objects at intervals specified by the cyclic timing mode, which may or may not be empty, and which varies in size both according to this setting, and health monitor memory constraints. When a participant updates code in their own Trussal Studio Strudel-Hydra editor, if it is valid, it is additionally enqueued at the next scheduled interval. When the metapattern reaches a particular participant's buffer queue, a single buffer is dequeued and streamed.
 
 ### Valid Chainable Functions
-There exist audiovisual analogs to Strudel functions whose parameters are automatically modulated according to network conditions in addition to user input, which do not align with Strudel's preexisting semantic framework when executed within the NetCycles editor.
+There exist audiovisual analogs to Strudel functions whose parameters are automatically modulated according to network conditions in addition to user input, which do not align with Strudel's preexisting semantic framework when executed within the JPattern editor.
 
 These include the functions `room`, `crush`, `echo`, and `noise`. More analogs will exist in later versions.
 
-All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their **image** counterparts are applied on the aggregator's composited frame — one application point, for the same reason — and their **text/css** counterparts in each browser's chat panel. `window._ncVisual` carries only the Hydra tint (`brightness`), which is the one channel anything reads.
+All four run on the **aggregator's master bus** — the single assembled mix the aggregator streams back to the room — rather than in each participant's browser, so the room hears one of each on the shared mix instead of one per client stacked on top of it. Where several are written the master path is `crush` → `echo` → `room` → `noise` regardless of the order in the program: the quantizer degrades the source material rather than grinding a reverb tail into a wash, the repeats then carry that crushed signal the way a lo-fi delay does, the room contains those repeats, and the bed comes last because it is additive and belongs on the mix rather than in the reverb's tail. Their **image** counterparts are applied on the aggregator's composited frame — one application point, for the same reason — and their **text/css** counterparts in each browser's chat panel. `window._jpVisual` carries only the Hydra tint (`brightness`), which is the one channel anything reads.
 
 ### The medium argument
 
@@ -411,7 +440,7 @@ The set patterns like every other argument (`<…>` alternation, with `@`, `?`, 
 
 Audio runs on the aggregator's master bus and video on its composited frame — **one application point each**, for the same reason: the master is the single mix the room hears and the mosaic is the single image it sees. `css` and `text` have no such point, because every browser paints its own chat panel.
 
-That is why **every text and css mutation is seeded** (`SeededRandom.js`), never `Math.random()`. Text Cycles' guarantee is that all clients paint the same words at the same time from the shared program, and one un-agreed coin flip breaks that silently and only for some viewers. The seed is drawn from the **Net Cycles grid** cycle, the performer, and the word's position in the turn — not from the Strudel hap's cycle number, which is per-browser (each client starts its own Strudel scheduler at its own moment) and would reintroduce exactly the divergence the seeding prevents.
+That is why **every text and css mutation is seeded** (`SeededRandom.js`), never `Math.random()`. Text Cycles' guarantee is that all clients paint the same words at the same time from the shared program, and one un-agreed coin flip breaks that silently and only for some viewers. The seed is drawn from the **JPattern grid** cycle, the performer, and the word's position in the turn — not from the Strudel hap's cycle number, which is per-browser (each client starts its own Strudel scheduler at its own moment) and would reintroduce exactly the divergence the seeding prevents.
 
 Each mapping is capped, at the point where more of the effect stops reading as the effect: blur at 24 px (3 px on text, which has to stay readable), pixel blocks at 32, grain at 0.6, crossfades at 2 s, letter-spacing at 14 px, letter-dropping at 60 %, injected glyphs at 4 per word, and word repeats at 3. `VideoState.js` and `TextState.js` hold those ceilings beside the mappings that need them.
 
@@ -460,7 +489,7 @@ $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exa
 ```
 
 ### Supported Audiovisual Functions
-Upon addition of a supported function via valid syntax in the NetCycles editor, it is added as a node within the preexisting Web Audio API graph after all other effects, as well as a corresponding visual effects chain that modifies the output of the Hydra WebGL shaders.
+Upon addition of a supported function via valid syntax in the JPattern editor, it is added as a node within the preexisting Web Audio API graph after all other effects, as well as a corresponding visual effects chain that modifies the output of the Hydra WebGL shaders.
 
 #### room
 - Description
@@ -638,4 +667,4 @@ $ participants <0 9 1 4 2>*2
 ```
 
 ## Artificial Network Modulation
-In addition to upward adjustments from o2lite-estimated wcl and wcpl, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the NetCycles metaprogramming editor, is governed by CRDT.
+In addition to upward adjustments from o2lite-estimated wcl and wcpl, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the JPattern metaprogramming editor, is governed by CRDT.

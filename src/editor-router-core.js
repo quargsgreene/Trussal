@@ -1,8 +1,8 @@
 // Editor routing — pure core.
 //
 // Two editors coexist in the studio: the personal Strudel textarea
-// ('.ts-code' in the detail panel) and the global Net Cycles metaprogram
-// editor ('.ts-code.nc-code', CRDT-bound). Head-cursor mutators, gesture
+// ('.ts-code' in the detail panel) and the global JPattern metaprogram
+// editor ('.ts-code.jp-code', CRDT-bound). Head-cursor mutators, gesture
 // handlers, and the on-screen keyboard all act on "whichever editor is
 // focused"; classification, the regex mutation and the button declarations
 // both editors support are pure so they run under node:test.
@@ -19,7 +19,7 @@ import {
 // classNames: iterable/array of class names (e.g. from element.classList).
 export function classifyEditor(classNames) {
   const set = new Set(classNames || []);
-  if (set.has('nc-code')) return 'netcycles';
+  if (set.has('jp-code')) return 'jpattern';
   if (set.has('ts-code')) return 'strudel';
   return null;
 }
@@ -31,7 +31,7 @@ export function applyRegexMutation(code, pattern, replacement) {
 }
 
 // Ctrl+/ line-comment toggle, shared by every textarea editor (personal
-// Strudel, remote bot pattern, Net Cycles metaprogram). Operates on whichever
+// Strudel, remote bot pattern, JPattern metaprogram). Operates on whichever
 // lines the selection touches — the current line for a collapsed cursor —
 // and comments them on unless every non-blank line touched is already
 // commented, in which case it uncomments. Returns the new value plus a
@@ -98,17 +98,17 @@ export function toggleLineComment(value, selectionStart, selectionEnd) {
   return { value: newText, selectionStart: mapOffset(start), selectionEnd: mapOffset(end) };
 }
 
-// NetCyclesButton snippet toggling on metaprogram text: first dwell adds the
+// JPatternButton snippet toggling on metaprogram text: first dwell adds the
 // line, next dwell comments it out, next re-activates (mirrors the Strudel
 // voice-button marker convention).
-export const NC_BTN_MARKER = ' // netcycles-btn';
+export const JP_BTN_MARKER = ' // jpattern-btn';
 
 // A `*`-prefixed statement declares a button instead of running: `*$ …` for a
 // scheduling voice, `*# …` for an effect. The declaration itself is inert (the
 // parser skips the line); the button is what writes it into the program. This
 // is the metaprogram's half of the personal editor's `*name: code` buttons —
 // same declaration shape, same toggle, same head-cursor dwell target.
-const NC_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
+const JP_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
 
 // Every button a metaprogram declares, in source order:
 //   { snippet, label, active }
@@ -116,11 +116,11 @@ const NC_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
 // `active` says whether it is currently in force, which for a scheduling
 // voice means its tokens are in the live sequence and for anything else means
 // its marked line is present and uncommented.
-export function parseNetCyclesButtons(text) {
+export function parseJPatternButtons(text) {
   const buttons = [];
   const seen = new Set();
   for (const line of String(text ?? '').split('\n')) {
-    const m = NC_BTN_DECL_RE.exec(line);
+    const m = JP_BTN_DECL_RE.exec(line);
     if (!m) continue;
     // A trailing comment annotates the declaration; it is not part of the
     // statement the button writes, and carrying it along would leave the
@@ -136,7 +136,7 @@ export function parseNetCyclesButtons(text) {
     buttons.push({
       snippet,
       label: buttonLabel(m[1], body),
-      active: isNetCyclesSnippetActive(text, snippet)
+      active: isJPatternSnippetActive(text, snippet)
     });
   }
   return buttons;
@@ -153,7 +153,7 @@ function buttonLabel(sigil, body) {
 // any other statement. Elements are whitespace-separated, as they are written
 // in the sequence, so a token keeps whatever modifiers it carries (`0@2`).
 export function participantTokensIn(snippet) {
-  const m = /^\$\s*participants\s*[<[]([^\]>]*)[\]>]\s*$/.exec(String(snippet ?? '').trim());
+  const m = /^\$\s*(?:participants\s*)?[<[]([^\]>]*)[\]>]\s*$/.exec(String(snippet ?? '').trim());
   if (!m) return null;
   const tokens = m[1].split(/\s+/).filter(Boolean);
   return tokens.length ? tokens : null;
@@ -165,14 +165,14 @@ export function participantTokensIn(snippet) {
 // sequence yet, the voice becomes one — written plain, not marked, so that from
 // then on it is an ordinary statement the very same button edits token by
 // token. Directives, having no such statement to join, toggle as a marked line.
-export function isNetCyclesSnippetActive(text, snippet) {
+export function isJPatternSnippetActive(text, snippet) {
   const cur = text || '';
   const tokens = participantTokensIn(snippet);
   if (tokens) return hasParticipantSequence(cur) && tokens.every(t => programHasParticipant(cur, t));
-  return cur.includes(`\n${snippet}${NC_BTN_MARKER}`);
+  return cur.includes(`\n${snippet}${JP_BTN_MARKER}`);
 }
 
-export function toggleNetCyclesSnippet(text, snippet) {
+export function toggleJPatternSnippet(text, snippet) {
   const cur = text || '';
   const tokens = participantTokensIn(snippet);
   if (tokens) {
@@ -189,8 +189,8 @@ export function toggleNetCyclesSnippet(text, snippet) {
       cur
     );
   }
-  const active = `\n${snippet}${NC_BTN_MARKER}`;
-  const commented = `\n// ${snippet}${NC_BTN_MARKER}`;
+  const active = `\n${snippet}${JP_BTN_MARKER}`;
+  const commented = `\n// ${snippet}${JP_BTN_MARKER}`;
   if (cur.includes(commented)) return cur.replace(commented, active);
   if (cur.includes(active)) return cur.replace(active, commented);
   return cur + active;

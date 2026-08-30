@@ -69,6 +69,9 @@ const options = {
 		'@strudel/soundfonts': resolve(__dirname, 'strudel-fork/packages/soundfonts/dist/index.mjs'),
 		'@strudel/core': resolve(__dirname, 'node_modules/@strudel/core/dist/index.mjs'),
 		'@strudel/webaudio': resolve(__dirname, 'node_modules/@strudel/webaudio/dist/index.mjs'),
+		// The Mondo parser/runner is vendored at src/audio-net/mondo.mjs (see
+		// its header); this alias only catches any stray bare `mondolang` import.
+		'mondolang': resolve(__dirname, 'src/audio-net/mondo.mjs'),
 	},
 	// Capture our own <script> URL synchronously at script load so
 	// `import.meta.url` (used by Strudel for its SharedWorker asset) resolves

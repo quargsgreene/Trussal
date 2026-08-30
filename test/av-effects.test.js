@@ -20,7 +20,7 @@ import {
 } from '../src/audio-net/av-effects/Noise.js';
 import { distanceMatrix, gridView, shadeForDistance } from '../src/audio-net/av-effects/Grid.js';
 import { computeChainParams, visualStateFor, EffectsChainManager } from '../src/audio-net/av-effects/index.js';
-import { parseMetaprogram, resolveEffectParams } from '../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram, resolveEffectParams } from './helpers/metaprogram.js';
 
 // --- room ---------------------------------------------------------------------
 
@@ -663,13 +663,13 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
 });
 
 // The manager's observable output for a master-bus effect is what it publishes
-// on `window`: the Hydra tint (_ncVisual) and the text/css mutations the Text
-// Cycles renderer applies (_ncText). Both readers are handed to the test.
+// on `window`: the Hydra tint (_jpVisual) and the text/css mutations the Text
+// Cycles renderer applies (_jpText). Both readers are handed to the test.
 function withStubWindow(fn) {
   const saved = globalThis.window;
   globalThis.window = {};
   try {
-    return fn(() => globalThis.window._ncVisual, () => globalThis.window._ncText);
+    return fn(() => globalThis.window._jpVisual, () => globalThis.window._jpText);
   } finally {
     if (saved === undefined) delete globalThis.window; else globalThis.window = saved;
   }

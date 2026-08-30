@@ -177,7 +177,7 @@
 #trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
 #trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
-/* Head-cursor dwell on the Net Cycles voice buttons (.nc-head-btn), same
+/* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
    yellow-fills-then-green as every other dwell target. */
 #trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
 #trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }

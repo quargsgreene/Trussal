@@ -13,7 +13,7 @@
 
 import { getStrudelAudioContext, getAggregatorPeer } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
-import { isNetCyclesActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
+import { isJPatternActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants } from './participants.js';
 import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { rewriteDataRefs, makeDataFn } from './data-ref.js';
@@ -25,10 +25,15 @@ import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from '
 import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCameraBypass } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra, usesExternalSource } from './hydra-code.js';
+import { readDirective } from './program-directive.js';
 import { textLog, textLogChanged, textWarn, registerTextProbe, clip } from './text-debug.js';
 import { wrapAsVoice } from './strudel-voice.js';
+// mondo notation for the personal editor: importing registers `mondo`/`mondolang`
+// as transpiler languages; the tag functions go into evalScope below.
+import { mondo, mondi, mondolang } from './mondo-notation.js';
 
-export const DEFAULT_PATTERN = `n("<0 1 2 3 4>*8").scale('G4:minor')
+export const DEFAULT_PATTERN = `'personal program'
+n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
   .room(2)
@@ -206,12 +211,18 @@ function applyCssRewrite(code, peer) {
 // see them.
 function buildBotSilentBlock(peer) {
   // Unlike a human's own live editing, a bot is operator-puppeted via the
-  // studio's remote-control path — it never holds a Net Cycles buffer queue
+  // studio's remote-control path — it never holds a JPattern buffer queue
   // slot the way a performer typing along with the rotation does, so its
   // code always reflects the latest remote-eval edit rather than staging
   // behind the ring's next-turn dequeue (getActivePattern would otherwise
   // replay whatever the ring last picked up, which could be several
   // rotations stale).
+  // A bot runs a 'bot program'; one puppeted with a human's captured editor
+  // may still carry that human's 'personal program' directive. Either is fine;
+  // anything else (or none) contributes nothing.
+  const botDir = readDirective(peer.pattern).kind;
+  if (botDir !== 'bot' && botDir !== 'personal') return null;
+
   const code = normalizePeerCode(peer.pattern);
   if (!code || !peer.playing || (!hasTextCycles(code) && !hasCssCycles(code))) return null;
 
@@ -285,7 +296,7 @@ function buildPeerBlock(peer) {
   // through their Jitsi mic / Jamulus, so their pattern is shown in the studio
   // for display + remote editing only — never folded into each viewer's combined
   // mix, which would play it a second time on top of the bot's incoming audio.
-  // Under Net Cycles their incoming audio is slot-gated at the chain instead.
+  // Under JPattern their incoming audio is slot-gated at the chain instead.
   //
   // Text and CSS Cycles are the one exception, and for the same reason the
   // aggregator exclusion below carves them out: both are painted into each
@@ -296,11 +307,20 @@ function buildPeerBlock(peer) {
   // and drop everything else — its audio already arrives as audio.
   if (peer.isBot) return buildBotSilentBlock(peer);
 
-  // Net Cycles: the pattern that plays is the one the scheduler last dequeued
+  // JPattern: the pattern that plays is the one the scheduler last dequeued
   // from this performer's buffer queue, so editor changes land at their next
   // slot rather than immediately.
-  const netCycles = isNetCyclesActive();
-  const source = netCycles ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
+  const jPattern = isJPatternActive();
+  const source = jPattern ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
+
+  // The directive is required, with no heuristic fallback: a personal editor
+  // buffer that does not open with 'personal program' contributes nothing to
+  // the combined program. The local peer is told why through the studio status
+  // line (onEvalAndPlay); a remote peer on a stale bundle is dropped quietly.
+  if (source && readDirective(source).kind !== 'personal') {
+    if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal program' directive — dropped`);
+    return null;
+  }
 
   // Trailing noise and *name: widget declarations (buttons, not patterns) are
   // stripped by the shared normalizer — the same one the aggregator's mosaic
@@ -343,9 +363,9 @@ function buildPeerBlock(peer) {
   // Local peer audio effects are applied via the WebAudio strudelFx chain,
   // so skip the Strudel-native DSP wrapper to avoid double-processing.
   let fx = peer.isLocal ? '' : effectChainFor(params);
-  // Net Cycles slot gate: a reactive gain the scheduler flips per slot —
+  // JPattern slot gate: a reactive gain the scheduler flips per slot —
   // no re-evaluation needed when a slot opens or closes.
-  if (netCycles && peer.jitsiId) fx += `.gain(_ncGate(${JSON.stringify(peer.jitsiId)}))`;
+  if (jPattern && peer.jitsiId) fx += `.gain(_jpGate(${JSON.stringify(peer.jitsiId)}))`;
 
   // Text Cycles paints per-page into each viewer's own chat panel and CSS
   // Cycles restyles each viewer's own document; neither makes a sound, so
@@ -542,9 +562,9 @@ async function ensureStrudel() {
     // sample pack becomes available as its own registration resolves.
     runPrebake().catch((e) => console.warn('[strudel] prebake failed', e));
     _sliderRef = mod.ref;
-    // _ncGate: reactive per-performer slot gate for Net Cycles (same ref
+    // _jpGate: reactive per-performer slot gate for JPattern (same ref
     // machinery as sliders — pattern events read the current level live).
-    const _ncGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
+    const _jpGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
     // live("device"): rolling-capture sampler of a local audio input;
     // _liveSilent is the stub remote peers' live() calls are rewritten to.
     const { live, _liveSilent } = installLiveInput(mod, audioCtx);
@@ -572,7 +592,7 @@ async function ensureStrudel() {
       try { ensureCameraBypass(); } catch (e) { console.warn('[strudel] camera bypass failed', e); }
       return result;
     };
-    await mod.evalScope({ sliderWithID, _ncGate, live, _liveSilent, _data, initHydra, ...textScope, ...cssScope });
+    await mod.evalScope({ sliderWithID, _jpGate, live, _liveSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -617,12 +637,12 @@ async function rebuildAndEvaluate() {
 
     // Blend user visuals (o1) with camera (s0); color tint driven by jitter/rtt
     // via window globals updated by hydra-video.js on each peer-state event.
-    // Net Cycles echo brightness rides the same tint (window._ncVisual is
+    // JPattern echo brightness rides the same tint (window._jpVisual is
     // written by the Effects Service; identity when no effects are chained).
     next += '\nsrc(o1).blend(src(s0),()=>window._hvBlendAmt)'
-         +  '.color(()=>window._hvR*((window._ncVisual&&window._ncVisual.brightness)||1),'
-         +  '()=>window._hvG*((window._ncVisual&&window._ncVisual.brightness)||1),'
-         +  '()=>window._hvB*((window._ncVisual&&window._ncVisual.brightness)||1)).out(o0)';
+         +  '.color(()=>window._hvR*((window._jpVisual&&window._jpVisual.brightness)||1),'
+         +  '()=>window._hvG*((window._jpVisual&&window._jpVisual.brightness)||1),'
+         +  '()=>window._hvB*((window._jpVisual&&window._jpVisual.brightness)||1)).out(o0)';
   }
 
   // Minted tokens (cc0, tc7, …) are positional placeholders assigned by
@@ -721,7 +741,7 @@ async function rebuildAndEvaluate() {
 // what the last evaluated program looked like. Pulled, so it costs nothing
 // until something has gone wrong and someone asks.
 registerTextProbe('program', () => ({
-  netCyclesActive: isNetCyclesActive(),
+  jPatternActive: isJPatternActive(),
   aggregatorPresent: !!getAggregatorPeer(),
   peers: getAllPeers().map((p) => ({
     jitsiId: p.jitsiId,
@@ -813,11 +833,11 @@ document.addEventListener('trussal-aggregator-mode-change', () => {
   if (strudelBoot) rebuildAndEvaluate();
 });
 
-// Net Cycles: rebuild when the mode flips (gates injected/removed) and when
+// JPattern: rebuild when the mode flips (gates injected/removed) and when
 // the scheduler dequeues a buffer whose pattern differs from the live one.
-document.addEventListener('trussal-netcycles-mode', () => {
+document.addEventListener('trussal-jpattern-mode', () => {
   if (strudelBoot) rebuildAndEvaluate();
 });
-document.addEventListener('trussal-netcycles-apply', () => {
+document.addEventListener('trussal-jpattern-apply', () => {
   if (strudelBoot) rebuildAndEvaluate();
 });

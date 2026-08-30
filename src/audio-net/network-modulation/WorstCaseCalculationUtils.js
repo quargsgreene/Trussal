@@ -1,4 +1,4 @@
-// Worst-case network metric calculation for Net Cycles.
+// Worst-case network metric calculation for JPattern.
 //
 // Every client computes WCL/WCPL from the same peer metrics broadcast over the
 // peer-state bus, so all browsers derive identical cycle lengths and effect

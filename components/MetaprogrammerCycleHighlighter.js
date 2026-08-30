@@ -9,8 +9,8 @@
 //
 // The aggregator bot owns the ring (turns last the program's network-derived
 // cycle length, so they stretch and tighten with the room) and broadcasts its current
-// turn as `nc-active` over the sidecar; peer-state surfaces that as the
-// 'trussal-netcycles-active' DOM event (and getActiveNetCyclesToken()). This
+// turn as `jp-active` over the sidecar; peer-state surfaces that as the
+// 'trussal-jpattern-active' DOM event (and getActiveJPatternToken()). This
 // highlighter outlines whichever token in the LIVE editor text matches the
 // active token, and moves to the next one whenever a new turn is reported. With
 // no aggregator in the room there is no signal, so no outline is drawn.
@@ -21,7 +21,7 @@
 
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 import {
-  getActiveNetCyclesToken, getActiveNetCyclesIndex, getActiveNetCyclesKind
+  getActiveJPatternToken, getActiveJPatternIndex, getActiveJPatternKind
 } from '../src/peer-state.js';
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
@@ -35,23 +35,23 @@ const MIRROR_PROPS = [
 ];
 
 function injectStyleOnce() {
-  if (document.getElementById('nc-play-style')) return;
+  if (document.getElementById('jp-play-style')) return;
   const style = document.createElement('style');
-  style.id = 'nc-play-style';
+  style.id = 'jp-play-style';
   // No !important: `body, body * { background: <panel-green> }` (custom.css) is a
   // default, not a forced override (fixed in 0f02e39), and every class selector
   // here already outspecifies the bare `body *` it used to need beating. This host
   // mounts inside #trussal-studio-overlay, a Trussal root, so leaving these plain
-  // lets a CSS Cycles sheet targeting .nc-play-overlay/.nc-play-box win normally
+  // lets a CSS Cycles sheet targeting .jp-play-overlay/.jp-play-box win normally
   // through the cascade instead of being unconditionally refused.
   style.textContent = `
-    .nc-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
-    .nc-play-mirror {
+    .jp-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
+    .jp-play-mirror {
       position:absolute; top:0; left:-99999px; visibility:hidden;
       white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
       background:transparent;
     }
-    .nc-play-box {
+    .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
       border:2.25px solid #1ff466; border-radius:0;
       background:transparent;
@@ -120,31 +120,31 @@ function elementPositions(text, type) {
 
 export function mountMetaprogrammerCycleHighlighter(container) {
   if (!container) return null;
-  const ta = container.querySelector('.nc-code');
+  const ta = container.querySelector('.jp-code');
   if (!ta) return null;
   const host = ta.parentElement;
-  if (!host || host.querySelector('.nc-play-overlay')) return null; // idempotent
+  if (!host || host.querySelector('.jp-play-overlay')) return null; // idempotent
 
   injectStyleOnce();
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
 
   const overlay = document.createElement('div');
-  overlay.className = 'nc-play-overlay';
+  overlay.className = 'jp-play-overlay';
   const mirror = document.createElement('div');
-  mirror.className = 'nc-play-mirror';
+  mirror.className = 'jp-play-mirror';
   // One reused box, moved between tokens — avoids churning a DOM node on every
   // reposition (new turn, edit, scroll, resize).
   const box = document.createElement('div');
-  box.className = 'nc-play-box';
+  box.className = 'jp-play-box';
   box.style.display = 'none';
   overlay.appendChild(box);
   host.append(overlay, mirror);
 
   // The aggregator's current ring turn (token + which occurrence, or a rest),
   // from peer-state.
-  let activeToken = getActiveNetCyclesToken();
-  let activeIndex = getActiveNetCyclesIndex();
-  let activeKind = getActiveNetCyclesKind();
+  let activeToken = getActiveJPatternToken();
+  let activeIndex = getActiveJPatternIndex();
+  let activeKind = getActiveJPatternKind();
 
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
@@ -214,7 +214,7 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   }
 
   // New turn from the aggregator → move (or clear) the outline.
-  document.addEventListener('trussal-netcycles-active', (e) => {
+  document.addEventListener('trussal-jpattern-active', (e) => {
     activeToken = e.detail ? e.detail.token : null;
     activeIndex = e.detail ? e.detail.index : null;
     activeKind = e.detail ? e.detail.kind : null;
@@ -225,7 +225,7 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   // changes, scrolling, and manual resize of the textarea.
   ta.addEventListener('input', renderOutline);
   ta.addEventListener('scroll', renderOutline);
-  document.addEventListener('trussal-netcycles-program', renderOutline);
+  document.addEventListener('trussal-jpattern-program', renderOutline);
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(renderOutline).observe(ta);
   }

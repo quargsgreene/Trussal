@@ -9,7 +9,7 @@ import { mergeConfig } from '../src/shared/config.js';
  * spawned; `retroactive: true` makes a later edit reach the bots already
  * running — but only at each one's NEXT TURN, never mid-phrase.
  *
- * The turn signal is the aggregator's `nc-active` broadcast, which is the only
+ * The turn signal is the aggregator's `jp-active` broadcast, which is the only
  * statement on the bus about whose token is streaming. These tests drive that
  * message directly, exactly as the aggregator does.
  */
@@ -57,7 +57,7 @@ const edit = (fleet, code) =>
   );
 
 const turn = (fleet, token) =>
-  fleet.handleBusMessage({ type: 'nc-active', token, index: 0, kind: 'bot' }, ROOM);
+  fleet.handleBusMessage({ type: 'jp-active', token, index: 0, kind: 'bot' }, ROOM);
 
 // Bots must be in the roster shadow to be driven — the fleet targets a peerId.
 async function joinBots(fleet) {

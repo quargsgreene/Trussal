@@ -8,7 +8,7 @@
 // them per CELL would process a blitted camera cell twice (once in the
 // performer's own published track, once here).
 //
-// Deliberately NOT published to `window._ncVisual`. That object has carried
+// Deliberately NOT published to `window._jpVisual`. That object has carried
 // lowpass/pixelate/noise channels that nothing has ever rendered; adding more
 // state that no consumer reads is how an effect ends up "implemented" and
 // invisible. Everything below is consumed by pageMosaic's frame loop.

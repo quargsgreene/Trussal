@@ -1,4 +1,4 @@
-// Room index + bot-cluster suffix rules for Net Cycles.
+// Room index + bot-cluster suffix rules for JPattern.
 //
 // Humans get a sequential integer index in join order, immutable for the
 // meeting and never reused after a leave. Bots get their owner's index plus

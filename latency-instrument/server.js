@@ -465,7 +465,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // until the next participant slot.
           if (!record.isFleet && (meta.lastActiveToken != null || meta.lastActiveKind === 'rest')) {
             send(ws, {
-              type: 'nc-active',
+              type: 'jp-active',
               token: meta.lastActiveToken,
               index: meta.lastActiveIndex,
               kind: meta.lastActiveKind,
@@ -633,7 +633,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           break;
         }
 
-        case 'nc-active': {
+        case 'jp-active': {
           // Aggregator publishing which participant token is streaming this ring
           // turn, so browsers can outline it in the shared metaprogram editor.
           // Fleet-only (the aggregator owns the ring); relayed to the room as-is.
@@ -643,7 +643,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           if (!record.isFleet) break;
           const token = typeof msg.token === 'string' ? msg.token : null;
           // Ring-slot index — distinguishes repeated tokens so the browser
-          // outlines the occurrence actually playing (see nc-active on hello).
+          // outlines the occurrence actually playing (see jp-active on hello).
           const index = Number.isInteger(msg.index) ? msg.index : null;
           // 'rest': the turn is a written `~` rather than a participant, and
           // `index` addresses the program's rests instead of its participants.
@@ -653,7 +653,7 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           ncMeta.lastActiveIndex = index;
           ncMeta.lastActiveKind = kind;
           const room = rooms.get(roomName);
-          if (room) broadcast(room, peerId, { type: 'nc-active', token, index, kind });
+          if (room) broadcast(room, peerId, { type: 'jp-active', token, index, kind });
           break;
         }
 

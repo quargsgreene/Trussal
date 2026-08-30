@@ -71,9 +71,9 @@ let reconnectTimer = null;
 let reconnectDelay = 1000;
 let lastPongAt = 0;
 let currentRoom = null;
-let activeNetCyclesToken = null; // aggregator's current ring turn (nc-active)
-let activeNetCyclesIndex = null; // ring-slot index of that turn (repeats-aware)
-let activeNetCyclesKind = null;  // 'rest' when the turn is a written `~`, else null
+let activeJPatternToken = null; // aggregator's current ring turn (jp-active)
+let activeJPatternIndex = null; // ring-slot index of that turn (repeats-aware)
+let activeJPatternKind = null;  // 'rest' when the turn is a written `~`, else null
 const MAX_RECONNECT_DELAY = 15000;
 const PONG_TIMEOUT_MS = 8000;
 
@@ -395,7 +395,7 @@ function handleMessage(msg) {
       if (Array.isArray(msg.updates)) emit('crdt-state', { updates: msg.updates });
       break;
 
-    case 'nc-active':
+    case 'jp-active':
       // Aggregator's current ring turn — the participant token whose audio is
       // streaming this slot, plus the ring-slot index that disambiguates a
       // token listed more than once. Surfaced as a DOM event so the metaprogram
@@ -405,14 +405,14 @@ function handleMessage(msg) {
       // the program's rests rather than its participants — the room is resting
       // at that written `~`. No token and no kind means no turn at all, which
       // clears the outline.
-      activeNetCyclesToken = typeof msg.token === 'string' ? msg.token : null;
-      activeNetCyclesIndex = Number.isInteger(msg.index) ? msg.index : null;
-      activeNetCyclesKind = msg.kind === 'rest' ? 'rest' : null;
-      document.dispatchEvent(new CustomEvent('trussal-netcycles-active', {
+      activeJPatternToken = typeof msg.token === 'string' ? msg.token : null;
+      activeJPatternIndex = Number.isInteger(msg.index) ? msg.index : null;
+      activeJPatternKind = msg.kind === 'rest' ? 'rest' : null;
+      document.dispatchEvent(new CustomEvent('trussal-jpattern-active', {
         detail: {
-          token: activeNetCyclesToken,
-          index: activeNetCyclesIndex,
-          kind: activeNetCyclesKind,
+          token: activeJPatternToken,
+          index: activeJPatternIndex,
+          kind: activeJPatternKind,
         }
       }));
       break;
@@ -535,19 +535,19 @@ export function getPeerByJitsiId(jitsiId) {
 
 export function getLocalPeer() { return localPeer; }
 
-// The participant token the aggregator is streaming this turn (nc-active), or
+// The participant token the aggregator is streaming this turn (jp-active), or
 // null if unknown / no aggregator has reported. Also emitted as the DOM event
-// 'trussal-netcycles-active' on each change.
-export function getActiveNetCyclesToken() { return activeNetCyclesToken; }
+// 'trussal-jpattern-active' on each change.
+export function getActiveJPatternToken() { return activeJPatternToken; }
 
 // The ring-slot index of that turn, disambiguating a token listed more than
 // once (null when unknown). Indexes the program's PARTICIPANTS normally and
-// its RESTS when the turn is a rest — see getActiveNetCyclesKind.
-export function getActiveNetCyclesIndex() { return activeNetCyclesIndex; }
+// its RESTS when the turn is a rest — see getActiveJPatternKind.
+export function getActiveJPatternIndex() { return activeJPatternIndex; }
 
 // 'rest' when the current turn is a written `~` (no participant is streaming
 // and the index addresses the rests), null otherwise.
-export function getActiveNetCyclesKind() { return activeNetCyclesKind; }
+export function getActiveJPatternKind() { return activeJPatternKind; }
 
 // The one rule for "is it this peer's turn right now" — shared by every
 // silent-by-construction renderer (Text Cycles, CSS Cycles) that needs to
@@ -559,11 +559,11 @@ export function getActiveNetCyclesKind() { return activeNetCyclesKind; }
 // Fails OPEN (true) when there is no live turn signal yet (no aggregator has
 // reported, or the peer has no roomIndex) — an unknown state must not hide a
 // performer's own output before their token is even assigned.
-export function isPeerNetCyclesTurn(jitsiId) {
-  if (activeNetCyclesToken == null) return true;
+export function isPeerJPatternTurn(jitsiId) {
+  if (activeJPatternToken == null) return true;
   const peer = getPeerByJitsiId(jitsiId);
   if (!peer || peer.roomIndex == null) return true;
-  return String(peer.roomIndex) === String(activeNetCyclesToken);
+  return String(peer.roomIndex) === String(activeJPatternToken);
 }
 
 export function getAllPeers() {

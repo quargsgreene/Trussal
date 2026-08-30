@@ -54,7 +54,7 @@ export const defaultConfig = Object.freeze({
   conductorPort: 7700,    // bots POST metrics here
   adminPort: 7777,        // admin page, bound 0.0.0.0 so it is reachable outside the VM
 
-  // Fleet service (Net Cycles): per-user bot clusters driven by in-room
+  // Fleet service (JPattern): per-user bot clusters driven by in-room
   // requests relayed through the latency sidecar.
   sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on
   // There is deliberately NO room setting. The fleet serves every room it

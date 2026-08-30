@@ -4,7 +4,7 @@
 // This is NOT upstream o2ws.js. It speaks Trussal's own transport: one
 // serialized o2lite-format.js message per binary WebSocket frame (no length
 // prefix, no o2host discovery handshake), fanned out per `?room=` by the
-// relay. The API is a small ES-module class that the Net Cycles driver
+// relay. The API is a small ES-module class that the JPattern driver
 // (src/audio-net/Metaprogrammer.js) and node:test (test/clock-sync.test.js)
 // both drive.
 //
@@ -123,7 +123,7 @@ export class O2LiteClient {
   }
 
   // Fan a message out to the room. Silently no-ops until the socket is open —
-  // Net Cycles tolerates running unsynced, so a pre-connect send is dropped
+  // JPattern tolerates running unsynced, so a pre-connect send is dropped
   // rather than thrown.
   send(address, typespec = ',', args = [], timestamp = 0) {
     if (!this.ws || this.ws.readyState !== WS_OPEN) return false;

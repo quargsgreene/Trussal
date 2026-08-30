@@ -57,7 +57,7 @@ export function gridView(peers, localJitsiId) {
 
 // --- DOM overlay (browser) ------------------------------------------------------
 
-const OVERLAY_CLASS = 'nc-grid-mark';
+const OVERLAY_CLASS = 'jp-grid-mark';
 
 function findVideoPanel(jitsiId) {
   // Jitsi filmstrip tiles carry participant ids in a few historical shapes.
@@ -87,11 +87,11 @@ export function renderGridOverlays(peers, localJitsiId, { landmarks = false, dis
     // without MediaPipe data (displacement map has no entry).
     const peer = peers.find(p => p.jitsiId === entry.jitsiId);
     const vec = displacement && displacement[entry.jitsiId];
-    let arrow = panel.querySelector('.nc-grid-vec');
+    let arrow = panel.querySelector('.jp-grid-vec');
     if (landmarks && vec && peer && !peer.isBot) {
       if (!arrow) {
         arrow = document.createElement('div');
-        arrow.className = 'nc-grid-vec';
+        arrow.className = 'jp-grid-vec';
         arrow.style.cssText = 'position:absolute;bottom:4px;right:4px;width:18px;height:18px;z-index:20;pointer-events:none;font-size:14px;line-height:18px;text-align:center;';
         panel.appendChild(arrow);
       }
@@ -107,5 +107,5 @@ export function renderGridOverlays(peers, localJitsiId, { landmarks = false, dis
 }
 
 export function clearGridOverlays() {
-  document.querySelectorAll(`.${OVERLAY_CLASS}, .nc-grid-vec`).forEach(el => el.remove());
+  document.querySelectorAll(`.${OVERLAY_CLASS}, .jp-grid-vec`).forEach(el => el.remove());
 }

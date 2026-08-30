@@ -288,7 +288,7 @@ export class CircularParticipantQueue {
 
   // --- Metaprogram ordering ------------------------------------------------------
   //
-  // When the room's Net Cycles metaprogram is in force, the $ participants
+  // When the room's JPattern metaprogram is in force, the $ participants
   // sequence dictates the ring's ORDER and MEMBERSHIP:
   //   - the rotation contains exactly the listed tokens, in written order (a
   //     listed token nobody has delivered audio for holds a placeholder slot —

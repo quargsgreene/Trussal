@@ -21,7 +21,7 @@ import {
 const require = createRequire(import.meta.url);
 const { createLatencyServer } = require('../../latency-instrument/server.js');
 
-const ROOM = 'nc-sync';
+const ROOM = 'jp-sync';
 
 // Human browser stand-in: peer-state.js's crdt-update/crdt-state contract
 // over a raw ws, feeding the real provider (MetaprogrammerCrdtSync).
@@ -35,7 +35,7 @@ function connectHuman(port, onActive) {
         listeners.forEach(fn => fn('crdt-update', { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality }));
       } else if (msg.type === 'crdt-state' && Array.isArray(msg.updates)) {
         listeners.forEach(fn => fn('crdt-state', { updates: msg.updates }));
-      } else if (msg.type === 'nc-active' && onActive) {
+      } else if (msg.type === 'jp-active' && onActive) {
         onActive(msg);
       }
     });
@@ -54,18 +54,23 @@ function connectHuman(port, onActive) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// The metaprogram directive every buffer now opens with (program-directive.js).
+// The fixtures below are bodies; mp() gives the full buffer the parser accepts.
+const mp = (body) => `'metaprogram'\n${body}`;
+
 // Type into the shared doc the way the editor does: one setText per
 // keystroke (every prefix, invalid intermediates included), modality
 // 'keyboard'.
-function typeText(sync, text) {
+function typeText(sync, body) {
+  const text = mp(body);
   for (let i = 1; i <= text.length; i++) sync.setText(text.slice(0, i));
 }
 
 // The editor's ▶ Apply: setText with the 'apply' origin; when typing already
 // synced the exact text the diff is empty, so the RUN signal ships as a
 // broadcastApplied snapshot (mirrors Metaprogrammer.applyProgramText).
-function applyText(sync, text) {
-  const changed = sync.setText(text, 'apply');
+function applyText(sync, body) {
+  const changed = sync.setText(mp(body), 'apply');
   if (!changed) sync.broadcastApplied();
 }
 
@@ -89,27 +94,27 @@ test('typing never runs the metaprogram; applies (diff or empty-diff) and catch-
 
   try {
     // The roster seed, written before the aggregator exists.
-    human.sync.setText('$ participants <0>', 'roster');
+    human.sync.setText(mp('$ participants <0>'), 'roster');
     await sleep(150);
 
     // Aggregator comes up: the crdt-state catch-up adopts the room's program.
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
-    assert.equal(bot.programText, '$ participants <0>', 'catch-up adopted the seed');
+    assert.equal(bot.programText, mp('$ participants <0>'), 'catch-up adopted the seed');
     assert.deepEqual(bot.order.order(), ['0'], 'ring follows the seed');
 
     // Typing an edit (bots added to the text) syncs the shared doc but must
     // not touch the running program — half-typed programs never run.
     typeText(human.sync, '$ participants <0 0a 0b>');
     await sleep(300);
-    assert.equal(bot.metaprogramDoc.getText(), '$ participants <0 0a 0b>', 'text synced per keystroke');
-    assert.equal(bot.programText, '$ participants <0>', 'typing did not change the running program');
+    assert.equal(bot.metaprogramDoc.getText(), mp('$ participants <0 0a 0b>'), 'text synced per keystroke');
+    assert.equal(bot.programText, mp('$ participants <0>'), 'typing did not change the running program');
     assert.deepEqual(bot.order.order(), ['0'], 'typing did not reorder the ring');
 
     // ▶ Apply after typing: the diff is empty, the snapshot RUN signal lands.
     applyText(human.sync, '$ participants <0 0a 0b>');
     await sleep(300);
-    assert.equal(bot.programText, '$ participants <0 0a 0b>', 'empty-diff apply ran the program');
+    assert.equal(bot.programText, mp('$ participants <0 0a 0b>'), 'empty-diff apply ran the program');
     assert.deepEqual(bot.order.order(), ['0', '0a', '0b'], 'ring adopted the applied order');
 
     // A third and fourth update keep applying (regression: the program was
@@ -118,12 +123,12 @@ test('typing never runs the metaprogram; applies (diff or empty-diff) and catch-
     typeText(human.sync, '$ participants <0b 0>');
     applyText(human.sync, '$ participants <0b 0>');
     await sleep(300);
-    assert.equal(bot.programText, '$ participants <0b 0>');
+    assert.equal(bot.programText, mp('$ participants <0b 0>'));
     assert.deepEqual(bot.order.order(), ['0b', '0'], 'third update applied');
 
     applyText(human.sync, '$ participants <0a>');
     await sleep(300);
-    assert.equal(bot.programText, '$ participants <0a>');
+    assert.equal(bot.programText, mp('$ participants <0a>'));
     assert.deepEqual(bot.order.order(), ['0a'], 'fourth update applied');
   } finally {
     await bot.stop().catch(() => {});
@@ -152,11 +157,11 @@ test('a stop broadcast leaves the running program and ring untouched (silencing 
   );
 
   try {
-    human.sync.setText('$ participants <0 0a>', 'roster');
+    human.sync.setText(mp('$ participants <0 0a>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
-    assert.equal(bot.programText, '$ participants <0 0a>');
+    assert.equal(bot.programText, mp('$ participants <0 0a>'));
     assert.deepEqual(bot.order.order(), ['0', '0a']);
 
     // A human's ■ Stop: broadcastStopSignal ships this exact zero-diff
@@ -168,7 +173,7 @@ test('a stop broadcast leaves the running program and ring untouched (silencing 
     // reacts to directly — so this broadcast must be a no-op here.
     human.sync.broadcastStop();
     await sleep(300);
-    assert.equal(bot.programText, '$ participants <0 0a>', 'stop did not touch the running program');
+    assert.equal(bot.programText, mp('$ participants <0 0a>'), 'stop did not touch the running program');
     assert.deepEqual(bot.order.order(), ['0', '0a'], 'stop did not touch the ring');
   } finally {
     await bot.stop().catch(() => {});
@@ -178,7 +183,7 @@ test('a stop broadcast leaves the running program and ring untouched (silencing 
   }
 });
 
-test('aggregator broadcasts nc-active on each ring turn change; the browser receives it deduped', { timeout: 30000 }, async () => {
+test('aggregator broadcasts jp-active on each ring turn change; the browser receives it deduped', { timeout: 30000 }, async () => {
   const { wss } = createLatencyServer({ port: 0 });
   await new Promise(r => wss.once('listening', r));
   const port = wss.address().port;
@@ -200,7 +205,7 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
   );
 
   try {
-    human.sync.setText('$ participants <0 1>', 'roster');
+    human.sync.setText(mp('$ participants <0 1>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();   // adopts the seed + connects the bus
     await sleep(200);
@@ -222,7 +227,7 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
     clock = turnMs * 2;    await bot.readAndAssembleMasterBuffer(); await sleep(80); // wraps → send '0'
 
     assert.deepEqual(ncActive, ['0', '1', '0'],
-      'one nc-active per turn change, no repeat within a turn');
+      'one jp-active per turn change, no repeat within a turn');
 
     // A late joiner must learn the CURRENT turn even though the aggregator only
     // emits on change (it won't re-send just for them): the sidecar replays its
@@ -240,7 +245,7 @@ test('aggregator broadcasts nc-active on each ring turn change; the browser rece
   }
 });
 
-test('nc-active re-announces the current turn on the heartbeat even when unchanged', { timeout: 30000 }, async () => {
+test('jp-active re-announces the current turn on the heartbeat even when unchanged', { timeout: 30000 }, async () => {
   const { wss } = createLatencyServer({ port: 0 });
   await new Promise(r => wss.once('listening', r));
   const port = wss.address().port;
@@ -261,7 +266,7 @@ test('nc-active re-announces the current turn on the heartbeat even when unchang
   );
 
   try {
-    human.sync.setText('$ participants <0>', 'roster');
+    human.sync.setText(mp('$ participants <0>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
@@ -282,7 +287,7 @@ test('nc-active re-announces the current turn on the heartbeat even when unchang
   }
 });
 
-test('nc-active carries the ring index so a repeated token is disambiguated', { timeout: 30000 }, async () => {
+test('jp-active carries the ring index so a repeated token is disambiguated', { timeout: 30000 }, async () => {
   const { wss } = createLatencyServer({ port: 0 });
   await new Promise(r => wss.once('listening', r));
   const port = wss.address().port;
@@ -306,7 +311,7 @@ test('nc-active carries the ring index so a repeated token is disambiguated', { 
   try {
     // `0` appears twice — a browser that keyed only on the token would jump back
     // to the first `0` at slot 2; the index (0,1,2) pins the exact occurrence.
-    human.sync.setText('$ participants <0 1 0>', 'roster');
+    human.sync.setText(mp('$ participants <0 1 0>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
@@ -356,7 +361,7 @@ test('a rest reaches the browser as a rest, addressing the written `~`', { timeo
   try {
     // Two rests, so the browser needs the index to know WHICH one is resting —
     // the rests are numbered in their own space, independent of `0` and `1`.
-    human.sync.setText('$ participants <0 ~ 1 ~>', 'roster');
+    human.sync.setText(mp('$ participants <0 ~ 1 ~>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);
@@ -408,7 +413,7 @@ test('a joiner landing mid-rest is told the room is resting', { timeout: 30000 }
   );
 
   try {
-    first.sync.setText('$ participants <0 ~>', 'roster');
+    first.sync.setText(mp('$ participants <0 ~>'), 'roster');
     await sleep(150);
     await bot.interpretAndExecuteMetaprogram();
     await sleep(200);

@@ -29,7 +29,7 @@
 // which bypass mini entirely (see rewriteTextCalls in text-cycles-core.js) —
 // double-quoting it would mint three separate one-third-cycle steps.
 
-import { getPeerByJitsiId, getLocalPeer, isPeerNetCyclesTurn } from './peer-state.js';
+import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
 import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip } from './text-debug.js';
 // The room's `#` effects, as they apply to words and their styling. The
@@ -150,7 +150,7 @@ function ensureContainer() {
 // indistinguishable, from the outside, from a pipeline that never ran.
 //
 // Running a text pattern is the gesture that asks for the chat, so it also
-// supplies the nickname: the performer's Net Cycles room index, which is the
+// supplies the nickname: the performer's JPattern room index, which is the
 // token the metaprogram already addresses them by, so a bubble is labelled with
 // the identity the room uses rather than an anonymous "text".
 //
@@ -181,7 +181,7 @@ function localParticipantName() {
   return typeof name === 'string' && name.trim() ? name : null;
 }
 
-// The performer's Net Cycles token. Assigned by the sidecar in its roster, so
+// The performer's JPattern token. Assigned by the sidecar in its roster, so
 // it can arrive after the first evaluate — which is why the entry below
 // retries rather than giving up on the first miss.
 function localToken() {
@@ -456,11 +456,11 @@ function paint(value, cycle) {
   // used to be exempt here (an operator-puppeted edit painted the moment it
   // landed, rather than waiting on the ring), but that predates bots having a
   // voice of their own to schedule at all.
-  if (!isPeerNetCyclesTurn(peerId)) {
+  if (!isPeerJPatternTurn(peerId)) {
     textHapLog('paint:gated', {
       token: value.word,
       peer: peerId,
-      note: "not this peer's turn — Net Cycles scheduling is active and their gate is closed",
+      note: "not this peer's turn — JPattern scheduling is active and their gate is closed",
     });
     return;
   }
@@ -470,7 +470,7 @@ function paint(value, cycle) {
   // and carrying the NET CYCLES cycle number — every mutation below is seeded
   // from it, so each browser paints the same characters. `cycle` above is the
   // Strudel hap's and is per-browser, which is exactly why it is not the seed.
-  const fx = (typeof window !== 'undefined' && window._ncText) || null;
+  const fx = (typeof window !== 'undefined' && window._jpText) || null;
   const active = fx && fx.active ? fx : null;
   const seedCycle = active ? active.cycle : 0;
   const seedPeer = peerSeed(peerId);

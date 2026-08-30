@@ -5,7 +5,7 @@ import {
   evaluateValuePattern, isValuePattern, formatValuePattern,
   entryHasValuePattern, chainHasValuePattern, isDataRefNode, setDataRefReader
 } from '../src/audio-net/ValuePattern.js';
-import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
+import { parseMetaprogram } from './helpers/metaprogram.js';
 
 const alt = (...terms) => ({ type: 'valueSeq', mode: 'alternate', terms });
 const sub = (...terms) => ({ type: 'valueSeq', mode: 'subdivide', terms });

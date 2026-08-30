@@ -432,7 +432,7 @@ export class FleetService {
           }
         }
         break;
-      case 'nc-active':
+      case 'jp-active':
         // The aggregator announcing whose turn is streaming. This is the only
         // turn signal on the bus, and it is what "applies on their next turn"
         // is measured against.

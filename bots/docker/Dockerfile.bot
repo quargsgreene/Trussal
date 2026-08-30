@@ -45,6 +45,10 @@ COPY src/hydra-code.js /repo/src/hydra-code.js
 # normalizer that finds a Hydra preamble. Another src/-root file, so it needs
 # its own COPY and its own .dockerignore whitelist entry.
 COPY src/bot-config.js /repo/src/bot-config.js
+# hydra-code.js also imports it: the 'personal program' / 'metaprogram' /
+# 'bot program' directive rule, stripped by the same normalizer. Another
+# src/-root file, same two entries.
+COPY src/program-directive.js /repo/src/program-directive.js
 # The Text Cycles declaration rule (bot.js imports it): the bot hands both
 # capability rules to its page scripts, which are serialised function bodies and
 # cannot import anything themselves. A third src/-root file, same two entries.

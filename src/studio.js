@@ -30,6 +30,7 @@ import {
 import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial-gesture.js';
 import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
 import { toggleLineComment } from './editor-router-core.js';
+import { readDirective, ensureDirective } from './program-directive.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
   bootAudioEngine,
@@ -203,7 +204,7 @@ function createChip() {
     <div class="ts-chip-row">
       <div class="ts-avatar"></div>
       <div class="ts-name"></div>
-      <span class="ts-idx" title="Net Cycles room index"></span>
+      <span class="ts-idx" title="JPattern room index"></span>
     </div>
   `;
   el.addEventListener('click', () => {
@@ -277,7 +278,7 @@ function metricsLine(peer) {
 // next to the metrics that produce it so a WCL that moves without the turn
 // following is visible in the UI, not only in the aggregator's log. Computed
 // here rather than read off a scheduler because the browser-side scheduler is
-// dormant (see setNetCyclesActive); this is the same pure calculation.
+// dormant (see setJPatternActive); this is the same pure calculation.
 function cycleLengthReadout(wc) {
   const text = getProgramText();
   if (!text) return 'turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
@@ -441,9 +442,9 @@ function createBotClusterSection() {
   el.querySelector('[data-bot-action="spawn"]').addEventListener('click', () => {
     // The editor box itself, not the last-evaluated pattern: a botConfig(...)
     // makes no sound, so nothing prompts an author to re-run their block after
-    // typing one, and peer.pattern only advances on eval. `:not(.nc-code)` is
-    // load-bearing — the shared Net Cycles textarea also carries .ts-code.
-    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+    // typing one, and peer.pattern only advances on eval. `:not(.jp-code)` is
+    // load-bearing — the shared JPattern textarea also carries .ts-code.
+    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
     spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : undefined);
   });
   el.querySelector('[data-bot-action="remove-all"]').addEventListener('click', () => removeBots('all'));
@@ -884,6 +885,15 @@ function updateSampleBanksArea(el) {
 }
 
 async function onEvalAndPlay(code) {
+  if (typeof code === 'string') {
+    const dir = readDirective(code);
+    if (dir.kind !== 'personal') {
+      setStatus(dir.kind == null
+        ? "Add 'personal program' as the first line of your editor"
+        : `This editor opens with '${dir.phrase}', not 'personal program'`);
+      return;
+    }
+  }
   setStatus('Starting…');
   try {
     await bootAudioEngine();
@@ -1085,7 +1095,7 @@ function ensureOverlay() {
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-netcycles" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
+    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
     <div class="ts-detail"></div>
   `;
   document.body.appendChild(overlay);
@@ -1100,14 +1110,14 @@ function ensureOverlay() {
   overlay.addEventListener('mousedown', (e) => e.stopPropagation());
   overlay.addEventListener('click', (e) => e.stopPropagation());
 
-  // The Net Cycles card mounts once, outside the re-rendered detail panel,
+  // The JPattern card mounts once, outside the re-rendered detail panel,
   // so the live CRDT-bound textarea survives roster/metrics re-renders.
-  const ncHost = overlay.querySelector('.ts-netcycles');
+  const ncHost = overlay.querySelector('.ts-jpattern');
   try {
     mountMetaprogrammerEditor(ncHost);
     mountMetaprogrammerCycleHighlighter(ncHost);
   } catch (e) {
-    console.warn('[studio] Net Cycles card mount failed', e);
+    console.warn('[studio] JPattern card mount failed', e);
   }
 
   overlay.querySelector('.ts-close').addEventListener('click', () => {
@@ -1138,7 +1148,9 @@ function ensureOverlay() {
     let seed = DEFAULT_PATTERN;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && saved.trim()) seed = saved;
+      // A draft saved before the directive existed is migrated in place — the
+      // editor pre-fills the line, the same as the default seed carrying it.
+      if (saved && saved.trim()) seed = ensureDirective(saved, 'personal');
     } catch (e) {}
     sendLocalPattern(seed);
   }
@@ -1200,11 +1212,11 @@ function tickUi() {
   bootAudioEngine().catch(e => console.warn('[studio] audio boot deferred', e));
 }
 
-// Keyboard module requests eval via this event. The Net Cycles editor's
+// Keyboard module requests eval via this event. The JPattern editor's
 // Eval applies the shared metaprogram instead of booting Strudel.
 document.addEventListener('trussal-kbd-eval', (e) => {
   const code = e.detail?.code;
-  if (e.detail?.editor === 'netcycles') {
+  if (e.detail?.editor === 'jpattern') {
     import('./audio-net/Metaprogrammer.js').then(m => {
       const errors = m.applyProgramText(typeof code === 'string' ? code : '');
       setStatus(errors.length ? `metaprogram: ${errors[0].line}:${errors[0].col} ${errors[0].message}` : 'metaprogram applied');
@@ -1216,9 +1228,9 @@ document.addEventListener('trussal-kbd-eval', (e) => {
 
 // Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
 // trussal-eval is the personal instrument's signal, so it must not land on the
-// Net Cycles textarea — which shares .ts-code and sits above it in the overlay.
+// JPattern textarea — which shares .ts-code and sits above it in the overlay.
 document.addEventListener('trussal-eval', () => {
-  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.nc-code)`);
+  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
   if (codeEl) {
     codeEl.classList.remove('ts-eval-flash');
     void codeEl.offsetWidth; // force reflow so the animation restarts each time

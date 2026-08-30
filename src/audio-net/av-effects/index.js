@@ -19,8 +19,8 @@
 // node at all: it renders panel overlays and nothing else.
 //
 // What this class still does, therefore, is publish the per-browser state the
-// aggregator has no business owning: the Hydra tint (window._ncVisual) and the
-// text/css mutations the Text Cycles renderer applies (window._ncText). The
+// aggregator has no business owning: the Hydra tint (window._jpVisual) and the
+// text/css mutations the Text Cycles renderer applies (window._jpText). The
 // IMAGE effects are not here — they belong to the single composited frame the
 // room sees, so they live in the aggregator's compositor and are computed by
 // av-effects/VideoState.js.
@@ -192,16 +192,16 @@ export class EffectsChainManager {
 
   _publishVisual(resolved) {
     if (typeof window === 'undefined') return;
-    window._ncVisual = visualStateFor(resolved);
+    window._jpVisual = visualStateFor(resolved);
     // The text and css counterparts, for the Text Cycles renderer. Unlike the
     // audio and video paths there is no single application point to push
     // these to — every browser paints its own chat panel — so they are
     // published here and consumed in text-cycles.js. The CYCLE travels with
-    // them: it is what seeds every mutation, and it has to be the Net Cycles
+    // them: it is what seeds every mutation, and it has to be the JPattern
     // grid's rather than a Strudel hap's, which is per-browser.
     const cycle = this.cycleContext();
     const { text, css } = textAndCssStateFor(this._chainEntries, this._metrics, cycle);
-    window._ncText = {
+    window._jpText = {
       text, css,
       cycle: Math.floor(cycle.cyclePos),
       active: !textStateIsNeutral(text) || !cssStateIsNeutral(css)
@@ -217,7 +217,7 @@ export class EffectsChainManager {
   // one: a constant-argument chain keeps re-deriving on metrics updates alone.
   //
   // With every audio node on the aggregator, what this tick keeps current is
-  // the VISUAL side — a patterned `# crush` still has to step _ncVisual.
+  // the VISUAL side — a patterned `# crush` still has to step _jpVisual.
   // pixelate on the grid. The aggregator runs its own tick, off the same
   // PATTERN_TICK_MS, for the audio.
   _syncPatternLoop() {
@@ -257,10 +257,10 @@ export class EffectsChainManager {
     this._syncGridLoop();
     this._syncPatternLoop();
     if (typeof window !== 'undefined') {
-      window._ncVisual = { brightness: 1 };
+      window._jpVisual = { brightness: 1 };
       // Left ACTIVE, a torn-down chain would go on dropping letters from every
       // word the room paints, with no directive anywhere to explain it.
-      window._ncText = null;
+      window._jpText = null;
     }
   }
 }

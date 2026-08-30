@@ -1,4 +1,4 @@
-// NetCycles metaprogram parser: text → AST.
+// JPattern metaprogram parser: text → AST.
 //
 // The metaprogramming language is Mondo-flavoured (strudel.cc mini-notation
 // sequences) but deliberately tiny: one `$ participants` scheduling sequence
@@ -16,7 +16,7 @@
 //
 // A statement written with a leading `*` (`*$ participants <2a 2b>`) is a
 // BUTTON DECLARATION rather than a statement: inert to this parser, rendered
-// as a button by the Net Cycles editor, and written into the program only when
+// as a button by the JPattern editor, and written into the program only when
 // that button is pressed. It is the metaprogram's `*name: code`.
 //
 // Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
@@ -44,6 +44,11 @@ import {
 // Which media an effect may name, and how a written set resolves. The grammar
 // validates against the same list the four consumers gate on.
 import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
+// The one rule for which of Trussal's three program kinds a buffer is. A
+// metaprogram must open with the `'metaprogram'` directive — it is what tells
+// this parser it is looking at a metaprogram, so `participants` no longer has
+// to be a reserved word carrying that signal.
+import { readDirective, stripDirective } from '../program-directive.js';
 
 export const TIMING_METRICS = ['wcl', 'wcpl'];
 // Metrics an effect may be modulated by. The same set as TIMING_METRICS: wcl
@@ -338,7 +343,7 @@ class Parser {
     }
 
     if (!program.participants) {
-      this.errors.push({ message: "missing '$ participants' scheduling sequence", line: 1, col: 1 });
+      this.errors.push({ message: "missing '$' scheduling sequence", line: 1, col: 1 });
     }
     // Defaults per spec: cycles wcl 20 (mirrors buildDefaultProgram — wcl is
     // mouth-to-ear latency in the tens of ms, so a small scale gives seconds).
@@ -355,14 +360,20 @@ class Parser {
   parseDollar(program) {
     const sigil = this.next(); // '$'
     const name = this.peek();
-    if (name.type !== 'word' || name.value !== 'participants') {
-      this.error(`unknown '$' statement '${name.value}' (only 'participants' exists)`, name);
-      this.recover();
-      return;
+    // `participants` is no longer reserved: the `'metaprogram'` directive is
+    // what identifies this buffer, so the label after `$` is optional sugar.
+    // `$ <0 1 2>` and `$ participants <0 1 2>` are the same statement. A word
+    // that is anything else is still an error — `$` has exactly one statement.
+    if (name.type === 'word') {
+      if (name.value !== 'participants') {
+        this.error(`unknown '$' statement '${name.value}' — '$' takes an optional 'participants' label then a sequence`, name);
+        this.recover();
+        return;
+      }
+      this.next();
     }
-    this.next();
     if (program.participants) {
-      this.error("duplicate '$ participants' statement", sigil);
+      this.error("duplicate '$' scheduling sequence", sigil);
       this.recover();
       return;
     }
@@ -373,11 +384,14 @@ class Parser {
     program.participants = seq;
   }
 
-  // <...> (alternate: one element per cycle) or [...] (subdivide the cycle).
+  // <...> (alternate: one element per cycle), [...] (subdivide the cycle), or a
+  // Mondo s-expression `(head …)` — mini and mondo are both accepted here, told
+  // apart by the opening bracket.
   parseSequenceGroup() {
     const open = this.peek();
+    if (open.type === 'punct' && open.value === '(') return this.parseMondoGroup();
     if (open.type !== 'punct' || (open.value !== '<' && open.value !== '[')) {
-      this.error(`expected '<' or '[' to open a sequence, got '${open.value ?? 'end of input'}'`, open);
+      this.error(`expected '<', '[' or '(' to open a sequence, got '${open.value ?? 'end of input'}'`, open);
       return null;
     }
     this.next();
@@ -465,6 +479,104 @@ class Parser {
     return { type: 'sequence', mode, stacks, modifiers: [], endLine: end?.line, endCol: end?.col };
   }
 
+  // A Mondo s-expression sequence: `(head elem elem …)`. Mini and mondo are
+  // both accepted for a scheduling sequence — `(cat 0 1a 2zzz)` and
+  // `(fast 2 (seq 0 1))` mean exactly what `<0 1a 2zzz>` and `[0 1]*2` do.
+  // The head names the combinator; without one the list subdivides, as `[…]`
+  // does. Elements reuse the same participant/rest/nested-group grammar and the
+  // same glued postfix modifiers as `<…>`/`[…]`, so nothing about a turn
+  // changes — only the spelling of the group around it.
+  parseMondoGroup() {
+    const open = this.next(); // '('
+    const HEADS = {
+      cat: 'alternate', slowcat: 'alternate', alt: 'alternate',
+      seq: 'subdivide', fastcat: 'subdivide', stepcat: 'subdivide', sub: 'subdivide',
+      stack: 'stack', fast: 'fast', slow: 'slow',
+    };
+    let mode = 'subdivide';
+    let head = null;
+    const h = this.peek();
+    if (h.type === 'word' && Object.prototype.hasOwnProperty.call(HEADS, h.value)) {
+      head = h.value;
+      this.next();
+      if (HEADS[head] === 'alternate' || HEADS[head] === 'subdivide') mode = HEADS[head];
+    } else if (h.type === 'word') {
+      this.error(`unknown Mondo head '${h.value}' — use cat, seq, fastcat, slowcat, stack, fast or slow`, h);
+      this.recover();
+      return null;
+    }
+
+    // `(fast N X)` == `X*N`, `(slow N X)` == `X/N`.
+    if (head === 'fast' || head === 'slow') {
+      const nTok = this.peek();
+      if (nTok.type !== 'number' && nTok.type !== 'intlike') {
+        this.error(`'${head}' needs a number then one group: (${head} 2 (seq 0 1))`, nTok);
+        this.recover();
+        return null;
+      }
+      this.next();
+      const n = parseFloat(tokenText(nTok));
+      const inner = this.parseElement();
+      const closeTok = this.peek();
+      if (closeTok.type === 'punct' && closeTok.value === ')') this.next();
+      else this.error("unclosed Mondo sequence — expected ')'", closeTok);
+      if (!inner) return null;
+      const seq = inner.type === 'sequence'
+        ? inner
+        : { type: 'sequence', mode: 'subdivide', stacks: [{ elements: [inner], cycleOffset: 0 }], modifiers: [] };
+      seq.modifiers = [...(seq.modifiers || []), { op: head === 'fast' ? '*' : '/', value: n }];
+      return { ...seq, line: open.line, col: open.col };
+    }
+
+    const stacks = [];
+    let run = [];
+    const flush = () => {
+      if (head === 'stack') {
+        for (const el of run) stacks.push({ elements: [el], cycleOffset: stacks.length });
+      } else {
+        stacks.push({ elements: run, cycleOffset: 0 });
+      }
+      run = [];
+    };
+    let close = null;
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof') { this.error("unclosed Mondo sequence — expected ')'", t); return null; }
+      if (t.type === 'newline') { this.next(); continue; }
+      if (t.type === 'punct' && t.value === ')') { close = this.next(); break; }
+      const el = this.parseElement();
+      if (!el) { this.next(); continue; }
+      if (this.peek().type === 'op' && this.peek().value === '..') {
+        const dots = this.next();
+        const hi = this.parseElement();
+        if (!el.token || !hi || !hi.token || el.suffix || hi.suffix ||
+            !/^\d+$/.test(el.token) || !/^\d+$/.test(hi.token)) {
+          this.error("'..' ranges need plain integer participant indices on both sides", dots);
+          continue;
+        }
+        const lo = parseInt(el.token, 10), high = parseInt(hi.token, 10);
+        if (high < lo) { this.error("'..' range upper bound below lower bound", dots); continue; }
+        for (let v = lo; v <= high; v++) {
+          run.push({ type: 'participant', token: String(v), ownerIndex: v, suffix: null, modifiers: [],
+            line: el.line, col: el.col, endLine: el.endLine, endCol: el.endCol });
+        }
+        continue;
+      }
+      this.parseModifiers(el);
+      run.push(el);
+    }
+    flush();
+    if (stacks.every((s) => s.elements.length === 0)) this.error('empty Mondo sequence', open);
+    return {
+      type: 'sequence',
+      mode: head === 'stack' ? 'alternate' : mode,
+      stacks,
+      modifiers: [],
+      endLine: close ? close.line : open.line,
+      endCol: close ? close.col + 1 : open.col + 1,
+    };
+  }
+
   parseElement() {
     const t = this.peek();
     if (t.type === 'rest') {
@@ -474,7 +586,7 @@ class Parser {
         line: t.line, col: t.col, endLine: t.line, endCol: t.col + 1
       };
     }
-    if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+    if (t.type === 'punct' && (t.value === '<' || t.value === '[' || t.value === '(')) {
       const group = this.parseSequenceGroup();
       if (!group) return null;
       return { ...group, line: t.line, col: t.col };
@@ -604,9 +716,14 @@ class Parser {
       }
       accept({ op: t.value, value: val });
     }
-    node.modifiers = mods;
+    // Merge rather than overwrite: every element/`<…>`/`[…]` arrives with
+    // `modifiers: []`, so this is identical to assignment for them — but a
+    // Mondo `(fast N X)` / `(slow N X)` group arrives already carrying the
+    // `*N` / `/N` it desugars to, and that must survive a trailing-operator
+    // scan that finds nothing.
+    node.modifiers = [...(node.modifiers || []), ...mods];
     if (extent) { node.endLine = extent.line; node.endCol = extent.col; }
-    return mods;
+    return node.modifiers;
   }
 
   parseDirective(program) {
@@ -632,7 +749,7 @@ class Parser {
       return;
     }
 
-    this.error(`'${name}' is not a NetCycles function — Strudel and Hydra functions cannot be executed in the NetCycles editor`, nameTok);
+    this.error(`'${name}' is not a JPattern function — Strudel and Hydra functions cannot be executed in the JPattern editor`, nameTok);
     this.recover();
   }
 
@@ -1250,7 +1367,7 @@ class Parser {
       // Consume the parenthesized blob rather than leaving it for recover():
       // a Strudel call may contain a '#' (`(pink # range 0 1)`), which
       // tokenizes as a statement sigil and would otherwise be picked up as a
-      // second, bogus "not a NetCycles function" error.
+      // second, bogus "not a JPattern function" error.
       this.skipParenBlob();
       return null;
     }
@@ -1406,7 +1523,7 @@ class Parser {
       }
       if (t.type === 'punct' && t.value === '(') {
         this.error(sig.patternArgs
-          ? `'${name}' arguments are positive numbers or mini-notation patterns like <2 4> — parenthesized expressions cannot be executed in the NetCycles editor`
+          ? `'${name}' arguments are positive numbers or mini-notation patterns like <2 4> — parenthesized expressions cannot be executed in the JPattern editor`
           : `'${name}' cannot take Strudel-call arguments — parameters are plain positive numbers`, t);
         this.skipParenBlob();
         return;
@@ -1481,7 +1598,24 @@ class Parser {
 // Public API
 
 export function parseMetaprogram(text) {
-  const { tokens, errors } = tokenize(typeof text === 'string' ? text : '');
+  const src = typeof text === 'string' ? text : '';
+  // The directive is required, with no heuristic fallback: a buffer that does
+  // not open with `'metaprogram'` is not a metaprogram, and the rest is parsed
+  // only so the editor can still squiggle whatever else is wrong. Blanking the
+  // directive line in place keeps every downstream line/col exactly where the
+  // author typed it.
+  const dir = readDirective(src);
+  const body = dir.kind === 'metaprogram' ? stripDirective(src) : src;
+  const { tokens, errors } = tokenize(body);
+  if (dir.kind !== 'metaprogram') {
+    errors.push({
+      message: dir.kind == null
+        ? (dir.reason || "a metaprogram must open with the 'metaprogram' directive line")
+        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram'`,
+      line: (dir.lineIndex ?? 0) + 1,
+      col: 1,
+    });
+  }
   const parser = new Parser(tokens, errors);
   const ast = parser.parseProgram();
   errors.sort((a, b) => a.line - b.line || a.col - b.col);
@@ -1568,7 +1702,7 @@ export function mosaicEnabled(ast) {
   return MOSAIC_ENABLED_BY_DEFAULT;
 }
 
-// The default program every room starts under (Net Cycles is always on):
+// The default program every room starts under (JPattern is always on):
 // participant 0 — the first to join — streams continuously. Nobody else is
 // listed, so later joiners stay silent until an edit adds them. wcl is the
 // worst-case mouth-to-ear latency a performer actually hears — tens of ms, the
@@ -1580,7 +1714,7 @@ export function mosaicEnabled(ast) {
 // editor. Cycle length still quantizes onto the parser's 120 bpm default —
 // writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `$ participants <0>\n# cycles wcl 20\n`;
+  return `'metaprogram'\n$ participants <0>\n# cycles wcl 20\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------
@@ -1591,13 +1725,13 @@ export function buildDefaultProgram() {
 // departed-but-listed participants persist as ghosts until an edit drops
 // them). Pure so the CRDT layer can apply the same edits to the shared doc.
 
-// The LIVE scheduling statement: `$ participants` opening a line, as the
-// grammar requires of every statement. Anchoring matters — an unanchored match
-// finds `$ participants <…>` anywhere, including inside a `*$` button
-// declaration or a commented-out line, and every helper below would then edit
-// text that is not the running program. Groups: prefix, open bracket, body,
-// close bracket. The body may span lines, as a wrapped sequence does.
-const SEQUENCE_RE = /^([ \t]*\$[ \t]*participants[ \t]*)([<[])([^\]>]*)([\]>])/m;
+// The LIVE scheduling statement: a `$` opening a line, with the now-optional
+// `participants` label. Anchoring matters — an unanchored match finds
+// `$ <…>` anywhere, including inside a `*$` button declaration or a
+// commented-out line, and every helper below would then edit text that is not
+// the running program. Groups: prefix, open bracket, body, close bracket. The
+// body may span lines, as a wrapped sequence does.
+const SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
 
 function escapeForRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

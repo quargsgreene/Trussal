@@ -1,6 +1,6 @@
 // The room's shared source of randomness.
 //
-// Net Cycles has two places where a program says "sometimes": `?` (and `|`) on
+// JPattern has two places where a program says "sometimes": `?` (and `|`) on
 // a `$ participants` turn, and `?` on an element of a patterned `#` effect
 // argument. Neither may use Math.random(): the whole design rests on every
 // client deriving the same schedule and the same effect parameters from the

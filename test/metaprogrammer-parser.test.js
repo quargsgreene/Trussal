@@ -6,7 +6,36 @@ import {
   resolveEffectParams,
   buildDefaultProgram,
   mosaicEnabled
-} from '../src/audio-net/MetaprogrammerParser.js';
+} from './helpers/metaprogram.js';
+// The unwrapped parser, for the directive-requirement tests themselves.
+import { parseMetaprogram as parseMetaprogramRaw } from '../src/audio-net/MetaprogrammerParser.js';
+
+// --- The 'metaprogram' directive is required, with no fallback -------------
+
+test("a buffer with no 'metaprogram' directive is invalid", () => {
+  const res = parseMetaprogramRaw('$ participants <0>\n# cycles wcl 20\n');
+  assert.ok(res.errors.some(e => /directive/.test(e.message) && /'metaprogram'/.test(e.message)));
+  assert.equal(res.valid, false);
+  assert.equal(res.errors[0].line, 1);
+});
+
+test("the wrong directive is named, not guessed past", () => {
+  const res = parseMetaprogramRaw("'personal program'\n$ participants <0>\n");
+  assert.ok(res.errors.some(e => /not a metaprogram/.test(e.message)));
+});
+
+test("a correct 'metaprogram' directive parses, single or double quoted", () => {
+  assert.equal(parseMetaprogramRaw("'metaprogram'\n$ participants <0>\n").valid, true);
+  assert.equal(parseMetaprogramRaw('"metaprogram"\n$ participants <0>\n').valid, true);
+});
+
+test("'$' no longer needs the 'participants' label — the directive carries the signal", () => {
+  const bare = parseMetaprogramRaw("'metaprogram'\n$ <0 1 2>\n");
+  assert.equal(bare.valid, true);
+  assert.deepEqual(bare.ast.participants.stacks[0].elements.map(e => e.token), ['0', '1', '2']);
+  // and the explicit label still works
+  assert.equal(parseMetaprogramRaw("'metaprogram'\n$ participants <0 1 2>\n").valid, true);
+});
 
 function ok(text) {
   const res = parseMetaprogram(text);
@@ -27,6 +56,44 @@ function bad(text, pattern) {
 }
 
 // --- Spec examples, verbatim -----------------------------------------------
+
+// --- Mondo s-expression sequences (mini and mondo both accepted) ----------
+
+test('mondo: (cat …) is the same sequence as <…>', () => {
+  const a = ok('$ (cat 0 1a 2zzz)\n# cycles wcl 3\n');
+  assert.equal(a.participants.mode, 'alternate');
+  assert.deepEqual(a.participants.stacks[0].elements.map(e => e.token), ['0', '1a', '2zzz']);
+});
+
+test('mondo: a headless list and (seq …) subdivide, as [ … ] does', () => {
+  assert.equal(ok('$ (0 1 2)\n').participants.mode, 'subdivide');
+  assert.equal(ok('$ (seq 0 1 ~ 3)\n').participants.mode, 'subdivide');
+  assert.equal(ok('$ (seq 0 1 ~ 3)\n').participants.stacks[0].elements[2].type, 'rest');
+});
+
+test('mondo: (fast N X) and (slow N X) are X*N / X/N', () => {
+  assert.deepEqual(ok('$ (fast 2 (seq 0 1))\n').participants.modifiers, [{ op: '*', value: 2 }]);
+  assert.deepEqual(ok('$ (slow 3 (cat 0 1))\n').participants.modifiers, [{ op: '/', value: 3 }]);
+});
+
+test('mondo: (stack …) offsets each element by a cycle, as the comma does', () => {
+  const a = ok('$ (stack 0 1 2)\n');
+  assert.deepEqual(a.participants.stacks.map(s => s.cycleOffset), [0, 1, 2]);
+});
+
+test('mondo: elements keep the glued postfix operators and nest with <…>/[…]', () => {
+  const a = ok('$ (cat 0@2 1!3 <2 3>)\n');
+  const els = a.participants.stacks[0].elements;
+  assert.deepEqual(els[0].modifiers, [{ op: '@', value: 2 }]);
+  assert.deepEqual(els[1].modifiers, [{ op: '!', value: 3 }]);
+  assert.equal(els[2].type, 'sequence');
+});
+
+test('mondo: an unknown head or an empty group is a parse error', () => {
+  bad('$ (spin 0 1)\n', /unknown Mondo head/);
+  bad('$ (cat)\n', /empty Mondo sequence/);
+  bad('$ (cat 0 1\n', /unclosed Mondo sequence/);
+});
 
 test('spec: scheduling example with mixed indices, repeat, and comment', () => {
   const ast = ok(`$ participants <0 1 3 5 2a 1zzzv 9 1>*2
@@ -95,7 +162,7 @@ test('spec: bad example — a Strudel call as an effect argument is rejected', (
 # cycles wcpl 3
 # tempo 90/4 cpm
 # room wcl (pink # range 0 1)
-`, /cannot be executed in the NetCycles editor/);
+`, /cannot be executed in the JPattern editor/);
   // The sequence itself is legal (@/!/? apply "as usual"): removing the bad
   // room line makes the program valid.
   const ast = ok(`$ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza]
@@ -119,7 +186,7 @@ test('spec: effect examples — room wcl 2 0.4, echo + ply, crush + chop, noise,
       { param: 'gain', metric: 'wcl', scale: 3, bound: 1200 }
     ]
   });
-  assert.deepEqual(ast.chain[1], { fn: 'ply', args: [2], line: 3, col: 3 });
+  assert.deepEqual(ast.chain[1], { fn: 'ply', args: [2], line: 4, col: 3 });
 
   ast = ok('$ participants [0 2 1 4 3]\n# crush wcl 1.0003\n# chop 2\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 1.0003, fixedMetric: null });
@@ -181,7 +248,7 @@ test('mosaic: an unparseable program falls back to the default rather than dark'
 test('bad bot indices inside sequences are parse errors with position', () => {
   const errors = bad('$ participants <0 0bcd 1>\n', /invalid participant index '0bcd'/);
   const err = errors.find(e => /0bcd/.test(e.message));
-  assert.equal(err.line, 1);
+  assert.equal(err.line, 2); // line 1 is the 'metaprogram' directive
   assert.equal(err.col, 19);
   bad('$ participants <9fae>\n', /invalid participant index/);
   // 'zz' as 28th-style suffix is fine as a *string* (52nd bot), '0zz' parses.
@@ -242,7 +309,8 @@ test('elements carry the source extent of their postfix operators', () => {
   assert.equal(extent('10'), '10!2');
   assert.equal(extent('2a'), '2a?');
   // Both ends are 1-based and on the same line: a modifier run never crosses one.
-  assert.equal(els.find(e => e.token === '10').endLine, 1);
+  // (line 1 is the 'metaprogram' directive; the sequence is on line 2.)
+  assert.equal(els.find(e => e.token === '10').endLine, 2);
   // An unmodified token spans exactly itself.
   assert.equal(text.slice(els[0].col - 1, els[0].endCol - 1), '0');
   assert.equal(text.slice(els[8].col - 1, els[8].endCol - 1), '4zza');
@@ -286,8 +354,8 @@ test('the extent keeps a number\'s spelling, which its parsed value loses', () =
 test('structural errors: unclosed and mismatched brackets, missing participants', () => {
   bad('$ participants <0 1\n', /unclosed sequence/);
   bad('$ participants <0 1]\n', /mismatched/);
-  bad('# cycles wcl\n', /missing '\$ participants'/);
-  bad('', /missing '\$ participants'/);
+  bad('# cycles wcl\n', /missing '\$'/);
+  bad('', /missing '\$'/);
   bad('$ participants <>\n', /empty sequence/);
 });
 
@@ -295,9 +363,9 @@ test('structural errors: unclosed and mismatched brackets, missing participants'
 
 test('whitelisted pattern functions parse; anything else is rejected', () => {
   ok('$ participants <0>\n# shuffle 4\n# degrade\n# degradeBy 0.5\n# undegrade\n# undegradeBy 0.1\n# hush\n');
-  bad('$ participants <0>\n# lpf 200\n', /not a NetCycles function/);
-  bad('$ participants <0>\n# osc 10\n', /not a NetCycles function/);   // Hydra
-  bad('$ participants <0>\n# range 0 1\n', /not a NetCycles function/);
+  bad('$ participants <0>\n# lpf 200\n', /not a JPattern function/);
+  bad('$ participants <0>\n# osc 10\n', /not a JPattern function/);   // Hydra
+  bad('$ participants <0>\n# range 0 1\n', /not a JPattern function/);
 });
 
 test('room requires a metric keyword; scale and pinned amount are optional', () => {
@@ -342,7 +410,7 @@ test('crush arguments may be mini-notation patterns, including the metric', () =
   let ast = ok('$ participants <0>\n# crush wcl <2 4>\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), {
     metric: 'wcl',
-    scale: { type: 'valueSeq', mode: 'alternate', terms: [2, 4], line: 2, col: 13 },
+    scale: { type: 'valueSeq', mode: 'alternate', terms: [2, 4], line: 3, col: 13 },
     fixedMetric: null
   });
 
@@ -395,7 +463,7 @@ test('crush arguments may be mini-notation patterns, including the metric', () =
   // place for them — and at the top level there is no parent to weigh against.
   bad('$ participants <0>\n# crush wcl <2 4>@3\n', /modifies one ELEMENT/);
   // Strudel expressions stay out of the editor, patterns or not.
-  bad('$ participants <0>\n# crush wcl (pink # range 0 1)\n', /cannot be executed in the NetCycles editor/);
+  bad('$ participants <0>\n# crush wcl (pink # range 0 1)\n', /cannot be executed in the JPattern editor/);
   // Effects without patternArgs keep rejecting sequences outright.
   bad('$ participants <0>\n# grid <1 2>\n', /unexpected argument '<'/);
 });
@@ -649,7 +717,7 @@ test('argument arity and positivity are validated', () => {
 });
 
 test('duplicate statements are rejected', () => {
-  bad('$ participants <0>\n$ participants <1>\n', /duplicate '\$ participants'/);
+  bad('$ participants <0>\n$ participants <1>\n', /duplicate '\$'/);
   bad('$ participants <0>\n# tempo 100 bpm\n# tempo 90 cps\n', /duplicate # tempo/);
 });
 
@@ -680,7 +748,7 @@ test('cycles args are positional: scale alone stays dynamic, amount pins the met
 test('errors carry 1-based line/col for editor squiggles', () => {
   const errors = bad('$ participants <0 1>\n# cycles wcl\n# cycles wcpl\n');
   const dup = errors.find(e => /chained/.test(e.message));
-  assert.equal(dup.line, 3);
+  assert.equal(dup.line, 4); // line 1 is the 'metaprogram' directive
   assert.equal(dup.col, 3);
 });
 
@@ -690,7 +758,7 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   // Participant 0 — the first to join — streams continuously; nobody else is
   // listed, so later joiners stay silent until an edit adds them.
   const text = buildDefaultProgram();
-  assert.equal(text, '$ participants <0>\n# cycles wcl 20\n');
+  assert.equal(text, "'metaprogram'\n$ participants <0>\n# cycles wcl 20\n");
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
   // No tempo directive in the default program, and none injected behind it.
@@ -713,9 +781,9 @@ test('`*`-prefixed statements are inert button declarations, not program', () =>
   // Whitespace around the '*' and the sigil is allowed, as it is on statements.
   ok('$ participants <0>\n  *  $ participants <1>\n');
   // Declarations do not stand in for the required scheduling sequence.
-  bad('*$ participants <0>\n', /missing '\$ participants'/);
+  bad('*$ participants <0>\n', /missing '\$'/);
   // A declaration never swallows the statements below it.
-  bad('$ participants <0>\n*# crush wcl 2\n# lpf 200\n', /not a NetCycles function/);
+  bad('$ participants <0>\n*# crush wcl 2\n# lpf 200\n', /not a JPattern function/);
   // A bare '*' is still junk: it declares nothing.
   bad('$ participants <0>\n* crush wcl 2\n', /expected '\$' or '#'/);
   // A declaration ending the text, with no newline after it.

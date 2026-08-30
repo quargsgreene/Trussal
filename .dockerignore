@@ -7,6 +7,7 @@
 !bots
 !src/audio-net
 !src/hydra-code.js
+!src/program-directive.js
 !src/bot-config.js
 !src/text-cycles-core.js
 !src/css-cycles-core.js

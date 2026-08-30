@@ -205,7 +205,7 @@ const TOOLS = [
   {
     name: 'get_session_log',
     description:
-      'Returns events from the Net Cycles research session log (JSONL written by the latency sidecar: ' +
+      'Returns events from the JPattern research session log (JSONL written by the latency sidecar: ' +
       'joins/leaves with indices, metrics, CRDT edits with author/modality, fleet actions, scheduler cycle samples, health actions). ' +
       'Reads SESSION_LOG_DIR; defaults to the newest session file.',
     inputSchema: {

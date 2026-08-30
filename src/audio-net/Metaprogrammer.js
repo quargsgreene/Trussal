@@ -1,4 +1,4 @@
-// Metaprogrammer — the Net Cycles eval driver (browser side).
+// Metaprogrammer — the JPattern eval driver (browser side).
 //
 // The shared metaprogram is ALWAYS IN FORCE — there is no on/off button. Its
 // live capabilities today are ORDERING and TIMING: the program text syncs over
@@ -7,7 +7,7 @@
 // scheduler slot grid — so a turn lasts the cycle length `# cycles` derives
 // from the live worst-case metrics (bots/src/bot/aggregator-bot.js). Typing only
 // syncs the shared TEXT; the ring (and programText here) adopt a program
-// solely on an explicit apply (▶ Apply / Ctrl+Enter / /nc/apply), the
+// solely on an explicit apply (▶ Apply / Ctrl+Enter / /jp/apply), the
 // one-time roster seed, or a late joiner's catch-up. The room
 // starts under the default program — `$ participants <0>`, the first
 // participant to join streaming continuously — seeded into the shared doc
@@ -19,11 +19,11 @@
 // Everything below that gates/transforms audio in THIS browser is a further
 // transformational capability being brought up one at a time (to keep
 // confounding variables out of testing the live one), so it stays dormant:
-// setNetCyclesActive(true) arms it, and no UI currently calls it. When armed,
+// setJPatternActive(true) arms it, and no UI currently calls it. When armed,
 // this module parses edits and drives the pure MetaprogramScheduler with
 // ClockSync network time. Scheduler slot events become:
 //   - Strudel voice gates: strudel.js wraps every voice in
-//     .gain(_ncGate(jitsiId)) and _ncGate reads getGateLevel() reactively —
+//     .gain(_jpGate(jitsiId)) and _jpGate reads getGateLevel() reactively —
 //     outside their slot a performer's instrument is silent.
 //   - Mic/chain gates: latency-instrument's per-peer chain input gain is
 //     ramped at the slot boundary (bots' Jitsi-published audio included).
@@ -36,7 +36,7 @@
 //
 // Cross-browser agreement: same CRDT-shared program text (Phase 6), same
 // broadcast worst-case metrics, and a shared epoch — every client
-// broadcasts its epoch on /nc/epoch over the O2 relay and adopts the
+// broadcasts its epoch on /jp/epoch over the O2 relay and adopts the
 // smallest it hears, so all schedulers converge on one cycle grid.
 
 import {
@@ -60,10 +60,10 @@ import {
 } from '../latency-instrument.js';
 import { EffectsChainManager } from './av-effects/index.js';
 
-const EPOCH_ADDR = '/nc/epoch';
-const APPLY_ADDR = '/nc/apply';
+const EPOCH_ADDR = '/jp/epoch';
+const APPLY_ADDR = '/jp/apply';
 const EPOCH_REBROADCAST_MS = 10000;
-// How far in the past a remote /nc/epoch may sit and still be believable as
+// How far in the past a remote /jp/epoch may sit and still be believable as
 // the same clock we are reading; beyond this it is another timebase.
 const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
 const QUEUE_LIMITS = { maxBuffers: 8, maxBytes: 32 * 1024 * 1024 };
@@ -84,7 +84,7 @@ let currentAst = null;       // last program that parsed clean
 
 const queues = new Map();        // token (room index) → AVBufferQueue
 const activePatterns = new Map(); // jitsiId → pattern applied by the last dequeued buffer
-const gateLevels = new Map();     // jitsiId → 0|1 (read reactively by strudel _ncGate)
+const gateLevels = new Map();     // jitsiId → 0|1 (read reactively by strudel _jpGate)
 const pendingEditorUpdates = new Map(); // token → latest pattern text since last enqueue
 const slotSubscribers = new Set();
 const slotTimers = new Set();
@@ -123,7 +123,7 @@ let crdt = null;
 let caughtUp = false;
 
 // The metaprogram doc lives for the whole meeting so edits are shared even
-// before Net Cycles playback is switched on.
+// before JPattern playback is switched on.
 export function ensureMetaprogramSync() {
   if (crdt) return crdt;
   const handle = createMetaprogramDoc();
@@ -160,7 +160,7 @@ export function ensureMetaprogramSync() {
       // it's safe to tell an empty doc from one that just hasn't caught up.
       maybeSeedDefaultProgram();
     }
-    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, remote: true, applied } }));
+    document.dispatchEvent(new CustomEvent('trussal-jpattern-program', { detail: { text, remote: true, applied } }));
   });
   // Induced network conditions (and VLAN changes) alter the effective WC
   // metrics on every client identically — schedulers and effects follow at
@@ -288,12 +288,12 @@ function maybeSeedDefaultProgram() {
   programText = buildDefaultProgram();
   sync.setText(programText, 'roster');
   pushProgramToScheduler();
-  document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text: programText } }));
+  document.dispatchEvent(new CustomEvent('trussal-jpattern-program', { detail: { text: programText } }));
 }
 
 // The CircularParticipantQueue lives in the aggregator bot's own process; the
 // bot's #pushProgramToScheduler (bots/src/bot/aggregator-bot.js) receives the
-// same program over CRDT//nc/apply and pushes the ordering into the queue there.
+// same program over CRDT//jp/apply and pushes the ordering into the queue there.
 function pushProgramToScheduler() {
   if (programText == null) return;
   const { ast, errors, valid } = parseMetaprogram(programText);
@@ -317,7 +317,7 @@ function pushProgramToScheduler() {
 }
 
 // Explicit apply from the editor. Valid text lands in the shared doc, in the
-// local scheduler (next boundary), and — via /nc/apply — in everyone else's
+// local scheduler (next boundary), and — via /jp/apply — in everyone else's
 // scheduler. Returns parse errors for squiggles.
 export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
@@ -332,7 +332,7 @@ export function applyProgramText(text, { broadcast = true } = {}) {
     }
     pushProgramToScheduler();
     if (broadcast && o2) o2.send(APPLY_ADDR, ',s', [text]);
-    document.dispatchEvent(new CustomEvent('trussal-netcycles-program', { detail: { text, applied: true } }));
+    document.dispatchEvent(new CustomEvent('trussal-jpattern-program', { detail: { text, applied: true } }));
   }
   return errors;
 }
@@ -353,7 +353,7 @@ export function broadcastStopSignal() {
   ensureMetaprogramSync().broadcastStop();
 }
 
-// Studio effect toggles double as metaprogram shortcuts under Net Cycles:
+// Studio effect toggles double as metaprogram shortcuts under JPattern:
 // toggling adds/removes the corresponding # line and applies it, so the
 // buttons and the shared editor never disagree.
 const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo', crush: '# crush wcl 1', noise: '# noise' };
@@ -456,7 +456,7 @@ function onSchedulerEvent(ev) {
     if (av) {
       if (typeof av.pattern === 'string') {
         activePatterns.set(peer.jitsiId, av.pattern);
-        document.dispatchEvent(new CustomEvent('trussal-netcycles-apply', {
+        document.dispatchEvent(new CustomEvent('trussal-jpattern-apply', {
           detail: { jitsiId: peer.jitsiId, token: ev.token }
         }));
       }
@@ -469,7 +469,7 @@ function onSchedulerEvent(ev) {
 }
 
 // Pattern applied by the last dequeued buffer — strudel.js prefers this over
-// the live peer.pattern while Net Cycles is active, which is what delays an
+// the live peer.pattern while JPattern is active, which is what delays an
 // edit to the performer's next slot.
 export function getActivePattern(jitsiId) {
   return activePatterns.has(jitsiId) ? activePatterns.get(jitsiId) : null;
@@ -529,7 +529,7 @@ async function replayCapturedAudio(jitsiId, take, ev) {
     const audioBuf = await ctx.decodeAudioData(buf);
     const src = ctx.createBufferSource();
     src.buffer = audioBuf;
-    await attachNodeToChain(jitsiId, src, 'nc-replay');
+    await attachNodeToChain(jitsiId, src, 'jp-replay');
     const atAudio = clock && clock.isSynced() ? Math.max(clock.toAudioTime(ev.t), ctx.currentTime) : ctx.currentTime;
     src.start(atAudio);
     src.stop(atAudio + ev.dur);
@@ -565,7 +565,7 @@ function adoptEpochIfEarlier(remoteEpoch) {
   if (epoch != null && remoteEpoch >= epoch - 0.05) return;
   const now = networkSeconds();
   if (!(clock && clock.isSynced()) || remoteEpoch > now || (now - remoteEpoch) > EPOCH_PLAUSIBLE_PAST_S) {
-    console.warn(`[metaprogrammer] refused /nc/epoch ${remoteEpoch} (local now ${now})`);
+    console.warn(`[metaprogrammer] refused /jp/epoch ${remoteEpoch} (local now ${now})`);
     return;
   }
   epoch = remoteEpoch;
@@ -590,7 +590,7 @@ function startScheduler() {
 
 // --- Lifecycle ----------------------------------------------------------------------
 
-export function isNetCyclesActive() { return active; }
+export function isJPatternActive() { return active; }
 
 // Arms the DORMANT browser-side slot machinery: local gates, the effects
 // chain, buffer-queue pattern delay, and this browser's own scheduler. No UI
@@ -598,7 +598,7 @@ export function isNetCyclesActive() { return active; }
 // ordering, which flows through the shared doc to the aggregator regardless
 // of `active`. Kept intact (both directions) so each further transformational
 // capability can be switched on and verified one at a time.
-export async function setNetCyclesActive(enable) {
+export async function setJPatternActive(enable) {
   if (enable === active) return;
   active = !!enable;
   if (active) {
@@ -633,7 +633,7 @@ export async function setNetCyclesActive(enable) {
       // aggregator tracks the same event the same way (#onSchedulerEvent).
       getCycleContext: cycleContext
     });
-    // Give /nc/epoch — and the CRDT catch-up carrying any existing program —
+    // Give /jp/epoch — and the CRDT catch-up carrying any existing program —
     // a beat to arrive before declaring our own epoch / seeding the default.
     await new Promise(r => setTimeout(r, 500));
     if (epoch == null) {
@@ -662,7 +662,7 @@ export async function setNetCyclesActive(enable) {
     pendingEditorUpdates.clear();
     resetChainGates();
   }
-  document.dispatchEvent(new CustomEvent('trussal-netcycles-mode', { detail: { active } }));
+  document.dispatchEvent(new CustomEvent('trussal-jpattern-mode', { detail: { active } }));
 }
 
 // --- Peer-state wiring ---------------------------------------------------------------
