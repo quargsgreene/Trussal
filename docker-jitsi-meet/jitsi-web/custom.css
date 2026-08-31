@@ -216,13 +216,39 @@ div[class*="premeeting"] video {
   fill: #111111 !important;
 }
 
-/* Prejoin heading + room-name span ship white (designed for a dark preview
-   backdrop) — invisible on the flat-white screen. Force #111. Scoped to the
-   prejoin so it can't touch the white-on-#111 Join button label. */
+/* Prejoin heading ships white (designed for a dark preview backdrop) —
+   invisible on the flat-white screen. Force #111. Scoped to the prejoin so
+   it can't touch the white-on-#111 Join button label. (The room-name span
+   below this heading is removed entirely, so it needs no colour rule.) */
 .premeeting-screen h1,
-.premeeting-screen [class*="-title"],
-.premeeting-screen [class*="roomName"] {
+.premeeting-screen [class*="-title"] {
   color: #111111 !important;
+}
+
+/* Drop the room-name span that sits between the heading and the name form:
+   it just repeats the room already shown in the URL / heading. It is the
+   only flow child of `paddedContent` between the <h1> and the input, so
+   removing it closes the gap cleanly. Emotion label `roomNameContainer`. */
+.premeeting-screen [class*="roomNameContainer"] {
+  display: none !important;
+}
+
+/* Remove the split-button dropdown welded to "Join meeting" (the chevron is
+   `…-options` inside `…-dropdownContainer`; its menu portals in as
+   `…-dropdownButtons`). Hiding the chevron leaves a plain full-width Join
+   button; the menu selector is a belt-and-braces in case it still mounts. */
+.premeeting-screen [class*="dropdownContainer"] [class*="options"],
+[class*="dropdownButtons"] {
+  display: none !important;
+}
+
+/* While Jitsi's Settings dialog is open on the prejoin, hide the name field
+   (`#premeeting-name-input`, wrapped in `…-inputContainer-input`). The Join
+   button stays. `.settings-dialog` exists only while that modal is mounted,
+   and `.premeeting-screen` only on the prejoin, so this is inert in-call. */
+body:has(.settings-dialog) .premeeting-screen [class*="inputContainer-input"],
+body:has(.settings-dialog) .premeeting-screen #premeeting-name-input {
+  display: none !important;
 }
 
 /* Centre what's left. Fill the screen with white and pull `.content`
