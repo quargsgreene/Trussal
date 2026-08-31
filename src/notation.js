@@ -211,12 +211,16 @@ export function miniToMondo(body) {
     if (!/^\s*\$:/.test(line)) { out.push(line); i++; continue; }
     // Gather this voice: the `$:` line and every following line that is a
     // `.method(` continuation (or the tail of a call left open across lines).
-    let buf = line;
+    // Inline comments are stripped as each line is taken in: a trailing
+    // `// note` on the `$:` line or on a `.method()` line otherwise stops the
+    // chain walk in splitCallChain (the char after `)` is `/`, not `.`), and
+    // every method past it is silently dropped from the lowered program.
+    let buf = stripInlineComments(line);
     let j = i + 1;
     while (j < lines.length) {
       const nxt = lines[j];
       if (/^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
-      if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) { buf += '\n' + nxt; j++; continue; }
+      if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) { buf += '\n' + stripInlineComments(nxt); j++; continue; }
       break;
     }
     const indent = (line.match(/^(\s*)/) || ['', ''])[1];
@@ -229,6 +233,33 @@ export function miniToMondo(body) {
     i = j;
   }
   return out.join('\n');
+}
+
+// Drop `//` line comments and `/* … */` block comments from one gathered voice
+// buffer, leaving string/template literals (which may legitimately contain `//`)
+// intact and preserving newlines so line counts do not shift. Only ever applied
+// to a `$:` voice and its continuation lines — a full-line comment elsewhere is
+// emitted verbatim by miniToMondo's pass-through branch.
+function stripInlineComments(s) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"' || c === "'" || c === '`') {
+      out += c; i++;
+      while (i < s.length && s[i] !== c) { if (s[i] === '\\') out += s[i++] ?? ''; out += s[i++] ?? ''; }
+      out += s[i] ?? '';
+      continue;
+    }
+    if (c === '/' && s[i + 1] === '/') { i += 2; while (i < s.length && s[i] !== '\n') i++; i--; continue; }
+    if (c === '/' && s[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < s.length && !(s[i] === '*' && s[i + 1] === '/')) i++;
+      i += 1;
+      continue;
+    }
+    out += c;
+  }
+  return out;
 }
 
 function balanced(s) {

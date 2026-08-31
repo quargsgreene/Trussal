@@ -778,13 +778,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         i++;
         continue;
       }
-      let buf = line;
+      let buf = stripInlineComments(line);
       let j2 = i + 1;
       while (j2 < lines.length) {
         const nxt = lines[j2];
         if (/^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
         if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) {
-          buf += "\n" + nxt;
+          buf += "\n" + stripInlineComments(nxt);
           j2++;
           continue;
         }
@@ -797,6 +797,36 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       i = j2;
     }
     return out.join("\n");
+  }
+  function stripInlineComments(s2) {
+    let out = "";
+    for (let i = 0; i < s2.length; i++) {
+      const c2 = s2[i];
+      if (c2 === '"' || c2 === "'" || c2 === "`") {
+        out += c2;
+        i++;
+        while (i < s2.length && s2[i] !== c2) {
+          if (s2[i] === "\\") out += s2[i++] ?? "";
+          out += s2[i++] ?? "";
+        }
+        out += s2[i] ?? "";
+        continue;
+      }
+      if (c2 === "/" && s2[i + 1] === "/") {
+        i += 2;
+        while (i < s2.length && s2[i] !== "\n") i++;
+        i--;
+        continue;
+      }
+      if (c2 === "/" && s2[i + 1] === "*") {
+        i += 2;
+        while (i + 1 < s2.length && !(s2[i] === "*" && s2[i + 1] === "/")) i++;
+        i += 1;
+        continue;
+      }
+      out += c2;
+    }
+    return out;
   }
   function balanced(s2) {
     let depth = 0;
@@ -59960,8 +59990,98 @@ ${s2}${BTN_MARKER}`)
     return wrap;
   }
 
-  // components/MetaprogrammerCycleHighlighter.js
+  // components/metaprogrammer-cycle-highlighter-core.js
   init_MetaprogrammerParser();
+  init_notation();
+  function lineColToOffset(text2, line, col) {
+    let offset2 = 0;
+    const lines = String(text2).split("\n");
+    for (let i = 0; i < line - 1 && i < lines.length; i++) offset2 += lines[i].length + 1;
+    return offset2 + (col - 1);
+  }
+  var MINI_SEQUENCE_RE = /^[ \t]*\$:[ \t]*participants[ \t]*\(\s*(["'`])/m;
+  function miniSequencePositions(text2) {
+    const m2 = MINI_SEQUENCE_RE.exec(text2);
+    if (!m2) return [];
+    const quote = m2[1];
+    const start = m2.index + m2[0].length;
+    const end2 = text2.indexOf(quote, start);
+    if (end2 === -1) return [];
+    const content = text2.slice(start, end2);
+    const els = [];
+    const sepBefore = (c2) => c2 === void 0 || " 	\n<[(>])|,".includes(c2);
+    let i = 0, depth = 0;
+    while (i < content.length) {
+      const c2 = content[i];
+      if (c2 === "<" || c2 === "[" || c2 === "(") {
+        depth++;
+        i++;
+        continue;
+      }
+      if (c2 === ">" || c2 === "]" || c2 === ")") {
+        depth--;
+        i++;
+        continue;
+      }
+      if (depth < 1 || " 	\n,|".includes(c2)) {
+        i++;
+        continue;
+      }
+      const isTokenStart = sepBefore(content[i - 1]);
+      const pm2 = isTokenStart && /^[0-9]+[a-z]*/.exec(content.slice(i));
+      if (pm2) {
+        const tokStart = i;
+        i += pm2[0].length;
+        const mod2 = /^(?:[@!?*/%:]\.?[0-9]*|\.\.[0-9]+[a-z]*)*/.exec(content.slice(i));
+        if (mod2) i += mod2[0].length;
+        els.push({ type: "participant", token: pm2[0], offset: start + tokStart, len: Math.max(1, i - tokStart) });
+        continue;
+      }
+      if (isTokenStart && (c2 === "~" || c2 === "_" || c2 === "-")) {
+        const tokStart = i;
+        i += 1;
+        const mod2 = /^(?:[@!?*/%:]\.?[0-9]*)*/.exec(content.slice(i));
+        if (mod2) i += mod2[0].length;
+        els.push({ type: "rest", token: c2, offset: start + tokStart, len: Math.max(1, i - tokStart) });
+        continue;
+      }
+      i++;
+    }
+    return els;
+  }
+  function elementPositions(text2, type) {
+    const { ast: ast2 } = parseMetaprogram(text2);
+    const out = [];
+    if (!ast2.participants) return out;
+    if (detectNotation(text2) === "mini") {
+      return miniSequencePositions(text2).filter((e30) => e30.type === type);
+    }
+    const walk2 = (els) => {
+      for (const el of els || []) {
+        if (!el) continue;
+        if (el.type === type && el.token != null && el.line != null) {
+          const token = String(el.token);
+          const offset2 = lineColToOffset(text2, el.line, el.col);
+          const end2 = el.endCol != null ? lineColToOffset(text2, el.endLine ?? el.line, el.endCol) : offset2 + token.length;
+          out.push({ token, offset: offset2, len: Math.max(1, end2 - offset2) });
+        } else if (el.type === "choice") {
+          (el.options || []).forEach(walk2);
+        } else if (el.type === "sequence") {
+          (el.stacks || []).forEach((st2) => walk2(st2.elements));
+        }
+      }
+    };
+    ast2.participants.stacks.forEach((st2) => walk2(st2.elements));
+    return out;
+  }
+  function participantPositions(text2) {
+    return elementPositions(text2, "participant");
+  }
+  function restPositions(text2) {
+    return elementPositions(text2, "rest");
+  }
+
+  // components/MetaprogrammerCycleHighlighter.js
   init_peer_state();
   var MIRROR_PROPS = [
     "fontFamily",
@@ -60003,40 +60123,6 @@ ${s2}${BTN_MARKER}`)
     }
   `;
     document.head.appendChild(style);
-  }
-  function lineColToOffset(text2, line, col) {
-    let offset2 = 0;
-    const lines = text2.split("\n");
-    for (let i = 0; i < line - 1 && i < lines.length; i++) offset2 += lines[i].length + 1;
-    return offset2 + (col - 1);
-  }
-  function participantPositions(text2) {
-    return elementPositions(text2, "participant");
-  }
-  function restPositions(text2) {
-    return elementPositions(text2, "rest");
-  }
-  function elementPositions(text2, type) {
-    const { ast: ast2 } = parseMetaprogram(text2);
-    const out = [];
-    if (!ast2.participants) return out;
-    const walk2 = (els) => {
-      for (const el of els || []) {
-        if (!el) continue;
-        if (el.type === type && el.token != null && el.line != null) {
-          const token = String(el.token);
-          const offset2 = lineColToOffset(text2, el.line, el.col);
-          const end2 = el.endCol != null ? lineColToOffset(text2, el.endLine ?? el.line, el.endCol) : offset2 + token.length;
-          out.push({ token, offset: offset2, len: Math.max(1, end2 - offset2) });
-        } else if (el.type === "choice") {
-          (el.options || []).forEach(walk2);
-        } else if (el.type === "sequence") {
-          (el.stacks || []).forEach((st2) => walk2(st2.elements));
-        }
-      }
-    };
-    ast2.participants.stacks.forEach((st2) => walk2(st2.elements));
-    return out;
   }
   function mountMetaprogrammerCycleHighlighter(container2) {
     if (!container2) return null;

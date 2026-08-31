@@ -17,9 +17,11 @@
 //
 // Token pixel positions are measured with a hidden mirror <div> that replicates
 // the textarea's box model, so the outline tracks the live text (edits,
-// wrapping, scroll) with no framework.
+// wrapping, scroll) with no framework. The pure text→offset half lives in
+// metaprogrammer-cycle-highlighter-core.js (node:test covers it); this file is
+// only the DOM.
 
-import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
+import { participantPositions, restPositions } from './metaprogrammer-cycle-highlighter-core.js';
 import {
   getActiveJPatternToken, getActiveJPatternIndex, getActiveJPatternKind
 } from '../src/peer-state.js';
@@ -58,64 +60,6 @@ function injectStyleOnce() {
     }
   `;
   document.head.appendChild(style);
-}
-
-// (line, col) are 1-based, as the parser emits them.
-function lineColToOffset(text, line, col) {
-  let offset = 0;
-  const lines = text.split('\n');
-  for (let i = 0; i < line - 1 && i < lines.length; i++) offset += lines[i].length + 1;
-  return offset + (col - 1);
-}
-
-// Every participant token in `$ participants` with its source offset (depth-first,
-// every branch of a `|` choice, repeats included). Rests and non-participant
-// nodes are skipped. Used to locate the active token's glyphs in the editor.
-function participantPositions(text) {
-  return elementPositions(text, 'participant');
-}
-
-// The same scan over the rests (`~`, `_`, `-`) — a separate list because the
-// scheduler numbers rests in their own index space, so the two never shift each
-// other (see restIndices in src/audio-net/MetaprogramScheduler.js).
-function restPositions(text) {
-  return elementPositions(text, 'rest');
-}
-
-// Source offsets of every element of `type`, in the same depth-first order the
-// scheduler indexes them — that shared order is what lets a slot's `index`
-// address a glyph in the live text.
-//
-// The span is the element's source extent (`endCol`, from the parser), which
-// runs from the token through its postfix operators — so `4@3` / `10!2` / `2a?`
-// are outlined as one thing. Those operators are what shape the turn being
-// played: how long it holds, how many times it comes round, whether it sounds
-// at all. They belong inside the box rather than beside it, and because the
-// grammar requires them glued to the token, the extent is always one unbroken
-// run of glyphs. An element with no extent recorded falls back to its token.
-function elementPositions(text, type) {
-  const { ast } = parseMetaprogram(text);
-  const out = [];
-  if (!ast.participants) return out;
-  const walk = (els) => {
-    for (const el of els || []) {
-      if (!el) continue;
-      if (el.type === type && el.token != null && el.line != null) {
-        const token = String(el.token);
-        const offset = lineColToOffset(text, el.line, el.col);
-        const end = el.endCol != null
-          ? lineColToOffset(text, el.endLine ?? el.line, el.endCol)
-          : offset + token.length;
-        out.push({ token, offset, len: Math.max(1, end - offset) });
-      } else if (el.type === 'choice') {
-        (el.options || []).forEach(walk);
-      } else if (el.type === 'sequence') {
-        (el.stacks || []).forEach(st => walk(st.elements));
-      }
-    }
-  };
-  ast.participants.stacks.forEach(st => walk(st.elements));
-  return out;
 }
 
 export function mountMetaprogrammerCycleHighlighter(container) {

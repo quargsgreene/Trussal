@@ -101,6 +101,26 @@ test('miniToMondo: non-$: lines pass through', () => {
   assert.equal(miniToMondo('// note\n$: participants("<0>")'), '// note\n$ participants <0>');
 });
 
+test('miniToMondo: an inline comment does not truncate the method chain', () => {
+  const want = '$ participants <0 1>\n# cycles "wcl" 10\n# room "wcl" 30';
+  // trailing on the $: line — used to drop cycles AND room silently
+  assert.equal(
+    miniToMondo('$: participants("<0 1>") // rotation\n.cycles("wcl", 10)\n.room("wcl", 30)'),
+    want);
+  // trailing on a chained line
+  assert.equal(
+    miniToMondo('$: participants("<0 1>")\n.cycles("wcl", 10) // ten\n.room("wcl", 30)'),
+    want);
+  // a block comment between segments
+  assert.equal(
+    miniToMondo('$: participants("<0 1>") /* pick order */ .cycles("wcl", 10).room("wcl", 30)'),
+    want);
+});
+
+test('miniToMondo: `//` inside a string literal is not a comment', () => {
+  assert.equal(miniToMondo('$: s("bd // sd")'), '$ s "bd // sd"');
+});
+
 // --- toConsumableNotation -------------------------------------------
 
 test('toConsumableNotation lowers to the target editor\'s form, or flags a mix', () => {
