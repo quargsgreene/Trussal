@@ -51901,7 +51901,12 @@ ${SHORTCUT_LINES[fn]}
 
 #trussal-studio-overlay {
   position: fixed; right: 16px; bottom: 88px;
-  width: min(640px, 92vw); max-height: 78vh;
+  width: min(640px, 92vw);
+  /* Drag/resize (src/panel-drag-resize.js) only ever writes top/left/width/
+     height as inline styles; these are the floors/ceilings it clamps to.
+     max-height was 78vh \u2014 a hard cap the resize grips couldn't grow past. */
+  min-width: 320px; min-height: 220px;
+  max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
   background: rgba(8, 14, 12, 0.96);
   color: #d6f5e2;
   border: 1px solid rgba(255,255,255,0.15);
@@ -51909,8 +51914,19 @@ ${SHORTCUT_LINES[fn]}
   z-index: 999999;
   font-family: sans-serif;
   display: flex; flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 16px 40px rgba(0,0,0,0.5);
 }
+/* Collapsed = header only (strip + detail hidden by the collapse button): drop
+   the height floor and any resized inline height so it shrinks to the bar. */
+#trussal-studio-overlay.ts-collapsed { min-height: 0; height: auto; }
+/* The header and strip keep their intrinsic height; the detail panel is the
+   one that grows and scrolls to fill whatever the window is resized to. The
+   JPattern card may shrink (min-height:0) so a short window still leaves the
+   detail panel something rather than clipping it to nothing. */
+#trussal-studio-overlay .ts-header,
+#trussal-studio-overlay .ts-strip { flex: 0 0 auto; }
+#trussal-studio-overlay .ts-jpattern { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 #trussal-studio-overlay .ts-header {
   display:flex; align-items:center; justify-content:space-between;
   padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -51918,6 +51934,9 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
 #trussal-studio-overlay .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
 #trussal-studio-overlay .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+/* Keep every header control clickable where a top corner resize grip
+   (src/panel-drag-resize.js, z-index 20) overlaps it. */
+#trussal-studio-overlay .ts-header > button { position: relative; z-index: 21; }
 #trussal-studio-overlay .ts-collapse-btn { margin-left: auto; }
 #trussal-studio-overlay .ts-strip {
   display:flex; gap:8px; padding: 10px 12px;
@@ -51968,6 +51987,8 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-detail {
   padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
   overflow-y:auto; min-height: 0;
+  /* Consume whatever vertical space the resized window has left over. */
+  flex: 1 1 auto;
 }
 #trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
 #trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
@@ -56827,6 +56848,315 @@ ${snippet}${JP_BTN_MARKER}`;
     return sync.getText() || getProgramText() || "";
   }
 
+  // src/panel-drag-resize.js
+  var STYLE_ID3 = "trussal-panel-dr-style";
+  var HINT_ID = "trussal-panel-dr-hint";
+  var DEFAULT_MIN_W = 280;
+  var DEFAULT_MIN_H = 160;
+  var HEAD_RELEASE_MS = 900;
+  var HEAD_STILL_RADIUS = 30;
+  var HEAD_COOLDOWN_MS = 1600;
+  var _headMode = null;
+  var _headRaf = null;
+  var _hintEl = null;
+  var _cooldownUntil = 0;
+  function _clamp(v2, lo, hi2) {
+    return v2 < lo ? lo : v2 > hi2 ? hi2 : v2;
+  }
+  function isHeadDragActive() {
+    return !!_headMode;
+  }
+  function pinTopLeft(panel, rect) {
+    panel.style.bottom = "auto";
+    panel.style.right = "auto";
+    panel.style.top = `${rect.top}px`;
+    panel.style.left = `${rect.left}px`;
+  }
+  function _injectStyles2() {
+    if (typeof document === "undefined" || document.getElementById(STYLE_ID3)) return;
+    const s2 = document.createElement("style");
+    s2.id = STYLE_ID3;
+    s2.textContent = `
+    .tdr-grip {
+      position: absolute; width: 18px; height: 18px; z-index: 20;
+      background: transparent;
+    }
+    .tdr-grip-nw { top: 0;    left: 0;  cursor: nwse-resize; }
+    .tdr-grip-ne { top: 0;    right: 0; cursor: nesw-resize; }
+    .tdr-grip-sw { bottom: 0; left: 0;  cursor: nesw-resize; }
+    .tdr-grip-se { bottom: 0; right: 0; cursor: nwse-resize; }
+    /* Faint diagonal grip so the bottom-right corner reads as resizable. */
+    .tdr-grip-se::after {
+      content: ''; position: absolute; right: 3px; bottom: 3px;
+      width: 8px; height: 8px;
+      border-right: 2px solid rgba(255,255,255,0.28);
+      border-bottom: 2px solid rgba(255,255,255,0.28);
+    }
+    /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
+       facial-gesture.js's dwell loop clicks them for free; these rules stand
+       on their own so they still look right if that panel never opened. */
+    .tdr-head-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #7aa68a; cursor: pointer; border-radius: 4px;
+      padding: 1px 6px; font-size: 11px; line-height: 1.5;
+      font-family: sans-serif; white-space: nowrap;
+      /* Above the z-index:20 corner grips so a corner grip can't eat the
+         button's clicks when it sits near a panel corner. */
+      position: relative; z-index: 21; overflow: hidden;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+    }
+    .tdr-head-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
+    .tdr-head-btn.on { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.14); }
+    .tdr-head-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
+    .tdr-head-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .tdr-head-btn::after {
+      content: ''; position: absolute; bottom: 0; left: 0;
+      width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
+      background: rgba(255,204,0,0.35); pointer-events: none;
+    }
+    .tdr-head-target { outline: 2px solid rgba(255,204,0,0.75); outline-offset: 2px; }
+    #${HINT_ID} {
+      position: fixed; z-index: 1000002; pointer-events: none;
+      background: rgba(5,10,8,0.95); color: #ffcc00;
+      border: 1px solid rgba(255,204,0,0.4); border-radius: 999px;
+      font: 600 11px/1.4 sans-serif; padding: 3px 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+  `;
+    document.head.appendChild(s2);
+  }
+  function _ensureGrips(panel) {
+    if (panel.querySelector(":scope > .tdr-grip")) return;
+    for (const corner of ["nw", "ne", "sw", "se"]) {
+      const g2 = document.createElement("div");
+      g2.className = `tdr-grip tdr-grip-${corner}`;
+      panel.appendChild(g2);
+    }
+  }
+  function _makeMouseDraggable(panel, handle) {
+    if (!handle.style.cursor) handle.style.cursor = "grab";
+    handle.addEventListener("mousedown", (e30) => {
+      if (e30.target.closest("button, select, input, textarea, a, .tdr-grip")) return;
+      e30.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      const sx = e30.clientX, sy = e30.clientY;
+      pinTopLeft(panel, rect);
+      const ol = rect.left, ot2 = rect.top;
+      const onMove = (ev) => {
+        panel.style.left = `${ol + ev.clientX - sx}px`;
+        panel.style.top = `${ot2 + ev.clientY - sy}px`;
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+  }
+  function _makeMouseResizable(panel, minW, minH) {
+    panel.querySelectorAll(":scope > .tdr-grip").forEach((h2) => {
+      const west = h2.classList.contains("tdr-grip-nw") || h2.classList.contains("tdr-grip-sw");
+      const north = h2.classList.contains("tdr-grip-nw") || h2.classList.contains("tdr-grip-ne");
+      h2.addEventListener("mousedown", (e30) => {
+        e30.preventDefault();
+        e30.stopPropagation();
+        const r2 = panel.getBoundingClientRect();
+        const sx = e30.clientX, sy = e30.clientY;
+        pinTopLeft(panel, r2);
+        panel.style.width = `${r2.width}px`;
+        panel.style.height = `${r2.height}px`;
+        const maxW = window.innerWidth - 20;
+        const maxH = window.innerHeight - 20;
+        const onMove = (ev) => {
+          const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          if (west) {
+            const w2 = Math.min(maxW, Math.max(minW, r2.width - dx));
+            panel.style.width = `${w2}px`;
+            panel.style.left = `${r2.left + (r2.width - w2)}px`;
+          } else {
+            panel.style.width = `${Math.min(maxW, Math.max(minW, r2.width + dx))}px`;
+          }
+          if (north) {
+            const ht2 = Math.min(maxH, Math.max(minH, r2.height - dy));
+            panel.style.height = `${ht2}px`;
+            panel.style.top = `${r2.top + (r2.height - ht2)}px`;
+          } else {
+            panel.style.height = `${Math.min(maxH, Math.max(minH, r2.height + dy))}px`;
+          }
+        };
+        const onUp = () => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
+    });
+  }
+  function _headCursor() {
+    const c2 = typeof window !== "undefined" && window.faceCtx || null;
+    if (!c2) return null;
+    return { x: c2.cursorX, y: c2.cursorY };
+  }
+  function _isParked(p) {
+    return p.x === window.innerWidth / 2 && p.y === window.innerHeight / 2;
+  }
+  function _startHeadMode(panel, kind, minW, minH, forced) {
+    _injectStyles2();
+    if (_headMode) _stopHeadMode();
+    if (!forced && performance.now() < _cooldownUntil) return;
+    const p = _headCursor();
+    if (!p || _isParked(p)) return;
+    const r2 = panel.getBoundingClientRect();
+    pinTopLeft(panel, r2);
+    panel.style.width = `${r2.width}px`;
+    panel.style.height = `${r2.height}px`;
+    _headMode = {
+      panel,
+      kind,
+      originX: p.x,
+      originY: p.y,
+      startLeft: r2.left,
+      startTop: r2.top,
+      startW: r2.width,
+      startH: r2.height,
+      stillX: p.x,
+      stillY: p.y,
+      stillSince: performance.now(),
+      minW: minW || DEFAULT_MIN_W,
+      minH: minH || DEFAULT_MIN_H
+    };
+    panel.classList.add("tdr-head-target");
+    _markButton(panel, kind, true);
+    _showHint(kind, p.x, p.y);
+    if (!_headRaf) _headRaf = requestAnimationFrame(_headTick);
+  }
+  function _stopHeadMode() {
+    if (!_headMode) return;
+    _headMode.panel.classList.remove("tdr-head-target");
+    _markButton(_headMode.panel, _headMode.kind, false);
+    _headMode = null;
+    _cooldownUntil = performance.now() + HEAD_COOLDOWN_MS;
+    if (_headRaf) {
+      cancelAnimationFrame(_headRaf);
+      _headRaf = null;
+    }
+    _hideHint();
+  }
+  function _markButton(panel, kind, on) {
+    const b = document.getElementById(`tdr-${kind}-${panel.id}`);
+    if (b) b.classList.toggle("on", on);
+  }
+  function _headTick() {
+    if (!_headMode) {
+      _headRaf = null;
+      return;
+    }
+    _headRaf = requestAnimationFrame(_headTick);
+    const p = _headCursor();
+    if (!p) return;
+    if (_isParked(p)) return;
+    const m2 = _headMode;
+    const panel = m2.panel;
+    const totalX = p.x - m2.originX;
+    const totalY = p.y - m2.originY;
+    if (m2.kind === "move") {
+      const maxLeft = window.innerWidth - 48;
+      const maxTop = window.innerHeight - 40;
+      panel.style.left = `${_clamp(m2.startLeft + totalX, 48 - m2.startW, maxLeft)}px`;
+      panel.style.top = `${_clamp(m2.startTop + totalY, 0, maxTop)}px`;
+    } else {
+      const maxW = Math.max(m2.minW, window.innerWidth - m2.startLeft - 10);
+      const maxH = Math.max(m2.minH, window.innerHeight - m2.startTop - 10);
+      panel.style.width = `${_clamp(m2.startW + totalX, m2.minW, maxW)}px`;
+      panel.style.height = `${_clamp(m2.startH + totalY, m2.minH, maxH)}px`;
+    }
+    const now = performance.now();
+    if (Math.hypot(p.x - m2.stillX, p.y - m2.stillY) > HEAD_STILL_RADIUS) {
+      m2.stillX = p.x;
+      m2.stillY = p.y;
+      m2.stillSince = now;
+    } else if (now - m2.stillSince > HEAD_RELEASE_MS) {
+      _stopHeadMode();
+      return;
+    }
+    _moveHint(p.x, p.y);
+  }
+  function _showHint(kind, x2, y2) {
+    _hideHint();
+    _hintEl = document.createElement("div");
+    _hintEl.id = HINT_ID;
+    _hintEl.textContent = kind === "move" ? "\u2725 steering \u2014 hold still to drop" : "\u21F2 resizing \u2014 hold still to set";
+    document.body.appendChild(_hintEl);
+    _moveHint(x2, y2);
+  }
+  function _moveHint(x2, y2) {
+    if (!_hintEl) return;
+    _hintEl.style.left = `${_clamp(x2 + 18, 4, window.innerWidth - 220)}px`;
+    _hintEl.style.top = `${_clamp(y2 + 18, 4, window.innerHeight - 28)}px`;
+  }
+  function _hideHint() {
+    if (_hintEl) {
+      _hintEl.remove();
+      _hintEl = null;
+    }
+  }
+  function _makeHeadButtons(panel, host, minW, minH) {
+    if (!panel.id) panel.id = `tdr-panel-${Math.random().toString(36).slice(2, 8)}`;
+    if (host.querySelector(".tdr-head-btn")) return;
+    const mk = (kind, glyph, label2) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tdr-head-btn ts-dwell-btn";
+      b.id = `tdr-${kind}-${panel.id}`;
+      b.textContent = glyph;
+      b.title = label2;
+      b.addEventListener("mousedown", (e30) => e30.preventDefault());
+      b.addEventListener("click", (e30) => {
+        e30.preventDefault();
+        e30.stopPropagation();
+        if (_headMode && _headMode.panel === panel && _headMode.kind === kind) _stopHeadMode();
+        else _startHeadMode(panel, kind, minW, minH, e30.isTrusted === true);
+      });
+      return b;
+    };
+    const moveBtn = mk("move", "\u2725", "Head-cursor move \u2014 dwell to grab, hold still to drop");
+    const resizeBtn = mk("resize", "\u21F2", "Head-cursor resize \u2014 dwell to grab, hold still to set");
+    const anchor2 = host.querySelector(
+      "#trussal-studio-collapse, .ts-collapse-btn, .ts-kbd-collapse-btn, #trussal-fg-collapse, .ts-close"
+    );
+    if (anchor2 && anchor2.parentElement === host) {
+      host.insertBefore(moveBtn, anchor2);
+      host.insertBefore(resizeBtn, anchor2);
+    } else {
+      host.appendChild(moveBtn);
+      host.appendChild(resizeBtn);
+    }
+  }
+  function attachMouseDragResize(panel, opts = {}) {
+    if (typeof document === "undefined" || !panel) return;
+    _injectStyles2();
+    _ensureGrips(panel);
+    _makeMouseDraggable(panel, opts.handle || panel);
+    _makeMouseResizable(panel, opts.minW || DEFAULT_MIN_W, opts.minH || DEFAULT_MIN_H);
+  }
+  function attachHeadDragResize(panel, opts = {}) {
+    if (typeof document === "undefined" || !panel) return;
+    _injectStyles2();
+    _makeHeadButtons(
+      panel,
+      opts.headButtonHost || opts.handle || panel,
+      opts.minW || DEFAULT_MIN_W,
+      opts.minH || DEFAULT_MIN_H
+    );
+  }
+  function attachPanelControls(panel, opts = {}) {
+    attachMouseDragResize(panel, opts);
+    attachHeadDragResize(panel, opts);
+  }
+
   // src/facial-gesture.js
   var WASM_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
   var MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -57210,6 +57540,20 @@ ${code2}${BTN_MARKER}`;
       _cursorEl.style.top = `${_ema.cursorY}px`;
       _cursorEl.style.display = "block";
     }
+    if (isHeadDragActive()) {
+      if (_dwell.el) {
+        _dwell.el.classList.remove("strudel-dwell-hover");
+        if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
+      }
+      _dwell.key = null;
+      _dwell.type = null;
+      _dwell.el = null;
+      _dwell.startMs = 0;
+      _dwell.fired = false;
+      if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
+      _rafId2 = requestAnimationFrame(_detectionLoop);
+      return;
+    }
     const cx = _ema.cursorX;
     const cy = _ema.cursorY;
     _followEditorCaret(cx, cy);
@@ -57382,37 +57726,11 @@ ${code2}${BTN_MARKER}`;
     if (_cursorEl) _cursorEl.style.display = "none";
     _setStatus("idle");
   }
-  function _makePanelDraggable(panel) {
-    const handle = panel.querySelector(".fg-drag-handle");
-    if (!handle) return;
-    handle.addEventListener("mousedown", (evt) => {
-      if (evt.target.closest("button,select,input")) return;
-      evt.preventDefault();
-      const rect = panel.getBoundingClientRect();
-      const startX = evt.clientX;
-      const startY = evt.clientY;
-      const origLeft = rect.left;
-      const origTop = rect.top;
-      panel.style.bottom = "";
-      panel.style.right = "";
-      panel.style.left = `${origLeft}px`;
-      panel.style.top = `${origTop}px`;
-      function onMove(e30) {
-        panel.style.left = `${origLeft + e30.clientX - startX}px`;
-        panel.style.top = `${origTop + e30.clientY - startY}px`;
-      }
-      function onUp() {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      }
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-    });
-  }
+  var _savedFgHeight = "";
   var FG_STYLE_ID = "trussal-fg-style";
   var FG_PANEL_ID = "trussal-fg-panel";
   var FG_CURSOR_ID = "trussal-fg-cursor";
-  function _injectStyles2() {
+  function _injectStyles3() {
     if (document.getElementById(FG_STYLE_ID)) return;
     const s2 = document.createElement("style");
     s2.id = FG_STYLE_ID;
@@ -57428,15 +57746,25 @@ ${code2}${BTN_MARKER}`;
       border:1px solid rgba(255,255,255,0.15); border-radius:10px;
       font-family:sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
-      max-height: calc(100vh - 80px); overflow-y: auto;
+      /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
+         inline; these are the clamp floors/ceilings. The panel itself no
+         longer scrolls \u2014 #trussal-fg-body does \u2014 so a resize can't hide the
+         drag handle. */
+      min-width:200px; min-height:220px;
+      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
+      overflow: hidden;
       display:none; flex-direction:column; gap:8px;
       box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
     }
+    #${FG_PANEL_ID}.fg-collapsed { min-height:0; height:auto; }
+    #${FG_PANEL_ID} #trussal-fg-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
     #${FG_PANEL_ID} .fg-drag-handle {
       cursor:grab; margin:-10px -12px 0; padding:8px 12px 6px;
-      border-radius:10px 10px 0 0;
+      border-radius:10px 10px 0 0; flex:0 0 auto;
     }
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
+    /* Keep handle controls clickable where a top corner grip overlaps them. */
+    #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
     #${FG_PANEL_ID} .fg-title { font-weight:600; color:#1ff466; }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
@@ -57523,7 +57851,7 @@ ${code2}${BTN_MARKER}`;
   }
   function _ensureDOM() {
     if (document.getElementById(FG_PANEL_ID)) return;
-    _injectStyles2();
+    _injectStyles3();
     initStrudelButton();
     const cursor = document.createElement("div");
     cursor.id = FG_CURSOR_ID;
@@ -57635,6 +57963,13 @@ ${code2}${BTN_MARKER}`;
         const collapsed = body.style.display === "none";
         body.style.display = collapsed ? "" : "none";
         fgCollapseBtn.textContent = collapsed ? "\u25BC" : "\u25B2";
+        panel.classList.toggle("fg-collapsed", !collapsed);
+        if (!collapsed) {
+          _savedFgHeight = panel.style.height;
+          panel.style.height = "";
+        } else {
+          panel.style.height = _savedFgHeight;
+        }
       });
     }
     panel.querySelector("#trussal-fg-trigger").addEventListener("change", (e30) => {
@@ -57654,7 +57989,11 @@ ${code2}${BTN_MARKER}`;
         if (lbl) lbl.textContent = v2;
       }
     });
-    _makePanelDraggable(panel);
+    attachPanelControls(panel, {
+      handle: panel.querySelector(".fg-drag-handle"),
+      minW: 200,
+      minH: 220
+    });
   }
   function injectFacialGestureToggle(headerEl) {
     const btn = document.createElement("button");
@@ -58237,7 +58576,7 @@ ${s2}${BTN_MARKER}`)
       });
     });
   }
-  function _injectStyles3() {
+  function _injectStyles4() {
     if (document.getElementById(KBD_STYLE_ID)) return;
     const s2 = document.createElement("style");
     s2.id = KBD_STYLE_ID;
@@ -58302,6 +58641,9 @@ ${s2}${BTN_MARKER}`)
       background: transparent;
     }
     .ts-kbd-header:active { cursor: grabbing; }
+    /* Collapse + the \u2725 / \u21F2 head buttons sit above the corner resize grips
+       (z-index 6) so a grip at the NE corner can't eat their clicks. */
+    #${KBD_PANEL_ID} .ts-kbd-header > button { position: relative; z-index: 7; }
     .ts-kbd-title {
       font-size: 11px;
       font-weight: 600;
@@ -58526,6 +58868,7 @@ ${s2}${BTN_MARKER}`)
     document.body.appendChild(panel);
     _makeDraggable(panel, header);
     _makeResizable(panel);
+    attachHeadDragResize(panel, { handle: header, minW: MIN_W, minH: MIN_H });
   }
   function _flash2(el) {
     el.classList.add("ts-kbd-flash");
@@ -58533,7 +58876,7 @@ ${s2}${BTN_MARKER}`)
   }
   function _ensureDOM2() {
     if (document.getElementById(KBD_PANEL_ID)) return;
-    _injectStyles3();
+    _injectStyles4();
     _buildPanel();
     _bindEditorActivity();
   }
@@ -58558,6 +58901,14 @@ ${s2}${BTN_MARKER}`)
       return;
     }
     _rafId3 = requestAnimationFrame(_dwellTick);
+    if (isHeadDragActive()) {
+      if (_dwellEl) {
+        _dwellEl.style.setProperty("--dwell", "0");
+        _dwellEl.classList.remove("ts-kbd-dwelling");
+        _dwellEl = null;
+      }
+      return;
+    }
     const ctx2 = window.faceCtx;
     if (!ctx2 || ctx2.cursorX === window.innerWidth / 2 && ctx2.cursorY === window.innerHeight / 2) return;
     const panel = document.getElementById(KBD_PANEL_ID);
@@ -58631,7 +58982,7 @@ ${s2}${BTN_MARKER}`)
   }
   function injectKeyboardToggle(headerEl) {
     if (!headerEl || document.getElementById(KBD_TOGGLE_ID)) return;
-    _injectStyles3();
+    _injectStyles4();
     const btn = document.createElement("button");
     btn.id = KBD_TOGGLE_ID;
     btn.type = "button";
@@ -59542,7 +59893,7 @@ ${s2}${BTN_MARKER}`)
   // src/studio.js
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
-  var STYLE_ID3 = "trussal-studio-style";
+  var STYLE_ID4 = "trussal-studio-style";
   var STORAGE_KEY = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var selectedPeerKey = null;
@@ -59553,6 +59904,7 @@ ${s2}${BTN_MARKER}`)
   var sampleBanks = [];
   var expandedBank = null;
   var currentSliders = [];
+  var savedStudioHeight = "";
   var uploadPending = false;
   async function refreshSampleBanks() {
     sampleBanks = await getSampleBanks().catch(() => []);
@@ -59616,9 +59968,9 @@ ${s2}${BTN_MARKER}`)
     for (const node of existing.values()) node.remove();
   }
   function injectStyles() {
-    if (document.getElementById(STYLE_ID3)) return;
+    if (document.getElementById(STYLE_ID4)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID3;
+    style.id = STYLE_ID4;
     style.textContent = studio_default;
     document.head.appendChild(style);
   }
@@ -60307,10 +60659,22 @@ ${s2}${BTN_MARKER}`)
         strip.style.display = collapsed ? "" : "none";
         detail.style.display = collapsed ? "" : "none";
         studioCollapseBtn.textContent = collapsed ? "\u25BC" : "\u25B2";
+        overlay.classList.toggle("ts-collapsed", !collapsed);
+        if (!collapsed) {
+          savedStudioHeight = overlay.style.height;
+          overlay.style.height = "";
+        } else {
+          overlay.style.height = savedStudioHeight;
+        }
       });
     }
     injectFacialGestureToggle(overlay.querySelector(".ts-header"));
     injectKeyboardToggle(overlay.querySelector(".ts-header"));
+    attachPanelControls(overlay, {
+      handle: overlay.querySelector(".ts-header"),
+      minW: 360,
+      minH: 260
+    });
     refreshSampleBanks();
     const localPeer2 = getLocalPeer();
     if (localPeer2.jitsiId && !localPeer2.pattern) {

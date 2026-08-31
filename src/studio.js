@@ -29,6 +29,7 @@ import {
 } from './user-samples.js';
 import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial-gesture.js';
 import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
+import { attachPanelControls } from './panel-drag-resize.js';
 import { toggleLineComment } from './editor-router-core.js';
 import { readDirective, ensureDirective } from './program-directive.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
@@ -88,6 +89,9 @@ let routedSet = new Set();
 let sampleBanks = [];
 let expandedBank = null; // which bank's per-sample list is open, if any
 let currentSliders = []; // most recent slider configs from strudel eval
+// Overlay height stashed while collapsed (strip + detail hidden), restored on
+// expand — so a resized panel doesn't leave a tall empty shell when collapsed.
+let savedStudioHeight = '';
 // True while a native file picker opened by wireUpload is on screen, or while
 // the files it returned are still being read. renderAll() skips rebuilding
 // the detail shell during this window — see the guard there for why.
@@ -1135,11 +1139,24 @@ function ensureOverlay() {
       strip.style.display  = collapsed ? '' : 'none';
       detail.style.display = collapsed ? '' : 'none';
       studioCollapseBtn.textContent = collapsed ? '▼' : '▲';
+      // Drop a resized panel's explicit height while collapsed so the hidden
+      // strip/detail don't leave dead space; put it back on expand.
+      overlay.classList.toggle('ts-collapsed', !collapsed);
+      if (!collapsed) { savedStudioHeight = overlay.style.height; overlay.style.height = ''; }
+      else { overlay.style.height = savedStudioHeight; }
     });
   }
 
   injectFacialGestureToggle(overlay.querySelector('.ts-header'));
   injectKeyboardToggle(overlay.querySelector('.ts-header'));
+
+  // Drag/resize the whole overlay by its header (mouse) or the ✥ / ⇲ header
+  // buttons (head cursor) — same window behaviour as the on-screen keyboard.
+  attachPanelControls(overlay, {
+    handle: overlay.querySelector('.ts-header'),
+    minW: 360,
+    minH: 260,
+  });
 
   refreshSampleBanks();
 

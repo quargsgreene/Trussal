@@ -26,6 +26,7 @@ import {
   activeEditorKind
 } from './editor-router.js';
 import { parseJPatternButtons } from './editor-router-core.js';
+import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -497,6 +498,22 @@ function _detectionLoop() {
     _cursorEl.style.display = 'block';
   }
 
+  // A panel is being flown around by the head cursor (panel-drag-resize.js).
+  // Suppress our own dwell firing until it's dropped — otherwise the same hold
+  // that steers the panel also toggles whatever button ends up under it. The
+  // cursor above still tracks, and panel-drag-resize reads window.faceCtx.
+  if (isHeadDragActive()) {
+    if (_dwell.el) {
+      _dwell.el.classList.remove('strudel-dwell-hover');
+      if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
+    }
+    _dwell.key = null; _dwell.type = null; _dwell.el = null;
+    _dwell.startMs = 0; _dwell.fired = false;
+    if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
+    _rafId = requestAnimationFrame(_detectionLoop);
+    return;
+  }
+
   // Dwell detection over .strudel-head-btn, .ts-fx-dwell-btn, and .ts-dwell-btn elements.
   const cx = _ema.cursorX;
   const cy = _ema.cursorY;
@@ -709,37 +726,9 @@ function _stopCamera() {
   _setStatus('idle');
 }
 
-// ---------------------------------------------------------------------------
-// Panel drag state.
-// ---------------------------------------------------------------------------
-function _makePanelDraggable(panel) {
-  const handle = panel.querySelector('.fg-drag-handle');
-  if (!handle) return;
-  handle.addEventListener('mousedown', (evt) => {
-    if (evt.target.closest('button,select,input')) return;
-    evt.preventDefault();
-    const rect = panel.getBoundingClientRect();
-    const startX = evt.clientX;
-    const startY = evt.clientY;
-    const origLeft = rect.left;
-    const origTop  = rect.top;
-    // Switch to top/left so the panel stays put when the viewport scrolls.
-    panel.style.bottom = '';
-    panel.style.right  = '';
-    panel.style.left   = `${origLeft}px`;
-    panel.style.top    = `${origTop}px`;
-    function onMove(e) {
-      panel.style.left = `${origLeft + e.clientX - startX}px`;
-      panel.style.top  = `${origTop  + e.clientY - startY}px`;
-    }
-    function onUp() {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup',   onUp);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
-  });
-}
+// Height stashed while the panel is collapsed to its drag handle, restored on
+// expand — so a head/mouse-resized panel doesn't leave a tall empty shell.
+let _savedFgHeight = '';
 
 // ---------------------------------------------------------------------------
 // DOM — styles, cursor overlay, and info panel.
@@ -764,15 +753,25 @@ function _injectStyles() {
       border:1px solid rgba(255,255,255,0.15); border-radius:10px;
       font-family:sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
-      max-height: calc(100vh - 80px); overflow-y: auto;
+      /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
+         inline; these are the clamp floors/ceilings. The panel itself no
+         longer scrolls — #trussal-fg-body does — so a resize can't hide the
+         drag handle. */
+      min-width:200px; min-height:220px;
+      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
+      overflow: hidden;
       display:none; flex-direction:column; gap:8px;
       box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
     }
+    #${FG_PANEL_ID}.fg-collapsed { min-height:0; height:auto; }
+    #${FG_PANEL_ID} #trussal-fg-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
     #${FG_PANEL_ID} .fg-drag-handle {
       cursor:grab; margin:-10px -12px 0; padding:8px 12px 6px;
-      border-radius:10px 10px 0 0;
+      border-radius:10px 10px 0 0; flex:0 0 auto;
     }
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
+    /* Keep handle controls clickable where a top corner grip overlaps them. */
+    #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
     #${FG_PANEL_ID} .fg-title { font-weight:600; color:#1ff466; }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
@@ -977,6 +976,11 @@ function _ensureDOM() {
       const collapsed = body.style.display === 'none';
       body.style.display    = collapsed ? '' : 'none';
       fgCollapseBtn.textContent = collapsed ? '▼' : '▲';
+      // Drop a resized panel's explicit height while only the handle shows;
+      // restore it on expand.
+      panel.classList.toggle('fg-collapsed', !collapsed);
+      if (!collapsed) { _savedFgHeight = panel.style.height; panel.style.height = ''; }
+      else { panel.style.height = _savedFgHeight; }
     });
   }
 
@@ -998,7 +1002,13 @@ function _ensureDOM() {
     }
   });
 
-  _makePanelDraggable(panel);
+  // Move it by the handle (mouse) or the ✥ / ⇲ handle buttons (head cursor),
+  // and resize it from any corner — same window behaviour as the keyboard.
+  attachPanelControls(panel, {
+    handle: panel.querySelector('.fg-drag-handle'),
+    minW: 200,
+    minH: 220,
+  });
 }
 
 // ---------------------------------------------------------------------------

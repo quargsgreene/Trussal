@@ -17,6 +17,7 @@
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 import { isHeadCursorEnabled } from './facial-gesture.js';
+import { attachHeadDragResize, isHeadDragActive } from './panel-drag-resize.js';
 
 const KBD_STYLE_ID  = 'trussal-kbd-style';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
@@ -440,6 +441,9 @@ function _injectStyles() {
       background: transparent;
     }
     .ts-kbd-header:active { cursor: grabbing; }
+    /* Collapse + the ✥ / ⇲ head buttons sit above the corner resize grips
+       (z-index 6) so a grip at the NE corner can't eat their clicks. */
+    #${KBD_PANEL_ID} .ts-kbd-header > button { position: relative; z-index: 7; }
     .ts-kbd-title {
       font-size: 11px;
       font-weight: 600;
@@ -675,6 +679,9 @@ function _buildPanel() {
   document.body.appendChild(panel);
   _makeDraggable(panel, header);
   _makeResizable(panel);
+  // Head-cursor move/resize: ✥ / ⇲ buttons in the header, same as Studio and
+  // the facial-control panel. Mouse drag/resize above stays as it was.
+  attachHeadDragResize(panel, { handle: header, minW: MIN_W, minH: MIN_H });
 }
 
 function _flash(el) {
@@ -707,6 +714,18 @@ function _stopDwellLoop() {
 function _dwellTick() {
   if (!_visible) { _rafId = null; return; }
   _rafId = requestAnimationFrame(_dwellTick);
+
+  // While the head cursor is dragging/resizing a panel (this one included),
+  // don't also let a dwell land on a key under it. Drop any partial dwell so
+  // it can't fire the instant the panel is released.
+  if (isHeadDragActive()) {
+    if (_dwellEl) {
+      _dwellEl.style.setProperty('--dwell', '0');
+      _dwellEl.classList.remove('ts-kbd-dwelling');
+      _dwellEl = null;
+    }
+    return;
+  }
 
   const ctx = window.faceCtx;
   if (!ctx || (ctx.cursorX === window.innerWidth / 2 && ctx.cursorY === window.innerHeight / 2)) return;
