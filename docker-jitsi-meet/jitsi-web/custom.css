@@ -1,25 +1,69 @@
+/* Trussal welcome / prejoin / in-call theme overrides.
+   Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
+   `cat custom.css >> all.css`). Tracked in the repo — never generated. */
 
 
+/* ------------------------------------------------------------------ *
+ * Global default palette + font.
+ *
+ * No !important on colour / background / border / font here: these are
+ * the app's DEFAULT values, not forced overrides. Any more-specific
+ * selector — Jitsi's own component CSS, the Studio overlay's own rules
+ * (#trussal-studio-overlay …), a runtime CSS-Cycles sheet — wins
+ * normally through the cascade: same specificity as `body *` (0,0,2)
+ * and later in source order. Only genuinely unstyled elements fall
+ * back to this. (This block replaces the old green theme; the
+ * reasoning about !important is unchanged.)
+ * ------------------------------------------------------------------ */
+body, body * {
+  color: #ffffff;
+  background-color: #222222;
+  border-color: #ffffff;
+  outline-color: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+}
 
-/* 1) Hide any built-in welcome header text inside the header container */
+/* Unstyled buttons: same #222 container, white text + outline, same
+   default-not-override reasoning (no !important). A button with its own
+   fill — Jitsi's native `.action-btn`, the Studio overlay's `.ts-btn`,
+   a CSS-Cycles sheet targeting it — wins normally through the cascade. */
+button {
+  background-color: #222222;
+  color: #ffffff;
+  border-color: #ffffff;
+}
+
+/* Form controls: white text on #222, white border. */
+input, textarea, select {
+  background-color: #222222;
+  color: #ffffff;
+  border-color: #ffffff;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Welcome page
+ * ------------------------------------------------------------------ */
+
+/* Hide any built-in welcome header text inside the header container */
 body.welcome-page .header-container h1,
 body.welcome-page .header-container h2,
 body.welcome-page .header-container p {
   display: none !important;
 }
 
+/* Jitsi's native room-name field — the Trussal overlay replaces it. */
 body.welcome-page #enter_room_field {
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  left: -9999px;  
+  left: -9999px;
 }
 
-
-/* 2) Add your own title + subtitle onto the header area */
+/* Our own title on the header area */
 body.welcome-page .header-container::after {
-  content: "Trussal"; /* \A = line break */
-  white-space: pre; /* so the \A becomes a new line */
+  content: "Trussal";
+  white-space: pre;
 
   position: absolute;
   left: 50%;
@@ -27,47 +71,17 @@ body.welcome-page .header-container::after {
   transform: translate(-50%, -50%);
 
   text-align: center;
-  font-family: Monaco, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 2rem;
   line-height: 1.2;
   font-weight: 600;
-  color: #9b02e8;
+  color: #ffffff;
 }
 
 /* Make sure the header is a positioning context */
 body.welcome-page .header {
   position: relative;
 }
-/* Welcome-page green theme (this block down to the recent-meeting rows below):
-   no !important on background/border. Same reasoning as `body, body *` and
-   `button` further down — these are the app's DEFAULT colours for these
-   elements, not a forced override, so a CSS Cycles sheet (or Jitsi's own
-   component CSS) targeting the same selector wins normally through the
-   cascade instead of being unconditionally beaten. See TRUSSAL_ROOTS in
-   css-cycles-core.js for where a performer's styling is allowed to reach —
-   the welcome page is outside every Trussal root, so only the allowlisted
-   properties (background/border/filter/text colour) are reachable here. */
-
-/* Outer area behind the recent-meeting card */
-body.welcome-page .welcome-page-content {
-  background: #06371f;           /* dark green */
-  padding-bottom: 4rem;          /* breathing room at bottom */
-}
-
-/* The card container itself (the big blue block in your screenshot) */
-body.welcome-page .welcome-page-content > div {
-  background-color: #0e3b29;   /* mid green */
-  border-radius: 18px;
-  padding: 24px;
-}
-
-/* The individual recent-room row/card */
-body.welcome-page .welcome-page-content [class*="recent"] {
-  background-color: #198754;   /* lighter green */
-  border-radius: 12px;
-  border: none;
-}
-
 
 /* Hide original Jitsi hero title/subtitle on the welcome page */
 body.welcome-page #welcome_page h1,
@@ -79,26 +93,24 @@ body.welcome-page #welcome_page .welcome-page-header-text {
   opacity: 0 !important;      /* keep layout but make them invisible */
 }
 
-
-/* Mid-green container block around the recent meetings list */
-body.welcome-page #welcome_page .welcome-page-content > * {
-  background-color: #0f5132;
-  border-radius: 18px;
-  padding: 24px;
+/* Welcome-page containers: flat #222, no borders. No !important — same
+   default-not-override reasoning as the global block above. */
+body.welcome-page .welcome-page-content {
+  background: #222222;
+  padding-bottom: 4rem;              /* breathing room at bottom */
+}
+body.welcome-page .welcome-page-content > div,
+body.welcome-page #welcome_page .welcome-page-content > *,
+body.welcome-page .welcome-page-content [class*="recent"],
+body.welcome-page #welcome_page .welcome-page-content .recent-list,
+body.welcome-page #welcome_page .welcome-page-content .recent-list-item {
+  background-color: #222222;
+  border: none;
 }
 
 /* Give the room-name input area some extra top margin */
 body.welcome-page #welcome_page .welcome-page-controls {
   margin-top: 2.5rem !important;
-}
-
-/* Light-green for the actual recent-meeting card/rows */
-body.welcome-page #welcome_page .welcome-page-content .recent-list,
-body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
-body.welcome-page #welcome_page .welcome-page-content [class*="recent"] {
-  background-color: #198754;
-  border-radius: 16px;
-  border: none;
 }
 
 /* Hide mobile-app download strip & footer on welcome page */
@@ -107,70 +119,97 @@ body.welcome-page .welcome-page-mobile-apps {
   display: none !important;
 }
 
-/* No !important: this is the app's DEFAULT green theme, not a forced
-   override. Any selector-based rule (Jitsi's own component styles, or a
-   dynamically-injected CSS Cycles / Text Cycles sheet) wins normally through
-   the cascade — same specificity as `body *` and it comes later in source
-   order, since css-cycles/text-cycles style elements are appended to <head>
-   at runtime, after this stylesheet. Only genuinely unstyled elements fall
-   back to this. See TRUSSAL_ROOTS in css-cycles-core.js for where performer
-   styling is allowed to reach. */
-body, body * {
- color: #1ff466;
- background-color: #0f5132;
+/* Default welcome-page background: flat #222, no image. No !important —
+   same default-not-override reasoning as the global block above. */
+body.welcome-page div {
+  background: #222222;
 }
 
-
-/* No !important, same reasoning as body, body * below: this is the default
-   welcome-page background, not a forced override. */
-body.welcome-page div
-{
-
-  background: #000 url("../images/welcome-background.png")
-              center center / cover no-repeat;
-
-}
-
-/* No !important, same reasoning as body, body * above: this is the default
-   background for an unstyled button, not a forced override. A button with
-   its own more-specific styling (Jitsi's native components, or a CSS Cycles
-   sheet targeting it) wins normally through the cascade. */
-button{
-	background-color: #000000;
-
-}
-
-/* Make the welcome-page meeting input text + placeholder the same bright green.
-   No !important on the colour itself, same default-not-override reasoning as
-   the rest of this theme — opacity stays forced since it isn't a property CSS
-   Cycles can reach outside a Trussal root anyway. */
+/* Trussal overlay room-name field text + placeholder. */
 body.welcome-page #enter_room_field,
 body.welcome-page #trussal-room-field {
-  color: #1ff466;  /* or whatever exact green you used above */
+  color: #ffffff;
 }
-
-/* Placeholder text color */
 body.welcome-page #enter_room_field::placeholder,
 body.welcome-page #trussal-room-field::placeholder {
-  color: #1ff466;
+  color: #ffffff;
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
 
 
-/* Trussal: hide all Jitsi watermarks/logos (top-right rectangle) */
-.watermark,
-.watermark.rightwatermark,
-.watermark.leftwatermark {
+/* ------------------------------------------------------------------ *
+ * Prejoin (premeeting) screen: no camera / avatar preview — just the
+ * centred name field + Join button.
+ * ------------------------------------------------------------------ */
+
+/* The full-bleed video / avatar preview behind the prejoin form, plus
+   its gradient overlay. `#preview` is Jitsi's long-stable id for the
+   premeeting Preview component. */
+#preview,
+.premeeting-screen .preview,
+.premeeting-screen .preview-overlay,
+.premeeting-screen .avatar,
+.premeeting-screen video,
+div[class*="premeeting"] video {
   display: none !important;
 }
 
-/* Only hide watermark on prejoin + in-conference views */
+/* The device / background-effect button row (camera, mic, blur,
+   select-background) and connection indicator: preview controls with
+   nothing left to preview. Leaves only the name input + Join button. */
+.premeeting-screen .toolbox-content-wrapper,
+.premeeting-screen .toolbox-content,
+.premeeting-screen .media-controls,
+.premeeting-screen .connection-status {
+  display: none !important;
+}
+
+/* Centre what's left. Fill the screen with #222 and pull `.content`
+   back into normal flow so the flex parent can centre it — Jitsi
+   positions it around the now-hidden absolute preview layer. */
+.premeeting-screen,
+div[class*="premeeting-screen"] {
+  background: #222222 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.premeeting-screen .content {
+  position: relative !important;
+  inset: auto !important;
+  margin: 0 !important;
+  width: min(480px, 90vw) !important;
+  max-width: 90vw !important;
+  align-items: stretch !important;
+}
+
+/* Prejoin name field: white text on #222, white outline. */
+.premeeting-screen input,
+.prejoin-input,
+#premeeting-name-input {
+  background-color: #222222 !important;
+  color: #ffffff !important;
+  border: 1px solid #ffffff !important;
+}
+.premeeting-screen input::placeholder,
+.prejoin-input::placeholder {
+  color: #ffffff;
+  opacity: 1;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * In-call: hide Jitsi watermarks / logos and pop-up notifications.
+ * ------------------------------------------------------------------ */
+.watermark,
+.watermark.rightwatermark,
+.watermark.leftwatermark,
 .prejoin-screen .watermark,
 .conference .watermark {
   display: none !important;
 }
 
-/* Trussal: hide all Jitsi pop-up notifications (including "no audio output") */
 #notifications-container,
 .notifications-container,
 #notification-container,
@@ -179,7 +218,10 @@ body.welcome-page #trussal-room-field::placeholder {
   display: none !important;
 }
 
-/* Trussal: Strudel overlay inside each video tile */
+
+/* ------------------------------------------------------------------ *
+ * In-call: Strudel overlay inside each video tile.
+ * ------------------------------------------------------------------ */
 .trussal-strudel-frame {
   position: absolute;
   left: 0;
@@ -187,7 +229,7 @@ body.welcome-page #trussal-room-field::placeholder {
   bottom: 0;
 
   /* ~bottom third of the tile */
-  width:100%;
+  width: 100%;
   height: 40%;
 
   border: none;
@@ -203,21 +245,20 @@ body.welcome-page #trussal-room-field::placeholder {
   position: relative !important;
 }
 
-/* Trussal: the global `body *` / `div` theme rules above paint green (and the
-   welcome background) over the in-call video tiles, so the grid showed solid
-   green panels instead of camera/Hydra video. Force every conference video
-   surface and its tile wrappers transparent so the actual video shows.
-   `body *` lost its !important (see above — it's now a default, not a
-   forced override), but this still needs its own: video/canvas elements can
-   pick up an opaque background from Jitsi's own component CSS at higher
-   specificity than a bare type selector.
 
-   Unlike every other rule in this file, this !important is a DELIBERATE
-   exception to the default-not-override pattern: it exists to defeat Jitsi's
-   OWN upstream component CSS (outside this repo, specificity unknown), not to
-   theme the app. That also means it is out of CSS Cycles' reach — a
-   performer's background() on a video tile is refused by this rule the same
-   way it would be by Jitsi's own styling if this fix did not exist. */
+/* ------------------------------------------------------------------ *
+ * In-call: keep video surfaces transparent so the global #222 theme
+ * does NOT paint over camera / Hydra video (the grid would otherwise
+ * show solid #222 panels instead of video).
+ *
+ * Unlike every other rule in this file, this !important is a
+ * DELIBERATE exception to the default-not-override pattern: it exists
+ * to defeat Jitsi's OWN upstream component CSS (outside this repo,
+ * specificity unknown), not to theme the app. That also puts it out
+ * of CSS-Cycles' reach — a performer's background() on a video tile
+ * is refused by this rule the same way Jitsi's own styling would
+ * refuse it if this fix did not exist.
+ * ------------------------------------------------------------------ */
 #videospace .videocontainer,
 #videospace .videocontainer *,
 .tile-view .videocontainer,

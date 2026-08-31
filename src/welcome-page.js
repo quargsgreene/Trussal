@@ -47,13 +47,14 @@ function renderTrussalWelcomeOverlay() {
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.75);
+        background: #222222;
         padding: 1.5rem 2rem;
         border-radius: 1rem;
         max-width: 480px;
         width: 90%;
         z-index: 9999;
         box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        font-family: Arial, Helvetica, sans-serif;
       ">
         <form class="trussal-room-form"
               style="display:flex;flex-direction:column;gap:0.75rem;">
@@ -70,17 +71,17 @@ function renderTrussalWelcomeOverlay() {
                  spellcheck="false"
                  placeholder="room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid rgba(255,255,255,0.4);
-                        background:rgba(0,0,0,0.35);
+                        border:1px solid #ffffff;
+                        background:#222222;
                         color:#ffffff;"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:none;background:#0f5132;color:#ffffff;
+                         border:1px solid #ffffff;background:#222222;color:#ffffff;
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
           <div id="trussal-room-error"
-               style="display:none;color:#ffb3b3;font-size:0.85rem;"></div>
+               style="display:none;color:#ffffff;font-size:0.85rem;"></div>
         </form>
       </div>
     `;
