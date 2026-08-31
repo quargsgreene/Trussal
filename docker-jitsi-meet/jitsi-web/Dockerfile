@@ -25,6 +25,21 @@ COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js
 COPY assets /usr/share/jitsi-meet/assets
 
+# Per-build cache-bust for the two assets a Trussal deploy actually changes.
+# jitsi pins `css/all.css?v=<n>` with a 1-year max-age and body.html loads
+# `/custom-config.js` with no version at all, so Cloudflare's edge cache (per
+# POP, keyed on the exact URL) and the browser kept serving the pre-deploy
+# files — every theme deploy was invisible until a manual CDN purge. The room
+# HTML is assembled with SSI and never cached (`cf-cache-status: DYNAMIC`), so
+# rewriting the query string here makes the next page load fetch fresh URLs
+# with no purge. Only these two — NOT app.bundle.min.js / lib-jitsi-meet.min.js,
+# which don't change between deploys and are multi-MB. run.sh builds web with
+# --no-cache so `date` re-runs every deploy; body.html's mount is removed from
+# docker-compose.yml so this baked copy is the one SSI includes.
+RUN BID="$(date +%Y%m%d%H%M%S)" && \
+    sed -i -E "s#(all\.css\?v=)[0-9]+#\1${BID}#g" /usr/share/jitsi-meet/*.html && \
+    printf '<script src="/custom-config.js?v=%s"></script>\n' "${BID}" > /usr/share/jitsi-meet/body.html
+
 # **Patch the React bundle fallback strings**
 RUN sed -i \
   -e 's|"headerTitle":"Jitsi Meet"|"headerTitle":"Trussal"|' \

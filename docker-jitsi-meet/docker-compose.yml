@@ -108,7 +108,10 @@ services:
       - ./trussal-impulse.wav:/usr/share/jitsi-meet/trussal-impulse.wav
       - ../src:/usr/share/jitsi-meet/css/src:ro
       - ${CONFIG}/web/letsencrypt:/etc/acme.sh
-      - ${CONFIG}/web/body.html:/usr/share/jitsi-meet/body.html:ro
+      # body.html is baked into the image by jitsi-web/Dockerfile with a
+      # per-build `?v=` on the custom-config.js src (cache-bust). Mounting the
+      # static ${CONFIG}/web/body.html over it would pin the URL and re-break
+      # CDN cache invalidation, so it is deliberately NOT mounted.
       - ./jitsi-web/custom-config.js:/usr/share/jitsi-meet/custom-config.js:ro
       - ./jitsi-web/assets:/usr/share/jitsi-meet/assets:ro
     labels:
