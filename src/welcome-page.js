@@ -40,26 +40,26 @@ function renderTrussalWelcomeOverlay() {
     const overlay = document.createElement('div');
     overlay.id = 'trussal-welcome-overlay';
 
-    // Simple centered panel; background transparent so your themed page shows through
+    // Simple centered panel; flat white on the flat-white welcome page.
     overlay.innerHTML = `
       <div style="
         position: fixed;
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: #222222;
+        background: #ffffff;
         padding: 1.5rem 2rem;
+        border: 1px solid #111111;
         border-radius: 1rem;
         max-width: 480px;
         width: 90%;
         z-index: 9999;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         font-family: Arial, Helvetica, sans-serif;
       ">
         <form class="trussal-room-form"
               style="display:flex;flex-direction:column;gap:0.75rem;">
           <label for="trussal-room-input"
-                 style="color:#ffffff;font-size:1rem;">
+                 style="color:#111111;font-size:1rem;">
             Room name:
           </label>
           <input id="trussal-room-input"
@@ -71,17 +71,17 @@ function renderTrussalWelcomeOverlay() {
                  spellcheck="false"
                  placeholder="room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid #ffffff;
-                        background:#222222;
-                        color:#ffffff;"/>
+                        border:1px solid #111111;
+                        background:#ffffff;
+                        color:#111111;"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:1px solid #ffffff;background:#222222;color:#ffffff;
+                         border:1px solid #111111;background:#ffffff;color:#111111;
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
           <div id="trussal-room-error"
-               style="display:none;color:#ffffff;font-size:0.85rem;"></div>
+               style="display:none;color:#111111;font-size:0.85rem;"></div>
         </form>
       </div>
     `;

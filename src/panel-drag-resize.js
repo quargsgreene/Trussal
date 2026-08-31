@@ -67,39 +67,39 @@ function _injectStyles() {
     .tdr-grip-se::after {
       content: ''; position: absolute; right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(255,255,255,0.28);
-      border-bottom: 2px solid rgba(255,255,255,0.28);
+      border-right: 2px solid rgba(17,17,17,0.45);
+      border-bottom: 2px solid rgba(17,17,17,0.45);
     }
     /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
        facial-gesture.js's dwell loop clicks them for free; these rules stand
        on their own so they still look right if that panel never opened. */
     .tdr-head-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a; cursor: pointer; border-radius: 4px;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111; cursor: pointer; border-radius: 4px;
       padding: 1px 6px; font-size: 11px; line-height: 1.5;
-      font-family: sans-serif; white-space: nowrap;
+      font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
       /* Above the z-index:20 corner grips so a corner grip can't eat the
          button's clicks when it sits near a panel corner. */
       position: relative; z-index: 21; overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .tdr-head-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .tdr-head-btn.on { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.14); }
-    .tdr-head-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .tdr-head-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .tdr-head-btn:hover { background: #111111; color: #ffffff; }
+    .tdr-head-btn.on { border-color: #111111; color: #ffffff; background: #111111; }
+    .tdr-head-btn.strudel-dwell-hover { border-color: #111111; }
+    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
     .tdr-head-btn::after {
       content: ''; position: absolute; bottom: 0; left: 0;
       width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35); pointer-events: none;
+      background: rgba(17,17,17,0.28); pointer-events: none;
     }
-    .tdr-head-target { outline: 2px solid rgba(255,204,0,0.75); outline-offset: 2px; }
+    .tdr-head-target { outline: 2px solid #111111; outline-offset: 2px; }
     #${HINT_ID} {
       position: fixed; z-index: 1000002; pointer-events: none;
-      background: rgba(5,10,8,0.95); color: #ffcc00;
-      border: 1px solid rgba(255,204,0,0.4); border-radius: 999px;
-      font: 600 11px/1.4 sans-serif; padding: 3px 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      background: #ffffff; color: #111111;
+      border: 1px solid #111111; border-radius: 999px;
+      font: 600 11px/1.4 Arial, Helvetica, sans-serif; padding: 3px 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
   `;
   document.head.appendChild(s);

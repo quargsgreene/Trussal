@@ -4,6 +4,11 @@
    still ships inside custom-config.js, just authored here instead of inside
    a JS template literal.
 
+   Palette: flat monochrome, matching custom.css. Background #ffffff, text /
+   borders / icons #111111, no accent colours. "selected" / "on" / "active" /
+   dwell states invert (fill #111111, text #ffffff) so they stay legible
+   without colour.
+
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
    from studio.js hardcoded as literal strings — safe because those are
    build-time constants that never change at runtime. If either constant is
@@ -17,15 +22,15 @@
      max-height was 78vh — a hard cap the resize grips couldn't grow past. */
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-  background: rgba(8, 14, 12, 0.96);
-  color: #d6f5e2;
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #111111;
   border-radius: 10px;
   z-index: 999999;
-  font-family: sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   display: flex; flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
 }
 /* Collapsed = header only (strip + detail hidden by the collapse button): drop
    the height floor and any resized inline height so it shrinks to the bar. */
@@ -39,11 +44,11 @@
 #trussal-studio-overlay .ts-jpattern { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 #trussal-studio-overlay .ts-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 10px 14px; border-bottom: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
-#trussal-studio-overlay .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
-#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-title { font-weight: 600; color:#111111; letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title small { color:#111111; opacity: 0.6; font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#111111; font-size: 1.1rem; cursor:pointer; }
 /* Keep every header control clickable where a top corner resize grip
    (src/panel-drag-resize.js, z-index 20) overlaps it. */
 #trussal-studio-overlay .ts-header > button { position: relative; z-index: 21; }
@@ -51,7 +56,7 @@
 #trussal-studio-overlay .ts-strip {
   display:flex; gap:8px; padding: 10px 12px;
   overflow-x:auto; overflow-y:hidden;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid #111111;
   scrollbar-width: thin;
 }
 #trussal-studio-overlay .ts-chip {
@@ -60,39 +65,42 @@
   min-width: 104px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #ffffff;
+  border: 1px solid #111111;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-family: inherit; color: inherit;
   text-align: left;
 }
-#trussal-studio-overlay .ts-chip:hover { background: rgba(255,255,255,0.07); }
+#trussal-studio-overlay .ts-chip:hover { background: #ffffff; }
 #trussal-studio-overlay .ts-chip.selected {
-  border-color: var(--ts-chip-color, #1ff466);
-  background: rgba(31,244,102,0.08);
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
 }
 #trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
 #trussal-studio-overlay .ts-avatar {
   width: 24px; height: 24px; border-radius: 50%;
-  background: var(--ts-chip-color, #1ff466);
-  color: #050f0a; font-weight: 700; font-size: 12px;
+  background: #111111;
+  color: #ffffff; font-weight: 700; font-size: 12px;
   display:flex; align-items:center; justify-content:center; flex-shrink: 0;
 }
+#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: #ffffff; color: #111111; }
 #trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
-#trussal-studio-overlay .ts-name.you { color: #1ff466; font-weight: 600; }
+#trussal-studio-overlay .ts-name.you { color: inherit; font-weight: 600; text-decoration: underline; }
 #trussal-studio-overlay .ts-idx {
   margin-left: auto;
   font-size: 10px; font-family: monospace; padding: 1px 5px;
-  border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+  border-radius: 3px; background: transparent; color: inherit;
+  border: 1px solid currentColor;
 }
 #trussal-studio-overlay .ts-routed {
   font-size: 10px; padding: 1px 4px; border-radius: 3px;
-  background: rgba(255,255,255,0.06); color: #5d7264;
+  background: transparent; color: inherit; opacity: 0.55; border: 1px solid currentColor;
 }
-#trussal-studio-overlay .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-#trussal-studio-overlay .ts-play { font-size: 10px; color: #5d7264; }
-#trussal-studio-overlay .ts-play.on { color: #1ff466; }
+#trussal-studio-overlay .ts-routed.on { background: #111111; color: #ffffff; opacity: 1; }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: inherit; opacity: 0.5; }
+#trussal-studio-overlay .ts-play.on { opacity: 1; font-weight: 700; }
 
 #trussal-studio-overlay .ts-detail {
   padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
@@ -101,22 +109,22 @@
   flex: 1 1 auto;
 }
 #trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
-#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: #111111; font-size: 0.95rem; }
 #trussal-studio-overlay .ts-readonly-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px;
-  background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
+  background: transparent; color: #111111; border: 1px solid #111111; letter-spacing: 0.5px;
 }
 #trussal-studio-overlay .ts-bot-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-  background: rgba(125,207,255,0.15); color: #7dcfff;
+  background: transparent; color: #111111; border: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-btn.eval { background: #1ff466; color: #050f0a; }
-#trussal-studio-overlay .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-#trussal-studio-overlay .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
+#trussal-studio-overlay .ts-btn.eval { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.mute { background: #ffffff; color: #111111; border: 1px solid #111111; }
+#trussal-studio-overlay .ts-btn.mute.on { background: #111111; color: #ffffff; }
 #trussal-studio-overlay .ts-section {
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid #111111;
   border-radius: 8px;
-  background: rgba(255,255,255,0.02);
+  background: #ffffff;
   /* 8px read as barely-there against the header's 10px 14px and the detail
      panel's 12px 14px — the section title sat almost flush against its own
      top border. */
@@ -134,37 +142,38 @@
 }
 #trussal-studio-overlay .ts-section-title {
   font-size: 10px; letter-spacing: 1px;
-  color: #7aa68a; font-weight: 600;
+  color: #111111; font-weight: 600;
 }
 #trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 #trussal-studio-overlay .ts-btn {
-  padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
+  padding: 4px 10px; border-radius: 999px; border:1px solid #111111; cursor:pointer;
   font-weight: 600; font-size: 12px;
+  background: #ffffff; color: #111111;
 }
-#trussal-studio-overlay .ts-btn.play  { background: #1ff466; color: #050f0a; }
-#trussal-studio-overlay .ts-btn.stop  { background: #2a2a2a; color: #fff; }
-#trussal-studio-overlay .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-#trussal-studio-overlay .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
+#trussal-studio-overlay .ts-btn.play  { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.stop  { background: #ffffff; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost { background: #ffffff; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost.on { background: #111111; color: #ffffff; }
 /* .ts-fx / .ts-fx-btn outlived the effects block — the bot cluster block styles its rows with them. */
-#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #111111; }
 #trussal-studio-overlay .ts-fx-btn {
   padding:3px 10px; border-radius:999px;
-  border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+  border:1px solid #111111; background:#ffffff; color:#111111;
   font-size:11px; cursor:pointer;
   transition:border-color 0.15s, color 0.15s, background 0.15s;
 }
-#trussal-studio-overlay .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-#trussal-studio-overlay .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
-#trussal-studio-overlay .ts-meta b { color: #b9d1c1; font-weight: 600; }
+#trussal-studio-overlay .ts-fx-btn:hover { color:#111111; border-color:#111111; }
+#trussal-studio-overlay .ts-fx-btn.on { color:#ffffff; border-color:#111111; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#111111; color:#ffffff; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#ffffff; background:#111111; }
+#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #111111; }
+#trussal-studio-overlay .ts-meta b { color: #111111; font-weight: 700; }
 #trussal-studio-overlay .ts-dim { opacity: 0.72; }
-#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; opacity: 0.55; font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
-  background: #050f0a; color:#1ff466;
+  background: #ffffff; color:#111111;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
+  border: 1px solid #111111; border-radius: 4px;
   padding: 8px; box-sizing: border-box;
   /* A fixed 160-280px fought short viewports (a phone in landscape, or the
      on-screen keyboard eating half the screen) — the overlay's own
@@ -174,15 +183,15 @@
   width: 100%; resize: vertical;
   white-space: pre-wrap; overflow:auto;
 }
-#trussal-studio-overlay .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+#trussal-studio-overlay .ts-code:focus { outline: 1px solid #111111; }
 @keyframes ts-eval-pulse {
-  0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
-  100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+  0%   { box-shadow: 0 0 0 3px rgba(17,17,17,0.85); }
+  100% { box-shadow: 0 0 0 0   rgba(17,17,17,0); }
 }
 #trussal-studio-overlay .ts-code.ts-eval-flash {
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
-#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #111111; }
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
@@ -190,18 +199,18 @@
 #trussal-studio-overlay .ts-voice-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: transparent; color: #7aa68a;
+  border: 1px solid #111111;
+  background: #ffffff; color: #111111;
   font-size: 11px; font-family: monospace; cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-#trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
-#trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-voice-btn:hover { color: #111111; border-color: #111111; }
+#trussal-studio-overlay .ts-voice-btn.on { color: #ffffff; border-color: #111111; background: #111111; }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
 /* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
-   yellow-fills-then-green as every other dwell target. */
-#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+   invert-fill feedback as every other dwell target. */
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #111111; color: #ffffff; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #111111; color: #ffffff; background: #111111; }
 
 #trussal-studio-overlay .ts-sample-banks {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -209,47 +218,48 @@
 }
 #trussal-studio-overlay .ts-sample-bank {
   padding: 1px 7px; border-radius: 3px;
-  background: rgba(31,244,102,0.1); color: #1ff466;
-  border: 1px solid rgba(31,244,102,0.25);
+  background: #ffffff; color: #111111;
+  border: 1px solid #111111;
   white-space: nowrap;
   font-size: 11px; font-family: monospace; cursor: pointer;
 }
-#trussal-studio-overlay .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
-/* Data packs read as a different kind of thing from sound banks. */
+#trussal-studio-overlay .ts-sample-bank:hover { background: #111111; color: #ffffff; }
+/* Data packs read as a different kind of thing from sound banks — dashed
+   border instead of a colour. */
 #trussal-studio-overlay .ts-sample-bank.data {
-  background: rgba(120,180,255,0.1); color: #7ab4ff;
-  border-color: rgba(120,180,255,0.3);
+  background: #ffffff; color: #111111;
+  border-color: #111111; border-style: dashed;
 }
-#trussal-studio-overlay .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: #111111; color: #ffffff; }
 #trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
 
 #trussal-studio-overlay .ts-sample-list {
   display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-  background: rgba(255,255,255,0.04);
+  background: #ffffff; border: 1px solid #111111;
   font-size: 11px; font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-item {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 3px 1px 6px; border-radius: 3px;
-  background: rgba(255,255,255,0.06); color: #cfd8e3;
+  background: #ffffff; color: #111111; border: 1px solid #111111;
   max-width: 100%;
 }
-#trussal-studio-overlay .ts-sample-idx { color: #7ab4ff; }
+#trussal-studio-overlay .ts-sample-idx { color: #111111; font-weight: 700; }
 #trussal-studio-overlay .ts-sample-label {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
 }
-#trussal-studio-overlay .ts-sample-len { color: #8a94a3; }
+#trussal-studio-overlay .ts-sample-len { color: #111111; opacity: 0.55; }
 #trussal-studio-overlay .ts-sample-x {
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
-  color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+  color: #111111; font-size: 13px; line-height: 1; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-x:hover { color: #ffffff; background: #111111; border-radius: 2px; }
 #trussal-studio-overlay .ts-sample-banks-del {
-  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
-  background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid #111111; cursor: pointer;
+  background: #ffffff; color: #111111; font-size: 11px; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: #111111; color: #ffffff; }
 
 #trussal-studio-overlay .ts-sliders {
   display: flex; flex-wrap: wrap; gap: 10px 16px;
@@ -259,11 +269,11 @@
   min-width: min(100px, 42vw); flex: 1 1 100px;
 }
 #trussal-studio-overlay .ts-slider-label {
-  font-size: 10px; font-family: monospace; color: #7aa68a;
+  font-size: 10px; font-family: monospace; color: #111111;
   display: flex; justify-content: space-between; gap: 6px;
 }
 #trussal-studio-overlay .ts-slider-input {
-  width: 100%; cursor: pointer; accent-color: #1ff466;
+  width: 100%; cursor: pointer; accent-color: #111111;
   height: 16px;
 }
 
@@ -302,9 +312,9 @@
   z-index: 9999;
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  border: none;
-  background: #1ff466;
-  color: #050f0a;
+  border: 1px solid #111111;
+  background: #ffffff;
+  color: #111111;
   font-weight: 600;
   cursor: pointer;
   display: none;

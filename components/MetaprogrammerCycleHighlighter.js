@@ -38,7 +38,7 @@ function injectStyleOnce() {
   if (document.getElementById('jp-play-style')) return;
   const style = document.createElement('style');
   style.id = 'jp-play-style';
-  // No !important: `body, body * { background: <panel-green> }` (custom.css) is a
+  // No !important: `html, body, body * { background: #ffffff }` (custom.css) is a
   // default, not a forced override (fixed in 0f02e39), and every class selector
   // here already outspecifies the bare `body *` it used to need beating. This host
   // mounts inside #trussal-studio-overlay, a Trussal root, so leaving these plain
@@ -53,7 +53,7 @@ function injectStyleOnce() {
     }
     .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:2.25px solid #1ff466; border-radius:0;
+      border:2.25px solid #111111; border-radius:0;
       background:transparent;
     }
   `;

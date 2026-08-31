@@ -1,43 +1,44 @@
 /* Trussal welcome / prejoin / in-call theme overrides.
    Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
-   `cat custom.css >> all.css`). Tracked in the repo — never generated. */
+   `cat custom.css >> all.css`). Tracked in the repo — never generated.
+
+   Palette: flat monochrome. Background #ffffff (white); text, borders,
+   outlines and icons #111111. No accent colours anywhere. */
 
 
 /* ------------------------------------------------------------------ *
- * Global default palette + font.
- *
- * No !important on colour / background / border / font here: these are
- * the app's DEFAULT values, not forced overrides. Any more-specific
- * selector — Jitsi's own component CSS, the Studio overlay's own rules
- * (#trussal-studio-overlay …), a runtime CSS-Cycles sheet — wins
- * normally through the cascade: same specificity as `body *` (0,0,2)
- * and later in source order. Only genuinely unstyled elements fall
- * back to this. (This block replaces the old green theme; the
- * reasoning about !important is unchanged.)
+ * Font: Arial everywhere, forced. Jitsi's own CSS sets Roboto /
+ * Segoe UI / open_sanslight at many specificities, so this needs
+ * !important and the universal selector to actually land. Jitsi's
+ * icons are inline <svg> (no icon font), so overriding font-family
+ * globally is safe.
  * ------------------------------------------------------------------ */
-body, body * {
-  color: #ffffff;
-  background-color: #222222;
-  border-color: #ffffff;
-  outline-color: #ffffff;
-  font-family: Arial, Helvetica, sans-serif;
+*, *::before, *::after {
+  font-family: Arial, Helvetica, sans-serif !important;
 }
 
-/* Unstyled buttons: same #222 container, white text + outline, same
-   default-not-override reasoning (no !important). A button with its own
-   fill — Jitsi's native `.action-btn`, the Studio overlay's `.ts-btn`,
-   a CSS-Cycles sheet targeting it — wins normally through the cascade. */
-button {
-  background-color: #222222;
-  color: #ffffff;
-  border-color: #ffffff;
+
+/* ------------------------------------------------------------------ *
+ * Global default palette.
+ *
+ * No !important on colour / background / border here: these are the
+ * app's DEFAULT values. Any more-specific selector — Jitsi's own
+ * component CSS, the Studio overlay's own rules, a runtime CSS-Cycles
+ * sheet — wins normally through the cascade. Genuinely coloured Jitsi
+ * components (blue Join, red hang-up, welcome header image, …) are
+ * flattened explicitly further down.
+ * ------------------------------------------------------------------ */
+html, body, body * {
+  color: #111111;
+  background-color: #ffffff;
+  border-color: #111111;
+  outline-color: #111111;
 }
 
-/* Form controls: white text on #222, white border. */
-input, textarea, select {
-  background-color: #222222;
-  color: #ffffff;
-  border-color: #ffffff;
+button, input, textarea, select {
+  background-color: #ffffff;
+  color: #111111;
+  border-color: #111111;
 }
 
 
@@ -71,11 +72,10 @@ body.welcome-page .header-container::after {
   transform: translate(-50%, -50%);
 
   text-align: center;
-  font-family: Arial, Helvetica, sans-serif;
   font-size: 2rem;
   line-height: 1.2;
   font-weight: 600;
-  color: #ffffff;
+  color: #111111;
 }
 
 /* Make sure the header is a positioning context */
@@ -93,19 +93,52 @@ body.welcome-page #welcome_page .welcome-page-header-text {
   opacity: 0 !important;      /* keep layout but make them invisible */
 }
 
-/* Welcome-page containers: flat #222, no borders. No !important — same
-   default-not-override reasoning as the global block above. */
+/* Kill the welcome-page background image. Jitsi's stock rule is
+   `.welcome .header { background-image: linear-gradient(...),
+   url(../images/welcome-background.png); background-color: #002637 }`
+   at (0,0,2,0) — it beats a plain `body.welcome-page div` — so this
+   override is deliberately !important, same class of exception as the
+   video-transparency block at the end of the file. (welcome-background.png
+   is also a solid-white 1x1 now, so anything this rule misses still
+   paints white.) */
+body.welcome-page,
+body.welcome-page .welcome,
+body.welcome-page .header,
+body.welcome-page .header-container,
+body.welcome-page [class*="header"],
+body.welcome-page .welcome-footer {
+  background: #ffffff !important;
+  background-image: none !important;
+}
+
+/* Welcome-page containers + the blue/dark accent bits Jitsi ships. */
 body.welcome-page .welcome-page-content {
-  background: #222222;
+  background: #ffffff;
   padding-bottom: 4rem;              /* breathing room at bottom */
 }
 body.welcome-page .welcome-page-content > div,
 body.welcome-page #welcome_page .welcome-page-content > *,
 body.welcome-page .welcome-page-content [class*="recent"],
 body.welcome-page #welcome_page .welcome-page-content .recent-list,
-body.welcome-page #welcome_page .welcome-page-content .recent-list-item {
-  background-color: #222222;
+body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
+body.welcome-page .welcome-card--dark,
+body.welcome-page .welcome-card--blue,
+body.welcome-page .welcome-card--grey {
+  background-color: #ffffff;
+  color: #111111;
   border: none;
+}
+body.welcome-page .tab-container .tab-buttons,
+body.welcome-page .tab-container .tab-buttons [role="tab"],
+body.welcome-page .tab-container .tab-buttons [role="tab"][aria-selected="true"],
+body.welcome-page .welcome-page-button,
+body.welcome-page .welcome-page-button:hover,
+body.welcome-page .header .not-allow-title-character-div,
+body.welcome-page .header #enter_room .join-meeting-container {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
 }
 
 /* Give the room-name input area some extra top margin */
@@ -119,20 +152,14 @@ body.welcome-page .welcome-page-mobile-apps {
   display: none !important;
 }
 
-/* Default welcome-page background: flat #222, no image. No !important —
-   same default-not-override reasoning as the global block above. */
-body.welcome-page div {
-  background: #222222;
-}
-
 /* Trussal overlay room-name field text + placeholder. */
 body.welcome-page #enter_room_field,
 body.welcome-page #trussal-room-field {
-  color: #ffffff;
+  color: #111111;
 }
 body.welcome-page #enter_room_field::placeholder,
 body.welcome-page #trussal-room-field::placeholder {
-  color: #ffffff;
+  color: #111111;
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
 
@@ -164,12 +191,12 @@ div[class*="premeeting"] video {
   display: none !important;
 }
 
-/* Centre what's left. Fill the screen with #222 and pull `.content`
+/* Centre what's left. Fill the screen with white and pull `.content`
    back into normal flow so the flex parent can centre it — Jitsi
    positions it around the now-hidden absolute preview layer. */
 .premeeting-screen,
 div[class*="premeeting-screen"] {
-  background: #222222 !important;
+  background: #ffffff !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -184,18 +211,35 @@ div[class*="premeeting-screen"] {
   align-items: stretch !important;
 }
 
-/* Prejoin name field: white text on #222, white outline. */
+/* Prejoin name field: #111 text on white, #111 outline. */
 .premeeting-screen input,
 .prejoin-input,
 #premeeting-name-input {
-  background-color: #222222 !important;
-  color: #ffffff !important;
-  border: 1px solid #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
 }
 .premeeting-screen input::placeholder,
 .prejoin-input::placeholder {
-  color: #ffffff;
+  color: #111111;
   opacity: 1;
+}
+
+/* The Join button (`.action-btn`, blue `.primary` / grey `.secondary`
+   in stock Jitsi) — flat white, #111 text + outline, #111 icon. */
+.premeeting-screen .action-btn,
+.premeeting-screen .action-btn.primary,
+.premeeting-screen .action-btn.secondary,
+.premeeting-screen .action-btn.disabled,
+.premeeting-screen .action-btn .options:hover {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+.premeeting-screen .action-btn svg,
+.premeeting-screen .action-btn .icon > svg {
+  fill: #111111 !important;
 }
 
 
@@ -220,6 +264,51 @@ div[class*="premeeting-screen"] {
 
 
 /* ------------------------------------------------------------------ *
+ * In-call toolbar: flat white bar, #111 icons. The hang-up
+ * ("telephone") button ships red (`div.hangup-button{background:#cb2233}`
+ * with a white svg) — flatten it like every other button.
+ * ------------------------------------------------------------------ */
+#new-toolbox,
+.toolbox-content-wrapper,
+.toolbox-content,
+.toolbox-content-items,
+.toolbox-content-mobile .toolbox-content-items {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.toolbox-icon,
+.toolbox-button,
+div.hangup-button,
+div.hangup-button:hover,
+div.hangup-button:active,
+div.hangup-menu-button,
+div.hangup-menu-button:hover,
+div.hangup-menu-button:active {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border-color: #111111 !important;
+}
+
+.toolbox-icon svg,
+.toolbox-button svg,
+div.hangup-button svg,
+div.hangup-menu-button svg {
+  fill: #111111 !important;
+}
+
+/* Toggled state stays legible by inverting rather than colouring. */
+.toolbox-icon.toggled {
+  background-color: #111111 !important;
+}
+.toolbox-icon.toggled svg {
+  fill: #ffffff !important;
+}
+
+
+/* ------------------------------------------------------------------ *
  * In-call: Strudel overlay inside each video tile.
  * ------------------------------------------------------------------ */
 .trussal-strudel-frame {
@@ -232,9 +321,9 @@ div[class*="premeeting-screen"] {
   width: 100%;
   height: 40%;
 
-  border: none;
+  border: 1px solid #111111;
   z-index: 50;
-  background: rgba(0, 0, 0, 0.85);
+  background: #ffffff;
 
   /* allow mouse / keyboard focus */
   pointer-events: auto;
@@ -247,17 +336,15 @@ div[class*="premeeting-screen"] {
 
 
 /* ------------------------------------------------------------------ *
- * In-call: keep video surfaces transparent so the global #222 theme
+ * In-call: keep video surfaces transparent so the global white theme
  * does NOT paint over camera / Hydra video (the grid would otherwise
- * show solid #222 panels instead of video).
+ * show solid white panels instead of video).
  *
- * Unlike every other rule in this file, this !important is a
- * DELIBERATE exception to the default-not-override pattern: it exists
- * to defeat Jitsi's OWN upstream component CSS (outside this repo,
- * specificity unknown), not to theme the app. That also puts it out
- * of CSS-Cycles' reach — a performer's background() on a video tile
- * is refused by this rule the same way Jitsi's own styling would
- * refuse it if this fix did not exist.
+ * Unlike the palette block, this !important is a DELIBERATE exception:
+ * it exists to defeat Jitsi's OWN upstream component CSS (specificity
+ * unknown), not to theme the app. That also puts it out of CSS-Cycles'
+ * reach — a performer's background() on a video tile is refused by this
+ * rule the same way Jitsi's own styling would refuse it.
  * ------------------------------------------------------------------ */
 #videospace .videocontainer,
 #videospace .videocontainer *,

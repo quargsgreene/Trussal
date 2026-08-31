@@ -51389,19 +51389,19 @@ ${SHORTCUT_LINES[fn]}
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: #222222;
+        background: #ffffff;
         padding: 1.5rem 2rem;
+        border: 1px solid #111111;
         border-radius: 1rem;
         max-width: 480px;
         width: 90%;
         z-index: 9999;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         font-family: Arial, Helvetica, sans-serif;
       ">
         <form class="trussal-room-form"
               style="display:flex;flex-direction:column;gap:0.75rem;">
           <label for="trussal-room-input"
-                 style="color:#ffffff;font-size:1rem;">
+                 style="color:#111111;font-size:1rem;">
             Room name:
           </label>
           <input id="trussal-room-input"
@@ -51413,17 +51413,17 @@ ${SHORTCUT_LINES[fn]}
                  spellcheck="false"
                  placeholder="room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid #ffffff;
-                        background:#222222;
-                        color:#ffffff;"/>
+                        border:1px solid #111111;
+                        background:#ffffff;
+                        color:#111111;"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:1px solid #ffffff;background:#222222;color:#ffffff;
+                         border:1px solid #111111;background:#ffffff;color:#111111;
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
           <div id="trussal-room-error"
-               style="display:none;color:#ffffff;font-size:0.85rem;"></div>
+               style="display:none;color:#111111;font-size:0.85rem;"></div>
         </form>
       </div>
     `;
@@ -51895,6 +51895,11 @@ ${SHORTCUT_LINES[fn]}
    still ships inside custom-config.js, just authored here instead of inside
    a JS template literal.
 
+   Palette: flat monochrome, matching custom.css. Background #ffffff, text /
+   borders / icons #111111, no accent colours. "selected" / "on" / "active" /
+   dwell states invert (fill #111111, text #ffffff) so they stay legible
+   without colour.
+
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
    from studio.js hardcoded as literal strings \u2014 safe because those are
    build-time constants that never change at runtime. If either constant is
@@ -51908,15 +51913,15 @@ ${SHORTCUT_LINES[fn]}
      max-height was 78vh \u2014 a hard cap the resize grips couldn't grow past. */
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-  background: rgba(8, 14, 12, 0.96);
-  color: #d6f5e2;
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #111111;
   border-radius: 10px;
   z-index: 999999;
-  font-family: sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   display: flex; flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
 }
 /* Collapsed = header only (strip + detail hidden by the collapse button): drop
    the height floor and any resized inline height so it shrinks to the bar. */
@@ -51930,11 +51935,11 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-jpattern { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 #trussal-studio-overlay .ts-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 10px 14px; border-bottom: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-title { font-weight: 600; color:#1ff466; letter-spacing: 0.5px; font-size: 0.95rem; }
-#trussal-studio-overlay .ts-title small { color:#7aa68a; font-weight: 400; margin-left:8px; }
-#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#fff; font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-title { font-weight: 600; color:#111111; letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title small { color:#111111; opacity: 0.6; font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#111111; font-size: 1.1rem; cursor:pointer; }
 /* Keep every header control clickable where a top corner resize grip
    (src/panel-drag-resize.js, z-index 20) overlaps it. */
 #trussal-studio-overlay .ts-header > button { position: relative; z-index: 21; }
@@ -51942,7 +51947,7 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-strip {
   display:flex; gap:8px; padding: 10px 12px;
   overflow-x:auto; overflow-y:hidden;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid #111111;
   scrollbar-width: thin;
 }
 #trussal-studio-overlay .ts-chip {
@@ -51951,39 +51956,42 @@ ${SHORTCUT_LINES[fn]}
   min-width: 104px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #ffffff;
+  border: 1px solid #111111;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-family: inherit; color: inherit;
   text-align: left;
 }
-#trussal-studio-overlay .ts-chip:hover { background: rgba(255,255,255,0.07); }
+#trussal-studio-overlay .ts-chip:hover { background: #ffffff; }
 #trussal-studio-overlay .ts-chip.selected {
-  border-color: var(--ts-chip-color, #1ff466);
-  background: rgba(31,244,102,0.08);
+  border-color: #111111;
+  background: #111111;
+  color: #ffffff;
 }
 #trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
 #trussal-studio-overlay .ts-avatar {
   width: 24px; height: 24px; border-radius: 50%;
-  background: var(--ts-chip-color, #1ff466);
-  color: #050f0a; font-weight: 700; font-size: 12px;
+  background: #111111;
+  color: #ffffff; font-weight: 700; font-size: 12px;
   display:flex; align-items:center; justify-content:center; flex-shrink: 0;
 }
+#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: #ffffff; color: #111111; }
 #trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
-#trussal-studio-overlay .ts-name.you { color: #1ff466; font-weight: 600; }
+#trussal-studio-overlay .ts-name.you { color: inherit; font-weight: 600; text-decoration: underline; }
 #trussal-studio-overlay .ts-idx {
   margin-left: auto;
   font-size: 10px; font-family: monospace; padding: 1px 5px;
-  border-radius: 3px; background: rgba(31,244,102,0.12); color: #1ff466;
+  border-radius: 3px; background: transparent; color: inherit;
+  border: 1px solid currentColor;
 }
 #trussal-studio-overlay .ts-routed {
   font-size: 10px; padding: 1px 4px; border-radius: 3px;
-  background: rgba(255,255,255,0.06); color: #5d7264;
+  background: transparent; color: inherit; opacity: 0.55; border: 1px solid currentColor;
 }
-#trussal-studio-overlay .ts-routed.on { background: rgba(255,140,40,0.18); color: #ffac6b; }
-#trussal-studio-overlay .ts-play { font-size: 10px; color: #5d7264; }
-#trussal-studio-overlay .ts-play.on { color: #1ff466; }
+#trussal-studio-overlay .ts-routed.on { background: #111111; color: #ffffff; opacity: 1; }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: inherit; opacity: 0.5; }
+#trussal-studio-overlay .ts-play.on { opacity: 1; font-weight: 700; }
 
 #trussal-studio-overlay .ts-detail {
   padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
@@ -51992,22 +52000,22 @@ ${SHORTCUT_LINES[fn]}
   flex: 1 1 auto;
 }
 #trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
-#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--ts-detail-color, #1ff466); font-size: 0.95rem; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: #111111; font-size: 0.95rem; }
 #trussal-studio-overlay .ts-readonly-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px;
-  background: rgba(255,255,255,0.08); color: #b9d1c1; letter-spacing: 0.5px;
+  background: transparent; color: #111111; border: 1px solid #111111; letter-spacing: 0.5px;
 }
 #trussal-studio-overlay .ts-bot-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-  background: rgba(125,207,255,0.15); color: #7dcfff;
+  background: transparent; color: #111111; border: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-btn.eval { background: #1ff466; color: #050f0a; }
-#trussal-studio-overlay .ts-btn.mute { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-#trussal-studio-overlay .ts-btn.mute.on { background: rgba(255,90,90,0.25); color: #ff8a8a; }
+#trussal-studio-overlay .ts-btn.eval { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.mute { background: #ffffff; color: #111111; border: 1px solid #111111; }
+#trussal-studio-overlay .ts-btn.mute.on { background: #111111; color: #ffffff; }
 #trussal-studio-overlay .ts-section {
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid #111111;
   border-radius: 8px;
-  background: rgba(255,255,255,0.02);
+  background: #ffffff;
   /* 8px read as barely-there against the header's 10px 14px and the detail
      panel's 12px 14px \u2014 the section title sat almost flush against its own
      top border. */
@@ -52025,37 +52033,38 @@ ${SHORTCUT_LINES[fn]}
 }
 #trussal-studio-overlay .ts-section-title {
   font-size: 10px; letter-spacing: 1px;
-  color: #7aa68a; font-weight: 600;
+  color: #111111; font-weight: 600;
 }
 #trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 #trussal-studio-overlay .ts-btn {
-  padding: 4px 10px; border-radius: 999px; border:none; cursor:pointer;
+  padding: 4px 10px; border-radius: 999px; border:1px solid #111111; cursor:pointer;
   font-weight: 600; font-size: 12px;
+  background: #ffffff; color: #111111;
 }
-#trussal-studio-overlay .ts-btn.play  { background: #1ff466; color: #050f0a; }
-#trussal-studio-overlay .ts-btn.stop  { background: #2a2a2a; color: #fff; }
-#trussal-studio-overlay .ts-btn.ghost { background: rgba(255,255,255,0.08); color: #d6f5e2; }
-#trussal-studio-overlay .ts-btn.ghost.on { background: rgba(255,140,40,0.2); color: #ffac6b; }
+#trussal-studio-overlay .ts-btn.play  { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.stop  { background: #ffffff; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost { background: #ffffff; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost.on { background: #111111; color: #ffffff; }
 /* .ts-fx / .ts-fx-btn outlived the effects block \u2014 the bot cluster block styles its rows with them. */
-#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #b9d1c1; }
+#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #111111; }
 #trussal-studio-overlay .ts-fx-btn {
   padding:3px 10px; border-radius:999px;
-  border:1px solid rgba(255,255,255,0.15); background:transparent; color:#7aa68a;
+  border:1px solid #111111; background:#ffffff; color:#111111;
   font-size:11px; cursor:pointer;
   transition:border-color 0.15s, color 0.15s, background 0.15s;
 }
-#trussal-studio-overlay .ts-fx-btn:hover { color:#d6f5e2; border-color:rgba(255,255,255,0.3); }
-#trussal-studio-overlay .ts-fx-btn.on { color:#1ff466; border-color:rgba(31,244,102,0.4); background:rgba(31,244,102,0.08); }
-#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
-#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #7aa68a; }
-#trussal-studio-overlay .ts-meta b { color: #b9d1c1; font-weight: 600; }
+#trussal-studio-overlay .ts-fx-btn:hover { color:#111111; border-color:#111111; }
+#trussal-studio-overlay .ts-fx-btn.on { color:#ffffff; border-color:#111111; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#111111; color:#ffffff; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#ffffff; background:#111111; }
+#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #111111; }
+#trussal-studio-overlay .ts-meta b { color: #111111; font-weight: 700; }
 #trussal-studio-overlay .ts-dim { opacity: 0.72; }
-#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #5d7264; font-family: monospace; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; opacity: 0.55; font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
-  background: #050f0a; color:#1ff466;
+  background: #ffffff; color:#111111;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
+  border: 1px solid #111111; border-radius: 4px;
   padding: 8px; box-sizing: border-box;
   /* A fixed 160-280px fought short viewports (a phone in landscape, or the
      on-screen keyboard eating half the screen) \u2014 the overlay's own
@@ -52065,15 +52074,15 @@ ${SHORTCUT_LINES[fn]}
   width: 100%; resize: vertical;
   white-space: pre-wrap; overflow:auto;
 }
-#trussal-studio-overlay .ts-code:focus { outline: 1px solid rgba(31,244,102,0.5); }
+#trussal-studio-overlay .ts-code:focus { outline: 1px solid #111111; }
 @keyframes ts-eval-pulse {
-  0%   { box-shadow: 0 0 0 3px rgba(31,244,102,0.85); }
-  100% { box-shadow: 0 0 0 0   rgba(31,244,102,0); }
+  0%   { box-shadow: 0 0 0 3px rgba(17,17,17,0.85); }
+  100% { box-shadow: 0 0 0 0   rgba(17,17,17,0); }
 }
 #trussal-studio-overlay .ts-code.ts-eval-flash {
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
-#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #7aa68a; }
+#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #111111; }
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
@@ -52081,18 +52090,18 @@ ${SHORTCUT_LINES[fn]}
 #trussal-studio-overlay .ts-voice-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.15);
-  background: transparent; color: #7aa68a;
+  border: 1px solid #111111;
+  background: #ffffff; color: #111111;
   font-size: 11px; font-family: monospace; cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-#trussal-studio-overlay .ts-voice-btn:hover { color: #d6f5e2; border-color: rgba(255,255,255,0.3); }
-#trussal-studio-overlay .ts-voice-btn.on { color: #1ff466; border-color: rgba(31,244,102,0.4); background: rgba(31,244,102,0.08); }
+#trussal-studio-overlay .ts-voice-btn:hover { color: #111111; border-color: #111111; }
+#trussal-studio-overlay .ts-voice-btn.on { color: #ffffff; border-color: #111111; background: #111111; }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
 /* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
-   yellow-fills-then-green as every other dwell target. */
-#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+   invert-fill feedback as every other dwell target. */
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #111111; color: #ffffff; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #111111; color: #ffffff; background: #111111; }
 
 #trussal-studio-overlay .ts-sample-banks {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -52100,47 +52109,48 @@ ${SHORTCUT_LINES[fn]}
 }
 #trussal-studio-overlay .ts-sample-bank {
   padding: 1px 7px; border-radius: 3px;
-  background: rgba(31,244,102,0.1); color: #1ff466;
-  border: 1px solid rgba(31,244,102,0.25);
+  background: #ffffff; color: #111111;
+  border: 1px solid #111111;
   white-space: nowrap;
   font-size: 11px; font-family: monospace; cursor: pointer;
 }
-#trussal-studio-overlay .ts-sample-bank:hover { background: rgba(31,244,102,0.2); }
-/* Data packs read as a different kind of thing from sound banks. */
+#trussal-studio-overlay .ts-sample-bank:hover { background: #111111; color: #ffffff; }
+/* Data packs read as a different kind of thing from sound banks \u2014 dashed
+   border instead of a colour. */
 #trussal-studio-overlay .ts-sample-bank.data {
-  background: rgba(120,180,255,0.1); color: #7ab4ff;
-  border-color: rgba(120,180,255,0.3);
+  background: #ffffff; color: #111111;
+  border-color: #111111; border-style: dashed;
 }
-#trussal-studio-overlay .ts-sample-bank.data:hover { background: rgba(120,180,255,0.2); }
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: #111111; color: #ffffff; }
 #trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
 
 #trussal-studio-overlay .ts-sample-list {
   display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-  background: rgba(255,255,255,0.04);
+  background: #ffffff; border: 1px solid #111111;
   font-size: 11px; font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-item {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 3px 1px 6px; border-radius: 3px;
-  background: rgba(255,255,255,0.06); color: #cfd8e3;
+  background: #ffffff; color: #111111; border: 1px solid #111111;
   max-width: 100%;
 }
-#trussal-studio-overlay .ts-sample-idx { color: #7ab4ff; }
+#trussal-studio-overlay .ts-sample-idx { color: #111111; font-weight: 700; }
 #trussal-studio-overlay .ts-sample-label {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
 }
-#trussal-studio-overlay .ts-sample-len { color: #8a94a3; }
+#trussal-studio-overlay .ts-sample-len { color: #111111; opacity: 0.55; }
 #trussal-studio-overlay .ts-sample-x {
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
-  color: #ff7070; font-size: 13px; line-height: 1; font-family: monospace;
+  color: #111111; font-size: 13px; line-height: 1; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-x:hover { color: #fff; background: rgba(255,80,80,0.35); border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-x:hover { color: #ffffff; background: #111111; border-radius: 2px; }
 #trussal-studio-overlay .ts-sample-banks-del {
-  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: none; cursor: pointer;
-  background: rgba(255,80,80,0.12); color: #ff7070; font-size: 11px; font-family: monospace;
+  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid #111111; cursor: pointer;
+  background: #ffffff; color: #111111; font-size: 11px; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-banks-del:hover { background: rgba(255,80,80,0.22); }
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: #111111; color: #ffffff; }
 
 #trussal-studio-overlay .ts-sliders {
   display: flex; flex-wrap: wrap; gap: 10px 16px;
@@ -52150,11 +52160,11 @@ ${SHORTCUT_LINES[fn]}
   min-width: min(100px, 42vw); flex: 1 1 100px;
 }
 #trussal-studio-overlay .ts-slider-label {
-  font-size: 10px; font-family: monospace; color: #7aa68a;
+  font-size: 10px; font-family: monospace; color: #111111;
   display: flex; justify-content: space-between; gap: 6px;
 }
 #trussal-studio-overlay .ts-slider-input {
-  width: 100%; cursor: pointer; accent-color: #1ff466;
+  width: 100%; cursor: pointer; accent-color: #111111;
   height: 16px;
 }
 
@@ -52193,9 +52203,9 @@ ${SHORTCUT_LINES[fn]}
   z-index: 9999;
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  border: none;
-  background: #1ff466;
-  color: #050f0a;
+  border: 1px solid #111111;
+  background: #ffffff;
+  color: #111111;
   font-weight: 600;
   cursor: pointer;
   display: none;
@@ -55182,49 +55192,49 @@ ${full}
     s2.textContent = `
     #${PANEL_ID} {
       position:fixed; top:64px; right:16px; z-index:1000000;
-      background:rgba(8,14,12,0.96); color:#d6f5e2;
-      border:1px solid rgba(255,255,255,0.15); border-radius:10px;
-      font-family:sans-serif; font-size:12px;
+      background:#ffffff; color:#111111;
+      border:1px solid #111111; border-radius:10px;
+      font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:300px;
       display:none; flex-direction:column; gap:8px;
-      box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
+      box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
     }
     #${PANEL_ID} video {
       width:100%; border-radius:4px; display:block; transform:scaleX(-1);
-      background:#050f0a;
+      background:#111111;
     }
     #${PANEL_ID} .hv-mode-row { display:flex; gap:6px; }
     #${PANEL_ID} .hv-mode-btn {
       flex:1; padding:3px 0; border-radius:4px;
-      border:1px solid rgba(255,255,255,0.15);
-      background:rgba(255,255,255,0.04); color:#7aa68a;
+      border:1px solid #111111;
+      background:#ffffff; color:#111111;
       font-size:11px; cursor:pointer; text-align:center;
       transition:background 0.15s, color 0.15s;
     }
     #${PANEL_ID} .hv-mode-btn.on {
-      background:rgba(31,244,102,0.15); color:#1ff466;
-      border-color:rgba(31,244,102,0.4);
+      background:#111111; color:#ffffff;
+      border-color:#111111;
     }
     #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
-    #${PANEL_ID} .hv-title { font-weight:600; color:#1ff466; }
+    #${PANEL_ID} .hv-title { font-weight:600; color:#111111; }
     #${PANEL_ID} .hv-collapse-btn {
-      background:none; border:none; color:#5d7264; cursor:pointer;
+      background:none; border:none; color:#111111; cursor:pointer;
       font-size:13px; line-height:1; padding:0 2px; transition:color 0.15s;
     }
-    #${PANEL_ID} .hv-collapse-btn:hover { color:#d6f5e2; }
+    #${PANEL_ID} .hv-collapse-btn:hover { color:#111111; }
     #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
     #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:10px; color:#5d7264; line-height:1.5; }
+    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; opacity:0.6; line-height:1.5; }
 
     #${TOGGLE_ID} {
-      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
+      background:#ffffff; border:1px solid #111111;
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:sans-serif; white-space:nowrap;
+      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
     }
-    #${TOGGLE_ID}:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
-    #${TOGGLE_ID}.on { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+    #${TOGGLE_ID}:hover { color:#ffffff; background:#111111; }
+    #${TOGGLE_ID}.on { color:#ffffff; background:#111111; border-color:#111111; }
   `;
     document.head.appendChild(s2);
   }
@@ -56890,39 +56900,39 @@ ${snippet}${JP_BTN_MARKER}`;
     .tdr-grip-se::after {
       content: ''; position: absolute; right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(255,255,255,0.28);
-      border-bottom: 2px solid rgba(255,255,255,0.28);
+      border-right: 2px solid rgba(17,17,17,0.45);
+      border-bottom: 2px solid rgba(17,17,17,0.45);
     }
     /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
        facial-gesture.js's dwell loop clicks them for free; these rules stand
        on their own so they still look right if that panel never opened. */
     .tdr-head-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a; cursor: pointer; border-radius: 4px;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111; cursor: pointer; border-radius: 4px;
       padding: 1px 6px; font-size: 11px; line-height: 1.5;
-      font-family: sans-serif; white-space: nowrap;
+      font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
       /* Above the z-index:20 corner grips so a corner grip can't eat the
          button's clicks when it sits near a panel corner. */
       position: relative; z-index: 21; overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .tdr-head-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .tdr-head-btn.on { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.14); }
-    .tdr-head-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .tdr-head-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .tdr-head-btn:hover { background: #111111; color: #ffffff; }
+    .tdr-head-btn.on { border-color: #111111; color: #ffffff; background: #111111; }
+    .tdr-head-btn.strudel-dwell-hover { border-color: #111111; }
+    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
     .tdr-head-btn::after {
       content: ''; position: absolute; bottom: 0; left: 0;
       width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35); pointer-events: none;
+      background: rgba(17,17,17,0.28); pointer-events: none;
     }
-    .tdr-head-target { outline: 2px solid rgba(255,204,0,0.75); outline-offset: 2px; }
+    .tdr-head-target { outline: 2px solid #111111; outline-offset: 2px; }
     #${HINT_ID} {
       position: fixed; z-index: 1000002; pointer-events: none;
-      background: rgba(5,10,8,0.95); color: #ffcc00;
-      border: 1px solid rgba(255,204,0,0.4); border-radius: 999px;
-      font: 600 11px/1.4 sans-serif; padding: 3px 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      background: #ffffff; color: #111111;
+      border: 1px solid #111111; border-radius: 999px;
+      font: 600 11px/1.4 Arial, Helvetica, sans-serif; padding: 3px 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
   `;
     document.head.appendChild(s2);
@@ -57392,9 +57402,8 @@ ${code2}${BTN_MARKER}`;
   }
   function _setStatus(s2) {
     if (!_statusEl) return;
-    const cols = { ready: "#1ff466", loading: "#ffcc00", error: "#ff4444", idle: "#7aa68a" };
     _statusEl.textContent = s2;
-    _statusEl.style.color = cols[s2] ?? "#7aa68a";
+    _statusEl.style.color = "#111111";
   }
   function _processResult(result, gestureResult) {
     const blendshapes = result.faceBlendshapes?.[0]?.categories;
@@ -57743,9 +57752,9 @@ ${code2}${BTN_MARKER}`;
     #${FG_PANEL_ID} {
       position:fixed; top:64px; left:16px;
       z-index:1000000;
-      background:rgba(8,14,12,0.96); color:#d6f5e2;
-      border:1px solid rgba(255,255,255,0.15); border-radius:10px;
-      font-family:sans-serif; font-size:12px;
+      background:#ffffff; color:#111111;
+      border:1px solid #111111; border-radius:10px;
+      font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
       /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
          inline; these are the clamp floors/ceilings. The panel itself no
@@ -57755,7 +57764,7 @@ ${code2}${BTN_MARKER}`;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       overflow: hidden;
       display:none; flex-direction:column; gap:8px;
-      box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
+      box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
     }
     #${FG_PANEL_ID}.fg-collapsed { min-height:0; height:auto; }
     #${FG_PANEL_ID} #trussal-fg-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
@@ -57767,7 +57776,7 @@ ${code2}${BTN_MARKER}`;
     /* Keep handle controls clickable where a top corner grip overlaps them. */
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
-    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#1ff466; }
+    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
     #${FG_PANEL_ID} video { width:100%; border-radius:4px; display:block; transform:scaleX(-1); }
     #${FG_PANEL_ID} canvas {
@@ -57776,31 +57785,31 @@ ${code2}${BTN_MARKER}`;
     }
     #${FG_PANEL_ID} .fg-flash {
       font-size:11px; font-weight:600; text-align:center;
-      color:#ffcc00; opacity:0; transition:opacity 0.15s; min-height:1.2em;
+      color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
     }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#5d7264; line-height:1.7; }
+    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; opacity:0.6; line-height:1.7; }
     #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
 
     .strudel-head-btn {
       display:inline-block; padding:2px 8px; border-radius:999px;
-      border:1px solid #4a5568; background:transparent; color:#7dcfff;
+      border:1px solid #111111; background:#ffffff; color:#111111;
       font-size:11px; font-family:monospace; cursor:default; user-select:none;
-      transition:border-color 0.15s, color 0.15s;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
     }
-    .strudel-head-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    .strudel-head-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    .strudel-head-btn.strudel-dwell-hover { border-color:#111111; }
+    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#ffffff; }
     /* Already in the pattern / in the ring \u2014 the same "on" the editor cards show. */
-    .strudel-head-btn.strudel-btn-on { border-color:#1ff466; color:#1ff466; background:rgba(31,244,102,0.08); }
+    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#ffffff; background:#111111; }
 
     #${FG_PANEL_ID} .fg-section {
-      border-top: 1px solid rgba(255,255,255,0.08);
+      border-top: 1px solid #111111;
       padding-top: 8px;
       display: flex; flex-direction: column; gap: 4px;
     }
-    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#d6f5e2; font-size:11px; }
+    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#111111; font-size:11px; }
     #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
-      background:#050f0a; color:#d6f5e2;
-      border:1px solid rgba(255,255,255,0.15); border-radius:4px;
+      background:#ffffff; color:#111111;
+      border:1px solid #111111; border-radius:4px;
       padding:3px 6px; font-size:11px; box-sizing:border-box;
     }
     #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
@@ -57808,43 +57817,43 @@ ${code2}${BTN_MARKER}`;
     #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
     #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
     #${FG_PANEL_ID} input[type="number"]:focus {
-      outline:1px solid rgba(31,244,102,0.4);
+      outline:1px solid #111111;
     }
 
     #trussal-fg-toggle {
-      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
+      background:#ffffff; border:1px solid #111111;
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:sans-serif; white-space:nowrap;
+      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
     }
-    #trussal-fg-toggle:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
-    #trussal-fg-toggle.on    { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+    #trussal-fg-toggle:hover { color:#ffffff; background:#111111; }
+    #trussal-fg-toggle.on    { color:#ffffff; background:#111111; border-color:#111111; }
 
     .ts-dwell-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111;
       cursor: pointer;
       border-radius: 4px;
       padding: 2px 7px;
       font-size: 10px;
       line-height: 1.5;
-      font-family: sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .ts-dwell-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .ts-dwell-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .ts-dwell-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-dwell-btn:hover { background: #111111; color: #ffffff; }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: #111111; }
+    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
     .ts-dwell-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
   `;
@@ -57860,10 +57869,10 @@ ${code2}${BTN_MARKER}`;
     <svg width="${RING_R * 2 + 8}" height="${RING_R * 2 + 8}"
          viewBox="0 0 ${RING_R * 2 + 8} ${RING_R * 2 + 8}">
       <circle cx="${RING_R + 4}" cy="${RING_R + 4}" r="4"
-              fill="rgba(255,255,255,0.85)"/>
+              fill="#111111"/>
       <circle id="trussal-fg-ring"
         cx="${RING_R + 4}" cy="${RING_R + 4}" r="${RING_R}"
-        fill="none" stroke="#ffcc00" stroke-width="2.5" stroke-linecap="round"
+        fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round"
         stroke-dasharray="${RING_C.toFixed(2)} ${RING_C.toFixed(2)}"
         stroke-dashoffset="${RING_C.toFixed(2)}"
         transform="rotate(-90 ${RING_R + 4} ${RING_R + 4})"/>
@@ -57900,7 +57909,7 @@ ${code2}${BTN_MARKER}`;
         <div class="fg-section-title">head tilt amount</div>
         <div style="display:flex;align-items:center;gap:6px;">
           <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
-          <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+          <span style="font-size:10px;color:#111111;">semitones per tilt</span>
         </div>
       </div>
 
@@ -57913,7 +57922,7 @@ ${code2}${BTN_MARKER}`;
         </select>
         <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
         <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-        <div style="font-size:9px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:9px;color:#111111;line-height:1.5;">
           or annotate code:<br>
           <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
         </div>
@@ -57921,7 +57930,7 @@ ${code2}${BTN_MARKER}`;
 
       <div class="fg-section">
         <div class="fg-section-title">StrudelButton</div>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           write in code:<br>
           <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
           dwell with head cursor (1 s) to append/toggle that voice.
@@ -57930,7 +57939,7 @@ ${code2}${BTN_MARKER}`;
 
       <div class="fg-section">
         <div class="fg-section-title">JPatternButton</div>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           write in the JPattern editor:<br>
           <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
           <code style="font-size:9px">*# crush wcl 2</code><br>
@@ -57942,8 +57951,8 @@ ${code2}${BTN_MARKER}`;
 
       <div class="fg-section">
         <div class="fg-section-title">window.faceCtx</div>
-        <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <code style="font-size:9px;color:#111111">.gain(() =&gt; window.faceCtx.jawOpen)</code>
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           jawOpen, browInnerUp, headTilt,<br>
           eyeBlinkL/R, mouthSmileL/R,<br>
           cursorX, cursorY
@@ -58592,14 +58601,14 @@ ${s2}${BTN_MARKER}`)
       min-width: 320px; min-height: 170px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
-      background: rgba(5, 10, 8, 0.97);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: #ffffff;
+      border: 1px solid #111111;
       border-radius: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
       display: none;
       flex-direction: column;
       user-select: none;
-      font-family: sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       overflow: hidden;
     }
     /* Collapsed = title bar only: drop the height floor so it can shrink to
@@ -58622,24 +58631,22 @@ ${s2}${BTN_MARKER}`)
       position: absolute;
       right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(255,255,255,0.28);
-      border-bottom: 2px solid rgba(255,255,255,0.28);
+      border-right: 2px solid rgba(17,17,17,0.45);
+      border-bottom: 2px solid rgba(17,17,17,0.45);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
-       "body, body star { background-color: #0f5132 }" rule. Every structural
-       container below therefore has to state its OWN background or it paints
-       solid green over the panel's near-black -- which reads as a big dead
-       rectangle behind the keys. A bare class selector (0,1,0) already
-       out-ranks that rule (0,0,1), so transparent is enough here; the keys
-       and chips keep their own fills. */
+       "html, body, body star { background-color: #ffffff }" rule. Every
+       structural container below still states its OWN background so a
+       future theme change can't paint over the panel. A bare class
+       selector (0,1,0) already out-ranks that rule (0,0,1). */
     .ts-kbd-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 6px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      border-bottom: 1px solid #111111;
       cursor: grab;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-header:active { cursor: grabbing; }
     /* Collapse + the \u2725 / \u21F2 head buttons sit above the corner resize grips
@@ -58648,14 +58655,14 @@ ${s2}${BTN_MARKER}`)
     .ts-kbd-title {
       font-size: 11px;
       font-weight: 600;
-      color: #7aa68a;
+      color: #111111;
       letter-spacing: 0.5px;
       pointer-events: none;
     }
     .ts-kbd-collapse-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111;
       cursor: pointer;
       border-radius: 4px;
       padding: 1px 7px;
@@ -58665,16 +58672,16 @@ ${s2}${BTN_MARKER}`)
       overflow: hidden;
       transition: background 0.1s, color 0.1s;
     }
-    .ts-kbd-collapse-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-kbd-collapse-btn:hover { background: #111111; color: #ffffff; }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #111111; }
+    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #ffffff; }
     .ts-kbd-collapse-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
     .ts-kbd-body {
@@ -58684,7 +58691,7 @@ ${s2}${BTN_MARKER}`)
       flex-direction: column;
       gap: 3px;
       padding: 8px;
-      background: transparent;
+      background: #ffffff;
     }
     /* Shown only when it holds suggestions (see _updatePredictions) \u2014 an empty
        row here was the "rectangle that does nothing" between the title bar and
@@ -58697,15 +58704,15 @@ ${s2}${BTN_MARKER}`)
       min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
       padding: 1px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(31,244,102,0.35);
-      background: rgba(31,244,102,0.08);
-      color: #1ff466;
+      border: 1px solid #111111;
+      background: #ffffff;
+      color: #111111;
       font-family: ui-monospace, monospace;
       font-size: 11px;
       cursor: pointer;
@@ -58714,7 +58721,8 @@ ${s2}${BTN_MARKER}`)
       transition: background 0.08s;
     }
     .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: rgba(31,244,102,0.2);
+      background: #111111;
+      color: #ffffff;
     }
     .ts-kbd-pred-btn::after {
       content: '';
@@ -58722,7 +58730,7 @@ ${s2}${BTN_MARKER}`)
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.4);
+      background: rgba(17,17,17,0.35);
       pointer-events: none;
     }
     .ts-kbd-row {
@@ -58730,7 +58738,7 @@ ${s2}${BTN_MARKER}`)
       min-height: 0;
       display: flex;
       gap: 3px;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-key {
       min-height: 22px;
@@ -58739,9 +58747,9 @@ ${s2}${BTN_MARKER}`)
       align-items: center;
       justify-content: center;
       border-radius: 5px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.1);
-      color: #d6f5e2;
+      border: 1px solid #111111;
+      background: #ffffff;
+      color: #111111;
       font-size: 12px;
       cursor: pointer;
       position: relative;
@@ -58749,34 +58757,35 @@ ${s2}${BTN_MARKER}`)
       transition: background 0.05s;
     }
     .ts-kbd-key:hover {
-      background: rgba(255,255,255,0.18);
-      border-color: rgba(255,255,255,0.28);
+      background: #111111;
+      color: #ffffff;
+      border-color: #111111;
     }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: #111111; }
     .ts-kbd-key.ts-kbd-mod-on {
-      background: rgba(31,244,102,0.15);
-      border-color: rgba(31,244,102,0.4);
-      color: #1ff466;
+      background: #111111;
+      border-color: #111111;
+      color: #ffffff;
     }
     /* No !important: default flash colour, not a forced override \u2014 #trussal-kbd-panel
        is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
        through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3); }
+    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #ffffff; }
     .ts-kbd-key[data-k="Eval"] {
-      background: rgba(31,244,102,0.1);
-      border-color: rgba(31,244,102,0.35);
-      color: #1ff466;
+      background: #ffffff;
+      border-color: #111111;
+      color: #111111;
       font-size: 10px;
       font-weight: 600;
     }
-    .ts-kbd-key[data-k="Eval"]:hover { background: rgba(31,244,102,0.22); }
+    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #ffffff; }
     .ts-kbd-key::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.3);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
     .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
@@ -58786,24 +58795,24 @@ ${s2}${BTN_MARKER}`)
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
     #${KBD_TOGGLE_ID} {
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
-      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #7aa68a;
+      background: #ffffff; border: 1px solid #111111;
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #111111;
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       line-height: 1; display: flex; align-items: center; gap: 4px;
-      font-size: 11px; font-family: sans-serif; white-space: nowrap;
+      font-size: 11px; font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
       position: relative; overflow: hidden;
     }
-    #${KBD_TOGGLE_ID}:hover { color: #d6f5e2; background: rgba(255,255,255,0.1); }
-    #${KBD_TOGGLE_ID}.on    { color: #1ff466; background: rgba(31,244,102,0.12); border-color: rgba(31,244,102,0.3); }
-    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    #${KBD_TOGGLE_ID}:hover { color: #ffffff; background: #111111; }
+    #${KBD_TOGGLE_ID}.on    { color: #ffffff; background: #111111; border-color: #111111; }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #111111; }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #ffffff; }
     #${KBD_TOGGLE_ID}::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
   `;
@@ -59432,7 +59441,7 @@ ${s2}${BTN_MARKER}`)
     </div>
     <textarea class="ts-code jp-code" spellcheck="false" style="min-height:96px;"></textarea>
     <div class="ts-voice-btns nc-voice-btns"></div>
-    <div class="ts-meta nc-errors" style="color:#ff8a8a;"></div>
+    <div class="ts-meta nc-errors" style="color:#111111;"></div>
     <div class="ts-meta nc-byline"></div>
   `;
     container2.appendChild(wrap);
@@ -59629,7 +59638,7 @@ ${s2}${BTN_MARKER}`)
     }
     .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:2.25px solid #1ff466; border-radius:0;
+      border:2.25px solid #111111; border-radius:0;
       background:transparent;
     }
   `;
@@ -60110,7 +60119,7 @@ ${s2}${BTN_MARKER}`)
     el.className = "ts-fx";
     el.innerHTML = `
     <span class="ts-idx"></span>
-    <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
+    <span class="ts-bot-name" style="font-size:11px;color:#111111;"></span>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>

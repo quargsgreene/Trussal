@@ -311,9 +311,10 @@ function _flash(gesture) {
 
 function _setStatus(s) {
   if (!_statusEl) return;
-  const cols = { ready: '#1ff466', loading: '#ffcc00', error: '#ff4444', idle: '#7aa68a' };
+  // Flat theme: the status word itself ("ready" / "error" / …) carries the
+  // meaning, so every state is the same #111111 rather than a colour.
   _statusEl.textContent = s;
-  _statusEl.style.color = cols[s] ?? '#7aa68a';
+  _statusEl.style.color = '#111111';
 }
 
 function _processResult(result, gestureResult) {
@@ -749,9 +750,9 @@ function _injectStyles() {
     #${FG_PANEL_ID} {
       position:fixed; top:64px; left:16px;
       z-index:1000000;
-      background:rgba(8,14,12,0.96); color:#d6f5e2;
-      border:1px solid rgba(255,255,255,0.15); border-radius:10px;
-      font-family:sans-serif; font-size:12px;
+      background:#ffffff; color:#111111;
+      border:1px solid #111111; border-radius:10px;
+      font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
       /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
          inline; these are the clamp floors/ceilings. The panel itself no
@@ -761,7 +762,7 @@ function _injectStyles() {
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       overflow: hidden;
       display:none; flex-direction:column; gap:8px;
-      box-shadow:0 8px 24px rgba(0,0,0,0.5); user-select:none;
+      box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
     }
     #${FG_PANEL_ID}.fg-collapsed { min-height:0; height:auto; }
     #${FG_PANEL_ID} #trussal-fg-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
@@ -773,7 +774,7 @@ function _injectStyles() {
     /* Keep handle controls clickable where a top corner grip overlaps them. */
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
-    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#1ff466; }
+    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
     #${FG_PANEL_ID} video { width:100%; border-radius:4px; display:block; transform:scaleX(-1); }
     #${FG_PANEL_ID} canvas {
@@ -782,31 +783,31 @@ function _injectStyles() {
     }
     #${FG_PANEL_ID} .fg-flash {
       font-size:11px; font-weight:600; text-align:center;
-      color:#ffcc00; opacity:0; transition:opacity 0.15s; min-height:1.2em;
+      color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
     }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#5d7264; line-height:1.7; }
+    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; opacity:0.6; line-height:1.7; }
     #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
 
     .strudel-head-btn {
       display:inline-block; padding:2px 8px; border-radius:999px;
-      border:1px solid #4a5568; background:transparent; color:#7dcfff;
+      border:1px solid #111111; background:#ffffff; color:#111111;
       font-size:11px; font-family:monospace; cursor:default; user-select:none;
-      transition:border-color 0.15s, color 0.15s;
+      transition:border-color 0.15s, color 0.15s, background 0.15s;
     }
-    .strudel-head-btn.strudel-dwell-hover { border-color:#ffcc00; color:#ffcc00; }
-    .strudel-head-btn.strudel-btn-active  { border-color:#68d391; color:#68d391; }
+    .strudel-head-btn.strudel-dwell-hover { border-color:#111111; }
+    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#ffffff; }
     /* Already in the pattern / in the ring — the same "on" the editor cards show. */
-    .strudel-head-btn.strudel-btn-on { border-color:#1ff466; color:#1ff466; background:rgba(31,244,102,0.08); }
+    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#ffffff; background:#111111; }
 
     #${FG_PANEL_ID} .fg-section {
-      border-top: 1px solid rgba(255,255,255,0.08);
+      border-top: 1px solid #111111;
       padding-top: 8px;
       display: flex; flex-direction: column; gap: 4px;
     }
-    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#d6f5e2; font-size:11px; }
+    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#111111; font-size:11px; }
     #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
-      background:#050f0a; color:#d6f5e2;
-      border:1px solid rgba(255,255,255,0.15); border-radius:4px;
+      background:#ffffff; color:#111111;
+      border:1px solid #111111; border-radius:4px;
       padding:3px 6px; font-size:11px; box-sizing:border-box;
     }
     #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
@@ -814,43 +815,43 @@ function _injectStyles() {
     #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
     #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
     #${FG_PANEL_ID} input[type="number"]:focus {
-      outline:1px solid rgba(31,244,102,0.4);
+      outline:1px solid #111111;
     }
 
     #trussal-fg-toggle {
-      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#7aa68a;
+      background:#ffffff; border:1px solid #111111;
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:sans-serif; white-space:nowrap;
+      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
     }
-    #trussal-fg-toggle:hover { color:#d6f5e2; background:rgba(255,255,255,0.1); }
-    #trussal-fg-toggle.on    { color:#1ff466; background:rgba(31,244,102,0.12); border-color:rgba(31,244,102,0.3); }
+    #trussal-fg-toggle:hover { color:#ffffff; background:#111111; }
+    #trussal-fg-toggle.on    { color:#ffffff; background:#111111; border-color:#111111; }
 
     .ts-dwell-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111;
       cursor: pointer;
       border-radius: 4px;
       padding: 2px 7px;
       font-size: 10px;
       line-height: 1.5;
-      font-family: sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .ts-dwell-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .ts-dwell-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .ts-dwell-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-dwell-btn:hover { background: #111111; color: #ffffff; }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: #111111; }
+    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
     .ts-dwell-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
   `;
@@ -869,10 +870,10 @@ function _ensureDOM() {
     <svg width="${RING_R*2+8}" height="${RING_R*2+8}"
          viewBox="0 0 ${RING_R*2+8} ${RING_R*2+8}">
       <circle cx="${RING_R+4}" cy="${RING_R+4}" r="4"
-              fill="rgba(255,255,255,0.85)"/>
+              fill="#111111"/>
       <circle id="trussal-fg-ring"
         cx="${RING_R+4}" cy="${RING_R+4}" r="${RING_R}"
-        fill="none" stroke="#ffcc00" stroke-width="2.5" stroke-linecap="round"
+        fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round"
         stroke-dasharray="${RING_C.toFixed(2)} ${RING_C.toFixed(2)}"
         stroke-dashoffset="${RING_C.toFixed(2)}"
         transform="rotate(-90 ${RING_R+4} ${RING_R+4})"/>
@@ -911,7 +912,7 @@ function _ensureDOM() {
         <div class="fg-section-title">head tilt amount</div>
         <div style="display:flex;align-items:center;gap:6px;">
           <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
-          <span style="font-size:10px;color:#5d7264;">semitones per tilt</span>
+          <span style="font-size:10px;color:#111111;">semitones per tilt</span>
         </div>
       </div>
 
@@ -924,7 +925,7 @@ function _ensureDOM() {
         </select>
         <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
         <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-        <div style="font-size:9px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:9px;color:#111111;line-height:1.5;">
           or annotate code:<br>
           <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
         </div>
@@ -932,7 +933,7 @@ function _ensureDOM() {
 
       <div class="fg-section">
         <div class="fg-section-title">StrudelButton</div>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           write in code:<br>
           <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
           dwell with head cursor (1 s) to append/toggle that voice.
@@ -941,7 +942,7 @@ function _ensureDOM() {
 
       <div class="fg-section">
         <div class="fg-section-title">JPatternButton</div>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           write in the JPattern editor:<br>
           <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
           <code style="font-size:9px">*# crush wcl 2</code><br>
@@ -953,8 +954,8 @@ function _ensureDOM() {
 
       <div class="fg-section">
         <div class="fg-section-title">window.faceCtx</div>
-        <code style="font-size:9px;color:#7dcfff">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-        <div style="font-size:10px;color:#5d7264;line-height:1.5;">
+        <code style="font-size:9px;color:#111111">.gain(() =&gt; window.faceCtx.jawOpen)</code>
+        <div style="font-size:10px;color:#111111;line-height:1.5;">
           jawOpen, browInnerUp, headTilt,<br>
           eyeBlinkL/R, mouthSmileL/R,<br>
           cursorX, cursorY

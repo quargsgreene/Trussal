@@ -391,14 +391,14 @@ function _injectStyles() {
       min-width: 320px; min-height: 170px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
-      background: rgba(5, 10, 8, 0.97);
-      border: 1px solid rgba(255,255,255,0.15);
+      background: #ffffff;
+      border: 1px solid #111111;
       border-radius: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
       display: none;
       flex-direction: column;
       user-select: none;
-      font-family: sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       overflow: hidden;
     }
     /* Collapsed = title bar only: drop the height floor so it can shrink to
@@ -421,24 +421,22 @@ function _injectStyles() {
       position: absolute;
       right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(255,255,255,0.28);
-      border-bottom: 2px solid rgba(255,255,255,0.28);
+      border-right: 2px solid rgba(17,17,17,0.45);
+      border-bottom: 2px solid rgba(17,17,17,0.45);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
-       "body, body star { background-color: #0f5132 }" rule. Every structural
-       container below therefore has to state its OWN background or it paints
-       solid green over the panel's near-black -- which reads as a big dead
-       rectangle behind the keys. A bare class selector (0,1,0) already
-       out-ranks that rule (0,0,1), so transparent is enough here; the keys
-       and chips keep their own fills. */
+       "html, body, body star { background-color: #ffffff }" rule. Every
+       structural container below still states its OWN background so a
+       future theme change can't paint over the panel. A bare class
+       selector (0,1,0) already out-ranks that rule (0,0,1). */
     .ts-kbd-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 6px 10px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      border-bottom: 1px solid #111111;
       cursor: grab;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-header:active { cursor: grabbing; }
     /* Collapse + the ✥ / ⇲ head buttons sit above the corner resize grips
@@ -447,14 +445,14 @@ function _injectStyles() {
     .ts-kbd-title {
       font-size: 11px;
       font-weight: 600;
-      color: #7aa68a;
+      color: #111111;
       letter-spacing: 0.5px;
       pointer-events: none;
     }
     .ts-kbd-collapse-btn {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #7aa68a;
+      background: #ffffff;
+      border: 1px solid #111111;
+      color: #111111;
       cursor: pointer;
       border-radius: 4px;
       padding: 1px 7px;
@@ -464,16 +462,16 @@ function _injectStyles() {
       overflow: hidden;
       transition: background 0.1s, color 0.1s;
     }
-    .ts-kbd-collapse-btn:hover { background: rgba(255,255,255,0.12); color: #d6f5e2; }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    .ts-kbd-collapse-btn:hover { background: #111111; color: #ffffff; }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #111111; }
+    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #ffffff; }
     .ts-kbd-collapse-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
     .ts-kbd-body {
@@ -483,7 +481,7 @@ function _injectStyles() {
       flex-direction: column;
       gap: 3px;
       padding: 8px;
-      background: transparent;
+      background: #ffffff;
     }
     /* Shown only when it holds suggestions (see _updatePredictions) — an empty
        row here was the "rectangle that does nothing" between the title bar and
@@ -496,15 +494,15 @@ function _injectStyles() {
       min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
       padding: 1px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(31,244,102,0.35);
-      background: rgba(31,244,102,0.08);
-      color: #1ff466;
+      border: 1px solid #111111;
+      background: #ffffff;
+      color: #111111;
       font-family: ui-monospace, monospace;
       font-size: 11px;
       cursor: pointer;
@@ -513,7 +511,8 @@ function _injectStyles() {
       transition: background 0.08s;
     }
     .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: rgba(31,244,102,0.2);
+      background: #111111;
+      color: #ffffff;
     }
     .ts-kbd-pred-btn::after {
       content: '';
@@ -521,7 +520,7 @@ function _injectStyles() {
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.4);
+      background: rgba(17,17,17,0.35);
       pointer-events: none;
     }
     .ts-kbd-row {
@@ -529,7 +528,7 @@ function _injectStyles() {
       min-height: 0;
       display: flex;
       gap: 3px;
-      background: transparent;
+      background: #ffffff;
     }
     .ts-kbd-key {
       min-height: 22px;
@@ -538,9 +537,9 @@ function _injectStyles() {
       align-items: center;
       justify-content: center;
       border-radius: 5px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.1);
-      color: #d6f5e2;
+      border: 1px solid #111111;
+      background: #ffffff;
+      color: #111111;
       font-size: 12px;
       cursor: pointer;
       position: relative;
@@ -548,34 +547,35 @@ function _injectStyles() {
       transition: background 0.05s;
     }
     .ts-kbd-key:hover {
-      background: rgba(255,255,255,0.18);
-      border-color: rgba(255,255,255,0.28);
+      background: #111111;
+      color: #ffffff;
+      border-color: #111111;
     }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: rgba(255,204,0,0.5); }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: #111111; }
     .ts-kbd-key.ts-kbd-mod-on {
-      background: rgba(31,244,102,0.15);
-      border-color: rgba(31,244,102,0.4);
-      color: #1ff466;
+      background: #111111;
+      border-color: #111111;
+      color: #ffffff;
     }
     /* No !important: default flash colour, not a forced override — #trussal-kbd-panel
        is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
        through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: rgba(31,244,102,0.3); }
+    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #ffffff; }
     .ts-kbd-key[data-k="Eval"] {
-      background: rgba(31,244,102,0.1);
-      border-color: rgba(31,244,102,0.35);
-      color: #1ff466;
+      background: #ffffff;
+      border-color: #111111;
+      color: #111111;
       font-size: 10px;
       font-weight: 600;
     }
-    .ts-kbd-key[data-k="Eval"]:hover { background: rgba(31,244,102,0.22); }
+    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #ffffff; }
     .ts-kbd-key::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(255,204,0,0.3);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
     .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
@@ -585,24 +585,24 @@ function _injectStyles() {
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
     #${KBD_TOGGLE_ID} {
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
-      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #7aa68a;
+      background: #ffffff; border: 1px solid #111111;
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #111111;
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       line-height: 1; display: flex; align-items: center; gap: 4px;
-      font-size: 11px; font-family: sans-serif; white-space: nowrap;
+      font-size: 11px; font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
       position: relative; overflow: hidden;
     }
-    #${KBD_TOGGLE_ID}:hover { color: #d6f5e2; background: rgba(255,255,255,0.1); }
-    #${KBD_TOGGLE_ID}.on    { color: #1ff466; background: rgba(31,244,102,0.12); border-color: rgba(31,244,102,0.3); }
-    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #ffcc00; color: #ffcc00; }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { border-color: #68d391; color: #68d391; }
+    #${KBD_TOGGLE_ID}:hover { color: #ffffff; background: #111111; }
+    #${KBD_TOGGLE_ID}.on    { color: #ffffff; background: #111111; border-color: #111111; }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #111111; }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #ffffff; }
     #${KBD_TOGGLE_ID}::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(255,204,0,0.35);
+      background: rgba(17,17,17,0.28);
       pointer-events: none;
     }
   `;

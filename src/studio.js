@@ -192,6 +192,10 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
+// Feeds the --ts-chip-color / --ts-detail-color custom properties. The flat
+// monochrome theme (studio.css) no longer reads either, so this has no visual
+// effect today — kept (rather than ripping out the setProperty calls) so a
+// future themed variant can wire the properties back up in one place.
 function chipColor(jitsiId, isLocal) {
   return isLocal ? '#1ff466' : `hsl(${hueFor(jitsiId)}, 60%, 60%)`;
 }
@@ -389,7 +393,7 @@ function createBotRow() {
   el.className = 'ts-fx';
   el.innerHTML = `
     <span class="ts-idx"></span>
-    <span class="ts-bot-name" style="font-size:11px;color:#b9d1c1;"></span>
+    <span class="ts-bot-name" style="font-size:11px;color:#111111;"></span>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
     <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
