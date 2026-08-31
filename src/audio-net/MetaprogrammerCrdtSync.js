@@ -14,6 +14,7 @@ import * as Y from 'yjs';
 export const TEXT_KEY = 'metaprogram';
 export const MODULATION_KEY = 'modulation'; // induced wcl/wcpl floors
 export const VLANS_KEY = 'vlans';           // vlanName → { members, induced }
+export const SETTINGS_KEY = 'settings';     // room-wide runtime toggles (not program text)
 const SNAPSHOT_EVERY = 25;
 
 export function createMetaprogramDoc() {
@@ -22,7 +23,14 @@ export function createMetaprogramDoc() {
     doc,
     text: doc.getText(TEXT_KEY),
     modulation: doc.getMap(MODULATION_KEY),
-    vlans: doc.getMap(VLANS_KEY)
+    vlans: doc.getMap(VLANS_KEY),
+    // Room-wide runtime switches that are NOT the program and NOT a network
+    // floor — today just `delayedStreaming` (whether the aggregator pre-buffers
+    // each performer's off-turn output and streams the backlog on their turn
+    // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
+    // program nor perturbs the worst-case metrics; rides the 'metaprogram'
+    // channel so the same people who may edit the program may flip it.
+    settings: doc.getMap(SETTINGS_KEY)
   };
 }
 
@@ -78,7 +86,7 @@ export function setDocText(ytext, value, origin = 'local') {
 
 // Binds a doc to the sidecar relay via the peer-state bus. `bus` is injected
 // ({ subscribe, sendUpdate }) so tests can run two providers over a fake bus.
-export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { modality = 'keyboard' } = {}) {
+export function connectMetaprogramSync({ doc, text, modulation, vlans, settings }, bus, { modality = 'keyboard' } = {}) {
   let localUpdates = 0;
   const listeners = new Set();
   let lastAuthorIndex = null;
@@ -87,7 +95,9 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
     if (origin === 'remote') return; // don't echo remote updates back
     // Modulation/VLAN transactions declare their channel so the sidecar can
     // apply the bot canWriteModulation permission separately from
-    // canEditMetaprogram.
+    // canEditMetaprogram. A 'settings' transaction (room-wide runtime toggles)
+    // deliberately rides the 'metaprogram' channel — same edit privilege as the
+    // program, and it must not be gated by canWriteModulation.
     const channel = origin === 'modulation' ? 'modulation' : 'metaprogram';
     // 'apply' and 'roster' transactions carry their origin as the wire
     // modality: receivers RUN the program only on those (typing merely syncs
@@ -118,6 +128,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
     text,
     modulation,
     vlans,
+    settings,
     getText: () => text.toString(),
     setText: (value, origin = 'local') => setDocText(text, value, origin),
     onRemoteChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
@@ -183,6 +194,28 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans }, bus, { 
       const h = () => { try { fn(this.getVlans()); } catch (e) {} };
       vlans.observe(h);
       return () => vlans.unobserve(h);
+    },
+
+    // Room-wide runtime toggles (settingKey → value). A plain snapshot of the
+    // Y.Map — callers read `delayedStreaming` off it. Unset keys are simply
+    // absent, so `!!getSettings().delayedStreaming` is the honest default-off.
+    getSettings() {
+      const out = {};
+      if (settings) settings.forEach((v, k) => { out[k] = v; });
+      return out;
+    },
+    // Default origin 'settings' → connectMetaprogramSync's onDocUpdate maps it
+    // to the 'metaprogram' channel (not 'modulation'), so it carries the same
+    // edit privilege as the program and never fires onModulationChange.
+    setSetting(key, value, origin = 'settings') {
+      if (!settings) return;
+      doc.transact(() => settings.set(key, value), origin);
+    },
+    onSettingsChange(fn) {
+      if (!settings) return () => {};
+      const h = () => { try { fn(this.getSettings()); } catch (e) {} };
+      settings.observe(h);
+      return () => settings.unobserve(h);
     },
 
     disconnect() {

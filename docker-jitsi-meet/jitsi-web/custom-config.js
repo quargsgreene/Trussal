@@ -50244,7 +50244,14 @@ ${err.toString()}`);
       doc: doc2,
       text: doc2.getText(TEXT_KEY),
       modulation: doc2.getMap(MODULATION_KEY),
-      vlans: doc2.getMap(VLANS_KEY)
+      vlans: doc2.getMap(VLANS_KEY),
+      // Room-wide runtime switches that are NOT the program and NOT a network
+      // floor — today just `delayedStreaming` (whether the aggregator pre-buffers
+      // each performer's off-turn output and streams the backlog on their turn
+      // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
+      // program nor perturbs the worst-case metrics; rides the 'metaprogram'
+      // channel so the same people who may edit the program may flip it.
+      settings: doc2.getMap(SETTINGS_KEY)
     };
   }
   function encodeUpdateB64(update) {
@@ -50286,7 +50293,7 @@ ${err.toString()}`);
   function setDocText(ytext, value2, origin = "local") {
     return applyTextDiff(ytext, value2, origin);
   }
-  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans }, bus2, { modality = "keyboard" } = {}) {
+  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings }, bus2, { modality = "keyboard" } = {}) {
     let localUpdates = 0;
     const listeners = /* @__PURE__ */ new Set();
     let lastAuthorIndex = null;
@@ -50327,6 +50334,7 @@ ${err.toString()}`);
       text: text2,
       modulation,
       vlans,
+      settings,
       getText: () => text2.toString(),
       setText: (value2, origin = "local") => setDocText(text2, value2, origin),
       onRemoteChange: (fn) => {
@@ -50406,19 +50414,49 @@ ${err.toString()}`);
         vlans.observe(h2);
         return () => vlans.unobserve(h2);
       },
+      // Room-wide runtime toggles (settingKey → value). A plain snapshot of the
+      // Y.Map — callers read `delayedStreaming` off it. Unset keys are simply
+      // absent, so `!!getSettings().delayedStreaming` is the honest default-off.
+      getSettings() {
+        const out = {};
+        if (settings) settings.forEach((v2, k2) => {
+          out[k2] = v2;
+        });
+        return out;
+      },
+      // Default origin 'settings' → connectMetaprogramSync's onDocUpdate maps it
+      // to the 'metaprogram' channel (not 'modulation'), so it carries the same
+      // edit privilege as the program and never fires onModulationChange.
+      setSetting(key, value2, origin = "settings") {
+        if (!settings) return;
+        doc2.transact(() => settings.set(key, value2), origin);
+      },
+      onSettingsChange(fn) {
+        if (!settings) return () => {
+        };
+        const h2 = () => {
+          try {
+            fn(this.getSettings());
+          } catch (e30) {
+          }
+        };
+        settings.observe(h2);
+        return () => settings.unobserve(h2);
+      },
       disconnect() {
         doc2.off("update", onDocUpdate);
         unsubscribe();
       }
     };
   }
-  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SNAPSHOT_EVERY;
+  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, SNAPSHOT_EVERY;
   var init_MetaprogrammerCrdtSync = __esm({
     "src/audio-net/MetaprogrammerCrdtSync.js"() {
       init_yjs();
       TEXT_KEY = "metaprogram";
       MODULATION_KEY = "modulation";
       VLANS_KEY = "vlans";
+      SETTINGS_KEY = "settings";
       SNAPSHOT_EVERY = 25;
     }
   });
@@ -51225,9 +51263,12 @@ ${err.toString()}`);
     getQueueDepth: () => getQueueDepth,
     getVlans: () => getVlans,
     hasEffectShortcut: () => hasEffectShortcut,
+    isDelayedStreaming: () => isDelayedStreaming,
     isJPatternActive: () => isJPatternActive,
+    onDelayedStreamingChange: () => onDelayedStreamingChange,
     removeVlan: () => removeVlan,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
+    setDelayedStreaming: () => setDelayedStreaming,
     setInducedMetric: () => setInducedMetric,
     setJPatternActive: () => setJPatternActive,
     setVlan: () => setVlan,
@@ -51304,6 +51345,15 @@ ${err.toString()}`);
   }
   function getInducedMetrics() {
     return crdt ? crdt.getInduced() : {};
+  }
+  function isDelayedStreaming() {
+    return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
+  }
+  function setDelayedStreaming(on) {
+    ensureMetaprogramSync().setSetting("delayedStreaming", !!on);
+  }
+  function onDelayedStreamingChange(fn) {
+    return ensureMetaprogramSync().onSettingsChange((s2) => fn(!!s2.delayedStreaming));
   }
   function setVlan(name3, { members = [], induced = {} } = {}) {
     if (!name3) return false;
@@ -59835,6 +59885,8 @@ ${s2}${BTN_MARKER}`)
       <div class="ts-section-controls">
         <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">\u25B6 Apply &amp; Start</button>
         <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
+        <button class="ts-btn ghost ts-dwell-btn nc-delayed" type="button" aria-pressed="false"
+          title="Delayed Streaming \u2014 the aggregator pre-buffers each performer's off-turn output and streams that backlog on their turn (picking up where the last turn left off, falling through to live if it drains) instead of onsetting live. Room-wide; kept alongside the live-onset path for comparison.">Delayed Streaming</button>
         <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply &amp; start \xB7 Ctrl+. to stop</span>
       </div>
     </div>
@@ -59849,12 +59901,14 @@ ${s2}${BTN_MARKER}`)
     const bylineEl = wrap.querySelector(".nc-byline");
     const applyBtn = wrap.querySelector(".nc-apply");
     const stopBtn = wrap.querySelector(".nc-stop");
+    const delayedBtn = wrap.querySelector(".nc-delayed");
     const btnsEl = wrap.querySelector(".nc-voice-btns");
     const sync = ensureMetaprogramSync();
     const readOnly = metaprogramReadOnly();
     if (readOnly) {
       ta.setAttribute("readonly", "readonly");
       applyBtn.disabled = true;
+      delayedBtn.disabled = true;
     } else {
       wrap.querySelector(".nc-shortcuts").textContent = "Ctrl+Enter to apply & start \xB7 Ctrl+/ to comment \xB7 Ctrl+. to stop";
     }
@@ -59978,6 +60032,17 @@ ${s2}${BTN_MARKER}`)
     };
     applyBtn.addEventListener("click", apply2);
     stopBtn.addEventListener("click", stop2);
+    const paintDelayed = () => {
+      const on = isDelayedStreaming();
+      delayedBtn.classList.toggle("on", on);
+      delayedBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    };
+    delayedBtn.addEventListener("click", () => {
+      if (readOnly) return;
+      setDelayedStreaming(!isDelayedStreaming());
+    });
+    onDelayedStreamingChange(paintDelayed);
+    paintDelayed();
     ta.addEventListener("keydown", (e30) => {
       const meta = e30.ctrlKey || e30.metaKey;
       if (meta && e30.key === "Enter") {

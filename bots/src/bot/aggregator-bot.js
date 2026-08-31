@@ -53,6 +53,14 @@ const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
 // tracks the network and has no upper bound, but the window costs
 // ~192 kB/s/participant at 48 kHz Float32 — past this a ghost loops what it has.
 const MAX_RETAIN_MS = 10000;
+// Delayed Streaming (opt-in, room-wide toggle over the CRDT settings map): how
+// much of each performer's OFF-TURN output the aggregator banks per performer
+// before the oldest samples are overwritten. A turn only drains one turn/cycle
+// of it, while an off-turn performer fills it at real-time rate, so the backlog
+// climbs to this cap and then holds a steady ~cap-seconds of deliberate delay.
+// ~192 kB/s/participant at 48 kHz Float32, so 30 s ≈ 5.8 MB each — override with
+// BACKLOG_MS. Never below one turn (the drain slice would starve otherwise).
+const DEFAULT_BACKLOG_MS = 30000;
 // Ceiling on banked-but-unplayed scheduler slots. The scheduler only emits a
 // lookahead ahead of real time, so this is slack for a stalled playback loop,
 // not a working size.
@@ -202,6 +210,15 @@ export class AggregatorBot extends Bot {
     // streamed, so its turns loop that frozen audio rather than falling silent.
     // Reset at the start of each of the ghost's turns.
     #ghostReplayOffset = new Map();
+    // Delayed Streaming state. #delayedStreaming is the room-wide toggle (CRDT
+    // settings map, mirrored here by #setDelayedStreaming). #backlog is the
+    // per-present-participant FIFO of their OFF-TURN output: a RingBuffer (so a
+    // full one overwrites its oldest samples) written every ingest tick and
+    // drained only during that participant's own turn — one turn/cycle's worth
+    // per turn, resuming next turn where it left off. Empty/undefined until the
+    // toggle is on. Ghosts are NOT served from here (see #replayDepartedGhost).
+    #delayedStreaming = false;
+    #backlog = new Map();
     // Election-gate hysteresis state (see #isActiveNow): whether we have ever won
     // the active slot, and when we were last active. Held so a transient miss
     // can't silence the room mid-stream.
@@ -311,6 +328,14 @@ export class AggregatorBot extends Bot {
             ? Math.max(1, Math.round(this.holdMs * this.sampleRate / 1000))
             : Math.max(1, Math.floor(bufferSize));
         this.epoch = null;
+        // Delayed Streaming: the room-wide toggle's boot default (env
+        // DELAYED_STREAMING=1) and the per-participant backlog cap in ms. The
+        // CRDT settings map overrides the boot default at runtime via
+        // #setDelayedStreaming; the cap is fixed for the bot's life.
+        this.#delayedStreaming = cfg.delayedStreaming === true;
+        this.backlogMs = cfg.backlogMs != null
+            ? Math.max(1, Number(cfg.backlogMs))
+            : DEFAULT_BACKLOG_MS;
         // Turn length for the pre-metaprogram round-robin, and an injectable
         // clock so the alternation is testable without real time.
         this.slotMs = Math.max(1, Number(cfg.slotMs ?? DEFAULT_SLOT_MS));
@@ -677,6 +702,19 @@ export class AggregatorBot extends Bot {
             // Shared induced-metric floors move the effective worst case the
             // same way a measured change does.
             this.metaprogramDoc.onModulationChange(() => this.#refreshWorstCase());
+            // Room-wide runtime toggles. Delayed Streaming is the only one:
+            // browsers flip it from the Studio's JPattern card and it rides the
+            // CRDT `settings` map to here. Observe fires for live diffs and the
+            // late-join catch-up alike; apply whatever the doc already holds
+            // once too, in case the catch-up landed before this observer. Only
+            // an explicitly-set key overrides the boot default (env
+            // DELAYED_STREAMING) — an empty map means the room has expressed no
+            // preference, not "off".
+            const adoptSettings = (s) => {
+                if ('delayedStreaming' in s) this.#setDelayedStreaming(s.delayedStreaming);
+            };
+            this.metaprogramDoc.onSettingsChange(adoptSettings);
+            adoptSettings(this.metaprogramDoc.getSettings());
         }
 
         // Wait for ClockSync to converge before declaring an epoch, and give
@@ -1219,7 +1257,11 @@ export class AggregatorBot extends Bot {
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
         );
-        for (const token of retired) { this.#ghostReplayOffset.delete(token); this.#lastScheduledBuffer.delete(token); }
+        for (const token of retired) {
+            this.#ghostReplayOffset.delete(token);
+            this.#lastScheduledBuffer.delete(token);
+            this.#backlog.delete(token);
+        }
         console.log(`[aggregator-bot] metaprogram retired departed participant(s): ${retired.join(',')}`);
     }
 
@@ -1687,11 +1729,20 @@ export class AggregatorBot extends Bot {
             if (this.order.revive(identity)) {
                 this.#ghostReplayOffset.delete(token);
                 this.#lastScheduledBuffer.delete(token);
+                // A revived participant streams live again; drop the stale
+                // backlog so Delayed Streaming rebuilds their delay from now.
+                this.#backlog.delete(token);
             }
             const samples = take.samples;
             const rb = this.participantBuffer(token);
             const evictedBefore = rb.evicted;
             rb.write(samples);
+            // Delayed Streaming: every arriving frame also banks into the
+            // participant's off-turn backlog. Written unconditionally (on-turn
+            // frames included) — the FIFO is drained only during their turn, so
+            // an on-turn write just refills right behind the read cursor and
+            // keeps the stream continuous across the turn boundary.
+            if (this.#delayedStreaming) this.#backlogFor(token).write(samples);
             summary[token] = {
                 wrote: samples.length,
                 length: rb.length,
@@ -1785,6 +1836,16 @@ export class AggregatorBot extends Bot {
         if (departed) {
             held = this.#replayDepartedGhost(active, newTurn);
             heldFrom = 'ghost-replay';
+        } else if (this.#delayedStreaming) {
+            // Delayed Streaming: serve the head of this performer's OFF-TURN
+            // backlog, topping up from the live ring only if it underruns
+            // within the turn. What the backlog doesn't yield stays for the
+            // next turn, so their audio plays through continuously, one
+            // turn/cycle per turn, delayed rather than onsetting live.
+            this.#ghostReplayOffset.delete(active);
+            held = this.#drainDelayed(active, currentRingBuffer);
+            const backlog = this.#backlog.get(active);
+            heldFrom = (backlog && backlog.length) ? 'delayed-backlog' : 'delayed-underrun';
         } else if (!currentRingBuffer) {
             held = new Float32Array(0);
             heldFrom = 'no-buffer';
@@ -1844,10 +1905,12 @@ export class AggregatorBot extends Bot {
         if (now - this.#lastEmptyTurnLogAt < EMPTY_TURN_LOG_MS) return;
         this.#lastEmptyTurnLogAt = now;
         const retained = this.#lastScheduledBuffer.get(token);
+        const backlog = this.#backlog.get(token);
         console.warn(
             `[aggregator-bot] EMPTY TURN token=${token} via=${from} departed=${departed} ` +
             `newTurn=${newTurn} bufferLen=${ringBuffer ? ringBuffer.length : 'NO-BUFFER'} ` +
             `retainedLen=${retained ? retained.length : 0} ghostOffset=${this.#ghostReplayOffset.get(token) ?? 0} ` +
+            `delayed=${this.#delayedStreaming} backlogLen=${backlog ? backlog.length : 0} ` +
             `slice=${this.masterSliceSamples} bufferTokens=[${Object.keys(this.buffers)}] ring=[${this.order.order()}]`,
         );
     }
@@ -1945,6 +2008,81 @@ export class AggregatorBot extends Bot {
         return out;
     }
 
+    // --- Delayed Streaming ----------------------------------------------------
+
+    /**
+     * Whether the room-wide Delayed Streaming toggle is on. Public for the same
+     * reason schedulerPacing / patternTicking() are — a test asserts which
+     * turn-serving path it exercised.
+     */
+    get delayedStreaming() { return this.#delayedStreaming; }
+
+    /**
+     * Adopt the toggle from the CRDT `settings` map (wired in
+     * interpretAndExecuteMetaprogram). Turning it OFF frees every backlog so a
+     * later re-enable starts fresh and idle memory isn't held; turning it ON is
+     * a no-op here — the backlogs fill from the next ingest tick, so the first
+     * turn after a flip underruns straight to live and the delay builds from
+     * there.
+     */
+    #setDelayedStreaming(on) {
+        const next = !!on;
+        if (next === this.#delayedStreaming) return;
+        this.#delayedStreaming = next;
+        if (!next) {
+            for (const rb of this.#backlog.values()) rb.clear();
+            this.#backlog.clear();
+        }
+        console.log(`[aggregator-bot] delayed streaming ${next ? 'ENABLED' : 'disabled'} — ` +
+            (next
+                ? `performers pre-buffer while off-turn (cap ${this.backlogMs}ms); ` +
+                  'their turn streams the backlog, live only on underrun'
+                : 'reverted to live output onsetting at each turn'));
+    }
+
+    /**
+     * Per-participant backlog capacity in samples: BACKLOG_MS of audio, but
+     * never less than one drain slice (a smaller cap would evict faster than a
+     * single turn can read, so the backlog could never carry a whole turn).
+     */
+    #backlogCapacitySamples() {
+        return Math.max(this.masterSliceSamples,
+            Math.round(this.backlogMs * this.sampleRate / 1000));
+    }
+
+    /** Existing or freshly-created backlog FIFO for a token. */
+    #backlogFor(token) {
+        let rb = this.#backlog.get(token);
+        if (!rb) { rb = new RingBuffer(this.#backlogCapacitySamples()); this.#backlog.set(token, rb); }
+        return rb;
+    }
+
+    /**
+     * One playback tick's slice for a PRESENT (non-ghost) participant under
+     * Delayed Streaming: drain the head of their backlog first, and only if that
+     * underruns WITHIN the turn top the slice up from their live ring (the
+     * freshest ~holdMs). The backlog keeps whatever it did not yield, so the
+     * next turn resumes from there; the live ring is a genuine read, so a
+     * topped-up sample is never served twice. Also feeds #retainScheduled so a
+     * later departure still has a ghost-replay window.
+     */
+    #drainDelayed(token, liveRing) {
+        const need = this.masterSliceSamples;
+        const backlog = this.#backlog.get(token);
+        const fromBacklog = backlog ? backlog.read(Math.min(backlog.length, need)) : new Float32Array(0);
+        let out = fromBacklog;
+        if (fromBacklog.length < need && liveRing && liveRing.length) {
+            const rest = liveRing.read(Math.min(liveRing.length, need - fromBacklog.length));
+            if (rest.length) {
+                out = new Float32Array(fromBacklog.length + rest.length);
+                out.set(fromBacklog, 0);
+                out.set(rest, fromBacklog.length);
+            }
+        }
+        this.#retainScheduled(token, out);
+        return out;
+    }
+
     async playMasterBufferToClient() {
         // Drain the single-slot pending master (assembled this tick by
         // readAndAssembleMasterBuffer) and hand it to the page-side player, which
@@ -2025,6 +2163,8 @@ export class AggregatorBot extends Bot {
         this.#resetSlotPacing();
         this.#ghostReplayOffset.clear();
         this.#lastScheduledBuffer.clear();
+        for (const rb of this.#backlog.values()) rb.clear();
+        this.#backlog.clear();
         for (const rb of Object.values(this.buffers)) rb.clear();
         await super.stop();
     }
@@ -2164,6 +2304,7 @@ export class AggregatorBot extends Bot {
         );
         this.#ghostReplayOffset.delete(token);
         this.#lastScheduledBuffer.delete(token);
+        this.#backlog.delete(token);
         if (this.#activeToken === token) this.#activeToken = null;
         // reason distinguishes a real ring compaction (join-order mode) from an
         // off-ring pin drop; hadRingSlot=true on an off-ring drop would flag the

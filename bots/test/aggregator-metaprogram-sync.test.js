@@ -183,6 +183,50 @@ test('a stop broadcast leaves the running program and ring untouched (silencing 
   }
 });
 
+test('the Delayed Streaming toggle rides the settings map from a human to the aggregator', { timeout: 30000 }, async () => {
+  const { wss } = createLatencyServer({ port: 0 });
+  await new Promise(r => wss.once('listening', r));
+  const port = wss.address().port;
+
+  const human = await connectHuman(port);
+
+  const bot = new AggregatorBot(
+    { botId: 99999, name: 'agg', jitsiUrl: `http://127.0.0.1:${port}/${ROOM}`, ingestIntervalMs: 0, playbackIntervalMs: 0 },
+    {
+      launcher: { launch: async () => { throw new Error('no browser in this test'); } },
+      connectSidecar: makeWsSidecarConnector(WebSocket),
+      webSocketImpl: WebSocket,
+      logIngest: false,
+      isActive: () => true
+    }
+  );
+
+  try {
+    human.sync.setText(mp('$ participants <0>'), 'roster');
+    await sleep(150);
+    await bot.interpretAndExecuteMetaprogram();
+    await sleep(200);
+    assert.equal(bot.delayedStreaming, false, 'off until the room asks for it');
+
+    // The Studio button: a settings-map write, not a program edit — the
+    // program text and ring are untouched.
+    human.sync.setSetting('delayedStreaming', true);
+    await sleep(300);
+    assert.equal(bot.delayedStreaming, true, 'the aggregator adopted the room-wide toggle');
+    assert.equal(bot.programText, mp('$ participants <0>'), 'the toggle did not touch the program');
+    assert.deepEqual(bot.order.order(), ['0'], 'nor the ring');
+
+    human.sync.setSetting('delayedStreaming', false);
+    await sleep(300);
+    assert.equal(bot.delayedStreaming, false, 'and the flip back reaches it too');
+  } finally {
+    await bot.stop().catch(() => {});
+    human.ws.close();
+    wss.close();
+    for (const c of wss.clients) c.terminate();
+  }
+});
+
 test('aggregator broadcasts jp-active on each ring turn change; the browser receives it deduped', { timeout: 30000 }, async () => {
   const { wss } = createLatencyServer({ port: 0 });
   await new Promise(r => wss.once('listening', r));

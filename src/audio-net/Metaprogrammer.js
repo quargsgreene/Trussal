@@ -230,6 +230,38 @@ export function getInducedMetrics() {
   return crdt ? crdt.getInduced() : {};
 }
 
+// --- Delayed Streaming toggle -------------------------------------------------
+//
+// A room-wide switch, shared over the CRDT doc's `settings` map, that changes
+// how the aggregator serves each performer's turn:
+//
+//   OFF (default) — a turn onsets the performer's LIVE output the instant the
+//   ring reaches them. Everything they played while waiting was only ever held
+//   in a sub-second rolling buffer and is gone, so the room hears an abrupt
+//   jump-in every turn (the "hiccup").
+//
+//   ON — the aggregator accumulates each performer's off-turn output into a
+//   bounded per-performer backlog and streams THAT on their turn, picking up
+//   where the previous turn left off. If the backlog drains before the turn
+//   ends it falls through to live; if the turn ends first the remainder is kept
+//   for next time. Past the cap the oldest samples are overwritten.
+//
+// The browser scheduler being dormant, this only takes effect in the
+// aggregator (bots/src/bot/aggregator-bot.js); the toggle is kept alongside the
+// live-onset path so the two can be compared in a running room.
+export function isDelayedStreaming() {
+  return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
+}
+
+export function setDelayedStreaming(on) {
+  ensureMetaprogramSync().setSetting('delayedStreaming', !!on);
+}
+
+// fn(bool) on every change (local flip included, so a button can paint itself).
+export function onDelayedStreamingChange(fn) {
+  return ensureMetaprogramSync().onSettingsChange((s) => fn(!!s.delayedStreaming));
+}
+
 // VLAN grouping: place peers into an additional named VLAN with its own
 // local induced conditions. All VLANs mix down to the single master bus;
 // the default is one mutual VLAN (no entries).

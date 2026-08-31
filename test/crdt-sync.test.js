@@ -90,6 +90,54 @@ test('apply/roster origins ride the wire as their modality; typing stays keyboar
   sync.disconnect();
 });
 
+test('settings map: setSetting rides the metaprogram channel as a keyboard edit, converges, and notifies', () => {
+  const a = createMetaprogramDoc();
+  const sent = [];
+  const bus = {
+    subscribe: () => () => {},
+    sendUpdate: (update, opts) => sent.push({ update, ...opts })
+  };
+  const sync = connectMetaprogramSync(a, bus);
+
+  // A room-wide toggle is neither program text nor a network floor: it must
+  // NOT stamp modality 'apply'/'roster' (no receiver should re-run the
+  // program) and must NOT ride the 'modulation' channel (not gated by
+  // canWriteModulation).
+  sync.setSetting('delayedStreaming', true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].modality, 'keyboard');
+  assert.equal(sent[0].channel, 'metaprogram');
+  assert.deepEqual(sync.getSettings(), { delayedStreaming: true });
+  assert.equal(sync.getText(), '', 'a settings write leaves the program text untouched');
+
+  sync.disconnect();
+});
+
+test('settings map: two docs converge on a toggle and onSettingsChange fires on both ends', () => {
+  const a = createMetaprogramDoc();
+  const b = createMetaprogramDoc();
+  const [busA, busB] = fakeBusPair();
+  const syncA = connectMetaprogramSync(a, busA);
+  const syncB = connectMetaprogramSync(b, busB);
+
+  const seenA = [];
+  const seenB = [];
+  syncA.onSettingsChange((s) => seenA.push(!!s.delayedStreaming));
+  syncB.onSettingsChange((s) => seenB.push(!!s.delayedStreaming));
+
+  syncB.setSetting('delayedStreaming', true);   // remote peer flips it on
+  assert.equal(syncA.getSettings().delayedStreaming, true, 'the flip reaches the other doc');
+  assert.deepEqual(seenB, [true], 'the flipping peer is notified of its own change');
+  assert.deepEqual(seenA, [true], 'the other peer is notified of the remote change');
+
+  syncA.setSetting('delayedStreaming', false);  // and back off from the other end
+  assert.equal(syncB.getSettings().delayedStreaming, false);
+  assert.deepEqual(seenA, [true, false]);
+  assert.deepEqual(seenB, [true, false]);
+
+  syncA.disconnect(); syncB.disconnect();
+});
+
 test('broadcastStop ships a zero-diff snapshot stamped stop, leaving the text unchanged', () => {
   const a = createMetaprogramDoc();
   const sent = [];

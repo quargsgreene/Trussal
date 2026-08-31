@@ -727,6 +727,164 @@ test('single human, no bots: one continuous stream, never alternating', async ()
   await bot.stop();
 });
 
+// --- Delayed Streaming -------------------------------------------------------
+// The room-wide opt-in toggle. OFF (default), a turn onsets the performer's
+// LIVE output the instant the ring reaches them. ON, the aggregator banks each
+// performer's OFF-TURN output into a bounded FIFO and streams that backlog on
+// their turn — resuming where the previous turn left off, falling through to
+// live only when it drains, overwriting the oldest samples past the cap.
+//
+// sampleRate 1000 + playbackIntervalMs 10 -> masterSliceSamples 10 (one turn
+// drains 10 samples per read), so a handful of samples per batch is a whole
+// turn's worth and the FIFO arithmetic is legible. Batch levels are all
+// float32-exact (k / 2^n) so Float32Array round-trips them for deepEqual.
+
+test('delayed streaming: OFF by default — a turn drains the live buffer (onset), no backlog', async () => {
+  const { fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+  assert.equal(bot.delayedStreaming, false, 'off unless explicitly enabled');
+
+  bot.buffers['0'] = new RingBuffer(1024);
+  bot.buffers['0'].write(new Array(200).fill(0.5));
+
+  const a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0');
+  assert.equal(a.assembled, 200, 'the live buffer is drained straight out');
+  assert.equal(bot.buffers['0'].length, 0, 'nothing is retained as a backlog');
+  // Next turn: the live buffer is empty and nothing accumulated, so silence.
+  assert.equal((await bot.readAndAssembleMasterBuffer()).assembled, 0);
+
+  await bot.stop();
+});
+
+test('delayed streaming: ON — a performer\'s off-turn output is banked and streamed FIFO, resuming across turn boundaries', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 1000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 100000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+  assert.equal(bot.delayedStreaming, true);
+  assert.equal(bot.masterSliceSamples, 10, 'one read drains 10 samples');
+
+  // Two performers join; each writes twice while the ring still sits on 0.
+  clock = 0;
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'h0', token: '0', samples: new Array(10).fill(0.5) },
+    { jitsiId: 'h1', token: '1', samples: new Array(10).fill(0.25) },
+  ]);
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'h0', token: '0', samples: new Array(10).fill(0.375) },
+    { jitsiId: 'h1', token: '1', samples: new Array(10).fill(0.75) },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0', '1']);
+
+  // 0's turn: streams its backlog OLDEST-FIRST, not "live now".
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.5), 'first buffered batch');
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.375), 'then the second — backlog drains in order');
+
+  // A third batch arrives for 0 while it is still 0's turn; 0's backlog is now
+  // empty so it is banked, not streamed yet.
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'h0', token: '0', samples: new Array(10).fill(0.125) },
+  ]);
+
+  // 1's turn: its own backlog, oldest-first.
+  clock = 1000;
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.25), '1 streams its first buffered batch');
+
+  // Back to 0: it RESUMES from where its backlog stood — the batch banked
+  // during its previous turn — rather than jumping to the newest audio.
+  clock = 2000;
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.125),
+    'the delay carries across the turn boundary');
+
+  await bot.stop();
+});
+
+test('delayed streaming: a turn that outruns the backlog falls through to live, without re-serving', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 100000 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // One performer (every slot is theirs). 15 samples of "old" audio bank into
+  // both the backlog and the live ring...
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'h0', token: '0', samples: new Array(15).fill(0.5) },
+  ]);
+  // ...then the live ring is replaced with distinct "fresh" audio, so a
+  // fall-through is identifiable.
+  bot.buffers['0'].clear();
+  bot.buffers['0'].write(new Array(30).fill(0.25));
+
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.5), 'read 1: all from the backlog');
+
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), [...new Array(5).fill(0.5), ...new Array(5).fill(0.25)],
+    'read 2: backlog underruns mid-slice, the remainder tops up from live');
+
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), new Array(10).fill(0.25),
+    'read 3: pure live — the 5 borrowed samples were consumed, not re-served');
+
+  await bot.stop();
+});
+
+test('delayed streaming: the backlog is bounded — past the cap the oldest samples are overwritten', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  let clock = 0;
+  const bot = new AggregatorBot(
+    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 20 },
+    { launcher: fakeLauncher, logIngest: false, now: () => clock },
+    {}, 1024,
+  );
+  await bot.start();
+
+  // 30 distinct float32-exact samples into a 20-sample cap -> the first 10
+  // (v1..v10) are overwritten before the turn ever reads.
+  const v = (i) => i / 256;
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'h0', token: '0', samples: Array.from({ length: 30 }, (_, i) => v(i + 1)) },
+  ]);
+
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), Array.from({ length: 10 }, (_, i) => v(i + 11)),
+    'the backlog starts at v11 — v1..v10 were evicted at the cap');
+
+  await bot.readAndAssembleMasterBuffer();
+  await bot.playMasterBufferToClient();
+  assert.deepEqual(calls.enqueued.at(-1), Array.from({ length: 10 }, (_, i) => v(i + 21)),
+    'then v21..v30 — the cap held exactly the newest 20');
+
+  await bot.stop();
+});
+
 // --- sample validation: only finite floats in [-1.0, 1.0] are accepted -------
 // A sample is valid normalized PCM iff it is a finite number within full scale.
 // Out-of-range magnitudes and non-number data types are rejected, so corrupt or

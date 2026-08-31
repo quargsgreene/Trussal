@@ -124,6 +124,11 @@ async function aggregatorMain() {
     sampleRate: Number(env('SAMPLE_RATE', '48000')),
     // Gain-staging ceiling for the assembled master (full scale = 1.0).
     gainCeiling: Number(env('GAIN_CEILING', '1.0')),
+    // Delayed Streaming: DELAYED_STREAMING=1 makes it the boot default (the
+    // room's Studio toggle, over the CRDT settings map, overrides it at
+    // runtime). BACKLOG_MS caps the per-performer off-turn backlog.
+    delayedStreaming: env('DELAYED_STREAMING', '') === '1',
+    backlogMs: env('BACKLOG_MS', '') ? Number(env('BACKLOG_MS', '')) : undefined,
     // Claim the room's single aggregator slot before joining; a losing bot exits
     // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).
   }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket), webSocketImpl: WebSocket }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
