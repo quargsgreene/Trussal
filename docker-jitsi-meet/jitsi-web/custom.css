@@ -169,29 +169,28 @@ body.welcome-page #trussal-room-field::placeholder {
  * centred name field + Join button.
  * ------------------------------------------------------------------ */
 
-/* The camera / avatar preview behind the prejoin form. This Jitsi build
-   renders the prejoin with Emotion CSS-in-JS (`css-<hash>-<label>`
-   classes), so target the stable label substrings as well as the legacy
-   ids/classes: the video is `#largeVideo`, the placeholder is
-   `[class*="avatar"]`. */
+/* Hide ONLY the camera video and the camera-off avatar placeholder. This
+   Jitsi build renders the prejoin with Emotion CSS-in-JS, so also match the
+   `avatar` label substring. Everything here must be a leaf (the <video> or
+   the avatar circle) — NOT a wrapper: `contentControls` / `paddedContent`
+   wrap the whole prejoin form (title + name input + Join button) in this
+   build, so hiding those blanks the page. `#largeVideo` is scoped to the
+   prejoin so the in-call stage video is untouched. */
 #preview,
-#largeVideo,
 .premeeting-screen video,
 .premeeting-screen #largeVideo,
-.premeeting-screen [class*="preview"],
-.premeeting-screen [class*="avatar"],
 .premeeting-screen .preview-overlay,
+.premeeting-screen [class*="avatar"],
 div[class*="premeeting"] video {
   display: none !important;
 }
 
-/* The device / background-effect button row and the "you need to enable
-   mic/camera" status pill (`css-…-deviceStatus`, amber): preview chrome
-   with nothing left to preview. Leaves only the name input + Join. */
+/* Legacy device / effect button row (older jitsi markup). The current
+   Emotion build has no separate row to hide — its controls live inside the
+   same wrapper as the form, so no `[class*="…"]` wrapper selector here. */
 .premeeting-screen .toolbox-content-wrapper,
 .premeeting-screen .toolbox-content,
 .premeeting-screen .media-controls,
-.premeeting-screen [class*="contentControls"],
 .premeeting-screen .connection-status {
   display: none !important;
 }
