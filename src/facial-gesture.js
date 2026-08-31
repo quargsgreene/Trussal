@@ -102,7 +102,13 @@ trackEditorFocus();
 // metaprogram. Rebuild it the moment focus moves; the rebuild is a no-op when
 // the buttons come out the same.
 if (typeof document !== 'undefined') {
-  document.addEventListener('focusin', () => refreshFacialGestureButtons());
+  document.addEventListener('focusin', (e) => {
+    refreshFacialGestureButtons();
+    // Any focused code editor becomes the one the head cursor holds focus on
+    // when the cursor later moves off to the on-screen keyboard — regardless
+    // of whether it was the head cursor, a click, or Tab that focused it.
+    if (e.target?.classList?.contains('ts-code')) _stickyEditor = e.target;
+  });
 }
 
 function getCode() {
@@ -243,11 +249,23 @@ const _ema = {
   cursorX: typeof window !== 'undefined' ? window.innerWidth  / 2 : 0,
   cursorY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
 };
-const _latch      = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
+const _latch      = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false };
 // _dwell.type: 'strudel' | 'fx' | null.  key is strudelCode or fx name.
 const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false };
 // What the dwell bar currently shows, so an unchanged rebuild is skipped.
 let _barKey = null;
+
+// Head-cursor editor targeting (see _followEditorCaret):
+//  • _stickyEditor stays focused after the head cursor leaves it, so the
+//    performer can move off to the on-screen keyboard and keep typing there.
+//  • _caretLocked is a thumbs-down freeze — while set, the head cursor no
+//    longer moves the editor's blinking caret (another thumbs-down clears it).
+//    Local to this browser; nothing about it is broadcast.
+//  • _caretEl / _caretAppliedAt back the anti-jitter travel threshold.
+let _stickyEditor   = null;
+let _caretLocked    = false;
+let _caretEl        = null;
+let _caretAppliedAt = { x: -Infinity, y: -Infinity };
 
 // Dwell-hoverable elements, refreshed on a throttle rather than re-querying the
 // whole document every animation frame (60fps) — the query itself (a five-part
@@ -281,6 +299,8 @@ function _flash(gesture) {
     drumDensity:   '◎ drum density (brow raise)',
     headTiltLeft:  `← tilt left → −${_headTiltDelta}st`,
     headTiltRight: `→ tilt right → +${_headTiltDelta}st`,
+    caretLock:     '🔒 caret locked (thumbs down)',
+    caretUnlock:   '🔓 caret unlocked (thumbs down)',
   };
   _flashEl.textContent = labels[gesture] ?? gesture;
   _flashEl.style.opacity = '1';
@@ -371,6 +391,19 @@ function _processGestures(blendshapes, gestureResult) {
   }
   if (_latch.thumbsUp && !isThumbsUp) {
     _latch.thumbsUp = false;
+  }
+
+  // caret lock — thumbs down toggles whether the head cursor may move the
+  // focused editor's blinking caret (see _followEditorCaret). Local to this
+  // browser; nothing about it is broadcast to other participants.
+  const isThumbsDown = topGesture?.categoryName === 'Thumb_Down' && topGesture.score > THUMBS_UP_THRESHOLD;
+  if (isThumbsDown && !_latch.thumbsDown) {
+    _latch.thumbsDown = true;
+    _caretLocked = !_caretLocked;
+    _flash(_caretLocked ? 'caretLock' : 'caretUnlock');
+  }
+  if (_latch.thumbsDown && !isThumbsDown) {
+    _latch.thumbsDown = false;
   }
 
   // update/eval — left blink only (right blink and double-blink are unmapped)
@@ -467,6 +500,14 @@ function _detectionLoop() {
   // Dwell detection over .strudel-head-btn, .ts-fx-dwell-btn, and .ts-dwell-btn elements.
   const cx = _ema.cursorX;
   const cy = _ema.cursorY;
+
+  // Head cursor over a Studio code editor → make that textarea the focused
+  // target and (unless the caret is thumbs-down locked) walk its blinking
+  // caret to the character under the cursor. The editor then stays focused
+  // even after the cursor leaves it, so the performer can move to the
+  // on-screen keyboard and keep typing there.
+  _followEditorCaret(cx, cy);
+
   let hoveredKey  = null;
   let hoveredType = null;
   let hoveredEl   = null;
@@ -537,6 +578,70 @@ function _detectionLoop() {
   _rafId = requestAnimationFrame(_detectionLoop);
 }
 
+// ---------------------------------------------------------------------------
+// Head-cursor caret follow — hovering a .ts-code editor (personal Strudel or
+// the shared JPattern one, both carry the class) focuses it and moves the
+// insertion point to the character under the cursor. Focus is then held on
+// that editor even after the cursor moves off (so the performer can type on
+// the on-screen keyboard); a thumbs-down freezes the caret until the next
+// thumbs-down (_caretLocked, set in _processGestures).
+// ---------------------------------------------------------------------------
+function _isEditable(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || el.isContentEditable === true;
+}
+
+function _followEditorCaret(cx, cy) {
+  // Keep a head-cursor-focused editor focused after the cursor leaves it —
+  // but only reclaim focus that was lost to nothing (a re-render, a click on
+  // the empty page). Never yank it out of another field the user is in.
+  if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
+  if (_stickyEditor && document.activeElement !== _stickyEditor &&
+      !_isEditable(document.activeElement)) {
+    _stickyEditor.focus({ preventScroll: true });
+  }
+
+  let over = null;
+  for (const ta of document.querySelectorAll('#trussal-studio-overlay textarea.ts-code')) {
+    const r = ta.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 &&
+        cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+      over = ta;
+      break;
+    }
+  }
+  if (!over) { _caretEl = null; return; }
+
+  if (document.activeElement !== over) over.focus({ preventScroll: true });
+  _stickyEditor = over;
+
+  // Thumbs-down freeze: the head cursor still focuses the editor, but it no
+  // longer moves the blinking caret — that stays wherever it was when the
+  // gesture fired (and where the keyboard advances it as the performer types).
+  if (_caretLocked) return;
+
+  // Re-seat the caret only once the cursor has actually travelled: EMA jitter
+  // of a "still" head must not keep yanking the insertion point away from
+  // someone typing on the physical keyboard with the head cursor parked here.
+  if (over === _caretEl &&
+      Math.abs(cx - _caretAppliedAt.x) < 6 &&
+      Math.abs(cy - _caretAppliedAt.y) < 6) return;
+
+  // Blink hands back the textarea itself as offsetNode, with offset an index
+  // into .value (verified Chrome 150, the deploy target). Without the API the
+  // caret just stays put — focus still moved, so input still lands here.
+  const pos = typeof document.caretPositionFromPoint === 'function'
+    ? document.caretPositionFromPoint(cx, cy)
+    : null;
+  if (pos && pos.offsetNode === over && Number.isFinite(pos.offset)) {
+    const i = Math.max(0, Math.min(over.value.length, pos.offset));
+    try { over.setSelectionRange(i, i); } catch {}
+  }
+  _caretEl        = over;
+  _caretAppliedAt = { x: cx, y: cy };
+}
+
 function _toggleFxEffect(fxName) {
   const peer = getLocalPeer();
   if (!peer) return;
@@ -596,7 +701,10 @@ function _stopCamera() {
     eyeBlinkLeft: 0, eyeBlinkRight: 0,
     cursorX: window.innerWidth / 2, cursorY: window.innerHeight / 2,
   });
-  Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false });
+  Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false });
+  _stickyEditor = null;
+  _caretLocked  = false;
+  _caretEl      = null;
   if (_cursorEl) _cursorEl.style.display = 'none';
   _setStatus('idle');
 }
@@ -792,6 +900,7 @@ function _ensureDOM() {
       <div class="fg-hints">
         smile → play<br>
         thumbs up → stop<br>
+        thumbs down → lock / unlock caret<br>
         left blink → update code<br>
         raise eyebrows → drum density<br>
         tilt head → transpose ±<span id="trussal-fg-tilt-label">2</span>st<br>
@@ -934,6 +1043,16 @@ export function injectFacialGestureToggle(headerEl) {
   // Insert before the close button.
   const closeBtn = headerEl.querySelector('.ts-close');
   headerEl.insertBefore(btn, closeBtn);
+}
+
+/**
+ * Whether the MediaPipe head cursor is currently switched on (the Face
+ * toggle). The on-screen keyboard gates its autopredict row on this — picking
+ * a suggestion is a head-cursor dwell, so with no head cursor the row is
+ * unpickable noise above the keys.
+ */
+export function isHeadCursorEnabled() {
+  return _enabled;
 }
 
 /**

@@ -56888,7 +56888,10 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   trackEditorFocus();
   if (typeof document !== "undefined") {
-    document.addEventListener("focusin", () => refreshFacialGestureButtons());
+    document.addEventListener("focusin", (e30) => {
+      refreshFacialGestureButtons();
+      if (e30.target?.classList?.contains("ts-code")) _stickyEditor = e30.target;
+    });
   }
   function getCode() {
     return readActiveEditor();
@@ -57015,9 +57018,13 @@ ${code2}${BTN_MARKER}`;
     cursorX: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
     cursorY: typeof window !== "undefined" ? window.innerHeight / 2 : 0
   };
-  var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false };
+  var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false };
   var _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
   var _barKey = null;
+  var _stickyEditor = null;
+  var _caretLocked = false;
+  var _caretEl = null;
+  var _caretAppliedAt = { x: -Infinity, y: -Infinity };
   var DWELL_TARGETS_REFRESH_MS = 300;
   var _dwellCandidates = [];
   var _dwellCandidatesAt = -Infinity;
@@ -57041,7 +57048,9 @@ ${code2}${BTN_MARKER}`;
       eval: "\u21BA update (left blink)",
       drumDensity: "\u25CE drum density (brow raise)",
       headTiltLeft: `\u2190 tilt left \u2192 \u2212${_headTiltDelta}st`,
-      headTiltRight: `\u2192 tilt right \u2192 +${_headTiltDelta}st`
+      headTiltRight: `\u2192 tilt right \u2192 +${_headTiltDelta}st`,
+      caretLock: "\u{1F512} caret locked (thumbs down)",
+      caretUnlock: "\u{1F513} caret unlocked (thumbs down)"
     };
     _flashEl.textContent = labels[gesture] ?? gesture;
     _flashEl.style.opacity = "1";
@@ -57114,6 +57123,15 @@ ${code2}${BTN_MARKER}`;
     }
     if (_latch.thumbsUp && !isThumbsUp) {
       _latch.thumbsUp = false;
+    }
+    const isThumbsDown = topGesture?.categoryName === "Thumb_Down" && topGesture.score > THUMBS_UP_THRESHOLD;
+    if (isThumbsDown && !_latch.thumbsDown) {
+      _latch.thumbsDown = true;
+      _caretLocked = !_caretLocked;
+      _flash(_caretLocked ? "caretLock" : "caretUnlock");
+    }
+    if (_latch.thumbsDown && !isThumbsDown) {
+      _latch.thumbsDown = false;
     }
     if (isLeftBlink && !_latch.leftBlink) {
       _latch.leftBlink = true;
@@ -57194,6 +57212,7 @@ ${code2}${BTN_MARKER}`;
     }
     const cx = _ema.cursorX;
     const cy = _ema.cursorY;
+    _followEditorCaret(cx, cy);
     let hoveredKey = null;
     let hoveredType = null;
     let hoveredEl = null;
@@ -57259,6 +57278,43 @@ ${code2}${BTN_MARKER}`;
     }
     _rafId2 = requestAnimationFrame(_detectionLoop);
   }
+  function _isEditable(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || el.isContentEditable === true;
+  }
+  function _followEditorCaret(cx, cy) {
+    if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
+    if (_stickyEditor && document.activeElement !== _stickyEditor && !_isEditable(document.activeElement)) {
+      _stickyEditor.focus({ preventScroll: true });
+    }
+    let over = null;
+    for (const ta of document.querySelectorAll("#trussal-studio-overlay textarea.ts-code")) {
+      const r2 = ta.getBoundingClientRect();
+      if (r2.width > 0 && r2.height > 0 && cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
+        over = ta;
+        break;
+      }
+    }
+    if (!over) {
+      _caretEl = null;
+      return;
+    }
+    if (document.activeElement !== over) over.focus({ preventScroll: true });
+    _stickyEditor = over;
+    if (_caretLocked) return;
+    if (over === _caretEl && Math.abs(cx - _caretAppliedAt.x) < 6 && Math.abs(cy - _caretAppliedAt.y) < 6) return;
+    const pos = typeof document.caretPositionFromPoint === "function" ? document.caretPositionFromPoint(cx, cy) : null;
+    if (pos && pos.offsetNode === over && Number.isFinite(pos.offset)) {
+      const i = Math.max(0, Math.min(over.value.length, pos.offset));
+      try {
+        over.setSelectionRange(i, i);
+      } catch {
+      }
+    }
+    _caretEl = over;
+    _caretAppliedAt = { x: cx, y: cy };
+  }
   function _toggleFxEffect(fxName) {
     const peer = getLocalPeer();
     if (!peer) return;
@@ -57319,7 +57375,10 @@ ${code2}${BTN_MARKER}`;
       cursorX: window.innerWidth / 2,
       cursorY: window.innerHeight / 2
     });
-    Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false });
+    Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false });
+    _stickyEditor = null;
+    _caretLocked = false;
+    _caretEl = null;
     if (_cursorEl) _cursorEl.style.display = "none";
     _setStatus("idle");
   }
@@ -57500,6 +57559,7 @@ ${code2}${BTN_MARKER}`;
       <div class="fg-hints">
         smile \u2192 play<br>
         thumbs up \u2192 stop<br>
+        thumbs down \u2192 lock / unlock caret<br>
         left blink \u2192 update code<br>
         raise eyebrows \u2192 drum density<br>
         tilt head \u2192 transpose \xB1<span id="trussal-fg-tilt-label">2</span>st<br>
@@ -57629,6 +57689,9 @@ ${code2}${BTN_MARKER}`;
     });
     const closeBtn = headerEl.querySelector(".ts-close");
     headerEl.insertBefore(btn, closeBtn);
+  }
+  function isHeadCursorEnabled() {
+    return _enabled;
   }
   function refreshFacialGestureButtons() {
     const bar = document.getElementById("trussal-fg-btns");
@@ -57927,6 +57990,11 @@ ${s2}${BTN_MARKER}`)
   function _updatePredictions() {
     const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
     if (!row || !_visible) return;
+    if (!isHeadCursorEnabled()) {
+      row.style.display = "none";
+      if (row.childElementCount) row.innerHTML = "";
+      return;
+    }
     const ta = _getTA();
     const text2 = ta ? ta.value : "";
     const caret = ta ? ta.selectionStart ?? text2.length : 0;
@@ -58588,7 +58656,11 @@ ${s2}${BTN_MARKER}`)
     if (!_visible) return;
     const overlay = document.getElementById("trussal-studio-overlay");
     const studioOpen = !!overlay && overlay.style.display !== "none";
-    if (!studioOpen || !_inMeeting()) _showPanel(false);
+    if (!studioOpen || !_inMeeting()) {
+      _showPanel(false);
+      return;
+    }
+    _updatePredictions();
   }
 
   // src/studio.js

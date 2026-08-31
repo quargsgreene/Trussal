@@ -5,6 +5,10 @@
 // Cycles editor — and its Eval key routes the same way studio.js's own eval
 // does.
 //
+// The autopredict row is a head-cursor affordance: its chips are dwell
+// targets, so it only appears while the MediaPipe head cursor (the Face
+// toggle) is on — see isHeadCursorEnabled() in _updatePredictions().
+//
 // The toggle lives IN the Studio header (injectKeyboardToggle), next to the
 // Face button, rather than as a free-floating button pinned to a page corner.
 // The panel itself stays a body-level fixed element so it can be dragged
@@ -12,6 +16,7 @@
 // closed or the meeting ends.
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
+import { isHeadCursorEnabled } from './facial-gesture.js';
 
 const KBD_STYLE_ID  = 'trussal-kbd-style';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
@@ -100,6 +105,14 @@ function _getTA() {
 function _updatePredictions() {
   const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
   if (!row || !_visible) return;
+  // Autopredict is a head-cursor affordance: a suggestion is chosen by
+  // dwelling on its chip, so the row only earns its space above the keys
+  // while the MediaPipe head cursor is on.
+  if (!isHeadCursorEnabled()) {
+    row.style.display = 'none';
+    if (row.childElementCount) row.innerHTML = '';
+    return;
+  }
   const ta    = _getTA();
   const text  = ta ? ta.value : '';
   const caret = ta ? (ta.selectionStart ?? text.length) : 0;
@@ -806,5 +819,8 @@ export function tickKbdUi() {
   if (!_visible) return;
   const overlay   = document.getElementById('trussal-studio-overlay');
   const studioOpen = !!overlay && overlay.style.display !== 'none';
-  if (!studioOpen || !_inMeeting()) _showPanel(false);
+  if (!studioOpen || !_inMeeting()) { _showPanel(false); return; }
+  // Reflect a head-cursor toggle on the autopredict row without waiting for
+  // the next editor keystroke to call _updatePredictions().
+  _updatePredictions();
 }
