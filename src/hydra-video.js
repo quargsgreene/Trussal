@@ -383,7 +383,7 @@ function _injectStyles() {
     #${PANEL_ID} .hv-collapse-btn:hover { color:#111111; }
     #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
     #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; opacity:0.6; line-height:1.5; }
+    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; line-height:1.5; }
 
     #${TOGGLE_ID} {
       background:#ffffff; border:1px solid #111111;

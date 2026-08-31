@@ -172,6 +172,25 @@ function patchPrejoinButton() {
         el.dataset.trussalJoinPatched = '1';
       }
     }
+
+    // Force the prejoin Join button flat #111. Jitsi's blue
+    // `.action-btn.primary { background:#0376da }` has out-fought the
+    // appended stylesheet override in practice (CF-cached all.css, or a
+    // specificity race), so set it inline with !important — the one place
+    // React's own class-driven styling can't reach. Re-applied on every
+    // observer tick (no dataset guard) so a React re-render can't win.
+    for (const btn of document.querySelectorAll(
+      '.action-btn, .action-btn.primary, .premeeting-screen .action-btn'
+    )) {
+      if (btn.style.getPropertyValue('background-color') === '#111111') continue;
+      btn.style.setProperty('background', '#111111', 'important');
+      btn.style.setProperty('background-color', '#111111', 'important');
+      btn.style.setProperty('color', '#ffffff', 'important');
+      btn.style.setProperty('border', '1px solid #111111', 'important');
+      btn.querySelectorAll('svg').forEach((svg) =>
+        svg.style.setProperty('fill', '#ffffff', 'important')
+      );
+    }
   }
 
 function startPrejoinRender() {

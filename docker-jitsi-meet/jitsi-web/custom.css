@@ -225,21 +225,36 @@ div[class*="premeeting-screen"] {
   opacity: 1;
 }
 
-/* The Join button (`.action-btn`, blue `.primary` / grey `.secondary`
-   in stock Jitsi) — flat white, #111 text + outline, #111 icon. */
+/* The Join button (`.action-btn`, blue `.primary` / grey `.secondary` /
+   `#0376da` in stock Jitsi) — solid #111 with white text + icon. The
+   `.premeeting-screen`-prefixed selectors weren't enough in practice, so
+   this also hits the bare class and a `body`-prefixed high-specificity
+   variant, and every interaction state. welcome-page.js's
+   patchPrejoinButton() additionally forces these inline as a last resort. */
+.action-btn,
+button.action-btn,
+[class~="action-btn"],
 .premeeting-screen .action-btn,
 .premeeting-screen .action-btn.primary,
 .premeeting-screen .action-btn.secondary,
 .premeeting-screen .action-btn.disabled,
+body .premeeting-screen .action-btn.primary,
+body .premeeting-screen .action-btn.primary:hover,
+body .premeeting-screen .action-btn.primary:focus,
+body .premeeting-screen .action-btn.primary:active,
+.premeeting-screen .action-btn.primary:hover,
+.premeeting-screen .action-btn.primary:focus,
+.premeeting-screen .action-btn .options,
 .premeeting-screen .action-btn .options:hover {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
-  color: #111111 !important;
+  background: #111111 !important;
+  background-color: #111111 !important;
+  color: #ffffff !important;
   border: 1px solid #111111 !important;
 }
+.action-btn svg,
 .premeeting-screen .action-btn svg,
 .premeeting-screen .action-btn .icon > svg {
-  fill: #111111 !important;
+  fill: #ffffff !important;
 }
 
 

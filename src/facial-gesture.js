@@ -785,7 +785,7 @@ function _injectStyles() {
       font-size:11px; font-weight:600; text-align:center;
       color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
     }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; opacity:0.6; line-height:1.7; }
+    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; line-height:1.7; }
     #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
 
     .strudel-head-btn {

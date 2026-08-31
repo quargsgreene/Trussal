@@ -51804,6 +51804,18 @@ ${newBody}`).length === 0;
         el.dataset.trussalJoinPatched = "1";
       }
     }
+    for (const btn of document.querySelectorAll(
+      ".action-btn, .action-btn.primary, .premeeting-screen .action-btn"
+    )) {
+      if (btn.style.getPropertyValue("background-color") === "#111111") continue;
+      btn.style.setProperty("background", "#111111", "important");
+      btn.style.setProperty("background-color", "#111111", "important");
+      btn.style.setProperty("color", "#ffffff", "important");
+      btn.style.setProperty("border", "1px solid #111111", "important");
+      btn.querySelectorAll("svg").forEach(
+        (svg) => svg.style.setProperty("fill", "#ffffff", "important")
+      );
+    }
   }
   function startPrejoinRender() {
     patchPrejoinButton();
@@ -52260,7 +52272,7 @@ ${newBody}`).length === 0;
   padding: 10px 14px; border-bottom: 1px solid #111111;
 }
 #trussal-studio-overlay .ts-title { font-weight: 600; color:#111111; letter-spacing: 0.5px; font-size: 0.95rem; }
-#trussal-studio-overlay .ts-title small { color:#111111; opacity: 0.6; font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-title small { color:#111111; font-weight: 400; margin-left:8px; }
 #trussal-studio-overlay .ts-close { border:none; background:transparent; color:#111111; font-size: 1.1rem; cursor:pointer; }
 /* Keep every header control clickable where a top corner resize grip
    (src/panel-drag-resize.js, z-index 20) overlaps it. */
@@ -52309,11 +52321,11 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-routed {
   font-size: 10px; padding: 1px 4px; border-radius: 3px;
-  background: transparent; color: inherit; opacity: 0.55; border: 1px solid currentColor;
+  background: transparent; color: #111111; border: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-routed.on { background: #111111; color: #ffffff; opacity: 1; }
-#trussal-studio-overlay .ts-play { font-size: 10px; color: inherit; opacity: 0.5; }
-#trussal-studio-overlay .ts-play.on { opacity: 1; font-weight: 700; }
+#trussal-studio-overlay .ts-routed.on { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: #111111; }
+#trussal-studio-overlay .ts-play.on { font-weight: 700; }
 
 #trussal-studio-overlay .ts-detail {
   padding: 12px 14px; display:flex; flex-direction:column; gap:12px;
@@ -52381,8 +52393,10 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#ffffff; background:#111111; }
 #trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #111111; }
 #trussal-studio-overlay .ts-meta b { color: #111111; font-weight: 700; }
-#trussal-studio-overlay .ts-dim { opacity: 0.72; }
-#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; opacity: 0.55; font-family: monospace; }
+/* .ts-dim used to fade a whole row; the flat theme keeps every glyph at full
+   #111111, so it now only italicises rather than greying. */
+#trussal-studio-overlay .ts-dim { font-style: italic; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
   background: #ffffff; color:#111111;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
@@ -52462,7 +52476,7 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-sample-label {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
 }
-#trussal-studio-overlay .ts-sample-len { color: #111111; opacity: 0.55; }
+#trussal-studio-overlay .ts-sample-len { color: #111111; }
 #trussal-studio-overlay .ts-sample-x {
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
   color: #111111; font-size: 13px; line-height: 1; font-family: monospace;
@@ -55546,7 +55560,7 @@ ${full}
     #${PANEL_ID} .hv-collapse-btn:hover { color:#111111; }
     #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
     #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; opacity:0.6; line-height:1.5; }
+    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; line-height:1.5; }
 
     #${TOGGLE_ID} {
       background:#ffffff; border:1px solid #111111;
@@ -58119,7 +58133,7 @@ ${code2}${BTN_MARKER}`;
       font-size:11px; font-weight:600; text-align:center;
       color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
     }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; opacity:0.6; line-height:1.7; }
+    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; line-height:1.7; }
     #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
 
     .strudel-head-btn {
