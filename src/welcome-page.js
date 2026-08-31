@@ -173,23 +173,37 @@ function patchPrejoinButton() {
       }
     }
 
-    // Force the prejoin Join button flat #111. Jitsi's blue
-    // `.action-btn.primary { background:#0376da }` has out-fought the
-    // appended stylesheet override in practice (CF-cached all.css, or a
-    // specificity race), so set it inline with !important — the one place
-    // React's own class-driven styling can't reach. Re-applied on every
-    // observer tick (no dataset guard) so a React re-render can't win.
-    for (const btn of document.querySelectorAll(
-      '.action-btn, .action-btn.primary, .premeeting-screen .action-btn'
-    )) {
-      if (btn.style.getPropertyValue('background-color') === '#111111') continue;
+    // Force the prejoin Join button flat #111. This Jitsi build renders it
+    // as `<div class="css-<hash>-actionButton primary" role="button">`
+    // (Emotion CSS-in-JS) — NOT the legacy `.action-btn` — and its blue
+    // fill comes from an injected <style>, so the appended all.css rule
+    // never matched it. Set it inline with !important (the one place
+    // Emotion's class styles can't win), re-applied every observer tick
+    // (no dataset guard) so a React re-render can't undo it. The
+    // `actionButton` label substring is stable across builds.
+    const joinBtns = document.querySelectorAll(
+      '[class*="actionButton"], .action-btn, .premeeting-screen [class*="actionButton"]'
+    );
+    for (const btn of joinBtns) {
+      // No guard — setProperty is idempotent and this must survive a React
+      // re-render that clears the inline style.
       btn.style.setProperty('background', '#111111', 'important');
       btn.style.setProperty('background-color', '#111111', 'important');
       btn.style.setProperty('color', '#ffffff', 'important');
       btn.style.setProperty('border', '1px solid #111111', 'important');
+      btn.querySelectorAll('*').forEach((c) => c.style.setProperty('color', '#ffffff', 'important'));
       btn.querySelectorAll('svg').forEach((svg) =>
         svg.style.setProperty('fill', '#ffffff', 'important')
       );
+    }
+
+    // The amber "you need to enable microphone and camera access" pill
+    // (`css-<hash>-deviceStatus device-status-error`) — flatten it too.
+    for (const el of document.querySelectorAll('[class*="deviceStatus"]')) {
+      el.style.setProperty('background', '#ffffff', 'important');
+      el.style.setProperty('background-color', '#ffffff', 'important');
+      el.style.setProperty('color', '#111111', 'important');
+      el.style.setProperty('border', '1px solid #111111', 'important');
     }
   }
 

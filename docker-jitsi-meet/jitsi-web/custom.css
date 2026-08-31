@@ -169,31 +169,51 @@ body.welcome-page #trussal-room-field::placeholder {
  * centred name field + Join button.
  * ------------------------------------------------------------------ */
 
-/* The full-bleed video / avatar preview behind the prejoin form, plus
-   its gradient overlay. `#preview` is Jitsi's long-stable id for the
-   premeeting Preview component. */
+/* The camera / avatar preview behind the prejoin form. This Jitsi build
+   renders the prejoin with Emotion CSS-in-JS (`css-<hash>-<label>`
+   classes), so target the stable label substrings as well as the legacy
+   ids/classes: the video is `#largeVideo`, the placeholder is
+   `[class*="avatar"]`. */
 #preview,
-.premeeting-screen .preview,
-.premeeting-screen .preview-overlay,
-.premeeting-screen .avatar,
+#largeVideo,
 .premeeting-screen video,
+.premeeting-screen #largeVideo,
+.premeeting-screen [class*="preview"],
+.premeeting-screen [class*="avatar"],
+.premeeting-screen .preview-overlay,
 div[class*="premeeting"] video {
   display: none !important;
 }
 
-/* The device / background-effect button row (camera, mic, blur,
-   select-background) and connection indicator: preview controls with
-   nothing left to preview. Leaves only the name input + Join button. */
+/* The device / background-effect button row and the "you need to enable
+   mic/camera" status pill (`css-…-deviceStatus`, amber): preview chrome
+   with nothing left to preview. Leaves only the name input + Join. */
 .premeeting-screen .toolbox-content-wrapper,
 .premeeting-screen .toolbox-content,
 .premeeting-screen .media-controls,
+.premeeting-screen [class*="contentControls"],
 .premeeting-screen .connection-status {
   display: none !important;
 }
 
+/* If the device-status pill is shown anyway, at least flatten it. */
+.premeeting-screen [class*="deviceStatus"],
+[class*="deviceStatus"],
+.device-status-error,
+.device-status-ok {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+[class*="deviceStatus"] *,
+[class*="deviceStatus"] svg {
+  color: #111111 !important;
+  fill: #111111 !important;
+}
+
 /* Centre what's left. Fill the screen with white and pull `.content`
-   back into normal flow so the flex parent can centre it — Jitsi
-   positions it around the now-hidden absolute preview layer. */
+   back into normal flow so the flex parent can centre it. */
 .premeeting-screen,
 div[class*="premeeting-screen"] {
   background: #ffffff !important;
@@ -202,7 +222,8 @@ div[class*="premeeting-screen"] {
   align-items: center !important;
   justify-content: center !important;
 }
-.premeeting-screen .content {
+.premeeting-screen .content,
+.premeeting-screen [class*="-content"] {
   position: relative !important;
   inset: auto !important;
   margin: 0 !important;
@@ -213,6 +234,7 @@ div[class*="premeeting-screen"] {
 
 /* Prejoin name field: #111 text on white, #111 outline. */
 .premeeting-screen input,
+.premeeting-screen [class*="inputContainer"] input,
 .prejoin-input,
 #premeeting-name-input {
   background-color: #ffffff !important;
@@ -225,36 +247,57 @@ div[class*="premeeting-screen"] {
   opacity: 1;
 }
 
-/* The Join button (`.action-btn`, blue `.primary` / grey `.secondary` /
-   `#0376da` in stock Jitsi) — solid #111 with white text + icon. The
-   `.premeeting-screen`-prefixed selectors weren't enough in practice, so
-   this also hits the bare class and a `body`-prefixed high-specificity
-   variant, and every interaction state. welcome-page.js's
-   patchPrejoinButton() additionally forces these inline as a last resort. */
+/* The Join button. This build renders it as
+   `<div class="css-<hash>-actionButton primary" role="button">` — Emotion,
+   NOT the legacy `.action-btn`. The `actionButton` label substring is
+   stable across builds (only the hash changes), so hook that; keep the
+   legacy `.action-btn` selectors too (harmless). Solid #111, white text +
+   icon, every interaction state. welcome-page.js's patchPrejoinButton()
+   also forces it inline as a last resort. */
+[class*="actionButton"],
+[class*="actionButton"].primary,
+[class*="actionButton"].secondary,
+[class*="actionButton"]:hover,
+[class*="actionButton"]:focus,
+[class*="actionButton"]:active,
+.premeeting-screen [class*="actionButton"],
+.premeeting-screen [class*="actionButton"].primary,
+[class*="dropdownContainer"] [class*="actionButton"],
 .action-btn,
 button.action-btn,
 [class~="action-btn"],
 .premeeting-screen .action-btn,
 .premeeting-screen .action-btn.primary,
 .premeeting-screen .action-btn.secondary,
-.premeeting-screen .action-btn.disabled,
-body .premeeting-screen .action-btn.primary,
-body .premeeting-screen .action-btn.primary:hover,
-body .premeeting-screen .action-btn.primary:focus,
-body .premeeting-screen .action-btn.primary:active,
-.premeeting-screen .action-btn.primary:hover,
-.premeeting-screen .action-btn.primary:focus,
 .premeeting-screen .action-btn .options,
-.premeeting-screen .action-btn .options:hover {
+.premeeting-screen .action-btn .options:hover,
+[class*="dropdownContainer"] [class*="options"],
+[class*="dropdownContainer"] [class*="options"]:hover {
   background: #111111 !important;
   background-color: #111111 !important;
   color: #ffffff !important;
   border: 1px solid #111111 !important;
 }
+[class*="actionButton"] *,
+[class*="actionButton"] svg,
+[class*="dropdownContainer"] [class*="options"] *,
+[class*="dropdownContainer"] [class*="options"] svg,
+[class*="dropdownContainer"] [class*="options"] path,
 .action-btn svg,
-.premeeting-screen .action-btn svg,
 .premeeting-screen .action-btn .icon > svg {
+  color: #ffffff !important;
   fill: #ffffff !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Icon wrappers must never take the global #ffffff default as a fill —
+   inside a dark button it shows as a white block. */
+.jitsi-icon,
+.jitsi-icon svg,
+.jitsi-icon path {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 

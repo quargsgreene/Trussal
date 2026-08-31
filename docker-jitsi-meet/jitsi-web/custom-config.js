@@ -51804,17 +51804,24 @@ ${newBody}`).length === 0;
         el.dataset.trussalJoinPatched = "1";
       }
     }
-    for (const btn of document.querySelectorAll(
-      ".action-btn, .action-btn.primary, .premeeting-screen .action-btn"
-    )) {
-      if (btn.style.getPropertyValue("background-color") === "#111111") continue;
+    const joinBtns = document.querySelectorAll(
+      '[class*="actionButton"], .action-btn, .premeeting-screen [class*="actionButton"]'
+    );
+    for (const btn of joinBtns) {
       btn.style.setProperty("background", "#111111", "important");
       btn.style.setProperty("background-color", "#111111", "important");
       btn.style.setProperty("color", "#ffffff", "important");
       btn.style.setProperty("border", "1px solid #111111", "important");
+      btn.querySelectorAll("*").forEach((c2) => c2.style.setProperty("color", "#ffffff", "important"));
       btn.querySelectorAll("svg").forEach(
         (svg) => svg.style.setProperty("fill", "#ffffff", "important")
       );
+    }
+    for (const el of document.querySelectorAll('[class*="deviceStatus"]')) {
+      el.style.setProperty("background", "#ffffff", "important");
+      el.style.setProperty("background-color", "#ffffff", "important");
+      el.style.setProperty("color", "#111111", "important");
+      el.style.setProperty("border", "1px solid #111111", "important");
     }
   }
   function startPrejoinRender() {
