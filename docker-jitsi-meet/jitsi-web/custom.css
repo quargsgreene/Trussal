@@ -53,7 +53,12 @@ body.welcome-page .header-container p {
   display: none !important;
 }
 
-/* Jitsi's native room-name field — the Trussal overlay replaces it. */
+/* Jitsi's native room-name entry block — the Trussal overlay replaces it.
+   Remove the whole `div#enter_room` (not just the input): left in the flow
+   it renders a stray box behind the Trussal panel and a stray tab stop. */
+body.welcome-page #enter_room {
+  display: none !important;
+}
 body.welcome-page #enter_room_field {
   opacity: 0;
   pointer-events: none;
@@ -375,6 +380,19 @@ button.action-btn,
   box-shadow: none !important;
 }
 
+/* Jitsi paints the rounded backdrop behind the toolbar buttons as
+   `.toolbox-content-wrapper::after { content:""; background:#141414 }` — a
+   pseudo-element the rule above can't reach, so it stayed as a dark bar
+   under the flat-grey icons. Flatten both pseudo-elements. */
+.toolbox-content-wrapper::before,
+.toolbox-content-wrapper::after,
+.toolbox-content::before,
+.toolbox-content::after {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  box-shadow: none !important;
+}
+
 .toolbox-icon,
 .toolbox-button,
 div.hangup-button,
@@ -394,6 +412,17 @@ div.hangup-menu-button:active {
 div.hangup-button svg,
 div.hangup-menu-button svg {
   fill: #111111 !important;
+}
+
+/* The small ⌄ dropdown affordance on the mic / camera buttons
+   (`.settings-button-small-icon-container`) ships a white SVG — invisible
+   on the flat-grey toolbar. */
+.settings-button-small-icon-container,
+.settings-button-small-icon-container svg,
+.settings-button-small-icon-container path {
+  background: transparent !important;
+  fill: #111111 !important;
+  color: #111111 !important;
 }
 
 /* Toggled state stays legible by inverting rather than colouring. */
@@ -429,6 +458,251 @@ div.hangup-menu-button svg {
 /* Make sure each video container can hold absolutely-positioned children */
 .trussal-video-host {
   position: relative !important;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Jitsi's Emotion (CSS-in-JS) surfaces.
+ *
+ * Everything above themes Jitsi's plain-CSS components. The React app
+ * also ships a whole dark palette through Emotion — hashed class names
+ * like `css-169oaf-participantsPane` — at a specificity the bare
+ * `html, body, body *` default can't touch, so these panels stayed
+ * `#141414` / `#3d3d3d` with a blue (`#4687ed` / `#0074e0`) accent.
+ *
+ * The hash prefix (`css-169oaf-`) changes every Jitsi build; the
+ * semantic suffix (`-participantsPane`, `-modal-dialog`, `-button-primary`,
+ * `-input`, `-chatHeader`, `-contextMenuItem-selected`) is stable, so
+ * these hook the suffix with `[class*="…"]` plus the stable ids Jitsi
+ * gives the same nodes. Same "defeat upstream component CSS" exception
+ * as the video-transparency block — hence !important throughout.
+ * ------------------------------------------------------------------ */
+
+/* Side panels: chat (`#sideToolbarContainer`) and the participants pane.
+   Border both inner edges (left + right) — whichever faces the video area
+   is the visible separator; the other sits at the window edge. */
+#sideToolbarContainer,
+#participants-pane,
+[class*="-participantsPane"],
+.chat-panel {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+  border-left: 1px solid #111111 !important;
+  border-right: 1px solid #111111 !important;
+}
+
+/* Dialogs / modals (Settings, Invite, Shortcuts, …). */
+.modal-dialog,
+.settings-dialog,
+[class*="-modal-dialog"],
+[class*="-modalContent"],
+[class*="-dialogContainer"] {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+
+/* Panel / dialog headings ship white or a pale grey (`#c2c2c2`), both
+   designed for the dark bg — e.g. the participants-pane "Meeting
+   participants (N)" title is `.css-…-heading { color:#c2c2c2 }`. */
+.chat-header,
+[class*="-chatHeader"],
+[class*="-header"] h1,
+[class*="-header"] h2,
+.participants-pane-header,
+[class*="-paneHeader"],
+[class*="header-text-title"],
+.settings-dialog [class*="-title"],
+#participants-pane [class*="-heading"],
+#sideToolbarContainer [class*="-heading"],
+.settings-dialog [class*="-heading"] {
+  color: #111111 !important;
+}
+
+/* Text inputs / selects inside those panels ship `#3d3d3d` + white text. */
+#participants-search-input,
+#chat-input-messagebox,
+#select-chat-recipient,
+[class*="-participantsPane"] input,
+#sideToolbarContainer input,
+#sideToolbarContainer textarea,
+#sideToolbarContainer [class*="-select"],
+[class*="-input"].icon-input,
+.settings-dialog input,
+.settings-dialog select {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+#participants-search-input::placeholder,
+#chat-input-messagebox::placeholder,
+#sideToolbarContainer input::placeholder,
+#sideToolbarContainer textarea::placeholder {
+  color: #111111 !important;
+  opacity: 1 !important;
+}
+
+/* Primary buttons ship Jitsi blue (`#4687ed`). Flatten to solid #111 with
+   white label + icon, matching the prejoin Join button. Secondary /
+   tertiary buttons only need their text forced to #111. */
+[class*="-button-primary"],
+#modal-dialog-ok-button,
+.settings-dialog [class*="-button-primary"],
+#participants-pane [class*="-button-primary"] {
+  background: #111111 !important;
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border: 1px solid #111111 !important;
+}
+[class*="-button-primary"] svg,
+[class*="-button-primary"] path,
+#modal-dialog-ok-button svg {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+}
+[class*="-button-secondary"],
+[class*="-button-tertiary"],
+#modal-dialog-cancel-button {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+
+/* Context-menu / overflow-menu / settings-tab items: #111 text by default
+   (this rule first, so the selected-state invert below wins over it). */
+.settings-dialog [role="tab"],
+[class*="-contextMenuItem"],
+[class*="-overflowMenuDrawer"] [role="button"] {
+  color: #111111 !important;
+}
+
+/* Chat / polls tab strip: keep it light, mark the active tab with a rule
+   rather than the shipped white-on-nothing. */
+#chat-tab,
+#polls-tab,
+.chat-header [class*="-tab"] {
+  color: #111111 !important;
+  background: transparent !important;
+}
+#chat-tab.selected,
+#polls-tab.selected,
+.chat-header [class*="-tab"].selected {
+  color: #111111 !important;
+  border-bottom: 2px solid #111111 !important;
+}
+
+/* Settings-dialog sidebar: the selected tab ships `#292929` + a blue left
+   border. Invert to a solid #111 pill (same treatment as a toggled
+   toolbar icon). */
+[class*="-contextMenuItem-selected"],
+.settings-dialog [role="tab"][aria-selected="true"] {
+  background: #111111 !important;
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+/* Camera/mic preview slab in the Settings dialog ("Permission not
+   granted") ships solid black. */
+.settings-dialog [class*="-preview"],
+.settings-dialog video,
+.settings-dialog [class*="-previewEntry"] {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+}
+
+/* Blue icon accents: the recent-meeting delete (trash) glyph on the
+   welcome page and any other FontAwesome/blue-filled icon. */
+svg[class*="trash_svg__"],
+svg[class*="trash_svg__"] path,
+.delete-meeting svg,
+.delete-meeting path {
+  fill: #111111 !important;
+  color: #111111 !important;
+}
+
+/* Welcome page: the recent-meeting rows ship pure #ffffff
+   (`.meetings-list .item`), and the settings gear ships a translucent
+   white pill with a white glyph. */
+.welcome-page .meetings-list .item,
+.welcome-page .meetings-list .item.with-click-handler,
+.welcome-page .meetings-list .item:hover,
+.welcome-page [class*="meetings-list"] [class*="item"] {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+}
+.welcome-page-settings,
+.welcome-page-settings .toolbox-icon,
+.welcome-page-settings .toolbox-button {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+  border: 1px solid #111111 !important;
+}
+.welcome-page-settings svg,
+.welcome-page-settings path {
+  fill: #111111 !important;
+  color: #111111 !important;
+}
+
+/* Every SVG glyph inside a flattened panel / menu / dialog ships white
+   (drawn for Jitsi's dark surfaces) — the settings-tab icons, the dialog
+   close ✕, the overflow-menu row icons. Force #111 across the board… */
+#sideToolbarContainer svg,
+#sideToolbarContainer path,
+#participants-pane svg,
+#participants-pane path,
+[class*="-participantsPane"] svg,
+[class*="-participantsPane"] path,
+.settings-dialog svg,
+.settings-dialog path,
+[class*="-modal-dialog"] svg,
+[class*="-modal-dialog"] path,
+[class*="-contextMenu"] svg,
+[class*="-contextMenu"] path,
+[class*="-overflowMenu"] svg,
+[class*="-overflowMenu"] path,
+.overflow-menu svg,
+.overflow-menu path,
+#modal-header-close-button svg,
+#modal-header-close-button path {
+  fill: #111111 !important;
+  color: #111111 !important;
+}
+
+/* …then restore white only where the surface underneath was inverted to
+   #111 (primary buttons, the selected settings-sidebar tab). Listed after
+   the block above so it wins at equal specificity. */
+[class*="-button-primary"] svg,
+[class*="-button-primary"] path,
+#modal-dialog-ok-button svg,
+#modal-dialog-ok-button path,
+#participants-pane [class*="-button-primary"] svg,
+#participants-pane [class*="-button-primary"] path,
+[class*="-contextMenuItem-selected"] svg,
+[class*="-contextMenuItem-selected"] path,
+.settings-dialog [role="tab"][aria-selected="true"] svg,
+.settings-dialog [role="tab"][aria-selected="true"] path {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+}
+
+/* The Trussal room-name overlay is `position:fixed; z-index:9999`, so it
+   floats over Jitsi's own dialogs — opening Settings from the welcome-page
+   gear left the dialog stranded underneath it. Hide the overlay while a
+   Jitsi dialog is open. `:has()` is kept to a single simple class
+   (`.settings-dialog` / `.modal-dialog`) — an attribute-substring
+   `:has([class*="…"])` on `body` is a recalc hazard during a heavy React
+   mount and must not be used here. */
+body:has(.settings-dialog) #trussal-welcome-overlay,
+body:has(.modal-dialog) #trussal-welcome-overlay {
+  display: none !important;
 }
 
 
