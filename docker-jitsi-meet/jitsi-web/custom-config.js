@@ -52249,9 +52249,15 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay {
   position: fixed; right: 16px; bottom: 88px;
   width: min(640px, 92vw);
-  /* Drag/resize (src/panel-drag-resize.js) only ever writes top/left/width/
-     height as inline styles; these are the floors/ceilings it clamps to.
-     max-height was 78vh \u2014 a hard cap the resize grips couldn't grow past. */
+  /* Explicit default height (like the on-screen keyboard's), NOT a tall
+     max-height with content-driven height: the panel is bottom-anchored, so a
+     content-tall panel grows UPWARD and shoves its own header (the drag
+     handle) and the Face/Keys toggles off the top of the screen \u2014 then it
+     can't be moved and it buries the keyboard. The 108px keeps the top on
+     screen next to the 88px bottom anchor; .ts-detail scrolls the overflow.
+     Drag/resize (src/panel-drag-resize.js) then writes top/left/width/height
+     inline and switches to top-anchoring, so max-height is the resize ceiling. */
+  height: min(600px, calc(100vh - 108px));
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
   background: #ffffff;
