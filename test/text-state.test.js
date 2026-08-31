@@ -30,26 +30,26 @@ test('text: an empty chain leaves words and styling alone', () => {
 });
 
 test('text: room grows letter spacing and softens the glyphs', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# room wcl 2'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# room "wcl" 2'), METRICS, CYCLE);
   assert.ok(text.spacingPx > 0 && text.spacingPx <= MAX_SPACING_PX);
   assert.ok(css.blurPx > 0);
 });
 
 test('text: crush drops letters and quantizes styling', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# crush wcl 2'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# crush "wcl" 2'), METRICS, CYCLE);
   assert.ok(text.dropChance > 0 && text.dropChance <= MAX_DROP);
   assert.ok(css.quantizeStep > 1 || css.colorLevels < 256);
 });
 
 test('text: noise injects glyphs and jitters styling', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# noise wcl 20 wcpl 10'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# noise "wcl" 20 "wcpl" 10'), METRICS, CYCLE);
   assert.ok(text.noiseChars > 0);
   assert.ok(text.noiseBand >= 0 && text.noiseBand < NOISE_GLYPHS.length);
   assert.ok(css.jitter > 0);
 });
 
 test('text: echo repeats the last word and crossfades the styling', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# echo wcl 2 wcpl 0.3 wcl 3'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# echo "wcl" 2 "wcpl" 0.3 "wcl" 3'), METRICS, CYCLE);
   assert.ok(text.repeats > 0);
   assert.ok(text.repeatAlpha > 0);
   assert.ok(css.fadeFromPrevious > 0);
@@ -58,19 +58,19 @@ test('text: echo repeats the last word and crossfades the styling', () => {
 // --- the medium argument ------------------------------------------------------
 
 test('text: a medium set of ["text"] mutates words but not styling', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# room wcl 2 ["text"]'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# room "wcl" 2 ["text"]'), METRICS, CYCLE);
   assert.ok(text.spacingPx > 0);
   assert.equal(cssStateIsNeutral(css), true);
 });
 
 test('text: a medium set of ["css"] styles but leaves the words alone', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# room wcl 2 ["css"]'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# room "wcl" 2 ["css"]'), METRICS, CYCLE);
   assert.equal(textStateIsNeutral(text), true);
   assert.ok(css.blurPx > 0);
 });
 
 test('text: an audio-and-video set touches neither', () => {
-  const { text, css } = textAndCssStateFor(chainOf('# crush wcl 2 ["audio" "video"]'), METRICS, CYCLE);
+  const { text, css } = textAndCssStateFor(chainOf('# crush "wcl" 2 ["audio" "video"]'), METRICS, CYCLE);
   assert.equal(textStateIsNeutral(text), true);
   assert.equal(cssStateIsNeutral(css), true);
 });

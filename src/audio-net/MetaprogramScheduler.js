@@ -68,8 +68,8 @@ export function describeCycleLength({ cycles, tempo, metrics }) {
   const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
   const targetS = timingTargetSeconds(cycles, metrics);
   const source = fixed != null
-    ? `# cycles ${metric} ${factor} ${fixed} (pinned)`
-    : `# cycles ${metric} ${factor}`;
+    ? `# cycles "${metric}" ${factor} ${fixed} (pinned)`
+    : `# cycles "${metric}" ${factor}`;
   const m = metrics || {};
   return `${seconds.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] ← ${source} ` +
     `target ${targetS.toFixed(3)}s (wcl ${(m.wcl || 0).toFixed(1)}ms, ` +

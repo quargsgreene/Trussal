@@ -12,6 +12,7 @@ import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { setPeerPacks, removePeerPacks } from './data-ref.js';
 import { hasTextCycles } from './text-cycles-core.js';
 import { textLog, clip } from './text-debug.js';
+import { detectNotation, mondoToMini } from './notation.js';
 
 const subscribers = new Set();
 
@@ -422,8 +423,14 @@ function handleMessage(msg) {
       // server gates on isBot). Reflect it on our local record and surface it as
       // a DOM event so the bot page can re-evaluate its Strudel / mute its audio.
       if (msg.action === 'pattern' && typeof msg.code === 'string') {
-        localPeer.pattern = msg.code;
-        document.dispatchEvent(new CustomEvent('trussal-remote-pattern', { detail: { code: msg.code } }));
+        // A bot's page carries the full bundle but its actual instrument is a
+        // separate bare @strudel/repl that cannot import anything. So a mondo
+        // ($ head / # method) edit pushed from the studio is lowered to the
+        // Strudel form HERE, the one place on the bot's page that can, before
+        // it reaches that REPL (pageRemoteControl) or peer.pattern.
+        const code = detectNotation(msg.code) === 'mondo' ? mondoToMini(msg.code) : msg.code;
+        localPeer.pattern = code;
+        document.dispatchEvent(new CustomEvent('trussal-remote-pattern', { detail: { code } }));
         emit('peer-upsert', localPeer);
       } else if (msg.action === 'mute') {
         localPeer.muted = !!msg.muted;

@@ -53,7 +53,7 @@ test('exact multiples stay exact (≥); zero metric floors at one beat', () => {
 });
 
 test('a fixed amount pins the timing metric; live metrics are ignored', () => {
-  // `# cycles wcl 10 0.3` — 0.3 s × 10 = 3 s even on a 5-second-WCL network.
+  // `# cycles "wcl" 10 0.3` — 0.3 s × 10 = 3 s even on a 5-second-WCL network.
   assert.equal(timingTargetSeconds(
     { metric: 'wcl', factor: 10, fixed: 0.3 }, { wcl: 5000 }
   ), 3);
@@ -86,7 +86,7 @@ test('expandCycle tags each slot with its written-sequence index', () => {
 test('slot-open and slot-close of the same slot share one id; ids are unique per cycle', () => {
   // `[0 1 0]` puts the same token in the cycle twice, which is exactly the case
   // (cycle, stack, token) cannot disambiguate — the aggregator pairs on `id`.
-  const { sched, events } = makeScheduler('$ participants [0 1 0]\n# cycles wcl 1\n', { wcl: 3000 });
+  const { sched, events } = makeScheduler('$ participants [0 1 0]\n# cycles "wcl" 1\n', { wcl: 3000 });
   sched.start(0);
 
   const opens = events.filter(e => e.type === 'slot-open' && e.cycle === 0);
@@ -99,7 +99,7 @@ test('slot-open and slot-close of the same slot share one id; ids are unique per
 });
 
 test('getCycleLength reports the length in force, which is the aggregator turn length', () => {
-  const { sched } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 2000 });
+  const { sched } = makeScheduler('$ participants <0>\n# cycles "wcl" 1\n', { wcl: 2000 });
   assert.equal(sched.getCycleLength().seconds, 2);
   sched.start(0);
   // Pending metrics land at the next boundary, not on the setter.
@@ -113,7 +113,7 @@ test('describeCycleLength reports the length, the beat grid, and the metrics beh
     tempo: { value: 120, unit: 'bpm' },
     metrics: { wcl: 1500, wcpl: 0.02 }
   });
-  assert.match(live, /^3\.000s \[6 beat\(s\) @ 0\.500s\] ← # cycles wcl 2 target 3\.000s /);
+  assert.match(live, /^3\.000s \[6 beat\(s\) @ 0\.500s\] ← # cycles "wcl" 2 target 3\.000s /);
   assert.match(live, /wcl 1500\.0ms/);
   assert.match(live, /wcpl 2\.0%/);
   // A pinned amount says so, and reports the pinned target rather than the live one.
@@ -122,7 +122,7 @@ test('describeCycleLength reports the length, the beat grid, and the metrics beh
     tempo: { value: 120, unit: 'bpm' },
     metrics: { wcl: 99000 }
   });
-  assert.match(pinned, /# cycles wcl 10 0\.3 \(pinned\) target 3\.000s/);
+  assert.match(pinned, /# cycles "wcl" 10 0\.3 \(pinned\) target 3\.000s/);
 });
 
 test('the scheduler prints its cycle length on change and heartbeats when it holds', () => {
@@ -137,7 +137,7 @@ test('the scheduler prints its cycle length on change and heartbeats when it hol
     setIntervalFn: null,
     clearIntervalFn: null
   });
-  sched.setProgram(astOf('$ participants <0>\n# cycles wcl 1\n'));
+  sched.setProgram(astOf('$ participants <0>\n# cycles "wcl" 1\n'));
   sched.setMetrics({ wcl: 1000 });
   sched.start(0);
   assert.equal(lines.length, 1);
@@ -526,7 +526,7 @@ function makeScheduler(text, metrics) {
 test('integration: <0 1>*2 emits the slot open/close grid against the fake clock', () => {
   // wcl 900 ms, factor 3, 120 bpm → 6 beats = 3 s cycles.
   const { sched, events, advance } = makeScheduler(
-    '$ participants <0 1>*2\n# cycles wcl 3\n',
+    '$ participants <0 1>*2\n# cycles "wcl" 3\n',
     { wcl: 900 }
   );
   sched.start(0);
@@ -573,7 +573,7 @@ test('a backward clock jump re-anchors the grid instead of silencing it', () => 
   // hrtime since the SIDECAR started, so a restart moves it backwards. Left
   // alone the next boundary sits unreachably in the future and NOTHING is ever
   // emitted again — which silenced a live room.
-  const { sched, events, advance } = makeScheduler('$ participants <0 1>\n# cycles wcl 1\n', { wcl: 4000 });
+  const { sched, events, advance } = makeScheduler('$ participants <0 1>\n# cycles "wcl" 1\n', { wcl: 4000 });
   sched.start(1000);
   advance(1010);
   const before = events.filter(e => e.type === 'cycle-start').length;
@@ -586,7 +586,7 @@ test('a backward clock jump re-anchors the grid instead of silencing it', () => 
 });
 
 test('a far-future clock jump re-anchors rather than grinding out every missed cycle', () => {
-  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 4000 });
+  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles "wcl" 1\n', { wcl: 4000 });
   sched.start(0);
   advance(1);
   const startedAt = Date.now();
@@ -596,7 +596,7 @@ test('a far-future clock jump re-anchors rather than grinding out every missed c
 });
 
 test('ordinary lateness does NOT re-anchor — only a real adrift does', () => {
-  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles wcl 1\n', { wcl: 4000 });
+  const { sched, events, advance } = makeScheduler('$ participants <0>\n# cycles "wcl" 1\n', { wcl: 4000 });
   sched.start(0);
   advance(0.01);
   // A couple of cycles late is normal catch-up: boundaries must stay on the
@@ -621,7 +621,7 @@ test('stop() halts emission; restart resumes from a fresh epoch', () => {
 test('getCyclePosition reports fractional cycles for patterned effect arguments', () => {
   // wcl 900 ms, factor 3, 120 bpm → 3 s cycles (as above).
   const { sched, advance, nowRef } = makeScheduler(
-    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+    '$ participants <0>\n# cycles "wcl" 3\n', { wcl: 900 }
   );
   assert.equal(sched.getCyclePosition(0), null, 'no grid before start()');
   sched.start(0);
@@ -643,13 +643,13 @@ test('getCyclePosition tracks the boundaries actually emitted, not a live divisi
   // 1 s cycles for three of them, then 2 s. Dividing elapsed time by the
   // current length would read cycle 1.5 where the grid says 3.
   const { sched, advance, nowRef } = makeScheduler(
-    '$ participants <0>\n# cycles wcl 1 1\n', { wcl: 0 }
+    '$ participants <0>\n# cycles "wcl" 1 1\n', { wcl: 0 }
   );
   sched.start(0);
   advance(2.5);
   assert.equal(sched.getCyclePosition(nowRef()), 2.5);
   sched.setMetrics({ wcl: 0 });
-  sched.setProgram(astOf('$ participants <0>\n# cycles wcl 1 2\n'));
+  sched.setProgram(astOf('$ participants <0>\n# cycles "wcl" 1 2\n'));
   advance(3.0);
   assert.equal(sched.getCyclePosition(nowRef()), 3, 'boundary 3 is still cycle 3');
   advance(4.0);
@@ -675,7 +675,7 @@ test('a fast grid keeps the cycle containing now, however far the lookahead runs
 
 test('a stopped grid has no position rather than a frozen one', () => {
   const { sched, advance, nowRef } = makeScheduler(
-    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+    '$ participants <0>\n# cycles "wcl" 3\n', { wcl: 900 }
   );
   sched.start(0);
   advance(1.5);
@@ -686,7 +686,7 @@ test('a stopped grid has no position rather than a frozen one', () => {
 
 test('a re-anchor drops the old grid rather than reading a position off it', () => {
   const { sched, advance, nowRef } = makeScheduler(
-    '$ participants <0>\n# cycles wcl 3\n', { wcl: 900 }
+    '$ participants <0>\n# cycles "wcl" 3\n', { wcl: 900 }
   );
   sched.start(0);
   advance(3);
@@ -745,14 +745,14 @@ test('the roster helpers edit the LIVE statement, not a declaration or a comment
   // A `*$` button declaration and a commented-out line both contain the text
   // `$ participants <…>`; neither is the running program, and an unanchored
   // match would edit whichever came first in the file.
-  const declared = '*$ participants <2a 2b>\n$ participants <0 1>\n# cycles wcl 20\n';
+  const declared = '*$ participants <2a 2b>\n$ participants <0 1>\n# cycles "wcl" 20\n';
   assert.equal(programHasParticipant(declared, '0'), true);
   assert.equal(programHasParticipant(declared, '2a'), false);
   assert.match(appendParticipantToProgram(declared, '5'), /^\$ participants <0 1 5>$/m);
   assert.match(appendParticipantToProgram(declared, '5'), /^\*\$ participants <2a 2b>$/m);
   assert.match(removeParticipantFromProgram(declared, '0'), /^\$ participants <1>$/m);
 
-  const commented = '// $ participants <0 1> — retired\n# cycles wcl 20\n';
+  const commented = '// $ participants <0 1> — retired\n# cycles "wcl" 20\n';
   assert.equal(hasParticipantSequence(commented), false);
   assert.equal(appendParticipantToProgram(commented, '5'), commented);
 

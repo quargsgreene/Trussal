@@ -125,7 +125,7 @@ test('room: allpass stages are chained in series, each feeding the next', () => 
 
 // --- echo ---------------------------------------------------------------------
 
-// The spec example: `# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200`.
+// The spec example: `# echo "wcl" 2 "wcpl" 0.3 "wcl" 3 1500 20 1200`.
 const SPEC_ECHO = {
   slots: [
     { param: 'length', metric: 'wcl', scale: 2, bound: 1500 },
@@ -161,7 +161,7 @@ test('echo: metrics past their bound clamp — the parameter never exceeds its s
   assert.equal(normalizedMetric('wcl', { wcl: 250 }, 0), 0.5, 'unusable bound falls back to the default');
 });
 
-test('echo: bare # echo defaults to wcl at 0.5 cycles / 0.5 feedback / unity gain', () => {
+test('echo: bare # echo defaults to "wcl" at 0.5 cycles / 0.5 feedback / unity gain', () => {
   const atBound = echoParams({ wcl: ECHO_METRIC_BOUNDS.wcl }, null, { cycleSeconds: 4 });
   assert.equal(atBound.lengthCycles, 0.5);
   assert.equal(atBound.feedback, 0.5);
@@ -297,7 +297,7 @@ test('crush: every worst-case metric can drive it, each on its own scale', () =>
 });
 
 test('crush: a fixed third argument pins the metric, in the metric\'s own unit', () => {
-  // Durations are pinned in SECONDS (as `# room wcl 2 0.4` pins wcl).
+  // Durations are pinned in SECONDS (as `# room "wcl" 2 0.4` pins wcl).
   assert.equal(crushMetricAmount('wcl', { wcl: 9999 }, 0.2), 200);
   assert.equal(crushParams({ wcl: 9999 }, { fixedMetric: 0.2 }).bitDepth, 2);
   // Loss is pinned as a fraction.
@@ -380,12 +380,12 @@ test('noise: a bare directive is the unmodulated floor — brown at the base dB'
 
 test('noise: the spectrum factor sweeps brown → pink → white', () => {
   // wcl 500 ms = 0.5 s, so factor 1 lands exactly halfway along the axis.
-  const pink = noiseFor('# noise wcl 1', { wcl: 500 });
+  const pink = noiseFor('# noise "wcl" 1', { wcl: 500 });
   assert.equal(pink.tilt, 0.5);
   assert.equal(pink.type, 'pink');
   assert.deepEqual(pink.mix, { brown: 0, pink: 1, white: 0 });
 
-  const brownish = noiseFor('# noise wcl 0.4', { wcl: 500 });
+  const brownish = noiseFor('# noise "wcl" 0.4', { wcl: 500 });
   assert.equal(brownish.tilt, 0.2);
   assert.equal(brownish.type, 'brown', 'nearest colour is the label; the mix is a blend');
   assert.ok(brownish.mix.brown > brownish.mix.pink && brownish.mix.pink > 0);
@@ -394,18 +394,18 @@ test('noise: the spectrum factor sweeps brown → pink → white', () => {
   const power = Object.values(brownish.mix).reduce((a, g) => a + g * g, 0);
   assert.ok(Math.abs(power - 1) < 1e-12);
 
-  const white = noiseFor('# noise wcl 20', { wcl: 500 });
+  const white = noiseFor('# noise "wcl" 20', { wcl: 500 });
   assert.equal(white.tilt, 1, 'clamped at the top of the axis');
   assert.deepEqual(white.mix, { brown: 0, pink: 0, white: 1 });
 });
 
 test('noise: the volume factor rides its own metric from the base dB to the clamp', () => {
   // wcpl 0.06 (a loss fraction) × 10 = 0.6 of the way from 25 dB to 75 dB.
-  const p = noiseFor('# noise wcl 1 wcpl 10', { wcl: 500, wcpl: 0.06 });
+  const p = noiseFor('# noise "wcl" 1 "wcpl" 10', { wcl: 500, wcpl: 0.06 });
   assert.equal(p.gainDb, 55);
   assert.ok(Math.abs(p.gain - NOISE_BASE_GAIN * Math.pow(10, 30 / 20)) < 1e-12);
 
-  const loud = noiseFor('# noise wcl 1 wcpl 1000', { wcl: 500, wcpl: 0.06 });
+  const loud = noiseFor('# noise "wcl" 1 "wcpl" 1000', { wcl: 500, wcpl: 0.06 });
   assert.equal(loud.gainDb, NOISE_MAX_DB, 'clamped at 75 dB');
   assert.ok(Math.abs(loud.gain - NOISE_BASE_GAIN * Math.pow(10, 50 / 20)) < 1e-12);
   assert.equal(noiseGainForDb(1e6), noiseGainForDb(NOISE_MAX_DB), 'the clamp is the ceiling');
@@ -413,11 +413,11 @@ test('noise: the volume factor rides its own metric from the base dB to the clam
 
 test('noise: each axis modulates only when its own factor is written', () => {
   // Spectrum named, volume not: the bed brightens but stays at the floor.
-  const p = noiseFor('# noise wcl 1', { wcl: 500 });
+  const p = noiseFor('# noise "wcl" 1', { wcl: 500 });
   assert.equal(p.tilt, 0.5);
   assert.equal(p.gainDb, NOISE_BASE_DB);
   // A metric keyword alone implies factor 1, as `# room wcl` does.
-  assert.equal(noiseFor('# noise wcl', { wcl: 500 }).tilt, 0.5);
+  assert.equal(noiseFor('# noise "wcl"', { wcl: 500 }).tilt, 0.5);
   // Bare numbers take the default metric, wcl, for both axes.
   const both = noiseFor('# noise 1 1', { wcl: 500 });
   assert.equal(both.tilt, 0.5);
@@ -425,25 +425,25 @@ test('noise: each axis modulates only when its own factor is written', () => {
 });
 
 test('noise: the 5th and 6th arguments pin the metrics in written order', () => {
-  const pinned = noiseFor('# noise wcl 1 wcpl 10 0.5 0.06', { wcl: 9999, wcpl: 9999 });
-  const live = noiseFor('# noise wcl 1 wcpl 10', { wcl: 500, wcpl: 0.06 });
+  const pinned = noiseFor('# noise "wcl" 1 "wcpl" 10 0.5 0.06', { wcl: 9999, wcpl: 9999 });
+  const live = noiseFor('# noise "wcl" 1 "wcpl" 10', { wcl: 500, wcpl: 0.06 });
   assert.equal(pinned.tilt, live.tilt, '0.5 s pinned ≡ 500 ms measured');
   assert.equal(pinned.gainDb, live.gainDb, '0.06 pinned ≡ 0.06 measured');
   // The amounts are positional, so pinning the spectrum metric means writing
-  // a volume factor first — as `# cycles wcl 10 0.3` needs its scale first.
+  // a volume factor first — as `# cycles "wcl" 10 0.3` needs its scale first.
   // wcpl is a fraction, not seconds, and pins on its own scale.
-  assert.equal(noiseFor('# noise wcpl 2 1 0.25', { wcpl: 0, wcl: 0 }).tilt, 0.5);
+  assert.equal(noiseFor('# noise "wcpl" 2 1 0.25', { wcpl: 0, wcl: 0 }).tilt, 0.5);
 });
 
 test('noise: patterned arguments advance one element per cycle', () => {
   const metrics = { wcl: 500 };
-  const tiltAt = (c) => noiseFor('# noise wcl <1 0.5 20>', metrics, c).tilt;
+  const tiltAt = (c) => noiseFor('# noise "wcl" <1 0.5 20>', metrics, c).tilt;
   assert.deepEqual([0, 1, 2, 3].map(tiltAt), [0.5, 0.25, 1, 0.5]);
   // The metric keyword itself may alternate.
-  const metricAt = (c) => noiseFor('# noise <wcl wcpl> 1', { wcl: 500, wcpl: 0.25 }, c).tilt;
+  const metricAt = (c) => noiseFor('# noise <"wcl" "wcpl"> 1', { wcl: 500, wcpl: 0.25 }, c).tilt;
   assert.deepEqual([0, 1].map(metricAt), [0.5, 0.25]);
   // Nested groups advance once per visit of the parent.
-  const nested = (c) => noiseFor('# noise wcl <1 <0.5 20>>', metrics, c).tilt;
+  const nested = (c) => noiseFor('# noise "wcl" <1 <0.5 20>>', metrics, c).tilt;
   assert.deepEqual([0, 1, 2, 3].map(nested), [0.5, 0.25, 0.5, 1]);
 });
 
@@ -517,7 +517,7 @@ test('grid: self is white, farthest peer is black, perspective is local', () => 
 
 test('parsed # chain resolves to full parameter sets and a merged visual state', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0 1>\n# room wcl 2\n# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200\n# crush wcpl 1\n# noise wcl 1 wcpl 10 0.5\n# grid true\n# ply 2\n'
+    '$ participants <0 1>\n# room "wcl" 2\n# echo "wcl" 2 "wcpl" 0.3 "wcl" 3 1500 20 1200\n# crush "wcpl" 1\n# noise "wcl" 1 "wcpl" 10 0.5\n# grid true\n# ply 2\n'
   );
   assert.deepEqual(errors, []);
   const metrics = { wcl: 750, wcpl: 0.5 };
@@ -594,7 +594,7 @@ function fakeAudioCtx({ onNode = () => {} } = {}) {
 
 test('no audio effect builds a node in the local browser chain — the aggregator master owns all four', () => {
   const { ast, errors } = parseMetaprogram(
-    '$ participants <0>\n# room wcl 2\n# noise wcl 1\n# crush wcl 1\n# echo\n');
+    '$ participants <0>\n# room "wcl" 2\n# noise "wcl" 1\n# crush "wcl" 1\n# echo\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
   const inserted = [];
@@ -624,7 +624,7 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
   // same `reduction` the old pixelate channel did. A patterned METRIC rather
   // than a patterned scale, because reduction is driven by the metric and
   // deliberately not by the scale.
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <wcl wcpl> 1\n');
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# crush <"wcl" "wcpl"> 1\n');
   assert.deepEqual(errors, []);
   let cyclePos = 0;
   withStubWindow((visual, text) => {
@@ -656,7 +656,7 @@ test('patterned arguments re-derive as the cycle advances; constants do not tick
     assert.equal(mgr.patternTicking(), false, 'dispose disarms the tick');
 
     // A constant-argument chain never arms it.
-    const plain = parseMetaprogram('$ participants <0>\n# crush wcl 1\n').ast;
+    const plain = parseMetaprogram('$ participants <0>\n# crush "wcl" 1\n').ast;
     mgr.setChain(plain.chain, { wcl: 100 });
     assert.equal(mgr.patternTicking(), false);
   });
@@ -676,7 +676,7 @@ function withStubWindow(fn) {
 }
 
 test('a master-bus-only chain inserts nothing locally but still publishes the visual', () => {
-  const { ast } = parseMetaprogram('$ participants <0>\n# room wcl 2\n# noise wcl 1\n');
+  const { ast } = parseMetaprogram('$ participants <0>\n# room "wcl" 2\n# noise "wcl" 1\n');
   const ctx = fakeAudioCtx();
   const inserted = [];
   withStubWindow((visual, text) => {
@@ -692,7 +692,7 @@ test('a master-bus-only chain inserts nothing locally but still publishes the vi
 });
 
 test('patterned noise arguments follow the cycle the manager is given', () => {
-  const { ast } = parseMetaprogram('$ participants <0>\n# noise wcl <1 20>\n');
+  const { ast } = parseMetaprogram('$ participants <0>\n# noise "wcl" <1 20>\n');
   const ctx = fakeAudioCtx();
   let cycle = 0;
   withStubWindow((visual, text) => {
@@ -754,7 +754,7 @@ test('echo: the limiter sits on the wet path only, so an unclamped gain is loud 
 });
 
 test('echo builds no local node, and its delay follows the cycle grid as well as the metrics', () => {
-  const { ast, errors } = parseMetaprogram('$ participants <0>\n# echo wcl <1 2> wcl 0.5 wcl 1 1000\n');
+  const { ast, errors } = parseMetaprogram('$ participants <0>\n# echo "wcl" <1 2> "wcl" 0.5 "wcl" 1 1000\n');
   assert.deepEqual(errors, []);
   const ctx = fakeAudioCtx();
   const cycle = { cycleSeconds: 2, cyclePos: 0 };

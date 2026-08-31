@@ -60,15 +60,19 @@ export const TIMING_METRICS = ['wcl', 'wcpl'];
 // (mouth-to-ear latency, a duration) and wcpl (packet-loss fraction).
 export const EFFECT_METRICS = ['wcl', 'wcpl'];
 
-// A metric keyword may be written bare (`wcl`) or, as mini notation forces and
-// `# cycles "wcl" 20` uses, quoted (`"wcl"`). Both tokenise with `.value` ===
-// the keyword, so a site only has to accept the extra token TYPE; whether the
-// value is one it allows stays the site's own check. `"audio"`/`"video"`/…
-// still read as media names, never metrics — they are a disjoint set, and
-// atMediaArg gates on isMedium() so a quoted metric is never taken for one.
+// A metric keyword is ALWAYS quoted — `# cycles "wcl" 20`, `# room "wcpl" 2`,
+// `# crush <"wcl" "wcpl"> <2 4>` — so it tokenises as a `string`, never a bare
+// `word`. This is the one spelling mini notation can express, and keeping it
+// the only one means the two surface notations read a metric identically.
+// `"audio"`/`"video"`/… are media names, a disjoint set; atMediaArg gates on
+// isMedium() so a quoted metric is never taken for one.
 function isMetricKeywordToken(t) {
-  return !!t && (t.type === 'word' || t.type === 'string');
+  return !!t && t.type === 'string';
 }
+
+// Every metric keyword, for spotting a bare (unquoted) one and telling the
+// author to quote it rather than falling through to a vaguer error.
+const METRIC_WORDS = new Set(['wcl', 'wcpl']);
 
 // A room with no `# mosaic` directive still tiles: the mosaic is the resting
 // state of the aggregator's video, and `# mosaic false` is the deviation from
@@ -300,6 +304,18 @@ class Parser {
     this.errors.push({ message, line: t.line, col: t.col });
   }
   skipNewlines() { while (this.peek().type === 'newline') this.next(); }
+
+  // A bare (unquoted) metric keyword where a quoted one belongs. Records the
+  // "quote it" error and returns true so the caller can bail; false leaves the
+  // caller to its own "needs a metric" path for a token that is not a metric
+  // word at all.
+  rejectBareMetric(t) {
+    if (t && t.type === 'word' && METRIC_WORDS.has(t.value)) {
+      this.error(`metric keywords are quoted — write "${t.value}", not ${t.value}`, t);
+      return true;
+    }
+    return false;
+  }
 
   // Consume the rest of the physical line. A button declaration is one line,
   // as `*name: code` is in the personal editor — it is skipped whole rather
@@ -768,21 +784,22 @@ class Parser {
     this.recover();
   }
 
-  // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
+  // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
   // With no amount the metric evolves with the live worst-case measurement;
   // an amount PINS it there regardless of network conditions (seconds for
   // wcl, loss fraction for wcpl), pinning timing only — measured metrics
-  // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
+  // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
+    if (this.rejectBareMetric(metricTok)) { this.recover(); return; }
     if (!isMetricKeywordToken(metricTok) || !TIMING_METRICS.includes(metricTok.value)) {
-      this.error(`cycles needs a timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
+      this.error(`cycles needs a quoted timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
       this.recover();
       return;
     }
     this.next();
     if (this.peek().type === 'op' && this.peek().value === '*') {
-      this.error(`the cycles scale factor is positional now — write '# cycles ${metricTok.value} 3', not '${metricTok.value}*3'`, this.peek());
+      this.error(`the cycles scale factor is positional now — write '# cycles "${metricTok.value}" 3', not '"${metricTok.value}"*3'`, this.peek());
       this.recover();
       return;
     }
@@ -962,13 +979,21 @@ class Parser {
         this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
-      // A metric leaf: bare `wcl`, or quoted `"wcl"` (the spelling mini
-      // notation forces). For a 'metric'-kind sequence any quoted string is
-      // taken as an attempted metric so the "not a metric" error can name it;
-      // in an 'any' sequence only a real keyword is — a stray string there may
-      // still be a medium the branch below claims.
-      const metricLeaf = t.type === 'word' ||
-        (t.type === 'string' && (kind === 'metric' || sig.metricKeywords.includes(t.value)));
+      // A bare metric word inside a pattern (`<wcl wcpl>`) — the same "quote
+      // it" error as a bare one anywhere else, then stand a rest in its place
+      // so the parallel arrays stay aligned.
+      if ((kind === 'metric' || kind === 'any') && this.rejectBareMetric(t)) {
+        this.next();
+        terms.push(null);
+        this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
+        continue;
+      }
+      // A metric leaf is a quoted `"wcl"` (never bare). For a 'metric'-kind
+      // sequence any quoted string is taken as an attempted metric so the "not
+      // a metric" error can name it; in an 'any' sequence only a real keyword
+      // is — a stray string there may still be a medium the branch below claims.
+      const metricLeaf = t.type === 'string' &&
+        (kind === 'metric' || sig.metricKeywords.includes(t.value));
       if ((kind === 'metric' || kind === 'any') && metricLeaf) {
         if (!settleKind('metric', t)) return null;
         if (!sig.metricKeywords.includes(t.value)) {
@@ -1020,7 +1045,7 @@ class Parser {
           ? `'${name}' medium pattern expects quoted medium names or sets of them ` +
             `(${MEDIA.join('|')}), got '${t.value}'`
           : leafKind === 'metric'
-            ? `'${name}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join('|')}), got '${t.value}'`
+            ? `'${name}' pattern expects quoted metric names ("${(sig.metricKeywords || EFFECT_METRICS).join('" | "')}"), got '${t.value}'`
             : `'${name}' pattern expects positive numbers, got '${t.value}'`,
         t
       );
@@ -1224,9 +1249,10 @@ class Parser {
     if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
       for (let i = 0; i < slots.length; i++) {
         const t = this.peek();
+        if (this.rejectBareMetric(t)) { this.recover(); return; }
         if (!isMetricKeywordToken(t) || !sig.metricKeywords.includes(t.value)) {
           this.error(
-            `'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its ${slots[i]} ` +
+            `'${name}' needs a quoted metric keyword ("${sig.metricKeywords.join('" | "')}") before its ${slots[i]} ` +
             `— the syntax is '${sig.usage}'`, t);
           this.recover();
           return;
@@ -1451,6 +1477,7 @@ class Parser {
         }
         continue;
       }
+      if (this.rejectBareMetric(t)) { this.recover(); return; }
       if (isMetricKeywordToken(t) && EFFECT_METRICS.includes(t.value)) {
         this.next();
         if (!this.bindNoiseMetric(metrics, args.length, t.value, t)) return;
@@ -1505,11 +1532,12 @@ class Parser {
 
   parseChainFn(program, name, nameTok, sig) {
     // Metric-keyed effects name their driving metric before the numbers:
-    // `# room "wcl" 2 0.4` (or bare `wcl`). The keyword is required — a
-    // bare-number form has no metric and is a parse error.
+    // `# room "wcl" 2 0.4`. The quoted keyword is required — a bare `wcl` or a
+    // bare-number form is a parse error.
     let metric = null;
     if (sig.metricKeywords) {
       const t = this.peek();
+      if (this.rejectBareMetric(t)) { this.recover(); return; }
       if (isMetricKeywordToken(t) && sig.metricKeywords.includes(t.value)) {
         metric = t.value;
         this.next();
@@ -1517,7 +1545,7 @@ class Parser {
         metric = this.parseValueSequence(name, 'metric', sig);
         if (!metric) { this.recover(); return; }
       } else {
-        this.error(`'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its arguments`, t);
+        this.error(`'${name}' needs a quoted metric keyword ("${sig.metricKeywords.join('" | "')}") before its arguments`, t);
         this.recover();
         return;
       }

@@ -286,10 +286,10 @@ told apart by the voice opener; mixing the two is a parse error.
   A chain split across lines (`$: participants("<0 1>")` then `.cycles("wcl", 10)`
   on the next line) is the same program.
 
-`"wcl"` / `"wcpl"` are quoted in both notations. A bare `wcl` still parses (it
-is how older programs are written) but the quoted spelling is canonical — it is
-what `buildDefaultProgram`, the studio effect-toggle buttons, and a lowered mini
-buffer all emit.
+`"wcl"` / `"wcpl"` are **always quoted**, in both notations — a bare `wcl` is a
+parse error that tells you to quote it. This is the one spelling mini notation
+can express, so keeping it the only one is what lets the two surfaces read a
+metric identically.
 
 The `participants` label is optional — `$ <0 1>` and `$ participants <0 1>` are
 the same statement.
@@ -308,9 +308,11 @@ s-expressions, told apart by the bracket:
   a mondough group use the same participant/rest/modifier grammar and may nest
   `<…>` / `[…]` / `(…)`.
 
-The `*$` button roster helpers and the studio "add me / drop me" buttons only
-edit a mondo `$ participants <…>` sequence; a buffer written in mini, or with
-`$ (cat …)`, parses and runs but those per-token buttons no-op on it.
+The `*$` participant-voice buttons and the studio "add me / drop me" buttons
+work in **both** notations — a mini buffer is lowered to the mondo grammar for
+the scan and the toggle and raised back afterwards, so the buffer never ends up
+mixed. The `*#` effect buttons are mondo-only (their marker convention has
+nowhere to hang on a mini `.method()` chain); in a mini buffer they no-op.
 
 ## Metaprogramming Semantics
 Each Jitsi room participant is assigned a sequential identifying index upon first joining the room that is immutable for the duration of the meeting. 
@@ -351,18 +353,18 @@ That cycle length is also the length of each performer's TURN: the aggregator pa
 
 The two worst-case metrics the language reads are **WCL** (worst-case mouth-to-ear latency, ms) and **WCPL** (worst-case packet loss, a fraction in [0, 1]). Both are computed identically on every client from the same peer-state broadcast, so all browsers derive identical cycle lengths and effect parameters.
 
-The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles wcl 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles wcl 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
+The general syntax is `# cycles <metric> [scale factor] [amount]`. With only a scale factor, the cycle target is the dynamically evolving worst-case measurement times the scale — `# cycles "wcl" 1000` is the live WCL (in seconds) × 1000. An additional amount FIXES the metric at that value regardless of current network conditions: `# cycles "wcl" 10 0.3` sets WCL to 300 ms and multiplies by 10 for a cycle length of 3 s. The amount is in seconds for `wcl` and a loss fraction in [0, 1] for `wcpl`. A fixed amount pins timing only — effects and readouts keep following the real network. The scale factor defaults to 1 when omitted.
 
 Examples:
 
 ```
 $ participants <0 1 3 5 2a 1zzzv 9 1>*2
-# cycles wcl 3 // This is a comment. 
+# cycles "wcl" 3 // This is a comment. 
 
 ```
 ```
 $ participants <0 1 2 3>
-# cycles wcl 20 // Default if not specified. wcl is worst-case MOUTH-TO-EAR latency: an UPPER BOUND over the room, built from the two worst network legs, the worst measured de-jitter buffer, and the worst rig's own measured capture/codec/playout latency. It sits in the tens-to-low-hundreds of ms, so a scale of 20 gives seconds-long solos.
+# cycles "wcl" 20 // Default if not specified. "wcl" is worst-case MOUTH-TO-EAR latency: an UPPER BOUND over the room, built from the two worst network legs, the worst measured de-jitter buffer, and the worst rig's own measured capture/codec/playout latency. It sits in the tens-to-low-hundreds of ms, so a scale of 20 gives seconds-long solos.
 # tempo 120 bpm // Tempo takes two arguments, quantity and unit, either bpm, cps, or cpm. No tempo directive is injected when none is written, but cycle quantization still falls back to 120 bpm — and the room's default program deliberately carries no `# tempo` line. A minimum waiting period based on specified cycle timing mode is prioritized over hitting buffer scheduling deadlines according to the specified tempo.
 
  // This is the default metaprogram for a meeting with four human participants. We first hear and see participant 0's output then participant 1's, and so on, with the smallest number of beats covering (≥) the cycle target. This is the order in which inputs are established via the Web Audio API.
@@ -370,7 +372,7 @@ $ participants <0 1 2 3>
 
 ```
 $ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
-# cycles wcl 20
+# cycles "wcl" 20
 # tempo 120 bpm
 
 // This is how the program would look immediately after participant 1 adds a cluster of four bots, participant 2 later adds a cluster of 3 bots, and participant 0 then adds one bot. The `# tempo` line here is written explicitly — the room's default program carries none, and quantization falls back to 120 bpm.
@@ -378,7 +380,7 @@ $ participants < 0 1 2 3 1a 1b 1c 1d 2a 2b 2c 0a>
 
 ```
 $ participants <0 1 2>
-# cycles wcl 10 0.3
+# cycles "wcl" 10 0.3
 
 // WCL pinned at 300 ms and scaled by 10: every cycle is exactly 3 s no matter how the network behaves.
 ```
@@ -388,8 +390,8 @@ Below is an example of an invalid program.
 
 ```
 $ participants [0 2 ~ 3 1]
-# cycles wcl
-# cycles wcpl
+# cycles "wcl"
+# cycles "wcpl"
 ```
 
 The infix operators @, !, ?, .., |, %, /, *, and : each apply as usual. What they apply to here is a TURN — the stretch of the room's output that belongs to one participant — so read them that way:
@@ -423,8 +425,8 @@ The metaprogram has the same thing, spelled with the sigil the statement already
 ```
 $ participants <0 1>
 *$ participants <2a 2b>     // a voice, waiting for its button
-*# crush wcl 2              // an effect, waiting for its button
-# cycles wcl 20
+*# crush "wcl" 2              // an effect, waiting for its button
+# cycles "wcl" 20
 ```
 
 The parser skips declaration lines whole — including when it is recovering from a syntax error somewhere above them — so nothing in a declaration runs and nothing in it is validated until a button writes it into the program, where it is parsed like any other statement. A declaration is one line, it may carry a trailing comment, and the same statement declared twice is one button. A declaration commented out (`// *$ …`) declares nothing, and neither does one with nothing after its sigil (`*$`, `*$ participants`, `*#`) — those show no button at all.
@@ -436,7 +438,7 @@ What "pressing" writes depends on the statement:
 | Declaration | Pressed on | Pressed off |
 |---|---|---|
 | `*$ participants <2a 2b>` | its tokens join the live scheduling sequence (`<0 1>` → `<0 1 2a 2b>`) | those same tokens leave it |
-| `*# crush wcl 2` | the directive is appended as its own line, marked `// jpattern-btn` | that line is commented out |
+| `*# crush "wcl" 2` | the directive is appended as its own line, marked `// jpattern-btn` | that line is commented out |
 
 A scheduling voice MERGES into the one sequence the language allows rather than appending a second `$ participants` statement, which would be a duplicate-statement error. A voice counts as on only when every one of its tokens is in the ring, so pressing a half-listed voice adds what is missing rather than removing what is there. Tokens keep whatever modifiers they are declared with (`*$ participants <1@2>` puts `1@2` in the ring and takes `1@2` back out). In a program with no `$ participants` statement at all there is nothing to merge into, so the voice becomes the sequence — written plain, without the marker, so that from then on it is an ordinary statement the same button goes on editing token by token. Turning off the last voice in the ring therefore leaves `$ participants <>`, which is an invalid program and reported as one, but a recoverable one: pressing the button again puts the voice straight back.
 
@@ -454,11 +456,11 @@ All four run on the **aggregator's master bus** — the single assembled mix the
 
 ### The medium argument
 
-Every effect has a counterpart in each of the room's four output media, and by default a directive acts on all of them: `# room wcl 2` reverberates the mix, blurs the published frame, blurs the styled text and stretches its letter-spacing at once. An optional trailing set narrows that.
+Every effect has a counterpart in each of the room's four output media, and by default a directive acts on all of them: `# room "wcl" 2` reverberates the mix, blurs the published frame, blurs the styled text and stretches its letter-spacing at once. An optional trailing set narrows that.
 
 ```
-# room wcl 2 ["audio" "video"]                       audio and video only
-# room wcl 2 <["audio" "video"] ["video" "css"]@2>*3 ...and it patterns
+# room "wcl" 2 ["audio" "video"]                       audio and video only
+# room "wcl" 2 <["audio" "video"] ["video" "css"]@2>*3 ...and it patterns
 ```
 
 The four media are `audio`, `css`, `text` and `video`. Names are space-separated and **a comma is a parse error** — the metaprogram's sequences have always separated elements by whitespace, and one collection spelled differently from every other would be a second convention to learn. Medium names are the only strings the language has, which is what keeps `["audio" "video"]` distinguishable from the numeric subdivision `[1 4]` a patterned argument may already be written as: **inside a medium argument `[…]` is a set, not a subdivision.** The set closes the directive — nothing may follow it.
@@ -501,7 +503,7 @@ A patterned argument is read the way a `$ participants` sequence is, on the same
 
 `@`, `?`, `!` and an element's `*` / `/` modify one element and are written inside the brackets; a `*` / `/` written *after* the closing bracket is the rate of the whole sequence. The count must be glued to its operator: `<1? 2>` is a maybe-1 followed by 2, not `<1?2>`, and `<1@ 2>` is an error rather than a weight that swallows the 2. The remaining operators (`%`, `:`) are parse errors inside an effect argument.
 
-**`/` after a number is a fraction, not a rate.** `# echo wcl 1/2` writes half a cycle, and that reading wins wherever a number is followed by `/` — so inside a pattern `<3/4 1>` is the value 0.75, not element 3 at a quarter rate. Nothing is lost by it: an element rate on a constant is inert either way. To rate a group, write it on the group (`<[1 4]/2 8>`). This is the one place the effect-argument grammar reads a spelling differently from a `$ participants` sequence, where `3/4` *is* participant 3 at a quarter rate.
+**`/` after a number is a fraction, not a rate.** `# echo "wcl" 1/2` writes half a cycle, and that reading wins wherever a number is followed by `/` — so inside a pattern `<3/4 1>` is the value 0.75, not element 3 at a quarter rate. Nothing is lost by it: an element rate on a constant is inert either way. To rate a group, write it on the group (`<[1 4]/2 8>`). This is the one place the effect-argument grammar reads a spelling differently from a `$ participants` sequence, where `3/4` *is* participant 3 at a quarter rate.
 
 **`?` is not a per-client coin flip.** The draw is seeded — by the pattern's position in the program text, the element's index (so replicas made by `!` draw separately), and which repetition of the sequence it is — so every browser and the aggregator drop and keep exactly the same elements at the same instants. Seeding by the occurrence rather than by the cycle also means an element widened by `@` or `/` decides **once, as a whole**, instead of flickering at each cycle boundary. This is the same generator, and the same guarantee, that `?` and `|` on a participant turn already run on.
 
@@ -512,18 +514,18 @@ Examples:
 - Good:
 ```
 $ participants [0 1 _ 4? 10 2a - 2za ~]
-# cycles wcpl 3
+# cycles "wcpl" 3
 # tempo 90/4 cpm
-# room wcl 2.5
+# room "wcl" 2.5
 # noise
 ```
 
 - Bad:
 ```
 $ participants [0 1 _@2 4@3 10!2 2a? 2 - 4zza] // the number to the right is exactly as mondo notation repeats or lengthens an element in the sequence.
-# cycles wcpl 3
+# cycles "wcpl" 3
 # tempo 90/4 cpm
-# room wcl (pink # range 0 1)
+# room "wcl" (pink # range 0 1)
 ```
 
 ### Supported Audiovisual Functions
@@ -542,9 +544,9 @@ The metric keyword is required; the bare-number form (`# room 2 3`) is not valid
 AV buffer object
 - Parameters
 scale factor: A positive real number multiplying the metric to give the reverb decay time: decay = scale_factor * metric, in seconds. Defaults to 1. Each comb line's feedback gain is then solved for that RT60 (g = 0.001^(delay/decay)), clamped below unity so the tail always dies away.
-amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl, so `# room wcl 2 0.4` is a fixed 800 ms decay regardless of network conditions, and a loss fraction for wcpl. Defaults to unset (live metrics).
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl, so `# room "wcl" 2 0.4` is a fixed 800 ms decay regardless of network conditions, and a loss fraction for wcpl. Defaults to unset (live metrics).
 
-Metrics are read in seconds, and wcpl — a fraction — as it stands, so `# room wcpl 2` is a 200 ms tail at 10 % loss. Note that wcl models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room wcl 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
+Metrics are read in seconds, and "wcpl" — a fraction — as it stands, so `# room "wcpl" 2` is a 200 ms tail at 10 % loss. Note that "wcl" models mouth-to-ear latency (tens of ms), not the bare network leg, so a modest scale factor already yields an audible tail — `# room "wcl" 10` is a ~1 s decay at 100 ms wcl. Scale or pin the amount as needed, the same way `# cycles` carries its scale openly rather than through a hidden multiplier.
 - Parameters as patterns
 Each of the three may be written as a mini-notation sequence instead of a constant, with rests, rates, weights and chances (see *Valid Chainable Functions* above). A rest in the metric or scale slot leaves that argument at its default — `wcl` and 1 — for as long as it is in force, rather than silencing the tail. Both the browser's Hydra counterpart and the aggregator's master reverb re-read the pattern on a 50 ms tick, so a sub-cycle step is heard where it is written.
 
@@ -554,15 +556,15 @@ Updated AV buffer object
 - Examples:
 ```
 $ participants [0 2 1 4 3]
-# room wcl 2
+# room "wcl" 2
 ```
 ```
 $ participants [0 2 1 4 3]
-# room <wcl wcpl> <1 2 ~ 2 3>*2   // metric turns over per cycle, scale twice per cycle
+# room <"wcl" "wcpl"> <1 2 ~ 2 3>*2   // metric turns over per cycle, scale twice per cycle
 ```
 ```
 $ participants [0 2 1 4 3]
-# room wcl <2@3 8?0.25>
+# room "wcl" <2@3 8?0.25>
 ```
 A modest tail held for three whole cycles, then one four times as long for a
 fourth — except that a quarter of the time that long one is dropped, leaving
@@ -570,7 +572,7 @@ the scale at its default 1 for that cycle. Every listener hears the same
 cycles dropped, because the draw is seeded rather than rolled per client.
 ```
 $ participants [0 2 1 4 3]
-# room wcl 2 0.4
+# room "wcl" 2 0.4
 ```
 
 #### echo
@@ -589,7 +591,7 @@ Every parameter is its scale factor times its metric **normalized against an upp
 
 The scale is therefore the value that parameter reaches when its metric sits at the bound, and nothing runs away when the network does.
 
-length: the delay time in **cycles**, not seconds. The echo rides the room's cycle grid, so it re-times itself whenever the metrics move the cycle length and stays in rhythm with the rotation. Rational lengths may be written as fractions — `# echo wcl 1/2 …`, the same spelling `# tempo 90/4` uses — or as decimals. Default scale 0.5.
+length: the delay time in **cycles**, not seconds. The echo rides the room's cycle grid, so it re-times itself whenever the metrics move the cycle length and stays in rhythm with the rotation. Rational lengths may be written as fractions — `# echo "wcl" 1/2 …`, the same spelling `# tempo 90/4` uses — or as decimals. Default scale 0.5.
 feedback: the recirculated proportion, clamped strictly below unity (0.95) — the one place a user's scale factor is overruled, because a self-oscillating delay line never gets quiet again. It also modulates the brightness of the synthesized video output: `brightness = 1 − feedback`, so an echo doing nothing audible leaves the image untouched and thicker repeats darken it. Default scale 0.5.
 gain: the level of the wet (echoed) path against the dry signal. Default scale 1.
 
@@ -603,13 +605,13 @@ Updated AV buffer object
 - Examples:
 ```
 $ participants [0 2 1 4 3]
-# echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200 // packet loss is a percentage
+# echo "wcl" 2 "wcpl" 0.3 "wcl" 3 1500 20 1200 // packet loss is a percentage
 # ply 2
 ```
 A 2-cycle echo at 1500 ms of worst-case latency, 0.3 feedback at 20 % worst-case loss, and gain 3 at 1200 ms — all three shrinking together as the room gets healthier.
 ```
 $ participants [0 2 1 4 3]
-# echo wcl <2 3 0.5> wcpl 0.3 wcl [1 4] 1500 20 1200
+# echo "wcl" <2 3 0.5> "wcpl" 0.3 "wcl" [1 4] 1500 20 1200
 ```
 The same echo with its length alternating per cycle and its gain jumping mid-cycle.
 
@@ -624,11 +626,11 @@ The metric keyword is required; the bare-number form (`# crush 2`) is not valid.
 AV buffer object
 - Parameters
 scale factor: A positive real number multiplying the 8-bit resting depth: bit_depth = clamp(8 * scale_factor / 2^(metric / halving_amount), 1, 16). Defaults to 1. Raising it crushes **less** (a 2 gives a 16-bit base); a value below 1 crushes harder.
-amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for wcl (`# crush wcl 2 0.4` is a fixed 400 ms whatever the network does), a loss fraction for wcpl, clamped to [0, 1].
+amount for metric: A positive real number that *pins* the metric instead of reading it live, in that metric's own unit — seconds for `wcl` (`# crush "wcl" 2 0.4` is a fixed 400 ms whatever the network does), a loss fraction for `wcpl`, clamped to [0, 1].
 
 The halving amounts are per metric, because the metrics are not on one scale: 100 ms of wcl or 0.25 of wcpl each halve the depth. The wcpl figure preserves the "a factor of 2 per 25 % packet loss" this effect was first specified with.
 
-**The resting depth is a ceiling, not a typical reading.** wcl is mouth-to-ear — both network legs plus the de-jitter buffer plus each rig's own capture/encode/playout pipeline (40 ms assumed until a rig measures itself) — so a healthy LAN room already sits around 90-150 ms. `# crush wcl 1` therefore rests near 4 bits rather than 8, and `# crush wcl 2` is the line that puts a typical room near 8.
+**The resting depth is a ceiling, not a typical reading.** `wcl` is mouth-to-ear — both network legs plus the de-jitter buffer plus each rig's own capture/encode/playout pipeline (40 ms assumed until a rig measures itself) — so a healthy LAN room already sits around 90-150 ms. `# crush "wcl" 1` therefore rests near 4 bits rather than 8, and `# crush "wcl" 2` is the line that puts a typical room near 8.
 
 Sample rate follows the metric alone, not the scale factor: sr_divisor = clamp(round(2^(metric / halving_amount)), 1, 64), a sample-and-hold period that is also the pixel-block edge for the Hydra counterpart. A clean room therefore decimates nothing whatever base depth the performer asked for.
 - Parameters as patterns
@@ -638,16 +640,16 @@ Updated AV buffer object
 - Examples:
 ```
 $ participants [0 2 1 4 3]
-# crush wcl 2
+# crush "wcl" 2
 # chop 2
 ```
 ```
 $ participants [0 2 1 4 3]
-# crush wcpl 1 0.25       // pinned at 25 % loss: a steady 4 bits
+# crush "wcpl" 1 0.25       // pinned at 25 % loss: a steady 4 bits
 ```
 ```
 $ participants [0 2 1 4 3]
-# crush <wcl wcpl> <2 4>   // metric and base depth both turn over per cycle
+# crush <"wcl" "wcpl"> <2 4>   // metric and base depth both turn over per cycle
 ```
 
 #### noise
@@ -658,15 +660,15 @@ A meeting opens **bypassed**: the default program carries no `# noise` line, so 
 - Syntax
 `# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [amount for metric 1] [amount for metric 2]`
 
-Both metric keywords are optional and default to `wcl`; either may be `wcl` or `wcpl`. A keyword binds to the factor that *follows* it, so `# noise wcl 20 wcpl 10` reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers are positional: spectrum factor, volume factor, then the two pinned amounts in the same order the metrics were written.
+Both metric keywords are optional and default to `wcl`; either may be `wcl` or `wcpl`. A keyword binds to the factor that *follows* it, so `# noise "wcl" 20 "wcpl" 10` reads "spectrum from "wcl" × 20, volume from "wcpl" × 10". The numbers are positional: spectrum factor, volume factor, then the two pinned amounts in the same order the metrics were written.
 - Input
 AV buffer object
 - Parameters
 spectrum factor: A positive real number multiplying its metric to give the bed's position on the colour axis, clamped to [0, 1]: 0 is brown, 0.5 pink, 1 white, with an equal-power crossfade between the two adjacent colours (the generators are normalized to a common level, so a sweep changes colour without changing level). Metrics are read in seconds for `wcl` and as a loss fraction for `wcpl`, so at 100 ms wcl a factor of 5 lands exactly on pink and a factor of 10 or more saturates at white. Defaults to 0 — an unmodulated bed sits at brown.
 volume factor: A positive real number multiplying its metric the same way, mapping [0, 1] onto 25 dB … 75 dB. The bed's gain is `0.12 × 10^((dB − 25) / 20)`, so 25 dB is the level the effect has always run at and each further 6 dB doubles it. **Clamped at 75 dB** — 50 dB above the base, i.e. 316× the base gain, an absolute linear gain of ~38. The clamp bounds the modulation; it does not promise the bed stays inside the mix's headroom. 0 dBFS arrives at about 43 dB, and there is no limiter between the bed and the published track, so the upper part of the range clips the master by design. Defaults to 0, leaving the bed at 25 dB.
-amount for metric 1 / metric 2: Positive real numbers that *pin* the corresponding metric instead of reading it live — seconds for `wcl`, a loss fraction for `wcpl` — exactly as `# room wcl 2 0.4` pins room's. Being positional, pinning the first metric means writing a volume factor first. Default unset (live metrics).
+amount for metric 1 / metric 2: Positive real numbers that *pin* the corresponding metric instead of reading it live — seconds for `wcl`, a loss fraction for `wcpl` — exactly as `# room "wcl" 2 0.4` pins room's. Being positional, pinning the first metric means writing a volume factor first. Default unset (live metrics).
 
-A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise wcpl` is "spectrum from live wcpl at scale 1", the same shape as `# room wcl`.
+A factor defaults to 1 rather than 0 when its metric keyword was written, so `# noise "wcpl"` is "spectrum from live "wcpl" at scale 1", the same shape as `# room "wcl"`.
 
 Every slot also accepts a `<…>` pattern, sampled **one element per cycle** — the aggregator re-derives the bed at each cycle boundary. `[…]` subdivides within a cycle, and a rate above 1 (`*2`) steps within one; neither is something a per-cycle argument can express, so both are parse errors, as is mixing metric keywords and numbers in one pattern. A rate of 1 or slower (`/2`) is fine, and so are rests, `@` weights (which hold an element for whole cycles) and `?` chances. Nested groups advance once per visit of their parent, as in mondo.
 
@@ -680,15 +682,15 @@ $ participants [0 2 1 4 3]
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise wcl 20 wcpl 10
+# noise "wcl" 20 "wcpl" 10
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise wcl 20 wcpl 10 0.4 0.06
+# noise "wcl" 20 "wcpl" 10 0.4 0.06
 ```
 ```
 $ participants [0 2 1 4 3]
-# noise <wcl wcpl> <20 5> wcpl 10
+# noise <"wcl" "wcpl"> <20 5> "wcpl" 10
 ```
 
 ### grid

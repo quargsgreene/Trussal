@@ -66,6 +66,24 @@ test('mondoToMini: live() with a device label and a mini struct', () => {
   );
 });
 
+test('the glued * (and every mini modifier) survives both directions', () => {
+  for (const [mondo, mini] of [
+    ['$ n <0 1>*2\n# room 2',        '$: n("<0 1>*2")\n.room(2)'],
+    ['$ participants <0@2 1!3>*2',   '$: participants("<0@2 1!3>*2")'],
+    ['$ s [bd sd]!2',                '$: s("[bd sd]!2")'],
+  ]) {
+    assert.equal(mondoToMini(mondo), mini, `mondo→mini: ${mondo}`);
+    assert.equal(miniToMondo(mini), mondo, `mini→mondo: ${mini}`);
+  }
+});
+
+test('miniToMondo lowers a *$: button declaration to the *$ scanner form', () => {
+  assert.equal(
+    miniToMondo('$: participants("<0>")\n*$: participants("<2a 2b>")'),
+    '$ participants <0>\n* $ participants <2a 2b>',
+  );
+});
+
 // --- mini -> mondo (metaprogram) -------------------------------------
 
 test('miniToMondo: the spec example, one-liner and multi-line both', () => {

@@ -53,17 +53,17 @@ test('button declarations are read off `*$` / `*#` lines, in source order', () =
   const text = [
     '$ participants <0 2a>',
     '*$ participants <2a 2b>',
-    '# cycles wcl 20',
-    '  *  # crush wcl 2  // annotates the declaration, not the statement',
-    '// *# noise wcl 3   — commented out, so no button',
+    '# cycles "wcl" 20',
+    '  *  # crush "wcl" 2  // annotates the declaration, not the statement',
+    '// *# noise "wcl" 3   — commented out, so no button',
     '*$ participants <2a 2b>' // the same statement twice is one button
   ].join('\n');
 
   const buttons = parseJPatternButtons(text);
-  assert.deepEqual(buttons.map(b => b.snippet), ['$ participants <2a 2b>', '# crush wcl 2']);
+  assert.deepEqual(buttons.map(b => b.snippet), ['$ participants <2a 2b>', '# crush "wcl" 2']);
   // A voice is labelled by its sequence — 'participants' on every one of them
   // would say nothing.
-  assert.deepEqual(buttons.map(b => b.label), ['<2a 2b>', 'crush wcl 2']);
+  assert.deepEqual(buttons.map(b => b.label), ['<2a 2b>', 'crush "wcl" 2']);
   // 2a is already in the ring but 2b is not, so the voice is not yet in force.
   assert.deepEqual(buttons.map(b => b.active), [false, false]);
   assert.deepEqual(parseJPatternButtons(''), []);
@@ -77,10 +77,10 @@ test('a commented declaration writes the statement, not the comment', () => {
 });
 
 test('a `*$` voice merges into the one scheduling sequence, both ways', () => {
-  const declared = '$ participants <0 1>\n*$ participants <2a 2b>\n# cycles wcl 20\n';
+  const declared = '$ participants <0 1>\n*$ participants <2a 2b>\n# cycles "wcl" 20\n';
   const snippet = '$ participants <2a 2b>';
   assert.deepEqual(participantTokensIn(snippet), ['2a', '2b']);
-  assert.equal(participantTokensIn('# crush wcl 2'), null);
+  assert.equal(participantTokensIn('# crush "wcl" 2'), null);
 
   // On: the tokens join the live sequence — NOT a second `$ participants`
   // statement, which the language rejects as a duplicate.
@@ -103,12 +103,29 @@ test('a `*$` voice merges into the one scheduling sequence, both ways', () => {
   assert.match(toggleJPatternSnippet(half, snippet), /\$ participants <0 2a 2b>/);
 });
 
+test('a `*$` voice button works in a mini-notation metaprogram too', () => {
+  const mini = "'metaprogram editor'\n$: participants(\"<0 1>\").cycles(\"wcl\", 20)\n*$: participants(\"<2a 2b>\")\n";
+  const [btn] = parseJPatternButtons(mini);
+  assert.equal(btn.snippet, '$ participants <2a 2b>');           // scanned as the mondo form
+  assert.equal(isJPatternSnippetActive(mini, btn.snippet), false);
+
+  // Toggling on merges the tokens into the live sequence and hands the buffer
+  // BACK in mini notation — never a mix.
+  const on = toggleJPatternSnippet(mini, btn.snippet);
+  assert.match(on, /\$: participants\("<0 1 2a 2b>"\)/);
+  assert.doesNotMatch(on, /^\s*#\s/m);                            // no stray mondo line
+  assert.equal(isJPatternSnippetActive(on, btn.snippet), true);
+
+  const off = toggleJPatternSnippet(on, btn.snippet);
+  assert.match(off, /\$: participants\("<0 1>"\)/);
+});
+
 test('a `*$` voice with no sequence to merge into becomes the sequence', () => {
   const snippet = '$ participants <0 1>';
-  const on = toggleJPatternSnippet('# cycles wcl 20', snippet);
+  const on = toggleJPatternSnippet('# cycles "wcl" 20', snippet);
   // Written plain, not marked: from here it is an ordinary statement that this
   // same button edits token by token.
-  assert.equal(on, `# cycles wcl 20\n${snippet}\n`);
+  assert.equal(on, `# cycles "wcl" 20\n${snippet}\n`);
   assert.equal(isJPatternSnippetActive(on, snippet), true);
   assert.equal(toggleJPatternSnippet('', snippet), `${snippet}\n`);
 
@@ -126,7 +143,7 @@ test('two voice buttons over one sequence stay independently reversible', () => 
   // button wrote the line would strand them both.
   const a = '$ participants <0 1>';
   const b = '$ participants <2a>';
-  let text = toggleJPatternSnippet('# cycles wcl 20', a);
+  let text = toggleJPatternSnippet('# cycles "wcl" 20', a);
   text = toggleJPatternSnippet(text, b);
   assert.match(text, /\$ participants <0 1 2a>/);
   assert.deepEqual([isJPatternSnippetActive(text, a), isJPatternSnippetActive(text, b)], [true, true]);
@@ -145,13 +162,13 @@ test('declarations and commented-out lines are never mistaken for the program', 
   // the first `$ participants` in the text, so an unanchored one edits the
   // declaration and reports the button on before it is ever pressed.
   const snippet = '$ participants <2a 2b>';
-  const text = `*${snippet}\n$ participants <0 1>\n# cycles wcl 20\n`;
+  const text = `*${snippet}\n$ participants <0 1>\n# cycles "wcl" 20\n`;
   assert.equal(parseJPatternButtons(text)[0].active, false);
   assert.match(toggleJPatternSnippet(text, snippet), /^\$ participants <0 1 2a 2b>$/m);
   assert.match(toggleJPatternSnippet(text, snippet), /^\*\$ participants <2a 2b>$/m);
 
   // A commented-out sequence is not a sequence.
-  const commented = '// $ participants <0 1>\n# cycles wcl 20\n';
+  const commented = '// $ participants <0 1>\n# cycles "wcl" 20\n';
   assert.equal(isJPatternSnippetActive(commented, '$ participants <0 1>'), false);
   assert.match(toggleJPatternSnippet(commented, snippet), /^\$ participants <2a 2b>$/m);
 });

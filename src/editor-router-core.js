@@ -15,6 +15,11 @@ import {
   programHasParticipant,
   hasParticipantSequence
 } from './audio-net/MetaprogrammerParser.js';
+// A `*$` / `*#` declaration and the roster helpers are the mondo `$`/`#`
+// grammar. A metaprogram written in mini ($: … .method(…)) is lowered to that
+// grammar for the scan and the toggle, and a mini buffer is raised back
+// afterwards so the notation never gets mixed.
+import { detectNotation, miniToMondo, mondoToMini } from './notation.js';
 
 // classNames: iterable/array of class names (e.g. from element.classList).
 export function classifyEditor(classNames) {
@@ -116,10 +121,17 @@ const JP_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
 // `active` says whether it is currently in force, which for a scheduling
 // voice means its tokens are in the live sequence and for anything else means
 // its marked line is present and uncommented.
+// A metaprogram in mini notation, lowered to the mondo `$`/`#` grammar the
+// button scanner and roster helpers read; a mondo (or plain) buffer unchanged.
+function asMondo(text) {
+  const s = String(text ?? '');
+  return detectNotation(s) === 'mini' ? miniToMondo(s) : s;
+}
+
 export function parseJPatternButtons(text) {
   const buttons = [];
   const seen = new Set();
-  for (const line of String(text ?? '').split('\n')) {
+  for (const line of asMondo(text).split('\n')) {
     const m = JP_BTN_DECL_RE.exec(line);
     if (!m) continue;
     // A trailing comment annotates the declaration; it is not part of the
@@ -166,29 +178,40 @@ export function participantTokensIn(snippet) {
 // then on it is an ordinary statement the very same button edits token by
 // token. Directives, having no such statement to join, toggle as a marked line.
 export function isJPatternSnippetActive(text, snippet) {
-  const cur = text || '';
+  const cur = asMondo(text || '');
   const tokens = participantTokensIn(snippet);
   if (tokens) return hasParticipantSequence(cur) && tokens.every(t => programHasParticipant(cur, t));
   return cur.includes(`\n${snippet}${JP_BTN_MARKER}`);
 }
 
 export function toggleJPatternSnippet(text, snippet) {
-  const cur = text || '';
+  const original = text || '';
+  const wasMini = detectNotation(original) === 'mini';
+  const cur = wasMini ? miniToMondo(original) : original;
+  // Toggle in the mondo grammar, then raise a mini buffer back so the
+  // notation stays consistent (mixing the two is a parse error).
+  const raise = (s) => (wasMini ? mondoToMini(s) : s);
   const tokens = participantTokensIn(snippet);
   if (tokens) {
     if (!hasParticipantSequence(cur)) {
       const head = cur.replace(/\s*$/, '');
-      return head ? `${head}\n${snippet}\n` : `${snippet}\n`;
+      return raise(head ? `${head}\n${snippet}\n` : `${snippet}\n`);
     }
     // Turning a voice off empties the ring when it is the only one in it. That
     // is an invalid program and the editor says so, but it is recoverable —
     // pressing the button again puts the voice straight back.
     const on = tokens.every(t => programHasParticipant(cur, t));
-    return tokens.reduce(
+    return raise(tokens.reduce(
       (acc, t) => (on ? removeParticipantFromProgram(acc, t) : appendParticipantToProgram(acc, t)),
       cur
-    );
+    ));
   }
+  // An effect declaration (`*#`) toggles a marked `# …` line in and out. That
+  // marker convention is mondo-only — the mini form of an effect is a
+  // `.method()` glued to the `$:` voice, with nowhere to hang a per-line
+  // marker — so in a mini buffer this is a no-op rather than a mix. Participant
+  // (`*$`) buttons, above, work in both.
+  if (wasMini) return original;
   const active = `\n${snippet}${JP_BTN_MARKER}`;
   const commented = `\n// ${snippet}${JP_BTN_MARKER}`;
   if (cur.includes(commented)) return cur.replace(commented, active);

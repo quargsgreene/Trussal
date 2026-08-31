@@ -71,6 +71,9 @@ export function detectNotation(body) {
 
 const OPEN = { '<': '>', '[': ']', '(': ')', '{': '}' };
 const CLOSE = new Set(['>', ']', ')', '}']);
+// The glued mini modifier characters — `*n /n @n !n ?n %n :n` and the `..`
+// range — that stay attached to a `<…>` / `[…]` group as one token.
+const MINI_MODIFIER_RE = /[*/@!?%:.\d]/;
 
 // Read one token starting at `i`; returns { text, end } or null at end-of-input.
 function readToken(src, i) {
@@ -93,6 +96,11 @@ function readToken(src, i) {
       if (OPEN[c]) depth++;
       else if (CLOSE.has(c)) { depth--; if (depth === 0) { i++; break; } }
     }
+    // A mini modifier glued to the group is part of the same token: `<0 1>*2`,
+    // `[0 1]!3`, `<0 1>*4/2`, `0 .. 3` — the same `@ ! ? * / % : ..` grammar
+    // the sequence parser reads, so it has to survive both directions of the
+    // transform intact.
+    while (i < n && MINI_MODIFIER_RE.test(src[i])) i++;
     return { text: src.slice(start, i), end: i };
   }
   // bare token: to next whitespace, but keep any bracket/quote group glued to
@@ -136,7 +144,11 @@ function splitTopLevelCommas(src) {
   return out;
 }
 
-const BRACKET_STRING_RE = /^(['"])([<[][\s\S]*[\]>])\1$/;
+// A quoted arg whose content is a mini-notation pattern: it starts with a
+// `<` / `[` bracket (glued modifiers may trail it — `"<0 1>*2"`). Unquoted to
+// bare in mondo. A literal string (`"wcl"`, `"Monaco"`, a device label) never
+// starts with a bracket, so it keeps its quotes.
+const BRACKET_STRING_RE = /^(['"])([<[][\s\S]*)\1$/;
 
 // --- mondo → mini --------------------------------------------------------
 //
@@ -161,7 +173,10 @@ function lowerMondoCall(rest) {
   const toks = tokenizeSpaced(rest);
   const name = toks.shift() || '';
   const args = toks.map((t) => {
-    if ((t[0] === '<' || t[0] === '[') && CLOSE.has(t[t.length - 1])) return JSON.stringify(t);
+    // A bracket group (with any glued modifiers) is a mini-notation pattern —
+    // quote it so Strudel mini-parses it. Anything else — a quoted string, a
+    // number, a bare identifier, a `(expr)` — is carried through as written.
+    if (t[0] === '<' || t[0] === '[') return JSON.stringify(t);
     return t;
   });
   return `${name}(${args.join(', ')})`;
@@ -188,6 +203,11 @@ export function miniToMondo(body) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    // A `*$:` button declaration (JPattern editor): lower the voice after the
+    // `*` and put the `*` back, so `*$: participants("<2a 2b>")` reads as the
+    // `*$ participants <2a 2b>` the button scanner expects.
+    const decl = line.match(/^(\s*)\*[ \t]*(\$:.*)$/);
+    if (decl) { out.push(`${decl[1]}* ${miniToMondo(decl[2]).trim()}`); i++; continue; }
     if (!/^\s*\$:/.test(line)) { out.push(line); i++; continue; }
     // Gather this voice: the `$:` line and every following line that is a
     // `.method(` continuation (or the tail of a call left open across lines).

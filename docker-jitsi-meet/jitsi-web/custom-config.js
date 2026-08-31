@@ -638,6 +638,257 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/notation.js
+  function detectNotation(body) {
+    const lines = String(body ?? "").split("\n");
+    let mini2 = false;
+    let mondo2 = false;
+    for (const line of lines) {
+      if (!line.trim() || COMMENT_RE.test(line)) continue;
+      if (MINI_OPEN_RE.test(line)) mini2 = true;
+      else if (MONDO_OPEN_RE.test(line) || MONDO_CHAIN_RE.test(line)) mondo2 = true;
+    }
+    if (mini2 && mondo2) return "mixed";
+    if (mondo2) return "mondo";
+    if (mini2) return "mini";
+    return null;
+  }
+  function readToken(src2, i) {
+    const n2 = src2.length;
+    while (i < n2 && (src2[i] === " " || src2[i] === "	" || src2[i] === "\n")) i++;
+    if (i >= n2) return null;
+    const start = i;
+    const ch2 = src2[i];
+    if (ch2 === '"' || ch2 === "'" || ch2 === "`") {
+      i++;
+      while (i < n2 && src2[i] !== ch2) {
+        if (src2[i] === "\\") i++;
+        i++;
+      }
+      i++;
+      return { text: src2.slice(start, i), end: i };
+    }
+    if (OPEN[ch2]) {
+      let depth = 0;
+      for (; i < n2; i++) {
+        const c2 = src2[i];
+        if (c2 === '"' || c2 === "'" || c2 === "`") {
+          i++;
+          while (i < n2 && src2[i] !== c2) {
+            if (src2[i] === "\\") i++;
+            i++;
+          }
+          continue;
+        }
+        if (OPEN[c2]) depth++;
+        else if (CLOSE.has(c2)) {
+          depth--;
+          if (depth === 0) {
+            i++;
+            break;
+          }
+        }
+      }
+      while (i < n2 && MINI_MODIFIER_RE.test(src2[i])) i++;
+      return { text: src2.slice(start, i), end: i };
+    }
+    while (i < n2) {
+      const c2 = src2[i];
+      if (c2 === " " || c2 === "	" || c2 === "\n") break;
+      if (c2 === '"' || c2 === "'" || c2 === "`" || OPEN[c2]) {
+        const t = readToken(src2, i);
+        i = t.end;
+        continue;
+      }
+      i++;
+    }
+    return { text: src2.slice(start, i), end: i };
+  }
+  function tokenizeSpaced(src2) {
+    const out = [];
+    let i = 0;
+    for (; ; ) {
+      const t = readToken(src2, i);
+      if (!t) break;
+      out.push(t.text);
+      i = t.end;
+    }
+    return out;
+  }
+  function splitTopLevelCommas(src2) {
+    const out = [];
+    let depth = 0, start = 0, i = 0;
+    const n2 = src2.length;
+    while (i < n2) {
+      const c2 = src2[i];
+      if (c2 === '"' || c2 === "'" || c2 === "`") {
+        i++;
+        while (i < n2 && src2[i] !== c2) {
+          if (src2[i] === "\\") i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+      if (OPEN[c2]) depth++;
+      else if (CLOSE.has(c2)) depth--;
+      else if (c2 === "," && depth === 0) {
+        out.push(src2.slice(start, i).trim());
+        start = i + 1;
+      }
+      i++;
+    }
+    const last2 = src2.slice(start).trim();
+    if (last2 || out.length) out.push(last2);
+    return out;
+  }
+  function mondoToMini(body) {
+    return String(body ?? "").split("\n").map((line) => {
+      let m2 = line.match(/^(\s*)\$[ \t]+(\S[\s\S]*?)\s*$/);
+      if (m2 && !/^\s*\$:/.test(line)) return `${m2[1]}$: ${lowerMondoCall(m2[2])}`;
+      m2 = line.match(/^(\s*)#[ \t]+(\S[\s\S]*?)\s*$/);
+      if (m2) return `${m2[1]}.${lowerMondoCall(m2[2])}`;
+      return line;
+    }).join("\n");
+  }
+  function lowerMondoCall(rest) {
+    const toks = tokenizeSpaced(rest);
+    const name3 = toks.shift() || "";
+    const args2 = toks.map((t) => {
+      if (t[0] === "<" || t[0] === "[") return JSON.stringify(t);
+      return t;
+    });
+    return `${name3}(${args2.join(", ")})`;
+  }
+  function miniToMondo(body) {
+    const src2 = String(body ?? "");
+    const lines = src2.split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const decl = line.match(/^(\s*)\*[ \t]*(\$:.*)$/);
+      if (decl) {
+        out.push(`${decl[1]}* ${miniToMondo(decl[2]).trim()}`);
+        i++;
+        continue;
+      }
+      if (!/^\s*\$:/.test(line)) {
+        out.push(line);
+        i++;
+        continue;
+      }
+      let buf = line;
+      let j2 = i + 1;
+      while (j2 < lines.length) {
+        const nxt = lines[j2];
+        if (/^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
+        if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) {
+          buf += "\n" + nxt;
+          j2++;
+          continue;
+        }
+        break;
+      }
+      const indent = (line.match(/^(\s*)/) || ["", ""])[1];
+      const mondo2 = voiceToMondo(buf, indent);
+      out.push(...mondo2);
+      for (let pad = mondo2.length; pad < j2 - i; pad++) out.push("");
+      i = j2;
+    }
+    return out.join("\n");
+  }
+  function balanced(s2) {
+    let depth = 0;
+    for (let i = 0; i < s2.length; i++) {
+      const c2 = s2[i];
+      if (c2 === '"' || c2 === "'" || c2 === "`") {
+        i++;
+        while (i < s2.length && s2[i] !== c2) {
+          if (s2[i] === "\\") i++;
+          i++;
+        }
+        continue;
+      }
+      if (OPEN[c2]) depth++;
+      else if (CLOSE.has(c2)) depth--;
+    }
+    return depth <= 0;
+  }
+  function voiceToMondo(buf, indent) {
+    const body = buf.replace(/^\s*\$:\s*/, "");
+    const segs = splitCallChain(body);
+    if (!segs.length) return [`${indent}$: ${body.trim()}`];
+    const lines = [];
+    segs.forEach((seg2, k2) => {
+      const args2 = splitTopLevelCommas(seg2.args).map(unquoteMiniPattern).filter((a2) => a2 !== "");
+      const head = k2 === 0 ? `${indent}$ ` : `${indent}# `;
+      lines.push(`${head}${seg2.name}${args2.length ? " " + args2.join(" ") : ""}`.trimEnd());
+    });
+    return lines;
+  }
+  function splitCallChain(src2) {
+    const segs = [];
+    let i = 0;
+    const n2 = src2.length;
+    const readName = () => {
+      const m2 = src2.slice(i).match(/^([A-Za-z_$][\w$]*)\s*\(/);
+      if (!m2) return null;
+      i += m2[0].length;
+      let depth = 1;
+      const argStart = i;
+      while (i < n2 && depth > 0) {
+        const c2 = src2[i];
+        if (c2 === '"' || c2 === "'") {
+          i++;
+          while (i < n2 && src2[i] !== c2) {
+            if (src2[i] === "\\") i++;
+            i++;
+          }
+          i++;
+          continue;
+        }
+        if (c2 === "(" || OPEN[c2]) depth++;
+        else if (c2 === ")" || CLOSE.has(c2)) depth--;
+        if (depth === 0) break;
+        i++;
+      }
+      const args2 = src2.slice(argStart, i);
+      i++;
+      return { name: m2[1], args: args2 };
+    };
+    const first = readName();
+    if (!first) return [];
+    segs.push(first);
+    while (i < n2) {
+      while (i < n2 && /\s/.test(src2[i])) i++;
+      if (src2[i] !== ".") break;
+      i++;
+      while (i < n2 && /\s/.test(src2[i])) i++;
+      const seg2 = readName();
+      if (!seg2) break;
+      segs.push(seg2);
+    }
+    return segs;
+  }
+  function unquoteMiniPattern(arg) {
+    const m2 = arg.match(BRACKET_STRING_RE);
+    return m2 ? m2[2] : arg;
+  }
+  var MINI_OPEN_RE, MONDO_OPEN_RE, MONDO_CHAIN_RE, COMMENT_RE, OPEN, CLOSE, MINI_MODIFIER_RE, BRACKET_STRING_RE;
+  var init_notation = __esm({
+    "src/notation.js"() {
+      MINI_OPEN_RE = /^\s*\$:/;
+      MONDO_OPEN_RE = /^\s*\$[ \t]+[A-Za-z_$]/;
+      MONDO_CHAIN_RE = /^\s*#[ \t]+[A-Za-z_$]/;
+      COMMENT_RE = /^\s*\/\//;
+      OPEN = { "<": ">", "[": "]", "(": ")", "{": "}" };
+      CLOSE = /* @__PURE__ */ new Set([">", "]", ")", "}"]);
+      MINI_MODIFIER_RE = /[*/@!?%:.\d]/;
+      BRACKET_STRING_RE = /^(['"])([<[][\s\S]*)\1$/;
+    }
+  });
+
   // src/peer-state.js
   function emit2(event, payload) {
     subscribers2.forEach((fn) => {
@@ -940,8 +1191,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         break;
       case "remote-control": {
         if (msg.action === "pattern" && typeof msg.code === "string") {
-          localPeer.pattern = msg.code;
-          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: msg.code } }));
+          const code2 = detectNotation(msg.code) === "mondo" ? mondoToMini(msg.code) : msg.code;
+          localPeer.pattern = code2;
+          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: code2 } }));
           emit2("peer-upsert", localPeer);
         } else if (msg.action === "mute") {
           localPeer.muted = !!msg.muted;
@@ -1135,6 +1387,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       init_data_ref();
       init_text_cycles_core();
       init_text_debug();
+      init_notation();
       subscribers2 = /* @__PURE__ */ new Set();
       peersByPeerId = /* @__PURE__ */ new Map();
       peerIdByJitsiId = /* @__PURE__ */ new Map();
@@ -38744,252 +38997,9 @@ ${s2}`;
     }
   });
 
-  // src/notation.js
-  function detectNotation(body) {
-    const lines = String(body ?? "").split("\n");
-    let mini2 = false;
-    let mondo2 = false;
-    for (const line of lines) {
-      if (!line.trim() || COMMENT_RE.test(line)) continue;
-      if (MINI_OPEN_RE.test(line)) mini2 = true;
-      else if (MONDO_OPEN_RE.test(line) || MONDO_CHAIN_RE.test(line)) mondo2 = true;
-    }
-    if (mini2 && mondo2) return "mixed";
-    if (mondo2) return "mondo";
-    if (mini2) return "mini";
-    return null;
-  }
-  function readToken(src2, i) {
-    const n2 = src2.length;
-    while (i < n2 && (src2[i] === " " || src2[i] === "	" || src2[i] === "\n")) i++;
-    if (i >= n2) return null;
-    const start = i;
-    const ch2 = src2[i];
-    if (ch2 === '"' || ch2 === "'" || ch2 === "`") {
-      i++;
-      while (i < n2 && src2[i] !== ch2) {
-        if (src2[i] === "\\") i++;
-        i++;
-      }
-      i++;
-      return { text: src2.slice(start, i), end: i };
-    }
-    if (OPEN[ch2]) {
-      let depth = 0;
-      for (; i < n2; i++) {
-        const c2 = src2[i];
-        if (c2 === '"' || c2 === "'" || c2 === "`") {
-          i++;
-          while (i < n2 && src2[i] !== c2) {
-            if (src2[i] === "\\") i++;
-            i++;
-          }
-          continue;
-        }
-        if (OPEN[c2]) depth++;
-        else if (CLOSE.has(c2)) {
-          depth--;
-          if (depth === 0) {
-            i++;
-            break;
-          }
-        }
-      }
-      return { text: src2.slice(start, i), end: i };
-    }
-    while (i < n2) {
-      const c2 = src2[i];
-      if (c2 === " " || c2 === "	" || c2 === "\n") break;
-      if (c2 === '"' || c2 === "'" || c2 === "`" || OPEN[c2]) {
-        const t = readToken(src2, i);
-        i = t.end;
-        continue;
-      }
-      i++;
-    }
-    return { text: src2.slice(start, i), end: i };
-  }
-  function tokenizeSpaced(src2) {
-    const out = [];
-    let i = 0;
-    for (; ; ) {
-      const t = readToken(src2, i);
-      if (!t) break;
-      out.push(t.text);
-      i = t.end;
-    }
-    return out;
-  }
-  function splitTopLevelCommas(src2) {
-    const out = [];
-    let depth = 0, start = 0, i = 0;
-    const n2 = src2.length;
-    while (i < n2) {
-      const c2 = src2[i];
-      if (c2 === '"' || c2 === "'" || c2 === "`") {
-        i++;
-        while (i < n2 && src2[i] !== c2) {
-          if (src2[i] === "\\") i++;
-          i++;
-        }
-        i++;
-        continue;
-      }
-      if (OPEN[c2]) depth++;
-      else if (CLOSE.has(c2)) depth--;
-      else if (c2 === "," && depth === 0) {
-        out.push(src2.slice(start, i).trim());
-        start = i + 1;
-      }
-      i++;
-    }
-    const last2 = src2.slice(start).trim();
-    if (last2 || out.length) out.push(last2);
-    return out;
-  }
-  function mondoToMini(body) {
-    return String(body ?? "").split("\n").map((line) => {
-      let m2 = line.match(/^(\s*)\$[ \t]+(\S[\s\S]*?)\s*$/);
-      if (m2 && !/^\s*\$:/.test(line)) return `${m2[1]}$: ${lowerMondoCall(m2[2])}`;
-      m2 = line.match(/^(\s*)#[ \t]+(\S[\s\S]*?)\s*$/);
-      if (m2) return `${m2[1]}.${lowerMondoCall(m2[2])}`;
-      return line;
-    }).join("\n");
-  }
-  function lowerMondoCall(rest) {
-    const toks = tokenizeSpaced(rest);
-    const name3 = toks.shift() || "";
-    const args2 = toks.map((t) => {
-      if ((t[0] === "<" || t[0] === "[") && CLOSE.has(t[t.length - 1])) return JSON.stringify(t);
-      return t;
-    });
-    return `${name3}(${args2.join(", ")})`;
-  }
-  function miniToMondo(body) {
-    const src2 = String(body ?? "");
-    const lines = src2.split("\n");
-    const out = [];
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (!/^\s*\$:/.test(line)) {
-        out.push(line);
-        i++;
-        continue;
-      }
-      let buf = line;
-      let j2 = i + 1;
-      while (j2 < lines.length) {
-        const nxt = lines[j2];
-        if (/^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
-        if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) {
-          buf += "\n" + nxt;
-          j2++;
-          continue;
-        }
-        break;
-      }
-      const indent = (line.match(/^(\s*)/) || ["", ""])[1];
-      const mondo2 = voiceToMondo(buf, indent);
-      out.push(...mondo2);
-      for (let pad = mondo2.length; pad < j2 - i; pad++) out.push("");
-      i = j2;
-    }
-    return out.join("\n");
-  }
-  function balanced(s2) {
-    let depth = 0;
-    for (let i = 0; i < s2.length; i++) {
-      const c2 = s2[i];
-      if (c2 === '"' || c2 === "'" || c2 === "`") {
-        i++;
-        while (i < s2.length && s2[i] !== c2) {
-          if (s2[i] === "\\") i++;
-          i++;
-        }
-        continue;
-      }
-      if (OPEN[c2]) depth++;
-      else if (CLOSE.has(c2)) depth--;
-    }
-    return depth <= 0;
-  }
-  function voiceToMondo(buf, indent) {
-    const body = buf.replace(/^\s*\$:\s*/, "");
-    const segs = splitCallChain(body);
-    if (!segs.length) return [`${indent}$: ${body.trim()}`];
-    const lines = [];
-    segs.forEach((seg2, k2) => {
-      const args2 = splitTopLevelCommas(seg2.args).map(unquoteMiniPattern).filter((a2) => a2 !== "");
-      const head = k2 === 0 ? `${indent}$ ` : `${indent}# `;
-      lines.push(`${head}${seg2.name}${args2.length ? " " + args2.join(" ") : ""}`.trimEnd());
-    });
-    return lines;
-  }
-  function splitCallChain(src2) {
-    const segs = [];
-    let i = 0;
-    const n2 = src2.length;
-    const readName = () => {
-      const m2 = src2.slice(i).match(/^([A-Za-z_$][\w$]*)\s*\(/);
-      if (!m2) return null;
-      i += m2[0].length;
-      let depth = 1;
-      const argStart = i;
-      while (i < n2 && depth > 0) {
-        const c2 = src2[i];
-        if (c2 === '"' || c2 === "'") {
-          i++;
-          while (i < n2 && src2[i] !== c2) {
-            if (src2[i] === "\\") i++;
-            i++;
-          }
-          i++;
-          continue;
-        }
-        if (c2 === "(" || OPEN[c2]) depth++;
-        else if (c2 === ")" || CLOSE.has(c2)) depth--;
-        if (depth === 0) break;
-        i++;
-      }
-      const args2 = src2.slice(argStart, i);
-      i++;
-      return { name: m2[1], args: args2 };
-    };
-    const first = readName();
-    if (!first) return [];
-    segs.push(first);
-    while (i < n2) {
-      while (i < n2 && /\s/.test(src2[i])) i++;
-      if (src2[i] !== ".") break;
-      i++;
-      while (i < n2 && /\s/.test(src2[i])) i++;
-      const seg2 = readName();
-      if (!seg2) break;
-      segs.push(seg2);
-    }
-    return segs;
-  }
-  function unquoteMiniPattern(arg) {
-    const m2 = arg.match(BRACKET_STRING_RE);
-    return m2 ? m2[2] : arg;
-  }
-  var MINI_OPEN_RE, MONDO_OPEN_RE, MONDO_CHAIN_RE, COMMENT_RE, OPEN, CLOSE, BRACKET_STRING_RE;
-  var init_notation = __esm({
-    "src/notation.js"() {
-      MINI_OPEN_RE = /^\s*\$:/;
-      MONDO_OPEN_RE = /^\s*\$[ \t]+[A-Za-z_$]/;
-      MONDO_CHAIN_RE = /^\s*#[ \t]+[A-Za-z_$]/;
-      COMMENT_RE = /^\s*\/\//;
-      OPEN = { "<": ">", "[": "]", "(": ")", "{": "}" };
-      CLOSE = /* @__PURE__ */ new Set([">", "]", ")", "}"]);
-      BRACKET_STRING_RE = /^(['"])([<[][\s\S]*[\]>])\1$/;
-    }
-  });
-
   // src/audio-net/MetaprogrammerParser.js
   function isMetricKeywordToken(t) {
-    return !!t && (t.type === "word" || t.type === "string");
+    return !!t && t.type === "string";
   }
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
@@ -39258,7 +39268,7 @@ $ participants <0>
     }).join(" ");
     return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
   }
-  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
+  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, METRIC_WORDS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
@@ -39269,6 +39279,7 @@ $ participants <0>
       init_notation();
       TIMING_METRICS = ["wcl", "wcpl"];
       EFFECT_METRICS = ["wcl", "wcpl"];
+      METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcpl"]);
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       VALUE_ELEMENT_OPS = /* @__PURE__ */ new Set(["@", "?", "!", "*", "/"]);
       MAX_VALUE_REPEATS = 1024;
@@ -39339,6 +39350,17 @@ $ participants <0>
         }
         skipNewlines() {
           while (this.peek().type === "newline") this.next();
+        }
+        // A bare (unquoted) metric keyword where a quoted one belongs. Records the
+        // "quote it" error and returns true so the caller can bail; false leaves the
+        // caller to its own "needs a metric" path for a token that is not a metric
+        // word at all.
+        rejectBareMetric(t) {
+          if (t && t.type === "word" && METRIC_WORDS.has(t.value)) {
+            this.error(`metric keywords are quoted \u2014 write "${t.value}", not ${t.value}`, t);
+            return true;
+          }
+          return false;
         }
         // Consume the rest of the physical line. A button declaration is one line,
         // as `*name: code` is in the personal editor — it is skipped whole rather
@@ -39799,21 +39821,25 @@ $ participants <0>
           this.error(`'${name3}' is not a JPattern function \u2014 Strudel and Hydra functions cannot be executed in the JPattern editor`, nameTok);
           this.recover();
         }
-        // `# cycles <metric> [scale factor] [amount]` — target = scale × metric.
+        // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
         // With no amount the metric evolves with the live worst-case measurement;
         // an amount PINS it there regardless of network conditions (seconds for
         // wcl, loss fraction for wcpl), pinning timing only — measured metrics
-        // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
+        // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
+          if (this.rejectBareMetric(metricTok)) {
+            this.recover();
+            return;
+          }
           if (!isMetricKeywordToken(metricTok) || !TIMING_METRICS.includes(metricTok.value)) {
-            this.error(`cycles needs a timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
+            this.error(`cycles needs a quoted timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
             this.recover();
             return;
           }
           this.next();
           if (this.peek().type === "op" && this.peek().value === "*") {
-            this.error(`the cycles scale factor is positional now \u2014 write '# cycles ${metricTok.value} 3', not '${metricTok.value}*3'`, this.peek());
+            this.error(`the cycles scale factor is positional now \u2014 write '# cycles "${metricTok.value}" 3', not '"${metricTok.value}"*3'`, this.peek());
             this.recover();
             return;
           }
@@ -39975,7 +40001,13 @@ $ participants <0>
               this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
               continue;
             }
-            const metricLeaf = t.type === "word" || t.type === "string" && (kind === "metric" || sig.metricKeywords.includes(t.value));
+            if ((kind === "metric" || kind === "any") && this.rejectBareMetric(t)) {
+              this.next();
+              terms.push(null);
+              this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
+              continue;
+            }
+            const metricLeaf = t.type === "string" && (kind === "metric" || sig.metricKeywords.includes(t.value));
             if ((kind === "metric" || kind === "any") && metricLeaf) {
               if (!settleKind("metric", t)) return null;
               if (!sig.metricKeywords.includes(t.value)) {
@@ -40014,7 +40046,7 @@ $ participants <0>
               continue;
             }
             this.error(
-              kind === "media" ? `'${name3}' medium pattern expects quoted medium names or sets of them (${MEDIA.join("|")}), got '${t.value}'` : leafKind === "metric" ? `'${name3}' pattern expects metric names (${(sig.metricKeywords || EFFECT_METRICS).join("|")}), got '${t.value}'` : `'${name3}' pattern expects positive numbers, got '${t.value}'`,
+              kind === "media" ? `'${name3}' medium pattern expects quoted medium names or sets of them (${MEDIA.join("|")}), got '${t.value}'` : leafKind === "metric" ? `'${name3}' pattern expects quoted metric names ("${(sig.metricKeywords || EFFECT_METRICS).join('" | "')}"), got '${t.value}'` : `'${name3}' pattern expects positive numbers, got '${t.value}'`,
               t
             );
             this.next();
@@ -40184,9 +40216,13 @@ $ participants <0>
           if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
             for (let i = 0; i < slots.length; i++) {
               const t = this.peek();
+              if (this.rejectBareMetric(t)) {
+                this.recover();
+                return;
+              }
               if (!isMetricKeywordToken(t) || !sig.metricKeywords.includes(t.value)) {
                 this.error(
-                  `'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its ${slots[i]} \u2014 the syntax is '${sig.usage}'`,
+                  `'${name3}' needs a quoted metric keyword ("${sig.metricKeywords.join('" | "')}") before its ${slots[i]} \u2014 the syntax is '${sig.usage}'`,
                   t
                 );
                 this.recover();
@@ -40404,6 +40440,10 @@ $ participants <0>
               }
               continue;
             }
+            if (this.rejectBareMetric(t)) {
+              this.recover();
+              return;
+            }
             if (isMetricKeywordToken(t) && EFFECT_METRICS.includes(t.value)) {
               this.next();
               if (!this.bindNoiseMetric(metrics, args2.length, t.value, t)) return;
@@ -40455,6 +40495,10 @@ $ participants <0>
           let metric = null;
           if (sig.metricKeywords) {
             const t = this.peek();
+            if (this.rejectBareMetric(t)) {
+              this.recover();
+              return;
+            }
             if (isMetricKeywordToken(t) && sig.metricKeywords.includes(t.value)) {
               metric = t.value;
               this.next();
@@ -40465,7 +40509,7 @@ $ participants <0>
                 return;
               }
             } else {
-              this.error(`'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its arguments`, t);
+              this.error(`'${name3}' needs a quoted metric keyword ("${sig.metricKeywords.join('" | "')}") before its arguments`, t);
               this.recover();
               return;
             }
@@ -40594,7 +40638,7 @@ $ participants <0>
     const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
     const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
     const targetS = timingTargetSeconds(cycles, metrics);
-    const source2 = fixed != null ? `# cycles ${metric} ${factor} ${fixed} (pinned)` : `# cycles ${metric} ${factor}`;
+    const source2 = fixed != null ? `# cycles "${metric}" ${factor} ${fixed} (pinned)` : `# cycles "${metric}" ${factor}`;
     const m2 = metrics || {};
     return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
   }
@@ -56948,6 +56992,7 @@ ${next}`;
 
   // src/editor-router-core.js
   init_MetaprogrammerParser();
+  init_notation();
   function classifyEditor(classNames) {
     const set2 = new Set(classNames || []);
     if (set2.has("jp-code")) return "jpattern";
@@ -57004,10 +57049,14 @@ ${next}`;
   }
   var JP_BTN_MARKER = " // jpattern-btn";
   var JP_BTN_DECL_RE = /^[ \t]*\*[ \t]*([$#])[ \t]*(\S[^\n]*?)[ \t\r]*$/;
+  function asMondo(text2) {
+    const s2 = String(text2 ?? "");
+    return detectNotation(s2) === "mini" ? miniToMondo(s2) : s2;
+  }
   function parseJPatternButtons(text2) {
     const buttons = [];
     const seen = /* @__PURE__ */ new Set();
-    for (const line of String(text2 ?? "").split("\n")) {
+    for (const line of asMondo(text2).split("\n")) {
       const m2 = JP_BTN_DECL_RE.exec(line);
       if (!m2) continue;
       const body = m2[2].replace(/\s*\/\/.*$/, "").trimEnd();
@@ -57035,29 +57084,33 @@ ${next}`;
     return tokens.length ? tokens : null;
   }
   function isJPatternSnippetActive(text2, snippet) {
-    const cur = text2 || "";
+    const cur = asMondo(text2 || "");
     const tokens = participantTokensIn(snippet);
     if (tokens) return hasParticipantSequence(cur) && tokens.every((t) => programHasParticipant(cur, t));
     return cur.includes(`
 ${snippet}${JP_BTN_MARKER}`);
   }
   function toggleJPatternSnippet(text2, snippet) {
-    const cur = text2 || "";
+    const original = text2 || "";
+    const wasMini = detectNotation(original) === "mini";
+    const cur = wasMini ? miniToMondo(original) : original;
+    const raise = (s2) => wasMini ? mondoToMini(s2) : s2;
     const tokens = participantTokensIn(snippet);
     if (tokens) {
       if (!hasParticipantSequence(cur)) {
         const head = cur.replace(/\s*$/, "");
-        return head ? `${head}
+        return raise(head ? `${head}
 ${snippet}
 ` : `${snippet}
-`;
+`);
       }
       const on = tokens.every((t) => programHasParticipant(cur, t));
-      return tokens.reduce(
+      return raise(tokens.reduce(
         (acc, t) => on ? removeParticipantFromProgram(acc, t) : appendParticipantToProgram(acc, t),
         cur
-      );
+      ));
     }
+    if (wasMini) return original;
     const active4 = `
 ${snippet}${JP_BTN_MARKER}`;
     const commented = `
