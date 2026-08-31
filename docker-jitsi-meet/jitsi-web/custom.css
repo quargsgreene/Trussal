@@ -2,7 +2,7 @@
    Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
    `cat custom.css >> all.css`). Tracked in the repo — never generated.
 
-   Palette: flat monochrome. Background #ffffff (white); text, borders,
+   Palette: flat monochrome. Background #eeeeee (light grey); text, borders,
    outlines and icons #111111. No accent colours anywhere. */
 
 
@@ -30,13 +30,13 @@
  * ------------------------------------------------------------------ */
 html, body, body * {
   color: #111111;
-  background-color: #ffffff;
+  background-color: #eeeeee;
   border-color: #111111;
   outline-color: #111111;
 }
 
 button, input, textarea, select {
-  background-color: #ffffff;
+  background-color: #eeeeee;
   color: #111111;
   border-color: #111111;
 }
@@ -99,21 +99,21 @@ body.welcome-page #welcome_page .welcome-page-header-text {
    at (0,0,2,0) — it beats a plain `body.welcome-page div` — so this
    override is deliberately !important, same class of exception as the
    video-transparency block at the end of the file. (welcome-background.png
-   is also a solid-white 1x1 now, so anything this rule misses still
-   paints white.) */
+   is also a solid 1x1 now, so anything this rule misses paints a flat
+   colour rather than the stock photo.) */
 body.welcome-page,
 body.welcome-page .welcome,
 body.welcome-page .header,
 body.welcome-page .header-container,
 body.welcome-page [class*="header"],
 body.welcome-page .welcome-footer {
-  background: #ffffff !important;
+  background: #eeeeee !important;
   background-image: none !important;
 }
 
 /* Welcome-page containers + the blue/dark accent bits Jitsi ships. */
 body.welcome-page .welcome-page-content {
-  background: #ffffff;
+  background: #eeeeee;
   padding-bottom: 4rem;              /* breathing room at bottom */
 }
 body.welcome-page .welcome-page-content > div,
@@ -124,7 +124,7 @@ body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
 body.welcome-page .welcome-card--dark,
 body.welcome-page .welcome-card--blue,
 body.welcome-page .welcome-card--grey {
-  background-color: #ffffff;
+  background-color: #eeeeee;
   color: #111111;
   border: none;
 }
@@ -135,8 +135,8 @@ body.welcome-page .welcome-page-button,
 body.welcome-page .welcome-page-button:hover,
 body.welcome-page .header .not-allow-title-character-div,
 body.welcome-page .header #enter_room .join-meeting-container {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
   color: #111111 !important;
   border: 1px solid #111111 !important;
 }
@@ -152,13 +152,18 @@ body.welcome-page .welcome-page-mobile-apps {
   display: none !important;
 }
 
-/* Trussal overlay room-name field text + placeholder. */
+/* Trussal overlay room-name field text + placeholder. The overlay input's
+   id is #trussal-room-input (see welcome-page.js); the placeholder rule is
+   what forces it to #111 — browsers otherwise render placeholder text at a
+   reduced default opacity. welcome-page.js also injects the same
+   ::placeholder rule inline so the fix ships with the bundle, not only a
+   rebuilt web image. */
 body.welcome-page #enter_room_field,
-body.welcome-page #trussal-room-field {
+body.welcome-page #trussal-room-input {
   color: #111111;
 }
 body.welcome-page #enter_room_field::placeholder,
-body.welcome-page #trussal-room-field::placeholder {
+body.welcome-page #trussal-room-input::placeholder {
   color: #111111;
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
@@ -200,8 +205,8 @@ div[class*="premeeting"] video {
 [class*="deviceStatus"],
 .device-status-error,
 .device-status-ok {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
   color: #111111 !important;
   border: 1px solid #111111 !important;
 }
@@ -224,7 +229,7 @@ div[class*="premeeting"] video {
    back into normal flow so the flex parent can centre it. */
 .premeeting-screen,
 div[class*="premeeting-screen"] {
-  background: #ffffff !important;
+  background: #eeeeee !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -245,7 +250,7 @@ div[class*="premeeting-screen"] {
 .premeeting-screen [class*="inputContainer"] input,
 .prejoin-input,
 #premeeting-name-input {
-  background-color: #ffffff !important;
+  background-color: #eeeeee !important;
   color: #111111 !important;
   border: 1px solid #111111 !important;
 }
@@ -299,8 +304,8 @@ button.action-btn,
   background-color: transparent !important;
 }
 
-/* Icon wrappers must never take the global #ffffff default as a fill —
-   inside a dark button it shows as a white block. */
+/* Icon wrappers must never take the global #eeeeee background default —
+   inside a dark button it shows as a light block. */
 .jitsi-icon,
 .jitsi-icon svg,
 .jitsi-icon path {
@@ -339,8 +344,8 @@ button.action-btn,
 .toolbox-content,
 .toolbox-content-items,
 .toolbox-content-mobile .toolbox-content-items {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
   box-shadow: none !important;
 }
 
@@ -352,8 +357,8 @@ div.hangup-button:active,
 div.hangup-menu-button,
 div.hangup-menu-button:hover,
 div.hangup-menu-button:active {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
   color: #111111 !important;
   border-color: #111111 !important;
 }
@@ -389,7 +394,7 @@ div.hangup-menu-button svg {
 
   border: 1px solid #111111;
   z-index: 50;
-  background: #ffffff;
+  background: #eeeeee;
 
   /* allow mouse / keyboard focus */
   pointer-events: auto;

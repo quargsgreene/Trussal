@@ -40,14 +40,23 @@ function renderTrussalWelcomeOverlay() {
     const overlay = document.createElement('div');
     overlay.id = 'trussal-welcome-overlay';
 
-    // Simple centered panel; flat white on the flat-white welcome page.
+    // Simple centered panel; flat grey on the flat-grey welcome page.
     overlay.innerHTML = `
+      <style>
+        /* Placeholder text is #111 like the rest of the palette — browsers
+           otherwise render it at a reduced default opacity. custom.css
+           carries the same rule for a rebuilt web image. */
+        #trussal-welcome-overlay #trussal-room-input::placeholder {
+          color: #111111;
+          opacity: 1;
+        }
+      </style>
       <div style="
         position: fixed;
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: #ffffff;
+        background: #eeeeee;
         padding: 1.5rem 2rem;
         border: 1px solid #111111;
         border-radius: 1rem;
@@ -69,14 +78,14 @@ function renderTrussalWelcomeOverlay() {
                  autocapitalize="none"
                  autocorrect="off"
                  spellcheck="false"
-                 placeholder="room name with 1023 characters or fewer"
+                 placeholder="Room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
                         border:1px solid #111111;
-                        background:#ffffff;
+                        background:#eeeeee;
                         color:#111111;"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:1px solid #111111;background:#ffffff;color:#111111;
+                         border:1px solid #111111;background:#eeeeee;color:#111111;
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
