@@ -16,6 +16,12 @@ $: typeface('Times New Roman').word("<I like@2 ~ squirrels\?>")
      .hyperlink("<google.com reddit.com ca.gov devry.edu>")
 ```
 
+The examples here are in mini notation (Strudel-native `$:` … `.method(…)`).
+The whole buffer may instead be written in mondo — `$ typeface 'Times New Roman'`
+then `# word "<I like@2 ~ squirrels\?>"` and one `# method …` per line — which
+the personal/bot editor lowers to the mini form before evaluating
+(`src/notation.js`). Every capability below works identically either way.
+
 `await initTextCycles()` declares a program's text presence exactly as
 `await initHydra()` declares its visuals: first line, then a blank line, then
 the patterns. Both may appear in the same preamble.

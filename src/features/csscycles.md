@@ -14,6 +14,14 @@ $: css(`.ts-chip {
      .fast(3)
 ```
 
+The examples here are in mini notation (Strudel-native `$:` … `.method(…)`).
+The whole buffer may instead be written in mondo — `` $ css `.ts-chip { … }` ``
+then one `# method "<…>"` per line — which the personal/bot editor lowers to
+the mini form before evaluating (`src/notation.js`). Both spell the same
+program. One caveat unique to CSS Cycles: the mondo lowering is line-by-line,
+so a `css(`…`)` block whose SCSS spans several physical lines has to be written
+in mini (or kept to one line); every patterned `# property` line is fine.
+
 `await initCss()` declares a program's styling presence exactly as
 `await initTextCycles()` declares its words: first line, then a blank line,
 then the patterns. Any of the capability declarations may share one preamble.

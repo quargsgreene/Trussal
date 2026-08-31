@@ -56,7 +56,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // The metaprogram directive every buffer now opens with (program-directive.js).
 // The fixtures below are bodies; mp() gives the full buffer the parser accepts.
-const mp = (body) => `'metaprogram'\n${body}`;
+const mp = (body) => `'metaprogram editor'\n${body}`;
 
 // Type into the shared doc the way the editor does: one setText per
 // keystroke (every prefix, invalid intermediates included), modality

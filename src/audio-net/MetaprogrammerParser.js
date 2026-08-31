@@ -45,15 +45,30 @@ import {
 // validates against the same list the four consumers gate on.
 import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
 // The one rule for which of Trussal's three program kinds a buffer is. A
-// metaprogram must open with the `'metaprogram'` directive — it is what tells
-// this parser it is looking at a metaprogram, so `participants` no longer has
-// to be a reserved word carrying that signal.
+// metaprogram must open with the `'metaprogram editor'` directive — it is what
+// tells this parser it is looking at a metaprogram, so `participants` no longer
+// has to be a reserved word carrying that signal.
 import { readDirective, stripDirective } from '../program-directive.js';
+// The two surface notations a metaprogram may be written in. This parser is
+// the `$`/`#` ("mondo") grammar, so a "mini" buffer — Strudel-style
+// `$: participants("<0 1>").cycles("wcl", 10)` — is lowered to it here before
+// tokenising. See src/notation.js.
+import { detectNotation, miniToMondo } from '../notation.js';
 
 export const TIMING_METRICS = ['wcl', 'wcpl'];
 // Metrics an effect may be modulated by. The same set as TIMING_METRICS: wcl
 // (mouth-to-ear latency, a duration) and wcpl (packet-loss fraction).
 export const EFFECT_METRICS = ['wcl', 'wcpl'];
+
+// A metric keyword may be written bare (`wcl`) or, as mini notation forces and
+// `# cycles "wcl" 20` uses, quoted (`"wcl"`). Both tokenise with `.value` ===
+// the keyword, so a site only has to accept the extra token TYPE; whether the
+// value is one it allows stays the site's own check. `"audio"`/`"video"`/…
+// still read as media names, never metrics — they are a disjoint set, and
+// atMediaArg gates on isMedium() so a quoted metric is never taken for one.
+function isMetricKeywordToken(t) {
+  return !!t && (t.type === 'word' || t.type === 'string');
+}
 
 // A room with no `# mosaic` directive still tiles: the mosaic is the resting
 // state of the aggregator's video, and `# mosaic false` is the deviation from
@@ -360,8 +375,8 @@ class Parser {
   parseDollar(program) {
     const sigil = this.next(); // '$'
     const name = this.peek();
-    // `participants` is no longer reserved: the `'metaprogram'` directive is
-    // what identifies this buffer, so the label after `$` is optional sugar.
+    // `participants` is no longer reserved: the `'metaprogram editor'` directive
+    // is what identifies this buffer, so the label after `$` is optional sugar.
     // `$ <0 1 2>` and `$ participants <0 1 2>` are the same statement. A word
     // that is anything else is still an error — `$` has exactly one statement.
     if (name.type === 'word') {
@@ -760,8 +775,8 @@ class Parser {
   // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
-    if (metricTok.type !== 'word' || !TIMING_METRICS.includes(metricTok.value)) {
-      this.error(`cycles needs a timing metric (${TIMING_METRICS.join('|')})`, metricTok);
+    if (!isMetricKeywordToken(metricTok) || !TIMING_METRICS.includes(metricTok.value)) {
+      this.error(`cycles needs a timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
       this.recover();
       return;
     }
@@ -947,7 +962,14 @@ class Parser {
         this.parseValueElementModifiers(name, terms.length - 1, terms, weights, chances, rates);
         continue;
       }
-      if ((kind === 'metric' || kind === 'any') && t.type === 'word') {
+      // A metric leaf: bare `wcl`, or quoted `"wcl"` (the spelling mini
+      // notation forces). For a 'metric'-kind sequence any quoted string is
+      // taken as an attempted metric so the "not a metric" error can name it;
+      // in an 'any' sequence only a real keyword is — a stray string there may
+      // still be a medium the branch below claims.
+      const metricLeaf = t.type === 'word' ||
+        (t.type === 'string' && (kind === 'metric' || sig.metricKeywords.includes(t.value)));
+      if ((kind === 'metric' || kind === 'any') && metricLeaf) {
         if (!settleKind('metric', t)) return null;
         if (!sig.metricKeywords.includes(t.value)) {
           this.error(`'${t.value}' is not a metric '${name}' can read (${sig.metricKeywords.join('|')})`, t);
@@ -1202,7 +1224,7 @@ class Parser {
     if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
       for (let i = 0; i < slots.length; i++) {
         const t = this.peek();
-        if (t.type !== 'word' || !sig.metricKeywords.includes(t.value)) {
+        if (!isMetricKeywordToken(t) || !sig.metricKeywords.includes(t.value)) {
           this.error(
             `'${name}' needs a metric keyword (${sig.metricKeywords.join('|')}) before its ${slots[i]} ` +
             `— the syntax is '${sig.usage}'`, t);
@@ -1277,9 +1299,12 @@ class Parser {
 
   // Whether what follows opens the trailing MEDIUM argument rather than
   // another numeric one. Both are written with the same brackets, so the LEAF
-  // settles it: a quoted string can only be a medium name, and a number can
-  // never be one. That is what makes `# echo … [1 4] ["audio"]` — a numeric
-  // bound followed by a medium set — read unambiguously.
+  // settles it: a quoted MEDIUM NAME (`"audio"`) can only be a medium, and a
+  // number can never be one. A quoted metric (`"wcl"`) is a string leaf too
+  // now, so the test is isMedium(), not "is a string" — media and metric
+  // names are disjoint. That is what keeps `# crush <"wcl" "wcpl"> <2 4>`
+  // (patterned metric) and `# echo … [1 4] ["audio"]` (numeric bound then a
+  // medium set) reading unambiguously.
   atMediaArg() {
     const t = this.peek();
     if (t.type !== 'punct' || (t.value !== '[' && t.value !== '<')) return false;
@@ -1291,7 +1316,7 @@ class Parser {
       i = this.nextMeaningful(i + 1);
     }
     const leaf = this.peek(i);
-    return !!leaf && leaf.type === 'string';
+    return !!leaf && leaf.type === 'string' && isMedium(leaf.value);
   }
 
   // `["audio" "video"]` — one set of media, space-separated. A comma is
@@ -1426,7 +1451,7 @@ class Parser {
         }
         continue;
       }
-      if (t.type === 'word' && EFFECT_METRICS.includes(t.value)) {
+      if (isMetricKeywordToken(t) && EFFECT_METRICS.includes(t.value)) {
         this.next();
         if (!this.bindNoiseMetric(metrics, args.length, t.value, t)) return;
         continue;
@@ -1480,12 +1505,12 @@ class Parser {
 
   parseChainFn(program, name, nameTok, sig) {
     // Metric-keyed effects name their driving metric before the numbers:
-    // `# room wcl 2 0.4`. The keyword is required — a bare-number form has
-    // no metric and is a parse error.
+    // `# room "wcl" 2 0.4` (or bare `wcl`). The keyword is required — a
+    // bare-number form has no metric and is a parse error.
     let metric = null;
     if (sig.metricKeywords) {
       const t = this.peek();
-      if (t.type === 'word' && sig.metricKeywords.includes(t.value)) {
+      if (isMetricKeywordToken(t) && sig.metricKeywords.includes(t.value)) {
         metric = t.value;
         this.next();
       } else if (sig.patternArgs && t.type === 'punct' && (t.value === '<' || t.value === '[')) {
@@ -1600,18 +1625,30 @@ class Parser {
 export function parseMetaprogram(text) {
   const src = typeof text === 'string' ? text : '';
   // The directive is required, with no heuristic fallback: a buffer that does
-  // not open with `'metaprogram'` is not a metaprogram, and the rest is parsed
-  // only so the editor can still squiggle whatever else is wrong. Blanking the
-  // directive line in place keeps every downstream line/col exactly where the
-  // author typed it.
+  // not open with `'metaprogram editor'` is not a metaprogram, and the rest is
+  // parsed only so the editor can still squiggle whatever else is wrong.
+  // Blanking the directive line in place keeps every downstream line/col
+  // exactly where the author typed it.
   const dir = readDirective(src);
-  const body = dir.kind === 'metaprogram' ? stripDirective(src) : src;
+  const rawBody = dir.kind === 'metaprogram' ? stripDirective(src) : src;
+  // A whole-buffer notation choice: mini ($: … .method(…)) is lowered to the
+  // mondo grammar this parser tokenises; a mondo buffer passes straight
+  // through; a buffer that mixes the two is refused before parsing.
+  const notation = detectNotation(rawBody);
+  const body = notation === 'mini' ? miniToMondo(rawBody) : rawBody;
   const { tokens, errors } = tokenize(body);
+  if (notation === 'mixed') {
+    errors.push({
+      message: 'a metaprogram is written entirely in one notation — this buffer mixes mini ($: … .cycles(…)) with mondo ($ … / # cycles …)',
+      line: (dir.lineIndex ?? 0) + 2,
+      col: 1,
+    });
+  }
   if (dir.kind !== 'metaprogram') {
     errors.push({
       message: dir.kind == null
-        ? (dir.reason || "a metaprogram must open with the 'metaprogram' directive line")
-        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram'`,
+        ? (dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line")
+        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram editor'`,
       line: (dir.lineIndex ?? 0) + 1,
       col: 1,
     });
@@ -1714,7 +1751,7 @@ export function mosaicEnabled(ast) {
 // editor. Cycle length still quantizes onto the parser's 120 bpm default —
 // writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `'metaprogram'\n$ participants <0>\n# cycles wcl 20\n`;
+  return `'metaprogram editor'\n$ participants <0>\n# cycles "wcl" 20\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

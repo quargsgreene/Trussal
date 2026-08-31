@@ -43,6 +43,7 @@ import {
   parseMetaprogram,
   buildDefaultProgram
 } from './MetaprogrammerParser.js';
+import { detectNotation, miniToMondo, mondoToMini } from '../notation.js';
 import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
 import { makeClockSyncOverO2 } from './ClockSync.js';
@@ -355,21 +356,40 @@ export function broadcastStopSignal() {
 
 // Studio effect toggles double as metaprogram shortcuts under JPattern:
 // toggling adds/removes the corresponding # line and applies it, so the
-// buttons and the shared editor never disagree.
-const SHORTCUT_LINES = { room: '# room wcl 2', echo: '# echo', crush: '# crush wcl 1', noise: '# noise' };
+// buttons and the shared editor never disagree. The `#` line is the mondo
+// spelling; when the shared buffer is written in mini the edit round-trips
+// through mondo (miniToMondo → edit → mondoToMini) so it stays one notation.
+const SHORTCUT_LINES = { room: '# room "wcl" 2', echo: '# echo', crush: '# crush "wcl" 1', noise: '# noise' };
+
+// Split a program into its first-line directive and the body below it. The
+// editor and buildDefaultProgram both put the directive on line 1.
+function splitDirective(text) {
+  const s = String(text ?? '');
+  const nl = s.indexOf('\n');
+  return nl === -1 ? { dir: s, body: '' } : { dir: s.slice(0, nl), body: s.slice(nl + 1) };
+}
+
+// The body as mondo, whichever notation it is in — the form the `#` shortcut
+// lines are written against.
+function bodyAsMondo(body) {
+  return detectNotation(body) === 'mini' ? miniToMondo(body) : body;
+}
 
 export function hasEffectShortcut(fn) {
   if (!programText) return false;
-  return new RegExp(`^#\\s*${fn}\\b`, 'm').test(programText);
+  return new RegExp(`^#\\s*${fn}\\b`, 'm').test(bodyAsMondo(splitDirective(programText).body));
 }
 
 export function toggleEffectShortcut(fn) {
   if (!SHORTCUT_LINES[fn]) return false;
-  let text = programText ?? buildDefaultProgram();
+  const { dir, body } = splitDirective(programText ?? buildDefaultProgram());
+  const wasMini = detectNotation(body) === 'mini';
+  let mondo = wasMini ? miniToMondo(body) : body;
   const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, 'm');
-  if (lineRe.test(text)) text = text.replace(lineRe, '');
-  else text = `${text.trimEnd()}\n${SHORTCUT_LINES[fn]}\n`;
-  return applyProgramText(text).length === 0;
+  if (lineRe.test(mondo)) mondo = mondo.replace(lineRe, '');
+  else mondo = `${mondo.trimEnd()}\n${SHORTCUT_LINES[fn]}\n`;
+  const newBody = wasMini ? mondoToMini(mondo) : mondo;
+  return applyProgramText(`${dir}\n${newBody}`).length === 0;
 }
 
 // --- Queues ---------------------------------------------------------------------

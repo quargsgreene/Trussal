@@ -6,9 +6,9 @@
 // string-literal directive on its first real line, exactly as a module opens
 // with "use strict":
 //
-//   'personal program'   a performer's own Strudel + Hydra editor
-//   'metaprogram'         the shared JPattern scheduling script
-//   'bot program'         code a bot runs on a performer's behalf
+//   'personal editor'     a performer's own Strudel + Hydra editor
+//   'metaprogram editor'  the shared JPattern scheduling script
+//   'bot editor'          code a bot runs on a performer's behalf
 //
 // It is REQUIRED and there is no heuristic fallback: a buffer with no
 // recognised directive is not silently classified, it is an error surfaced to
@@ -16,32 +16,48 @@
 // being a reserved word — the JPattern parser knows it is parsing a
 // metaprogram because the directive says so, not because it spotted a
 // `$ participants` line, so the token is free to mean anything in the other
-// two kinds.
+// two kinds. It is also what tells a whole-buffer notation apart: the personal
+// and bot editors accept a Strudel-native ("mini") buffer or a terse ("mondo")
+// one, and the metaprogram editor the same pair — see src/notation.js.
+//
+// The `… program` spellings this directive used before are still recognised as
+// legacy aliases so a draft saved under the old wording keeps parsing; it
+// upgrades to the current spelling the next time ensureDirective/retagDirective
+// rewrites it.
 //
 // Pure module: no DOM, no imports. Runs identically in the browser bundle, in
 // the bots process, and under node:test.
 
-export const PERSONAL = 'personal program';
-export const METAPROGRAM = 'metaprogram';
-export const BOT = 'bot program';
+export const PERSONAL = 'personal editor';
+export const METAPROGRAM = 'metaprogram editor';
+export const BOT = 'bot editor';
 
 export const DIRECTIVES = { PERSONAL, METAPROGRAM, BOT };
 
+// Every phrase that names a kind — the current spelling first, then the legacy
+// `… program` aliases. Order matters only in that readDirective reports the
+// current spelling for a legacy match (via CANONICAL_BY_KIND), never the alias.
 const KIND_BY_TEXT = {
   [PERSONAL]: 'personal',
   [METAPROGRAM]: 'metaprogram',
   [BOT]: 'bot',
+  'personal program': 'personal',
+  'metaprogram': 'metaprogram',
+  'bot program': 'bot',
 };
+
+const CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT };
 
 // A line is "blank or a full-line comment" if it carries nothing a program
 // runs. The directive may sit below any number of these, the same slack
 // "use strict" gets below a licence header.
 const SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
 
-// The directive itself: a single- or double-quoted one of the three phrases,
-// alone on its line bar an optional trailing `;` and `// comment`. Anchored so
-// a quoted phrase mid-expression is never mistaken for it.
-const DIRECTIVE_RE = /^\s*(['"])(personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+// The directive itself: a single- or double-quoted one of the recognised
+// phrases (current spelling or a legacy `… program` alias), alone on its line
+// bar an optional trailing `;` and `// comment`. Anchored so a quoted phrase
+// mid-expression is never mistaken for it.
+const DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
 
 // The directive line as a serialisable descriptor, for consumers that cannot
 // import this module — the bot's page scripts are function bodies handed to
@@ -64,6 +80,9 @@ function firstRealLine(lines) {
 
 // { kind, phrase, lineIndex } for the buffer's directive, or
 // { kind: null, reason } when the first real line is not a valid directive.
+// `phrase` is always the current spelling for the kind, even when a legacy
+// alias was what matched — callers that echo it into a status line then teach
+// the wording a save will migrate to.
 export function readDirective(text) {
   const lines = splitLines(text);
   const idx = firstRealLine(lines);
@@ -74,11 +93,12 @@ export function readDirective(text) {
   if (!m) {
     return {
       kind: null,
-      reason: "missing directive — the first line must be 'personal program', 'metaprogram' or 'bot program'",
+      reason: "missing directive — the first line must be 'personal editor', 'metaprogram editor' or 'bot editor'",
       lineIndex: idx,
     };
   }
-  return { kind: KIND_BY_TEXT[m[2]], phrase: m[2], lineIndex: idx };
+  const kind = KIND_BY_TEXT[m[2]];
+  return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
 }
 
 // True when the buffer's directive names exactly this kind
@@ -101,9 +121,11 @@ export function stripDirective(text) {
 
 // Prepend the directive for a given kind if the buffer does not already carry
 // it. For programmatic producers — the room's default programs, the bot fleet
-// wrapping a captured pattern — never for text a human is editing.
+// wrapping a captured pattern — never for text a human is editing. Always
+// writes the current spelling, so a body that still carries a legacy alias
+// (readDirective already reports its kind) is left as-is, not double-tagged.
 export function ensureDirective(text, kind) {
-  const phrase = Object.keys(KIND_BY_TEXT).find((p) => KIND_BY_TEXT[p] === kind);
+  const phrase = CANONICAL_BY_KIND[kind];
   if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
   const s = String(text ?? '');
   if (readDirective(s).kind === kind) return s;
@@ -111,9 +133,9 @@ export function ensureDirective(text, kind) {
 }
 
 // Swap whatever directive a buffer carries (or none) for this kind's, leaving
-// the body untouched. Used when a bot adopts a performer's 'personal program'
-// as its own 'bot program'. The blank line stripDirective leaves where the old
-// directive sat is folded back into the new directive's own line.
+// the body untouched. Used when a bot adopts a performer's 'personal editor'
+// buffer as its own 'bot editor'. The blank line stripDirective leaves where
+// the old directive sat is folded back into the new directive's own line.
 export function retagDirective(text, kind) {
   const info = readDirective(text);
   const body = info.kind == null

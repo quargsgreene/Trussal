@@ -32,7 +32,7 @@ import { wrapAsVoice } from './strudel-voice.js';
 // as transpiler languages; the tag functions go into evalScope below.
 import { mondo, mondi, mondolang } from './mondo-notation.js';
 
-export const DEFAULT_PATTERN = `'personal program'
+export const DEFAULT_PATTERN = `'personal editor'
 n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
@@ -217,9 +217,9 @@ function buildBotSilentBlock(peer) {
   // behind the ring's next-turn dequeue (getActivePattern would otherwise
   // replay whatever the ring last picked up, which could be several
   // rotations stale).
-  // A bot runs a 'bot program'; one puppeted with a human's captured editor
-  // may still carry that human's 'personal program' directive. Either is fine;
-  // anything else (or none) contributes nothing.
+  // A bot runs a 'bot editor' buffer; one puppeted with a human's captured
+  // editor may still carry that human's 'personal editor' directive. Either is
+  // fine; anything else (or none) contributes nothing.
   const botDir = readDirective(peer.pattern).kind;
   if (botDir !== 'bot' && botDir !== 'personal') return null;
 
@@ -314,11 +314,11 @@ function buildPeerBlock(peer) {
   const source = jPattern ? (getActivePattern(peer.jitsiId) ?? peer.pattern) : peer.pattern;
 
   // The directive is required, with no heuristic fallback: a personal editor
-  // buffer that does not open with 'personal program' contributes nothing to
+  // buffer that does not open with 'personal editor' contributes nothing to
   // the combined program. The local peer is told why through the studio status
   // line (onEvalAndPlay); a remote peer on a stale bundle is dropped quietly.
   if (source && readDirective(source).kind !== 'personal') {
-    if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal program' directive — dropped`);
+    if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal editor' directive — dropped`);
     return null;
   }
 

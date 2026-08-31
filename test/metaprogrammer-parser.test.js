@@ -10,31 +10,36 @@ import {
 // The unwrapped parser, for the directive-requirement tests themselves.
 import { parseMetaprogram as parseMetaprogramRaw } from '../src/audio-net/MetaprogrammerParser.js';
 
-// --- The 'metaprogram' directive is required, with no fallback -------------
+// --- The 'metaprogram editor' directive is required, with no fallback ------
 
-test("a buffer with no 'metaprogram' directive is invalid", () => {
+test("a buffer with no 'metaprogram editor' directive is invalid", () => {
   const res = parseMetaprogramRaw('$ participants <0>\n# cycles wcl 20\n');
-  assert.ok(res.errors.some(e => /directive/.test(e.message) && /'metaprogram'/.test(e.message)));
+  assert.ok(res.errors.some(e => /directive/.test(e.message) && /'metaprogram editor'/.test(e.message)));
   assert.equal(res.valid, false);
   assert.equal(res.errors[0].line, 1);
 });
 
 test("the wrong directive is named, not guessed past", () => {
-  const res = parseMetaprogramRaw("'personal program'\n$ participants <0>\n");
+  const res = parseMetaprogramRaw("'personal editor'\n$ participants <0>\n");
   assert.ok(res.errors.some(e => /not a metaprogram/.test(e.message)));
 });
 
-test("a correct 'metaprogram' directive parses, single or double quoted", () => {
+test("a correct 'metaprogram editor' directive parses, single or double quoted", () => {
+  assert.equal(parseMetaprogramRaw("'metaprogram editor'\n$ participants <0>\n").valid, true);
+  assert.equal(parseMetaprogramRaw('"metaprogram editor"\n$ participants <0>\n').valid, true);
+});
+
+test("the legacy 'metaprogram' directive alias still parses", () => {
   assert.equal(parseMetaprogramRaw("'metaprogram'\n$ participants <0>\n").valid, true);
   assert.equal(parseMetaprogramRaw('"metaprogram"\n$ participants <0>\n').valid, true);
 });
 
 test("'$' no longer needs the 'participants' label — the directive carries the signal", () => {
-  const bare = parseMetaprogramRaw("'metaprogram'\n$ <0 1 2>\n");
+  const bare = parseMetaprogramRaw("'metaprogram editor'\n$ <0 1 2>\n");
   assert.equal(bare.valid, true);
   assert.deepEqual(bare.ast.participants.stacks[0].elements.map(e => e.token), ['0', '1', '2']);
   // and the explicit label still works
-  assert.equal(parseMetaprogramRaw("'metaprogram'\n$ participants <0 1 2>\n").valid, true);
+  assert.equal(parseMetaprogramRaw("'metaprogram editor'\n$ participants <0 1 2>\n").valid, true);
 });
 
 function ok(text) {
@@ -54,6 +59,50 @@ function bad(text, pattern) {
   }
   return res.errors;
 }
+
+// --- mini surface notation (Strudel-style $: … .method(…)) ----------------
+
+test('mini: the spec example parses to the same AST as its mondo equivalent', () => {
+  const mini = ok('$: participants("<0 1>").cycles("wcl", 10).room("wcl", 30)');
+  const mondo = ok('$ participants <0 1>\n# cycles "wcl" 10\n# room "wcl" 30\n');
+  assert.deepEqual(mini.participants.stacks[0].elements.map(e => e.token),
+    mondo.participants.stacks[0].elements.map(e => e.token));
+  assert.deepEqual(mini.cycles, mondo.cycles);
+  assert.deepEqual(mini.chain.map(c => c.fn), mondo.chain.map(c => c.fn));
+  assert.deepEqual(resolveEffectParams(mini.chain[0]), resolveEffectParams(mondo.chain[0]));
+});
+
+test('mini: a method chain split across lines is the same as one line', () => {
+  const a = ok('$: participants("<0 1>")\n.cycles("wcpl", 3)\n.crush("wcl", 2)');
+  assert.equal(a.participants.mode, 'alternate');
+  assert.deepEqual(a.cycles, { metric: 'wcpl', factor: 3, fixed: null });
+  assert.deepEqual(a.chain.map(c => c.fn), ['crush']);
+});
+
+test('mini: [ … ] subdivides, exactly as the bare mondo form does', () => {
+  assert.equal(ok('$: participants("[0 1 2]")').participants.mode, 'subdivide');
+});
+
+test("mixing mini and mondo in one buffer is a parse error", () => {
+  bad('$: participants("<0>")\n# cycles "wcl" 10', /entirely in one notation/);
+});
+
+// --- metric keywords are accepted quoted (mini forces it) or bare --------
+
+test('metric keywords parse quoted or bare, to the same AST', () => {
+  assert.deepEqual(ok('$ participants <0>\n# cycles "wcl" 10\n').cycles,
+    ok('$ participants <0>\n# cycles wcl 10\n').cycles);
+  assert.deepEqual(ok('$ participants <0>\n# room "wcpl" 2\n').chain[0],
+    ok('$ participants <0>\n# room wcpl 2\n').chain[0]);
+});
+
+test('a quoted metric pattern still reads as metrics, not media', () => {
+  const a = ok('$ participants <0>\n# crush <"wcl" "wcpl"> <2 4>\n');
+  assert.equal(a.chain[0].fn, 'crush');
+  // the metric arg is a value sequence of metric keywords, not a media set
+  assert.equal(a.chain[0].metric.type, 'valueSeq');
+  assert.deepEqual(a.chain[0].metric.terms, ['wcl', 'wcpl']);
+});
 
 // --- Spec examples, verbatim -----------------------------------------------
 
@@ -758,7 +807,7 @@ test('buildDefaultProgram emits the always-on default and round-trips the parser
   // Participant 0 — the first to join — streams continuously; nobody else is
   // listed, so later joiners stay silent until an edit adds them.
   const text = buildDefaultProgram();
-  assert.equal(text, "'metaprogram'\n$ participants <0>\n# cycles wcl 20\n");
+  assert.equal(text, "'metaprogram editor'\n$ participants <0>\n# cycles \"wcl\" 20\n");
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
   // No tempo directive in the default program, and none injected behind it.

@@ -38701,11 +38701,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (!m2) {
       return {
         kind: null,
-        reason: "missing directive \u2014 the first line must be 'personal program', 'metaprogram' or 'bot program'",
+        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor' or 'bot editor'",
         lineIndex: idx
       };
     }
-    return { kind: KIND_BY_TEXT[m2[2]], phrase: m2[2], lineIndex: idx };
+    const kind = KIND_BY_TEXT[m2[2]];
+    return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
   }
   function stripDirective(text2) {
     const info = readDirective(text2);
@@ -38715,31 +38716,281 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     return lines.join("\n");
   }
   function ensureDirective(text2, kind) {
-    const phrase = Object.keys(KIND_BY_TEXT).find((p) => KIND_BY_TEXT[p] === kind);
+    const phrase = CANONICAL_BY_KIND[kind];
     if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
     const s2 = String(text2 ?? "");
     if (readDirective(s2).kind === kind) return s2;
     return `'${phrase}'
 ${s2}`;
   }
-  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
+  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
   var init_program_directive = __esm({
     "src/program-directive.js"() {
-      PERSONAL = "personal program";
-      METAPROGRAM = "metaprogram";
-      BOT = "bot program";
+      PERSONAL = "personal editor";
+      METAPROGRAM = "metaprogram editor";
+      BOT = "bot editor";
       KIND_BY_TEXT = {
         [PERSONAL]: "personal",
         [METAPROGRAM]: "metaprogram",
-        [BOT]: "bot"
+        [BOT]: "bot",
+        "personal program": "personal",
+        "metaprogram": "metaprogram",
+        "bot program": "bot"
       };
+      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT };
       SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
-      DIRECTIVE_RE = /^\s*(['"])(personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
       DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
     }
   });
 
+  // src/notation.js
+  function detectNotation(body) {
+    const lines = String(body ?? "").split("\n");
+    let mini2 = false;
+    let mondo2 = false;
+    for (const line of lines) {
+      if (!line.trim() || COMMENT_RE.test(line)) continue;
+      if (MINI_OPEN_RE.test(line)) mini2 = true;
+      else if (MONDO_OPEN_RE.test(line) || MONDO_CHAIN_RE.test(line)) mondo2 = true;
+    }
+    if (mini2 && mondo2) return "mixed";
+    if (mondo2) return "mondo";
+    if (mini2) return "mini";
+    return null;
+  }
+  function readToken(src2, i) {
+    const n2 = src2.length;
+    while (i < n2 && (src2[i] === " " || src2[i] === "	" || src2[i] === "\n")) i++;
+    if (i >= n2) return null;
+    const start = i;
+    const ch2 = src2[i];
+    if (ch2 === '"' || ch2 === "'" || ch2 === "`") {
+      i++;
+      while (i < n2 && src2[i] !== ch2) {
+        if (src2[i] === "\\") i++;
+        i++;
+      }
+      i++;
+      return { text: src2.slice(start, i), end: i };
+    }
+    if (OPEN[ch2]) {
+      let depth = 0;
+      for (; i < n2; i++) {
+        const c2 = src2[i];
+        if (c2 === '"' || c2 === "'" || c2 === "`") {
+          i++;
+          while (i < n2 && src2[i] !== c2) {
+            if (src2[i] === "\\") i++;
+            i++;
+          }
+          continue;
+        }
+        if (OPEN[c2]) depth++;
+        else if (CLOSE.has(c2)) {
+          depth--;
+          if (depth === 0) {
+            i++;
+            break;
+          }
+        }
+      }
+      return { text: src2.slice(start, i), end: i };
+    }
+    while (i < n2) {
+      const c2 = src2[i];
+      if (c2 === " " || c2 === "	" || c2 === "\n") break;
+      if (c2 === '"' || c2 === "'" || c2 === "`" || OPEN[c2]) {
+        const t = readToken(src2, i);
+        i = t.end;
+        continue;
+      }
+      i++;
+    }
+    return { text: src2.slice(start, i), end: i };
+  }
+  function tokenizeSpaced(src2) {
+    const out = [];
+    let i = 0;
+    for (; ; ) {
+      const t = readToken(src2, i);
+      if (!t) break;
+      out.push(t.text);
+      i = t.end;
+    }
+    return out;
+  }
+  function splitTopLevelCommas(src2) {
+    const out = [];
+    let depth = 0, start = 0, i = 0;
+    const n2 = src2.length;
+    while (i < n2) {
+      const c2 = src2[i];
+      if (c2 === '"' || c2 === "'" || c2 === "`") {
+        i++;
+        while (i < n2 && src2[i] !== c2) {
+          if (src2[i] === "\\") i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+      if (OPEN[c2]) depth++;
+      else if (CLOSE.has(c2)) depth--;
+      else if (c2 === "," && depth === 0) {
+        out.push(src2.slice(start, i).trim());
+        start = i + 1;
+      }
+      i++;
+    }
+    const last2 = src2.slice(start).trim();
+    if (last2 || out.length) out.push(last2);
+    return out;
+  }
+  function mondoToMini(body) {
+    return String(body ?? "").split("\n").map((line) => {
+      let m2 = line.match(/^(\s*)\$[ \t]+(\S[\s\S]*?)\s*$/);
+      if (m2 && !/^\s*\$:/.test(line)) return `${m2[1]}$: ${lowerMondoCall(m2[2])}`;
+      m2 = line.match(/^(\s*)#[ \t]+(\S[\s\S]*?)\s*$/);
+      if (m2) return `${m2[1]}.${lowerMondoCall(m2[2])}`;
+      return line;
+    }).join("\n");
+  }
+  function lowerMondoCall(rest) {
+    const toks = tokenizeSpaced(rest);
+    const name3 = toks.shift() || "";
+    const args2 = toks.map((t) => {
+      if ((t[0] === "<" || t[0] === "[") && CLOSE.has(t[t.length - 1])) return JSON.stringify(t);
+      return t;
+    });
+    return `${name3}(${args2.join(", ")})`;
+  }
+  function miniToMondo(body) {
+    const src2 = String(body ?? "");
+    const lines = src2.split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!/^\s*\$:/.test(line)) {
+        out.push(line);
+        i++;
+        continue;
+      }
+      let buf = line;
+      let j2 = i + 1;
+      while (j2 < lines.length) {
+        const nxt = lines[j2];
+        if (/^\s*\$:/.test(nxt) || /^\s*\$[ \t]/.test(nxt) || /^\s*#[ \t]/.test(nxt)) break;
+        if (/^\s*\.[A-Za-z_$]/.test(nxt) || !balanced(buf)) {
+          buf += "\n" + nxt;
+          j2++;
+          continue;
+        }
+        break;
+      }
+      const indent = (line.match(/^(\s*)/) || ["", ""])[1];
+      const mondo2 = voiceToMondo(buf, indent);
+      out.push(...mondo2);
+      for (let pad = mondo2.length; pad < j2 - i; pad++) out.push("");
+      i = j2;
+    }
+    return out.join("\n");
+  }
+  function balanced(s2) {
+    let depth = 0;
+    for (let i = 0; i < s2.length; i++) {
+      const c2 = s2[i];
+      if (c2 === '"' || c2 === "'" || c2 === "`") {
+        i++;
+        while (i < s2.length && s2[i] !== c2) {
+          if (s2[i] === "\\") i++;
+          i++;
+        }
+        continue;
+      }
+      if (OPEN[c2]) depth++;
+      else if (CLOSE.has(c2)) depth--;
+    }
+    return depth <= 0;
+  }
+  function voiceToMondo(buf, indent) {
+    const body = buf.replace(/^\s*\$:\s*/, "");
+    const segs = splitCallChain(body);
+    if (!segs.length) return [`${indent}$: ${body.trim()}`];
+    const lines = [];
+    segs.forEach((seg2, k2) => {
+      const args2 = splitTopLevelCommas(seg2.args).map(unquoteMiniPattern).filter((a2) => a2 !== "");
+      const head = k2 === 0 ? `${indent}$ ` : `${indent}# `;
+      lines.push(`${head}${seg2.name}${args2.length ? " " + args2.join(" ") : ""}`.trimEnd());
+    });
+    return lines;
+  }
+  function splitCallChain(src2) {
+    const segs = [];
+    let i = 0;
+    const n2 = src2.length;
+    const readName = () => {
+      const m2 = src2.slice(i).match(/^([A-Za-z_$][\w$]*)\s*\(/);
+      if (!m2) return null;
+      i += m2[0].length;
+      let depth = 1;
+      const argStart = i;
+      while (i < n2 && depth > 0) {
+        const c2 = src2[i];
+        if (c2 === '"' || c2 === "'") {
+          i++;
+          while (i < n2 && src2[i] !== c2) {
+            if (src2[i] === "\\") i++;
+            i++;
+          }
+          i++;
+          continue;
+        }
+        if (c2 === "(" || OPEN[c2]) depth++;
+        else if (c2 === ")" || CLOSE.has(c2)) depth--;
+        if (depth === 0) break;
+        i++;
+      }
+      const args2 = src2.slice(argStart, i);
+      i++;
+      return { name: m2[1], args: args2 };
+    };
+    const first = readName();
+    if (!first) return [];
+    segs.push(first);
+    while (i < n2) {
+      while (i < n2 && /\s/.test(src2[i])) i++;
+      if (src2[i] !== ".") break;
+      i++;
+      while (i < n2 && /\s/.test(src2[i])) i++;
+      const seg2 = readName();
+      if (!seg2) break;
+      segs.push(seg2);
+    }
+    return segs;
+  }
+  function unquoteMiniPattern(arg) {
+    const m2 = arg.match(BRACKET_STRING_RE);
+    return m2 ? m2[2] : arg;
+  }
+  var MINI_OPEN_RE, MONDO_OPEN_RE, MONDO_CHAIN_RE, COMMENT_RE, OPEN, CLOSE, BRACKET_STRING_RE;
+  var init_notation = __esm({
+    "src/notation.js"() {
+      MINI_OPEN_RE = /^\s*\$:/;
+      MONDO_OPEN_RE = /^\s*\$[ \t]+[A-Za-z_$]/;
+      MONDO_CHAIN_RE = /^\s*#[ \t]+[A-Za-z_$]/;
+      COMMENT_RE = /^\s*\/\//;
+      OPEN = { "<": ">", "[": "]", "(": ")", "{": "}" };
+      CLOSE = /* @__PURE__ */ new Set([">", "]", ")", "}"]);
+      BRACKET_STRING_RE = /^(['"])([<[][\s\S]*[\]>])\1$/;
+    }
+  });
+
   // src/audio-net/MetaprogrammerParser.js
+  function isMetricKeywordToken(t) {
+    return !!t && (t.type === "word" || t.type === "string");
+  }
   function valuePatternKind(node) {
     if (!isValuePattern(node)) return null;
     if (isDataRefNode(node)) return "number";
@@ -38881,11 +39132,20 @@ ${s2}`;
   function parseMetaprogram(text2) {
     const src2 = typeof text2 === "string" ? text2 : "";
     const dir = readDirective(src2);
-    const body = dir.kind === "metaprogram" ? stripDirective(src2) : src2;
+    const rawBody = dir.kind === "metaprogram" ? stripDirective(src2) : src2;
+    const notation = detectNotation(rawBody);
+    const body = notation === "mini" ? miniToMondo(rawBody) : rawBody;
     const { tokens, errors } = tokenize2(body);
+    if (notation === "mixed") {
+      errors.push({
+        message: "a metaprogram is written entirely in one notation \u2014 this buffer mixes mini ($: \u2026 .cycles(\u2026)) with mondo ($ \u2026 / # cycles \u2026)",
+        line: (dir.lineIndex ?? 0) + 2,
+        col: 1
+      });
+    }
     if (dir.kind !== "metaprogram") {
       errors.push({
-        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram'`,
+        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram editor'`,
         line: (dir.lineIndex ?? 0) + 1,
         col: 1
       });
@@ -38961,9 +39221,9 @@ ${s2}`;
     }
   }
   function buildDefaultProgram() {
-    return `'metaprogram'
+    return `'metaprogram editor'
 $ participants <0>
-# cycles wcl 20
+# cycles "wcl" 20
 `;
   }
   function escapeForRegExp(s2) {
@@ -39006,6 +39266,7 @@ $ participants <0>
       init_ValuePattern();
       init_EffectMedia();
       init_program_directive();
+      init_notation();
       TIMING_METRICS = ["wcl", "wcpl"];
       EFFECT_METRICS = ["wcl", "wcpl"];
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
@@ -39545,8 +39806,8 @@ $ participants <0>
         // still drive effects and readouts. `# cycles wcl 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
-          if (metricTok.type !== "word" || !TIMING_METRICS.includes(metricTok.value)) {
-            this.error(`cycles needs a timing metric (${TIMING_METRICS.join("|")})`, metricTok);
+          if (!isMetricKeywordToken(metricTok) || !TIMING_METRICS.includes(metricTok.value)) {
+            this.error(`cycles needs a timing metric ("${TIMING_METRICS.join('" | "')}")`, metricTok);
             this.recover();
             return;
           }
@@ -39714,7 +39975,8 @@ $ participants <0>
               this.parseValueElementModifiers(name3, terms.length - 1, terms, weights, chances, rates);
               continue;
             }
-            if ((kind === "metric" || kind === "any") && t.type === "word") {
+            const metricLeaf = t.type === "word" || t.type === "string" && (kind === "metric" || sig.metricKeywords.includes(t.value));
+            if ((kind === "metric" || kind === "any") && metricLeaf) {
               if (!settleKind("metric", t)) return null;
               if (!sig.metricKeywords.includes(t.value)) {
                 this.error(`'${t.value}' is not a metric '${name3}' can read (${sig.metricKeywords.join("|")})`, t);
@@ -39922,7 +40184,7 @@ $ participants <0>
           if (!this.atStatementEnd() && !(sig.mediaArg && this.atMediaArg())) {
             for (let i = 0; i < slots.length; i++) {
               const t = this.peek();
-              if (t.type !== "word" || !sig.metricKeywords.includes(t.value)) {
+              if (!isMetricKeywordToken(t) || !sig.metricKeywords.includes(t.value)) {
                 this.error(
                   `'${name3}' needs a metric keyword (${sig.metricKeywords.join("|")}) before its ${slots[i]} \u2014 the syntax is '${sig.usage}'`,
                   t
@@ -39999,9 +40261,12 @@ $ participants <0>
         }
         // Whether what follows opens the trailing MEDIUM argument rather than
         // another numeric one. Both are written with the same brackets, so the LEAF
-        // settles it: a quoted string can only be a medium name, and a number can
-        // never be one. That is what makes `# echo … [1 4] ["audio"]` — a numeric
-        // bound followed by a medium set — read unambiguously.
+        // settles it: a quoted MEDIUM NAME (`"audio"`) can only be a medium, and a
+        // number can never be one. A quoted metric (`"wcl"`) is a string leaf too
+        // now, so the test is isMedium(), not "is a string" — media and metric
+        // names are disjoint. That is what keeps `# crush <"wcl" "wcpl"> <2 4>`
+        // (patterned metric) and `# echo … [1 4] ["audio"]` (numeric bound then a
+        // medium set) reading unambiguously.
         atMediaArg() {
           const t = this.peek();
           if (t.type !== "punct" || t.value !== "[" && t.value !== "<") return false;
@@ -40011,7 +40276,7 @@ $ participants <0>
             i = this.nextMeaningful(i + 1);
           }
           const leaf = this.peek(i);
-          return !!leaf && leaf.type === "string";
+          return !!leaf && leaf.type === "string" && isMedium(leaf.value);
         }
         // `["audio" "video"]` — one set of media, space-separated. A comma is
         // refused by name rather than as a generic unexpected token: it is the one
@@ -40139,7 +40404,7 @@ $ participants <0>
               }
               continue;
             }
-            if (t.type === "word" && EFFECT_METRICS.includes(t.value)) {
+            if (isMetricKeywordToken(t) && EFFECT_METRICS.includes(t.value)) {
               this.next();
               if (!this.bindNoiseMetric(metrics, args2.length, t.value, t)) return;
               continue;
@@ -40190,7 +40455,7 @@ $ participants <0>
           let metric = null;
           if (sig.metricKeywords) {
             const t = this.peek();
-            if (t.type === "word" && sig.metricKeywords.includes(t.value)) {
+            if (isMetricKeywordToken(t) && sig.metricKeywords.includes(t.value)) {
               metric = t.value;
               this.next();
             } else if (sig.patternArgs && t.type === "punct" && (t.value === "<" || t.value === "[")) {
@@ -51029,19 +51294,31 @@ ${err.toString()}`);
   function broadcastStopSignal() {
     ensureMetaprogramSync().broadcastStop();
   }
+  function splitDirective(text2) {
+    const s2 = String(text2 ?? "");
+    const nl = s2.indexOf("\n");
+    return nl === -1 ? { dir: s2, body: "" } : { dir: s2.slice(0, nl), body: s2.slice(nl + 1) };
+  }
+  function bodyAsMondo(body) {
+    return detectNotation(body) === "mini" ? miniToMondo(body) : body;
+  }
   function hasEffectShortcut(fn) {
     if (!programText) return false;
-    return new RegExp(`^#\\s*${fn}\\b`, "m").test(programText);
+    return new RegExp(`^#\\s*${fn}\\b`, "m").test(bodyAsMondo(splitDirective(programText).body));
   }
   function toggleEffectShortcut(fn) {
     if (!SHORTCUT_LINES[fn]) return false;
-    let text2 = programText ?? buildDefaultProgram();
+    const { dir, body } = splitDirective(programText ?? buildDefaultProgram());
+    const wasMini = detectNotation(body) === "mini";
+    let mondo2 = wasMini ? miniToMondo(body) : body;
     const lineRe = new RegExp(`^#\\s*${fn}\\b[^\\n]*\\n?`, "m");
-    if (lineRe.test(text2)) text2 = text2.replace(lineRe, "");
-    else text2 = `${text2.trimEnd()}
+    if (lineRe.test(mondo2)) mondo2 = mondo2.replace(lineRe, "");
+    else mondo2 = `${mondo2.trimEnd()}
 ${SHORTCUT_LINES[fn]}
 `;
-    return applyProgramText(text2).length === 0;
+    const newBody = wasMini ? mondoToMini(mondo2) : mondo2;
+    return applyProgramText(`${dir}
+${newBody}`).length === 0;
   }
   function queueFor(token) {
     let q2 = queues.get(token);
@@ -51295,6 +51572,7 @@ ${SHORTCUT_LINES[fn]}
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
+      init_notation();
       init_MetaprogramScheduler();
       init_WorstCaseCalculationUtils();
       init_ClockSync();
@@ -51328,7 +51606,7 @@ ${SHORTCUT_LINES[fn]}
       slotTimers = /* @__PURE__ */ new Set();
       crdt = null;
       caughtUp = false;
-      SHORTCUT_LINES = { room: "# room wcl 2", echo: "# echo", crush: "# crush wcl 1", noise: "# noise" };
+      SHORTCUT_LINES = { room: '# room "wcl" 2', echo: "# echo", crush: '# crush "wcl" 1', noise: "# noise" };
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();
       recorder = null;
@@ -55481,6 +55759,7 @@ ${full}
 
   // src/hydra-code.js
   init_program_directive();
+  init_notation();
   init_text_cycles_core();
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
   var INIT_TEXT_CYCLES_RE2 = /(^|\n)\s*await\s+initTextCycles\s*\(/;
@@ -55511,9 +55790,9 @@ ${adds.join("\n")}${s2.slice(cut2)}`;
   var INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
   var HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
   function normalizePeerCode(code2) {
-    return ensureCapabilityPreambles(
-      stripBotConfig(stripDirective(code2 || "")).replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim()
-    );
+    const cleaned = stripBotConfig(stripDirective(code2 || "")).replace(/[\s;]+$/g, "").replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, "").trim();
+    const lowered = detectNotation(cleaned) === "mondo" ? mondoToMini(cleaned) : cleaned;
+    return ensureCapabilityPreambles(lowered);
   }
   function splitHydraCode(code2) {
     const normalized = normalizePeerCode(code2);
@@ -56150,7 +56429,7 @@ $: (${split.expr})${fx}`;
   registerLanguage("mondolang", { getLocations: (code2) => getLocations(code2, 0) });
 
   // src/strudel.js
-  var DEFAULT_PATTERN = `'personal program'
+  var DEFAULT_PATTERN = `'personal editor'
 n("<0 1 2 3 4>*8").scale('G4:minor')
   .s("gm_lead_6_voice")
   .clip(sine.range(.2,.8).slow(8))
@@ -56273,7 +56552,7 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
     const jPattern = isJPatternActive();
     const source2 = jPattern ? getActivePattern(peer.jitsiId) ?? peer.pattern : peer.pattern;
     if (source2 && readDirective(source2).kind !== "personal") {
-      if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal program' directive \u2014 dropped`);
+      if (!peer.isLocal) console.warn(`[strudel] peer ${peer.jitsiId ?? peer.peerId} has no 'personal editor' directive \u2014 dropped`);
       return null;
     }
     let code2 = normalizePeerCode(source2);
@@ -59026,6 +59305,7 @@ ${s2}${BTN_MARKER}`)
 
   // src/studio.js
   init_program_directive();
+  init_notation();
 
   // src/editor-undo.js
   var HISTORY_LIMIT = 200;
@@ -60486,7 +60766,11 @@ ${s2}${BTN_MARKER}`)
     if (typeof code2 === "string") {
       const dir = readDirective(code2);
       if (dir.kind !== "personal") {
-        setStatus(dir.kind == null ? "Add 'personal program' as the first line of your editor" : `This editor opens with '${dir.phrase}', not 'personal program'`);
+        setStatus(dir.kind == null ? "Add 'personal editor' as the first line of your editor" : `This editor opens with '${dir.phrase}', not 'personal editor'`);
+        return;
+      }
+      if (detectNotation(stripDirective(code2)) === "mixed") {
+        setStatus("This buffer mixes mini ($: \u2026 .method(\u2026)) and mondo ($ \u2026 / # \u2026) \u2014 write it in one or the other");
         return;
       }
     }

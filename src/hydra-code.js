@@ -18,6 +18,11 @@
 
 import { stripBotConfig } from './bot-config.js';
 import { stripDirective } from './program-directive.js';
+// The personal/bot editor consumes Strudel ("mini") notation; a buffer written
+// in the terse "mondo" form ($ head "arg" / # method "arg") is lowered to it
+// here, line for line, before the transpiler or any capability sniffing. See
+// src/notation.js.
+import { detectNotation, mondoToMini } from './notation.js';
 // The word()/css() call shapes — imported rather than re-typed so the
 // auto-preamble rule below cannot drift from the rewriters that act on them.
 // Neither core imports this module, so there is no cycle.
@@ -104,25 +109,34 @@ export const INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HY
 export const HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
 
 // Editor text minus the noise that is never part of either language: the
-// leading `'personal program'` / `'bot program'` directive line, trailing
+// leading `'personal editor'` / `'bot editor'` directive line, trailing
 // whitespace/semicolons, `*name: code` lines (studio button widgets, not
 // patterns), and `botConfig(...)` declarations (bot-cluster settings, not
-// patterns). buildPeerBlock strips exactly these before testing for a
-// preamble, so the mosaic has to strip them too or a leading widget line would
-// hide an otherwise-valid preamble.
+// patterns) — then a mondo buffer lowered to the Strudel form. buildPeerBlock
+// strips exactly these before testing for a preamble, so the mosaic has to
+// strip them too or a leading widget line would hide an otherwise-valid
+// preamble.
 //
 // The directive and botConfig both have to go before Strudel's transpiler sees
 // the block: botConfig's argument is free text and the transpiler mini-parses
 // every double-quoted string, so a quoted value left in place would throw and
 // stop the whole room's program; the directive is a bare string literal that
 // would otherwise evaluate as a stray pattern.
+//
+// mondo lowering runs LAST here, on the cleaned body, so the `word()`/`css()`/
+// `.out()` shapes it produces are what ensureCapabilityPreambles then sniffs —
+// a `$ word "hi"` block gets its `await initTextCycles()` the same as
+// `$: word("hi")` would. A plain Strudel buffer (no `$`/`#` voice markers) and
+// one already written `$: …` are left untouched; a buffer that mixes the two
+// notations is left as-is for the transpiler to reject (the local editor names
+// the mistake — see studio.js).
 export function normalizePeerCode(code) {
-  return ensureCapabilityPreambles(
-    stripBotConfig(stripDirective(code || ''))
-      .replace(/[\s;]+$/g, '')
-      .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
-      .trim()
-  );
+  const cleaned = stripBotConfig(stripDirective(code || ''))
+    .replace(/[\s;]+$/g, '')
+    .replace(/^\*[a-zA-Z_$][a-zA-Z0-9_$]*\s*:.*$/mg, '')
+    .trim();
+  const lowered = detectNotation(cleaned) === 'mondo' ? mondoToMini(cleaned) : cleaned;
+  return ensureCapabilityPreambles(lowered);
 }
 
 // Split normalized code into its Hydra preamble and Strudel remainder, or null

@@ -287,7 +287,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   };
 
   const cap = capabilityPatterns || {};
-  // The leading 'personal program' / 'bot program' directive a pushed edit
+  // The leading 'personal editor' / 'bot editor' directive a pushed edit
   // carries (studio seeds the textarea with the bot's whole announced program,
   // directive included). It is a bare string literal the bare REPL has no use
   // for — strip it exactly as the browser's normalizePeerCode does, using the

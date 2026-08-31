@@ -84,7 +84,7 @@ export class Bot {
       css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
       initTextCycles: INIT_TEXT_CYCLES_PATTERN,
       initCss: INIT_CSS_PATTERN,
-      // The 'personal program' / 'bot program' directive a pushed edit opens
+      // The 'personal editor' / 'bot editor' directive a pushed edit opens
       // with — a bare string literal the bare REPL has no use for, stripped
       // the same way the browser's normalizePeerCode strips it.
       directive: DIRECTIVE_LINE_PATTERN,

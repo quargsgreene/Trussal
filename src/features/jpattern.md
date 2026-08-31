@@ -245,34 +245,72 @@ All prior conductor health functionality persists (i.e. removing bots to avoid s
 ## Metaprogramming Syntax
 The JPattern metaprogramming language foundationally uses the Mondo pattern language syntax (https://strudel.cc/learn/mondo-notation/).
 
-### The `'metaprogram'` directive
+### The `'metaprogram editor'` directive
 
-Every JPattern buffer opens with a bare `'metaprogram'` string literal on its
-first real line, the way a module opens with `"use strict"` — one of the three
-program-kind directives (`'metaprogram'`, `'personal program'`, `'bot program'`)
-that `src/program-directive.js` defines. It is **required**, with no heuristic
+Every JPattern buffer opens with a bare `'metaprogram editor'` string literal on
+its first real line, the way a module opens with `"use strict"` — one of the
+three program-kind directives (`'metaprogram editor'`, `'personal editor'`,
+`'bot editor'`) that `src/program-directive.js` defines; the `… program`
+spellings still parse as legacy aliases. It is **required**, with no heuristic
 fallback: a buffer that does not carry it is not a metaprogram and the parser
 reports it as invalid. Making the kind explicit is what lets `participants` stop
 being a reserved word — the parser knows it is reading a metaprogram from the
-directive, not from spotting a `$ participants` line.
+directive, not from spotting a `$ participants` line. The editor prefills the
+line.
 
-### mini and mondo, both accepted
+### Surface notation: mini or mondo, whole-buffer
 
-A scheduling sequence may be written in either notation, told apart by the
-bracket:
+The buffer is written entirely in ONE of two surface notations (`src/notation.js`),
+told apart by the voice opener; mixing the two is a parse error.
 
-- mini — `$ <0 1 2>` (alternate, one turn per cycle), `$ [0 1 ~ 3]` (subdivide),
-  nesting and the glued `@ ! ? * / % :` operators as documented below.
-- mondo — `$ (cat 0 1 2)` ≡ `<0 1 2>`, `$ (seq 0 1 ~ 3)` ≡ `[0 1 ~ 3]`, a
-  headless `$ (0 1 2)` subdivides, `$ (stack 0 1)` offsets each element by a
-  cycle as the comma does, and `$ (fast N X)` / `$ (slow N X)` are `X*N` / `X/N`.
-  Elements inside a mondo group use the same participant/rest/modifier grammar
-  and may nest `<…>` / `[…]` / `(…)`.
+- **mondo** (the default, and what the examples below use) — `$ participants <0 1>`
+  opens the scheduling voice, then one `# directive …` per line chains onto it:
 
-The `participants` label is now optional — `$ <0 1>` and `$ participants <0 1>`
-are the same statement. The `*$` button roster helpers only edit mini-bracket
-sequences; a room written with `$ (cat …)` parses but its per-token buttons do
-not act on it.
+  ```
+  'metaprogram editor'
+  $ participants <0 1>
+  # cycles "wcl" 10
+  # room "wcl" 30
+  ```
+
+- **mini** — the Strudel-native spelling of the same thing: `$:` opener,
+  `.method(…)` chaining, parens and commas, every string (metrics included)
+  quoted, mini-notation patterns as quoted strings. The parser lowers it to
+  mondo before tokenising, so the AST is identical:
+
+  ```
+  'metaprogram editor'
+  $: participants("<0 1>").cycles("wcl", 10).room("wcl", 30)
+  ```
+
+  A chain split across lines (`$: participants("<0 1>")` then `.cycles("wcl", 10)`
+  on the next line) is the same program.
+
+`"wcl"` / `"wcpl"` are quoted in both notations. A bare `wcl` still parses (it
+is how older programs are written) but the quoted spelling is canonical — it is
+what `buildDefaultProgram`, the studio effect-toggle buttons, and a lowered mini
+buffer all emit.
+
+The `participants` label is optional — `$ <0 1>` and `$ participants <0 1>` are
+the same statement.
+
+### Pattern fragments: mini-notation brackets or mondough s-expressions
+
+Independent of the buffer's surface notation, a scheduling *sequence* itself may
+be spelled with mini-notation brackets or with strudel [mondough](https://strudel.cc/learn/mondo-notation/)
+s-expressions, told apart by the bracket:
+
+- `<0 1 2>` (alternate, one turn per cycle), `[0 1 ~ 3]` (subdivide), nesting
+  and the glued `@ ! ? * / % :` operators as documented below.
+- `(cat 0 1 2)` ≡ `<0 1 2>`, `(seq 0 1 ~ 3)` ≡ `[0 1 ~ 3]`, a headless
+  `(0 1 2)` subdivides, `(stack 0 1)` offsets each element by a cycle as the
+  comma does, and `(fast N X)` / `(slow N X)` are `X*N` / `X/N`. Elements inside
+  a mondough group use the same participant/rest/modifier grammar and may nest
+  `<…>` / `[…]` / `(…)`.
+
+The `*$` button roster helpers and the studio "add me / drop me" buttons only
+edit a mondo `$ participants <…>` sequence; a buffer written in mini, or with
+`$ (cat …)`, parses and runs but those per-token buttons no-op on it.
 
 ## Metaprogramming Semantics
 Each Jitsi room participant is assigned a sequential identifying index upon first joining the room that is immutable for the duration of the meeting. 

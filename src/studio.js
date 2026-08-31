@@ -31,7 +31,8 @@ import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial
 import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
 import { attachPanelControls } from './panel-drag-resize.js';
 import { toggleLineComment } from './editor-router-core.js';
-import { readDirective, ensureDirective } from './program-directive.js';
+import { readDirective, ensureDirective, stripDirective } from './program-directive.js';
+import { detectNotation } from './notation.js';
 import { attachUndoHistory, resetUndoBaseline } from './editor-undo.js';
 import {
   bootAudioEngine,
@@ -897,8 +898,12 @@ async function onEvalAndPlay(code) {
     const dir = readDirective(code);
     if (dir.kind !== 'personal') {
       setStatus(dir.kind == null
-        ? "Add 'personal program' as the first line of your editor"
-        : `This editor opens with '${dir.phrase}', not 'personal program'`);
+        ? "Add 'personal editor' as the first line of your editor"
+        : `This editor opens with '${dir.phrase}', not 'personal editor'`);
+      return;
+    }
+    if (detectNotation(stripDirective(code)) === 'mixed') {
+      setStatus('This buffer mixes mini ($: … .method(…)) and mondo ($ … / # …) — write it in one or the other');
       return;
     }
   }
