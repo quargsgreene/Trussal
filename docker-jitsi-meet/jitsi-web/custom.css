@@ -211,6 +211,15 @@ div[class*="premeeting"] video {
   fill: #111111 !important;
 }
 
+/* Prejoin heading + room-name span ship white (designed for a dark preview
+   backdrop) — invisible on the flat-white screen. Force #111. Scoped to the
+   prejoin so it can't touch the white-on-#111 Join button label. */
+.premeeting-screen h1,
+.premeeting-screen [class*="-title"],
+.premeeting-screen [class*="roomName"] {
+  color: #111111 !important;
+}
+
 /* Centre what's left. Fill the screen with white and pull `.content`
    back into normal flow so the flex parent can centre it. */
 .premeeting-screen,
