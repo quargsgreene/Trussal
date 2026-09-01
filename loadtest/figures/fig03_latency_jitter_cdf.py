@@ -57,7 +57,9 @@ def build_figure(run_dir=None, column="double"):
         axes.set_ylim(0, 1)
         axes.set_xlim(0, x_upper_limit)
         axes.axhline(0.95, color="#c9c8c0", lw=0.5, ls=(0, (2, 2)))
-    rtt_axes.legend(title="network", ncol=2, loc="lower right")
+    # legend on the jitter panel's clear lower-right wedge — on the RTT panel a
+    # 2-col box overlapped the slow (2.5G) curve.
+    jitter_axes.legend(title="network", ncol=1, loc="lower right")
     if is_synthetic(observations):
         watermark(figure)
     return figure, is_synthetic(observations)

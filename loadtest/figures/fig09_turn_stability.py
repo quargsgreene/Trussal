@@ -3,8 +3,10 @@
 Fig 9 — turn-assignment stability under churn (scenario S5), consistent-hash
 ring vs a maintained literal `$ participants`. 1x2 small multiple at one WWAN
 profile (p3, LTE congested):
-  left  — successor disruption: fraction of surviving tokens whose "who plays
-          next" neighbour changed, per churn event
+  left  — of the performers still in the room after a join/leave, the fraction
+          whose turn-order successor ("who plays next") is now a different
+          performer. 0 = the rotation was undisturbed for everyone who stayed;
+          1 = every survivor got a new next-up. Not a dropout/retention rate.
   right — time to a joiner's first turn
 Two series: hash (accent) vs explicit (secondary). Defaults to double column.
 """
@@ -15,14 +17,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, direct_label, watermark
+from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, watermark
 from _cli import figure_main
 from _data import load_turn_stability, CHURN_RATE_STEPS, is_synthetic
 
 OUTPUT_NAME = "fig09_turn_stability"
 PROFILE = "p3_lte_busy"
 MODE_COLOR = {"hash": CATEGORICAL_COLORS[0], "explicit": CATEGORICAL_COLORS[1]}
-MODE_LABEL = {"hash": "# ring hash", "explicit": "maintained literal"}
+MODE_LABEL = {"hash": "ring hash", "explicit": "maintained literal"}
 
 
 def _series(frame, turn_mode, metric):
@@ -44,20 +46,20 @@ def build_figure(run_dir=None, column="double"):
         x_succ, y_succ = _series(turn_stability, turn_mode, "successor_disruption")
         if x_succ:
             successor_axes.plot(x_succ, y_succ, marker="o", color=color, label=MODE_LABEL[turn_mode])
-            direct_label(successor_axes, x_succ[-1], y_succ[-1], MODE_LABEL[turn_mode], color)
         x_ttf, y_ttf = _series(turn_stability, turn_mode, "time_to_first_turn_s")
         if x_ttf:
             first_turn_axes.plot(x_ttf, y_ttf, marker="o", color=color, label=MODE_LABEL[turn_mode])
-            direct_label(first_turn_axes, x_ttf[-1], y_ttf[-1], MODE_LABEL[turn_mode], color)
 
     for axes in (successor_axes, first_turn_axes):
         axes.set_xlabel("churn rate (join+leave events / min)")
         axes.set_xticks(CHURN_RATE_STEPS)
-    successor_axes.set_ylabel("successor disruption\n(fraction of survivors, per churn event)")
+    successor_axes.set_ylabel("performers whose next-up changed\n"
+                              "(fraction of those still present, per join/leave)")
     successor_axes.set_ylim(bottom=0)
     first_turn_axes.set_ylabel("time to a joiner's first turn (s)")
     first_turn_axes.set_ylim(bottom=0)
     successor_axes.legend(loc="upper left")
+    first_turn_axes.legend(loc="upper left")
     if is_synthetic(turn_stability):
         watermark(figure)
     return figure, is_synthetic(turn_stability)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, direct_label, watermark
+from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, watermark
 from _cli import figure_main, stats_by
 from _data import load_summary, ensure_scenarios, is_synthetic
 
@@ -68,8 +68,6 @@ def build_figure(run_dir=None, column="single"):
         if {"p05", "p95"}.issubset(cpu_by_room_size.columns):
             axes.fill_between(cpu_by_room_size.level, cpu_by_room_size.p05,
                               cpu_by_room_size.p95, color=line_color, alpha=0.12, lw=0)
-        direct_label(axes, cpu_by_room_size.level.iloc[-1], cpu_by_room_size.p50.iloc[-1],
-                     container_label, line_color)
 
     axes.set_xlabel("participants in room")
     axes.set_ylabel("container CPU, p50 (%)")

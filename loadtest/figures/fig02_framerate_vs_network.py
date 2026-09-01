@@ -51,7 +51,10 @@ def build_figure(run_dir=None, column="single"):
     axes.set_ylabel("received frame rate (fps)")
     axes.set_xlabel("network profile  (clean $\\rightarrow$ degraded)")
     axes.axhline(15, color="#b0afa8", lw=0.6, ls=(0, (3, 3)))
-    axes.text(0, 15.2, "capture 15 fps", fontsize=6, color="#8a8981")
+    # right edge: lines have all fallen well below 15 fps there, so the tag
+    # sits in clear space instead of on the LAN marker at the left.
+    axes.text(len(profiles_present) - 1, 15.4, "capture 15 fps", fontsize=6,
+              color="#8a8981", ha="right", va="bottom")
     axes.legend(title="room size", ncol=3, loc="lower left")
     if is_synthetic(summary):
         watermark(figure)

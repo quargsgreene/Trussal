@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plotstyle import apply_style, new_figure, profile_color, direct_label, watermark
+from plotstyle import apply_style, new_figure, profile_color, watermark
 from _cli import figure_main, stats_by
 from _data import (load_summary, ensure_scenarios, PROFILE_IDS, PROFILE_LABELS,
                    is_synthetic)
@@ -42,13 +42,12 @@ def build_figure(run_dir=None, column="single"):
         if {"p05", "p95"}.issubset(turn_gap_by_token_count.columns):
             axes.fill_between(turn_gap_by_token_count.level, turn_gap_by_token_count.p05,
                               turn_gap_by_token_count.p95, color=line_color, alpha=0.13, lw=0)
-        direct_label(axes, turn_gap_by_token_count.level.iloc[-1],
-                     turn_gap_by_token_count.p50.iloc[-1],
-                     PROFILE_LABELS.get(profile_id, profile_id), line_color)
 
     axes.axhline(IDEAL_SLOT_SECONDS, color="#8a8981", lw=0.7, ls=(0, (3, 3)))
-    axes.text(metaprogram_growth.level.min(), IDEAL_SLOT_SECONDS * 1.03, "ideal slot",
-              fontsize=6, color="#8a8981")
+    # right edge: the measured lines have climbed clear of the ideal slot there,
+    # so the tag isn't jammed against the first marker.
+    axes.text(metaprogram_growth.level.max(), IDEAL_SLOT_SECONDS * 1.04, "ideal slot",
+              fontsize=6, color="#8a8981", ha="right", va="bottom")
     axes.set_xlabel(r"tokens in $\$\,$participants sequence")
     axes.set_ylabel("measured turn period (s)")
     axes.set_xticks(sorted(metaprogram_growth.level.unique()))

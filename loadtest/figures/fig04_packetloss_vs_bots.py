@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from plotstyle import apply_style, new_figure, profile_color, direct_label, watermark
+from plotstyle import apply_style, new_figure, profile_color, watermark
 from _cli import figure_main, stats_by
 from _data import (load_summary, ensure_scenarios, PROFILE_IDS, PROFILE_LABELS,
                    is_synthetic)
@@ -40,14 +40,15 @@ def build_figure(run_dir=None, column="single"):
             axes.fill_between(loss_by_bot_count.level, loss_by_bot_count.p05.clip(lower=1e-4),
                               loss_by_bot_count.p95.clip(lower=1e-4), color=line_color,
                               alpha=0.13, lw=0)
-        direct_label(axes, loss_by_bot_count.level.iloc[-1], median_loss.iloc[-1],
-                     PROFILE_LABELS.get(profile_id, profile_id), line_color)
 
     axes.set_yscale("log")
     axes.set_xlabel("bots in room")
     axes.set_ylabel("inbound packet loss (fraction)")
     axes.set_xticks(sorted(bot_swarm.level.unique()))
-    axes.legend(title="network", ncol=2, loc="lower right")
+    # above the axes: every series slopes up-left-to-right on a log y, so an
+    # in-axes box is grazed by the clean-profile lines wherever it sits.
+    axes.legend(title="network", ncol=3, loc="lower center",
+                bbox_to_anchor=(0.5, 1.0), borderaxespad=0.3)
     if is_synthetic(summary):
         watermark(figure)
     return figure, is_synthetic(summary)

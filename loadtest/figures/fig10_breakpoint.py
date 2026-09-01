@@ -20,7 +20,7 @@ from _data import load_break_points, TURN_STUDY_PROFILES, PROFILE_LABELS, is_syn
 
 OUTPUT_NAME = "fig10_breakpoint"
 MODE_ORDER = ["explicit", "hash"]
-MODE_LABEL = {"hash": "# ring hash", "explicit": "maintained literal"}
+MODE_LABEL = {"hash": "ring hash", "explicit": "maintained literal"}
 CONDITION_SHORT = {
     "nc_gap_multiple_of_ideal": "turn gap", "aggregator_cpu_pct": "aggr. CPU",
     "jvb_cpu_pct": "JVB CPU", "dropout_hazard_per_part_min": "dropout",
@@ -58,7 +58,10 @@ def build_figure(run_dir=None, column="single"):
     axes.set_xticks(group_centers)
     axes.set_xticklabels([PROFILE_LABELS.get(p, p) for p in profiles_present])
     axes.set_ylabel("participants at turn-scheduling break")
-    axes.legend(loc="upper right")
+    axes.margins(y=0.20)   # headroom for the two-line bar annotations
+    # legend above the axes — an in-axes box collides with a tall bar's
+    # annotation whenever the break level lands in the legend's corner.
+    axes.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, borderaxespad=0.3)
     if is_synthetic(break_points):
         watermark(figure)
     return figure, is_synthetic(break_points)
