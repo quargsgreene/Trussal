@@ -9,17 +9,15 @@
 #                     generator VM, not provisioned) — keeps S1/S3/S4
 #   extra_cells       dropped (the p3 handover overlay)
 #   intercell_settle  90s -> 20s
-#   S1 steps          capped at 16 concurrent real Chromium (== the single
-#                     generator's media_browsers budget on .42, 8 GiB RAM);
-#                     the manuscript ladder's 32/64/120 would OOM the box
-#   S4 humans         24 -> 12   (S4's independent variable is bytes/update,
-#                     not population, so shrinking the room doesn't change
-#                     what it measures)
+#   S1 steps          capped at 12 concurrent real Chromium — each user is a
+#                     headless Chromium subprocess (~300-500 MiB), and .42 has
+#                     8 GiB; the manuscript ladder's 32/64/120 would OOM it
+#   S3 / S4 humans    12 -> 10 for the same headroom (Hydra on in both)
 # Duration is then scaled at launch with STEP_HOLD_SCALE=0.25 (env), which
 # only shrinks each step's hold, not the number of load levels — every point
 # on every figure's x-axis is still a real, separately-held measurement.
-# S3 (humans 12) already fits; S2/S5/S6 kept as complete, valid definitions
-# so the file parses, though matrix.scenarios does not run them.
+# S2/S5/S6 are kept as complete, valid definitions so the file parses, though
+# matrix.scenarios does not run them.
 
 matrix:
   profiles: [p0_lan, p2_lte_typical, p5_edge]
@@ -40,8 +38,9 @@ scenarios:
     id: S1
     description: >
       Humans join a single room at a fixed arrival rate and stay. Isolates the
-      cost of roster size / simulcast / SFU forwarding as N grows. Capped at 16
-      (the single generator's concurrent-browser budget).
+      cost of roster size / simulcast / SFU forwarding as N grows. Capped at 12
+      (headroom on the single 8 GiB generator; each user is a
+      real headless Chromium).
     shape: SteadyJoinShape
     room_mode: single
     user_classes: [HumanParticipantUser, SidecarGhostUser]
@@ -54,8 +53,7 @@ scenarios:
     steps:
       - {level: 4,   hold_s: 240}
       - {level: 8,   hold_s: 240}
-      - {level: 12,  hold_s: 300}
-      - {level: 16,  hold_s: 360}
+      - {level: 12,  hold_s: 360}
     arrival_rate_per_s: 0.5
 
   S2_bot_swarm:
@@ -86,7 +84,7 @@ scenarios:
     shape: MetaprogramGrowthShape
     room_mode: single
     user_classes: [HumanParticipantUser, MetaprogramEditorUser]
-    humans: 12
+    humans: 10
     seed_bots: 6
     media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: true}
     steps:
@@ -103,12 +101,12 @@ scenarios:
     id: S4
     description: >
       A fixed human population; each performer churns their editor at a rising
-      byte budget, cycling through media kinds. Population 24 -> 12 to fit the
+      byte budget, cycling through media kinds. Population 24 -> 10 to fit the
       generator's RAM; the independent variable (bytes/update) is unchanged.
     shape: CodeVolumeShape
     room_mode: single
     user_classes: [HumanParticipantUser]
-    humans: 12
+    humans: 10
     media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: true}
     steps:
       - {level: 200,    hold_s: 240}
