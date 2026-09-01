@@ -68,7 +68,8 @@ set_maxbots() { [[ -n "$CADMIN" ]] || return 0
 
 cleanup() {
   echo ">> cleanup"
-  for p in "${COLLECTOR_PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done
+  local _pid
+  for _pid in "${COLLECTOR_PIDS[@]:-}"; do kill "$_pid" 2>/dev/null || true; done
   bash "$HERE/netem.sh" clear "$INV" || true
   [[ -n "$ORIG_MAXBOTS" ]] && set_maxbots "$ORIG_MAXBOTS" || true
 }
@@ -87,7 +88,11 @@ start_collectors() {
     >"$RESDIR/logs/observer-$CELL.log" 2>&1 & COLLECTOR_PIDS+=($!)
 }
 stop_collectors() {
-  for p in "${COLLECTOR_PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done
+  # NB: a bare `p` here would clobber the `for p in "${PROFS[@]}"` grid loop
+  # that calls this (bash for-loop vars aren't scoped) — every cell after the
+  # first in a profile then ran with PROFILE=<a collector PID>.
+  local _pid
+  for _pid in "${COLLECTOR_PIDS[@]:-}"; do kill "$_pid" 2>/dev/null || true; done
   wait 2>/dev/null || true
   COLLECTOR_PIDS=()
 }
@@ -159,9 +164,9 @@ PYEOF
 # ---- the grid ----
 IFS=',' read -ra PROFS <<< "$profiles"
 IFS=',' read -ra SCENS <<< "$scenarios"
-for p in "${PROFS[@]}"; do
-  for s in "${SCENS[@]}"; do
-    run_cell "$p" "$s" 0
+for prof in "${PROFS[@]}"; do
+  for scen in "${SCENS[@]}"; do
+    run_cell "$prof" "$scen" 0
   done
 done
 
