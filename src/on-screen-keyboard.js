@@ -65,6 +65,10 @@ const ROWS = [
 let _shift        = false;
 let _caps         = false;
 let _visible      = false;
+// Standalone = the keyboard is held open by Landmark and Gesture Mode rather
+// than by the Studio header toggle, so it stays up on the welcome page and
+// prejoin screen too and tickKbdUi() must not retract it.
+let _standalone   = false;
 let _collapsed    = false;
 let _lastTA       = null;
 let _dwellEl      = null;
@@ -830,11 +834,44 @@ export function injectKeyboardToggle(headerEl) {
 }
 
 /**
+ * Whether the keyboard is currently held open by Landmark and Gesture Mode
+ * (as opposed to the Studio header toggle). gestureAndLandmarkConfig reports
+ * this back as `virtualKeyboardEnabled`.
+ */
+export function isKeyboardStandalone() { return _standalone; }
+
+/**
+ * Landmark and Gesture Mode calls this to show/hide the keyboard independently
+ * of Studio — so it is available on the welcome page and prejoin screen, not
+ * just in a meeting with Studio open.
+ */
+export function setKeyboardStandalone(on) {
+  _standalone = !!on;
+  if (_standalone) {
+    try { _ensureDOM(); } catch (e) { console.error('[on-screen-keyboard] panel init failed', e); return; }
+    _showPanel(true);
+  } else {
+    // Hand visibility back to the Studio toggle — tickKbdUi() retracts the
+    // panel unless a meeting with Studio open still wants it up.
+    tickKbdUi();
+  }
+}
+
+/**
  * Housekeeping tick from studio.js's tickUi(). The toggle lives in the Studio
  * header and comes and goes with the overlay on its own; this only has to
- * retract the body-level panel when Studio is closed or the meeting ends.
+ * retract the body-level panel when Studio is closed or the meeting ends —
+ * unless Landmark and Gesture Mode is holding it open (standalone).
  */
 export function tickKbdUi() {
+  if (_standalone) {
+    if (!_visible) {
+      try { _ensureDOM(); } catch (e) { console.error('[on-screen-keyboard] panel init failed', e); return; }
+      _showPanel(true);
+    }
+    _updatePredictions();
+    return;
+  }
   if (!_visible) return;
   const overlay   = document.getElementById('trussal-studio-overlay');
   const studioOpen = !!overlay && overlay.style.display !== 'none';

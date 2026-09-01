@@ -1,10 +1,25 @@
 /*
-facial-gesture.js — MediaPipe head-cursor and gestural metaprogramming for Trussal.
+facial-gesture.js — MediaPipe face-mesh, head-cursor and gestural
+metaprogramming for Trussal.
 
 Ports useFacialGestures.jsx, FacialGestureControl.jsx, and strudelButton.mjs from
 the strudel-fork into Trussal's vanilla-JS context.  All strudel-fork behaviour is
 preserved; the only adaptation is that the "editor" is Trussal's textarea (.ts-code)
 and peer-state bus rather than a CodeMirror REPL.
+
+Since gestureAndLandmarkConfig() (see landmark-gesture-mode.js) this module no
+longer owns any of its own configuration UI.  The panel is just the live face
+mesh plus a one-line readout of the gesture that last fired; the gesture map,
+the on/off state of the head cursor, and the on/off state of gesture actions
+are all set from code.
+
+The camera runs in two states:
+  • watch-only — started the moment the bundle loads.  The face landmarker
+    runs, but the only gesture that does anything is whichever one maps to
+    `enable-landmark-gesture-mode` (left-eye-closed-for-2s by default).  No
+    mesh is drawn, no head cursor is shown.
+  • full — the head cursor and/or gesture actions are switched on.  The mesh
+    is drawn (grayscale, thicker eye/mouth outlines) and gestures fire.
 
 window.faceCtx   — EMA-smoothed face metrics, readable inside any Strudel pattern
                    callback without touching the audio clock thread.
@@ -23,10 +38,9 @@ import {
   applyIfJPattern,
   applyMetaprogramNow,
   toggleJPatternButtonCode,
-  activeEditorKind
 } from './editor-router.js';
-import { parseJPatternButtons } from './editor-router-core.js';
 import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
+import { DEFAULT_GESTURE_MAPPINGS } from './landmark-gesture-core.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -45,9 +59,12 @@ const THUMBS_UP_THRESHOLD  = 0.6;  // GestureRecognizer confidence for Thumb_Up 
 const BROW_INNER_THRESHOLD = 0.6;
 const BROW_OUTER_THRESHOLD = 0.45;
 const HEAD_TILT_THRESHOLD  = 0.3;
+const MOUTH_OPEN_THRESHOLD = 0.5;  // jawOpen blendshape → `mouthOpen` trigger
 const EMA_ALPHA            = 0.15;
 const LATCH_RESET          = 0.4;
 const DWELL_MS             = 1000;
+const LEFT_EYE_HOLD_MS     = 2000; // sustained left-eye-shut → `leftEyeClosed2s`
+const HEAD_TILT_SEMITONES  = 2;    // transpose step for a head tilt
 
 const RING_R = 16;
 const RING_C = 2 * Math.PI * RING_R;
@@ -80,9 +97,6 @@ function initStrudelButton() {
   try { customElements.define('strudel-button', StrudelButton, { extends: 'button' }); } catch {}
   globalThis.StrudelButton = StrudelButton;
 
-  // JPatternButton — same shape, but its code targets the shared
-  // metaprogram doc: dwell toggles the snippet in the JPattern editor and
-  // re-applies the program (see toggleJPatternButtonCode).
   class JPatternButton extends HTMLButtonElement {
     constructor(code) { super(); this._jPatternCode = code; }
   }
@@ -97,17 +111,11 @@ function initStrudelButton() {
 // ---------------------------------------------------------------------------
 trackEditorFocus();
 
-// The dwell bar shows the FOCUSED editor's buttons, and a dwell writes to
-// whichever editor is focused — so a bar left holding the other editor's
-// buttons is not a stale label, it is a Strudel voice written into the shared
-// metaprogram. Rebuild it the moment focus moves; the rebuild is a no-op when
-// the buttons come out the same.
+// Any focused code editor becomes the one the head cursor holds focus on when
+// the cursor later moves off to the on-screen keyboard — regardless of whether
+// it was the head cursor, a click, or Tab that focused it.
 if (typeof document !== 'undefined') {
   document.addEventListener('focusin', (e) => {
-    refreshFacialGestureButtons();
-    // Any focused code editor becomes the one the head cursor holds focus on
-    // when the cursor later moves off to the on-screen keyboard — regardless
-    // of whether it was the head cursor, a click, or Tab that focused it.
     if (e.target?.classList?.contains('ts-code')) _stickyEditor = e.target;
   });
 }
@@ -146,8 +154,6 @@ async function mutateAndEvaluate(mutatorFn) {
 // ---------------------------------------------------------------------------
 // Mutation helpers — identical logic to FacialGestureControl.jsx.
 // ---------------------------------------------------------------------------
-const BTN_MARKER = ' // strudel-btn';
-
 const HH_CYCLE = ['', '*2', '*4', '*8'];
 function cycleHiHat(code) {
   const re = /\bhh(\*\d+)?/;
@@ -166,6 +172,9 @@ function shiftTranspose(code, delta) {
   return code.replace(/(\S)\s*$/, `$1.transpose(${delta})`);
 }
 
+// In-code `/* @mediapipe {"trigger":…,"action":…} */` annotations are still
+// honoured: for a given trigger they OVERRIDE the configured mapping, exactly
+// as they did before gestureAndLandmarkConfig() existed.
 function parseMediapipeConfigs(code) {
   const configs = [];
   const re = /\/\*\s*@mediapipe\s+(\{[\s\S]*?\})\s*\*\//g;
@@ -180,60 +189,27 @@ function applyRegexMutation(code, pattern, replacement) {
   try { return code.replace(new RegExp(pattern, 'g'), replacement ?? ''); } catch { return code; }
 }
 
-export function toggleButtonCode(code) {
-  const cur = getCode();
-  const active    = `\n${code}${BTN_MARKER}`;
-  const commented = `\n// ${code}${BTN_MARKER}`;
-  let next;
-  if      (cur.includes(commented)) next = cur.replace(commented, active);
-  else if (cur.includes(active))    next = cur.replace(active, commented);
-  else                              next = cur + active;
-  setCode(next);
-  evaluate();
-}
-
-function makeGestureHandler(triggerName, defaultMutator) {
-  return async () => {
-    const code = getCode();
-    const configs = parseMediapipeConfigs(code);
-    let ran = false;
-    for (const cfg of configs) {
-      if (cfg.trigger === triggerName && cfg.action === 'regex-swap' && cfg.regex) {
-        await mutateAndEvaluate((c) => applyRegexMutation(c, cfg.regex, cfg.replacement));
-        ran = true;
-      }
-      // Personal metapattern control by gesture: stop/start/apply the shared
-      // metaprogram via the same latch/cooldown machinery.
-      if (cfg.trigger === triggerName && cfg.action === 'apply-metaprogram') {
-        applyMetaprogramNow();
-        ran = true;
-      }
-    }
-    // Also check the live regex mutator UI state (mirrors FacialGestureControl.jsx).
-    if (_regexTrigger === triggerName && _regexPattern) {
-      await mutateAndEvaluate((c) => applyRegexMutation(c, _regexPattern, _regexReplacement));
-      ran = true;
-    }
-    if (!ran) await mutateAndEvaluate(defaultMutator);
-  };
-}
-
-let _headTiltDelta = 2; // semitones per tilt; user-adjustable from the panel
-
-const handleBrowRaise    = makeGestureHandler('browRaise',    cycleHiHat);
-const handleHeadTiltLeft = makeGestureHandler('headTiltLeft',  (c) => shiftTranspose(c, -_headTiltDelta));
-const handleHeadTiltRight= makeGestureHandler('headTiltRight', (c) => shiftTranspose(c,  _headTiltDelta));
-
 // ---------------------------------------------------------------------------
 // MediaPipe detection state.
 // ---------------------------------------------------------------------------
-let _enabled           = false;
 let _landmarker        = null;
 let _gestureRecognizer = null;
 let _mpClasses         = null;
 let _drawingUtils  = null;
 let _stream        = null;
 let _rafId         = null;
+
+let _cameraOn        = false; // camera + detection loop running (watch or full)
+let _cameraStarting  = false;
+let _cameraBlocked   = false; // getUserMedia / model load failed — enable paths degrade
+let _headCursor      = false; // head cursor + dwell active (isHeadCursorEnabled)
+let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-gesture-mode)
+let _sharedWithHydra = false;
+let _leftEyeClosedSince = 0;
+
+// The live gesture map. Replaced wholesale by setGestureMappings(); starts as
+// the defaults so behaviour with no config call is exactly what it always was.
+let _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m) => ({ ...m }));
 
 let _videoEl       = null;
 let _canvasEl      = null;
@@ -250,18 +226,19 @@ const _ema = {
   cursorX: typeof window !== 'undefined' ? window.innerWidth  / 2 : 0,
   cursorY: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
 };
-const _latch      = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false };
-// _dwell.type: 'strudel' | 'fx' | null.  key is strudelCode or fx name.
-const _dwell      = { key: null, type: null, el: null, startMs: 0, fired: false };
-// What the dwell bar currently shows, so an unchanged rebuild is skipped.
-let _barKey = null;
+const _latch = {
+  headLeft: false, headRight: false, leftBlink: false, browRaise: false,
+  smile: false, thumbsUp: false, thumbsDown: false,
+  mouthOpen: false, leftEyeClosed2s: false,
+};
+// _dwell.type: 'fx' | 'action' | null.  key is the fx name or the button id.
+const _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
 
 // Head-cursor editor targeting (see _followEditorCaret):
 //  • _stickyEditor stays focused after the head cursor leaves it, so the
 //    performer can move off to the on-screen keyboard and keep typing there.
 //  • _caretLocked is a thumbs-down freeze — while set, the head cursor no
 //    longer moves the editor's blinking caret (another thumbs-down clears it).
-//    Local to this browser; nothing about it is broadcast.
 //  • _caretEl / _caretAppliedAt back the anti-jitter travel threshold.
 let _stickyEditor   = null;
 let _caretLocked    = false;
@@ -269,9 +246,9 @@ let _caretEl        = null;
 let _caretAppliedAt = { x: -Infinity, y: -Infinity };
 
 // Dwell-hoverable elements, refreshed on a throttle rather than re-querying the
-// whole document every animation frame (60fps) — the query itself (a five-part
-// compound selector walking the full tree) is the expensive part, not the
-// getBoundingClientRect() check against a handful of cached candidates.
+// whole document every animation frame (60fps). The JPattern editor card's
+// voice buttons (.jp-head-btn) are dwellable directly — the facial-control
+// panel no longer mirrors them.
 const DWELL_TARGETS_REFRESH_MS = 300;
 let _dwellCandidates = [];
 let _dwellCandidatesAt = -Infinity;
@@ -279,44 +256,105 @@ function _dwellCandidateEls(now) {
   if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
     _dwellCandidatesAt = now;
     _dwellCandidates = Array.from(document.querySelectorAll(
-      '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
+      '.ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
     ));
   }
   return _dwellCandidates;
 }
 
-// Regex mutator UI state — mirrors FacialGestureControl.jsx's useState for
-// triggerGesture / regex / replacement.
-let _regexTrigger      = 'mouthOpen';
-let _regexPattern      = '';
-let _regexReplacement  = '';
-
-function _flash(gesture) {
+// ---------------------------------------------------------------------------
+// Gesture → action dispatch.
+// ---------------------------------------------------------------------------
+function _flash(trigger, action) {
   if (!_flashEl) return;
-  const labels = {
-    play:          '▶ play (smile)',
-    stop:          '■ stop (thumbs up)',
-    eval:          '↺ update (left blink)',
-    drumDensity:   '◎ drum density (brow raise)',
-    headTiltLeft:  `← tilt left → −${_headTiltDelta}st`,
-    headTiltRight: `→ tilt right → +${_headTiltDelta}st`,
-    caretLock:     '🔒 caret locked (thumbs down)',
-    caretUnlock:   '🔓 caret unlocked (thumbs down)',
-  };
-  _flashEl.textContent = labels[gesture] ?? gesture;
+  _flashEl.textContent = action ? `${trigger} → ${action}` : trigger;
   _flashEl.style.opacity = '1';
   clearTimeout(_flashTimeout);
-  _flashTimeout = setTimeout(() => { if (_flashEl) _flashEl.style.opacity = '0'; }, 800);
+  _flashTimeout = setTimeout(() => { if (_flashEl) _flashEl.style.opacity = '0'; }, 900);
 }
 
 function _setStatus(s) {
   if (!_statusEl) return;
-  // Flat theme: the status word itself ("ready" / "error" / …) carries the
-  // meaning, so every state is the same #111111 rather than a colour.
+  // Flat theme: the status word itself carries the meaning, so every state is
+  // the same #111111 rather than a colour.
   _statusEl.textContent = s;
   _statusEl.style.color = '#111111';
 }
 
+// For `trigger`, an in-code @mediapipe annotation wins over the configured
+// mapping; otherwise the configured mapping(s) apply.
+function _effectiveMappingsFor(trigger) {
+  let codeMaps = [];
+  try {
+    codeMaps = parseMediapipeConfigs(getCode()).filter((m) => m && m.trigger === trigger);
+  } catch {}
+  if (codeMaps.length) return codeMaps;
+  return _gestureMappings.filter((m) => m.trigger === trigger);
+}
+
+function _dispatchTrigger(trigger) {
+  for (const m of _effectiveMappingsFor(trigger)) {
+    // Before opt-in, the ONLY thing a gesture may do is turn the mode on.
+    if (!_gestures && m.action !== 'enable-landmark-gesture-mode') continue;
+    _runAction(m, trigger);
+  }
+}
+
+function _runAction(m, trigger) {
+  switch (m.action) {
+    case 'play':
+      _flash(trigger, m.action);
+      bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {});
+      break;
+    case 'stop':
+      _flash(trigger, m.action);
+      stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {});
+      break;
+    case 'update-code':
+    case 'eval': // legacy spelling
+      _flash(trigger, 'update-code');
+      evaluate();
+      break;
+    case 'toggle-caret-lock':
+      _caretLocked = !_caretLocked;
+      _flash(trigger, _caretLocked ? 'caret-lock' : 'caret-unlock');
+      break;
+    case 'drum-density':
+      _flash(trigger, m.action);
+      mutateAndEvaluate(cycleHiHat);
+      break;
+    case 'transpose-down':
+      _flash(trigger, m.action);
+      mutateAndEvaluate((c) => shiftTranspose(c, -HEAD_TILT_SEMITONES));
+      break;
+    case 'transpose-up':
+      _flash(trigger, m.action);
+      mutateAndEvaluate((c) => shiftTranspose(c, HEAD_TILT_SEMITONES));
+      break;
+    case 'regex-swap':
+      if (m.regex) {
+        _flash(trigger, m.action);
+        mutateAndEvaluate((c) => applyRegexMutation(c, m.regex, m.replacement));
+      }
+      break;
+    case 'apply-metaprogram':
+      _flash(trigger, m.action);
+      applyMetaprogramNow();
+      break;
+    case 'enable-landmark-gesture-mode':
+      _flash(trigger, m.action);
+      document.dispatchEvent(new CustomEvent('trussal-landmark-gesture-mode', {
+        detail: { on: true, source: 'gesture' },
+      }));
+      break;
+    default:
+      console.warn('[facial-gesture] no handler for action', m.action);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Detection.
+// ---------------------------------------------------------------------------
 function _processResult(result, gestureResult) {
   const blendshapes = result.faceBlendshapes?.[0]?.categories;
   const landmarks   = result.faceLandmarks?.[0];
@@ -335,9 +373,7 @@ function _processResult(result, gestureResult) {
   if (landmarks && landmarks.length > 263) {
     const eyeDistX   = Math.abs(landmarks[263].x - landmarks[33].x) || 0.1;
     const eyeCenterX = (landmarks[33].x + landmarks[263].x) / 2;
-    // tilt: vertical difference between eye corners (head roll)
     const tiltRaw    = (landmarks[33].y - landmarks[263].y) / eyeDistX;
-    // yaw: nose tip (landmark 4) offset from eye midpoint, normalized by eye width
     const yawRaw     = (landmarks[4].x - eyeCenterX) / eyeDistX;
     _ema.headTilt    = lerp(_ema.headTilt, Math.max(-1, Math.min(1, tiltRaw)));
     _ema.headYaw     = lerp(_ema.headYaw,  Math.max(-1, Math.min(1, yawRaw)));
@@ -362,84 +398,77 @@ function _processGestures(blendshapes, gestureResult) {
   const browOuterL   = score('browOuterUpLeft');
   const browOuterR   = score('browOuterUpRight');
 
-  // Left blink: left eye clearly closed, right clearly open.
-  // The < 0.3 guard ensures double-blink never fires this. Right blink is unmapped.
+  // Left blink: left eye clearly closed, right clearly open. The < 0.3 guard
+  // ensures a double-blink never qualifies. Right blink is unmapped.
   const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
+
+  // enable gesture: left eye held shut (right open) for LEFT_EYE_HOLD_MS.
+  // _dispatchTrigger lets this through even while the rest of gesture
+  // detection is off — that is how the top-left instruction's "close your left
+  // eye for two seconds" works before opt-in.
+  if (isLeftBlink) {
+    if (_leftEyeClosedSince === 0) _leftEyeClosedSince = performance.now();
+    if (!_latch.leftEyeClosed2s && performance.now() - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
+      _latch.leftEyeClosed2s = true;
+      _dispatchTrigger('leftEyeClosed2s');
+    }
+  } else {
+    _leftEyeClosedSince = 0;
+    _latch.leftEyeClosed2s = false;
+  }
 
   // play — bilateral smile, guarded against head-turn false positives:
   // • both sides must exceed threshold (real smile)
-  // • left/right scores must agree within SMILE_ASYMMETRY_MAX (perspective artifacts are lopsided)
-  // • head yaw must be small (turning to move the cursor lifts mouth corners via foreshortening)
+  // • left/right scores must agree within SMILE_ASYMMETRY_MAX
+  // • head yaw must be small (turning to move the cursor lifts mouth corners)
   const isSmile = mouthSmileL > SMILE_THRESHOLD &&
                   mouthSmileR > SMILE_THRESHOLD &&
                   Math.abs(mouthSmileL - mouthSmileR) < SMILE_ASYMMETRY_MAX &&
                   Math.abs(_ema.headYaw) < HEAD_YAW_THRESHOLD;
-  if (isSmile && !_latch.smile) {
-    _latch.smile = true;
-    _flash('play');
-    bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {});
-  }
+  if (isSmile && !_latch.smile) { _latch.smile = true; _dispatchTrigger('smile'); }
   if (_latch.smile && mouthSmileL < SMILE_THRESHOLD * LATCH_RESET && mouthSmileR < SMILE_THRESHOLD * LATCH_RESET) {
     _latch.smile = false;
   }
 
   // stop — thumbs up hand gesture (GestureRecognizer)
-  const topGesture   = gestureResult?.gestures?.[0]?.[0];
-  const isThumbsUp   = topGesture?.categoryName === 'Thumb_Up' && topGesture.score > THUMBS_UP_THRESHOLD;
-  if (isThumbsUp && !_latch.thumbsUp) {
-    _latch.thumbsUp = true;
-    _flash('stop');
-    stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {});
-  }
-  if (_latch.thumbsUp && !isThumbsUp) {
-    _latch.thumbsUp = false;
-  }
+  const topGesture = gestureResult?.gestures?.[0]?.[0];
+  const isThumbsUp = topGesture?.categoryName === 'Thumb_Up' && topGesture.score > THUMBS_UP_THRESHOLD;
+  if (isThumbsUp && !_latch.thumbsUp) { _latch.thumbsUp = true; _dispatchTrigger('thumbsUp'); }
+  if (_latch.thumbsUp && !isThumbsUp) { _latch.thumbsUp = false; }
 
-  // caret lock — thumbs down toggles whether the head cursor may move the
-  // focused editor's blinking caret (see _followEditorCaret). Local to this
-  // browser; nothing about it is broadcast to other participants.
+  // thumbs down — the mapped action decides what it does (caret lock by default)
   const isThumbsDown = topGesture?.categoryName === 'Thumb_Down' && topGesture.score > THUMBS_UP_THRESHOLD;
-  if (isThumbsDown && !_latch.thumbsDown) {
-    _latch.thumbsDown = true;
-    _caretLocked = !_caretLocked;
-    _flash(_caretLocked ? 'caretLock' : 'caretUnlock');
-  }
-  if (_latch.thumbsDown && !isThumbsDown) {
-    _latch.thumbsDown = false;
-  }
+  if (isThumbsDown && !_latch.thumbsDown) { _latch.thumbsDown = true; _dispatchTrigger('thumbsDown'); }
+  if (_latch.thumbsDown && !isThumbsDown) { _latch.thumbsDown = false; }
 
   // update/eval — left blink only (right blink and double-blink are unmapped)
-  if (isLeftBlink && !_latch.leftBlink) {
-    _latch.leftBlink = true;
-    _flash('eval');
-    evaluate();
-  }
-  if (_latch.leftBlink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
-    _latch.leftBlink = false;
-  }
+  if (isLeftBlink && !_latch.leftBlink) { _latch.leftBlink = true; _dispatchTrigger('leftBlink'); }
+  if (_latch.leftBlink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) { _latch.leftBlink = false; }
 
   // drum density — brow raise: inner brow up + at least one outer brow, eyes open
   const isBrowRaise =
     browInnerUp > BROW_INNER_THRESHOLD &&
     (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) &&
     eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
-  if (isBrowRaise && !_latch.browRaise) {
-    _latch.browRaise = true;
-    _flash('drumDensity');
-    handleBrowRaise();
-  }
-  if (_latch.browRaise && !(browInnerUp > BROW_INNER_THRESHOLD * LATCH_RESET)) {
-    _latch.browRaise = false;
-  }
+  if (isBrowRaise && !_latch.browRaise) { _latch.browRaise = true; _dispatchTrigger('browRaise'); }
+  if (_latch.browRaise && !(browInnerUp > BROW_INNER_THRESHOLD * LATCH_RESET)) { _latch.browRaise = false; }
 
+  // mouth open — jawOpen blendshape (drives `mouthOpen` @mediapipe swaps and
+  // any mouthOpen mapping). Had no built-in effect before, so the default map
+  // leaves it unbound.
+  const jaw = _ema.jawOpen;
+  if (jaw > MOUTH_OPEN_THRESHOLD && !_latch.mouthOpen) { _latch.mouthOpen = true; _dispatchTrigger('mouthOpen'); }
+  if (_latch.mouthOpen && jaw < MOUTH_OPEN_THRESHOLD * LATCH_RESET) { _latch.mouthOpen = false; }
+
+  // head tilt — transpose ±
   const headTilt = _ema.headTilt;
   if (!_latch.headLeft && headTilt < -HEAD_TILT_THRESHOLD) {
-    _latch.headLeft = true; _flash('headTiltLeft'); handleHeadTiltLeft();
+    _latch.headLeft = true; _dispatchTrigger('headTiltLeft');
   } else if (_latch.headLeft && headTilt > -HEAD_TILT_THRESHOLD * LATCH_RESET) {
     _latch.headLeft = false;
   }
   if (!_latch.headRight && headTilt > HEAD_TILT_THRESHOLD) {
-    _latch.headRight = true; _flash('headTiltRight'); handleHeadTiltRight();
+    _latch.headRight = true; _dispatchTrigger('headTiltRight');
   } else if (_latch.headRight && headTilt < HEAD_TILT_THRESHOLD * LATCH_RESET) {
     _latch.headRight = false;
   }
@@ -447,6 +476,13 @@ function _processGestures(blendshapes, gestureResult) {
 
 function _drawLandmarks(result) {
   if (!_canvasEl || !_mpClasses || !_videoEl) return;
+  // The mesh is a Landmark-and-Gesture-Mode affordance — nothing draws it while
+  // the camera is only watching for the enable gesture.
+  if (!_headCursor && !_gestures) {
+    const c = _canvasEl.getContext('2d');
+    if (c) c.clearRect(0, 0, _canvasEl.width, _canvasEl.height);
+    return;
+  }
   if (_canvasEl.width  !== _videoEl.videoWidth)  _canvasEl.width  = _videoEl.videoWidth  || 320;
   if (_canvasEl.height !== _videoEl.videoHeight) _canvasEl.height = _videoEl.videoHeight || 240;
   const ctx = _canvasEl.getContext('2d');
@@ -455,14 +491,15 @@ function _drawLandmarks(result) {
   if (!result.faceLandmarks?.length) return;
   const du = _drawingUtils;
   const FL = _mpClasses.FaceLandmarker;
+  // Exclusively grayscale; eye and lip outlines a touch thicker than the mesh.
   for (const lm of result.faceLandmarks) {
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_TESSELATION,   { color: '#C0C0C040', lineWidth: 0.5 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYE,     { color: '#FF3030',   lineWidth: 1 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYEBROW, { color: '#FF3030',   lineWidth: 1 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYE,      { color: '#30FF30',   lineWidth: 1 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYEBROW,  { color: '#30FF30',   lineWidth: 1 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_FACE_OVAL,     { color: '#E0E0E0',   lineWidth: 1 });
-    du.drawConnectors(lm, FL.FACE_LANDMARKS_LIPS,          { color: '#E0E060',   lineWidth: 1 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_TESSELATION,   { color: '#8a8a8a30', lineWidth: 0.5 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYE,     { color: '#f2f2f2',   lineWidth: 2.5 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYEBROW, { color: '#c8c8c8',   lineWidth: 2 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYE,      { color: '#f2f2f2',   lineWidth: 2.5 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYEBROW,  { color: '#c8c8c8',   lineWidth: 2 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_FACE_OVAL,     { color: '#9a9a9a',   lineWidth: 1 });
+    du.drawConnectors(lm, FL.FACE_LANDMARKS_LIPS,          { color: '#f2f2f2',   lineWidth: 2.5 });
   }
 }
 
@@ -474,9 +511,9 @@ function _detectionLoop() {
     return;
   }
 
-  // Room-health landmark-density scale-down: under load (RoomHealthService
-  // sets window._jpLandmarkScale to 0.5 / 0.25) run detection on every 2nd /
-  // 4th frame — the cursor EMA smooths over the gaps.
+  // Room-health landmark-density scale-down: under load (RoomHealthService sets
+  // window._jpLandmarkScale to 0.5 / 0.25) run detection on every 2nd / 4th
+  // frame — the cursor EMA smooths over the gaps.
   const densityScale = (typeof window !== 'undefined' && window._jpLandmarkScale) || 1;
   if (densityScale < 1) {
     _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
@@ -492,6 +529,14 @@ function _detectionLoop() {
   _processResult(result, gestureResult);
   _drawLandmarks(result);
 
+  // Everything below is head-cursor work — skipped entirely in the watch-only
+  // state (camera up purely to catch the enable gesture).
+  if (!_headCursor) {
+    if (_cursorEl && _cursorEl.style.display !== 'none') _cursorEl.style.display = 'none';
+    _rafId = requestAnimationFrame(_detectionLoop);
+    return;
+  }
+
   // Move head cursor.
   if (_cursorEl) {
     _cursorEl.style.left    = `${_ema.cursorX}px`;
@@ -500,9 +545,7 @@ function _detectionLoop() {
   }
 
   // A panel is being flown around by the head cursor (panel-drag-resize.js).
-  // Suppress our own dwell firing until it's dropped — otherwise the same hold
-  // that steers the panel also toggles whatever button ends up under it. The
-  // cursor above still tracks, and panel-drag-resize reads window.faceCtx.
+  // Suppress our own dwell firing until it's dropped.
   if (isHeadDragActive()) {
     if (_dwell.el) {
       _dwell.el.classList.remove('strudel-dwell-hover');
@@ -515,15 +558,12 @@ function _detectionLoop() {
     return;
   }
 
-  // Dwell detection over .strudel-head-btn, .ts-fx-dwell-btn, and .ts-dwell-btn elements.
   const cx = _ema.cursorX;
   const cy = _ema.cursorY;
 
-  // Head cursor over a Studio code editor → make that textarea the focused
-  // target and (unless the caret is thumbs-down locked) walk its blinking
-  // caret to the character under the cursor. The editor then stays focused
-  // even after the cursor leaves it, so the performer can move to the
-  // on-screen keyboard and keep typing there.
+  // Head cursor over a Studio code editor → focus that textarea and (unless the
+  // caret is thumbs-down locked) walk its blinking caret to the character under
+  // the cursor.
   _followEditorCaret(cx, cy);
 
   let hoveredKey  = null;
@@ -543,8 +583,7 @@ function _detectionLoop() {
         hoveredKey  = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
         hoveredType = 'action';
       } else {
-        hoveredKey  = btn.dataset.strudelCode;
-        hoveredType = 'strudel';
+        continue;
       }
       hoveredEl = btn;
       break;
@@ -583,12 +622,10 @@ function _detectionLoop() {
       if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
       if (_dwell.type === 'fx') {
         _toggleFxEffect(_dwell.key);
-      } else if (_dwell.type === 'action') {
-        if (_dwell.el) _dwell.el.click();
       } else if (_dwell.type === 'jpattern') {
         toggleJPatternButtonCode(_dwell.key);
-      } else {
-        toggleButtonCode(_dwell.key);
+      } else if (_dwell.type === 'action') {
+        if (_dwell.el) _dwell.el.click();
       }
     }
   }
@@ -597,12 +634,11 @@ function _detectionLoop() {
 }
 
 // ---------------------------------------------------------------------------
-// Head-cursor caret follow — hovering a .ts-code editor (personal Strudel or
-// the shared JPattern one, both carry the class) focuses it and moves the
-// insertion point to the character under the cursor. Focus is then held on
-// that editor even after the cursor moves off (so the performer can type on
-// the on-screen keyboard); a thumbs-down freezes the caret until the next
-// thumbs-down (_caretLocked, set in _processGestures).
+// Head-cursor caret follow — hovering a .ts-code editor focuses it and moves
+// the insertion point to the character under the cursor. Focus is then held on
+// that editor even after the cursor moves off (so the performer can type on the
+// on-screen keyboard); a thumbs-down freezes the caret until the next
+// thumbs-down (_caretLocked, set in _runAction).
 // ---------------------------------------------------------------------------
 function _isEditable(el) {
   if (!el) return false;
@@ -611,9 +647,6 @@ function _isEditable(el) {
 }
 
 function _followEditorCaret(cx, cy) {
-  // Keep a head-cursor-focused editor focused after the cursor leaves it —
-  // but only reclaim focus that was lost to nothing (a re-render, a click on
-  // the empty page). Never yank it out of another field the user is in.
   if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
   if (_stickyEditor && document.activeElement !== _stickyEditor &&
       !_isEditable(document.activeElement)) {
@@ -634,21 +667,12 @@ function _followEditorCaret(cx, cy) {
   if (document.activeElement !== over) over.focus({ preventScroll: true });
   _stickyEditor = over;
 
-  // Thumbs-down freeze: the head cursor still focuses the editor, but it no
-  // longer moves the blinking caret — that stays wherever it was when the
-  // gesture fired (and where the keyboard advances it as the performer types).
   if (_caretLocked) return;
 
-  // Re-seat the caret only once the cursor has actually travelled: EMA jitter
-  // of a "still" head must not keep yanking the insertion point away from
-  // someone typing on the physical keyboard with the head cursor parked here.
   if (over === _caretEl &&
       Math.abs(cx - _caretAppliedAt.x) < 6 &&
       Math.abs(cy - _caretAppliedAt.y) < 6) return;
 
-  // Blink hands back the textarea itself as offsetNode, with offset an index
-  // into .value (verified Chrome 150, the deploy target). Without the API the
-  // caret just stays put — focus still moved, so input still lands here.
   const pos = typeof document.caretPositionFromPoint === 'function'
     ? document.caretPositionFromPoint(cx, cy)
     : null;
@@ -667,7 +691,21 @@ function _toggleFxEffect(fxName) {
   sendLocalEffects({ distortion: !!e.distortion, noise: !!e.noise, reverb: !!e.reverb, [fxName]: !e[fxName] });
 }
 
+// ---------------------------------------------------------------------------
+// Camera lifecycle.
+// ---------------------------------------------------------------------------
+function _syncHydraShare() {
+  // Only lend the camera to Hydra's `s0` inside a meeting — setVideoStream()
+  // builds the Hydra split panel, which has no place on the welcome/prejoin
+  // screens the watcher also runs on.
+  const want = !!(_stream && (_headCursor || _gestures) && document.getElementById('largeVideoContainer'));
+  if (want && !_sharedWithHydra) { setVideoStream(_stream); _sharedWithHydra = true; }
+  else if (!want && _sharedWithHydra) { setVideoStream(null); _sharedWithHydra = false; }
+}
+
 async function _startCamera() {
+  if (_cameraOn || _cameraStarting) return _cameraOn;
+  _cameraStarting = true;
   _setStatus('loading');
   try {
     const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
@@ -688,42 +726,57 @@ async function _startCamera() {
       }),
     ]);
 
-    // The REAL camera: face tracking needs the performer's face, and the
-    // landmarks UI is one of the two places their camera is legitimately
-    // visible. A plain getUserMedia would be intercepted by the
-    // published-video override and return the canvas the ROOM sees.
+    // The REAL camera: face tracking needs the performer's face. A plain
+    // getUserMedia would be intercepted by the published-video override and
+    // return the canvas the ROOM sees.
     _stream = await openCamera({ video: { width: 320, height: 240 } });
     _videoEl.srcObject = _stream;
     await _videoEl.play();
 
-    setVideoStream(_stream); // share with hydra-video
+    _cameraOn = true;
+    _cameraBlocked = false;
+    _syncHydraShare();
     _setStatus('ready');
     _rafId = requestAnimationFrame(_detectionLoop);
+    return true;
   } catch (e) {
     console.error('[facial-gesture]', e);
+    _cameraBlocked = true;
     _setStatus('error');
+    return false;
+  } finally {
+    _cameraStarting = false;
   }
 }
 
 function _stopCamera() {
   cancelAnimationFrame(_rafId);  _rafId = null;
-  setVideoStream(null); // detach from hydra-video before stopping tracks
+  if (_sharedWithHydra) { setVideoStream(null); _sharedWithHydra = false; }
   _stream?.getTracks().forEach((t) => t.stop());  _stream = null;
   _landmarker?.close();        _landmarker        = null;
   _gestureRecognizer?.close(); _gestureRecognizer = null;
   _mpClasses    = null;
   _drawingUtils = null;
+  _cameraOn = false;
+  _headCursor = false;
+  _gestures = false;
+  _leftEyeClosedSince = 0;
   Object.assign(_ema, {
     jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
     mouthSmileLeft: 0, mouthSmileRight: 0,
     eyeBlinkLeft: 0, eyeBlinkRight: 0,
     cursorX: window.innerWidth / 2, cursorY: window.innerHeight / 2,
   });
-  Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false });
+  Object.assign(_latch, {
+    headLeft: false, headRight: false, leftBlink: false, browRaise: false,
+    smile: false, thumbsUp: false, thumbsDown: false,
+    mouthOpen: false, leftEyeClosed2s: false,
+  });
   _stickyEditor = null;
   _caretLocked  = false;
   _caretEl      = null;
   if (_cursorEl) _cursorEl.style.display = 'none';
+  _syncPanelVisibility();
   _setStatus('idle');
 }
 
@@ -732,7 +785,7 @@ function _stopCamera() {
 let _savedFgHeight = '';
 
 // ---------------------------------------------------------------------------
-// DOM — styles, cursor overlay, and info panel.
+// DOM — styles, cursor overlay, and the face-mesh panel.
 // ---------------------------------------------------------------------------
 const FG_STYLE_ID  = 'trussal-fg-style';
 const FG_PANEL_ID  = 'trussal-fg-panel';
@@ -754,11 +807,7 @@ function _injectStyles() {
       border:1px solid #111111; border-radius:10px;
       font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
-      /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
-         inline; these are the clamp floors/ceilings. The panel itself no
-         longer scrolls — #trussal-fg-body does — so a resize can't hide the
-         drag handle. */
-      min-width:200px; min-height:220px;
+      min-width:200px; min-height:200px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       overflow: hidden;
       display:none; flex-direction:column; gap:8px;
@@ -771,7 +820,6 @@ function _injectStyles() {
       border-radius:10px 10px 0 0; flex:0 0 auto;
     }
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
-    /* Keep handle controls clickable where a top corner grip overlaps them. */
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
     #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
@@ -784,38 +832,7 @@ function _injectStyles() {
     #${FG_PANEL_ID} .fg-flash {
       font-size:11px; font-weight:600; text-align:center;
       color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
-    }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; line-height:1.7; }
-    #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
-
-    .strudel-head-btn {
-      display:inline-block; padding:2px 8px; border-radius:999px;
-      border:1px solid #111111; background:#eeeeee; color:#111111;
-      font-size:11px; font-family:monospace; cursor:default; user-select:none;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    .strudel-head-btn.strudel-dwell-hover { border-color:#111111; }
-    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#eeeeee; }
-    /* Already in the pattern / in the ring — the same "on" the editor cards show. */
-    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#eeeeee; background:#111111; }
-
-    #${FG_PANEL_ID} .fg-section {
-      border-top: 1px solid #111111;
-      padding-top: 8px;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#111111; font-size:11px; }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:4px;
-      padding:3px 6px; font-size:11px; box-sizing:border-box;
-    }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
-    #${FG_PANEL_ID} input[type="number"] { width:52px; font-family:monospace; text-align:center; }
-    #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
-    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
-    #${FG_PANEL_ID} input[type="number"]:focus {
-      outline:1px solid #111111;
+      font-family:monospace;
     }
 
     #trussal-fg-toggle {
@@ -882,7 +899,9 @@ function _ensureDOM() {
   _cursorEl    = cursor;
   _progressRing = cursor.querySelector('#trussal-fg-ring');
 
-  // Info panel.
+  // Face-mesh panel — the live landmark stream and a one-line readout of the
+  // gesture that last fired. Everything that used to configure the gesture map
+  // is set from code now (gestureAndLandmarkConfig).
   const panel = document.createElement('div');
   panel.id = FG_PANEL_ID;
   panel.innerHTML = `
@@ -897,70 +916,6 @@ function _ensureDOM() {
         <canvas id="trussal-fg-canvas"></canvas>
       </div>
       <div class="fg-flash" id="trussal-fg-flash"></div>
-      <div class="fg-hints">
-        smile → play<br>
-        thumbs up → stop<br>
-        thumbs down → lock / unlock caret<br>
-        left blink → update code<br>
-        raise eyebrows → drum density<br>
-        tilt head → transpose ±<span id="trussal-fg-tilt-label">2</span>st<br>
-        head cursor dwell 1s → toggle voice
-      </div>
-      <div class="fg-btns" id="trussal-fg-btns"></div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">head tilt amount</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
-          <span style="font-size:10px;color:#111111;">semitones per tilt</span>
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">regex mutator</div>
-        <select id="trussal-fg-trigger">
-          <option value="mouthOpen">mouth open</option>
-          <option value="headTiltLeft">head tilt left</option>
-          <option value="headTiltRight">head tilt right</option>
-        </select>
-        <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
-        <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-        <div style="font-size:9px;color:#111111;line-height:1.5;">
-          or annotate code:<br>
-          <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">StrudelButton</div>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          write in code:<br>
-          <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
-          dwell with head cursor (1 s) to append/toggle that voice.
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">JPatternButton</div>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          write in the JPattern editor:<br>
-          <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
-          <code style="font-size:9px">*# crush wcl 2</code><br>
-          dwell to put that voice in the ring (or that effect in the chain)
-          and apply; dwell again to take it out. The bar above follows
-          whichever editor has focus.
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">window.faceCtx</div>
-        <code style="font-size:9px;color:#111111">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          jawOpen, browInnerUp, headTilt,<br>
-          eyeBlinkL/R, mouthSmileL/R,<br>
-          cursorX, cursorY
-        </div>
-      </div>
     </div>
   `;
   document.body.appendChild(panel);
@@ -977,53 +932,114 @@ function _ensureDOM() {
       const collapsed = body.style.display === 'none';
       body.style.display    = collapsed ? '' : 'none';
       fgCollapseBtn.textContent = collapsed ? '▼' : '▲';
-      // Drop a resized panel's explicit height while only the handle shows;
-      // restore it on expand.
       panel.classList.toggle('fg-collapsed', !collapsed);
       if (!collapsed) { _savedFgHeight = panel.style.height; panel.style.height = ''; }
       else { panel.style.height = _savedFgHeight; }
     });
   }
 
-  panel.querySelector('#trussal-fg-trigger').addEventListener('change', (e) => {
-    _regexTrigger = e.target.value;
-  });
-  panel.querySelector('#trussal-fg-regex').addEventListener('input', (e) => {
-    _regexPattern = e.target.value;
-  });
-  panel.querySelector('#trussal-fg-replacement').addEventListener('input', (e) => {
-    _regexReplacement = e.target.value;
-  });
-  panel.querySelector('#trussal-fg-tilt-delta').addEventListener('input', (e) => {
-    const v = parseInt(e.target.value, 10);
-    if (!isNaN(v) && v >= 1) {
-      _headTiltDelta = v;
-      const lbl = document.getElementById('trussal-fg-tilt-label');
-      if (lbl) lbl.textContent = v;
-    }
-  });
-
   // Move it by the handle (mouse) or the ✥ / ⇲ handle buttons (head cursor),
   // and resize it from any corner — same window behaviour as the keyboard.
   attachPanelControls(panel, {
     handle: panel.querySelector('.fg-drag-handle'),
     minW: 200,
-    minH: 220,
+    minH: 200,
   });
 }
 
+function _syncPanelVisibility() {
+  const panel = document.getElementById(FG_PANEL_ID);
+  if (panel) panel.style.display = (_headCursor || _gestures) ? 'flex' : 'none';
+}
+
+function _ensureCameraRunning() {
+  if (_cameraOn || _cameraStarting) return;
+  try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel init failed', e); }
+  _startCamera();
+}
+
 // ---------------------------------------------------------------------------
-// Public API used by studio.js.
+// Public API.
 // ---------------------------------------------------------------------------
 
 /**
- * Inject a camera-icon toggle button into the studio header element.
+ * Start MediaPipe in its watch-only state: the face landmarker runs, but the
+ * only gesture that does anything is whichever one maps to
+ * `enable-landmark-gesture-mode`. Idempotent. Resolves to true once the camera
+ * is live, false if getUserMedia / the model download failed.
+ */
+export function startFacialWatch() {
+  try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel init failed', e); }
+  return _startCamera();
+}
+
+/** Hard stop — release the camera and tear the detector down. */
+export function stopFacial() {
+  _stopCamera();
+}
+
+/** Turn the head cursor + dwell on/off. Starts the camera if it needs to. */
+export function setHeadCursorEnabled(on) {
+  _headCursor = !!on;
+  if (_headCursor) _ensureCameraRunning();
+  else if (_cursorEl) _cursorEl.style.display = 'none';
+  _syncPanelVisibility();
+  _syncHydraShare();
+}
+
+/**
+ * Turn gesture ACTIONS on/off. With this off, a detected gesture can still only
+ * run `enable-landmark-gesture-mode` (see _dispatchTrigger). Starts the camera
+ * if it needs to.
+ */
+export function setGestureDetectionEnabled(on) {
+  _gestures = !!on;
+  if (_gestures) _ensureCameraRunning();
+  _syncPanelVisibility();
+  _syncHydraShare();
+}
+
+export function isGestureDetectionEnabled() { return _gestures; }
+
+/** Replace the whole gesture map. A non-array resets to the defaults. */
+export function setGestureMappings(list) {
+  _gestureMappings = Array.isArray(list)
+    ? list.map((m) => ({ ...m }))
+    : DEFAULT_GESTURE_MAPPINGS.map((m) => ({ ...m }));
+}
+
+/** Snapshot of the live gesture config, for gestureAndLandmarkConfig's return. */
+export function getGestureConfig() {
+  return {
+    gestureMappings: _gestureMappings.map((m) => ({ ...m })),
+    headCursorEnabled: _headCursor,
+    gestureDetectionEnabled: _gestures,
+  };
+}
+
+/** True once getUserMedia / the model download has failed — the enable paths
+ *  that don't need a camera (Right Arrow, the ⚙ menu) still work. */
+export function isCameraBlocked() { return _cameraBlocked; }
+
+/**
+ * Whether the MediaPipe head cursor is currently switched on. The on-screen
+ * keyboard gates its autopredict row on this — picking a suggestion is a
+ * head-cursor dwell, so with no head cursor the row is unpickable noise.
+ */
+export function isHeadCursorEnabled() {
+  return _headCursor;
+}
+
+/**
+ * Inject the "Face" toggle into the studio header. It now just flips Landmark
+ * and Gesture Mode (keyboard + head cursor + gesture actions) via the shared
+ * event, and mirrors the mode's on/off state.
  * Called once from ensureOverlay() in studio.js.
  */
 export function injectFacialGestureToggle(headerEl) {
   const btn = document.createElement('button');
   btn.id    = 'trussal-fg-toggle';
-  btn.title = 'Toggle MediaPipe facial gesture control';
+  btn.title = 'Toggle Landmark and Gesture Mode (keyboard + head cursor + face gestures)';
   btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
       fill="currentColor" width="13" height="13" aria-hidden="true">
     <path d="M12 9a3.75 3.75 0 1 0 0 7.5A3.75 3.75 0 0 0 12 9Z"/>
@@ -1036,101 +1052,16 @@ export function injectFacialGestureToggle(headerEl) {
       0Zm12-1.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd"/>
   </svg>Face`;
 
-  btn.addEventListener('click', async () => {
-    _enabled = !_enabled;
-    btn.classList.toggle('on', _enabled);
-    // Lazy-init the FG panel on first click so a panel setup error never
-    // prevents the button from appearing in the header.
-    try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel init failed', e); }
-    const panel = document.getElementById(FG_PANEL_ID);
-    if (panel) panel.style.display = _enabled ? 'flex' : 'none';
-    if (_enabled) {
-      await _startCamera();
-    } else {
-      _stopCamera();
-    }
+  btn.addEventListener('click', () => {
+    document.dispatchEvent(new CustomEvent('trussal-landmark-gesture-mode', {
+      detail: { toggle: true, source: 'studio-face-button' },
+    }));
+  });
+  document.addEventListener('trussal-landmark-gesture-mode-changed', (e) => {
+    btn.classList.toggle('on', !!(e.detail && e.detail.on));
   });
 
   // Insert before the close button.
   const closeBtn = headerEl.querySelector('.ts-close');
   headerEl.insertBefore(btn, closeBtn);
-}
-
-/**
- * Whether the MediaPipe head cursor is currently switched on (the Face
- * toggle). The on-screen keyboard gates its autopredict row on this — picking
- * a suggestion is a head-cursor dwell, so with no head cursor the row is
- * unpickable noise above the keys.
- */
-export function isHeadCursorEnabled() {
-  return _enabled;
-}
-
-/**
- * Rebuild the dwell-bar from the focused editor's button declarations —
- * StrudelButtons (`*name: code`) for the personal editor, JPatternButtons
- * (`*$ participants <2a>`, `*# crush wcl 2`) for the shared metaprogram.
- * Call this after renderDetail() whenever the pattern or overlay is refreshed.
- */
-export function refreshFacialGestureButtons() {
-  const bar = document.getElementById('trussal-fg-btns');
-  if (!bar || !_enabled) { if (bar) { bar.innerHTML = ''; _barKey = null; } return; }
-
-  const code = getCode();
-  const esc   = (s) => String(s).replace(/[&<>"']/g, (c) =>
-    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
-  const escAt = (s) => String(s).replace(/"/g, '&quot;');
-  // Rebuilding the bar detaches whatever node a dwell is currently filling
-  // against — _dwell.el would go on styling an element that is no longer in
-  // the document, and the user loses all feedback mid-hold. The shared editor
-  // re-renders this on every remote keystroke, so only rebuild when the
-  // buttons themselves actually changed.
-  const render = (buttons, klass, attr) => {
-    const key = `${klass} ${buttons.map(b => `${b.code}${b.label}${b.on ? 1 : 0}`).join('')}`;
-    if (key === _barKey) return false;
-    _barKey = key;
-    bar.innerHTML = buttons.map((b) =>
-      `<button class="strudel-head-btn${klass}${b.on ? ' strudel-btn-on' : ''}"` +
-      ` ${attr}="${escAt(b.code)}" title="${escAt(b.code)}">▶ ${esc(b.label)}</button>`
-    ).join('');
-    return true;
-  };
-  const truncate = (s) => (s.length > 20 ? s.slice(0, 20) + '…' : s);
-
-  // The bar follows the focused editor, because so does the dwell action.
-  // `.jp-head-btn` is what routes a dwell to the metaprogram toggle instead of
-  // the pattern one (see the dwell classification in _detectionLoop).
-  if (activeEditorKind() === 'jpattern') {
-    // Same label and same on/off state as the editor card's own row — one
-    // button named two ways in two places is two buttons as far as the
-    // performer can tell.
-    const buttons = parseJPatternButtons(code)
-      .map(b => ({ code: b.snippet, label: b.label, on: b.active }));
-    if (render(buttons, ' jp-head-btn', 'data-jpattern-code')) {
-      bar.querySelectorAll('[data-jpattern-code]').forEach((btn) => {
-        btn.addEventListener('click', () => toggleJPatternButtonCode(btn.dataset.jpatternCode));
-      });
-    }
-    return;
-  }
-
-  const snippets = [];
-  const starred = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
-  const explicit= /new\s+StrudelButton\((['"`])([\s\S]*?)\1\)/g;
-  let m;
-  starred.lastIndex  = 0;
-  explicit.lastIndex = 0;
-  while ((m = starred.exec(code))  !== null) snippets.push(`${m[1]}: ${m[2].trim()}`);
-  while ((m = explicit.exec(code)) !== null) snippets.push(m[2]);
-
-  const buttons = snippets.map(s => ({
-    code: s,
-    label: truncate(s),
-    on: code.includes(`\n${s}${BTN_MARKER}`)
-  }));
-  if (render(buttons, '', 'data-strudel-code')) {
-    bar.querySelectorAll('[data-strudel-code]').forEach((btn) => {
-      btn.addEventListener('click', () => toggleButtonCode(btn.dataset.strudelCode));
-    });
-  }
 }

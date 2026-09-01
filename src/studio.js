@@ -27,7 +27,7 @@ import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrud
 import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
-import { injectFacialGestureToggle, refreshFacialGestureButtons } from './facial-gesture.js';
+import { injectFacialGestureToggle } from './facial-gesture.js';
 import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
 import { attachPanelControls } from './panel-drag-resize.js';
 import { toggleLineComment } from './editor-router-core.js';
@@ -752,8 +752,6 @@ function patchDetailForPeer(container, peer, isLocal) {
 
   const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : (peer.playing ? 'Playing' : 'Idle'));
   container.querySelector('.ts-status').textContent = status;
-
-  refreshFacialGestureButtons();
 }
 
 function patchLocalProgramSection(el, peer, isLocal) {

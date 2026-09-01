@@ -57640,9 +57640,6 @@ ${snippet}${JP_BTN_MARKER}`;
       if (kind) lastKind = kind;
     });
   }
-  function activeEditorKind() {
-    return lastKind;
-  }
   function metaprogramReadOnly() {
     const peer = getLocalPeer();
     return !!peer.isBot && peer.canEditMetaprogram === false;
@@ -58007,6 +58004,83 @@ ${snippet}${JP_BTN_MARKER}`;
     attachHeadDragResize(panel, opts);
   }
 
+  // src/landmark-gesture-core.js
+  var GESTURE_TRIGGERS = [
+    "smile",
+    "thumbsUp",
+    "thumbsDown",
+    "leftBlink",
+    "browRaise",
+    "headTiltLeft",
+    "headTiltRight",
+    "mouthOpen",
+    "leftEyeClosed2s"
+  ];
+  var GESTURE_ACTIONS = [
+    "play",
+    "stop",
+    "update-code",
+    "toggle-caret-lock",
+    "drum-density",
+    "transpose-down",
+    "transpose-up",
+    "regex-swap",
+    "apply-metaprogram",
+    "enable-landmark-gesture-mode"
+  ];
+  var DEFAULT_GESTURE_MAPPINGS = [
+    { trigger: "smile", action: "play" },
+    { trigger: "thumbsUp", action: "stop" },
+    { trigger: "thumbsDown", action: "toggle-caret-lock" },
+    { trigger: "leftBlink", action: "update-code" },
+    { trigger: "browRaise", action: "drum-density" },
+    { trigger: "headTiltLeft", action: "transpose-down" },
+    { trigger: "headTiltRight", action: "transpose-up" },
+    { trigger: "leftEyeClosed2s", action: "enable-landmark-gesture-mode" }
+  ];
+  function normalizeGestureMapping(m2, i = 0) {
+    if (m2 == null || typeof m2 !== "object" || Array.isArray(m2)) {
+      throw new TypeError(`gestureMappings[${i}] must be an object`);
+    }
+    if (typeof m2.trigger !== "string" || !m2.trigger.trim()) {
+      throw new TypeError(`gestureMappings[${i}].trigger must be a non-empty string`);
+    }
+    if (typeof m2.action !== "string" || !m2.action.trim()) {
+      throw new TypeError(`gestureMappings[${i}].action must be a non-empty string`);
+    }
+    const out = { trigger: m2.trigger.trim(), action: m2.action.trim() };
+    if (m2.regex != null) out.regex = String(m2.regex);
+    if (m2.replacement != null) out.replacement = String(m2.replacement);
+    if (!GESTURE_TRIGGERS.includes(out.trigger)) {
+      console.warn(`[landmark-gesture] unknown trigger "${out.trigger}" \u2014 kept, but nothing detects it`);
+    }
+    if (!GESTURE_ACTIONS.includes(out.action)) {
+      console.warn(`[landmark-gesture] unknown action "${out.action}" \u2014 kept, but nothing runs it`);
+    }
+    return out;
+  }
+  function normalizeGestureAndLandmarkConfig(obj) {
+    if (obj == null || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new TypeError("gestureAndLandmarkConfig(config): config must be a plain object");
+    }
+    const out = {};
+    if ("gestureMappings" in obj) {
+      if (!Array.isArray(obj.gestureMappings)) {
+        throw new TypeError("gestureAndLandmarkConfig: gestureMappings must be an array");
+      }
+      out.gestureMappings = obj.gestureMappings.map((m2, i) => normalizeGestureMapping(m2, i));
+    }
+    for (const key of ["virtualKeyboardEnabled", "headCursorEnabled", "gestureDetectionEnabled"]) {
+      if (key in obj) {
+        if (typeof obj[key] !== "boolean") {
+          throw new TypeError(`gestureAndLandmarkConfig: ${key} must be a boolean`);
+        }
+        out[key] = obj[key];
+      }
+    }
+    return out;
+  }
+
   // src/facial-gesture.js
   var WASM_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
   var MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -58020,9 +58094,12 @@ ${snippet}${JP_BTN_MARKER}`;
   var BROW_INNER_THRESHOLD = 0.6;
   var BROW_OUTER_THRESHOLD = 0.45;
   var HEAD_TILT_THRESHOLD = 0.3;
+  var MOUTH_OPEN_THRESHOLD = 0.5;
   var EMA_ALPHA = 0.15;
   var LATCH_RESET = 0.4;
   var DWELL_MS = 1e3;
+  var LEFT_EYE_HOLD_MS = 2e3;
+  var HEAD_TILT_SEMITONES = 2;
   var RING_R = 16;
   var RING_C = 2 * Math.PI * RING_R;
   if (typeof window !== "undefined") {
@@ -58069,7 +58146,6 @@ ${snippet}${JP_BTN_MARKER}`;
   trackEditorFocus();
   if (typeof document !== "undefined") {
     document.addEventListener("focusin", (e30) => {
-      refreshFacialGestureButtons();
       if (e30.target?.classList?.contains("ts-code")) _stickyEditor = e30.target;
     });
   }
@@ -58098,7 +58174,6 @@ ${snippet}${JP_BTN_MARKER}`;
       await evaluate2();
     }
   }
-  var BTN_MARKER = " // strudel-btn";
   var HH_CYCLE = ["", "*2", "*4", "*8"];
   function cycleHiHat(code2) {
     const re2 = /\bhh(\*\d+)?/;
@@ -58133,52 +58208,20 @@ ${snippet}${JP_BTN_MARKER}`;
       return code2;
     }
   }
-  function toggleButtonCode(code2) {
-    const cur = getCode();
-    const active4 = `
-${code2}${BTN_MARKER}`;
-    const commented = `
-// ${code2}${BTN_MARKER}`;
-    let next;
-    if (cur.includes(commented)) next = cur.replace(commented, active4);
-    else if (cur.includes(active4)) next = cur.replace(active4, commented);
-    else next = cur + active4;
-    setCode(next);
-    evaluate2();
-  }
-  function makeGestureHandler(triggerName, defaultMutator) {
-    return async () => {
-      const code2 = getCode();
-      const configs = parseMediapipeConfigs(code2);
-      let ran = false;
-      for (const cfg of configs) {
-        if (cfg.trigger === triggerName && cfg.action === "regex-swap" && cfg.regex) {
-          await mutateAndEvaluate((c2) => applyRegexMutation2(c2, cfg.regex, cfg.replacement));
-          ran = true;
-        }
-        if (cfg.trigger === triggerName && cfg.action === "apply-metaprogram") {
-          applyMetaprogramNow();
-          ran = true;
-        }
-      }
-      if (_regexTrigger === triggerName && _regexPattern) {
-        await mutateAndEvaluate((c2) => applyRegexMutation2(c2, _regexPattern, _regexReplacement));
-        ran = true;
-      }
-      if (!ran) await mutateAndEvaluate(defaultMutator);
-    };
-  }
-  var _headTiltDelta = 2;
-  var handleBrowRaise = makeGestureHandler("browRaise", cycleHiHat);
-  var handleHeadTiltLeft = makeGestureHandler("headTiltLeft", (c2) => shiftTranspose(c2, -_headTiltDelta));
-  var handleHeadTiltRight = makeGestureHandler("headTiltRight", (c2) => shiftTranspose(c2, _headTiltDelta));
-  var _enabled = false;
   var _landmarker = null;
   var _gestureRecognizer = null;
   var _mpClasses = null;
   var _drawingUtils = null;
   var _stream = null;
   var _rafId2 = null;
+  var _cameraOn = false;
+  var _cameraStarting = false;
+  var _cameraBlocked = false;
+  var _headCursor2 = false;
+  var _gestures = false;
+  var _sharedWithHydra = false;
+  var _leftEyeClosedSince = 0;
+  var _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   var _videoEl2 = null;
   var _canvasEl = null;
   var _cursorEl = null;
@@ -58198,9 +58241,18 @@ ${code2}${BTN_MARKER}`;
     cursorX: typeof window !== "undefined" ? window.innerWidth / 2 : 0,
     cursorY: typeof window !== "undefined" ? window.innerHeight / 2 : 0
   };
-  var _latch = { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false };
+  var _latch = {
+    headLeft: false,
+    headRight: false,
+    leftBlink: false,
+    browRaise: false,
+    smile: false,
+    thumbsUp: false,
+    thumbsDown: false,
+    mouthOpen: false,
+    leftEyeClosed2s: false
+  };
   var _dwell = { key: null, type: null, el: null, startMs: 0, fired: false };
-  var _barKey = null;
   var _stickyEditor = null;
   var _caretLocked = false;
   var _caretEl = null;
@@ -58212,37 +58264,92 @@ ${code2}${BTN_MARKER}`;
     if (now - _dwellCandidatesAt >= DWELL_TARGETS_REFRESH_MS) {
       _dwellCandidatesAt = now;
       _dwellCandidates = Array.from(document.querySelectorAll(
-        '.strudel-head-btn, .ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
+        '.ts-fx-dwell-btn, .ts-dwell-btn, .jp-head-btn, button[is="j-pattern-button"]'
       ));
     }
     return _dwellCandidates;
   }
-  var _regexTrigger = "mouthOpen";
-  var _regexPattern = "";
-  var _regexReplacement = "";
-  function _flash(gesture) {
+  function _flash(trigger, action) {
     if (!_flashEl) return;
-    const labels = {
-      play: "\u25B6 play (smile)",
-      stop: "\u25A0 stop (thumbs up)",
-      eval: "\u21BA update (left blink)",
-      drumDensity: "\u25CE drum density (brow raise)",
-      headTiltLeft: `\u2190 tilt left \u2192 \u2212${_headTiltDelta}st`,
-      headTiltRight: `\u2192 tilt right \u2192 +${_headTiltDelta}st`,
-      caretLock: "\u{1F512} caret locked (thumbs down)",
-      caretUnlock: "\u{1F513} caret unlocked (thumbs down)"
-    };
-    _flashEl.textContent = labels[gesture] ?? gesture;
+    _flashEl.textContent = action ? `${trigger} \u2192 ${action}` : trigger;
     _flashEl.style.opacity = "1";
     clearTimeout(_flashTimeout);
     _flashTimeout = setTimeout(() => {
       if (_flashEl) _flashEl.style.opacity = "0";
-    }, 800);
+    }, 900);
   }
   function _setStatus(s2) {
     if (!_statusEl) return;
     _statusEl.textContent = s2;
     _statusEl.style.color = "#111111";
+  }
+  function _effectiveMappingsFor(trigger) {
+    let codeMaps = [];
+    try {
+      codeMaps = parseMediapipeConfigs(getCode()).filter((m2) => m2 && m2.trigger === trigger);
+    } catch {
+    }
+    if (codeMaps.length) return codeMaps;
+    return _gestureMappings.filter((m2) => m2.trigger === trigger);
+  }
+  function _dispatchTrigger(trigger) {
+    for (const m2 of _effectiveMappingsFor(trigger)) {
+      if (!_gestures && m2.action !== "enable-landmark-gesture-mode") continue;
+      _runAction(m2, trigger);
+    }
+  }
+  function _runAction(m2, trigger) {
+    switch (m2.action) {
+      case "play":
+        _flash(trigger, m2.action);
+        bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {
+        });
+        break;
+      case "stop":
+        _flash(trigger, m2.action);
+        stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {
+        });
+        break;
+      case "update-code":
+      case "eval":
+        _flash(trigger, "update-code");
+        evaluate2();
+        break;
+      case "toggle-caret-lock":
+        _caretLocked = !_caretLocked;
+        _flash(trigger, _caretLocked ? "caret-lock" : "caret-unlock");
+        break;
+      case "drum-density":
+        _flash(trigger, m2.action);
+        mutateAndEvaluate(cycleHiHat);
+        break;
+      case "transpose-down":
+        _flash(trigger, m2.action);
+        mutateAndEvaluate((c2) => shiftTranspose(c2, -HEAD_TILT_SEMITONES));
+        break;
+      case "transpose-up":
+        _flash(trigger, m2.action);
+        mutateAndEvaluate((c2) => shiftTranspose(c2, HEAD_TILT_SEMITONES));
+        break;
+      case "regex-swap":
+        if (m2.regex) {
+          _flash(trigger, m2.action);
+          mutateAndEvaluate((c2) => applyRegexMutation2(c2, m2.regex, m2.replacement));
+        }
+        break;
+      case "apply-metaprogram":
+        _flash(trigger, m2.action);
+        applyMetaprogramNow();
+        break;
+      case "enable-landmark-gesture-mode":
+        _flash(trigger, m2.action);
+        document.dispatchEvent(new CustomEvent("trussal-landmark-gesture-mode", {
+          detail: { on: true, source: "gesture" }
+        }));
+        break;
+      default:
+        console.warn("[facial-gesture] no handler for action", m2.action);
+    }
   }
   function _processResult(result, gestureResult) {
     const blendshapes = result.faceBlendshapes?.[0]?.categories;
@@ -58282,12 +58389,20 @@ ${code2}${BTN_MARKER}`;
     const browOuterL = score("browOuterUpLeft");
     const browOuterR = score("browOuterUpRight");
     const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
+    if (isLeftBlink) {
+      if (_leftEyeClosedSince === 0) _leftEyeClosedSince = performance.now();
+      if (!_latch.leftEyeClosed2s && performance.now() - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
+        _latch.leftEyeClosed2s = true;
+        _dispatchTrigger("leftEyeClosed2s");
+      }
+    } else {
+      _leftEyeClosedSince = 0;
+      _latch.leftEyeClosed2s = false;
+    }
     const isSmile = mouthSmileL > SMILE_THRESHOLD && mouthSmileR > SMILE_THRESHOLD && Math.abs(mouthSmileL - mouthSmileR) < SMILE_ASYMMETRY_MAX && Math.abs(_ema.headYaw) < HEAD_YAW_THRESHOLD;
     if (isSmile && !_latch.smile) {
       _latch.smile = true;
-      _flash("play");
-      bootStrudelOnUserGesture().then(() => sendLocalPlaying(true)).catch(() => {
-      });
+      _dispatchTrigger("smile");
     }
     if (_latch.smile && mouthSmileL < SMILE_THRESHOLD * LATCH_RESET && mouthSmileR < SMILE_THRESHOLD * LATCH_RESET) {
       _latch.smile = false;
@@ -58296,9 +58411,7 @@ ${code2}${BTN_MARKER}`;
     const isThumbsUp = topGesture?.categoryName === "Thumb_Up" && topGesture.score > THUMBS_UP_THRESHOLD;
     if (isThumbsUp && !_latch.thumbsUp) {
       _latch.thumbsUp = true;
-      _flash("stop");
-      stopStrudel().then(() => sendLocalPlaying(false)).catch(() => {
-      });
+      _dispatchTrigger("thumbsUp");
     }
     if (_latch.thumbsUp && !isThumbsUp) {
       _latch.thumbsUp = false;
@@ -58306,16 +58419,14 @@ ${code2}${BTN_MARKER}`;
     const isThumbsDown = topGesture?.categoryName === "Thumb_Down" && topGesture.score > THUMBS_UP_THRESHOLD;
     if (isThumbsDown && !_latch.thumbsDown) {
       _latch.thumbsDown = true;
-      _caretLocked = !_caretLocked;
-      _flash(_caretLocked ? "caretLock" : "caretUnlock");
+      _dispatchTrigger("thumbsDown");
     }
     if (_latch.thumbsDown && !isThumbsDown) {
       _latch.thumbsDown = false;
     }
     if (isLeftBlink && !_latch.leftBlink) {
       _latch.leftBlink = true;
-      _flash("eval");
-      evaluate2();
+      _dispatchTrigger("leftBlink");
     }
     if (_latch.leftBlink && eyeBlinkL < WINK_THRESHOLD * LATCH_RESET) {
       _latch.leftBlink = false;
@@ -58323,30 +58434,40 @@ ${code2}${BTN_MARKER}`;
     const isBrowRaise = browInnerUp > BROW_INNER_THRESHOLD && (browOuterL > BROW_OUTER_THRESHOLD || browOuterR > BROW_OUTER_THRESHOLD) && eyeBlinkL < 0.3 && eyeBlinkR < 0.3;
     if (isBrowRaise && !_latch.browRaise) {
       _latch.browRaise = true;
-      _flash("drumDensity");
-      handleBrowRaise();
+      _dispatchTrigger("browRaise");
     }
     if (_latch.browRaise && !(browInnerUp > BROW_INNER_THRESHOLD * LATCH_RESET)) {
       _latch.browRaise = false;
     }
+    const jaw = _ema.jawOpen;
+    if (jaw > MOUTH_OPEN_THRESHOLD && !_latch.mouthOpen) {
+      _latch.mouthOpen = true;
+      _dispatchTrigger("mouthOpen");
+    }
+    if (_latch.mouthOpen && jaw < MOUTH_OPEN_THRESHOLD * LATCH_RESET) {
+      _latch.mouthOpen = false;
+    }
     const headTilt = _ema.headTilt;
     if (!_latch.headLeft && headTilt < -HEAD_TILT_THRESHOLD) {
       _latch.headLeft = true;
-      _flash("headTiltLeft");
-      handleHeadTiltLeft();
+      _dispatchTrigger("headTiltLeft");
     } else if (_latch.headLeft && headTilt > -HEAD_TILT_THRESHOLD * LATCH_RESET) {
       _latch.headLeft = false;
     }
     if (!_latch.headRight && headTilt > HEAD_TILT_THRESHOLD) {
       _latch.headRight = true;
-      _flash("headTiltRight");
-      handleHeadTiltRight();
+      _dispatchTrigger("headTiltRight");
     } else if (_latch.headRight && headTilt < HEAD_TILT_THRESHOLD * LATCH_RESET) {
       _latch.headRight = false;
     }
   }
   function _drawLandmarks(result) {
     if (!_canvasEl || !_mpClasses || !_videoEl2) return;
+    if (!_headCursor2 && !_gestures) {
+      const c2 = _canvasEl.getContext("2d");
+      if (c2) c2.clearRect(0, 0, _canvasEl.width, _canvasEl.height);
+      return;
+    }
     if (_canvasEl.width !== _videoEl2.videoWidth) _canvasEl.width = _videoEl2.videoWidth || 320;
     if (_canvasEl.height !== _videoEl2.videoHeight) _canvasEl.height = _videoEl2.videoHeight || 240;
     const ctx2 = _canvasEl.getContext("2d");
@@ -58356,13 +58477,13 @@ ${code2}${BTN_MARKER}`;
     const du = _drawingUtils;
     const FL = _mpClasses.FaceLandmarker;
     for (const lm of result.faceLandmarks) {
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_TESSELATION, { color: "#C0C0C040", lineWidth: 0.5 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYE, { color: "#FF3030", lineWidth: 1 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYEBROW, { color: "#FF3030", lineWidth: 1 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYE, { color: "#30FF30", lineWidth: 1 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYEBROW, { color: "#30FF30", lineWidth: 1 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_FACE_OVAL, { color: "#E0E0E0", lineWidth: 1 });
-      du.drawConnectors(lm, FL.FACE_LANDMARKS_LIPS, { color: "#E0E060", lineWidth: 1 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_TESSELATION, { color: "#8a8a8a30", lineWidth: 0.5 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYE, { color: "#f2f2f2", lineWidth: 2.5 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_RIGHT_EYEBROW, { color: "#c8c8c8", lineWidth: 2 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYE, { color: "#f2f2f2", lineWidth: 2.5 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_LEFT_EYEBROW, { color: "#c8c8c8", lineWidth: 2 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_FACE_OVAL, { color: "#9a9a9a", lineWidth: 1 });
+      du.drawConnectors(lm, FL.FACE_LANDMARKS_LIPS, { color: "#f2f2f2", lineWidth: 2.5 });
     }
   }
   var _densitySkip = 0;
@@ -58384,6 +58505,11 @@ ${code2}${BTN_MARKER}`;
     const gestureResult = _gestureRecognizer?.recognizeForVideo(_videoEl2, ts);
     _processResult(result, gestureResult);
     _drawLandmarks(result);
+    if (!_headCursor2) {
+      if (_cursorEl && _cursorEl.style.display !== "none") _cursorEl.style.display = "none";
+      _rafId2 = requestAnimationFrame(_detectionLoop);
+      return;
+    }
     if (_cursorEl) {
       _cursorEl.style.left = `${_ema.cursorX}px`;
       _cursorEl.style.top = `${_ema.cursorY}px`;
@@ -58422,8 +58548,7 @@ ${code2}${BTN_MARKER}`;
           hoveredKey = btn.id || btn.dataset.dwellId || btn.textContent.trim().slice(0, 20);
           hoveredType = "action";
         } else {
-          hoveredKey = btn.dataset.strudelCode;
-          hoveredType = "strudel";
+          continue;
         }
         hoveredEl = btn;
         break;
@@ -58460,12 +58585,10 @@ ${code2}${BTN_MARKER}`;
         if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
         if (_dwell.type === "fx") {
           _toggleFxEffect(_dwell.key);
-        } else if (_dwell.type === "action") {
-          if (_dwell.el) _dwell.el.click();
         } else if (_dwell.type === "jpattern") {
           toggleJPatternButtonCode(_dwell.key);
-        } else {
-          toggleButtonCode(_dwell.key);
+        } else if (_dwell.type === "action") {
+          if (_dwell.el) _dwell.el.click();
         }
       }
     }
@@ -58514,7 +58637,19 @@ ${code2}${BTN_MARKER}`;
     const e30 = peer.effects || {};
     sendLocalEffects({ distortion: !!e30.distortion, noise: !!e30.noise, reverb: !!e30.reverb, [fxName]: !e30[fxName] });
   }
+  function _syncHydraShare() {
+    const want = !!(_stream && (_headCursor2 || _gestures) && document.getElementById("largeVideoContainer"));
+    if (want && !_sharedWithHydra) {
+      setVideoStream(_stream);
+      _sharedWithHydra = true;
+    } else if (!want && _sharedWithHydra) {
+      setVideoStream(null);
+      _sharedWithHydra = false;
+    }
+  }
   async function _startCamera() {
+    if (_cameraOn || _cameraStarting) return _cameraOn;
+    _cameraStarting = true;
     _setStatus("loading");
     try {
       const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
@@ -58536,44 +58671,20 @@ ${code2}${BTN_MARKER}`;
       _stream = await openCamera({ video: { width: 320, height: 240 } });
       _videoEl2.srcObject = _stream;
       await _videoEl2.play();
-      setVideoStream(_stream);
+      _cameraOn = true;
+      _cameraBlocked = false;
+      _syncHydraShare();
       _setStatus("ready");
       _rafId2 = requestAnimationFrame(_detectionLoop);
+      return true;
     } catch (e30) {
       console.error("[facial-gesture]", e30);
+      _cameraBlocked = true;
       _setStatus("error");
+      return false;
+    } finally {
+      _cameraStarting = false;
     }
-  }
-  function _stopCamera() {
-    cancelAnimationFrame(_rafId2);
-    _rafId2 = null;
-    setVideoStream(null);
-    _stream?.getTracks().forEach((t) => t.stop());
-    _stream = null;
-    _landmarker?.close();
-    _landmarker = null;
-    _gestureRecognizer?.close();
-    _gestureRecognizer = null;
-    _mpClasses = null;
-    _drawingUtils = null;
-    Object.assign(_ema, {
-      jawOpen: 0,
-      browInnerUp: 0,
-      headTilt: 0,
-      headYaw: 0,
-      mouthSmileLeft: 0,
-      mouthSmileRight: 0,
-      eyeBlinkLeft: 0,
-      eyeBlinkRight: 0,
-      cursorX: window.innerWidth / 2,
-      cursorY: window.innerHeight / 2
-    });
-    Object.assign(_latch, { headLeft: false, headRight: false, leftBlink: false, browRaise: false, smile: false, thumbsUp: false, thumbsDown: false });
-    _stickyEditor = null;
-    _caretLocked = false;
-    _caretEl = null;
-    if (_cursorEl) _cursorEl.style.display = "none";
-    _setStatus("idle");
   }
   var _savedFgHeight = "";
   var FG_STYLE_ID = "trussal-fg-style";
@@ -58595,11 +58706,7 @@ ${code2}${BTN_MARKER}`;
       border:1px solid #111111; border-radius:10px;
       font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
-      /* Drag/resize (src/panel-drag-resize.js) writes top/left/width/height
-         inline; these are the clamp floors/ceilings. The panel itself no
-         longer scrolls \u2014 #trussal-fg-body does \u2014 so a resize can't hide the
-         drag handle. */
-      min-width:200px; min-height:220px;
+      min-width:200px; min-height:200px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       overflow: hidden;
       display:none; flex-direction:column; gap:8px;
@@ -58612,7 +58719,6 @@ ${code2}${BTN_MARKER}`;
       border-radius:10px 10px 0 0; flex:0 0 auto;
     }
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
-    /* Keep handle controls clickable where a top corner grip overlaps them. */
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
     #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
@@ -58625,38 +58731,7 @@ ${code2}${BTN_MARKER}`;
     #${FG_PANEL_ID} .fg-flash {
       font-size:11px; font-weight:600; text-align:center;
       color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
-    }
-    #${FG_PANEL_ID} .fg-hints { font-size:10px; color:#111111; line-height:1.7; }
-    #${FG_PANEL_ID} .fg-btns { display:flex; flex-wrap:wrap; gap:4px; min-height:0; }
-
-    .strudel-head-btn {
-      display:inline-block; padding:2px 8px; border-radius:999px;
-      border:1px solid #111111; background:#eeeeee; color:#111111;
-      font-size:11px; font-family:monospace; cursor:default; user-select:none;
-      transition:border-color 0.15s, color 0.15s, background 0.15s;
-    }
-    .strudel-head-btn.strudel-dwell-hover { border-color:#111111; }
-    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#eeeeee; }
-    /* Already in the pattern / in the ring \u2014 the same "on" the editor cards show. */
-    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#eeeeee; background:#111111; }
-
-    #${FG_PANEL_ID} .fg-section {
-      border-top: 1px solid #111111;
-      padding-top: 8px;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#111111; font-size:11px; }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:4px;
-      padding:3px 6px; font-size:11px; box-sizing:border-box;
-    }
-    #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"] { width: 100%; }
-    #${FG_PANEL_ID} input[type="number"] { width:52px; font-family:monospace; text-align:center; }
-    #${FG_PANEL_ID} input[type="text"] { font-family:monospace; }
-    #${FG_PANEL_ID} input[type="text"]:focus, #${FG_PANEL_ID} select:focus,
-    #${FG_PANEL_ID} input[type="number"]:focus {
-      outline:1px solid #111111;
+      font-family:monospace;
     }
 
     #trussal-fg-toggle {
@@ -58733,70 +58808,6 @@ ${code2}${BTN_MARKER}`;
         <canvas id="trussal-fg-canvas"></canvas>
       </div>
       <div class="fg-flash" id="trussal-fg-flash"></div>
-      <div class="fg-hints">
-        smile \u2192 play<br>
-        thumbs up \u2192 stop<br>
-        thumbs down \u2192 lock / unlock caret<br>
-        left blink \u2192 update code<br>
-        raise eyebrows \u2192 drum density<br>
-        tilt head \u2192 transpose \xB1<span id="trussal-fg-tilt-label">2</span>st<br>
-        head cursor dwell 1s \u2192 toggle voice
-      </div>
-      <div class="fg-btns" id="trussal-fg-btns"></div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">head tilt amount</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <input type="number" id="trussal-fg-tilt-delta" value="2" min="1" max="24" step="1"/>
-          <span style="font-size:10px;color:#111111;">semitones per tilt</span>
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">regex mutator</div>
-        <select id="trussal-fg-trigger">
-          <option value="mouthOpen">mouth open</option>
-          <option value="headTiltLeft">head tilt left</option>
-          <option value="headTiltRight">head tilt right</option>
-        </select>
-        <input type="text" id="trussal-fg-regex" placeholder="regex pattern" spellcheck="false"/>
-        <input type="text" id="trussal-fg-replacement" placeholder="replacement" spellcheck="false"/>
-        <div style="font-size:9px;color:#111111;line-height:1.5;">
-          or annotate code:<br>
-          <code>/* @mediapipe {"trigger":"mouthOpen","action":"regex-swap","regex":"bd","replacement":"sd"} */</code>
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">StrudelButton</div>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          write in code:<br>
-          <code style="font-size:9px">*bass: note("c2").s('bass')</code><br>
-          dwell with head cursor (1 s) to append/toggle that voice.
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">JPatternButton</div>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          write in the JPattern editor:<br>
-          <code style="font-size:9px">*$ participants &lt;2a 2b&gt;</code><br>
-          <code style="font-size:9px">*# crush wcl 2</code><br>
-          dwell to put that voice in the ring (or that effect in the chain)
-          and apply; dwell again to take it out. The bar above follows
-          whichever editor has focus.
-        </div>
-      </div>
-
-      <div class="fg-section">
-        <div class="fg-section-title">window.faceCtx</div>
-        <code style="font-size:9px;color:#111111">.gain(() =&gt; window.faceCtx.jawOpen)</code>
-        <div style="font-size:10px;color:#111111;line-height:1.5;">
-          jawOpen, browInnerUp, headTilt,<br>
-          eyeBlinkL/R, mouthSmileL/R,<br>
-          cursorX, cursorY
-        </div>
-      </div>
     </div>
   `;
     document.body.appendChild(panel);
@@ -58821,33 +58832,69 @@ ${code2}${BTN_MARKER}`;
         }
       });
     }
-    panel.querySelector("#trussal-fg-trigger").addEventListener("change", (e30) => {
-      _regexTrigger = e30.target.value;
-    });
-    panel.querySelector("#trussal-fg-regex").addEventListener("input", (e30) => {
-      _regexPattern = e30.target.value;
-    });
-    panel.querySelector("#trussal-fg-replacement").addEventListener("input", (e30) => {
-      _regexReplacement = e30.target.value;
-    });
-    panel.querySelector("#trussal-fg-tilt-delta").addEventListener("input", (e30) => {
-      const v2 = parseInt(e30.target.value, 10);
-      if (!isNaN(v2) && v2 >= 1) {
-        _headTiltDelta = v2;
-        const lbl = document.getElementById("trussal-fg-tilt-label");
-        if (lbl) lbl.textContent = v2;
-      }
-    });
     attachPanelControls(panel, {
       handle: panel.querySelector(".fg-drag-handle"),
       minW: 200,
-      minH: 220
+      minH: 200
     });
+  }
+  function _syncPanelVisibility() {
+    const panel = document.getElementById(FG_PANEL_ID);
+    if (panel) panel.style.display = _headCursor2 || _gestures ? "flex" : "none";
+  }
+  function _ensureCameraRunning() {
+    if (_cameraOn || _cameraStarting) return;
+    try {
+      _ensureDOM();
+    } catch (e30) {
+      console.error("[facial-gesture] panel init failed", e30);
+    }
+    _startCamera();
+  }
+  function startFacialWatch() {
+    try {
+      _ensureDOM();
+    } catch (e30) {
+      console.error("[facial-gesture] panel init failed", e30);
+    }
+    return _startCamera();
+  }
+  function setHeadCursorEnabled(on) {
+    _headCursor2 = !!on;
+    if (_headCursor2) _ensureCameraRunning();
+    else if (_cursorEl) _cursorEl.style.display = "none";
+    _syncPanelVisibility();
+    _syncHydraShare();
+  }
+  function setGestureDetectionEnabled(on) {
+    _gestures = !!on;
+    if (_gestures) _ensureCameraRunning();
+    _syncPanelVisibility();
+    _syncHydraShare();
+  }
+  function isGestureDetectionEnabled() {
+    return _gestures;
+  }
+  function setGestureMappings(list) {
+    _gestureMappings = Array.isArray(list) ? list.map((m2) => ({ ...m2 })) : DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
+  }
+  function getGestureConfig() {
+    return {
+      gestureMappings: _gestureMappings.map((m2) => ({ ...m2 })),
+      headCursorEnabled: _headCursor2,
+      gestureDetectionEnabled: _gestures
+    };
+  }
+  function isCameraBlocked() {
+    return _cameraBlocked;
+  }
+  function isHeadCursorEnabled() {
+    return _headCursor2;
   }
   function injectFacialGestureToggle(headerEl) {
     const btn = document.createElement("button");
     btn.id = "trussal-fg-toggle";
-    btn.title = "Toggle MediaPipe facial gesture control";
+    btn.title = "Toggle Landmark and Gesture Mode (keyboard + head cursor + face gestures)";
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
       fill="currentColor" width="13" height="13" aria-hidden="true">
     <path d="M12 9a3.75 3.75 0 1 0 0 7.5A3.75 3.75 0 0 0 12 9Z"/>
@@ -58859,78 +58906,16 @@ ${code2}${BTN_MARKER}`;
       2.332-1.39ZM6.75 12.75a5.25 5.25 0 1 1 10.5 0 5.25 5.25 0 0 1-10.5
       0Zm12-1.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd"/>
   </svg>Face`;
-    btn.addEventListener("click", async () => {
-      _enabled = !_enabled;
-      btn.classList.toggle("on", _enabled);
-      try {
-        _ensureDOM();
-      } catch (e30) {
-        console.error("[facial-gesture] panel init failed", e30);
-      }
-      const panel = document.getElementById(FG_PANEL_ID);
-      if (panel) panel.style.display = _enabled ? "flex" : "none";
-      if (_enabled) {
-        await _startCamera();
-      } else {
-        _stopCamera();
-      }
+    btn.addEventListener("click", () => {
+      document.dispatchEvent(new CustomEvent("trussal-landmark-gesture-mode", {
+        detail: { toggle: true, source: "studio-face-button" }
+      }));
+    });
+    document.addEventListener("trussal-landmark-gesture-mode-changed", (e30) => {
+      btn.classList.toggle("on", !!(e30.detail && e30.detail.on));
     });
     const closeBtn = headerEl.querySelector(".ts-close");
     headerEl.insertBefore(btn, closeBtn);
-  }
-  function isHeadCursorEnabled() {
-    return _enabled;
-  }
-  function refreshFacialGestureButtons() {
-    const bar = document.getElementById("trussal-fg-btns");
-    if (!bar || !_enabled) {
-      if (bar) {
-        bar.innerHTML = "";
-        _barKey = null;
-      }
-      return;
-    }
-    const code2 = getCode();
-    const esc = (s2) => String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
-    const escAt = (s2) => String(s2).replace(/"/g, "&quot;");
-    const render = (buttons2, klass, attr) => {
-      const key = `${klass}\0${buttons2.map((b) => `${b.code}${b.label}${b.on ? 1 : 0}`).join("")}`;
-      if (key === _barKey) return false;
-      _barKey = key;
-      bar.innerHTML = buttons2.map(
-        (b) => `<button class="strudel-head-btn${klass}${b.on ? " strudel-btn-on" : ""}" ${attr}="${escAt(b.code)}" title="${escAt(b.code)}">\u25B6 ${esc(b.label)}</button>`
-      ).join("");
-      return true;
-    };
-    const truncate = (s2) => s2.length > 20 ? s2.slice(0, 20) + "\u2026" : s2;
-    if (activeEditorKind() === "jpattern") {
-      const buttons2 = parseJPatternButtons(code2).map((b) => ({ code: b.snippet, label: b.label, on: b.active }));
-      if (render(buttons2, " jp-head-btn", "data-jpattern-code")) {
-        bar.querySelectorAll("[data-jpattern-code]").forEach((btn) => {
-          btn.addEventListener("click", () => toggleJPatternButtonCode(btn.dataset.jpatternCode));
-        });
-      }
-      return;
-    }
-    const snippets = [];
-    const starred = /^\*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:\s*(.+)$/mg;
-    const explicit = /new\s+StrudelButton\((['"`])([\s\S]*?)\1\)/g;
-    let m2;
-    starred.lastIndex = 0;
-    explicit.lastIndex = 0;
-    while ((m2 = starred.exec(code2)) !== null) snippets.push(`${m2[1]}: ${m2[2].trim()}`);
-    while ((m2 = explicit.exec(code2)) !== null) snippets.push(m2[2]);
-    const buttons = snippets.map((s2) => ({
-      code: s2,
-      label: truncate(s2),
-      on: code2.includes(`
-${s2}${BTN_MARKER}`)
-    }));
-    if (render(buttons, "", "data-strudel-code")) {
-      bar.querySelectorAll("[data-strudel-code]").forEach((btn) => {
-        btn.addEventListener("click", () => toggleButtonCode(btn.dataset.strudelCode));
-      });
-    }
   }
 
   // src/on-screen-keyboard-core.js
@@ -59150,6 +59135,7 @@ ${s2}${BTN_MARKER}`)
   var _shift = false;
   var _caps = false;
   var _visible = false;
+  var _standalone = false;
   var _collapsed = false;
   var _lastTA = null;
   var _dwellEl = null;
@@ -59852,7 +59838,37 @@ ${s2}${BTN_MARKER}`)
     if (closeBtn) headerEl.insertBefore(btn, closeBtn);
     else headerEl.appendChild(btn);
   }
+  function isKeyboardStandalone() {
+    return _standalone;
+  }
+  function setKeyboardStandalone(on) {
+    _standalone = !!on;
+    if (_standalone) {
+      try {
+        _ensureDOM2();
+      } catch (e30) {
+        console.error("[on-screen-keyboard] panel init failed", e30);
+        return;
+      }
+      _showPanel(true);
+    } else {
+      tickKbdUi();
+    }
+  }
   function tickKbdUi() {
+    if (_standalone) {
+      if (!_visible) {
+        try {
+          _ensureDOM2();
+        } catch (e30) {
+          console.error("[on-screen-keyboard] panel init failed", e30);
+          return;
+        }
+        _showPanel(true);
+      }
+      _updatePredictions();
+      return;
+    }
     if (!_visible) return;
     const overlay = document.getElementById("trussal-studio-overlay");
     const studioOpen = !!overlay && overlay.style.display !== "none";
@@ -60380,7 +60396,6 @@ ${s2}${BTN_MARKER}`)
           btn.addEventListener("click", () => press2(btn.dataset.jpatternCode));
         });
       }
-      refreshFacialGestureButtons();
     }
     function press2(snippet) {
       if (readOnly) return;
@@ -61312,7 +61327,6 @@ ${s2}${BTN_MARKER}`)
     patchLocalProgramSection(container2.querySelector(".ts-local-program-section"), peer, isLocal);
     const status = isLocal ? lastStatus : peer.muted ? "Muted" : peer.playing ? "Playing" : "Idle";
     container2.querySelector(".ts-status").textContent = status;
-    refreshFacialGestureButtons();
   }
   function patchLocalProgramSection(el, peer, isLocal) {
     if (isLocal) {
@@ -61722,6 +61736,221 @@ ${s2}${BTN_MARKER}`)
     window.addEventListener("DOMContentLoaded", tickUi);
   }
   setInterval(tickUi, 1e3);
+
+  // src/landmark-gesture-mode.js
+  var CORNER_ID = "trussal-lg-corner";
+  var GEAR_ID = "trussal-lg-gear";
+  var MENU_ID = "trussal-lg-menu";
+  var INSTRUCTION_ID = "trussal-lg-instruction";
+  var STYLE_ID5 = "trussal-lg-style";
+  var _modeOn = false;
+  var _dismissed = false;
+  var _booted = false;
+  function enableMode() {
+    if (_modeOn) return;
+    _modeOn = true;
+    setGestureDetectionEnabled(true);
+    setHeadCursorEnabled(true);
+    setKeyboardStandalone(true);
+    _renderInstruction();
+    _syncGear();
+    _announce();
+  }
+  function disableMode() {
+    if (!_modeOn) return;
+    _modeOn = false;
+    setGestureDetectionEnabled(false);
+    setHeadCursorEnabled(false);
+    setKeyboardStandalone(false);
+    _renderInstruction();
+    _syncGear();
+    _announce();
+  }
+  function toggleMode() {
+    _modeOn ? disableMode() : enableMode();
+  }
+  function _announce() {
+    document.dispatchEvent(new CustomEvent("trussal-landmark-gesture-mode-changed", {
+      detail: { on: _modeOn }
+    }));
+  }
+  function gestureAndLandmarkConfig(config) {
+    const norm = normalizeGestureAndLandmarkConfig(config);
+    if ("gestureMappings" in norm) setGestureMappings(norm.gestureMappings);
+    if ("virtualKeyboardEnabled" in norm) setKeyboardStandalone(norm.virtualKeyboardEnabled);
+    if ("headCursorEnabled" in norm) setHeadCursorEnabled(norm.headCursorEnabled);
+    if ("gestureDetectionEnabled" in norm) setGestureDetectionEnabled(norm.gestureDetectionEnabled);
+    const on = isKeyboardStandalone() || isHeadCursorEnabled() || isGestureDetectionEnabled();
+    if (on !== _modeOn) {
+      _modeOn = on;
+      _renderInstruction();
+      _syncGear();
+      _announce();
+    }
+    return { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
+  }
+  function _injectStyles5() {
+    if (document.getElementById(STYLE_ID5)) return;
+    const s2 = document.createElement("style");
+    s2.id = STYLE_ID5;
+    s2.textContent = `
+    #${CORNER_ID} {
+      position: fixed; top: 10px; left: 10px;
+      z-index: 1000003;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #${GEAR_ID} {
+      width: 28px; height: 28px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      background: #eeeeee; color: #111111;
+      border: 1px solid #111111; border-radius: 6px;
+      font-size: 15px; cursor: pointer; padding: 0;
+    }
+    #${GEAR_ID}:hover { background: #111111; color: #eeeeee; }
+    #${GEAR_ID}.on { background: #111111; color: #eeeeee; }
+    #${MENU_ID} {
+      display: none;
+      background: #eeeeee; color: #111111;
+      border: 1px solid #111111; border-radius: 6px;
+      padding: 8px 10px; font-size: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    #${MENU_ID}.open { display: block; }
+    #${MENU_ID} label {
+      display: flex; align-items: center; gap: 6px; cursor: pointer;
+      white-space: nowrap;
+    }
+    #${INSTRUCTION_ID} {
+      background: #eeeeee; color: #111111;
+      border: 1px solid #111111; border-radius: 8px;
+      padding: 8px 10px; max-width: 300px;
+      font-size: 12px; line-height: 1.5;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    #${INSTRUCTION_ID} .lg-row { display: flex; justify-content: space-between; gap: 8px; }
+    #${INSTRUCTION_ID} .lg-title { font-weight: 600; }
+    #${INSTRUCTION_ID} .lg-x {
+      background: #eeeeee; color: #111111;
+      border: 1px solid #111111; border-radius: 4px;
+      cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
+    }
+    #${INSTRUCTION_ID} .lg-x:hover { background: #111111; color: #eeeeee; }
+    #${INSTRUCTION_ID} ul { margin: 6px 0 0; padding-left: 18px; }
+    #${INSTRUCTION_ID} kbd {
+      border: 1px solid #111111; border-radius: 3px;
+      padding: 0 4px; font-family: monospace; font-size: 11px;
+    }
+    #${INSTRUCTION_ID} .lg-blocked { opacity: 0.55; }
+  `;
+    document.head.appendChild(s2);
+  }
+  function _ensureDOM3() {
+    if (document.getElementById(CORNER_ID)) return;
+    if (!document.body) return;
+    _injectStyles5();
+    const corner = document.createElement("div");
+    corner.id = CORNER_ID;
+    const gear = document.createElement("button");
+    gear.id = GEAR_ID;
+    gear.type = "button";
+    gear.title = "Landmark and Gesture Mode";
+    gear.textContent = "\u2699";
+    const menu = document.createElement("div");
+    menu.id = MENU_ID;
+    menu.innerHTML = `
+    <label>
+      <input type="checkbox" id="trussal-lg-mode-toggle" />
+      Landmark and Gesture Mode
+    </label>
+  `;
+    const instruction = document.createElement("div");
+    instruction.id = INSTRUCTION_ID;
+    corner.appendChild(gear);
+    corner.appendChild(menu);
+    corner.appendChild(instruction);
+    document.body.appendChild(corner);
+    gear.addEventListener("click", (e30) => {
+      e30.stopPropagation();
+      menu.classList.toggle("open");
+    });
+    document.addEventListener("click", (e30) => {
+      if (!menu.classList.contains("open")) return;
+      if (e30.target === gear || menu.contains(e30.target)) return;
+      menu.classList.remove("open");
+    });
+    menu.querySelector("#trussal-lg-mode-toggle").addEventListener("change", (e30) => {
+      e30.target.checked ? enableMode() : disableMode();
+    });
+    _renderInstruction();
+    _syncGear();
+  }
+  function _renderInstruction() {
+    const el = document.getElementById(INSTRUCTION_ID);
+    if (!el) return;
+    if (_modeOn || _dismissed) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "block";
+    const blocked = isCameraBlocked();
+    el.innerHTML = `
+    <div class="lg-row">
+      <span class="lg-title">Landmark &amp; Gesture Mode</span>
+      <button class="lg-x" type="button" title="Dismiss">\u2715</button>
+    </div>
+    <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
+    <ul>
+      <li>press <kbd>\u2192</kbd> (Right Arrow)</li>
+      <li>tick it in the <strong>\u2699</strong> menu (top-left)</li>
+      <li class="${blocked ? "lg-blocked" : ""}">close your left eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
+    </ul>
+  `;
+    el.querySelector(".lg-x").addEventListener("click", (e30) => {
+      e30.stopPropagation();
+      _dismissed = true;
+      _renderInstruction();
+    });
+  }
+  function _syncGear() {
+    const gear = document.getElementById(GEAR_ID);
+    if (gear) gear.classList.toggle("on", _modeOn);
+    const cb = document.getElementById("trussal-lg-mode-toggle");
+    if (cb) cb.checked = _modeOn;
+  }
+  function _onKeydown(e30) {
+    if (_modeOn) return;
+    if (e30.key !== "ArrowRight" || e30.repeat || e30.defaultPrevented) return;
+    const t = e30.target;
+    const tag = t && t.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t && t.isContentEditable) return;
+    enableMode();
+  }
+  function init() {
+    if (_booted) return;
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+    _booted = true;
+    window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
+    window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
+    _ensureDOM3();
+    window.addEventListener("keydown", _onKeydown, true);
+    document.addEventListener("trussal-landmark-gesture-mode", (e30) => {
+      const d = e30.detail || {};
+      if (d.toggle) toggleMode();
+      else if (d.on === false) disableMode();
+      else enableMode();
+    });
+    startFacialWatch().then((ok) => {
+      if (!ok) _renderInstruction();
+    }).catch((err) => {
+      console.error("[landmark-gesture] watch start failed", err);
+      _renderInstruction();
+    });
+  }
+  if (typeof document !== "undefined") {
+    if (document.readyState === "complete" || document.readyState === "interactive") init();
+    else window.addEventListener("DOMContentLoaded", init);
+  }
 
   // src/index.js
   window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;

@@ -13,6 +13,7 @@ import { setDataRefReader } from './audio-net/ValuePattern.js';
 // lobby and prejoin screen as well as in-call. Self-initialising on import.
 import './theme-context.js';
 import './studio.js';
+import './landmark-gesture-mode.js';
 
 window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
 
