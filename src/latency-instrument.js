@@ -961,16 +961,87 @@ class NodeOutputEffect {
 
 let strudelRoomEffect = null; // { track, effect } while publishing, else null
 let strudelPublishRetryTimer = null; // aggregator-mode publish guard interval
+let strudelTrackAcquiring = false;   // acquireLocalAudioTrackForStrudel() in flight
+let strudelTrackAcquireAt = 0;       // epoch ms of the last acquisition attempt
+let strudelPublishWarned = false;    // "no local track" logged once per outage
+const STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS = 8000;
 
 function stopStrudelPublishRetry() {
   if (strudelPublishRetryTimer) { clearInterval(strudelPublishRetryTimer); strudelPublishRetryTimer = null; }
 }
 
+// Resolve once a local Jitsi audio track with a usable setEffect API exists, or
+// after timeoutMs with null. Polled (like participants.js) because track
+// creation is driven by jitsi-meet internals we don't get events for.
+function pollForLocalAudioTrack(timeoutMs) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      const t = findLocalJitsiAudioTrack();
+      if (t && typeof t.setEffect === 'function') return resolve(t);
+      if (Date.now() - started >= timeoutMs) return resolve(null);
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+}
+
+// A performer who lives in the Strudel editor never unmutes their mic, so no
+// local Jitsi audio track is ever created — and the aggregator's master, which
+// is one performer per slot, then streams dead air for their turn. Acquire a
+// track ourselves the way a bot does (bots/src/bot/page-scripts.js
+// pageEnsureAudioPublished): ask jitsi-meet to unmute (fires a gUM and
+// publishes the result); if that yields nothing, build the track directly and
+// hand it to the conference. The mic audio never reaches the room — the caller
+// attaches NodeOutputEffect the instant the track appears, replacing it with
+// masterStrudelGain, and in aggregator mode every other client already holds
+// this performer's chain gain at 0 — but the OS mic-activity light does come
+// on, so this only runs with an aggregator present (every caller of
+// publishLocalStrudelToRoom guarantees that). Rate-limited: the publish guard
+// re-fires every second, and unmute + createLocalTracks must not.
+async function acquireLocalAudioTrackForStrudel() {
+  const existing = findLocalJitsiAudioTrack();
+  if (existing && typeof existing.setEffect === 'function') return existing;
+  if (strudelTrackAcquiring) return null;
+  if (Date.now() - strudelTrackAcquireAt < STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS) return null;
+  strudelTrackAcquiring = true;
+  strudelTrackAcquireAt = Date.now();
+  try {
+    const conf = window.APP && window.APP.conference;
+    // 1) Unmute. If the track was muted or never created, jitsi-meet runs a gUM
+    //    and adds the resulting track to the conference.
+    if (conf && typeof conf.muteAudio === 'function') {
+      try { await conf.muteAudio(false); } catch (e) { /* fall through to (2) */ }
+      const t = await pollForLocalAudioTrack(2500);
+      if (t) return t;
+    }
+    // 2) Fallback: create the track ourselves and give it to the conference.
+    if (window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+      try {
+        const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
+        const at = tracks && tracks[0];
+        if (at && conf) {
+          if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
+          else if (conf._room && typeof conf._room.addTrack === 'function') await conf._room.addTrack(at);
+        }
+      } catch (e) {
+        console.warn('[latency] strudel publish: createLocalTracks fallback failed', e);
+      }
+      const t = await pollForLocalAudioTrack(2500);
+      if (t) return t;
+    }
+  } finally {
+    strudelTrackAcquiring = false;
+  }
+  return findLocalJitsiAudioTrack();
+}
+
 // Publish guard, running for the whole time an aggregator is present. Two jobs:
 //  - The mic is usually muted at join, so no local Jitsi audio track exists yet
-//    when the aggregator is first detected — the initial publish fails and
-//    nothing else re-fires it when the user enables the mic, so the aggregator
-//    would tap silence forever. Re-attempt every second until it takes hold.
+//    when the aggregator is first detected — the initial publish then drives
+//    acquireLocalAudioTrackForStrudel() (unmute → gUM, or build the track
+//    directly), which is rate-limited, so re-attempt every second until one of
+//    those takes hold. Without this the aggregator taps silence forever.
 //  - The publish is only as durable as the JitsiLocalTrack it rides. A
 //    renegotiation (the P2P↔JVB flip when the 3rd participant joins, a device
 //    change) can replace the local track, leaving the effect attached to a dead
@@ -1006,12 +1077,22 @@ export async function publishLocalStrudelToRoom() {
   if (strudelRoomEffect) return true; // already publishing
   await ensureMasterStrudelInput(); // guarantees masterStrudelGain + audioCtx
   if (!masterStrudelGain) return false;
-  const track = findLocalJitsiAudioTrack();
+  let track = findLocalJitsiAudioTrack();
   if (!track || typeof track.setEffect !== 'function') {
-    console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track (mic muted?); will retry when the mic is enabled');
+    // A performer using Strudel as their instrument never unmutes, so there is
+    // no track to attach to. Acquire one (unmute → gUM, or build it directly)
+    // rather than waiting forever for a mic gesture that never comes.
+    track = await acquireLocalAudioTrackForStrudel();
+  }
+  if (!track || typeof track.setEffect !== 'function') {
+    if (!strudelPublishWarned) {
+      console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track; retrying');
+      strudelPublishWarned = true;
+    }
     ensureStrudelPublishGuard();
     return false;
   }
+  strudelPublishWarned = false;
   const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
   try {
     await track.setEffect(effect);
@@ -1030,6 +1111,7 @@ export async function publishLocalStrudelToRoom() {
 
 export async function unpublishLocalStrudelFromRoom() {
   stopStrudelPublishRetry(); // aggregator gone (or never published) — stop waiting for the mic
+  strudelPublishWarned = false; // next aggregator re-arms the one-shot warning
   if (!strudelRoomEffect) return;
   const s = strudelRoomEffect;
   strudelRoomEffect = null;
