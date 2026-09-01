@@ -226,7 +226,7 @@ function _renderInstruction() {
     </div>
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
-      <li>press <kbd>→</kbd> (Right Arrow)</li>
+      <li>press <kbd>→</kbd> (Right Arrow) — or <kbd>→</kbd> <kbd>→</kbd> <kbd>→</kbd> quickly if you're in a text field</li>
       <li>tick it in the <strong>⚙</strong> menu (top-left)</li>
       <li class="${blocked ? 'lg-blocked' : ''}">close your left eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
@@ -247,14 +247,25 @@ function _syncGear() {
 
 // ---------------------------------------------------------------------------
 // Right Arrow — a global enable that stays out of the way of text entry.
+// Pressed with nothing focused: one press enables. Pressed while a text field
+// has focus (the prejoin screen autofocuses its name input, so this is the
+// common case): a single press must still just move the caret, but THREE
+// presses inside 800ms — a StickyKeys-style deliberate repeat — enables. That
+// is the keyboard-only escape hatch for a performer whose sole input device is
+// the on-screen keyboard, which can't otherwise reach this switch.
 // ---------------------------------------------------------------------------
+let _arrowTaps = [];
 function _onKeydown(e) {
   if (_modeOn) return;
   if (e.key !== 'ArrowRight' || e.repeat || e.defaultPrevented) return;
   const t = e.target;
   const tag = t && t.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-  enableMode();
+  const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
+  if (!inField) { enableMode(); return; }
+  const now = Date.now();
+  _arrowTaps = _arrowTaps.filter((ts) => now - ts < 800);
+  _arrowTaps.push(now);
+  if (_arrowTaps.length >= 3) { _arrowTaps = []; enableMode(); }
 }
 
 // ---------------------------------------------------------------------------

@@ -58791,6 +58791,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var _gestures = false;
   var _sharedWithHydra = false;
   var _leftEyeClosedSince = 0;
+  var _leftEyeOpenGraceUntil = 0;
   var _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   var _videoEl2 = null;
   var _canvasEl = null;
@@ -58827,6 +58828,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var _caretLocked = false;
   var _caretEl = null;
   var _caretAppliedAt = { x: -Infinity, y: -Infinity };
+  var _hcFocusEl = null;
   var DWELL_TARGETS_REFRESH_MS = 300;
   var _dwellCandidates = [];
   var _dwellCandidatesAt = -Infinity;
@@ -58838,6 +58840,33 @@ ${snippet}${JP_BTN_MARKER}`;
       ));
     }
     return _dwellCandidates;
+  }
+  function _inMeetingDom() {
+    const lv = document.getElementById("largeVideoContainer");
+    if (!lv) return false;
+    const r2 = lv.getBoundingClientRect();
+    return r2.width > 0 && r2.height > 0;
+  }
+  var GENERIC_DWELL_REFRESH_MS = 400;
+  var _genericDwell = [];
+  var _genericDwellAt = -Infinity;
+  function _genericDwellEls(now) {
+    if (_inMeetingDom()) {
+      _genericDwell = [];
+      return _genericDwell;
+    }
+    if (now - _genericDwellAt >= GENERIC_DWELL_REFRESH_MS) {
+      _genericDwellAt = now;
+      _genericDwell = Array.from(document.querySelectorAll(
+        'button, [role="button"], a[href], summary, input[type="checkbox"], input[type="radio"]'
+      )).filter((el) => {
+        if (el.disabled) return false;
+        if (el.closest("#trussal-kbd-panel, #trussal-fg-panel")) return false;
+        const r2 = el.getBoundingClientRect();
+        return r2.width > 4 && r2.height > 4 && r2.bottom > 0 && r2.right > 0 && r2.top < window.innerHeight && r2.left < window.innerWidth;
+      });
+    }
+    return _genericDwell;
   }
   function _flash(trigger, action) {
     if (!_flashEl) return;
@@ -58960,13 +58989,16 @@ ${snippet}${JP_BTN_MARKER}`;
     const browOuterL = score("browOuterUpLeft");
     const browOuterR = score("browOuterUpRight");
     const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
-    if (isLeftBlink) {
-      if (_leftEyeClosedSince === 0) _leftEyeClosedSince = performance.now();
-      if (!_latch.leftEyeClosed2s && performance.now() - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
+    const nowP = performance.now();
+    const leftEyeHeld = eyeBlinkL > 0.5 && eyeBlinkR < 0.45;
+    if (leftEyeHeld) {
+      if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
+      _leftEyeOpenGraceUntil = nowP + 250;
+      if (!_latch.leftEyeClosed2s && nowP - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
         _latch.leftEyeClosed2s = true;
         _dispatchTrigger("leftEyeClosed2s");
       }
-    } else {
+    } else if (nowP > _leftEyeOpenGraceUntil) {
       _leftEyeClosedSince = 0;
       _latch.leftEyeClosed2s = false;
     }
@@ -59095,7 +59127,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     if (isHeadDragActive()) {
       if (_dwell.el) {
-        _dwell.el.classList.remove("strudel-dwell-hover");
+        _dwell.el.classList.remove("strudel-dwell-hover", "trussal-hc-dwell");
         if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
       }
       _dwell.key = null;
@@ -59132,10 +59164,20 @@ ${snippet}${JP_BTN_MARKER}`;
         break;
       }
     }
+    if (!hoveredEl) {
+      for (const el of _genericDwellEls(ts)) {
+        const r2 = el.getBoundingClientRect();
+        if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
+          hoveredKey = el;
+          hoveredType = "native";
+          hoveredEl = el;
+        }
+      }
+    }
     const now = performance.now();
     if (hoveredKey !== _dwell.key || hoveredType !== _dwell.type) {
       if (_dwell.el) {
-        _dwell.el.classList.remove("strudel-dwell-hover");
+        _dwell.el.classList.remove("strudel-dwell-hover", "trussal-hc-dwell");
         if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
       }
       _dwell.key = hoveredKey;
@@ -59148,14 +59190,14 @@ ${snippet}${JP_BTN_MARKER}`;
     if (hoveredKey && !_dwell.fired) {
       const progress = Math.min((now - _dwell.startMs) / DWELL_MS, 1);
       if (_dwell.el) {
-        _dwell.el.classList.add("strudel-dwell-hover");
+        _dwell.el.classList.add(_dwell.type === "native" ? "trussal-hc-dwell" : "strudel-dwell-hover");
         if (_dwell.type === "action") _dwell.el.style.setProperty("--dwell-prog", progress.toFixed(3));
       }
       if (_progressRing) _progressRing.style.strokeDashoffset = (RING_C * (1 - progress)).toFixed(2);
       if (progress >= 1) {
         _dwell.fired = true;
         if (_dwell.el) {
-          _dwell.el.classList.remove("strudel-dwell-hover");
+          _dwell.el.classList.remove("strudel-dwell-hover", "trussal-hc-dwell");
           _dwell.el.classList.add("strudel-btn-active");
           if (_dwell.type === "action") _dwell.el.style.removeProperty("--dwell-prog");
           setTimeout(() => _dwell.el?.classList.remove("strudel-btn-active"), 600);
@@ -59167,6 +59209,14 @@ ${snippet}${JP_BTN_MARKER}`;
           toggleJPatternButtonCode(_dwell.key);
         } else if (_dwell.type === "action") {
           if (_dwell.el) _dwell.el.click();
+        } else if (_dwell.type === "native") {
+          if (_dwell.el && _dwell.el.isConnected) {
+            try {
+              _dwell.el.focus({ preventScroll: true });
+            } catch {
+            }
+            _dwell.el.click();
+          }
         }
       }
     }
@@ -59179,14 +59229,22 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   function _caretFollowCandidates() {
     const targets = Array.from(document.querySelectorAll("#trussal-studio-overlay textarea.ts-code"));
-    const premeeting = document.getElementById("premeeting-name-input");
-    if (premeeting) targets.push(premeeting);
-    const lobby = document.getElementById("lobby-name-field");
-    if (lobby) targets.push(lobby);
+    for (const id3 of ["trussal-room-input", "premeeting-name-input", "lobby-name-field"]) {
+      const el = document.getElementById(id3);
+      if (el) targets.push(el);
+    }
     return targets;
+  }
+  function _setHcFocus(el) {
+    if (_hcFocusEl && _hcFocusEl !== el) _hcFocusEl.classList.remove("trussal-hc-focus");
+    _hcFocusEl = el || null;
+    if (_hcFocusEl && !_hcFocusEl.classList.contains("trussal-hc-focus")) {
+      _hcFocusEl.classList.add("trussal-hc-focus");
+    }
   }
   function _followEditorCaret(cx, cy) {
     if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
+    if (!_stickyEditor) _setHcFocus(null);
     if (_stickyEditor && document.activeElement !== _stickyEditor && !_isEditable(document.activeElement)) {
       _stickyEditor.focus({ preventScroll: true });
     }
@@ -59204,6 +59262,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     if (document.activeElement !== over) over.focus({ preventScroll: true });
     _stickyEditor = over;
+    _setHcFocus(over.classList.contains("ts-code") ? null : over);
     if (_caretLocked) return;
     if (over === _caretEl && Math.abs(cx - _caretAppliedAt.x) < 6 && Math.abs(cy - _caretAppliedAt.y) < 6) return;
     const pos = typeof document.caretPositionFromPoint === "function" ? document.caretPositionFromPoint(cx, cy) : null;
@@ -59330,6 +59389,21 @@ ${snippet}${JP_BTN_MARKER}`;
     #trussal-fg-toggle:hover { color:#eeeeee; background:#111111; }
     #trussal-fg-toggle.on    { color:#eeeeee; background:#111111; border-color:#111111; }
 
+    /* Head-cursor feedback on plain (non-Trussal) controls: the field it is
+       holding focus on, and the button/link it is currently dwelling. Jitsi's
+       own inputs and buttons suppress the focus ring, so state this loudly.
+       !important \u2014 these sit over Emotion class styles on the prejoin. */
+    .trussal-hc-focus {
+      outline: 2px solid #111111 !important;
+      outline-offset: 1px !important;
+      border-radius: 2px;
+    }
+    .trussal-hc-dwell {
+      outline: 2px solid #111111 !important;
+      outline-offset: 2px !important;
+      background: rgba(17,17,17,0.06) !important;
+    }
+
     .ts-dwell-btn {
       background: #eeeeee;
       border: 1px solid #111111;
@@ -59447,8 +59521,17 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   function setHeadCursorEnabled(on) {
     _headCursor2 = !!on;
-    if (_headCursor2) _ensureCameraRunning();
-    else if (_cursorEl) _cursorEl.style.display = "none";
+    if (_headCursor2) {
+      _ensureCameraRunning();
+    } else {
+      if (_cursorEl) _cursorEl.style.display = "none";
+      _setHcFocus(null);
+      if (_dwell.el) _dwell.el.classList.remove("strudel-dwell-hover", "trussal-hc-dwell");
+      _dwell.key = null;
+      _dwell.type = null;
+      _dwell.el = null;
+      _dwell.fired = false;
+    }
     _syncPanelVisibility();
     _syncHydraShare();
   }
@@ -59647,10 +59730,18 @@ ${snippet}${JP_BTN_MARKER}`;
   var KBD_PANEL_ID = "trussal-kbd-panel";
   var KBD_TOGGLE_ID = "trussal-kbd-toggle";
   var DWELL_MS2 = 1e3;
+  var WELCOME_ROOM_ID = "trussal-room-input";
   var PREJOIN_NAME_ID = "premeeting-name-input";
   var LOBBY_NAME_ID = "lobby-name-field";
+  var NATIVE_FIELD_IDS = [WELCOME_ROOM_ID, PREJOIN_NAME_ID, LOBBY_NAME_ID];
   function _isTypingTarget(el) {
-    return !!el && (el.classList && el.classList.contains("ts-code") || el.id === PREJOIN_NAME_ID || el.id === LOBBY_NAME_ID);
+    return !!el && (el.classList && el.classList.contains("ts-code") || NATIVE_FIELD_IDS.includes(el.id));
+  }
+  function _setNativeValue(el, value2) {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, "value");
+    if (desc && desc.set) desc.set.call(el, value2);
+    else el.value = value2;
   }
   var ROWS = [
     [
@@ -59750,7 +59841,7 @@ ${snippet}${JP_BTN_MARKER}`;
   function _getTA() {
     if (_lastTA && _lastTA.isConnected) return _lastTA;
     _lastTA = null;
-    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)") || document.getElementById(PREJOIN_NAME_ID) || document.getElementById(LOBBY_NAME_ID);
+    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)") || document.getElementById(WELCOME_ROOM_ID) || document.getElementById(PREJOIN_NAME_ID) || document.getElementById(LOBBY_NAME_ID);
   }
   function _updatePredictions() {
     const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
@@ -59784,7 +59875,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const pos = ta.selectionStart ?? ta.value.length;
     const prefix = wordPrefixAt(ta.value, pos);
     const start = pos - prefix.length;
-    ta.value = ta.value.slice(0, start) + word2 + ta.value.slice(pos);
+    _setNativeValue(ta, ta.value.slice(0, start) + word2 + ta.value.slice(pos));
     ta.setSelectionRange(start + word2.length, start + word2.length);
     ta.dispatchEvent(new Event("input", { bubbles: true }));
     _updatePredictions();
@@ -59856,22 +59947,46 @@ ${snippet}${JP_BTN_MARKER}`;
     const s2 = ta.selectionStart ?? ta.value.length;
     const e30 = ta.selectionEnd ?? ta.value.length;
     const val2 = ta.value;
+    const isTextarea = ta.tagName === "TEXTAREA";
     if (key === "Backspace") {
       if (s2 !== e30) {
-        ta.value = val2.slice(0, s2) + val2.slice(e30);
+        _setNativeValue(ta, val2.slice(0, s2) + val2.slice(e30));
         ta.setSelectionRange(s2, s2);
       } else if (s2 > 0) {
-        ta.value = val2.slice(0, s2 - 1) + val2.slice(s2);
+        _setNativeValue(ta, val2.slice(0, s2 - 1) + val2.slice(s2));
         ta.setSelectionRange(s2 - 1, s2 - 1);
       }
     } else if (key === "Enter") {
-      if (ta.tagName === "TEXTAREA") {
-        ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
+      if (isTextarea) {
+        _setNativeValue(ta, val2.slice(0, s2) + "\n" + val2.slice(e30));
         ta.setSelectionRange(s2 + 1, s2 + 1);
+      } else {
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        ta.dispatchEvent(new Event("change", { bubbles: true }));
+        for (const type of ["keydown", "keypress", "keyup"]) {
+          ta.dispatchEvent(new KeyboardEvent(type, {
+            key: "Enter",
+            code: "Enter",
+            keyCode: 13,
+            which: 13,
+            bubbles: true
+          }));
+        }
+        if (ta.form && typeof ta.form.requestSubmit === "function") {
+          try {
+            ta.form.requestSubmit();
+          } catch {
+            ta.form.submit();
+          }
+        }
+        _updatePredictions();
+        return;
       }
     } else if (key === "Tab") {
-      ta.value = val2.slice(0, s2) + "  " + val2.slice(e30);
-      ta.setSelectionRange(s2 + 2, s2 + 2);
+      if (isTextarea) {
+        _setNativeValue(ta, val2.slice(0, s2) + "  " + val2.slice(e30));
+        ta.setSelectionRange(s2 + 2, s2 + 2);
+      }
     } else if (key === "ArrowLeft") {
       const p = Math.max(0, s2 - 1);
       ta.setSelectionRange(p, p);
@@ -59879,9 +59994,9 @@ ${snippet}${JP_BTN_MARKER}`;
       const p = Math.min(val2.length, e30 + 1);
       ta.setSelectionRange(p, p);
     } else if (key === "ArrowUp" || key === "ArrowDown") {
-      _moveLine(ta, key === "ArrowUp" ? -1 : 1);
+      if (isTextarea) _moveLine(ta, key === "ArrowUp" ? -1 : 1);
     } else if (key.length === 1) {
-      ta.value = val2.slice(0, s2) + key + val2.slice(e30);
+      _setNativeValue(ta, val2.slice(0, s2) + key + val2.slice(e30));
       ta.setSelectionRange(s2 + 1, s2 + 1);
       if (_shift) {
         _shift = false;
@@ -62495,7 +62610,7 @@ ${snippet}${JP_BTN_MARKER}`;
     </div>
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
-      <li>press <kbd>\u2192</kbd> (Right Arrow)</li>
+      <li>press <kbd>\u2192</kbd> (Right Arrow) \u2014 or <kbd>\u2192</kbd> <kbd>\u2192</kbd> <kbd>\u2192</kbd> quickly if you're in a text field</li>
       <li>tick it in the <strong>\u2699</strong> menu (top-left)</li>
       <li class="${blocked ? "lg-blocked" : ""}">close your left eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
     </ul>
@@ -62512,13 +62627,24 @@ ${snippet}${JP_BTN_MARKER}`;
     const cb = document.getElementById("trussal-lg-mode-toggle");
     if (cb) cb.checked = _modeOn;
   }
+  var _arrowTaps = [];
   function _onKeydown(e30) {
     if (_modeOn) return;
     if (e30.key !== "ArrowRight" || e30.repeat || e30.defaultPrevented) return;
     const t = e30.target;
     const tag = t && t.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t && t.isContentEditable) return;
-    enableMode();
+    const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t && t.isContentEditable;
+    if (!inField) {
+      enableMode();
+      return;
+    }
+    const now = Date.now();
+    _arrowTaps = _arrowTaps.filter((ts) => now - ts < 800);
+    _arrowTaps.push(now);
+    if (_arrowTaps.length >= 3) {
+      _arrowTaps = [];
+      enableMode();
+    }
   }
   function init() {
     if (_booted) return;

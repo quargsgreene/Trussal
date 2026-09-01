@@ -226,7 +226,8 @@ let _cameraBlocked   = false; // getUserMedia / model load failed — enable pat
 let _headCursor      = false; // head cursor + dwell active (isHeadCursorEnabled)
 let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-gesture-mode)
 let _sharedWithHydra = false;
-let _leftEyeClosedSince = 0;
+let _leftEyeClosedSince   = 0;
+let _leftEyeOpenGraceUntil = 0; // tolerate a brief eyes-open flicker mid-hold
 
 // The live gesture map. Replaced wholesale by setGestureMappings(); starts as
 // the defaults so behaviour with no config call is exactly what it always was.
@@ -265,6 +266,10 @@ let _stickyEditor   = null;
 let _caretLocked    = false;
 let _caretEl        = null;
 let _caretAppliedAt = { x: -Infinity, y: -Infinity };
+// The field the head cursor most recently focused — kept outlined (see
+// .trussal-hc-focus) while it stays the on-screen keyboard's typing target,
+// so a hands-free performer can see where their keystrokes are going.
+let _hcFocusEl      = null;
 
 // Dwell-hoverable elements, refreshed on a throttle rather than re-querying the
 // whole document every animation frame (60fps). The JPattern editor card's
@@ -281,6 +286,44 @@ function _dwellCandidateEls(now) {
     ));
   }
   return _dwellCandidates;
+}
+
+// A meeting is up once largeVideoContainer has real size. Studio's dwell
+// buttons only exist then; before then (welcome / prejoin / lobby) there are
+// none, so the head cursor has nothing to click.
+function _inMeetingDom() {
+  const lv = document.getElementById('largeVideoContainer');
+  if (!lv) return false;
+  const r = lv.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+
+// Outside a meeting the head cursor doubles as a general dwell-to-click
+// pointer: a hands-free performer still has to work the welcome room-name
+// form, the prejoin Join button and the lobby "Ask to join" control, none of
+// which carry a Trussal dwell class. In a meeting this returns nothing — the
+// Studio-scoped list above stays the only source, so the cursor can't
+// surprise-click Jitsi's own toolbar.
+const GENERIC_DWELL_REFRESH_MS = 400;
+let _genericDwell   = [];
+let _genericDwellAt = -Infinity;
+function _genericDwellEls(now) {
+  if (_inMeetingDom()) { _genericDwell = []; return _genericDwell; }
+  if (now - _genericDwellAt >= GENERIC_DWELL_REFRESH_MS) {
+    _genericDwellAt = now;
+    _genericDwell = Array.from(document.querySelectorAll(
+      'button, [role="button"], a[href], summary, input[type="checkbox"], input[type="radio"]'
+    )).filter((el) => {
+      if (el.disabled) return false;
+      // The on-screen keyboard and the facial panel run their own dwell loops.
+      if (el.closest('#trussal-kbd-panel, #trussal-fg-panel')) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 4 && r.height > 4 &&
+             r.bottom > 0 && r.right > 0 &&
+             r.top < window.innerHeight && r.left < window.innerWidth;
+    });
+  }
+  return _genericDwell;
 }
 
 // ---------------------------------------------------------------------------
@@ -427,17 +470,23 @@ function _processGestures(blendshapes, gestureResult) {
   // ensures a double-blink never qualifies. Right blink is unmapped.
   const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
 
-  // enable gesture: left eye held shut (right open) for LEFT_EYE_HOLD_MS.
-  // _dispatchTrigger lets this through even while the rest of gesture
-  // detection is off — that is how the top-left instruction's "close your left
-  // eye for two seconds" works before opt-in.
-  if (isLeftBlink) {
-    if (_leftEyeClosedSince === 0) _leftEyeClosedSince = performance.now();
-    if (!_latch.leftEyeClosed2s && performance.now() - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
+  // enable gesture: left eye held shut (right open-ish) for LEFT_EYE_HOLD_MS.
+  // This is the ONLY way a performer with no physical keyboard or mouse can
+  // switch Landmark and Gesture Mode on before a meeting, so it has to be
+  // forgiving: a slightly looser closed/open pair than the sharp `leftBlink`
+  // action, and a short grace window so one flickered-open frame from
+  // MediaPipe's raw blendshape doesn't reset the whole 2s hold.
+  // _dispatchTrigger lets it through even while gesture actions are off.
+  const nowP = performance.now();
+  const leftEyeHeld = eyeBlinkL > 0.5 && eyeBlinkR < 0.45;
+  if (leftEyeHeld) {
+    if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
+    _leftEyeOpenGraceUntil = nowP + 250;
+    if (!_latch.leftEyeClosed2s && nowP - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
       _latch.leftEyeClosed2s = true;
       _dispatchTrigger('leftEyeClosed2s');
     }
-  } else {
+  } else if (nowP > _leftEyeOpenGraceUntil) {
     _leftEyeClosedSince = 0;
     _latch.leftEyeClosed2s = false;
   }
@@ -583,7 +632,7 @@ function _detectionLoop() {
   // Suppress our own dwell firing until it's dropped.
   if (isHeadDragActive()) {
     if (_dwell.el) {
-      _dwell.el.classList.remove('strudel-dwell-hover');
+      _dwell.el.classList.remove('strudel-dwell-hover', 'trussal-hc-dwell');
       if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
     }
     _dwell.key = null; _dwell.type = null; _dwell.el = null;
@@ -625,10 +674,24 @@ function _detectionLoop() {
     }
   }
 
+  // Nothing Trussal-owned under the cursor → on the welcome / prejoin / lobby
+  // screens fall back to any plain button / link / checkbox there. Keep the
+  // LAST match under the point so an inner control wins over its wrapper.
+  if (!hoveredEl) {
+    for (const el of _genericDwellEls(ts)) {
+      const r = el.getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        hoveredKey  = el;   // element identity is the dwell key
+        hoveredType = 'native';
+        hoveredEl   = el;
+      }
+    }
+  }
+
   const now = performance.now();
   if (hoveredKey !== _dwell.key || hoveredType !== _dwell.type) {
     if (_dwell.el) {
-      _dwell.el.classList.remove('strudel-dwell-hover');
+      _dwell.el.classList.remove('strudel-dwell-hover', 'trussal-hc-dwell');
       if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
     }
     _dwell.key     = hoveredKey;
@@ -642,14 +705,14 @@ function _detectionLoop() {
   if (hoveredKey && !_dwell.fired) {
     const progress = Math.min((now - _dwell.startMs) / DWELL_MS, 1);
     if (_dwell.el) {
-      _dwell.el.classList.add('strudel-dwell-hover');
+      _dwell.el.classList.add(_dwell.type === 'native' ? 'trussal-hc-dwell' : 'strudel-dwell-hover');
       if (_dwell.type === 'action') _dwell.el.style.setProperty('--dwell-prog', progress.toFixed(3));
     }
     if (_progressRing) _progressRing.style.strokeDashoffset = (RING_C * (1 - progress)).toFixed(2);
     if (progress >= 1) {
       _dwell.fired = true;
       if (_dwell.el) {
-        _dwell.el.classList.remove('strudel-dwell-hover');
+        _dwell.el.classList.remove('strudel-dwell-hover', 'trussal-hc-dwell');
         _dwell.el.classList.add('strudel-btn-active');
         if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
         setTimeout(() => _dwell.el?.classList.remove('strudel-btn-active'), 600);
@@ -661,6 +724,11 @@ function _detectionLoop() {
         toggleJPatternButtonCode(_dwell.key);
       } else if (_dwell.type === 'action') {
         if (_dwell.el) _dwell.el.click();
+      } else if (_dwell.type === 'native') {
+        if (_dwell.el && _dwell.el.isConnected) {
+          try { _dwell.el.focus({ preventScroll: true }); } catch {}
+          _dwell.el.click();
+        }
       }
     }
   }
@@ -689,17 +757,36 @@ function _isEditable(el) {
   return tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || el.isContentEditable === true;
 }
 
+// The Studio code editors (in a meeting) plus the three single-line fields a
+// hands-free performer meets before one: the welcome overlay's room-name box
+// (#trussal-room-input — Trussal's own, not Jitsi's), the prejoin display-name
+// input (#premeeting-name-input) and the lobby knock name field
+// (#lobby-name-field). Only one screen is ever mounted at a time.
 function _caretFollowCandidates() {
   const targets = Array.from(document.querySelectorAll('#trussal-studio-overlay textarea.ts-code'));
-  const premeeting = document.getElementById('premeeting-name-input');
-  if (premeeting) targets.push(premeeting);
-  const lobby = document.getElementById('lobby-name-field');
-  if (lobby) targets.push(lobby);
+  for (const id of ['trussal-room-input', 'premeeting-name-input', 'lobby-name-field']) {
+    const el = document.getElementById(id);
+    if (el) targets.push(el);
+  }
   return targets;
+}
+
+// Outline whichever field the head cursor is holding focus on, and only that
+// one. Jitsi's inputs suppress the native focus ring, so without this a
+// hands-free performer gets no feedback that a field is armed for the keyboard.
+function _setHcFocus(el) {
+  if (_hcFocusEl && _hcFocusEl !== el) _hcFocusEl.classList.remove('trussal-hc-focus');
+  _hcFocusEl = el || null;
+  // Re-assert every call, not just on change: React may strip an
+  // externally-added class on a re-render of a field it controls.
+  if (_hcFocusEl && !_hcFocusEl.classList.contains('trussal-hc-focus')) {
+    _hcFocusEl.classList.add('trussal-hc-focus');
+  }
 }
 
 function _followEditorCaret(cx, cy) {
   if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
+  if (!_stickyEditor) _setHcFocus(null);
   if (_stickyEditor && document.activeElement !== _stickyEditor &&
       !_isEditable(document.activeElement)) {
     _stickyEditor.focus({ preventScroll: true });
@@ -718,6 +805,10 @@ function _followEditorCaret(cx, cy) {
 
   if (document.activeElement !== over) over.focus({ preventScroll: true });
   _stickyEditor = over;
+  // Outline only the plain single-line fields (welcome / prejoin / lobby):
+  // the Studio .ts-code editors carry their own focus styling in a meeting,
+  // so leave that path visually untouched.
+  _setHcFocus(over.classList.contains('ts-code') ? null : over);
 
   if (_caretLocked) return;
 
@@ -813,6 +904,7 @@ function _stopCamera() {
   _headCursor = false;
   _gestures = false;
   _leftEyeClosedSince = 0;
+  _leftEyeOpenGraceUntil = 0;
   Object.assign(_ema, {
     jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
     mouthSmileLeft: 0, mouthSmileRight: 0,
@@ -827,6 +919,7 @@ function _stopCamera() {
   _stickyEditor = null;
   _caretLocked  = false;
   _caretEl      = null;
+  _setHcFocus(null);
   if (_cursorEl) _cursorEl.style.display = 'none';
   _syncPanelVisibility();
   _setStatus('idle');
@@ -896,6 +989,21 @@ function _injectStyles() {
     }
     #trussal-fg-toggle:hover { color:#eeeeee; background:#111111; }
     #trussal-fg-toggle.on    { color:#eeeeee; background:#111111; border-color:#111111; }
+
+    /* Head-cursor feedback on plain (non-Trussal) controls: the field it is
+       holding focus on, and the button/link it is currently dwelling. Jitsi's
+       own inputs and buttons suppress the focus ring, so state this loudly.
+       !important — these sit over Emotion class styles on the prejoin. */
+    .trussal-hc-focus {
+      outline: 2px solid #111111 !important;
+      outline-offset: 1px !important;
+      border-radius: 2px;
+    }
+    .trussal-hc-dwell {
+      outline: 2px solid #111111 !important;
+      outline-offset: 2px !important;
+      background: rgba(17,17,17,0.06) !important;
+    }
 
     .ts-dwell-btn {
       background: #eeeeee;
@@ -1033,8 +1141,16 @@ export function stopFacial() {
 /** Turn the head cursor + dwell on/off. Starts the camera if it needs to. */
 export function setHeadCursorEnabled(on) {
   _headCursor = !!on;
-  if (_headCursor) _ensureCameraRunning();
-  else if (_cursorEl) _cursorEl.style.display = 'none';
+  if (_headCursor) {
+    _ensureCameraRunning();
+  } else {
+    if (_cursorEl) _cursorEl.style.display = 'none';
+    // The detection loop stops running its head-cursor block the moment
+    // _headCursor is false, so it never gets to tidy these up itself.
+    _setHcFocus(null);
+    if (_dwell.el) _dwell.el.classList.remove('strudel-dwell-hover', 'trussal-hc-dwell');
+    _dwell.key = null; _dwell.type = null; _dwell.el = null; _dwell.fired = false;
+  }
   _syncPanelVisibility();
   _syncHydraShare();
 }

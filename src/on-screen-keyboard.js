@@ -27,21 +27,40 @@ const KBD_PANEL_ID  = 'trussal-kbd-panel';
 const KBD_TOGGLE_ID = 'trussal-kbd-toggle';
 const DWELL_MS      = 1000;
 
-// The two Jitsi-native name fields that live outside a meeting — the prejoin
-// screen's display-name input and the lobby knock screen's name field — are
-// the other typing targets the on-screen keyboard has to reach. They're why
-// Landmark and Gesture Mode holds the keyboard open standalone on those
-// screens (see setKeyboardStandalone below); without this a performer with no
-// physical keyboard could open the panel there but nothing they pressed would
-// land anywhere.
+// The single-line fields that live outside a meeting — Trussal's own welcome
+// overlay room-name box, the prejoin display-name input and the lobby knock
+// name field — are the other typing targets the on-screen keyboard has to
+// reach. They're why Landmark and Gesture Mode holds the keyboard open
+// standalone on those screens (see setKeyboardStandalone below); without this
+// a performer with no physical keyboard could open the panel there but nothing
+// they pressed would land anywhere.
+const WELCOME_ROOM_ID = 'trussal-room-input';
 const PREJOIN_NAME_ID = 'premeeting-name-input';
 const LOBBY_NAME_ID   = 'lobby-name-field';
+const NATIVE_FIELD_IDS = [WELCOME_ROOM_ID, PREJOIN_NAME_ID, LOBBY_NAME_ID];
 
 function _isTypingTarget(el) {
   return !!el && (
     (el.classList && el.classList.contains('ts-code')) ||
-    el.id === PREJOIN_NAME_ID || el.id === LOBBY_NAME_ID
+    NATIVE_FIELD_IDS.includes(el.id)
   );
+}
+
+// The prejoin and lobby name fields are React-controlled: assigning `.value`
+// directly and firing `input` does nothing, because React's value tracker
+// already recorded the new string via its own setter override and so sees no
+// change to forward to onChange — React then reverts the DOM on its next
+// render and the Join button never enables. Writing through the native
+// prototype setter leaves the tracker stale, so the `input` event registers
+// as a real change. Trussal's own welcome overlay input is a plain uncontrolled
+// field, where this is simply equivalent to `el.value = v`.
+function _setNativeValue(el, value) {
+  const proto = el instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (desc && desc.set) desc.set.call(el, value);
+  else el.value = value;
 }
 
 // ── Layout (total = 14.5 flex-units per row) ────────────────────────────────────
@@ -124,8 +143,10 @@ function _getTA() {
   _lastTA = null;
   return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)')
       || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)')
-      // Studio only mounts in a meeting, which is exactly when neither of
-      // these Jitsi-native name fields exists — never both fallbacks at once.
+      // Studio only mounts in a meeting, which is exactly when none of these
+      // single-line fields exists — never a Studio editor and one of these
+      // at once.
+      || document.getElementById(WELCOME_ROOM_ID)
       || document.getElementById(PREJOIN_NAME_ID)
       || document.getElementById(LOBBY_NAME_ID);
 }
@@ -171,7 +192,7 @@ function _insertCompletion(word) {
   const pos    = ta.selectionStart ?? ta.value.length;
   const prefix = wordPrefixAt(ta.value, pos);
   const start  = pos - prefix.length;
-  ta.value = ta.value.slice(0, start) + word + ta.value.slice(pos);
+  _setNativeValue(ta, ta.value.slice(0, start) + word + ta.value.slice(pos));
   ta.setSelectionRange(start + word.length, start + word.length);
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   _updatePredictions();
@@ -249,33 +270,50 @@ function _typeKey(key) {
   const e   = ta.selectionEnd   ?? ta.value.length;
   const val = ta.value;
 
+  const isTextarea = ta.tagName === 'TEXTAREA';
+
   if (key === 'Backspace') {
     if (s !== e) {
-      ta.value = val.slice(0, s) + val.slice(e);
+      _setNativeValue(ta, val.slice(0, s) + val.slice(e));
       ta.setSelectionRange(s, s);
     } else if (s > 0) {
-      ta.value = val.slice(0, s - 1) + val.slice(s);
+      _setNativeValue(ta, val.slice(0, s - 1) + val.slice(s));
       ta.setSelectionRange(s - 1, s - 1);
     }
   } else if (key === 'Enter') {
-    // A single-line <input> (the prejoin/lobby name fields) doesn't accept a
-    // newline — matches what a physical Enter key does there and keeps one
-    // from getting silently embedded in a display name.
-    if (ta.tagName === 'TEXTAREA') {
-      ta.value = val.slice(0, s) + '\n' + val.slice(e);
+    if (isTextarea) {
+      _setNativeValue(ta, val.slice(0, s) + '\n' + val.slice(e));
       ta.setSelectionRange(s + 1, s + 1);
+    } else {
+      // A single-line field (welcome room name, prejoin / lobby name) takes
+      // no newline. Mimic a physical Enter so the screen's own submit-on-Enter
+      // handler runs — that's the hands-free performer's way off this screen.
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.dispatchEvent(new Event('change', { bubbles: true }));
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        ta.dispatchEvent(new KeyboardEvent(type, {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+        }));
+      }
+      if (ta.form && typeof ta.form.requestSubmit === 'function') {
+        try { ta.form.requestSubmit(); } catch { ta.form.submit(); }
+      }
+      _updatePredictions();
+      return;
     }
   } else if (key === 'Tab') {
-    ta.value = val.slice(0, s) + '  ' + val.slice(e);
-    ta.setSelectionRange(s + 2, s + 2);
+    if (isTextarea) {
+      _setNativeValue(ta, val.slice(0, s) + '  ' + val.slice(e));
+      ta.setSelectionRange(s + 2, s + 2);
+    }
   } else if (key === 'ArrowLeft') {
     const p = Math.max(0, s - 1); ta.setSelectionRange(p, p);
   } else if (key === 'ArrowRight') {
     const p = Math.min(val.length, e + 1); ta.setSelectionRange(p, p);
   } else if (key === 'ArrowUp' || key === 'ArrowDown') {
-    _moveLine(ta, key === 'ArrowUp' ? -1 : 1);
+    if (isTextarea) _moveLine(ta, key === 'ArrowUp' ? -1 : 1);
   } else if (key.length === 1) {
-    ta.value = val.slice(0, s) + key + val.slice(e);
+    _setNativeValue(ta, val.slice(0, s) + key + val.slice(e));
     ta.setSelectionRange(s + 1, s + 1);
     if (_shift) { _shift = false; _renderModState(); }
   }
