@@ -1,0 +1,14 @@
+results/
+figures_out/
+media/seeds/*.y4m
+media/seeds/*.wav
+media/seeds/*.ivf
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+*.log
+browsers/
+tools/proxmox/vmmap.env
+tools/proxmox/templates.env
+config/inventory.yaml
