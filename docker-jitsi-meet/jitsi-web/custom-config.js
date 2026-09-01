@@ -124,12 +124,16 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const newLocal = readLocal();
     if (!newLocal) {
       if (local) {
+        missingLocalTicks += 1;
+        if (missingLocalTicks < LOCAL_LEAVE_CONFIRM_TICKS) return;
         const left2 = local;
         local = null;
+        missingLocalTicks = 0;
         emit("local-leave", left2);
       }
       return;
     }
+    missingLocalTicks = 0;
     if (!local || local.id !== newLocal.id) {
       local = newLocal;
       emit("local", local);
@@ -205,12 +209,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
     return null;
   }
-  var subscribers, local, remotes, pollTimer;
+  var subscribers, local, remotes, LOCAL_LEAVE_CONFIRM_TICKS, missingLocalTicks, pollTimer;
   var init_participants = __esm({
     "src/participants.js"() {
       subscribers = /* @__PURE__ */ new Set();
       local = null;
       remotes = /* @__PURE__ */ new Map();
+      LOCAL_LEAVE_CONFIRM_TICKS = 6;
+      missingLocalTicks = 0;
       pollTimer = null;
       startPolling();
     }

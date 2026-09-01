@@ -539,6 +539,22 @@ div.hangup-menu-button svg {
   color: var(--trussal-secondary, #111111) !important;
 }
 
+/* Breakout-rooms list: the room names, the per-room participant-count text
+   ("N participants") and each participant row inside `#breakout-rooms-list` are
+   drawn by Jitsi's own component CSS in near-white (`theme.palette.text01`) —
+   one class each (0,1,0), so the global `html, body, body *` default can't
+   reach them and they stay pale on the flat pane. Sweep the whole subtree to
+   #111 like the pane heading above. `#breakout-rooms-list` is the stable
+   wrapper id (RoomList.tsx); `.breakout-room-container` is the stable class on
+   each collapsible room row (CollapsibleRoom.tsx), kept as a hedge in case the
+   list wrapper is ever restructured. */
+#breakout-rooms-list,
+#breakout-rooms-list *,
+.breakout-room-container,
+.breakout-room-container * {
+  color: var(--trussal-secondary, #111111) !important;
+}
+
 /* Text inputs / selects inside those panels ship `#3d3d3d` + white text. */
 #participants-search-input,
 #chat-input-messagebox,

@@ -6,6 +6,19 @@ const subscribers = new Set();
 let local = null;
 const remotes = new Map();
 
+// A single null read of the local participant is NOT a departure. Jitsi tears
+// down and rebuilds APP.conference for transient reasons that are not a
+// hangup — most visibly moving into or out of a breakout room, where the
+// client leaves the main MUC and joins the breakout MUC with a multi-second
+// gap during which getMyUserId() is null (a P2P<->JVB flip or a bridge
+// reconnect looks identical, just briefer). 'local-leave' is irreversible for
+// subscribers (meeting.js navigates the whole page to the lobby; peer-state
+// closes its sidecar socket), so require the absence to hold across several
+// consecutive polls before treating it as real. A breakout switch / reconnect
+// repopulates APP.conference well within this window and never fires the event.
+const LOCAL_LEAVE_CONFIRM_TICKS = 6; // ~6s at the 1s poll interval
+let missingLocalTicks = 0;
+
 function emit(event, payload) {
   subscribers.forEach(fn => {
     try { fn(event, payload); } catch (e) { console.warn('[participants] subscriber threw', e); }
@@ -59,17 +72,25 @@ function tick() {
   const newLocal = readLocal();
   if (!newLocal) {
     // We were in a conference and now read as absent (APP.conference torn
-    // down or getMyUserId() gone null): a genuine local departure, e.g. an
-    // in-app hangup that leaves the tab open on a post-call/welcome screen
-    // rather than closing or reloading it. Reset so a same-tab rejoin is
-    // treated as a fresh 'local' join (below) instead of silently ignored.
+    // down or getMyUserId() gone null). This is a genuine local departure —
+    // an in-app hangup that leaves the tab open on a post-call/welcome screen
+    // rather than closing or reloading it — ONLY if it persists: a breakout
+    // room switch (and other transient teardowns) reads the same way for a
+    // few seconds before the new conference is joined. Hold off until the
+    // absence has survived LOCAL_LEAVE_CONFIRM_TICKS consecutive polls, then
+    // reset so a same-tab rejoin is treated as a fresh 'local' join (below)
+    // instead of silently ignored.
     if (local) {
+      missingLocalTicks += 1;
+      if (missingLocalTicks < LOCAL_LEAVE_CONFIRM_TICKS) return;
       const left = local;
       local = null;
+      missingLocalTicks = 0;
       emit('local-leave', left);
     }
     return;
   }
+  missingLocalTicks = 0;
 
   if (!local || local.id !== newLocal.id) {
     local = newLocal;
