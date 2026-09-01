@@ -100,6 +100,21 @@ class CampaignShape(LoadTestShape):
                              population=population_for(level), target=self._ctx.target_name,
                              turn_mode=self._ctx.turn_mode)
 
+        # Restrict spawning to the classes this scenario/level actually wants.
+        # A bare (count, rate) tick lets locust spread `count` across EVERY
+        # registered User class by weight, so BotOperatorUser /
+        # MetaprogramEditorUser / ChurnUser spawn where they were never asked
+        # for (and BotOperatorUser then dies in on_start). The 3-tuple form
+        # limits the set; weights (set in locustfile from population_for) fix
+        # the ratio within it.
+        pop = population_for(level)
         user_count = total_users_for(level)
         spawn_rate = max(1.0, user_count / max(1.0, _RAMP_SETTLE_S / 4))
+        try:
+            active = [c for c in self.runner.environment.user_classes
+                      if pop.get(c.__name__, 0) > 0]
+            if active:
+                return (user_count, spawn_rate, active)
+        except Exception:
+            pass
         return (user_count, spawn_rate)

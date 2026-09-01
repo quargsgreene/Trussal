@@ -279,7 +279,7 @@ class BotOperatorUser(User):
         self.spawned = 0
         self._pending_since = None
         self._batch = int(SCEN.get("spawn_batch", 4))
-        self.n_ops = max(1, _state.OPERATORS)
+        self.n_ops = max(1, _state.OPERATOR_COUNT)
         self.client_sc = SidecarClient(
             CTX.sidecar_url(ROOM, "player"), display_name=self.name,
             stable_id=uuid.uuid4().hex, on_event=self._ev, name=self.name,
@@ -593,3 +593,33 @@ class ChurnUser(User):
     def on_stop(self):
         self._stop = True
         self.sink.close()
+
+
+# --------------------------------------------------------------------------- #
+# Per-scenario class weights, from _state.population_for(). Within a scenario
+# the ratio between classes is constant across steps (S1 is always 1 human : N
+# ghosts, S3 is always FIXED_HUMANS humans : 1 editor, ...), so one weighting
+# derived from the top step level holds for the whole run. CampaignShape.tick()
+# then returns (count, rate, active_classes) and locust splits `count` by these
+# weights — the only per-step mechanism locust's dispatcher honours (mutating
+# `fixed_count` mid-run does not take effect after the first spawn).
+def _apply_scenario_weights():
+    classes = {
+        "SidecarGhostUser": SidecarGhostUser,
+        "HumanParticipantUser": HumanParticipantUser,
+        "BotOperatorUser": BotOperatorUser,
+        "MetaprogramEditorUser": MetaprogramEditorUser,
+        "ChurnUser": ChurnUser,
+    }
+    try:
+        top_level = max((int(s["level"]) for s in _state.STEPS), default=1)
+        mix = _state.population_for(top_level)
+        unit = min((c for c in mix.values() if c > 0), default=1)
+    except Exception:
+        return
+    for name, cls in classes.items():
+        n = mix.get(name, 0)
+        cls.weight = max(1, round(n / unit)) if n else 1
+
+
+_apply_scenario_weights()
