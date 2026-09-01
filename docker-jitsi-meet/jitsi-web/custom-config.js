@@ -38528,7 +38528,8 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     const existing = findLocalJitsiAudioTrack();
     if (existing && typeof existing.setEffect === "function") return existing;
     if (strudelTrackAcquiring) return null;
-    if (Date.now() - strudelTrackAcquireAt < STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS) return null;
+    const cooldown = strudelPublishBackoff ? STRUDEL_TRACK_ACQUIRE_BACKOFF_MS : STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS;
+    if (Date.now() - strudelTrackAcquireAt < cooldown) return null;
     strudelTrackAcquiring = true;
     strudelTrackAcquireAt = Date.now();
     try {
@@ -38538,23 +38539,46 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           await conf.muteAudio(false);
         } catch (e30) {
         }
-        const t = await pollForLocalAudioTrack(2500);
-        if (t) return t;
+        const t = await pollForLocalAudioTrack(2e3);
+        if (t) {
+          strudelPublishBackoff = false;
+          return t;
+        }
       }
-      if (window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === "function") {
+      if (audioCtx && masterStrudelGain && window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === "function") {
+        if (!strudelSynthDest) {
+          strudelSynthDest = audioCtx.createMediaStreamDestination();
+          try {
+            masterStrudelGain.connect(strudelSynthDest);
+          } catch (e30) {
+          }
+        }
+        const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (c2 = {}) => c2 && c2.audio && !c2.video && strudelSynthDest ? strudelSynthDest.stream : realGUM(c2);
+        let at2 = null;
         try {
           const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ["audio"] });
-          const at2 = tracks && tracks[0];
-          if (at2 && conf) {
+          at2 = tracks && tracks[0];
+        } catch (e30) {
+          console.warn("[latency] strudel publish: synthetic-track create failed", e30);
+        } finally {
+          navigator.mediaDevices.getUserMedia = realGUM;
+        }
+        if (at2 && conf) {
+          try {
             if (typeof conf.useAudioStream === "function") await conf.useAudioStream(at2);
             else if (conf._room && typeof conf._room.addTrack === "function") await conf._room.addTrack(at2);
+          } catch (e30) {
+            console.warn("[latency] strudel publish: useAudioStream failed", e30);
           }
-        } catch (e30) {
-          console.warn("[latency] strudel publish: createLocalTracks fallback failed", e30);
         }
         const t = await pollForLocalAudioTrack(2500);
-        if (t) return t;
+        if (t) {
+          strudelPublishBackoff = false;
+          return t;
+        }
       }
+      strudelPublishBackoff = true;
     } finally {
       strudelTrackAcquiring = false;
     }
@@ -38591,7 +38615,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     if (!track || typeof track.setEffect !== "function") {
       if (!strudelPublishWarned) {
-        console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track; retrying");
+        console.warn("[latency] cannot publish local Strudel to room yet \u2014 no local Jitsi audio track (mic blocked and synthetic publish did not take); retrying");
         strudelPublishWarned = true;
       }
       ensureStrudelPublishGuard();
@@ -38614,6 +38638,14 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   async function unpublishLocalStrudelFromRoom() {
     stopStrudelPublishRetry();
     strudelPublishWarned = false;
+    strudelPublishBackoff = false;
+    if (strudelSynthDest) {
+      try {
+        masterStrudelGain && masterStrudelGain.disconnect(strudelSynthDest);
+      } catch (e30) {
+      }
+      strudelSynthDest = null;
+    }
     if (!strudelRoomEffect) return;
     const s2 = strudelRoomEffect;
     strudelRoomEffect = null;
@@ -38661,7 +38693,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -38797,7 +38829,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       strudelTrackAcquiring = false;
       strudelTrackAcquireAt = 0;
       strudelPublishWarned = false;
+      strudelSynthDest = null;
+      strudelPublishBackoff = false;
       STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS = 8e3;
+      STRUDEL_TRACK_ACQUIRE_BACKOFF_MS = 3e4;
       if (typeof window !== "undefined") {
         window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
         window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;

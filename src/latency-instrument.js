@@ -964,7 +964,10 @@ let strudelPublishRetryTimer = null; // aggregator-mode publish guard interval
 let strudelTrackAcquiring = false;   // acquireLocalAudioTrackForStrudel() in flight
 let strudelTrackAcquireAt = 0;       // epoch ms of the last acquisition attempt
 let strudelPublishWarned = false;    // "no local track" logged once per outage
+let strudelSynthDest = null;         // MediaStreamAudioDestinationNode feeding the published Strudel track (no mic)
+let strudelPublishBackoff = false;   // last acquisition failed outright — poll slowly, not every 8s
 const STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS = 8000;
+const STRUDEL_TRACK_ACQUIRE_BACKOFF_MS = 30000;
 
 function stopStrudelPublishRetry() {
   if (strudelPublishRetryTimer) { clearInterval(strudelPublishRetryTimer); strudelPublishRetryTimer = null; }
@@ -986,50 +989,70 @@ function pollForLocalAudioTrack(timeoutMs) {
   });
 }
 
-// A performer who lives in the Strudel editor never unmutes their mic, so no
-// local Jitsi audio track is ever created — and the aggregator's master, which
-// is one performer per slot, then streams dead air for their turn. Acquire a
-// track ourselves the way a bot does (bots/src/bot/page-scripts.js
-// pageEnsureAudioPublished): ask jitsi-meet to unmute (fires a gUM and
-// publishes the result); if that yields nothing, build the track directly and
-// hand it to the conference. The mic audio never reaches the room — the caller
-// attaches NodeOutputEffect the instant the track appears, replacing it with
-// masterStrudelGain, and in aggregator mode every other client already holds
-// this performer's chain gain at 0 — but the OS mic-activity light does come
-// on, so this only runs with an aggregator present (every caller of
-// publishLocalStrudelToRoom guarantees that). Rate-limited: the publish guard
-// re-fires every second, and unmute + createLocalTracks must not.
+// A performer who lives in the Strudel editor never unmutes their mic — and
+// often has it hard-blocked (Chrome then fails getUserMedia with NotAllowedError
+// and no prompt). Either way no local Jitsi audio track exists, so the
+// aggregator's master (one performer per slot) streams dead air for their turn.
+// Get a track without needing a working microphone:
+//   1. If mic permission IS granted, the cheapest path is to let jitsi-meet
+//      unmute — it runs the gUM and adds+signals the track itself.
+//   2. Otherwise publish a permission-free MediaStreamAudioDestinationNode
+//      carrying masterStrudelGain as the local audio track. It goes through
+//      createLocalTracks (the path jitsi wraps in a JitsiLocalTrack and
+//      renegotiates itself) via a getUserMedia shim scoped to that one call —
+//      the same substitution the bots' pageAudioBridge makes permanently.
+// The published track carries only Strudel: the caller then attaches
+// NodeOutputEffect (masterStrudelGain), and in aggregator mode every other
+// client holds this performer's chain gain at 0. Runs only with an aggregator
+// present (every caller of publishLocalStrudelToRoom guarantees that).
+// Rate-limited because the publish guard re-fires every second.
 async function acquireLocalAudioTrackForStrudel() {
   const existing = findLocalJitsiAudioTrack();
   if (existing && typeof existing.setEffect === 'function') return existing;
   if (strudelTrackAcquiring) return null;
-  if (Date.now() - strudelTrackAcquireAt < STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS) return null;
+  const cooldown = strudelPublishBackoff ? STRUDEL_TRACK_ACQUIRE_BACKOFF_MS : STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS;
+  if (Date.now() - strudelTrackAcquireAt < cooldown) return null;
   strudelTrackAcquiring = true;
   strudelTrackAcquireAt = Date.now();
   try {
     const conf = window.APP && window.APP.conference;
-    // 1) Unmute. If the track was muted or never created, jitsi-meet runs a gUM
-    //    and adds the resulting track to the conference.
+    // 1) Mic permission granted → jitsi-meet's own unmute is simplest.
     if (conf && typeof conf.muteAudio === 'function') {
-      try { await conf.muteAudio(false); } catch (e) { /* fall through to (2) */ }
-      const t = await pollForLocalAudioTrack(2500);
-      if (t) return t;
+      try { await conf.muteAudio(false); } catch (e) { /* denied — fall through to (2) */ }
+      const t = await pollForLocalAudioTrack(2000);
+      if (t) { strudelPublishBackoff = false; return t; }
     }
-    // 2) Fallback: create the track ourselves and give it to the conference.
-    if (window.JitsiMeetJS && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+    // 2) No track (mic muted or blocked) → publish a synthetic Strudel track.
+    if (audioCtx && masterStrudelGain && window.JitsiMeetJS
+        && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
+      if (!strudelSynthDest) {
+        strudelSynthDest = audioCtx.createMediaStreamDestination();
+        try { masterStrudelGain.connect(strudelSynthDest); } catch (e) {}
+      }
+      const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = async (c = {}) =>
+        (c && c.audio && !c.video && strudelSynthDest) ? strudelSynthDest.stream : realGUM(c);
+      let at = null;
       try {
         const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
-        const at = tracks && tracks[0];
-        if (at && conf) {
+        at = tracks && tracks[0];
+      } catch (e) {
+        console.warn('[latency] strudel publish: synthetic-track create failed', e);
+      } finally {
+        navigator.mediaDevices.getUserMedia = realGUM; // restore before anything else can gUM
+      }
+      if (at && conf) {
+        try {
           if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
           else if (conf._room && typeof conf._room.addTrack === 'function') await conf._room.addTrack(at);
+        } catch (e) {
+          console.warn('[latency] strudel publish: useAudioStream failed', e);
         }
-      } catch (e) {
-        console.warn('[latency] strudel publish: createLocalTracks fallback failed', e);
       }
       const t = await pollForLocalAudioTrack(2500);
-      if (t) return t;
+      if (t) { strudelPublishBackoff = false; return t; }
     }
+    strudelPublishBackoff = true; // nothing took — slow the retry down
   } finally {
     strudelTrackAcquiring = false;
   }
@@ -1079,14 +1102,15 @@ export async function publishLocalStrudelToRoom() {
   if (!masterStrudelGain) return false;
   let track = findLocalJitsiAudioTrack();
   if (!track || typeof track.setEffect !== 'function') {
-    // A performer using Strudel as their instrument never unmutes, so there is
-    // no track to attach to. Acquire one (unmute → gUM, or build it directly)
+    // A performer using Strudel as their instrument never unmutes (and may have
+    // the mic blocked), so there is no track to attach to. Acquire one — jitsi's
+    // unmute if the mic is available, else a synthetic Strudel-only track —
     // rather than waiting forever for a mic gesture that never comes.
     track = await acquireLocalAudioTrackForStrudel();
   }
   if (!track || typeof track.setEffect !== 'function') {
     if (!strudelPublishWarned) {
-      console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track; retrying');
+      console.warn('[latency] cannot publish local Strudel to room yet — no local Jitsi audio track (mic blocked and synthetic publish did not take); retrying');
       strudelPublishWarned = true;
     }
     ensureStrudelPublishGuard();
@@ -1112,6 +1136,11 @@ export async function publishLocalStrudelToRoom() {
 export async function unpublishLocalStrudelFromRoom() {
   stopStrudelPublishRetry(); // aggregator gone (or never published) — stop waiting for the mic
   strudelPublishWarned = false; // next aggregator re-arms the one-shot warning
+  strudelPublishBackoff = false;
+  if (strudelSynthDest) {
+    try { masterStrudelGain && masterStrudelGain.disconnect(strudelSynthDest); } catch (e) {}
+    strudelSynthDest = null;
+  }
   if (!strudelRoomEffect) return;
   const s = strudelRoomEffect;
   strudelRoomEffect = null;
