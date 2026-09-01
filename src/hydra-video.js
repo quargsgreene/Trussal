@@ -351,7 +351,7 @@ function _injectStyles() {
   s.textContent = `
     #${PANEL_ID} {
       position:fixed; top:64px; right:16px; z-index:1000000;
-      background:#ffffff; color:#111111;
+      background:#eeeeee; color:#111111;
       border:1px solid #111111; border-radius:10px;
       font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:300px;
@@ -366,12 +366,12 @@ function _injectStyles() {
     #${PANEL_ID} .hv-mode-btn {
       flex:1; padding:3px 0; border-radius:4px;
       border:1px solid #111111;
-      background:#ffffff; color:#111111;
+      background:#eeeeee; color:#111111;
       font-size:11px; cursor:pointer; text-align:center;
       transition:background 0.15s, color 0.15s;
     }
     #${PANEL_ID} .hv-mode-btn.on {
-      background:#111111; color:#ffffff;
+      background:#111111; color:#eeeeee;
       border-color:#111111;
     }
     #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
@@ -386,14 +386,14 @@ function _injectStyles() {
     #${PANEL_ID} .hv-status { font-size:10px; color:#111111; line-height:1.5; }
 
     #${TOGGLE_ID} {
-      background:#ffffff; border:1px solid #111111;
+      background:#eeeeee; border:1px solid #111111;
       cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
       font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
     }
-    #${TOGGLE_ID}:hover { color:#ffffff; background:#111111; }
-    #${TOGGLE_ID}.on { color:#ffffff; background:#111111; border-color:#111111; }
+    #${TOGGLE_ID}:hover { color:#eeeeee; background:#111111; }
+    #${TOGGLE_ID}.on { color:#eeeeee; background:#111111; border-color:#111111; }
   `;
   document.head.appendChild(s);
 }

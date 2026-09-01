@@ -198,19 +198,19 @@ function patchPrejoinButton() {
       // re-render that clears the inline style.
       btn.style.setProperty('background', '#111111', 'important');
       btn.style.setProperty('background-color', '#111111', 'important');
-      btn.style.setProperty('color', '#ffffff', 'important');
+      btn.style.setProperty('color', '#eeeeee', 'important');
       btn.style.setProperty('border', '1px solid #111111', 'important');
-      btn.querySelectorAll('*').forEach((c) => c.style.setProperty('color', '#ffffff', 'important'));
+      btn.querySelectorAll('*').forEach((c) => c.style.setProperty('color', '#eeeeee', 'important'));
       btn.querySelectorAll('svg').forEach((svg) =>
-        svg.style.setProperty('fill', '#ffffff', 'important')
+        svg.style.setProperty('fill', '#eeeeee', 'important')
       );
     }
 
     // The amber "you need to enable microphone and camera access" pill
     // (`css-<hash>-deviceStatus device-status-error`) — flatten it too.
     for (const el of document.querySelectorAll('[class*="deviceStatus"]')) {
-      el.style.setProperty('background', '#ffffff', 'important');
-      el.style.setProperty('background-color', '#ffffff', 'important');
+      el.style.setProperty('background', '#eeeeee', 'important');
+      el.style.setProperty('background-color', '#eeeeee', 'important');
       el.style.setProperty('color', '#111111', 'important');
       el.style.setProperty('border', '1px solid #111111', 'important');
     }

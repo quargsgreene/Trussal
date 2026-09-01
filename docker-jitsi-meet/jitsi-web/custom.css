@@ -319,7 +319,7 @@ button.action-btn,
 [class*="dropdownContainer"] [class*="options"]:hover {
   background: #111111 !important;
   background-color: #111111 !important;
-  color: #ffffff !important;
+  color: #eeeeee !important;
   border: 1px solid #111111 !important;
 }
 [class*="actionButton"] *,
@@ -329,8 +329,8 @@ button.action-btn,
 [class*="dropdownContainer"] [class*="options"] path,
 .action-btn svg,
 .premeeting-screen .action-btn .icon > svg {
-  color: #ffffff !important;
-  fill: #ffffff !important;
+  color: #eeeeee !important;
+  fill: #eeeeee !important;
   background: transparent !important;
   background-color: transparent !important;
 }
@@ -430,7 +430,7 @@ div.hangup-menu-button svg {
   background-color: #111111 !important;
 }
 .toolbox-icon.toggled svg {
-  fill: #ffffff !important;
+  fill: #eeeeee !important;
 }
 
 
@@ -554,14 +554,14 @@ div.hangup-menu-button svg {
 #participants-pane [class*="-button-primary"] {
   background: #111111 !important;
   background-color: #111111 !important;
-  color: #ffffff !important;
+  color: #eeeeee !important;
   border: 1px solid #111111 !important;
 }
 [class*="-button-primary"] svg,
 [class*="-button-primary"] path,
 #modal-dialog-ok-button svg {
-  fill: #ffffff !important;
-  color: #ffffff !important;
+  fill: #eeeeee !important;
+  color: #eeeeee !important;
 }
 [class*="-button-secondary"],
 [class*="-button-tertiary"],
@@ -572,12 +572,61 @@ div.hangup-menu-button svg {
   border: 1px solid #111111 !important;
 }
 
-/* Context-menu / overflow-menu / settings-tab items: #111 text by default
-   (this rule first, so the selected-state invert below wins over it). */
-.settings-dialog [role="tab"],
+/* Context-menu / overflow-menu / settings-tab items AND every scrap of text
+   inside a flattened dialog: #111 by default. The Settings dialog ships a lot
+   of body copy — field labels, checkbox captions, the "More"/"Profile" notes,
+   the "Permission not granted" slab caption — in white or a pale grey for its
+   dark design, at an Emotion specificity the global `html, body, body *`
+   default can't reach (`-text-textContainer`, `-formControl-…-check`,
+   `-textSelector`, …). One broad sweep is simpler than chasing each hash.
+   This block sits BEFORE the selected-state inverts below, and the
+   end-of-file descendant restore re-lightens text that lands on one of the
+   #111 pills, so an inverted row's own label stays legible. */
+.settings-dialog,
+.settings-dialog *,
+[class*="-modal-dialog"] *,
+[class*="-modalContent"] *,
+[class*="-dialogContainer"] *,
 [class*="-contextMenuItem"],
 [class*="-overflowMenuDrawer"] [role="button"] {
   color: #111111 !important;
+}
+
+/* The "Permission not granted" camera/mic slab in Settings is `-textSelector`
+   (an earlier guess at `-preview` never matched) — solid black by default. */
+.settings-dialog [class*="-textSelector"],
+[class*="-textSelector"] {
+  background: #eeeeee !important;
+  background-color: #eeeeee !important;
+  color: #111111 !important;
+}
+
+/* Hovering a settings-dialog row / sidebar tab, an overflow-menu item, or the
+   welcome-page settings gear inverts it to the same solid #111 pill the
+   selected state already uses (glyph + label #eee) — the theme's one
+   hover/selected treatment, matching a toggled toolbar icon. `:not(-selected)`
+   keeps this off the already-inverted current tab so nothing double-applies. */
+.settings-dialog [role="tab"]:hover,
+[class*="-contextMenuItem"]:not([class*="-selected"]):hover,
+[class*="-overflowMenuDrawer"] [role="button"]:hover,
+.welcome-page-settings:hover,
+.welcome-page-settings .toolbox-icon:hover,
+.welcome-page-settings .toolbox-button:hover {
+  background: #111111 !important;
+  background-color: #111111 !important;
+  color: #eeeeee !important;
+  border-color: #111111 !important;
+}
+.settings-dialog [role="tab"]:hover *,
+[class*="-contextMenuItem"]:not([class*="-selected"]):hover *,
+.welcome-page-settings:hover svg,
+.welcome-page-settings:hover path,
+.welcome-page-settings .toolbox-icon:hover svg,
+.welcome-page-settings .toolbox-icon:hover path {
+  color: #eeeeee !important;
+  fill: #eeeeee !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 /* Chat / polls tab strip: keep it light, mark the active tab with a rule
@@ -602,7 +651,7 @@ div.hangup-menu-button svg {
 .settings-dialog [role="tab"][aria-selected="true"] {
   background: #111111 !important;
   background-color: #111111 !important;
-  color: #ffffff !important;
+  color: #eeeeee !important;
   border-color: #111111 !important;
 }
 
@@ -676,21 +725,23 @@ svg[class*="trash_svg__"] path,
   color: #111111 !important;
 }
 
-/* …then restore white only where the surface underneath was inverted to
-   #111 (primary buttons, the selected settings-sidebar tab). Listed after
-   the block above so it wins at equal specificity. */
-[class*="-button-primary"] svg,
-[class*="-button-primary"] path,
-#modal-dialog-ok-button svg,
-#modal-dialog-ok-button path,
-#participants-pane [class*="-button-primary"] svg,
-#participants-pane [class*="-button-primary"] path,
-[class*="-contextMenuItem-selected"] svg,
-[class*="-contextMenuItem-selected"] path,
-.settings-dialog [role="tab"][aria-selected="true"] svg,
-.settings-dialog [role="tab"][aria-selected="true"] path {
-  fill: #ffffff !important;
-  color: #ffffff !important;
+/* …then restore the light tone on EVERY descendant of a surface that was
+   inverted to #111 — the primary button, the selected settings-sidebar tab,
+   the selected context-menu row. Not just svg/path: a label lives in a
+   `<span>` / `-text-textContainer`, and the global `background-color:#eeeeee`
+   otherwise paints an #eee box behind that span on the black pill (the "OK"
+   button read as a light chip). Force the text light and the child
+   background transparent. The inverted element ITSELF is not listed here —
+   it keeps its #111 fill from the invert rules above; only its children. */
+[class*="-button-primary"] *,
+#modal-dialog-ok-button *,
+#participants-pane [class*="-button-primary"] *,
+[class*="-contextMenuItem-selected"] *,
+.settings-dialog [role="tab"][aria-selected="true"] * {
+  fill: #eeeeee !important;
+  color: #eeeeee !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 /* The Trussal room-name overlay is `position:fixed; z-index:9999`, so it
@@ -726,4 +777,58 @@ body:has(.modal-dialog) #trussal-welcome-overlay {
   background: transparent !important;
   background-image: none !important;
   background-color: transparent !important;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * In-call: dominant-speaker ring, raised-hand ring/badge, and text
+ * selection — the last coloured accents Jitsi ships, all pulled onto
+ * the flat #111 / #eee scheme.
+ *
+ * The thumbnail component (app.bundle.min.js) paints two overlay divs
+ * per tile and rings them with an `!important` box-shadow off its
+ * palette: `.active-speaker-indicator` at `action01Hover` (a blue) and
+ * `.raised-hand-border` at `warning02` (amber). The class names are
+ * plain, not hashed. To beat Jitsi's own `.css-<hash>-activeSpeaker
+ * .active-speaker-indicator` (0,2,0 + !important, injected at runtime so
+ * it wins source-order ties) these qualify with `.videocontainer` AND a
+ * `div` type, landing at (0,2,1). Same "defeat upstream component CSS"
+ * exception as the video-transparency block above.
+ * ------------------------------------------------------------------ */
+
+/* Dominant / active speaker — "speaker focus". #111 ring, like every other
+   focus outline in the theme. */
+.videocontainer div.active-speaker-indicator,
+#largeVideoContainer div.active-speaker-indicator {
+  box-shadow: inset 0 0 0 3px #111111 !important;
+}
+
+/* Raised hand — ring uniform with a toggled toolbar icon (solid #111). */
+.videocontainer div.raised-hand-border,
+#largeVideoContainer div.raised-hand-border {
+  box-shadow: inset 0 0 0 2px #111111 !important;
+}
+
+/* Raised-hand badge on the tile (`-raisedHandIndicator`, hashed) ships an
+   amber fill — invert it to the toggled-toolbar-icon look: #111 pill, #eee
+   glyph. */
+[class*="raisedHandIndicator"] {
+  background: #111111 !important;
+  background-color: #111111 !important;
+}
+[class*="raisedHandIndicator"] svg,
+[class*="raisedHandIndicator"] path {
+  fill: #eeeeee !important;
+  color: #eeeeee !important;
+}
+
+/* Text selection: the theme's invert, not the browser/OS blue. Kept without
+   !important — it is a default, and nothing in the app overrides ::selection. */
+::selection {
+  background: #111111;
+  color: #eeeeee;
+}
+::-moz-selection {
+  background: #111111;
+  color: #eeeeee;
 }

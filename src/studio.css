@@ -4,9 +4,9 @@
    still ships inside custom-config.js, just authored here instead of inside
    a JS template literal.
 
-   Palette: flat monochrome, matching custom.css. Background #ffffff, text /
+   Palette: flat monochrome, matching custom.css. Background #eeeeee, text /
    borders / icons #111111, no accent colours. "selected" / "on" / "active" /
-   dwell states invert (fill #111111, text #ffffff) so they stay legible
+   dwell states invert (fill #111111, text #eeeeee) so they stay legible
    without colour.
 
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
@@ -28,7 +28,7 @@
   height: min(600px, calc(100vh - 108px));
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-  background: #ffffff;
+  background: #eeeeee;
   color: #111111;
   border: 1px solid #111111;
   border-radius: 10px;
@@ -71,27 +71,27 @@
   min-width: 104px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #ffffff;
+  background: #eeeeee;
   border: 1px solid #111111;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-family: inherit; color: inherit;
   text-align: left;
 }
-#trussal-studio-overlay .ts-chip:hover { background: #ffffff; }
+#trussal-studio-overlay .ts-chip:hover { background: #eeeeee; }
 #trussal-studio-overlay .ts-chip.selected {
   border-color: #111111;
   background: #111111;
-  color: #ffffff;
+  color: #eeeeee;
 }
 #trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
 #trussal-studio-overlay .ts-avatar {
   width: 24px; height: 24px; border-radius: 50%;
   background: #111111;
-  color: #ffffff; font-weight: 700; font-size: 12px;
+  color: #eeeeee; font-weight: 700; font-size: 12px;
   display:flex; align-items:center; justify-content:center; flex-shrink: 0;
 }
-#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: #ffffff; color: #111111; }
+#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: #eeeeee; color: #111111; }
 #trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
 #trussal-studio-overlay .ts-name.you { color: inherit; font-weight: 600; text-decoration: underline; }
 #trussal-studio-overlay .ts-idx {
@@ -104,7 +104,7 @@
   font-size: 10px; padding: 1px 4px; border-radius: 3px;
   background: transparent; color: #111111; border: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-routed.on { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-routed.on { background: #111111; color: #eeeeee; }
 #trussal-studio-overlay .ts-play { font-size: 10px; color: #111111; }
 #trussal-studio-overlay .ts-play.on { font-weight: 700; }
 
@@ -124,13 +124,13 @@
   font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
   background: transparent; color: #111111; border: 1px solid #111111;
 }
-#trussal-studio-overlay .ts-btn.eval { background: #111111; color: #ffffff; }
-#trussal-studio-overlay .ts-btn.mute { background: #ffffff; color: #111111; border: 1px solid #111111; }
-#trussal-studio-overlay .ts-btn.mute.on { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.eval { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-btn.mute { background: #eeeeee; color: #111111; border: 1px solid #111111; }
+#trussal-studio-overlay .ts-btn.mute.on { background: #111111; color: #eeeeee; }
 #trussal-studio-overlay .ts-section {
   border: 1px solid #111111;
   border-radius: 8px;
-  background: #ffffff;
+  background: #eeeeee;
   /* 8px read as barely-there against the header's 10px 14px and the detail
      panel's 12px 14px — the section title sat almost flush against its own
      top border. */
@@ -154,24 +154,24 @@
 #trussal-studio-overlay .ts-btn {
   padding: 4px 10px; border-radius: 999px; border:1px solid #111111; cursor:pointer;
   font-weight: 600; font-size: 12px;
-  background: #ffffff; color: #111111;
+  background: #eeeeee; color: #111111;
 }
-#trussal-studio-overlay .ts-btn.play  { background: #111111; color: #ffffff; }
-#trussal-studio-overlay .ts-btn.stop  { background: #ffffff; color: #111111; }
-#trussal-studio-overlay .ts-btn.ghost { background: #ffffff; color: #111111; }
-#trussal-studio-overlay .ts-btn.ghost.on { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-btn.play  { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-btn.stop  { background: #eeeeee; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost { background: #eeeeee; color: #111111; }
+#trussal-studio-overlay .ts-btn.ghost.on { background: #111111; color: #eeeeee; }
 /* .ts-fx / .ts-fx-btn outlived the effects block — the bot cluster block styles its rows with them. */
 #trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #111111; }
 #trussal-studio-overlay .ts-fx-btn {
   padding:3px 10px; border-radius:999px;
-  border:1px solid #111111; background:#ffffff; color:#111111;
+  border:1px solid #111111; background:#eeeeee; color:#111111;
   font-size:11px; cursor:pointer;
   transition:border-color 0.15s, color 0.15s, background 0.15s;
 }
 #trussal-studio-overlay .ts-fx-btn:hover { color:#111111; border-color:#111111; }
-#trussal-studio-overlay .ts-fx-btn.on { color:#ffffff; border-color:#111111; background:#111111; }
-#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#111111; color:#ffffff; background:#111111; }
-#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#ffffff; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.on { color:#eeeeee; border-color:#111111; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#111111; color:#eeeeee; background:#111111; }
+#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#eeeeee; background:#111111; }
 #trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #111111; }
 #trussal-studio-overlay .ts-meta b { color: #111111; font-weight: 700; }
 /* .ts-dim used to fade a whole row; the flat theme keeps every glyph at full
@@ -179,7 +179,7 @@
 #trussal-studio-overlay .ts-dim { font-style: italic; }
 #trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
-  background: #ffffff; color:#111111;
+  background: #eeeeee; color:#111111;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
   border: 1px solid #111111; border-radius: 4px;
   padding: 8px; box-sizing: border-box;
@@ -208,17 +208,17 @@
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
   border: 1px solid #111111;
-  background: #ffffff; color: #111111;
+  background: #eeeeee; color: #111111;
   font-size: 11px; font-family: monospace; cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 #trussal-studio-overlay .ts-voice-btn:hover { color: #111111; border-color: #111111; }
-#trussal-studio-overlay .ts-voice-btn.on { color: #ffffff; border-color: #111111; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.on { color: #eeeeee; border-color: #111111; background: #111111; }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
 /* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
    invert-fill feedback as every other dwell target. */
-#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #111111; color: #ffffff; background: #111111; }
-#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #111111; color: #ffffff; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #111111; color: #eeeeee; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #111111; color: #eeeeee; background: #111111; }
 
 #trussal-studio-overlay .ts-sample-banks {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -226,31 +226,31 @@
 }
 #trussal-studio-overlay .ts-sample-bank {
   padding: 1px 7px; border-radius: 3px;
-  background: #ffffff; color: #111111;
+  background: #eeeeee; color: #111111;
   border: 1px solid #111111;
   white-space: nowrap;
   font-size: 11px; font-family: monospace; cursor: pointer;
 }
-#trussal-studio-overlay .ts-sample-bank:hover { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-sample-bank:hover { background: #111111; color: #eeeeee; }
 /* Data packs read as a different kind of thing from sound banks — dashed
    border instead of a colour. */
 #trussal-studio-overlay .ts-sample-bank.data {
-  background: #ffffff; color: #111111;
+  background: #eeeeee; color: #111111;
   border-color: #111111; border-style: dashed;
 }
-#trussal-studio-overlay .ts-sample-bank.data:hover { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: #111111; color: #eeeeee; }
 #trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
 
 #trussal-studio-overlay .ts-sample-list {
   display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-  background: #ffffff; border: 1px solid #111111;
+  background: #eeeeee; border: 1px solid #111111;
   font-size: 11px; font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-item {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 3px 1px 6px; border-radius: 3px;
-  background: #ffffff; color: #111111; border: 1px solid #111111;
+  background: #eeeeee; color: #111111; border: 1px solid #111111;
   max-width: 100%;
 }
 #trussal-studio-overlay .ts-sample-idx { color: #111111; font-weight: 700; }
@@ -262,12 +262,12 @@
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
   color: #111111; font-size: 13px; line-height: 1; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-x:hover { color: #ffffff; background: #111111; border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-x:hover { color: #eeeeee; background: #111111; border-radius: 2px; }
 #trussal-studio-overlay .ts-sample-banks-del {
   margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid #111111; cursor: pointer;
-  background: #ffffff; color: #111111; font-size: 11px; font-family: monospace;
+  background: #eeeeee; color: #111111; font-size: 11px; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-banks-del:hover { background: #111111; color: #ffffff; }
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: #111111; color: #eeeeee; }
 
 #trussal-studio-overlay .ts-sliders {
   display: flex; flex-wrap: wrap; gap: 10px 16px;
@@ -321,7 +321,7 @@
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
   border: 1px solid #111111;
-  background: #ffffff;
+  background: #eeeeee;
   color: #111111;
   font-weight: 600;
   cursor: pointer;

@@ -74,7 +74,7 @@ function _injectStyles() {
        facial-gesture.js's dwell loop clicks them for free; these rules stand
        on their own so they still look right if that panel never opened. */
     .tdr-head-btn {
-      background: #ffffff;
+      background: #eeeeee;
       border: 1px solid #111111;
       color: #111111; cursor: pointer; border-radius: 4px;
       padding: 1px 6px; font-size: 11px; line-height: 1.5;
@@ -84,10 +84,10 @@ function _injectStyles() {
       position: relative; z-index: 21; overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .tdr-head-btn:hover { background: #111111; color: #ffffff; }
-    .tdr-head-btn.on { border-color: #111111; color: #ffffff; background: #111111; }
+    .tdr-head-btn:hover { background: #111111; color: #eeeeee; }
+    .tdr-head-btn.on { border-color: #111111; color: #eeeeee; background: #111111; }
     .tdr-head-btn.strudel-dwell-hover { border-color: #111111; }
-    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
+    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
     .tdr-head-btn::after {
       content: ''; position: absolute; bottom: 0; left: 0;
       width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
@@ -96,7 +96,7 @@ function _injectStyles() {
     .tdr-head-target { outline: 2px solid #111111; outline-offset: 2px; }
     #${HINT_ID} {
       position: fixed; z-index: 1000002; pointer-events: none;
-      background: #ffffff; color: #111111;
+      background: #eeeeee; color: #111111;
       border: 1px solid #111111; border-radius: 999px;
       font: 600 11px/1.4 Arial, Helvetica, sans-serif; padding: 3px 10px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);

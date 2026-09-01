@@ -391,7 +391,7 @@ function _injectStyles() {
       min-width: 320px; min-height: 170px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
-      background: #ffffff;
+      background: #eeeeee;
       border: 1px solid #111111;
       border-radius: 10px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.2);
@@ -425,7 +425,7 @@ function _injectStyles() {
       border-bottom: 2px solid rgba(17,17,17,0.45);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
-       "html, body, body star { background-color: #ffffff }" rule. Every
+       "html, body, body star { background-color: #eeeeee }" rule. Every
        structural container below still states its OWN background so a
        future theme change can't paint over the panel. A bare class
        selector (0,1,0) already out-ranks that rule (0,0,1). */
@@ -436,7 +436,7 @@ function _injectStyles() {
       padding: 6px 10px;
       border-bottom: 1px solid #111111;
       cursor: grab;
-      background: #ffffff;
+      background: #eeeeee;
     }
     .ts-kbd-header:active { cursor: grabbing; }
     /* Collapse + the ✥ / ⇲ head buttons sit above the corner resize grips
@@ -450,7 +450,7 @@ function _injectStyles() {
       pointer-events: none;
     }
     .ts-kbd-collapse-btn {
-      background: #ffffff;
+      background: #eeeeee;
       border: 1px solid #111111;
       color: #111111;
       cursor: pointer;
@@ -462,9 +462,9 @@ function _injectStyles() {
       overflow: hidden;
       transition: background 0.1s, color 0.1s;
     }
-    .ts-kbd-collapse-btn:hover { background: #111111; color: #ffffff; }
+    .ts-kbd-collapse-btn:hover { background: #111111; color: #eeeeee; }
     .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #ffffff; }
+    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #eeeeee; }
     .ts-kbd-collapse-btn::after {
       content: '';
       position: absolute;
@@ -481,7 +481,7 @@ function _injectStyles() {
       flex-direction: column;
       gap: 3px;
       padding: 8px;
-      background: #ffffff;
+      background: #eeeeee;
     }
     /* Shown only when it holds suggestions (see _updatePredictions) — an empty
        row here was the "rectangle that does nothing" between the title bar and
@@ -494,14 +494,14 @@ function _injectStyles() {
       min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
-      background: #ffffff;
+      background: #eeeeee;
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
       padding: 1px 10px;
       border-radius: 999px;
       border: 1px solid #111111;
-      background: #ffffff;
+      background: #eeeeee;
       color: #111111;
       font-family: ui-monospace, monospace;
       font-size: 11px;
@@ -512,7 +512,7 @@ function _injectStyles() {
     }
     .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
       background: #111111;
-      color: #ffffff;
+      color: #eeeeee;
     }
     .ts-kbd-pred-btn::after {
       content: '';
@@ -528,7 +528,7 @@ function _injectStyles() {
       min-height: 0;
       display: flex;
       gap: 3px;
-      background: #ffffff;
+      background: #eeeeee;
     }
     .ts-kbd-key {
       min-height: 22px;
@@ -538,7 +538,7 @@ function _injectStyles() {
       justify-content: center;
       border-radius: 5px;
       border: 1px solid #111111;
-      background: #ffffff;
+      background: #eeeeee;
       color: #111111;
       font-size: 12px;
       cursor: pointer;
@@ -548,27 +548,27 @@ function _injectStyles() {
     }
     .ts-kbd-key:hover {
       background: #111111;
-      color: #ffffff;
+      color: #eeeeee;
       border-color: #111111;
     }
     .ts-kbd-key.ts-kbd-dwelling { border-color: #111111; }
     .ts-kbd-key.ts-kbd-mod-on {
       background: #111111;
       border-color: #111111;
-      color: #ffffff;
+      color: #eeeeee;
     }
     /* No !important: default flash colour, not a forced override — #trussal-kbd-panel
        is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
        through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #ffffff; }
+    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #eeeeee; }
     .ts-kbd-key[data-k="Eval"] {
-      background: #ffffff;
+      background: #eeeeee;
       border-color: #111111;
       color: #111111;
       font-size: 10px;
       font-weight: 600;
     }
-    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #ffffff; }
+    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #eeeeee; }
     .ts-kbd-key::after {
       content: '';
       position: absolute;
@@ -585,17 +585,17 @@ function _injectStyles() {
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
     #${KBD_TOGGLE_ID} {
-      background: #ffffff; border: 1px solid #111111;
+      background: #eeeeee; border: 1px solid #111111;
       cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #111111;
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       line-height: 1; display: flex; align-items: center; gap: 4px;
       font-size: 11px; font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
       position: relative; overflow: hidden;
     }
-    #${KBD_TOGGLE_ID}:hover { color: #ffffff; background: #111111; }
-    #${KBD_TOGGLE_ID}.on    { color: #ffffff; background: #111111; border-color: #111111; }
+    #${KBD_TOGGLE_ID}:hover { color: #eeeeee; background: #111111; }
+    #${KBD_TOGGLE_ID}.on    { color: #eeeeee; background: #111111; border-color: #111111; }
     #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #111111; }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #ffffff; }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #eeeeee; }
     #${KBD_TOGGLE_ID}::after {
       content: '';
       position: absolute;

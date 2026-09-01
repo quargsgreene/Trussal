@@ -750,7 +750,7 @@ function _injectStyles() {
     #${FG_PANEL_ID} {
       position:fixed; top:64px; left:16px;
       z-index:1000000;
-      background:#ffffff; color:#111111;
+      background:#eeeeee; color:#111111;
       border:1px solid #111111; border-radius:10px;
       font-family:Arial, Helvetica, sans-serif; font-size:12px;
       padding:10px 12px; width:220px;
@@ -790,14 +790,14 @@ function _injectStyles() {
 
     .strudel-head-btn {
       display:inline-block; padding:2px 8px; border-radius:999px;
-      border:1px solid #111111; background:#ffffff; color:#111111;
+      border:1px solid #111111; background:#eeeeee; color:#111111;
       font-size:11px; font-family:monospace; cursor:default; user-select:none;
       transition:border-color 0.15s, color 0.15s, background 0.15s;
     }
     .strudel-head-btn.strudel-dwell-hover { border-color:#111111; }
-    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#ffffff; }
+    .strudel-head-btn.strudel-btn-active  { border-color:#111111; background:#111111; color:#eeeeee; }
     /* Already in the pattern / in the ring — the same "on" the editor cards show. */
-    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#ffffff; background:#111111; }
+    .strudel-head-btn.strudel-btn-on { border-color:#111111; color:#eeeeee; background:#111111; }
 
     #${FG_PANEL_ID} .fg-section {
       border-top: 1px solid #111111;
@@ -806,7 +806,7 @@ function _injectStyles() {
     }
     #${FG_PANEL_ID} .fg-section-title { font-weight:600; color:#111111; font-size:11px; }
     #${FG_PANEL_ID} select, #${FG_PANEL_ID} input[type="text"], #${FG_PANEL_ID} input[type="number"] {
-      background:#ffffff; color:#111111;
+      background:#eeeeee; color:#111111;
       border:1px solid #111111; border-radius:4px;
       padding:3px 6px; font-size:11px; box-sizing:border-box;
     }
@@ -819,17 +819,17 @@ function _injectStyles() {
     }
 
     #trussal-fg-toggle {
-      background:#ffffff; border:1px solid #111111;
+      background:#eeeeee; border:1px solid #111111;
       cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
       font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
     }
-    #trussal-fg-toggle:hover { color:#ffffff; background:#111111; }
-    #trussal-fg-toggle.on    { color:#ffffff; background:#111111; border-color:#111111; }
+    #trussal-fg-toggle:hover { color:#eeeeee; background:#111111; }
+    #trussal-fg-toggle.on    { color:#eeeeee; background:#111111; border-color:#111111; }
 
     .ts-dwell-btn {
-      background: #ffffff;
+      background: #eeeeee;
       border: 1px solid #111111;
       color: #111111;
       cursor: pointer;
@@ -842,9 +842,9 @@ function _injectStyles() {
       overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .ts-dwell-btn:hover { background: #111111; color: #ffffff; }
+    .ts-dwell-btn:hover { background: #111111; color: #eeeeee; }
     .ts-dwell-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #ffffff; }
+    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
     .ts-dwell-btn::after {
       content: '';
       position: absolute;
