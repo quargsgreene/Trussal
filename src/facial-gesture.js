@@ -118,6 +118,27 @@ if (typeof document !== 'undefined') {
   document.addEventListener('focusin', (e) => {
     if (e.target?.classList?.contains('ts-code')) _stickyEditor = e.target;
   });
+  // liveCapture('gesture') replay: a recorded raw gesture is re-dispatched by
+  // name here, running whatever action it is currently mapped to. Registered at
+  // module load so a replay works regardless of the panel / opt-in state.
+  document.addEventListener('trussal-gesture-refire', (e) => {
+    refireGesture(e && e.detail && e.detail.name);
+  });
+}
+
+// Announce a fired raw gesture so liveCapture('gesture') can log it. detail.name
+// is a trigger name: smile, thumbsUp, thumbsDown, leftBlink, browRaise,
+// mouthOpen, headTiltLeft, headTiltRight.
+function _fireGestureEvent(name) {
+  try {
+    document.dispatchEvent(new CustomEvent('trussal-gesture-fired', { detail: { name } }));
+  } catch (e) { /* ignore */ }
+}
+
+// Replay half of liveCapture('gesture'): re-run the gesture's currently-mapped
+// action through the same dispatch path a live gesture takes.
+export function refireGesture(name) {
+  if (name) _dispatchTrigger(name);
 }
 
 function getCode() {
@@ -293,6 +314,10 @@ function _effectiveMappingsFor(trigger) {
 }
 
 function _dispatchTrigger(trigger) {
+  // Capture tap for liveCapture('gesture') — every raw gesture, whether or not
+  // it is currently mapped or opted in. The replay path re-enters here, so
+  // live-capture.js guards its own logger against the refire it just issued.
+  _fireGestureEvent(trigger);
   for (const m of _effectiveMappingsFor(trigger)) {
     // Before opt-in, the ONLY thing a gesture may do is turn the mode on.
     if (!_gestures && m.action !== 'enable-landmark-gesture-mode') continue;
@@ -528,6 +553,16 @@ function _detectionLoop() {
   const gestureResult = _gestureRecognizer?.recognizeForVideo(_videoEl, ts);
   _processResult(result, gestureResult);
   _drawLandmarks(result);
+
+  // liveCapture('cursor') retrace: while a replay is driving, its point wins so
+  // the real head cursor (and every dwell target it hovers) follows the path.
+  const _lcOv = typeof window !== 'undefined' ? window._lcCursorOverride : null;
+  if (_lcOv && Date.now() < _lcOv.until) {
+    _ema.cursorX = _lcOv.x;
+    _ema.cursorY = _lcOv.y;
+    window.faceCtx.cursorX = _lcOv.x;
+    window.faceCtx.cursorY = _lcOv.y;
+  }
 
   // Everything below is head-cursor work — skipped entirely in the watch-only
   // state (camera up purely to catch the enable gesture).

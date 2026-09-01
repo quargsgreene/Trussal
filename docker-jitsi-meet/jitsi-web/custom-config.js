@@ -53468,10 +53468,12 @@ ${newBody}`).length === 0;
   // src/strudel.js
   init_data_ref();
 
-  // src/live-input.js
+  // src/live-capture.js
   init_latency_instrument();
+  init_peer_state();
 
-  // src/live-input-core.js
+  // src/live-capture-core.js
+  var MEDIA2 = ["audio", "video", "text", "css", "gesture", "cursor"];
   var LiveRing = class {
     constructor(capacity) {
       this.capacity = Math.max(1, Math.floor(capacity));
@@ -53505,18 +53507,138 @@ ${newBody}`).length === 0;
       return out;
     }
   };
+  var EventLog = class {
+    constructor({ capacity = 256, windowMs = 3e4 } = {}) {
+      this.capacity = Math.max(1, Math.floor(capacity));
+      this.windowMs = Math.max(0, windowMs);
+      this.entries = [];
+    }
+    _trim(now) {
+      if (this.windowMs && this.entries.length) {
+        const floor3 = now - this.windowMs;
+        while (this.entries.length > 1 && this.entries[0].t < floor3) this.entries.shift();
+      }
+      while (this.entries.length > this.capacity) this.entries.shift();
+    }
+    push(value2, t = Date.now()) {
+      this.entries.push({ t, value: value2 });
+      this._trim(t);
+    }
+    get length() {
+      return this.entries.length;
+    }
+    latest() {
+      return this.entries.length ? this.entries[this.entries.length - 1] : null;
+    }
+    nextAfter(t) {
+      if (!this.entries.length) return null;
+      for (const e30 of this.entries) if (e30.t > t) return e30;
+      return this.entries[0];
+    }
+    reset() {
+      this.entries = [];
+    }
+  };
+  var CursorPath = class {
+    constructor(capacity = 4096) {
+      this.capacity = Math.max(2, Math.floor(capacity));
+      this.points = [];
+    }
+    push(x2, y2, t = Date.now()) {
+      if (!Number.isFinite(x2) || !Number.isFinite(y2)) return;
+      this.points.push({ x: x2, y: y2, t });
+      if (this.points.length > this.capacity) this.points.shift();
+    }
+    get length() {
+      return this.points.length;
+    }
+    // Milliseconds between the first and last recorded sample.
+    get span() {
+      if (this.points.length < 2) return 0;
+      return this.points[this.points.length - 1].t - this.points[0].t;
+    }
+    reset() {
+      this.points = [];
+    }
+    // Interpolated { x, y } at `offsetMs` past the first sample, wrapped modulo
+    // the span. null while nothing is recorded.
+    at(offsetMs) {
+      const p = this.points;
+      if (!p.length) return null;
+      if (p.length === 1) return { x: p[0].x, y: p[0].y };
+      const span = this.span;
+      if (span <= 0) return { x: p[p.length - 1].x, y: p[p.length - 1].y };
+      const off2 = (offsetMs % span + span) % span;
+      const target = p[0].t + off2;
+      for (let i = 1; i < p.length; i++) {
+        if (p[i].t >= target) {
+          const a2 = p[i - 1], b = p[i];
+          const dt2 = b.t - a2.t || 1;
+          const f2 = Math.max(0, Math.min(1, (target - a2.t) / dt2));
+          return { x: a2.x + (b.x - a2.x) * f2, y: a2.y + (b.y - a2.y) * f2 };
+        }
+      }
+      return { x: p[p.length - 1].x, y: p[p.length - 1].y };
+    }
+  };
+  function patternWordsToString(arg) {
+    if (typeof arg === "string") return arg;
+    if (arg && typeof arg.firstCycle === "function") {
+      try {
+        return arg.firstCycle().sort((a2, b) => a2.part.begin - b.part.begin).map((h2) => `${h2.value}`).join(" ");
+      } catch (e30) {
+      }
+    }
+    return arg == null ? "" : String(arg);
+  }
+  function parseLiveCaptureArgs(mediumArg, nameArg, detectArg) {
+    const medium = patternWordsToString(mediumArg).trim().toLowerCase();
+    const name3 = patternWordsToString(nameArg).trim();
+    const detectLocalDevices = detectArg === true || detectArg === "true" || detectArg === 1;
+    const error = MEDIA2.includes(medium) ? null : `unknown medium "${medium || "(none)"}" \u2014 expected one of: ${MEDIA2.join(", ")}`;
+    return { medium, name: name3, detectLocalDevices, error };
+  }
+  function captureSlug(medium, name3) {
+    const m2 = String(medium || "audio").toLowerCase().replace(/[^a-z]+/g, "") || "audio";
+    const base = String(name3 || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return `livecap_${m2}_${base || "self"}`;
+  }
   function matchAudioDevice(devices, name3) {
     const wanted = (name3 || "").trim().toLowerCase();
     if (!wanted) return null;
     const labeled = devices.filter((d) => d.label);
     return labeled.find((d) => d.label.toLowerCase() === wanted) || labeled.find((d) => d.label.toLowerCase().includes(wanted)) || devices.find((d) => d.deviceId === name3) || null;
   }
-  function liveSlug(name3) {
-    const base = (name3 || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-    return `live_${base || "default"}`;
+  var CALL_RE = /(^|[^\w.$])liveCapture\s*\(\s*((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|[^()'"`])*?)\s*\)/g;
+  var NAME_RE = /(^|[^\w.$])liveCapture\s*\(/g;
+  function splitArgs(raw) {
+    const args2 = [];
+    let cur = "";
+    let q2 = null;
+    for (let i = 0; i < raw.length; i++) {
+      const c2 = raw[i];
+      if (q2) {
+        cur += c2;
+        if (c2 === "\\") {
+          cur += raw[++i] ?? "";
+          continue;
+        }
+        if (c2 === q2) q2 = null;
+      } else if (c2 === '"' || c2 === "'" || c2 === "`") {
+        q2 = c2;
+        cur += c2;
+      } else if (c2 === ",") {
+        args2.push(cur);
+        cur = "";
+      } else {
+        cur += c2;
+      }
+    }
+    args2.push(cur);
+    const trimmed = args2.map((s2) => s2.trim());
+    if (trimmed.length === 1 && trimmed[0] === "") return [];
+    return trimmed;
   }
-  var LIVE_CALL_RE = /(^|[^\w.$])live\s*\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)?\s*\)/g;
-  var LIVE_NAME_RE = /(^|[^\w.$])live\s*\(/g;
   function decodeLiteral(raw) {
     const body = raw.slice(1, -1);
     if (raw[0] === '"') {
@@ -53530,27 +53652,48 @@ ${newBody}`).length === 0;
   function singleQuote(value2) {
     return `'${value2.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r?\n/g, " ")}'`;
   }
-  function rewriteLiveCalls(code2, { silent = false } = {}) {
-    const fn = silent ? "_liveSilent" : "live";
-    let out = String(code2 ?? "").replace(LIVE_CALL_RE, (match2, before, literal2) => {
-      if (literal2 && literal2[0] === "`" && literal2.includes("${")) return match2;
-      if (!literal2) return `${before}${fn}()`;
-      return `${before}${fn}(${singleQuote(decodeLiteral(literal2))})`;
+  function isPlainStringLiteral(part) {
+    if (part.length < 2) return false;
+    const q2 = part[0];
+    if (q2 !== '"' && q2 !== "'" && q2 !== "`" || part[part.length - 1] !== q2) return false;
+    if (q2 === "`" && part.includes("${")) return false;
+    return true;
+  }
+  function rewriteLiveCaptureCalls(code2, { silent = false } = {}) {
+    const fn = silent ? "_liveCaptureSilent" : "liveCapture";
+    let out = String(code2 ?? "").replace(CALL_RE, (match2, before, rawArgs) => {
+      const parts = splitArgs(rawArgs).map(
+        (p) => isPlainStringLiteral(p) ? singleQuote(decodeLiteral(p)) : p
+      );
+      return `${before}${fn}(${parts.join(", ")})`;
     });
-    if (silent) out = out.replace(LIVE_NAME_RE, `$1${fn}(`);
+    if (silent) out = out.replace(NAME_RE, `$1${fn}(`);
     return out;
   }
 
-  // src/live-input.js
+  // src/live-capture.js
   var RING_SECONDS = 10;
   var RETRY_MS = 1e4;
-  var SILENT_SOUND = "_livesilent";
+  var SILENT_SOUND = "_livecapsilent";
+  var VIDEO_W = 240;
+  var VIDEO_H = 180;
+  var VIDEO_FRAMES = 120;
+  var VIDEO_FPS = 12;
   var captures = /* @__PURE__ */ new Map();
   var epoch2 = 0;
   var audioCtx2 = null;
   var registerSoundFn = null;
   var sFn = null;
   var workletReady = null;
+  var breakArmed = false;
+  var rightShutSince = 0;
+  var deviceWatch = null;
+  var gestureReplaying = false;
+  function bucket(medium) {
+    if (typeof window === "undefined") return {};
+    const root = window._liveCapture || (window._liveCapture = {});
+    return root[medium] || (root[medium] = {});
+  }
   var WORKLET_SOURCE = `
 class TrussalLiveCapture extends AudioWorkletProcessor {
   constructor() { super(); this.batch = []; this.len = 0; }
@@ -53590,36 +53733,60 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     return workletReady;
   }
-  function nameToString(arg) {
-    if (typeof arg === "string") return arg;
-    if (arg && typeof arg.firstCycle === "function") {
-      try {
-        return arg.firstCycle().sort((a2, b) => a2.part.begin - b.part.begin).map((h2) => `${h2.value}`).join(" ");
-      } catch (e30) {
-        console.warn("[live] could not read device name pattern", e30);
-      }
-    }
-    return String(arg ?? "");
+  function resolvePeerByName(name3) {
+    const want = String(name3 || "").trim().toLowerCase();
+    if (!want) return null;
+    const peers = getAllPeers();
+    return peers.find((p) => (p.displayName || "").toLowerCase() === want) || peers.find((p) => (p.displayName || "").toLowerCase().includes(want)) || peers.find((p) => String(p.roomIndex) === want) || null;
   }
-  async function startCapture(slug, name3) {
-    const devices = await listAudioInputDevices();
-    const match2 = matchAudioDevice(devices, name3);
-    if (name3 && !match2) {
-      console.warn(`[live] no local audio input matches "${name3}" \u2014 live() is silent in this browser. Inputs: ${devices.map((d) => d.label).join(", ") || "(none)"}`);
-      captures.get(slug).state = "failed";
-      return;
+  function remoteAudioStream(jitsiId) {
+    if (!jitsiId || typeof document === "undefined") return null;
+    const el = document.getElementById(`remoteAudio_${jitsiId}`) || Array.from(document.querySelectorAll("audio")).find((a2) => a2.id && a2.id.includes(jitsiId));
+    return el && el.srcObject ? el.srcObject : null;
+  }
+  function remoteVideoEl(jitsiId) {
+    if (!jitsiId || typeof document === "undefined") return null;
+    let scoped = null;
+    try {
+      scoped = document.querySelector(`#participant_${jitsiId} video`);
+    } catch (e30) {
     }
-    const audioConstraints = {
-      echoCancellation: false,
-      autoGainControl: false,
-      noiseSuppression: false
-    };
-    if (match2) audioConstraints.deviceId = { exact: match2.deviceId };
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    return scoped || document.getElementById(`remoteVideo_${jitsiId}`) || Array.from(document.querySelectorAll("video")).find((v2) => v2.id && v2.id.includes(jitsiId) && v2.srcObject) || null;
+  }
+  async function startAudioCapture(cap) {
+    const { name: name3 } = cap;
+    const peer = name3 ? resolvePeerByName(name3) : null;
+    let stream = null;
+    let label2 = "";
+    let ownsStream = false;
+    if (peer && !peer.isLocal) {
+      stream = remoteAudioStream(peer.jitsiId);
+      if (!stream) {
+        console.warn(`[liveCapture] audio: participant "${peer.displayName}" has no audio yet \u2014 retrying`);
+        cap.state = "failed";
+        return;
+      }
+      label2 = `participant ${peer.displayName}`;
+    } else {
+      if (peer && peer.isLocal) {
+        console.warn("[liveCapture] audio of yourself is a monitor loop \u2014 capturing your default input instead");
+      }
+      const devices = await listAudioInputDevices();
+      const match2 = matchAudioDevice(devices, name3);
+      if (name3 && !match2 && !peer) {
+        console.warn(`[liveCapture] no participant or local input matches "${name3}" \u2014 silent in this browser. Inputs: ${devices.map((d) => d.label).join(", ") || "(none)"}`);
+        cap.state = "failed";
+        return;
+      }
+      const audioConstraints = { echoCancellation: false, autoGainControl: false, noiseSuppression: false };
+      if (match2) audioConstraints.deviceId = { exact: match2.deviceId };
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      ownsStream = true;
+      label2 = match2 ? match2.label : "default input";
+    }
     await ensureWorklet();
-    const cap = captures.get(slug);
-    if (!cap || cap.state !== "starting") {
-      stream.getTracks().forEach((t) => t.stop());
+    if (!captures.get(cap.slug) || cap.state !== "starting") {
+      if (ownsStream) stream.getTracks().forEach((t) => t.stop());
       return;
     }
     const ring2 = new LiveRing(Math.round(RING_SECONDS * audioCtx2.sampleRate));
@@ -53635,64 +53802,380 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     source2.connect(worklet2);
     worklet2.connect(sink);
     sink.connect(audioCtx2.destination);
-    Object.assign(cap, { state: "ready", ring: ring2, stream, source: source2, worklet: worklet2, sink });
-    console.log(`[live] capturing "${match2 ? match2.label : "default input"}" \u2192 s("${slug}")`);
+    Object.assign(cap, { state: "ready", ring: ring2, stream, source: source2, worklet: worklet2, sink, ownsStream });
+    console.log(`[liveCapture] audio \u2190 ${label2} \u2192 s("${cap.slug}")`);
   }
-  function makeOnTrigger(slug) {
-    return (t, value2, onEnded) => {
-      const cap = captures.get(slug);
-      if (!cap || cap.state !== "ready" || !cap.ring.filled) return;
-      const speed2 = typeof value2.speed === "number" ? value2.speed : 1;
-      if (speed2 === 0) return;
-      const dur2 = Math.min(RING_SECONDS, Math.max(5e-3, value2.duration ?? 0.1));
-      const data3 = cap.ring.snapshot(Math.round(dur2 * audioCtx2.sampleRate));
-      if (!data3.length) return;
-      if (speed2 < 0) data3.reverse();
-      const buffer = audioCtx2.createBuffer(1, data3.length, audioCtx2.sampleRate);
-      buffer.copyToChannel(data3, 0);
-      const node = audioCtx2.createBufferSource();
-      node.buffer = buffer;
-      node.playbackRate.value = Math.abs(speed2);
-      node.onended = onEnded;
-      node.start(t);
-      return { node, stop: (time2) => {
+  function audioOnTrigger(cap, t, value2, onEnded) {
+    if (cap.state !== "ready" || !cap.ring || !cap.ring.filled) return;
+    const speed2 = typeof value2.speed === "number" ? value2.speed : 1;
+    if (speed2 === 0) return;
+    const dur2 = Math.min(RING_SECONDS, Math.max(5e-3, value2.duration ?? 0.1));
+    const data3 = cap.ring.snapshot(Math.round(dur2 * audioCtx2.sampleRate));
+    if (!data3.length) return;
+    if (speed2 < 0) data3.reverse();
+    const buffer = audioCtx2.createBuffer(1, data3.length, audioCtx2.sampleRate);
+    buffer.copyToChannel(data3, 0);
+    const node = audioCtx2.createBufferSource();
+    node.buffer = buffer;
+    node.playbackRate.value = Math.abs(speed2);
+    node.onended = onEnded;
+    node.start(t);
+    return { node, stop: (time2) => {
+      try {
+        node.stop(time2);
+      } catch (e30) {
+      }
+    } };
+  }
+  async function startVideoCapture(cap) {
+    const peer = resolvePeerByName(cap.name);
+    if (!peer) {
+      console.warn(`[liveCapture] video: no participant matches "${cap.name}"`);
+      cap.state = "failed";
+      return;
+    }
+    const srcEl = remoteVideoEl(peer.jitsiId);
+    if (!srcEl) {
+      console.warn(`[liveCapture] video: "${peer.displayName}" has no visible video track yet \u2014 retrying`);
+      cap.state = "failed";
+      return;
+    }
+    const frames2 = Array.from({ length: VIDEO_FRAMES }, () => {
+      const c2 = document.createElement("canvas");
+      c2.width = VIDEO_W;
+      c2.height = VIDEO_H;
+      return c2;
+    });
+    const vid = { frames: frames2, writePos: 0, filled: 0, playIdx: 0, srcEl };
+    const grab = () => {
+      if (!srcEl.videoWidth) return;
+      try {
+        frames2[vid.writePos].getContext("2d").drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H);
+      } catch (e30) {
+        return;
+      }
+      vid.writePos = (vid.writePos + 1) % VIDEO_FRAMES;
+      vid.filled = Math.min(vid.filled + 1, VIDEO_FRAMES);
+    };
+    const playback = document.createElement("canvas");
+    playback.width = VIDEO_W;
+    playback.height = VIDEO_H;
+    const liveCanvas = document.createElement("canvas");
+    liveCanvas.width = VIDEO_W;
+    liveCanvas.height = VIDEO_H;
+    const liveTimer = setInterval(() => {
+      if (srcEl.videoWidth) {
         try {
-          node.stop(time2);
+          liveCanvas.getContext("2d").drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H);
         } catch (e30) {
         }
-      } };
-    };
+      }
+    }, Math.round(1e3 / 15));
+    const timer2 = setInterval(grab, Math.round(1e3 / VIDEO_FPS));
+    bucket("video")[cap.slug] = { canvas: playback, playback, live: liveCanvas };
+    Object.assign(cap, { state: "ready", vid, playback, liveCanvas, timer: timer2, liveTimer });
+    console.log(`[liveCapture] video \u2190 participant ${peer.displayName} \u2192 window._liveCapture.video["${cap.slug}"].canvas`);
   }
-  function installLiveInput(mod2, ctx2) {
-    audioCtx2 = ctx2;
-    registerSoundFn = mod2.registerSound;
-    sFn = mod2.s;
-    registerSoundFn(SILENT_SOUND, () => void 0, { type: "live", prebake: true });
-    const live = (nameArg) => {
-      const name3 = nameToString(nameArg).trim();
-      const slug = liveSlug(name3);
-      const existing = captures.get(slug);
-      if (existing && existing.state === "failed" && Date.now() - existing.attemptAt > RETRY_MS) {
-        captures.delete(slug);
+  function videoOnTrigger(cap, value2) {
+    const vid = cap.vid;
+    if (cap.state !== "ready" || !vid || !vid.filled) return;
+    const speed2 = typeof value2.speed === "number" && value2.speed !== 0 ? value2.speed : 1;
+    vid.playIdx = (vid.playIdx + Math.sign(speed2) + vid.filled) % vid.filled;
+    const ringIdx = (vid.writePos - vid.filled + vid.playIdx + VIDEO_FRAMES * 2) % VIDEO_FRAMES;
+    try {
+      cap.playback.getContext("2d").drawImage(vid.frames[ringIdx], 0, 0);
+    } catch (e30) {
+    }
+    return;
+  }
+  function textDelta(prev, next) {
+    const p = new Set(String(prev || "").split(/\s+/).filter(Boolean));
+    const added = String(next || "").split(/\s+/).filter((w2) => w2 && !p.has(w2));
+    if (added.length) return added.join(" ");
+    const lines = String(next || "").split("\n").map((s2) => s2.trim()).filter(Boolean);
+    return lines.length ? lines[lines.length - 1] : "";
+  }
+  var TEXT_OVERLAY_ID = "trussal-livecapture-text";
+  function textOverlay() {
+    let el = document.getElementById(TEXT_OVERLAY_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = TEXT_OVERLAY_ID;
+      el.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:1000000;max-width:40vw;font-family:monospace;font-size:13px;line-height:1.5;color:#eeeeee;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,0.8);display:flex;flex-direction:column;gap:2px;";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function startTextCapture(cap) {
+    const log3 = new EventLog({ capacity: 64, windowMs: 6e4 });
+    cap.log = log3;
+    cap.lastText = null;
+    cap.unsub = subscribePeerState((event, peer) => {
+      if (event !== "peer-upsert") return;
+      if (!peerMatches(cap, peer)) return;
+      const text2 = typeof peer.pattern === "string" ? peer.pattern : "";
+      if (cap.lastText === null) {
+        cap.lastText = text2;
+        return;
       }
-      if (!captures.has(slug)) {
-        captures.set(slug, { state: "starting", attemptAt: Date.now(), name: name3, epoch: epoch2 });
-        registerSoundFn(slug, makeOnTrigger(slug), { type: "live", prebake: true });
-        startCapture(slug, name3).catch((e30) => {
-          const cap = captures.get(slug);
-          if (cap) cap.state = "failed";
-          console.error(`[live] capture failed for "${name3}"`, e30);
-        });
+      if (text2 === cap.lastText) return;
+      const frag = textDelta(cap.lastText, text2);
+      cap.lastText = text2;
+      if (frag) log3.push(frag);
+    });
+    cap.state = "ready";
+    console.log(`[liveCapture] text \u2190 editor changes of "${cap.name}"`);
+  }
+  function textOnTrigger(cap, value2) {
+    if (!cap.log) return;
+    const e30 = cap.log.latest();
+    if (!e30) return;
+    const el = textOverlay();
+    const span = document.createElement("div");
+    span.textContent = e30.value;
+    if (value2 && typeof value2.color === "string") span.style.color = value2.color;
+    if (value2 && (typeof value2.size === "number" || typeof value2.size === "string")) {
+      span.style.fontSize = typeof value2.size === "number" ? `${value2.size}px` : value2.size;
+    }
+    if (value2 && typeof value2.typeface === "string") span.style.fontFamily = value2.typeface;
+    el.appendChild(span);
+    while (el.childNodes.length > 8) el.removeChild(el.firstChild);
+    setTimeout(() => {
+      try {
+        span.remove();
+      } catch (err) {
       }
-      captures.get(slug).epoch = epoch2;
-      return sFn(slug);
+    }, 6e3);
+    return;
+  }
+  function startCssCapture(cap) {
+    const log3 = new EventLog({ capacity: 16, windowMs: 12e4 });
+    cap.log = log3;
+    cap.lastCss = null;
+    cap.styleEl = null;
+    cap.unsub = subscribePeerState((event, peer) => {
+      if (event !== "peer-upsert") return;
+      if (!peerMatches(cap, peer)) return;
+      const css = typeof peer.compiledCss === "string" ? peer.compiledCss : "";
+      if (css === cap.lastCss) return;
+      cap.lastCss = css;
+      if (css) log3.push(css);
+    });
+    cap.state = "ready";
+    console.log(`[liveCapture] css \u2190 CSS changes of "${cap.name}"`);
+  }
+  function cssOnTrigger(cap) {
+    if (!cap.log) return;
+    const e30 = cap.log.latest();
+    if (!e30) return;
+    if (!cap.styleEl) {
+      cap.styleEl = document.createElement("style");
+      cap.styleEl.id = `trussal-livecapture-css-${cap.slug}`;
+      document.head.appendChild(cap.styleEl);
+    }
+    if (cap.styleEl.textContent !== e30.value) cap.styleEl.textContent = e30.value;
+    return;
+  }
+  function startGestureCapture(cap) {
+    const log3 = new EventLog({ capacity: 128, windowMs: 12e4 });
+    cap.log = log3;
+    cap.gCursor = 0;
+    cap.onFired = (evt) => {
+      if (gestureReplaying) return;
+      const name3 = evt && evt.detail && evt.detail.name;
+      if (name3) log3.push(name3);
     };
-    const _liveSilent = () => sFn(SILENT_SOUND);
-    return { live, _liveSilent };
+    document.addEventListener("trussal-gesture-fired", cap.onFired);
+    armBreakControls();
+    cap.state = "ready";
+    console.log("[liveCapture] gesture \u2190 your fired facial gestures");
+  }
+  function gestureOnTrigger(cap) {
+    if (cap.broken || !cap.log || !cap.log.length) return;
+    const e30 = cap.log.nextAfter(cap.gCursor);
+    if (!e30) return;
+    cap.gCursor = e30.t;
+    gestureReplaying = true;
+    try {
+      document.dispatchEvent(new CustomEvent("trussal-gesture-refire", { detail: { name: e30.value } }));
+    } catch (err) {
+    } finally {
+      gestureReplaying = false;
+    }
+    return;
+  }
+  var CURSOR_DOT_ID = "trussal-livecapture-cursor";
+  function cursorDot() {
+    let el = document.getElementById(CURSOR_DOT_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = CURSOR_DOT_ID;
+      el.style.cssText = "position:fixed;width:14px;height:14px;border-radius:50%;z-index:9999998;border:2px solid #eeeeee;background:rgba(238,238,238,0.25);pointer-events:none;transform:translate(-50%,-50%);transition:left 0.08s linear,top 0.08s linear;display:none;";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function startCursorCapture(cap) {
+    const path = new CursorPath(6e3);
+    cap.path = path;
+    cap.headMs = 0;
+    cap.dotEl = cursorDot();
+    const sample = () => {
+      const fc = typeof window !== "undefined" ? window.faceCtx : null;
+      if (fc && Number.isFinite(fc.cursorX) && Number.isFinite(fc.cursorY)) {
+        path.push(fc.cursorX, fc.cursorY);
+      }
+    };
+    cap.sampleTimer = setInterval(sample, 33);
+    cap.onMouse = (e30) => path.push(e30.clientX, e30.clientY);
+    window.addEventListener("mousemove", cap.onMouse);
+    armBreakControls();
+    cap.state = "ready";
+    console.log("[liveCapture] cursor \u2190 your head-cursor / pointer path");
+  }
+  function cursorOnTrigger(cap, value2) {
+    if (cap.broken || !cap.path || !cap.path.length) {
+      if (cap.dotEl) cap.dotEl.style.display = "none";
+      return;
+    }
+    const speed2 = typeof value2.speed === "number" && value2.speed !== 0 ? value2.speed : 1;
+    const stepMs = Math.max(20, (value2.duration ?? 0.1) * 1e3) * speed2;
+    cap.headMs += stepMs;
+    const p = cap.path.at(cap.headMs);
+    if (!p) return;
+    window._lcCursorOverride = { x: p.x, y: p.y, until: Date.now() + 2e3 };
+    if (cap.dotEl) {
+      cap.dotEl.style.display = "block";
+      cap.dotEl.style.left = `${p.x}px`;
+      cap.dotEl.style.top = `${p.y}px`;
+    }
+    return;
+  }
+  function armBreakControls() {
+    if (breakArmed || typeof window === "undefined") return;
+    breakArmed = true;
+    window.addEventListener("keydown", (e30) => {
+      if (e30.key === "ArrowRight") breakReplay("right-arrow");
+    });
+    setInterval(() => {
+      const fc = window.faceCtx;
+      const r2 = fc && fc.eyeBlinkRight || 0;
+      const l = fc && fc.eyeBlinkLeft || 0;
+      if (r2 > 0.6 && l < 0.3) {
+        if (!rightShutSince) rightShutSince = Date.now();
+        else if (Date.now() - rightShutSince >= 2e3) breakReplay("right-eye-2s");
+      } else {
+        rightShutSince = 0;
+      }
+    }, 100);
+  }
+  function breakReplay(why) {
+    let any2 = false;
+    for (const cap of captures.values()) {
+      if ((cap.medium === "gesture" || cap.medium === "cursor") && !cap.broken) {
+        cap.broken = true;
+        any2 = true;
+        if (cap.medium === "cursor") {
+          window._lcCursorOverride = null;
+          if (cap.dotEl) cap.dotEl.style.display = "none";
+        }
+      }
+    }
+    if (any2) console.log(`[liveCapture] gesture/cursor replay broken (${why}) \u2014 re-evaluate to resume`);
+  }
+  async function startDeviceWatch(cap) {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const peer = cap.name ? resolvePeerByName(cap.name) : null;
+    if (peer && !peer.isLocal) {
+      console.warn(`[liveCapture] detectLocalDevices ignored \u2014 one cannot access ${peer.displayName}'s local system devices, only your own`);
+      return;
+    }
+    if (deviceWatch) {
+      deviceWatch.refs++;
+      return;
+    }
+    const dump = async () => {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const rows = devs.map((d) => ({
+          kind: d.kind,
+          label: d.label || "(hidden until a matching permission is granted)",
+          id: (d.deviceId || "").slice(0, 8)
+        }));
+        console.log(`[liveCapture] your local devices (${rows.length}) \u2014 updates on devicechange:`);
+        (typeof console.table === "function" ? console.table : console.log).call(console, rows);
+      } catch (e30) {
+        console.warn("[liveCapture] could not enumerate local devices", e30);
+      }
+    };
+    const onChange = () => dump();
+    navigator.mediaDevices.addEventListener?.("devicechange", onChange);
+    deviceWatch = { refs: 1, stop: () => navigator.mediaDevices.removeEventListener?.("devicechange", onChange) };
+    await dump();
+  }
+  function stopDeviceWatch() {
+    if (!deviceWatch) return;
+    try {
+      deviceWatch.stop();
+    } catch (e30) {
+    }
+    deviceWatch = null;
+  }
+  function peerMatches(cap, peer) {
+    if (!peer) return false;
+    if (!cap._targetJitsiId) {
+      const resolved = resolvePeerByName(cap.name);
+      cap._targetJitsiId = resolved ? resolved.jitsiId : null;
+    }
+    if (cap._targetJitsiId && peer.jitsiId === cap._targetJitsiId) return true;
+    const want = String(cap.name || "").trim().toLowerCase();
+    if (!want) return false;
+    return (peer.displayName || "").toLowerCase() === want || String(peer.roomIndex) === want;
+  }
+  function startCapture(cap) {
+    switch (cap.medium) {
+      case "audio":
+        return startAudioCapture(cap);
+      case "video":
+        return startVideoCapture(cap);
+      case "text":
+        return Promise.resolve(startTextCapture(cap));
+      case "css":
+        return Promise.resolve(startCssCapture(cap));
+      case "gesture":
+        return Promise.resolve(startGestureCapture(cap));
+      case "cursor":
+        return Promise.resolve(startCursorCapture(cap));
+      default:
+        return Promise.reject(new Error(`unknown medium ${cap.medium}`));
+    }
+  }
+  function makeOnTrigger(slug) {
+    return (t, rawValue, onEnded) => {
+      const cap = captures.get(slug);
+      if (!cap) return;
+      const value2 = rawValue && typeof rawValue === "object" ? rawValue : {};
+      switch (cap.medium) {
+        case "audio":
+          return audioOnTrigger(cap, t, value2, onEnded);
+        case "video":
+          return videoOnTrigger(cap, value2);
+        case "text":
+          return textOnTrigger(cap, value2);
+        case "css":
+          return cssOnTrigger(cap);
+        case "gesture":
+          return gestureOnTrigger(cap);
+        case "cursor":
+          return cursorOnTrigger(cap, value2);
+        default:
+          return void 0;
+      }
+    };
   }
   function teardown(slug, cap) {
     try {
-      cap.stream && cap.stream.getTracks().forEach((t) => t.stop());
+      if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach((t) => t.stop());
     } catch (e30) {
     }
     try {
@@ -53707,10 +54190,84 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       cap.sink && cap.sink.disconnect();
     } catch (e30) {
     }
+    try {
+      cap.timer && clearInterval(cap.timer);
+    } catch (e30) {
+    }
+    try {
+      cap.liveTimer && clearInterval(cap.liveTimer);
+    } catch (e30) {
+    }
+    try {
+      cap.sampleTimer && clearInterval(cap.sampleTimer);
+    } catch (e30) {
+    }
+    try {
+      cap.unsub && cap.unsub();
+    } catch (e30) {
+    }
+    try {
+      cap.onFired && document.removeEventListener("trussal-gesture-fired", cap.onFired);
+    } catch (e30) {
+    }
+    try {
+      cap.onMouse && window.removeEventListener("mousemove", cap.onMouse);
+    } catch (e30) {
+    }
+    try {
+      cap.styleEl && cap.styleEl.remove();
+    } catch (e30) {
+    }
+    try {
+      cap.dotEl && cap.dotEl.remove();
+    } catch (e30) {
+    }
+    if (cap.medium === "cursor") window._lcCursorOverride = null;
+    const b = typeof window !== "undefined" && window._liveCapture && window._liveCapture[cap.medium];
+    if (b) delete b[slug];
     captures.delete(slug);
+  }
+  function installLiveCapture(mod2, ctx2) {
+    audioCtx2 = ctx2;
+    registerSoundFn = mod2.registerSound;
+    sFn = mod2.s;
+    registerSoundFn(SILENT_SOUND, () => void 0, { type: "live", prebake: true });
+    const liveCapture = (mediumArg, nameArg, detectArg) => {
+      const { medium, name: name3, detectLocalDevices, error } = parseLiveCaptureArgs(mediumArg, nameArg, detectArg);
+      if (error) {
+        console.warn(`[liveCapture] ${error}`);
+        return sFn(SILENT_SOUND);
+      }
+      const slug = captureSlug(medium, name3);
+      let cap = captures.get(slug);
+      if (cap && cap.state === "failed" && Date.now() - cap.attemptAt > RETRY_MS) {
+        teardown(slug, cap);
+        cap = null;
+      }
+      if (!cap) {
+        cap = { medium, name: name3, slug, state: "starting", attemptAt: Date.now(), epoch: epoch2, broken: false };
+        captures.set(slug, cap);
+        registerSoundFn(slug, makeOnTrigger(slug), { type: "live", prebake: true });
+        startCapture(cap).catch((e30) => {
+          const c2 = captures.get(slug);
+          if (c2) c2.state = "failed";
+          console.error(`[liveCapture] ${medium} capture failed for "${name3}"`, e30);
+        });
+      } else {
+        cap.broken = false;
+      }
+      cap.epoch = epoch2;
+      if (detectLocalDevices) startDeviceWatch(cap).catch(() => {
+      });
+      return sFn(slug);
+    };
+    const _liveCaptureSilent = () => sFn(SILENT_SOUND);
+    return { liveCapture, _liveCaptureSilent };
   }
   function stopLiveCaptures() {
     for (const [slug, cap] of captures) teardown(slug, cap);
+    stopDeviceWatch();
+    if (typeof window !== "undefined") window._lcCursorOverride = null;
   }
   function beginLiveEpoch() {
     epoch2++;
@@ -53718,9 +54275,10 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   function releaseUnusedCaptures() {
     for (const [slug, cap] of captures) {
       if (cap.epoch === epoch2) continue;
-      console.log(`[live] releasing "${cap.name || "default input"}" \u2014 no longer referenced`);
+      console.log(`[liveCapture] releasing ${cap.medium} "${cap.name || "self"}" \u2014 no longer referenced`);
       teardown(slug, cap);
     }
+    if (!captures.size) stopDeviceWatch();
   }
 
   // src/text-cycles.js
@@ -56025,10 +56583,10 @@ ${full}
     for (const key of BOT_CONFIG_KEYS) out[key] = null;
     return out;
   }
-  var CALL_RE = /(^|[^\w$.])botConfig\s*\(/;
+  var CALL_RE2 = /(^|[^\w$.])botConfig\s*\(/;
   function findBotConfigCall(code2) {
     const src2 = String(code2 ?? "");
-    const match2 = CALL_RE.exec(src2);
+    const match2 = CALL_RE2.exec(src2);
     if (!match2) return null;
     const start = match2.index + match2[1].length;
     const open = src2.indexOf("(", start);
@@ -57111,8 +57669,8 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
       }
       return null;
     }
-    if (code2.includes("live")) {
-      code2 = rewriteLiveCalls(code2, { silent: !peer.isLocal });
+    if (code2.includes("liveCapture")) {
+      code2 = rewriteLiveCaptureCalls(code2, { silent: !peer.isLocal });
     }
     const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
     const params2 = computePeerStrudelParams(peer);
@@ -57314,7 +57872,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
       runPrebake().catch((e30) => console.warn("[strudel] prebake failed", e30));
       _sliderRef = mod2.ref;
       const _jpGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
-      const { live, _liveSilent } = installLiveInput(mod2, audioCtx3);
+      const { liveCapture, _liveCaptureSilent } = installLiveCapture(mod2, audioCtx3);
       const textScope = installTextCycles(mod2);
       const cssScope = installCssCycles(mod2);
       const _data = makeDataFn(mod2);
@@ -57328,7 +57886,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
         }
         return result;
       };
-      await mod2.evalScope({ sliderWithID, _jpGate, live, _liveSilent, _data, initHydra: initHydra2, mondo, mondi, mondolang, ...textScope, ...cssScope });
+      await mod2.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra: initHydra2, mondo, mondi, mondolang, ...textScope, ...cssScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -58148,6 +58706,18 @@ ${snippet}${JP_BTN_MARKER}`;
     document.addEventListener("focusin", (e30) => {
       if (e30.target?.classList?.contains("ts-code")) _stickyEditor = e30.target;
     });
+    document.addEventListener("trussal-gesture-refire", (e30) => {
+      refireGesture(e30 && e30.detail && e30.detail.name);
+    });
+  }
+  function _fireGestureEvent(name3) {
+    try {
+      document.dispatchEvent(new CustomEvent("trussal-gesture-fired", { detail: { name: name3 } }));
+    } catch (e30) {
+    }
+  }
+  function refireGesture(name3) {
+    if (name3) _dispatchTrigger(name3);
   }
   function getCode() {
     return readActiveEditor();
@@ -58293,6 +58863,7 @@ ${snippet}${JP_BTN_MARKER}`;
     return _gestureMappings.filter((m2) => m2.trigger === trigger);
   }
   function _dispatchTrigger(trigger) {
+    _fireGestureEvent(trigger);
     for (const m2 of _effectiveMappingsFor(trigger)) {
       if (!_gestures && m2.action !== "enable-landmark-gesture-mode") continue;
       _runAction(m2, trigger);
@@ -58505,6 +59076,13 @@ ${snippet}${JP_BTN_MARKER}`;
     const gestureResult = _gestureRecognizer?.recognizeForVideo(_videoEl2, ts);
     _processResult(result, gestureResult);
     _drawLandmarks(result);
+    const _lcOv = typeof window !== "undefined" ? window._lcCursorOverride : null;
+    if (_lcOv && Date.now() < _lcOv.until) {
+      _ema.cursorX = _lcOv.x;
+      _ema.cursorY = _lcOv.y;
+      window.faceCtx.cursorX = _lcOv.x;
+      window.faceCtx.cursorY = _lcOv.y;
+    }
     if (!_headCursor2) {
       if (_cursorEl && _cursorEl.style.display !== "none") _cursorEl.style.display = "none";
       _rafId2 = requestAnimationFrame(_detectionLoop);

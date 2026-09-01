@@ -55,7 +55,7 @@ const STRING_LITERAL = '("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'|`(?:[^`\
 const LABEL_RE = /^\s*(?:\$|[a-zA-Z_$][\w$]*)\s*:/;
 
 // `word(` / `w(` in any position, including as a chained method — unlike
-// rewriteLiveCalls we WANT to match `.word(`, so "." is allowed to precede.
+// rewriteLiveCaptureCalls we WANT to match `.word(`, so "." is allowed to precede.
 export const WORD_CALL_RE = /(?:^|[^\w$])(?:word|w)\s*\(/;
 
 const INIT_TEXT_CYCLES_RE = /^\s*await\s+initTextCycles\s*\(/m;

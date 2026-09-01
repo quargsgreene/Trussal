@@ -17,8 +17,8 @@ import { isJPatternActive, getActivePattern, getGateLevel, isDelayedStreaming, g
 import { subscribeParticipants } from './participants.js';
 import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { rewriteDataRefs, makeDataFn } from './data-ref.js';
-import { installLiveInput, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-input.js';
-import { rewriteLiveCalls } from './live-input-core.js';
+import { installLiveCapture, stopLiveCaptures, beginLiveEpoch, releaseUnusedCaptures } from './live-capture.js';
+import { rewriteLiveCaptureCalls } from './live-capture-core.js';
 import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.js';
 import { hasTextCycles, rewriteTextCalls } from './text-cycles-core.js';
 import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from './css-cycles.js';
@@ -417,11 +417,12 @@ function buildPeerBlock(peer) {
     return null;
   }
 
-  // live(): re-emit the device name as a transpiler-proof literal, and for
-  // remote peers swap in the silent stub — capture belongs to the authoring
-  // browser, but the pattern shape (struct, chained ops) must survive here.
-  if (code.includes('live')) {
-    code = rewriteLiveCalls(code, { silent: !peer.isLocal });
+  // liveCapture(): re-emit the medium and source-name strings as
+  // transpiler-proof literals, and for remote peers swap in the silent stub —
+  // capture belongs to the authoring browser, but the pattern shape (struct,
+  // chained ops) must survive here.
+  if (code.includes('liveCapture')) {
+    code = rewriteLiveCaptureCalls(code, { silent: !peer.isLocal });
   }
 
   // Per-human publish isolation: while a remote aggregator is present, this
@@ -643,9 +644,11 @@ async function ensureStrudel() {
     // _jpGate: reactive per-performer slot gate for JPattern (same ref
     // machinery as sliders — pattern events read the current level live).
     const _jpGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
-    // live("device"): rolling-capture sampler of a local audio input;
-    // _liveSilent is the stub remote peers' live() calls are rewritten to.
-    const { live, _liveSilent } = installLiveInput(mod, audioCtx);
+    // liveCapture(medium, name, detectLocalDevices): rolling-capture sampler of
+    // a participant's aggregator output or a local input / the local performer's
+    // gesture + cursor input; _liveCaptureSilent is the stub remote peers' calls
+    // are rewritten to.
+    const { liveCapture, _liveCaptureSilent } = installLiveCapture(mod, audioCtx);
     // Text Cycles: word/typeface/… controls plus initTextCycles(). Silent by
     // construction — the renderer it attaches carries a dominant trigger.
     const textScope = installTextCycles(mod);
@@ -670,7 +673,7 @@ async function ensureStrudel() {
       try { ensureCameraBypass(); } catch (e) { console.warn('[strudel] camera bypass failed', e); }
       return result;
     };
-    await mod.evalScope({ sliderWithID, _jpGate, live, _liveSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope });
+    await mod.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -773,7 +776,7 @@ async function rebuildAndEvaluate() {
   if (!next) {
     anyPlaying = false;
     try { hush(); } catch (e) { /* ignore */ }
-    // Nothing is playing, so no live() call can still want its device.
+    // Nothing is playing, so no liveCapture() call can still want its source.
     stopLiveCaptures();
     return;
   }
@@ -792,8 +795,8 @@ async function rebuildAndEvaluate() {
       });
     }
     await evaluate(next);
-    // Every live() in this program has now re-stamped the epoch; whatever
-    // didn't is no longer referenced, so release its device.
+    // Every liveCapture() in this program has now re-stamped the epoch;
+    // whatever didn't is no longer referenced, so release its source.
     releaseUnusedCaptures();
     anyPlaying = true;
     // Tell hydra-video.js the Hydra synth was (re)created so s0 is re-synced
@@ -846,8 +849,8 @@ export async function stopStrudel() {
   const { hush, clearHydra } = await loadStrudel();
   try { hush(); } catch (e) { /* ignore */ }
   try { if (typeof clearHydra === 'function') clearHydra(); } catch (e) { /* ignore */ }
-  // Release captured devices with the music; the next evaluate that still
-  // contains live() restarts its capture.
+  // Release captured sources with the music; the next evaluate that still
+  // contains liveCapture() restarts its capture.
   stopLiveCaptures();
   // Words already in the chat stay there as history; only new ones stop.
   stopTextCycles();

@@ -244,7 +244,7 @@ export function resolveDataRef(text, strudel) {
 // A double-quoted whole-string reference, optionally preceded by the sound
 // control that would make it a sample name. Double-quoted only: Strudel's
 // transpiler mini-parses `"…"` and leaves `'…'` alone, which is the same
-// convention rewriteLiveCalls relies on.
+// convention rewriteLiveCaptureCalls relies on.
 const REWRITE_RE = /(\b(?:s|sound)\s*\(\s*)?"([A-Za-z_][A-Za-z0-9_]*\s*:\s*\d+)"/g;
 
 /**
