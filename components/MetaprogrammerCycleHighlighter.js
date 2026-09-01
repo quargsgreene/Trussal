@@ -27,13 +27,14 @@ import {
 } from '../src/peer-state.js';
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
-// to line up. width/whiteSpace are set explicitly (see syncMetrics).
+// to line up. width/whiteSpace are set explicitly (see syncMetrics). Kebab-case
+// because syncMetrics writes them with setProperty(..., 'important') — see there.
 const MIRROR_PROPS = [
-  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
-  'letterSpacing', 'textTransform', 'wordSpacing', 'textIndent', 'lineHeight',
-  'tabSize', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-  'boxSizing'
+  'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+  'letter-spacing', 'text-transform', 'word-spacing', 'text-indent', 'line-height',
+  'tab-size', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  'box-sizing'
 ];
 
 function injectStyleOnce() {
@@ -93,9 +94,20 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   // Copy font/box metrics onto the mirror and align the overlay to the
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
   // exactly as the textarea does.
+  //
+  // setProperty(..., 'important'), not a plain assignment: custom.css ships
+  // `*, ::before, ::after { font-family: … !important }` (the flat-theme font
+  // override). A <textarea> keeps its own stack via a more specific `textarea`
+  // rule, but a plain <div> like this mirror does not — so a plain
+  // `mirror.style.fontFamily = cs.fontFamily` was silently overridden back to
+  // the theme font, and the mirror measured glyph advances in a DIFFERENT font
+  // than the textarea renders. On any machine where the two fonts have unequal
+  // metrics that pushed the outline box further off the token the further into
+  // the line it sat. An inline !important beats the author !important, so the
+  // mirror now always lays text out in the textarea's real computed font.
   function syncMetrics() {
     const cs = getComputedStyle(ta);
-    for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
+    for (const p of MIRROR_PROPS) mirror.style.setProperty(p, cs.getPropertyValue(p), 'important');
     const bl = parseFloat(cs.borderLeftWidth) || 0;
     const br = parseFloat(cs.borderRightWidth) || 0;
     mirror.style.width = (ta.clientWidth + bl + br) + 'px'; // border-box → content matches

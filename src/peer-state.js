@@ -441,7 +441,7 @@ function handleMessage(msg) {
         document.dispatchEvent(new CustomEvent('trussal-remote-video', { detail: { videoOn: localPeer.videoOn } }));
         emit('peer-upsert', localPeer);
       } else if (msg.action === 'stop') {
-        // Room-wide ■ Stop reaching a bot. No local/roster state to keep —
+        // Room-wide Stop reaching a bot. No local/roster state to keep —
         // page-scripts.js's fan-gain gate is the only consumer.
         document.dispatchEvent(new CustomEvent('trussal-remote-stop', { detail: { stopped: !!msg.stopped } }));
       }
@@ -727,7 +727,7 @@ export function sendRemoteMute(targetPeerId, muted) {
   safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
 }
 
-// A room-wide ■ Stop's reach into a bot's audio: independent of the manual
+// A room-wide Stop's reach into a bot's audio: independent of the manual
 // per-bot mute toggle above (both are gain gates page-scripts.js multiplies
 // together — see trussal-remote-stop), so Stop/Apply never clobbers a
 // deliberate individual mute, and unmuting one never un-stops the other.

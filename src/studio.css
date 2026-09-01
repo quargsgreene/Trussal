@@ -96,7 +96,11 @@
 }
 #trussal-studio-overlay .ts-chip:hover { background: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-chip.selected {
+  /* No border on the selected chip — the inverted fill already marks it, and
+     box-sizing:border-box keeps the geometry identical to the 1px unselected
+     chips so nothing shifts. */
   border-color: var(--trussal-secondary, #111111);
+  border-width: 0;
   background: var(--trussal-secondary, #111111);
   color: var(--trussal-primary, #eeeeee);
 }

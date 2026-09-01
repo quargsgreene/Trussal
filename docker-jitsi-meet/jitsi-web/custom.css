@@ -704,6 +704,14 @@ svg[class*="trash_svg__"] path,
   background-color: var(--trussal-primary, #eeeeee) !important;
   color: var(--trussal-secondary, #111111) !important;
 }
+/* The row's `.subtitle` — the meeting time under the date, and the call
+   duration under the room name — ships Jitsi's muted `#5e6d7a` slate, too
+   faint on the flat-grey welcome page. Pull it to the same #111 as the row's
+   title (`.item` above only reaches the row, not this nested span). */
+.welcome-page .meetings-list .item .subtitle,
+.welcome-page [class*="meetings-list"] [class*="item"] [class*="subtitle"] {
+  color: var(--trussal-secondary, #111111) !important;
+}
 .welcome-page-settings,
 .welcome-page-settings .toolbox-icon,
 .welcome-page-settings .toolbox-button {

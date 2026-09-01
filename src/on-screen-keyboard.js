@@ -656,7 +656,7 @@ function _injectStyles() {
     }
     .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
 
-    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the ⌨ button
+    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
        sits flush beside the Face button whether or not the facial-gesture
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
@@ -695,7 +695,7 @@ function _buildPanel() {
 
   const title = document.createElement('span');
   title.className = 'ts-kbd-title';
-  title.textContent = '⌨ keyboard';
+  title.textContent = 'keyboard';
 
   const collapseBtn = document.createElement('button');
   collapseBtn.className = 'ts-kbd-collapse-btn';
@@ -881,7 +881,7 @@ function _showPanel(on) {
 }
 
 /**
- * Inject the ⌨ toggle into the Studio header. Called once from ensureOverlay()
+ * Inject the Keys toggle into the Studio header. Called once from ensureOverlay()
  * in studio.js, right after injectFacialGestureToggle(). The button carries
  * .ts-dwell-btn so facial-gesture.js's head-cursor dwell loop clicks it for
  * free, exactly like the Face and collapse buttons beside it.
@@ -894,7 +894,7 @@ export function injectKeyboardToggle(headerEl) {
   btn.type  = 'button';
   btn.className = 'ts-dwell-btn';
   btn.title = 'Toggle the on-screen keyboard';
-  btn.textContent = '⌨ Keys';
+  btn.textContent = 'Keys';
   btn.addEventListener('mousedown', e => e.preventDefault());
   btn.addEventListener('click', () => {
     try { _ensureDOM(); } catch (e) { console.error('[on-screen-keyboard] panel init failed', e); return; }

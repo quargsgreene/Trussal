@@ -1186,7 +1186,7 @@ export function getGestureConfig() {
 }
 
 /** True once getUserMedia / the model download has failed — the enable paths
- *  that don't need a camera (Right Arrow, the ⚙ menu) still work. */
+ *  that don't need a camera (Right Arrow, the ☰ menu) still work. */
 export function isCameraBlocked() { return _cameraBlocked; }
 
 /**

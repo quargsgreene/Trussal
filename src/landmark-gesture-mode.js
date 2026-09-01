@@ -5,7 +5,7 @@
 // lobby knock, meeting):
 //
 //   • press → (Right Arrow)
-//   • tick "Landmark and Gesture Mode" in the ⚙ menu, top-left
+//   • tick "Landmark and Gesture Mode" in the ☰ menu, top-left
 //   • hold your left eye shut for two seconds
 //
 // The third is why MediaPipe starts the moment the bundle loads: facial-gesture
@@ -18,7 +18,7 @@
 // headCursorEnabled, gestureDetectionEnabled }) is the code-side control:
 // facial-gesture.js owns the gesture map + detection, on-screen-keyboard.js
 // owns the keyboard, and this module wires a config object onto both and keeps
-// the instruction / ⚙ menu in step. landmark-gesture-core.js holds the pure
+// the instruction / ☰ menu in step. landmark-gesture-core.js holds the pure
 // validation.
 
 import {
@@ -90,7 +90,7 @@ export function gestureAndLandmarkConfig(config) {
   if ('headCursorEnabled' in norm) setHeadCursorEnabled(norm.headCursorEnabled);
   if ('gestureDetectionEnabled' in norm) setGestureDetectionEnabled(norm.gestureDetectionEnabled);
 
-  // The mode is "on" if any of its three limbs is on. Keep the instruction / ⚙
+  // The mode is "on" if any of its three limbs is on. Keep the instruction / ☰
   // menu / Face button in step with whatever the config just did.
   const on = isKeyboardStandalone() || isHeadCursorEnabled() || isGestureDetectionEnabled();
   if (on !== _modeOn) {
@@ -104,7 +104,7 @@ export function gestureAndLandmarkConfig(config) {
 }
 
 // ---------------------------------------------------------------------------
-// DOM — the top-left ⚙ button, its one-item menu, and the instruction card.
+// DOM — the top-left ☰ button, its one-item menu, and the instruction card.
 // ---------------------------------------------------------------------------
 function _injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -175,7 +175,7 @@ function _ensureDOM() {
   gear.id = GEAR_ID;
   gear.type = 'button';
   gear.title = 'Landmark and Gesture Mode';
-  gear.textContent = '⚙';
+  gear.textContent = '☰';
 
   const menu = document.createElement('div');
   menu.id = MENU_ID;
@@ -227,7 +227,7 @@ function _renderInstruction() {
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
       <li>press <kbd>→</kbd> (Right Arrow) — or <kbd>→</kbd> <kbd>→</kbd> <kbd>→</kbd> quickly if you're in a text field</li>
-      <li>tick it in the <strong>⚙</strong> menu (top-left)</li>
+      <li>tick it in the <strong>☰</strong> menu (top-left)</li>
       <li class="${blocked ? 'lg-blocked' : ''}">close your left eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
   `;

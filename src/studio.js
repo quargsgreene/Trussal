@@ -251,17 +251,12 @@ function renderStrip(container) {
 }
 
 function metricsLine(peer) {
-  // preciseMs, not toFixed(0): these are the samples the WC readout directly
-  // below is computed from, and at LAN scale a fixed 0-decimal render printed
-  // a 0.4 ms RTT as "0ms" next to a WCL of "0.40ms" — the same number,
+  // preciseMs, not toFixed(0): at LAN scale a fixed 0-decimal render printed a
+  // 0.4 ms RTT as "0ms" next to a WCL of "0.40ms" — the same number,
   // contradicting itself two lines apart. It coerces null to 0, so the
   // unmeasured guard stays.
   const ms = (v) => (typeof v === 'number' ? preciseMs(v) : '–');
   const rtt = ms(peer.rtt);
-  const jitter = ms(peer.jitter);
-  const rtcRtt = ms(peer.rtcRtt);
-  const rtcJitter = ms(peer.rtcJitter);
-  const loss = typeof peer.packetLoss === 'number' ? `${(peer.packetLoss * 100).toFixed(1)}%` : '–';
   const extLabel  = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
   const routed = routedSet.has(peer.jitsiId);
   const propagating = peer.isLocal && isPropagatingToRoom();
@@ -273,11 +268,11 @@ function metricsLine(peer) {
   } else if (peer.isLocal) {
     // Local Strudel audio bypasses the worklet chain (goes directly to master
     // gain), so it never lands in audioRouted. Show play state instead.
-    routedTxt = peer.playing ? '<b>instrument ▶</b>' : 'not playing';
+    routedTxt = peer.playing ? '<b>instrument playing</b>' : 'not playing';
   } else {
     routedTxt = 'no live audio';
   }
-  return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCL is built from">RTT <b>${rtt}</b> · media RTT <b>${rtcRtt}</b> · jitter <b>${jitter}</b> · media jitter <b>${rtcJitter}</b> · loss <b>${loss}</b> · ${routedTxt}</div>`;
+  return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">RTT <b>${rtt}</b> · ${routedTxt}</div>`;
 }
 
 // The one network panel: this peer's measured link and the room-wide
@@ -297,9 +292,9 @@ function metricsLine(peer) {
 // dormant (see setJPatternActive); this is the same pure calculation.
 function cycleLengthReadout(wc) {
   const text = getProgramText();
-  if (!text) return 'turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
+  if (!text) return 'Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
   const { ast, valid } = parseMetaprogram(text);
-  if (!valid) return 'turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
+  if (!valid) return 'Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
   const { seconds, beats, beatSeconds } = cycleLength({ cycles: ast.cycles, tempo: ast.tempo, metrics: wc });
   const targetS = timingTargetSeconds(ast.cycles, wc);
   const { metric, factor, fixed } = ast.cycles;
@@ -309,7 +304,7 @@ function cycleLengthReadout(wc) {
   const source = fixed != null
     ? `pinned ${fixed}s`
     : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
-  return `turn length: <b>${seconds.toFixed(3)}s</b> ` +
+  return `Current turn length: <b>${seconds.toFixed(3)}s</b> ` +
     `<span class="ts-dim">= ${escapeHtml(source)} &times; ${factor} = ${targetS.toFixed(3)}s` +
     `, rounded up to ${beats} &times; ${beatSeconds.toFixed(3)}s beat</span>`;
 }
@@ -359,10 +354,6 @@ function updateMetricsSection(el, peer, controls = '') {
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
-      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
-        + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}
-        <span title="worst value of each term across the room — an upper bound, so no real path exceeds it">(upper bound)</span>
-        <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;
   } catch (e) {
@@ -575,17 +566,17 @@ function createLocalProgramSection(isLocal) {
   const controls = isLocal
     ? `
       <div class="ts-section-controls">
-        <button class="ts-btn play" data-action="play">▶ Play</button>
-        <button class="ts-btn stop" data-action="stop">■ Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">⬆ Samples</button>
+        <button class="ts-btn play" data-action="play">Play</button>
+        <button class="ts-btn stop" data-action="stop">Stop</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
-        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">⬆ Data</button>
+        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop · Ctrl+/ to comment</span>
       </div>`
     : `
       <div class="ts-section-controls">
-        <button class="ts-btn eval" data-action="remote-eval">▶ Eval</button>
+        <button class="ts-btn eval" data-action="remote-eval">Eval</button>
         <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
         <span class="ts-shortcuts">Ctrl+Enter to send · Ctrl+/ to comment</span>
       </div>`;
@@ -778,7 +769,7 @@ function patchLocalProgramSection(el, peer, isLocal) {
 
   const muteBtnEl = el.querySelector('.ts-remote-mute-btn');
   muteBtnEl.style.display = peer.isBot ? '' : 'none';
-  muteBtnEl.textContent = peer.muted ? '🔇 Muted' : '🔈 Mute';
+  muteBtnEl.textContent = peer.muted ? 'Muted' : 'Mute';
   muteBtnEl.classList.toggle('on', !!peer.muted);
 
   // Never stomp an unsent edit: while focused, only follow a live pattern
@@ -861,7 +852,7 @@ function updateSampleBanksArea(el) {
     return `<button class="ts-sample-bank${b.kind === 'audio' ? '' : ' data'}${open ? ' open' : ''}"
       data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
       title="${b.kind === 'audio' ? 'audio bank' : `${b.kind.toUpperCase()} data pack`}${
-        b.truncated ? ' — truncated to fit the memory budget' : ''}">${label}${b.truncated ? ' ⚠' : ''}</button>`;
+        b.truncated ? ' — truncated to fit the memory budget' : ''}">${label}${b.truncated ? ' (truncated)' : ''}</button>`;
   };
   const openBank = sampleBanks.find(b => b.name === expandedBank);
   const sampleList = openBank ? `
@@ -870,7 +861,7 @@ function updateSampleBanksArea(el) {
         <span class="ts-sample-item">
           <span class="ts-sample-idx">${openBank.kind === 'audio' ? i : i + 1}</span>
           <span class="ts-sample-label"${s.preview ? ` title="${escapeHtml(s.preview)}"` : ''}>${escapeHtml(s.label)}</span>
-          ${s.length != null ? `<span class="ts-sample-len">${s.length}${s.truncated ? '⚠' : ''}</span>` : ''}
+          ${s.length != null ? `<span class="ts-sample-len">${s.length}${s.truncated ? ' (truncated)' : ''}</span>` : ''}
           <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s.id)}"
             title="delete this sample">×</button>
         </span>`).join('')}

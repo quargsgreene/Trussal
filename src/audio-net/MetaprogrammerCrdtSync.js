@@ -135,7 +135,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings 
     getLastAuthorIndex: () => lastAuthorIndex,
 
     // Apply with no text change (typing already synced every keystroke into
-    // the doc, so the ▶ Apply diff is usually empty): broadcast the full doc
+    // the doc, so the Apply diff is usually empty): broadcast the full doc
     // state stamped modality 'apply' so every receiver still gets the RUN
     // signal. A snapshot is a no-op on converged docs and compacts the
     // sidecar's update log as a side effect.

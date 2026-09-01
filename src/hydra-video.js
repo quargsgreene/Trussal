@@ -407,7 +407,7 @@ function _ensurePanel() {
   panel.innerHTML = `
     <div class="hv-header">
       <div class="hv-title">hydra video</div>
-      <button class="hv-collapse-btn ts-dwell-btn" title="Collapse panel" aria-label="Collapse">▼</button>
+      <button class="hv-collapse-btn ts-dwell-btn" title="Collapse panel" aria-label="Collapse">▲</button>
     </div>
     <div class="hv-body">
       <video id="${VIDEO_ID}" muted playsinline></video>
@@ -420,7 +420,7 @@ function _ensurePanel() {
     const body = panel.querySelector('.hv-body');
     const btn  = panel.querySelector('.hv-collapse-btn');
     const collapsed = body.classList.toggle('collapsed');
-    btn.textContent = collapsed ? '▶' : '▼';
+    btn.textContent = collapsed ? '▼' : '▲';
     btn.title = collapsed ? 'Expand panel' : 'Collapse panel';
   });
 

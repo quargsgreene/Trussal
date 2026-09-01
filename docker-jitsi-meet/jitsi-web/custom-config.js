@@ -50438,7 +50438,7 @@ ${err.toString()}`);
       },
       getLastAuthorIndex: () => lastAuthorIndex,
       // Apply with no text change (typing already synced every keystroke into
-      // the doc, so the ▶ Apply diff is usually empty): broadcast the full doc
+      // the doc, so the Apply diff is usually empty): broadcast the full doc
       // state stamped modality 'apply' so every receiver still gets the RUN
       // signal. A snapshot is a no-op on converged docs and compacts the
       // sidecar's update log as a side effect.
@@ -52680,7 +52680,11 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-chip:hover { background: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-chip.selected {
+  /* No border on the selected chip \u2014 the inverted fill already marks it, and
+     box-sizing:border-box keeps the geometry identical to the 1px unselected
+     chips so nothing shifts. */
   border-color: var(--trussal-secondary, #111111);
+  border-width: 0;
   background: var(--trussal-secondary, #111111);
   color: var(--trussal-primary, #eeeeee);
 }
@@ -56545,7 +56549,7 @@ ${full}
     panel.innerHTML = `
     <div class="hv-header">
       <div class="hv-title">hydra video</div>
-      <button class="hv-collapse-btn ts-dwell-btn" title="Collapse panel" aria-label="Collapse">\u25BC</button>
+      <button class="hv-collapse-btn ts-dwell-btn" title="Collapse panel" aria-label="Collapse">\u25B2</button>
     </div>
     <div class="hv-body">
       <video id="${VIDEO_ID}" muted playsinline></video>
@@ -56557,7 +56561,7 @@ ${full}
       const body = panel.querySelector(".hv-body");
       const btn = panel.querySelector(".hv-collapse-btn");
       const collapsed = body.classList.toggle("collapsed");
-      btn.textContent = collapsed ? "\u25B6" : "\u25BC";
+      btn.textContent = collapsed ? "\u25BC" : "\u25B2";
       btn.title = collapsed ? "Expand panel" : "Collapse panel";
     });
     _updatePanelStatus();
@@ -60354,7 +60358,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
 
-    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the \u2328 button
+    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
        sits flush beside the Face button whether or not the facial-gesture
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
@@ -60389,7 +60393,7 @@ ${snippet}${JP_BTN_MARKER}`;
     header.className = "ts-kbd-header";
     const title = document.createElement("span");
     title.className = "ts-kbd-title";
-    title.textContent = "\u2328 keyboard";
+    title.textContent = "keyboard";
     const collapseBtn = document.createElement("button");
     collapseBtn.className = "ts-kbd-collapse-btn";
     collapseBtn.type = "button";
@@ -60562,7 +60566,7 @@ ${snippet}${JP_BTN_MARKER}`;
     btn.type = "button";
     btn.className = "ts-dwell-btn";
     btn.title = "Toggle the on-screen keyboard";
-    btn.textContent = "\u2328 Keys";
+    btn.textContent = "Keys";
     btn.addEventListener("mousedown", (e30) => e30.preventDefault());
     btn.addEventListener("click", () => {
       try {
@@ -61069,8 +61073,8 @@ ${snippet}${JP_BTN_MARKER}`;
     <div class="ts-section-head">
       <div class="ts-section-title">JPattern \u2014 shared metaprogram</div>
       <div class="ts-section-controls">
-        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">\u25B6 Apply &amp; Start</button>
-        <button class="ts-btn stop nc-stop" type="button">\u25A0 Stop</button>
+        <button class="ts-btn eval ts-dwell-btn nc-apply" type="button" title="Apply the program and start/resume this browser's ensemble">Apply &amp; Start</button>
+        <button class="ts-btn stop nc-stop" type="button">Stop</button>
         <button class="ts-btn ghost ts-dwell-btn nc-delayed" type="button" aria-pressed="false"
           title="Delayed Streaming \u2014 the aggregator pre-buffers each performer's off-turn output and streams that backlog on their turn (picking up where the last turn left off, falling through to live if it drains) instead of onsetting live. Room-wide; kept alongside the live-onset path for comparison.">Delayed Streaming</button>
         <span class="ts-shortcuts nc-shortcuts">Ctrl+Enter to apply &amp; start \xB7 Ctrl+. to stop</span>
@@ -61129,7 +61133,7 @@ ${snippet}${JP_BTN_MARKER}`;
       if (key !== btnsKey) {
         btnsKey = key;
         btnsEl.innerHTML = buttons.map(
-          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>\u25B6 ${esc(b.label)}</button>`
+          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>${esc(b.label)}</button>`
         ).join("");
         btnsEl.querySelectorAll(".jp-head-btn").forEach((btn) => {
           btn.addEventListener("click", () => press2(btn.dataset.jpatternCode));
@@ -61343,26 +61347,26 @@ ${snippet}${JP_BTN_MARKER}`;
   // components/MetaprogrammerCycleHighlighter.js
   init_peer_state();
   var MIRROR_PROPS = [
-    "fontFamily",
-    "fontSize",
-    "fontWeight",
-    "fontStyle",
-    "fontVariant",
-    "letterSpacing",
-    "textTransform",
-    "wordSpacing",
-    "textIndent",
-    "lineHeight",
-    "tabSize",
-    "paddingTop",
-    "paddingRight",
-    "paddingBottom",
-    "paddingLeft",
-    "borderTopWidth",
-    "borderRightWidth",
-    "borderBottomWidth",
-    "borderLeftWidth",
-    "boxSizing"
+    "font-family",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "font-variant",
+    "letter-spacing",
+    "text-transform",
+    "word-spacing",
+    "text-indent",
+    "line-height",
+    "tab-size",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+    "box-sizing"
   ];
   function injectStyleOnce() {
     if (document.getElementById("jp-play-style")) return;
@@ -61405,7 +61409,7 @@ ${snippet}${JP_BTN_MARKER}`;
     let activeKind = getActiveJPatternKind();
     function syncMetrics() {
       const cs = getComputedStyle(ta);
-      for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
+      for (const p of MIRROR_PROPS) mirror.style.setProperty(p, cs.getPropertyValue(p), "important");
       const bl = parseFloat(cs.borderLeftWidth) || 0;
       const br = parseFloat(cs.borderRightWidth) || 0;
       mirror.style.width = ta.clientWidth + bl + br + "px";
@@ -61732,10 +61736,6 @@ ${snippet}${JP_BTN_MARKER}`;
   function metricsLine(peer) {
     const ms = (v2) => typeof v2 === "number" ? preciseMs(v2) : "\u2013";
     const rtt = ms(peer.rtt);
-    const jitter = ms(peer.jitter);
-    const rtcRtt = ms(peer.rtcRtt);
-    const rtcJitter = ms(peer.rtcJitter);
-    const loss = typeof peer.packetLoss === "number" ? `${(peer.packetLoss * 100).toFixed(1)}%` : "\u2013";
     const extLabel = getExternalStreamLabel(peer.jitsiId) || getExternalNodeLabel(peer.jitsiId);
     const routed = routedSet.has(peer.jitsiId);
     const propagating = peer.isLocal && isPropagatingToRoom();
@@ -61745,22 +61745,22 @@ ${snippet}${JP_BTN_MARKER}`;
     } else if (routed) {
       routedTxt = "<b>routed</b>";
     } else if (peer.isLocal) {
-      routedTxt = peer.playing ? "<b>instrument \u25B6</b>" : "not playing";
+      routedTxt = peer.playing ? "<b>instrument playing</b>" : "not playing";
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta" title="RTT and jitter are the WS ping/pong signalling leg to the sidecar; the media figures come from RTCStats on the audio path and are what WCL is built from">RTT <b>${rtt}</b> \xB7 media RTT <b>${rtcRtt}</b> \xB7 jitter <b>${jitter}</b> \xB7 media jitter <b>${rtcJitter}</b> \xB7 loss <b>${loss}</b> \xB7 ${routedTxt}</div>`;
+    return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">RTT <b>${rtt}</b> \xB7 ${routedTxt}</div>`;
   }
   function cycleLengthReadout(wc) {
     const text2 = getProgramText();
-    if (!text2) return 'turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
+    if (!text2) return 'Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
     const { ast: ast2, valid } = parseMetaprogram(text2);
-    if (!valid) return 'turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
+    if (!valid) return 'Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
     const { seconds: seconds2, beats, beatSeconds: beatSeconds2 } = cycleLength({ cycles: ast2.cycles, tempo: ast2.tempo, metrics: wc });
     const targetS = timingTargetSeconds(ast2.cycles, wc);
     const { metric, factor, fixed } = ast2.cycles;
     const source2 = fixed != null ? `pinned ${fixed}s` : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
-    return `turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
+    return `Current turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
   }
   function preciseMs(v2) {
     const n2 = Number(v2) || 0;
@@ -61792,10 +61792,6 @@ ${snippet}${JP_BTN_MARKER}`;
       ${metricsLine(peer)}
       <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
-      <div class="ts-meta ts-dim">WCL = net ${preciseMs(Math.max(0, wc.wcl - (wc.wcjb || 0) - (wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)))}
-        + buffer ${preciseMs(wc.wcjb || 0)} + rig ${preciseMs(wc.wcpipe ?? PIPELINE_ALLOWANCE_MS)}
-        <span title="worst value of each term across the room \u2014 an upper bound, so no real path exceeds it">(upper bound)</span>
-        <span title="rigs that measured their own capture/codec/playout latency by loopback; the rest use the ${PIPELINE_ALLOWANCE_MS}ms fallback">${wc.pipelineMeasured ?? 0}/${wc.sampleCount} rigs measured</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;
     } catch (e30) {
@@ -61932,16 +61928,16 @@ ${snippet}${JP_BTN_MARKER}`;
     el.className = "ts-section ts-local-program-section";
     const controls2 = isLocal ? `
       <div class="ts-section-controls">
-        <button class="ts-btn play" data-action="play">\u25B6 Play</button>
-        <button class="ts-btn stop" data-action="stop">\u25A0 Stop</button>
-        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">\u2B06 Samples</button>
+        <button class="ts-btn play" data-action="play">Play</button>
+        <button class="ts-btn stop" data-action="stop">Stop</button>
+        <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">Samples</button>
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
-        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">\u2B06 Data</button>
+        <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop \xB7 Ctrl+/ to comment</span>
       </div>` : `
       <div class="ts-section-controls">
-        <button class="ts-btn eval" data-action="remote-eval">\u25B6 Eval</button>
+        <button class="ts-btn eval" data-action="remote-eval">Eval</button>
         <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
         <span class="ts-shortcuts">Ctrl+Enter to send \xB7 Ctrl+/ to comment</span>
       </div>`;
@@ -62085,7 +62081,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     const muteBtnEl = el.querySelector(".ts-remote-mute-btn");
     muteBtnEl.style.display = peer.isBot ? "" : "none";
-    muteBtnEl.textContent = peer.muted ? "\u{1F507} Muted" : "\u{1F508} Mute";
+    muteBtnEl.textContent = peer.muted ? "Muted" : "Mute";
     muteBtnEl.classList.toggle("on", !!peer.muted);
     const codeEl = el.querySelector(".ts-code");
     const active4 = document.activeElement === codeEl;
@@ -62149,7 +62145,7 @@ ${snippet}${JP_BTN_MARKER}`;
       const open = expandedBank === b.name;
       return `<button class="ts-sample-bank${b.kind === "audio" ? "" : " data"}${open ? " open" : ""}"
       data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
-      title="${b.kind === "audio" ? "audio bank" : `${b.kind.toUpperCase()} data pack`}${b.truncated ? " \u2014 truncated to fit the memory budget" : ""}">${label2}${b.truncated ? " \u26A0" : ""}</button>`;
+      title="${b.kind === "audio" ? "audio bank" : `${b.kind.toUpperCase()} data pack`}${b.truncated ? " \u2014 truncated to fit the memory budget" : ""}">${label2}${b.truncated ? " (truncated)" : ""}</button>`;
     };
     const openBank = sampleBanks.find((b) => b.name === expandedBank);
     const sampleList = openBank ? `
@@ -62158,7 +62154,7 @@ ${snippet}${JP_BTN_MARKER}`;
         <span class="ts-sample-item">
           <span class="ts-sample-idx">${openBank.kind === "audio" ? i : i + 1}</span>
           <span class="ts-sample-label"${s2.preview ? ` title="${escapeHtml(s2.preview)}"` : ""}>${escapeHtml(s2.label)}</span>
-          ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? "\u26A0" : ""}</span>` : ""}
+          ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? " (truncated)" : ""}</span>` : ""}
           <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s2.id)}"
             title="delete this sample">\xD7</button>
         </span>`).join("")}
@@ -62603,7 +62599,7 @@ ${snippet}${JP_BTN_MARKER}`;
     gear.id = GEAR_ID;
     gear.type = "button";
     gear.title = "Landmark and Gesture Mode";
-    gear.textContent = "\u2699";
+    gear.textContent = "\u2630";
     const menu = document.createElement("div");
     menu.id = MENU_ID;
     menu.innerHTML = `
@@ -62650,7 +62646,7 @@ ${snippet}${JP_BTN_MARKER}`;
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
       <li>press <kbd>\u2192</kbd> (Right Arrow) \u2014 or <kbd>\u2192</kbd> <kbd>\u2192</kbd> <kbd>\u2192</kbd> quickly if you're in a text field</li>
-      <li>tick it in the <strong>\u2699</strong> menu (top-left)</li>
+      <li>tick it in the <strong>\u2630</strong> menu (top-left)</li>
       <li class="${blocked ? "lg-blocked" : ""}">close your left eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
     </ul>
   `;

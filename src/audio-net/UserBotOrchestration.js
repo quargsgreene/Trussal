@@ -158,7 +158,7 @@ export function muteBots(selector, muted) {
 }
 
 // Room-wide, unlike mute/removeBots/setBotsVideo above: every bot in the
-// room, regardless of owner, since the JPattern ■ Stop it backs is a
+// room, regardless of owner, since the JPattern Stop it backs is a
 // room-wide "everyone go silent" rather than a per-cluster action. Rides the
 // SAME remote-control channel as mute but a separate 'stop' action/gate (see
 // sendRemoteStop, page-scripts.js's trussal-remote-stop) so a Stop/Apply

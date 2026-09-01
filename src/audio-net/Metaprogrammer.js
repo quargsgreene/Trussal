@@ -7,7 +7,7 @@
 // scheduler slot grid — so a turn lasts the cycle length `# cycles` derives
 // from the live worst-case metrics (bots/src/bot/aggregator-bot.js). Typing only
 // syncs the shared TEXT; the ring (and programText here) adopt a program
-// solely on an explicit apply (▶ Apply / Ctrl+Enter / /jp/apply), the
+// solely on an explicit apply (Apply / Ctrl+Enter / /jp/apply), the
 // one-time roster seed, or a late joiner's catch-up. The room
 // starts under the default program — `$ participants <0>`, the first
 // participant to join streaming continuously — seeded into the shared doc
@@ -405,7 +405,7 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 export function getProgramText() { return programText; }
 
 // Tell every other HUMAN peer running the shared metaprogram to silence
-// their local ensemble the same way this browser's ■ Stop does. Does NOT
+// their local ensemble the same way this browser's Stop does. Does NOT
 // reach bots — a bot's page never mounts components/MetaprogrammerEditor.js
 // (nothing ever opens the Studio overlay there), and its actual audio is a
 // separate standalone @strudel/repl instance this signal couldn't touch
