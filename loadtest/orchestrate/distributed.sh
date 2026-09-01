@@ -75,34 +75,51 @@ echo "distributed: cell $CELL  room=$ROOM  workers=$TOTAL_W  dur=${DUR}s"
 
 PIDFILE="$LT_DIR/results/$RUN_ID/logs/workers-$CELL.pids"; : > "$PIDFILE"
 
+# stop_workers pattern-kills by the worker's own --logfile path, which carries
+# $RUN_ID and $CELL and stays in the process argv. Tracking $! over ssh is
+# unreliable once setsid re-forks, and the old `& echo $!` form also hung the
+# ssh channel open on the backgrounded job's inherited fds (the run blocked
+# here forever the first time this path ran for real).
+WORKER_TAG="results/$RUN_ID/logs/worker-.*-$CELL\\.log"
+
 start_workers() {
   for key in "${!WCOUNT[@]}"; do
     IFS='|' read -r name ssh numa <<< "$key"
     n=${WCOUNT[$key]}
     for i in $(seq 1 "$n"); do
       node=$(( (i - 1) % (numa > 0 ? numa : 1) ))
+      # ( setsid ... </dev/null >/dev/null 2>&1 & ) ; exit 0  fully detaches so
+      # the ssh returns at once instead of waiting on the worker's fds.
       remote="cd $LT_DIR_REMOTE && \
-        RUN_ID=$RUN_ID PROFILE=$PID SCENARIO=$SID TRUSSAL_HOST=$HOST TRUSSAL_SCHEME=$SCHEME \
-        TRUSSAL_TARGET=$TARGET TRUSSAL_TURN_MODE=$TURN_MODE \
-        LT_ROOM=$ROOM INVENTORY=$INV SCENARIOS_YAML=$SCENARIOS_YAML_REMOTE \
-        LT_SEED_VIDEO=$LT_DIR_REMOTE/media/seeds/camera_320x240_15.y4m \
-        LT_SEED_AUDIO=$LT_DIR_REMOTE/media/seeds/mic_16k.wav \
-        nohup numactl --cpunodebind=$node --preferred=$node \
-        $VENV_REMOTE/bin/locust -f locust/locustfile.py --worker --master-host=$MASTER_IP \
-        --master-port=$MASTER_PORT \
-        --logfile results/$RUN_ID/logs/worker-$name-$i-$CELL.log \
-        >/dev/null 2>&1 & echo \$!"
-      wpid=$(ssh -o BatchMode=yes "$ssh" bash -lc "'$remote'")
-      echo "$ssh $wpid" >> "$PIDFILE"
+        ( setsid nohup env \
+          RUN_ID=$RUN_ID PROFILE=$PID SCENARIO=$SID TRUSSAL_HOST=$HOST TRUSSAL_SCHEME=$SCHEME \
+          TRUSSAL_TARGET=$TARGET TRUSSAL_TURN_MODE=$TURN_MODE \
+          LT_ROOM=$ROOM INVENTORY=$INV SCENARIOS_YAML=$SCENARIOS_YAML_REMOTE \
+          LT_SEED_VIDEO=$LT_DIR_REMOTE/media/seeds/camera_320x240_15.y4m \
+          LT_SEED_AUDIO=$LT_DIR_REMOTE/media/seeds/mic_16k.wav \
+          numactl --cpunodebind=$node --preferred=$node \
+          $VENV_REMOTE/bin/locust -f locust/locustfile.py --worker --master-host=$MASTER_IP \
+          --master-port=$MASTER_PORT \
+          --logfile results/$RUN_ID/logs/worker-$name-$i-$CELL.log \
+          >/dev/null 2>&1 </dev/null & ) ; exit 0"
+      ssh -n -o BatchMode=yes "$ssh" "$remote"
+      echo "$ssh" >> "$PIDFILE"
     done
     echo "  $name: $n workers"
   done
 }
 
 stop_workers() {
-  while read -r ssh wpid; do
-    [[ -n "$wpid" ]] && ssh -o BatchMode=yes "$ssh" "kill $wpid 2>/dev/null; pkill -P $wpid 2>/dev/null" || true
-  done < "$PIDFILE"
+  sort -u "$PIDFILE" 2>/dev/null | while read -r ssh; do
+    [[ -z "$ssh" ]] && continue
+    ssh -n -o BatchMode=yes "$ssh" "
+      pkill -f '$WORKER_TAG' 2>/dev/null
+      sleep 1
+      pkill -f 'harness/media_agent.py' 2>/dev/null
+      pkill -f 'chrome-linux64/chrome' 2>/dev/null
+      pkill -f 'chrome_crashpad_handler' 2>/dev/null
+      true" || true
+  done
 }
 trap stop_workers EXIT
 
