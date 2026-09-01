@@ -1,0 +1,191 @@
+# The four load scenarios and the campaign matrix.
+#
+# Each scenario defines a step schedule: the shape (locust/shapes.py) reads
+# `steps` and holds each `hold_s` seconds at the given level, so every metric
+# can be aggregated per (profile, scenario, step_level). `run_campaign.sh`
+# crosses `matrix.profiles` x `matrix.scenarios`.
+
+matrix:
+  # profile ids from netem_profiles.yaml, swept outer (clean -> worst)
+  profiles: [p0_lan, p1_lte_good, p2_lte_typical, p3_lte_busy, p4_hspa, p5_edge]
+  # plus the mobility overlay cell (base p3, handover loop on)
+  extra_cells:
+    - {profile: p3_lte_busy, handover: true, scenarios: [S1, S2]}
+  scenarios: [S1, S2, S3, S4]
+  # between cells: clear netem, tear down rooms, 90 s settle
+  intercell_settle_s: 90
+
+# --- Layout C: matched-pair turn-assignment study --------------------------- #
+# S5 drives BOTH targets at once under identical netem (variance cancels);
+# S6 ramps ONE target to failure. `targets` here overrides matrix.scenarios
+# routing in run_campaign.sh.
+turn_study:
+  targets: [sut_explicit, sut_hash]
+  profiles: [p2_lte_typical, p3_lte_busy, p4_hspa]   # where the difference shows
+  matched_load: [S5]                                 # run against both, one netem
+  break_find: [S6]                                   # run against each, alone
+  intercell_settle_s: 90
+
+# ---------------------------------------------------------------------------
+scenarios:
+
+  S1_steady_join:
+    id: S1
+    description: >
+      Humans join a single room at a fixed arrival rate and stay. Isolates the
+      cost of roster size / simulcast / SFU forwarding as N grows.
+    shape: SteadyJoinShape
+    room_mode: single                 # one room, all participants
+    user_classes: [HumanParticipantUser, SidecarGhostUser]
+    ghost_ratio: 3                     # 3 app-plane-only WS clients per media browser
+    media_profile:                    # passed to media_agent.py
+      video_height: 240
+      fps: 15
+      strudel_on: true
+      hydra: false
+    steps:                            # level = concurrent human participants
+      - {level: 4,   hold_s: 240}
+      - {level: 8,   hold_s: 240}
+      - {level: 16,  hold_s: 300}
+      - {level: 32,  hold_s: 300}
+      - {level: 64,  hold_s: 360}
+      - {level: 120, hold_s: 420}
+    arrival_rate_per_s: 0.5           # ramp between steps
+
+  S2_bot_swarm:
+    id: S2
+    description: >
+      A small fixed set of humans, then bots spawned in growing clusters via
+      fleet-request (the Studio "spawn N" path). Stresses the bots VM, the
+      per-room aggregator, and the SFU's last-N / channel handling.
+    shape: BotRampShape
+    room_mode: single
+    user_classes: [HumanParticipantUser, BotOperatorUser]
+    humans: 4
+    media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: true}
+    # level = TOTAL bots requested across operators; BotRampShape splits across `humans`
+    steps:
+      - {level: 4,   hold_s: 300}
+      - {level: 12,  hold_s: 300}
+      - {level: 24,  hold_s: 360}
+      - {level: 48,  hold_s: 420}
+      - {level: 96,  hold_s: 480}
+    spawn_batch: 4                    # bots per fleet-request; operator waits for fleet-status
+    require_max_bots: 120             # preflight raises the conductor ceiling to this
+
+  S3_metaprogram_growth:
+    id: S3
+    description: >
+      One editor grows the shared `$ participants` sequence one token at a time
+      while a fixed population (humans + a few bots) is present. Measures Yjs
+      fan-out, aggregator ring rescheduling, nc-active cadence drift, and whether
+      turn-gated output keeps up as the ring lengthens.
+    shape: MetaprogramGrowthShape
+    room_mode: single
+    user_classes: [HumanParticipantUser, MetaprogramEditorUser]
+    humans: 12
+    seed_bots: 6                      # so there are real indices to schedule
+    media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: true}
+    # level = number of tokens in `$ participants < ... >`
+    steps:
+      - {level: 2,   hold_s: 180}
+      - {level: 4,   hold_s: 180}
+      - {level: 8,   hold_s: 240}
+      - {level: 16,  hold_s: 240}
+      - {level: 24,  hold_s: 300}
+      - {level: 32,  hold_s: 300}
+    directives: "# cycles wcl\n# tempo 110\n# room wcl 2\n# mosaic"
+    edit_interval_s: 6               # append one token every N s within a step
+
+  S4_codevolume_media:
+    id: S4
+    description: >
+      A fixed human population; each performer churns their editor at a rising
+      byte budget, cycling through media kinds (plain Strudel, sample banks,
+      image banks, data-pack refs, Hydra, Text Cycles, CSS Cycles). CSS Cycles
+      forces a sidecar SCSS compile per update — the server-CPU vector. Also
+      pushes growing `datapacks` and `sample-file` blobs.
+    shape: CodeVolumeShape
+    room_mode: single
+    user_classes: [HumanParticipantUser]
+    humans: 24
+    media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: true}
+    # level = approx bytes of code pushed per performer per update
+    steps:
+      - {level: 200,    hold_s: 240}
+      - {level: 1000,   hold_s: 240}
+      - {level: 4000,   hold_s: 300}
+      - {level: 12000,  hold_s: 300}
+      - {level: 32000,  hold_s: 360}
+    media_kinds: [plain, samples, images, datapack, hydra, textcycles, csscycles]
+    update_interval_s: 4            # each performer pushes an update every N s
+    datapack_rows_per_level: [8, 32, 64, 64, 64]   # capped at sidecar PACK_MAX_SAMPLES
+
+  # ----- S5: turn-stability under churn (matched load, both SUTs) ---------- #
+  S5_churn:
+    id: S5
+    description: >
+      A fixed ring of humans + seed bots, then a steady-state churn process:
+      every churn_interval_s, `churn_batch` participants leave and an equal
+      number join (roster size held constant), a fraction as hard SIGKILL
+      (involuntary). Run against sut_explicit and sut_hash under one netem
+      profile at a time. The comparison metric is turn-map disruption per
+      churn event: what fraction of surviving tokens' next-turn slot moved,
+      diffed from the `nc-active` stream the observer already logs. Also
+      time-to-first-turn for a joiner, and Jain fairness on turns/participant.
+    shape: ChurnShape
+    room_mode: single
+    user_classes: [HumanParticipantUser, ChurnUser, SidecarGhostUser]
+    humans: 16                       # stable ring core (never churn)
+    seed_bots: 12                    # more real tokens on the ring
+    ghost_ratio: 4                   # roster pressure without browser cost
+    media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: false}
+    # level = churn rate: join+leave EVENTS per minute across the churn pool
+    steps:
+      - {level: 2,   hold_s: 240}
+      - {level: 6,   hold_s: 240}
+      - {level: 12,  hold_s: 300}
+      - {level: 24,  hold_s: 300}
+      - {level: 48,  hold_s: 360}
+    churn_pool: 16                   # ChurnUser instances that cycle in/out
+    involuntary_frac: 0.35           # of churn-outs, this share are hard kills
+    rejoin_delay_s: [3, 12]          # a leaver waits this long, then rejoins
+    # explicit arm maintains `$ participants <literal>` on every roster change;
+    # hash arm writes `# ring hash` once. The harness picks by target.turn_mode.
+    program_directives: "# cycles wcl\n# tempo 110"
+
+  # ----- S6: ramp one SUT to where its turn scheduling breaks ------------- #
+  S6_breakfind:
+    id: S6
+    description: >
+      Monotonic participant ramp with a constant background churn, against ONE
+      target. BreakFindShape keeps raising the level every dwell_s and stops
+      when BreakDetector reports a SUSTAINED break — involuntary-dropout hazard
+      over threshold, nc-active turn gap over N x the ideal slot, aggregator or
+      JVB CPU pegged, or join-success rate collapsed. The recorded break_level
+      is the headline: does `# ring hash` sustain more participants / churn
+      before turn scheduling falls apart than the maintained literal.
+    shape: BreakFindShape
+    room_mode: single
+    user_classes: [HumanParticipantUser, ChurnUser, SidecarGhostUser]
+    seed_bots: 12
+    ghost_ratio: 4
+    media_profile: {video_height: 240, fps: 15, strudel_on: true, hydra: false}
+    ramp: {start: 8, increment: 8, max: 200, dwell_s: 150}
+    background_churn_per_min: 8
+    program_directives: "# cycles wcl\n# tempo 110"
+    break_conditions:
+      dropout_hazard_per_part_min: 0.5
+      nc_gap_multiple_of_ideal: 3.0
+      aggregator_cpu_pct: 90
+      jvb_cpu_pct: 92
+      join_success_rate: 0.5
+      sustained_s: 30              # a condition must hold this long to count
+      poll_s: 5
+
+# passed through to every media_agent unless a scenario overrides
+media_defaults:
+  join_timeout_s: 45
+  stats_interval_s: 2
+  # intentional leave marker so the observer/agent can classify a close as voluntary
+  graceful_leave: true

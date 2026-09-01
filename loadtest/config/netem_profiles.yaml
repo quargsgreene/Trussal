@@ -1,0 +1,105 @@
+# WWAN degradation ladder. orchestrate/netem.sh reads this and builds, on each
+# generator's uplink `iface` (from inventory.yaml), toward campaign.vm_subnet:
+#
+#   root htb  -> class rate <rate_up_kbit>            (egress cap / uplink)
+#     -> netem delay <delay_ms> <jitter_ms> distribution normal
+#                loss <loss_pct>% <loss_corr_pct>%
+#                reorder <reorder_pct>% 50%   duplicate <dup_pct>%
+#                corrupt <corrupt_pct>%   limit <backlog_pkts>
+#
+# and the mirror on an ifb device for ingress (downlink) with <rate_down_kbit>.
+# delay/jitter/loss are applied to BOTH directions (added, so end-to-end RTT
+# gains ~2x delay_ms); rate differs per direction.
+#
+# order is the campaign sweep order (clean -> worst).
+
+profiles:
+  - id: p0_lan
+    label: "LAN baseline"
+    delay_ms: 0
+    jitter_ms: 0
+    loss_pct: 0.0
+    loss_corr_pct: 0
+    reorder_pct: 0.0
+    dup_pct: 0.0
+    corrupt_pct: 0.0
+    rate_down_kbit: 0        # 0 = unshaped
+    rate_up_kbit: 0
+    backlog_pkts: 1000
+
+  - id: p1_lte_good
+    label: "LTE (strong)"
+    delay_ms: 20
+    jitter_ms: 5
+    loss_pct: 0.1
+    loss_corr_pct: 20
+    reorder_pct: 0.2
+    dup_pct: 0.0
+    corrupt_pct: 0.0
+    rate_down_kbit: 25000
+    rate_up_kbit: 8000
+    backlog_pkts: 1000
+
+  - id: p2_lte_typical
+    label: "LTE (median)"
+    delay_ms: 40
+    jitter_ms: 15
+    loss_pct: 0.5
+    loss_corr_pct: 25
+    reorder_pct: 0.5
+    dup_pct: 0.1
+    corrupt_pct: 0.0
+    rate_down_kbit: 12000
+    rate_up_kbit: 4000
+    backlog_pkts: 800
+
+  - id: p3_lte_busy
+    label: "LTE (congested cell)"
+    delay_ms: 65
+    jitter_ms: 35
+    loss_pct: 1.5
+    loss_corr_pct: 30
+    reorder_pct: 1.0
+    dup_pct: 0.2
+    corrupt_pct: 0.1
+    rate_down_kbit: 6000
+    rate_up_kbit: 2000
+    backlog_pkts: 600
+
+  - id: p4_hspa
+    label: "3G / HSPA (cell edge)"
+    delay_ms: 110
+    jitter_ms: 60
+    loss_pct: 3.0
+    loss_corr_pct: 35
+    reorder_pct: 2.0
+    dup_pct: 0.3
+    corrupt_pct: 0.2
+    rate_down_kbit: 3000
+    rate_up_kbit: 1000
+    backlog_pkts: 400
+
+  - id: p5_edge
+    label: "2.5G / deep fade"
+    delay_ms: 200
+    jitter_ms: 90
+    loss_pct: 6.0
+    loss_corr_pct: 40
+    reorder_pct: 3.0
+    dup_pct: 0.5
+    corrupt_pct: 0.3
+    rate_down_kbit: 1000
+    rate_up_kbit: 400
+    backlog_pkts: 300
+
+# Mobility overlay — NOT a sweep step. Applied on top of p3_lte_busy by
+# `netem.sh apply p3_lte_busy <inv> --handover`, which forks a loop doing
+# `tc qdisc change` to inject a stall+burst every stall_every_s..stall_max_s.
+handover_overlay:
+  base: p3_lte_busy
+  stall_ms_min: 800
+  stall_ms_max: 2000
+  stall_every_s_min: 25
+  stall_every_s_max: 40
+  burst_loss_pct: 5.0
+  burst_duration_s: 3

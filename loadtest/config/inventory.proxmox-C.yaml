@@ -1,0 +1,103 @@
+# Layout C — matched-pair staging on Proxmox, with C2 as the generator + break-
+# finder. Copy to inventory.yaml (or pass INVENTORY=config/inventory.proxmox-C.yaml).
+#
+# This file doubles as the VM shopping list. Every `proxmox:` block is a VM you
+# create at Checkpoint B (linked clone of a template; see tools/proxmox/).
+# The two SUTs are IDENTICAL clones of the `trussal-sut` template — "explicit"
+# vs "hash" is only what the harness writes into the shared metaprogram
+# (turn_mode below), so there is no per-SUT build.
+
+# ---- systems under test: two identical Trussal clones ---------------------- #
+targets:
+  sut_explicit:
+    host: 10.20.0.11            # sut-explicit on vmbr1 (isolated test bridge)
+    scheme: https
+    ws_path: /ws
+    xmpp_ws_path: /xmpp-websocket
+    turn_mode: explicit         # harness maintains a literal `$ participants <...>`
+    proxmox:
+      node: c1
+      template: trussal-sut
+      vcpus: 12
+      ram_gib: 18
+      numa: 1
+      cputype: host
+      balloon: 0
+      bridges: [vmbr0, vmbr1]   # vmbr0 mgmt/ssh (unshaped), vmbr1 test traffic
+      pin_note: "NUMA node 0; leave node 1 for sut-explicit-bots"
+  sut_hash:
+    host: 10.20.0.21            # sut-hash on vmbr1
+    scheme: https
+    ws_path: /ws
+    xmpp_ws_path: /xmpp-websocket
+    turn_mode: hash             # harness writes `# ring hash` into the metaprogram
+    proxmox:
+      node: c3
+      template: trussal-sut
+      vcpus: 20
+      ram_gib: 28
+      numa: 0
+      cputype: host
+      balloon: 0
+      bridges: [vmbr0, vmbr1]
+      pin_note: "cores 0-19; sut-hash-bots gets 20-45, gen-c none here"
+
+# ---- per-SUT bot fleets (part of the SUT, sampled by host_stats) ---------- #
+sut_bots:
+  sut_explicit:
+    ssh: trussal@10.0.0.12
+    conductor_admin: http://10.0.0.12:7777
+    container_prefix: trussal-bot-
+    max_bots_for_campaign: 48
+    proxmox: {node: c1, template: trussal-bots, vcpus: 20, ram_gib: 10, numa: 1, cputype: host, balloon: 0, bridges: [vmbr0, vmbr1]}
+  sut_hash:
+    ssh: trussal@10.0.0.22
+    conductor_admin: http://10.0.0.22:7777
+    container_prefix: trussal-bot-
+    max_bots_for_campaign: 48
+    proxmox: {node: c3, template: trussal-bots, vcpus: 26, ram_gib: 20, cputype: host, balloon: 0, pin: "20-45", bridges: [vmbr0, vmbr1]}
+
+# ---- infra VMs to sample with docker stats (compose services on each SUT) - #
+vms:
+  sut_explicit:
+    ssh: trussal@10.0.0.11
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats   # enable COLIBRI_REST_ENABLED=1 on the template
+  sut_hash:
+    ssh: trussal@10.0.0.21
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats
+
+# ---- load generators: both live on C2 ----------------------------------- #
+# Matched-load cells (S5) drive BOTH targets at once; break-find cells (S6)
+# drive ONE. distributed.sh splits gen-worker's browser budget across the
+# active targets.
+generators:
+  - name: gen-master
+    ssh: trussal@10.0.0.31
+    role: [master, worker, collectors, netem]
+    iface: ens19               # the vmbr1-side NIC — netem.sh shapes THIS only
+    numa_nodes: 1
+    media_browsers: 16
+    ghost_ws: 1500
+    proxmox: {node: c2, template: trussal-gen, vcpus: 16, ram_gib: 12, numa: 1, cputype: host, balloon: 0, bridges: [vmbr0, vmbr1]}
+  - name: gen-worker
+    ssh: trussal@10.0.0.32
+    role: [worker]
+    iface: ens19
+    numa_nodes: 1
+    media_browsers: 44
+    ghost_ws: 3000
+    proxmox: {node: c2, template: trussal-gen, vcpus: 20, ram_gib: 16, numa: 0, cputype: host, balloon: 0, bridges: [vmbr0, vmbr1]}
+
+campaign:
+  repo_dir: ~/Trussal/loadtest
+  venv: ~/Trussal/loadtest/.venv
+  vm_subnet: 10.20.0.0/24        # vmbr1 test subnet — netem restricts shaping to this
+  mgmt_subnet: 10.0.0.0/24       # vmbr0 — never shaped
+  room_prefix: loadtest
+  # Proxmox snapshot to roll each SUT back to between cells (optional; needs a
+  # Proxmox cluster + tools/proxmox/snapshot.sh). Empty = no rollback.
+  sut_cold_snapshot: cold

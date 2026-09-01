@@ -1,0 +1,54 @@
+# Checkpoint A — one SUT, one bots VM, one generator. The point of this file is
+# to smoke the real join / observe / netem path (and provision.sh) BEFORE the
+# full Layout-C set exists. Single `target:` (not `targets:`), so preflight.sh
+# and run_campaign.sh's non-Layout-C path work unchanged.
+#
+# Addresses are filled: SUT 192.168.1.41 (VM 1201), bots+generator 192.168.1.42
+# (VM 1203). The template's cloud-init was inert, so the static IPs / trussal
+# user / SSH key were injected by an offline `virt-customize` pass, not the
+# NoCloud datasource (see tools/proxmox/checkpoint-a-bringup.md §0). `qm guest
+# cmd` does not work — the minimal image ships no qemu-guest-agent.
+#
+# Checkpoint A has NO vmbr1 yet — every address here is the vmbr0 192.168.1.x
+# one. netem in this phase shapes the generator's uplink toward that /24
+# (generators[0].iface = enp6s18, the NIC on .42 that routes to .41).
+
+target:
+  host: 192.168.1.41             # VM 1201 sut-explicit (serves the bundle + wss://<host>/ws)
+  scheme: https
+  ws_path: /ws
+  xmpp_ws_path: /xmpp-websocket
+
+vms:
+  # The SUT samples itself with docker stats + Colibri (COLIBRI_REST_ENABLED=1).
+  video:
+    ssh: trussal@192.168.1.41
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats
+  audio:
+    ssh: trussal@192.168.1.41     # no separate audio VM in Checkpoint A; point at the SUT so preflight has something
+    containers: []
+  bots:
+    ssh: trussal@192.168.1.42     # VM 1203 sut-explicit-bots
+    conductor_admin: http://192.168.1.42:7777
+    container_prefix: trussal-bot-
+    max_bots_for_campaign: 24     # small — Checkpoint A is a smoke, not a load run
+
+generators:
+  # Checkpoint A has two VMs; .42 wears both the bots hat and the generator hat.
+  # For the join/observe/figures smoke no generated load runs, so this entry just
+  # needs to resolve. `iface` is confirmed with `ip -o -4 addr` once .42 is up.
+  - name: gen-master
+    ssh: trussal@192.168.1.42
+    role: [master, worker, collectors, netem]
+    iface: enp6s18   # NIC facing the SUT /24 — confirmed on .42: `ip route get 192.168.1.41` -> dev enp6s18
+    numa_nodes: 1
+    media_browsers: 8             # smoke: a handful of real Chromium endpoints
+    ghost_ws: 200
+
+campaign:
+  repo_dir: ~/Trussal/loadtest
+  venv: ~/Trussal/loadtest/.venv
+  vm_subnet: 192.168.1.0/24       # netem restricts shaping to this; ssh/console stay unshaped only if you split subnets later
+  room_prefix: loadtest-cpa

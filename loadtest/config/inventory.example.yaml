@@ -1,0 +1,64 @@
+# Copy to inventory.yaml and fill in. inventory.yaml is gitignored via ../.gitignore
+# (add it there if you keep secrets in it).
+#
+# `target` is the Trussal deployment under test. Point it at a STAGING stack,
+# not meet.trussal.com — preflight.sh blocks the production hostnames unless
+# ALLOW_PROD=1 is exported.
+
+target:
+  # Public host that serves the bundle and proxies wss://<host>/ws .
+  host: staging.trussal.internal
+  scheme: https
+  # WebSocket path for the latency sidecar (nginx route, see latency-instrument/ws-route.conf).
+  ws_path: /ws
+  # xmpp-websocket path (ENABLE_XMPP_WEBSOCKET=1).
+  xmpp_ws_path: /xmpp-websocket
+
+vms:
+  video:
+    ssh: trussal-video@192.168.1.254
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    # container names to sample with `docker stats`
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    # optional: Colibri REST, only if COLIBRI_REST_ENABLED=1 in docker-jitsi-meet/.env
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats
+  audio:
+    ssh: trussal-audio@192.168.1.120
+    containers: []
+  bots:
+    ssh: trussal-bot-vm@192.168.1.232
+    conductor_admin: http://192.168.1.232:7777      # /api/rooms /api/bots /api/config
+    # bot containers are dynamic; sample by name prefix
+    container_prefix: trussal-bot-
+    # campaign raises MAX_BOTS to this for S2, then restores the original on exit
+    max_bots_for_campaign: 120
+
+generators:
+  - name: gen-a
+    ssh: user@192.168.1.201
+    role: [master, worker, collectors, netem]
+    iface: eth0                # uplink toward 192.168.1.0/24 — netem.sh shapes this
+    numa_nodes: 2
+    media_browsers: 50
+    ghost_ws: 800
+  - name: gen-b
+    ssh: user@192.168.1.202
+    role: [worker]
+    iface: eth0
+    numa_nodes: 2
+    media_browsers: 50
+    ghost_ws: 800
+  - name: gen-c
+    ssh: user@192.168.1.203
+    role: [worker, seed-encode]
+    iface: enp4s0
+    numa_nodes: 1
+    media_browsers: 200
+    ghost_ws: 4000
+
+campaign:
+  repo_dir: ~/Trussal/loadtest     # where this tree is checked out on each generator
+  venv: ~/Trussal/loadtest/.venv
+  # LAN subnet netem restricts shaping to — keeps ssh/console traffic unshaped.
+  vm_subnet: 192.168.1.0/24
+  room_prefix: loadtest

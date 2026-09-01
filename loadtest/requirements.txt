@@ -1,0 +1,17 @@
+# Trussal load-test harness — Python deps
+# Python 3.10+ (tested on 3.12 / 3.14)
+
+locust>=2.31,<3.0           # load driver + LoadTestShape + distributed workers
+gevent>=24.2               # locust's concurrency model (pulled by locust; pinned for websocket use)
+websocket-client>=1.8      # sidecar WS client (used from gevent greenlets)
+playwright>=1.47           # real Chromium media endpoints (run `playwright install chromium`)
+requests>=2.32             # conductor /api, web asset fetches outside locust
+paramiko>=3.4              # ssh from collectors to the 3 VMs (no shelling out to ssh)
+PyYAML>=6.0                # config/*.yaml
+
+# analysis + figures
+pandas>=2.2
+pyarrow>=17.0              # tidy Parquet
+numpy>=1.26
+matplotlib>=3.9            # manuscript figures (PDF + PNG)
+scipy>=1.13                # ECDF, lognormal think-times, survival CIs
