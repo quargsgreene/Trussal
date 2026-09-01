@@ -72,7 +72,12 @@ class VMSampler(threading.Thread):
             if len(parts) < 7:
                 continue
             name, cpu, memusage, memperc, netio, blockio, pids = parts
+            # `docker-jitsi-meet-jvb-1.2` -> `jvb`, so the entity stays a stable
+            # `<vm>/<service>` regardless of the compose project prefix (what the
+            # figures key on). Only rewrites the compose form; `trussal-bot-99999`
+            # and already-short names are untouched.
             base = name.split(".")[0]
+            base = re.sub(r"^docker-jitsi-meet-(.*?)-\d+$", r"\1", base)
             self.sink.sample("cpu_pct", _pct(cpu), entity=f"{self.vm_name}/{base}")
             self.sink.sample("mem_mb", _size_mb(memusage.split("/")[0]), entity=f"{self.vm_name}/{base}")
             self.sink.sample("mem_pct", _pct(memperc), entity=f"{self.vm_name}/{base}")

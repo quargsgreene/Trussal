@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plotstyle import apply_style, new_figure, profile_color, watermark
 from _cli import figure_main, stats_by
-from _data import load_summary, load_dropout_rate, PROFILE_IDS, PROFILE_LABELS, is_synthetic
+from _data import (load_summary, load_dropout_rate, ensure_scenarios,
+                   PROFILE_IDS, PROFILE_LABELS, is_synthetic)
 
 OUTPUT_NAME = "fig07_codevolume_media"
 
@@ -26,7 +27,8 @@ def build_figure(run_dir=None, column="double"):
     if column == "single":
         column = "1p5"
     apply_style(column)
-    summary = load_summary(run_dir)
+    summary = ensure_scenarios(load_summary(run_dir), ["S4"], lambda: load_summary(None),
+                               require_metrics="cpu_pct")
     dropout_rate = load_dropout_rate(run_dir)
     code_volume_summary = summary[summary.scenario == "S4"]
     code_volume_dropout = dropout_rate[dropout_rate.scenario == "S4"]

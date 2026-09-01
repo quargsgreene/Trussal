@@ -35,7 +35,8 @@ def build_figure(run_dir=None, column="double"):
         column = "1p5"
     apply_style(column)
     observations = ensure_scenarios(load_observations(run_dir), ["S1"],
-                                    lambda: load_observations(None))
+                                    lambda: load_observations(None),
+                                    require_metrics=["rtt_ms", "jitter_ms"])
     steady_join_samples = observations[(observations.scenario == "S1")
                                        & (observations.kind == "sample")]
     figure, (rtt_axes, jitter_axes) = new_figure(column, width_to_height_ratio=2.3, n_columns=2)

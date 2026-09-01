@@ -187,7 +187,8 @@ def is_synthetic(*frames) -> bool:
     return any(frame.attrs.get("SYNTHETIC") for frame in frames)
 
 
-def ensure_scenarios(frame: pd.DataFrame, scenarios, synthetic_loader) -> pd.DataFrame:
+def ensure_scenarios(frame: pd.DataFrame, scenarios, synthetic_loader,
+                     require_metrics=None) -> pd.DataFrame:
     """Guard a figure against a real-but-non-matching frame.
 
     A run that only exercised a smoke / S0 cell still writes a non-empty
@@ -195,11 +196,23 @@ def ensure_scenarios(frame: pd.DataFrame, scenarios, synthetic_loader) -> pd.Dat
     empty (unwatermarked) axes. If the real frame carries no row in the
     scenarios the figure actually plots, swap in the synthetic reference so the
     panel renders watermarked instead of blank.
+
+    `require_metrics` extends the same guard to the metric axis: an app-plane
+    run produces real S1 rows (roster / peer_* / cpu_pct) but none of the
+    media-plane series a figure like fig01/02/03 plots. Pass the metric name(s)
+    that figure needs and it falls back to the watermarked synthetic reference
+    instead of rendering a blank, unwatermarked panel.
     """
     if frame.attrs.get("SYNTHETIC"):
         return frame
     wanted = set(scenarios)
-    if "scenario" in frame.columns and frame["scenario"].isin(wanted).any():
+    has_scenario = "scenario" in frame.columns and frame["scenario"].isin(wanted).any()
+    has_metric = True
+    if require_metrics is not None:
+        want_metrics = ({require_metrics} if isinstance(require_metrics, str)
+                        else set(require_metrics))
+        has_metric = "metric" in frame.columns and frame["metric"].isin(want_metrics).any()
+    if has_scenario and has_metric:
         return frame
     return synthetic_loader()
 

@@ -21,7 +21,8 @@ OUTPUT_NAME = "fig02_framerate_vs_network"
 
 def build_figure(run_dir=None, column="single"):
     apply_style(column)
-    summary = ensure_scenarios(load_summary(run_dir), ["S1"], lambda: load_summary(None))
+    summary = ensure_scenarios(load_summary(run_dir), ["S1"], lambda: load_summary(None),
+                               require_metrics="fps_in")
     steady_join = summary[summary.scenario == "S1"]
     figure, axes = new_figure(column, width_to_height_ratio=1.5)
 
