@@ -205,20 +205,17 @@ div[class*="premeeting"] video {
   display: none !important;
 }
 
-/* If the device-status pill is shown anyway, at least flatten it. */
+/* Remove the prejoin device-status pill ("You need to enable microphone and
+   camera access", and its ok variant). Mic/camera permission is driven from
+   the metaprogram once in the meeting, so the prejoin warning is noise. The
+   `deviceStatus` Emotion label and `.device-status-{error,ok}` classes are
+   used only by the prejoin's DeviceStatus component, so hiding them unscoped
+   is safe; `.premeeting-screen` is kept as the primary selector. */
 .premeeting-screen [class*="deviceStatus"],
 [class*="deviceStatus"],
 .device-status-error,
 .device-status-ok {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
-}
-[class*="deviceStatus"] *,
-[class*="deviceStatus"] svg {
-  color: #111111 !important;
-  fill: #111111 !important;
+  display: none !important;
 }
 
 /* Prejoin heading ships white (designed for a dark preview backdrop) —
