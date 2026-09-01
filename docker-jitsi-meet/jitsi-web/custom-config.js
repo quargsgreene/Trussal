@@ -52454,6 +52454,9 @@ ${newBody}`).length === 0;
   var DEFAULT_PRIMARY = "#eeeeee";
   var DEFAULT_SECONDARY = "#111111";
   var DEFAULT_FONT = "Arial, Helvetica, sans-serif";
+  var DEFAULT_FONT_SCALE = 1;
+  var MIN_FONT_SCALE = 0.5;
+  var MAX_FONT_SCALE = 5;
   var WEB_SAFE_FONTS = [
     { label: "Arial (default)", value: DEFAULT_FONT },
     { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
@@ -52473,7 +52476,9 @@ ${newBody}`).length === 0;
     // '' → use DEFAULT_PRIMARY
     secondary: "",
     // '' → use DEFAULT_SECONDARY
-    font: DEFAULT_FONT
+    font: DEFAULT_FONT,
+    fontScale: DEFAULT_FONT_SCALE
+    // stored raw (may be a string from the form); normalised on apply
   };
   function isHexColor(value2) {
     return typeof value2 === "string" && /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value2.trim());
@@ -52483,6 +52488,15 @@ ${newBody}`).length === 0;
     let hex = value2.trim().replace(/^#/, "").toLowerCase();
     if (hex.length === 3) hex = hex.split("").map((c2) => c2 + c2).join("");
     return `#${hex}`;
+  }
+  function isFontScale(value2) {
+    const n2 = typeof value2 === "number" ? value2 : parseFloat(value2);
+    return Number.isFinite(n2) && n2 >= MIN_FONT_SCALE && n2 <= MAX_FONT_SCALE;
+  }
+  function normalizeFontScale(value2) {
+    const n2 = typeof value2 === "number" ? value2 : parseFloat(value2);
+    if (!Number.isFinite(n2)) return DEFAULT_FONT_SCALE;
+    return Math.min(MAX_FONT_SCALE, Math.max(MIN_FONT_SCALE, n2));
   }
   function effectiveAnchors(theme2) {
     const t = { ...DEFAULT_THEME, ...theme2 || {} };
@@ -52556,6 +52570,7 @@ ${newBody}`).length === 0;
       root.style.setProperty("--trussal-primary", primary);
       root.style.setProperty("--trussal-secondary", secondary);
       root.style.setProperty("--trussal-font", state.font || DEFAULT_FONT);
+      root.style.setProperty("--trussal-font-scale", String(normalizeFontScale(state.fontScale)));
     }
     ensureInvertStyle(state.invert);
     setCssCyclesSuppressed(state.disableCss);
@@ -52584,6 +52599,15 @@ ${newBody}`).length === 0;
    states swap them (fill secondary, text primary) and stay legible without
    colour. The font comes from var(--trussal-font, ...). Each reference below
    keeps its old literal as the var() fallback.
+
+   Font sizes: every \`font-size\` here is
+     calc(<base> * var(--trussal-font-scale, 1))
+   where <base> is 1.5x the size this overlay used before \u2014 the studio text was
+   bumped 50% across the board \u2014 and --trussal-font-scale is the per-user "Font
+   scale:" multiplier from the Personal Theme card (src/theme-context.js), 1
+   when unset. So the on-disk number is already the enlarged size; the user
+   multiplier rides on top of it. Absolute px in the calc keeps the scaling
+   flat (no em compounding through nested text).
 
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
    from studio.js hardcoded as literal strings \u2014 safe because those are
@@ -52628,9 +52652,9 @@ ${newBody}`).length === 0;
   display:flex; align-items:center; justify-content:space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--trussal-secondary, #111111);
 }
-#trussal-studio-overlay .ts-title { font-weight: 600; color:var(--trussal-secondary, #111111); letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title { font-weight: 600; color:var(--trussal-secondary, #111111); letter-spacing: 0.5px; font-size: calc(1.425rem * var(--trussal-font-scale, 1)); }
 #trussal-studio-overlay .ts-title small { color:var(--trussal-secondary, #111111); font-weight: 400; margin-left:8px; }
-#trussal-studio-overlay .ts-close { border:none; background:transparent; color:var(--trussal-secondary, #111111); font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:var(--trussal-secondary, #111111); font-size: calc(1.65rem * var(--trussal-font-scale, 1)); cursor:pointer; }
 /* Keep every header control clickable where a top corner resize grip
    (src/panel-drag-resize.js, z-index 20) overlaps it. */
 #trussal-studio-overlay .ts-header > button { position: relative; z-index: 21; }
@@ -52664,24 +52688,24 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-avatar {
   width: 24px; height: 24px; border-radius: 50%;
   background: var(--trussal-secondary, #111111);
-  color: var(--trussal-primary, #eeeeee); font-weight: 700; font-size: 12px;
+  color: var(--trussal-primary, #eeeeee); font-weight: 700; font-size: calc(18px * var(--trussal-font-scale, 1));
   display:flex; align-items:center; justify-content:center; flex-shrink: 0;
 }
 #trussal-studio-overlay .ts-chip.selected .ts-avatar { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
-#trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
+#trussal-studio-overlay .ts-name { font-size: calc(18px * var(--trussal-font-scale, 1)); min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
 #trussal-studio-overlay .ts-name.you { color: inherit; font-weight: 600; text-decoration: underline; }
 #trussal-studio-overlay .ts-idx {
   margin-left: auto;
-  font-size: 10px; font-family: monospace; padding: 1px 5px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); font-family: monospace; padding: 1px 5px;
   border-radius: 3px; background: transparent; color: inherit;
   border: 1px solid currentColor;
 }
 #trussal-studio-overlay .ts-routed {
-  font-size: 10px; padding: 1px 4px; border-radius: 3px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); padding: 1px 4px; border-radius: 3px;
   background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111);
 }
 #trussal-studio-overlay .ts-routed.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-#trussal-studio-overlay .ts-play { font-size: 10px; color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-play { font-size: calc(15px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-play.on { font-weight: 700; }
 
 #trussal-studio-overlay .ts-detail {
@@ -52691,13 +52715,13 @@ ${newBody}`).length === 0;
   flex: 1 1 auto;
 }
 #trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
-#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--trussal-secondary, #111111); font-size: 0.95rem; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--trussal-secondary, #111111); font-size: calc(1.425rem * var(--trussal-font-scale, 1)); }
 #trussal-studio-overlay .ts-readonly-badge {
-  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); padding: 2px 6px; border-radius: 3px;
   background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111); letter-spacing: 0.5px;
 }
 #trussal-studio-overlay .ts-bot-badge {
-  font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
   background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111);
 }
 #trussal-studio-overlay .ts-btn.eval { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
@@ -52723,28 +52747,28 @@ ${newBody}`).length === 0;
   gap: 8px;
 }
 #trussal-studio-overlay .ts-section-title {
-  font-size: 10px; letter-spacing: 1px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); letter-spacing: 1px;
   color: var(--trussal-secondary, #111111); font-weight: 600;
 }
 #trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 #trussal-studio-overlay .ts-btn {
   padding: 4px 10px; border-radius: 999px; border:1px solid var(--trussal-secondary, #111111); cursor:pointer;
-  font-weight: 600; font-size: 12px;
+  font-weight: 600; font-size: calc(18px * var(--trussal-font-scale, 1));
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
 }
 #trussal-studio-overlay .ts-btn.play  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-btn.stop  { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-btn.ghost { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-btn.ghost.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-meta { font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace; color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-meta b { color: var(--trussal-secondary, #111111); font-weight: 700; }
 /* .ts-dim used to fade a whole row; the flat theme keeps every glyph at the
    full secondary colour, so it now only italicises rather than greying. */
 #trussal-studio-overlay .ts-dim { font-style: italic; }
-#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: var(--trussal-secondary, #111111); font-family: monospace; }
+#trussal-studio-overlay .ts-shortcuts { font-size: calc(16.5px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111); font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
   background: var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: calc(18px * var(--trussal-font-scale, 1));
   border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
   padding: 8px; box-sizing: border-box;
   /* A fixed 160-280px fought short viewports (a phone in landscape, or the
@@ -52763,7 +52787,7 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-code.ts-eval-flash {
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
-#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-status { font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace; color: var(--trussal-secondary, #111111); }
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
@@ -52773,7 +52797,7 @@ ${newBody}`).length === 0;
   padding: 2px 8px; border-radius: 999px;
   border: 1px solid var(--trussal-secondary, #111111);
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
-  font-size: 11px; font-family: monospace; cursor: pointer;
+  font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace; cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 #trussal-studio-overlay .ts-voice-btn:hover { color: var(--trussal-secondary, #111111); border-color: var(--trussal-secondary, #111111); }
@@ -52786,14 +52810,14 @@ ${newBody}`).length === 0;
 
 #trussal-studio-overlay .ts-sample-banks {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  font-size: 11px; font-family: monospace;
+  font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-bank {
   padding: 1px 7px; border-radius: 3px;
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
   border: 1px solid var(--trussal-secondary, #111111);
   white-space: nowrap;
-  font-size: 11px; font-family: monospace; cursor: pointer;
+  font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace; cursor: pointer;
 }
 #trussal-studio-overlay .ts-sample-bank:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 /* Data packs read as a different kind of thing from sound banks \u2014 dashed
@@ -52809,7 +52833,7 @@ ${newBody}`).length === 0;
   display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 4px; padding: 5px 6px; border-radius: 4px;
   background: var(--trussal-primary, #eeeeee); border: 1px solid var(--trussal-secondary, #111111);
-  font-size: 11px; font-family: monospace;
+  font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-item {
   display: inline-flex; align-items: center; gap: 5px;
@@ -52824,12 +52848,12 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-sample-len { color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-sample-x {
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
-  color: var(--trussal-secondary, #111111); font-size: 13px; line-height: 1; font-family: monospace;
+  color: var(--trussal-secondary, #111111); font-size: calc(19.5px * var(--trussal-font-scale, 1)); line-height: 1; font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-x:hover { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); border-radius: 2px; }
 #trussal-studio-overlay .ts-sample-banks-del {
   margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid var(--trussal-secondary, #111111); cursor: pointer;
-  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); font-size: 11px; font-family: monospace;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); font-size: calc(16.5px * var(--trussal-font-scale, 1)); font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-banks-del:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 
@@ -52841,7 +52865,7 @@ ${newBody}`).length === 0;
   min-width: min(100px, 42vw); flex: 1 1 100px;
 }
 #trussal-studio-overlay .ts-slider-label {
-  font-size: 10px; font-family: monospace; color: var(--trussal-secondary, #111111);
+  font-size: calc(15px * var(--trussal-font-scale, 1)); font-family: monospace; color: var(--trussal-secondary, #111111);
   display: flex; justify-content: space-between; gap: 6px;
 }
 #trussal-studio-overlay .ts-slider-input {
@@ -52924,7 +52948,7 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-theme-check {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--trussal-secondary, #111111); cursor: pointer;
+  font-size: calc(18px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111); cursor: pointer;
 }
 #trussal-studio-overlay .ts-theme-check input { accent-color: var(--trussal-secondary, #111111); cursor: pointer; }
 #trussal-studio-overlay .ts-theme-fields {
@@ -52932,18 +52956,24 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-theme-field {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--trussal-secondary, #111111);
+  font-size: calc(18px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111);
 }
 #trussal-studio-overlay .ts-theme-color {
   width: 96px; padding: 3px 6px;
   border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: calc(18px * var(--trussal-font-scale, 1));
 }
 #trussal-studio-overlay .ts-theme-font {
   padding: 3px 6px; border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
-  font-size: 12px; max-width: 180px;
+  font-size: calc(18px * var(--trussal-font-scale, 1)); max-width: 180px;
+}
+#trussal-studio-overlay .ts-theme-scale {
+  width: 64px; padding: 3px 6px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: calc(18px * var(--trussal-font-scale, 1));
 }
 #trussal-studio-overlay .ts-theme-status { min-height: 14px; }
 `;
@@ -61819,6 +61849,11 @@ ${snippet}${JP_BTN_MARKER}`;
       <label class="ts-theme-field">Font:
         <select class="ts-theme-font" data-theme="font">${fontOptions}</select>
       </label>
+      <label class="ts-theme-field">Font scale:
+        <input type="number" class="ts-theme-scale" data-theme="fontScale"
+          min="${MIN_FONT_SCALE}" max="${MAX_FONT_SCALE}" step="0.1" inputmode="decimal"
+          value="${escapeHtml(String(t.fontScale))}">
+      </label>
     </div>
     <div class="ts-meta ts-theme-status"></div>
   `;
@@ -61833,6 +61868,10 @@ ${snippet}${JP_BTN_MARKER}`;
           statusEl.textContent = `${field} colour must be a 3- or 6-digit hex like #1a1a1a`;
           return;
         }
+      }
+      if (patch.fontScale && !isFontScale(patch.fontScale)) {
+        statusEl.textContent = `font scale must be a number from ${MIN_FONT_SCALE} to ${MAX_FONT_SCALE} (e.g. 2 = twice as large)`;
+        return;
       }
       setTheme2(patch);
       statusEl.textContent = "Theme applied \u2014 this browser only";

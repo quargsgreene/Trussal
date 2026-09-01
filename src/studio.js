@@ -66,9 +66,12 @@ import {
   getTheme,
   setTheme,
   isHexColor,
+  isFontScale,
   WEB_SAFE_FONTS,
   DEFAULT_PRIMARY,
   DEFAULT_SECONDARY,
+  MIN_FONT_SCALE,
+  MAX_FONT_SCALE,
 } from './theme-context.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
@@ -432,6 +435,11 @@ function createThemePickerSection() {
       <label class="ts-theme-field">Font:
         <select class="ts-theme-font" data-theme="font">${fontOptions}</select>
       </label>
+      <label class="ts-theme-field">Font scale:
+        <input type="number" class="ts-theme-scale" data-theme="fontScale"
+          min="${MIN_FONT_SCALE}" max="${MAX_FONT_SCALE}" step="0.1" inputmode="decimal"
+          value="${escapeHtml(String(t.fontScale))}">
+      </label>
     </div>
     <div class="ts-meta ts-theme-status"></div>
   `;
@@ -447,6 +455,12 @@ function createThemePickerSection() {
         statusEl.textContent = `${field} colour must be a 3- or 6-digit hex like #1a1a1a`;
         return;
       }
+    }
+    // Empty means "back to the authored size" (handled as the default on apply);
+    // a filled field has to be a number in range.
+    if (patch.fontScale && !isFontScale(patch.fontScale)) {
+      statusEl.textContent = `font scale must be a number from ${MIN_FONT_SCALE} to ${MAX_FONT_SCALE} (e.g. 2 = twice as large)`;
+      return;
     }
     setTheme(patch);
     statusEl.textContent = 'Theme applied — this browser only';

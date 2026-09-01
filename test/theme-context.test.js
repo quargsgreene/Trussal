@@ -5,8 +5,13 @@ import {
   isHexColor,
   normalizeHex,
   effectiveAnchors,
+  isFontScale,
+  normalizeFontScale,
   DEFAULT_PRIMARY,
   DEFAULT_SECONDARY,
+  DEFAULT_FONT_SCALE,
+  MIN_FONT_SCALE,
+  MAX_FONT_SCALE,
   WEB_SAFE_FONTS,
 } from '../src/theme-context.js';
 
@@ -49,6 +54,25 @@ test('dark mode swaps the resolved pair', () => {
   assert.deepEqual(effectiveAnchors({ darkMode: true, primary: '#fafafa', secondary: '#202020' }), {
     primary: '#202020', secondary: '#fafafa',
   });
+});
+
+test('isFontScale accepts in-range numbers and numeric strings, rejects the rest', () => {
+  for (const ok of [1, 2, MIN_FONT_SCALE, MAX_FONT_SCALE, '1.5', '3']) {
+    assert.equal(isFontScale(ok), true, String(ok));
+  }
+  for (const bad of [0, -1, MAX_FONT_SCALE + 0.1, 'huge', '', null, undefined, NaN]) {
+    assert.equal(isFontScale(bad), false, String(bad));
+  }
+});
+
+test('normalizeFontScale coerces and clamps, else falls back to the default', () => {
+  assert.equal(normalizeFontScale(2), 2);
+  assert.equal(normalizeFontScale('1.5'), 1.5);
+  assert.equal(normalizeFontScale(0), MIN_FONT_SCALE);       // clamped up
+  assert.equal(normalizeFontScale(999), MAX_FONT_SCALE);     // clamped down
+  assert.equal(normalizeFontScale('not a number'), DEFAULT_FONT_SCALE);
+  assert.equal(normalizeFontScale(''), DEFAULT_FONT_SCALE);
+  assert.equal(normalizeFontScale(undefined), DEFAULT_FONT_SCALE);
 });
 
 test('the font list is non-empty and every entry has a label and a value', () => {
