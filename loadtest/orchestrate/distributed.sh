@@ -33,10 +33,28 @@ else
 fi
 REPO_DIR="$($PY "$HERE/cfg.py" inv "$INV" campaign.repo_dir)"
 VENV="$($PY "$HERE/cfg.py" inv "$INV" campaign.venv)"
-LT_DIR="$REPO_DIR/loadtest"
+# campaign.repo_dir / campaign.venv may use ~ shorthand. It expands correctly
+# inside the remote ssh command (the remote shell reparses it as source text),
+# but bash does NOT tilde-expand a variable's stored value, so a ~-form used as
+# a local path silently becomes a literal ./~/... tree and `$VENV/bin/locust`
+# for the master fails to exec. Keep the raw form for the remote string; expand
+# a local form for every operation on this host.
+REPO_DIR_REMOTE="$REPO_DIR"
+VENV_REMOTE="$VENV"
+REPO_DIR="${REPO_DIR/#\~/$HOME}"
+VENV="${VENV/#\~/$HOME}"
+LT_DIR="$REPO_DIR/loadtest"                 # local, absolute
+LT_DIR_REMOTE="$REPO_DIR_REMOTE/loadtest"   # keeps ~ for per-host expansion
 MASTER_IP="$(hostname -I | awk '{print $1}')"
 CSV="$LT_DIR/results/$RUN_ID/raw/locust-$CELL"
 mkdir -p "$LT_DIR/results/$RUN_ID/raw" "$LT_DIR/results/$RUN_ID/logs"
+
+# SCENARIOS_YAML (exported by run_campaign.sh, absolute local path) drives the
+# LoadTestShape — see harness/common.py::load_scenarios. The local master
+# inherits it as-is; each remote worker needs the same file at its own repo
+# path (scp the custom scenarios file there alongside inventory.yaml).
+SCEN_BASENAME="$(basename "${SCENARIOS_YAML:-scenarios.yaml}")"
+SCENARIOS_YAML_REMOTE="$LT_DIR_REMOTE/config/$SCEN_BASENAME"
 
 export RUN_ID PROFILE="$PID" SCENARIO="$SID" TRUSSAL_HOST="$HOST" TRUSSAL_SCHEME="$SCHEME"
 export TRUSSAL_TARGET="$TARGET" TRUSSAL_TURN_MODE="$TURN_MODE"
@@ -63,14 +81,14 @@ start_workers() {
     n=${WCOUNT[$key]}
     for i in $(seq 1 "$n"); do
       node=$(( (i - 1) % (numa > 0 ? numa : 1) ))
-      remote="cd $LT_DIR && \
+      remote="cd $LT_DIR_REMOTE && \
         RUN_ID=$RUN_ID PROFILE=$PID SCENARIO=$SID TRUSSAL_HOST=$HOST TRUSSAL_SCHEME=$SCHEME \
         TRUSSAL_TARGET=$TARGET TRUSSAL_TURN_MODE=$TURN_MODE \
-        LT_ROOM=$ROOM INVENTORY=$INV \
-        LT_SEED_VIDEO=$LT_DIR/media/seeds/camera_320x240_15.y4m \
-        LT_SEED_AUDIO=$LT_DIR/media/seeds/mic_16k.wav \
+        LT_ROOM=$ROOM INVENTORY=$INV SCENARIOS_YAML=$SCENARIOS_YAML_REMOTE \
+        LT_SEED_VIDEO=$LT_DIR_REMOTE/media/seeds/camera_320x240_15.y4m \
+        LT_SEED_AUDIO=$LT_DIR_REMOTE/media/seeds/mic_16k.wav \
         nohup numactl --cpunodebind=$node --preferred=$node \
-        $VENV/bin/locust -f locust/locustfile.py --worker --master-host=$MASTER_IP \
+        $VENV_REMOTE/bin/locust -f locust/locustfile.py --worker --master-host=$MASTER_IP \
         --master-port=$MASTER_PORT \
         --logfile results/$RUN_ID/logs/worker-$name-$i-$CELL.log \
         >/dev/null 2>&1 & echo \$!"

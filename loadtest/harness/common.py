@@ -186,7 +186,16 @@ def load_inventory(path: str | Path | None = None) -> dict:
 
 
 def load_scenarios(path: str | Path | None = None) -> dict:
-    return load_yaml(path or CONFIG_DIR / "scenarios.yaml")
+    # Mirrors load_inventory's INVENTORY env-var pattern. run_campaign.sh takes
+    # a <scenarios.yaml> argument, but that argument previously reached only
+    # its own orchestration logic (matrix crossing, cell-duration estimates) —
+    # the actual LoadTestShape (locust/_state.py, imported independently by
+    # the master and every worker) called load_scenarios() bare and always
+    # read the canonical config/scenarios.yaml, silently ignoring a custom
+    # file passed to run_campaign.sh. distributed.sh now exports this so a
+    # custom scenario file's step levels and population sizes actually drive
+    # the run, not just its own timing estimate.
+    return load_yaml(path or os.environ.get("SCENARIOS_YAML") or CONFIG_DIR / "scenarios.yaml")
 
 
 def load_netem_profiles(path: str | Path | None = None) -> dict:

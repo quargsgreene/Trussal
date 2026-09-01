@@ -23,6 +23,13 @@ SCEN_YAML=${2:?scenarios.yaml}
 RUN_ID="${RUN_ID:-campaign-$(date +%Y%m%d-%H%M%S)}"
 STEP_HOLD_SCALE="${STEP_HOLD_SCALE:-1.0}"
 
+# The LoadTestShape (locust/_state.py) reads SCENARIOS_YAML — see
+# harness/common.py::load_scenarios — so a custom scenario file actually
+# drives step levels and population, not just this script's own timing
+# estimates. Absolute so it's valid regardless of the local master's cwd;
+# distributed.sh translates it to each remote worker's own repo path.
+export SCENARIOS_YAML="$(cd "$(dirname "$SCEN_YAML")" && pwd)/$(basename "$SCEN_YAML")"
+
 # Single-target by default. Set TRUSSAL_TARGET=<name> to point the whole grid at
 # one of a Layout-C inventory's `targets.<name>` (and, with SNAPSHOT_ROLLBACK=1,
 # cold-roll it between cells).
