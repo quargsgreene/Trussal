@@ -209,10 +209,13 @@ test('the Delayed Streaming toggle rides the settings map from a human to the ag
     assert.equal(bot.delayedStreaming, false, 'off until the room asks for it');
 
     // The Studio button: a settings-map write, not a program edit — the
-    // program text and ring are untouched.
+    // program text and ring are untouched. It stamps the backlog cap alongside
+    // the toggle so the aggregator and every browser read one delay.
+    human.sync.setSetting('backlogMs', 12000);
     human.sync.setSetting('delayedStreaming', true);
     await sleep(300);
     assert.equal(bot.delayedStreaming, true, 'the aggregator adopted the room-wide toggle');
+    assert.equal(bot.backlogMs, 12000, 'and the backlog cap that rode with it');
     assert.equal(bot.programText, mp('$ participants <0>'), 'the toggle did not touch the program');
     assert.deepEqual(bot.order.order(), ['0'], 'nor the ring');
 

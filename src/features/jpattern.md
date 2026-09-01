@@ -708,3 +708,18 @@ $ participants <0 9 1 4 2>*2
 
 ## Artificial Network Modulation
 In addition to upward adjustments from o2lite-estimated wcl and wcpl, room participants may place other participants in their own additional VLANs with their own local network conditions via the Trussal Studio UI, the output of which are mixed down into a single master bus. By default, all participants share a mutual VLAN. This portion of the Trussal Studio UI, like the JPattern metaprogramming editor, is governed by CRDT.
+
+## Delayed Streaming
+A room-wide opt-in toggle in the JPattern card, off by default, that changes how the aggregator serves a rotation turn. It rides its own `settings` Y.Map on the metaprogram CRDT doc (`delayedStreaming`, plus `backlogMs` — the delay in ms, default 30000 — stamped alongside it so the aggregator and every browser read one number). A flip neither re-runs the program nor perturbs the worst-case metrics.
+
+**Off (default):** the aggregator drains only the active token's ~1 s per-performer `RingBuffer`, so a turn hard-onsets roughly-live audio — an audible hiccup every turn, and no advance scheduling of what the metaprogram will play next.
+
+**On:** the aggregator banks each present performer's output every ingest tick into a bounded per-performer FIFO (`#backlog`, cap `backlogMs`, oldest overwritten) and serves a turn from that backlog head first, topping up from the live ring only on an underrun within the turn. Whatever the backlog does not yield stays for the next turn, so a performer's audio plays through continuously — one turn/cycle per turn, delayed rather than onsetting live. The backlog climbs from empty to the cap over the first ~`backlogMs` after a flip and then holds a steady delay; ghosts keep their existing replay path; the backlog is cleared on retire, revive, departure, stop and toggle-off.
+
+**The delay is mirrored onto the turn's other media** so a performer's whole turn — sound, mosaic cell, words, styling — lands together rather than the audio alone:
+
+- **Audio (Strudel, including `live()` capture)** — the `#backlog` above. `live()` sound reaches the aggregator inside the performer's published Strudel track, so it is delayed with everything else at no extra cost.
+- **Video (the aggregator's mosaic)** — the aggregator keeps a short per-peer history of each performer's code (it sees every edit over the metaprogram bus) and builds the mosaic cell from the code as it stood `backlogMs` ago (`#mosaicPeersView`), and rolls the `H(...)` cycle anchor back by the same span (`#syncMosaicCycle`), so a code edit and its pattern-bound parameters reach the cell in step with the audio. A `src(s0)` camera cell is blitted from the performer's own live track and is **not** frame-delayed — its pixels stay live, though a switch into or out of camera code still lands `backlogMs` late.
+- **Text Cycles / CSS Cycles** — rendered client-side in every browser and turn-gated by `isPeerJPatternTurn`, so left alone they would paint a performer's current `word()`/`css()` output during a turn playing their delayed audio. `strudel.js` keeps the same per-peer code history (`delayedPeerView`) and builds a remote peer's silent voices — and their locally-rendered Hydra preamble — from the code from `backlogMs` ago. The local performer's own bubbles stay live (they author against the editor, not the chat panel; their published audio must also stay live, so the aggregator does that delaying).
+
+Effect intensities driven by live network metrics (the `#` chain) are not themselves delayed. Boot knobs on the aggregator: `DELAYED_STREAMING=1` makes it the boot default, `BACKLOG_MS` overrides the cap (an explicit `settings` value from a browser wins over both).

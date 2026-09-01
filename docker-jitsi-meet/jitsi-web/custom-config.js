@@ -51346,6 +51346,7 @@ ${err.toString()}`);
   // src/audio-net/Metaprogrammer.js
   var Metaprogrammer_exports = {};
   __export(Metaprogrammer_exports, {
+    DEFAULT_STREAM_DELAY_MS: () => DEFAULT_STREAM_DELAY_MS,
     applyProgramText: () => applyProgramText,
     broadcastStopSignal: () => broadcastStopSignal,
     bufferReplayEnabled: () => bufferReplayEnabled,
@@ -51356,6 +51357,7 @@ ${err.toString()}`);
     getInducedMetrics: () => getInducedMetrics,
     getProgramText: () => getProgramText,
     getQueueDepth: () => getQueueDepth,
+    getStreamDelayMs: () => getStreamDelayMs,
     getVlans: () => getVlans,
     hasEffectShortcut: () => hasEffectShortcut,
     isDelayedStreaming: () => isDelayedStreaming,
@@ -51444,8 +51446,19 @@ ${err.toString()}`);
   function isDelayedStreaming() {
     return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
   }
+  function getStreamDelayMs() {
+    if (!crdt || !crdt.getSettings) return 0;
+    const s2 = crdt.getSettings();
+    if (!s2.delayedStreaming) return 0;
+    const ms = Number(s2.backlogMs);
+    return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_STREAM_DELAY_MS;
+  }
   function setDelayedStreaming(on) {
-    ensureMetaprogramSync().setSetting("delayedStreaming", !!on);
+    const sync = ensureMetaprogramSync();
+    sync.setSetting("delayedStreaming", !!on);
+    if (on && !(Number(sync.getSettings().backlogMs) > 0)) {
+      sync.setSetting("backlogMs", DEFAULT_STREAM_DELAY_MS);
+    }
   }
   function onDelayedStreamingChange(fn) {
     return ensureMetaprogramSync().onSettingsChange((s2) => fn(!!s2.delayedStreaming));
@@ -51787,7 +51800,7 @@ ${newBody}`).length === 0;
     }
     document.dispatchEvent(new CustomEvent("trussal-jpattern-mode", { detail: { active } }));
   }
-  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, caughtUp, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
+  var EPOCH_ADDR, APPLY_ADDR, EPOCH_REBROADCAST_MS, EPOCH_PLAUSIBLE_PAST_S, QUEUE_LIMITS, active, programText, scheduler, effects, o2, clock, epoch, epochTimer, localSecondsFallbackT0, cycleGrid, currentAst, queues, activePatterns, gateLevels, pendingEditorUpdates, slotSubscribers, slotTimers, crdt, caughtUp, DEFAULT_STREAM_DELAY_MS, SHORTCUT_LINES, bufferReplayEnabled, captureTakes, recorder;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
@@ -51825,6 +51838,7 @@ ${newBody}`).length === 0;
       slotTimers = /* @__PURE__ */ new Set();
       crdt = null;
       caughtUp = false;
+      DEFAULT_STREAM_DELAY_MS = 3e4;
       SHORTCUT_LINES = { room: '# room "wcl" 2', echo: "# echo", crush: '# crush "wcl" 1', noise: "# noise" };
       bufferReplayEnabled = false;
       captureTakes = /* @__PURE__ */ new Map();
@@ -57032,6 +57046,52 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
   function buildStrudelVoice(rawCode, fx) {
     return wrapAsVoice(rewriteDataRefs(rawCode), fx);
   }
+  var peerCodeLog = /* @__PURE__ */ new Map();
+  var PEER_CODE_LOG_MARGIN_MS = 5e3;
+  function peerCodeLogKey(peer) {
+    return peer.peerId || peer.jitsiId || null;
+  }
+  function recordPeerCode(key, pattern2, playing, now, keepMs) {
+    let log3 = peerCodeLog.get(key);
+    if (!log3) {
+      log3 = [];
+      peerCodeLog.set(key, log3);
+    }
+    const last2 = log3[log3.length - 1];
+    if (!last2 || last2.pattern !== pattern2 || last2.playing !== playing) {
+      log3.push({ t: now, pattern: pattern2, playing });
+    }
+    const cutoff2 = now - keepMs - PEER_CODE_LOG_MARGIN_MS;
+    let firstKept = 0;
+    while (firstKept + 1 < log3.length && log3[firstKept + 1].t <= cutoff2) firstKept++;
+    if (firstKept > 0) log3.splice(0, firstKept);
+  }
+  function peerCodeAt(key, at2) {
+    const log3 = peerCodeLog.get(key);
+    if (!log3 || !log3.length) return null;
+    let pick2 = null;
+    for (const entry of log3) {
+      if (entry.t <= at2) pick2 = entry;
+      else break;
+    }
+    return pick2 || log3[log3.length - 1];
+  }
+  function forgetPeerCode(key) {
+    if (key) peerCodeLog.delete(key);
+  }
+  function delayedPeerView(peer) {
+    if (peer.isAggregator) return peer;
+    const key = peerCodeLogKey(peer);
+    const delay2 = key && getAggregatorPeer() && !isJPatternActive() ? getStreamDelayMs() : 0;
+    if (!delay2 || peer.isLocal) {
+      if (key && !delay2) peerCodeLog.delete(key);
+      return peer;
+    }
+    recordPeerCode(key, peer.pattern, !!peer.playing, Date.now(), delay2);
+    const past = peerCodeAt(key, Date.now() - delay2);
+    if (!past || past.pattern === peer.pattern && past.playing === !!peer.playing) return peer;
+    return { ...peer, pattern: past.pattern, playing: past.playing };
+  }
   function buildPeerBlock(peer) {
     if (peer.isBot) return buildBotSilentBlock(peer);
     const jPattern = isJPatternActive();
@@ -57286,7 +57346,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
     cssAtoms = {};
     cssCounter = { n: 0 };
     cssSheets = [];
-    const blocks = getAllPeers().map(buildPeerBlock).filter(Boolean);
+    const blocks = getAllPeers().map(delayedPeerView).map(buildPeerBlock).filter(Boolean);
     const rawJoined = blocks.join("\n");
     let next = blocks.length === 0 ? null : rawJoined;
     if (next && getMode() === MODE_DIRECT) {
@@ -57408,8 +57468,14 @@ ${next}`;
   }
   subscribePeerState((event, payload) => {
     if (event !== "peer-upsert" && event !== "peer-leave") return;
+    if (event === "peer-leave" && payload) forgetPeerCode(payload.peerId || payload.jitsiId);
     if (strudelBoot) rebuildAndEvaluate();
   });
+  setInterval(() => {
+    if (strudelBoot && getAggregatorPeer() && isDelayedStreaming() && getStreamDelayMs() > 0) {
+      rebuildAndEvaluate();
+    }
+  }, 1e3);
   subscribeParticipants((event) => {
     if (event === "leave") {
       if (strudelBoot) rebuildAndEvaluate();

@@ -246,15 +246,47 @@ export function getInducedMetrics() {
 //   ends it falls through to live; if the turn ends first the remainder is kept
 //   for next time. Past the cap the oldest samples are overwritten.
 //
-// The browser scheduler being dormant, this only takes effect in the
-// aggregator (bots/src/bot/aggregator-bot.js); the toggle is kept alongside the
-// live-onset path so the two can be compared in a running room.
+// The aggregator's audio backlog is the primary effect (it serves each turn
+// from a bounded per-performer FIFO), but the same delay is mirrored by every
+// browser onto the OTHER media that ride a performer's turn: the mosaic cell
+// and the Text/CSS Cycles bubbles are built from that performer's code as it
+// stood `getStreamDelayMs()` ago, so their whole turn — sound, visuals, words,
+// styling — lands together, delayed, rather than the audio alone.
+//
+// The delay is a fixed room-wide value, `backlogMs` in the settings map (the
+// aggregator's per-performer backlog cap). The backlog itself climbs from 0 to
+// that cap over the first ~cap ms after a flip, so the audio and the mirrored
+// media only fully agree once it is warm; `setDelayedStreaming` stamps the
+// value so the aggregator (which owns the real BACKLOG_MS) and every browser
+// read one number.
+export const DEFAULT_STREAM_DELAY_MS = 30000;
+
 export function isDelayedStreaming() {
   return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
 }
 
+// The room-wide media delay in ms: the settings-map `backlogMs` when Delayed
+// Streaming is on, else 0. Read by strudel.js (Text/CSS Cycles + mosaic-preamble
+// delay-line) and anything else mirroring the aggregator's audio backlog onto a
+// turn's other media. Never throws — an absent/blank value falls back to the
+// default cap, an unset toggle to 0.
+export function getStreamDelayMs() {
+  if (!crdt || !crdt.getSettings) return 0;
+  const s = crdt.getSettings();
+  if (!s.delayedStreaming) return 0;
+  const ms = Number(s.backlogMs);
+  return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_STREAM_DELAY_MS;
+}
+
 export function setDelayedStreaming(on) {
-  ensureMetaprogramSync().setSetting('delayedStreaming', !!on);
+  const sync = ensureMetaprogramSync();
+  sync.setSetting('delayedStreaming', !!on);
+  // Stamp the delay the first time it is switched on so browsers and the
+  // aggregator share one number; leave an already-set value (an operator's
+  // BACKLOG_MS override that reached the map) untouched.
+  if (on && !(Number(sync.getSettings().backlogMs) > 0)) {
+    sync.setSetting('backlogMs', DEFAULT_STREAM_DELAY_MS);
+  }
 }
 
 // fn(bool) on every change (local flip included, so a button can paint itself).

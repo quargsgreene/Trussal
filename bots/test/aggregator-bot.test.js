@@ -2135,12 +2135,16 @@ const HYDRA_CAM = 'await initHydra()\nsrc(s0).out()';
 
 // 720p so the rectangles below read in round numbers; the frame is derived
 // from the same videoHeight the join URL caps the send side at.
-async function mosaicBot({ bandwidth = { videoHeight: 720 } } = {}) {
+async function mosaicBot({ bandwidth = { videoHeight: 720 }, now, slotMs } = {}) {
   const { calls, fakeLauncher } = makeFakes();
   const bus = fakeMetaprogramBus();
-  const bot = new AggregatorBot({ ...cfg, bandwidth }, {
+  const extra = {};
+  if (slotMs != null) extra.slotMs = slotMs;
+  const deps = {
     launcher: fakeLauncher, logIngest: false, webSocketImpl: FakeWebSocket, connectSidecar: bus.connect,
-  }, {}, 1024);
+  };
+  if (now) deps.now = now;
+  const bot = new AggregatorBot({ ...cfg, bandwidth, ...extra }, deps, {}, 1024);
   await bot.start();
   return { calls, bus, bot };
 }
@@ -2396,6 +2400,96 @@ test('mosaic: the cycle grid is pushed so H() parameters advance on the room clo
     assert.ok(calls.mosaicCycle.length > before, 'each cycle re-anchors');
   } finally {
     await bot.stop();
+  }
+});
+
+test('mosaic: the aggregator adopts backlogMs from the settings map', async () => {
+  const { bot } = await mosaicBot();
+  try {
+    assert.equal(bot.backlogMs, 30000, 'the boot default until the room says otherwise');
+    bot.metaprogramDoc.setSetting('backlogMs', 7777);
+    assert.equal(bot.backlogMs, 7777, 'a browser stamp overrides the boot default');
+    bot.metaprogramDoc.setSetting('delayedStreaming', true);
+    assert.equal(bot.delayedStreaming, true);
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic: under Delayed Streaming a cell renders the code from backlogMs ago', async () => {
+  const clock = { ms: 0 };
+  const { calls, bus, bot } = await mosaicBot({ now: () => clock.ms });
+  try {
+    bot.metaprogramDoc.setSetting('backlogMs', 10000);
+    bot.metaprogramDoc.setSetting('delayedStreaming', true);
+
+    // p0 joins running one Hydra preamble at t=0.
+    bus.rec.deliver({ type: 'roster', peers: [
+      { peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: 'await initHydra()\nosc(10).out()' },
+    ] });
+    assert.match(calls.mosaicCells.at(-1).cells[0].preamble, /osc\(10\)/);
+
+    // They edit it well past a full delay-window later, so the history has a
+    // clean "10 s ago" entry that is the ORIGINAL, not just the oldest we hold.
+    clock.ms = 12000;
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { pattern: 'await initHydra()\nosc(20).out()' } });
+
+    // 3 s after the edit: the delayed view still shows the original.
+    clock.ms = 15000;
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 5 } });
+    assert.match(calls.mosaicCells.at(-1).cells[0].preamble, /osc\(10\)/,
+      'the cell lags the editor by the backlog span');
+
+    // Past the window: the edit has now reached the cell.
+    clock.ms = 23000;
+    bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { rtt: 6 } });
+    assert.match(calls.mosaicCells.at(-1).cells[0].preamble, /osc\(20\)/,
+      'and it catches up once the delay has elapsed');
+
+    // Turning the toggle off snaps straight back to live.
+    bot.metaprogramDoc.setSetting('delayedStreaming', false);
+    assert.match(calls.mosaicCells.at(-1).cells[0].preamble, /osc\(20\)/);
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic: Delayed Streaming rolls the H() cycle anchor back by the delay', async () => {
+  // Two bots on one injected clock, driven identically — one with Delayed
+  // Streaming on, one off — so the anchor difference is purely the rollback.
+  const clock = { ms: 1785540000000 };
+  const live = await mosaicBot({ now: () => clock.ms, slotMs: 4000 });
+  const delayed = await mosaicBot({ now: () => clock.ms, slotMs: 4000 });
+  try {
+    delayed.bot.metaprogramDoc.setSetting('backlogMs', 3000);
+    delayed.bot.metaprogramDoc.setSetting('delayedStreaming', true);
+    for (const b of [live.bot, delayed.bot]) {
+      b.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    }
+    for (const g of [live, delayed]) {
+      g.bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
+    }
+
+    // Step one cycle at a time so the grid emits real consecutive boundaries
+    // (a big jump just re-anchors near cycle 0). Ten steps clears the ~3 s
+    // rollback so the clamp at cycle 0 is not in play.
+    for (let i = 0; i < 10; i++) {
+      clock.ms += 4000;
+      live.bot.scheduler.tick();
+      delayed.bot.scheduler.tick();
+    }
+
+    const a0 = live.calls.mosaicCycle.at(-1);
+    const a1 = delayed.calls.mosaicCycle.at(-1);
+    assert.ok(a0 && a1 && a0.seconds > 0, 'both anchored');
+    assert.equal(a1.seconds, a0.seconds, 'same cycle length');
+    const expectedShift = 3 / a0.seconds;                 // backlogMs / 1000 / cycleSeconds
+    assert.ok(expectedShift > 0.01, 'a real rollback');
+    assert.ok(Math.abs((a0.cycle - a1.cycle) - expectedShift) < 1e-6,
+      `delayed anchor trails the live one by the delay (${a0.cycle} -> ${a1.cycle}, want ${expectedShift})`);
+  } finally {
+    await live.bot.stop();
+    await delayed.bot.stop();
   }
 });
 

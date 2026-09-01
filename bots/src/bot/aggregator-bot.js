@@ -219,6 +219,14 @@ export class AggregatorBot extends Bot {
     // toggle is on. Ghosts are NOT served from here (see #replayDepartedGhost).
     #delayedStreaming = false;
     #backlog = new Map();
+    // Delayed Streaming, video side: the mosaic cell and its `H(...)` cycle
+    // anchor are held back by the same delay as the audio backlog, so a
+    // performer's turn shows the visuals that go with the sound it is playing
+    // rather than their live output. #peerCodeLog is a short per-peer history of
+    // (t, pattern) — the aggregator sees every edit over the metaprogram bus —
+    // read `backlogMs` in arrears by #mosaicPeersView. Off (identity) unless the
+    // toggle is on.
+    #peerCodeLog = new Map();
     // Election-gate hysteresis state (see #isActiveNow): whether we have ever won
     // the active slot, and when we were last active. Held so a transient miss
     // can't silence the room mid-stream.
@@ -711,6 +719,11 @@ export class AggregatorBot extends Bot {
             // DELAYED_STREAMING) — an empty map means the room has expressed no
             // preference, not "off".
             const adoptSettings = (s) => {
+                // backlogMs first: it sizes both the audio backlog and the
+                // mosaic's delay, and #setDelayedStreaming logs the cap it is
+                // enabling with. A browser stamps it alongside the toggle so
+                // every side reads one number (see Metaprogrammer.setDelayedStreaming).
+                if ('backlogMs' in s) this.#adoptBacklogMs(s.backlogMs);
                 if ('delayedStreaming' in s) this.#setDelayedStreaming(s.delayedStreaming);
             };
             this.metaprogramDoc.onSettingsChange(adoptSettings);
@@ -971,7 +984,7 @@ export class AggregatorBot extends Bot {
      * from cells, so equal cells imply an unchanged arrangement.
      */
     #syncMosaicCells() {
-        const cells = mosaicCellsForPeers(this.#peers);
+        const cells = mosaicCellsForPeers(this.#mosaicPeersView());
         if (cellsEqual(cells, this.#mosaicCells)) return;
         this.#mosaicCells = cells;
         this.#mosaicSlots = reconcileSlots(this.#mosaicSlots, cells.map((c) => c.token));
@@ -1111,8 +1124,14 @@ export class AggregatorBot extends Bot {
      */
     #syncMosaicCycle(ev) {
         if (!this.page || !(ev.seconds > 0)) return;
+        // Under warm Delayed Streaming the cells render `backlogMs`-old code, so
+        // roll the cycle anchor back by the same span — otherwise `H(...)`
+        // parameters animate live against a delayed picture. Clamped at 0 so a
+        // room younger than the delay only sees a small phase offset near t=0.
+        const shiftCycles = Math.min(ev.cycle,
+            (this.#streamDelayMs() / 1000) / ev.seconds);
         const anchor = {
-            cycle: ev.cycle,
+            cycle: ev.cycle - shiftCycles,
             seconds: ev.seconds,
             inSeconds: ev.t - this.networkSeconds(),
         };
@@ -1617,18 +1636,24 @@ export class AggregatorBot extends Bot {
                     // aggregator's scheduler and master-bus room reverb compute
                     // the identical values.
                     this.#peers.clear();
-                    for (const p of msg.peers) if (p && p.peerId) this.#peers.set(p.peerId, p);
+                    for (const p of msg.peers) if (p && p.peerId) {
+                        this.#peers.set(p.peerId, p);
+                        this.#recordPeerCode(p.peerId, p.pattern);
+                    }
                     this.#refreshWorstCase();
                 } else if (msg.type === 'peer-join' && msg.peer && msg.peer.peerId) {
                     this.#peers.set(msg.peer.peerId, msg.peer);
+                    this.#recordPeerCode(msg.peer.peerId, msg.peer.pattern);
                     this.#refreshWorstCase();
                 } else if (msg.type === 'peer-update' && msg.peerId) {
                     const rec = this.#peers.get(msg.peerId);
                     if (rec && msg.patch) {
                         Object.assign(rec, msg.patch);
+                        if ('pattern' in msg.patch) this.#recordPeerCode(msg.peerId, rec.pattern);
                         this.#refreshWorstCase();
                     }
                 } else if (msg.type === 'peer-leave' && msg.peerId) {
+                    this.#peerCodeLog.delete(msg.peerId);
                     if (this.#peers.delete(msg.peerId)) this.#refreshWorstCase();
                 }
             },
@@ -2032,12 +2057,99 @@ export class AggregatorBot extends Bot {
         if (!next) {
             for (const rb of this.#backlog.values()) rb.clear();
             this.#backlog.clear();
+            // The mosaic returns to live: no need to keep the history warm.
+            this.#peerCodeLog.clear();
         }
+        // The mosaic's delay is driven off #delayedStreaming + backlogMs, so a
+        // flip changes which code its cells render — recompute now rather than
+        // waiting for the next metrics tick.
+        this.#syncMosaicCells();
         console.log(`[aggregator-bot] delayed streaming ${next ? 'ENABLED' : 'disabled'} — ` +
             (next
                 ? `performers pre-buffer while off-turn (cap ${this.backlogMs}ms); ` +
-                  'their turn streams the backlog, live only on underrun'
+                  'their turn streams the backlog (and their mosaic cell + words + styling), live only on underrun'
                 : 'reverted to live output onsetting at each turn'));
+    }
+
+    /**
+     * Adopt the per-performer backlog cap from the CRDT `settings` map (a
+     * browser stamps it when it flips the toggle). It sizes both the audio
+     * backlog RingBuffers and the mosaic's delay, so a change clears the
+     * existing backlogs — RingBuffer capacity is fixed at construction, and
+     * #backlogFor rebuilds them at the new size on the next ingest tick.
+     */
+    #adoptBacklogMs(ms) {
+        const next = Math.max(1, Number(ms) || 0);
+        if (!next || next === this.backlogMs) return;
+        this.backlogMs = next;
+        for (const rb of this.#backlog.values()) rb.clear();
+        this.#backlog.clear();
+        // The cap is also the mosaic's delay, so a change moves which code the
+        // cells render — recompute rather than waiting for the next tick.
+        this.#syncMosaicCells();
+        console.log(`[aggregator-bot] delayed-streaming backlog cap set to ${next}ms`);
+    }
+
+    /** The room-wide media delay in ms: the backlog cap while ON, else 0. */
+    #streamDelayMs() {
+        return this.#delayedStreaming ? this.backlogMs : 0;
+    }
+
+    /**
+     * Bank a peer's current code for the mosaic delay-line. Called for every
+     * roster/join/update that carries a `pattern`. Only while the toggle is on,
+     * so the history starts empty at the flip and the mosaic warms up over the
+     * same span the audio backlog does (see #peerCodeAt's live fallback), rather
+     * than snapping the cell backlogMs into the past the instant it is enabled.
+     * De-duplicated (the roster broadcast repeats a pattern every metrics tick)
+     * and pruned to the delay window plus a margin.
+     */
+    #recordPeerCode(peerId, pattern) {
+        if (!this.#delayedStreaming || !peerId || typeof pattern !== 'string') return;
+        let log = this.#peerCodeLog.get(peerId);
+        if (!log) { log = []; this.#peerCodeLog.set(peerId, log); }
+        const last = log[log.length - 1];
+        if (last && last.pattern === pattern) return;
+        const now = this.now();
+        log.push({ t: now, pattern });
+        const cutoff = now - this.backlogMs - 5000;
+        let firstKept = 0;
+        while (firstKept + 1 < log.length && log[firstKept + 1].t <= cutoff) firstKept++;
+        if (firstKept > 0) log.splice(0, firstKept);
+    }
+
+    /**
+     * A peer's pattern as it stood at `at`. Falls back to the NEWEST entry when
+     * `at` predates the whole history — a still-warming toggle, or a peer in the
+     * room less than backlogMs — so the cell tracks live code until the history
+     * is deep enough to backdate it, matching the audio backlog underrunning to
+     * live over the same window.
+     */
+    #peerCodeAt(peerId, at) {
+        const log = this.#peerCodeLog.get(peerId);
+        if (!log || !log.length) return null;
+        let pick = null;
+        for (const entry of log) { if (entry.t <= at) pick = entry; else break; }
+        return (pick || log[log.length - 1]).pattern;
+    }
+
+    /**
+     * The roster mosaicCellsForPeers should see this pass: the live peers,
+     * except under warm Delayed Streaming every peer's `pattern` is swapped for
+     * the one from `backlogMs` ago, so a cell shows the visuals that go with the
+     * audio its turn is playing. Everything else (roomIndex, jitsiId,
+     * isAggregator) stays current.
+     */
+    #mosaicPeersView() {
+        const delay = this.#streamDelayMs();
+        const live = [...this.#peers.values()];
+        if (!delay) return live;
+        const at = this.now() - delay;
+        return live.map((peer) => {
+            if (!peer || peer.isAggregator) return peer;
+            const past = this.#peerCodeAt(peer.peerId, at);
+            return (past == null || past === peer.pattern) ? peer : { ...peer, pattern: past };
+        });
     }
 
     /**
@@ -2165,6 +2277,7 @@ export class AggregatorBot extends Bot {
         this.#lastScheduledBuffer.clear();
         for (const rb of this.#backlog.values()) rb.clear();
         this.#backlog.clear();
+        this.#peerCodeLog.clear();
         for (const rb of Object.values(this.buffers)) rb.clear();
         await super.stop();
     }

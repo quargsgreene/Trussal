@@ -13,7 +13,7 @@
 
 import { getStrudelAudioContext, getAggregatorPeer } from './latency-instrument.js';
 import { subscribePeerState, getAllPeers } from './peer-state.js';
-import { isJPatternActive, getActivePattern, getGateLevel } from './audio-net/Metaprogrammer.js';
+import { isJPatternActive, getActivePattern, getGateLevel, isDelayedStreaming, getStreamDelayMs } from './audio-net/Metaprogrammer.js';
 import { subscribeParticipants } from './participants.js';
 import { registerSamplesFromDB, registerImagesFromDB } from './user-samples.js';
 import { rewriteDataRefs, makeDataFn } from './data-ref.js';
@@ -277,6 +277,84 @@ function buildStrudelVoice(rawCode, fx) {
   // preamble has already been split off, and its H("Weather:3") is resolved by
   // hydra-params instead.
   return wrapAsVoice(rewriteDataRefs(rawCode), fx);
+}
+
+// --- Delayed Streaming: code-state delay-line --------------------------------
+//
+// When the aggregator is pre-buffering each performer's off-turn output and
+// streaming it on their turn (Delayed Streaming, room-wide toggle), the audio a
+// viewer hears during peer P's turn is P's output from `getStreamDelayMs()` ago.
+// P's Text/CSS Cycles bubbles and their locally-rendered Hydra preamble are
+// built from P's program in every browser, so left alone they would show P's
+// CURRENT code while the sound is delayed. This keeps a short per-peer history
+// of each peer's (pattern, playing) and hands buildPeerBlock the entry from
+// `delay` ms ago, so the whole turn lands together. (The aggregator applies the
+// same delay to its published mosaic cell — see aggregator-bot #mosaicPeersView.)
+//
+// Only remote peers and bots are delayed: the local performer authors live, and
+// their own published audio track must stay live (the aggregator does the
+// delaying) — delaying it here too would double up. Their own words/styling
+// showing live in their own view is a harmless authoring convenience.
+const peerCodeLog = new Map(); // peerKey -> [{ t, pattern, playing }], oldest→newest
+const PEER_CODE_LOG_MARGIN_MS = 5000;
+
+function peerCodeLogKey(peer) {
+  return peer.peerId || peer.jitsiId || null;
+}
+
+function recordPeerCode(key, pattern, playing, now, keepMs) {
+  let log = peerCodeLog.get(key);
+  if (!log) { log = []; peerCodeLog.set(key, log); }
+  const last = log[log.length - 1];
+  if (!last || last.pattern !== pattern || last.playing !== playing) {
+    log.push({ t: now, pattern, playing });
+  }
+  // Drop entries older than the window, but always keep the last one that is
+  // still <= (now - keepMs) so a peer whose code has not changed in a while
+  // still resolves to it rather than to nothing.
+  const cutoff = now - keepMs - PEER_CODE_LOG_MARGIN_MS;
+  let firstKept = 0;
+  while (firstKept + 1 < log.length && log[firstKept + 1].t <= cutoff) firstKept++;
+  if (firstKept > 0) log.splice(0, firstKept);
+}
+
+// The newest history entry at or before `at`. Falls back to the NEWEST entry
+// when `at` predates the whole log — a still-warming toggle, or a peer in the
+// room less than `delay` — so the voices track live code until the history is
+// deep enough to backdate them, matching the aggregator's audio backlog
+// underrunning to live over the same window.
+function peerCodeAt(key, at) {
+  const log = peerCodeLog.get(key);
+  if (!log || !log.length) return null;
+  let pick = null;
+  for (const entry of log) { if (entry.t <= at) pick = entry; else break; }
+  return pick || log[log.length - 1];
+}
+
+function forgetPeerCode(key) {
+  if (key) peerCodeLog.delete(key);
+}
+
+// The peer view buildPeerBlock should use this pass: the live peer, except a
+// remote peer / bot under warm Delayed Streaming, which gets its (pattern,
+// playing) from `delay` ms back. Records the live state into the history as a
+// side effect, so this must run once per peer per rebuild.
+function delayedPeerView(peer) {
+  if (peer.isAggregator) return peer;
+  const key = peerCodeLogKey(peer);
+  const delay = (key && getAggregatorPeer() && !isJPatternActive()) ? getStreamDelayMs() : 0;
+  // Local peer stays live (see the note above); JPattern's own getActivePattern
+  // staging (buildPeerBlock) already delays behind the ring, so don't stack.
+  if (!delay || peer.isLocal) {
+    if (key && !delay) peerCodeLog.delete(key); // stale once the mode is off
+    return peer;
+  }
+  // Record only while the mode is on, so the history starts empty at the flip
+  // and warms up over the same span the audio backlog does.
+  recordPeerCode(key, peer.pattern, !!peer.playing, Date.now(), delay);
+  const past = peerCodeAt(key, Date.now() - delay);
+  if (!past || (past.pattern === peer.pattern && past.playing === !!peer.playing)) return peer;
+  return { ...peer, pattern: past.pattern, playing: past.playing };
 }
 
 // Builds the code block for one peer's contribution to the combined program.
@@ -611,6 +689,7 @@ async function rebuildAndEvaluate() {
   cssSheets = [];
 
   const blocks = getAllPeers()
+    .map(delayedPeerView)
     .map(buildPeerBlock)
     .filter(Boolean);
 
@@ -811,8 +890,23 @@ export async function rebakeStrudel() {
 // play state moves.
 subscribePeerState((event, payload) => {
   if (event !== 'peer-upsert' && event !== 'peer-leave') return;
+  // Drop a departed peer's Delayed Streaming code history so it can't be
+  // re-used if a fresh peer lands on the same key.
+  if (event === 'peer-leave' && payload) forgetPeerCode(payload.peerId || payload.jitsiId);
   if (strudelBoot) rebuildAndEvaluate();
 });
+
+// Delayed Streaming: the text/CSS voices (and a remote peer's Hydra preamble)
+// are built from each peer's code as it stood getStreamDelayMs() ago
+// (delayedPeerView). A live room's metrics ticks re-stack often enough to walk
+// that window forward, but a quiet roster might not, so nudge a rebuild once a
+// second while the mode is warm. rebuildAndEvaluate dedups on the program text,
+// so a tick that changes nothing is cheap.
+setInterval(() => {
+  if (strudelBoot && getAggregatorPeer() && isDelayedStreaming() && getStreamDelayMs() > 0) {
+    rebuildAndEvaluate();
+  }
+}, 1000);
 
 subscribeParticipants((event) => {
   if (event === 'leave') {
