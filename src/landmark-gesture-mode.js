@@ -2,7 +2,7 @@
 // "Landmark and Gesture Mode" — the one switch that turns on the on-screen
 // keyboard, the MediaPipe head cursor, and face-gesture control together, and
 // the three ways to reach it from ANY Trussal screen (welcome page, prejoin,
-// meeting):
+// lobby knock, meeting):
 //
 //   • press → (Right Arrow)
 //   • tick "Landmark and Gesture Mode" in the ⚙ menu, top-left

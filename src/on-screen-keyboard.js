@@ -3,7 +3,10 @@
 // autocomplete ("autopredict"). It types into whichever Trussal Studio code
 // editor was last focused — the personal Strudel textarea or the shared Net
 // Cycles editor — and its Eval key routes the same way studio.js's own eval
-// does.
+// does. Outside a meeting, where Studio doesn't exist, it targets the two
+// Jitsi-native name fields instead: the prejoin screen's display-name input
+// and the lobby knock screen's name field (Eval is a no-op on those — see
+// _isTypingTarget / PREJOIN_NAME_ID / LOBBY_NAME_ID).
 //
 // The autopredict row is a head-cursor affordance: its chips are dwell
 // targets, so it only appears while the MediaPipe head cursor (the Face
@@ -23,6 +26,23 @@ const KBD_STYLE_ID  = 'trussal-kbd-style';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
 const KBD_TOGGLE_ID = 'trussal-kbd-toggle';
 const DWELL_MS      = 1000;
+
+// The two Jitsi-native name fields that live outside a meeting — the prejoin
+// screen's display-name input and the lobby knock screen's name field — are
+// the other typing targets the on-screen keyboard has to reach. They're why
+// Landmark and Gesture Mode holds the keyboard open standalone on those
+// screens (see setKeyboardStandalone below); without this a performer with no
+// physical keyboard could open the panel there but nothing they pressed would
+// land anywhere.
+const PREJOIN_NAME_ID = 'premeeting-name-input';
+const LOBBY_NAME_ID   = 'lobby-name-field';
+
+function _isTypingTarget(el) {
+  return !!el && (
+    (el.classList && el.classList.contains('ts-code')) ||
+    el.id === PREJOIN_NAME_ID || el.id === LOBBY_NAME_ID
+  );
+}
 
 // ── Layout (total = 14.5 flex-units per row) ────────────────────────────────────
 const ROWS = [
@@ -82,7 +102,7 @@ let _savedHeight  = ''; // panel height stashed while collapsed, restored on exp
 // target it. Detached nodes (a peer switch rebuilds the detail panel) are
 // rejected in _getTA(), so this can safely hold whatever was focused last.
 document.addEventListener('focusin', (e) => {
-  if (e.target?.classList?.contains('ts-code')) {
+  if (_isTypingTarget(e.target)) {
     _lastTA = e.target;
     _updatePredictions();
   }
@@ -103,24 +123,30 @@ function _getTA() {
   if (_lastTA && _lastTA.isConnected) return _lastTA;
   _lastTA = null;
   return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)')
-      || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)');
+      || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)')
+      // Studio only mounts in a meeting, which is exactly when neither of
+      // these Jitsi-native name fields exists — never both fallbacks at once.
+      || document.getElementById(PREJOIN_NAME_ID)
+      || document.getElementById(LOBBY_NAME_ID);
 }
 
 // ── Predictions ────────────────────────────────────────────────────────────────
 function _updatePredictions() {
   const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
   if (!row || !_visible) return;
-  // Autopredict is a head-cursor affordance: a suggestion is chosen by
-  // dwelling on its chip, so the row only earns its space above the keys
-  // while the MediaPipe head cursor is on.
-  if (!isHeadCursorEnabled()) {
+  const ta = _getTA();
+  // Autopredict is Strudel-keyword completion — meaningless over a plain name
+  // field, so it only ever considers a real .ts-code editor. It's also a
+  // head-cursor affordance: a suggestion is chosen by dwelling on its chip,
+  // so the row only earns its space above the keys while the MediaPipe head
+  // cursor is on.
+  if (!ta || !ta.classList?.contains('ts-code') || !isHeadCursorEnabled()) {
     row.style.display = 'none';
     if (row.childElementCount) row.innerHTML = '';
     return;
   }
-  const ta    = _getTA();
-  const text  = ta ? ta.value : '';
-  const caret = ta ? (ta.selectionStart ?? text.length) : 0;
+  const text  = ta.value;
+  const caret = ta.selectionStart ?? text.length;
   const preds = predictCompletions(text, caret);
   // Hide the row entirely when there is nothing to suggest — an always-present
   // empty strip below the title bar is the "rectangle that does nothing".
@@ -161,14 +187,14 @@ function _bindEditorActivity() {
   const refresh = (e) => {
     if (!_visible) return;
     const t = e.target;
-    if (t?.classList?.contains('ts-code')) { _lastTA = t; _updatePredictions(); }
+    if (_isTypingTarget(t)) { _lastTA = t; _updatePredictions(); }
   };
   document.addEventListener('input', refresh, true);
   document.addEventListener('keyup', refresh, true);
   document.addEventListener('selectionchange', () => {
     if (!_visible) return;
     const a = document.activeElement;
-    if (a?.classList?.contains('ts-code')) { _lastTA = a; _updatePredictions(); }
+    if (_isTypingTarget(a)) { _lastTA = a; _updatePredictions(); }
   });
 }
 
@@ -203,11 +229,14 @@ function _typeKey(key) {
     const ta = _getTA();
     // Eval routes by editor: the shared Net Cycles editor (.nc-code) applies
     // the metaprogram; the personal editor evals Strudel. studio.js handles
-    // the dispatch either way.
+    // the dispatch either way. Not a real editor (e.g. the prejoin/lobby name
+    // field) → nothing to run; studio.js's listener would otherwise try to
+    // eval whatever name the performer just typed as a Strudel pattern.
+    if (!ta || !ta.classList?.contains('ts-code')) return;
     document.dispatchEvent(new CustomEvent('trussal-kbd-eval', {
       detail: {
-        code: ta ? ta.value : '',
-        editor: ta && ta.classList.contains('nc-code') ? 'netcycles' : 'strudel'
+        code: ta.value,
+        editor: ta.classList.contains('nc-code') ? 'netcycles' : 'strudel'
       }
     }));
     return;
@@ -229,8 +258,13 @@ function _typeKey(key) {
       ta.setSelectionRange(s - 1, s - 1);
     }
   } else if (key === 'Enter') {
-    ta.value = val.slice(0, s) + '\n' + val.slice(e);
-    ta.setSelectionRange(s + 1, s + 1);
+    // A single-line <input> (the prejoin/lobby name fields) doesn't accept a
+    // newline — matches what a physical Enter key does there and keeps one
+    // from getting silently embedded in a display name.
+    if (ta.tagName === 'TEXTAREA') {
+      ta.value = val.slice(0, s) + '\n' + val.slice(e);
+      ta.setSelectionRange(s + 1, s + 1);
+    }
   } else if (key === 'Tab') {
     ta.value = val.slice(0, s) + '  ' + val.slice(e);
     ta.setSelectionRange(s + 2, s + 2);

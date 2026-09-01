@@ -58599,13 +58599,21 @@ ${snippet}${JP_BTN_MARKER}`;
     const tag = el.tagName;
     return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || el.isContentEditable === true;
   }
+  function _caretFollowCandidates() {
+    const targets = Array.from(document.querySelectorAll("#trussal-studio-overlay textarea.ts-code"));
+    const premeeting = document.getElementById("premeeting-name-input");
+    if (premeeting) targets.push(premeeting);
+    const lobby = document.getElementById("lobby-name-field");
+    if (lobby) targets.push(lobby);
+    return targets;
+  }
   function _followEditorCaret(cx, cy) {
     if (_stickyEditor && !_stickyEditor.isConnected) _stickyEditor = null;
     if (_stickyEditor && document.activeElement !== _stickyEditor && !_isEditable(document.activeElement)) {
       _stickyEditor.focus({ preventScroll: true });
     }
     let over = null;
-    for (const ta of document.querySelectorAll("#trussal-studio-overlay textarea.ts-code")) {
+    for (const ta of _caretFollowCandidates()) {
       const r2 = ta.getBoundingClientRect();
       if (r2.width > 0 && r2.height > 0 && cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
         over = ta;
@@ -59061,6 +59069,11 @@ ${snippet}${JP_BTN_MARKER}`;
   var KBD_PANEL_ID = "trussal-kbd-panel";
   var KBD_TOGGLE_ID = "trussal-kbd-toggle";
   var DWELL_MS2 = 1e3;
+  var PREJOIN_NAME_ID = "premeeting-name-input";
+  var LOBBY_NAME_ID = "lobby-name-field";
+  function _isTypingTarget(el) {
+    return !!el && (el.classList && el.classList.contains("ts-code") || el.id === PREJOIN_NAME_ID || el.id === LOBBY_NAME_ID);
+  }
   var ROWS = [
     [
       { l: "`", k: "`", s: "~" },
@@ -59145,7 +59158,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var _activityBound = false;
   var _savedHeight = "";
   document.addEventListener("focusin", (e30) => {
-    if (e30.target?.classList?.contains("ts-code")) {
+    if (_isTypingTarget(e30.target)) {
       _lastTA = e30.target;
       _updatePredictions();
     }
@@ -59159,19 +59172,19 @@ ${snippet}${JP_BTN_MARKER}`;
   function _getTA() {
     if (_lastTA && _lastTA.isConnected) return _lastTA;
     _lastTA = null;
-    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)");
+    return document.querySelector("#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)") || document.querySelector("#trussal-studio-overlay .ts-code:not(.nc-code)") || document.getElementById(PREJOIN_NAME_ID) || document.getElementById(LOBBY_NAME_ID);
   }
   function _updatePredictions() {
     const row = document.querySelector(`#${KBD_PANEL_ID} .ts-kbd-pred-row`);
     if (!row || !_visible) return;
-    if (!isHeadCursorEnabled()) {
+    const ta = _getTA();
+    if (!ta || !ta.classList?.contains("ts-code") || !isHeadCursorEnabled()) {
       row.style.display = "none";
       if (row.childElementCount) row.innerHTML = "";
       return;
     }
-    const ta = _getTA();
-    const text2 = ta ? ta.value : "";
-    const caret = ta ? ta.selectionStart ?? text2.length : 0;
+    const text2 = ta.value;
+    const caret = ta.selectionStart ?? text2.length;
     const preds = predictCompletions(text2, caret);
     if (!preds.length) {
       row.style.display = "none";
@@ -59204,7 +59217,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const refresh = (e30) => {
       if (!_visible) return;
       const t = e30.target;
-      if (t?.classList?.contains("ts-code")) {
+      if (_isTypingTarget(t)) {
         _lastTA = t;
         _updatePredictions();
       }
@@ -59214,7 +59227,7 @@ ${snippet}${JP_BTN_MARKER}`;
     document.addEventListener("selectionchange", () => {
       if (!_visible) return;
       const a2 = document.activeElement;
-      if (a2?.classList?.contains("ts-code")) {
+      if (_isTypingTarget(a2)) {
         _lastTA = a2;
         _updatePredictions();
       }
@@ -59251,10 +59264,11 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     if (key === "Eval") {
       const ta2 = _getTA();
+      if (!ta2 || !ta2.classList?.contains("ts-code")) return;
       document.dispatchEvent(new CustomEvent("trussal-kbd-eval", {
         detail: {
-          code: ta2 ? ta2.value : "",
-          editor: ta2 && ta2.classList.contains("nc-code") ? "netcycles" : "strudel"
+          code: ta2.value,
+          editor: ta2.classList.contains("nc-code") ? "netcycles" : "strudel"
         }
       }));
       return;
@@ -59273,8 +59287,10 @@ ${snippet}${JP_BTN_MARKER}`;
         ta.setSelectionRange(s2 - 1, s2 - 1);
       }
     } else if (key === "Enter") {
-      ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
-      ta.setSelectionRange(s2 + 1, s2 + 1);
+      if (ta.tagName === "TEXTAREA") {
+        ta.value = val2.slice(0, s2) + "\n" + val2.slice(e30);
+        ta.setSelectionRange(s2 + 1, s2 + 1);
+      }
     } else if (key === "Tab") {
       ta.value = val2.slice(0, s2) + "  " + val2.slice(e30);
       ta.setSelectionRange(s2 + 2, s2 + 2);

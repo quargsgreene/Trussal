@@ -639,11 +639,28 @@ function _detectionLoop() {
 // that editor even after the cursor moves off (so the performer can type on the
 // on-screen keyboard); a thumbs-down freezes the caret until the next
 // thumbs-down (_caretLocked, set in _runAction).
+//
+// The same follow targets the two Jitsi-native name fields that live OUTSIDE
+// a meeting: the prejoin screen's display-name input (#premeeting-name-input)
+// and the lobby knock screen's name field (#lobby-name-field) — otherwise a
+// performer using only the head cursor + on-screen keyboard (no physical
+// mouse/keyboard) can never get into a room at all. Never both at once with
+// the .ts-code editors: Studio only mounts in a meeting, which is exactly
+// when neither of those screens exists.
 // ---------------------------------------------------------------------------
 function _isEditable(el) {
   if (!el) return false;
   const tag = el.tagName;
   return tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || el.isContentEditable === true;
+}
+
+function _caretFollowCandidates() {
+  const targets = Array.from(document.querySelectorAll('#trussal-studio-overlay textarea.ts-code'));
+  const premeeting = document.getElementById('premeeting-name-input');
+  if (premeeting) targets.push(premeeting);
+  const lobby = document.getElementById('lobby-name-field');
+  if (lobby) targets.push(lobby);
+  return targets;
 }
 
 function _followEditorCaret(cx, cy) {
@@ -654,7 +671,7 @@ function _followEditorCaret(cx, cy) {
   }
 
   let over = null;
-  for (const ta of document.querySelectorAll('#trussal-studio-overlay textarea.ts-code')) {
+  for (const ta of _caretFollowCandidates()) {
     const r = ta.getBoundingClientRect();
     if (r.width > 0 && r.height > 0 &&
         cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
