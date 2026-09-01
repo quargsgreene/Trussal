@@ -12,7 +12,7 @@
 import * as Y from 'yjs';
 
 export const TEXT_KEY = 'metaprogram';
-export const MODULATION_KEY = 'modulation'; // induced wcl/wcpl floors
+export const MODULATION_KEY = 'modulation'; // induced wcl/wcrtt/wcpl floors
 export const VLANS_KEY = 'vlans';           // vlanName → { members, induced }
 export const SETTINGS_KEY = 'settings';     // room-wide runtime toggles (not program text)
 const SNAPSHOT_EVERY = 25;
@@ -158,7 +158,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings 
     getInduced() {
       if (!modulation) return {};
       const out = {};
-      for (const key of ['wcl', 'wcpl']) {
+      for (const key of ['wcl', 'wcrtt', 'wcpl']) {
         const v = modulation.get(key);
         if (typeof v === 'number') out[key] = v;
       }

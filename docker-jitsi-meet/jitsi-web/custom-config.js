@@ -39018,9 +39018,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var init_Echo = __esm({
     "src/audio-net/av-effects/Echo.js"() {
       init_ValuePattern();
-      ECHO_METRICS = ["wcl", "wcpl"];
+      ECHO_METRICS = ["wcl", "wcrtt", "wcpl"];
       ECHO_METRIC_BOUNDS = Object.freeze({
         wcl: 500,
+        wcrtt: 500,
         wcpl: 20
       });
       ECHO_SLOTS = ["length", "feedback", "gain"];
@@ -39409,15 +39410,15 @@ $ participants <0>
       init_program_directive();
       init_notation();
       TIMING_METRICS = ["wcl", "wcpl"];
-      EFFECT_METRICS = ["wcl", "wcpl"];
-      METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcpl"]);
+      EFFECT_METRICS = ["wcl", "wcrtt", "wcpl"];
+      METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcrtt", "wcpl"]);
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       VALUE_ELEMENT_OPS = /* @__PURE__ */ new Set(["@", "?", "!", "*", "/"]);
       MAX_VALUE_REPEATS = 1024;
-      CRUSH_METRICS = ["wcl", "wcpl"];
+      CRUSH_METRICS = ["wcl", "wcpl", "wcrtt"];
       EFFECTS = {
         // scale=1, fixed metric amount=live. Any worst-case metric may drive the
-        // decay, and all three arguments pattern — `# room <wcl wcpl> <1 2 ~ 2 3>*2`.
+        // decay, and all three arguments pattern — `# room <wcl wcrtt> <1 2 ~ 2 3>*2`.
         room: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
         echo: {
           kind: "effect",
@@ -40524,8 +40525,8 @@ $ participants <0>
         //          [<amount for metric 1>] [<amount for metric 2>]`
         //
         // Positional, with the two metric keywords optional and interleaved: a
-        // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcpl 10`
-        // reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers fill
+        // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
+        // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
         // the spectrum factor, the volume factor, then the two pinned amounts — in
         // the order the metrics were written. Any slot may instead be a `<…>`
         // pattern, sampled one element per cycle.
@@ -40771,7 +40772,7 @@ $ participants <0>
     const targetS = timingTargetSeconds(cycles, metrics);
     const source2 = fixed != null ? `# cycles "${metric}" ${factor} ${fixed} (pinned)` : `# cycles "${metric}" ${factor}`;
     const m2 = metrics || {};
-    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
+    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcrtt ${(m2.wcrtt || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
   }
   function clampRate(rate) {
     if (!(rate > 0) || !isFinite(rate)) return 1;
@@ -41020,7 +41021,7 @@ $ participants <0>
           this._clearInterval = clearIntervalFn;
           this._ast = null;
           this._pendingAst = null;
-          this._metrics = { wcl: 0, wcpl: 0 };
+          this._metrics = { wcl: 0, wcrtt: 0, wcpl: 0 };
           this._pendingMetrics = null;
           this._running = false;
           this._timer = null;
@@ -41232,6 +41233,29 @@ $ participants <0>
     }
   });
 
+  // src/audio-net/network-modulation/IncreaseRTT.js
+  var IncreaseRTT;
+  var init_IncreaseRTT = __esm({
+    "src/audio-net/network-modulation/IncreaseRTT.js"() {
+      IncreaseRTT = Object.freeze({
+        key: "wcrtt",
+        label: "Induce RTT",
+        unit: "ms",
+        min: 0,
+        max: 1e4,
+        step: 10,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
   // src/audio-net/network-modulation/IncreasePacketLoss.js
   var IncreasePacketLoss;
   var init_IncreasePacketLoss = __esm({
@@ -41300,6 +41324,7 @@ $ participants <0>
     const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
     return {
       wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
+      wcrtt: worstCase(rtts) ?? 0,
       wcjb,
       wcpipe,
       // How many rigs actually measured their own pipeline, so a readout can say
@@ -41322,10 +41347,12 @@ $ participants <0>
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
+      init_IncreaseRTT();
       init_IncreasePacketLoss();
       PIPELINE_ALLOWANCE_MS = 40;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
+        wcrtt: IncreaseRTT,
         wcpl: IncreasePacketLoss
       });
     }
@@ -50465,7 +50492,7 @@ ${err.toString()}`);
       getInduced() {
         if (!modulation) return {};
         const out = {};
-        for (const key of ["wcl", "wcpl"]) {
+        for (const key of ["wcl", "wcrtt", "wcpl"]) {
           const v2 = modulation.get(key);
           if (typeof v2 === "number") out[key] = v2;
         }
@@ -50674,7 +50701,7 @@ ${err.toString()}`);
       LOWPASS_PER_SECOND = 12;
       MAX_COMB_FEEDBACK = 0.98;
       WET_GAIN = 0.5;
-      METRIC_PER_SECOND = { wcl: 1e3, wcpl: 1 };
+      METRIC_PER_SECOND = { wcl: 1e3, wcrtt: 1e3, wcpl: 1 };
       DEFAULT_METRIC = "wcl";
     }
   });
@@ -50750,7 +50777,7 @@ ${err.toString()}`);
       MIN_BIT_DEPTH = 1;
       MAX_BIT_DEPTH = 16;
       MAX_SR_DIVISOR = 64;
-      HALVING_AMOUNTS = { wcl: 100, wcpl: 0.25 };
+      HALVING_AMOUNTS = { wcl: 100, wcrtt: 100, wcpl: 0.25 };
       DEFAULT_METRIC2 = "wcl";
     }
   });
@@ -52775,6 +52802,16 @@ ${newBody}`).length === 0;
 /* .ts-dim used to fade a whole row; the flat theme keeps every glyph at the
    full secondary colour, so it now only italicises rather than greying. */
 #trussal-studio-overlay .ts-dim { font-style: italic; }
+/* Leading tag on a Network Metrics line: PERSONAL (the selected participant's
+   own reading) vs GLOBAL (room-wide worst case, identical on every client).
+   A border box rather than a faded/coloured word, matching .ts-dim's
+   no-greying rule \u2014 the two are told apart by shape, not by contrast. */
+#trussal-studio-overlay .ts-scope {
+  display: inline-block; text-transform: uppercase; font-style: normal;
+  font-size: calc(12px * var(--trussal-font-scale, 1)); letter-spacing: 0.5px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 3px;
+  padding: 0 4px; margin-right: 2px; vertical-align: 1px;
+}
 #trussal-studio-overlay .ts-shortcuts { font-size: calc(16.5px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111); font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
   background: var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
@@ -61739,6 +61776,9 @@ ${snippet}${JP_BTN_MARKER}`;
   function renderStrip(container2) {
     reconcileList(container2, getAllPeers(), chipKey, createChip, updateChip);
   }
+  function scopeTag(kind) {
+    return `<span class="ts-scope" title="${kind === "personal" ? "this participant\u2019s own reading" : "room-wide worst case \u2014 identical on every client"}">${kind}</span>`;
+  }
   function metricsLine(peer) {
     const ms = (v2) => typeof v2 === "number" ? preciseMs(v2) : "\u2013";
     const rtt = ms(peer.rtt);
@@ -61755,18 +61795,18 @@ ${snippet}${JP_BTN_MARKER}`;
     } else {
       routedTxt = "no live audio";
     }
-    return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">RTT <b>${rtt}</b> \xB7 ${routedTxt}</div>`;
+    return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">${scopeTag("personal")} RTT <b>${rtt}</b> \xB7 ${routedTxt}</div>`;
   }
   function cycleLengthReadout(wc) {
     const text2 = getProgramText();
-    if (!text2) return 'Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
+    if (!text2) return `${scopeTag("global")} Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>`;
     const { ast: ast2, valid } = parseMetaprogram(text2);
-    if (!valid) return 'Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
+    if (!valid) return `${scopeTag("global")} Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>`;
     const { seconds: seconds2, beats, beatSeconds: beatSeconds2 } = cycleLength({ cycles: ast2.cycles, tempo: ast2.tempo, metrics: wc });
     const targetS = timingTargetSeconds(ast2.cycles, wc);
     const { metric, factor, fixed } = ast2.cycles;
     const source2 = fixed != null ? `pinned ${fixed}s` : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
-    return `Current turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
+    return `${scopeTag("global")} Current turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
   }
   function preciseMs(v2) {
     const n2 = Number(v2) || 0;
@@ -61796,7 +61836,7 @@ ${snippet}${JP_BTN_MARKER}`;
       const wc = effectiveWorstCase();
       body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCRTT is the worst measured round trip across the roster.">${scopeTag("global")} WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;

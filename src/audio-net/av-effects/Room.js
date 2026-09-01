@@ -57,7 +57,7 @@ export function rt60CombFeedback(delayS, decayS) {
 // exact where 43 * 0.001 is not, and the decay feeds an exponent — every
 // client solving the same comb gains from the same metrics should land on the
 // same float, not one an ulp apart.
-export const METRIC_PER_SECOND = { wcl: 1000, wcpl: 1 };
+export const METRIC_PER_SECOND = { wcl: 1000, wcrtt: 1000, wcpl: 1 };
 
 export const DEFAULT_METRIC = 'wcl';
 

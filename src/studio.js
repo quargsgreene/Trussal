@@ -250,6 +250,18 @@ function renderStrip(container) {
   reconcileList(container, getAllPeers(), chipKey, createChip, updateChip);
 }
 
+// PERSONAL vs GLOBAL: every reading in this panel is either one participant's
+// own number (the selected chip — "personal") or the room-wide worst case
+// every client computes identically from the same broadcast metrics
+// ("global"). The tag is the first thing on each line so the two kinds are
+// never mistaken for each other — a personal RTT of 0.4ms next to a global
+// WCRTT of 40ms is two different peers' links, not a contradiction.
+function scopeTag(kind) {
+  return `<span class="ts-scope" title="${kind === 'personal'
+    ? 'this participant’s own reading'
+    : 'room-wide worst case — identical on every client'}">${kind}</span>`;
+}
+
 function metricsLine(peer) {
   // preciseMs, not toFixed(0): at LAN scale a fixed 0-decimal render printed a
   // 0.4 ms RTT as "0ms" next to a WCL of "0.40ms" — the same number,
@@ -272,7 +284,7 @@ function metricsLine(peer) {
   } else {
     routedTxt = 'no live audio';
   }
-  return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">RTT <b>${rtt}</b> · ${routedTxt}</div>`;
+  return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">${scopeTag('personal')} RTT <b>${rtt}</b> · ${routedTxt}</div>`;
 }
 
 // The one network panel: this peer's measured link and the room-wide
@@ -292,9 +304,9 @@ function metricsLine(peer) {
 // dormant (see setJPatternActive); this is the same pure calculation.
 function cycleLengthReadout(wc) {
   const text = getProgramText();
-  if (!text) return 'Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>';
+  if (!text) return `${scopeTag('global')} Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>`;
   const { ast, valid } = parseMetaprogram(text);
-  if (!valid) return 'Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>';
+  if (!valid) return `${scopeTag('global')} Current turn length: <b>&mdash;</b> <span title="the metaprogram has parse errors">(program invalid)</span>`;
   const { seconds, beats, beatSeconds } = cycleLength({ cycles: ast.cycles, tempo: ast.tempo, metrics: wc });
   const targetS = timingTargetSeconds(ast.cycles, wc);
   const { metric, factor, fixed } = ast.cycles;
@@ -304,7 +316,7 @@ function cycleLengthReadout(wc) {
   const source = fixed != null
     ? `pinned ${fixed}s`
     : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
-  return `Current turn length: <b>${seconds.toFixed(3)}s</b> ` +
+  return `${scopeTag('global')} Current turn length: <b>${seconds.toFixed(3)}s</b> ` +
     `<span class="ts-dim">= ${escapeHtml(source)} &times; ${factor} = ${targetS.toFixed(3)}s` +
     `, rounded up to ${beats} &times; ${beatSeconds.toFixed(3)}s beat</span>`;
 }
@@ -352,7 +364,7 @@ function updateMetricsSection(el, peer, controls = '') {
     const wc = effectiveWorstCase();
     body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance">WCL <b>${preciseMs(wc.wcl)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCRTT is the worst measured round trip across the roster.">${scopeTag('global')} WCL <b>${preciseMs(wc.wcl)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;

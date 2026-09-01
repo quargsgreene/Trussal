@@ -64,6 +64,13 @@ test('room: cutoff clamps — no tail opens fully, an enormous tail floors at th
   assert.equal(roomParams({ wcl: 1e6 }, { scale: 100 }).cutoffHz, CUTOFF_MIN_HZ); // decay → ∞, cutoff → floor
 });
 
+test('room: wcrtt is a valid decay metric too, on the same ms-to-seconds scale as wcl', () => {
+  const viaRtt = roomParams({ wcrtt: 500 }, { metric: 'wcrtt', scale: 2 });
+  const viaWcl = roomParams({ wcl: 500 }, { scale: 2 });
+  assert.equal(viaRtt.decayS, viaWcl.decayS);
+  assert.deepEqual(viaRtt.combFeedbacks, viaWcl.combFeedbacks);
+});
+
 // Minimal recording stand-in for an AudioContext: enough surface for
 // createRoomNode, and every connect() is logged so the built graph can be
 // asserted on. Schroeder's shape (parallel combs → SERIES allpasses) is a
@@ -286,14 +293,14 @@ test('crush: the scale factor multiplies the resting depth (higher = less crush)
 });
 
 test('crush: every worst-case metric can drive it, each on its own scale', () => {
-  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcl', 'wcpl']);
-  const metrics = { wcl: 100, wcpl: 0.25 };
+  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcl', 'wcpl', 'wcrtt']);
+  const metrics = { wcl: 100, wcrtt: 100, wcpl: 0.25 };
   // One halving of the 8-bit base for each metric at its own halving amount.
   for (const metric of Object.keys(HALVING_AMOUNTS)) {
     assert.equal(crushParams(metrics, { metric }).bitDepth, 4, metric);
   }
   // A metric the room has not measured yet reads as 0 — no crush, not NaN.
-  assert.equal(crushParams({}, { metric: 'wcpl' }).bitDepth, BASE_BIT_DEPTH);
+  assert.equal(crushParams({}, { metric: 'wcrtt' }).bitDepth, BASE_BIT_DEPTH);
 });
 
 test('crush: a fixed third argument pins the metric, in the metric\'s own unit', () => {
@@ -400,12 +407,12 @@ test('noise: the spectrum factor sweeps brown → pink → white', () => {
 });
 
 test('noise: the volume factor rides its own metric from the base dB to the clamp', () => {
-  // wcpl 0.06 (a loss fraction) × 10 = 0.6 of the way from 25 dB to 75 dB.
-  const p = noiseFor('# noise "wcl" 1 "wcpl" 10', { wcl: 500, wcpl: 0.06 });
+  // wcrtt 60 ms = 0.06 s × 10 = 0.6 of the way from 25 dB to 75 dB.
+  const p = noiseFor('# noise "wcl" 1 "wcrtt" 10', { wcl: 500, wcrtt: 60 });
   assert.equal(p.gainDb, 55);
   assert.ok(Math.abs(p.gain - NOISE_BASE_GAIN * Math.pow(10, 30 / 20)) < 1e-12);
 
-  const loud = noiseFor('# noise "wcl" 1 "wcpl" 1000', { wcl: 500, wcpl: 0.06 });
+  const loud = noiseFor('# noise "wcl" 1 "wcrtt" 1000', { wcl: 500, wcrtt: 60 });
   assert.equal(loud.gainDb, NOISE_MAX_DB, 'clamped at 75 dB');
   assert.ok(Math.abs(loud.gain - NOISE_BASE_GAIN * Math.pow(10, 50 / 20)) < 1e-12);
   assert.equal(noiseGainForDb(1e6), noiseGainForDb(NOISE_MAX_DB), 'the clamp is the ceiling');

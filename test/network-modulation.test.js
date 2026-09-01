@@ -15,12 +15,13 @@ const require = createRequire(import.meta.url);
 const { createLatencyServer } = require('../latency-instrument/server.js');
 
 test('effective metric merge is strictly upward: induced below measured is a no-op', () => {
-  const measured = { wcl: 200, wcpl: 0.1, wcjb: 55 };
-  const below = mergeInducedMetrics(measured, { wcl: 50, wcpl: 0.01 });
+  const measured = { wcl: 200, wcrtt: 400, wcpl: 0.1, wcjb: 55 };
+  const below = mergeInducedMetrics(measured, { wcl: 50, wcrtt: 100, wcpl: 0.01 });
   assert.deepEqual(below, measured);
-  const above = mergeInducedMetrics(measured, { wcl: 900 });
+  const above = mergeInducedMetrics(measured, { wcl: 900, wcpl: 0.7 });
   assert.equal(above.wcl, 900);
-  assert.equal(above.wcpl, 0.1, 'untouched metrics keep their measured value');
+  assert.equal(above.wcpl, 0.7);
+  assert.equal(above.wcrtt, 400, 'untouched metrics keep their measured value');
   assert.equal(above.wcjb, 55, 'wcl\'s broken-out terms pass through unchanged');
 });
 
@@ -40,7 +41,8 @@ test('per-VLAN worst case: members only, VLAN-local induced conditions', () => {
   ];
   // Members only: member 1's 400 ms link and 0.5 loss must not leak in.
   const local = computeVlanWorstCase(peers, { members: ['0', '2'] });
-  assert.equal(local.wcl, 80 / 2 + 40 / 2 + 40, "member 1's terrible link doesn't leak into this VLAN");
+  assert.equal(local.wcrtt, 80, "member 1's terrible link doesn't leak into this VLAN");
+  assert.equal(local.wcl, 80 / 2 + 40 / 2 + 40, "nor its latency");
   assert.equal(local.wcpl, 0.05, "nor its packet loss");
   // VLAN-local induced floor applies on top of the members-only measurement.
   const floored = computeVlanWorstCase(peers, { members: ['0', '2'], induced: { wcpl: 0.3 } });

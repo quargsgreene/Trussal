@@ -10,7 +10,7 @@
 //
 // A metric reads live unless the matching fixed amount pins it — the 5th and
 // 6th arguments pin the 1st and 2nd metric IN WRITTEN ORDER, exactly as
-// `# room wcl 2 0.4` pins room's wcl. Amounts are seconds for wcl
+// `# room wcl 2 0.4` pins room's wcl. Amounts are seconds for wcl/wcrtt
 // and a loss fraction for wcpl, matching `# cycles`. Both metrics default to
 // wcl, and a factor defaults to 1 only when its metric keyword was written:
 // a bare `# noise` names neither metric, so nothing modulates and the bed

@@ -31,6 +31,7 @@ test('computeWorstCaseMetrics over a mixed roster', () => {
     { rtt: null, packetLoss: null, rtcRtt: null } // contributes nothing
   ];
   const wc = computeWorstCaseMetrics(peers);
+  assert.equal(wc.wcrtt, 120);
   // Mouth-to-ear: the two worst legs halved and summed (sender -> JVB ->
   // receiver), plus the measured de-jitter buffer, plus the fixed pipeline
   // allowance. No jitterBufferMs reported here, so that term is 0.
@@ -51,7 +52,7 @@ test('the de-jitter buffer is measured, and normally dominates wcl', () => {
   // The point of the model: on a LAN the network is single-digit ms while what
   // a performer hears is ~100 ms, so a network-only figure was ~25x too small.
   assert.ok(wc.wcl > 90 && wc.wcl < 110, `physically plausible (${wc.wcl}ms)`);
-  assert.ok(wc.wcl > (6 / 2 + 1 / 2) * 10, 'buffer + pipeline dwarf the network leg');
+  assert.ok(wc.wcl > wc.wcrtt * 10, 'buffer + pipeline dwarf the network leg');
 });
 
 test('wcl is an UPPER BOUND: each term at its worst across the roster', () => {
@@ -94,6 +95,7 @@ test('empty roster degrades to zeros, not NaN', () => {
   for (const roster of [[], null, undefined, [{}]]) {
     const wc = computeWorstCaseMetrics(roster);
     assert.equal(wc.wcl, 0);
+    assert.equal(wc.wcrtt, 0);
     assert.equal(wc.wcpl, 0);
     assert.equal(wc.sampleCount, 0);
   }
@@ -101,6 +103,7 @@ test('empty roster degrades to zeros, not NaN', () => {
 
 test('single peer roster (alone in room) assumes a symmetric partner leg', () => {
   const wc = computeWorstCaseMetrics([{ rtt: 33, packetLoss: 0.05 }]);
+  assert.equal(wc.wcrtt, 33);
   // No second peer to measure, so the partner leg is assumed to match: the
   // network term is 33/2 + 33/2 = one full leg RTT.
   assert.equal(wc.wcl, 33 + PIPELINE_ALLOWANCE_MS);
@@ -112,6 +115,7 @@ test('bot-only roster works like any other roster (bots self-report metrics too)
     { isBot: true, rtt: 200, packetLoss: 0.4 },
     { isBot: true, rtt: 90, packetLoss: 0.1 }
   ]);
+  assert.equal(wc.wcrtt, 200);
   assert.equal(wc.wcl, 200 / 2 + 90 / 2 + PIPELINE_ALLOWANCE_MS);
   assert.equal(wc.wcpl, 0.4);
 });

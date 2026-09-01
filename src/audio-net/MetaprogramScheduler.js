@@ -73,7 +73,7 @@ export function describeCycleLength({ cycles, tempo, metrics }) {
   const m = metrics || {};
   return `${seconds.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] ← ${source} ` +
     `target ${targetS.toFixed(3)}s (wcl ${(m.wcl || 0).toFixed(1)}ms, ` +
-    `wcpl ${((m.wcpl || 0) * 100).toFixed(1)}%)`;
+    `wcrtt ${(m.wcrtt || 0).toFixed(1)}ms, wcpl ${((m.wcpl || 0) * 100).toFixed(1)}%)`;
 }
 
 // --- Cycle expansion -----------------------------------------------------------
@@ -459,7 +459,7 @@ export class MetaprogramScheduler {
 
     this._ast = null;
     this._pendingAst = null;
-    this._metrics = { wcl: 0, wcpl: 0 };
+    this._metrics = { wcl: 0, wcrtt: 0, wcpl: 0 };
     this._pendingMetrics = null;
 
     this._running = false;

@@ -441,7 +441,7 @@ test('room requires a metric keyword; scale and pinned amount are optional', () 
   ast = ok('$ participants <0>\n# room "wcl" 2\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: null });
   // Any worst-case metric may drive the decay, as it may drive crush.
-  for (const metric of ['wcl', 'wcpl']) {
+  for (const metric of ['wcl', 'wcpl', 'wcrtt']) {
     ast = ok(`$ participants <0>\n# room "${metric}" 2\n`);
     assert.equal(resolveEffectParams(ast.chain[0]).metric, metric);
   }
@@ -460,8 +460,8 @@ test('crush takes a metric keyword, a scale factor, and an optional pinned amoun
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: null });
   ast = ok('$ participants <0>\n# crush "wcl" 2 0.4\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: 0.4 });
-  // crush reads any worst-case metric.
-  for (const metric of ['wcl', 'wcpl']) {
+  // crush reads any worst-case metric, wcrtt included.
+  for (const metric of ['wcl', 'wcpl', 'wcrtt']) {
     ast = ok(`$ participants <0>\n# crush "${metric}" 2\n`);
     assert.equal(resolveEffectParams(ast.chain[0]).metric, metric);
   }
@@ -544,9 +544,9 @@ test('echo takes three metric/scale pairs, or none, plus up to three bounds', ()
   ]);
 
   // Six arguments, no bounds: each metric keeps its own default bound.
-  ast = ok('$ participants <0>\n# echo "wcpl" 2 "wcpl" 0.3 "wcl" 3\n');
+  ast = ok('$ participants <0>\n# echo "wcl" 2 "wcpl" 0.3 "wcrtt" 3\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]).slots.map(s => [s.metric, s.scale, s.bound]),
-    [['wcpl', 2, null], ['wcpl', 0.3, null], ['wcl', 3, null]]);
+    [['wcl', 2, null], ['wcpl', 0.3, null], ['wcrtt', 3, null]]);
 
   // Bounds fill their slots left to right, so a partial list is legal.
   ast = ok('$ participants <0>\n# echo "wcl" 2 "wcpl" 0.3 "wcl" 3 1500\n');
@@ -705,17 +705,17 @@ test('room arguments may be patterns too, rests and a rate included', () => {
 });
 
 test('noise: two metric/factor pairs, then two amounts pinning those metrics', () => {
-  // The spec line: spectrum from wcl × 20, volume from wcpl × 10.
-  let ast = ok('$ participants <0>\n# noise "wcl" 20 "wcpl" 10\n');
+  // The spec line: spectrum from wcl × 20, volume from wcrtt × 10.
+  let ast = ok('$ participants <0>\n# noise "wcl" 20 "wcrtt" 10\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), {
     spectrum: { metric: 'wcl', factor: 20, fixed: null },
-    volume: { metric: 'wcpl', factor: 10, fixed: null }
+    volume: { metric: 'wcrtt', factor: 10, fixed: null }
   });
   // 5th and 6th arguments pin the metrics in written order.
-  ast = ok('$ participants <0>\n# noise "wcl" 20 "wcpl" 10 0.4 0.06\n');
+  ast = ok('$ participants <0>\n# noise "wcl" 20 "wcrtt" 10 0.4 0.06\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), {
     spectrum: { metric: 'wcl', factor: 20, fixed: 0.4 },
-    volume: { metric: 'wcpl', factor: 10, fixed: 0.06 }
+    volume: { metric: 'wcrtt', factor: 10, fixed: 0.06 }
   });
   // Metric keywords are optional and default to wcl; a keyword alone implies
   // factor 1, the way `# room wcl` does.
@@ -738,7 +738,7 @@ test('noise: two metric/factor pairs, then two amounts pinning those metrics', (
 });
 
 test('noise: any slot may be a <…> pattern, sampled one element per cycle', () => {
-  const ast = ok('$ participants <0>\n# noise <"wcl" "wcpl"> <20 10> "wcl" <5 <1 2>>\n');
+  const ast = ok('$ participants <0>\n# noise <"wcl" "wcpl"> <20 10> "wcrtt" <5 <1 2>>\n');
   const at = (cycle) => resolveEffectParams(ast.chain[0], { cycle });
   assert.deepEqual(at(0).spectrum, { metric: 'wcl', factor: 20, fixed: null });
   assert.deepEqual(at(1).spectrum, { metric: 'wcpl', factor: 10, fixed: null });
@@ -789,6 +789,9 @@ test('duplicate statements are rejected', () => {
 
 test('cycles metric must be a timing metric; scale and amount must be positive', () => {
   bad('$ participants <0>\n# cycles rtt\n', /timing metric/);
+  // wcrtt is a valid EFFECT_METRICS/CRUSH_METRICS/ECHO_METRICS metric but not
+  // a TIMING_METRICS one — a round trip cannot set a cycle length.
+  bad('$ participants <0>\n# cycles "wcrtt"\n', /timing metric/);
   bad('$ participants <0>\n# cycles "wcl" 0\n', /scale factor must be a positive real/);
   bad('$ participants <0>\n# cycles "wcl" 10 0\n', /fixed amount must be a positive real/);
   ok('$ participants <0>\n# cycles "wcpl"\n');

@@ -277,7 +277,7 @@ export class AggregatorBot extends Bot {
     #servedTurnAt = new Map();   // "stack:index" -> #turnCounter when last served
     #pacingStalled = false;      // latched so the fall-back warning prints once per stall
     #lastEmptyTurnLogAt = 0;     // rate limit for the empty-turn diagnostic
-    #worstCase = { wcl: 0, wcpl: 0 };
+    #worstCase = { wcl: 0, wcrtt: 0, wcpl: 0 };
     #roomChain = null;
     // The applied program's whole `#` chain, for the video counterpart.
     #chain = [];

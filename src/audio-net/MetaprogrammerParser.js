@@ -56,9 +56,10 @@ import { readDirective, stripDirective } from '../program-directive.js';
 import { detectNotation, miniToMondo } from '../notation.js';
 
 export const TIMING_METRICS = ['wcl', 'wcpl'];
-// Metrics an effect may be modulated by. The same set as TIMING_METRICS: wcl
-// (mouth-to-ear latency, a duration) and wcpl (packet-loss fraction).
-export const EFFECT_METRICS = ['wcl', 'wcpl'];
+// Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
+// cannot set a cycle length (it is a round trip, not a turn) but it is a
+// perfectly good modulation source.
+export const EFFECT_METRICS = ['wcl', 'wcrtt', 'wcpl'];
 
 // A metric keyword is ALWAYS quoted — `# cycles "wcl" 20`, `# room "wcpl" 2`,
 // `# crush <"wcl" "wcpl"> <2 4>` — so it tokenises as a `string`, never a bare
@@ -72,7 +73,7 @@ function isMetricKeywordToken(t) {
 
 // Every metric keyword, for spotting a bare (unquoted) one and telling the
 // author to quote it rather than falling through to a vaguer error.
-const METRIC_WORDS = new Set(['wcl', 'wcpl']);
+const METRIC_WORDS = new Set(['wcl', 'wcrtt', 'wcpl']);
 
 // A room with no `# mosaic` directive still tiles: the mosaic is the resting
 // state of the aggregator's video, and `# mosaic false` is the deviation from
@@ -110,9 +111,9 @@ const VALUE_ELEMENT_OPS = new Set(['@', '?', '!', '*', '/']);
 // with MAX_EXPANSION_STEPS; this is that bound applied to one written element.
 export const MAX_VALUE_REPEATS = 1024;
 
-// crush reads any worst-case metric — the same set `# cycles` and every other
-// effect accept.
-export const CRUSH_METRICS = ['wcl', 'wcpl'];
+// crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
+// which turns its metric into a duration and has no meaning for a round trip.
+export const CRUSH_METRICS = ['wcl', 'wcpl', 'wcrtt'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted. `metricKeywords`
@@ -120,13 +121,13 @@ export const CRUSH_METRICS = ['wcl', 'wcpl'];
 // `metricPairs` instead takes that many <metric> <scale> pairs, one per
 // parameter, followed by that many optional upper bounds (`# echo`, below).
 // `patternArgs` additionally lets the metric and the numbers be written as
-// mini-notation sequences (`# crush <wcl wcpl> <2 4>`), read per cycle — rests
+// mini-notation sequences (`# crush <wcl wcrtt> <2 4>`), read per cycle — rests
 // and a trailing `*n` / `/n` rate included. `mediaArg` allows the trailing
 // medium set (`# crush wcl 2 ["audio" "video"]`), which narrows the effect
 // from its whole-room default and patterns like any other argument.
 const EFFECTS = {
   // scale=1, fixed metric amount=live. Any worst-case metric may drive the
-  // decay, and all three arguments pattern — `# room <wcl wcpl> <1 2 ~ 2 3>*2`.
+  // decay, and all three arguments pattern — `# room <wcl wcrtt> <1 2 ~ 2 3>*2`.
   room: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   echo: {
     kind: 'effect',
@@ -1432,8 +1433,8 @@ class Parser {
   //          [<amount for metric 1>] [<amount for metric 2>]`
   //
   // Positional, with the two metric keywords optional and interleaved: a
-  // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcpl 10`
-  // reads "spectrum from wcl × 20, volume from wcpl × 10". The numbers fill
+  // keyword binds to the factor that FOLLOWS it, so `# noise wcl 20 wcrtt 10`
+  // reads "spectrum from wcl × 20, volume from wcrtt × 10". The numbers fill
   // the spectrum factor, the volume factor, then the two pinned amounts — in
   // the order the metrics were written. Any slot may instead be a `<…>`
   // pattern, sampled one element per cycle.

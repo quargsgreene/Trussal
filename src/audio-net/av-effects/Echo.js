@@ -16,7 +16,7 @@
 // gain 3 at 1200 ms — all three shrinking together as the room gets healthier.
 //
 // Bounds are written in the unit their metric is read in: milliseconds for
-// wcl, PERCENT for wcpl (`20` means 20 % loss, while metrics.wcpl
+// wcl/wcrtt, PERCENT for wcpl (`20` means 20 % loss, while metrics.wcpl
 // itself is the fraction 0.2). An omitted bound falls back to
 // ECHO_METRIC_BOUNDS — deliberately set near the worst a real algorave room
 // reaches rather than at the metric's theoretical ceiling, so the effect
@@ -45,14 +45,16 @@
 
 import { evaluateValuePattern, isValuePattern } from '../ValuePattern.js';
 
-// Metrics an echo parameter may be driven by — the same set every effect and
-// `# cycles` accept.
-export const ECHO_METRICS = ['wcl', 'wcpl'];
+// Metrics an echo parameter may be driven by. wcrtt is included even though
+// `# cycles` has no use for it: an echo tracking the round trip rather than
+// mouth-to-ear latency is a different, legible musical choice.
+export const ECHO_METRICS = ['wcl', 'wcrtt', 'wcpl'];
 
 // Default upper bound per metric, in that metric's written unit (ms; percent
 // for wcpl). Used for any bound the user leaves off.
 export const ECHO_METRIC_BOUNDS = Object.freeze({
   wcl: 500,
+  wcrtt: 500,
   wcpl: 20
 });
 

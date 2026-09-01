@@ -1,15 +1,16 @@
 // Worst-case network metric calculation for JPattern.
 //
-// Every client computes WCL/WCPL from the same peer metrics broadcast over the
-// peer-state bus, so all browsers derive identical cycle lengths and effect
-// parameters from identical inputs. Pure module — no DOM, no WebAudio — so it
-// runs under node:test as-is.
+// Every client computes WCL/WCRTT/WCPL from the same peer metrics broadcast
+// over the peer-state bus, so all browsers derive identical cycle lengths and
+// effect parameters from identical inputs. Pure module — no DOM, no WebAudio —
+// so it runs under node:test as-is.
 //
 // `percentile` is ported from bots/src/shared/stats.js (R-7 linear
 // interpolation, the numpy/Excel default) so fleet-side and room-side
 // statistics agree.
 
 import { IncreaseLatency } from './IncreaseLatency.js';
+import { IncreaseRTT } from './IncreaseRTT.js';
 import { IncreasePacketLoss } from './IncreasePacketLoss.js';
 
 export function percentile(values, p) {
@@ -39,7 +40,7 @@ export function worstCase(values) {
 function peerRtt(peer) {
   // Prefer the RTCStats round-trip (media path) over the WS ping/pong
   // fallback (signalling path) when both are known. Feeds WCL's two network
-  // legs (worstCaseOneWayLatency); it is no longer exposed on its own.
+  // legs (worstCaseOneWayLatency) and, on its own, WCRTT.
   if (typeof peer.rtcRtt === 'number' && isFinite(peer.rtcRtt)) return peer.rtcRtt;
   if (typeof peer.rtt === 'number' && isFinite(peer.rtt)) return peer.rtt;
   return null;
@@ -92,6 +93,7 @@ export function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
 
 // Worst-case metrics over the whole roster:
 //   wcl   worst-case one-way mouth-to-ear latency, ms (see above)
+//   wcrtt worst-case round-trip time, ms
 //   wcpl  worst-case packet loss, fraction in [0, 1]
 //
 // wcjb / wcpipe are wcl's own broken-out terms (de-jitter buffer, rig
@@ -132,6 +134,7 @@ export function computeWorstCaseMetrics(peers) {
   const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
   return {
     wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
+    wcrtt: worstCase(rtts) ?? 0,
     wcjb,
     wcpipe,
     // How many rigs actually measured their own pipeline, so a readout can say
@@ -144,6 +147,7 @@ export function computeWorstCaseMetrics(peers) {
 
 export const INDUCTIONS = Object.freeze({
   wcl: IncreaseLatency,
+  wcrtt: IncreaseRTT,
   wcpl: IncreasePacketLoss
 });
 

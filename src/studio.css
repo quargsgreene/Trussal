@@ -185,6 +185,16 @@
 /* .ts-dim used to fade a whole row; the flat theme keeps every glyph at the
    full secondary colour, so it now only italicises rather than greying. */
 #trussal-studio-overlay .ts-dim { font-style: italic; }
+/* Leading tag on a Network Metrics line: PERSONAL (the selected participant's
+   own reading) vs GLOBAL (room-wide worst case, identical on every client).
+   A border box rather than a faded/coloured word, matching .ts-dim's
+   no-greying rule — the two are told apart by shape, not by contrast. */
+#trussal-studio-overlay .ts-scope {
+  display: inline-block; text-transform: uppercase; font-style: normal;
+  font-size: calc(12px * var(--trussal-font-scale, 1)); letter-spacing: 0.5px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 3px;
+  padding: 0 4px; margin-right: 2px; vertical-align: 1px;
+}
 #trussal-studio-overlay .ts-shortcuts { font-size: calc(16.5px * var(--trussal-font-scale, 1)); color: var(--trussal-secondary, #111111); font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
   background: var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
