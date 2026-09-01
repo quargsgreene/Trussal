@@ -341,23 +341,17 @@ function folderOf(id) {
 // Called alongside registerSamplesFromDB. Idempotent: existing URLs are
 // revoked first so a re-registration does not leak one per call.
 export async function registerImagesFromDB() {
-  const idb = await openSamplesDB().catch((e) => {
-    console.error('[trussal] could not open the sample DB for images', e);
-    throw e;
-  });
-  if (!idb) return 0;
-
   for (const entries of imageUrls.values()) {
     for (const entry of entries) URL.revokeObjectURL(entry.url);
   }
   imageUrls.clear();
 
-  const { objectStore } = idb;
-  const stored = await new Promise((resolve, reject) => {
-    const req = objectStore.getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
+  // Same store, same read path as registerSamplesFromDB — the images are just
+  // the records readAll() returns whose title/id is an image file. (This used
+  // to call a non-existent openSamplesDB(), so every Strudel boot threw
+  // `ReferenceError: openSamplesDB is not defined` here and img() uploads
+  // never registered.)
+  const stored = await readAll();
 
   let count = 0;
   for (const record of stored) {

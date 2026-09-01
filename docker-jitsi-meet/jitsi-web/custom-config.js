@@ -53160,21 +53160,11 @@ ${newBody}`).length === 0;
     return parts.length > 1 ? parts[parts.length - 2] : "";
   }
   async function registerImagesFromDB() {
-    const idb = await openSamplesDB().catch((e30) => {
-      console.error("[trussal] could not open the sample DB for images", e30);
-      throw e30;
-    });
-    if (!idb) return 0;
     for (const entries2 of imageUrls.values()) {
       for (const entry of entries2) URL.revokeObjectURL(entry.url);
     }
     imageUrls.clear();
-    const { objectStore } = idb;
-    const stored = await new Promise((resolve3, reject) => {
-      const req2 = objectStore.getAll();
-      req2.onsuccess = () => resolve3(req2.result || []);
-      req2.onerror = () => reject(req2.error);
-    });
+    const stored = await readAll();
     let count = 0;
     for (const record2 of stored) {
       if (!record2 || !isImageFile(record2.title || record2.id)) continue;
