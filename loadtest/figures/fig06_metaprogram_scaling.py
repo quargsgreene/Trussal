@@ -23,7 +23,8 @@ IDEAL_SLOT_SECONDS = 4.0   # config/scenarios.yaml S3 default rotation
 
 def build_figure(run_dir=None, column="single"):
     apply_style(column)
-    summary = ensure_scenarios(load_summary(run_dir), ["S3"], lambda: load_summary(None))
+    summary = ensure_scenarios(load_summary(run_dir), ["S3"], lambda: load_summary(None),
+                               require_metrics=["nc_turn_gap_s", "nc_active_gap_s"])
     metaprogram_growth = summary[summary.scenario == "S3"]
     turn_gap_metric = ("nc_turn_gap_s" if (metaprogram_growth.metric == "nc_turn_gap_s").any()
                        else "nc_active_gap_s")

@@ -74,9 +74,14 @@ def load_dropout_rate(run_dir=None) -> pd.DataFrame:
         dropout_rate = pd.read_parquet(tidy_dir / "dropout_rate.parquet")
         # fig05 groups by the S1-S4 load scenarios; a run with only smoke/S0
         # cells has nothing to say there, so fall back like turn_stability does.
+        # A short capacity slice can also record *zero* involuntary dropout in
+        # every cell -> a bar chart of nothing; treat that as no signal too.
         manuscript_scenarios = {"S1", "S2", "S3", "S4"}
-        if not dropout_rate.empty and \
-                dropout_rate["scenario"].isin(manuscript_scenarios).any():
+        has_scenario = (not dropout_rate.empty
+                        and dropout_rate["scenario"].isin(manuscript_scenarios).any())
+        has_signal = (not dropout_rate.empty
+                      and float(dropout_rate["hazard_per_part_min"].fillna(0).abs().sum()) > 0.0)
+        if has_scenario and has_signal:
             dropout_rate.attrs["SYNTHETIC"] = False
             return dropout_rate
     return _synthetic_dropout_rate()
