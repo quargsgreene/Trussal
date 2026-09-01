@@ -1,0 +1,69 @@
+{
+  "effect": "room",
+  "wclMs": 100,
+  "metric": "wcl",
+  "cycle": {
+    "seconds": 2,
+    "beats": 4,
+    "directive": "# cycles \"wcl\" 20"
+  },
+  "params": {
+    "metric": "wcl",
+    "decayS": 0.1,
+    "combDelaysS": [
+      0.0297,
+      0.0371,
+      0.0411,
+      0.0437
+    ],
+    "allpassDelaysS": [
+      0.005,
+      0.0017
+    ],
+    "combFeedbacks": [
+      0.12852866599436155,
+      0.07709034690644301,
+      0.058479008414448086,
+      0.04886523593428336
+    ],
+    "wetGain": 0.5,
+    "cutoffHz": 8181.818181818181,
+    "visualLowpass": 0.45454545454545453
+  },
+  "stats": {
+    "renderSeconds": 1,
+    "sampleRate": 48000,
+    "peakAbs": 1,
+    "rmsDb": -46.58,
+    "decayS": 0.1,
+    "cutoffHz": 8181.8,
+    "wetGain": 0.5,
+    "combDelaysMs": [
+      29.7,
+      37.1,
+      41.1,
+      43.7
+    ],
+    "combFeedbacks": [
+      0.1285,
+      0.0771,
+      0.0585,
+      0.0489
+    ],
+    "measuredRt60Ms": 99.5,
+    "measuredEarlyRt60Ms": 103.5
+  },
+  "meta": {
+    "wclMs": 100,
+    "metric": "wcl",
+    "sampleRate": 48000,
+    "cycle": {
+      "seconds": 2,
+      "beats": 4,
+      "directive": "# cycles \"wcl\" 20"
+    },
+    "generatedAt": "2026-09-01T09:04:57.427Z",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "href": "http://127.0.0.1:8973/"
+  }
+}

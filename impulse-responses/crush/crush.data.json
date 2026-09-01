@@ -1,0 +1,45 @@
+{
+  "effect": "crush",
+  "wclMs": 100,
+  "metric": "wcl",
+  "cycle": {
+    "seconds": 2,
+    "beats": 4,
+    "directive": "# cycles \"wcl\" 20"
+  },
+  "params": {
+    "metric": "wcl",
+    "amount": 100,
+    "scale": 1,
+    "reduction": 2,
+    "bitDepth": 4,
+    "srDivisor": 2,
+    "visualPixelate": 2
+  },
+  "stats": {
+    "renderSeconds": 0.06,
+    "sampleRate": 48000,
+    "peakAbs": 0.69174,
+    "rmsDb": -35.94,
+    "bitDepth": 4,
+    "quantSteps": 16,
+    "srDivisor": 2,
+    "reduction": 2,
+    "srCornerHz": 12000,
+    "settlesTo": 0,
+    "measuredMinus3dBHz": 14156
+  },
+  "meta": {
+    "wclMs": 100,
+    "metric": "wcl",
+    "sampleRate": 48000,
+    "cycle": {
+      "seconds": 2,
+      "beats": 4,
+      "directive": "# cycles \"wcl\" 20"
+    },
+    "generatedAt": "2026-09-01T09:04:57.427Z",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "href": "http://127.0.0.1:8973/"
+  }
+}

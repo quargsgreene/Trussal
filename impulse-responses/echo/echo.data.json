@@ -1,0 +1,53 @@
+{
+  "effect": "echo",
+  "wclMs": 100,
+  "metric": "wcl",
+  "cycle": {
+    "seconds": 2,
+    "beats": 4,
+    "directive": "# cycles \"wcl\" 20"
+  },
+  "params": {
+    "lengthCycles": 0.1,
+    "delayS": 0.2,
+    "feedback": 0.1,
+    "gain": 0.2,
+    "wetGain": 0.2,
+    "visualBrightness": 0.9
+  },
+  "stats": {
+    "renderSeconds": 2,
+    "sampleRate": 48000,
+    "peakAbs": 1,
+    "rmsDb": -49.66,
+    "delayS": 0.2,
+    "lengthCycles": 0.1,
+    "feedback": 0.1,
+    "echoGain": 0.2,
+    "wetGain": 0.2,
+    "cycleSeconds": 2,
+    "measuredTaps": [
+      {
+        "ms": 206,
+        "amp": 0.19694
+      },
+      {
+        "ms": 408.67,
+        "amp": 0.02001
+      }
+    ]
+  },
+  "meta": {
+    "wclMs": 100,
+    "metric": "wcl",
+    "sampleRate": 48000,
+    "cycle": {
+      "seconds": 2,
+      "beats": 4,
+      "directive": "# cycles \"wcl\" 20"
+    },
+    "generatedAt": "2026-09-01T09:04:57.427Z",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "href": "http://127.0.0.1:8973/"
+  }
+}
