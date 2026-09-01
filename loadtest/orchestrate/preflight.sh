@@ -65,7 +65,7 @@ while IFS=$'\t' read -r name ssh iface _r browsers _g _n; do
     test -x $VENV/bin/locust && echo locust:ok || echo locust:MISSING
     $VENV/bin/python -c \"import playwright\" 2>/dev/null && echo pw:ok || echo pw:MISSING
     test -s $REPO_DIR/loadtest/media/seeds/camera.y4m && echo seeds:ok || echo seeds:MISSING
-    tc -V >/dev/null 2>&1 && echo tc:ok || echo tc:MISSING
+    PATH=\"\$PATH:/usr/sbin:/sbin\" tc -V >/dev/null 2>&1 && echo tc:ok || echo tc:MISSING
     df -PBG $REPO_DIR | awk \"NR==2{print \\\"disk:\\\" \\\$4}\"
   '" 2>/dev/null)
   echo "  [$name] $(echo "$out" | tr '\n' ' ')"
