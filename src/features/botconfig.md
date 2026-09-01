@@ -36,6 +36,8 @@ Spawn reads the box.
 
 ## Properties
 
+### Shaping — what the bots play
+
 | Property | Type | Values |
 |---|---|---|
 | `random` | string | `"params"` jitters every numeric parameter of your code (±50%); `"full"` replaces it with a fresh patch from the built-in palette |
@@ -48,6 +50,39 @@ Spawn reads the box.
 A value outside these sets is rejected and reported back to your studio as a
 `fleet-status` reason. The cluster still spawns, playing exact copies — a typo
 costs you the config, not the bots.
+
+### Actions — managing your cluster from code
+
+These replaced the old Bot Cluster buttons. Each is a **one-shot** operation
+your studio carries out the next time you **evaluate your personal editor**
+(Ctrl+Enter / Play) — the same moment your pattern is sent. They act only on
+**your own** cluster.
+
+| Property | Type | Default | Effect on the next eval |
+|---|---|---|---|
+| `spawn` | number | `0` | Spawn this many bots (shaped by the properties above) |
+| `remove` | string[] | `[]` | Remove your bots with these participant indices, e.g. `["1a", "1c"]` |
+| `removeAll` | boolean | `false` | Remove every bot in your cluster |
+| `mute` | string[] | `[]` | Mute the participants with these indices |
+| `muteAll` | boolean | `false` | Mute every bot in your cluster |
+| `unmuteAll` | boolean | `false` | Unmute every bot in your cluster |
+| `camera` | string[] | `[]` | Turn the video tile **on** for your bots with these indices |
+| `cameraOffAll` | boolean | `false` | Turn every bot's video tile **off** |
+| `cameraOnAll` | boolean | `false` | Turn every bot's video tile **on** |
+
+`removeAll` wins over `remove`, and removal runs before `spawn` — a declaration
+that both removes and spawns reads as "replace my cluster".
+
+For mute and camera the "all" booleans run first and the per-index list is
+applied on top, so `{ unmuteAll: true, mute: ["1a"] }` means "unmute the cluster
+except 1a" and `{ cameraOffAll: true, camera: ["1a"] }` means "all dark except
+1a". If you set both "all" booleans of a pair, the muting / camera-off one wins
+(it runs last).
+
+**Deduped.** The same action set does not fire twice — leaving `spawn: 2` in
+your editor while you tweak an unrelated line and re-evaluate does **not** spawn
+two more bots. Change a value (bump the count, edit an array, flip a boolean)
+to trigger it again.
 
 Every spawn says what the fleet took, on the same status line as the spawn
 itself: `spawned 2/2 for 1 — botConfig applied: harmony=diatonic`, or

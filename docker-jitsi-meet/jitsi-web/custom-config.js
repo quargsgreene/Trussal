@@ -43643,9 +43643,9 @@ ${err.toString()}`);
           );
         }
       };
-      match = (state) => new PatternMatcher(
+      match = (state2) => new PatternMatcher(
         /** @type {any} */
-        state
+        state2
       );
       _random = /** @type {any} */
       match(
@@ -44116,13 +44116,13 @@ ${err.toString()}`);
           const client = readVarUint(decoder.restDecoder);
           const numberOfDeletes = readVarUint(decoder.restDecoder);
           const structs = store.clients.get(client) || [];
-          const state = getState(store, client);
+          const state2 = getState(store, client);
           for (let i2 = 0; i2 < numberOfDeletes; i2++) {
             const clock2 = decoder.readDsClock();
             const clockEnd = clock2 + decoder.readDsLen();
-            if (clock2 < state) {
-              if (state < clockEnd) {
-                addToDeleteSet(unappliedDS, client, state, clockEnd - state);
+            if (clock2 < state2) {
+              if (state2 < clockEnd) {
+                addToDeleteSet(unappliedDS, client, state2, clockEnd - state2);
               }
               let index2 = findIndexSS(structs, clock2);
               let struct2 = structs[index2];
@@ -45043,7 +45043,7 @@ ${err.toString()}`);
             curStructsTarget.i++
           ]
         );
-        const state = /* @__PURE__ */ new Map();
+        const state2 = /* @__PURE__ */ new Map();
         const addStackToRestSS = () => {
           for (const item of stack2) {
             const client = item.id.client;
@@ -45063,7 +45063,7 @@ ${err.toString()}`);
         };
         while (true) {
           if (stackHead.constructor !== Skip) {
-            const localClock = setIfUndefined(state, stackHead.id.client, () => getState(store, stackHead.id.client));
+            const localClock = setIfUndefined(state2, stackHead.id.client, () => getState(store, stackHead.id.client));
             const offset2 = localClock - stackHead.id.clock;
             if (offset2 < 0) {
               stack2.push(stackHead);
@@ -45090,7 +45090,7 @@ ${err.toString()}`);
                 }
               } else if (offset2 === 0 || offset2 < stackHead.length) {
                 stackHead.integrate(transaction, offset2);
-                state.set(stackHead.id.client, stackHead.id.clock + stackHead.length);
+                state2.set(stackHead.id.client, stackHead.id.clock + stackHead.length);
               }
             }
           }
@@ -45793,7 +45793,7 @@ ${err.toString()}`);
         return updateEncoder.toUint8Array();
       };
       diffUpdateV2 = (update, sv, YDecoder = UpdateDecoderV2, YEncoder = UpdateEncoderV2) => {
-        const state = decodeStateVector(sv);
+        const state2 = decodeStateVector(sv);
         const encoder = new YEncoder();
         const lazyStructWriter = new LazyStructWriter(encoder);
         const decoder = new YDecoder(createDecoder(update));
@@ -45801,7 +45801,7 @@ ${err.toString()}`);
         while (reader.curr) {
           const curr = reader.curr;
           const currClient = curr.id.client;
-          const svClock = state.get(currClient) || 0;
+          const svClock = state2.get(currClient) || 0;
           if (reader.curr.constructor === Skip) {
             reader.next();
             continue;
@@ -51062,13 +51062,13 @@ ${err.toString()}`);
     }
     return { text: text2, css };
   }
-  function textStateIsNeutral(state) {
-    if (!state) return true;
-    return !(state.spacingPx > 0) && !(state.dropChance > 0) && !(state.noiseChars > 0) && !(state.repeats > 0 && state.repeatAlpha > 0);
+  function textStateIsNeutral(state2) {
+    if (!state2) return true;
+    return !(state2.spacingPx > 0) && !(state2.dropChance > 0) && !(state2.noiseChars > 0) && !(state2.repeats > 0 && state2.repeatAlpha > 0);
   }
-  function cssStateIsNeutral(state) {
-    if (!state) return true;
-    return !(state.blurPx > 0) && !(state.quantizeStep > 1) && !(state.colorLevels > 0 && state.colorLevels < 256) && !(state.jitter > 0) && !(state.fadeFromPrevious > 0);
+  function cssStateIsNeutral(state2) {
+    if (!state2) return true;
+    return !(state2.blurPx > 0) && !(state2.quantizeStep > 1) && !(state2.colorLevels > 0 && state2.colorLevels < 256) && !(state2.jitter > 0) && !(state2.fadeFromPrevious > 0);
   }
   function crushWord(word2, dropChance, cycle, peer, index2) {
     if (!(dropChance > 0) || !word2) return word2;
@@ -51165,11 +51165,11 @@ ${err.toString()}`);
     return out;
   }
   function visualStateFor(chainParams) {
-    const state = { brightness: 1 };
+    const state2 = { brightness: 1 };
     for (const { fn, params: params2 } of chainParams) {
-      if (fn === "echo") state.brightness = Math.min(state.brightness, params2.visualBrightness);
+      if (fn === "echo") state2.brightness = Math.min(state2.brightness, params2.visualBrightness);
     }
-    return state;
+    return state2;
   }
   var MASTER_BUS_EFFECTS, AUDIO_EFFECTS, EffectsChainManager;
   var init_av_effects = __esm({
@@ -51886,7 +51886,7 @@ ${newBody}`).length === 0;
            otherwise render it at a reduced default opacity. custom.css
            carries the same rule for a rebuilt web image. */
         #trussal-welcome-overlay #trussal-room-input::placeholder {
-          color: #111111;
+          color: var(--trussal-secondary, #111111);
           opacity: 1;
         }
       </style>
@@ -51895,19 +51895,19 @@ ${newBody}`).length === 0;
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: #eeeeee;
+        background: var(--trussal-primary, #eeeeee);
         padding: 1.5rem 2rem;
-        border: 1px solid #111111;
+        border: 1px solid var(--trussal-secondary, #111111);
         border-radius: 1rem;
         max-width: 480px;
         width: 90%;
         z-index: 9999;
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       ">
         <form class="trussal-room-form"
               style="display:flex;flex-direction:column;gap:0.75rem;">
           <label for="trussal-room-input"
-                 style="color:#111111;font-size:1rem;">
+                 style="color:var(--trussal-secondary, #111111);font-size:1rem;">
             Room name:
           </label>
           <input id="trussal-room-input"
@@ -51919,17 +51919,17 @@ ${newBody}`).length === 0;
                  spellcheck="false"
                  placeholder="Room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid #111111;
-                        background:#eeeeee;
-                        color:#111111;"/>
+                        border:1px solid var(--trussal-secondary, #111111);
+                        background:var(--trussal-primary, #eeeeee);
+                        color:var(--trussal-secondary, #111111);"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:1px solid #111111;background:#eeeeee;color:#111111;
+                         border:1px solid var(--trussal-secondary, #111111);background:var(--trussal-primary, #eeeeee);color:var(--trussal-secondary, #111111);
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
           <div id="trussal-room-error"
-               style="display:none;color:#111111;font-size:0.85rem;"></div>
+               style="display:none;color:var(--trussal-secondary, #111111);font-size:0.85rem;"></div>
         </form>
       </div>
     `;
@@ -51992,20 +51992,20 @@ ${newBody}`).length === 0;
       '[class*="actionButton"], .action-btn, .premeeting-screen [class*="actionButton"]'
     );
     for (const btn of joinBtns) {
-      btn.style.setProperty("background", "#111111", "important");
-      btn.style.setProperty("background-color", "#111111", "important");
-      btn.style.setProperty("color", "#eeeeee", "important");
-      btn.style.setProperty("border", "1px solid #111111", "important");
-      btn.querySelectorAll("*").forEach((c2) => c2.style.setProperty("color", "#eeeeee", "important"));
+      btn.style.setProperty("background", "var(--trussal-secondary, #111111)", "important");
+      btn.style.setProperty("background-color", "var(--trussal-secondary, #111111)", "important");
+      btn.style.setProperty("color", "var(--trussal-primary, #eeeeee)", "important");
+      btn.style.setProperty("border", "1px solid var(--trussal-secondary, #111111)", "important");
+      btn.querySelectorAll("*").forEach((c2) => c2.style.setProperty("color", "var(--trussal-primary, #eeeeee)", "important"));
       btn.querySelectorAll("svg").forEach(
-        (svg) => svg.style.setProperty("fill", "#eeeeee", "important")
+        (svg) => svg.style.setProperty("fill", "var(--trussal-primary, #eeeeee)", "important")
       );
     }
     for (const el of document.querySelectorAll('[class*="deviceStatus"]')) {
-      el.style.setProperty("background", "#eeeeee", "important");
-      el.style.setProperty("background-color", "#eeeeee", "important");
-      el.style.setProperty("color", "#111111", "important");
-      el.style.setProperty("border", "1px solid #111111", "important");
+      el.style.setProperty("background", "var(--trussal-primary, #eeeeee)", "important");
+      el.style.setProperty("background-color", "var(--trussal-primary, #eeeeee)", "important");
+      el.style.setProperty("color", "var(--trussal-secondary, #111111)", "important");
+      el.style.setProperty("border", "1px solid var(--trussal-secondary, #111111)", "important");
     }
   }
   function startPrejoinRender() {
@@ -52413,6 +52413,145 @@ ${newBody}`).length === 0;
   init_data_ref();
   init_ValuePattern();
 
+  // src/css-cycles-suppress.js
+  var suppressed = false;
+  var subscribers3 = /* @__PURE__ */ new Set();
+  function isCssCyclesSuppressed() {
+    return suppressed;
+  }
+  function setCssCyclesSuppressed(on) {
+    const next = !!on;
+    if (next === suppressed) return;
+    suppressed = next;
+    for (const fn of subscribers3) {
+      try {
+        fn(suppressed);
+      } catch (e30) {
+      }
+    }
+  }
+  function onCssCyclesSuppressChange(fn) {
+    subscribers3.add(fn);
+    return () => subscribers3.delete(fn);
+  }
+
+  // src/theme-context.js
+  var STORAGE_KEY = "trussal.theme.v1";
+  var DEFAULT_PRIMARY = "#eeeeee";
+  var DEFAULT_SECONDARY = "#111111";
+  var DEFAULT_FONT = "Arial, Helvetica, sans-serif";
+  var WEB_SAFE_FONTS = [
+    { label: "Arial (default)", value: DEFAULT_FONT },
+    { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+    { label: "Verdana", value: "Verdana, Geneva, sans-serif" },
+    { label: "Tahoma", value: "Tahoma, Geneva, sans-serif" },
+    { label: "Trebuchet MS", value: '"Trebuchet MS", Helvetica, sans-serif' },
+    { label: "Georgia", value: 'Georgia, "Times New Roman", serif' },
+    { label: "Times New Roman", value: '"Times New Roman", Times, serif' },
+    { label: "Courier New", value: '"Courier New", Courier, monospace' },
+    { label: "Monospace", value: "ui-monospace, SFMono-Regular, Menlo, monospace" }
+  ];
+  var DEFAULT_THEME = {
+    darkMode: false,
+    disableCss: false,
+    invert: false,
+    primary: "",
+    // '' → use DEFAULT_PRIMARY
+    secondary: "",
+    // '' → use DEFAULT_SECONDARY
+    font: DEFAULT_FONT
+  };
+  function isHexColor(value2) {
+    return typeof value2 === "string" && /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value2.trim());
+  }
+  function normalizeHex(value2) {
+    if (!isHexColor(value2)) return "";
+    let hex = value2.trim().replace(/^#/, "").toLowerCase();
+    if (hex.length === 3) hex = hex.split("").map((c2) => c2 + c2).join("");
+    return `#${hex}`;
+  }
+  function effectiveAnchors(theme2) {
+    const t = { ...DEFAULT_THEME, ...theme2 || {} };
+    let primary = normalizeHex(t.primary) || DEFAULT_PRIMARY;
+    let secondary = normalizeHex(t.secondary) || DEFAULT_SECONDARY;
+    if (t.darkMode) [primary, secondary] = [secondary, primary];
+    return { primary, secondary };
+  }
+  var state = { ...DEFAULT_THEME };
+  var subscribers4 = /* @__PURE__ */ new Set();
+  function loadState() {
+    try {
+      const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+      if (raw) state = { ...DEFAULT_THEME, ...JSON.parse(raw) };
+    } catch (e30) {
+      console.warn("[theme] could not read the stored theme", e30);
+    }
+  }
+  function persist() {
+    try {
+      globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e30) {
+      console.warn("[theme] could not persist the theme", e30);
+    }
+  }
+  function getTheme2() {
+    return { ...state };
+  }
+  function setTheme2(patch) {
+    const next = { ...state };
+    for (const key of Object.keys(DEFAULT_THEME)) {
+      if (patch && Object.prototype.hasOwnProperty.call(patch, key)) next[key] = patch[key];
+    }
+    state = next;
+    persist();
+    applyTheme();
+    for (const fn of subscribers4) {
+      try {
+        fn(getTheme2());
+      } catch (e30) {
+      }
+    }
+    return getTheme2();
+  }
+  var INVERT_STYLE_ID = "trussal-personal-invert";
+  function ensureInvertStyle(on) {
+    const doc2 = globalThis.document;
+    if (!doc2?.head) return;
+    let el = doc2.getElementById(INVERT_STYLE_ID);
+    if (!on) {
+      el?.remove();
+      return;
+    }
+    if (!el) {
+      el = doc2.createElement("style");
+      el.id = INVERT_STYLE_ID;
+      doc2.head.appendChild(el);
+    }
+    el.textContent = [
+      "html { filter: invert(1) hue-rotate(180deg); }",
+      "img, video, canvas, iframe, #largeVideo, #largeVideoWrapper,",
+      '#hydra-canvas, [id^="hydra"], .videocontainer video, .videocontainer canvas',
+      "{ filter: invert(1) hue-rotate(180deg); }"
+    ].join("\n");
+  }
+  function applyTheme() {
+    const doc2 = globalThis.document;
+    const root = doc2?.documentElement;
+    if (root?.style) {
+      const { primary, secondary } = effectiveAnchors(state);
+      root.style.setProperty("--trussal-primary", primary);
+      root.style.setProperty("--trussal-secondary", secondary);
+      root.style.setProperty("--trussal-font", state.font || DEFAULT_FONT);
+    }
+    ensureInvertStyle(state.invert);
+    setCssCyclesSuppressed(state.disableCss);
+  }
+  loadState();
+  applyTheme();
+  if (globalThis.document && globalThis.document.readyState === "loading") {
+    globalThis.document.addEventListener("DOMContentLoaded", applyTheme, { once: true });
+  }
+
   // src/studio.css
   var studio_default = `/* Styles for the Trussal Studio overlay (src/studio.js). Imported as raw text
    (see build.mjs's '.css': 'text' loader) and injected via injectStyles() \u2014
@@ -52420,10 +52559,17 @@ ${newBody}`).length === 0;
    still ships inside custom-config.js, just authored here instead of inside
    a JS template literal.
 
-   Palette: flat monochrome, matching custom.css. Background #eeeeee, text /
-   borders / icons #111111, no accent colours. "selected" / "on" / "active" /
-   dwell states invert (fill #111111, text #eeeeee) so they stay legible
-   without colour.
+   Palette: flat monochrome, matching custom.css. Authored against two CSS
+   custom properties rather than hard hex so the per-user Personal Theme picker
+   (src/theme-context.js) can retint the overlay by reassigning them on :root:
+
+     --trussal-primary    the light anchor \u2014 surfaces, "inverted" text
+     --trussal-secondary  the dark anchor  \u2014 text, borders, icons
+
+   The two are always used as a pair, so "selected" / "on" / "active" / dwell
+   states swap them (fill secondary, text primary) and stay legible without
+   colour. The font comes from var(--trussal-font, ...). Each reference below
+   keeps its old literal as the var() fallback.
 
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
    from studio.js hardcoded as literal strings \u2014 safe because those are
@@ -52444,12 +52590,12 @@ ${newBody}`).length === 0;
   height: min(600px, calc(100vh - 108px));
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-  background: #eeeeee;
-  color: #111111;
-  border: 1px solid #111111;
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111);
   border-radius: 10px;
   z-index: 999999;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
   display: flex; flex-direction: column;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0,0,0,0.18);
@@ -52466,11 +52612,11 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-jpattern { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 #trussal-studio-overlay .ts-header {
   display:flex; align-items:center; justify-content:space-between;
-  padding: 10px 14px; border-bottom: 1px solid #111111;
+  padding: 10px 14px; border-bottom: 1px solid var(--trussal-secondary, #111111);
 }
-#trussal-studio-overlay .ts-title { font-weight: 600; color:#111111; letter-spacing: 0.5px; font-size: 0.95rem; }
-#trussal-studio-overlay .ts-title small { color:#111111; font-weight: 400; margin-left:8px; }
-#trussal-studio-overlay .ts-close { border:none; background:transparent; color:#111111; font-size: 1.1rem; cursor:pointer; }
+#trussal-studio-overlay .ts-title { font-weight: 600; color:var(--trussal-secondary, #111111); letter-spacing: 0.5px; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-title small { color:var(--trussal-secondary, #111111); font-weight: 400; margin-left:8px; }
+#trussal-studio-overlay .ts-close { border:none; background:transparent; color:var(--trussal-secondary, #111111); font-size: 1.1rem; cursor:pointer; }
 /* Keep every header control clickable where a top corner resize grip
    (src/panel-drag-resize.js, z-index 20) overlaps it. */
 #trussal-studio-overlay .ts-header > button { position: relative; z-index: 21; }
@@ -52478,7 +52624,7 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-strip {
   display:flex; gap:8px; padding: 10px 12px;
   overflow-x:auto; overflow-y:hidden;
-  border-bottom: 1px solid #111111;
+  border-bottom: 1px solid var(--trussal-secondary, #111111);
   scrollbar-width: thin;
 }
 #trussal-studio-overlay .ts-chip {
@@ -52487,27 +52633,27 @@ ${newBody}`).length === 0;
   min-width: 104px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #eeeeee;
-  border: 1px solid #111111;
+  background: var(--trussal-primary, #eeeeee);
+  border: 1px solid var(--trussal-secondary, #111111);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-family: inherit; color: inherit;
   text-align: left;
 }
-#trussal-studio-overlay .ts-chip:hover { background: #eeeeee; }
+#trussal-studio-overlay .ts-chip:hover { background: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-chip.selected {
-  border-color: #111111;
-  background: #111111;
-  color: #eeeeee;
+  border-color: var(--trussal-secondary, #111111);
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
 }
 #trussal-studio-overlay .ts-chip-row { display:flex; align-items:center; gap:8px; }
 #trussal-studio-overlay .ts-avatar {
   width: 24px; height: 24px; border-radius: 50%;
-  background: #111111;
-  color: #eeeeee; font-weight: 700; font-size: 12px;
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee); font-weight: 700; font-size: 12px;
   display:flex; align-items:center; justify-content:center; flex-shrink: 0;
 }
-#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: #eeeeee; color: #111111; }
+#trussal-studio-overlay .ts-chip.selected .ts-avatar { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-name { font-size: 12px; min-width: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: clamp(48px, 22vw, 84px); }
 #trussal-studio-overlay .ts-name.you { color: inherit; font-weight: 600; text-decoration: underline; }
 #trussal-studio-overlay .ts-idx {
@@ -52518,10 +52664,10 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-routed {
   font-size: 10px; padding: 1px 4px; border-radius: 3px;
-  background: transparent; color: #111111; border: 1px solid #111111;
+  background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111);
 }
-#trussal-studio-overlay .ts-routed.on { background: #111111; color: #eeeeee; }
-#trussal-studio-overlay .ts-play { font-size: 10px; color: #111111; }
+#trussal-studio-overlay .ts-routed.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-studio-overlay .ts-play { font-size: 10px; color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-play.on { font-weight: 700; }
 
 #trussal-studio-overlay .ts-detail {
@@ -52531,22 +52677,22 @@ ${newBody}`).length === 0;
   flex: 1 1 auto;
 }
 #trussal-studio-overlay .ts-detail-header { display:flex; align-items:center; gap:8px; }
-#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: #111111; font-size: 0.95rem; }
+#trussal-studio-overlay .ts-detail-name { font-weight: 600; color: var(--trussal-secondary, #111111); font-size: 0.95rem; }
 #trussal-studio-overlay .ts-readonly-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px;
-  background: transparent; color: #111111; border: 1px solid #111111; letter-spacing: 0.5px;
+  background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111); letter-spacing: 0.5px;
 }
 #trussal-studio-overlay .ts-bot-badge {
   font-size: 10px; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.5px;
-  background: transparent; color: #111111; border: 1px solid #111111;
+  background: transparent; color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111);
 }
-#trussal-studio-overlay .ts-btn.eval { background: #111111; color: #eeeeee; }
-#trussal-studio-overlay .ts-btn.mute { background: #eeeeee; color: #111111; border: 1px solid #111111; }
-#trussal-studio-overlay .ts-btn.mute.on { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-btn.eval { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-studio-overlay .ts-btn.mute { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-btn.mute.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-section {
-  border: 1px solid #111111;
+  border: 1px solid var(--trussal-secondary, #111111);
   border-radius: 8px;
-  background: #eeeeee;
+  background: var(--trussal-primary, #eeeeee);
   /* 8px read as barely-there against the header's 10px 14px and the detail
      panel's 12px 14px \u2014 the section title sat almost flush against its own
      top border. */
@@ -52564,40 +52710,28 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-section-title {
   font-size: 10px; letter-spacing: 1px;
-  color: #111111; font-weight: 600;
+  color: var(--trussal-secondary, #111111); font-weight: 600;
 }
 #trussal-studio-overlay .ts-section-controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 #trussal-studio-overlay .ts-btn {
-  padding: 4px 10px; border-radius: 999px; border:1px solid #111111; cursor:pointer;
+  padding: 4px 10px; border-radius: 999px; border:1px solid var(--trussal-secondary, #111111); cursor:pointer;
   font-weight: 600; font-size: 12px;
-  background: #eeeeee; color: #111111;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
 }
-#trussal-studio-overlay .ts-btn.play  { background: #111111; color: #eeeeee; }
-#trussal-studio-overlay .ts-btn.stop  { background: #eeeeee; color: #111111; }
-#trussal-studio-overlay .ts-btn.ghost { background: #eeeeee; color: #111111; }
-#trussal-studio-overlay .ts-btn.ghost.on { background: #111111; color: #eeeeee; }
-/* .ts-fx / .ts-fx-btn outlived the effects block \u2014 the bot cluster block styles its rows with them. */
-#trussal-studio-overlay .ts-fx { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size: 12px; color: #111111; }
-#trussal-studio-overlay .ts-fx-btn {
-  padding:3px 10px; border-radius:999px;
-  border:1px solid #111111; background:#eeeeee; color:#111111;
-  font-size:11px; cursor:pointer;
-  transition:border-color 0.15s, color 0.15s, background 0.15s;
-}
-#trussal-studio-overlay .ts-fx-btn:hover { color:#111111; border-color:#111111; }
-#trussal-studio-overlay .ts-fx-btn.on { color:#eeeeee; border-color:#111111; background:#111111; }
-#trussal-studio-overlay .ts-fx-btn.strudel-dwell-hover { border-color:#111111; color:#eeeeee; background:#111111; }
-#trussal-studio-overlay .ts-fx-btn.strudel-btn-active  { border-color:#111111; color:#eeeeee; background:#111111; }
-#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: #111111; }
-#trussal-studio-overlay .ts-meta b { color: #111111; font-weight: 700; }
-/* .ts-dim used to fade a whole row; the flat theme keeps every glyph at full
-   #111111, so it now only italicises rather than greying. */
+#trussal-studio-overlay .ts-btn.play  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-studio-overlay .ts-btn.stop  { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-btn.ghost { background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-btn.ghost.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-studio-overlay .ts-meta { font-size: 11px; font-family: monospace; color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-meta b { color: var(--trussal-secondary, #111111); font-weight: 700; }
+/* .ts-dim used to fade a whole row; the flat theme keeps every glyph at the
+   full secondary colour, so it now only italicises rather than greying. */
 #trussal-studio-overlay .ts-dim { font-style: italic; }
-#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: #111111; font-family: monospace; }
+#trussal-studio-overlay .ts-shortcuts { font-size: 11px; color: var(--trussal-secondary, #111111); font-family: monospace; }
 #trussal-studio-overlay .ts-code, #trussal-studio-overlay .ts-pre {
-  background: #eeeeee; color:#111111;
+  background: var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-  border: 1px solid #111111; border-radius: 4px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
   padding: 8px; box-sizing: border-box;
   /* A fixed 160-280px fought short viewports (a phone in landscape, or the
      on-screen keyboard eating half the screen) \u2014 the overlay's own
@@ -52607,7 +52741,7 @@ ${newBody}`).length === 0;
   width: 100%; resize: vertical;
   white-space: pre-wrap; overflow:auto;
 }
-#trussal-studio-overlay .ts-code:focus { outline: 1px solid #111111; }
+#trussal-studio-overlay .ts-code:focus { outline: 1px solid var(--trussal-secondary, #111111); }
 @keyframes ts-eval-pulse {
   0%   { box-shadow: 0 0 0 3px rgba(17,17,17,0.85); }
   100% { box-shadow: 0 0 0 0   rgba(17,17,17,0); }
@@ -52615,7 +52749,7 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-code.ts-eval-flash {
   animation: ts-eval-pulse 0.55s ease-out forwards;
 }
-#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: #111111; }
+#trussal-studio-overlay .ts-status { font-size: 11px; font-family: monospace; color: var(--trussal-secondary, #111111); }
 
 #trussal-studio-overlay .ts-voice-btns {
   display: flex; flex-wrap: wrap; gap: 4px; min-height: 0;
@@ -52623,18 +52757,18 @@ ${newBody}`).length === 0;
 #trussal-studio-overlay .ts-voice-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: 999px;
-  border: 1px solid #111111;
-  background: #eeeeee; color: #111111;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
   font-size: 11px; font-family: monospace; cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-#trussal-studio-overlay .ts-voice-btn:hover { color: #111111; border-color: #111111; }
-#trussal-studio-overlay .ts-voice-btn.on { color: #eeeeee; border-color: #111111; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn:hover { color: var(--trussal-secondary, #111111); border-color: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-voice-btn.on { color: var(--trussal-primary, #eeeeee); border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-voice-btn[disabled] { opacity: 0.4; cursor: default; }
 /* Head-cursor dwell on the JPattern voice buttons (.jp-head-btn), same
    invert-fill feedback as every other dwell target. */
-#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: #111111; color: #eeeeee; background: #111111; }
-#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: #111111; color: #eeeeee; background: #111111; }
+#trussal-studio-overlay .ts-voice-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
+#trussal-studio-overlay .ts-voice-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
 
 #trussal-studio-overlay .ts-sample-banks {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -52642,48 +52776,48 @@ ${newBody}`).length === 0;
 }
 #trussal-studio-overlay .ts-sample-bank {
   padding: 1px 7px; border-radius: 3px;
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111);
   white-space: nowrap;
   font-size: 11px; font-family: monospace; cursor: pointer;
 }
-#trussal-studio-overlay .ts-sample-bank:hover { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-sample-bank:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 /* Data packs read as a different kind of thing from sound banks \u2014 dashed
    border instead of a colour. */
 #trussal-studio-overlay .ts-sample-bank.data {
-  background: #eeeeee; color: #111111;
-  border-color: #111111; border-style: dashed;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border-color: var(--trussal-secondary, #111111); border-style: dashed;
 }
-#trussal-studio-overlay .ts-sample-bank.data:hover { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-sample-bank.data:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 #trussal-studio-overlay .ts-sample-bank.open { border-style: dashed; }
 
 #trussal-studio-overlay .ts-sample-list {
   display: flex; flex-wrap: wrap; gap: 4px;
   margin-top: 4px; padding: 5px 6px; border-radius: 4px;
-  background: #eeeeee; border: 1px solid #111111;
+  background: var(--trussal-primary, #eeeeee); border: 1px solid var(--trussal-secondary, #111111);
   font-size: 11px; font-family: monospace;
 }
 #trussal-studio-overlay .ts-sample-item {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 1px 3px 1px 6px; border-radius: 3px;
-  background: #eeeeee; color: #111111; border: 1px solid #111111;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); border: 1px solid var(--trussal-secondary, #111111);
   max-width: 100%;
 }
-#trussal-studio-overlay .ts-sample-idx { color: #111111; font-weight: 700; }
+#trussal-studio-overlay .ts-sample-idx { color: var(--trussal-secondary, #111111); font-weight: 700; }
 #trussal-studio-overlay .ts-sample-label {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(160px, 42vw);
 }
-#trussal-studio-overlay .ts-sample-len { color: #111111; }
+#trussal-studio-overlay .ts-sample-len { color: var(--trussal-secondary, #111111); }
 #trussal-studio-overlay .ts-sample-x {
   border: none; background: transparent; cursor: pointer; padding: 0 3px;
-  color: #111111; font-size: 13px; line-height: 1; font-family: monospace;
+  color: var(--trussal-secondary, #111111); font-size: 13px; line-height: 1; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-x:hover { color: #eeeeee; background: #111111; border-radius: 2px; }
+#trussal-studio-overlay .ts-sample-x:hover { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); border-radius: 2px; }
 #trussal-studio-overlay .ts-sample-banks-del {
-  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid #111111; cursor: pointer;
-  background: #eeeeee; color: #111111; font-size: 11px; font-family: monospace;
+  margin-left: auto; padding: 1px 8px; border-radius: 3px; border: 1px solid var(--trussal-secondary, #111111); cursor: pointer;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111); font-size: 11px; font-family: monospace;
 }
-#trussal-studio-overlay .ts-sample-banks-del:hover { background: #111111; color: #eeeeee; }
+#trussal-studio-overlay .ts-sample-banks-del:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 
 #trussal-studio-overlay .ts-sliders {
   display: flex; flex-wrap: wrap; gap: 10px 16px;
@@ -52693,11 +52827,11 @@ ${newBody}`).length === 0;
   min-width: min(100px, 42vw); flex: 1 1 100px;
 }
 #trussal-studio-overlay .ts-slider-label {
-  font-size: 10px; font-family: monospace; color: #111111;
+  font-size: 10px; font-family: monospace; color: var(--trussal-secondary, #111111);
   display: flex; justify-content: space-between; gap: 6px;
 }
 #trussal-studio-overlay .ts-slider-input {
-  width: 100%; cursor: pointer; accent-color: #111111;
+  width: 100%; cursor: pointer; accent-color: var(--trussal-secondary, #111111);
   height: 16px;
 }
 
@@ -52736,9 +52870,9 @@ ${newBody}`).length === 0;
   z-index: 9999;
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  border: 1px solid #111111;
-  background: #eeeeee;
-  color: #111111;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
   font-weight: 600;
   cursor: pointer;
   display: none;
@@ -52766,6 +52900,38 @@ ${newBody}`).length === 0;
   #trussal-studio-overlay .ts-shortcuts { display: none; }
   #trussal-studio-toggle { right: 10px; bottom: 70px; }
 }
+
+/* ------------------------------------------------------------------ *
+ * Personal Theme card (src/studio.js createThemePickerSection) \u2014 the
+ * per-user theme picker that replaced the Bot Cluster panel.
+ * ------------------------------------------------------------------ */
+#trussal-studio-overlay .ts-theme-checks {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+}
+#trussal-studio-overlay .ts-theme-check {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--trussal-secondary, #111111); cursor: pointer;
+}
+#trussal-studio-overlay .ts-theme-check input { accent-color: var(--trussal-secondary, #111111); cursor: pointer; }
+#trussal-studio-overlay .ts-theme-fields {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+}
+#trussal-studio-overlay .ts-theme-field {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--trussal-secondary, #111111);
+}
+#trussal-studio-overlay .ts-theme-color {
+  width: 96px; padding: 3px 6px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+#trussal-studio-overlay .ts-theme-font {
+  padding: 3px 6px; border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  font-size: 12px; max-width: 180px;
+}
+#trussal-studio-overlay .ts-theme-status { min-height: 14px; }
 `;
 
   // src/studio.js
@@ -53619,9 +53785,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return container;
   }
   function chatAbsenceReason() {
-    const state = jitsiState();
-    if (!state) return "no Jitsi store yet";
-    const local2 = state["features/base/participants"]?.local;
+    const state2 = jitsiState();
+    if (!state2) return "no Jitsi store yet";
+    const local2 = state2["features/base/participants"]?.local;
     if (!local2?.name) {
       return "the local participant has no display name \u2014 Jitsi is showing the chat nickname prompt instead of the message list";
     }
@@ -53632,8 +53798,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return store && typeof store.getState === "function" ? store.getState() : null;
   }
   function localParticipantName() {
-    const state = jitsiState();
-    const name3 = state?.["features/base/participants"]?.local?.name;
+    const state2 = jitsiState();
+    const name3 = state2?.["features/base/participants"]?.local?.name;
     return typeof name3 === "string" && name3.trim() ? name3 : null;
   }
   function localToken() {
@@ -55292,6 +55458,7 @@ ${full}
   }
   function installPeerCss(peerId, css) {
     let el = styleEls.get(peerId);
+    if (isCssCyclesSuppressed()) css = "";
     if (css) {
       const errors = checkCompiledCss(css);
       if (errors.length) {
@@ -55460,6 +55627,13 @@ ${full}
       if (!cssSubscribed) {
         cssSubscribed = true;
         subscribePeerState(syncFromPeers);
+        onCssCyclesSuppressChange(() => {
+          try {
+            syncFromPeers();
+          } catch (e30) {
+            console.error("[css-cycles] re-sync after suppress toggle failed", e30);
+          }
+        });
         syncFromPeers();
         document.addEventListener("trussal-jpattern-active", handleJPatternTokenChange);
       }
@@ -55817,7 +55991,19 @@ ${full}
       ]
     },
     retroactive: { type: "boolean" },
-    samples: { type: "boolean" }
+    samples: { type: "boolean" },
+    // Action properties. `spawn` is a count (0 / absent → spawn nothing); the
+    // string-array properties list one's own bot participant indices ('1a',
+    // '1b', …), absent → []; the `*All` booleans, absent → false.
+    spawn: { type: "number" },
+    remove: { type: "string-array" },
+    removeAll: { type: "boolean" },
+    mute: { type: "string-array" },
+    muteAll: { type: "boolean" },
+    unmuteAll: { type: "boolean" },
+    camera: { type: "string-array" },
+    cameraOffAll: { type: "boolean" },
+    cameraOnAll: { type: "boolean" }
   };
   var BOT_CONFIG_KEYS = Object.keys(BOT_CONFIG_PROPS);
   function defaultBotConfig() {
@@ -55941,8 +56127,9 @@ ${full}
     }
     function readValue() {
       if (src2[i] === '"' || src2[i] === "'") return readString();
+      if (src2[i] === "[") return readArray();
       const start = i;
-      while (i < src2.length && !/[,}\s]/.test(src2[i])) i++;
+      while (i < src2.length && !/[,}\s\]]/.test(src2[i])) i++;
       const word2 = src2.slice(start, i);
       if (word2 === "") return fail("expected a value");
       if (word2 === "true") return { ok: true, value: true };
@@ -55951,6 +56138,48 @@ ${full}
       const num2 = Number(word2);
       if (word2 !== "" && Number.isFinite(num2)) return { ok: true, value: num2 };
       return { ok: false, error: `unquoted value "${word2}" at position ${start}` };
+    }
+    function readArray() {
+      i++;
+      const out2 = [];
+      ws3();
+      if (src2[i] === "]") {
+        i++;
+        return { ok: true, value: out2 };
+      }
+      while (i < src2.length) {
+        ws3();
+        let element2;
+        if (src2[i] === '"' || src2[i] === "'") {
+          const str = readString();
+          if (!str.ok) return str;
+          element2 = str.value;
+        } else if (src2[i] === "[" || src2[i] === "{") {
+          return fail("an array element must be a string or bare token, not a nested array or object");
+        } else {
+          const start = i;
+          while (i < src2.length && !/[,\]\s]/.test(src2[i])) i++;
+          element2 = src2.slice(start, i);
+          if (element2 === "") return fail("expected an array element");
+        }
+        out2.push(String(element2));
+        ws3();
+        if (src2[i] === ",") {
+          i++;
+          ws3();
+          if (src2[i] === "]") {
+            i++;
+            return { ok: true, value: out2 };
+          }
+          continue;
+        }
+        if (src2[i] === "]") {
+          i++;
+          return { ok: true, value: out2 };
+        }
+        return fail('expected "," or "]" in array');
+      }
+      return fail("unterminated array");
     }
   }
   function propError(key, message) {
@@ -55965,6 +56194,11 @@ ${full}
     }
     if (spec.type === "boolean") {
       return typeof value2 === "boolean" ? null : propError(key, "must be true or false");
+    }
+    if (spec.type === "string-array") {
+      if (!Array.isArray(value2)) return propError(key, 'must be an array of participant indices, e.g. ["1a", "1b"]');
+      if (!value2.every((v2) => typeof v2 === "string")) return propError(key, "must contain only participant indices");
+      return null;
     }
     if (typeof value2 !== "string") return propError(key, "must be a string");
     if (spec.values && !spec.values.includes(value2)) {
@@ -56000,6 +56234,12 @@ ${full}
   }
   function flag(value2) {
     return value2 === true;
+  }
+  function spawnCount(value2) {
+    return Number.isFinite(value2) && value2 > 0 ? Math.floor(value2) : 0;
+  }
+  function indexList(value2) {
+    return Array.isArray(value2) ? value2.map(String).map((s2) => s2.trim()).filter(Boolean) : [];
   }
 
   // src/hydra-code.js
@@ -59583,15 +59823,15 @@ ${s2}${BTN_MARKER}`)
       if (!(e30.ctrlKey || e30.metaKey) || e30.key.toLowerCase() !== "z") return;
       e30.preventDefault();
       const [from2, to] = e30.shiftKey ? [redo, undo] : [undo, redo];
-      const state = from2.pop();
-      if (!state) return;
+      const state2 = from2.pop();
+      if (!state2) return;
       to.push(last2);
       restoring = true;
-      ta.value = state.value;
-      ta.setSelectionRange(state.selStart, state.selEnd);
+      ta.value = state2.value;
+      ta.setSelectionRange(state2.selStart, state2.selEnd);
       ta.dispatchEvent(new Event("input", { bubbles: true }));
       restoring = false;
-      last2 = state;
+      last2 = state2;
     });
     handles.set(ta, { resetBaseline: () => {
       last2 = snapshot(ta);
@@ -59924,10 +60164,6 @@ ${s2}${BTN_MARKER}`)
     const targets = selectBots(myClusterBots(), selector).map((b) => b.roomIndex);
     if (targets.length) sendFleetRequest("remove", { targets });
   }
-  function removeOneBot(index2) {
-    if (index2 == null) return;
-    sendFleetRequest("removeOne", { targets: [String(index2)] });
-  }
   function muteBots(selector, muted) {
     for (const bot of selectBots(myClusterBots(), selector)) {
       sendRemoteMute(bot.peerId, !!muted);
@@ -59941,6 +60177,50 @@ ${s2}${BTN_MARKER}`)
   function setBotsVideo(selector, videoOn) {
     for (const bot of selectBots(myClusterBots(), selector)) {
       sendRemoteVideo(bot.peerId, !!videoOn);
+    }
+  }
+  var lastDirectiveKey = null;
+  function resetBotClusterDirectives() {
+    lastDirectiveKey = null;
+  }
+  function applyBotClusterDirectives(code2) {
+    const parsed = parseBotConfig(code2);
+    if (!parsed.present || !parsed.ok) {
+      lastDirectiveKey = null;
+      return null;
+    }
+    const c2 = parsed.config;
+    const directives = {
+      spawn: spawnCount(c2.spawn),
+      remove: indexList(c2.remove),
+      removeAll: flag(c2.removeAll),
+      mute: indexList(c2.mute),
+      muteAll: flag(c2.muteAll),
+      unmuteAll: flag(c2.unmuteAll),
+      camera: indexList(c2.camera),
+      cameraOffAll: flag(c2.cameraOffAll),
+      cameraOnAll: flag(c2.cameraOnAll)
+    };
+    const key = JSON.stringify(directives);
+    if (key === lastDirectiveKey) return null;
+    lastDirectiveKey = key;
+    if (directives.removeAll) removeBots("all");
+    else if (directives.remove.length) removeBots(directives.remove);
+    if (directives.spawn > 0) spawnBots(directives.spawn, code2);
+    if (directives.unmuteAll) muteBots("all", false);
+    if (directives.muteAll) muteBots("all", true);
+    if (directives.mute.length) muteByIndex(directives.mute, true);
+    if (directives.cameraOnAll) setBotsVideo("all", true);
+    if (directives.cameraOffAll) setBotsVideo("all", false);
+    if (directives.camera.length) setBotsVideo(directives.camera, true);
+    return directives;
+  }
+  function muteByIndex(tokens, muted) {
+    const want = new Set(tokens.map(String));
+    for (const peer of getAllPeers()) {
+      if (peer.peerId && peer.roomIndex != null && want.has(String(peer.roomIndex))) {
+        sendRemoteMute(peer.peerId, !!muted);
+      }
     }
   }
   var statusSubscribers = /* @__PURE__ */ new Set();
@@ -60509,7 +60789,7 @@ ${s2}${BTN_MARKER}`)
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
   var STYLE_ID4 = "trussal-studio-style";
-  var STORAGE_KEY = "trussal.studio.pattern";
+  var STORAGE_KEY2 = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var selectedPeerKey = null;
   var initedRoom = null;
@@ -60703,92 +60983,71 @@ ${s2}${BTN_MARKER}`)
       body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>`;
     }
   }
-  var lastFleetStatus = "";
   subscribeFleetStatus((status) => {
+    let line = "";
     if (status.action === "spawn") {
-      lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.botConfig ? ` \u2014 ${status.botConfig}` : "") + (status.reason ? ` \u2014 ${status.reason}` : "");
+      line = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` + (status.botConfig ? ` \u2014 ${status.botConfig}` : "") + (status.reason ? ` \u2014 ${status.reason}` : "");
     } else if (status.action === "remove") {
-      lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` \u2014 ${status.reason}` : ""}`;
+      line = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` \u2014 ${status.reason}` : ""}`;
     } else if (status.action === "config-error") {
-      lastFleetStatus = `botConfig rejected (${status.ownerIndex}) \u2014 ${status.reason || "invalid config"}`;
+      line = `botConfig rejected (${status.ownerIndex}) \u2014 ${status.reason || "invalid config"}`;
     } else if (status.action === "teardown") {
-      lastFleetStatus = `fleet teardown \u2014 ${status.reason || ""}`;
+      line = `fleet teardown \u2014 ${status.reason || ""}`;
+      resetBotClusterDirectives();
     }
-    renderAll();
+    if (line) setStatus(line);
   });
-  function botRowKey(bot) {
-    return bot.roomIndex;
-  }
-  function createBotRow() {
+  function createThemePickerSection() {
     const el = document.createElement("div");
-    el.className = "ts-fx";
-    el.innerHTML = `
-    <span class="ts-idx"></span>
-    <span class="ts-bot-name" style="font-size:11px;color:#111111;"></span>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">\xD7</button>
-  `;
-    el.querySelectorAll("[data-bot-action]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const action = btn.dataset.botAction;
-        const idx = el.dataset.reconcileKey;
-        if (action === "removeOne") {
-          removeOneBot(idx);
-          return;
-        }
-        const bot = myClusterBots().find((b) => b.roomIndex === idx);
-        if (action === "mute") muteBots([idx], !(bot && bot.muted));
-        else if (action === "video") setBotsVideo([idx], !(bot && bot.videoOn));
-      });
-    });
-    return el;
-  }
-  function updateBotRow(el, bot) {
-    el.querySelector(".ts-idx").textContent = bot.roomIndex;
-    el.querySelector(".ts-bot-name").textContent = bot.displayName || "bot";
-    const muteBtn = el.querySelector('[data-bot-action="mute"]');
-    muteBtn.textContent = bot.muted ? "unmute" : "mute";
-    muteBtn.classList.toggle("on", !!bot.muted);
-    el.querySelector('[data-bot-action="video"]').classList.toggle("on", !!bot.videoOn);
-  }
-  function createBotClusterSection() {
-    const el = document.createElement("div");
-    el.className = "ts-section ts-bot-cluster-section";
+    el.className = "ts-section ts-theme-section";
+    const t = getTheme2();
+    const check = (key, label2) => `<label class="ts-theme-check"><input type="checkbox" data-theme="${key}"${t[key] ? " checked" : ""}> ${label2}</label>`;
+    const fontOptions = WEB_SAFE_FONTS.map(
+      (f2) => `<option value="${escapeHtml(f2.value)}"${f2.value === t.font ? " selected" : ""}>${escapeHtml(f2.label)}</option>`
+    ).join("");
     el.innerHTML = `
     <div class="ts-section-head">
-      <div class="ts-section-title">Bot Cluster</div>
+      <div class="ts-section-title">Personal Theme</div>
       <div class="ts-section-controls">
-        <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">\u{1F507} all</button>
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">\xD7 all</button>
+        <button class="ts-btn play ts-dwell-btn" data-action="apply-theme">Apply</button>
       </div>
     </div>
-    <div class="ts-bot-rows"></div>
-    <div class="ts-meta ts-bot-empty">no bots in your cluster</div>
-    <div class="ts-meta ts-bot-status" style="display:none;"></div>
+    <div class="ts-theme-checks">
+      ${check("darkMode", "Dark mode")}
+      ${check("disableCss", "Disable CSS changes")}
+      ${check("invert", "Invert")}
+    </div>
+    <div class="ts-theme-fields">
+      <label class="ts-theme-field">Primary color:
+        <input type="text" class="ts-theme-color" data-theme="primary" spellcheck="false"
+          autocapitalize="off" placeholder="${DEFAULT_PRIMARY}" value="${escapeHtml(t.primary)}">
+      </label>
+      <label class="ts-theme-field">Secondary color:
+        <input type="text" class="ts-theme-color" data-theme="secondary" spellcheck="false"
+          autocapitalize="off" placeholder="${DEFAULT_SECONDARY}" value="${escapeHtml(t.secondary)}">
+      </label>
+      <label class="ts-theme-field">Font:
+        <select class="ts-theme-font" data-theme="font">${fontOptions}</select>
+      </label>
+    </div>
+    <div class="ts-meta ts-theme-status"></div>
   `;
-    const countEl = el.querySelector(".ts-bot-count");
-    el.querySelector('[data-bot-action="spawn"]').addEventListener("click", () => {
-      const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
-      spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : void 0);
+    const statusEl = el.querySelector(".ts-theme-status");
+    el.querySelector('[data-action="apply-theme"]').addEventListener("click", () => {
+      const patch = {};
+      el.querySelectorAll("[data-theme]").forEach((node) => {
+        patch[node.dataset.theme] = node.type === "checkbox" ? node.checked : node.value.trim();
+      });
+      for (const field of ["primary", "secondary"]) {
+        if (patch[field] && !isHexColor(patch[field])) {
+          statusEl.textContent = `${field} colour must be a 3- or 6-digit hex like #1a1a1a`;
+          return;
+        }
+      }
+      setTheme2(patch);
+      statusEl.textContent = "Theme applied \u2014 this browser only";
     });
-    el.querySelector('[data-bot-action="remove-all"]').addEventListener("click", () => removeBots("all"));
-    el.querySelector('[data-bot-action="mute-all"]').addEventListener("click", () => muteBots("all", true));
     return el;
-  }
-  function updateBotClusterSection(el) {
-    const bots = myClusterBots();
-    reconcileList(el.querySelector(".ts-bot-rows"), bots, botRowKey, createBotRow, updateBotRow);
-    el.querySelector(".ts-bot-empty").style.display = bots.length ? "none" : "";
-    const statusEl = el.querySelector(".ts-bot-status");
-    if (lastFleetStatus) {
-      statusEl.textContent = lastFleetStatus;
-      statusEl.style.display = "";
-    } else {
-      statusEl.style.display = "none";
-    }
   }
   function resolveSelectedPeer() {
     let peer = getPeerByJitsiId(selectedJitsiId);
@@ -60831,7 +61090,7 @@ ${s2}${BTN_MARKER}`)
     header.innerHTML = `<div class="ts-detail-name"></div>`;
     container2.appendChild(header);
     container2.appendChild(createMetricsSection());
-    if (isLocal) container2.appendChild(createBotClusterSection());
+    if (isLocal) container2.appendChild(createThemePickerSection());
     const localProgram = createLocalProgramSection(isLocal);
     container2.appendChild(localProgram);
     bindLocalProgramSection(localProgram, peer, isLocal);
@@ -60884,7 +61143,7 @@ ${s2}${BTN_MARKER}`)
         clearTimeout(codeDebounce);
         codeDebounce = setTimeout(() => {
           try {
-            localStorage.setItem(STORAGE_KEY, codeEl.value);
+            localStorage.setItem(STORAGE_KEY2, codeEl.value);
           } catch (e30) {
           }
         }, 200);
@@ -60984,10 +61243,6 @@ ${s2}${BTN_MARKER}`)
       botBadge.remove();
     }
     updateMetricsSection(container2.querySelector(".ts-metrics-section"), peer, "");
-    if (isLocal) {
-      const botCluster = container2.querySelector(".ts-bot-cluster-section");
-      if (botCluster) updateBotClusterSection(botCluster);
-    }
     patchLocalProgramSection(container2.querySelector(".ts-local-program-section"), peer, isLocal);
     const status = isLocal ? lastStatus : peer.muted ? "Muted" : peer.playing ? "Playing" : "Idle";
     container2.querySelector(".ts-status").textContent = status;
@@ -61102,7 +61357,14 @@ ${s2}${BTN_MARKER}`)
     setStatus("Starting\u2026");
     try {
       await bootAudioEngine();
-      if (typeof code2 === "string") sendLocalPattern(code2);
+      if (typeof code2 === "string") {
+        sendLocalPattern(code2);
+        try {
+          applyBotClusterDirectives(code2);
+        } catch (e30) {
+          console.error("[studio] botConfig cluster directives failed", e30);
+        }
+      }
       await bootStrudelOnUserGesture();
       sendLocalPlaying(true);
       setStatus("Playing");
@@ -61299,7 +61561,7 @@ ${s2}${BTN_MARKER}`)
     if (localPeer2.jitsiId && !localPeer2.pattern) {
       let seed2 = DEFAULT_PATTERN;
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEY2);
         if (saved && saved.trim()) seed2 = ensureDirective(saved, "personal");
       } catch (e30) {
       }

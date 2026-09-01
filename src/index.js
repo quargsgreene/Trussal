@@ -9,6 +9,9 @@ import { installPublishedVideoOverride, startWithVideoMuted } from './published-
 import { installHydraParamApi } from './hydra-params.js';
 import { sampleDataRefAt } from './data-ref.js';
 import { setDataRefReader } from './audio-net/ValuePattern.js';
+// Applies this browser's saved personal theme as early as possible — on the
+// lobby and prejoin screen as well as in-call. Self-initialising on import.
+import './theme-context.js';
 import './studio.js';
 
 window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;

@@ -57,6 +57,7 @@ import {
   parseColor,
 } from './css-cycles-core.js';
 import { peerTextClass } from './text-cycles-core.js';
+import { isCssCyclesSuppressed, onCssCyclesSuppressChange } from './css-cycles-suppress.js';
 
 const STYLE_PREFIX = 'trussal-css-cycles-';
 
@@ -196,6 +197,11 @@ export function publishCssSheets(sheets) {
 // selector must not disagree about who wins depending on join order.
 function installPeerCss(peerId, css) {
   let el = styleEls.get(peerId);
+  // "Disable CSS changes" (per-user theme toggle): every peer's sheet is
+  // pulled and none installed while it is on, so an incoming restyle never
+  // overrides this viewer's personal theme. Their own patterns still compile
+  // and broadcast — only the local install is withheld.
+  if (isCssCyclesSuppressed()) css = '';
   if (css) {
     // The sidecar compiles what it is handed and cannot tell an honest client
     // from a patched one, so the guardrails are enforced again here, on the
@@ -491,6 +497,10 @@ export function installCssCycles(mod) {
     if (!cssSubscribed) {
       cssSubscribed = true;
       subscribePeerState(syncFromPeers);
+      // Re-run installation the instant "Disable CSS changes" flips either way
+      // — pull every sheet when it goes on, restore them when it goes off —
+      // rather than waiting for the next peer-state broadcast.
+      onCssCyclesSuppressChange(() => { try { syncFromPeers(); } catch (e) { console.error('[css-cycles] re-sync after suppress toggle failed', e); } });
       syncFromPeers();
       // The same 'trussal-jpattern-active' event isPeerJPatternTurn's
       // callers already outline the ring to — peer-state.js dispatches it on

@@ -25,9 +25,22 @@
 // whole room's program.
 
 // Every property, its accepted type, and its accepted values. `null` — the
-// value of any property the author leaves out — always means "no effect on the
-// bots' code", so a bare `botConfig()` is a config of all nulls: each bot plays
-// exactly what its human is playing.
+// value of any property the author leaves out — always means "no effect", so a
+// bare `botConfig()` is a config of all nulls: each bot plays exactly what its
+// human is playing and no cluster action fires.
+//
+// Two kinds of property live here:
+//
+//   * SHAPING — random / paramFactor / harmony / colorScheme / retroactive /
+//     samples — describe what a spawned bot plays. Parsed by the fleet.
+//
+//   * ACTION — spawn / remove / removeAll / mute / muteAll / unmuteAll /
+//     camera / cameraOffAll / cameraOnAll — one-shot imperative cluster
+//     operations the studio carries out the next time the local performer
+//     evaluates their editor (see src/audio-net/UserBotOrchestration.js
+//     `applyBotClusterDirectives`). They replace the old Bot Cluster buttons.
+//     The fleet ignores them; only the browser acts on them, and only once
+//     per distinct value.
 export const BOT_CONFIG_PROPS = {
   random: { type: 'string', values: ['params', 'full'] },
   paramFactor: { type: 'number' },
@@ -41,6 +54,19 @@ export const BOT_CONFIG_PROPS = {
   },
   retroactive: { type: 'boolean' },
   samples: { type: 'boolean' },
+
+  // Action properties. `spawn` is a count (0 / absent → spawn nothing); the
+  // string-array properties list one's own bot participant indices ('1a',
+  // '1b', …), absent → []; the `*All` booleans, absent → false.
+  spawn: { type: 'number' },
+  remove: { type: 'string-array' },
+  removeAll: { type: 'boolean' },
+  mute: { type: 'string-array' },
+  muteAll: { type: 'boolean' },
+  unmuteAll: { type: 'boolean' },
+  camera: { type: 'string-array' },
+  cameraOffAll: { type: 'boolean' },
+  cameraOnAll: { type: 'boolean' },
 };
 
 export const BOT_CONFIG_KEYS = Object.keys(BOT_CONFIG_PROPS);
@@ -121,8 +147,10 @@ export function stripBotConfig(code) {
 
 // --- Argument parsing -------------------------------------------------------
 
-// A flat object of scalars: `{ key: value, ... }`. Bare or quoted keys, single
-// or double quoted strings, numbers, booleans, null, and a trailing comma.
+// A flat object: `{ key: value, ... }`. Bare or quoted keys, single or double
+// quoted strings, numbers, booleans, null, a trailing comma, and — for the
+// action properties — a `[...]` array of strings/bare tokens (`["1a", 1b]`).
+// Arrays are one level deep only; a nested array or object is a parse error.
 export function parseObjectLiteral(text) {
   const src = String(text ?? '').trim();
   if (src === '') return { ok: true, value: {} };
@@ -195,8 +223,9 @@ export function parseObjectLiteral(text) {
 
   function readValue() {
     if (src[i] === '"' || src[i] === "'") return readString();
+    if (src[i] === '[') return readArray();
     const start = i;
-    while (i < src.length && !/[,}\s]/.test(src[i])) i++;
+    while (i < src.length && !/[,}\s\]]/.test(src[i])) i++;
     const word = src.slice(start, i);
     if (word === '') return fail('expected a value');
     if (word === 'true') return { ok: true, value: true };
@@ -205,6 +234,38 @@ export function parseObjectLiteral(text) {
     const num = Number(word);
     if (word !== '' && Number.isFinite(num)) return { ok: true, value: num };
     return { ok: false, error: `unquoted value "${word}" at position ${start}` };
+  }
+
+  // `[ a, "b", 1c ]` → ['a', 'b', '1c']. Every element is coerced to a string:
+  // a bot participant index like `1a` is a string, and a bare `1` is index "1",
+  // never the number 1. Empty list `[]` is legal.
+  function readArray() {
+    i++; // past '['
+    const out = [];
+    ws();
+    if (src[i] === ']') { i++; return { ok: true, value: out }; }
+    while (i < src.length) {
+      ws();
+      let element;
+      if (src[i] === '"' || src[i] === "'") {
+        const str = readString();
+        if (!str.ok) return str;
+        element = str.value;
+      } else if (src[i] === '[' || src[i] === '{') {
+        return fail('an array element must be a string or bare token, not a nested array or object');
+      } else {
+        const start = i;
+        while (i < src.length && !/[,\]\s]/.test(src[i])) i++;
+        element = src.slice(start, i);
+        if (element === '') return fail('expected an array element');
+      }
+      out.push(String(element));
+      ws();
+      if (src[i] === ',') { i++; ws(); if (src[i] === ']') { i++; return { ok: true, value: out }; } continue; }
+      if (src[i] === ']') { i++; return { ok: true, value: out }; }
+      return fail('expected "," or "]" in array');
+    }
+    return fail('unterminated array');
   }
 }
 
@@ -225,6 +286,11 @@ function propertyError(key, value) {
   }
   if (spec.type === 'boolean') {
     return typeof value === 'boolean' ? null : propError(key, 'must be true or false');
+  }
+  if (spec.type === 'string-array') {
+    if (!Array.isArray(value)) return propError(key, 'must be an array of participant indices, e.g. ["1a", "1b"]');
+    if (!value.every((v) => typeof v === 'string')) return propError(key, 'must contain only participant indices');
+    return null;
   }
   if (typeof value !== 'string') return propError(key, 'must be a string');
   if (spec.values && !spec.values.includes(value)) {
@@ -285,7 +351,21 @@ export function parseHarmony(value) {
 
 // `retroactive` and `samples` are booleans whose unset value is null. Null
 // reads as false everywhere: an unwritten property has no effect, and "no
-// effect" for these two is the same as "off".
+// effect" for these two is the same as "off". The action booleans
+// (`removeAll` / `muteAll` / `cameraOffAll`) read the same way.
 export function flag(value) {
   return value === true;
+}
+
+// `spawn` as a non-negative integer count. Unset (null), non-finite, or
+// negative all mean "spawn nothing".
+export function spawnCount(value) {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+// A string-array action property (`remove` / `mute` / `camera`) as a plain
+// array of index strings. Unset → []. Blank entries are dropped so a stray
+// comma can't select participant "".
+export function indexList(value) {
+  return Array.isArray(value) ? value.map(String).map((s) => s.trim()).filter(Boolean) : [];
 }

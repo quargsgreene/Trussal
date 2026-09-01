@@ -2,8 +2,29 @@
    Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
    `cat custom.css >> all.css`). Tracked in the repo — never generated.
 
-   Palette: flat monochrome. Background #eeeeee (light grey); text, borders,
-   outlines and icons #111111. No accent colours anywhere. */
+   Palette: flat monochrome, authored against three CSS custom properties so
+   the per-user Personal Theme picker (src/theme-context.js, in the bundle)
+   can retint the whole app by reassigning them on :root:
+
+     --trussal-primary    the light anchor — surfaces / backgrounds (grey)
+     --trussal-secondary  the dark anchor  — text, borders, outlines, icons
+     --trussal-font       the UI font
+
+   Every reference keeps its previous literal as the var() fallback, so the
+   page renders correctly in the window before the bundle's theme module runs.
+   Dark mode swaps the two anchors; Invert is a root filter the bundle adds.
+   No accent colours anywhere. */
+
+
+/* The theme anchors, as the app's own defaults. The bundle's theme module
+   reassigns these on :root (higher priority, being inline on <html>) for a
+   personal theme; here they just give DevTools something to show and keep the
+   values in one place. Kept in sync with src/theme-context.js DEFAULT_*. */
+:root {
+  --trussal-primary: #eeeeee;
+  --trussal-secondary: #111111;
+  --trussal-font: Arial, Helvetica, sans-serif;
+}
 
 
 /* ------------------------------------------------------------------ *
@@ -14,7 +35,7 @@
  * globally is safe.
  * ------------------------------------------------------------------ */
 *, *::before, *::after {
-  font-family: Arial, Helvetica, sans-serif !important;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif) !important;
 }
 
 
@@ -29,16 +50,16 @@
  * flattened explicitly further down.
  * ------------------------------------------------------------------ */
 html, body, body * {
-  color: #111111;
-  background-color: #eeeeee;
-  border-color: #111111;
-  outline-color: #111111;
+  color: var(--trussal-secondary, #111111);
+  background-color: var(--trussal-primary, #eeeeee);
+  border-color: var(--trussal-secondary, #111111);
+  outline-color: var(--trussal-secondary, #111111);
 }
 
 button, input, textarea, select {
-  background-color: #eeeeee;
-  color: #111111;
-  border-color: #111111;
+  background-color: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  border-color: var(--trussal-secondary, #111111);
 }
 
 
@@ -80,7 +101,7 @@ body.welcome-page .header-container::after {
   font-size: 2rem;
   line-height: 1.2;
   font-weight: 600;
-  color: #111111;
+  color: var(--trussal-secondary, #111111);
 }
 
 /* Make sure the header is a positioning context */
@@ -112,13 +133,13 @@ body.welcome-page .header,
 body.welcome-page .header-container,
 body.welcome-page [class*="header"],
 body.welcome-page .welcome-footer {
-  background: #eeeeee !important;
+  background: var(--trussal-primary, #eeeeee) !important;
   background-image: none !important;
 }
 
 /* Welcome-page containers + the blue/dark accent bits Jitsi ships. */
 body.welcome-page .welcome-page-content {
-  background: #eeeeee;
+  background: var(--trussal-primary, #eeeeee);
   padding-bottom: 4rem;              /* breathing room at bottom */
 }
 body.welcome-page .welcome-page-content > div,
@@ -129,8 +150,8 @@ body.welcome-page #welcome_page .welcome-page-content .recent-list-item,
 body.welcome-page .welcome-card--dark,
 body.welcome-page .welcome-card--blue,
 body.welcome-page .welcome-card--grey {
-  background-color: #eeeeee;
-  color: #111111;
+  background-color: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
   border: none;
 }
 body.welcome-page .tab-container .tab-buttons,
@@ -140,10 +161,10 @@ body.welcome-page .welcome-page-button,
 body.welcome-page .welcome-page-button:hover,
 body.welcome-page .header .not-allow-title-character-div,
 body.welcome-page .header #enter_room .join-meeting-container {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 
 /* Give the room-name input area some extra top margin */
@@ -165,11 +186,11 @@ body.welcome-page .welcome-page-mobile-apps {
    rebuilt web image. */
 body.welcome-page #enter_room_field,
 body.welcome-page #trussal-room-input {
-  color: #111111;
+  color: var(--trussal-secondary, #111111);
 }
 body.welcome-page #enter_room_field::placeholder,
 body.welcome-page #trussal-room-input::placeholder {
-  color: #111111;
+  color: var(--trussal-secondary, #111111);
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
 
@@ -224,7 +245,7 @@ div[class*="premeeting"] video {
    below this heading is removed entirely, so it needs no colour rule.) */
 .premeeting-screen h1,
 .premeeting-screen [class*="-title"] {
-  color: #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Drop the room-name span that sits between the heading and the name form:
@@ -257,7 +278,7 @@ body:has(.settings-dialog) .premeeting-screen #premeeting-name-input {
    back into normal flow so the flex parent can centre it. */
 .premeeting-screen,
 div[class*="premeeting-screen"] {
-  background: #eeeeee !important;
+  background: var(--trussal-primary, #eeeeee) !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
@@ -278,13 +299,13 @@ div[class*="premeeting-screen"] {
 .premeeting-screen [class*="inputContainer"] input,
 .prejoin-input,
 #premeeting-name-input {
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 .premeeting-screen input::placeholder,
 .prejoin-input::placeholder {
-  color: #111111;
+  color: var(--trussal-secondary, #111111);
   opacity: 1;
 }
 
@@ -314,10 +335,10 @@ button.action-btn,
 .premeeting-screen .action-btn .options:hover,
 [class*="dropdownContainer"] [class*="options"],
 [class*="dropdownContainer"] [class*="options"]:hover {
-  background: #111111 !important;
-  background-color: #111111 !important;
-  color: #eeeeee !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 [class*="actionButton"] *,
 [class*="actionButton"] svg,
@@ -326,13 +347,13 @@ button.action-btn,
 [class*="dropdownContainer"] [class*="options"] path,
 .action-btn svg,
 .premeeting-screen .action-btn .icon > svg {
-  color: #eeeeee !important;
-  fill: #eeeeee !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
   background: transparent !important;
   background-color: transparent !important;
 }
 
-/* Icon wrappers must never take the global #eeeeee background default —
+/* Icon wrappers must never take the global surface colour as a background —
    inside a dark button it shows as a light block. */
 .jitsi-icon,
 .jitsi-icon svg,
@@ -372,8 +393,8 @@ button.action-btn,
 .toolbox-content,
 .toolbox-content-items,
 .toolbox-content-mobile .toolbox-content-items {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
   box-shadow: none !important;
 }
 
@@ -385,8 +406,8 @@ button.action-btn,
 .toolbox-content-wrapper::after,
 .toolbox-content::before,
 .toolbox-content::after {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
   box-shadow: none !important;
 }
 
@@ -398,17 +419,17 @@ div.hangup-button:active,
 div.hangup-menu-button,
 div.hangup-menu-button:hover,
 div.hangup-menu-button:active {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border-color: #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border-color: var(--trussal-secondary, #111111) !important;
 }
 
 .toolbox-icon svg,
 .toolbox-button svg,
 div.hangup-button svg,
 div.hangup-menu-button svg {
-  fill: #111111 !important;
+  fill: var(--trussal-secondary, #111111) !important;
 }
 
 /* The small ⌄ dropdown affordance on the mic / camera buttons
@@ -418,16 +439,16 @@ div.hangup-menu-button svg {
 .settings-button-small-icon-container svg,
 .settings-button-small-icon-container path {
   background: transparent !important;
-  fill: #111111 !important;
-  color: #111111 !important;
+  fill: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Toggled state stays legible by inverting rather than colouring. */
 .toolbox-icon.toggled {
-  background-color: #111111 !important;
+  background-color: var(--trussal-secondary, #111111) !important;
 }
 .toolbox-icon.toggled svg {
-  fill: #eeeeee !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
 }
 
 
@@ -444,9 +465,9 @@ div.hangup-menu-button svg {
   width: 100%;
   height: 40%;
 
-  border: 1px solid #111111;
+  border: 1px solid var(--trussal-secondary, #111111);
   z-index: 50;
-  background: #eeeeee;
+  background: var(--trussal-primary, #eeeeee);
 
   /* allow mouse / keyboard focus */
   pointer-events: auto;
@@ -482,11 +503,11 @@ div.hangup-menu-button svg {
 #participants-pane,
 [class*="-participantsPane"],
 .chat-panel {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border-left: 1px solid #111111 !important;
-  border-right: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border-left: 1px solid var(--trussal-secondary, #111111) !important;
+  border-right: 1px solid var(--trussal-secondary, #111111) !important;
 }
 
 /* Dialogs / modals (Settings, Invite, Shortcuts, …). */
@@ -495,10 +516,10 @@ div.hangup-menu-button svg {
 [class*="-modal-dialog"],
 [class*="-modalContent"],
 [class*="-dialogContainer"] {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 
 /* Panel / dialog headings ship white or a pale grey (`#c2c2c2`), both
@@ -515,7 +536,7 @@ div.hangup-menu-button svg {
 #participants-pane [class*="-heading"],
 #sideToolbarContainer [class*="-heading"],
 .settings-dialog [class*="-heading"] {
-  color: #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Text inputs / selects inside those panels ship `#3d3d3d` + white text. */
@@ -529,16 +550,16 @@ div.hangup-menu-button svg {
 [class*="-input"].icon-input,
 .settings-dialog input,
 .settings-dialog select {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 #participants-search-input::placeholder,
 #chat-input-messagebox::placeholder,
 #sideToolbarContainer input::placeholder,
 #sideToolbarContainer textarea::placeholder {
-  color: #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
   opacity: 1 !important;
 }
 
@@ -549,24 +570,24 @@ div.hangup-menu-button svg {
 #modal-dialog-ok-button,
 .settings-dialog [class*="-button-primary"],
 #participants-pane [class*="-button-primary"] {
-  background: #111111 !important;
-  background-color: #111111 !important;
-  color: #eeeeee !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 [class*="-button-primary"] svg,
 [class*="-button-primary"] path,
 #modal-dialog-ok-button svg {
-  fill: #eeeeee !important;
-  color: #eeeeee !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
 }
 [class*="-button-secondary"],
 [class*="-button-tertiary"],
 #modal-dialog-cancel-button {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 
 /* Context-menu / overflow-menu / settings-tab items AND every scrap of text
@@ -586,16 +607,16 @@ div.hangup-menu-button svg {
 [class*="-dialogContainer"] *,
 [class*="-contextMenuItem"],
 [class*="-overflowMenuDrawer"] [role="button"] {
-  color: #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* The "Permission not granted" camera/mic slab in Settings is `-textSelector`
    (an earlier guess at `-preview` never matched) — solid black by default. */
 .settings-dialog [class*="-textSelector"],
 [class*="-textSelector"] {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Hovering a settings-dialog row / sidebar tab, an overflow-menu item, or the
@@ -609,10 +630,10 @@ div.hangup-menu-button svg {
 .welcome-page-settings:hover,
 .welcome-page-settings .toolbox-icon:hover,
 .welcome-page-settings .toolbox-button:hover {
-  background: #111111 !important;
-  background-color: #111111 !important;
-  color: #eeeeee !important;
-  border-color: #111111 !important;
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border-color: var(--trussal-secondary, #111111) !important;
 }
 .settings-dialog [role="tab"]:hover *,
 [class*="-contextMenuItem"]:not([class*="-selected"]):hover *,
@@ -620,8 +641,8 @@ div.hangup-menu-button svg {
 .welcome-page-settings:hover path,
 .welcome-page-settings .toolbox-icon:hover svg,
 .welcome-page-settings .toolbox-icon:hover path {
-  color: #eeeeee !important;
-  fill: #eeeeee !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
   background: transparent !important;
   background-color: transparent !important;
 }
@@ -631,14 +652,14 @@ div.hangup-menu-button svg {
 #chat-tab,
 #polls-tab,
 .chat-header [class*="-tab"] {
-  color: #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
   background: transparent !important;
 }
 #chat-tab.selected,
 #polls-tab.selected,
 .chat-header [class*="-tab"].selected {
-  color: #111111 !important;
-  border-bottom: 2px solid #111111 !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border-bottom: 2px solid var(--trussal-secondary, #111111) !important;
 }
 
 /* Settings-dialog sidebar: the selected tab ships `#292929` + a blue left
@@ -646,10 +667,10 @@ div.hangup-menu-button svg {
    toolbar icon). */
 [class*="-contextMenuItem-selected"],
 .settings-dialog [role="tab"][aria-selected="true"] {
-  background: #111111 !important;
-  background-color: #111111 !important;
-  color: #eeeeee !important;
-  border-color: #111111 !important;
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border-color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Camera/mic preview slab in the Settings dialog ("Permission not
@@ -657,9 +678,9 @@ div.hangup-menu-button svg {
 .settings-dialog [class*="-preview"],
 .settings-dialog video,
 .settings-dialog [class*="-previewEntry"] {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Blue icon accents: the recent-meeting delete (trash) glyph on the
@@ -668,8 +689,8 @@ svg[class*="trash_svg__"],
 svg[class*="trash_svg__"] path,
 .delete-meeting svg,
 .delete-meeting path {
-  fill: #111111 !important;
-  color: #111111 !important;
+  fill: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Welcome page: the recent-meeting rows ship pure #ffffff
@@ -679,22 +700,22 @@ svg[class*="trash_svg__"] path,
 .welcome-page .meetings-list .item.with-click-handler,
 .welcome-page .meetings-list .item:hover,
 .welcome-page [class*="meetings-list"] [class*="item"] {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 .welcome-page-settings,
 .welcome-page-settings .toolbox-icon,
 .welcome-page-settings .toolbox-button {
-  background: #eeeeee !important;
-  background-color: #eeeeee !important;
-  color: #111111 !important;
-  border: 1px solid #111111 !important;
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
 }
 .welcome-page-settings svg,
 .welcome-page-settings path {
-  fill: #111111 !important;
-  color: #111111 !important;
+  fill: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Every SVG glyph inside a flattened panel / menu / dialog ships white
@@ -718,14 +739,14 @@ svg[class*="trash_svg__"] path,
 .overflow-menu path,
 #modal-header-close-button svg,
 #modal-header-close-button path {
-  fill: #111111 !important;
-  color: #111111 !important;
+  fill: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-secondary, #111111) !important;
 }
 
 /* …then restore the light tone on EVERY descendant of a surface that was
    inverted to #111 — the primary button, the selected settings-sidebar tab,
    the selected context-menu row. Not just svg/path: a label lives in a
-   `<span>` / `-text-textContainer`, and the global `background-color:#eeeeee`
+   `<span>` / `-text-textContainer`, and the global `background-color:var(--trussal-primary, #eeeeee)`
    otherwise paints an #eee box behind that span on the black pill (the "OK"
    button read as a light chip). Force the text light and the child
    background transparent. The inverted element ITSELF is not listed here —
@@ -735,8 +756,8 @@ svg[class*="trash_svg__"] path,
 #participants-pane [class*="-button-primary"] *,
 [class*="-contextMenuItem-selected"] *,
 .settings-dialog [role="tab"][aria-selected="true"] * {
-  fill: #eeeeee !important;
-  color: #eeeeee !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
   background: transparent !important;
   background-color: transparent !important;
 }
@@ -797,35 +818,35 @@ body:has(.modal-dialog) #trussal-welcome-overlay {
    focus outline in the theme. */
 .videocontainer div.active-speaker-indicator,
 #largeVideoContainer div.active-speaker-indicator {
-  box-shadow: inset 0 0 0 3px #111111 !important;
+  box-shadow: inset 0 0 0 3px var(--trussal-secondary, #111111) !important;
 }
 
 /* Raised hand — ring uniform with a toggled toolbar icon (solid #111). */
 .videocontainer div.raised-hand-border,
 #largeVideoContainer div.raised-hand-border {
-  box-shadow: inset 0 0 0 2px #111111 !important;
+  box-shadow: inset 0 0 0 2px var(--trussal-secondary, #111111) !important;
 }
 
 /* Raised-hand badge on the tile (`-raisedHandIndicator`, hashed) ships an
    amber fill — invert it to the toggled-toolbar-icon look: #111 pill, #eee
    glyph. */
 [class*="raisedHandIndicator"] {
-  background: #111111 !important;
-  background-color: #111111 !important;
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
 }
 [class*="raisedHandIndicator"] svg,
 [class*="raisedHandIndicator"] path {
-  fill: #eeeeee !important;
-  color: #eeeeee !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
 }
 
 /* Text selection: the theme's invert, not the browser/OS blue. Kept without
    !important — it is a default, and nothing in the app overrides ::selection. */
 ::selection {
-  background: #111111;
-  color: #eeeeee;
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
 }
 ::-moz-selection {
-  background: #111111;
-  color: #eeeeee;
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
 }

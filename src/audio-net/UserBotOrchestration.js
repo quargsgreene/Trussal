@@ -15,7 +15,7 @@ import {
   sendSampleFile,
   subscribePeerState
 } from '../peer-state.js';
-import { flag, parseBotConfig } from '../bot-config.js';
+import { flag, indexList, parseBotConfig, spawnCount } from '../bot-config.js';
 import { readSampleBanks } from '../user-samples.js';
 
 // --- Pure selection helpers -----------------------------------------------------
@@ -175,6 +175,90 @@ export function stopAllBots(stopped) {
 export function setBotsVideo(selector, videoOn) {
   for (const bot of selectBots(myClusterBots(), selector)) {
     sendRemoteVideo(bot.peerId, !!videoOn);
+  }
+}
+
+// --- botConfig({...}) cluster directives --------------------------------------------
+
+// The last directive set actually carried out, serialised. A directive set that
+// equals it is a no-op: leaving `spawn: 2` in your editor must not spawn two
+// more bots every time you re-evaluate an unrelated pattern line. Change a
+// value (bump the count, edit an array, flip a boolean) to fire it again.
+let lastDirectiveKey = null;
+
+// Reset so the next identical directive set fires again — e.g. after the
+// cluster has been town down out from under it.
+export function resetBotClusterDirectives() {
+  lastDirectiveKey = null;
+}
+
+// Carry out the ACTION properties of a `botConfig({...})` declaration — spawn,
+// remove/removeAll, mute/muteAll/unmuteAll, camera/cameraOffAll/cameraOnAll —
+// reading them from the local performer's editor text. studio.js calls this
+// once, right after the performer evaluates their editor ("the next update to
+// the personal editor").
+//
+// `code` is the raw editor buffer; parseBotConfig strips and parses the
+// declaration. A buffer with no `botConfig(...)` at all clears the dedupe
+// latch and does nothing. A malformed one is left to the fleet's own
+// config-error path to report — no action fires.
+export function applyBotClusterDirectives(code) {
+  const parsed = parseBotConfig(code);
+  if (!parsed.present || !parsed.ok) {
+    lastDirectiveKey = null;
+    return null;
+  }
+
+  const c = parsed.config;
+  const directives = {
+    spawn: spawnCount(c.spawn),
+    remove: indexList(c.remove),
+    removeAll: flag(c.removeAll),
+    mute: indexList(c.mute),
+    muteAll: flag(c.muteAll),
+    unmuteAll: flag(c.unmuteAll),
+    camera: indexList(c.camera),
+    cameraOffAll: flag(c.cameraOffAll),
+    cameraOnAll: flag(c.cameraOnAll),
+  };
+
+  const key = JSON.stringify(directives);
+  if (key === lastDirectiveKey) return null;
+  lastDirectiveKey = key;
+
+  // Removal before spawn: a directive set that both removes and spawns reads as
+  // "replace my cluster".
+  if (directives.removeAll) removeBots('all');
+  else if (directives.remove.length) removeBots(directives.remove);
+
+  if (directives.spawn > 0) spawnBots(directives.spawn, code);
+
+  // "All" ops first, then the per-index list on top, so
+  // `{ unmuteAll: true, mute: ["1a"] }` reads as "unmute the cluster except 1a"
+  // (and the same for `{ cameraOffAll: true, camera: ["1a"] }`). muteAll wins a
+  // muteAll+unmuteAll clash by running last.
+  if (directives.unmuteAll) muteBots('all', false);
+  if (directives.muteAll) muteBots('all', true);
+  if (directives.mute.length) muteByIndex(directives.mute, true);
+
+  if (directives.cameraOnAll) setBotsVideo('all', true);
+  if (directives.cameraOffAll) setBotsVideo('all', false);
+  if (directives.camera.length) setBotsVideo(directives.camera, true);
+
+  return directives;
+}
+
+// Mute a set of participants named by room-index token. Bots are the only
+// participants the sidecar will actually mute on a remote request (a human owns
+// their own mic), so in practice this hits one's own cluster — but it is
+// written against the token, not `myClusterBots()`, to match the declared
+// "array of participant tokens".
+function muteByIndex(tokens, muted) {
+  const want = new Set(tokens.map(String));
+  for (const peer of getAllPeers()) {
+    if (peer.peerId && peer.roomIndex != null && want.has(String(peer.roomIndex))) {
+      sendRemoteMute(peer.peerId, !!muted);
+    }
   }
 }
 

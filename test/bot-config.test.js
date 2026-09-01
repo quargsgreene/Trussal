@@ -7,9 +7,11 @@ import {
   findBotConfigCall,
   flag,
   hasBotConfig,
+  indexList,
   parseBotConfig,
   parseHarmony,
   parseObjectLiteral,
+  spawnCount,
   stripBotConfig,
   validateBotConfig,
 } from '../src/bot-config.js';
@@ -190,4 +192,87 @@ test('reports a malformed argument instead of ignoring the call', () => {
 test('reports an unbalanced call', () => {
   const parsed = parseBotConfig('botConfig({ random: "full" }');
   assert.equal(parsed.ok, false);
+});
+
+// --- Action properties ------------------------------------------------------
+
+test('parses a string array for an action property', () => {
+  const parsed = parseObjectLiteral('{ remove: ["1a", "1c"] }');
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.value, { remove: ['1a', '1c'] });
+});
+
+test('an array accepts bare tokens and an empty list, coercing to strings', () => {
+  assert.deepEqual(parseObjectLiteral('{ camera: [1a, 2b,] }').value, { camera: ['1a', '2b'] });
+  assert.deepEqual(parseObjectLiteral('{ mute: [] }').value, { mute: [] });
+  assert.deepEqual(parseObjectLiteral('{ remove: [1] }').value, { remove: ['1'] });
+});
+
+test('rejects a nested array or object as an element', () => {
+  assert.equal(parseObjectLiteral('{ remove: [["1a"]] }').ok, false);
+  assert.equal(parseObjectLiteral('{ remove: [{}] }').ok, false);
+});
+
+test('rejects an unterminated array', () => {
+  assert.equal(parseObjectLiteral('{ remove: ["1a"').ok, false);
+});
+
+test('validateBotConfig accepts the action properties', () => {
+  const valid = validateBotConfig({
+    spawn: 3, remove: ['1a'], removeAll: false,
+    mute: ['1b', '1c'], muteAll: true, camera: ['1a'], cameraOffAll: false,
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.spawn, 3);
+  assert.deepEqual(valid.config.mute, ['1b', '1c']);
+});
+
+test('validateBotConfig rejects a wrong-typed action property', () => {
+  assert.equal(parseBotConfig('botConfig({ spawn: "two" })').ok, false);
+  assert.equal(parseBotConfig('botConfig({ remove: "1a" })').ok, false);
+  assert.equal(parseBotConfig('botConfig({ removeAll: "yes" })').ok, false);
+  // bare array tokens are coerced to strings, so this is accepted
+  assert.equal(parseBotConfig('botConfig({ camera: [1, 2] })').ok, true);
+});
+
+test('the action keys are part of BOT_CONFIG_KEYS and default to null', () => {
+  const actionKeys = [
+    'spawn', 'remove', 'removeAll', 'mute', 'muteAll', 'unmuteAll',
+    'camera', 'cameraOffAll', 'cameraOnAll',
+  ];
+  for (const key of actionKeys) {
+    assert.ok(BOT_CONFIG_KEYS.includes(key), `${key} missing from BOT_CONFIG_KEYS`);
+    assert.equal(defaultBotConfig()[key], null);
+  }
+});
+
+test('unmuteAll and cameraOnAll validate as booleans, mirroring their pair', () => {
+  assert.equal(parseBotConfig('botConfig({ unmuteAll: true, cameraOnAll: true })').ok, true);
+  assert.equal(parseBotConfig('botConfig({ unmuteAll: "yes" })').ok, false);
+  assert.equal(parseBotConfig('botConfig({ cameraOnAll: 1 })').ok, false);
+});
+
+test('a botConfig with action properties survives a round-trip parse and strip', () => {
+  const code = 's("bd sd")\nbotConfig({ spawn: 2, camera: ["1a"] })\nnote("c3")';
+  assert.equal(stripBotConfig(code), 's("bd sd")\nnote("c3")');
+  const parsed = parseBotConfig(code);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.config.spawn, 2);
+  assert.deepEqual(parsed.config.camera, ['1a']);
+});
+
+test('spawnCount reads a positive integer, else 0', () => {
+  assert.equal(spawnCount(3), 3);
+  assert.equal(spawnCount(2.7), 2);
+  assert.equal(spawnCount(0), 0);
+  assert.equal(spawnCount(-1), 0);
+  assert.equal(spawnCount(null), 0);
+  assert.equal(spawnCount(NaN), 0);
+});
+
+test('indexList normalises to a trimmed, non-empty string array', () => {
+  assert.deepEqual(indexList(['1a', ' 1b ', '', '1c']), ['1a', '1b', '1c']);
+  assert.deepEqual(indexList(null), []);
+  assert.deepEqual(indexList('1a'), []);
+  assert.deepEqual(indexList([1, 2]), ['1', '2']);
 });

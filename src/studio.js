@@ -57,15 +57,19 @@ import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
 import {
-  myClusterBots,
-  spawnBots,
-  removeBots,
-  removeOneBot,
-  muteBots,
-  setBotsVideo,
+  applyBotClusterDirectives,
+  resetBotClusterDirectives,
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
 import { startRoomHealth } from './audio-net/RoomHealthService.js';
+import {
+  getTheme,
+  setTheme,
+  isHexColor,
+  WEB_SAFE_FONTS,
+  DEFAULT_PRIMARY,
+  DEFAULT_SECONDARY,
+} from './theme-context.js';
 
 const BUTTON_ID  = 'trussal-studio-toggle';
 const OVERLAY_ID = 'trussal-studio-overlay';
@@ -364,114 +368,90 @@ function updateMetricsSection(el, peer, controls = '') {
   }
 }
 
-let lastFleetStatus = '';
 subscribeFleetStatus((status) => {
+  // The Bot Cluster panel that used to show this is gone (its actions moved
+  // into botConfig({ spawn / remove / mute / camera / … })). Surface fleet
+  // feedback — spawn counts, what the fleet made of a botConfig, a rejected
+  // config, a teardown — on the shared status line instead.
+  let line = '';
   if (status.action === 'spawn') {
-    // `botConfig` is what the fleet made of the declaration in the code we sent
-    // — "applied: harmony=…", "no botConfig() declared", or absent when it was
-    // rejected (then `reason` says why). It is the only place an author can see
-    // whether their declaration crossed three processes intact.
-    lastFleetStatus = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` +
+    line = `spawned ${status.spawned}/${status.requested} for ${status.ownerIndex}` +
       (status.botConfig ? ` — ${status.botConfig}` : '') +
       (status.reason ? ` — ${status.reason}` : '');
   } else if (status.action === 'remove') {
-    lastFleetStatus = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
+    line = `removed ${status.removed} (${status.ownerIndex})${status.reason ? ` — ${status.reason}` : ''}`;
   } else if (status.action === 'config-error') {
     // A botConfig() typo on a retroactive-or-not edit — see
     // fleet-service.js's #handlePerformerEdit. Without this the edit just
     // silently fails to apply, indistinguishable from "reverted".
-    lastFleetStatus = `botConfig rejected (${status.ownerIndex}) — ${status.reason || 'invalid config'}`;
+    line = `botConfig rejected (${status.ownerIndex}) — ${status.reason || 'invalid config'}`;
   } else if (status.action === 'teardown') {
-    lastFleetStatus = `fleet teardown — ${status.reason || ''}`;
+    line = `fleet teardown — ${status.reason || ''}`;
+    // The cluster is gone; let the same botConfig({ spawn: n }) rebuild it on
+    // the next eval instead of being deduped away as "already done".
+    resetBotClusterDirectives();
   }
-  renderAll();
+  if (line) setStatus(line);
 });
 
-function botRowKey(bot) { return bot.roomIndex; }
-
-function createBotRow() {
+// The Personal Theme card replaces the old Bot Cluster panel. Every control is
+// local-only: Apply writes this viewer's own theme (src/theme-context.js) and
+// repaints just this browser — nothing goes on the wire. Built once per
+// peer-selection; it reads the stored theme at build time and needs no
+// per-tick patch, so there is no update* counterpart.
+function createThemePickerSection() {
   const el = document.createElement('div');
-  el.className = 'ts-fx';
-  el.innerHTML = `
-    <span class="ts-idx"></span>
-    <span class="ts-bot-name" style="font-size:11px;color:#111111;"></span>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="mute"></button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="video" title="publish this bot's Hydra output as its video tile">vid</button>
-    <button class="ts-fx-btn ts-dwell-btn" data-bot-action="removeOne">×</button>
-  `;
-  // idx comes off the row's own reconcile key at click time, not a closed-over
-  // `bot` — this node is reused across ticks, so a stale closure would still
-  // read whatever roomIndex this bot happened to have when the row was first
-  // created. myClusterBots() is re-queried fresh per click for the same reason.
-  el.querySelectorAll('[data-bot-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const action = btn.dataset.botAction;
-      const idx = el.dataset.reconcileKey;
-      if (action === 'removeOne') { removeOneBot(idx); return; }
-      const bot = myClusterBots().find(b => b.roomIndex === idx);
-      if (action === 'mute') muteBots([idx], !(bot && bot.muted));
-      else if (action === 'video') setBotsVideo([idx], !(bot && bot.videoOn));
-    });
-  });
-  return el;
-}
-
-function updateBotRow(el, bot) {
-  el.querySelector('.ts-idx').textContent = bot.roomIndex;
-  el.querySelector('.ts-bot-name').textContent = bot.displayName || 'bot';
-  const muteBtn = el.querySelector('[data-bot-action="mute"]');
-  muteBtn.textContent = bot.muted ? 'unmute' : 'mute';
-  muteBtn.classList.toggle('on', !!bot.muted);
-  el.querySelector('[data-bot-action="video"]').classList.toggle('on', !!bot.videoOn);
-}
-
-// Built once per peer selection. The count input is a stable node from here
-// on — nothing ever rewrites its .value except the operator's own typing, so
-// the "spawn count silently reverts to 2" bug (botClusterBlock used to
-// hardcode value="2" into a template re-rendered on every peer-state tick)
-// cannot recur structurally, not just by a preserve/restore patch on top.
-function createBotClusterSection() {
-  const el = document.createElement('div');
-  el.className = 'ts-section ts-bot-cluster-section';
+  el.className = 'ts-section ts-theme-section';
+  const t = getTheme();
+  const check = (key, label) =>
+    `<label class="ts-theme-check"><input type="checkbox" data-theme="${key}"${t[key] ? ' checked' : ''}> ${label}</label>`;
+  const fontOptions = WEB_SAFE_FONTS.map((f) =>
+    `<option value="${escapeHtml(f.value)}"${f.value === t.font ? ' selected' : ''}>${escapeHtml(f.label)}</option>`
+  ).join('');
   el.innerHTML = `
     <div class="ts-section-head">
-      <div class="ts-section-title">Bot Cluster</div>
+      <div class="ts-section-title">Personal Theme</div>
       <div class="ts-section-controls">
-        <input class="ts-select ts-bot-count" type="number" min="1" max="10" value="2" style="width:52px;">
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="spawn">+ Spawn</button>
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="mute-all">🔇 all</button>
-        <button class="ts-btn ghost ts-dwell-btn" data-bot-action="remove-all">× all</button>
+        <button class="ts-btn play ts-dwell-btn" data-action="apply-theme">Apply</button>
       </div>
     </div>
-    <div class="ts-bot-rows"></div>
-    <div class="ts-meta ts-bot-empty">no bots in your cluster</div>
-    <div class="ts-meta ts-bot-status" style="display:none;"></div>
+    <div class="ts-theme-checks">
+      ${check('darkMode', 'Dark mode')}
+      ${check('disableCss', 'Disable CSS changes')}
+      ${check('invert', 'Invert')}
+    </div>
+    <div class="ts-theme-fields">
+      <label class="ts-theme-field">Primary color:
+        <input type="text" class="ts-theme-color" data-theme="primary" spellcheck="false"
+          autocapitalize="off" placeholder="${DEFAULT_PRIMARY}" value="${escapeHtml(t.primary)}">
+      </label>
+      <label class="ts-theme-field">Secondary color:
+        <input type="text" class="ts-theme-color" data-theme="secondary" spellcheck="false"
+          autocapitalize="off" placeholder="${DEFAULT_SECONDARY}" value="${escapeHtml(t.secondary)}">
+      </label>
+      <label class="ts-theme-field">Font:
+        <select class="ts-theme-font" data-theme="font">${fontOptions}</select>
+      </label>
+    </div>
+    <div class="ts-meta ts-theme-status"></div>
   `;
-  const countEl = el.querySelector('.ts-bot-count');
-  el.querySelector('[data-bot-action="spawn"]').addEventListener('click', () => {
-    // The editor box itself, not the last-evaluated pattern: a botConfig(...)
-    // makes no sound, so nothing prompts an author to re-run their block after
-    // typing one, and peer.pattern only advances on eval. `:not(.jp-code)` is
-    // load-bearing — the shared JPattern textarea also carries .ts-code.
-    const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
-    spawnBots(parseInt(countEl.value, 10) || 1, codeEl ? codeEl.value : undefined);
-  });
-  el.querySelector('[data-bot-action="remove-all"]').addEventListener('click', () => removeBots('all'));
-  el.querySelector('[data-bot-action="mute-all"]').addEventListener('click', () => muteBots('all', true));
-  return el;
-}
 
-function updateBotClusterSection(el) {
-  const bots = myClusterBots();
-  reconcileList(el.querySelector('.ts-bot-rows'), bots, botRowKey, createBotRow, updateBotRow);
-  el.querySelector('.ts-bot-empty').style.display = bots.length ? 'none' : '';
-  const statusEl = el.querySelector('.ts-bot-status');
-  if (lastFleetStatus) {
-    statusEl.textContent = lastFleetStatus;
-    statusEl.style.display = '';
-  } else {
-    statusEl.style.display = 'none';
-  }
+  const statusEl = el.querySelector('.ts-theme-status');
+  el.querySelector('[data-action="apply-theme"]').addEventListener('click', () => {
+    const patch = {};
+    el.querySelectorAll('[data-theme]').forEach((node) => {
+      patch[node.dataset.theme] = node.type === 'checkbox' ? node.checked : node.value.trim();
+    });
+    for (const field of ['primary', 'secondary']) {
+      if (patch[field] && !isHexColor(patch[field])) {
+        statusEl.textContent = `${field} colour must be a 3- or 6-digit hex like #1a1a1a`;
+        return;
+      }
+    }
+    setTheme(patch);
+    statusEl.textContent = 'Theme applied — this browser only';
+  });
+  return el;
 }
 
 // Resolves whichever peer is currently selected, repairing selectedJitsiId
@@ -559,7 +539,7 @@ function buildDetailShell(container, peer, peerKey, isLocal) {
 
   container.appendChild(createMetricsSection());
 
-  if (isLocal) container.appendChild(createBotClusterSection());
+  if (isLocal) container.appendChild(createThemePickerSection());
 
   const localProgram = createLocalProgramSection(isLocal);
   container.appendChild(localProgram);
@@ -765,10 +745,8 @@ function patchDetailForPeer(container, peer, isLocal) {
   // what used to feed networkMetricsBlock's header controls.
   updateMetricsSection(container.querySelector('.ts-metrics-section'), peer, '');
 
-  if (isLocal) {
-    const botCluster = container.querySelector('.ts-bot-cluster-section');
-    if (botCluster) updateBotClusterSection(botCluster);
-  }
+  // The Personal Theme card is user-driven (Apply) and reads its values from
+  // the store at build time — nothing to patch per tick.
 
   patchLocalProgramSection(container.querySelector('.ts-local-program-section'), peer, isLocal);
 
@@ -910,7 +888,18 @@ async function onEvalAndPlay(code) {
   setStatus('Starting…');
   try {
     await bootAudioEngine();
-    if (typeof code === 'string') sendLocalPattern(code);
+    if (typeof code === 'string') {
+      sendLocalPattern(code);
+      // "The next update to the personal editor" — carry out any one-shot
+      // cluster directives declared in botConfig({ spawn / remove / mute /
+      // camera / … }). Deduped inside, so an unchanged directive set does not
+      // re-fire; a broken botConfig is left to the fleet's config-error path.
+      try {
+        applyBotClusterDirectives(code);
+      } catch (e) {
+        console.error('[studio] botConfig cluster directives failed', e);
+      }
+    }
     await bootStrudelOnUserGesture();
     sendLocalPlaying(true);
     setStatus('Playing');

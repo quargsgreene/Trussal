@@ -47,7 +47,7 @@ function renderTrussalWelcomeOverlay() {
            otherwise render it at a reduced default opacity. custom.css
            carries the same rule for a rebuilt web image. */
         #trussal-welcome-overlay #trussal-room-input::placeholder {
-          color: #111111;
+          color: var(--trussal-secondary, #111111);
           opacity: 1;
         }
       </style>
@@ -56,19 +56,19 @@ function renderTrussalWelcomeOverlay() {
         left: 50%;
         top: 40%;
         transform: translate(-50%, -50%);
-        background: #eeeeee;
+        background: var(--trussal-primary, #eeeeee);
         padding: 1.5rem 2rem;
-        border: 1px solid #111111;
+        border: 1px solid var(--trussal-secondary, #111111);
         border-radius: 1rem;
         max-width: 480px;
         width: 90%;
         z-index: 9999;
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       ">
         <form class="trussal-room-form"
               style="display:flex;flex-direction:column;gap:0.75rem;">
           <label for="trussal-room-input"
-                 style="color:#111111;font-size:1rem;">
+                 style="color:var(--trussal-secondary, #111111);font-size:1rem;">
             Room name:
           </label>
           <input id="trussal-room-input"
@@ -80,17 +80,17 @@ function renderTrussalWelcomeOverlay() {
                  spellcheck="false"
                  placeholder="Room name with 1023 characters or fewer"
                  style="padding:0.5rem 0.75rem;border-radius:0.5rem;
-                        border:1px solid #111111;
-                        background:#eeeeee;
-                        color:#111111;"/>
+                        border:1px solid var(--trussal-secondary, #111111);
+                        background:var(--trussal-primary, #eeeeee);
+                        color:var(--trussal-secondary, #111111);"/>
           <button type="submit"
                   style="padding:0.6rem 0.9rem;border-radius:0.5rem;
-                         border:1px solid #111111;background:#eeeeee;color:#111111;
+                         border:1px solid var(--trussal-secondary, #111111);background:var(--trussal-primary, #eeeeee);color:var(--trussal-secondary, #111111);
                          font-weight:600;cursor:pointer;">
             Join session
           </button>
           <div id="trussal-room-error"
-               style="display:none;color:#111111;font-size:0.85rem;"></div>
+               style="display:none;color:var(--trussal-secondary, #111111);font-size:0.85rem;"></div>
         </form>
       </div>
     `;
@@ -196,23 +196,23 @@ function patchPrejoinButton() {
     for (const btn of joinBtns) {
       // No guard — setProperty is idempotent and this must survive a React
       // re-render that clears the inline style.
-      btn.style.setProperty('background', '#111111', 'important');
-      btn.style.setProperty('background-color', '#111111', 'important');
-      btn.style.setProperty('color', '#eeeeee', 'important');
-      btn.style.setProperty('border', '1px solid #111111', 'important');
-      btn.querySelectorAll('*').forEach((c) => c.style.setProperty('color', '#eeeeee', 'important'));
+      btn.style.setProperty('background', 'var(--trussal-secondary, #111111)', 'important');
+      btn.style.setProperty('background-color', 'var(--trussal-secondary, #111111)', 'important');
+      btn.style.setProperty('color', 'var(--trussal-primary, #eeeeee)', 'important');
+      btn.style.setProperty('border', '1px solid var(--trussal-secondary, #111111)', 'important');
+      btn.querySelectorAll('*').forEach((c) => c.style.setProperty('color', 'var(--trussal-primary, #eeeeee)', 'important'));
       btn.querySelectorAll('svg').forEach((svg) =>
-        svg.style.setProperty('fill', '#eeeeee', 'important')
+        svg.style.setProperty('fill', 'var(--trussal-primary, #eeeeee)', 'important')
       );
     }
 
     // The amber "you need to enable microphone and camera access" pill
     // (`css-<hash>-deviceStatus device-status-error`) — flatten it too.
     for (const el of document.querySelectorAll('[class*="deviceStatus"]')) {
-      el.style.setProperty('background', '#eeeeee', 'important');
-      el.style.setProperty('background-color', '#eeeeee', 'important');
-      el.style.setProperty('color', '#111111', 'important');
-      el.style.setProperty('border', '1px solid #111111', 'important');
+      el.style.setProperty('background', 'var(--trussal-primary, #eeeeee)', 'important');
+      el.style.setProperty('background-color', 'var(--trussal-primary, #eeeeee)', 'important');
+      el.style.setProperty('color', 'var(--trussal-secondary, #111111)', 'important');
+      el.style.setProperty('border', '1px solid var(--trussal-secondary, #111111)', 'important');
     }
   }
 
