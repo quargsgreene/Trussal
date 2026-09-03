@@ -42,6 +42,7 @@ const CORNER_ID      = 'trussal-lg-corner';
 const GEAR_ID        = 'trussal-lg-gear';
 const MENU_ID        = 'trussal-lg-menu';
 const INSTRUCTION_ID = 'trussal-lg-instruction';
+const TOAST_ID       = 'trussal-lg-toast';
 const STYLE_ID       = 'trussal-lg-style';
 
 let _modeOn    = false;
@@ -132,11 +133,48 @@ export function gestureAndLandmarkConfig(config) {
   }
 
   const result = { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
-  // A write gives no on-screen signal for a map/tuning change, which reads as
-  // "the call did nothing" — echo what landed and the resulting state.
+  // A write to the gesture map / cursor tuning has no on-screen effect of its
+  // own, which reads as "the call did nothing" — so echo what landed both to
+  // the console and as a brief on-screen toast by the ☰ corner.
   const applied = Object.keys(norm);
-  if (applied.length) console.log('[landmark-gesture] applied', applied, '→', result);
+  if (applied.length) {
+    console.log('[landmark-gesture] applied', applied, '→', result);
+    _toast(_describeApplied(norm, result));
+  }
   return result;
+}
+
+// Human-readable one-liner for what a gestureAndLandmarkConfig() write changed.
+function _describeApplied(norm, cfg) {
+  const parts = [];
+  if ('gestureMappings' in norm) {
+    const n = norm.gestureMappings.length;
+    parts.push(`gesture map · ${n} mapping${n === 1 ? '' : 's'}`);
+  }
+  if ('virtualKeyboardEnabled' in norm) parts.push(`keyboard ${norm.virtualKeyboardEnabled ? 'on' : 'off'}`);
+  if ('headCursorEnabled' in norm) parts.push(`head cursor ${norm.headCursorEnabled ? 'on' : 'off'}`);
+  if ('gestureDetectionEnabled' in norm) parts.push(`gesture actions ${norm.gestureDetectionEnabled ? 'on' : 'off'}`);
+  if ('cursorSpeed' in norm) parts.push(`cursor speed ${cfg.cursorSpeed}`);
+  if ('cursorGain' in norm) parts.push(`cursor gain ${cfg.cursorGain}`);
+  if ('meetingLoadSensitivity' in norm) parts.push(`load sensitivity ${cfg.meetingLoadSensitivity}`);
+  return `Landmark & Gesture · ${parts.join(' · ')}`;
+}
+
+// Brief inverted-colour toast beside the ☰ corner. Auto-dismisses; reachable on
+// every screen (welcome / prejoin / meeting) since a config call can land on any.
+let _toastTimer = null;
+function _toast(msg) {
+  try { _injectStyles(); } catch (e) { /* head not ready — skip the toast */ return; }
+  let el = document.getElementById(TOAST_ID);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = TOAST_ID;
+    (document.body || document.documentElement).appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.classList.remove('show'); }, 3500);
 }
 
 // Expose the control surface the instant this module evaluates — not only from
@@ -204,6 +242,19 @@ function _injectStyles() {
       padding: 0 4px; font-family: monospace; font-size: 11px;
     }
     #${INSTRUCTION_ID} .lg-blocked { opacity: 0.55; }
+    #${TOAST_ID} {
+      position: fixed; top: 10px; left: 46px;
+      z-index: 1000004;
+      max-width: 280px;
+      background: #111111; color: #eeeeee;
+      border: 1px solid #111111; border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; line-height: 1.4;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      opacity: 0; transform: translateY(-4px);
+      transition: opacity .15s ease, transform .15s ease;
+      pointer-events: none;
+    }
+    #${TOAST_ID}.show { opacity: 1; transform: translateY(0); }
   `;
   document.head.appendChild(s);
 }

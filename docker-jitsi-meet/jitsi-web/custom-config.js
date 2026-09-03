@@ -62671,6 +62671,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var GEAR_ID = "trussal-lg-gear";
   var MENU_ID = "trussal-lg-menu";
   var INSTRUCTION_ID = "trussal-lg-instruction";
+  var TOAST_ID = "trussal-lg-toast";
   var STYLE_ID5 = "trussal-lg-style";
   var _modeOn = false;
   var _dismissed = false;
@@ -62739,8 +62740,45 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     const result = { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
     const applied = Object.keys(norm);
-    if (applied.length) console.log("[landmark-gesture] applied", applied, "\u2192", result);
+    if (applied.length) {
+      console.log("[landmark-gesture] applied", applied, "\u2192", result);
+      _toast(_describeApplied(norm, result));
+    }
     return result;
+  }
+  function _describeApplied(norm, cfg) {
+    const parts = [];
+    if ("gestureMappings" in norm) {
+      const n2 = norm.gestureMappings.length;
+      parts.push(`gesture map \xB7 ${n2} mapping${n2 === 1 ? "" : "s"}`);
+    }
+    if ("virtualKeyboardEnabled" in norm) parts.push(`keyboard ${norm.virtualKeyboardEnabled ? "on" : "off"}`);
+    if ("headCursorEnabled" in norm) parts.push(`head cursor ${norm.headCursorEnabled ? "on" : "off"}`);
+    if ("gestureDetectionEnabled" in norm) parts.push(`gesture actions ${norm.gestureDetectionEnabled ? "on" : "off"}`);
+    if ("cursorSpeed" in norm) parts.push(`cursor speed ${cfg.cursorSpeed}`);
+    if ("cursorGain" in norm) parts.push(`cursor gain ${cfg.cursorGain}`);
+    if ("meetingLoadSensitivity" in norm) parts.push(`load sensitivity ${cfg.meetingLoadSensitivity}`);
+    return `Landmark & Gesture \xB7 ${parts.join(" \xB7 ")}`;
+  }
+  var _toastTimer = null;
+  function _toast(msg) {
+    try {
+      _injectStyles5();
+    } catch (e30) {
+      return;
+    }
+    let el = document.getElementById(TOAST_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = TOAST_ID;
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+      el.classList.remove("show");
+    }, 3500);
   }
   if (typeof window !== "undefined" && !window.__trussalIsBot && !window.__trussalIsAggregator) {
     window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
@@ -62799,6 +62837,19 @@ ${snippet}${JP_BTN_MARKER}`;
       padding: 0 4px; font-family: monospace; font-size: 11px;
     }
     #${INSTRUCTION_ID} .lg-blocked { opacity: 0.55; }
+    #${TOAST_ID} {
+      position: fixed; top: 10px; left: 46px;
+      z-index: 1000004;
+      max-width: 280px;
+      background: #111111; color: #eeeeee;
+      border: 1px solid #111111; border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; line-height: 1.4;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      opacity: 0; transform: translateY(-4px);
+      transition: opacity .15s ease, transform .15s ease;
+      pointer-events: none;
+    }
+    #${TOAST_ID}.show { opacity: 1; transform: translateY(0); }
   `;
     document.head.appendChild(s2);
   }
