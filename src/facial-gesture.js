@@ -231,6 +231,7 @@ let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-
 let _sharedWithHydra = false;
 let _leftEyeClosedSince   = 0;
 let _leftEyeOpenGraceUntil = 0; // tolerate a brief eyes-open flicker mid-hold
+let _lastSynthMove   = 0;    // throttle the toolbar-keep-alive mousemove
 
 // The live gesture map. Replaced wholesale by setGestureMappings(); starts as
 // the defaults so behaviour with no config call is exactly what it always was.
@@ -690,6 +691,21 @@ function _detectionLoop() {
 
   const cx = _ema.cursorX;
   const cy = _ema.cursorY;
+
+  // A head-cursor-only performer produces no real pointer events, so Jitsi's
+  // toolbar (and every other hover-revealed control) auto-hides after a few
+  // seconds and can never be dwelled. Replay a synthetic mousemove at the
+  // cursor a couple of times a second so the app's inactivity timers keep
+  // those controls on screen.
+  if (ts - _lastSynthMove > 450) {
+    _lastSynthMove = ts;
+    const under = document.elementFromPoint(cx, cy) || document.body;
+    try {
+      under?.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: cx, clientY: cy, bubbles: true, cancelable: true, view: window,
+      }));
+    } catch (e) { /* SecurityError from a cross-origin frame under the point */ }
+  }
 
   // Head cursor over a Studio code editor → focus that textarea and (unless the
   // caret is thumbs-down locked) walk its blinking caret to the character under

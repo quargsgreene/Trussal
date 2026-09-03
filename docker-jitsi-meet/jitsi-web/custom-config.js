@@ -58873,6 +58873,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var _sharedWithHydra = false;
   var _leftEyeClosedSince = 0;
   var _leftEyeOpenGraceUntil = 0;
+  var _lastSynthMove = 0;
   var _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   var _videoEl2 = null;
   var _canvasEl = null;
@@ -59235,6 +59236,20 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     const cx = _ema.cursorX;
     const cy = _ema.cursorY;
+    if (ts - _lastSynthMove > 450) {
+      _lastSynthMove = ts;
+      const under = document.elementFromPoint(cx, cy) || document.body;
+      try {
+        under?.dispatchEvent(new MouseEvent("mousemove", {
+          clientX: cx,
+          clientY: cy,
+          bubbles: true,
+          cancelable: true,
+          view: window
+        }));
+      } catch (e30) {
+      }
+    }
     _followEditorCaret(cx, cy);
     let hoveredKey = null;
     let hoveredType = null;
