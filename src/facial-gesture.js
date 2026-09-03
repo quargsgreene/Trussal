@@ -78,6 +78,7 @@ if (typeof window !== 'undefined') {
     jawOpen: 0, browInnerUp: 0, headTilt: 0, headYaw: 0,
     mouthSmileLeft: 0, mouthSmileRight: 0,
     eyeBlinkLeft: 0, eyeBlinkRight: 0,
+    eyeOpenLeft: null, eyeOpenRight: null,
     cursorX: window.innerWidth  / 2,
     cursorY: window.innerHeight / 2,
   };
@@ -423,6 +424,21 @@ function _runAction(m, trigger) {
 // ---------------------------------------------------------------------------
 // Detection.
 // ---------------------------------------------------------------------------
+// Per-eye eyelid aperture from the face mesh: vertical lid gap ÷ eye width, so
+// it is invariant to distance and head size. A relaxed open eye lands around
+// 0.28-0.40, a shut one below ~0.12. Unlike the eyeBlink blendshape this does
+// NOT sag while an eye is held shut, and it resolves the two eyes independently
+// — the blendshape (verified live) reports both eyes together on a one-eyed
+// wink, which is why the enable gesture never fired. Points: right eye upper/
+// lower lid 159/145, corners 33/133; left eye 386/374, corners 362/263.
+function _eyeOpenness(landmarks) {
+  if (!landmarks || landmarks.length <= 386) return null;
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const rOpen = d(landmarks[159], landmarks[145]) / (d(landmarks[33],  landmarks[133]) || 1e-6);
+  const lOpen = d(landmarks[386], landmarks[374]) / (d(landmarks[362], landmarks[263]) || 1e-6);
+  return { lOpen, rOpen };
+}
+
 function _processResult(result, gestureResult) {
   const blendshapes = result.faceBlendshapes?.[0]?.categories;
   const landmarks   = result.faceLandmarks?.[0];
@@ -453,10 +469,19 @@ function _processResult(result, gestureResult) {
   }
 
   Object.assign(window.faceCtx, _ema);
-  _processGestures(blendshapes, gestureResult);
+
+  // Raw eyelid aperture (not EMA'd — a "held shut" test wants the real
+  // per-frame gap; the 250ms grace below rides out a dropped frame). Also
+  // published on faceCtx so the thresholds can be retuned from live values
+  // without another deploy.
+  const eyes = _eyeOpenness(landmarks);
+  window.faceCtx.eyeOpenLeft  = eyes ? eyes.lOpen : null;
+  window.faceCtx.eyeOpenRight = eyes ? eyes.rOpen : null;
+
+  _processGestures(blendshapes, gestureResult, eyes);
 }
 
-function _processGestures(blendshapes, gestureResult) {
+function _processGestures(blendshapes, gestureResult, eyes) {
   const score        = (name) => blendshapes.find((c) => c.categoryName === name)?.score ?? 0;
   const eyeBlinkL    = score('eyeBlinkLeft');
   const eyeBlinkR    = score('eyeBlinkRight');
@@ -470,26 +495,31 @@ function _processGestures(blendshapes, gestureResult) {
   // ensures a double-blink never qualifies. Right blink is unmapped.
   const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
 
-  // enable gesture: one eye held markedly more shut than the other for
+  // enable gesture: one eye held clearly shut while the other stays open, for
   // LEFT_EYE_HOLD_MS. This is the ONLY way a performer with no physical keyboard
   // or mouse can switch Landmark and Gesture Mode on before a meeting, so it has
-  // to actually fire for a real face — the old `eyeBlinkL > 0.5 && eyeBlinkR <
-  // 0.45` pair almost never sustained 2s:
-  //  • it is an ASYMMETRY test, not an absolute gate on a named eye. Which
-  //    physical eye MediaPipe's eyeBlinkLeft/Right blendshape reports flips with
-  //    model version and camera mirroring, and the instruction only says
-  //    "close one eye" — so hold whichever eye is the more-shut one and require
-  //    a clear gap to the other.
-  //  • the open eye is allowed to squint: a forced one-eyed hold drags the
-  //    other lid halfway down within a second, which is exactly what tripped the
-  //    old hard `< 0.45` ceiling.
-  //  • a real blink closes both eyes together (tiny gap) and still won't qualify.
-  //  • a short grace window keeps one flickered-open frame from MediaPipe's raw
-  //    blendshape from resetting the whole 2s hold.
+  // to actually fire for a real face.
+  //  • Driven by eyelid APERTURE (`eyes`, mesh geometry), not the eyeBlink
+  //    blendshape: the blendshape fires on the blink motion, sags within ~1s of
+  //    a held close, and on this camera/model reports BOTH eyes rising together
+  //    on a one-eyed wink (measured live: L and R within ~0.05 the whole time).
+  //    Geometry has none of those problems.
+  //  • Eye-agnostic: whichever eye is the more-shut one counts, so it does not
+  //    matter which physical eye the mesh calls left. `open - shut` gap tolerates
+  //    the open eye squinting sympathetically.
+  //  • A real blink closes both lids together (tiny gap) and still won't qualify.
+  //  • Blendshape asymmetry stays as a fallback for a frame with no usable
+  //    landmarks; the 250ms grace rides out a single dropped frame.
   // _dispatchTrigger lets it through even while gesture actions are off.
   const nowP = performance.now();
-  const eyeWinkAsym = Math.abs(eyeBlinkL - eyeBlinkR);
-  const winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && eyeWinkAsym > 0.25;
+  let winkHeld;
+  if (eyes) {
+    const shut = Math.min(eyes.lOpen, eyes.rOpen);
+    const open = Math.max(eyes.lOpen, eyes.rOpen);
+    winkHeld = shut < 0.15 && (open - shut) > 0.13;
+  } else {
+    winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && Math.abs(eyeBlinkL - eyeBlinkR) > 0.25;
+  }
   if (winkHeld) {
     if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
     _leftEyeOpenGraceUntil = nowP + 250;

@@ -58747,6 +58747,8 @@ ${snippet}${JP_BTN_MARKER}`;
       mouthSmileRight: 0,
       eyeBlinkLeft: 0,
       eyeBlinkRight: 0,
+      eyeOpenLeft: null,
+      eyeOpenRight: null,
       cursorX: window.innerWidth / 2,
       cursorY: window.innerHeight / 2
     };
@@ -59028,6 +59030,13 @@ ${snippet}${JP_BTN_MARKER}`;
         console.warn("[facial-gesture] no handler for action", m2.action);
     }
   }
+  function _eyeOpenness(landmarks) {
+    if (!landmarks || landmarks.length <= 386) return null;
+    const d = (a2, b) => Math.hypot(a2.x - b.x, a2.y - b.y);
+    const rOpen = d(landmarks[159], landmarks[145]) / (d(landmarks[33], landmarks[133]) || 1e-6);
+    const lOpen = d(landmarks[386], landmarks[374]) / (d(landmarks[362], landmarks[263]) || 1e-6);
+    return { lOpen, rOpen };
+  }
   function _processResult(result, gestureResult) {
     const blendshapes = result.faceBlendshapes?.[0]?.categories;
     const landmarks = result.faceLandmarks?.[0];
@@ -59054,9 +59063,12 @@ ${snippet}${JP_BTN_MARKER}`;
       _ema.cursorY = lerp(_ema.cursorY, lm.y * window.innerHeight);
     }
     Object.assign(window.faceCtx, _ema);
-    _processGestures(blendshapes, gestureResult);
+    const eyes = _eyeOpenness(landmarks);
+    window.faceCtx.eyeOpenLeft = eyes ? eyes.lOpen : null;
+    window.faceCtx.eyeOpenRight = eyes ? eyes.rOpen : null;
+    _processGestures(blendshapes, gestureResult, eyes);
   }
-  function _processGestures(blendshapes, gestureResult) {
+  function _processGestures(blendshapes, gestureResult, eyes) {
     const score = (name3) => blendshapes.find((c2) => c2.categoryName === name3)?.score ?? 0;
     const eyeBlinkL = score("eyeBlinkLeft");
     const eyeBlinkR = score("eyeBlinkRight");
@@ -59067,8 +59079,14 @@ ${snippet}${JP_BTN_MARKER}`;
     const browOuterR = score("browOuterUpRight");
     const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
     const nowP = performance.now();
-    const eyeWinkAsym = Math.abs(eyeBlinkL - eyeBlinkR);
-    const winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && eyeWinkAsym > 0.25;
+    let winkHeld;
+    if (eyes) {
+      const shut = Math.min(eyes.lOpen, eyes.rOpen);
+      const open = Math.max(eyes.lOpen, eyes.rOpen);
+      winkHeld = shut < 0.15 && open - shut > 0.13;
+    } else {
+      winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && Math.abs(eyeBlinkL - eyeBlinkR) > 0.25;
+    }
     if (winkHeld) {
       if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
       _leftEyeOpenGraceUntil = nowP + 250;
