@@ -6,12 +6,12 @@
 //
 //   • press → (Right Arrow)
 //   • tick "Landmark and Gesture Mode" in the ☰ menu, top-left
-//   • hold your left eye shut for two seconds
+//   • hold one eye shut for two seconds
 //
 // The third is why MediaPipe starts the moment the bundle loads: facial-gesture
 // runs a camera-backed watcher with every gesture action OFF except
 // `enable-landmark-gesture-mode`, so before you opt in the only thing it can do
-// is notice the left-eye-closed gesture and flip this switch. The gesture is a
+// is notice the one-eye-held-shut gesture and flip this switch. The gesture is a
 // normal entry in the map and can be re-pointed from code.
 //
 // gestureAndLandmarkConfig({ gestureMappings, virtualKeyboardEnabled,
@@ -228,7 +228,7 @@ function _renderInstruction() {
     <ul>
       <li>press <kbd>→</kbd> (Right Arrow) — or <kbd>→</kbd> <kbd>→</kbd> <kbd>→</kbd> quickly if you're in a text field</li>
       <li>tick it in the <strong>☰</strong> menu (top-left)</li>
-      <li class="${blocked ? 'lg-blocked' : ''}">close your left eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
+      <li class="${blocked ? 'lg-blocked' : ''}">close one eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
   `;
   el.querySelector('.lg-x').addEventListener('click', (e) => {
@@ -289,7 +289,7 @@ function init() {
     else enableMode();
   });
 
-  // Kick MediaPipe into its watch-only state so the left-eye-closed enable
+  // Kick MediaPipe into its watch-only state so the one-eye-held-shut enable
   // gesture works before the user has opted into anything. On failure the other
   // two enable paths still stand — just redraw the instruction to say so.
   startFacialWatch()

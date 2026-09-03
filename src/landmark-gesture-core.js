@@ -9,7 +9,8 @@
 // `/* @mediapipe {…} */` code annotation: { trigger, action, regex?, replacement? }.
 
 // Every gesture the detector can raise. `leftEyeClosed2s` is the sustained
-// left-eye-shut hold the top-left instruction advertises as an enable path.
+// one-eyed hold the top-left instruction advertises as an enable path (the name
+// is historical — the detector fires it for whichever eye is held shut).
 export const GESTURE_TRIGGERS = [
   'smile',
   'thumbsUp',

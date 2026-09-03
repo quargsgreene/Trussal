@@ -59067,8 +59067,9 @@ ${snippet}${JP_BTN_MARKER}`;
     const browOuterR = score("browOuterUpRight");
     const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
     const nowP = performance.now();
-    const leftEyeHeld = eyeBlinkL > 0.5 && eyeBlinkR < 0.45;
-    if (leftEyeHeld) {
+    const eyeWinkAsym = Math.abs(eyeBlinkL - eyeBlinkR);
+    const winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && eyeWinkAsym > 0.25;
+    if (winkHeld) {
       if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
       _leftEyeOpenGraceUntil = nowP + 250;
       if (!_latch.leftEyeClosed2s && nowP - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
@@ -62693,7 +62694,7 @@ ${snippet}${JP_BTN_MARKER}`;
     <ul>
       <li>press <kbd>\u2192</kbd> (Right Arrow) \u2014 or <kbd>\u2192</kbd> <kbd>\u2192</kbd> <kbd>\u2192</kbd> quickly if you're in a text field</li>
       <li>tick it in the <strong>\u2630</strong> menu (top-left)</li>
-      <li class="${blocked ? "lg-blocked" : ""}">close your left eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
+      <li class="${blocked ? "lg-blocked" : ""}">close one eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
     </ul>
   `;
     el.querySelector(".lg-x").addEventListener("click", (e30) => {

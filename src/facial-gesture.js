@@ -16,7 +16,7 @@ are all set from code.
 The camera runs in two states:
   • watch-only — started the moment the bundle loads.  The face landmarker
     runs, but the only gesture that does anything is whichever one maps to
-    `enable-landmark-gesture-mode` (left-eye-closed-for-2s by default).  No
+    `enable-landmark-gesture-mode` (one eye held shut for 2s by default).  No
     mesh is drawn, no head cursor is shown.
   • full — the head cursor and/or gesture actions are switched on.  The mesh
     is drawn (grayscale, thicker eye/mouth outlines) and gestures fire.
@@ -63,7 +63,7 @@ const MOUTH_OPEN_THRESHOLD = 0.5;  // jawOpen blendshape → `mouthOpen` trigger
 const EMA_ALPHA            = 0.15;
 const LATCH_RESET          = 0.4;
 const DWELL_MS             = 1000;
-const LEFT_EYE_HOLD_MS     = 2000; // sustained left-eye-shut → `leftEyeClosed2s`
+const LEFT_EYE_HOLD_MS     = 2000; // sustained one-eyed hold → `leftEyeClosed2s`
 const HEAD_TILT_SEMITONES  = 2;    // transpose step for a head tilt
 
 const RING_R = 16;
@@ -470,16 +470,27 @@ function _processGestures(blendshapes, gestureResult) {
   // ensures a double-blink never qualifies. Right blink is unmapped.
   const isLeftBlink = eyeBlinkL > WINK_THRESHOLD && eyeBlinkR < 0.3;
 
-  // enable gesture: left eye held shut (right open-ish) for LEFT_EYE_HOLD_MS.
-  // This is the ONLY way a performer with no physical keyboard or mouse can
-  // switch Landmark and Gesture Mode on before a meeting, so it has to be
-  // forgiving: a slightly looser closed/open pair than the sharp `leftBlink`
-  // action, and a short grace window so one flickered-open frame from
-  // MediaPipe's raw blendshape doesn't reset the whole 2s hold.
+  // enable gesture: one eye held markedly more shut than the other for
+  // LEFT_EYE_HOLD_MS. This is the ONLY way a performer with no physical keyboard
+  // or mouse can switch Landmark and Gesture Mode on before a meeting, so it has
+  // to actually fire for a real face — the old `eyeBlinkL > 0.5 && eyeBlinkR <
+  // 0.45` pair almost never sustained 2s:
+  //  • it is an ASYMMETRY test, not an absolute gate on a named eye. Which
+  //    physical eye MediaPipe's eyeBlinkLeft/Right blendshape reports flips with
+  //    model version and camera mirroring, and the instruction only says
+  //    "close one eye" — so hold whichever eye is the more-shut one and require
+  //    a clear gap to the other.
+  //  • the open eye is allowed to squint: a forced one-eyed hold drags the
+  //    other lid halfway down within a second, which is exactly what tripped the
+  //    old hard `< 0.45` ceiling.
+  //  • a real blink closes both eyes together (tiny gap) and still won't qualify.
+  //  • a short grace window keeps one flickered-open frame from MediaPipe's raw
+  //    blendshape from resetting the whole 2s hold.
   // _dispatchTrigger lets it through even while gesture actions are off.
   const nowP = performance.now();
-  const leftEyeHeld = eyeBlinkL > 0.5 && eyeBlinkR < 0.45;
-  if (leftEyeHeld) {
+  const eyeWinkAsym = Math.abs(eyeBlinkL - eyeBlinkR);
+  const winkHeld = Math.max(eyeBlinkL, eyeBlinkR) > 0.5 && eyeWinkAsym > 0.25;
+  if (winkHeld) {
     if (_leftEyeClosedSince === 0) _leftEyeClosedSince = nowP;
     _leftEyeOpenGraceUntil = nowP + 250;
     if (!_latch.leftEyeClosed2s && nowP - _leftEyeClosedSince >= LEFT_EYE_HOLD_MS) {
