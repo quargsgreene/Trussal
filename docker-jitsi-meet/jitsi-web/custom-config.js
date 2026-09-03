@@ -58866,6 +58866,8 @@ ${snippet}${JP_BTN_MARKER}`;
   var _cameraOn = false;
   var _cameraStarting = false;
   var _cameraBlocked = false;
+  var _explicitlyStopped = false;
+  var _camRetryAt = 0;
   var _headCursor2 = false;
   var _gestures = false;
   var _sharedWithHydra = false;
@@ -58920,30 +58922,26 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     return _dwellCandidates;
   }
-  function _inMeetingDom() {
-    const lv = document.getElementById("largeVideoContainer");
-    if (!lv) return false;
-    const r2 = lv.getBoundingClientRect();
-    return r2.width > 0 && r2.height > 0;
-  }
-  var GENERIC_DWELL_REFRESH_MS = 400;
+  var GENERIC_DWELL_REFRESH_MS = 500;
+  var _GENERIC_DWELL_SEL = 'button, [role="button"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="switch"], [role="option"], a[href], summary, select, input:not([type="hidden"]):not([type="range"])';
   var _genericDwell = [];
   var _genericDwellAt = -Infinity;
   function _genericDwellEls(now) {
-    if (_inMeetingDom()) {
-      _genericDwell = [];
-      return _genericDwell;
-    }
     if (now - _genericDwellAt >= GENERIC_DWELL_REFRESH_MS) {
       _genericDwellAt = now;
-      _genericDwell = Array.from(document.querySelectorAll(
-        'button, [role="button"], a[href], summary, input[type="checkbox"], input[type="radio"]'
-      )).filter((el) => {
-        if (el.disabled) return false;
-        if (el.closest("#trussal-kbd-panel, #trussal-fg-panel")) return false;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      _genericDwell = [];
+      for (const el of document.querySelectorAll(_GENERIC_DWELL_SEL)) {
+        if (el.disabled || el.getAttribute("aria-disabled") === "true") continue;
+        if (el.closest(`#trussal-kbd-panel, #${FG_PANEL_ID}, #${FG_CURSOR_ID}`)) continue;
         const r2 = el.getBoundingClientRect();
-        return r2.width > 4 && r2.height > 4 && r2.bottom > 0 && r2.right > 0 && r2.top < window.innerHeight && r2.left < window.innerWidth;
-      });
+        if (r2.width <= 4 || r2.height <= 4) continue;
+        if (r2.bottom <= 0 || r2.right <= 0 || r2.top >= vh || r2.left >= vw) continue;
+        const cs = getComputedStyle(el);
+        if (cs.visibility === "hidden" || cs.display === "none" || +cs.opacity === 0) continue;
+        if (!el.offsetParent && cs.position !== "fixed") continue;
+        _genericDwell.push({ el, r: r2 });
+      }
     }
     return _genericDwell;
   }
@@ -59261,8 +59259,7 @@ ${snippet}${JP_BTN_MARKER}`;
       }
     }
     if (!hoveredEl) {
-      for (const el of _genericDwellEls(ts)) {
-        const r2 = el.getBoundingClientRect();
+      for (const { el, r: r2 } of _genericDwellEls(ts)) {
         if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
           hoveredKey = el;
           hoveredType = "native";
@@ -59391,31 +59388,42 @@ ${snippet}${JP_BTN_MARKER}`;
   async function _startCamera() {
     if (_cameraOn || _cameraStarting) return _cameraOn;
     _cameraStarting = true;
+    _explicitlyStopped = false;
     _setStatus("loading");
     try {
-      const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
-      _mpClasses = { FaceLandmarker, DrawingUtils };
-      const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
-      [_landmarker, _gestureRecognizer] = await Promise.all([
-        FaceLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-          outputFaceBlendshapes: true,
-          runningMode: "VIDEO",
-          numFaces: 1
-        }),
-        GestureRecognizer.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: "GPU" },
-          runningMode: "VIDEO",
-          numHands: 1
-        })
-      ]);
+      if (!_landmarker || !_gestureRecognizer) {
+        const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
+        _mpClasses = { FaceLandmarker, DrawingUtils };
+        const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
+        [_landmarker, _gestureRecognizer] = await Promise.all([
+          FaceLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+            outputFaceBlendshapes: true,
+            runningMode: "VIDEO",
+            numFaces: 1
+          }),
+          GestureRecognizer.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: "GPU" },
+            runningMode: "VIDEO",
+            numHands: 1
+          })
+        ]);
+      }
       _stream = await openCamera({ video: { width: 320, height: 240 } });
-      _videoEl2.srcObject = _stream;
-      await _videoEl2.play();
+      if (_videoEl2) {
+        _videoEl2.srcObject = _stream;
+        await _videoEl2.play();
+      }
+      for (const t of _stream.getTracks()) {
+        t.addEventListener("ended", () => {
+          _cameraOn = false;
+        }, { once: true });
+      }
       _cameraOn = true;
       _cameraBlocked = false;
       _syncHydraShare();
       _setStatus("ready");
+      if (_rafId2) cancelAnimationFrame(_rafId2);
       _rafId2 = requestAnimationFrame(_detectionLoop);
       return true;
     } catch (e30) {
@@ -59607,12 +59615,43 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     _startCamera();
   }
+  var _watchdogTimer = null;
+  function _startWatchdog() {
+    if (_watchdogTimer || typeof window === "undefined") return;
+    if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+    _watchdogTimer = setInterval(_healWatch, 1500);
+  }
+  function _healWatch() {
+    if (_explicitlyStopped) return;
+    if (!document.getElementById(FG_PANEL_ID) || !document.getElementById(FG_CURSOR_ID)) {
+      try {
+        _ensureDOM();
+      } catch (e30) {
+        console.error("[facial-gesture] panel re-init failed", e30);
+      }
+    }
+    const track = _stream && _stream.getVideoTracks()[0];
+    const dead = !_stream || !track || track.readyState === "ended";
+    const now = (typeof performance !== "undefined" ? performance : Date).now();
+    if (dead && !_cameraStarting && now - _camRetryAt > (_cameraBlocked ? 8e3 : 1200)) {
+      _camRetryAt = now;
+      _cameraOn = false;
+      _startCamera();
+    } else if (!dead && _videoEl2 && _videoEl2.srcObject !== _stream) {
+      _videoEl2.srcObject = _stream;
+      _videoEl2.play().catch(() => {
+      });
+    }
+    _syncPanelVisibility();
+    _syncHydraShare();
+  }
   function startFacialWatch() {
     try {
       _ensureDOM();
     } catch (e30) {
       console.error("[facial-gesture] panel init failed", e30);
     }
+    _startWatchdog();
     return _startCamera();
   }
   function setHeadCursorEnabled(on) {
@@ -62555,9 +62594,25 @@ ${snippet}${JP_BTN_MARKER}`;
   var _modeOn = false;
   var _dismissed = false;
   var _booted = false;
+  var PERSIST_KEY = "trussal-landmark-gesture-mode";
+  function _persistMode(on) {
+    try {
+      if (on) sessionStorage.setItem(PERSIST_KEY, "1");
+      else sessionStorage.removeItem(PERSIST_KEY);
+    } catch (e30) {
+    }
+  }
+  function _wasModeOn() {
+    try {
+      return sessionStorage.getItem(PERSIST_KEY) === "1";
+    } catch (e30) {
+      return false;
+    }
+  }
   function enableMode() {
     if (_modeOn) return;
     _modeOn = true;
+    _persistMode(true);
     setGestureDetectionEnabled(true);
     setHeadCursorEnabled(true);
     setKeyboardStandalone(true);
@@ -62568,6 +62623,7 @@ ${snippet}${JP_BTN_MARKER}`;
   function disableMode() {
     if (!_modeOn) return;
     _modeOn = false;
+    _persistMode(false);
     setGestureDetectionEnabled(false);
     setHeadCursorEnabled(false);
     setKeyboardStandalone(false);
@@ -62592,6 +62648,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const on = isKeyboardStandalone() || isHeadCursorEnabled() || isGestureDetectionEnabled();
     if (on !== _modeOn) {
       _modeOn = on;
+      _persistMode(on);
       _renderInstruction();
       _syncGear();
       _announce();
@@ -62766,6 +62823,7 @@ ${snippet}${JP_BTN_MARKER}`;
       console.error("[landmark-gesture] watch start failed", err);
       _renderInstruction();
     });
+    if (_wasModeOn()) enableMode();
   }
   if (typeof document !== "undefined") {
     if (document.readyState === "complete" || document.readyState === "interactive") init();

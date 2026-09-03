@@ -44,12 +44,30 @@ let _modeOn    = false;
 let _dismissed = false; // the user closed the instruction with its ✕
 let _booted    = false;
 
+// Trussal's welcome overlay enters a room with a full page reload
+// (welcome-page.js). Without this the performer would have to re-enable the
+// whole mode — by hand, the one thing it exists to avoid — every time they
+// cross from the welcome page into prejoin/the meeting. Persist the on/off
+// state per tab and restore it in init(); the facial-gesture watchdog brings
+// the camera back on the far side.
+const PERSIST_KEY = 'trussal-landmark-gesture-mode';
+function _persistMode(on) {
+  try {
+    if (on) sessionStorage.setItem(PERSIST_KEY, '1');
+    else sessionStorage.removeItem(PERSIST_KEY);
+  } catch (e) { /* private mode / storage disabled — non-fatal */ }
+}
+function _wasModeOn() {
+  try { return sessionStorage.getItem(PERSIST_KEY) === '1'; } catch (e) { return false; }
+}
+
 // ---------------------------------------------------------------------------
 // Mode on/off.
 // ---------------------------------------------------------------------------
 function enableMode() {
   if (_modeOn) return;
   _modeOn = true;
+  _persistMode(true);
   setGestureDetectionEnabled(true);
   setHeadCursorEnabled(true);
   setKeyboardStandalone(true);
@@ -61,6 +79,7 @@ function enableMode() {
 function disableMode() {
   if (!_modeOn) return;
   _modeOn = false;
+  _persistMode(false);
   setGestureDetectionEnabled(false);
   setHeadCursorEnabled(false);
   setKeyboardStandalone(false);
@@ -95,6 +114,7 @@ export function gestureAndLandmarkConfig(config) {
   const on = isKeyboardStandalone() || isHeadCursorEnabled() || isGestureDetectionEnabled();
   if (on !== _modeOn) {
     _modeOn = on;
+    _persistMode(on);
     _renderInstruction();
     _syncGear();
     _announce();
@@ -295,6 +315,10 @@ function init() {
   startFacialWatch()
     .then((ok) => { if (!ok) _renderInstruction(); })
     .catch((err) => { console.error('[landmark-gesture] watch start failed', err); _renderInstruction(); });
+
+  // Was the mode on before a screen change reloaded the page? Restore it, so
+  // the performer stays hands-free straight through welcome → prejoin → meeting.
+  if (_wasModeOn()) enableMode();
 }
 
 if (typeof document !== 'undefined') {

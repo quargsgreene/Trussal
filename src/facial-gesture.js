@@ -224,6 +224,8 @@ let _rafId         = null;
 let _cameraOn        = false; // camera + detection loop running (watch or full)
 let _cameraStarting  = false;
 let _cameraBlocked   = false; // getUserMedia / model load failed — enable paths degrade
+let _explicitlyStopped = false; // stopFacial() was called — the watchdog stands down
+let _camRetryAt      = 0;     // performance.now() of the watchdog's last re-acquire
 let _headCursor      = false; // head cursor + dwell active (isHeadCursorEnabled)
 let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-gesture-mode)
 let _sharedWithHydra = false;
@@ -289,40 +291,43 @@ function _dwellCandidateEls(now) {
   return _dwellCandidates;
 }
 
-// A meeting is up once largeVideoContainer has real size. Studio's dwell
-// buttons only exist then; before then (welcome / prejoin / lobby) there are
-// none, so the head cursor has nothing to click.
-function _inMeetingDom() {
-  const lv = document.getElementById('largeVideoContainer');
-  if (!lv) return false;
-  const r = lv.getBoundingClientRect();
-  return r.width > 0 && r.height > 0;
-}
-
-// Outside a meeting the head cursor doubles as a general dwell-to-click
-// pointer: a hands-free performer still has to work the welcome room-name
-// form, the prejoin Join button and the lobby "Ask to join" control, none of
-// which carry a Trussal dwell class. In a meeting this returns nothing — the
-// Studio-scoped list above stays the only source, so the cursor can't
-// surprise-click Jitsi's own toolbar.
-const GENERIC_DWELL_REFRESH_MS = 400;
+// Every actionable control anywhere on the page — Trussal's own screens AND
+// Jitsi's (toolbar, participants pane, chat, settings dialog, overflow menus),
+// on the welcome page, prejoin, lobby and in a meeting alike. A hands-free
+// performer drives the WHOLE app by dwell, so nothing is out of scope. The only
+// exclusions are the two panels that run their own dwell loop (the on-screen
+// keyboard and the facial panel) and the head-cursor overlay itself.
+//
+// Returns { el, r } pairs with the bounding rect captured HERE, on the throttle
+// — the per-frame loop then hit-tests against the cached rect instead of
+// calling getBoundingClientRect on a few hundred nodes every frame. A rect up
+// to GENERIC_DWELL_REFRESH_MS stale is close enough for a target that needs a
+// full second of hover to fire.
+const GENERIC_DWELL_REFRESH_MS = 500;
+const _GENERIC_DWELL_SEL =
+  'button, [role="button"], [role="menuitem"], [role="menuitemcheckbox"], ' +
+  '[role="menuitemradio"], [role="tab"], [role="switch"], [role="option"], ' +
+  'a[href], summary, select, input:not([type="hidden"]):not([type="range"])';
 let _genericDwell   = [];
 let _genericDwellAt = -Infinity;
 function _genericDwellEls(now) {
-  if (_inMeetingDom()) { _genericDwell = []; return _genericDwell; }
   if (now - _genericDwellAt >= GENERIC_DWELL_REFRESH_MS) {
     _genericDwellAt = now;
-    _genericDwell = Array.from(document.querySelectorAll(
-      'button, [role="button"], a[href], summary, input[type="checkbox"], input[type="radio"]'
-    )).filter((el) => {
-      if (el.disabled) return false;
-      // The on-screen keyboard and the facial panel run their own dwell loops.
-      if (el.closest('#trussal-kbd-panel, #trussal-fg-panel')) return false;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    _genericDwell = [];
+    for (const el of document.querySelectorAll(_GENERIC_DWELL_SEL)) {
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
+      // The keyboard, the facial panel and the cursor ring handle themselves.
+      if (el.closest(`#trussal-kbd-panel, #${FG_PANEL_ID}, #${FG_CURSOR_ID}`)) continue;
       const r = el.getBoundingClientRect();
-      return r.width > 4 && r.height > 4 &&
-             r.bottom > 0 && r.right > 0 &&
-             r.top < window.innerHeight && r.left < window.innerWidth;
-    });
+      if (r.width <= 4 || r.height <= 4) continue;
+      if (r.bottom <= 0 || r.right <= 0 || r.top >= vh || r.left >= vw) continue;
+      // Hidden by CSS, or parked off-DOM-flow by an auto-retracted toolbar.
+      const cs = getComputedStyle(el);
+      if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
+      if (!el.offsetParent && cs.position !== 'fixed') continue;
+      _genericDwell.push({ el, r });
+    }
   }
   return _genericDwell;
 }
@@ -715,12 +720,12 @@ function _detectionLoop() {
     }
   }
 
-  // Nothing Trussal-owned under the cursor → on the welcome / prejoin / lobby
-  // screens fall back to any plain button / link / checkbox there. Keep the
-  // LAST match under the point so an inner control wins over its wrapper.
+  // Nothing Trussal-owned under the cursor → fall back to any plain control on
+  // the page (Jitsi's toolbar/menus/panes included). Keep the LAST match under
+  // the point so an inner control wins over its wrapper. Rects are the ones
+  // cached by _genericDwellEls on its throttle, not fresh per-frame reads.
   if (!hoveredEl) {
-    for (const el of _genericDwellEls(ts)) {
-      const r = el.getBoundingClientRect();
+    for (const { el, r } of _genericDwellEls(ts)) {
       if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
         hoveredKey  = el;   // element identity is the dwell key
         hoveredType = 'native';
@@ -890,37 +895,51 @@ function _syncHydraShare() {
 async function _startCamera() {
   if (_cameraOn || _cameraStarting) return _cameraOn;
   _cameraStarting = true;
+  _explicitlyStopped = false;
   _setStatus('loading');
   try {
-    const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
-    _mpClasses = { FaceLandmarker, DrawingUtils };
+    // Re-use the graphs across a re-acquire (device handed to the meeting, then
+    // handed back): re-creating them leaks the old pair and re-downloads the
+    // WASM. Only build them the first time / after an explicit stopFacial().
+    if (!_landmarker || !_gestureRecognizer) {
+      const { FaceLandmarker, GestureRecognizer, FilesetResolver, DrawingUtils } = await import(MP_ESM);
+      _mpClasses = { FaceLandmarker, DrawingUtils };
 
-    const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
-    [_landmarker, _gestureRecognizer] = await Promise.all([
-      FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-        outputFaceBlendshapes: true,
-        runningMode: 'VIDEO',
-        numFaces: 1,
-      }),
-      GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: 'GPU' },
-        runningMode: 'VIDEO',
-        numHands: 1,
-      }),
-    ]);
+      const vision = await FilesetResolver.forVisionTasks(WASM_CDN);
+      [_landmarker, _gestureRecognizer] = await Promise.all([
+        FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          outputFaceBlendshapes: true,
+          runningMode: 'VIDEO',
+          numFaces: 1,
+        }),
+        GestureRecognizer.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: GESTURE_MODEL_URL, delegate: 'GPU' },
+          runningMode: 'VIDEO',
+          numHands: 1,
+        }),
+      ]);
+    }
 
     // The REAL camera: face tracking needs the performer's face. A plain
     // getUserMedia would be intercepted by the published-video override and
     // return the canvas the ROOM sees.
     _stream = await openCamera({ video: { width: 320, height: 240 } });
-    _videoEl.srcObject = _stream;
-    await _videoEl.play();
+    if (_videoEl) {
+      _videoEl.srcObject = _stream;
+      await _videoEl.play();
+    }
+    // If the OS ends this track (a meeting grabs the device), the watchdog
+    // re-acquires within ~1.5s — flip _cameraOn so it knows to.
+    for (const t of _stream.getTracks()) {
+      t.addEventListener('ended', () => { _cameraOn = false; }, { once: true });
+    }
 
     _cameraOn = true;
     _cameraBlocked = false;
     _syncHydraShare();
     _setStatus('ready');
+    if (_rafId) cancelAnimationFrame(_rafId); // collapse any idling prior loop
     _rafId = requestAnimationFrame(_detectionLoop);
     return true;
   } catch (e) {
@@ -934,6 +953,7 @@ async function _startCamera() {
 }
 
 function _stopCamera() {
+  _explicitlyStopped = true; // the keep-alive watchdog stands down until _startCamera()
   cancelAnimationFrame(_rafId);  _rafId = null;
   if (_sharedWithHydra) { setVideoStream(null); _sharedWithHydra = false; }
   _stream?.getTracks().forEach((t) => t.stop());  _stream = null;
@@ -1160,6 +1180,46 @@ function _ensureCameraRunning() {
 }
 
 // ---------------------------------------------------------------------------
+// Keep-alive watchdog.
+//
+// The watch has to outlive every screen change with no visible restart:
+//  • Trussal's welcome overlay enters a room with a full `window.location.href`
+//    navigation (welcome-page.js) — a hard reload. sessionStorage in
+//    landmark-gesture-mode.js carries the *enabled* state across it; this
+//    brings the camera back up on the far side without a re-wink.
+//  • Jitsi re-mounts large DOM subtrees on the prejoin→meeting transition, and
+//    the OS can end the getUserMedia track when the meeting claims the device.
+//
+// So every 1.5s: rebuild the panel if it was dropped, re-bind the stream if the
+// panel was rebuilt under a live one, and re-acquire the camera if its track
+// ended. All of it no-ops in the common case. Stands down after stopFacial().
+let _watchdogTimer = null;
+function _startWatchdog() {
+  if (_watchdogTimer || typeof window === 'undefined') return;
+  if (window.__trussalIsBot || window.__trussalIsAggregator) return;
+  _watchdogTimer = setInterval(_healWatch, 1500);
+}
+function _healWatch() {
+  if (_explicitlyStopped) return;
+  if (!document.getElementById(FG_PANEL_ID) || !document.getElementById(FG_CURSOR_ID)) {
+    try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel re-init failed', e); }
+  }
+  const track = _stream && _stream.getVideoTracks()[0];
+  const dead  = !_stream || !track || track.readyState === 'ended';
+  const now   = (typeof performance !== 'undefined' ? performance : Date).now();
+  if (dead && !_cameraStarting && now - _camRetryAt > (_cameraBlocked ? 8000 : 1200)) {
+    _camRetryAt = now;
+    _cameraOn = false;          // _startCamera() bails unless this is false
+    _startCamera();
+  } else if (!dead && _videoEl && _videoEl.srcObject !== _stream) {
+    _videoEl.srcObject = _stream;   // panel was rebuilt around a live stream
+    _videoEl.play().catch(() => {});
+  }
+  _syncPanelVisibility();
+  _syncHydraShare();
+}
+
+// ---------------------------------------------------------------------------
 // Public API.
 // ---------------------------------------------------------------------------
 
@@ -1167,10 +1227,12 @@ function _ensureCameraRunning() {
  * Start MediaPipe in its watch-only state: the face landmarker runs, but the
  * only gesture that does anything is whichever one maps to
  * `enable-landmark-gesture-mode`. Idempotent. Resolves to true once the camera
- * is live, false if getUserMedia / the model download failed.
+ * is live, false if getUserMedia / the model download failed. Also arms the
+ * keep-alive watchdog so the watch survives every later screen change.
  */
 export function startFacialWatch() {
   try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel init failed', e); }
+  _startWatchdog();
   return _startCamera();
 }
 
