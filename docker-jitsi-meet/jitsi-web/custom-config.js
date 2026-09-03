@@ -62666,12 +62666,111 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   setInterval(tickUi, 1e3);
 
+  // src/landmark-gesture-mode.css
+  var landmark_gesture_mode_default = `/* landmark-gesture-mode.css \u2014 imported as raw text (build.mjs '.css': 'text')
+   and injected once by _injectStyles(). Covers the top-left \u2630 corner + its
+   menu + the instruction card, the config toast, and the section grafted into
+   Jitsi's "Keyboard shortcuts" dialog. Flat #111111 / #eeeeee theme. */
+
+#trussal-lg-corner {
+  position: fixed; top: 10px; left: 10px;
+  z-index: 1000003;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#trussal-lg-gear {
+  width: 28px; height: 28px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: #eeeeee; color: #111111;
+  border: 1px solid #111111; border-radius: 6px;
+  font-size: 15px; cursor: pointer; padding: 0;
+}
+#trussal-lg-gear:hover { background: #111111; color: #eeeeee; }
+#trussal-lg-gear.on { background: #111111; color: #eeeeee; }
+
+#trussal-lg-menu {
+  display: none;
+  background: #eeeeee; color: #111111;
+  border: 1px solid #111111; border-radius: 6px;
+  padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+#trussal-lg-menu.open { display: block; }
+#trussal-lg-menu label {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  white-space: nowrap;
+}
+
+#trussal-lg-instruction {
+  background: #eeeeee; color: #111111;
+  border: 1px solid #111111; border-radius: 8px;
+  padding: 8px 10px; max-width: 300px;
+  font-size: 12px; line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+#trussal-lg-instruction .lg-row { display: flex; justify-content: space-between; gap: 8px; }
+#trussal-lg-instruction .lg-title { font-weight: 600; }
+#trussal-lg-instruction .lg-x {
+  background: #eeeeee; color: #111111;
+  border: 1px solid #111111; border-radius: 4px;
+  cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
+}
+#trussal-lg-instruction .lg-x:hover { background: #111111; color: #eeeeee; }
+#trussal-lg-instruction ul { margin: 6px 0 0; padding-left: 18px; }
+#trussal-lg-instruction kbd {
+  border: 1px solid #111111; border-radius: 3px;
+  padding: 0 4px; font-family: monospace; font-size: 11px;
+}
+#trussal-lg-instruction .lg-blocked { opacity: 0.55; }
+
+/* Config toast \u2014 inverted colours so it reads as a transient notice, not a
+   panel. Beside the \u2630 gear. */
+.trussal-lg-toast {
+  position: fixed; top: 10px; left: 46px;
+  z-index: 1000004;
+  max-width: 280px;
+  background: #111111; color: #eeeeee;
+  border: 1px solid #111111; border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; line-height: 1.4;
+  font-family: Arial, Helvetica, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0; transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.trussal-lg-toast.show { opacity: 1; transform: translateY(0); }
+
+/* Section grafted into Jitsi's "Keyboard shortcuts" dialog. Inherits the
+   dialog's own type colour (currentColor) rather than forcing the flat theme,
+   so it sits in whichever palette that dialog is drawn in. */
+.trussal-lg-shortcuts { margin-top: 16px; }
+.trussal-lg-shortcuts .lg-sc-h {
+  font-weight: 700; font-size: 13px; margin: 0 0 6px;
+  padding-bottom: 4px; border-bottom: 1px solid currentColor;
+}
+.trussal-lg-shortcuts .lg-sc-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 5px 0; font-size: 13px;
+}
+.trussal-lg-shortcuts .lg-sc-ctl { display: flex; align-items: center; gap: 8px; }
+.trussal-lg-shortcuts input[type="range"] { width: 150px; accent-color: currentColor; }
+.trussal-lg-shortcuts .lg-sc-val {
+  min-width: 2.6em; text-align: right;
+  font-variant-numeric: tabular-nums; font-size: 12px; opacity: 0.75;
+}
+.trussal-lg-shortcuts .lg-sc-keys { opacity: 0.7; font-size: 12px; }
+.trussal-lg-shortcuts kbd {
+  border: 1px solid currentColor; border-radius: 3px;
+  padding: 0 4px; font-family: monospace; font-size: 11px;
+}
+`;
+
   // src/landmark-gesture-mode.js
   var CORNER_ID = "trussal-lg-corner";
   var GEAR_ID = "trussal-lg-gear";
   var MENU_ID = "trussal-lg-menu";
   var INSTRUCTION_ID = "trussal-lg-instruction";
-  var TOAST_ID = "trussal-lg-toast";
   var STYLE_ID5 = "trussal-lg-style";
   var _modeOn = false;
   var _dismissed = false;
@@ -62743,6 +62842,8 @@ ${snippet}${JP_BTN_MARKER}`;
     if (applied.length) {
       console.log("[landmark-gesture] applied", applied, "\u2192", result);
       _toast(_describeApplied(norm, result));
+      const section = document.querySelector(".trussal-lg-shortcuts");
+      if (section) _syncShortcutsControls(section);
     }
     return result;
   }
@@ -62767,10 +62868,10 @@ ${snippet}${JP_BTN_MARKER}`;
     } catch (e30) {
       return;
     }
-    let el = document.getElementById(TOAST_ID);
+    let el = document.querySelector(".trussal-lg-toast");
     if (!el) {
       el = document.createElement("div");
-      el.id = TOAST_ID;
+      el.className = "trussal-lg-toast";
       (document.body || document.documentElement).appendChild(el);
     }
     el.textContent = msg;
@@ -62788,69 +62889,7 @@ ${snippet}${JP_BTN_MARKER}`;
     if (document.getElementById(STYLE_ID5)) return;
     const s2 = document.createElement("style");
     s2.id = STYLE_ID5;
-    s2.textContent = `
-    #${CORNER_ID} {
-      position: fixed; top: 10px; left: 10px;
-      z-index: 1000003;
-      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-    #${GEAR_ID} {
-      width: 28px; height: 28px; line-height: 1;
-      display: flex; align-items: center; justify-content: center;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 6px;
-      font-size: 15px; cursor: pointer; padding: 0;
-    }
-    #${GEAR_ID}:hover { background: #111111; color: #eeeeee; }
-    #${GEAR_ID}.on { background: #111111; color: #eeeeee; }
-    #${MENU_ID} {
-      display: none;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 6px;
-      padding: 8px 10px; font-size: 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    }
-    #${MENU_ID}.open { display: block; }
-    #${MENU_ID} label {
-      display: flex; align-items: center; gap: 6px; cursor: pointer;
-      white-space: nowrap;
-    }
-    #${INSTRUCTION_ID} {
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 8px;
-      padding: 8px 10px; max-width: 300px;
-      font-size: 12px; line-height: 1.5;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    }
-    #${INSTRUCTION_ID} .lg-row { display: flex; justify-content: space-between; gap: 8px; }
-    #${INSTRUCTION_ID} .lg-title { font-weight: 600; }
-    #${INSTRUCTION_ID} .lg-x {
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 4px;
-      cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
-    }
-    #${INSTRUCTION_ID} .lg-x:hover { background: #111111; color: #eeeeee; }
-    #${INSTRUCTION_ID} ul { margin: 6px 0 0; padding-left: 18px; }
-    #${INSTRUCTION_ID} kbd {
-      border: 1px solid #111111; border-radius: 3px;
-      padding: 0 4px; font-family: monospace; font-size: 11px;
-    }
-    #${INSTRUCTION_ID} .lg-blocked { opacity: 0.55; }
-    #${TOAST_ID} {
-      position: fixed; top: 10px; left: 46px;
-      z-index: 1000004;
-      max-width: 280px;
-      background: #111111; color: #eeeeee;
-      border: 1px solid #111111; border-radius: 6px;
-      padding: 6px 10px; font-size: 12px; line-height: 1.4;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-      opacity: 0; transform: translateY(-4px);
-      transition: opacity .15s ease, transform .15s ease;
-      pointer-events: none;
-    }
-    #${TOAST_ID}.show { opacity: 1; transform: translateY(0); }
-  `;
+    s2.textContent = landmark_gesture_mode_default;
     document.head.appendChild(s2);
   }
   function _ensureDOM3() {
@@ -62925,6 +62964,85 @@ ${snippet}${JP_BTN_MARKER}`;
     if (gear) gear.classList.toggle("on", _modeOn);
     const cb = document.getElementById("trussal-lg-mode-toggle");
     if (cb) cb.checked = _modeOn;
+    const scToggle = document.querySelector(".trussal-lg-shortcuts .lg-sc-toggle");
+    if (scToggle) scToggle.checked = _modeOn;
+  }
+  var _SC_ROWS = [
+    { key: "cursorSpeed", label: "Head-cursor speed", step: 0.01 },
+    { key: "cursorGain", label: "Head-cursor gain", step: 0.05 },
+    { key: "meetingLoadSensitivity", label: "Meeting-load sensitivity", step: 0.05 }
+  ];
+  function _findShortcutsDialog() {
+    for (const el of document.querySelectorAll('[class*="shortcut" i]')) {
+      if (el.closest(".trussal-lg-shortcuts")) continue;
+      const dlg = el.closest('[role="dialog"], [class*="dialog" i], [class*="modal" i]');
+      if (dlg) return dlg;
+    }
+    for (const d of document.querySelectorAll('[role="dialog"], [class*="dialog" i]')) {
+      const h2 = d.querySelector('h1, h2, h3, [class*="title" i]');
+      const t = (h2 && h2.textContent || d.getAttribute("aria-label") || "").toLowerCase();
+      if (t.includes("shortcut")) return d;
+    }
+    return null;
+  }
+  function _syncShortcutsControls(section) {
+    const cfg = getGestureConfig();
+    const toggle = section.querySelector(".lg-sc-toggle");
+    if (toggle) toggle.checked = _modeOn;
+    for (const { key } of _SC_ROWS) {
+      const input = section.querySelector(`input[data-key="${key}"]`);
+      const val2 = section.querySelector(`.lg-sc-val[data-key="${key}"]`);
+      if (input && document.activeElement !== input) input.value = cfg[key];
+      if (val2) val2.textContent = Number(cfg[key]).toFixed(2);
+    }
+  }
+  function _buildShortcutsSection() {
+    const cfg = getGestureConfig();
+    const section = document.createElement("div");
+    section.className = "trussal-lg-shortcuts";
+    const rows = _SC_ROWS.map(({ key, label: label2, step }) => {
+      const { min: min2, max: max2 } = CURSOR_TUNING[key];
+      return `<div class="lg-sc-row"><span>${label2}</span><span class="lg-sc-ctl"><input type="range" data-key="${key}" min="${min2}" max="${max2}" step="${step}" value="${cfg[key]}"><span class="lg-sc-val" data-key="${key}">${Number(cfg[key]).toFixed(2)}</span></span></div>`;
+    }).join("");
+    section.innerHTML = `
+    <div class="lg-sc-h">Landmark &amp; Gesture Mode</div>
+    <div class="lg-sc-row"><span>Turn the mode on / off</span>
+      <span class="lg-sc-ctl"><input type="checkbox" class="lg-sc-toggle"></span></div>
+    <div class="lg-sc-row"><span class="lg-sc-keys">also: <kbd>&rarr;</kbd> &middot; hold one eye 2s &middot; top-left <kbd>&#9776;</kbd></span></div>
+    ${rows}
+  `;
+    section.querySelector(".lg-sc-toggle").addEventListener("change", (e30) => {
+      e30.target.checked ? enableMode() : disableMode();
+    });
+    for (const { key } of _SC_ROWS) {
+      const input = section.querySelector(`input[data-key="${key}"]`);
+      input.addEventListener("input", () => {
+        gestureAndLandmarkConfig({ [key]: parseFloat(input.value) });
+        _syncShortcutsControls(section);
+      });
+    }
+    _syncShortcutsControls(section);
+    return section;
+  }
+  function _maybeInjectShortcuts() {
+    const dialog = _findShortcutsDialog();
+    if (!dialog || dialog.querySelector(".trussal-lg-shortcuts")) return;
+    _injectStyles5();
+    const body = dialog.querySelector('[class*="content" i], [class*="body" i]') || dialog;
+    body.appendChild(_buildShortcutsSection());
+  }
+  var _scPending = false;
+  function _watchShortcutsDialog() {
+    const obs = new MutationObserver(() => {
+      if (_scPending) return;
+      _scPending = true;
+      requestAnimationFrame(() => {
+        _scPending = false;
+        _maybeInjectShortcuts();
+      });
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    _maybeInjectShortcuts();
   }
   var _arrowTaps = [];
   function _onKeydown(e30) {
@@ -62950,6 +63068,7 @@ ${snippet}${JP_BTN_MARKER}`;
     if (window.__trussalIsBot || window.__trussalIsAggregator) return;
     _booted = true;
     _ensureDOM3();
+    _watchShortcutsDialog();
     window.addEventListener("keydown", _onKeydown, true);
     document.addEventListener("trussal-landmark-gesture-mode", (e30) => {
       const d = e30.detail || {};

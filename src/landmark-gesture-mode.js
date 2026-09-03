@@ -21,6 +21,11 @@
 // owns the keyboard, and this module wires a config object onto both and keeps
 // the instruction / ☰ menu in step. landmark-gesture-core.js holds the pure
 // validation (including the cursor-tuning ranges).
+//
+// The same on/off toggle and the three tuning sliders are also grafted into
+// Jitsi's own "Keyboard shortcuts" dialog (⋮ menu → View shortcuts, or `?`),
+// so a mouse user can reach them without the console. Styling is in
+// landmark-gesture-mode.css (imported as text, like studio.css).
 
 import {
   startFacialWatch,
@@ -36,13 +41,13 @@ import {
   getGestureConfig,
 } from './facial-gesture.js';
 import { setKeyboardStandalone, isKeyboardStandalone } from './on-screen-keyboard.js';
-import { normalizeGestureAndLandmarkConfig, DEFAULT_GESTURE_MAPPINGS } from './landmark-gesture-core.js';
+import { normalizeGestureAndLandmarkConfig, DEFAULT_GESTURE_MAPPINGS, CURSOR_TUNING } from './landmark-gesture-core.js';
+import styles from './landmark-gesture-mode.css';
 
 const CORNER_ID      = 'trussal-lg-corner';
 const GEAR_ID        = 'trussal-lg-gear';
 const MENU_ID        = 'trussal-lg-menu';
 const INSTRUCTION_ID = 'trussal-lg-instruction';
-const TOAST_ID       = 'trussal-lg-toast';
 const STYLE_ID       = 'trussal-lg-style';
 
 let _modeOn    = false;
@@ -140,6 +145,8 @@ export function gestureAndLandmarkConfig(config) {
   if (applied.length) {
     console.log('[landmark-gesture] applied', applied, '→', result);
     _toast(_describeApplied(norm, result));
+    const section = document.querySelector('.trussal-lg-shortcuts');
+    if (section) _syncShortcutsControls(section);
   }
   return result;
 }
@@ -165,10 +172,10 @@ function _describeApplied(norm, cfg) {
 let _toastTimer = null;
 function _toast(msg) {
   try { _injectStyles(); } catch (e) { /* head not ready — skip the toast */ return; }
-  let el = document.getElementById(TOAST_ID);
+  let el = document.querySelector('.trussal-lg-toast');
   if (!el) {
     el = document.createElement('div');
-    el.id = TOAST_ID;
+    el.className = 'trussal-lg-toast';
     (document.body || document.documentElement).appendChild(el);
   }
   el.textContent = msg;
@@ -188,74 +195,14 @@ if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussal
 
 // ---------------------------------------------------------------------------
 // DOM — the top-left ☰ button, its one-item menu, and the instruction card.
+// Styling lives in landmark-gesture-mode.css (imported as raw text, injected
+// once here — same mechanism studio.js uses for studio.css).
 // ---------------------------------------------------------------------------
 function _injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = STYLE_ID;
-  s.textContent = `
-    #${CORNER_ID} {
-      position: fixed; top: 10px; left: 10px;
-      z-index: 1000003;
-      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-    #${GEAR_ID} {
-      width: 28px; height: 28px; line-height: 1;
-      display: flex; align-items: center; justify-content: center;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 6px;
-      font-size: 15px; cursor: pointer; padding: 0;
-    }
-    #${GEAR_ID}:hover { background: #111111; color: #eeeeee; }
-    #${GEAR_ID}.on { background: #111111; color: #eeeeee; }
-    #${MENU_ID} {
-      display: none;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 6px;
-      padding: 8px 10px; font-size: 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    }
-    #${MENU_ID}.open { display: block; }
-    #${MENU_ID} label {
-      display: flex; align-items: center; gap: 6px; cursor: pointer;
-      white-space: nowrap;
-    }
-    #${INSTRUCTION_ID} {
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 8px;
-      padding: 8px 10px; max-width: 300px;
-      font-size: 12px; line-height: 1.5;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    }
-    #${INSTRUCTION_ID} .lg-row { display: flex; justify-content: space-between; gap: 8px; }
-    #${INSTRUCTION_ID} .lg-title { font-weight: 600; }
-    #${INSTRUCTION_ID} .lg-x {
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 4px;
-      cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
-    }
-    #${INSTRUCTION_ID} .lg-x:hover { background: #111111; color: #eeeeee; }
-    #${INSTRUCTION_ID} ul { margin: 6px 0 0; padding-left: 18px; }
-    #${INSTRUCTION_ID} kbd {
-      border: 1px solid #111111; border-radius: 3px;
-      padding: 0 4px; font-family: monospace; font-size: 11px;
-    }
-    #${INSTRUCTION_ID} .lg-blocked { opacity: 0.55; }
-    #${TOAST_ID} {
-      position: fixed; top: 10px; left: 46px;
-      z-index: 1000004;
-      max-width: 280px;
-      background: #111111; color: #eeeeee;
-      border: 1px solid #111111; border-radius: 6px;
-      padding: 6px 10px; font-size: 12px; line-height: 1.4;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-      opacity: 0; transform: translateY(-4px);
-      transition: opacity .15s ease, transform .15s ease;
-      pointer-events: none;
-    }
-    #${TOAST_ID}.show { opacity: 1; transform: translateY(0); }
-  `;
+  s.textContent = styles;
   document.head.appendChild(s);
 }
 
@@ -339,6 +286,102 @@ function _syncGear() {
   if (gear) gear.classList.toggle('on', _modeOn);
   const cb = document.getElementById('trussal-lg-mode-toggle');
   if (cb) cb.checked = _modeOn;
+  const scToggle = document.querySelector('.trussal-lg-shortcuts .lg-sc-toggle');
+  if (scToggle) scToggle.checked = _modeOn;
+}
+
+// ---------------------------------------------------------------------------
+// Jitsi "Keyboard shortcuts" dialog integration.
+//
+// Jitsi's own shortcut list (⋮ menu → "View shortcuts", or the `?` key) gets a
+// Landmark & Gesture Mode section grafted on: the enable shortcuts, an on/off
+// toggle, and a slider for each of the three head-cursor motion tuning values.
+// The dialog is React-owned, so a MutationObserver re-grafts the section
+// whenever it (re)appears; each control just calls the same public entry points
+// (enableMode/disableMode, gestureAndLandmarkConfig) a code call would.
+// ---------------------------------------------------------------------------
+const _SC_ROWS = [
+  { key: 'cursorSpeed',            label: 'Head-cursor speed',       step: 0.01 },
+  { key: 'cursorGain',             label: 'Head-cursor gain',        step: 0.05 },
+  { key: 'meetingLoadSensitivity', label: 'Meeting-load sensitivity', step: 0.05 },
+];
+
+function _findShortcutsDialog() {
+  // An element Jitsi named "…shortcut…" → its dialog ancestor.
+  for (const el of document.querySelectorAll('[class*="shortcut" i]')) {
+    if (el.closest('.trussal-lg-shortcuts')) continue;
+    const dlg = el.closest('[role="dialog"], [class*="dialog" i], [class*="modal" i]');
+    if (dlg) return dlg;
+  }
+  // Fallback: a dialog whose heading / aria-label mentions shortcuts.
+  for (const d of document.querySelectorAll('[role="dialog"], [class*="dialog" i]')) {
+    const h = d.querySelector('h1, h2, h3, [class*="title" i]');
+    const t = ((h && h.textContent) || d.getAttribute('aria-label') || '').toLowerCase();
+    if (t.includes('shortcut')) return d;
+  }
+  return null;
+}
+
+function _syncShortcutsControls(section) {
+  const cfg = getGestureConfig();
+  const toggle = section.querySelector('.lg-sc-toggle');
+  if (toggle) toggle.checked = _modeOn;
+  for (const { key } of _SC_ROWS) {
+    const input = section.querySelector(`input[data-key="${key}"]`);
+    const val = section.querySelector(`.lg-sc-val[data-key="${key}"]`);
+    if (input && document.activeElement !== input) input.value = cfg[key];
+    if (val) val.textContent = Number(cfg[key]).toFixed(2);
+  }
+}
+
+function _buildShortcutsSection() {
+  const cfg = getGestureConfig();
+  const section = document.createElement('div');
+  section.className = 'trussal-lg-shortcuts';
+  const rows = _SC_ROWS.map(({ key, label, step }) => {
+    const { min, max } = CURSOR_TUNING[key];
+    return `<div class="lg-sc-row"><span>${label}</span><span class="lg-sc-ctl">`
+      + `<input type="range" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${cfg[key]}">`
+      + `<span class="lg-sc-val" data-key="${key}">${Number(cfg[key]).toFixed(2)}</span></span></div>`;
+  }).join('');
+  section.innerHTML = `
+    <div class="lg-sc-h">Landmark &amp; Gesture Mode</div>
+    <div class="lg-sc-row"><span>Turn the mode on / off</span>
+      <span class="lg-sc-ctl"><input type="checkbox" class="lg-sc-toggle"></span></div>
+    <div class="lg-sc-row"><span class="lg-sc-keys">also: <kbd>&rarr;</kbd> &middot; hold one eye 2s &middot; top-left <kbd>&#9776;</kbd></span></div>
+    ${rows}
+  `;
+  section.querySelector('.lg-sc-toggle').addEventListener('change', (e) => {
+    e.target.checked ? enableMode() : disableMode();
+  });
+  for (const { key } of _SC_ROWS) {
+    const input = section.querySelector(`input[data-key="${key}"]`);
+    input.addEventListener('input', () => {
+      gestureAndLandmarkConfig({ [key]: parseFloat(input.value) });
+      _syncShortcutsControls(section);
+    });
+  }
+  _syncShortcutsControls(section);
+  return section;
+}
+
+function _maybeInjectShortcuts() {
+  const dialog = _findShortcutsDialog();
+  if (!dialog || dialog.querySelector('.trussal-lg-shortcuts')) return;
+  _injectStyles();
+  const body = dialog.querySelector('[class*="content" i], [class*="body" i]') || dialog;
+  body.appendChild(_buildShortcutsSection());
+}
+
+let _scPending = false;
+function _watchShortcutsDialog() {
+  const obs = new MutationObserver(() => {
+    if (_scPending) return;
+    _scPending = true;
+    requestAnimationFrame(() => { _scPending = false; _maybeInjectShortcuts(); });
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  _maybeInjectShortcuts(); // in case the dialog is already open
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +418,7 @@ function init() {
   // window.gestureAndLandmarkConfig is already set at module load (above); this
   // is the DOM + camera wiring.
   _ensureDOM();
+  _watchShortcutsDialog();
   window.addEventListener('keydown', _onKeydown, true);
 
   document.addEventListener('trussal-landmark-gesture-mode', (e) => {
