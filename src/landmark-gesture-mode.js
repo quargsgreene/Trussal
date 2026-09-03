@@ -106,7 +106,11 @@ function _announce() {
 // gestureAndLandmarkConfig — the code-side control surface.
 // ---------------------------------------------------------------------------
 export function gestureAndLandmarkConfig(config) {
-  const norm = normalizeGestureAndLandmarkConfig(config);
+  // A bare `gestureAndLandmarkConfig()` (or an explicit null/undefined) reads
+  // the current config back — the obvious way to inspect it, and what a config
+  // getter is expected to do. Only a genuinely wrong type (string, number,
+  // array, …) still throws, from normalizeGestureAndLandmarkConfig.
+  const norm = normalizeGestureAndLandmarkConfig(config == null ? {} : config);
 
   if ('gestureMappings' in norm) setGestureMappings(norm.gestureMappings);
   if ('virtualKeyboardEnabled' in norm) setKeyboardStandalone(norm.virtualKeyboardEnabled);
@@ -127,7 +131,21 @@ export function gestureAndLandmarkConfig(config) {
     _announce();
   }
 
-  return { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
+  const result = { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
+  // A write gives no on-screen signal for a map/tuning change, which reads as
+  // "the call did nothing" — echo what landed and the resulting state.
+  const applied = Object.keys(norm);
+  if (applied.length) console.log('[landmark-gesture] applied', applied, '→', result);
+  return result;
+}
+
+// Expose the control surface the instant this module evaluates — not only from
+// init() on DOMContentLoaded — so a bundle script or a console call that lands
+// before the DOM is ready still finds `window.gestureAndLandmarkConfig`. Bots
+// and the aggregator have no landmark UI, so they are left without it.
+if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussalIsAggregator) {
+  window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
+  window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m) => ({ ...m }));
 }
 
 // ---------------------------------------------------------------------------
@@ -303,9 +321,8 @@ function init() {
   if (window.__trussalIsBot || window.__trussalIsAggregator) return;
   _booted = true;
 
-  window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
-  window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m) => ({ ...m }));
-
+  // window.gestureAndLandmarkConfig is already set at module load (above); this
+  // is the DOM + camera wiring.
   _ensureDOM();
   window.addEventListener('keydown', _onKeydown, true);
 

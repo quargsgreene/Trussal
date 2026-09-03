@@ -62721,7 +62721,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }));
   }
   function gestureAndLandmarkConfig(config) {
-    const norm = normalizeGestureAndLandmarkConfig(config);
+    const norm = normalizeGestureAndLandmarkConfig(config == null ? {} : config);
     if ("gestureMappings" in norm) setGestureMappings(norm.gestureMappings);
     if ("virtualKeyboardEnabled" in norm) setKeyboardStandalone(norm.virtualKeyboardEnabled);
     if ("headCursorEnabled" in norm) setHeadCursorEnabled(norm.headCursorEnabled);
@@ -62737,7 +62737,14 @@ ${snippet}${JP_BTN_MARKER}`;
       _syncGear();
       _announce();
     }
-    return { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
+    const result = { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
+    const applied = Object.keys(norm);
+    if (applied.length) console.log("[landmark-gesture] applied", applied, "\u2192", result);
+    return result;
+  }
+  if (typeof window !== "undefined" && !window.__trussalIsBot && !window.__trussalIsAggregator) {
+    window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
+    window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   }
   function _injectStyles5() {
     if (document.getElementById(STYLE_ID5)) return;
@@ -62891,8 +62898,6 @@ ${snippet}${JP_BTN_MARKER}`;
     if (_booted) return;
     if (window.__trussalIsBot || window.__trussalIsAggregator) return;
     _booted = true;
-    window.gestureAndLandmarkConfig = gestureAndLandmarkConfig;
-    window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
     _ensureDOM3();
     window.addEventListener("keydown", _onKeydown, true);
     document.addEventListener("trussal-landmark-gesture-mode", (e30) => {
