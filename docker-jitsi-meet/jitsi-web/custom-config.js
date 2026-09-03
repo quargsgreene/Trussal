@@ -58673,6 +58673,11 @@ ${snippet}${JP_BTN_MARKER}`;
     { trigger: "headTiltRight", action: "transpose-up" },
     { trigger: "leftEyeClosed2s", action: "enable-landmark-gesture-mode" }
   ];
+  var CURSOR_TUNING = {
+    cursorSpeed: { min: 0.02, max: 1, default: 0.15 },
+    cursorGain: { min: 0.25, max: 4, default: 1 },
+    meetingLoadSensitivity: { min: 0, max: 1, default: 1 }
+  };
   function normalizeGestureMapping(m2, i = 0) {
     if (m2 == null || typeof m2 !== "object" || Array.isArray(m2)) {
       throw new TypeError(`gestureMappings[${i}] must be an object`);
@@ -58711,6 +58716,16 @@ ${snippet}${JP_BTN_MARKER}`;
           throw new TypeError(`gestureAndLandmarkConfig: ${key} must be a boolean`);
         }
         out[key] = obj[key];
+      }
+    }
+    for (const key of Object.keys(CURSOR_TUNING)) {
+      if (key in obj) {
+        const v2 = obj[key];
+        if (typeof v2 !== "number" || !Number.isFinite(v2)) {
+          throw new TypeError(`gestureAndLandmarkConfig: ${key} must be a finite number`);
+        }
+        const { min: min2, max: max2 } = CURSOR_TUNING[key];
+        out[key] = Math.min(max2, Math.max(min2, v2));
       }
     }
     return out;
@@ -58874,6 +58889,9 @@ ${snippet}${JP_BTN_MARKER}`;
   var _leftEyeClosedSince = 0;
   var _leftEyeOpenGraceUntil = 0;
   var _lastSynthMove = 0;
+  var _cursorAlpha = EMA_ALPHA;
+  var _cursorGain = 1;
+  var _meetingLoadSensitivity = 1;
   var _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   var _videoEl2 = null;
   var _canvasEl = null;
@@ -59058,8 +59076,13 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     if (landmarks && landmarks.length > 10) {
       const lm = landmarks[10];
-      _ema.cursorX = lerp(_ema.cursorX, (1 - lm.x) * window.innerWidth);
-      _ema.cursorY = lerp(_ema.cursorY, lm.y * window.innerHeight);
+      const cw = window.innerWidth, ch2 = window.innerHeight;
+      const rawX = (1 - lm.x) * cw;
+      const rawY = lm.y * ch2;
+      const tgtX = Math.max(0, Math.min(cw, cw / 2 + (rawX - cw / 2) * _cursorGain));
+      const tgtY = Math.max(0, Math.min(ch2, ch2 / 2 + (rawY - ch2 / 2) * _cursorGain));
+      _ema.cursorX += _cursorAlpha * (tgtX - _ema.cursorX);
+      _ema.cursorY += _cursorAlpha * (tgtY - _ema.cursorY);
     }
     Object.assign(window.faceCtx, _ema);
     const eyes = _eyeOpenness(landmarks);
@@ -59190,7 +59213,8 @@ ${snippet}${JP_BTN_MARKER}`;
       _rafId2 = requestAnimationFrame(_detectionLoop);
       return;
     }
-    const densityScale = typeof window !== "undefined" && window._jpLandmarkScale || 1;
+    const rawScale = typeof window !== "undefined" && window._jpLandmarkScale || 1;
+    const densityScale = rawScale + (1 - rawScale) * (1 - _meetingLoadSensitivity);
     if (densityScale < 1) {
       _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
       if (_densitySkip !== 0) {
@@ -59660,7 +59684,46 @@ ${snippet}${JP_BTN_MARKER}`;
     _syncPanelVisibility();
     _syncHydraShare();
   }
+  var CURSOR_TUNING_KEY = "trussal-landmark-cursor-tuning";
+  function _persistCursorTuning() {
+    try {
+      sessionStorage.setItem(CURSOR_TUNING_KEY, JSON.stringify({
+        cursorSpeed: _cursorAlpha,
+        cursorGain: _cursorGain,
+        meetingLoadSensitivity: _meetingLoadSensitivity
+      }));
+    } catch (e30) {
+    }
+  }
+  function _restoreCursorTuning() {
+    try {
+      const t = JSON.parse(sessionStorage.getItem(CURSOR_TUNING_KEY) || "{}");
+      if (Number.isFinite(t.cursorSpeed)) _cursorAlpha = t.cursorSpeed;
+      if (Number.isFinite(t.cursorGain)) _cursorGain = t.cursorGain;
+      if (Number.isFinite(t.meetingLoadSensitivity)) _meetingLoadSensitivity = t.meetingLoadSensitivity;
+    } catch (e30) {
+    }
+  }
+  function setCursorSpeed(v2) {
+    if (Number.isFinite(v2)) {
+      _cursorAlpha = v2;
+      _persistCursorTuning();
+    }
+  }
+  function setCursorGain(v2) {
+    if (Number.isFinite(v2)) {
+      _cursorGain = v2;
+      _persistCursorTuning();
+    }
+  }
+  function setMeetingLoadSensitivity(v2) {
+    if (Number.isFinite(v2)) {
+      _meetingLoadSensitivity = v2;
+      _persistCursorTuning();
+    }
+  }
   function startFacialWatch() {
+    _restoreCursorTuning();
     try {
       _ensureDOM();
     } catch (e30) {
@@ -59701,7 +59764,10 @@ ${snippet}${JP_BTN_MARKER}`;
     return {
       gestureMappings: _gestureMappings.map((m2) => ({ ...m2 })),
       headCursorEnabled: _headCursor2,
-      gestureDetectionEnabled: _gestures
+      gestureDetectionEnabled: _gestures,
+      cursorSpeed: _cursorAlpha,
+      cursorGain: _cursorGain,
+      meetingLoadSensitivity: _meetingLoadSensitivity
     };
   }
   function isCameraBlocked() {
@@ -62660,6 +62726,9 @@ ${snippet}${JP_BTN_MARKER}`;
     if ("virtualKeyboardEnabled" in norm) setKeyboardStandalone(norm.virtualKeyboardEnabled);
     if ("headCursorEnabled" in norm) setHeadCursorEnabled(norm.headCursorEnabled);
     if ("gestureDetectionEnabled" in norm) setGestureDetectionEnabled(norm.gestureDetectionEnabled);
+    if ("cursorSpeed" in norm) setCursorSpeed(norm.cursorSpeed);
+    if ("cursorGain" in norm) setCursorGain(norm.cursorGain);
+    if ("meetingLoadSensitivity" in norm) setMeetingLoadSensitivity(norm.meetingLoadSensitivity);
     const on = isKeyboardStandalone() || isHeadCursorEnabled() || isGestureDetectionEnabled();
     if (on !== _modeOn) {
       _modeOn = on;

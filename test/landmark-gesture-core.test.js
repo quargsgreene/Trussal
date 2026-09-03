@@ -5,6 +5,7 @@ import {
   GESTURE_TRIGGERS,
   GESTURE_ACTIONS,
   DEFAULT_GESTURE_MAPPINGS,
+  CURSOR_TUNING,
   normalizeGestureMapping,
   normalizeGestureAndLandmarkConfig,
 } from '../src/landmark-gesture-core.js';
@@ -120,4 +121,38 @@ test('config: a bad mapping inside the array propagates', () => {
     () => normalizeGestureAndLandmarkConfig({ gestureMappings: [{ trigger: 'smile' }] }),
     TypeError,
   );
+});
+
+// --- cursor tuning ---------------------------------------------------------
+
+test('cursor tuning: every range has a default inside [min, max]', () => {
+  for (const [k, { min, max, default: d }] of Object.entries(CURSOR_TUNING)) {
+    assert.ok(min < max, `${k}: min < max`);
+    assert.ok(d >= min && d <= max, `${k}: default in range`);
+  }
+});
+
+test('config: cursor tuning keys pass through in range', () => {
+  const out = normalizeGestureAndLandmarkConfig({
+    cursorSpeed: 0.4, cursorGain: 2, meetingLoadSensitivity: 0.5,
+  });
+  assert.deepEqual(out, { cursorSpeed: 0.4, cursorGain: 2, meetingLoadSensitivity: 0.5 });
+});
+
+test('config: an out-of-range cursor value is clamped, not thrown', () => {
+  assert.equal(normalizeGestureAndLandmarkConfig({ cursorSpeed: 9 }).cursorSpeed, CURSOR_TUNING.cursorSpeed.max);
+  assert.equal(normalizeGestureAndLandmarkConfig({ cursorSpeed: 0 }).cursorSpeed, CURSOR_TUNING.cursorSpeed.min);
+  assert.equal(normalizeGestureAndLandmarkConfig({ cursorGain: -3 }).cursorGain, CURSOR_TUNING.cursorGain.min);
+  assert.equal(normalizeGestureAndLandmarkConfig({ meetingLoadSensitivity: 5 }).meetingLoadSensitivity, 1);
+});
+
+test('config: a non-number cursor value throws', () => {
+  assert.throws(() => normalizeGestureAndLandmarkConfig({ cursorSpeed: '0.3' }), TypeError);
+  assert.throws(() => normalizeGestureAndLandmarkConfig({ cursorGain: NaN }), TypeError);
+  assert.throws(() => normalizeGestureAndLandmarkConfig({ meetingLoadSensitivity: null }), TypeError);
+  assert.throws(() => normalizeGestureAndLandmarkConfig({ cursorGain: Infinity }), TypeError);
+});
+
+test('config: cursor tuning only comes back when supplied', () => {
+  assert.deepEqual(normalizeGestureAndLandmarkConfig({ cursorGain: 1.5 }), { cursorGain: 1.5 });
 });

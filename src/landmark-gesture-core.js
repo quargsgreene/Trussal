@@ -54,6 +54,28 @@ export const DEFAULT_GESTURE_MAPPINGS = [
   { trigger: 'leftEyeClosed2s', action: 'enable-landmark-gesture-mode' },
 ];
 
+// Head-cursor motion tuning, all optional keys of a gestureAndLandmarkConfig
+// call. Each is a plain number; a present key of the wrong type throws (as the
+// boolean flags do), an out-of-range value is clamped to [min, max].
+//   cursorSpeed            — per-frame EMA follow fraction for the cursor point.
+//                            1 tracks the head raw (jittery); low glides smoothly
+//                            but lags. Independent of the blendshape smoothing,
+//                            so it never changes gesture sensitivity.
+//   cursorGain             — amplifies head displacement about screen centre.
+//                            2 → a small head turn sweeps twice as far; 0.5 →
+//                            needs double the movement. Result is clamped to the
+//                            viewport.
+//   meetingLoadSensitivity — how much of the room-health load-shedding
+//                            (window._jpLandmarkScale, which drops cursor
+//                            detection to every 2nd/4th frame under load) to
+//                            apply. 1 honours it fully (prior behaviour); 0
+//                            ignores it and keeps the cursor at full frame rate.
+export const CURSOR_TUNING = {
+  cursorSpeed:            { min: 0.02, max: 1, default: 0.15 },
+  cursorGain:             { min: 0.25, max: 4, default: 1 },
+  meetingLoadSensitivity: { min: 0,    max: 1, default: 1 },
+};
+
 // An unknown trigger or action is kept, not rejected — a newer bundle may add
 // one, and an old draft naming it should still round-trip — but it is logged so
 // a typo ("smiile") does not fail silently.
@@ -99,6 +121,16 @@ export function normalizeGestureAndLandmarkConfig(obj) {
         throw new TypeError(`gestureAndLandmarkConfig: ${key} must be a boolean`);
       }
       out[key] = obj[key];
+    }
+  }
+  for (const key of Object.keys(CURSOR_TUNING)) {
+    if (key in obj) {
+      const v = obj[key];
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        throw new TypeError(`gestureAndLandmarkConfig: ${key} must be a finite number`);
+      }
+      const { min, max } = CURSOR_TUNING[key];
+      out[key] = Math.min(max, Math.max(min, v));
     }
   }
   return out;

@@ -15,11 +15,12 @@
 // normal entry in the map and can be re-pointed from code.
 //
 // gestureAndLandmarkConfig({ gestureMappings, virtualKeyboardEnabled,
-// headCursorEnabled, gestureDetectionEnabled }) is the code-side control:
-// facial-gesture.js owns the gesture map + detection, on-screen-keyboard.js
+// headCursorEnabled, gestureDetectionEnabled, cursorSpeed, cursorGain,
+// meetingLoadSensitivity }) is the code-side control: facial-gesture.js owns the
+// gesture map + detection + the head-cursor motion tuning, on-screen-keyboard.js
 // owns the keyboard, and this module wires a config object onto both and keeps
 // the instruction / ☰ menu in step. landmark-gesture-core.js holds the pure
-// validation.
+// validation (including the cursor-tuning ranges).
 
 import {
   startFacialWatch,
@@ -29,6 +30,9 @@ import {
   isGestureDetectionEnabled,
   isCameraBlocked,
   setGestureMappings,
+  setCursorSpeed,
+  setCursorGain,
+  setMeetingLoadSensitivity,
   getGestureConfig,
 } from './facial-gesture.js';
 import { setKeyboardStandalone, isKeyboardStandalone } from './on-screen-keyboard.js';
@@ -108,6 +112,9 @@ export function gestureAndLandmarkConfig(config) {
   if ('virtualKeyboardEnabled' in norm) setKeyboardStandalone(norm.virtualKeyboardEnabled);
   if ('headCursorEnabled' in norm) setHeadCursorEnabled(norm.headCursorEnabled);
   if ('gestureDetectionEnabled' in norm) setGestureDetectionEnabled(norm.gestureDetectionEnabled);
+  if ('cursorSpeed' in norm) setCursorSpeed(norm.cursorSpeed);
+  if ('cursorGain' in norm) setCursorGain(norm.cursorGain);
+  if ('meetingLoadSensitivity' in norm) setMeetingLoadSensitivity(norm.meetingLoadSensitivity);
 
   // The mode is "on" if any of its three limbs is on. Keep the instruction / ☰
   // menu / Face button in step with whatever the config just did.

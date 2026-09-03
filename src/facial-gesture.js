@@ -233,6 +233,13 @@ let _leftEyeClosedSince   = 0;
 let _leftEyeOpenGraceUntil = 0; // tolerate a brief eyes-open flicker mid-hold
 let _lastSynthMove   = 0;    // throttle the toolbar-keep-alive mousemove
 
+// Head-cursor motion tuning — see gestureAndLandmarkConfig / landmark-gesture-core.
+// Separate from EMA_ALPHA (which stays the blendshape smoothing) so tuning the
+// cursor never shifts gesture sensitivity.
+let _cursorAlpha = EMA_ALPHA;    // cursorSpeed: per-frame follow fraction
+let _cursorGain  = 1;            // cursorGain: displacement amplitude about centre
+let _meetingLoadSensitivity = 1; // how much window._jpLandmarkScale is honoured
+
 // The live gesture map. Replaced wholesale by setGestureMappings(); starts as
 // the defaults so behaviour with no config call is exactly what it always was.
 let _gestureMappings = DEFAULT_GESTURE_MAPPINGS.map((m) => ({ ...m }));
@@ -470,8 +477,16 @@ function _processResult(result, gestureResult) {
   }
   if (landmarks && landmarks.length > 10) {
     const lm = landmarks[10];
-    _ema.cursorX = lerp(_ema.cursorX, (1 - lm.x) * window.innerWidth);
-    _ema.cursorY = lerp(_ema.cursorY,       lm.y  * window.innerHeight);
+    const cw = window.innerWidth, ch = window.innerHeight;
+    // Raw head-tracked point → amplified about screen centre by cursorGain
+    // (a small head turn can be made to sweep the whole screen) → clamped in.
+    const rawX = (1 - lm.x) * cw;
+    const rawY = lm.y * ch;
+    const tgtX = Math.max(0, Math.min(cw, cw / 2 + (rawX - cw / 2) * _cursorGain));
+    const tgtY = Math.max(0, Math.min(ch, ch / 2 + (rawY - ch / 2) * _cursorGain));
+    // cursorSpeed is this frame's follow fraction — its own alpha, not `lerp`.
+    _ema.cursorX += _cursorAlpha * (tgtX - _ema.cursorX);
+    _ema.cursorY += _cursorAlpha * (tgtY - _ema.cursorY);
   }
 
   Object.assign(window.faceCtx, _ema);
@@ -634,8 +649,10 @@ function _detectionLoop() {
 
   // Room-health landmark-density scale-down: under load (RoomHealthService sets
   // window._jpLandmarkScale to 0.5 / 0.25) run detection on every 2nd / 4th
-  // frame — the cursor EMA smooths over the gaps.
-  const densityScale = (typeof window !== 'undefined' && window._jpLandmarkScale) || 1;
+  // frame — the cursor EMA smooths over the gaps. meetingLoadSensitivity dials
+  // how much of that throttle to apply: 1 honours it, 0 lifts it back to full.
+  const rawScale = (typeof window !== 'undefined' && window._jpLandmarkScale) || 1;
+  const densityScale = rawScale + (1 - rawScale) * (1 - _meetingLoadSensitivity);
   if (densityScale < 1) {
     _densitySkip = (_densitySkip + 1) % Math.round(1 / densityScale);
     if (_densitySkip !== 0) {
@@ -1236,6 +1253,46 @@ function _healWatch() {
 }
 
 // ---------------------------------------------------------------------------
+// Head-cursor motion tuning. Set through gestureAndLandmarkConfig(); the values
+// are validated + clamped in landmark-gesture-core before they arrive here.
+// Persisted per tab so a performer's tuning rides the welcome→room reload the
+// same way the mode-on flag does.
+// ---------------------------------------------------------------------------
+const CURSOR_TUNING_KEY = 'trussal-landmark-cursor-tuning';
+
+function _persistCursorTuning() {
+  try {
+    sessionStorage.setItem(CURSOR_TUNING_KEY, JSON.stringify({
+      cursorSpeed: _cursorAlpha,
+      cursorGain: _cursorGain,
+      meetingLoadSensitivity: _meetingLoadSensitivity,
+    }));
+  } catch (e) { /* storage disabled — non-fatal */ }
+}
+
+function _restoreCursorTuning() {
+  try {
+    const t = JSON.parse(sessionStorage.getItem(CURSOR_TUNING_KEY) || '{}');
+    if (Number.isFinite(t.cursorSpeed))            _cursorAlpha = t.cursorSpeed;
+    if (Number.isFinite(t.cursorGain))             _cursorGain = t.cursorGain;
+    if (Number.isFinite(t.meetingLoadSensitivity)) _meetingLoadSensitivity = t.meetingLoadSensitivity;
+  } catch (e) { /* absent or malformed — keep the defaults */ }
+}
+
+/** cursorSpeed — per-frame EMA follow fraction for the head cursor. */
+export function setCursorSpeed(v) {
+  if (Number.isFinite(v)) { _cursorAlpha = v; _persistCursorTuning(); }
+}
+/** cursorGain — head-displacement amplitude about screen centre. */
+export function setCursorGain(v) {
+  if (Number.isFinite(v)) { _cursorGain = v; _persistCursorTuning(); }
+}
+/** meetingLoadSensitivity — how much window._jpLandmarkScale throttling to apply. */
+export function setMeetingLoadSensitivity(v) {
+  if (Number.isFinite(v)) { _meetingLoadSensitivity = v; _persistCursorTuning(); }
+}
+
+// ---------------------------------------------------------------------------
 // Public API.
 // ---------------------------------------------------------------------------
 
@@ -1247,6 +1304,7 @@ function _healWatch() {
  * keep-alive watchdog so the watch survives every later screen change.
  */
 export function startFacialWatch() {
+  _restoreCursorTuning();
   try { _ensureDOM(); } catch (e) { console.error('[facial-gesture] panel init failed', e); }
   _startWatchdog();
   return _startCamera();
@@ -1301,6 +1359,9 @@ export function getGestureConfig() {
     gestureMappings: _gestureMappings.map((m) => ({ ...m })),
     headCursorEnabled: _headCursor,
     gestureDetectionEnabled: _gestures,
+    cursorSpeed: _cursorAlpha,
+    cursorGain: _cursorGain,
+    meetingLoadSensitivity: _meetingLoadSensitivity,
   };
 }
 
