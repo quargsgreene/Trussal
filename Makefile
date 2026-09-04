@@ -18,8 +18,15 @@
 #   make deploy-audio   push updated Jamulus unit file, restart Jamulus instances
 #   make deploy-bots    rebuild bot images, restart conductor
 #   make deploy-all     all three in sequence
+#
+# Targeting a non-production environment (e.g. staging): keep its VM addresses
+# in a separate file (e.g. .env.deploy.staging, gitignored like .env.deploy)
+# and pass ENV_DEPLOY, which overrides which file gets included below —
+#   make deploy-video ENV_DEPLOY=.env.deploy.staging
+# See CONTRIBUTING.md "Staging environment".
 
--include .env.deploy
+ENV_DEPLOY ?= .env.deploy
+-include $(ENV_DEPLOY)
 
 VIDEO_VM        ?= trussal-video@192.168.1.254
 AUDIO_VM        ?= trussal-audio@192.168.1.120

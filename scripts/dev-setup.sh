@@ -30,11 +30,23 @@ else
 	# Local single-laptop overrides appended last so they win over the template.
 	# The web container binds 80/443 directly and browsers treat http://localhost
 	# as a secure context, so getUserMedia (camera/mic) works over plain HTTP.
+	#
+	# JVB_ADVERTISE_IPS=127.0.0.1 is required, not cosmetic: with it unset, JVB
+	# falls back to STUN-discovering this machine's public-facing IP and
+	# offering that as the only media candidate (env.example's default). The
+	# browser is on the SAME machine, not out on the internet, so that
+	# candidate needs NAT hairpinning to work at all (most routers don't
+	# support it) and is simply unreachable on a sandboxed/offline dev box.
+	# ICE then fails, and Jitsi tears the call down right after join — the
+	# room looks like it connects and then drops instantly. jvb's 10000/udp
+	# port is published on all host interfaces (docker-compose.yml), so
+	# 127.0.0.1 is always reachable from a browser running on this same host.
 	cat >> "$ENV_FILE" <<-'EOF'
 
 	# --- Trussal local-dev overrides (scripts/dev-setup.sh) ---
 	PUBLIC_URL=http://localhost
 	RESTART_POLICY=no
+	JVB_ADVERTISE_IPS=127.0.0.1
 	EOF
 fi
 

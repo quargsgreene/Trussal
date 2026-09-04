@@ -44,10 +44,9 @@ All three VMs clone this same repo. Deployment pushes changes by SSHing into eac
 
 - **Node ≥ 18** and npm
 - **Git**
-- **SSH access** to all three VMs (key-based; passwords are not supported by the Makefile targets)
-- **make** (GNU Make)
-
-You do not need Docker locally. All Docker operations happen on the VMs.
+- **SSH access** to all three VMs (key-based; passwords are not supported by the Makefile targets) — only needed for deploying to production
+- **make** (GNU Make) — only needed for deploying to production
+- **Docker** — only needed if you want to run a full Trussal meeting room locally (see "Local dev environment" below); not required just to edit and unit-test `src/`
 
 ---
 
@@ -60,6 +59,49 @@ npm install
 ```
 
 That installs esbuild and the Strudel peer dependencies. The strudel-fork packages ship pre-built (`strudel-fork/**/dist/` is committed), so a plain `npm install` is enough — you do not need pnpm or a separate build step unless you are changing Strudel itself.
+
+---
+
+## Local dev environment (single laptop, no VM access needed)
+
+You do not need SSH access to the production VMs to test a change in a real meeting room. `scripts/dev-setup.sh` and `scripts/dev.sh` bring up a minimal Jitsi stack (`web`, `prosody`, `jicofo`, `jvb`, `latency`) on your own machine, entirely independent of the video/audio/bots VMs.
+
+```bash
+npm run dev:setup   # once — creates docker-jitsi-meet/.env + a repo-local config tree
+npm run dev         # builds custom-config.js, starts the stack, watches src/ for rebuilds
+```
+
+Then open `http://localhost/<any-room-name>` (two tabs/profiles to test multi-participant behavior). Editing `src/` and saving triggers a rebuild; hard-refresh the browser (Ctrl-Shift-R) to pick it up. Tear the stack down with `npm run dev:down` (containers only — your `.env` and config tree are left in place, so `npm run dev` comes straight back up).
+
+This flow deliberately skips `coturn`/`ddns` (no TURN relay, no dynamic DNS) since everything runs on one machine, but it does set `JVB_ADVERTISE_IPS=127.0.0.1` in the generated `.env`. **Do not remove that line or leave it unset.** Without it, the videobridge falls back to STUN-discovering this machine's public-facing IP and offers only that as a media candidate — which needs NAT hairpinning to reach a browser on the *same* machine, and typically doesn't. The symptom is a meeting room that appears to connect and then drops immediately: XMPP/signalling succeeds, but ICE/media negotiation fails right after join.
+
+---
+
+## VM setup: staging or production
+
+The rest of this section is only needed to deploy to real VMs — skip it if you're only running the local dev stack above. Everything here (`.env.deploy`, VM bootstrap, `make deploy-*`) works identically whether the hosts are a **staging** environment or the real **production** video/audio/bots VMs; the only difference is which addresses you point the tooling at, via `ENV_DEPLOY` (below).
+
+### Staging environment
+
+Reach for staging when a change needs a real deployment to test properly — actual TURN/ICE, DNS/TLS, multiple real participants, the bots fleet — but you don't want to touch production. It's also the target `loadtest/` expects: `loadtest/README.md` §8 says to point load campaigns at a dedicated staging Trussal, never `trussal.com` (`preflight.sh` hard-blocks the production hostname without `ALLOW_PROD=1`).
+
+The minimum useful staging environment is **one VM** running the full `docker-jitsi-meet` stack — follow **First-time VM setup → Video VM** below, on a non-production host and a domain/IP that isn't `trussal.com`. Add the **Audio** and/or **Bots** VMs the same way (same steps below) if the feature you're testing needs Jamulus or the bot fleet; none of the three steps below are prod-specific.
+
+Keep staging's VM addresses in their own gitignored file, separate from `.env.deploy`, so a `make deploy-*` can never mix the two up:
+
+```bash
+cp .env.deploy.example .env.deploy.staging
+# edit VIDEO_VM / AUDIO_VM / BOTS_VM / REPO_PATH for the staging hosts
+```
+
+Then pass `ENV_DEPLOY` to target it instead of the default `.env.deploy`:
+
+```bash
+make deploy-video ENV_DEPLOY=.env.deploy.staging
+make deploy-all   ENV_DEPLOY=.env.deploy.staging   # or deploy-multishard, if staging is sharded
+```
+
+Every target (`deploy-video`, `deploy-audio`, `deploy-bots`, `deploy-all`, `check-tokens`, …) respects `ENV_DEPLOY`, so `make check-tokens ENV_DEPLOY=.env.deploy.staging` verifies staging's control-token pair independently of production's. Omit `ENV_DEPLOY` (or point it back at `.env.deploy`) to deploy to production as usual.
 
 ### Configure deploy targets
 
@@ -93,8 +135,10 @@ sudo usermod -aG docker $USER   # then log out and back in
 cd ~/Trussal/docker-jitsi-meet
 cp env.example .env             # fill in PUBLIC_URL, JVB_ADVERTISE_IPS, LETSENCRYPT_EMAIL, etc.
 ./gen-passwords.sh              # generates XMPP/JVB credentials into .env
-docker compose up -d            # first boot
+COMPOSE_PROFILES=local-turn docker compose up -d   # first boot (a standalone/single-box deploy needs the coturn+ddns profile too)
 ```
+
+A bare `docker compose up -d` (no `COMPOSE_PROFILES`) skips `coturn`/`ddns` — clients whose direct path to the videobridge is unreliable (mobile carrier NAT, restrictive firewalls) then have no TURN fallback. `./run.sh` / `make deploy-video` set this automatically on every subsequent deploy (unless `EDGE_MODE=shard`, see CLAUDE.md); it's only the very first manual boot that needs it spelled out.
 
 **Audio VM** (Jamulus installed as a service):
 ```bash

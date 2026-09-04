@@ -9,6 +9,22 @@
 ## 0. Video
 [Link to Video](https://drive.google.com/file/d/1lUwyc61QysvvyS1FYGxXaMGErrUWAvnc/view?usp=sharing)
 
+## Development
+
+Want to run a real Trussal meeting room to test a change? You don't need access to the production VMs — a local single-laptop dev stack is documented in [CONTRIBUTING.md](CONTRIBUTING.md#local-dev-environment-single-laptop-no-vm-access-needed):
+
+```bash
+npm install
+npm run dev:setup   # once
+npm run dev         # builds custom-config.js, starts a local Jitsi stack, watches src/
+```
+
+Then open `http://localhost/<any-room-name>`.
+
+Need to test against a real deployment instead — real TURN/ICE, DNS/TLS, multiple participants — without touching production? Stand up a [staging environment](CONTRIBUTING.md#staging-environment): the same VM setup as production, on separate hosts, deployed with `make deploy-video ENV_DEPLOY=.env.deploy.staging`.
+
+See CONTRIBUTING.md for the full guide, including production deployment across the three-VM architecture, and `CLAUDE.md` for a tour of the source layout.
+
 ## 1. Introduction
 Where did the name "Trussal" come from?
 
