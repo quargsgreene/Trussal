@@ -61,15 +61,21 @@ deploy-shards:
 	  ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; \
 	done
 
-# The consistent-hash edge in front of the shards (edge/README.md). Validates
-# the config before the seamless reload so a typo can't take the site down.
+# The edge host: the consistent-hash LB (edge/README.md) plus the rack's one
+# coturn + ddns. Validates haproxy.cfg before the seamless reload so a typo
+# can't take the site down, then self-heals coturn's TURN_EXTERNAL_IP and
+# (re)installs its refresh cron.
 deploy-edge:
 	@[ -n "$(EDGE_VM)" ] || { echo "EDGE_VM unset in .env.deploy — no edge tier, skipping"; exit 0; }
 	ssh $(EDGE_VM) 'cd $(EDGE_REPO_PATH) && git pull --ff-only && cd edge \
 	  && docker compose up -d \
 	  && docker compose exec -T edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg \
 	  && docker compose kill -s HUP edge \
-	  && echo "edge reloaded"'
+	  && cd .. \
+	  && TURN_ENV_FILE=edge/.env TURN_COMPOSE_DIR=edge bash scripts/refresh-turn-external-ip.sh \
+	  && ( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh"; \
+	       echo "*/5 * * * * cd $(EDGE_REPO_PATH) && TURN_ENV_FILE=edge/.env TURN_COMPOSE_DIR=edge bash scripts/refresh-turn-external-ip.sh >> \$$HOME/turn-ip-refresh.log 2>&1" ) | crontab - \
+	  && echo "edge reloaded; TURN IP refresh cron installed"'
 
 deploy-audio:
 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \

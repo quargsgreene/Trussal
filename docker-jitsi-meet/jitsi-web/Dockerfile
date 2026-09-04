@@ -6,6 +6,13 @@
 ARG JITSI_IMAGE_VERSION=stable-11031
 FROM jitsi/web:${JITSI_IMAGE_VERSION}
 
+# The static-asset cache-bust string (see the RUN below). run.sh passes the git
+# commit so EVERY shard of a rack that builds the same commit stamps the SAME
+# `?v=` — identical bytes at identical URLs, so an edge LB may serve
+# `/custom-config.js` from any shard and Cloudflare caches it once. Falls back
+# to a per-build timestamp when unset (a manual `docker build`).
+ARG ASSET_VERSION=
+
 # Images
 COPY trussal-watermark.svg   /usr/share/jitsi-meet/images/trussal-watermark.svg
 COPY favicon.ico             /usr/share/jitsi-meet/images/favicon.ico
@@ -36,8 +43,8 @@ COPY assets /usr/share/jitsi-meet/assets
 # which don't change between deploys and are multi-MB. run.sh builds web with
 # --no-cache so `date` re-runs every deploy; body.html's mount is removed from
 # docker-compose.yml so this baked copy is the one SSI includes.
-RUN BID="$(date +%Y%m%d%H%M%S)" && \
-    sed -i -E "s#(all\.css\?v=)[0-9]+#\1${BID}#g" /usr/share/jitsi-meet/*.html && \
+RUN BID="${ASSET_VERSION:-$(date +%Y%m%d%H%M%S)}" && \
+    sed -i -E "s#(all\.css\?v=)[0-9a-zA-Z._-]+#\1${BID}#g" /usr/share/jitsi-meet/*.html && \
     printf '<script src="/custom-config.js?v=%s"></script>\n' "${BID}" > /usr/share/jitsi-meet/body.html
 
 # **Patch the React bundle fallback strings**

@@ -1,12 +1,19 @@
-# Trussal edge LB — runs on the AMD (the machine Cloudflare's origin points at).
+# Trussal edge — runs on the AMD (the machine Cloudflare's origin points at).
+# Three host-networked services:
+#   edge    HAProxy, the consistent-hash room -> shard LB (haproxy.cfg)
+#   coturn  the ONE STUN/TURN relay for the whole rack (every shard's prosody
+#           advertises it via TURN_HOST/TURN_CREDENTIALS; shards run EDGE_MODE=shard
+#           so their own coturn stays inactive)
+#   ddns    the ONE Cloudflare DNS updater for trussal.com
 #
-#   cd edge && docker compose up -d
-#   docker compose exec edge haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg   # validate
-#   docker compose kill -s HUP edge                                             # hot reload after editing haproxy.cfg
+# In a single-box deploy you do NOT use this file — run.sh brings coturn + ddns
+# up itself (the `local-turn` compose profile). This file is only for a rack
+# where the AMD is edge-only.
 #
-# host networking: HAProxy binds :80 on the AMD and reaches each shard on the
-# rack LAN (10.20.0.0/24 in haproxy.cfg — edit for your addressing). Cloudflare
-# stays in front for TLS; this is a plain-HTTP origin (decision 3).
+#   cp .env.example .env    # fill in CF_API_TOKEN, TURN_CREDENTIALS, TURN_HOST, …
+#   docker compose up -d
+#   docker compose exec -T edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg
+#   docker compose kill -s HUP edge          # hot reload after editing haproxy.cfg
 
 services:
   edge:
@@ -15,10 +22,54 @@ services:
     network_mode: host
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    # HAProxy drops privileges itself; keep the pid namespace tidy.
     init: true
     healthcheck:
       test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # STUN/TURN relay. One for the whole rack: a client's relayed media transits
+  # this host to whichever shard holds its room. Same shared-secret scheme as a
+  # single-box deploy (TURN_CREDENTIALS == every shard prosody's
+  # external_service_secret). TURN_EXTERNAL_IP is kept current by
+  # `scripts/refresh-turn-external-ip.sh` (make deploy-edge installs its cron).
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    network_mode: host
+    env_file: [.env]
+    command:
+      - turnserver
+      - --no-cli
+      - --listening-port=${TURN_PORT:-3478}
+      # plain turn: on 3478 only; see edge/README.md "TLS" to add turns:/5349
+      - --min-port=${TURN_RELAY_MIN_PORT:-49160}
+      - --max-port=${TURN_RELAY_MAX_PORT:-49200}
+      - --realm=${TURN_HOST:-trussal.com}
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_CREDENTIALS}
+      - --external-ip=${TURN_EXTERNAL_IP}
+      - --max-allocate-lifetime=120
+      - --no-multicast-peers
+      - --no-tlsv1
+      - --no-tlsv1_1
+      - --fingerprint
+      - --log-file=stdout
+    labels:
+      service: "jitsi-coturn"
+
+  ddns:
+    image: favonia/cloudflare-ddns:latest
+    restart: unless-stopped
+    network_mode: host
+    cap_drop: [all]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - DOMAINS=${DDNS_DOMAINS:-trussal.com,meet.trussal.com}
+      - PROXIED=false
+      - UPDATE_CRON=@every 5m

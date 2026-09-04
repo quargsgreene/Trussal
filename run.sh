@@ -32,6 +32,19 @@ case "$CFG_REAL/" in "$REPO_REAL"/*)
 
 echo "CONFIG OK: $CFG_REAL"
 
+# EDGE_MODE=shard: this host is one shard of a rack behind the edge LB
+# (edge/README.md), so the DNS updater and the TURN relay run once on the edge,
+# not here. Anything else (unset / "standalone") is the single-box / full-stack
+# deploy — activate the `local-turn` compose profile so coturn + ddns come up
+# exactly as before. Every `docker compose` call below inherits COMPOSE_PROFILES.
+EDGE_MODE=$(sed -n 's/^EDGE_MODE=//p' "$ENV_FILE" | tail -n1)
+if [ "$EDGE_MODE" = "shard" ]; then
+  echo "EDGE_MODE=shard — coturn + ddns come from the edge host, not this shard"
+else
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:+$COMPOSE_PROFILES,}local-turn"
+  echo "COMPOSE_PROFILES=$COMPOSE_PROFILES (coturn + ddns run here)"
+fi
+
 # Repair prosody's /config ownership. The image only ever fixes this on a FIRST
 # run, because its cont-init guard keys off the top-level dir:
 #
@@ -68,6 +81,14 @@ fi
 npm ci --include=dev
 npm run clean
 npm run deploy:local
+
+# Stamp the static-asset `?v=` from the commit, not the wall clock, so a rack's
+# shards that build the same commit serve byte-identical files at identical URLs
+# (see jitsi-web/Dockerfile). `-dirty` if the tree carries uncommitted changes.
+export ASSET_VERSION="$(git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || true)"
+[ -n "$ASSET_VERSION" ] && ! git -C "$REPO" diff --quiet 2>/dev/null && ASSET_VERSION="${ASSET_VERSION}-dirty"
+echo "ASSET_VERSION=${ASSET_VERSION:-<none, will use build timestamp>}"
+
 cd "$REPO/docker-jitsi-meet"
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
 docker compose build --no-cache latency && docker compose rm -sf latency && docker compose up -d latency
@@ -78,11 +99,18 @@ docker compose down && docker compose up -d
 # a hostname itself). No root on this box, so cron rather than a systemd timer.
 # Idempotent: drop any prior entry for this script before re-adding it, so a
 # moved checkout doesn't leave a stale path running alongside the new one.
+# Skipped on a shard — its coturn is inactive; the edge host runs this instead
+# (make deploy-edge). Drop any stale entry there too.
 REFRESH_TURN_SCRIPT="$REPO/scripts/refresh-turn-external-ip.sh"
-REFRESH_TURN_CRON="*/5 * * * * $REFRESH_TURN_SCRIPT >> \$HOME/turn-ip-refresh.log 2>&1"
-( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh"; echo "$REFRESH_TURN_CRON" ) | crontab -
-echo "Installed cron: $REFRESH_TURN_CRON"
-"$REFRESH_TURN_SCRIPT"
+if [ "$EDGE_MODE" = "shard" ]; then
+  ( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh" ) | crontab - || true
+  echo "EDGE_MODE=shard — TURN_EXTERNAL_IP refresh cron not installed here"
+else
+  REFRESH_TURN_CRON="*/5 * * * * $REFRESH_TURN_SCRIPT >> \$HOME/turn-ip-refresh.log 2>&1"
+  ( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh"; echo "$REFRESH_TURN_CRON" ) | crontab -
+  echo "Installed cron: $REFRESH_TURN_CRON"
+  "$REFRESH_TURN_SCRIPT"
+fi
 
 # Fleet control-channel secret, checked LAST so it lands at the bottom of the
 # screen rather than under a full docker build, and after the stack is up so it

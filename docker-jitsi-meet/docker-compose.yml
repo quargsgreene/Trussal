@@ -6,6 +6,13 @@ services:
     image: favonia/cloudflare-ddns:latest
     restart: unless-stopped
     network_mode: host
+    # In a sharded rack the DNS record and the TURN relay live once, on the
+    # edge host (edge/docker-compose.yml). A shard sets EDGE_MODE=shard in .env
+    # and run.sh then leaves this profile inactive; a standalone / single-box
+    # deploy activates `local-turn` (run.sh does, by default) so these run as
+    # before. Targeting `coturn` explicitly by name (refresh-turn-external-ip.sh)
+    # still starts it regardless of the profile.
+    profiles: ["local-turn"]
     cap_drop:
       - all
     read_only: true
@@ -32,6 +39,11 @@ services:
     image: coturn/coturn:4.6.2
     restart: unless-stopped
     network_mode: host
+    # See ddns above: inactive on a shard (EDGE_MODE=shard), active for a
+    # standalone / single-box deploy. Every shard's prosody still advertises a
+    # TURN server to clients via TURN_HOST/TURN_CREDENTIALS — in a rack those
+    # point at the one coturn on the edge.
+    profiles: ["local-turn"]
     command:
       - turnserver
       - --no-cli
@@ -93,6 +105,9 @@ services:
       context: ./jitsi-web
       args:
         JITSI_IMAGE_VERSION: ${JITSI_IMAGE_VERSION:-stable-11031}
+        # Static-asset `?v=` cache-bust. run.sh exports the git commit so every
+        # shard of a rack stamps the same value; empty here → per-build timestamp.
+        ASSET_VERSION: ${ASSET_VERSION:-}
     restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       - "80:80"

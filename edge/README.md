@@ -64,22 +64,61 @@ pre-compute (`bots/src/orchestrator/fleet-service.js`) and
 `loadtest/figures/fig11_shard_balance.py`. A small divergence in tie handling is
 harmless because the conductor confirms placement from its per-shard discovery.
 
+## What runs on the edge host
+
+`edge/docker-compose.yml` has three host-networked services:
+
+| service | role |
+|---|---|
+| `edge` | HAProxy — this config |
+| `coturn` | the **one** STUN/TURN relay for the whole rack. Every shard's prosody advertises it (`TURN_HOST` / `TURN_CREDENTIALS` in each shard `.env`, the same secret everywhere); shards set `EDGE_MODE=shard` so their own coturn stays inactive. `TURN_EXTERNAL_IP` is kept current by `scripts/refresh-turn-external-ip.sh` (`make deploy-edge` installs its cron). |
+| `ddns` | the **one** Cloudflare DNS updater for `trussal.com` (again, off on the shards) |
+
 ## Run it
 
 On the AMD:
 
 ```bash
 cd edge
+cp .env.example .env          # CF_API_TOKEN, TURN_CREDENTIALS, TURN_HOST, …
 docker compose up -d
-docker compose exec edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg   # "Configuration file is valid"
+docker compose exec -T edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg   # "Configuration file is valid"
 ```
 
-Cloudflare's origin / DNS for `trussal.com` points at the AMD:80. Each shard's
-`docker-jitsi-meet/.env` keeps `PUBLIC_URL=https://trussal.com` (identical on
-every shard) and sets its own `DEPLOYMENTINFO_SHARD` (`s1` / `s2` / …),
-`DOCKER_HOST_ADDRESS` / `LOCAL_ADDRESS` / `JVB_ADVERTISE_IPS` to that machine,
-and a shard-unique `JVB_AUTH_PASSWORD` / `JVB_MUC_NICKNAME` / `JVB_WS_SERVER_ID`
-( = the shard name). See `docker-jitsi-meet/MULTISHARD.md`.
+or `make deploy-edge` (git pull + up + validate + `kill -s HUP` reload + TURN-IP
+refresh/cron). Cloudflare's origin / DNS for `trussal.com` points at the AMD:80.
+
+Each shard's `docker-jitsi-meet/.env`: `PUBLIC_URL=https://trussal.com` (identical
+everywhere), `EDGE_MODE=shard`, its own `DEPLOYMENTINFO_SHARD` (`s1` / `s2` / …),
+`DOCKER_HOST_ADDRESS` / `LOCAL_ADDRESS` / `JVB_ADVERTISE_IPS` for that machine, a
+shard-unique `JVB_AUTH_PASSWORD` / `JVB_MUC_NICKNAME` / `JVB_WS_SERVER_ID`
+( = the shard name), and `TURN_HOST` / `TURN_CREDENTIALS` matching the edge.
+Full list: `docker-jitsi-meet/MULTISHARD.md`.
+
+## Running degraded / on one machine
+
+Every layer collapses to the single-box path, so the app survives losing any
+part of the rack:
+
+- **A shard is down.** Verified: its health check goes red, `hash-type consistent`
+  re-homes its rooms onto the survivors, in-flight requests are retried
+  (`option redispatch`, `retry-on all-retryable-errors`). **One shard left still
+  serves every room.** Recovery re-homes only that shard's rooms back. Zero
+  shards up is the only hard-down.
+- **Down to one Dell.** It is already a full stack — point Cloudflare straight at
+  it and skip the edge. On the bots VM leave `SIDECAR_CONTROL_URLS` unset (one
+  control connection) and `SIDECAR_WS_URL` = that host.
+- **Only the AMD.** Run a full stack on it: leave `EDGE_MODE` unset (so `run.sh`
+  brings up `web`/`prosody`/`jicofo`/`jvb`/`latency` **plus** coturn + ddns via
+  the `local-turn` compose profile) and point Cloudflare at it. Optionally still
+  run the edge in front of a single `server s1 127.0.0.1:<web-port>`.
+- **`make deploy-all`** with `SHARD_VMS` / `EDGE_VM` unset in `.env.deploy` is
+  byte-identical to the historical single-VM deploy.
+- **`# ring hash`** (the room turn ring) is pure per-browser logic —
+  `orderTokens(local roster, room-name seed)` — with no shard or edge awareness
+  at all. It behaves identically on one machine or fifty; `test/turn-ring.test.js`
+  and the `# ring hash` cases in `test/metaprogram-scheduler.test.js` are the
+  single-machine proof (a fake local roster, no network).
 
 ## Add or drain a shard
 
@@ -104,8 +143,12 @@ image lacks that route, change the `http-check` lines to `GET /` +
 
 Cloudflare terminates TLS; HAProxy is a **plain-HTTP LAN origin** (decision 3),
 so `bind :80` with no certs. If you later move TLS onto the edge, add
-`bind :443 ssl crt …`, an `http-request redirect scheme https` on `:80`, and
-move the coturn cert/acme handling here from the shards.
+`bind :443 ssl crt …` and an `http-request redirect scheme https` on `:80`.
+
+TURN over TLS (`turns:` on 5349) does need a cert — `edge/docker-compose.yml`'s
+`coturn` runs without TLS listeners by default (plain `turn:` on 3478 is enough
+behind CF for most clients); add `--cert` / `--pkey` pointing at a mounted cert
+and set `TURNS_PORT` if you want `turns:`.
 
 ## What this tier does NOT do
 

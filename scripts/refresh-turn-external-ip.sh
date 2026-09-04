@@ -28,7 +28,13 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$REPO/docker-jitsi-meet/.env"
+# Standalone / single-box: docker-jitsi-meet/.env + that compose dir. On the
+# edge host of a sharded rack, coturn lives in edge/ — point both there:
+#   TURN_ENV_FILE=edge/.env TURN_COMPOSE_DIR=edge scripts/refresh-turn-external-ip.sh
+ENV_FILE="${TURN_ENV_FILE:-$REPO/docker-jitsi-meet/.env}"
+COMPOSE_DIR="${TURN_COMPOSE_DIR:-$REPO/docker-jitsi-meet}"
+case "$ENV_FILE" in /*) : ;; *) ENV_FILE="$REPO/$ENV_FILE" ;; esac
+case "$COMPOSE_DIR" in /*) : ;; *) COMPOSE_DIR="$REPO/$COMPOSE_DIR" ;; esac
 
 [ -f "$ENV_FILE" ] || { echo "[turn-ip] $ENV_FILE missing, nothing to do"; exit 0; }
 
@@ -56,6 +62,6 @@ if ! grep -q '^TURN_EXTERNAL_IP=' "$ENV_FILE"; then
   echo "TURN_EXTERNAL_IP=$current_ip" >> "$ENV_FILE"
 fi
 
-cd "$REPO/docker-jitsi-meet"
+cd "$COMPOSE_DIR"
 docker compose up -d --force-recreate coturn
 echo "[turn-ip] coturn recreated with TURN_EXTERNAL_IP=$current_ip"
