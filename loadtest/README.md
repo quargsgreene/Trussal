@@ -382,6 +382,39 @@ Layout-C set (2 SUTs + 2 bots VMs + 2 generator VMs on C2, isolated `vmbr1`).
 `tools/proxmox/provision.sh` linked-clones and configures them from three
 templates.
 
+### Self-contained real-run tools (`tools/`)
+
+Same family as `tools/proxmox/cpa-smoke-driver.py` — a single script that talks
+`harness.sidecar.SidecarClient` straight to a live target, no locust/distributed.sh
+needed, safe against a staging box (`assert_not_prod`, bounded population).
+
+- **`tools/turnring_ab_driver.py`** — `# ring explicit` vs `# ring hash`, same
+  churn shape, back to back, same host. Writes ordinary `sidecar_observer.py`
+  JSONL (ingest.py -> metrics.py -> fig09 as usual) **plus** the
+  `crdt_update_bytes` metric `summary.parquet` already tracks — that alone is
+  real evidence for hash's "no CRDT round-trip per join" claim even without a
+  live aggregator to produce `nc-active` (turn_stability needs one; see below).
+  `figures/fig12_crdt_traffic.py --run results/<run-id>` plots update
+  count/bytes, explicit vs hash — real (no `_SYNTH` suffix) whenever the run
+  has `crdt_update_bytes` rows.
+- **`tools/multiroom_driver.py`** — grows the number of independent, live,
+  concurrently-chattering rooms (accumulates — nothing torn down between
+  levels) against one target, sampling join-roster latency, in-room broadcast
+  fan-out latency, and (optionally, `SSH_KEY`/`SSH_TARGET`) host `docker stats`
+  at each level. Every peer is sidecar-only — no XMPP/JVB — so this isolates
+  the **sidecar + nginx** cost of many concurrent rooms, not prosody/jicofo/JVB
+  per-room overhead (those need real browser joins, out of scope for this
+  driver). Writes `results/<run-id>/multiroom_summary.jsonl`;
+  `figures/fig13_room_scaling.py --run results/<run-id>` plots it.
+
+**What real `nc-active` / turn-disruption data (fig09/fig10 for real) needs
+that these two don't provide**: a live **aggregator** — `nc-active` is only
+ever emitted by a room's aggregator bot ticking its own `MetaprogramScheduler`,
+or a real browser with the (normally dormant) local scheduler armed. Neither
+driver here runs one; `turn_stability.parquet` comes back empty from a
+sidecar-ghost-only run, by design, not a bug — `analysis/metrics.py`'s
+`turn_stability()` correctly returns nothing rather than fabricate a result.
+
 ### The Trussal-side change this study needs
 
 Landed on `main` (all `npm test` green + 20 new tests):

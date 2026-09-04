@@ -31,6 +31,8 @@ FIGURE_MODULES = [
     "fig09_turn_stability",
     "fig10_breakpoint",
     "fig11_shard_balance",
+    "fig12_crdt_traffic",
+    "fig13_room_scaling",
 ]
 
 
