@@ -1,30 +1,38 @@
 /* landmark-gesture-mode.css — imported as raw text (build.mjs '.css': 'text')
    and injected once by _injectStyles(). Covers the top-left ☰ corner + its
    menu + the instruction card, the config toast, and the section grafted into
-   Jitsi's "Keyboard shortcuts" dialog. Flat #111111 / #eeeeee theme. */
+   Jitsi's "Keyboard shortcuts" dialog.
+
+   Authored against the per-user Personal Theme vars (src/theme-context.js) —
+   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+   on :root, each with its previous literal as the var() fallback — so this
+   corner retints with the Strudel overlay and the rest of the app. The toast
+   is the theme's one inverted surface (dark anchor bg, light anchor text).
+   The .trussal-lg-shortcuts graft below is the deliberate exception: it uses
+   currentColor to sit in whichever palette Jitsi draws that dialog in. */
 
 #trussal-lg-corner {
   position: fixed; top: 10px; left: 10px;
   z-index: 1000003;
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
 }
 
 #trussal-lg-gear {
   width: 28px; height: 28px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 6px;
-  font-size: 15px; cursor: pointer; padding: 0;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); cursor: pointer; padding: 0;
 }
-#trussal-lg-gear:hover { background: #111111; color: #eeeeee; }
-#trussal-lg-gear.on { background: #111111; color: #eeeeee; }
+#trussal-lg-gear:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-lg-gear.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 
 #trussal-lg-menu {
   display: none;
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 6px;
-  padding: 8px 10px; font-size: 12px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  padding: 8px 10px; font-size: calc(12px * var(--trussal-font-scale, 1));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 #trussal-lg-menu.open { display: block; }
@@ -34,24 +42,24 @@
 }
 
 #trussal-lg-instruction {
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 8px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;
   padding: 8px 10px; max-width: 300px;
-  font-size: 12px; line-height: 1.5;
+  font-size: calc(12px * var(--trussal-font-scale, 1)); line-height: 1.5;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 #trussal-lg-instruction .lg-row { display: flex; justify-content: space-between; gap: 8px; }
 #trussal-lg-instruction .lg-title { font-weight: 600; }
 #trussal-lg-instruction .lg-x {
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 4px;
-  cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  cursor: pointer; font-size: calc(10px * var(--trussal-font-scale, 1)); line-height: 1; padding: 1px 5px;
 }
-#trussal-lg-instruction .lg-x:hover { background: #111111; color: #eeeeee; }
+#trussal-lg-instruction .lg-x:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 #trussal-lg-instruction ul { margin: 6px 0 0; padding-left: 18px; }
 #trussal-lg-instruction kbd {
-  border: 1px solid #111111; border-radius: 3px;
-  padding: 0 4px; font-family: monospace; font-size: 11px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 3px;
+  padding: 0 4px; font-family: monospace; font-size: calc(11px * var(--trussal-font-scale, 1));
 }
 #trussal-lg-instruction .lg-blocked { opacity: 0.55; }
 
@@ -61,10 +69,10 @@
   position: fixed; top: 10px; left: 46px;
   z-index: 1000004;
   max-width: 280px;
-  background: #111111; color: #eeeeee;
-  border: 1px solid #111111; border-radius: 6px;
-  padding: 6px 10px; font-size: 12px; line-height: 1.4;
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  padding: 6px 10px; font-size: calc(12px * var(--trussal-font-scale, 1)); line-height: 1.4;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0; transform: translateY(-4px);
   transition: opacity 0.15s ease, transform 0.15s ease;

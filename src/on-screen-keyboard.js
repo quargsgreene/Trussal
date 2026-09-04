@@ -456,6 +456,14 @@ function _injectStyles() {
   if (document.getElementById(KBD_STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = KBD_STYLE_ID;
+  // Palette / font / font-scale come from the per-user Personal Theme
+  // (src/theme-context.js): --trussal-primary (light anchor), --trussal-secondary
+  // (dark anchor), --trussal-font, --trussal-font-scale on :root. Every colour,
+  // font-family and font-size below is authored against those vars — with the
+  // previous literal kept as the var() fallback — so a personal theme (dark
+  // mode, a recolour, a bigger font) repaints this keyboard exactly as it does
+  // the Strudel overlay. Translucent dwell-progress fills are a color-mix of the
+  // dark anchor; box-shadows stay literal (shadow, not palette).
   s.textContent = `
     #${KBD_PANEL_ID} {
       position: fixed;
@@ -467,14 +475,14 @@ function _injectStyles() {
       min-width: 320px; min-height: 170px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
-      background: #eeeeee;
-      border: 1px solid #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
       border-radius: 10px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.2);
       display: none;
       flex-direction: column;
       user-select: none;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       overflow: hidden;
     }
     /* Collapsed = title bar only: drop the height floor so it can shrink to
@@ -497,57 +505,57 @@ function _injectStyles() {
       position: absolute;
       right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(17,17,17,0.45);
-      border-bottom: 2px solid rgba(17,17,17,0.45);
+      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
-       "html, body, body star { background-color: #eeeeee }" rule. Every
-       structural container below still states its OWN background so a
-       future theme change can't paint over the panel. A bare class
-       selector (0,1,0) already out-ranks that rule (0,0,1). */
+       "html, body, body star { background-color: var(--trussal-primary) }" rule.
+       Every structural container below still states its OWN background so a
+       CSS Cycles sheet or a future theme change can't paint over the panel. A
+       bare class selector (0,1,0) already out-ranks that rule (0,0,1). */
     .ts-kbd-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 6px 10px;
-      border-bottom: 1px solid #111111;
+      border-bottom: 1px solid var(--trussal-secondary, #111111);
       cursor: grab;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-header:active { cursor: grabbing; }
     /* Collapse + the ✥ / ⇲ head buttons sit above the corner resize grips
        (z-index 6) so a grip at the NE corner can't eat their clicks. */
     #${KBD_PANEL_ID} .ts-kbd-header > button { position: relative; z-index: 7; }
     .ts-kbd-title {
-      font-size: 11px;
+      font-size: calc(11px * var(--trussal-font-scale, 1));
       font-weight: 600;
-      color: #111111;
+      color: var(--trussal-secondary, #111111);
       letter-spacing: 0.5px;
       pointer-events: none;
     }
     .ts-kbd-collapse-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
       cursor: pointer;
       border-radius: 4px;
       padding: 1px 7px;
-      font-size: 10px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       line-height: 1.5;
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s;
     }
-    .ts-kbd-collapse-btn:hover { background: #111111; color: #eeeeee; }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #eeeeee; }
+    .ts-kbd-collapse-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-kbd-collapse-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-collapse-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
     .ts-kbd-body {
@@ -557,7 +565,7 @@ function _injectStyles() {
       flex-direction: column;
       gap: 3px;
       padding: 8px;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     /* Shown only when it holds suggestions (see _updatePredictions) — an empty
        row here was the "rectangle that does nothing" between the title bar and
@@ -570,25 +578,25 @@ function _injectStyles() {
       min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
       padding: 1px 10px;
       border-radius: 999px;
-      border: 1px solid #111111;
-      background: #eeeeee;
-      color: #111111;
+      border: 1px solid var(--trussal-secondary, #111111);
+      background: var(--trussal-primary, #eeeeee);
+      color: var(--trussal-secondary, #111111);
       font-family: ui-monospace, monospace;
-      font-size: 11px;
+      font-size: calc(11px * var(--trussal-font-scale, 1));
       cursor: pointer;
       position: relative;
       overflow: hidden;
       transition: background 0.08s;
     }
     .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: #111111;
-      color: #eeeeee;
+      background: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-pred-btn::after {
       content: '';
@@ -596,7 +604,7 @@ function _injectStyles() {
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.35);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 35%, transparent);
       pointer-events: none;
     }
     .ts-kbd-row {
@@ -604,7 +612,7 @@ function _injectStyles() {
       min-height: 0;
       display: flex;
       gap: 3px;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-key {
       min-height: 22px;
@@ -613,72 +621,72 @@ function _injectStyles() {
       align-items: center;
       justify-content: center;
       border-radius: 5px;
-      border: 1px solid #111111;
-      background: #eeeeee;
-      color: #111111;
-      font-size: 12px;
+      border: 1px solid var(--trussal-secondary, #111111);
+      background: var(--trussal-primary, #eeeeee);
+      color: var(--trussal-secondary, #111111);
+      font-size: calc(12px * var(--trussal-font-scale, 1));
       cursor: pointer;
       position: relative;
       overflow: hidden;
       transition: background 0.05s;
     }
     .ts-kbd-key:hover {
-      background: #111111;
-      color: #eeeeee;
-      border-color: #111111;
+      background: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
+      border-color: var(--trussal-secondary, #111111);
     }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: #111111; }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: var(--trussal-secondary, #111111); }
     .ts-kbd-key.ts-kbd-mod-on {
-      background: #111111;
-      border-color: #111111;
-      color: #eeeeee;
+      background: var(--trussal-secondary, #111111);
+      border-color: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
     }
     /* No !important: default flash colour, not a forced override — #trussal-kbd-panel
        is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
        through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #eeeeee; }
+    .ts-kbd-key.ts-kbd-flash { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-key[data-k="Eval"] {
-      background: #eeeeee;
-      border-color: #111111;
-      color: #111111;
-      font-size: 10px;
+      background: var(--trussal-primary, #eeeeee);
+      border-color: var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       font-weight: 600;
     }
-    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #eeeeee; }
+    .ts-kbd-key[data-k="Eval"]:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-key::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
-    .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
+    .ts-kbd-label { pointer-events: none; font-size: calc(11px * var(--trussal-font-scale, 1)); color: inherit; }
 
     /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
        sits flush beside the Face button whether or not the facial-gesture
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
     #${KBD_TOGGLE_ID} {
-      background: #eeeeee; border: 1px solid #111111;
-      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #111111;
+      background: var(--trussal-primary, #eeeeee); border: 1px solid var(--trussal-secondary, #111111);
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: var(--trussal-secondary, #111111);
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       line-height: 1; display: flex; align-items: center; gap: 4px;
-      font-size: 11px; font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
+      font-size: calc(11px * var(--trussal-font-scale, 1)); font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
       position: relative; overflow: hidden;
     }
-    #${KBD_TOGGLE_ID}:hover { color: #eeeeee; background: #111111; }
-    #${KBD_TOGGLE_ID}.on    { color: #eeeeee; background: #111111; border-color: #111111; }
-    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #111111; }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #eeeeee; }
+    #${KBD_TOGGLE_ID}:hover { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.on    { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); border-color: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     #${KBD_TOGGLE_ID}::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
   `;

@@ -354,9 +354,10 @@ function _flash(trigger, action) {
 function _setStatus(s) {
   if (!_statusEl) return;
   // Flat theme: the status word itself carries the meaning, so every state is
-  // the same #111111 rather than a colour.
+  // the same dark anchor rather than a colour. Tracks the per-user Personal
+  // Theme via the CSS var (literal kept as the fallback).
   _statusEl.textContent = s;
-  _statusEl.style.color = '#111111';
+  _statusEl.style.color = 'var(--trussal-secondary, #111111)';
 }
 
 // For `trigger`, an in-code @mediapipe annotation wins over the configured
@@ -1034,17 +1035,26 @@ function _injectStyles() {
   if (document.getElementById(FG_STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = FG_STYLE_ID;
+  // Palette / font / font-scale come from the per-user Personal Theme
+  // (src/theme-context.js) via --trussal-primary / --trussal-secondary /
+  // --trussal-font / --trussal-font-scale on :root, each with its previous
+  // literal as the var() fallback — so a personal theme repaints this panel,
+  // the head cursor and the shared .ts-dwell-btn just as it does the Strudel
+  // overlay. Dwell-progress fills are a color-mix of the dark anchor;
+  // box-shadows stay literal.
   s.textContent = `
     #${FG_CURSOR_ID} {
       position:fixed; pointer-events:none; z-index:9999999;
       transform:translate(-50%,-50%); display:none;
     }
+    #${FG_CURSOR_ID} circle { fill: var(--trussal-secondary, #111111); }
+    #${FG_CURSOR_ID} #trussal-fg-ring { fill: none; stroke: var(--trussal-secondary, #111111); }
     #${FG_PANEL_ID} {
       position:fixed; top:64px; left:16px;
       z-index:1000000;
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:10px;
-      font-family:Arial, Helvetica, sans-serif; font-size:12px;
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
+      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
       padding:10px 12px; width:220px;
       min-width:200px; min-height:200px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
@@ -1061,7 +1071,7 @@ function _injectStyles() {
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
-    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
+    #${FG_PANEL_ID} .fg-title { font-weight:600; color:var(--trussal-secondary, #111111); }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
     #${FG_PANEL_ID} video { width:100%; border-radius:4px; display:block; transform:scaleX(-1); }
     #${FG_PANEL_ID} canvas {
@@ -1069,60 +1079,60 @@ function _injectStyles() {
       border-radius:4px; pointer-events:none; transform:scaleX(-1);
     }
     #${FG_PANEL_ID} .fg-flash {
-      font-size:11px; font-weight:600; text-align:center;
-      color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-weight:600; text-align:center;
+      color:var(--trussal-secondary, #111111); opacity:0; transition:opacity 0.15s; min-height:1.2em;
       font-family:monospace;
     }
 
     #trussal-fg-toggle {
-      background:#eeeeee; border:1px solid #111111;
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
+      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
     }
-    #trussal-fg-toggle:hover { color:#eeeeee; background:#111111; }
-    #trussal-fg-toggle.on    { color:#eeeeee; background:#111111; border-color:#111111; }
+    #trussal-fg-toggle:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
+    #trussal-fg-toggle.on    { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
 
     /* Head-cursor feedback on plain (non-Trussal) controls: the field it is
        holding focus on, and the button/link it is currently dwelling. Jitsi's
        own inputs and buttons suppress the focus ring, so state this loudly.
        !important — these sit over Emotion class styles on the prejoin. */
     .trussal-hc-focus {
-      outline: 2px solid #111111 !important;
+      outline: 2px solid var(--trussal-secondary, #111111) !important;
       outline-offset: 1px !important;
       border-radius: 2px;
     }
     .trussal-hc-dwell {
-      outline: 2px solid #111111 !important;
+      outline: 2px solid var(--trussal-secondary, #111111) !important;
       outline-offset: 2px !important;
-      background: rgba(17,17,17,0.06) !important;
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 6%, transparent) !important;
     }
 
     .ts-dwell-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
       cursor: pointer;
       border-radius: 4px;
       padding: 2px 7px;
-      font-size: 10px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       line-height: 1.5;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .ts-dwell-btn:hover { background: #111111; color: #eeeeee; }
-    .ts-dwell-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
+    .ts-dwell-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-dwell-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-dwell-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
   `;

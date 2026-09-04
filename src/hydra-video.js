@@ -348,52 +348,56 @@ function _injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = STYLE_ID;
+  // Authored against the per-user Personal Theme vars (src/theme-context.js):
+  // --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+  // on :root, each keeping its previous literal as the var() fallback, so this
+  // panel retints with the Strudel overlay and the rest of the app.
   s.textContent = `
     #${PANEL_ID} {
       position:fixed; top:64px; right:16px; z-index:1000000;
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:10px;
-      font-family:Arial, Helvetica, sans-serif; font-size:12px;
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
+      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
       padding:10px 12px; width:300px;
       display:none; flex-direction:column; gap:8px;
       box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
     }
     #${PANEL_ID} video {
       width:100%; border-radius:4px; display:block; transform:scaleX(-1);
-      background:#111111;
+      background:var(--trussal-secondary, #111111);
     }
     #${PANEL_ID} .hv-mode-row { display:flex; gap:6px; }
     #${PANEL_ID} .hv-mode-btn {
       flex:1; padding:3px 0; border-radius:4px;
-      border:1px solid #111111;
-      background:#eeeeee; color:#111111;
-      font-size:11px; cursor:pointer; text-align:center;
+      border:1px solid var(--trussal-secondary, #111111);
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      font-size:calc(11px * var(--trussal-font-scale, 1)); cursor:pointer; text-align:center;
       transition:background 0.15s, color 0.15s;
     }
     #${PANEL_ID} .hv-mode-btn.on {
-      background:#111111; color:#eeeeee;
-      border-color:#111111;
+      background:var(--trussal-secondary, #111111); color:var(--trussal-primary, #eeeeee);
+      border-color:var(--trussal-secondary, #111111);
     }
     #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
-    #${PANEL_ID} .hv-title { font-weight:600; color:#111111; }
+    #${PANEL_ID} .hv-title { font-weight:600; color:var(--trussal-secondary, #111111); }
     #${PANEL_ID} .hv-collapse-btn {
-      background:none; border:none; color:#111111; cursor:pointer;
-      font-size:13px; line-height:1; padding:0 2px; transition:color 0.15s;
+      background:none; border:none; color:var(--trussal-secondary, #111111); cursor:pointer;
+      font-size:calc(13px * var(--trussal-font-scale, 1)); line-height:1; padding:0 2px; transition:color 0.15s;
     }
-    #${PANEL_ID} .hv-collapse-btn:hover { color:#111111; }
+    #${PANEL_ID} .hv-collapse-btn:hover { color:var(--trussal-secondary, #111111); }
     #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
     #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; line-height:1.5; }
+    #${PANEL_ID} .hv-status { font-size:calc(10px * var(--trussal-font-scale, 1)); color:var(--trussal-secondary, #111111); line-height:1.5; }
 
     #${TOGGLE_ID} {
-      background:#eeeeee; border:1px solid #111111;
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
+      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
     }
-    #${TOGGLE_ID}:hover { color:#eeeeee; background:#111111; }
-    #${TOGGLE_ID}.on { color:#eeeeee; background:#111111; border-color:#111111; }
+    #${TOGGLE_ID}:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
+    #${TOGGLE_ID}.on { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
   `;
   document.head.appendChild(s);
 }

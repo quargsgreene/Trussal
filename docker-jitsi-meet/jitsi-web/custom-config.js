@@ -56671,49 +56671,49 @@ ${full}
     s2.textContent = `
     #${PANEL_ID} {
       position:fixed; top:64px; right:16px; z-index:1000000;
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:10px;
-      font-family:Arial, Helvetica, sans-serif; font-size:12px;
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
+      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
       padding:10px 12px; width:300px;
       display:none; flex-direction:column; gap:8px;
       box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
     }
     #${PANEL_ID} video {
       width:100%; border-radius:4px; display:block; transform:scaleX(-1);
-      background:#111111;
+      background:var(--trussal-secondary, #111111);
     }
     #${PANEL_ID} .hv-mode-row { display:flex; gap:6px; }
     #${PANEL_ID} .hv-mode-btn {
       flex:1; padding:3px 0; border-radius:4px;
-      border:1px solid #111111;
-      background:#eeeeee; color:#111111;
-      font-size:11px; cursor:pointer; text-align:center;
+      border:1px solid var(--trussal-secondary, #111111);
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      font-size:calc(11px * var(--trussal-font-scale, 1)); cursor:pointer; text-align:center;
       transition:background 0.15s, color 0.15s;
     }
     #${PANEL_ID} .hv-mode-btn.on {
-      background:#111111; color:#eeeeee;
-      border-color:#111111;
+      background:var(--trussal-secondary, #111111); color:var(--trussal-primary, #eeeeee);
+      border-color:var(--trussal-secondary, #111111);
     }
     #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
-    #${PANEL_ID} .hv-title { font-weight:600; color:#111111; }
+    #${PANEL_ID} .hv-title { font-weight:600; color:var(--trussal-secondary, #111111); }
     #${PANEL_ID} .hv-collapse-btn {
-      background:none; border:none; color:#111111; cursor:pointer;
-      font-size:13px; line-height:1; padding:0 2px; transition:color 0.15s;
+      background:none; border:none; color:var(--trussal-secondary, #111111); cursor:pointer;
+      font-size:calc(13px * var(--trussal-font-scale, 1)); line-height:1; padding:0 2px; transition:color 0.15s;
     }
-    #${PANEL_ID} .hv-collapse-btn:hover { color:#111111; }
+    #${PANEL_ID} .hv-collapse-btn:hover { color:var(--trussal-secondary, #111111); }
     #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
     #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:10px; color:#111111; line-height:1.5; }
+    #${PANEL_ID} .hv-status { font-size:calc(10px * var(--trussal-font-scale, 1)); color:var(--trussal-secondary, #111111); line-height:1.5; }
 
     #${TOGGLE_ID} {
-      background:#eeeeee; border:1px solid #111111;
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
+      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
     }
-    #${TOGGLE_ID}:hover { color:#eeeeee; background:#111111; }
-    #${TOGGLE_ID}.on { color:#eeeeee; background:#111111; border-color:#111111; }
+    #${TOGGLE_ID}:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
+    #${TOGGLE_ID}.on { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
   `;
     document.head.appendChild(s2);
   }
@@ -58504,38 +58504,38 @@ ${snippet}${JP_BTN_MARKER}`;
     .tdr-grip-se::after {
       content: ''; position: absolute; right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(17,17,17,0.45);
-      border-bottom: 2px solid rgba(17,17,17,0.45);
+      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
     }
     /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
        facial-gesture.js's dwell loop clicks them for free; these rules stand
        on their own so they still look right if that panel never opened. */
     .tdr-head-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111; cursor: pointer; border-radius: 4px;
-      padding: 1px 6px; font-size: 11px; line-height: 1.5;
-      font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111); cursor: pointer; border-radius: 4px;
+      padding: 1px 6px; font-size: calc(11px * var(--trussal-font-scale, 1)); line-height: 1.5;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
       /* Above the z-index:20 corner grips so a corner grip can't eat the
          button's clicks when it sits near a panel corner. */
       position: relative; z-index: 21; overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .tdr-head-btn:hover { background: #111111; color: #eeeeee; }
-    .tdr-head-btn.on { border-color: #111111; color: #eeeeee; background: #111111; }
-    .tdr-head-btn.strudel-dwell-hover { border-color: #111111; }
-    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
+    .tdr-head-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .tdr-head-btn.on { border-color: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
+    .tdr-head-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .tdr-head-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .tdr-head-btn::after {
       content: ''; position: absolute; bottom: 0; left: 0;
       width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28); pointer-events: none;
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent); pointer-events: none;
     }
-    .tdr-head-target { outline: 2px solid #111111; outline-offset: 2px; }
+    .tdr-head-target { outline: 2px solid var(--trussal-secondary, #111111); outline-offset: 2px; }
     #${HINT_ID} {
       position: fixed; z-index: 1000002; pointer-events: none;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 999px;
-      font: 600 11px/1.4 Arial, Helvetica, sans-serif; padding: 3px 10px;
+      background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+      border: 1px solid var(--trussal-secondary, #111111); border-radius: 999px;
+      font: 600 calc(11px * var(--trussal-font-scale, 1))/1.4 var(--trussal-font, Arial, Helvetica, sans-serif); padding: 3px 10px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
   `;
@@ -59109,7 +59109,7 @@ ${snippet}${JP_BTN_MARKER}`;
   function _setStatus(s2) {
     if (!_statusEl) return;
     _statusEl.textContent = s2;
-    _statusEl.style.color = "#111111";
+    _statusEl.style.color = "var(--trussal-secondary, #111111)";
   }
   function _effectiveMappingsFor(trigger) {
     let codeMaps = [];
@@ -59620,12 +59620,14 @@ ${snippet}${JP_BTN_MARKER}`;
       position:fixed; pointer-events:none; z-index:9999999;
       transform:translate(-50%,-50%); display:none;
     }
+    #${FG_CURSOR_ID} circle { fill: var(--trussal-secondary, #111111); }
+    #${FG_CURSOR_ID} #trussal-fg-ring { fill: none; stroke: var(--trussal-secondary, #111111); }
     #${FG_PANEL_ID} {
       position:fixed; top:64px; left:16px;
       z-index:1000000;
-      background:#eeeeee; color:#111111;
-      border:1px solid #111111; border-radius:10px;
-      font-family:Arial, Helvetica, sans-serif; font-size:12px;
+      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
+      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
       padding:10px 12px; width:220px;
       min-width:200px; min-height:200px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
@@ -59642,7 +59644,7 @@ ${snippet}${JP_BTN_MARKER}`;
     #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
     #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
     #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
-    #${FG_PANEL_ID} .fg-title { font-weight:600; color:#111111; }
+    #${FG_PANEL_ID} .fg-title { font-weight:600; color:var(--trussal-secondary, #111111); }
     #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
     #${FG_PANEL_ID} video { width:100%; border-radius:4px; display:block; transform:scaleX(-1); }
     #${FG_PANEL_ID} canvas {
@@ -59650,60 +59652,60 @@ ${snippet}${JP_BTN_MARKER}`;
       border-radius:4px; pointer-events:none; transform:scaleX(-1);
     }
     #${FG_PANEL_ID} .fg-flash {
-      font-size:11px; font-weight:600; text-align:center;
-      color:#111111; opacity:0; transition:opacity 0.15s; min-height:1.2em;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-weight:600; text-align:center;
+      color:var(--trussal-secondary, #111111); opacity:0; transition:opacity 0.15s; min-height:1.2em;
       font-family:monospace;
     }
 
     #trussal-fg-toggle {
-      background:#eeeeee; border:1px solid #111111;
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:#111111;
+      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
+      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
       transition:color 0.15s, background 0.15s, border-color 0.15s;
       line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:11px; font-family:Arial, Helvetica, sans-serif; white-space:nowrap;
+      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
     }
-    #trussal-fg-toggle:hover { color:#eeeeee; background:#111111; }
-    #trussal-fg-toggle.on    { color:#eeeeee; background:#111111; border-color:#111111; }
+    #trussal-fg-toggle:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
+    #trussal-fg-toggle.on    { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
 
     /* Head-cursor feedback on plain (non-Trussal) controls: the field it is
        holding focus on, and the button/link it is currently dwelling. Jitsi's
        own inputs and buttons suppress the focus ring, so state this loudly.
        !important \u2014 these sit over Emotion class styles on the prejoin. */
     .trussal-hc-focus {
-      outline: 2px solid #111111 !important;
+      outline: 2px solid var(--trussal-secondary, #111111) !important;
       outline-offset: 1px !important;
       border-radius: 2px;
     }
     .trussal-hc-dwell {
-      outline: 2px solid #111111 !important;
+      outline: 2px solid var(--trussal-secondary, #111111) !important;
       outline-offset: 2px !important;
-      background: rgba(17,17,17,0.06) !important;
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 6%, transparent) !important;
     }
 
     .ts-dwell-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
       cursor: pointer;
       border-radius: 4px;
       padding: 2px 7px;
-      font-size: 10px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       line-height: 1.5;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .ts-dwell-btn:hover { background: #111111; color: #eeeeee; }
-    .ts-dwell-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-dwell-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
+    .ts-dwell-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-dwell-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-dwell-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-dwell-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
   `;
@@ -60484,14 +60486,14 @@ ${snippet}${JP_BTN_MARKER}`;
       min-width: 320px; min-height: 170px;
       max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
       z-index: 1000001;
-      background: #eeeeee;
-      border: 1px solid #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
       border-radius: 10px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.2);
       display: none;
       flex-direction: column;
       user-select: none;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
       overflow: hidden;
     }
     /* Collapsed = title bar only: drop the height floor so it can shrink to
@@ -60514,57 +60516,57 @@ ${snippet}${JP_BTN_MARKER}`;
       position: absolute;
       right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(17,17,17,0.45);
-      border-bottom: 2px solid rgba(17,17,17,0.45);
+      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
     }
     /* The deployed Trussal theme (all.css) carries a blunt
-       "html, body, body star { background-color: #eeeeee }" rule. Every
-       structural container below still states its OWN background so a
-       future theme change can't paint over the panel. A bare class
-       selector (0,1,0) already out-ranks that rule (0,0,1). */
+       "html, body, body star { background-color: var(--trussal-primary) }" rule.
+       Every structural container below still states its OWN background so a
+       CSS Cycles sheet or a future theme change can't paint over the panel. A
+       bare class selector (0,1,0) already out-ranks that rule (0,0,1). */
     .ts-kbd-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 6px 10px;
-      border-bottom: 1px solid #111111;
+      border-bottom: 1px solid var(--trussal-secondary, #111111);
       cursor: grab;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-header:active { cursor: grabbing; }
     /* Collapse + the \u2725 / \u21F2 head buttons sit above the corner resize grips
        (z-index 6) so a grip at the NE corner can't eat their clicks. */
     #${KBD_PANEL_ID} .ts-kbd-header > button { position: relative; z-index: 7; }
     .ts-kbd-title {
-      font-size: 11px;
+      font-size: calc(11px * var(--trussal-font-scale, 1));
       font-weight: 600;
-      color: #111111;
+      color: var(--trussal-secondary, #111111);
       letter-spacing: 0.5px;
       pointer-events: none;
     }
     .ts-kbd-collapse-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
       cursor: pointer;
       border-radius: 4px;
       padding: 1px 7px;
-      font-size: 10px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       line-height: 1.5;
       position: relative;
       overflow: hidden;
       transition: background 0.1s, color 0.1s;
     }
-    .ts-kbd-collapse-btn:hover { background: #111111; color: #eeeeee; }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: #111111; }
-    .ts-kbd-collapse-btn.strudel-btn-active  { background: #111111; color: #eeeeee; }
+    .ts-kbd-collapse-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-kbd-collapse-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-collapse-btn::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
     .ts-kbd-body {
@@ -60574,7 +60576,7 @@ ${snippet}${JP_BTN_MARKER}`;
       flex-direction: column;
       gap: 3px;
       padding: 8px;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     /* Shown only when it holds suggestions (see _updatePredictions) \u2014 an empty
        row here was the "rectangle that does nothing" between the title bar and
@@ -60587,25 +60589,25 @@ ${snippet}${JP_BTN_MARKER}`;
       min-height: 22px;
       padding-bottom: 2px;
       scrollbar-width: none;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-pred-btn {
       flex: 0 0 auto;
       padding: 1px 10px;
       border-radius: 999px;
-      border: 1px solid #111111;
-      background: #eeeeee;
-      color: #111111;
+      border: 1px solid var(--trussal-secondary, #111111);
+      background: var(--trussal-primary, #eeeeee);
+      color: var(--trussal-secondary, #111111);
       font-family: ui-monospace, monospace;
-      font-size: 11px;
+      font-size: calc(11px * var(--trussal-font-scale, 1));
       cursor: pointer;
       position: relative;
       overflow: hidden;
       transition: background 0.08s;
     }
     .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: #111111;
-      color: #eeeeee;
+      background: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-pred-btn::after {
       content: '';
@@ -60613,7 +60615,7 @@ ${snippet}${JP_BTN_MARKER}`;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.35);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 35%, transparent);
       pointer-events: none;
     }
     .ts-kbd-row {
@@ -60621,7 +60623,7 @@ ${snippet}${JP_BTN_MARKER}`;
       min-height: 0;
       display: flex;
       gap: 3px;
-      background: #eeeeee;
+      background: var(--trussal-primary, #eeeeee);
     }
     .ts-kbd-key {
       min-height: 22px;
@@ -60630,72 +60632,72 @@ ${snippet}${JP_BTN_MARKER}`;
       align-items: center;
       justify-content: center;
       border-radius: 5px;
-      border: 1px solid #111111;
-      background: #eeeeee;
-      color: #111111;
-      font-size: 12px;
+      border: 1px solid var(--trussal-secondary, #111111);
+      background: var(--trussal-primary, #eeeeee);
+      color: var(--trussal-secondary, #111111);
+      font-size: calc(12px * var(--trussal-font-scale, 1));
       cursor: pointer;
       position: relative;
       overflow: hidden;
       transition: background 0.05s;
     }
     .ts-kbd-key:hover {
-      background: #111111;
-      color: #eeeeee;
-      border-color: #111111;
+      background: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
+      border-color: var(--trussal-secondary, #111111);
     }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: #111111; }
+    .ts-kbd-key.ts-kbd-dwelling { border-color: var(--trussal-secondary, #111111); }
     .ts-kbd-key.ts-kbd-mod-on {
-      background: #111111;
-      border-color: #111111;
-      color: #eeeeee;
+      background: var(--trussal-secondary, #111111);
+      border-color: var(--trussal-secondary, #111111);
+      color: var(--trussal-primary, #eeeeee);
     }
     /* No !important: default flash colour, not a forced override \u2014 #trussal-kbd-panel
        is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
        through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: #111111; color: #eeeeee; }
+    .ts-kbd-key.ts-kbd-flash { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-key[data-k="Eval"] {
-      background: #eeeeee;
-      border-color: #111111;
-      color: #111111;
-      font-size: 10px;
+      background: var(--trussal-primary, #eeeeee);
+      border-color: var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
+      font-size: calc(10px * var(--trussal-font-scale, 1));
       font-weight: 600;
     }
-    .ts-kbd-key[data-k="Eval"]:hover { background: #111111; color: #eeeeee; }
+    .ts-kbd-key[data-k="Eval"]:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .ts-kbd-key::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell,0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
-    .ts-kbd-label { pointer-events: none; font-size: 11px; color: inherit; }
+    .ts-kbd-label { pointer-events: none; font-size: calc(11px * var(--trussal-font-scale, 1)); color: inherit; }
 
     /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
        sits flush beside the Face button whether or not the facial-gesture
        panel (which injects the shared .ts-dwell-btn base rules) has ever
        been opened. */
     #${KBD_TOGGLE_ID} {
-      background: #eeeeee; border: 1px solid #111111;
-      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: #111111;
+      background: var(--trussal-primary, #eeeeee); border: 1px solid var(--trussal-secondary, #111111);
+      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: var(--trussal-secondary, #111111);
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       line-height: 1; display: flex; align-items: center; gap: 4px;
-      font-size: 11px; font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
+      font-size: calc(11px * var(--trussal-font-scale, 1)); font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
       position: relative; overflow: hidden;
     }
-    #${KBD_TOGGLE_ID}:hover { color: #eeeeee; background: #111111; }
-    #${KBD_TOGGLE_ID}.on    { color: #eeeeee; background: #111111; border-color: #111111; }
-    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: #111111; }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: #111111; color: #eeeeee; }
+    #${KBD_TOGGLE_ID}:hover { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.on    { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); border-color: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     #${KBD_TOGGLE_ID}::after {
       content: '';
       position: absolute;
       bottom: 0; left: 0;
       width: 100%;
       height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
   `;
@@ -61397,7 +61399,7 @@ ${snippet}${JP_BTN_MARKER}`;
     </div>
     <textarea class="ts-code jp-code" spellcheck="false" style="min-height:96px;"></textarea>
     <div class="ts-voice-btns nc-voice-btns"></div>
-    <div class="ts-meta nc-errors" style="color:#111111;"></div>
+    <div class="ts-meta nc-errors" style="color:var(--trussal-secondary, #111111);"></div>
     <div class="ts-meta nc-byline"></div>
   `;
     container2.appendChild(wrap);
@@ -61696,7 +61698,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:2.25px solid #111111; border-radius:0;
+      border:2.25px solid var(--trussal-secondary, #111111); border-radius:0;
       background:transparent;
     }
   `;
@@ -62803,30 +62805,38 @@ ${snippet}${JP_BTN_MARKER}`;
   var landmark_gesture_mode_default = `/* landmark-gesture-mode.css \u2014 imported as raw text (build.mjs '.css': 'text')
    and injected once by _injectStyles(). Covers the top-left \u2630 corner + its
    menu + the instruction card, the config toast, and the section grafted into
-   Jitsi's "Keyboard shortcuts" dialog. Flat #111111 / #eeeeee theme. */
+   Jitsi's "Keyboard shortcuts" dialog.
+
+   Authored against the per-user Personal Theme vars (src/theme-context.js) \u2014
+   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+   on :root, each with its previous literal as the var() fallback \u2014 so this
+   corner retints with the Strudel overlay and the rest of the app. The toast
+   is the theme's one inverted surface (dark anchor bg, light anchor text).
+   The .trussal-lg-shortcuts graft below is the deliberate exception: it uses
+   currentColor to sit in whichever palette Jitsi draws that dialog in. */
 
 #trussal-lg-corner {
   position: fixed; top: 10px; left: 10px;
   z-index: 1000003;
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
 }
 
 #trussal-lg-gear {
   width: 28px; height: 28px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 6px;
-  font-size: 15px; cursor: pointer; padding: 0;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  font-size: calc(15px * var(--trussal-font-scale, 1)); cursor: pointer; padding: 0;
 }
-#trussal-lg-gear:hover { background: #111111; color: #eeeeee; }
-#trussal-lg-gear.on { background: #111111; color: #eeeeee; }
+#trussal-lg-gear:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+#trussal-lg-gear.on { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 
 #trussal-lg-menu {
   display: none;
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 6px;
-  padding: 8px 10px; font-size: 12px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  padding: 8px 10px; font-size: calc(12px * var(--trussal-font-scale, 1));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 #trussal-lg-menu.open { display: block; }
@@ -62836,24 +62846,24 @@ ${snippet}${JP_BTN_MARKER}`;
 }
 
 #trussal-lg-instruction {
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 8px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;
   padding: 8px 10px; max-width: 300px;
-  font-size: 12px; line-height: 1.5;
+  font-size: calc(12px * var(--trussal-font-scale, 1)); line-height: 1.5;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 #trussal-lg-instruction .lg-row { display: flex; justify-content: space-between; gap: 8px; }
 #trussal-lg-instruction .lg-title { font-weight: 600; }
 #trussal-lg-instruction .lg-x {
-  background: #eeeeee; color: #111111;
-  border: 1px solid #111111; border-radius: 4px;
-  cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 5px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  cursor: pointer; font-size: calc(10px * var(--trussal-font-scale, 1)); line-height: 1; padding: 1px 5px;
 }
-#trussal-lg-instruction .lg-x:hover { background: #111111; color: #eeeeee; }
+#trussal-lg-instruction .lg-x:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
 #trussal-lg-instruction ul { margin: 6px 0 0; padding-left: 18px; }
 #trussal-lg-instruction kbd {
-  border: 1px solid #111111; border-radius: 3px;
-  padding: 0 4px; font-family: monospace; font-size: 11px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 3px;
+  padding: 0 4px; font-family: monospace; font-size: calc(11px * var(--trussal-font-scale, 1));
 }
 #trussal-lg-instruction .lg-blocked { opacity: 0.55; }
 
@@ -62863,10 +62873,10 @@ ${snippet}${JP_BTN_MARKER}`;
   position: fixed; top: 10px; left: 46px;
   z-index: 1000004;
   max-width: 280px;
-  background: #111111; color: #eeeeee;
-  border: 1px solid #111111; border-radius: 6px;
-  padding: 6px 10px; font-size: 12px; line-height: 1.4;
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  padding: 6px 10px; font-size: calc(12px * var(--trussal-font-scale, 1)); line-height: 1.4;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0; transform: translateY(-4px);
   transition: opacity 0.15s ease, transform 0.15s ease;

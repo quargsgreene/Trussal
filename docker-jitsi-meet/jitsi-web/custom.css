@@ -2,13 +2,16 @@
    Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
    `cat custom.css >> all.css`). Tracked in the repo — never generated.
 
-   Palette: flat monochrome, authored against three CSS custom properties so
-   the per-user Personal Theme picker (src/theme-context.js, in the bundle)
-   can retint the whole app by reassigning them on :root:
+   Palette: flat monochrome, authored against CSS custom properties so the
+   per-user Personal Theme picker (src/theme-context.js, in the bundle) can
+   retint the whole app by reassigning them on :root:
 
-     --trussal-primary    the light anchor — surfaces / backgrounds (grey)
-     --trussal-secondary  the dark anchor  — text, borders, outlines, icons
-     --trussal-font       the UI font
+     --trussal-primary     the light anchor — surfaces / backgrounds (grey)
+     --trussal-secondary   the dark anchor  — text, borders, outlines, icons
+     --trussal-font        the UI font
+     --trussal-font-scale  unitless multiplier on Trussal-overlay font sizes
+                           (used by the bundle's own <style> blocks, not here —
+                           Jitsi's own type is left at its shipped sizes)
 
    Every reference keeps its previous literal as the var() fallback, so the
    page renders correctly in the window before the bundle's theme module runs.
@@ -24,6 +27,7 @@
   --trussal-primary: #eeeeee;
   --trussal-secondary: #111111;
   --trussal-font: Arial, Helvetica, sans-serif;
+  --trussal-font-scale: 1;
 }
 
 
@@ -520,6 +524,34 @@ div.hangup-menu-button svg {
   background-color: var(--trussal-primary, #eeeeee) !important;
   color: var(--trussal-secondary, #111111) !important;
   border: 1px solid var(--trussal-secondary, #111111) !important;
+}
+
+/* Pop-up menus / submenus that portal out of the toolbar and the tiles: the
+   mic / camera device pickers, the ⋯ overflow menu, a participant's kebab
+   menu, the reactions / video-quality / language menus, and the mobile-style
+   bottom drawer they collapse into on a narrow window. Jitsi's Emotion ships
+   every one of these on a dark surface (`#242528` / `#1e1e1e`) at the same
+   hashed-class specificity as the panels above, so the non-!important global
+   default can't reach them and they stayed dark under a personal theme.
+   Stable Emotion label substrings — only the `css-<hash>-` prefix changes per
+   build — plus the legacy plain classes as a hedge. The hover / selected
+   inverts further down still win (later in source order, also !important). */
+[class*="-contextMenu"],
+[class*="-contextMenuItem"],
+[class*="-contextMenuItemGroup"],
+[class*="-overflowMenu"],
+[class*="-overflowMenuItem"],
+[class*="-drawerContainer"],
+[class*="-drawer-content"],
+[class*="-drawerContent"],
+.overflow-menu,
+.overflow-menu .overflow-menu-item,
+.popupmenu,
+.popupmenu li {
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border-color: var(--trussal-secondary, #111111) !important;
 }
 
 /* Panel / dialog headings ship white or a pale grey (`#c2c2c2`), both

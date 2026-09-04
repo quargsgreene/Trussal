@@ -54,6 +54,10 @@ function _injectStyles() {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
   const s = document.createElement('style');
   s.id = STYLE_ID;
+  // Authored against the per-user Personal Theme vars (src/theme-context.js):
+  // --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+  // on :root, each with its previous literal as the var() fallback, so these
+  // shared drag/resize affordances retint with the rest of the app.
   s.textContent = `
     .tdr-grip {
       position: absolute; width: 18px; height: 18px; z-index: 20;
@@ -67,38 +71,38 @@ function _injectStyles() {
     .tdr-grip-se::after {
       content: ''; position: absolute; right: 3px; bottom: 3px;
       width: 8px; height: 8px;
-      border-right: 2px solid rgba(17,17,17,0.45);
-      border-bottom: 2px solid rgba(17,17,17,0.45);
+      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
+      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
     }
     /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
        facial-gesture.js's dwell loop clicks them for free; these rules stand
        on their own so they still look right if that panel never opened. */
     .tdr-head-btn {
-      background: #eeeeee;
-      border: 1px solid #111111;
-      color: #111111; cursor: pointer; border-radius: 4px;
-      padding: 1px 6px; font-size: 11px; line-height: 1.5;
-      font-family: Arial, Helvetica, sans-serif; white-space: nowrap;
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111); cursor: pointer; border-radius: 4px;
+      padding: 1px 6px; font-size: calc(11px * var(--trussal-font-scale, 1)); line-height: 1.5;
+      font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
       /* Above the z-index:20 corner grips so a corner grip can't eat the
          button's clicks when it sits near a panel corner. */
       position: relative; z-index: 21; overflow: hidden;
       transition: background 0.1s, color 0.1s, border-color 0.1s;
     }
-    .tdr-head-btn:hover { background: #111111; color: #eeeeee; }
-    .tdr-head-btn.on { border-color: #111111; color: #eeeeee; background: #111111; }
-    .tdr-head-btn.strudel-dwell-hover { border-color: #111111; }
-    .tdr-head-btn.strudel-btn-active  { border-color: #111111; background: #111111; color: #eeeeee; }
+    .tdr-head-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .tdr-head-btn.on { border-color: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
+    .tdr-head-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .tdr-head-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
     .tdr-head-btn::after {
       content: ''; position: absolute; bottom: 0; left: 0;
       width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
-      background: rgba(17,17,17,0.28); pointer-events: none;
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent); pointer-events: none;
     }
-    .tdr-head-target { outline: 2px solid #111111; outline-offset: 2px; }
+    .tdr-head-target { outline: 2px solid var(--trussal-secondary, #111111); outline-offset: 2px; }
     #${HINT_ID} {
       position: fixed; z-index: 1000002; pointer-events: none;
-      background: #eeeeee; color: #111111;
-      border: 1px solid #111111; border-radius: 999px;
-      font: 600 11px/1.4 Arial, Helvetica, sans-serif; padding: 3px 10px;
+      background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+      border: 1px solid var(--trussal-secondary, #111111); border-radius: 999px;
+      font: 600 calc(11px * var(--trussal-font-scale, 1))/1.4 var(--trussal-font, Arial, Helvetica, sans-serif); padding: 3px 10px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
   `;

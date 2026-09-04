@@ -56,7 +56,7 @@ function injectStyleOnce() {
     }
     .jp-play-box {
       position:absolute; left:0; top:0; box-sizing:border-box;
-      border:2.25px solid #111111; border-radius:0;
+      border:2.25px solid var(--trussal-secondary, #111111); border-radius:0;
       background:transparent;
     }
   `;
