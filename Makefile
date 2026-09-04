@@ -66,8 +66,8 @@ deploy-shards:
 # can't take the site down, then self-heals coturn's TURN_EXTERNAL_IP and
 # (re)installs its refresh cron.
 deploy-edge:
-	@[ -n "$(EDGE_VM)" ] || { echo "EDGE_VM unset in .env.deploy — no edge tier, skipping"; exit 0; }
-	ssh $(EDGE_VM) 'cd $(EDGE_REPO_PATH) && git pull --ff-only && cd edge \
+	@[ -n "$(EDGE_VM)" ] || echo "EDGE_VM unset in .env.deploy — no edge tier, skipping"
+	@[ -z "$(EDGE_VM)" ] || ssh $(EDGE_VM) 'cd $(EDGE_REPO_PATH) && git pull --ff-only && cd edge \
 	  && docker compose up -d \
 	  && docker compose exec -T edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg \
 	  && docker compose kill -s HUP edge \
