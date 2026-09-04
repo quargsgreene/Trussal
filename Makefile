@@ -29,6 +29,15 @@ VIDEO_REPO_PATH ?= $(REPO_PATH)
 AUDIO_REPO_PATH ?= $(REPO_PATH)
 BOTS_REPO_PATH  ?= $(REPO_PATH)
 
+# Multi-shard (edge/README.md, docker-jitsi-meet/MULTISHARD.md): SHARD_VMS is a
+# space-separated `user@host` list, one FULL Jitsi stack per host, each behind
+# the consistent-hash edge on EDGE_VM. Unset => the single VIDEO_VM, i.e. the
+# existing single-stack deploy, unchanged. EDGE_VM unset => no edge step.
+SHARD_VMS       ?= $(VIDEO_VM)
+EDGE_VM         ?=
+SHARD_REPO_PATH ?= $(REPO_PATH)
+EDGE_REPO_PATH  ?= $(REPO_PATH)
+
 # run.sh rebuilds the bundle on the video VM, and build.mjs bakes in the
 # Jamulus hostname from JAMULUS_HOST (shell env or a repo-root .env, which no
 # VM has). Passing it here is what keeps that rebuild from silently baking the
@@ -36,10 +45,32 @@ BOTS_REPO_PATH  ?= $(REPO_PATH)
 # custom-config.js dirty, which breaks the next `git pull --ff-only`.
 JAMULUS_HOST    ?= jamulus.trussal.com
 
-.PHONY: deploy-video deploy-audio deploy-bots deploy-all check-tokens
+.PHONY: deploy-video deploy-shards deploy-edge deploy-audio deploy-bots \
+        deploy-all deploy-multishard check-tokens collect-session-logs
 
 deploy-video:
 	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh'
+
+# One FULL Jitsi stack per shard host. `run.sh` is already per-host and needs no
+# shard argument — shard identity (DEPLOYMENTINFO_SHARD, JVB_* ) lives in that
+# host's gitignored docker-jitsi-meet/.env (docker-jitsi-meet/MULTISHARD.md).
+# Serial, and it aborts on the first failure rather than half-deploying the rack.
+deploy-shards:
+	@for vm in $(SHARD_VMS); do \
+	  echo "=== shard $$vm ==="; \
+	  ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; \
+	done
+
+# The consistent-hash edge in front of the shards (edge/README.md). Validates
+# the config before the seamless reload so a typo can't take the site down.
+deploy-edge:
+	@[ -n "$(EDGE_VM)" ] || { echo "EDGE_VM unset in .env.deploy — no edge tier, skipping"; exit 0; }
+	ssh $(EDGE_VM) 'cd $(EDGE_REPO_PATH) && git pull --ff-only && cd edge \
+	  && docker compose up -d \
+	  && docker compose exec -T edge haproxy -c -V -f /usr/local/etc/haproxy/haproxy.cfg \
+	  && docker compose kill -s HUP edge \
+	  && echo "edge reloaded"'
+
 deploy-audio:
 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
 	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \
@@ -54,28 +85,48 @@ deploy-bots:
 	  && cd .. && bash scripts/check-control-token.sh bots' \
 	  || echo "WARNING: bots deployed, but the control token is missing/stale — no aggregator will spawn."
 
-# The control-channel secret lives only in two gitignored .env files on two
-# different VMs, and both compose files default it to empty rather than failing,
-# so the pair can be absent OR mismatched with no error anywhere except a
-# conductor log flooding one line every 2s. Neither VM can check the other, so
-# this compares sha256 fingerprints of what each side has actually got — the
-# secrets themselves never leave their hosts. Fatal: a wrong pair means the
-# fleet is dead no matter how cleanly everything else deployed.
+# The control-channel secret lives only in gitignored .env files across the VMs
+# (SIDECAR_CONTROL_TOKEN in every shard's docker-jitsi-meet/.env, and
+# FLEET_CONTROL_TOKEN in bots/.env), and every compose file defaults it to empty
+# rather than failing — so the set can be absent OR mismatched with no error
+# anywhere except a conductor log flooding one line every 2s. No VM can check
+# another, so this compares sha256 fingerprints of what each side actually
+# holds; the secrets never leave their hosts. Fatal: a wrong set means the fleet
+# is dead no matter how cleanly everything else deployed. Every shard's token
+# must match the one bots/.env holds, or that shard discovers no rooms.
 check-tokens:
-	@video=$$(ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && bash scripts/check-control-token.sh video' | sed -n 's/^FINGERPRINT //p'); \
-	bots=$$(ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && bash scripts/check-control-token.sh bots' | sed -n 's/^FINGERPRINT //p'); \
-	if [ -z "$$video" ] || [ -z "$$bots" ]; then \
-	  [ -n "$$video" ] || echo "FAIL: video VM has no usable control token (diagnosis above)."; \
-	  [ -n "$$bots" ]  || echo "FAIL: bots VM has no usable control token (diagnosis above)."; \
-	  exit 1; \
-	fi; \
-	if [ "$$video" != "$$bots" ]; then \
-	  echo "FAIL: the two VMs hold DIFFERENT control tokens (video sha $$video, bots sha $$bots)."; \
-	  echo "  Room discovery is refused, so no aggregator spawns in any room. Copy the"; \
-	  echo "  video VM's SIDECAR_CONTROL_TOKEN into bots/.env as FLEET_CONTROL_TOKEN, then:"; \
-	  echo "    cd bots && docker compose up -d --force-recreate conductor"; \
-	  exit 1; \
-	fi; \
-	echo "control token OK — both VMs agree (sha $$video)"
+	@bots=$$(ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && bash scripts/check-control-token.sh bots' | sed -n 's/^FINGERPRINT //p'); \
+	if [ -z "$$bots" ]; then echo "FAIL: bots VM has no usable control token (diagnosis above)."; exit 1; fi; \
+	rc=0; \
+	for vm in $(SHARD_VMS); do \
+	  fp=$$(ssh $$vm 'cd $(SHARD_REPO_PATH) && bash scripts/check-control-token.sh video' | sed -n 's/^FINGERPRINT //p'); \
+	  if [ -z "$$fp" ]; then echo "FAIL: shard $$vm has no usable control token (diagnosis above)."; rc=1; \
+	  elif [ "$$fp" != "$$bots" ]; then \
+	    echo "FAIL: shard $$vm holds a DIFFERENT control token (shard sha $$fp, bots sha $$bots)."; \
+	    echo "  That shard discovers no rooms. Set its docker-jitsi-meet/.env SIDECAR_CONTROL_TOKEN"; \
+	    echo "  to the value in bots/.env, then: cd docker-jitsi-meet && docker compose up -d --force-recreate latency"; \
+	    rc=1; \
+	  else echo "  ✓ shard $$vm agrees (sha $$fp)"; fi; \
+	done; \
+	[ $$rc -eq 0 ] && echo "control token OK — every shard agrees with the bots VM (sha $$bots)"; \
+	exit $$rc
 
+# Each shard writes its `latency` sidecar's SESSION_LOG_DIR JSONL locally; pull
+# them together for loadtest/analysis/ingest.py. SESSION_LOG_REMOTE is the path
+# inside each shard's repo (default matches docker-jitsi-meet's compose mount).
+SESSION_LOG_REMOTE ?= $(SHARD_REPO_PATH)/docker-jitsi-meet/session-logs
+SESSION_LOG_LOCAL  ?= loadtest/results/_session-logs
+collect-session-logs:
+	@mkdir -p $(SESSION_LOG_LOCAL)
+	@for vm in $(SHARD_VMS); do \
+	  name=$${vm##*@}; \
+	  echo "=== $$vm -> $(SESSION_LOG_LOCAL)/$$name ==="; \
+	  rsync -az --ignore-missing-args $$vm:$(SESSION_LOG_REMOTE)/ $(SESSION_LOG_LOCAL)/$$name/ || true; \
+	done
+
+# Single-stack deploy (unchanged): one video VM, no edge.
 deploy-all: deploy-video deploy-audio deploy-bots check-tokens
+
+# Sharded rack: edge first, then every shard, then audio + bots, then verify the
+# control token across the whole set.
+deploy-multishard: deploy-edge deploy-shards deploy-audio deploy-bots check-tokens

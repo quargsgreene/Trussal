@@ -89,16 +89,41 @@ make deploy-all     # all three
 
 Which target to run depends on what changed: `src/` (bundle) or `latency-instrument/server.js` (sidecar) → **video**; `bots/` → **bots**; `system/jamulus@.service` → **audio**.
 
+### Multi-shard rack (optional)
+
+The deployment can instead run **one full Jitsi stack per rack machine**
+("shards") behind a consistent-hash edge load balancer that pins every room to
+one shard. Off by default: with `SHARD_VMS` / `EDGE_VM` unset in `.env.deploy`,
+`deploy-all` is exactly the single-`video`-VM path above.
+
+- `edge/` — the HAProxy config (`haproxy.cfg`), its compose file, and
+  `edge/README.md` (how the room key is derived per surface, the cookie /
+  stick-table fallback for XMPP, add/drain a shard).
+- `docker-jitsi-meet/MULTISHARD.md` — the per-shard `.env` (`DEPLOYMENTINFO_SHARD`,
+  `JVB_WS_SERVER_ID`, shard-unique JVB secrets), bring-up order, and why OCTO
+  stays off (a room never spans shards).
+- `src/deploy/room-shard.js` — the offline model of the same rendezvous mapping
+  (conductor placement pre-compute, `loadtest` fig11). HAProxy is the runtime
+  authority.
+- Targets: `make deploy-edge` (validate + seamless-reload HAProxy),
+  `make deploy-shards` (`run.sh` on every `SHARD_VM`, serial), `make deploy-multishard`
+  (edge → shards → audio → bots → `check-tokens`). `make collect-session-logs`
+  rsyncs each shard's sidecar JSONL together for `loadtest/analysis/ingest.py`.
+- The bots conductor opens one `?role=control` discovery connection **per shard**
+  (`SIDECAR_CONTROL_URLS` in `bots/.env`, comma-separated); its per-room
+  `?role=fleet` connections go through the edge, routed by `?room=`. Every
+  shard's `SIDECAR_CONTROL_TOKEN` must equal the bots VM's `FLEET_CONTROL_TOKEN`.
+
 **Room discovery needs a shared secret on BOTH VMs.** Set the same value as `SIDECAR_CONTROL_TOKEN` in `docker-jitsi-meet/.env` (video) and `FLEET_CONTROL_TOKEN` in `bots/.env` (bots) — generate with `openssl rand -hex 32`. The relay's `?role=control` channel lists every meeting in progress and `/ws` is proxied publicly with no auth of its own, so it **fails closed**: with no token, or a mismatched one, no rooms are discovered and **no aggregator spawns anywhere**. `[fleet] the relay REFUSED room discovery` in the conductor's log means the two values disagree.
 
 Both files are gitignored, so **no deploy can install them** and both compose files default the variable to empty rather than failing — an absent or mismatched pair is silent everywhere except a conductor log repeating one line every ~2s. Verify it instead of assuming:
 
 ```bash
-make check-tokens                       # compares sha256 fingerprints across both VMs
+make check-tokens                       # compares sha256 fingerprints across the VMs (every shard vs bots)
 scripts/check-control-token.sh video    # or bots — checks one side, on that host
 ```
 
-`check-tokens` runs at the end of `make deploy-all`; `run.sh` and `make deploy-bots` warn (non-fatally) on their own side. The per-side script also compares the `.env` against the **running container**, because container env is fixed at create time and `docker compose restart` does not re-read `.env` — editing the file and restarting leaves the old value live.
+`check-tokens` runs at the end of `make deploy-all` / `make deploy-multishard`; `run.sh` and `make deploy-bots` warn (non-fatally) on their own side. The per-side script also compares the `.env` against the **running container**, because container env is fixed at create time and `docker compose restart` does not re-read `.env` — editing the file and restarting leaves the old value live.
 
 ### Deploy caveats (these have each cost real time)
 
@@ -147,6 +172,7 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `editor-router.js` | Routes head-cursor/keyboard input to whichever editor is focused (personal Strudel vs shared JPattern) |
 | `audio-net/MosaicLayout.js` | Pure slot + geometry math for the aggregator's video mosaic: who holds which cell, and where that cell sits in the frame |
 | `audio-net/MosaicCells.js` | Which peers earn a mosaic cell, and whether it is re-executed locally or blitted from their published track |
+| `audio-net/TurnRing.js` | The one rule for the NetCycles rotation order under `# ring hash` (the default): weighted-rendezvous (HRW) hash of the room's PRESENT tokens, seed = room name — a pure function of `(present set, seed)` with nothing stored, minimal-disruption on a join/leave. `MetaprogramScheduler` / `Metaprogrammer` / `AggregatorBot` all call `orderTokens` against the identical roster + seed. `# ring explicit` (or no `# ring`) is the old literal `$ participants` walk. See `src/features/turn-ring.md` |
 | `audio-net/` | JPattern: metaprogram parser + deterministic scheduler + AV buffer queues (`Metaprogrammer*.js`, `MetaprogramScheduler.js`), O2lite/ClockSync, CRDT sync (Yjs over the sidecar), worst-case metrics + artificial modulation (`network-modulation/`), RTCStats + spectrum observability (`observability/`), network-modulated effects (`av-effects/`), bot cluster orchestration, room health |
 | `bridges/XMPPtoO2Mapper.js` | jitsiId ↔ room index ↔ O2 service name |
 
@@ -159,6 +185,7 @@ Top-level: `components/` (vanilla-DOM JPattern editor/highlighter/cluster video)
 - **Strudel is evaluated once per browser, combining all peers.** `strudel.js` builds one program from every playing peer's pattern using `$:` labeled-voice syntax and re-evaluates whenever any peer's state changes. Local peer effects are applied via WebAudio post-mix; remote peer effects are injected as `.distort()/.crush()/.room()` calls into the combined program.
 - **Every program buffer self-declares its kind.** A performer's editor opens with `'personal editor'`, a bot's code with `'bot editor'`, the JPattern editor with `'metaprogram editor'` (`src/program-directive.js`; the `… program` spellings still parse as legacy aliases). All three are prefilled by default. The directive is required with no fallback — an unlabeled buffer is rejected, not guessed.
 - **Two surface notations, whole-buffer, everywhere.** Each editor accepts **mini** (`$: head("<0 1>").m("wcl", 10)` — Strudel-native `.` chaining, parens, every string quoted) or **mondo** (`$ head <0 1>` then `# m "wcl" 10` per line — bare mini-notation patterns, `#` chaining). One buffer is entirely one or the other; mixing is a parse error (`src/notation.js`). The personal/bot path lowers mondo→mini before the transpiler; the metaprogram parser lowers mini→mondo before tokenising. `"wcl"`/`"wcpl"` are quoted in both. Independent of `mondo-notation.js`, which is a pattern-*fragment* language (`` mondo`(cat 0 1)` ``) usable inside either.
+- **The rotation order is a consistent hash by default.** `buildDefaultProgram()` ships `# ring hash`: the NetCycles turn order is `TurnRing.orderTokens(present roster, seed=room name)`, recomputed each cycle, so every joiner takes turns with no `$ participants` edit and no CRDT round-trip, and a join/leave perturbs O(1/N) of the ring. `# ring explicit`, or any older program with no `# ring` line, is the literal `$ participants` walk — byte-identical to before. Browser and aggregator hash the identical roster + seed (`src/features/turn-ring.md`).
 - **Audio effects are deterministic from network metrics.** RTT and jitter values (broadcast over the peer-state bus) are used identically on every client to compute effect parameters, so all browsers produce the same processed audio for the same peer.
 - **The latency sidecar WebSocket** connects at `wss://<host>/ws?room=<name>&role=player` (nginx proxies it). `peer-state.js` owns this connection and buffers outbound messages until the `hello` handshake completes.
 - **Room names are free-form and nothing may be pinned to one.** The room is the last path segment of the URL, on both the client (`getRoomNameFromUrl`) and the bots (`AggregatorBot#roomAndProto`). Because no room can be known ahead of time, the fleet service discovers them: it holds one `?role=control` connection to the sidecar, which sends the rooms currently holding participants and announces each new one, and the fleet then opens a per-room `role=fleet` bus. Every active room gets its own aggregator, pointed at that room via `JITSI_URL` (`jitsiUrlForRoom`). There is **no room setting at all** — every fleet method that acts on a meeting takes its room as a required argument (`requireRoom`), because any configured default could only ever be a wrong guess. The control channel is **authenticated and fails closed**: `FLEET_CONTROL_TOKEN` on the conductor must equal `SIDECAR_CONTROL_TOKEN` on the video VM, since the channel lists every meeting in progress and `/ws` is proxied publicly with no auth of its own. Unset or mismatched → discovery is refused and the symptom is "no aggregator in any room".
