@@ -22,6 +22,7 @@ Then (re)builds results/<run-id>/campaign.db from all of the above.
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -280,6 +281,113 @@ def turn_stability(observations: pd.DataFrame, window_s: float = 30.0) -> pd.Dat
     return pd.DataFrame(rows)
 
 
+# --------------------------------------------------------------------------- #
+# Shard balance (mirrors src/deploy/room-shard.js — the JS is authoritative)
+# --------------------------------------------------------------------------- #
+def _fnv1a32(s: str) -> int:
+    h = 0x811C9DC5
+    for ch in s.encode("utf-8", "surrogatepass"):
+        h ^= ch
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def _hash_unit_interval(seed: str, token: str) -> float:
+    return (_fnv1a32(f"{seed} {token}") + 0.5) / 4294967296.0
+
+
+def _shard_for_room(room: str, shards: list[str]) -> str | None:
+    """Rendezvous (HRW) winner — the offline model HAProxy's `hash-type
+    consistent` approximates. Equal weights only (the study does not bias)."""
+    if not shards:
+        return None
+    best, best_score = None, float("-inf")
+    for name in sorted(set(map(str, shards))):
+        u = _hash_unit_interval(str(room), name)
+        score = -1.0 / math.log(u)
+        if score > best_score:
+            best, best_score = name, score
+    return best
+
+
+def shard_balance(observations: pd.DataFrame) -> pd.DataFrame:
+    """Rooms- and participants-per-shard for a sharded run, plus the modelled
+    fraction of rooms that re-home when the shard set changes (the
+    consistent-hash win). Empty for an unsharded run (no X-Jitsi-Shard)."""
+    serving = observations[(observations.collector == "sidecar_observer")
+                           & (observations.metric == "serving_shard")].copy()
+    if serving.empty or "shard" not in serving.columns:
+        return pd.DataFrame()
+    serving = serving[serving["shard"].fillna("").astype(str) != ""]
+    if serving.empty:
+        return pd.DataFrame()
+
+    joins = observations[(observations.collector == "sidecar_observer")
+                         & (observations.metric.isin(["peer_join", "peer_leave"]))].copy()
+
+    rows: list[dict] = []
+    for keys, cell in serving.groupby([c for c in CELL_KEYS if c in serving.columns]):
+        key_map = dict(zip([c for c in CELL_KEYS if c in serving.columns],
+                           keys if isinstance(keys, tuple) else (keys,)))
+        room_shard = (cell.sort_values("t")
+                          .drop_duplicates("room", keep="last")
+                          .set_index("room")["shard"].astype(str).to_dict())
+        observed_shards = sorted(set(room_shard.values()))
+
+        # observed placement
+        rooms_on: dict[str, int] = {s: 0 for s in observed_shards}
+        for s in room_shard.values():
+            rooms_on[s] += 1
+        for s, n in rooms_on.items():
+            rows.append({**key_map, "shard_set": "observed", "shard": s,
+                         "metric": "rooms_on_shard", "value": float(n)})
+
+        # participants per shard (net joins-minus-leaves per room, routed by the
+        # observed room->shard map)
+        if not joins.empty:
+            jc = joins
+            for col in CELL_KEYS:
+                if col in jc.columns and col in key_map:
+                    jc = jc[jc[col] == key_map[col]]
+            per_room: dict[str, int] = {}
+            for _, ev in jc.iterrows():
+                r = ev.get("room")
+                if r is None or r not in room_shard:
+                    continue
+                per_room[r] = per_room.get(r, 0) + (1 if ev.metric == "peer_join" else -1)
+            part_on = {s: 0 for s in observed_shards}
+            for r, n in per_room.items():
+                part_on[room_shard[r]] += max(0, n)
+            for s, n in part_on.items():
+                rows.append({**key_map, "shard_set": "observed", "shard": s,
+                             "metric": "participants_on_shard", "value": float(n)})
+            rows.append({**key_map, "shard_set": "observed", "shard": "",
+                         "metric": "participants_jain",
+                         "value": _jain(list(part_on.values()))})
+
+        rows.append({**key_map, "shard_set": "observed", "shard": "",
+                     "metric": "rooms_jain", "value": _jain(list(rooms_on.values()))})
+
+        # modelled rebalance: over the SAME observed room set, how many rooms
+        # move when a shard is added / drained. This is the property HAProxy's
+        # consistent hashing and src/deploy/room-shard.js share.
+        all_rooms = list(room_shard.keys())
+        n = len(observed_shards)
+        if n >= 1 and all_rooms:
+            grow = observed_shards + [f"s{n + 1}"]
+            drain = observed_shards[:-1] if n >= 2 else observed_shards
+            for label, before, after in [(f"{n}->{n + 1}", observed_shards, grow),
+                                         (f"{n}->{max(1, n - 1)}", observed_shards, drain)]:
+                if before == after:
+                    continue
+                moved = sum(1 for r in all_rooms
+                            if _shard_for_room(r, before) != _shard_for_room(r, after))
+                rows.append({**key_map, "shard_set": label, "shard": "",
+                             "metric": "rehomed_fraction",
+                             "value": moved / len(all_rooms)})
+    return pd.DataFrame(rows)
+
+
 def break_points(observations: pd.DataFrame) -> pd.DataFrame:
     events = observations[(observations.collector == "campaign")].copy()
     breaks = events[events.metric == "break_level"]
@@ -325,6 +433,7 @@ def main(argv=None):
     outputs["dropout_rate.parquet"] = dropout_rate(observations, drops)
     outputs["turn_stability.parquet"] = turn_stability(observations)
     outputs["break_points.parquet"] = break_points(observations)
+    outputs["shard_balance.parquet"] = shard_balance(observations)
 
     for filename, frame in outputs.items():
         frame.to_parquet(tidy / filename, index=False)

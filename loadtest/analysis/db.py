@@ -38,6 +38,7 @@ _TABLE_FROM_PARQUET = {
     "dropouts": "dropouts.parquet",
     "dropout_rate": "dropout_rate.parquet",
     "break_points": "break_points.parquet",
+    "shard_balance": "shard_balance.parquet",
     "summary": "summary.parquet",
 }
 

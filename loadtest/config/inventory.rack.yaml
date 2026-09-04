@@ -1,0 +1,88 @@
+# Layout R — the physical rack (1 AMD + 2 Dells), no Proxmox.
+#
+# Two uses:
+#   * turn-assignment study (S5/S6, fig09/fig10): the two Dells are the matched
+#     pair — one arm writes `# ring explicit`, the other leaves the `# ring hash`
+#     default. The AMD is the generator + break-finder. Each Dell is a plain
+#     standalone Trussal stack here; the edge tier is NOT involved.
+#   * shard-balance study (fig11): the whole rack as ONE sharded system — the
+#     AMD runs edge/ + coturn + ddns, the Dells are shards s1 / s2. See
+#     `sharded_target:` at the bottom and `edge/README.md`.
+#
+# Addresses are placeholders — fill from your rack (they mirror the gitignored
+# .env.deploy). The mgmt LAN is 192.168.1.0/24; there is no vmbr1, so netem
+# shapes the generator's uplink toward that /24 (generators[0].iface).
+
+# ---- turn study: the two Dells as identical Trussal stacks ---------------- #
+targets:
+  sut_explicit:
+    host: 192.168.1.201          # Dell A
+    scheme: https
+    ws_path: /ws
+    xmpp_ws_path: /xmpp-websocket
+    turn_mode: explicit          # harness writes `# ring explicit` + a maintained literal
+  sut_hash:
+    host: 192.168.1.202          # Dell B
+    scheme: https
+    ws_path: /ws
+    xmpp_ws_path: /xmpp-websocket
+    turn_mode: hash              # harness leaves the `# ring hash` default alone
+
+sut_bots:
+  sut_explicit:
+    ssh: trussal@192.168.1.201
+    conductor_admin: http://192.168.1.201:7777
+    container_prefix: trussal-bot-
+    max_bots_for_campaign: 48
+  sut_hash:
+    ssh: trussal@192.168.1.202
+    conductor_admin: http://192.168.1.202:7777
+    container_prefix: trussal-bot-
+    max_bots_for_campaign: 48
+
+vms:
+  sut_explicit:
+    ssh: trussal@192.168.1.201
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats
+  sut_hash:
+    ssh: trussal@192.168.1.202
+    compose_dir: ~/Trussal/docker-jitsi-meet
+    containers: [docker-jitsi-meet-web-1, docker-jitsi-meet-jvb-1, docker-jitsi-meet-jicofo-1, docker-jitsi-meet-prosody-1, docker-jitsi-meet-latency-1]
+    colibri_stats_url: http://127.0.0.1:8080/colibri/stats
+
+# ---- load generator: the AMD ------------------------------------------- #
+generators:
+  - name: gen-master
+    ssh: trussal@192.168.1.254
+    role: [master, worker, collectors, netem]
+    iface: eth0                  # the NIC toward 192.168.1.0/24 — netem.sh shapes THIS only
+    media_browsers: 24
+    ghost_ws: 2000
+
+campaign:
+  repo_dir: ~/Trussal/loadtest
+  venv: ~/Trussal/loadtest/.venv
+  vm_subnet: 192.168.1.0/24
+  mgmt_subnet: 192.168.1.0/24
+  room_prefix: loadtest
+  sut_cold_snapshot: ""          # no Proxmox rollback on bare metal
+
+# ---- shard-balance study (fig11): the rack as one sharded system --------- #
+# run_shardstudy is not wired yet; this block records the topology the observer
+# fleet + analysis.metrics.shard_balance() expect. The observer reads
+# X-Jitsi-Shard off each room's /ws 101 (harness/sidecar.py handshake_headers).
+sharded_target:
+  edge:
+    host: trussal.com           # Cloudflare -> the AMD:80 (edge/haproxy.cfg)
+    ssh: trussal@192.168.1.254
+    compose_dir: ~/Trussal/edge
+  shards:
+    - name: s1
+      ssh: trussal@192.168.1.201
+      compose_dir: ~/Trussal/docker-jitsi-meet
+    - name: s2
+      ssh: trussal@192.168.1.202
+      compose_dir: ~/Trussal/docker-jitsi-meet
+  room_prefix: loadtest         # observer opens wss://trussal.com/ws?room=<prefix>-NNNN

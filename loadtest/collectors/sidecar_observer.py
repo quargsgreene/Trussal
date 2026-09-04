@@ -133,7 +133,12 @@ class Observer:
         for pid, p in list(sc.peers.items()):
             self.peers[pid] = {"roomIndex": p.get("roomIndex"), "isBot": p.get("isBot"),
                                "kind": self._kind(p), "joined_t": time.time()}
-        self.sink.event("observer_up", room=self.room, **self._counts())
+        # which shard the edge LB routed this room to (X-Jitsi-Shard on the /ws
+        # 101). "" for an unsharded stack — shard_balance() then has nothing to
+        # tally, exactly as for a single-target run.
+        shard = sc.handshake_headers.get("x-jitsi-shard", "")
+        self.sink.event("serving_shard", entity=shard, room=self.room, shard=shard)
+        self.sink.event("observer_up", room=self.room, serving_shard=shard, **self._counts())
 
         deadline = time.time() + self.duration if self.duration > 0 else float("inf")
         while not self.stop and time.time() < deadline and not sc.closed.is_set():

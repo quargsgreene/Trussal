@@ -30,6 +30,7 @@ FIGURE_MODULES = [
     "fig08_server_resources",
     "fig09_turn_stability",
     "fig10_breakpoint",
+    "fig11_shard_balance",
 ]
 
 

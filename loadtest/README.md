@@ -144,6 +144,8 @@ loadtest/
   config/
     inventory.example.yaml     ← Layout A/B: one target + bare-metal generators
     inventory.proxmox-C.yaml   ← Layout C: matched pair + C2 generators (§9); the VM list
+    inventory.rack.yaml        ← Layout R: the physical rack (1 AMD + 2 Dells) — the
+                                 matched pair for §9, and `sharded_target:` for fig11
     netem_profiles.yaml        ← the WWAN ladder
     scenarios.yaml             ← S1–S4 matrix + `turn_study` (S5/S6) block
   harness/                  ← importable Python package
@@ -183,6 +185,8 @@ loadtest/
     fig01…fig08 …           ← the WWAN/load figures (§7)
     fig09_turn_stability.py ← successor-disruption + time-to-first-turn, hash vs literal
     fig10_breakpoint.py     ← participants-at-break, hash vs literal, per profile
+    fig11_shard_balance.py  ← rooms/participants per shard + rooms re-homed on
+                              add/drain (the consistent-hash edge, edge/haproxy.cfg)
     render_all.py
   results/<run-id>/{raw,tidy,logs,campaign.db,meta.json}
   figures_out/*.pdf *.png   ← manuscript-sized, one file per figure
@@ -340,17 +344,34 @@ maintained literal, or writes `# ring hash` once). There is **no per-SUT build**
 bash orchestrate/preflight.sh config/inventory.proxmox-C.yaml
 bash orchestrate/run_turnstudy.sh config/inventory.proxmox-C.yaml config/scenarios.yaml
 python analysis/ingest.py  results/<run-id>     # observations + phases + campaign.db
-python analysis/metrics.py results/<run-id>     # turn_stability + break_points + rebuild db
+python analysis/metrics.py results/<run-id>     # turn_stability + break_points + shard_balance + rebuild db
 python figures/fig09_turn_stability.py --run results/<run-id> --column double
 python figures/fig10_breakpoint.py     --run results/<run-id>
 ```
 
+On the physical rack, `config/inventory.rack.yaml` replaces `inventory.proxmox-C.yaml`
+(the two Dells are the matched pair, the AMD is the generator).
+
 `SNAPSHOT_ROLLBACK=1` rolls each SUT back to `campaign.sut_cold_snapshot`
 between cells (needs a Proxmox cluster + `tools/proxmox/`).
 
+### Shard-balance study (fig11)
+
+Separate from S5/S6: it measures the **consistent-hash edge**
+(`edge/haproxy.cfg`), not the turn ring. Bring the whole rack up as one
+sharded system (`inventory.rack.yaml` → `sharded_target:`; `edge/README.md`),
+run one `sidecar_observer` per room against `wss://trussal.com/ws?room=…` — it
+records the `X-Jitsi-Shard` the edge routed each room to (from the `/ws` 101,
+`harness/sidecar.py` `handshake_headers`) — then `analysis/metrics.py`
+`shard_balance()` emits `shard_balance.parquet`: rooms/participants per shard,
+Jain fairness, and the **modelled** fraction of rooms that re-home when a shard
+is added or drained (`src/deploy/room-shard.js` replayed over the observed room
+set — the property HAProxy's `hash-type consistent` shares). `fig11_shard_balance.py`
+plots it; watermarked SYNTH until a sharded run is ingested.
+
 **`campaign.db`** — `analysis/db.py` builds `results/<run-id>/campaign.db`
 (SQLite) from the tidy Parquet: tables `observations`, `phases`, `nc_active`,
-`roster_events`, `dropouts`, `turn_stability`, `break_points` + views
+`roster_events`, `dropouts`, `turn_stability`, `break_points`, `shard_balance` + views
 `v_turn_gap`, `v_roster_size`. Parquet stays the figure export; the DB is for
 the relational, iterative "why did the hash ring hold at level X while the
 literal broke" queries. `sqlite3 results/<run-id>/campaign.db`.

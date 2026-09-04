@@ -118,6 +118,17 @@ def load_break_points(run_dir=None) -> pd.DataFrame:
     return _synthetic_break_points()     # no S6 cells in this run
 
 
+def load_shard_balance(run_dir=None) -> pd.DataFrame:
+    tidy_dir = _tidy_dir_if_present(run_dir)
+    path = tidy_dir / "shard_balance.parquet" if tidy_dir else None
+    if path and path.exists():
+        frame = pd.read_parquet(path)
+        if not frame.empty:
+            frame.attrs["SYNTHETIC"] = False
+            return frame
+    return _synthetic_shard_balance()    # no sharded run ingested yet
+
+
 # S5 churn-rate steps (events / minute) and the turn-study profile subset
 CHURN_RATE_STEPS = [2, 6, 12, 24, 48]
 TURN_STUDY_PROFILES = ["p2_lte_typical", "p3_lte_busy", "p4_hspa"]
@@ -165,6 +176,69 @@ def _synthetic_turn_stability() -> pd.DataFrame:
                     target=f"sut_{turn_mode}", turn_mode=turn_mode, profile=profile_id,
                     scenario="S5", step_index=step_index, level=churn_rate,
                     metric="jain_fairness", stat="value", value=float(np.clip(fairness, 0, 1))))
+    frame = pd.DataFrame(records)
+    frame.attrs["SYNTHETIC"] = True
+    return frame
+
+
+# Rendezvous (HRW) room->shard, mirroring src/deploy/room-shard.js (authoritative)
+# and analysis.metrics._shard_for_room. Equal weights.
+def _fnv1a32(s: str) -> int:
+    h = 0x811C9DC5
+    for ch in s.encode("utf-8", "surrogatepass"):
+        h = ((h ^ ch) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def _shard_for_room(room: str, shards: list[str]) -> str:
+    best, best_score = None, float("-inf")
+    for name in sorted(set(shards)):
+        u = (_fnv1a32(f"{room} {name}") + 0.5) / 4294967296.0
+        score = -1.0 / np.log(u)
+        if score > best_score:
+            best, best_score = name, score
+    return best
+
+
+# room counts a sharded-rack run sweeps (rooms, not participants)
+SHARD_ROOM_STEPS = [4, 8, 16, 32, 64, 128]
+
+
+def _synthetic_shard_balance() -> pd.DataFrame:
+    records: list[dict] = []
+    shards = ["s1", "s2"]
+    for step_index, room_count in enumerate(SHARD_ROOM_STEPS):
+        rooms = [f"loadtest-{i:04d}" for i in range(room_count)]
+        placement = {r: _shard_for_room(r, shards) for r in rooms}
+        rooms_on = {s: sum(1 for v in placement.values() if v == s) for s in shards}
+        rng = _seeded_rng("shardbal", room_count)
+        # ~8 participants/room, jittered, routed by the real hash
+        part_on = {s: 0 for s in shards}
+        for r, s in placement.items():
+            part_on[s] += max(1, int(rng.normal(8, 2)))
+        for s in shards:
+            records.append(dict(target="rack", turn_mode="hash", profile="p0_lan",
+                                scenario="SHARD", step_index=step_index, level=room_count,
+                                shard_set="observed", shard=s,
+                                metric="rooms_on_shard", value=float(rooms_on[s])))
+            records.append(dict(target="rack", turn_mode="hash", profile="p0_lan",
+                                scenario="SHARD", step_index=step_index, level=room_count,
+                                shard_set="observed", shard=s,
+                                metric="participants_on_shard", value=float(part_on[s])))
+        jain = (sum(rooms_on.values()) ** 2) / (len(shards) * sum(v * v for v in rooms_on.values()))
+        records.append(dict(target="rack", turn_mode="hash", profile="p0_lan",
+                            scenario="SHARD", step_index=step_index, level=room_count,
+                            shard_set="observed", shard="",
+                            metric="rooms_jain", value=float(jain)))
+        # modelled rebalance over the same room set — add a shard, and lose one
+        # (what metrics.shard_balance emits for a real 2-shard run)
+        for label, after in [("2->3", ["s1", "s2", "s3"]), ("2->1", ["s1"])]:
+            moved = sum(1 for r in rooms
+                        if _shard_for_room(r, shards) != _shard_for_room(r, after))
+            records.append(dict(target="rack", turn_mode="hash", profile="p0_lan",
+                                scenario="SHARD", step_index=step_index, level=room_count,
+                                shard_set=label, shard="",
+                                metric="rehomed_fraction", value=moved / len(rooms)))
     frame = pd.DataFrame(records)
     frame.attrs["SYNTHETIC"] = True
     return frame

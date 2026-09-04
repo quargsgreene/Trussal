@@ -67,6 +67,7 @@ class SidecarClient:
 
         self.jitsi_id = f"lt-{uuid.uuid4()}"
         self.ws: websocket.WebSocket | None = None
+        self.handshake_headers: dict[str, str] = {}
         self.my_peer_id: str | None = None
         self.my_room_index: str | None = None
         self.peers: dict[str, dict] = {}          # peerId -> public view
@@ -102,6 +103,14 @@ class SidecarClient:
             # accept the staging stack's self-signed cert
             sslopt={"cert_reqs": 0},
         )
+        # The 101 response headers — carries `X-Jitsi-Shard` when the edge LB
+        # routed us to a sharded stack (edge/README.md). None if the client lib
+        # does not expose them.
+        try:
+            self.handshake_headers = {k.lower(): v for k, v in
+                                      (self.ws.getheaders() or {}).items()}
+        except Exception:
+            self.handshake_headers = {}
         self._reader = threading.Thread(target=self._read_loop, name=f"sc-read-{self.name}", daemon=True)
         self._reader.start()
         self._pinger = threading.Thread(target=self._ping_loop, name=f"sc-ping-{self.name}", daemon=True)
