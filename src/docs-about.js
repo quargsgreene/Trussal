@@ -1,18 +1,18 @@
 // docs-about.js — the welcome-page Docs / About corner.
 //
-// Two buttons, top-right of the welcome page, positioned to sit immediately
-// left of Jitsi's own settings gear (`.welcome-page-settings` — see
-// docker-jitsi-meet/jitsi-web/custom.css, which already names it "the
-// welcome-page settings gear"). That gear is a React-owned element we must
-// not touch or append into (a re-render would wipe anything grafted onto it),
-// so — the same pattern landmark-gesture-mode.js and studio.js use — this
-// mounts as its own fixed-position corner appended to document.body, and
-// reads the gear's live bounding rect to stay glued to its left edge as the
-// window resizes or the welcome page re-renders.
+// Two buttons, fixed bottom-right of the welcome page — a plain-CSS corner
+// (docs-about.css), appended to document.body the same way
+// landmark-gesture-mode.js's own corner is, since it must not be grafted
+// into any of Jitsi's own React-owned DOM (a re-render would wipe it). An
+// earlier version sat top-right, tracking the live position of Jitsi's own
+// settings gear (`.welcome-page-settings`) to stay just left of it — that
+// covered (and ate clicks meant for) the gear itself, so it was moved down
+// here instead; see the removed `_positionCorner` in git history for the
+// bug if this ever needs resurrecting.
 //
 // Docs and About are each a centered modal panel. Docs documents the JPattern
-// (metaprogram) language end to end: what each `#`-directive/chained function
-// does, its syntax, and a short example — the language `src/audio-net/
+// (metaprogram) language end to end: what each chained function does, its
+// syntax, and a short example — the language `src/audio-net/
 // MetaprogrammerParser.js` actually parses, kept in sync with
 // `src/features/jpattern.md` and `src/features/turn-ring.md`. About is a
 // short plain-language summary of what Trussal is.
@@ -61,8 +61,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-ring',
-    name: '# ring — how the rotation order is chosen',
-    sig: '# ring hash [w <token> <weight> …]\n# ring explicit',
+    name: 'ring — how the rotation order is chosen',
+    sig: 'ring hash [w <token> <weight> …]\nring explicit',
     body: `
       <p><code>hash</code> (the default in a fresh room) computes the rotation
       as a consistent hash of whoever is <em>currently present</em>, reseeded
@@ -78,8 +78,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-cycles',
-    name: '# cycles — the length of one cycle (and one turn)',
-    sig: '# cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
+    name: 'cycles — the length of one cycle (and one turn)',
+    sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
     body: `
       <p>Sets how long one cycle — and so one performer's turn — lasts, as a
       multiple of a live network metric: <code>"wcl"</code> (worst-case
@@ -95,8 +95,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-tempo',
-    name: '# tempo — quantization tempo',
-    sig: '# tempo <number>[/<int>]  bpm | cps | cpm',
+    name: 'tempo — quantization tempo',
+    sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
     body: `
       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
       (a plain number, or a fraction like <code>90/4</code>) and a unit:
@@ -107,8 +107,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-room',
-    name: '# room — reverb (audio), blur (video/css), letter-spacing (text)',
-    sig: '# room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+    name: 'room — reverb (audio), blur (video/css), letter-spacing (text)',
+    sig: 'room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
     body: `
       <p>A Schroeder reverb whose decay time is <em>scale</em> × the metric,
       in seconds — longer decay also closes a cascaded lowpass, so a long
@@ -125,8 +125,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-crush',
-    name: '# crush — bitcrush (audio), pixelation (video/css/text)',
-    sig: '# crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+    name: 'crush — bitcrush (audio), pixelation (video/css/text)',
+    sig: 'crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
     body: `
       <p>Reduces bit-depth and sample rate as the metric worsens — 8 bits is
       the resting depth, halving each time the metric climbs by its halving
@@ -138,8 +138,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-echo',
-    name: '# echo — feedback delay',
-    sig: '# echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]',
+    name: 'echo — feedback delay',
+    sig: 'echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]',
     body: `
       <p>Three independently-metric-driven parameters — all six of the first
       arguments are required together, or omit the whole directive for the
@@ -156,8 +156,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-noise',
-    name: '# noise — noise bed (audio), grain (video/css/text)',
-    sig: '# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]',
+    name: 'noise — noise bed (audio), grain (video/css/text)',
+    sig: 'noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]',
     body: `
       <p>Bypassed by default (no node exists until written). Two metrics —
       each defaulting to <code>wcl</code> and each optional — independently
@@ -170,8 +170,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-grid',
-    name: '# grid — the per-participant distance overlay',
-    sig: '# grid [landmarks: true|false]        (default false)',
+    name: 'grid — the per-participant distance overlay',
+    sig: 'grid [landmarks: true|false]        (default false)',
     body: `
       <p>Marks each participant's video panel with a small grayscale circle
       (darker = a greater modelled network distance) in the top-left corner;
@@ -183,8 +183,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-mosaic',
-    name: '# mosaic — the aggregator\'s video layout',
-    sig: '# mosaic [true|false]        (default true — unwritten means on)',
+    name: 'mosaic — the aggregator\'s video layout',
+    sig: 'mosaic [true|false]        (default true — unwritten means on)',
     body: `
       <p>Controls how the room's published video is composited. On (the
       default) tiles every Hydra-running participant into a square grid, only
@@ -194,32 +194,32 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-ply',
-    name: '# ply — repeat each turn\'s buffer n times',
-    sig: '# ply <n>',
+    name: 'ply — repeat each turn\'s buffer n times',
+    sig: 'ply <n>',
     body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
       buffer into <em>n</em> repeats.</p>
       <pre># ply 2</pre>`,
   },
   {
     id: 'jp-chop',
-    name: '# chop — chop each turn\'s buffer into n pieces',
-    sig: '# chop <n>',
+    name: 'chop — chop each turn\'s buffer into n pieces',
+    sig: 'chop <n>',
     body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
       buffer into <em>n</em> consecutive pieces.</p>
       <pre># chop 2</pre>`,
   },
   {
     id: 'jp-shuffle',
-    name: '# shuffle — randomize buffer-piece order',
-    sig: '# shuffle [n]',
+    name: 'shuffle — randomize buffer-piece order',
+    sig: 'shuffle [n]',
     body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
       of (optionally, <em>n</em>) buffer pieces, seeded so every listener
       hears the same shuffle.</p>`,
   },
   {
     id: 'jp-degrade',
-    name: '# degrade / # degradeBy — drop events at random',
-    sig: '# degrade\n# degradeBy <probability 0–1>',
+    name: 'degrade / degradeBy — drop events at random',
+    sig: 'degrade\ndegradeBy <probability 0–1>',
     body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
       default; <code>degradeBy</code> takes an explicit probability. Seeded,
       so the draw is identical for every listener.</p>
@@ -227,31 +227,31 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
   },
   {
     id: 'jp-undegrade',
-    name: '# undegrade / # undegradeBy — the inverse of degrade',
-    sig: '# undegrade\n# undegradeBy <probability 0–1>',
+    name: 'undegrade / undegradeBy — the inverse of degrade',
+    sig: 'undegrade\nundegradeBy <probability 0–1>',
     body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
       would have dropped — the complementary draw, same seed.</p>`,
   },
   {
     id: 'jp-hush',
-    name: '# hush — silence the voice',
-    sig: '# hush',
+    name: 'hush — silence the voice',
+    sig: 'hush',
     body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
       voice's output entirely without removing it from the scheduling
       sequence.</p>`,
   },
   {
     id: 'jp-jux',
-    name: '# jux — a stacked, cycle-offset duplicate',
-    sig: '# jux',
+    name: 'jux — a stacked, cycle-offset duplicate',
+    sig: 'jux',
     body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
       metaprogram analog of Strudel's <code>.jux()</code>/the stack
       (<code>,</code>) operator.</p>`,
   },
   {
     id: 'jp-superimpose',
-    name: '# superimpose — layer a second sequence on top',
-    sig: '# superimpose [<sequence>]',
+    name: 'superimpose — layer a second sequence on top',
+    sig: 'superimpose [<sequence>]',
     body: `<p>Like <code># jux</code>, but the optional bracketed sequence
       lets the superimposed layer be a different pattern, not a plain copy.</p>
       <pre># superimpose &lt;0 2&gt;</pre>`,
@@ -627,6 +627,25 @@ function _buildDocsBody() {
     is the language <code>src/audio-net/MetaprogrammerParser.js</code>
     parses — kept in sync with <code>src/features/jpattern.md</code> and
     <code>src/features/turn-ring.md</code> in the repository.</p>
+    <div class="da-fn">
+      <div class="da-fn-name">The <code>#</code> prefix</div>
+      <p><code>#</code> is <strong>mondo</strong> notation's chaining
+      operator — how a line attaches to the voice <code>$ participants</code>
+      opened above it, the same job a mini-notation <code>.method(…)</code>
+      call does. It is not part of any directive's own name: <code>#
+      cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
+      (mini, chained onto <code>$: participants(…)</code>) are the same
+      statement written in the two surface notations. Every directive
+      below — <code>ring</code>, <code>cycles</code>, <code>room</code>,
+      <code>ply</code>, … — takes this same <code>#</code> in mondo; the
+      signatures on this page name the directive itself and omit it, the
+      way this page also doesn't repeat <code>$:</code> on every mini
+      example.</p>
+      <pre>'metaprogram editor'
+$ participants &lt;0 1&gt;
+# cycles "wcl" 10
+# room "wcl" 2</pre>
+    </div>
     ${_renderFnSection(JPATTERN_FUNCTIONS)}
 
     <h3 id="trussal-da-textcycles">Text Cycles</h3>
@@ -719,38 +738,16 @@ function _ensureDOM() {
   });
 }
 
-// Jitsi's own welcome-page settings gear — see docker-jitsi-meet/jitsi-web/
-// custom.css, which already calls this class "the welcome-page settings
-// gear". It's centered inside a fixed-width content column rather than
-// pinned to the viewport edge, so a static CSS offset can't track it — read
-// its live position instead.
-const GEAR_SELECTOR = '.welcome-page-settings, [aria-label="Open settings" i]';
-
-function _positionCorner() {
-  const corner = document.getElementById(CORNER_ID);
-  if (!corner) return;
-  const gear = document.querySelector(GEAR_SELECTOR);
-  if (gear) {
-    const r = gear.getBoundingClientRect();
-    const cw = corner.offsetWidth || 0;
-    const ch = corner.offsetHeight || 0;
-    corner.style.right = '';
-    corner.style.left = `${Math.max(8, r.left - cw - 10)}px`;
-    corner.style.top = `${Math.max(8, r.top + (r.height - ch) / 2)}px`;
-  } else {
-    corner.style.left = '';
-    corner.style.top = '10px';
-    corner.style.right = '10px';
-  }
-}
-
-let _posPending = false;
-function _schedulePosition() {
-  if (_posPending) return;
-  _posPending = true;
-  requestAnimationFrame(() => { _posPending = false; _positionCorner(); });
-}
-
+// Bottom-right corner, fixed by plain CSS (see docs-about.css) — no JS
+// positioning needed. This used to track the live position of Jitsi's
+// welcome-page settings gear (top-right) to sit just left of it, but that
+// gear is centered inside a fixed-width content column rather than pinned to
+// the viewport edge, and the tracking logic left a stale `right` from the
+// stylesheet's base rule alongside the JS-set `left` on some layouts — with
+// both offsets present on a `position: fixed` box with no explicit width,
+// the browser stretches it to fill the whole gap between them, and the
+// resulting full-width strip sat on top of (and ate clicks meant for) the
+// gear itself. Bottom-right has nothing else to collide with.
 function _onWelcomePage() {
   return !!(document.body && document.body.classList.contains('welcome-page'));
 }
@@ -760,19 +757,9 @@ function _boot() {
   const maxTries = 40; // ~10s at 250ms, same budget welcome-page.js's own poll uses
   const timer = setInterval(() => {
     tries += 1;
-    if (_onWelcomePage()) {
-      _ensureDOM();
-      _schedulePosition();
-    }
+    if (_onWelcomePage()) _ensureDOM();
     if (document.getElementById(CORNER_ID) || tries >= maxTries) clearInterval(timer);
   }, 250);
-
-  window.addEventListener('resize', _schedulePosition);
-
-  // The welcome page keeps re-rendering (recent-meetings list, the settings
-  // gear itself) well after first paint — reposition whenever it does.
-  const obs = new MutationObserver(_schedulePosition);
-  obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
 }
 
 function init() {

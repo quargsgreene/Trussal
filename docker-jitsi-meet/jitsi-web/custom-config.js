@@ -63233,7 +63233,7 @@ ${snippet}${JP_BTN_MARKER}`;
   }
 
   // src/docs-about.css
-  var docs_about_default = "/* docs-about.css \u2014 imported as raw text (build.mjs '.css': 'text') and\n   injected once by _injectStyles(). Covers the top-right Docs/About corner\n   (welcome page only, positioned to sit just left of Jitsi's own\n   `.welcome-page-settings` gear \u2014 see docs-about.js's _positionCorner) and\n   the two modal panels it opens.\n\n   Authored against the per-user Personal Theme vars (src/theme-context.js) \u2014\n   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale\n   on :root, each with its previous literal as the var() fallback \u2014 so this\n   corner and its panels retint with the rest of the app. */\n\n#trussal-da-corner {\n  position: fixed; top: 10px; right: 10px; /* _positionCorner overrides both */\n  z-index: 1000003;\n  display: flex; flex-direction: row; align-items: center; gap: 6px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n\n#trussal-da-corner button {\n  height: 28px; padding: 0 12px; line-height: 1;\n  display: flex; align-items: center; justify-content: center;\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  font-family: inherit; font-size: calc(13px * var(--trussal-font-scale, 1));\n  font-weight: 600; cursor: pointer;\n}\n#trussal-da-corner button:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n/* Modal scrim + panel, shared by the Docs and About panels. */\n.trussal-da-scrim {\n  position: fixed; inset: 0;\n  z-index: 1000010;\n  background: rgba(0, 0, 0, 0.35);\n  display: none;\n  align-items: flex-start; justify-content: center;\n  padding: 6vh 16px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n.trussal-da-scrim.open { display: flex; }\n\n.trussal-da-panel {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 10px;\n  width: min(720px, 100%);\n  max-height: 86vh;\n  display: flex; flex-direction: column;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);\n}\n\n.trussal-da-panel .da-head {\n  display: flex; align-items: center; justify-content: space-between;\n  gap: 12px; padding: 14px 18px;\n  border-bottom: 1px solid var(--trussal-secondary, #111111);\n  flex: 0 0 auto;\n}\n.trussal-da-panel .da-head h2 {\n  margin: 0; font-size: calc(18px * var(--trussal-font-scale, 1)); font-weight: 700;\n}\n.trussal-da-panel .da-close {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  width: 26px; height: 26px; line-height: 1; padding: 0;\n  font-size: calc(13px * var(--trussal-font-scale, 1)); cursor: pointer; flex: 0 0 auto;\n}\n.trussal-da-panel .da-close:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n.trussal-da-panel .da-body {\n  overflow-y: auto;\n  padding: 4px 18px 18px;\n  font-size: calc(13.5px * var(--trussal-font-scale, 1));\n  line-height: 1.55;\n}\n.trussal-da-panel .da-body p { margin: 10px 0; }\n.trussal-da-panel .da-body h3 {\n  margin: 22px 0 4px; font-size: calc(15px * var(--trussal-font-scale, 1));\n  padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);\n}\n.trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }\n.trussal-da-panel .da-body h4 {\n  margin: 16px 0 2px; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body ul, .trussal-da-panel .da-body ol {\n  margin: 6px 0; padding-left: 20px;\n}\n.trussal-da-panel .da-body li { margin: 3px 0; }\n.trussal-da-panel .da-body code {\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 3px; padding: 1px 5px;\n}\n.trussal-da-panel .da-body pre {\n  font-family: monospace; font-size: calc(12px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;\n  line-height: 1.4;\n}\n.trussal-da-panel .da-body pre code { background: none; padding: 0; }\n.trussal-da-panel .da-body table {\n  border-collapse: collapse; width: 100%; margin: 8px 0;\n  font-size: calc(12.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body th, .trussal-da-panel .da-body td {\n  border: 1px solid var(--trussal-secondary, #111111);\n  padding: 4px 8px; text-align: left; vertical-align: top;\n}\n\n/* One JPattern function entry. */\n.trussal-da-panel .da-fn {\n  margin: 14px 0; padding: 10px 12px;\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;\n}\n.trussal-da-panel .da-fn .da-fn-name {\n  font-weight: 700; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-fn .da-fn-sig {\n  display: block; margin: 6px 0;\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 5px; padding: 6px 9px; white-space: pre-wrap; word-break: break-word;\n}\n.trussal-da-panel .da-fn p { margin: 6px 0; }\n\n/* Docs sub-nav: jump links at the top of the Docs panel body. */\n.trussal-da-panel .da-toc {\n  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 4px 0 16px;\n  font-size: calc(12px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-toc a {\n  color: var(--trussal-secondary, #111111);\n  text-decoration: underline; cursor: pointer;\n}\n";
+  var docs_about_default = "/* docs-about.css \u2014 imported as raw text (build.mjs '.css': 'text') and\n   injected once by _injectStyles(). Covers the bottom-right Docs/About\n   corner (welcome page only \u2014 a plain fixed CSS position, deliberately with\n   no JS repositioning: an earlier top-right version tracked Jitsi's own\n   settings gear and ended up covering it, see docs-about.js) and the two\n   modal panels the corner opens.\n\n   Authored against the per-user Personal Theme vars (src/theme-context.js) \u2014\n   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale\n   on :root, each with its previous literal as the var() fallback \u2014 so this\n   corner and its panels retint with the rest of the app. */\n\n#trussal-da-corner {\n  position: fixed; bottom: 10px; right: 10px;\n  z-index: 1000003;\n  display: flex; flex-direction: row; align-items: center; gap: 6px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n\n#trussal-da-corner button {\n  height: 28px; padding: 0 12px; line-height: 1;\n  display: flex; align-items: center; justify-content: center;\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  font-family: inherit; font-size: calc(13px * var(--trussal-font-scale, 1));\n  font-weight: 600; cursor: pointer;\n}\n#trussal-da-corner button:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n/* Modal scrim + panel, shared by the Docs and About panels. */\n.trussal-da-scrim {\n  position: fixed; inset: 0;\n  z-index: 1000010;\n  background: rgba(0, 0, 0, 0.35);\n  display: none;\n  align-items: flex-start; justify-content: center;\n  padding: 6vh 16px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n.trussal-da-scrim.open { display: flex; }\n\n.trussal-da-panel {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 10px;\n  width: min(720px, 100%);\n  max-height: 86vh;\n  display: flex; flex-direction: column;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);\n}\n\n.trussal-da-panel .da-head {\n  display: flex; align-items: center; justify-content: space-between;\n  gap: 12px; padding: 14px 18px;\n  border-bottom: 1px solid var(--trussal-secondary, #111111);\n  flex: 0 0 auto;\n}\n.trussal-da-panel .da-head h2 {\n  margin: 0; font-size: calc(18px * var(--trussal-font-scale, 1)); font-weight: 700;\n}\n.trussal-da-panel .da-close {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  width: 26px; height: 26px; line-height: 1; padding: 0;\n  font-size: calc(13px * var(--trussal-font-scale, 1)); cursor: pointer; flex: 0 0 auto;\n}\n.trussal-da-panel .da-close:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n.trussal-da-panel .da-body {\n  overflow-y: auto;\n  padding: 4px 18px 18px;\n  font-size: calc(13.5px * var(--trussal-font-scale, 1));\n  line-height: 1.55;\n}\n.trussal-da-panel .da-body p { margin: 10px 0; }\n.trussal-da-panel .da-body h3 {\n  margin: 22px 0 4px; font-size: calc(15px * var(--trussal-font-scale, 1));\n  padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);\n}\n.trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }\n.trussal-da-panel .da-body h4 {\n  margin: 16px 0 2px; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body ul, .trussal-da-panel .da-body ol {\n  margin: 6px 0; padding-left: 20px;\n}\n.trussal-da-panel .da-body li { margin: 3px 0; }\n.trussal-da-panel .da-body code {\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 3px; padding: 1px 5px;\n}\n.trussal-da-panel .da-body pre {\n  font-family: monospace; font-size: calc(12px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;\n  line-height: 1.4;\n}\n.trussal-da-panel .da-body pre code { background: none; padding: 0; }\n.trussal-da-panel .da-body table {\n  border-collapse: collapse; width: 100%; margin: 8px 0;\n  font-size: calc(12.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body th, .trussal-da-panel .da-body td {\n  border: 1px solid var(--trussal-secondary, #111111);\n  padding: 4px 8px; text-align: left; vertical-align: top;\n}\n\n/* One JPattern function entry. */\n.trussal-da-panel .da-fn {\n  margin: 14px 0; padding: 10px 12px;\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;\n}\n.trussal-da-panel .da-fn .da-fn-name {\n  font-weight: 700; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-fn .da-fn-sig {\n  display: block; margin: 6px 0;\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 5px; padding: 6px 9px; white-space: pre-wrap; word-break: break-word;\n}\n.trussal-da-panel .da-fn p { margin: 6px 0; }\n\n/* Docs sub-nav: jump links at the top of the Docs panel body. */\n.trussal-da-panel .da-toc {\n  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 4px 0 16px;\n  font-size: calc(12px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-toc a {\n  color: var(--trussal-secondary, #111111);\n  text-decoration: underline; cursor: pointer;\n}\n";
 
   // src/docs-about.js
   var CORNER_ID2 = "trussal-da-corner";
@@ -63274,8 +63274,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-ring",
-      name: "# ring \u2014 how the rotation order is chosen",
-      sig: "# ring hash [w <token> <weight> \u2026]\n# ring explicit",
+      name: "ring \u2014 how the rotation order is chosen",
+      sig: "ring hash [w <token> <weight> \u2026]\nring explicit",
       body: `
       <p><code>hash</code> (the default in a fresh room) computes the rotation
       as a consistent hash of whoever is <em>currently present</em>, reseeded
@@ -63291,8 +63291,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-cycles",
-      name: "# cycles \u2014 the length of one cycle (and one turn)",
-      sig: '# cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
+      name: "cycles \u2014 the length of one cycle (and one turn)",
+      sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
       body: `
       <p>Sets how long one cycle \u2014 and so one performer's turn \u2014 lasts, as a
       multiple of a live network metric: <code>"wcl"</code> (worst-case
@@ -63308,8 +63308,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-tempo",
-      name: "# tempo \u2014 quantization tempo",
-      sig: "# tempo <number>[/<int>]  bpm | cps | cpm",
+      name: "tempo \u2014 quantization tempo",
+      sig: "tempo <number>[/<int>]  bpm | cps | cpm",
       body: `
       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
       (a plain number, or a fraction like <code>90/4</code>) and a unit:
@@ -63320,8 +63320,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-room",
-      name: "# room \u2014 reverb (audio), blur (video/css), letter-spacing (text)",
-      sig: '# room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+      name: "room \u2014 reverb (audio), blur (video/css), letter-spacing (text)",
+      sig: 'room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
       body: `
       <p>A Schroeder reverb whose decay time is <em>scale</em> \xD7 the metric,
       in seconds \u2014 longer decay also closes a cascaded lowpass, so a long
@@ -63338,8 +63338,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-crush",
-      name: "# crush \u2014 bitcrush (audio), pixelation (video/css/text)",
-      sig: '# crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+      name: "crush \u2014 bitcrush (audio), pixelation (video/css/text)",
+      sig: 'crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
       body: `
       <p>Reduces bit-depth and sample rate as the metric worsens \u2014 8 bits is
       the resting depth, halving each time the metric climbs by its halving
@@ -63351,8 +63351,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-echo",
-      name: "# echo \u2014 feedback delay",
-      sig: "# echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]",
+      name: "echo \u2014 feedback delay",
+      sig: "echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]",
       body: `
       <p>Three independently-metric-driven parameters \u2014 all six of the first
       arguments are required together, or omit the whole directive for the
@@ -63369,8 +63369,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-noise",
-      name: "# noise \u2014 noise bed (audio), grain (video/css/text)",
-      sig: "# noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]",
+      name: "noise \u2014 noise bed (audio), grain (video/css/text)",
+      sig: "noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]",
       body: `
       <p>Bypassed by default (no node exists until written). Two metrics \u2014
       each defaulting to <code>wcl</code> and each optional \u2014 independently
@@ -63383,8 +63383,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-grid",
-      name: "# grid \u2014 the per-participant distance overlay",
-      sig: "# grid [landmarks: true|false]        (default false)",
+      name: "grid \u2014 the per-participant distance overlay",
+      sig: "grid [landmarks: true|false]        (default false)",
       body: `
       <p>Marks each participant's video panel with a small grayscale circle
       (darker = a greater modelled network distance) in the top-left corner;
@@ -63396,8 +63396,8 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-mosaic",
-      name: "# mosaic \u2014 the aggregator's video layout",
-      sig: "# mosaic [true|false]        (default true \u2014 unwritten means on)",
+      name: "mosaic \u2014 the aggregator's video layout",
+      sig: "mosaic [true|false]        (default true \u2014 unwritten means on)",
       body: `
       <p>Controls how the room's published video is composited. On (the
       default) tiles every Hydra-running participant into a square grid, only
@@ -63407,32 +63407,32 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-ply",
-      name: "# ply \u2014 repeat each turn's buffer n times",
-      sig: "# ply <n>",
+      name: "ply \u2014 repeat each turn's buffer n times",
+      sig: "ply <n>",
       body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
       buffer into <em>n</em> repeats.</p>
       <pre># ply 2</pre>`
     },
     {
       id: "jp-chop",
-      name: "# chop \u2014 chop each turn's buffer into n pieces",
-      sig: "# chop <n>",
+      name: "chop \u2014 chop each turn's buffer into n pieces",
+      sig: "chop <n>",
       body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
       buffer into <em>n</em> consecutive pieces.</p>
       <pre># chop 2</pre>`
     },
     {
       id: "jp-shuffle",
-      name: "# shuffle \u2014 randomize buffer-piece order",
-      sig: "# shuffle [n]",
+      name: "shuffle \u2014 randomize buffer-piece order",
+      sig: "shuffle [n]",
       body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
       of (optionally, <em>n</em>) buffer pieces, seeded so every listener
       hears the same shuffle.</p>`
     },
     {
       id: "jp-degrade",
-      name: "# degrade / # degradeBy \u2014 drop events at random",
-      sig: "# degrade\n# degradeBy <probability 0\u20131>",
+      name: "degrade / degradeBy \u2014 drop events at random",
+      sig: "degrade\ndegradeBy <probability 0\u20131>",
       body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
       default; <code>degradeBy</code> takes an explicit probability. Seeded,
       so the draw is identical for every listener.</p>
@@ -63440,31 +63440,31 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-undegrade",
-      name: "# undegrade / # undegradeBy \u2014 the inverse of degrade",
-      sig: "# undegrade\n# undegradeBy <probability 0\u20131>",
+      name: "undegrade / undegradeBy \u2014 the inverse of degrade",
+      sig: "undegrade\nundegradeBy <probability 0\u20131>",
       body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
       would have dropped \u2014 the complementary draw, same seed.</p>`
     },
     {
       id: "jp-hush",
-      name: "# hush \u2014 silence the voice",
-      sig: "# hush",
+      name: "hush \u2014 silence the voice",
+      sig: "hush",
       body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
       voice's output entirely without removing it from the scheduling
       sequence.</p>`
     },
     {
       id: "jp-jux",
-      name: "# jux \u2014 a stacked, cycle-offset duplicate",
-      sig: "# jux",
+      name: "jux \u2014 a stacked, cycle-offset duplicate",
+      sig: "jux",
       body: `<p>Duplicates the voice, offsetting the copy by one cycle \u2014 the
       metaprogram analog of Strudel's <code>.jux()</code>/the stack
       (<code>,</code>) operator.</p>`
     },
     {
       id: "jp-superimpose",
-      name: "# superimpose \u2014 layer a second sequence on top",
-      sig: "# superimpose [<sequence>]",
+      name: "superimpose \u2014 layer a second sequence on top",
+      sig: "superimpose [<sequence>]",
       body: `<p>Like <code># jux</code>, but the optional bracketed sequence
       lets the superimposed layer be a different pattern, not a plain copy.</p>
       <pre># superimpose &lt;0 2&gt;</pre>`
@@ -63802,6 +63802,25 @@ $: liveCapture('gesture').struct("x*2")</pre>`
     is the language <code>src/audio-net/MetaprogrammerParser.js</code>
     parses \u2014 kept in sync with <code>src/features/jpattern.md</code> and
     <code>src/features/turn-ring.md</code> in the repository.</p>
+    <div class="da-fn">
+      <div class="da-fn-name">The <code>#</code> prefix</div>
+      <p><code>#</code> is <strong>mondo</strong> notation's chaining
+      operator \u2014 how a line attaches to the voice <code>$ participants</code>
+      opened above it, the same job a mini-notation <code>.method(\u2026)</code>
+      call does. It is not part of any directive's own name: <code>#
+      cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
+      (mini, chained onto <code>$: participants(\u2026)</code>) are the same
+      statement written in the two surface notations. Every directive
+      below \u2014 <code>ring</code>, <code>cycles</code>, <code>room</code>,
+      <code>ply</code>, \u2026 \u2014 takes this same <code>#</code> in mondo; the
+      signatures on this page name the directive itself and omit it, the
+      way this page also doesn't repeat <code>$:</code> on every mini
+      example.</p>
+      <pre>'metaprogram editor'
+$ participants &lt;0 1&gt;
+# cycles "wcl" 10
+# room "wcl" 2</pre>
+    </div>
     ${_renderFnSection(JPATTERN_FUNCTIONS)}
 
     <h3 id="trussal-da-textcycles">Text Cycles</h3>
@@ -63882,33 +63901,6 @@ $: liveCapture('gesture').struct("x*2")</pre>`
       document.getElementById(ABOUT_ID).classList.add("open");
     });
   }
-  var GEAR_SELECTOR = '.welcome-page-settings, [aria-label="Open settings" i]';
-  function _positionCorner() {
-    const corner = document.getElementById(CORNER_ID2);
-    if (!corner) return;
-    const gear = document.querySelector(GEAR_SELECTOR);
-    if (gear) {
-      const r2 = gear.getBoundingClientRect();
-      const cw = corner.offsetWidth || 0;
-      const ch2 = corner.offsetHeight || 0;
-      corner.style.right = "";
-      corner.style.left = `${Math.max(8, r2.left - cw - 10)}px`;
-      corner.style.top = `${Math.max(8, r2.top + (r2.height - ch2) / 2)}px`;
-    } else {
-      corner.style.left = "";
-      corner.style.top = "10px";
-      corner.style.right = "10px";
-    }
-  }
-  var _posPending = false;
-  function _schedulePosition() {
-    if (_posPending) return;
-    _posPending = true;
-    requestAnimationFrame(() => {
-      _posPending = false;
-      _positionCorner();
-    });
-  }
   function _onWelcomePage() {
     return !!(document.body && document.body.classList.contains("welcome-page"));
   }
@@ -63917,15 +63909,9 @@ $: liveCapture('gesture').struct("x*2")</pre>`
     const maxTries = 40;
     const timer2 = setInterval(() => {
       tries += 1;
-      if (_onWelcomePage()) {
-        _ensureDOM4();
-        _schedulePosition();
-      }
+      if (_onWelcomePage()) _ensureDOM4();
       if (document.getElementById(CORNER_ID2) || tries >= maxTries) clearInterval(timer2);
     }, 250);
-    window.addEventListener("resize", _schedulePosition);
-    const obs = new MutationObserver(_schedulePosition);
-    obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
   }
   function init2() {
     if (window.__trussalIsBot || window.__trussalIsAggregator) return;

@@ -1,8 +1,9 @@
 /* docs-about.css — imported as raw text (build.mjs '.css': 'text') and
-   injected once by _injectStyles(). Covers the top-right Docs/About corner
-   (welcome page only, positioned to sit just left of Jitsi's own
-   `.welcome-page-settings` gear — see docs-about.js's _positionCorner) and
-   the two modal panels it opens.
+   injected once by _injectStyles(). Covers the bottom-right Docs/About
+   corner (welcome page only — a plain fixed CSS position, deliberately with
+   no JS repositioning: an earlier top-right version tracked Jitsi's own
+   settings gear and ended up covering it, see docs-about.js) and the two
+   modal panels the corner opens.
 
    Authored against the per-user Personal Theme vars (src/theme-context.js) —
    --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
@@ -10,7 +11,7 @@
    corner and its panels retint with the rest of the app. */
 
 #trussal-da-corner {
-  position: fixed; top: 10px; right: 10px; /* _positionCorner overrides both */
+  position: fixed; bottom: 10px; right: 10px;
   z-index: 1000003;
   display: flex; flex-direction: row; align-items: center; gap: 6px;
   font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
