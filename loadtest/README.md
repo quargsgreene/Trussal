@@ -316,8 +316,8 @@ consumed identically by every browser and the aggregator.
 
 **Design.** Two **identical `trussal-sut` clones** — `sut_explicit` and
 `sut_hash` — differing only in `targets.<name>.turn_mode` in
-`config/inventory.proxmox-C.yaml` (the harness writes a maintained literal, or
-writes `# ring hash` once). There is **no per-SUT build**.
+`config/inventory.proxmox-C.yaml` (the harness writes `# ring explicit` + a
+maintained literal, or writes `# ring hash` once). There is **no per-SUT build**.
 
 - **S5 — matched load.** `run_turnstudy.sh` applies one WWAN profile and runs
   `distributed.sh` for **both** targets concurrently (same schedule, wall clock,

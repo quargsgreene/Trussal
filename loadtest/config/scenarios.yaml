@@ -150,8 +150,9 @@ scenarios:
     churn_pool: 16                   # ChurnUser instances that cycle in/out
     involuntary_frac: 0.35           # of churn-outs, this share are hard kills
     rejoin_delay_s: [3, 12]          # a leaver waits this long, then rejoins
-    # explicit arm maintains `$ participants <literal>` on every roster change;
-    # hash arm writes `# ring hash` once. The harness picks by target.turn_mode.
+    # explicit arm writes `# ring explicit` and maintains `$ participants
+    # <literal>` on every roster change; hash arm writes `# ring hash` once
+    # (also the room default). The harness picks by target.turn_mode.
     program_directives: "# cycles wcl\n# tempo 110"
 
   # ----- S6: ramp one SUT to where its turn scheduling breaks ------------- #

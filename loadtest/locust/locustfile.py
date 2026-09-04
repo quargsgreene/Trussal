@@ -416,12 +416,17 @@ class MetaprogramEditorUser(User):
 
         # S5 / S6
         if self._turn_mode == "hash":
-            # write it once; the scheduler tracks the roster from here on
+            # `# ring hash` is the buildDefaultProgram default, but write it
+            # explicitly so the arm does not depend on the room's seed text.
+            # Written once; the scheduler tracks the roster from here on.
             self._publish(build_program(["0"], "# ring hash\n" + self._directives), tokens=0)
             gevent.sleep(5)
         else:  # explicit: keep the literal in step with the live roster
+            # `# ring explicit` — the default is now hash, so the literal arm
+            # must opt out, not rely on the absence of a `# ring` line.
             tokens = self._room_tokens()
-            self._publish(build_program(tokens, self._directives), tokens=len(tokens))
+            self._publish(build_program(tokens, "# ring explicit\n" + self._directives),
+                          tokens=len(tokens))
             gevent.sleep(max(1.0, float(SCEN.get("edit_interval_s", 3))))
 
     def on_stop(self):
