@@ -1,0 +1,24 @@
+# Trussal edge LB — runs on the AMD (the machine Cloudflare's origin points at).
+#
+#   cd edge && docker compose up -d
+#   docker compose exec edge haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg   # validate
+#   docker compose kill -s HUP edge                                             # hot reload after editing haproxy.cfg
+#
+# host networking: HAProxy binds :80 on the AMD and reaches each shard on the
+# rack LAN (10.20.0.0/24 in haproxy.cfg — edit for your addressing). Cloudflare
+# stays in front for TLS; this is a plain-HTTP origin (decision 3).
+
+services:
+  edge:
+    image: haproxy:2.9-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    # HAProxy drops privileges itself; keep the pid namespace tidy.
+    init: true
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

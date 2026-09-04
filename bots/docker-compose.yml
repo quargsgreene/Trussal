@@ -53,6 +53,10 @@ services:
       # (wss://<jitsi-host>/ws). Without it the fleet sees no rooms at all: no
       # aggregator appears and the Spawn button broadcasts into the void.
       SIDECAR_WS_URL: "${SIDECAR_WS_URL:-ws://localhost:8081/ws}"
+      # Multi-shard only: each shard's own sidecar URL, comma-separated, for the
+      # `?role=control` discovery connections (the edge LB can't route a
+      # roomless control channel). Unset = single stack. See edge/README.md.
+      SIDECAR_CONTROL_URLS: "${SIDECAR_CONTROL_URLS:-}"
       # Must match SIDECAR_CONTROL_TOKEN on the video VM's `latency` service.
       # The relay refuses room discovery without it (the channel lists every
       # live meeting on a publicly-proxied path), so leaving it unset means no

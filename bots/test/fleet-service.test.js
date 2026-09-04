@@ -744,6 +744,40 @@ test('concurrent rooms each get their own aggregator, on distinct container ids'
   });
 });
 
+test('multi-shard: a control connection per shard, and either shard can announce a room', async () => {
+  await withDiscoveringFleet(async ({ fleet, runner, bus }) => {
+    const controls = bus.conns.filter((c) => c.url.includes('role=control'));
+    assert.equal(controls.length, 2, 'one ?role=control connection per shard sidecar');
+    assert.deepEqual(controls.map((c) => c.url).sort(),
+      ['ws://s1.rack/ws?role=control', 'ws://s2.rack/ws?role=control']);
+
+    // s1 announces one room, s2 announces another — the fleet serves both.
+    await controls[0].handlers.onMessage({ type: 'room-active', room: 'on-s1' });
+    await controls[1].handlers.onMessage({ type: 'rooms', rooms: ['on-s2'] });
+    assert.deepEqual(fleet.roomsStatus().map((s) => s.room).sort(), ['on-s1', 'on-s2']);
+
+    // Per-room ?role=fleet connections still go to the one sidecarWsUrl (the
+    // edge LB), which routes them by ?room=.
+    for (const room of ['on-s1', 'on-s2']) {
+      assert.match(bus.roomConn(room).url, /^ws:\/\/edge\/ws\?room=/);
+    }
+  }, { sidecarWsUrl: 'ws://edge/ws', sidecarControlUrls: ['ws://s1.rack/ws', 'ws://s2.rack/ws'] });
+});
+
+test('multi-shard: stop() closes every shard control connection', async () => {
+  const runner = makeFakeRunner();
+  const bus = makeFakeConnector();
+  const fleet = new FleetService(
+    mergeConfig({ maxBots: 5, conductorPort: 0, sidecarControlUrls: ['ws://s1/ws', 'ws://s2/ws'] }),
+    { runner, connectSidecar: bus.connectSidecar },
+  );
+  await fleet.start();
+  await fleet.stop();
+  const controls = bus.conns.filter((c) => c.url.includes('role=control'));
+  assert.equal(controls.length, 2);
+  assert.ok(controls.every((c) => c.closed), 'both shard control connections closed');
+});
+
 test('one room ending leaves the other room’s aggregator and bots alone', async () => {
   await withDiscoveringFleet(async ({ fleet, runner, bus }) => {
     await bus.control().handlers.onMessage({ type: 'rooms', rooms: ['staying', 'leaving'] });

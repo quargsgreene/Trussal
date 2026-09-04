@@ -151,9 +151,13 @@ export class FleetService {
     this.tick = null;
     this.activeCeiling = cfg.maxBots;
 
-    // The relay-wide control connection that tells us which rooms have people
+    // The relay-wide control connection(s) that tell us which rooms have people
     // in them. Room names are free-form, so this is the only way to serve more
-    // than one configured meeting — see #joinControlBus.
+    // than one configured meeting — see #joinControlBus. One connection per
+    // shard: `?role=control` carries no room, so the edge LB cannot route it —
+    // it has to reach each shard's sidecar directly. `this.control` stays as an
+    // alias to the first for back-compat.
+    this.controls = [];
     this.control = null;
     // roomName → per-meeting state (see #roomState). Everything that used to be
     // a single field here is per-room now: one aggregator, one roster shadow,
@@ -267,17 +271,35 @@ export class FleetService {
     for (const state of this.rooms.values()) {
       if (state.sidecar) { try { state.sidecar.close(); } catch {} state.sidecar = null; }
     }
-    if (this.control) { try { this.control.close(); } catch {} this.control = null; }
+    for (const c of this.controls) { try { c.close(); } catch {} }
+    this.controls = [];
+    this.control = null;
     if (this.server) await new Promise((resolve) => this.server.close(resolve));
   }
 
   // ---------- sidecar bus ----------
 
+  // The sidecar URLs to open a `?role=control` connection on — one per shard.
+  // `sidecarControlUrls` (SIDECAR_CONTROL_URLS, comma-separated) lists each
+  // shard's own sidecar; unset means single-stack, so fall back to the one
+  // `sidecarWsUrl`. `?role=control` carries no room, so it cannot go through
+  // the edge LB — it must reach each shard's sidecar directly.
+  #controlUrls() {
+    const configured = this.cfg.sidecarControlUrls;
+    const list = Array.isArray(configured)
+      ? configured
+      : (typeof configured === 'string' && configured.trim()
+        ? configured.split(',').map((s) => s.trim()).filter(Boolean)
+        : null);
+    return (list && list.length) ? list : [this.cfg.sidecarWsUrl];
+  }
+
   /**
-   * One connection to the relay's control channel (`?role=control`). It replies
-   * with the rooms that already hold participants and then announces each new
-   * one, which is how the fleet serves whatever meeting people opened: a
-   * room name is free-form, so there is nothing to configure ahead of time.
+   * One connection to each shard's control channel (`?role=control`). Each
+   * replies with the rooms that already hold participants on that shard and
+   * announces each new one; the fleet unions them. A room is pinned to one
+   * shard by the edge (edge/haproxy.cfg), so a given room is announced by
+   * exactly one control connection — but `attachRoom` is idempotent either way.
    */
   #joinControlBus() {
     // The relay refuses an unauthenticated control connection outright — it is a
@@ -289,23 +311,30 @@ export class FleetService {
       console.warn('[fleet] FLEET_CONTROL_TOKEN unset — the relay will refuse room discovery, ' +
         'so no rooms will be served and no aggregator will spawn.');
     }
-    const url = `${this.cfg.sidecarWsUrl}?role=control`;
-    this.control = this.connectSidecar(url, {
-      // In a header rather than the URL — see makeWsSidecarConnector: a query
-      // parameter would put the shared secret in nginx's access log.
-      headers: this.controlToken ? { [CONTROL_TOKEN_HEADER]: this.controlToken } : null,
-      onOpen: () => {},
-      onMessage: (msg) => {
-        if (msg.type === 'control-denied') {
-          console.error('[fleet] the relay REFUSED room discovery — FLEET_CONTROL_TOKEN does not ' +
-            'match the sidecar\'s SIDECAR_CONTROL_TOKEN. No aggregator will spawn.');
-        } else if (msg.type === 'rooms' && Array.isArray(msg.rooms)) {
-          for (const room of msg.rooms) this.attachRoom(room);
-        } else if (msg.type === 'room-active' && msg.room != null) {
-          this.attachRoom(msg.room);
-        }
-      },
+    const urls = this.#controlUrls();
+    if (urls.length > 1) {
+      console.log(`[fleet] room discovery across ${urls.length} shards: ${urls.join(', ')}`);
+    }
+    this.controls = urls.map((base) => {
+      const url = `${base}?role=control`;
+      return this.connectSidecar(url, {
+        // In a header rather than the URL — see makeWsSidecarConnector: a query
+        // parameter would put the shared secret in nginx's access log.
+        headers: this.controlToken ? { [CONTROL_TOKEN_HEADER]: this.controlToken } : null,
+        onOpen: () => {},
+        onMessage: (msg) => {
+          if (msg.type === 'control-denied') {
+            console.error(`[fleet] the relay at ${base} REFUSED room discovery — FLEET_CONTROL_TOKEN ` +
+              'does not match that shard\'s SIDECAR_CONTROL_TOKEN. No aggregator will spawn there.');
+          } else if (msg.type === 'rooms' && Array.isArray(msg.rooms)) {
+            for (const room of msg.rooms) this.attachRoom(room);
+          } else if (msg.type === 'room-active' && msg.room != null) {
+            this.attachRoom(msg.room);
+          }
+        },
+      });
     });
+    this.control = this.controls[0] || null;
   }
 
   /**

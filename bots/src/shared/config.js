@@ -57,6 +57,13 @@ export const defaultConfig = Object.freeze({
   // Fleet service (JPattern): per-user bot clusters driven by in-room
   // requests relayed through the latency sidecar.
   sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on
+                                          // (per-room ?role=fleet; through the edge LB
+                                          // in a multi-shard deploy, which routes by ?room=)
+  // Multi-shard room discovery: one ?role=control connection per shard's own
+  // sidecar. `?role=control` carries no room, so it can't go through the edge
+  // LB. null / empty = single stack, use [sidecarWsUrl]. Set from
+  // SIDECAR_CONTROL_URLS (comma-separated) in orchestrator/index.js.
+  sidecarControlUrls: null,
   // There is deliberately NO room setting. The fleet serves every room it
   // discovers over the relay's control channel (`?role=control`); a room name
   // is free-form, so any configured value could only ever be a wrong default,

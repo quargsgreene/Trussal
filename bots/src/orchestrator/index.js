@@ -20,6 +20,12 @@ const cfg = mergeConfig({
   ...(process.env.JAMULUS_SERVER ? { jamulusServer: process.env.JAMULUS_SERVER } : {}),
   ...(process.env.VARY_HYDRA ? { varyHydra: process.env.VARY_HYDRA === 'true' } : {}),
   ...(process.env.SIDECAR_WS_URL ? { sidecarWsUrl: process.env.SIDECAR_WS_URL } : {}),
+  // Multi-shard: one control connection per shard's own sidecar (the edge LB
+  // can't route `?role=control` — it has no room). Comma-separated. Unset =
+  // single stack.
+  ...(process.env.SIDECAR_CONTROL_URLS
+    ? { sidecarControlUrls: process.env.SIDECAR_CONTROL_URLS.split(',').map((s) => s.trim()).filter(Boolean) }
+    : {}),
 });
 
 const runner = makeDockerRunner({
@@ -43,7 +49,10 @@ const fleet = new FleetService(cfg, {
   controlToken: process.env.FLEET_CONTROL_TOKEN || null,
 });
 await fleet.start();
-console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, serving every room on ${cfg.sidecarWsUrl}`);
+const discovery = cfg.sidecarControlUrls && cfg.sidecarControlUrls.length
+  ? `${cfg.sidecarControlUrls.length} shards (${cfg.sidecarControlUrls.join(', ')})`
+  : cfg.sidecarWsUrl;
+console.log(`[fleet] listening on :${fleet.port}, ceiling ${cfg.maxBots}, discovering rooms on ${discovery}`);
 
 const admin = createAdminServer(fleet);
 admin.listen(cfg.adminPort, '0.0.0.0', () => {
