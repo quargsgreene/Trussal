@@ -445,17 +445,42 @@ harness bug, hit one still-open one.**
   **unwatermarked** pair of axes that reads as "measured: zero disruption".
   Both now fall back to watermarked synthetic when the real frame is short the
   metrics they need.
-- **Still open**: `successor_disruption` / `position_disruption` /
-  `time_to_first_turn_s` are still absent — the aggregator's `#activeToken`
-  stays `null` the whole run even with the CRDT-published program (with the
-  required `'metaprogram editor'` directive line prepended) and a live ghost
-  roster present; `ring_size` never exceeds 1. Diagnosed as far as: `jitsiJoined:
-  true`, epoch synced, `nc-active`/heartbeat flowing, but no evidence in the
-  container logs that `#applyOrderFromProgram` / the CRDT sync ever adopts the
-  published program in this bare (no conductor, no other real participants)
-  setup. Next step: instrument `MetaprogrammerCrdtSync.js`'s remote-update path
-  directly (or reproduce with a real `HumanParticipantUser` browser in the
-  room instead of ghosts) rather than inferring from container logs alone.
+- **Resolved — two more real bugs, found by instrumenting the CRDT path
+  directly** (temporary `[DIAG]` logging in `aggregator-bot.js`, since removed):
+  1. **`DIRECTIVES`/`program_directives`/`directives` in this driver and in
+     `config/scenarios.yaml` (S3/S5/S6) were never valid metaprogram syntax** —
+     `# cycles wcl` (metric keyword unquoted) and `# tempo 110` (no unit) both
+     fail to parse. `parseMetaprogram` returning `valid:false` made
+     `#pushProgramToScheduler` bail before ever reaching `#applyOrderFromProgram`
+     — the published program was silently never adopted, aggregator OR browser.
+     Fixed to `# cycles "wcl"` / `# tempo 110 bpm` everywhere (verified: also
+     hit the same YAML footgun once — `\n` inside a *single*-quoted YAML scalar
+     is two literal characters, not a newline; double-quoted-with-escapes is
+     what the original used and what it needed to stay as).
+  2. **A genuinely empty `crdt-state` catch-up (`updates: []` — any room the
+     aggregator reaches before anyone else touches it) permanently defeats the
+     `programText == null` default-program fallback.** `onRemoteChange` set
+     `this.programText = ''` for *any* `catchUp === true`, empty or not —
+     `'' == null` is `false`, so `interpretAndExecuteMetaprogram`'s "JPattern is
+     always on" default (`applyProgramText(buildDefaultProgram())`) never fired,
+     and no later valid update could reach it because it was still queued behind
+     the empty pushProgramToScheduler()'s no-op. `Metaprogrammer.js`'s browser
+     side dodges the same trap for its scheduler-push (only pushes on non-empty
+     text) but has a whole `maybeSeedDefaultProgram()` the aggregator lacks.
+     Fix: an empty catch-up no longer counts as "applied" at all. Verified: zero
+     regressions (25/25 pre-existing `aggregator-bot.test.js` failures
+     unchanged; `aggregator-metaprogram-sync.test.js` 8/8).
+
+  With both fixed, a real churn run (`.41`, 20-member ring + 15-member churn
+  pool, ~180s/arm) produced genuinely complete `turn_stability` data for the
+  first time — `successor_disruption`, `position_disruption`,
+  `time_to_first_turn_s`, `ring_size`, `jain_fairness`, `churn_events`, every
+  one populated, both arms. `fig09_turn_stability.py` itself still renders
+  empty for this specific run — it hardcodes `PROFILE = "p3_lte_busy"` (a WWAN
+  sweep point) and this run used clean `p0_lan` (no netem applied), so the
+  filter matches nothing; the data is real, just not at the profile the figure
+  looks for. A stepped-churn-rate run under `p3_lte_busy` (matching the real S5
+  design) would populate the actual figure — not yet done.
 
 ### The Trussal-side change this study needs
 

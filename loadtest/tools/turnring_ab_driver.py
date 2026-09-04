@@ -54,7 +54,7 @@ CHURN_INTERVAL_S = float(os.environ.get("CHURN_INTERVAL_S", "6"))
 INVOLUNTARY_FRAC = float(os.environ.get("INVOLUNTARY_FRAC", "0.3"))
 ARM_DURATION_S = int(os.environ.get("ARM_DURATION_S", "150"))
 SETTLE_S = int(os.environ.get("SETTLE_S", "20"))
-DIRECTIVES = "# cycles wcl\n# tempo 110"
+DIRECTIVES = '# cycles "wcl"\n# tempo 110 bpm'
 
 # Real aggregator (bots/src/bot/aggregator-bot.js), one per arm: it is the
 # ONLY thing that ticks a MetaprogramScheduler and emits `nc-active` — a

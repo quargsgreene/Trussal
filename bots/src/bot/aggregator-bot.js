@@ -703,6 +703,19 @@ export class AggregatorBot extends Bot {
                 const applied = !!payload && (payload.catchUp === true ||
                     payload.modality === 'apply' || payload.modality === 'roster');
                 if (!applied) return;
+                // A genuinely EMPTY catch-up (crdt-state with no prior updates —
+                // a room nobody has touched yet) must NOT count as "a program
+                // reached us": setting programText to '' here would permanently
+                // defeat the `programText == null` default-program fallback a
+                // few lines below in interpretAndExecuteMetaprogram (`''  ==
+                // null` is false), leaving the room silently running NO program
+                // at all instead of the intended default. Metaprogrammer.js's
+                // browser-side onRemoteChange avoids the same trap by gating its
+                // pushProgramToScheduler on non-empty text; this goes one step
+                // further and skips the assignment too, since the aggregator has
+                // no maybeSeedDefaultProgram() to correct programText afterward.
+                // A live apply/roster is trusted even if surprisingly empty.
+                if (payload.catchUp === true && !(text && text.trim())) return;
                 this.programText = text;
                 // apply/roster/catch-up are all genuine re-applies: end any
                 // departed ghost's grace period (Case 2/3).
