@@ -1,0 +1,135 @@
+/* docs-about.css — imported as raw text (build.mjs '.css': 'text') and
+   injected once by _injectStyles(). Covers the top-right Docs/About corner
+   (welcome page only, positioned to sit just left of Jitsi's own
+   `.welcome-page-settings` gear — see docs-about.js's _positionCorner) and
+   the two modal panels it opens.
+
+   Authored against the per-user Personal Theme vars (src/theme-context.js) —
+   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+   on :root, each with its previous literal as the var() fallback — so this
+   corner and its panels retint with the rest of the app. */
+
+#trussal-da-corner {
+  position: fixed; top: 10px; right: 10px; /* _positionCorner overrides both */
+  z-index: 1000003;
+  display: flex; flex-direction: row; align-items: center; gap: 6px;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+
+#trussal-da-corner button {
+  height: 28px; padding: 0 12px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  font-family: inherit; font-size: calc(13px * var(--trussal-font-scale, 1));
+  font-weight: 600; cursor: pointer;
+}
+#trussal-da-corner button:hover {
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+}
+
+/* Modal scrim + panel, shared by the Docs and About panels. */
+.trussal-da-scrim {
+  position: fixed; inset: 0;
+  z-index: 1000010;
+  background: rgba(0, 0, 0, 0.35);
+  display: none;
+  align-items: flex-start; justify-content: center;
+  padding: 6vh 16px;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+.trussal-da-scrim.open { display: flex; }
+
+.trussal-da-panel {
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 10px;
+  width: min(720px, 100%);
+  max-height: 86vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.trussal-da-panel .da-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 18px;
+  border-bottom: 1px solid var(--trussal-secondary, #111111);
+  flex: 0 0 auto;
+}
+.trussal-da-panel .da-head h2 {
+  margin: 0; font-size: calc(18px * var(--trussal-font-scale, 1)); font-weight: 700;
+}
+.trussal-da-panel .da-close {
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
+  width: 26px; height: 26px; line-height: 1; padding: 0;
+  font-size: calc(13px * var(--trussal-font-scale, 1)); cursor: pointer; flex: 0 0 auto;
+}
+.trussal-da-panel .da-close:hover {
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+}
+
+.trussal-da-panel .da-body {
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+  font-size: calc(13.5px * var(--trussal-font-scale, 1));
+  line-height: 1.55;
+}
+.trussal-da-panel .da-body p { margin: 10px 0; }
+.trussal-da-panel .da-body h3 {
+  margin: 22px 0 4px; font-size: calc(15px * var(--trussal-font-scale, 1));
+  padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);
+}
+.trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }
+.trussal-da-panel .da-body h4 {
+  margin: 16px 0 2px; font-size: calc(13.5px * var(--trussal-font-scale, 1));
+}
+.trussal-da-panel .da-body ul, .trussal-da-panel .da-body ol {
+  margin: 6px 0; padding-left: 20px;
+}
+.trussal-da-panel .da-body li { margin: 3px 0; }
+.trussal-da-panel .da-body code {
+  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+  border-radius: 3px; padding: 1px 5px;
+}
+.trussal-da-panel .da-body pre {
+  font-family: monospace; font-size: calc(12px * var(--trussal-font-scale, 1));
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+  border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;
+  line-height: 1.4;
+}
+.trussal-da-panel .da-body pre code { background: none; padding: 0; }
+.trussal-da-panel .da-body table {
+  border-collapse: collapse; width: 100%; margin: 8px 0;
+  font-size: calc(12.5px * var(--trussal-font-scale, 1));
+}
+.trussal-da-panel .da-body th, .trussal-da-panel .da-body td {
+  border: 1px solid var(--trussal-secondary, #111111);
+  padding: 4px 8px; text-align: left; vertical-align: top;
+}
+
+/* One JPattern function entry. */
+.trussal-da-panel .da-fn {
+  margin: 14px 0; padding: 10px 12px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;
+}
+.trussal-da-panel .da-fn .da-fn-name {
+  font-weight: 700; font-size: calc(13.5px * var(--trussal-font-scale, 1));
+}
+.trussal-da-panel .da-fn .da-fn-sig {
+  display: block; margin: 6px 0;
+  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+  border-radius: 5px; padding: 6px 9px; white-space: pre-wrap; word-break: break-word;
+}
+.trussal-da-panel .da-fn p { margin: 6px 0; }
+
+/* Docs sub-nav: jump links at the top of the Docs panel body. */
+.trussal-da-panel .da-toc {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 4px 0 16px;
+  font-size: calc(12px * var(--trussal-font-scale, 1));
+}
+.trussal-da-panel .da-toc a {
+  color: var(--trussal-secondary, #111111);
+  text-decoration: underline; cursor: pointer;
+}
