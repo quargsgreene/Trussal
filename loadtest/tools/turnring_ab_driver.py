@@ -56,11 +56,66 @@ ARM_DURATION_S = int(os.environ.get("ARM_DURATION_S", "150"))
 SETTLE_S = int(os.environ.get("SETTLE_S", "20"))
 DIRECTIVES = "# cycles wcl\n# tempo 110"
 
+# Real aggregator (bots/src/bot/aggregator-bot.js), one per arm: it is the
+# ONLY thing that ticks a MetaprogramScheduler and emits `nc-active` — a
+# ghost-only run never produces turn_stability data (see loadtest/README.md).
+# It needs no conductor: BOT_ROLE=aggregator + JITSI_URL is the whole of what
+# a standalone `docker run` needs (derives its sidecar/O2 urls from
+# JITSI_URL's own host). Image: `cd bots && docker compose --profile
+# build-only build bot-image` on AGGREGATOR_SSH_TARGET first.
+AGGREGATOR_SSH_KEY = os.environ.get("AGGREGATOR_SSH_KEY", "")
+AGGREGATOR_SSH_TARGET = os.environ.get("AGGREGATOR_SSH_TARGET", "")
+AGGREGATOR_JOIN_WAIT_S = float(os.environ.get("AGGREGATOR_JOIN_WAIT_S", "25"))
+AGGREGATOR_CONTAINER = "trussal-bot-turnring-ab"
+
 VENV_PY = str(LOADTEST / ".venv" / "bin" / "python")
 
 
 def log(msg):
     print(f"[turnring-ab] {msg}", flush=True)
+
+
+def _ssh(cmd: str) -> str:
+    out = subprocess.run(
+        ["ssh", "-i", os.path.expanduser(AGGREGATOR_SSH_KEY), "-o", "BatchMode=yes",
+         "-o", "ConnectTimeout=10", AGGREGATOR_SSH_TARGET, cmd],
+        capture_output=True, text=True, timeout=40)
+    return (out.stdout or "") + (out.stderr or "")
+
+
+def start_aggregator(room: str):
+    if not (AGGREGATOR_SSH_KEY and AGGREGATOR_SSH_TARGET):
+        return False
+    _ssh(f"docker rm -f {AGGREGATOR_CONTAINER} >/dev/null 2>&1")
+    jitsi_url = f"{SCHEME}://{HOST}/{room}"
+    cmd = (
+        f"docker run -d --name {AGGREGATOR_CONTAINER} --network host "
+        "--ulimit rtprio=99 --ulimit memlock=-1 --shm-size 1gb "
+        # The aggregator's own O2/sidecar sockets are plain Node `ws` (strict
+        # TLS by default, no rejectUnauthorized option exposed) — a
+        # self-signed staging cert fails BOTH, leaving it on an unsynced local
+        # clock and (worse) never actually connected to the room's peer bus.
+        # Verified live: without this, ClockSync doesn't converge and the
+        # fleet socket never opens; with it, both connect immediately.
+        "-e NODE_TLS_REJECT_UNAUTHORIZED=0 "
+        "-e BOT_ID=99 -e BOT_ROLE=aggregator "
+        f"-e JITSI_URL={jitsi_url} trussal-bot"
+    )
+    out = _ssh(cmd)
+    log(f"aggregator: started for {room} ({out.strip()[:80] or 'no output'}); "
+        f"waiting {AGGREGATOR_JOIN_WAIT_S:.0f}s for it to join")
+    time.sleep(AGGREGATOR_JOIN_WAIT_S)
+    tail = _ssh(f"docker logs --tail 15 {AGGREGATOR_CONTAINER} 2>&1")
+    log("aggregator log tail: " + tail.strip()[-500:])
+    return True
+
+
+def stop_aggregator():
+    if not (AGGREGATOR_SSH_KEY and AGGREGATOR_SSH_TARGET):
+        return
+    _ssh(f"docker stop -t 15 {AGGREGATOR_CONTAINER} >/dev/null 2>&1; "
+        f"docker rm -f {AGGREGATOR_CONTAINER} >/dev/null 2>&1")
+    log("aggregator: stopped")
 
 
 def run_arm(arm: str):
@@ -79,6 +134,7 @@ def run_arm(arm: str):
          "--room", room, "--duration", str(ARM_DURATION_S + 30)],
         env=obs_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     time.sleep(3)  # let the observer attach before anyone joins
+    start_aggregator(room)
 
     # ---- editor: publishes the ring-mode directive, then (explicit only)
     # re-publishes the literal on every roster change, exactly like
@@ -183,6 +239,7 @@ def run_arm(arm: str):
     editor_thread.join(timeout=5)
     editor_sc.close(intentional=True)
     doc.close()
+    stop_aggregator()
 
     log("players done, waiting on observer...")
     try:

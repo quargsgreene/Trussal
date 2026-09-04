@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, watermark
 from _cli import figure_main
-from _data import load_break_points, TURN_STUDY_PROFILES, PROFILE_LABELS, is_synthetic
+from _data import load_break_points, TURN_STUDY_PROFILES, PROFILE_LABELS, is_synthetic, ensure_scenarios
 
 OUTPUT_NAME = "fig10_breakpoint"
 MODE_ORDER = ["explicit", "hash"]
@@ -31,6 +31,9 @@ CONDITION_SHORT = {
 def build_figure(run_dir=None, column="single"):
     apply_style(column)
     break_points = load_break_points(run_dir)
+    # Same partial-run guard as fig09/fig01/etc: a real run that never reached
+    # S6 (break-find) would otherwise render empty, unwatermarked axes.
+    break_points = ensure_scenarios(break_points, ["S6"], lambda: load_break_points(None))
     figure, axes = new_figure(column, width_to_height_ratio=1.5)
 
     profiles_present = [p for p in TURN_STUDY_PROFILES if p in break_points.profile.unique()]

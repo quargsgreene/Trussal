@@ -5,7 +5,7 @@ Protocol mirrored from latency-instrument/server.js and src/peer-state.js:
 
   <- welcome {peerId}
   -> hello {jitsiId, displayName, stableId?, isBot?, isAggregator?, ownerIndex?, isFleet?}
-  <- roster {peers[], you}            <- crdt-state {updates[]}      <- nc-active {...}
+  <- roster {peers[], you}            <- crdt-state {updates[]}      <- jp-active {...}
   <- peer-join {peer}    <- peer-leave {peerId}    <- peer-update {peerId, patch}
   <- fleet-status {...}  <- crdt-update {update,...}  <- scss-compiled/scss-error
   <- remote-control {...}   <- pong {clientSentAt, rtt}
@@ -275,7 +275,12 @@ class SidecarClient:
             self.on_event("crdt-update", msg)
         elif mt == "crdt-state":
             self.on_event("crdt-state", {"count": len(msg.get("updates", []) or [])})
-        elif mt == "nc-active":
+        elif mt == "jp-active":
+            # Wire type is `jp-active` (aggregator-bot.js #broadcastActiveToken,
+            # JPattern) — the metaprogram feature the harness still calls
+            # NetCycles ("nc") predates that rename. Keep the internal event/
+            # metric name `nc-active`/`nc_active` (analysis/metrics.py,
+            # figures/fig09 already key off it) and translate at this one seam.
             self.on_event("nc-active", {"token": msg.get("token"), "index": msg.get("index"), "kind": msg.get("kind")})
         elif mt == "scss-compiled":
             self.on_event("scss-compiled", {"bytes": len(msg.get("css", "") or "")})

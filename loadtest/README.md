@@ -415,6 +415,48 @@ driver here runs one; `turn_stability.parquet` comes back empty from a
 sidecar-ghost-only run, by design, not a bug — `analysis/metrics.py`'s
 `turn_stability()` correctly returns nothing rather than fabricate a result.
 
+**2026-09-04 update — got a real aggregator in, found + fixed one real
+harness bug, hit one still-open one.**
+`tools/turnring_ab_driver.py` now optionally spawns/tears down a real
+`bots/src/bot/aggregator-bot.js` container per arm (`AGGREGATOR_SSH_KEY` /
+`AGGREGATOR_SSH_TARGET`; no conductor needed — `BOT_ROLE=aggregator` +
+`JITSI_URL` is the whole contract, see `bots/src/orchestrator/fleet-service.js`
+`#ensureAggregator`). Two findings from actually doing this against `.41`:
+
+- **Fixed**: the aggregator's own O2/sidecar sockets are plain Node `ws` /
+  `http` clients with strict TLS and no `rejectUnauthorized` escape hatch, so
+  a self-signed staging cert silently left it on an unsynced local clock *and*
+  never connected to the room's peer bus at all (no error surfaced — it just
+  never joined the roster). `NODE_TLS_REJECT_UNAUTHORIZED=0` on the container
+  fixes both; the driver sets it automatically when `AGGREGATOR_SSH_*` is set.
+- **Fixed**: `harness/sidecar.py` listened for a wire message type `nc-active`
+  that no shipped code has sent since the NetCycles → JPattern rename — the
+  aggregator actually broadcasts `#broadcastActiveToken`'s `{type:'jp-active',
+  token, index, kind}`. `sidecar.py` now dispatches on `jp-active` (keeping the
+  harness's internal `nc-active`/`nc_active` vocabulary, which `metrics.py`
+  already keys off, unchanged). Verified live: `nc_active` events now reach
+  `sidecar_observer.py` and `turn_stability.parquet` gets real `ring_size` /
+  `jain_fairness` / `churn_events` rows for the first time.
+- **Fixed**: `fig09_turn_stability.py` / `fig10_breakpoint.py` read their frame
+  straight from `load_turn_stability()`/`load_break_points()` with no
+  `ensure_scenarios(..., require_metrics=...)` guard (the one fig01/07/08 etc.
+  already use for this exact situation) — a real run whose `turn_stability`
+  rows exist but don't cover THIS figure's specific metrics rendered a blank,
+  **unwatermarked** pair of axes that reads as "measured: zero disruption".
+  Both now fall back to watermarked synthetic when the real frame is short the
+  metrics they need.
+- **Still open**: `successor_disruption` / `position_disruption` /
+  `time_to_first_turn_s` are still absent — the aggregator's `#activeToken`
+  stays `null` the whole run even with the CRDT-published program (with the
+  required `'metaprogram editor'` directive line prepended) and a live ghost
+  roster present; `ring_size` never exceeds 1. Diagnosed as far as: `jitsiJoined:
+  true`, epoch synced, `nc-active`/heartbeat flowing, but no evidence in the
+  container logs that `#applyOrderFromProgram` / the CRDT sync ever adopts the
+  published program in this bare (no conductor, no other real participants)
+  setup. Next step: instrument `MetaprogrammerCrdtSync.js`'s remote-update path
+  directly (or reproduce with a real `HumanParticipantUser` browser in the
+  room instead of ghosts) rather than inferring from container logs alone.
+
 ### The Trussal-side change this study needs
 
 Landed on `main` (all `npm test` green + 20 new tests):

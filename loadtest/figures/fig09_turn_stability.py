@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS, watermark
 from _cli import figure_main
-from _data import load_turn_stability, CHURN_RATE_STEPS, is_synthetic
+from _data import load_turn_stability, CHURN_RATE_STEPS, is_synthetic, ensure_scenarios
 
 OUTPUT_NAME = "fig09_turn_stability"
 PROFILE = "p3_lte_busy"
@@ -38,6 +38,14 @@ def build_figure(run_dir=None, column="double"):
         column = "1p5"
     apply_style(column)
     turn_stability = load_turn_stability(run_dir)
+    # A real run can produce turn_stability.parquet with SOME rows (ring_size,
+    # jain_fairness, churn_events — computable from nc-active alone) but none of
+    # THIS figure's two metrics (they also need a real successor to have moved,
+    # i.e. more than one token ever active) — same partial-run gap fig01/02/03/07/08
+    # guard against. Fall back to watermarked synthetic rather than an empty,
+    # unwatermarked pair of axes that would read as "zero disruption, measured".
+    turn_stability = ensure_scenarios(turn_stability, ["S5"], lambda: load_turn_stability(None),
+                                      require_metrics=["successor_disruption", "time_to_first_turn_s"])
     figure, (successor_axes, first_turn_axes) = new_figure(
         column, width_to_height_ratio=2.3, n_columns=2)
 
