@@ -19,6 +19,7 @@ import {
   programHasParticipant,
   hasParticipantSequence
 } from './helpers/metaprogram.js';
+import { orderTokens } from '../src/audio-net/TurnRing.js';
 
 function astOf(text) {
   const { ast, errors } = parseMetaprogram(text);
@@ -758,4 +759,44 @@ test('the roster helpers edit the LIVE statement, not a declaration or a comment
 
   // An emptied sequence takes the next append without a stray separator.
   assert.match(appendParticipantToProgram('$ participants <>\n', '0'), /<0>/);
+});
+
+// --- # ring hash: rotation follows the consistent-hash order of the roster ---
+
+test('# ring hash schedules the hashed roster order, not the written $ participants', () => {
+  const { sched, events, advance } = makeScheduler(
+    '$ participants <0>\n# ring hash\n# cycles "wcl" 1\n', { wcl: 4000 }, // 4 s cycles
+  );
+  const roster = ['3', '1', '4', '1', '5', '9', '2', '6'];
+  sched.setRing({ seed: 'room-x', roster: () => roster });
+  const expected = orderTokens(roster, { seed: 'room-x' }); // 7 unique, hashed order
+
+  sched.start(0);
+  // one cycle at a time so the grid never parts company with the clock
+  for (let c = 0; c <= expected.length; c++) advance(c * 4 + 0.01);
+  const opens = events.filter(e => e.type === 'slot-open').slice(0, expected.length);
+  assert.deepEqual(opens.map(e => e.token), expected);
+  // written token '0' is not in the roster, so it never gets a slot
+  assert.ok(!opens.some(e => e.token === '0'));
+});
+
+test('# ring hash falls back to $ participants until a roster is known', () => {
+  const { sched, events, advance } = makeScheduler(
+    '$ participants <7>\n# ring hash\n# cycles "wcl" 1\n', { wcl: 4000 },
+  );
+  sched.setRing({ seed: 'r', roster: () => [] }); // empty roster
+  sched.start(0);
+  advance(5);
+  assert.equal(events.find(e => e.type === 'slot-open').token, '7');
+});
+
+test('no # ring directive: setRing is inert, written order is used verbatim', () => {
+  const { sched, events, advance } = makeScheduler(
+    '$ participants <0 1 2>\n# cycles "wcl" 1\n', { wcl: 4000 },
+  );
+  sched.setRing({ seed: 'r', roster: () => ['9', '8', '7'] });
+  sched.start(0);
+  advance(13);
+  const first3 = events.filter(e => e.type === 'slot-open').slice(0, 3).map(e => e.token);
+  assert.deepEqual(first3, ['0', '1', '2']);
 });

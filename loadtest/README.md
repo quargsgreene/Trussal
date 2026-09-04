@@ -363,14 +363,18 @@ templates.
 
 ### The Trussal-side change this study needs
 
-Landed on `main` (all 600 `npm test` green + 20 new tests):
+Landed on `main` (all `npm test` green + 20 new tests):
 
 | file | change |
 |---|---|
 | `src/audio-net/TurnRing.js` | **new** pure module — `orderTokens`, `weightedRingSlots`, `nextOwner`, `ringDisruption` / `positionDisruption` / `rejoinRestoresSlot`, `jainFairness` |
-| `src/audio-net/MetaprogrammerParser.js` | `# ring <explicit\|hash> [w …]` directive → `program.ring` |
+| `src/audio-net/MetaprogrammerParser.js` | `# ring <explicit\|hash> [w …]` directive → `program.ring`; `buildDefaultProgram()` now ships `# ring hash` |
 | `src/audio-net/MetaprogramScheduler.js` | `setRing({roster, seed})` + `_effectiveParticipants()` — under `# ring hash`, expand the hashed roster order instead of `$ participants`; **inert** without the directive |
 | `src/audio-net/Metaprogrammer.js` | wires `setRing` (roster = present tokens, seed = room name) |
 | `bots/src/bot/aggregator-bot.js` | same wiring for the aggregator's own scheduler + `CircularParticipantQueue` |
 
-An unwritten `# ring` is byte-identical to today.
+`# ring hash` is now the **default** (`buildDefaultProgram()`); an explicit
+`# ring explicit`, or any older program with no `# ring` line, is byte-identical
+to the pre-hash literal walk. So the `turn_mode: explicit` arm writes
+`# ring explicit` (or a maintained literal `$ participants <…>`); the
+`turn_mode: hash` arm leaves the default alone.

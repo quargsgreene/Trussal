@@ -39365,6 +39365,7 @@ ${s2}`;
   function buildDefaultProgram() {
     return `'metaprogram editor'
 $ participants <0>
+# ring hash
 # cycles "wcl" 20
 `;
   }
@@ -39400,7 +39401,7 @@ $ participants <0>
     }).join(" ");
     return text2.replace(m2[0], `${m2[1]}${m2[2]}${cleaned}${m2[4]}`);
   }
-  var import_room_indices, TIMING_METRICS, EFFECT_METRICS, METRIC_WORDS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
+  var import_room_indices, TIMING_METRICS, RING_MODES, EFFECT_METRICS, METRIC_WORDS, TEMPO_UNITS, VALUE_ELEMENT_OPS, MAX_VALUE_REPEATS, CRUSH_METRICS, EFFECTS, PATTERN_FNS, PUNCT, OPS, RESTS, Parser2, SEQUENCE_RE;
   var init_MetaprogrammerParser = __esm({
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
@@ -39410,6 +39411,7 @@ $ participants <0>
       init_program_directive();
       init_notation();
       TIMING_METRICS = ["wcl", "wcpl"];
+      RING_MODES = ["explicit", "hash"];
       EFFECT_METRICS = ["wcl", "wcrtt", "wcpl"];
       METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcrtt", "wcpl"]);
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
@@ -39515,7 +39517,7 @@ $ participants <0>
           }
         }
         parseProgram() {
-          const program = { participants: null, cycles: null, tempo: null, chain: [] };
+          const program = { participants: null, cycles: null, tempo: null, ring: null, chain: [] };
           this.skipNewlines();
           while (!this.atEof()) {
             const t = this.peek();
@@ -39939,6 +39941,10 @@ $ participants <0>
             this.parseTempo(program, nameTok);
             return;
           }
+          if (name3 === "ring") {
+            this.parseRing(program, nameTok);
+            return;
+          }
           if (PATTERN_FNS[name3]) {
             this.parseChainFn(program, name3, nameTok, PATTERN_FNS[name3]);
             return;
@@ -40042,6 +40048,60 @@ $ participants <0>
             return;
           }
           program.tempo = { value: value2, unit: unitTok.value };
+        }
+        // `# ring <mode> [w <token> <weight> …]`
+        parseRing(program, nameTok) {
+          if (program.ring) {
+            this.error("duplicate # ring directive", nameTok);
+            this.recover();
+            return;
+          }
+          const modeTok = this.peek();
+          if (modeTok.type !== "word" || !RING_MODES.includes(modeTok.value)) {
+            this.error(`ring needs a mode (${RING_MODES.join("|")})`, modeTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          const ring2 = { mode: modeTok.value, weights: {} };
+          if (this.peek().type === "word" && this.peek().value === "w") {
+            if (ring2.mode !== "hash") {
+              this.error("weights only apply to '# ring hash'", this.peek());
+              this.recover();
+              return;
+            }
+            this.next();
+            let pairs2 = 0;
+            while (!this.atStatementEnd()) {
+              const tokenTok = this.peek();
+              if (tokenTok.type !== "intlike" && tokenTok.type !== "word" && tokenTok.type !== "number") {
+                this.error("ring weight expects '<token> <weight>' pairs", tokenTok);
+                this.recover();
+                return;
+              }
+              this.next();
+              const weightTok = this.peek();
+              const weight = weightTok.type === "number" ? weightTok.value : weightTok.type === "intlike" ? parseFloat(weightTok.value) : NaN;
+              if (!(weight > 0) || !isFinite(weight)) {
+                this.error("ring weight must be a positive number", weightTok);
+                this.recover();
+                return;
+              }
+              this.next();
+              ring2.weights[tokenText(tokenTok)] = weight;
+              pairs2++;
+            }
+            if (!pairs2) {
+              this.error("'w' must be followed by at least one '<token> <weight>' pair", nameTok);
+              return;
+            }
+          }
+          if (!this.atStatementEnd()) {
+            this.error(`ring got an unexpected argument '${tokenText(this.peek())}' \u2014 the syntax is '# ring <mode> [w <token> <weight> \u2026]'`, this.peek());
+            this.recover();
+            return;
+          }
+          program.ring = ring2;
         }
         // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
         // (numbers or metric words) rather than over participants, so it needs its
@@ -40733,6 +40793,33 @@ $ participants <0>
     }
   });
 
+  // src/audio-net/TurnRing.js
+  function fnv1a32(str) {
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i) & 255;
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash >>> 0;
+  }
+  function hashUnitInterval(seed2, token) {
+    const raw = fnv1a32(`${seed2}\0${token}`);
+    return (raw + 0.5) / 4294967296;
+  }
+  function rendezvousScore(seed2, token, weight) {
+    const u2 = hashUnitInterval(seed2, token);
+    return -(weight > 0 ? weight : 1) / Math.log(u2);
+  }
+  function orderTokens(tokens, { seed: seed2 = "trussal", weights = null } = {}) {
+    const unique = [...new Set((tokens || []).map(String))];
+    const weightOf = (token) => weights && weights[token] > 0 ? weights[token] : 1;
+    return unique.map((token) => ({ token, score: rendezvousScore(seed2, token, weightOf(token)) })).sort((a2, b) => b.score - a2.score || (a2.token < b.token ? -1 : a2.token > b.token ? 1 : 0)).map((entry) => entry.token);
+  }
+  var init_TurnRing = __esm({
+    "src/audio-net/TurnRing.js"() {
+    }
+  });
+
   // src/audio-net/MetaprogramScheduler.js
   function beatSeconds(tempo) {
     const v2 = tempo && tempo.value > 0 ? tempo.value : 120;
@@ -40943,6 +41030,7 @@ $ participants <0>
   var init_MetaprogramScheduler = __esm({
     "src/audio-net/MetaprogramScheduler.js"() {
       init_SeededRandom();
+      init_TurnRing();
       WCPL_FULL_SCALE_S = 10;
       EPS = 1e-9;
       MAX_EXPANSION_STEPS = 1024;
@@ -41028,6 +41116,45 @@ $ participants <0>
           this._cycle = 0;
           this._nextCycleStart = null;
           this._grid = [];
+          this._rosterTokens = null;
+          this._ringSeed = "trussal";
+        }
+        // Wire the consistent-hash ring: `roster()` returns the present participant
+        // tokens (room-index strings, aggregator excluded), `seed` is shared by
+        // every client for this room. Only consulted while the active program
+        // carries `# ring hash`.
+        setRing({ roster, seed: seed2 } = {}) {
+          if (typeof roster === "function") this._rosterTokens = roster;
+          if (seed2 != null) this._ringSeed = String(seed2);
+        }
+        // The participant sequence to expand this cycle. Normally the literal
+        // `$ participants` AST; under `# ring hash` (with a roster wired) a synthetic
+        // one-per-cycle alternation built from TurnRing.orderTokens, so the rotation
+        // follows the live roster with no `$ participants` edit and no broadcast.
+        _effectiveParticipants() {
+          const ring2 = this._ast && this._ast.ring;
+          if (!ring2 || ring2.mode !== "hash" || typeof this._rosterTokens !== "function") {
+            return this._ast ? this._ast.participants : null;
+          }
+          const tokens = (this._rosterTokens() || []).map(String).filter(Boolean);
+          if (!tokens.length) return this._ast.participants;
+          const order = orderTokens(tokens, { seed: this._ringSeed, weights: ring2.weights || null });
+          return {
+            type: "sequence",
+            mode: "alternate",
+            // one token per cycle = one turn per cycle
+            stacks: [{
+              elements: order.map((token) => ({
+                type: "participant",
+                token,
+                ownerIndex: token,
+                suffix: null,
+                modifiers: []
+              })),
+              cycleOffset: 0
+            }],
+            modifiers: []
+          };
         }
         setProgram(ast2) {
           if (!ast2 || !ast2.participants) return false;
@@ -41136,7 +41263,7 @@ $ participants <0>
             this._grid.push({ cycle: this._cycle, t0, seconds: seconds2 });
             while (this._grid.length > GRID_HISTORY && this._grid[1].t0 <= now) this._grid.shift();
             this._emit({ type: "cycle-start", cycle: this._cycle, t: t0, seconds: seconds2, beats });
-            expandCycle(this._ast.participants, this._cycle).forEach((ev, i) => {
+            expandCycle(this._effectiveParticipants(), this._cycle).forEach((ev, i) => {
               const t = t0 + ev.start * seconds2;
               const dur2 = ev.dur * seconds2;
               const slot = {
@@ -51746,6 +51873,12 @@ ${newBody}`).length === 0;
     scheduler = new MetaprogramScheduler({
       now: networkSeconds,
       onEvent: onSchedulerEvent
+    });
+    scheduler.setRing({
+      // Lowercased to match the sidecar's room-name normalization, so the browser
+      // and the aggregator hash against the identical seed.
+      seed: (getRoomNameFromUrl() || "default").toLowerCase(),
+      roster: () => getAllPeers().filter((p) => p.roomIndex != null && !p.isAggregator).map((p) => String(p.roomIndex))
     });
     pushProgramToScheduler();
     scheduler.setMetrics(effectiveWorstCase());

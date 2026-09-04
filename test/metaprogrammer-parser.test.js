@@ -824,17 +824,21 @@ test('errors carry 1-based line/col for editor squiggles', () => {
 // --- Defaults / helpers --------------------------------------------------------
 
 test('buildDefaultProgram emits the always-on default and round-trips the parser', () => {
-  // Participant 0 — the first to join — streams continuously; nobody else is
-  // listed, so later joiners stay silent until an edit adds them.
+  // `# ring hash`: the rotation is the consistent-hash order of the present
+  // roster, so every joiner takes turns immediately. `$ participants <0>` is
+  // still required by the grammar but seeds nothing in hash mode.
   const text = buildDefaultProgram();
-  assert.equal(text, "'metaprogram editor'\n$ participants <0>\n# cycles \"wcl\" 20\n");
+  assert.equal(text, "'metaprogram editor'\n$ participants <0>\n# ring hash\n# cycles \"wcl\" 20\n");
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
+  assert.deepEqual(ast.ring, { mode: 'hash', weights: {} });
   // No tempo directive in the default program, and none injected behind it.
   assert.equal(ast.tempo, null);
   // The implicit default (no # cycles line) mirrors the same directive.
   const implied = ok('$ participants <0>\n');
   assert.deepEqual(implied.cycles, { metric: 'wcl', factor: 20, fixed: null, defaulted: true });
+  // An unwritten `# ring` is the literal walk — byte-identical to the old default.
+  assert.equal(implied.ring, null);
 });
 
 test('`*`-prefixed statements are inert button declarations, not program', () => {
@@ -909,4 +913,25 @@ test('# cycles reads fixed numbers, so it names the limit rather than reporting 
 test('the colon binds an identifier to digits and nothing else', () => {
   ok(`${PARTS}# cycles "wcl" 20`, 'a plain numeric argument is untouched');
   bad(`${PARTS}# crush "wcl" :3`);
+});
+
+// --- # ring (consistent-hash turn ordering) ----------------------------------
+
+test('# ring hash parses to a ring node; an unwritten # ring stays null', () => {
+  assert.equal(ok(PARTS).ring, null);
+  assert.deepEqual(ok(`${PARTS}# ring hash`).ring, { mode: 'hash', weights: {} });
+  assert.deepEqual(ok(`${PARTS}# ring explicit`).ring, { mode: 'explicit', weights: {} });
+});
+
+test('# ring hash takes optional w <token> <weight> pairs', () => {
+  assert.deepEqual(ok(`${PARTS}# ring hash w 0 3 1 2`).ring,
+    { mode: 'hash', weights: { '0': 3, '1': 2 } });
+});
+
+test('# ring rejects a bad mode, a lone w, weights on explicit, and duplicates', () => {
+  bad(`${PARTS}# ring roundrobin`, /ring needs a mode/);
+  bad(`${PARTS}# ring hash w`, /at least one/);
+  bad(`${PARTS}# ring hash w 0`, /positive number/);
+  bad(`${PARTS}# ring explicit w 0 3`, /weights only apply/);
+  bad(`${PARTS}# ring hash\n# ring hash`, /duplicate # ring/);
 });

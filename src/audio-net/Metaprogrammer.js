@@ -667,6 +667,18 @@ function startScheduler() {
     now: networkSeconds,
     onEvent: onSchedulerEvent
   });
+  // `# ring hash`: the rotation order is the consistent-hash order of the
+  // room's present tokens, recomputed each cycle. Seed = the room name, so it
+  // is deterministic across every client with nothing stored (see TurnRing.js).
+  // Inert unless the active program carries `# ring hash`.
+  scheduler.setRing({
+    // Lowercased to match the sidecar's room-name normalization, so the browser
+    // and the aggregator hash against the identical seed.
+    seed: (getRoomNameFromUrl() || 'default').toLowerCase(),
+    roster: () => getAllPeers()
+      .filter(p => p.roomIndex != null && !p.isAggregator)
+      .map(p => String(p.roomIndex)),
+  });
   pushProgramToScheduler();
   scheduler.setMetrics(effectiveWorstCase());
   scheduler.start(epoch);

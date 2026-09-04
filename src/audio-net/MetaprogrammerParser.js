@@ -56,6 +56,20 @@ import { readDirective, stripDirective } from '../program-directive.js';
 import { detectNotation, miniToMondo } from '../notation.js';
 
 export const TIMING_METRICS = ['wcl', 'wcpl'];
+
+// `# ring <mode>` selects how the turn rotation order is derived:
+//   explicit  the literal `$ participants <…>` sequence, walked cyclically
+//             (an unwritten `# ring` means this — byte-identical to the old
+//             behaviour). `buildDefaultProgram()` now ships `# ring hash`, so
+//             a fresh room starts in hash mode; edit the line to opt out.
+//   hash      the consistent-hash order of the room's PRESENT tokens
+//             (TurnRing.orderTokens), recomputed each cycle from the live
+//             roster, so a join/leave perturbs O(1/N) of the ring and needs
+//             no `$ participants` edit. `$ participants` must still be present
+//             syntactically (a program has one); its contents seed nothing in
+//             hash mode. Optional `w <token> <weight> …` pairs bias a token's
+//             share of turns (weighted rendezvous — see weightedRingSlots).
+export const RING_MODES = ['explicit', 'hash'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
 // cannot set a cycle length (it is a round trip, not a turn) but it is a
 // perfectly good modulation source.
@@ -347,7 +361,7 @@ class Parser {
   }
 
   parseProgram() {
-    const program = { participants: null, cycles: null, tempo: null, chain: [] };
+    const program = { participants: null, cycles: null, tempo: null, ring: null, chain: [] };
     this.skipNewlines();
     while (!this.atEof()) {
       const t = this.peek();
@@ -771,6 +785,7 @@ class Parser {
 
     if (name === 'cycles') { this.parseCycles(program, nameTok); return; }
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
+    if (name === 'ring') { this.parseRing(program, nameTok); return; }
 
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
     if (EFFECTS[name]) {
@@ -878,6 +893,65 @@ class Parser {
       return;
     }
     program.tempo = { value, unit: unitTok.value };
+  }
+
+  // `# ring <mode> [w <token> <weight> …]`
+  parseRing(program, nameTok) {
+    if (program.ring) {
+      this.error('duplicate # ring directive', nameTok);
+      this.recover();
+      return;
+    }
+    const modeTok = this.peek();
+    if (modeTok.type !== 'word' || !RING_MODES.includes(modeTok.value)) {
+      this.error(`ring needs a mode (${RING_MODES.join('|')})`, modeTok);
+      this.recover();
+      return;
+    }
+    this.next();
+    const ring = { mode: modeTok.value, weights: {} };
+
+    // optional weight pairs: `w <token> <weight> <token> <weight> …`
+    if (this.peek().type === 'word' && this.peek().value === 'w') {
+      if (ring.mode !== 'hash') {
+        this.error("weights only apply to '# ring hash'", this.peek());
+        this.recover();
+        return;
+      }
+      this.next();
+      let pairs = 0;
+      while (!this.atStatementEnd()) {
+        const tokenTok = this.peek();
+        if (tokenTok.type !== 'intlike' && tokenTok.type !== 'word' && tokenTok.type !== 'number') {
+          this.error("ring weight expects '<token> <weight>' pairs", tokenTok);
+          this.recover();
+          return;
+        }
+        this.next();
+        const weightTok = this.peek();
+        const weight = weightTok.type === 'number' ? weightTok.value
+          : (weightTok.type === 'intlike' ? parseFloat(weightTok.value) : NaN);
+        if (!(weight > 0) || !isFinite(weight)) {
+          this.error("ring weight must be a positive number", weightTok);
+          this.recover();
+          return;
+        }
+        this.next();
+        ring.weights[tokenText(tokenTok)] = weight;
+        pairs++;
+      }
+      if (!pairs) {
+        this.error("'w' must be followed by at least one '<token> <weight>' pair", nameTok);
+        return;
+      }
+    }
+
+    if (!this.atStatementEnd()) {
+      this.error(`ring got an unexpected argument '${tokenText(this.peek())}' — the syntax is '# ring <mode> [w <token> <weight> …]'`, this.peek());
+      this.recover();
+      return;
+    }
+    program.ring = ring;
   }
 
   // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
@@ -1768,19 +1842,26 @@ export function mosaicEnabled(ast) {
   return MOSAIC_ENABLED_BY_DEFAULT;
 }
 
-// The default program every room starts under (JPattern is always on):
-// participant 0 — the first to join — streams continuously. Nobody else is
-// listed, so later joiners stay silent until an edit adds them. wcl is the
-// worst-case mouth-to-ear latency a performer actually hears — tens of ms, the
-// de-jitter buffer dominating — so a scale of 20 turns a ~100 ms room into ~2 s
-// solos. Raise it for longer turns, lower it for a faster round.
+// The default program every room starts under (JPattern is always on).
+//
+// `# ring hash` derives the rotation from a consistent hash of the PRESENT
+// roster (TurnRing.orderTokens), so every joiner takes turns immediately and a
+// join/leave needs no `$ participants` edit and no CRDT round-trip. The
+// `$ participants <0>` line is still required by the grammar (a program has a
+// `$` scheduling sequence) but seeds nothing in hash mode; edit the line to
+// `# ring explicit` to walk it literally instead — the old behaviour, where
+// only the listed tokens play.
+//
+// wcl is the worst-case mouth-to-ear latency a performer actually hears — tens
+// of ms, the de-jitter buffer dominating — so a scale of 20 turns a ~100 ms
+// room into ~2 s solos. Raise it for longer turns, lower it for a faster round.
 //
 // No `# tempo` line: the room's default program leaves the tempo unwritten so
 // the beat grid is not part of what a performer reads when they open the
 // editor. Cycle length still quantizes onto the parser's 120 bpm default —
 // writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `'metaprogram editor'\n$ participants <0>\n# cycles "wcl" 20\n`;
+  return `'metaprogram editor'\n$ participants <0>\n# ring hash\n# cycles "wcl" 20\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

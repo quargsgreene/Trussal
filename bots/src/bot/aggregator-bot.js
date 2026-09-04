@@ -32,6 +32,7 @@ import { videoStateFor, videoStateIsNeutral } from '../../../src/audio-net/av-ef
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
+import { orderTokens } from '../../../src/audio-net/TurnRing.js';
 
 // How often the ingest loop drains the page tap into the buffers.
 const DEFAULT_INGEST_INTERVAL_MS = 500;
@@ -1267,11 +1268,32 @@ export class AggregatorBot extends Bot {
      * re-adoption (programUpdate=false) retires nothing, so the ghost keeps
      * replaying until the performer actually re-applies.
      */
+    // Present participant tokens (room-index strings), aggregator excluded —
+    // the input set for `# ring hash`. Mirrors the browser's roster provider
+    // (Metaprogrammer.startScheduler) so both hash against the same set.
+    #presentTokens() {
+        return [...this.#peers.values()]
+            .filter((p) => p && p.roomIndex != null && !p.isAggregator)
+            .map((p) => String(p.roomIndex));
+    }
+
+    // Ring seed: the room name, lowercased to match the sidecar's
+    // normalization and the browser side.
+    #ringSeed() {
+        const parts = this.#roomAndProto();
+        return (parts && parts.room ? parts.room : 'default').toLowerCase();
+    }
+
     #applyOrderFromProgram(ast, { programUpdate = false } = {}) {
         if (!ast || !ast.participants) return;
-        const retired = this.order.applyMetaprogramOrder(
-            metaprogramTokenSequence(ast.participants), { programUpdate },
-        );
+        // `# ring hash`: the rotation order is the consistent-hash order of the
+        // present tokens, not the written `$ participants` sequence. Same
+        // TurnRing.orderTokens + same seed as every browser, so the ring the
+        // aggregator streams matches the one each client outlines.
+        const tokenSequence = (ast.ring && ast.ring.mode === 'hash')
+            ? orderTokens(this.#presentTokens(), { seed: this.#ringSeed(), weights: ast.ring.weights || null })
+            : metaprogramTokenSequence(ast.participants);
+        const retired = this.order.applyMetaprogramOrder(tokenSequence, { programUpdate });
         if (!retired.length) return;
         this.buffers = Object.fromEntries(
             Object.entries(this.buffers).filter(([token]) => !retired.includes(token)),
@@ -1331,6 +1353,10 @@ export class AggregatorBot extends Bot {
             onEvent: (ev) => this.#onSchedulerEvent(ev),
             label: 'jpattern/aggregator',
         });
+        // `# ring hash`: same TurnRing.orderTokens + same room-name seed the
+        // browsers use, so the ring the aggregator streams matches the one each
+        // client outlines. Inert unless the active program carries `# ring hash`.
+        this.scheduler.setRing({ seed: this.#ringSeed(), roster: () => this.#presentTokens() });
         this.#pushProgramToScheduler();
         this.scheduler.setMetrics(this.#worstCase);
         this.scheduler.start(this.epoch);

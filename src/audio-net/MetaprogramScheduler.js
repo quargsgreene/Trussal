@@ -12,6 +12,7 @@
 // clients compute identical slot grids without further coordination.
 
 import { occurrenceDraw } from './SeededRandom.js';
+import { orderTokens } from './TurnRing.js';
 
 // --- Cycle length ------------------------------------------------------------
 
@@ -467,6 +468,46 @@ export class MetaprogramScheduler {
     this._cycle = 0;
     this._nextCycleStart = null;
     this._grid = [];              // recent { cycle, t0, seconds }, newest last
+
+    // `# ring hash` support: a provider of the room's present participant
+    // tokens and a room-wide seed. Left null until setRing() is called, so a
+    // program without `# ring hash` behaves exactly as before.
+    this._rosterTokens = null;    // () → string[]
+    this._ringSeed = 'trussal';
+  }
+
+  // Wire the consistent-hash ring: `roster()` returns the present participant
+  // tokens (room-index strings, aggregator excluded), `seed` is shared by
+  // every client for this room. Only consulted while the active program
+  // carries `# ring hash`.
+  setRing({ roster, seed } = {}) {
+    if (typeof roster === 'function') this._rosterTokens = roster;
+    if (seed != null) this._ringSeed = String(seed);
+  }
+
+  // The participant sequence to expand this cycle. Normally the literal
+  // `$ participants` AST; under `# ring hash` (with a roster wired) a synthetic
+  // one-per-cycle alternation built from TurnRing.orderTokens, so the rotation
+  // follows the live roster with no `$ participants` edit and no broadcast.
+  _effectiveParticipants() {
+    const ring = this._ast && this._ast.ring;
+    if (!ring || ring.mode !== 'hash' || typeof this._rosterTokens !== 'function') {
+      return this._ast ? this._ast.participants : null;
+    }
+    const tokens = (this._rosterTokens() || []).map(String).filter(Boolean);
+    if (!tokens.length) return this._ast.participants; // fall back until the roster is known
+    const order = orderTokens(tokens, { seed: this._ringSeed, weights: ring.weights || null });
+    return {
+      type: 'sequence',
+      mode: 'alternate',                 // one token per cycle = one turn per cycle
+      stacks: [{
+        elements: order.map((token) => ({
+          type: 'participant', token, ownerIndex: token, suffix: null, modifiers: [],
+        })),
+        cycleOffset: 0,
+      }],
+      modifiers: [],
+    };
   }
 
   setProgram(ast) {
@@ -586,7 +627,7 @@ export class MetaprogramScheduler {
       // open/close share one `id` so a consumer pacing off these events can
       // pair them without guessing: (cycle, stack, token) is not unique — a
       // token may occupy several slots in one cycle.
-      expandCycle(this._ast.participants, this._cycle).forEach((ev, i) => {
+      expandCycle(this._effectiveParticipants(), this._cycle).forEach((ev, i) => {
         const t = t0 + ev.start * seconds;
         const dur = ev.dur * seconds;
         const slot = {
