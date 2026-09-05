@@ -39071,6 +39071,71 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/program-directive.js
+  function splitLines(text2) {
+    return String(text2 ?? "").split("\n");
+  }
+  function firstRealLine(lines) {
+    for (let i = 0; i < lines.length; i++) {
+      if (!SKIPPABLE_RE.test(lines[i])) return i;
+    }
+    return -1;
+  }
+  function readDirective(text2) {
+    const lines = splitLines(text2);
+    const idx = firstRealLine(lines);
+    if (idx === -1) {
+      return { kind: null, reason: "empty program \u2014 expected a leading directive line", lineIndex: 0 };
+    }
+    const m2 = lines[idx].match(DIRECTIVE_RE);
+    if (!m2) {
+      return {
+        kind: null,
+        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor', 'bot editor' or 'breakout room'",
+        lineIndex: idx
+      };
+    }
+    const kind = KIND_BY_TEXT[m2[2]];
+    return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
+  }
+  function stripDirective(text2) {
+    const info = readDirective(text2);
+    if (info.kind == null) return String(text2 ?? "");
+    const lines = splitLines(text2);
+    lines[info.lineIndex] = "";
+    return lines.join("\n");
+  }
+  function ensureDirective(text2, kind) {
+    const phrase = CANONICAL_BY_KIND[kind];
+    if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
+    const s2 = String(text2 ?? "");
+    if (readDirective(s2).kind === kind) return s2;
+    return `'${phrase}'
+${s2}`;
+  }
+  var PERSONAL, METAPROGRAM, BOT, BREAKOUT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
+  var init_program_directive = __esm({
+    "src/program-directive.js"() {
+      PERSONAL = "personal editor";
+      METAPROGRAM = "metaprogram editor";
+      BOT = "bot editor";
+      BREAKOUT = "breakout room";
+      KIND_BY_TEXT = {
+        [PERSONAL]: "personal",
+        [METAPROGRAM]: "metaprogram",
+        [BOT]: "bot",
+        [BREAKOUT]: "breakout",
+        "personal program": "personal",
+        "metaprogram": "metaprogram",
+        "bot program": "bot"
+      };
+      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT, breakout: BREAKOUT };
+      SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
+      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|breakout room|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+      DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
+    }
+  });
+
   // src/breakout-core.js
   function validateBreakoutLiteral(obj) {
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
@@ -39120,9 +39185,16 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       assignedTo
     };
   }
+  function buildDefaultBreakoutProgram(participants) {
+    const tokens = participants && participants.length ? participants.join(" ") : "~";
+    return `'${BREAKOUT}'
+$ participants <${tokens}>
+`;
+  }
   var MAIN_ROOM;
   var init_breakout_core = __esm({
     "src/breakout-core.js"() {
+      init_program_directive();
       MAIN_ROOM = "main";
     }
   });
@@ -39150,69 +39222,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     "src/audio-net/EffectMedia.js"() {
       init_ValuePattern();
       MEDIA = Object.freeze(["audio", "css", "text", "video"]);
-    }
-  });
-
-  // src/program-directive.js
-  function splitLines(text2) {
-    return String(text2 ?? "").split("\n");
-  }
-  function firstRealLine(lines) {
-    for (let i = 0; i < lines.length; i++) {
-      if (!SKIPPABLE_RE.test(lines[i])) return i;
-    }
-    return -1;
-  }
-  function readDirective(text2) {
-    const lines = splitLines(text2);
-    const idx = firstRealLine(lines);
-    if (idx === -1) {
-      return { kind: null, reason: "empty program \u2014 expected a leading directive line", lineIndex: 0 };
-    }
-    const m2 = lines[idx].match(DIRECTIVE_RE);
-    if (!m2) {
-      return {
-        kind: null,
-        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor' or 'bot editor'",
-        lineIndex: idx
-      };
-    }
-    const kind = KIND_BY_TEXT[m2[2]];
-    return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
-  }
-  function stripDirective(text2) {
-    const info = readDirective(text2);
-    if (info.kind == null) return String(text2 ?? "");
-    const lines = splitLines(text2);
-    lines[info.lineIndex] = "";
-    return lines.join("\n");
-  }
-  function ensureDirective(text2, kind) {
-    const phrase = CANONICAL_BY_KIND[kind];
-    if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
-    const s2 = String(text2 ?? "");
-    if (readDirective(s2).kind === kind) return s2;
-    return `'${phrase}'
-${s2}`;
-  }
-  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
-  var init_program_directive = __esm({
-    "src/program-directive.js"() {
-      PERSONAL = "personal editor";
-      METAPROGRAM = "metaprogram editor";
-      BOT = "bot editor";
-      KIND_BY_TEXT = {
-        [PERSONAL]: "personal",
-        [METAPROGRAM]: "metaprogram",
-        [BOT]: "bot",
-        "personal program": "personal",
-        "metaprogram": "metaprogram",
-        "bot program": "bot"
-      };
-      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT };
-      SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
-      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
-      DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
     }
   });
 
@@ -39376,7 +39385,8 @@ ${s2}`;
   function parseMetaprogram(text2) {
     const src2 = typeof text2 === "string" ? text2 : "";
     const dir = readDirective(src2);
-    const rawBody = dir.kind === "metaprogram" ? stripDirective(src2) : src2;
+    const isMetaprogramBuffer = dir.kind === "metaprogram" || dir.kind === "breakout";
+    const rawBody = isMetaprogramBuffer ? stripDirective(src2) : src2;
     const notation = detectNotation(rawBody);
     const body = notation === "mini" ? miniToMondo(rawBody) : rawBody;
     const { tokens, errors } = tokenize2(body);
@@ -39387,14 +39397,14 @@ ${s2}`;
         col: 1
       });
     }
-    if (dir.kind !== "metaprogram") {
+    if (!isMetaprogramBuffer) {
       errors.push({
-        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram editor'`,
+        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram editor' or 'breakout room' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram editor' or 'breakout room'`,
         line: (dir.lineIndex ?? 0) + 1,
         col: 1
       });
     }
-    const parser = new Parser2(tokens, errors);
+    const parser = new Parser2(tokens, errors, dir.kind === "breakout" ? "breakout" : "metaprogram");
     const ast2 = parser.parseProgram();
     errors.sort((a2, b) => a2.line - b.line || a2.col - b.col);
     return { ast: ast2, errors, valid: errors.length === 0 };
@@ -39567,10 +39577,17 @@ $ participants <0>
       OPS = /* @__PURE__ */ new Set(["*", "/", "@", "!", "?", "%", ":"]);
       RESTS = /* @__PURE__ */ new Set(["~", "_", "-"]);
       Parser2 = class {
-        constructor(tokens, errors) {
+        // `directiveKind` is 'metaprogram' (the main room's program) or 'breakout'
+        // (one breakout room's own program, program-directive.js's BREAKOUT) — the
+        // only difference the grammar makes on it is parseBreakout/parseAssign
+        // refusing to run inside a 'breakout' buffer: a breakout room's own program
+        // schedules and effects ITS room, but only the main room's metaprogram may
+        // create rooms or move participants into them.
+        constructor(tokens, errors, directiveKind = "metaprogram") {
           this.tokens = tokens.filter((t) => t.type !== "newline" || true);
           this.pos = 0;
           this.errors = errors;
+          this.directiveKind = directiveKind;
         }
         peek(offset2 = 0) {
           return this.tokens[this.pos + offset2];
@@ -40234,6 +40251,11 @@ $ participants <0>
         // breakout-core.js's resolveBreakoutState (the actual room-creation and
         // participant-moving side effects live in src/audio-net/Breakout.js).
         parseBreakout(program, nameTok) {
+          if (this.directiveKind === "breakout") {
+            this.error("# breakout is not allowed in a breakout room's own program \u2014 rooms are created only from the main room's metaprogram", nameTok);
+            this.recover();
+            return;
+          }
           const litTok = this.peek();
           if (litTok.type !== "string") {
             this.error(`breakout needs a single-quoted JSON object \u2014 the syntax is # breakout '{"name":"Room A","participants":["0","1"]}'`, litTok);
@@ -40262,6 +40284,11 @@ $ participants <0>
         // (resolveBreakoutState), the same "read top-to-bottom as current desired
         // state" rule # ring's weights and the participants sequence already follow.
         parseAssign(program, nameTok) {
+          if (this.directiveKind === "breakout") {
+            this.error("# assign is not allowed in a breakout room's own program \u2014 participants are assigned only from the main room's metaprogram", nameTok);
+            this.recover();
+            return;
+          }
           const tokenTok = this.peek();
           if (tokenTok.type !== "string" || !tokenTok.value.trim()) {
             this.error('assign needs a quoted participant token \u2014 the syntax is # assign "0" "Room A"', tokenTok);
@@ -50752,7 +50779,8 @@ ${err.toString()}`);
       // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
       // program nor perturbs the worst-case metrics; rides the 'metaprogram'
       // channel so the same people who may edit the program may flip it.
-      settings: doc2.getMap(SETTINGS_KEY)
+      settings: doc2.getMap(SETTINGS_KEY),
+      breakoutPrograms: doc2.getMap(BREAKOUT_PROGRAMS_KEY)
     };
   }
   function encodeUpdateB64(update) {
@@ -50794,7 +50822,7 @@ ${err.toString()}`);
   function setDocText(ytext, value2, origin = "local") {
     return applyTextDiff(ytext, value2, origin);
   }
-  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings }, bus2, { modality = "keyboard" } = {}) {
+  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings, breakoutPrograms }, bus2, { modality = "keyboard" } = {}) {
     let localUpdates = 0;
     const listeners = /* @__PURE__ */ new Set();
     let lastAuthorIndex = null;
@@ -50944,13 +50972,44 @@ ${err.toString()}`);
         settings.observe(h2);
         return () => settings.unobserve(h2);
       },
+      // Each breakout room's own metaprogram (roomName → whole program text).
+      // Rides the 'metaprogram' channel, same edit privilege as the main
+      // program and the settings map above.
+      getBreakoutProgram(roomName) {
+        return breakoutPrograms && breakoutPrograms.get(roomName) || "";
+      },
+      // Every declared room's program at once, for a room-selector UI to list
+      // from without a separate "which rooms exist" channel.
+      getBreakoutPrograms() {
+        const out = {};
+        if (breakoutPrograms) breakoutPrograms.forEach((v2, k2) => {
+          out[k2] = v2;
+        });
+        return out;
+      },
+      setBreakoutProgram(roomName, value2, origin = "settings") {
+        if (!breakoutPrograms || !roomName) return;
+        doc2.transact(() => breakoutPrograms.set(roomName, String(value2 ?? "")), origin);
+      },
+      onBreakoutProgramsChange(fn) {
+        if (!breakoutPrograms) return () => {
+        };
+        const h2 = () => {
+          try {
+            fn(this.getBreakoutPrograms());
+          } catch (e30) {
+          }
+        };
+        breakoutPrograms.observe(h2);
+        return () => breakoutPrograms.unobserve(h2);
+      },
       disconnect() {
         doc2.off("update", onDocUpdate);
         unsubscribe();
       }
     };
   }
-  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, SNAPSHOT_EVERY;
+  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, BREAKOUT_PROGRAMS_KEY, SNAPSHOT_EVERY;
   var init_MetaprogrammerCrdtSync = __esm({
     "src/audio-net/MetaprogrammerCrdtSync.js"() {
       init_yjs();
@@ -50958,6 +51017,7 @@ ${err.toString()}`);
       MODULATION_KEY = "modulation";
       VLANS_KEY = "vlans";
       SETTINGS_KEY = "settings";
+      BREAKOUT_PROGRAMS_KEY = "breakoutPrograms";
       SNAPSHOT_EVERY = 25;
     }
   });
@@ -51759,6 +51819,8 @@ ${err.toString()}`);
     effectiveWorstCase: () => effectiveWorstCase,
     ensureMetaprogramSync: () => ensureMetaprogramSync,
     getActivePattern: () => getActivePattern,
+    getBreakoutProgramText: () => getBreakoutProgramText,
+    getBreakoutRoomNames: () => getBreakoutRoomNames,
     getGateLevel: () => getGateLevel,
     getInducedMetrics: () => getInducedMetrics,
     getProgramText: () => getProgramText,
@@ -51770,12 +51832,14 @@ ${err.toString()}`);
     isJPatternActive: () => isJPatternActive,
     onDelayedStreamingChange: () => onDelayedStreamingChange,
     removeVlan: () => removeVlan,
+    setBreakoutProgramText: () => setBreakoutProgramText,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
     setDelayedStreaming: () => setDelayedStreaming,
     setInducedMetric: () => setInducedMetric,
     setJPatternActive: () => setJPatternActive,
     setVlan: () => setVlan,
     startLocalCapture: () => startLocalCapture,
+    subscribeBreakoutPrograms: () => subscribeBreakoutPrograms,
     subscribeSlotEvents: () => subscribeSlotEvents,
     toggleEffectShortcut: () => toggleEffectShortcut
   });
@@ -51912,6 +51976,28 @@ ${err.toString()}`);
     if (scheduler) scheduler.setProgram(ast2);
     if (effects) effects.setChain(ast2.chain, effectiveWorstCase());
     applyBreakoutDirectives(ast2.breakouts, ast2.assignments);
+    seedBreakoutPrograms(ast2.breakouts);
+  }
+  function seedBreakoutPrograms(breakouts) {
+    if (!crdt || !breakouts?.length || !isRosterEditLeader()) return;
+    for (const spec of breakouts) {
+      if (crdt.getBreakoutProgram(spec.name)) continue;
+      crdt.setBreakoutProgram(spec.name, buildDefaultBreakoutProgram(spec.participants), "roster");
+    }
+  }
+  function getBreakoutRoomNames() {
+    return Object.keys(ensureMetaprogramSync().getBreakoutPrograms()).sort();
+  }
+  function getBreakoutProgramText(roomName) {
+    return ensureMetaprogramSync().getBreakoutProgram(roomName);
+  }
+  function setBreakoutProgramText(roomName, text2) {
+    const { errors, valid } = parseMetaprogram(text2);
+    if (valid) ensureMetaprogramSync().setBreakoutProgram(roomName, text2, "apply");
+    return errors;
+  }
+  function subscribeBreakoutPrograms(fn) {
+    return ensureMetaprogramSync().onBreakoutProgramsChange(fn);
   }
   function applyProgramText(text2, { broadcast = true } = {}) {
     const { errors, valid } = parseMetaprogram(text2);
@@ -52218,6 +52304,7 @@ ${newBody}`).length === 0;
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
       init_Breakout();
+      init_breakout_core();
       init_notation();
       init_MetaprogramScheduler();
       init_WorstCaseCalculationUtils();
@@ -57997,8 +58084,8 @@ ${rendererCall}` : text2).join("\n");
       while (i < src2.length && src2[i] !== quote) {
         if (src2[i] === "\\") {
           i++;
-          const esc = src2[i];
-          str += esc === "n" ? "\n" : esc === "t" ? "	" : esc;
+          const esc2 = src2[i];
+          str += esc2 === "n" ? "\n" : esc2 === "t" ? "	" : esc2;
         } else {
           str += src2[i];
         }
@@ -62605,7 +62692,7 @@ ${snippet}${JP_BTN_MARKER}`;
         }, APPLIED_FADE_MS);
       }
     }
-    const esc = (s2) => String(s2).replace(
+    const esc2 = (s2) => String(s2).replace(
       /[&<>"']/g,
       (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
     );
@@ -62616,7 +62703,7 @@ ${snippet}${JP_BTN_MARKER}`;
       if (key !== btnsKey) {
         btnsKey = key;
         btnsEl.innerHTML = buttons.map(
-          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>${esc(b.label)}</button>`
+          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc2(b.snippet)}" title="${esc2(b.snippet)}"${readOnly ? " disabled" : ""}>${esc2(b.label)}</button>`
         ).join("");
         btnsEl.querySelectorAll(".jp-head-btn").forEach((btn) => {
           btn.addEventListener("click", () => press2(btn.dataset.jpatternCode));
@@ -62950,6 +63037,87 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     renderOutline();
     return overlay;
+  }
+
+  // components/BreakoutProgramEditor.js
+  init_Metaprogrammer();
+  var esc = (s2) => String(s2).replace(
+    /[&<>"']/g,
+    (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
+  );
+  function mountBreakoutProgramEditor(container4) {
+    if (!container4 || container4.querySelector(".bo-editor")) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "ts-section bo-editor";
+    wrap.innerHTML = `
+    <div class="ts-section-head">
+      <div class="ts-section-title">Breakout room metaprogram</div>
+      <div class="ts-section-controls">
+        <select class="bo-room-select"></select>
+        <button class="ts-btn eval bo-apply" type="button">Apply</button>
+        <span class="ts-shortcuts">No # breakout / # assign here \u2014 only the main JPattern card above creates rooms or moves participants.</span>
+      </div>
+    </div>
+    <textarea class="ts-code bo-code" spellcheck="false" style="min-height:72px;"></textarea>
+    <div class="ts-meta bo-errors" style="color:var(--trussal-secondary, #111111);"></div>
+    <div class="ts-meta bo-empty">No breakout rooms declared yet \u2014 add one with # breakout in the JPattern card above.</div>
+  `;
+    container4.appendChild(wrap);
+    const select = wrap.querySelector(".bo-room-select");
+    const ta = wrap.querySelector(".bo-code");
+    const errorsEl = wrap.querySelector(".bo-errors");
+    const emptyEl = wrap.querySelector(".bo-empty");
+    const applyBtn = wrap.querySelector(".bo-apply");
+    attachUndoHistory(ta);
+    let currentRoom2 = null;
+    let optionsKey = null;
+    function loadRoom(name3) {
+      currentRoom2 = name3;
+      ta.value = name3 ? getBreakoutProgramText(name3) : "";
+      resetUndoBaseline(ta);
+      errorsEl.textContent = "";
+    }
+    function refreshRoomList() {
+      const names2 = getBreakoutRoomNames();
+      const hasRooms = names2.length > 0;
+      select.hidden = !hasRooms;
+      ta.hidden = !hasRooms;
+      applyBtn.hidden = !hasRooms;
+      emptyEl.hidden = hasRooms;
+      if (!hasRooms) {
+        currentRoom2 = null;
+        return;
+      }
+      const key = names2.join("\0");
+      if (key !== optionsKey) {
+        optionsKey = key;
+        select.innerHTML = names2.map((n2) => `<option value="${esc(n2)}">${esc(n2)}</option>`).join("");
+      }
+      if (!names2.includes(currentRoom2)) currentRoom2 = names2[0];
+      select.value = currentRoom2;
+      const stored = getBreakoutProgramText(currentRoom2);
+      if (ta.value !== stored && document.activeElement !== ta) {
+        ta.value = stored;
+        resetUndoBaseline(ta);
+        errorsEl.textContent = "";
+      }
+    }
+    select.addEventListener("change", () => loadRoom(select.value));
+    function apply2() {
+      if (!currentRoom2) return;
+      const errors = setBreakoutProgramText(currentRoom2, ta.value);
+      errorsEl.textContent = errors.length ? errors.map((e30) => `${e30.line}:${e30.col} ${e30.message}`).join("  \xB7  ") : "saved";
+    }
+    applyBtn.addEventListener("click", apply2);
+    ta.addEventListener("keydown", (e30) => {
+      if ((e30.ctrlKey || e30.metaKey) && e30.key === "Enter") {
+        e30.preventDefault();
+        apply2();
+      }
+    });
+    subscribeBreakoutPrograms(refreshRoomList);
+    refreshRoomList();
+    return wrap;
   }
 
   // src/audio-net/RoomHealth.js
@@ -63846,6 +64014,7 @@ ${snippet}${JP_BTN_MARKER}`;
     try {
       mountMetaprogrammerEditor(ncHost);
       mountMetaprogrammerCycleHighlighter(ncHost);
+      mountBreakoutProgramEditor(ncHost);
     } catch (e30) {
       console.warn("[studio] JPattern card mount failed", e30);
     }
