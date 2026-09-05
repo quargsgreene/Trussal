@@ -1,6 +1,17 @@
 // breakout-core.js — pure logic for breakout-room definitions and
 // assignments: the object-literal shape `# breakout` takes, and the
 // bookkeeping that decides which rooms exist and who currently belongs where.
+// Also, for each breakout room's OWN metaprogram (a separate CRDT-synced
+// program per declared room — see MetaprogrammerCrdtSync.js's
+// breakoutPrograms map and Metaprogrammer.js's seedBreakoutPrograms), the
+// default program a newly-declared room is seeded with.
+//
+// A breakout room's own program opens with the 'breakout room' directive
+// (program-directive.js's BREAKOUT) rather than 'metaprogram editor' — same
+// $/# grammar, but MetaprogrammerParser.js refuses # breakout / # assign
+// inside one: a breakout room's own program schedules and effects ITS room,
+// but only the MAIN room's metaprogram may create rooms or move participants
+// into them.
 //
 // No DOM, no Strudel, no Jitsi — runs identically in the browser bundle and
 // under node:test. Reading the parsed metaprogram AST and actually creating
@@ -12,6 +23,8 @@
 //
 // Same reasoning as polls-core.js: strict JSON, not a lenient bespoke
 // grammar — a typo should be reported, not guessed around.
+
+import { BREAKOUT } from './program-directive.js';
 
 // The reserved room name assign() uses to send someone back to the main
 // meeting — not itself a room breakout() may declare.
@@ -85,4 +98,18 @@ export function resolveBreakoutState(breakouts, assignments) {
 // resolved state — MAIN_ROOM when nothing assigns it anywhere.
 export function roomForToken(state, token) {
   return state.assignedTo.get(String(token)) ?? MAIN_ROOM;
+}
+
+// The program a newly-declared breakout room starts with: the 'breakout
+// room' directive, plus a $ participants ring seeded from that room's own
+// declared participants (breakout()'s own "participants" list — the room's
+// state at the moment it was created, same "this is how the program would
+// look immediately after…" convention Metaprogrammer.js's main-room default
+// follows). `<~>` — a single rest — is the seed for a room declared with
+// nobody in it yet: `$ participants <>` (empty) is not a valid program, and
+// a rest is a legal, silent placeholder until an # assign line or an edit
+// gives it a real token.
+export function buildDefaultBreakoutProgram(participants) {
+  const tokens = participants && participants.length ? participants.join(' ') : '~';
+  return `'${BREAKOUT}'\n$ participants <${tokens}>\n`;
 }

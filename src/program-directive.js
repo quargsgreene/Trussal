@@ -1,7 +1,7 @@
-// program-directive.js — the one line that says which of Trussal's three
+// program-directive.js — the one line that says which of Trussal's four
 // program kinds a buffer is, so nothing downstream has to infer it from shape.
 //
-// One rule, three consumers — the same reasoning as hydra-code.js and
+// One rule, several consumers — the same reasoning as hydra-code.js and
 // bot-config.js. Every editable program buffer in the system opens with a bare
 // string-literal directive on its first real line, exactly as a module opens
 // with "use strict":
@@ -9,6 +9,11 @@
 //   'personal editor'     a performer's own Strudel + Hydra editor
 //   'metaprogram editor'  the shared JPattern scheduling script
 //   'bot editor'          code a bot runs on a performer's behalf
+//   'breakout room'       one breakout room's OWN metaprogram — same grammar
+//                         as 'metaprogram editor', except MetaprogrammerParser.js
+//                         refuses # breakout / # assign inside one (only the
+//                         main room's metaprogram may create rooms or move
+//                         participants into them; see breakout-core.js)
 //
 // It is REQUIRED and there is no heuristic fallback: a buffer with no
 // recognised directive is not silently classified, it is an error surfaced to
@@ -31,8 +36,14 @@
 export const PERSONAL = 'personal editor';
 export const METAPROGRAM = 'metaprogram editor';
 export const BOT = 'bot editor';
+// A breakout room's own metaprogram (src/audio-net/Breakout.js /
+// breakout-core.js) — the same $/# grammar as 'metaprogram editor', except
+// MetaprogrammerParser.js refuses # breakout / # assign inside one: a
+// breakout room's own program schedules and effects ITS room, but only the
+// MAIN room's metaprogram may create rooms or move participants into them.
+export const BREAKOUT = 'breakout room';
 
-export const DIRECTIVES = { PERSONAL, METAPROGRAM, BOT };
+export const DIRECTIVES = { PERSONAL, METAPROGRAM, BOT, BREAKOUT };
 
 // Every phrase that names a kind — the current spelling first, then the legacy
 // `… program` aliases. Order matters only in that readDirective reports the
@@ -41,12 +52,13 @@ const KIND_BY_TEXT = {
   [PERSONAL]: 'personal',
   [METAPROGRAM]: 'metaprogram',
   [BOT]: 'bot',
+  [BREAKOUT]: 'breakout',
   'personal program': 'personal',
   'metaprogram': 'metaprogram',
   'bot program': 'bot',
 };
 
-const CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT };
+const CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT, breakout: BREAKOUT };
 
 // A line is "blank or a full-line comment" if it carries nothing a program
 // runs. The directive may sit below any number of these, the same slack
@@ -57,7 +69,7 @@ const SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
 // phrases (current spelling or a legacy `… program` alias), alone on its line
 // bar an optional trailing `;` and `// comment`. Anchored so a quoted phrase
 // mid-expression is never mistaken for it.
-const DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+const DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|breakout room|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
 
 // The directive line as a serialisable descriptor, for consumers that cannot
 // import this module — the bot's page scripts are function bodies handed to
@@ -93,7 +105,7 @@ export function readDirective(text) {
   if (!m) {
     return {
       kind: null,
-      reason: "missing directive — the first line must be 'personal editor', 'metaprogram editor' or 'bot editor'",
+      reason: "missing directive — the first line must be 'personal editor', 'metaprogram editor', 'bot editor' or 'breakout room'",
       lineIndex: idx,
     };
   }

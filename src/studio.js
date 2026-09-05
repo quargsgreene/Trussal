@@ -58,6 +58,7 @@ import { PIPELINE_ALLOWANCE_MS } from './audio-net/network-modulation/WorstCaseC
 import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
+import { mountBreakoutProgramEditor } from '../components/BreakoutProgramEditor.js';
 import {
   applyBotClusterDirectives,
   resetBotClusterDirectives,
@@ -1156,6 +1157,7 @@ function ensureOverlay() {
   try {
     mountMetaprogrammerEditor(ncHost);
     mountMetaprogrammerCycleHighlighter(ncHost);
+    mountBreakoutProgramEditor(ncHost);
   } catch (e) {
     console.warn('[studio] JPattern card mount failed', e);
   }

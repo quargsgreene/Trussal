@@ -7,7 +7,9 @@ import {
   validateBreakoutLiteral,
   resolveBreakoutState,
   roomForToken,
+  buildDefaultBreakoutProgram,
 } from '../src/breakout-core.js';
+import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 
 test('validateBreakoutLiteral normalizes a room with no participants', () => {
   const spec = validateBreakoutLiteral({ name: 'Room A' });
@@ -58,4 +60,25 @@ test('resolveBreakoutState: assign() to an undeclared room name still creates it
   const state = resolveBreakoutState([], [{ token: '0', room: 'Ad Hoc' }]);
   assert.equal(roomForToken(state, '0'), 'Ad Hoc');
   assert.deepEqual(state.rooms, [{ name: 'Ad Hoc', participants: ['0'] }]);
+});
+
+// --- buildDefaultBreakoutProgram ---------------------------------------------
+
+test('buildDefaultBreakoutProgram opens with the breakout room directive and seats known participants', () => {
+  const program = buildDefaultBreakoutProgram(['0', '1']);
+  assert.match(program, /^'breakout room'\n/);
+  assert.match(program, /\$ participants <0 1>/);
+});
+
+test('buildDefaultBreakoutProgram seeds a rest when nobody is in the room yet', () => {
+  assert.match(buildDefaultBreakoutProgram([]), /\$ participants <~>/);
+  assert.match(buildDefaultBreakoutProgram(undefined), /\$ participants <~>/);
+});
+
+test('buildDefaultBreakoutProgram output actually parses as a valid breakout-room metaprogram', () => {
+  const withParticipants = parseMetaprogram(buildDefaultBreakoutProgram(['0', '1', '2a']));
+  assert.equal(withParticipants.valid, true, JSON.stringify(withParticipants.errors));
+
+  const empty = parseMetaprogram(buildDefaultBreakoutProgram([]));
+  assert.equal(empty.valid, true, JSON.stringify(empty.errors));
 });

@@ -15,6 +15,15 @@ export const TEXT_KEY = 'metaprogram';
 export const MODULATION_KEY = 'modulation'; // induced wcl/wcrtt/wcpl floors
 export const VLANS_KEY = 'vlans';           // vlanName → { members, induced }
 export const SETTINGS_KEY = 'settings';     // room-wide runtime toggles (not program text)
+// roomName → that breakout room's own program text (a whole 'breakout room'
+// buffer — see program-directive.js's BREAKOUT and breakout-core.js's
+// buildDefaultBreakoutProgram). A plain Y.Map of whole strings, not a Y.Text
+// per room: unlike the main program there is no live scheduler reading this
+// yet (see audio-net/Breakout.js's own doc comment for that gap), so
+// character-level collaborative merge isn't worth a dynamically-managed set
+// of Y.Text instances — a concurrent edit to the SAME room's program is rare
+// and last-write-wins is an acceptable simplification for now.
+export const BREAKOUT_PROGRAMS_KEY = 'breakoutPrograms';
 const SNAPSHOT_EVERY = 25;
 
 export function createMetaprogramDoc() {
@@ -30,7 +39,8 @@ export function createMetaprogramDoc() {
     // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
     // program nor perturbs the worst-case metrics; rides the 'metaprogram'
     // channel so the same people who may edit the program may flip it.
-    settings: doc.getMap(SETTINGS_KEY)
+    settings: doc.getMap(SETTINGS_KEY),
+    breakoutPrograms: doc.getMap(BREAKOUT_PROGRAMS_KEY)
   };
 }
 
@@ -86,7 +96,7 @@ export function setDocText(ytext, value, origin = 'local') {
 
 // Binds a doc to the sidecar relay via the peer-state bus. `bus` is injected
 // ({ subscribe, sendUpdate }) so tests can run two providers over a fake bus.
-export function connectMetaprogramSync({ doc, text, modulation, vlans, settings }, bus, { modality = 'keyboard' } = {}) {
+export function connectMetaprogramSync({ doc, text, modulation, vlans, settings, breakoutPrograms }, bus, { modality = 'keyboard' } = {}) {
   let localUpdates = 0;
   const listeners = new Set();
   let lastAuthorIndex = null;
@@ -216,6 +226,30 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings 
       const h = () => { try { fn(this.getSettings()); } catch (e) {} };
       settings.observe(h);
       return () => settings.unobserve(h);
+    },
+
+    // Each breakout room's own metaprogram (roomName → whole program text).
+    // Rides the 'metaprogram' channel, same edit privilege as the main
+    // program and the settings map above.
+    getBreakoutProgram(roomName) {
+      return (breakoutPrograms && breakoutPrograms.get(roomName)) || '';
+    },
+    // Every declared room's program at once, for a room-selector UI to list
+    // from without a separate "which rooms exist" channel.
+    getBreakoutPrograms() {
+      const out = {};
+      if (breakoutPrograms) breakoutPrograms.forEach((v, k) => { out[k] = v; });
+      return out;
+    },
+    setBreakoutProgram(roomName, value, origin = 'settings') {
+      if (!breakoutPrograms || !roomName) return;
+      doc.transact(() => breakoutPrograms.set(roomName, String(value ?? '')), origin);
+    },
+    onBreakoutProgramsChange(fn) {
+      if (!breakoutPrograms) return () => {};
+      const h = () => { try { fn(this.getBreakoutPrograms()); } catch (e) {} };
+      breakoutPrograms.observe(h);
+      return () => breakoutPrograms.unobserve(h);
     },
 
     disconnect() {

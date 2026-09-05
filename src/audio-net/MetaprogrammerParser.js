@@ -332,10 +332,17 @@ function tokenText(t) {
 }
 
 class Parser {
-  constructor(tokens, errors) {
+  // `directiveKind` is 'metaprogram' (the main room's program) or 'breakout'
+  // (one breakout room's own program, program-directive.js's BREAKOUT) — the
+  // only difference the grammar makes on it is parseBreakout/parseAssign
+  // refusing to run inside a 'breakout' buffer: a breakout room's own program
+  // schedules and effects ITS room, but only the main room's metaprogram may
+  // create rooms or move participants into them.
+  constructor(tokens, errors, directiveKind = 'metaprogram') {
     this.tokens = tokens.filter(t => t.type !== 'newline' || true); // keep newlines: statement boundaries
     this.pos = 0;
     this.errors = errors;
+    this.directiveKind = directiveKind;
   }
 
   peek(offset = 0) { return this.tokens[this.pos + offset]; }
@@ -998,6 +1005,12 @@ class Parser {
   // breakout-core.js's resolveBreakoutState (the actual room-creation and
   // participant-moving side effects live in src/audio-net/Breakout.js).
   parseBreakout(program, nameTok) {
+    if (this.directiveKind === 'breakout') {
+      this.error("# breakout is not allowed in a breakout room's own program — " +
+        "rooms are created only from the main room's metaprogram", nameTok);
+      this.recover();
+      return;
+    }
     const litTok = this.peek();
     if (litTok.type !== 'string') {
       this.error('breakout needs a single-quoted JSON object — the syntax is ' +
@@ -1028,6 +1041,12 @@ class Parser {
   // (resolveBreakoutState), the same "read top-to-bottom as current desired
   // state" rule # ring's weights and the participants sequence already follow.
   parseAssign(program, nameTok) {
+    if (this.directiveKind === 'breakout') {
+      this.error("# assign is not allowed in a breakout room's own program — " +
+        "participants are assigned only from the main room's metaprogram", nameTok);
+      this.recover();
+      return;
+    }
     const tokenTok = this.peek();
     if (tokenTok.type !== 'string' || !tokenTok.value.trim()) {
       this.error('assign needs a quoted participant token — the syntax is # assign "0" "Room A"', tokenTok);
@@ -1824,12 +1843,14 @@ class Parser {
 export function parseMetaprogram(text) {
   const src = typeof text === 'string' ? text : '';
   // The directive is required, with no heuristic fallback: a buffer that does
-  // not open with `'metaprogram editor'` is not a metaprogram, and the rest is
-  // parsed only so the editor can still squiggle whatever else is wrong.
-  // Blanking the directive line in place keeps every downstream line/col
-  // exactly where the author typed it.
+  // not open with `'metaprogram editor'` (the main room) or `'breakout room'`
+  // (one breakout room's own program — program-directive.js's BREAKOUT) is not
+  // a metaprogram at all, and the rest is parsed only so the editor can still
+  // squiggle whatever else is wrong. Blanking the directive line in place
+  // keeps every downstream line/col exactly where the author typed it.
   const dir = readDirective(src);
-  const rawBody = dir.kind === 'metaprogram' ? stripDirective(src) : src;
+  const isMetaprogramBuffer = dir.kind === 'metaprogram' || dir.kind === 'breakout';
+  const rawBody = isMetaprogramBuffer ? stripDirective(src) : src;
   // A whole-buffer notation choice: mini ($: … .method(…)) is lowered to the
   // mondo grammar this parser tokenises; a mondo buffer passes straight
   // through; a buffer that mixes the two is refused before parsing.
@@ -1843,16 +1864,16 @@ export function parseMetaprogram(text) {
       col: 1,
     });
   }
-  if (dir.kind !== 'metaprogram') {
+  if (!isMetaprogramBuffer) {
     errors.push({
       message: dir.kind == null
-        ? (dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line")
-        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram editor'`,
+        ? (dir.reason || "a metaprogram must open with the 'metaprogram editor' or 'breakout room' directive line")
+        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram editor' or 'breakout room'`,
       line: (dir.lineIndex ?? 0) + 1,
       col: 1,
     });
   }
-  const parser = new Parser(tokens, errors);
+  const parser = new Parser(tokens, errors, dir.kind === 'breakout' ? 'breakout' : 'metaprogram');
   const ast = parser.parseProgram();
   errors.sort((a, b) => a.line - b.line || a.col - b.col);
   return { ast, errors, valid: errors.length === 0 };

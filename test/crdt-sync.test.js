@@ -138,6 +138,49 @@ test('settings map: two docs converge on a toggle and onSettingsChange fires on 
   syncA.disconnect(); syncB.disconnect();
 });
 
+// --- breakoutPrograms map ------------------------------------------------------
+
+test('breakoutPrograms: set/get one room, rides the metaprogram channel, leaves the main program untouched', () => {
+  const a = createMetaprogramDoc();
+  const sent = [];
+  const bus = { subscribe: () => () => {}, sendUpdate: (update, opts) => sent.push({ update, ...opts }) };
+  const sync = connectMetaprogramSync(a, bus);
+
+  sync.setBreakoutProgram('Room A', "'breakout room'\n$ participants <0>\n");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].channel, 'metaprogram');
+  assert.equal(sync.getBreakoutProgram('Room A'), "'breakout room'\n$ participants <0>\n");
+  assert.equal(sync.getBreakoutProgram('nonexistent'), '');
+  assert.equal(sync.getText(), '', 'a breakout-room program write leaves the main program text untouched');
+
+  sync.disconnect();
+});
+
+test('breakoutPrograms: two docs converge, getBreakoutPrograms lists every room, onBreakoutProgramsChange fires on both ends', () => {
+  const a = createMetaprogramDoc();
+  const b = createMetaprogramDoc();
+  const [busA, busB] = fakeBusPair();
+  const syncA = connectMetaprogramSync(a, busA);
+  const syncB = connectMetaprogramSync(b, busB);
+
+  const seenA = [];
+  const seenB = [];
+  syncA.onBreakoutProgramsChange((m) => seenA.push(Object.keys(m)));
+  syncB.onBreakoutProgramsChange((m) => seenB.push(Object.keys(m)));
+
+  syncA.setBreakoutProgram('Room A', "'breakout room'\n$ participants <0>\n");
+  syncB.setBreakoutProgram('Room B', "'breakout room'\n$ participants <1>\n");
+
+  assert.deepEqual(syncA.getBreakoutPrograms(), {
+    'Room A': "'breakout room'\n$ participants <0>\n",
+    'Room B': "'breakout room'\n$ participants <1>\n",
+  });
+  assert.deepEqual(syncA.getBreakoutPrograms(), syncB.getBreakoutPrograms());
+  assert.ok(seenA.length >= 2 && seenB.length >= 2, 'both ends were notified of both writes');
+
+  syncA.disconnect(); syncB.disconnect();
+});
+
 test('broadcastStop ships a zero-diff snapshot stamped stop, leaving the text unchanged', () => {
   const a = createMetaprogramDoc();
   const sent = [];

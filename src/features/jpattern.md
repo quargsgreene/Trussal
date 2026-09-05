@@ -724,3 +724,27 @@ A room-wide opt-in toggle in the JPattern card, off by default, that changes how
 - **Text Cycles / CSS Cycles** — rendered client-side in every browser and turn-gated by `isPeerJPatternTurn`, so left alone they would paint a performer's current `word()`/`css()` output during a turn playing their delayed audio. `strudel.js` keeps the same per-peer code history (`delayedPeerView`) and builds a remote peer's silent voices — and their locally-rendered Hydra preamble — from the code from `backlogMs` ago. The local performer's own bubbles stay live (they author against the editor, not the chat panel; their published audio must also stay live, so the aggregator does that delaying).
 
 Effect intensities driven by live network metrics (the `#` chain) are not themselves delayed. Boot knobs on the aggregator: `DELAYED_STREAMING=1` makes it the boot default, `BACKLOG_MS` overrides the cap (an explicit `settings` value from a browser wins over both).
+
+## Breakout Rooms
+
+Two new `#` directives, main-room-only, drive Jitsi's own native breakout-rooms feature (already enabled in this deployment via Prosody's `mod_muc_breakout_rooms`):
+
+```
+$ participants <0 1 2>
+# breakout '{"name":"Room A","participants":["0","1"]}'
+# assign "2" "Room A"
+```
+
+**`# breakout '<json>'`** declares or redeclares one room. The argument is **single-quoted**, not the double-quoted string every other directive's metric/medium keyword uses — JSON's own `"` characters would terminate a double-quoted token at the very first one. The object takes `name` (required, non-empty, and not `"main"` — that name is reserved for sending someone back to the main room) and an optional `participants` array of participant tokens, which seats them in that room the moment it is declared (no separate `# assign` needed for them). Repeatable: several `# breakout` lines declare several rooms, and redeclaring the same name later in the program replaces its participants list — read top-to-bottom as the room's current desired state, the same rule `# ring`'s weights and the `$ participants` sequence itself already follow.
+
+**`# assign "<token>" "<room>"`** moves one participant token into a named room, or back to `"main"`. Repeatable and order-sensitive: the last `# assign` for a given token wins. A token named in a `# breakout`'s own `participants` list is assigned by that declaration unless a later `# assign` line overrides it.
+
+Every browser parses the identical program (it replicates over the metaprogram CRDT doc like everything else) and independently attempts the same create/assign calls — Jitsi's own rule is that creating a room or moving ANY participant (including yourself) requires the acting client to be the meeting's moderator, so in the normal case only the moderator's browser actually does anything; everyone else's identical attempt is a harmless no-op. There is a **panic button** (Studio's "⚠ Leave breakout room") available to every participant regardless of role, for the case a moderator's assignment leaves someone stuck: it does not use Jitsi's moderator-gated API at all, just an unconditional rejoin of the URL the performer originally opened.
+
+### Each breakout room's own metaprogram
+
+Every declared room gets its own program, opening with the **`'breakout room'`** directive (`program-directive.js`'s `BREAKOUT`) instead of `'metaprogram editor'` — the identical `$`/`#` grammar (its own `$ participants`, `# cycles`, `# tempo`, `# room`/`crush`/`echo`/`noise`/`grid`, `# ring`), **except `# breakout` and `# assign` are parse errors under it.** Room creation and participant assignment happen only from the main room's metaprogram; a breakout room's own program schedules and effects *its* room and nothing else.
+
+A newly-declared room is seeded once, from its own declared `participants`: `'breakout room'\n$ participants <0 1>\n` (or `<~>`, a single rest, if the room was declared with nobody in it yet — `$ participants <>` is not a valid program on its own). The seed and every later edit live in the CRDT doc's own `breakoutPrograms` Y.Map (roomName → whole program text, keyed independently of the main program's `metaprogram` Y.Text), so any participant can open the Studio's "Breakout room metaprogram" card, pick a declared room from its selector, and edit that room's program directly — Apply there only validates and saves to the shared doc.
+
+**Not yet implemented:** nothing currently *reads* a breakout room's program to actually gate audio or video the way `MetaprogramScheduler` does for the main room — there is no separate aggregator, O2 namespace, or bot-fleet presence per breakout room in this lightweight design. A breakout room's program is real, shared, and validated, but until a scheduler exists for it, applying one changes nothing audible yet.

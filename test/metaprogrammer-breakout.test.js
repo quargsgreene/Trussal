@@ -6,6 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseMetaprogram } from './helpers/metaprogram.js';
+// The raw parser, for the 'breakout room' directive tests — the helper
+// always prepends 'metaprogram editor', which these need to NOT be true.
+import { parseMetaprogram as parseMetaprogramRaw } from '../src/audio-net/MetaprogrammerParser.js';
 
 test('# breakout parses a room with participants', () => {
   const res = parseMetaprogram(
@@ -75,6 +78,48 @@ test('# assign rejects a missing second argument', () => {
   const res = parseMetaprogram('$ participants <0>\n# assign "0"\n');
   assert.equal(res.valid, false);
   assert.ok(res.errors.some(e => /assign needs a quoted room name/.test(e.message)));
+});
+
+// --- the 'breakout room' directive ------------------------------------------
+
+test("a 'breakout room' buffer parses as a metaprogram, same grammar as 'metaprogram editor'", () => {
+  const res = parseMetaprogramRaw("'breakout room'\n$ participants <0 1>\n# cycles \"wcl\" 20\n");
+  assert.equal(res.valid, true, JSON.stringify(res.errors));
+  assert.deepEqual(res.ast.participants.stacks[0].elements.map(e => e.token), ['0', '1']);
+});
+
+test("'breakout room' refuses # breakout — rooms are created only from the main metaprogram", () => {
+  const res = parseMetaprogramRaw(
+    "'breakout room'\n$ participants <0>\n" + `# breakout '{"name":"Nested"}'\n`
+  );
+  assert.equal(res.valid, false);
+  assert.ok(res.errors.some(e => /not allowed in a breakout room's own program/.test(e.message)));
+});
+
+test("'breakout room' refuses # assign — participants are assigned only from the main metaprogram", () => {
+  const res = parseMetaprogramRaw('\'breakout room\'\n$ participants <0>\n# assign "0" "Room B"\n');
+  assert.equal(res.valid, false);
+  assert.ok(res.errors.some(e => /not allowed in a breakout room's own program/.test(e.message)));
+});
+
+test('the main metaprogram (\'metaprogram editor\') still allows # breakout / # assign', () => {
+  const res = parseMetaprogramRaw(
+    "'metaprogram editor'\n$ participants <0 1>\n" +
+    `# breakout '{"name":"Room A"}'\n# assign "0" "Room A"\n`
+  );
+  assert.equal(res.valid, true, JSON.stringify(res.errors));
+});
+
+test('a buffer with no directive at all is refused, and the message names both valid options', () => {
+  const res = parseMetaprogramRaw('$ participants <0>\n');
+  assert.equal(res.valid, false);
+  assert.ok(res.errors.some(e => /'metaprogram editor'/.test(e.message) && /'breakout room'/.test(e.message)));
+});
+
+test('a personal editor buffer is refused as a metaprogram, message unaffected by the new kind', () => {
+  const res = parseMetaprogramRaw("'personal editor'\n$ participants <0>\n");
+  assert.equal(res.valid, false);
+  assert.ok(res.errors.some(e => /not a metaprogram — the first line must be 'metaprogram editor' or 'breakout room'/.test(e.message)));
 });
 
 test('the single-quote delimiter survives a JSON blob with several internal double quotes', () => {

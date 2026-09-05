@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   readDirective, hasDirective, stripDirective, ensureDirective, retagDirective,
-  PERSONAL, METAPROGRAM, BOT,
+  PERSONAL, METAPROGRAM, BOT, BREAKOUT,
 } from '../src/program-directive.js';
 
 test('reads each kind from a leading single- or double-quoted line', () => {
   assert.equal(readDirective("'personal editor'\ns(\"bd\")").kind, 'personal');
   assert.equal(readDirective('"metaprogram editor"\n$ participants <0>').kind, 'metaprogram');
   assert.equal(readDirective("'bot editor'\nn(\"0 2\")").kind, 'bot');
+  assert.equal(readDirective("'breakout room'\n$ participants <0>").kind, 'breakout');
 });
 
 test('the legacy "… program" spellings still resolve to their kind', () => {
@@ -80,4 +81,5 @@ test('phrase constants are the exact strings', () => {
   assert.equal(PERSONAL, 'personal editor');
   assert.equal(METAPROGRAM, 'metaprogram editor');
   assert.equal(BOT, 'bot editor');
+  assert.equal(BREAKOUT, 'breakout room');
 });

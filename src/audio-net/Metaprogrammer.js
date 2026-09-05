@@ -44,6 +44,7 @@ import {
   buildDefaultProgram
 } from './MetaprogrammerParser.js';
 import { applyBreakoutDirectives } from './Breakout.js';
+import { buildDefaultBreakoutProgram } from '../breakout-core.js';
 import { detectNotation, miniToMondo, mondoToMini } from '../notation.js';
 import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
@@ -384,6 +385,55 @@ function pushProgramToScheduler() {
   // feature (Breakout.js). Independent of the turn-scheduling capability
   // above (setJPatternActive) — breakout rooms are not gated behind it.
   applyBreakoutDirectives(ast.breakouts, ast.assignments);
+  // Give every newly-declared room its own metaprogram, seeded once — see
+  // seedBreakoutPrograms.
+  seedBreakoutPrograms(ast.breakouts);
+}
+
+// Each declared breakout room gets its own CRDT-synced program (the
+// 'breakout room' directive — see program-directive.js's BREAKOUT and
+// breakout-core.js's buildDefaultBreakoutProgram), seeded ONCE from that
+// room's own participants at the moment it was declared. Leader-gated the
+// same way maybeSeedDefaultProgram is, so concurrent browsers parsing the
+// same freshly-applied program don't race to seed the same room; harmless
+// even if they did (Yjs Map.set is idempotent for identical values), but
+// there is no reason to pay for the redundant CRDT write on every parse.
+function seedBreakoutPrograms(breakouts) {
+  if (!crdt || !breakouts?.length || !isRosterEditLeader()) return;
+  for (const spec of breakouts) {
+    if (crdt.getBreakoutProgram(spec.name)) continue; // already seeded (or edited since)
+    crdt.setBreakoutProgram(spec.name, buildDefaultBreakoutProgram(spec.participants), 'roster');
+  }
+}
+
+// --- Breakout-room program access, for the Studio UI ------------------------
+//
+// Which room a participant belongs to is NOT editable from here —
+// MetaprogrammerParser.js refuses # breakout / # assign under the 'breakout
+// room' directive — only that room's own $ participants / # cycles / # tempo
+// / # room / etc.
+
+export function getBreakoutRoomNames() {
+  return Object.keys(ensureMetaprogramSync().getBreakoutPrograms()).sort();
+}
+
+export function getBreakoutProgramText(roomName) {
+  return ensureMetaprogramSync().getBreakoutProgram(roomName);
+}
+
+// Validates before writing — a breakout room's program has no scheduler
+// reading it yet (see audio-net/Breakout.js's own doc comment), so there is
+// no "apply" moment that runs it the way the main program's does; the only
+// thing "applying" means here is "save it to the shared doc as this room's
+// current program", which happens iff it is syntactically valid.
+export function setBreakoutProgramText(roomName, text) {
+  const { errors, valid } = parseMetaprogram(text);
+  if (valid) ensureMetaprogramSync().setBreakoutProgram(roomName, text, 'apply');
+  return errors;
+}
+
+export function subscribeBreakoutPrograms(fn) {
+  return ensureMetaprogramSync().onBreakoutProgramsChange(fn);
 }
 
 // Explicit apply from the editor. Valid text lands in the shared doc, in the
