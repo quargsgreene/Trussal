@@ -456,10 +456,10 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return { quote: raw[0], body: raw.slice(1, -1) };
   }
   function rewriteTextCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
-    const atoms3 = {};
+    const atoms5 = {};
     const mint = (text2) => {
       const token = `tc${counter.n++}`;
-      atoms3[token] = { text: text2, peer };
+      atoms5[token] = { text: text2, peer };
       return token;
     };
     const re2 = new RegExp(
@@ -478,7 +478,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
 ._tcRender()`;
     };
     const rewritten = String(code2 ?? "").split(/\n\n+/).map((paragraph) => splitStatements(paragraph).map(rewriteStatement).join("\n")).join("\n\n");
-    return { code: rewritten, atoms: atoms3 };
+    return { code: rewritten, atoms: atoms5 };
   }
   function sanitizeDeclarations(input) {
     if (!input) return [];
@@ -959,11 +959,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   }
   function stableClientId() {
     try {
-      const KEY = "trussal:clientId";
-      let id3 = window.localStorage.getItem(KEY);
+      const KEY2 = "trussal:clientId";
+      let id3 = window.localStorage.getItem(KEY2);
       if (!id3) {
         id3 = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        window.localStorage.setItem(KEY, id3);
+        window.localStorage.setItem(KEY2, id3);
       }
       return id3;
     } catch (e30) {
@@ -1205,6 +1205,29 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       case "fleet-status":
         emit2("fleet-status", msg);
         break;
+      // File-attachment patterns (image()/video()/textFile()/pdfFile()/
+      // soundFile(), see src/file-cycles.js): one peer's file, broadcast once
+      // by the sidecar to everyone else in the room. Not roster state — nothing
+      // here belongs on a peer record — so it is relayed straight through as
+      // its own event rather than folded into peer-upsert.
+      case "chat-file":
+        emit2("chat-file", {
+          fromIndex: msg.fromIndex ?? null,
+          kind: msg.kind,
+          name: msg.name,
+          mime: msg.mime,
+          data: msg.data
+        });
+        break;
+      // Meeting-poll click-to-vote (src/polls.js), relayed from another peer.
+      case "poll-vote":
+        emit2("poll-vote", {
+          pollId: msg.pollId,
+          option: msg.option ?? null,
+          previousOption: msg.previousOption ?? null,
+          voterToken: msg.voterToken
+        });
+        break;
       case "crdt-update":
         if (typeof msg.update === "string") {
           emit2("crdt-update", { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality });
@@ -1414,6 +1437,14 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   function sendSampleFile({ bank: bank2, name: name3, data: data3 }) {
     if (typeof bank2 !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
     safeSend({ type: "sample-file", bank: bank2, name: name3, data: data3 });
+  }
+  function sendChatFile({ kind, name: name3, mime, data: data3 }) {
+    if (typeof kind !== "string" || typeof name3 !== "string" || typeof mime !== "string" || typeof data3 !== "string") return;
+    safeSend({ type: "chat-file", kind, name: name3, mime, data: data3 });
+  }
+  function sendPollVote({ pollId, option, previousOption, voterToken }) {
+    if (typeof pollId !== "string" || typeof voterToken !== "string") return;
+    safeSend({ type: "poll-vote", pollId, option: option ?? null, previousOption: previousOption ?? null, voterToken });
   }
   var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeJPatternToken, activeJPatternIndex, activeJPatternKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
@@ -38519,12 +38550,12 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   }
   function pollForLocalAudioTrack(timeoutMs) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve5) => {
       const started = Date.now();
       const tick3 = () => {
         const t = findLocalJitsiAudioTrack();
-        if (t && typeof t.setEffect === "function") return resolve3(t);
-        if (Date.now() - started >= timeoutMs) return resolve3(null);
+        if (t && typeof t.setEffect === "function") return resolve5(t);
+        if (Date.now() - started >= timeoutMs) return resolve5(null);
         setTimeout(tick3, 120);
       };
       tick3();
@@ -39040,6 +39071,62 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
+  // src/breakout-core.js
+  function validateBreakoutLiteral(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new Error('breakout(): expected a JSON object with "name"');
+    }
+    if (typeof obj.name !== "string" || !obj.name.trim()) {
+      throw new Error('breakout(): "name" must be a non-empty string');
+    }
+    if (obj.name.trim() === MAIN_ROOM) {
+      throw new Error(`breakout(): "${MAIN_ROOM}" is the reserved name for the main room \u2014 pick another`);
+    }
+    const participants = obj.participants == null ? [] : obj.participants;
+    if (!Array.isArray(participants) || participants.some((p) => typeof p !== "string" && typeof p !== "number")) {
+      throw new Error('breakout(): "participants" must be an array of participant tokens');
+    }
+    return { name: obj.name.trim(), participants: participants.map(String) };
+  }
+  function parseBreakoutLiteral(raw) {
+    let obj;
+    try {
+      obj = JSON.parse(String(raw ?? ""));
+    } catch (e30) {
+      throw new Error(`breakout(): not valid JSON \u2014 ${e30.message}`);
+    }
+    return validateBreakoutLiteral(obj);
+  }
+  function resolveBreakoutState(breakouts, assignments) {
+    const rooms = /* @__PURE__ */ new Map();
+    for (const spec of breakouts ?? []) {
+      rooms.set(spec.name, { name: spec.name, participants: new Set(spec.participants) });
+    }
+    const assignedTo = /* @__PURE__ */ new Map();
+    for (const { token, room: room2 } of assignments ?? []) {
+      assignedTo.set(String(token), room2);
+      if (room2 !== MAIN_ROOM) {
+        if (!rooms.has(room2)) rooms.set(room2, { name: room2, participants: /* @__PURE__ */ new Set() });
+        rooms.get(room2).participants.add(String(token));
+      }
+    }
+    for (const room2 of rooms.values()) {
+      for (const token of room2.participants) {
+        if (!assignedTo.has(token)) assignedTo.set(token, room2.name);
+      }
+    }
+    return {
+      rooms: [...rooms.values()].map((r2) => ({ name: r2.name, participants: [...r2.participants] })),
+      assignedTo
+    };
+  }
+  var MAIN_ROOM;
+  var init_breakout_core = __esm({
+    "src/breakout-core.js"() {
+      MAIN_ROOM = "main";
+    }
+  });
+
   // src/audio-net/EffectMedia.js
   function isMedium(name3) {
     return MEDIA.includes(name3);
@@ -39186,6 +39273,21 @@ ${s2}`;
         if (!terminated) {
           errors.push({
             message: `unterminated string \u2014 a medium name closes with a '"' on the same line`,
+            line: startLine,
+            col: startCol
+          });
+        }
+        push("string", text2.slice(i + 1, j2), startLine, startCol, text2.slice(i, terminated ? j2 + 1 : j2));
+        advance(j2 - i + (terminated ? 1 : 0));
+        continue;
+      }
+      if (ch2 === "'") {
+        let j2 = i + 1;
+        while (j2 < n2 && text2[j2] !== "'" && text2[j2] !== "\n") j2++;
+        const terminated = text2[j2] === "'";
+        if (!terminated) {
+          errors.push({
+            message: `unterminated string \u2014 a breakout/assign literal closes with a "'" on the same line`,
             line: startLine,
             col: startCol
           });
@@ -39406,6 +39508,7 @@ $ participants <0>
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
       init_Echo();
+      init_breakout_core();
       init_ValuePattern();
       init_EffectMedia();
       init_program_directive();
@@ -39517,7 +39620,18 @@ $ participants <0>
           }
         }
         parseProgram() {
-          const program = { participants: null, cycles: null, tempo: null, ring: null, chain: [] };
+          const program = {
+            participants: null,
+            cycles: null,
+            tempo: null,
+            ring: null,
+            chain: [],
+            // # breakout / # assign — see breakout-core.js. Both repeatable, folded
+            // in source order by resolveBreakoutState rather than treated as a
+            // singleton the way cycles/tempo/ring are.
+            breakouts: [],
+            assignments: []
+          };
           this.skipNewlines();
           while (!this.atEof()) {
             const t = this.peek();
@@ -39945,6 +40059,14 @@ $ participants <0>
             this.parseRing(program, nameTok);
             return;
           }
+          if (name3 === "breakout") {
+            this.parseBreakout(program, nameTok);
+            return;
+          }
+          if (name3 === "assign") {
+            this.parseAssign(program, nameTok);
+            return;
+          }
           if (PATTERN_FNS[name3]) {
             this.parseChainFn(program, name3, nameTok, PATTERN_FNS[name3]);
             return;
@@ -40102,6 +40224,64 @@ $ participants <0>
             return;
           }
           program.ring = ring2;
+        }
+        // `# breakout '{"name":"Room A","participants":["0","1"]}'` — declares or
+        // redeclares one breakout room. The argument is single-quoted, not the
+        // double-quoted string every other directive's metric/medium keywords use
+        // — see the tokenizer's `'` branch for why (a JSON blob's own quotes would
+        // terminate a double-quoted token at the first one). Repeatable: several
+        // `# breakout` lines declare several rooms, folded in source order by
+        // breakout-core.js's resolveBreakoutState (the actual room-creation and
+        // participant-moving side effects live in src/audio-net/Breakout.js).
+        parseBreakout(program, nameTok) {
+          const litTok = this.peek();
+          if (litTok.type !== "string") {
+            this.error(`breakout needs a single-quoted JSON object \u2014 the syntax is # breakout '{"name":"Room A","participants":["0","1"]}'`, litTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          let spec;
+          try {
+            spec = parseBreakoutLiteral(litTok.value);
+          } catch (e30) {
+            this.error(e30.message, litTok);
+            this.recover();
+            return;
+          }
+          if (!this.atStatementEnd()) {
+            this.error(`breakout takes exactly one argument \u2014 the syntax is # breakout '{"name":"Room A"}'`, this.peek());
+            this.recover();
+            return;
+          }
+          program.breakouts.push(spec);
+        }
+        // `# assign "<participant token>" "<room name>"` — moves one participant
+        // into a breakout room, or back to breakout-core.js's reserved "main" room.
+        // Repeatable and order-sensitive: the last # assign for a given token wins
+        // (resolveBreakoutState), the same "read top-to-bottom as current desired
+        // state" rule # ring's weights and the participants sequence already follow.
+        parseAssign(program, nameTok) {
+          const tokenTok = this.peek();
+          if (tokenTok.type !== "string" || !tokenTok.value.trim()) {
+            this.error('assign needs a quoted participant token \u2014 the syntax is # assign "0" "Room A"', tokenTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          const roomTok = this.peek();
+          if (roomTok.type !== "string" || !roomTok.value.trim()) {
+            this.error('assign needs a quoted room name after the participant token \u2014 the syntax is # assign "0" "Room A"', roomTok);
+            this.recover();
+            return;
+          }
+          this.next();
+          if (!this.atStatementEnd()) {
+            this.error(`assign takes exactly two arguments \u2014 the syntax is # assign "<token>" "<room>"`, this.peek());
+            this.recover();
+            return;
+          }
+          program.assignments.push({ token: tokenTok.value.trim(), room: roomTok.value.trim() });
         }
         // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
         // (numbers or metric words) rather than over participants, so it needs its
@@ -40790,6 +40970,72 @@ $ participants <0>
         }
       };
       SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
+    }
+  });
+
+  // src/audio-net/Breakout.js
+  function conference() {
+    return typeof window !== "undefined" ? window.APP?.conference : null;
+  }
+  function breakoutApi() {
+    const conf = conference();
+    return conf && typeof conf.getBreakoutRooms === "function" ? conf.getBreakoutRooms() : null;
+  }
+  function jidForToken(token) {
+    const conf = conference();
+    if (!conf || typeof conf.getParticipantById !== "function") return null;
+    const peer = getAllPeers().find((p) => String(p.roomIndex) === String(token));
+    if (!peer?.jitsiId) return null;
+    try {
+      return conf.getParticipantById(peer.jitsiId)?.getJid?.() ?? null;
+    } catch (e30) {
+      return null;
+    }
+  }
+  function knownRoomJidByName(api2) {
+    const byName = /* @__PURE__ */ new Map();
+    for (const [jid, room2] of Object.entries(api2._rooms || {})) {
+      if (room2 && typeof room2.name === "string") byName.set(room2.name, jid);
+    }
+    return byName;
+  }
+  function applyBreakoutDirectives(breakouts, assignments) {
+    const api2 = breakoutApi();
+    if (!api2 || !api2.isSupported()) return;
+    const state2 = resolveBreakoutState(breakouts, assignments);
+    for (const room2 of state2.rooms) {
+      if (createdRooms.has(room2.name)) continue;
+      createdRooms.add(room2.name);
+      try {
+        api2.createBreakoutRoom(room2.name);
+      } catch (e30) {
+        console.warn("[breakout] createBreakoutRoom failed", e30);
+      }
+    }
+    const roomJidByName = knownRoomJidByName(api2);
+    for (const [token, room2] of state2.assignedTo) {
+      if (room2 === MAIN_ROOM) continue;
+      const key = `${token}\0${room2}`;
+      if (movedAssignments.has(key)) continue;
+      const roomJid = roomJidByName.get(room2);
+      if (!roomJid) continue;
+      const participantJid = jidForToken(token);
+      if (!participantJid) continue;
+      movedAssignments.add(key);
+      try {
+        api2.sendParticipantToRoom(participantJid, roomJid);
+      } catch (e30) {
+        console.warn("[breakout] sendParticipantToRoom failed", e30);
+      }
+    }
+  }
+  var createdRooms, movedAssignments;
+  var init_Breakout = __esm({
+    "src/audio-net/Breakout.js"() {
+      init_breakout_core();
+      init_peer_state();
+      createdRooms = /* @__PURE__ */ new Set();
+      movedAssignments = /* @__PURE__ */ new Set();
     }
   });
 
@@ -41834,7 +42080,7 @@ $ participants <0>
         // first connect's promise.
         connect() {
           if (this._connectPromise) return this._connectPromise;
-          this._connectPromise = new Promise((resolve3, reject) => {
+          this._connectPromise = new Promise((resolve5, reject) => {
             let ws3;
             try {
               ws3 = new this._WS(this.url);
@@ -41849,7 +42095,7 @@ $ participants <0>
             }
             const onOpen = () => {
               removeListener(ws3, "error", onError);
-              resolve3(this);
+              resolve5(this);
             };
             const onError = (ev) => {
               removeListener(ws3, "error", onError);
@@ -44340,17 +44586,17 @@ ${err.toString()}`);
           this.isLoaded = false;
           this.isSynced = false;
           this.isDestroyed = false;
-          this.whenLoaded = create4((resolve3) => {
+          this.whenLoaded = create4((resolve5) => {
             this.on("load", () => {
               this.isLoaded = true;
-              resolve3(this);
+              resolve5(this);
             });
           });
-          const provideSyncedPromise = () => create4((resolve3) => {
+          const provideSyncedPromise = () => create4((resolve5) => {
             const eventHandler = (isSynced) => {
               if (isSynced === void 0 || isSynced === true) {
                 this.off("sync", eventHandler);
-                resolve3();
+                resolve5();
               }
             };
             this.on("sync", eventHandler);
@@ -51665,6 +51911,7 @@ ${err.toString()}`);
     currentAst = ast2;
     if (scheduler) scheduler.setProgram(ast2);
     if (effects) effects.setChain(ast2.chain, effectiveWorstCase());
+    applyBreakoutDirectives(ast2.breakouts, ast2.assignments);
   }
   function applyProgramText(text2, { broadcast = true } = {}) {
     const { errors, valid } = parseMetaprogram(text2);
@@ -51796,7 +52043,7 @@ ${newBody}`).length === 0;
   function setBufferReplayEnabled(v2) {
     bufferReplayEnabled = !!v2;
   }
-  function startLocalCapture(sourceNode2, localToken2) {
+  function startLocalCapture(sourceNode2, localToken4) {
     if (!bufferReplayEnabled || recorder || typeof MediaRecorder === "undefined") return;
     const ctx2 = getAudioContext2();
     if (!ctx2 || !sourceNode2) return;
@@ -51810,7 +52057,7 @@ ${newBody}`).length === 0;
     rec.onstop = () => {
       if (chunks.length) {
         const blob = new Blob(chunks.splice(0), { type: "audio/webm" });
-        captureTakes.set(localToken2, { blob, bytes: blob.size });
+        captureTakes.set(localToken4, { blob, bytes: blob.size });
       }
       if (recorder === rec) {
         try {
@@ -51970,6 +52217,7 @@ ${newBody}`).length === 0;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
+      init_Breakout();
       init_notation();
       init_MetaprogramScheduler();
       init_WorstCaseCalculationUtils();
@@ -52039,6 +52287,27 @@ ${newBody}`).length === 0;
 
   // src/index.js
   init_jamulus();
+
+  // src/panic-button.js
+  var KEY = "trussal-main-room-url";
+  function captureMainRoomUrl() {
+    try {
+      if (typeof sessionStorage !== "undefined" && !sessionStorage.getItem(KEY)) {
+        sessionStorage.setItem(KEY, window.location.href);
+      }
+    } catch (e30) {
+    }
+  }
+  function panic() {
+    let url2 = null;
+    try {
+      if (typeof sessionStorage !== "undefined") url2 = sessionStorage.getItem(KEY);
+    } catch (e30) {
+    }
+    if (url2) window.location.href = url2;
+    else window.location.reload();
+  }
+  captureMainRoomUrl();
 
   // src/welcome-page.js
   var MAX_ROOM_NAME_LENGTH = 1023;
@@ -53450,9 +53719,9 @@ ${newBody}`).length === 0;
     return IMAGE_EXTENSIONS.has(extensionOf2(filename));
   }
   function openDB() {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve5, reject) => {
       if (typeof window === "undefined" || !("indexedDB" in window)) {
-        resolve3(null);
+        resolve5(null);
         return;
       }
       const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -53461,7 +53730,7 @@ ${newBody}`).length === 0;
         ["blob", "title"].forEach((c2) => store.createIndex(c2, c2, { unique: false }));
       };
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve3(request.result);
+      request.onsuccess = () => resolve5(request.result);
     });
   }
   async function withStore(mode2, fn) {
@@ -53470,21 +53739,21 @@ ${newBody}`).length === 0;
       throw e30;
     });
     if (!db) return null;
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve5, reject) => {
       const tx = db.transaction([DB_TABLE], mode2);
       const store = tx.objectStore(DB_TABLE);
       let result;
       Promise.resolve(fn(store)).then((r2) => {
         result = r2;
       }).catch(reject);
-      tx.oncomplete = () => resolve3(result);
+      tx.oncomplete = () => resolve5(result);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
   }
   function req(request) {
-    return new Promise((resolve3, reject) => {
-      request.onsuccess = () => resolve3(request.result);
+    return new Promise((resolve5, reject) => {
+      request.onsuccess = () => resolve5(request.result);
       request.onerror = () => reject(request.error);
     });
   }
@@ -53561,15 +53830,15 @@ ${newBody}`).length === 0;
     return (records ?? []).filter(isDataRecord).map((r2) => r2.pack);
   }
   async function clearSamplesDB() {
-    return new Promise((resolve3) => {
+    return new Promise((resolve5) => {
       if (typeof window === "undefined" || !("indexedDB" in window)) {
-        resolve3();
+        resolve5();
         return;
       }
       const request = indexedDB.deleteDatabase(DB_NAME);
-      request.onsuccess = resolve3;
-      request.onerror = resolve3;
-      request.onblocked = resolve3;
+      request.onsuccess = resolve5;
+      request.onerror = resolve5;
+      request.onblocked = resolve5;
     });
   }
   async function deleteSample(sampleId) {
@@ -53664,6 +53933,16 @@ ${newBody}`).length === 0;
     if (typeof window !== "undefined") window.img = imageUrl;
     console.log(`[trussal] ${count} uploaded image(s) available to img()`);
     return count;
+  }
+  function imageUrlByFilename(name3) {
+    const key = String(name3 ?? "").toLowerCase();
+    if (!key) return null;
+    for (const entries2 of imageUrls.values()) {
+      for (const entry of entries2) {
+        if (String(entry.title).toLowerCase() === key) return entry.url;
+      }
+    }
+    return null;
   }
   function imageUrl(folder, index2 = 0) {
     const entries2 = imageUrls.get(String(folder));
@@ -54784,25 +55063,25 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       return;
     }
     const fx = typeof window !== "undefined" && window._jpText || null;
-    const active4 = fx && fx.active ? fx : null;
-    const seedCycle = active4 ? active4.cycle : 0;
+    const active6 = fx && fx.active ? fx : null;
+    const seedCycle = active6 ? active6.cycle : 0;
     const seedPeer = peerSeed(peerId);
     const wordIndex = nextWordIndex(peerId, cycle);
-    if (active4) {
+    if (active6) {
       const authored = text2;
-      text2 = crushWord(text2, active4.text.dropChance, seedCycle, seedPeer, wordIndex);
+      text2 = crushWord(text2, active6.text.dropChance, seedCycle, seedPeer, wordIndex);
       if (!text2) {
         textHapLog("paint:crushed-away", { authored, seedCycle, wordIndex, note: "the room `#` chain dropped every character \u2014 the effect working, not a failure" });
         return;
       }
-      text2 = noiseWord(text2, active4.text, seedCycle, seedPeer, wordIndex);
+      text2 = noiseWord(text2, active6.text, seedCycle, seedPeer, wordIndex);
     }
     const bubble = bubbleFor(peerId, cycle, peerClass);
     const line = bubble.lastChild;
     const span = document.createElement("span");
     span.className = `tc-word ${peerClass}`;
     span.textContent = text2;
-    const styleFx = active4 ? active4.css : null;
+    const styleFx = active6 ? active6.css : null;
     for (const [param, prop] of CSS_BY_PARAM) {
       if (value2[param] == null) continue;
       for (const [p, v2] of sanitizeDeclarations(`${prop}: ${resolve(value2[param])}`)) {
@@ -54815,9 +55094,9 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     if (styleFx) {
       if (styleFx.blurPx > 0) span.style.filter = `blur(${styleFx.blurPx.toFixed(2)}px)`;
-      if (active4.text.spacingPx > 0) {
+      if (active6.text.spacingPx > 0) {
         const authored = parseFloat(span.style.letterSpacing) || 0;
-        span.style.letterSpacing = `${(authored + active4.text.spacingPx).toFixed(2)}px`;
+        span.style.letterSpacing = `${(authored + active6.text.spacingPx).toFixed(2)}px`;
       }
       if (styleFx.fadeFromPrevious > 0) crossfadeFromPreviousTurn(span, peerId, styleFx);
       rememberTurnStyle(peerId, span);
@@ -54843,13 +55122,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       visible: !!container.parentNode,
       style: span.style.cssText || "(inherited from Jitsi chat)"
     });
-    if (active4 && active4.text.repeats > 0 && active4.text.repeatAlpha > 0) {
+    if (active6 && active6.text.repeats > 0 && active6.text.repeatAlpha > 0) {
       lastWordOfTurn.set(String(peerId), {
         text: text2,
         line,
         peerClass,
-        repeats: active4.text.repeats,
-        alpha: active4.text.repeatAlpha
+        repeats: active6.text.repeats,
+        alpha: active6.text.repeatAlpha
       });
     }
     const log3 = container.parentNode;
@@ -55966,12 +56245,12 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     return { calls, end: i };
   }
   function rewriteCssCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
-    const atoms3 = {};
+    const atoms5 = {};
     const sheets = [];
     const errors = [];
     const mint = (text2, kind = "value") => {
       const token = `cc${counter.n++}`;
-      atoms3[token] = { text: text2, peer, kind };
+      atoms5[token] = { text: text2, peer, kind };
       return token;
     };
     const rewriteStatement = ({ text: text2, hasCss }) => {
@@ -56011,7 +56290,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
 ._ccRender()`;
     };
     const rewritten = String(code2 ?? "").split(/\n\n+/).map((paragraph) => splitCssStatements(paragraph).map(rewriteStatement).join("\n")).join("\n\n");
-    return { code: rewritten, atoms: atoms3, sheets, errors };
+    return { code: rewritten, atoms: atoms5, sheets, errors };
   }
   function checkSheet(sheet) {
     const errors = [];
@@ -56441,6 +56720,828 @@ ${full}
     lastJPatternTurnKey = null;
   }
 
+  // src/reactions.js
+  init_peer_state();
+
+  // src/reactions-core.js
+  var REACTIONS = {
+    tu: { id: "like", label: "Thumbs Up", emoji: "\u{1F44D}" },
+    su: { id: "surprised", label: "Surprise", emoji: "\u{1F632}" },
+    si: { id: "silence", label: "Silence", emoji: "\u{1F92B}" },
+    la: { id: "laugh", label: "Laugh", emoji: "\u{1F602}" },
+    b: { id: "boo", label: "Boo", emoji: "\u{1F44E}" },
+    h: { id: "heart", label: "Heart", emoji: "\u2764\uFE0F" },
+    c: { id: "clap", label: "Clap", emoji: "\u{1F44F}" }
+  };
+  var REACTION_CALL_RE = /(?:^|[^\w$])reaction\s*\(/;
+  var BY_ID = Object.fromEntries(Object.values(REACTIONS).map((r2) => [r2.id, r2]));
+  function resolveReaction(token) {
+    const key = String(token ?? "").trim().toLowerCase();
+    if (!key) return null;
+    return REACTIONS[key] || BY_ID[key] || null;
+  }
+  var DEFAULT_UNREACT_MS = 4e3;
+  var MIN_UNREACT_MS = 200;
+  var MAX_UNREACT_MS = 3e4;
+  function resolveUnreactMs(value2) {
+    const n2 = Number(value2);
+    if (!Number.isFinite(n2)) return DEFAULT_UNREACT_MS;
+    return Math.min(MAX_UNREACT_MS, Math.max(MIN_UNREACT_MS, n2));
+  }
+
+  // src/reactions.js
+  function sendJitsiReaction(id3) {
+    try {
+      const store = typeof window !== "undefined" ? window.APP?.store : null;
+      if (!store || typeof store.dispatch !== "function") return false;
+      store.dispatch({ type: "ADD_REACTION_BUFFER", reaction: id3 });
+      return true;
+    } catch (e30) {
+      console.warn("[reactions] could not dispatch to Jitsi", e30);
+      return false;
+    }
+  }
+  var lastFiredAt = /* @__PURE__ */ new Map();
+  function handleTrigger3(hap, currentTime, cps2, targetTime) {
+    const value2 = hap?.value;
+    if (!value2 || value2.reaction == null) return;
+    const reaction = resolveReaction(value2.reaction);
+    if (!reaction) {
+      console.warn(`[reactions] unknown reaction "${value2.reaction}" \u2014 expected one of tu/su/si/la/b/h/c`);
+      return;
+    }
+    const unreactMs = resolveUnreactMs(value2.unreact);
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(() => {
+      if (!isPeerJPatternTurn(getLocalPeer()?.jitsiId)) return;
+      const now = Date.now();
+      if (now - (lastFiredAt.get(reaction.id) || 0) < unreactMs) return;
+      lastFiredAt.set(reaction.id, now);
+      sendJitsiReaction(reaction.id);
+    }, delayMs);
+  }
+  function installReactions(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = {
+      ...registerControl2("reaction"),
+      ...registerControl2("unreact")
+    };
+    register2("_rxRender", (pat) => pat.onTrigger(handleTrigger3, true));
+    return scope2;
+  }
+  function stopReactions() {
+    lastFiredAt.clear();
+  }
+
+  // src/panel-bg.js
+  init_peer_state();
+  var currentSource = null;
+  function dispatchVirtualBackground(virtualSource) {
+    try {
+      const store = typeof window !== "undefined" ? window.APP?.store : null;
+      if (!store || typeof store.dispatch !== "function") return false;
+      store.dispatch({
+        type: "SET_VIRTUAL_BACKGROUND",
+        virtualSource,
+        backgroundType: virtualSource ? "image" : "none"
+      });
+      return true;
+    } catch (e30) {
+      console.warn("[panel-bg] could not dispatch to Jitsi", e30);
+      return false;
+    }
+  }
+  function resolvePanelSource(name3) {
+    const uploaded = imageUrlByFilename(name3);
+    return uploaded || name3;
+  }
+  function handleTrigger4(hap, currentTime, cps2, targetTime) {
+    const value2 = hap?.value;
+    if (!value2 || value2.panel == null) return;
+    const name3 = String(value2.panel);
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(() => {
+      if (!isPeerJPatternTurn(getLocalPeer()?.jitsiId)) return;
+      if (name3 === currentSource) return;
+      currentSource = name3;
+      dispatchVirtualBackground(resolvePanelSource(name3));
+    }, delayMs);
+  }
+  function installPanelBg(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = { ...registerControl2("panel") };
+    register2("_pbRender", (pat) => pat.onTrigger(handleTrigger4, true));
+    return scope2;
+  }
+  function stopPanelBg() {
+    if (currentSource == null) return;
+    currentSource = null;
+    dispatchVirtualBackground(null);
+  }
+
+  // src/panel-bg-core.js
+  var PANEL_CALL_RE = /(?:^|[^\w$])panel\s*\(/;
+
+  // src/silent-voice-core.js
+  init_text_cycles_core();
+  function appendRendererCalls(code2, callRe, rendererCall) {
+    return splitStatements(String(code2 ?? "")).map(({ text: text2 }) => callRe.test(text2) ? `${text2.replace(/[\s;]+$/, "")}
+${rendererCall}` : text2).join("\n");
+  }
+  function stripCalls(code2, callRe) {
+    return splitStatements(String(code2 ?? "")).map(({ text: text2 }) => callRe.test(text2) ? "" : text2).filter((line, i, arr) => !(line === "" && arr[i - 1] === "")).join("\n");
+  }
+  function keepMatchingStatements(code2, callRe, initRe) {
+    return String(code2 ?? "").split(/\n\n+/).map((paragraph) => {
+      if (!paragraph.trim()) return null;
+      const survivors = splitStatements(paragraph).filter(({ text: text2 }) => callRe.test(text2) || initRe && initRe.test(text2.trim())).map(({ text: text2 }) => text2);
+      return survivors.length ? survivors.join("\n") : null;
+    }).filter((p) => p !== null).join("\n\n").trim();
+  }
+
+  // src/file-cycles.js
+  init_peer_state();
+
+  // src/file-cycles-core.js
+  init_text_cycles_core();
+  var MAX_FILE_BYTES = 10 * 1024 * 1024;
+  var FILE_KINDS = {
+    image: { param: "image", extensions: ["gif", "jpeg", "jpg", "png", "svg", "bmp"] },
+    video: { param: "video", extensions: ["mp4", "m4a", "mov"] },
+    textFile: { param: "textFile", extensions: ["txt"] },
+    pdfFile: { param: "pdfFile", extensions: ["pdf"] },
+    soundFile: { param: "soundFile", extensions: ["wav", "mp3", "ogg"] }
+  };
+  var EXT_TO_KIND = /* @__PURE__ */ new Map();
+  for (const [kind, { extensions }] of Object.entries(FILE_KINDS)) {
+    for (const ext of extensions) EXT_TO_KIND.set(ext, kind);
+  }
+  function extensionOf3(filename) {
+    return String(filename ?? "").split(".").pop().toLowerCase();
+  }
+  function kindOfFilename(filename) {
+    return EXT_TO_KIND.get(extensionOf3(filename)) ?? null;
+  }
+  var MIME_BY_EXT = {
+    gif: "image/gif",
+    jpeg: "image/jpeg",
+    jpg: "image/jpeg",
+    png: "image/png",
+    svg: "image/svg+xml",
+    bmp: "image/bmp",
+    mp4: "video/mp4",
+    m4a: "video/mp4",
+    mov: "video/quicktime",
+    txt: "text/plain",
+    pdf: "application/pdf",
+    wav: "audio/wav",
+    mp3: "audio/mpeg",
+    ogg: "audio/ogg"
+  };
+  function mimeOfFilename(filename) {
+    return MIME_BY_EXT[extensionOf3(filename)] ?? "application/octet-stream";
+  }
+  function validateUpload(name3, size3) {
+    const kind = kindOfFilename(name3);
+    if (!kind) return { ok: false, reason: `"${name3}": unsupported file type` };
+    if (typeof size3 === "number" && size3 > MAX_FILE_BYTES) {
+      return { ok: false, reason: `"${name3}": over the 10MB limit` };
+    }
+    return { ok: true, kind };
+  }
+  var FILE_PARAMS = Object.keys(FILE_KINDS).sort((a2, b) => b.length - a2.length);
+  var FILE_CALL_RE = new RegExp(`(?:^|[^\\w$])(?:${FILE_PARAMS.join("|")})\\s*\\(`);
+  var STRING_LITERAL2 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
+  function literalBody2(raw) {
+    return { quote: raw[0], body: raw.slice(1, -1) };
+  }
+  function rewriteFileCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
+    const atoms5 = {};
+    const mint = (text2) => {
+      const token = `fc${counter.n++}`;
+      atoms5[token] = { text: text2, peer };
+      return token;
+    };
+    const re2 = new RegExp(`((?:^|[^\\w$])(?:${FILE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL2}`, "g");
+    const rewriteStatement = (text2) => {
+      if (!FILE_CALL_RE.test(text2)) return text2;
+      const out = text2.replace(re2, (match2, head, raw) => {
+        if (raw[0] === "`" && raw.includes("${")) return match2;
+        const { quote, body } = literalBody2(raw);
+        const encoded = quote === "'" ? mint(body) : encodeMiniText(body, mint);
+        return `${head}"${encoded}"`;
+      });
+      return `${out.replace(/[\s;]+$/, "")}
+._fcRender()`;
+    };
+    const rewritten = splitStatements(String(code2 ?? "")).map(({ text: text2 }) => rewriteStatement(text2)).join("\n");
+    return { code: rewritten, atoms: atoms5 };
+  }
+  var INIT_FILE_CYCLES_RE = /^\s*await\s+initFileCycles\s*\(/m;
+  var INIT_FILE_CYCLES_PATTERN = { source: INIT_FILE_CYCLES_RE.source, flags: INIT_FILE_CYCLES_RE.flags };
+  function hasFileCycles(code2) {
+    return INIT_FILE_CYCLES_RE.test(String(code2 ?? ""));
+  }
+
+  // src/chat-entry.js
+  var CHAT_ENTRY_MAX_TRIES2 = 40;
+  var CHAT_ENTRY_INTERVAL_MS2 = 500;
+  function jitsiState2() {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    return store && typeof store.getState === "function" ? store.getState() : null;
+  }
+  function localParticipantName2() {
+    const state2 = jitsiState2();
+    const name3 = state2?.["features/base/participants"]?.local?.name;
+    return typeof name3 === "string" && name3.trim() ? name3 : null;
+  }
+  function setNickname2(name3) {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    if (!store || typeof store.dispatch !== "function") return false;
+    store.dispatch({ type: "SETTINGS_UPDATED", settings: { displayName: name3 } });
+    return true;
+  }
+  function openChatPanel2() {
+    try {
+      window.APP?.store?.dispatch({ type: "OPEN_CHAT" });
+    } catch (e30) {
+      console.warn("[chat-entry] could not open the chat panel", e30);
+    }
+  }
+  function attachToChatLog(container4) {
+    const log3 = document.getElementById("chatconversation");
+    if (log3 && container4.parentNode !== log3) {
+      const sentinel = document.getElementById("messagesListEnd");
+      if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container4, sentinel);
+      else log3.appendChild(container4);
+    }
+    return container4.parentNode === log3 && !!log3;
+  }
+  function ensureChatEntry2(container4, fallbackName, isActive = () => true) {
+    let tries = 0;
+    const attempt = () => {
+      if (!isActive()) return;
+      tries++;
+      if (!localParticipantName2() && fallbackName) setNickname2(fallbackName);
+      openChatPanel2();
+      if (attachToChatLog(container4)) return;
+      if (tries >= CHAT_ENTRY_MAX_TRIES2) return;
+      setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS2);
+    };
+    attempt();
+  }
+
+  // src/file-cycles.js
+  var CONTAINER_ID2 = "trussal-file-cycles";
+  var STYLE_ID2 = "trussal-file-cycles-style";
+  var MAX_BUBBLES2 = 100;
+  var atoms3 = {};
+  var active4 = false;
+  var container2 = null;
+  var styleEl2 = null;
+  var bubbleCount = 0;
+  function setFileAtoms(table) {
+    atoms3 = table || {};
+  }
+  function resolve3(value2) {
+    if (value2 == null) return null;
+    const atom2 = atoms3[String(value2)];
+    return atom2 ? atom2.text : String(value2);
+  }
+  function peerOf2(value2) {
+    const atom2 = atoms3[String(value2)];
+    return atom2 ? atom2.peer : null;
+  }
+  var DB_NAME2 = "trussal-attachments";
+  var DB_VERSION2 = 1;
+  var DB_TABLE2 = "files";
+  function openDB2() {
+    return new Promise((resolve5, reject) => {
+      if (typeof window === "undefined" || !("indexedDB" in window)) {
+        resolve5(null);
+        return;
+      }
+      const request = indexedDB.open(DB_NAME2, DB_VERSION2);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(DB_TABLE2, { keyPath: "name" });
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve5(request.result);
+    });
+  }
+  async function withStore2(mode2, fn) {
+    const db = await openDB2().catch((e30) => {
+      console.error("[file-cycles] DB failed to open", e30);
+      throw e30;
+    });
+    if (!db) return null;
+    return new Promise((resolve5, reject) => {
+      const tx = db.transaction([DB_TABLE2], mode2);
+      const store = tx.objectStore(DB_TABLE2);
+      let result;
+      Promise.resolve(fn(store)).then((r2) => {
+        result = r2;
+      }).catch(reject);
+      tx.oncomplete = () => resolve5(result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+  function req2(request) {
+    return new Promise((resolve5, reject) => {
+      request.onsuccess = () => resolve5(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async function uploadChatFilesToDB(files2, onDone) {
+    const all3 = Array.from(files2 ?? []);
+    const errors = [];
+    const records = [];
+    for (const f2 of all3) {
+      const { ok, reason, kind } = validateUpload(f2.name, f2.size);
+      if (!ok) {
+        errors.push(reason);
+        continue;
+      }
+      records.push({
+        name: f2.name,
+        kind,
+        mime: f2.type || mimeOfFilename(f2.name),
+        blob: await f2.arrayBuffer().then((buf) => new Blob([buf]))
+      });
+    }
+    if (records.length) {
+      await withStore2("readwrite", (store) => {
+        records.forEach((r2) => store.put(r2));
+      });
+      console.log(`[trussal] stored ${records.length} attachment(s) in IDB`);
+    }
+    onDone?.({ count: records.length, errors });
+  }
+  function getLocalFile(name3) {
+    return withStore2("readonly", (store) => req2(store.get(name3))).catch((e30) => {
+      console.error("[file-cycles] read failed", e30);
+      return null;
+    });
+  }
+  var received = /* @__PURE__ */ new Map();
+  var inFlight = /* @__PURE__ */ new Map();
+  function blobToBase64(blob) {
+    return new Promise((resolve5, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve5(String(reader.result).split(",")[1] || "");
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  function loadAndBroadcastOwn(name3) {
+    if (received.has(name3)) return Promise.resolve(received.get(name3));
+    if (inFlight.has(name3)) return inFlight.get(name3);
+    const p = (async () => {
+      const stored = await getLocalFile(name3);
+      if (!stored) {
+        console.warn(`[file-cycles] "${name3}" \u2014 no file by that name in your uploads`);
+        return null;
+      }
+      const record2 = { blob: stored.blob, mime: stored.mime, kind: stored.kind };
+      received.set(name3, record2);
+      const data3 = await blobToBase64(stored.blob);
+      sendChatFile({ kind: stored.kind, name: stored.name, mime: stored.mime, data: data3 });
+      return record2;
+    })();
+    inFlight.set(name3, p);
+    p.finally(() => inFlight.delete(name3));
+    return p;
+  }
+  subscribePeerState((event, payload) => {
+    if (event !== "chat-file") return;
+    if (received.has(payload.name)) return;
+    try {
+      const bytes = Uint8Array.from(atob(payload.data), (c2) => c2.charCodeAt(0));
+      received.set(payload.name, { blob: new Blob([bytes], { type: payload.mime }), mime: payload.mime, kind: payload.kind });
+    } catch (e30) {
+      console.error("[file-cycles] could not decode a received attachment", e30);
+    }
+  });
+  function ensureStyle2() {
+    if (styleEl2 && document.contains(styleEl2)) return styleEl2;
+    styleEl2 = document.getElementById(STYLE_ID2) || document.createElement("style");
+    styleEl2.id = STYLE_ID2;
+    if (!styleEl2.textContent) {
+      styleEl2.textContent = `
+#${CONTAINER_ID2} .fc-bubble { margin: 4px 0; padding: 0 16px; }
+#${CONTAINER_ID2} .fc-name { font-size: 12px; opacity: .6; }
+#${CONTAINER_ID2} .fc-media { max-width: 240px; max-height: 240px; display: block; margin-top: 2px; border-radius: 4px; }
+#${CONTAINER_ID2} .fc-link { display: inline-block; margin-top: 2px; }
+`;
+    }
+    if (!document.contains(styleEl2)) document.head.appendChild(styleEl2);
+    return styleEl2;
+  }
+  function ensureContainer2() {
+    if (!container2) {
+      container2 = document.createElement("div");
+      container2.id = CONTAINER_ID2;
+    }
+    ensureStyle2();
+    return container2;
+  }
+  function localToken2() {
+    const index2 = getLocalPeer()?.roomIndex;
+    return index2 == null || index2 === "" ? null : String(index2);
+  }
+  function mediaElementFor(kind, url2, name3, mime) {
+    if (kind === "image") {
+      const img = document.createElement("img");
+      img.className = "fc-media";
+      img.src = url2;
+      img.alt = name3;
+      return img;
+    }
+    if (kind === "video") {
+      const video = document.createElement("video");
+      video.className = "fc-media";
+      video.src = url2;
+      video.controls = true;
+      return video;
+    }
+    if (kind === "soundFile") {
+      const audio = document.createElement("audio");
+      audio.src = url2;
+      audio.controls = true;
+      return audio;
+    }
+    const a2 = document.createElement("a");
+    a2.className = "fc-link";
+    a2.href = url2;
+    a2.download = name3;
+    a2.target = "_blank";
+    a2.rel = "noopener noreferrer";
+    a2.textContent = `\u2B07 ${name3}`;
+    return a2;
+  }
+  function renderBubble(name3, record2, peerId) {
+    ensureContainer2();
+    const bubble = document.createElement("div");
+    bubble.className = "fc-bubble";
+    const label2 = document.createElement("div");
+    label2.className = "fc-name";
+    const peer = peerId ? getPeerByJitsiId(peerId) : null;
+    label2.textContent = peer?.displayName || name3;
+    bubble.appendChild(label2);
+    const url2 = URL.createObjectURL(record2.blob);
+    bubble.appendChild(mediaElementFor(record2.kind, url2, name3, record2.mime));
+    ensureChatEntry2(container2, localToken2(), () => active4);
+    container2.appendChild(bubble);
+    bubbleCount++;
+    while (bubbleCount > MAX_BUBBLES2 && container2.firstChild) {
+      for (const media of container2.firstChild.querySelectorAll("img,video,audio,a")) {
+        const src2 = media.src || media.href;
+        if (src2) URL.revokeObjectURL(src2);
+      }
+      container2.removeChild(container2.firstChild);
+      bubbleCount--;
+    }
+    const log3 = container2.parentNode;
+    if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
+      log3.scrollTop = log3.scrollHeight;
+    }
+  }
+  function handleTrigger5(hap, currentTime, cps2, targetTime) {
+    if (!active4) return;
+    const value2 = hap?.value;
+    if (!value2) return;
+    const param = Object.keys(FILE_KINDS).find((k2) => value2[k2] != null);
+    if (!param) return;
+    const name3 = resolve3(value2[param]);
+    if (!name3) return;
+    const peerId = peerOf2(value2[param]);
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(async () => {
+      if (!isPeerJPatternTurn(peerId)) return;
+      let record2 = received.get(name3);
+      if (!record2 && peerId != null && peerId === getLocalPeer()?.jitsiId) {
+        record2 = await loadAndBroadcastOwn(name3);
+      }
+      if (!record2) return;
+      renderBubble(name3, record2, peerId);
+    }, delayMs);
+  }
+  function installFileCycles(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = {};
+    for (const kind of Object.keys(FILE_KINDS)) {
+      Object.assign(scope2, registerControl2(kind));
+    }
+    register2("_fcRender", (pat) => pat.onTrigger(handleTrigger5, true));
+    scope2.initFileCycles = async () => {
+      const wasActive = active4;
+      active4 = true;
+      if (!wasActive) ensureChatEntry2(ensureContainer2(), localToken2(), () => active4);
+      return true;
+    };
+    return scope2;
+  }
+  function stopFileCycles() {
+    active4 = false;
+  }
+
+  // src/polls.js
+  init_peer_state();
+
+  // src/polls-core.js
+  init_text_cycles_core();
+  var DEFAULT_POLL_TEXT_COLOR = "#111111";
+  function parsePollLiteral(raw) {
+    let obj;
+    try {
+      obj = JSON.parse(String(raw ?? ""));
+    } catch (e30) {
+      throw new Error(`poll(): not valid JSON \u2014 ${e30.message}`);
+    }
+    return validatePollLiteral(obj);
+  }
+  function validatePollLiteral(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new Error('poll(): expected a JSON object with "question" and "options"');
+    }
+    if (typeof obj.question !== "string" || !obj.question.trim()) {
+      throw new Error('poll(): "question" must be a non-empty string');
+    }
+    if (!Array.isArray(obj.options) || !obj.options.length || obj.options.some((o) => typeof o !== "string" || !o.trim())) {
+      throw new Error('poll(): "options" must be a non-empty array of non-empty strings');
+    }
+    const options = [...new Set(obj.options)];
+    if (options.length !== obj.options.length) {
+      throw new Error('poll(): "options" must not repeat the same option twice');
+    }
+    const participants = Array.isArray(obj.participants) ? obj.participants.map(String) : [];
+    const tally = Object.fromEntries(options.map((o) => [o, 0]));
+    if (obj.votes != null) {
+      const entries2 = Array.isArray(obj.votes) ? obj.votes : [obj.votes];
+      for (const entry of entries2) {
+        if (!entry || typeof entry !== "object") continue;
+        for (const [option, count] of Object.entries(entry)) {
+          if (!(option in tally)) throw new Error(`poll(): "votes" names an option not in "options": "${option}"`);
+          if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+            throw new Error(`poll(): "votes"."${option}" must be a non-negative number`);
+          }
+          tally[option] += count;
+        }
+      }
+    }
+    return { question: obj.question.trim(), options, participants, tally };
+  }
+  function canVote(spec, voterToken) {
+    return !spec.participants.length || spec.participants.includes(String(voterToken));
+  }
+  function applyVoteDelta(tally, delta) {
+    const out = { ...tally };
+    if (!delta || typeof delta !== "object") return out;
+    for (const [option, count] of Object.entries(delta)) {
+      if (!(option in out) || typeof count !== "number" || !Number.isFinite(count)) continue;
+      out[option] = Math.max(0, out[option] + count);
+    }
+    return out;
+  }
+  function switchVote(tally, from2, to) {
+    const delta = {};
+    if (from2 && from2 in tally) delta[from2] = -1;
+    if (to && to in tally) delta[to] = 1;
+    return applyVoteDelta(tally, delta);
+  }
+  var POLL_CALL_RE = /(?:^|[^\w$])poll\s*\(/;
+  var STRING_LITERAL3 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
+  function literalBody3(raw) {
+    return { quote: raw[0], body: raw.slice(1, -1) };
+  }
+  function rewritePollCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
+    const atoms5 = {};
+    const mint = (text2) => {
+      const token = `pl${counter.n++}`;
+      atoms5[token] = { text: text2, peer };
+      return token;
+    };
+    const re2 = new RegExp(`((?:^|[^\\w$])(?:poll|vote)\\s*\\(\\s*)${STRING_LITERAL3}`, "g");
+    const rewriteStatement = (text2) => {
+      if (!POLL_CALL_RE.test(text2)) return text2;
+      const out = text2.replace(re2, (match2, head, raw) => {
+        if (raw[0] === "`" && raw.includes("${")) return match2;
+        const { body } = literalBody3(raw);
+        return `${head}"${mint(body)}"`;
+      });
+      return `${out.replace(/[\s;]+$/, "")}
+._pollRender()`;
+    };
+    const rewritten = splitStatements(String(code2 ?? "")).map(({ text: text2 }) => rewriteStatement(text2)).join("\n");
+    return { code: rewritten, atoms: atoms5 };
+  }
+  var INIT_POLLS_RE = /^\s*await\s+initPolls\s*\(/m;
+  var INIT_POLLS_PATTERN = { source: INIT_POLLS_RE.source, flags: INIT_POLLS_RE.flags };
+  function hasPollCycles(code2) {
+    return INIT_POLLS_RE.test(String(code2 ?? ""));
+  }
+
+  // src/polls.js
+  var CONTAINER_ID3 = "trussal-polls";
+  var STYLE_ID3 = "trussal-polls-style";
+  var atoms4 = {};
+  var active5 = false;
+  var container3 = null;
+  var styleEl3 = null;
+  var polls = /* @__PURE__ */ new Map();
+  function setPollAtoms(table) {
+    atoms4 = table || {};
+  }
+  function resolve4(value2) {
+    if (value2 == null) return null;
+    const atom2 = atoms4[String(value2)];
+    return atom2 ? atom2.text : String(value2);
+  }
+  function peerOf3(value2) {
+    const atom2 = atoms4[String(value2)];
+    return atom2 ? atom2.peer : null;
+  }
+  function ensureStyle3() {
+    if (styleEl3 && document.contains(styleEl3)) return styleEl3;
+    styleEl3 = document.getElementById(STYLE_ID3) || document.createElement("style");
+    styleEl3.id = STYLE_ID3;
+    if (!styleEl3.textContent) {
+      styleEl3.textContent = `
+#${CONTAINER_ID3} .pl-bubble { margin: 4px 0; padding: 6px 16px; color: ${DEFAULT_POLL_TEXT_COLOR}; background: #eeeeee; border-radius: 6px; }
+#${CONTAINER_ID3} .pl-name { font-size: 12px; opacity: .6; }
+#${CONTAINER_ID3} .pl-question { font-weight: 600; margin: 2px 0 4px; }
+#${CONTAINER_ID3} .pl-option { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; margin: 2px 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff; }
+#${CONTAINER_ID3} .pl-option.pl-mine { border-color: #111111; font-weight: 600; }
+#${CONTAINER_ID3} .pl-option.pl-closed { cursor: default; opacity: .8; }
+#${CONTAINER_ID3} .pl-status { font-size: 11px; opacity: .7; margin-top: 2px; }
+`;
+    }
+    if (!document.contains(styleEl3)) document.head.appendChild(styleEl3);
+    return styleEl3;
+  }
+  function ensureContainer3() {
+    if (!container3) {
+      container3 = document.createElement("div");
+      container3.id = CONTAINER_ID3;
+    }
+    ensureStyle3();
+    return container3;
+  }
+  function localToken3() {
+    const index2 = getLocalPeer()?.roomIndex;
+    return index2 == null || index2 === "" ? null : String(index2);
+  }
+  function isClosed(entry) {
+    return entry.closesAt != null && Date.now() >= entry.closesAt;
+  }
+  function scoreboard(entry) {
+    const total = Object.values(entry.tally).reduce((a2, b) => a2 + b, 0);
+    return total;
+  }
+  function renderPoll(question) {
+    const entry = polls.get(question);
+    if (!entry) return;
+    ensureChatEntry2(ensureContainer3(), localToken3(), () => active5);
+    if (!entry.bubbleEl || !entry.bubbleEl.isConnected) {
+      entry.bubbleEl = document.createElement("div");
+      entry.bubbleEl.className = "pl-bubble";
+      container3.appendChild(entry.bubbleEl);
+    }
+    const bubble = entry.bubbleEl;
+    bubble.innerHTML = "";
+    const peer = entry.peerId ? getPeerByJitsiId(entry.peerId) : null;
+    const name3 = document.createElement("div");
+    name3.className = "pl-name";
+    name3.textContent = peer?.displayName || "poll";
+    bubble.appendChild(name3);
+    const q2 = document.createElement("div");
+    q2.className = "pl-question";
+    q2.textContent = entry.spec.question;
+    bubble.appendChild(q2);
+    const closed = isClosed(entry);
+    const myToken = localToken3();
+    const myChoice = myToken ? entry.voterChoice.get(myToken) : null;
+    const eligible = myToken != null && canVote(entry.spec, myToken);
+    const total = scoreboard(entry);
+    for (const option of entry.spec.options) {
+      const row = document.createElement("div");
+      row.className = `pl-option${option === myChoice ? " pl-mine" : ""}${closed ? " pl-closed" : ""}`;
+      const label2 = document.createElement("span");
+      label2.textContent = option;
+      const count = document.createElement("span");
+      const votes = entry.tally[option] || 0;
+      const pct = total > 0 ? Math.round(votes / total * 100) : 0;
+      count.textContent = `${votes} (${pct}%)`;
+      row.appendChild(label2);
+      row.appendChild(count);
+      if (!closed && eligible) {
+        row.addEventListener("click", () => castVote(question, option));
+      }
+      bubble.appendChild(row);
+    }
+    const status = document.createElement("div");
+    status.className = "pl-status";
+    status.textContent = closed ? "Poll closed" : !eligible ? "You're not eligible to vote in this poll" : myChoice ? `You voted "${myChoice}" \u2014 click another option to change your vote` : "Click an option to vote";
+    bubble.appendChild(status);
+    const log3 = container3.parentNode;
+    if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
+      log3.scrollTop = log3.scrollHeight;
+    }
+  }
+  function castVote(question, option) {
+    const entry = polls.get(question);
+    if (!entry || isClosed(entry)) return;
+    const voterToken = localToken3();
+    if (voterToken == null || !canVote(entry.spec, voterToken)) return;
+    const previous = entry.voterChoice.get(voterToken) || null;
+    if (previous === option) return;
+    entry.tally = switchVote(entry.tally, previous, option);
+    entry.voterChoice.set(voterToken, option);
+    sendPollVote({ pollId: question, option, previousOption: previous, voterToken });
+    renderPoll(question);
+  }
+  subscribePeerState((event, payload) => {
+    if (event !== "poll-vote") return;
+    const entry = polls.get(payload.pollId);
+    if (!entry) return;
+    entry.tally = switchVote(entry.tally, payload.previousOption, payload.option);
+    entry.voterChoice.set(payload.voterToken, payload.option);
+    renderPoll(payload.pollId);
+  });
+  function handleTrigger6(hap, currentTime, cps2, targetTime) {
+    if (!active5) return;
+    const value2 = hap?.value;
+    if (!value2 || value2.poll == null) return;
+    const pollJson = resolve4(value2.poll);
+    const peerId = peerOf3(value2.poll);
+    const voteJson = value2.vote != null ? resolve4(value2.vote) : null;
+    const closeMs = value2.close != null ? Number(value2.close) : null;
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(() => {
+      if (!isPeerJPatternTurn(peerId)) return;
+      let spec;
+      try {
+        spec = parsePollLiteral(pollJson);
+      } catch (e30) {
+        console.error("[polls]", e30.message);
+        return;
+      }
+      let entry = polls.get(spec.question);
+      if (!entry) {
+        entry = {
+          spec,
+          tally: spec.tally,
+          voterChoice: /* @__PURE__ */ new Map(),
+          createdAt: Date.now(),
+          closesAt: null,
+          closeTimer: null,
+          peerId,
+          bubbleEl: null
+        };
+        polls.set(spec.question, entry);
+      }
+      if (Number.isFinite(closeMs) && closeMs > 0) {
+        entry.closesAt = entry.createdAt + closeMs;
+        clearTimeout(entry.closeTimer);
+        const remaining = entry.closesAt - Date.now();
+        if (remaining > 0) entry.closeTimer = setTimeout(() => renderPoll(spec.question), remaining);
+      }
+      if (voteJson) {
+        try {
+          entry.tally = applyVoteDelta(entry.tally, JSON.parse(voteJson));
+        } catch (e30) {
+          console.warn("[polls] .vote() argument is not valid JSON", e30);
+        }
+      }
+      renderPoll(spec.question);
+    }, delayMs);
+  }
+  function installPolls(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = {
+      ...registerControl2("poll"),
+      ...registerControl2("close"),
+      ...registerControl2("vote")
+    };
+    register2("_pollRender", (pat) => pat.onTrigger(handleTrigger6, true));
+    scope2.initPolls = async () => {
+      const wasActive = active5;
+      active5 = true;
+      if (!wasActive) ensureChatEntry2(ensureContainer3(), localToken3(), () => active5);
+      return true;
+    };
+    return scope2;
+  }
+  function stopPolls() {
+    active5 = false;
+    for (const entry of polls.values()) clearTimeout(entry.closeTimer);
+  }
+
   // src/hydra-video.js
   init_peer_state();
   var MODE_SPLIT = "split";
@@ -56463,7 +57564,7 @@ ${full}
   var PANEL_ID = "trussal-hv-panel";
   var TOGGLE_ID = "trussal-hv-toggle";
   var VIDEO_ID = "trussal-hv-video";
-  var STYLE_ID2 = "trussal-hv-style";
+  var STYLE_ID4 = "trussal-hv-style";
   function setVideoStream(stream) {
     if (!stream) {
       if (_videoEl) _videoEl.srcObject = null;
@@ -56519,9 +57620,9 @@ ${full}
     video.muted = true;
     video.playsInline = true;
     video.srcObject = stream;
-    return new Promise((resolve3) => {
+    return new Promise((resolve5) => {
       video.addEventListener("loadedmetadata", () => {
-        video.play().then(() => resolve3(video)).catch(() => resolve3(video));
+        video.play().then(() => resolve5(video)).catch(() => resolve5(video));
       });
     });
   }
@@ -56665,9 +57766,9 @@ ${full}
     }
   }
   function _injectStyles() {
-    if (document.getElementById(STYLE_ID2)) return;
+    if (document.getElementById(STYLE_ID4)) return;
     const s2 = document.createElement("style");
-    s2.id = STYLE_ID2;
+    s2.id = STYLE_ID4;
     s2.textContent = `
     #${PANEL_ID} {
       position:fixed; top:64px; right:16px; z-index:1000000;
@@ -57031,6 +58132,8 @@ ${full}
   var INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
   var INIT_TEXT_CYCLES_RE2 = /(^|\n)\s*await\s+initTextCycles\s*\(/;
   var INIT_CSS_RE2 = /(^|\n)\s*await\s+initCss\s*\(/;
+  var INIT_FILE_CYCLES_RE2 = /(^|\n)\s*await\s+initFileCycles\s*\(/;
+  var INIT_POLLS_RE2 = /(^|\n)\s*await\s+initPolls\s*\(/;
   var HYDRA_SHAPE_RE = /\.out\s*\(|(?:^|[^\w$.])(?:osc|shape|gradient|solid|voronoi|src)\s*\(|(?:^|[^\w$])init(?:Cam|Screen|Image|Video)\s*\(/;
   function ensureCapabilityPreambles(code2) {
     let s2 = String(code2 ?? "");
@@ -57038,12 +58141,16 @@ ${full}
     const needHydra = !PROGRAM_INIT_HYDRA_RE.test(s2) && HYDRA_SHAPE_RE.test(s2);
     const needText = !INIT_TEXT_CYCLES_RE2.test(s2) && WORD_CALL_RE.test(s2);
     const needCss = !INIT_CSS_RE2.test(s2) && CSS_CALL_RE.test(s2);
-    if (!needHydra && !needText && !needCss) return s2;
+    const needFile = !INIT_FILE_CYCLES_RE2.test(s2) && FILE_CALL_RE.test(s2);
+    const needPoll = !INIT_POLLS_RE2.test(s2) && POLL_CALL_RE.test(s2);
+    if (!needHydra && !needText && !needCss && !needFile && !needPoll) return s2;
     const adds = [];
     if (needHydra) adds.push("await initHydra()");
     if (needText) adds.push("await initTextCycles()");
     if (needCss) adds.push("await initCss()");
-    const hasPreamble = PROGRAM_INIT_HYDRA_RE.test(s2) || INIT_TEXT_CYCLES_RE2.test(s2) || INIT_CSS_RE2.test(s2);
+    if (needFile) adds.push("await initFileCycles()");
+    if (needPoll) adds.push("await initPolls()");
+    const hasPreamble = PROGRAM_INIT_HYDRA_RE.test(s2) || INIT_TEXT_CYCLES_RE2.test(s2) || INIT_CSS_RE2.test(s2) || INIT_FILE_CYCLES_RE2.test(s2) || INIT_POLLS_RE2.test(s2);
     if (!hasPreamble) return `${adds.join("\n")}
 
 ${s2}`;
@@ -57754,7 +58861,7 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
     if (!code2) return null;
     const blank = code2.match(/\n\n+/);
     const preamble = blank ? code2.slice(0, blank.index) : code2;
-    if (!hasTextCycles(preamble) && !hasCssCycles(preamble)) return null;
+    if (!hasTextCycles(preamble) && !hasCssCycles(preamble) && !hasFileCycles(preamble) && !hasPollCycles(preamble)) return null;
     if (!blank) return { preamble: code2, strudel: "" };
     return {
       preamble: preamble.trim(),
@@ -57764,14 +58871,14 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
   var textAtoms = {};
   var textCounter = { n: 0 };
   function applyTextRewrite(code2, peer) {
-    const { code: rewritten, atoms: atoms3 } = rewriteTextCalls(code2, {
+    const { code: rewritten, atoms: atoms5 } = rewriteTextCalls(code2, {
       peer: peer.jitsiId,
       counter: textCounter
     });
-    Object.assign(textAtoms, atoms3);
+    Object.assign(textAtoms, atoms5);
     textLogChanged(`rewrite:${peer.jitsiId ?? "local"}`, {
-      minted: Object.keys(atoms3).length,
-      words: Object.fromEntries(Object.entries(atoms3).map(([t, a2]) => [t, a2.text])),
+      minted: Object.keys(atoms5).length,
+      words: Object.fromEntries(Object.entries(atoms5).map(([t, a2]) => [t, a2.text])),
       rendererAttached: rewritten.includes("._tcRender()"),
       before: clip(code2),
       after: clip(rewritten)
@@ -57782,13 +58889,33 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
   var cssCounter = { n: 0 };
   var cssSheets = [];
   function applyCssRewrite(code2, peer) {
-    const { code: rewritten, atoms: atoms3, sheets, errors } = rewriteCssCalls(code2, {
+    const { code: rewritten, atoms: atoms5, sheets, errors } = rewriteCssCalls(code2, {
       peer: peer.jitsiId,
       counter: cssCounter
     });
-    Object.assign(cssAtoms, atoms3);
+    Object.assign(cssAtoms, atoms5);
     cssSheets = cssSheets.concat(sheets);
     if (errors.length) console.error("[css-cycles]", errors.join("; "));
+    return rewritten;
+  }
+  var fileAtoms = {};
+  var fileCounter = { n: 0 };
+  function applyFileRewrite(code2, peer) {
+    const { code: rewritten, atoms: atoms5 } = rewriteFileCalls(code2, {
+      peer: peer.jitsiId,
+      counter: fileCounter
+    });
+    Object.assign(fileAtoms, atoms5);
+    return rewritten;
+  }
+  var pollAtoms = {};
+  var pollCounter = { n: 0 };
+  function applyPollRewrite(code2, peer) {
+    const { code: rewritten, atoms: atoms5 } = rewritePollCalls(code2, {
+      peer: peer.jitsiId,
+      counter: pollCounter
+    });
+    Object.assign(pollAtoms, atoms5);
     return rewritten;
   }
   function buildBotSilentBlock(peer) {
@@ -57882,12 +59009,20 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
     if (code2.includes("liveCapture")) {
       code2 = rewriteLiveCaptureCalls(code2, { silent: !peer.isLocal });
     }
+    if (peer.isLocal) {
+      code2 = appendRendererCalls(code2, REACTION_CALL_RE, "._rxRender()");
+      code2 = appendRendererCalls(code2, PANEL_CALL_RE, "._pbRender()");
+    } else if (REACTION_CALL_RE.test(code2) || PANEL_CALL_RE.test(code2)) {
+      code2 = stripCalls(stripCalls(code2, REACTION_CALL_RE), PANEL_CALL_RE);
+    }
     const remoteVoiceExcluded = !peer.isLocal && !!getAggregatorPeer();
     const params2 = computePeerStrudelParams(peer);
     let fx = peer.isLocal ? "" : effectChainFor(params2);
     if (jPattern && peer.jitsiId) fx += `.gain(_jpGate(${JSON.stringify(peer.jitsiId)}))`;
     const isText = hasTextCycles(code2);
     const isCss = hasCssCycles(code2);
+    const isFile = hasFileCycles(code2);
+    const isPoll = hasPollCycles(code2);
     const hydraSplit = splitHydraCode(code2);
     const split = hydraSplit || splitSilentCode(code2);
     if (isText && !split) {
@@ -57904,8 +59039,23 @@ n("<0 1 2 3 4>*8").scale('G4:minor')
 ${preamble}
 /* mini-on */` : preamble;
       let strudelCode = split.strudel;
-      if (isText || isCss) {
-        if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+      if (isText || isCss || isFile || isPoll) {
+        if (remoteVoiceExcluded) {
+          const rawStrudelCode = strudelCode;
+          strudelCode = keepSilentStatements(strudelCode);
+          if (isFile) {
+            const keptFile = keepMatchingStatements(rawStrudelCode, FILE_CALL_RE);
+            if (keptFile) strudelCode = strudelCode ? `${strudelCode}
+
+${keptFile}` : keptFile;
+          }
+          if (isPoll) {
+            const keptPoll = keepMatchingStatements(rawStrudelCode, POLL_CALL_RE);
+            if (keptPoll) strudelCode = strudelCode ? `${strudelCode}
+
+${keptPoll}` : keptPoll;
+          }
+        }
         if (isText) {
           textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
             contributes: true,
@@ -57918,6 +59068,8 @@ ${preamble}
         }
         if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
         if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
+        if (strudelCode && isFile) strudelCode = applyFileRewrite(strudelCode, peer);
+        if (strudelCode && isPoll) strudelCode = applyPollRewrite(strudelCode, peer);
       } else if (remoteVoiceExcluded) {
         return outPreamble;
       }
@@ -58085,6 +59237,10 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
       const { liveCapture, _liveCaptureSilent } = installLiveCapture(mod2, audioCtx3);
       const textScope = installTextCycles(mod2);
       const cssScope = installCssCycles(mod2);
+      const reactionScope = installReactions(mod2);
+      const panelScope = installPanelBg(mod2);
+      const fileScope = installFileCycles(mod2);
+      const pollScope = installPolls(mod2);
       const _data = makeDataFn(mod2);
       const realInitHydra = mod2.initHydra;
       const initHydra2 = async (...args2) => {
@@ -58096,7 +59252,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
         }
         return result;
       };
-      await mod2.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra: initHydra2, mondo, mondi, mondolang, ...textScope, ...cssScope });
+      await mod2.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra: initHydra2, mondo, mondi, mondolang, ...textScope, ...cssScope, ...reactionScope, ...panelScope, ...fileScope, ...pollScope });
       if (typeof initAudio2 === "function") {
         try {
           await initAudio2({ maxPolyphony: 128 });
@@ -58114,6 +59270,10 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
     cssAtoms = {};
     cssCounter = { n: 0 };
     cssSheets = [];
+    fileAtoms = {};
+    fileCounter = { n: 0 };
+    pollAtoms = {};
+    pollCounter = { n: 0 };
     const blocks = getAllPeers().map(delayedPeerView).map(buildPeerBlock).filter(Boolean);
     const rawJoined = blocks.join("\n");
     let next = blocks.length === 0 ? null : rawJoined;
@@ -58134,6 +59294,8 @@ ${next}`;
       setTextAtoms(textAtoms);
       setCssAtoms(cssAtoms);
       publishCssSheets(cssSheets);
+      setFileAtoms(fileAtoms);
+      setPollAtoms(pollAtoms);
     }
     if (next === lastEvaluated) return;
     lastEvaluated = next;
@@ -58213,6 +59375,10 @@ ${next}`;
     stopLiveCaptures();
     stopTextCycles();
     stopCssCycles();
+    stopReactions();
+    stopPanelBg();
+    stopFileCycles();
+    stopPolls();
     anyPlaying = false;
     lastEvaluated = null;
     activeSliders = {};
@@ -58386,13 +59552,13 @@ ${snippet}
       ));
     }
     if (wasMini) return original;
-    const active4 = `
+    const active6 = `
 ${snippet}${JP_BTN_MARKER}`;
     const commented = `
 // ${snippet}${JP_BTN_MARKER}`;
-    if (cur.includes(commented)) return cur.replace(commented, active4);
-    if (cur.includes(active4)) return cur.replace(active4, commented);
-    return cur + active4;
+    if (cur.includes(commented)) return cur.replace(commented, active6);
+    if (cur.includes(active6)) return cur.replace(active6, commented);
+    return cur + active6;
   }
 
   // src/editor-router.js
@@ -58464,7 +59630,7 @@ ${snippet}${JP_BTN_MARKER}`;
   }
 
   // src/panel-drag-resize.js
-  var STYLE_ID3 = "trussal-panel-dr-style";
+  var STYLE_ID5 = "trussal-panel-dr-style";
   var HINT_ID = "trussal-panel-dr-hint";
   var DEFAULT_MIN_W = 280;
   var DEFAULT_MIN_H = 160;
@@ -58488,9 +59654,9 @@ ${snippet}${JP_BTN_MARKER}`;
     panel.style.left = `${rect.left}px`;
   }
   function _injectStyles2() {
-    if (typeof document === "undefined" || document.getElementById(STYLE_ID3)) return;
+    if (typeof document === "undefined" || document.getElementById(STYLE_ID5)) return;
     const s2 = document.createElement("style");
-    s2.id = STYLE_ID3;
+    s2.id = STYLE_ID5;
     s2.textContent = `
     .tdr-grip {
       position: absolute; width: 18px; height: 18px; z-index: 20;
@@ -60994,7 +62160,7 @@ ${snippet}${JP_BTN_MARKER}`;
     let rtcJitter = null;
     let uplinkLoss = null;
     let lost = 0;
-    let received = 0;
+    let received2 = 0;
     let jbDelay = 0;
     let jbEmitted = 0;
     let sawInbound = false;
@@ -61022,16 +62188,16 @@ ${snippet}${JP_BTN_MARKER}`;
           rtcJitter = Math.max(rtcJitter ?? 0, s2.jitter * 1e3);
         }
         if (typeof s2.packetsLost === "number") lost += s2.packetsLost;
-        if (typeof s2.packetsReceived === "number") received += s2.packetsReceived;
+        if (typeof s2.packetsReceived === "number") received2 += s2.packetsReceived;
         if (typeof s2.jitterBufferDelay === "number") jbDelay += s2.jitterBufferDelay;
         if (typeof s2.jitterBufferEmittedCount === "number") jbEmitted += s2.jitterBufferEmittedCount;
       }
     }
-    const totals = { lost, received, jbDelay, jbEmitted };
+    const totals = { lost, received: received2, jbDelay, jbEmitted };
     let packetLoss = null;
     if (sawInbound) {
       const dLost = prevTotals ? lost - prevTotals.lost : lost;
-      const dReceived = prevTotals ? received - prevTotals.received : received;
+      const dReceived = prevTotals ? received2 - prevTotals.received : received2;
       const denom2 = dLost + dReceived;
       if (denom2 > 0 && dLost >= 0 && dReceived >= 0) {
         packetLoss = Math.min(1, Math.max(0, dLost / denom2));
@@ -61143,8 +62309,8 @@ ${snippet}${JP_BTN_MARKER}`;
       pcs2.push(pcSend, pcRecv);
       pcSend.onicecandidate = (e30) => e30.candidate && pcRecv.addIceCandidate(e30.candidate);
       pcRecv.onicecandidate = (e30) => e30.candidate && pcSend.addIceCandidate(e30.candidate);
-      const inbound = new Promise((resolve3) => {
-        pcRecv.ontrack = (e30) => resolve3(e30.streams[0]);
+      const inbound = new Promise((resolve5) => {
+        pcRecv.ontrack = (e30) => resolve5(e30.streams[0]);
       });
       for (const track of outbound.stream.getAudioTracks()) pcSend.addTrack(track, outbound.stream);
       const offer = await pcSend.createOffer();
@@ -61173,12 +62339,12 @@ ${snippet}${JP_BTN_MARKER}`;
       source2.offset.setValueAtTime(0, emittedAt + 5e-3);
       source2.start();
       return await Promise.race([
-        new Promise((resolve3) => {
+        new Promise((resolve5) => {
           detector.onaudioprocess = (e30) => {
             const offset2 = firstImpulseOffset(e30.inputBuffer.getChannelData(0));
             if (offset2 < 0) return;
             detector.onaudioprocess = null;
-            resolve3(Math.max(0, e30.playbackTime + offset2 / ctx2.sampleRate - emittedAt));
+            resolve5(Math.max(0, e30.playbackTime + offset2 / ctx2.sampleRate - emittedAt));
           };
         }),
         new Promise((r2) => setTimeout(() => r2(null), MEASURE_TIMEOUT_MS))
@@ -61382,8 +62548,8 @@ ${snippet}${JP_BTN_MARKER}`;
 
   // components/MetaprogrammerEditor.js
   var APPLIED_FADE_MS = 5e3;
-  function mountMetaprogrammerEditor(container2) {
-    if (!container2 || container2.querySelector(".nc-editor")) return null;
+  function mountMetaprogrammerEditor(container4) {
+    if (!container4 || container4.querySelector(".nc-editor")) return null;
     const wrap = document.createElement("div");
     wrap.className = "ts-section nc-editor";
     wrap.innerHTML = `
@@ -61402,7 +62568,7 @@ ${snippet}${JP_BTN_MARKER}`;
     <div class="ts-meta nc-errors" style="color:var(--trussal-secondary, #111111);"></div>
     <div class="ts-meta nc-byline"></div>
   `;
-    container2.appendChild(wrap);
+    container4.appendChild(wrap);
     const ta = wrap.querySelector(".jp-code");
     const errorsEl = wrap.querySelector(".nc-errors");
     const bylineEl = wrap.querySelector(".nc-byline");
@@ -61704,9 +62870,9 @@ ${snippet}${JP_BTN_MARKER}`;
   `;
     document.head.appendChild(style);
   }
-  function mountMetaprogrammerCycleHighlighter(container2) {
-    if (!container2) return null;
-    const ta = container2.querySelector(".jp-code");
+  function mountMetaprogrammerCycleHighlighter(container4) {
+    if (!container4) return null;
+    const ta = container4.querySelector(".jp-code");
     if (!ta) return null;
     const host = ta.parentElement;
     if (!host || host.querySelector(".jp-play-overlay")) return null;
@@ -61929,7 +63095,7 @@ ${snippet}${JP_BTN_MARKER}`;
   // src/studio.js
   var BUTTON_ID = "trussal-studio-toggle";
   var OVERLAY_ID = "trussal-studio-overlay";
-  var STYLE_ID4 = "trussal-studio-style";
+  var STYLE_ID6 = "trussal-studio-style";
   var STORAGE_KEY2 = "trussal.studio.pattern";
   var selectedJitsiId = null;
   var selectedPeerKey = null;
@@ -61980,9 +63146,9 @@ ${snippet}${JP_BTN_MARKER}`;
   function escapeHtml(s2) {
     return String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
   }
-  function reconcileList(container2, items, keyFn, createFn, updateFn) {
+  function reconcileList(container4, items, keyFn, createFn, updateFn) {
     const existing = /* @__PURE__ */ new Map();
-    for (const child of Array.from(container2.children)) {
+    for (const child of Array.from(container4.children)) {
       const key = child.dataset ? child.dataset.reconcileKey : void 0;
       if (key != null) existing.set(key, child);
     }
@@ -61997,16 +63163,16 @@ ${snippet}${JP_BTN_MARKER}`;
         node.dataset.reconcileKey = key;
       }
       updateFn(node, item);
-      const wantSibling = prevNode ? prevNode.nextSibling : container2.firstChild;
-      if (wantSibling !== node) container2.insertBefore(node, wantSibling);
+      const wantSibling = prevNode ? prevNode.nextSibling : container4.firstChild;
+      if (wantSibling !== node) container4.insertBefore(node, wantSibling);
       prevNode = node;
     }
     for (const node of existing.values()) node.remove();
   }
   function injectStyles() {
-    if (document.getElementById(STYLE_ID4)) return;
+    if (document.getElementById(STYLE_ID6)) return;
     const style = document.createElement("style");
-    style.id = STYLE_ID4;
+    style.id = STYLE_ID6;
     style.textContent = studio_default;
     document.head.appendChild(style);
   }
@@ -62047,8 +63213,8 @@ ${snippet}${JP_BTN_MARKER}`;
     name3.classList.toggle("you", isLocal);
     el.querySelector(".ts-idx").textContent = peer.roomIndex != null ? String(peer.roomIndex) : "\xB7";
   }
-  function renderStrip(container2) {
-    reconcileList(container2, getAllPeers(), chipKey, createChip, updateChip);
+  function renderStrip(container4) {
+    reconcileList(container4, getAllPeers(), chipKey, createChip, updateChip);
   }
   function scopeTag(kind) {
     return `<span class="ts-scope" title="${kind === "personal" ? "this participant\u2019s own reading" : "room-wide worst case \u2014 identical on every client"}">${kind}</span>`;
@@ -62202,7 +63368,7 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     return peer;
   }
-  function renderDetail(container2) {
+  function renderDetail(container4) {
     let peer = resolveSelectedPeer();
     if (!peer) {
       const local2 = getLocalPeer();
@@ -62212,36 +63378,36 @@ ${snippet}${JP_BTN_MARKER}`;
       }
     }
     if (!peer) {
-      if (container2.dataset.peerKey) delete container2.dataset.peerKey;
-      if (!container2.querySelector(".ts-meta")) {
-        container2.innerHTML = `<div class="ts-meta">Waiting for participant data\u2026</div>`;
+      if (container4.dataset.peerKey) delete container4.dataset.peerKey;
+      if (!container4.querySelector(".ts-meta")) {
+        container4.innerHTML = `<div class="ts-meta">Waiting for participant data\u2026</div>`;
       }
       return;
     }
     const isLocal = !!peer.isLocal;
     selectedPeerKey = isLocal ? "local" : peer.peerId || null;
     const peerKey = isLocal ? "local" : String(peer.peerId || peer.jitsiId || "");
-    if (container2.dataset.peerKey !== peerKey) {
-      buildDetailShell(container2, peer, peerKey, isLocal);
+    if (container4.dataset.peerKey !== peerKey) {
+      buildDetailShell(container4, peer, peerKey, isLocal);
     }
-    patchDetailForPeer(container2, peer, isLocal);
+    patchDetailForPeer(container4, peer, isLocal);
   }
-  function buildDetailShell(container2, peer, peerKey, isLocal) {
-    container2.innerHTML = "";
-    container2.dataset.peerKey = peerKey;
-    container2.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
+  function buildDetailShell(container4, peer, peerKey, isLocal) {
+    container4.innerHTML = "";
+    container4.dataset.peerKey = peerKey;
+    container4.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
     const header = document.createElement("div");
     header.className = "ts-detail-header";
     header.innerHTML = `<div class="ts-detail-name"></div>`;
-    container2.appendChild(header);
-    container2.appendChild(createMetricsSection());
-    if (isLocal) container2.appendChild(createThemePickerSection());
+    container4.appendChild(header);
+    container4.appendChild(createMetricsSection());
+    if (isLocal) container4.appendChild(createThemePickerSection());
     const localProgram = createLocalProgramSection(isLocal);
-    container2.appendChild(localProgram);
+    container4.appendChild(localProgram);
     bindLocalProgramSection(localProgram, peer, isLocal);
     const status = document.createElement("div");
     status.className = "ts-status";
-    container2.appendChild(status);
+    container4.appendChild(status);
   }
   function createLocalProgramSection(isLocal) {
     const el = document.createElement("div");
@@ -62254,6 +63420,8 @@ ${snippet}${JP_BTN_MARKER}`;
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs \u2014 reference a column as &quot;Name:3&quot;">Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
+        <button class="ts-btn ghost" data-action="load-files" title="Load images/video/audio/pdf/txt (10MB each) to reference from image()/video()/textFile()/pdfFile()/soundFile()">Files</button>
+        <input type="file" class="ts-files-input" accept=".gif,.jpeg,.jpg,.png,.svg,.bmp,.mp4,.m4a,.mov,.txt,.pdf,.wav,.mp3,.ogg" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval \xB7 Ctrl+. to stop \xB7 Ctrl+/ to comment</span>
       </div>` : `
       <div class="ts-section-controls">
@@ -62312,7 +63480,7 @@ ${snippet}${JP_BTN_MARKER}`;
       el.querySelector('[data-action="stop"]').addEventListener("click", onStopClick);
       const captureBtnEl = el.querySelector('[data-action="capture"]');
       if (captureBtnEl) captureBtnEl.addEventListener("click", onCaptureClick);
-      const wireUpload = (buttonSelector, inputSelector) => {
+      const wireUpload = (buttonSelector, inputSelector, uploadFn, onResult) => {
         const button = el.querySelector(buttonSelector);
         const input = el.querySelector(inputSelector);
         if (!button || !input) return;
@@ -62328,28 +63496,36 @@ ${snippet}${JP_BTN_MARKER}`;
             const files2 = input.files;
             if (!files2 || !files2.length) return;
             setStatus("Loading\u2026");
-            await uploadSamplesToDB(files2, async ({ audio, images, packs, errors }) => {
-              if (!audio && !images && !packs) {
-                setStatus(errors.length ? errors[0] : "No audio, image or data files found");
-                return;
-              }
-              if (audio || images) await refreshLocalSamples();
-              await refreshSampleBanks();
-              const parts = [];
-              if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
-              if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
-              if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
-              const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
-              setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
-            });
+            await uploadFn(files2, onResult);
             input.value = "";
           } finally {
             uploadPending = false;
           }
         });
       };
-      wireUpload('[data-action="load-samples"]', ".ts-samples-input");
-      wireUpload('[data-action="load-data"]', ".ts-data-input");
+      const onSamplesLoaded = async ({ audio, images, packs, errors }) => {
+        if (!audio && !images && !packs) {
+          setStatus(errors.length ? errors[0] : "No audio, image or data files found");
+          return;
+        }
+        if (audio || images) await refreshLocalSamples();
+        await refreshSampleBanks();
+        const parts = [];
+        if (audio) parts.push(`${audio} sample${audio === 1 ? "" : "s"}`);
+        if (images) parts.push(`${images} image${images === 1 ? "" : "s"}`);
+        if (packs) parts.push(`${packs} data pack${packs === 1 ? "" : "s"}`);
+        const hint = packs ? ' \u2014 reference a column as "Name:3"' : images && !audio ? ' \u2014 use img("foldername") in a Hydra preamble' : ' \u2014 use s("foldername") in patterns';
+        setStatus(`Loaded ${parts.join(", ")}${hint}` + (errors.length ? ` (${errors.length} rejected)` : ""));
+      };
+      wireUpload('[data-action="load-samples"]', ".ts-samples-input", uploadSamplesToDB, onSamplesLoaded);
+      wireUpload('[data-action="load-data"]', ".ts-data-input", uploadSamplesToDB, onSamplesLoaded);
+      wireUpload('[data-action="load-files"]', ".ts-files-input", uploadChatFilesToDB, ({ count, errors }) => {
+        if (!count) {
+          setStatus(errors.length ? errors[0] : "No supported files found");
+          return;
+        }
+        setStatus(`Loaded ${count} file${count === 1 ? "" : "s"} \u2014 use image()/video()/textFile()/pdfFile()/soundFile() in patterns` + (errors.length ? ` (${errors.length} rejected)` : ""));
+      });
       el.querySelector(".ts-sample-banks-host").appendChild(createSampleBanksArea());
     } else {
       codeEl.value = peer.pattern || "";
@@ -62373,9 +63549,9 @@ ${snippet}${JP_BTN_MARKER}`;
       });
     }
   }
-  function patchDetailForPeer(container2, peer, isLocal) {
-    container2.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
-    const header = container2.querySelector(".ts-detail-header");
+  function patchDetailForPeer(container4, peer, isLocal) {
+    container4.style.setProperty("--ts-detail-color", chipColor(peer.jitsiId, isLocal));
+    const header = container4.querySelector(".ts-detail-header");
     header.querySelector(".ts-detail-name").textContent = isLocal ? "You" : peer.displayName || "Participant";
     let botBadge = header.querySelector(".ts-bot-badge");
     const showBadge = !isLocal && peer.isBot;
@@ -62387,10 +63563,10 @@ ${snippet}${JP_BTN_MARKER}`;
     } else if (!showBadge && botBadge) {
       botBadge.remove();
     }
-    updateMetricsSection(container2.querySelector(".ts-metrics-section"), peer, "");
-    patchLocalProgramSection(container2.querySelector(".ts-local-program-section"), peer, isLocal);
+    updateMetricsSection(container4.querySelector(".ts-metrics-section"), peer, "");
+    patchLocalProgramSection(container4.querySelector(".ts-local-program-section"), peer, isLocal);
     const status = isLocal ? lastStatus : peer.muted ? "Muted" : peer.playing ? "Playing" : "Idle";
-    container2.querySelector(".ts-status").textContent = status;
+    container4.querySelector(".ts-status").textContent = status;
   }
   function patchLocalProgramSection(el, peer, isLocal) {
     if (isLocal) {
@@ -62404,8 +63580,8 @@ ${snippet}${JP_BTN_MARKER}`;
     muteBtnEl.textContent = peer.muted ? "Muted" : "Mute";
     muteBtnEl.classList.toggle("on", !!peer.muted);
     const codeEl = el.querySelector(".ts-code");
-    const active4 = document.activeElement === codeEl;
-    const hasUnsentEdit = active4 && codeEl.value !== codeEl.dataset.lastSynced;
+    const active6 = document.activeElement === codeEl;
+    const hasUnsentEdit = active6 && codeEl.value !== codeEl.dataset.lastSynced;
     if (!hasUnsentEdit) {
       const live = peer.pattern || "";
       if (codeEl.value !== live) {
@@ -62589,8 +63765,8 @@ ${snippet}${JP_BTN_MARKER}`;
       return named ? named[1] : `slider ${i + 1}`;
     });
   }
-  function renderSliders(container2, sliders) {
-    const area = container2.querySelector(".ts-strudel-sliders");
+  function renderSliders(container4, sliders) {
+    const area = container4.querySelector(".ts-strudel-sliders");
     if (!area) return;
     if (!sliders || !sliders.length) {
       area.innerHTML = "";
@@ -62657,10 +63833,13 @@ ${snippet}${JP_BTN_MARKER}`;
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
+    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
+      <button class="ts-btn ghost ts-panic-btn" type="button" title="Stuck in a breakout room? Leave it and rejoin the meeting you originally opened.">\u26A0 Leave breakout room</button>
+    </div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
+    overlay.querySelector(".ts-panic-btn").addEventListener("click", panic);
     overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
     overlay.addEventListener("click", (e30) => e30.stopPropagation());
     const ncHost = overlay.querySelector(".ts-jpattern");
@@ -62914,7 +64093,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var GEAR_ID = "trussal-lg-gear";
   var MENU_ID = "trussal-lg-menu";
   var INSTRUCTION_ID = "trussal-lg-instruction";
-  var STYLE_ID5 = "trussal-lg-style";
+  var STYLE_ID7 = "trussal-lg-style";
   var _modeOn = false;
   var _dismissed = false;
   var _booted = false;
@@ -63029,9 +64208,9 @@ ${snippet}${JP_BTN_MARKER}`;
     window.gestureAndLandmarkConfig.defaults = DEFAULT_GESTURE_MAPPINGS.map((m2) => ({ ...m2 }));
   }
   function _injectStyles5() {
-    if (document.getElementById(STYLE_ID5)) return;
+    if (document.getElementById(STYLE_ID7)) return;
     const s2 = document.createElement("style");
-    s2.id = STYLE_ID5;
+    s2.id = STYLE_ID7;
     s2.textContent = landmark_gesture_mode_default;
     document.head.appendChild(s2);
   }
@@ -63241,7 +64420,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var ABOUT_BTN_ID = "trussal-da-about-btn";
   var DOCS_ID = "trussal-da-docs-scrim";
   var ABOUT_ID = "trussal-da-about-scrim";
-  var STYLE_ID6 = "trussal-da-style";
+  var STYLE_ID8 = "trussal-da-style";
   var JPATTERN_FUNCTIONS = [
     {
       id: "jp-participants",
@@ -63752,9 +64931,9 @@ $: liveCapture('gesture').struct("x*2")</pre>`
   whose combined audio and video is streamed into the room by an aggregator.</p>
 `;
   function _injectStyles6() {
-    if (document.getElementById(STYLE_ID6)) return;
+    if (document.getElementById(STYLE_ID8)) return;
     const s2 = document.createElement("style");
-    s2.id = STYLE_ID6;
+    s2.id = STYLE_ID8;
     s2.textContent = docs_about_default;
     document.head.appendChild(s2);
   }
