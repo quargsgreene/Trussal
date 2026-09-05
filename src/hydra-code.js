@@ -28,10 +28,14 @@ import { detectNotation, mondoToMini } from './notation.js';
 // Neither core imports this module, so there is no cycle.
 import { WORD_CALL_RE } from './text-cycles-core.js';
 import { CSS_CALL_RE } from './css-cycles-core.js';
+import { FILE_CALL_RE } from './file-cycles-core.js';
+import { POLL_CALL_RE } from './polls-core.js';
 
 const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
 const INIT_TEXT_CYCLES_RE = /(^|\n)\s*await\s+initTextCycles\s*\(/;
 const INIT_CSS_RE = /(^|\n)\s*await\s+initCss\s*\(/;
+const INIT_FILE_CYCLES_RE = /(^|\n)\s*await\s+initFileCycles\s*\(/;
+const INIT_POLLS_RE = /(^|\n)\s*await\s+initPolls\s*\(/;
 
 // The three capability preambles are now OPTIONAL: a block that only shows the
 // shape of a capability — a Hydra render/source call, a word() voice, a css()
@@ -62,15 +66,20 @@ export function ensureCapabilityPreambles(code) {
   const needHydra = !PROGRAM_INIT_HYDRA_RE.test(s) && HYDRA_SHAPE_RE.test(s);
   const needText = !INIT_TEXT_CYCLES_RE.test(s) && WORD_CALL_RE.test(s);
   const needCss = !INIT_CSS_RE.test(s) && CSS_CALL_RE.test(s);
-  if (!needHydra && !needText && !needCss) return s;
+  const needFile = !INIT_FILE_CYCLES_RE.test(s) && FILE_CALL_RE.test(s);
+  const needPoll = !INIT_POLLS_RE.test(s) && POLL_CALL_RE.test(s);
+  if (!needHydra && !needText && !needCss && !needFile && !needPoll) return s;
 
   const adds = [];
   if (needHydra) adds.push('await initHydra()');
   if (needText) adds.push('await initTextCycles()');
   if (needCss) adds.push('await initCss()');
+  if (needFile) adds.push('await initFileCycles()');
+  if (needPoll) adds.push('await initPolls()');
 
   const hasPreamble =
-    PROGRAM_INIT_HYDRA_RE.test(s) || INIT_TEXT_CYCLES_RE.test(s) || INIT_CSS_RE.test(s);
+    PROGRAM_INIT_HYDRA_RE.test(s) || INIT_TEXT_CYCLES_RE.test(s) || INIT_CSS_RE.test(s)
+    || INIT_FILE_CYCLES_RE.test(s) || INIT_POLLS_RE.test(s);
   if (!hasPreamble) return `${adds.join('\n')}\n\n${s}`;
 
   // Splice the missing lines into the existing preamble, before its first blank.

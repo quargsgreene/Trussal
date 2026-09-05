@@ -43,6 +43,7 @@ import {
   parseMetaprogram,
   buildDefaultProgram
 } from './MetaprogrammerParser.js';
+import { applyBreakoutDirectives } from './Breakout.js';
 import { detectNotation, miniToMondo, mondoToMini } from '../notation.js';
 import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
@@ -379,6 +380,10 @@ function pushProgramToScheduler() {
   // computes only the Hydra counterparts — every audio node it knows about
   // runs on the aggregator's master bus instead (av-effects/index.js).
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
+  // # breakout / # assign: best-effort onto Jitsi's own native breakout-rooms
+  // feature (Breakout.js). Independent of the turn-scheduling capability
+  // above (setJPatternActive) — breakout rooms are not gated behind it.
+  applyBreakoutDirectives(ast.breakouts, ast.assignments);
 }
 
 // Explicit apply from the editor. Valid text lands in the shared doc, in the

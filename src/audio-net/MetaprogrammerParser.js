@@ -35,6 +35,10 @@ import {
 // that module touches WebAudio until createEchoNode() is CALLED with a
 // context, so importing it keeps this parser loadable in the bots process.
 import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.js';
+// # breakout's JSON-object argument shape and validation — one rule, shared
+// with src/audio-net/Breakout.js (which reads program.breakouts/assignments
+// to actually create rooms and move participants).
+import { parseBreakoutLiteral } from '../breakout-core.js';
 // The one reader for every patterned `#` argument, whatever the effect — and
 // the bare-`?` probability, which is that reader's to define rather than the
 // grammar's.
@@ -233,6 +237,29 @@ function tokenize(text) {
       advance(j - i + (terminated ? 1 : 0));
       continue;
     }
+    if (ch === "'") {
+      // A second, DIFFERENT quote character exists solely so `# breakout` and
+      // `# assign` can carry a JSON object literal (breakout-core.js): JSON's
+      // own strings are double-quoted, so wrapping the whole blob in single
+      // quotes instead is what lets `'{"name":"Room A"}'` tokenize as ONE
+      // string rather than terminating at the first internal `"`. Same
+      // no-escaping, same-line-only scan as the `"` branch above; still
+      // produces a 'string' token so every existing `t.type === 'string'`
+      // check (medium sets, metric keywords) is unaffected by a directive
+      // that happens to use this instead.
+      let j = i + 1;
+      while (j < n && text[j] !== "'" && text[j] !== '\n') j++;
+      const terminated = text[j] === "'";
+      if (!terminated) {
+        errors.push({
+          message: "unterminated string — a breakout/assign literal closes with a \"'\" on the same line",
+          line: startLine, col: startCol
+        });
+      }
+      push('string', text.slice(i + 1, j), startLine, startCol, text.slice(i, terminated ? j + 1 : j));
+      advance(j - i + (terminated ? 1 : 0));
+      continue;
+    }
     if (ch === '$' || ch === '#') { push('sigil', ch, startLine, startCol); advance(); continue; }
     if (ch === '.' && text[i + 1] === '.') { push('op', '..', startLine, startCol); advance(2); continue; }
     if (PUNCT.has(ch)) { push('punct', ch, startLine, startCol); advance(); continue; }
@@ -361,7 +388,13 @@ class Parser {
   }
 
   parseProgram() {
-    const program = { participants: null, cycles: null, tempo: null, ring: null, chain: [] };
+    const program = {
+      participants: null, cycles: null, tempo: null, ring: null, chain: [],
+      // # breakout / # assign — see breakout-core.js. Both repeatable, folded
+      // in source order by resolveBreakoutState rather than treated as a
+      // singleton the way cycles/tempo/ring are.
+      breakouts: [], assignments: [],
+    };
     this.skipNewlines();
     while (!this.atEof()) {
       const t = this.peek();
@@ -786,6 +819,8 @@ class Parser {
     if (name === 'cycles') { this.parseCycles(program, nameTok); return; }
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
     if (name === 'ring') { this.parseRing(program, nameTok); return; }
+    if (name === 'breakout') { this.parseBreakout(program, nameTok); return; }
+    if (name === 'assign') { this.parseAssign(program, nameTok); return; }
 
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
     if (EFFECTS[name]) {
@@ -952,6 +987,67 @@ class Parser {
       return;
     }
     program.ring = ring;
+  }
+
+  // `# breakout '{"name":"Room A","participants":["0","1"]}'` — declares or
+  // redeclares one breakout room. The argument is single-quoted, not the
+  // double-quoted string every other directive's metric/medium keywords use
+  // — see the tokenizer's `'` branch for why (a JSON blob's own quotes would
+  // terminate a double-quoted token at the first one). Repeatable: several
+  // `# breakout` lines declare several rooms, folded in source order by
+  // breakout-core.js's resolveBreakoutState (the actual room-creation and
+  // participant-moving side effects live in src/audio-net/Breakout.js).
+  parseBreakout(program, nameTok) {
+    const litTok = this.peek();
+    if (litTok.type !== 'string') {
+      this.error('breakout needs a single-quoted JSON object — the syntax is ' +
+        `# breakout '{"name":"Room A","participants":["0","1"]}'`, litTok);
+      this.recover();
+      return;
+    }
+    this.next();
+    let spec;
+    try {
+      spec = parseBreakoutLiteral(litTok.value);
+    } catch (e) {
+      this.error(e.message, litTok);
+      this.recover();
+      return;
+    }
+    if (!this.atStatementEnd()) {
+      this.error(`breakout takes exactly one argument — the syntax is # breakout '{"name":"Room A"}'`, this.peek());
+      this.recover();
+      return;
+    }
+    program.breakouts.push(spec);
+  }
+
+  // `# assign "<participant token>" "<room name>"` — moves one participant
+  // into a breakout room, or back to breakout-core.js's reserved "main" room.
+  // Repeatable and order-sensitive: the last # assign for a given token wins
+  // (resolveBreakoutState), the same "read top-to-bottom as current desired
+  // state" rule # ring's weights and the participants sequence already follow.
+  parseAssign(program, nameTok) {
+    const tokenTok = this.peek();
+    if (tokenTok.type !== 'string' || !tokenTok.value.trim()) {
+      this.error('assign needs a quoted participant token — the syntax is # assign "0" "Room A"', tokenTok);
+      this.recover();
+      return;
+    }
+    this.next();
+    const roomTok = this.peek();
+    if (roomTok.type !== 'string' || !roomTok.value.trim()) {
+      this.error('assign needs a quoted room name after the participant token — the syntax is # assign "0" "Room A"', roomTok);
+      this.recover();
+      return;
+    }
+    this.next();
+    if (!this.atStatementEnd()) {
+      this.error(`assign takes exactly two arguments — the syntax is # assign "<token>" "<room>"`, this.peek());
+      this.recover();
+      return;
+    }
+    program.assignments.push({ token: tokenTok.value.trim(), room: roomTok.value.trim() });
   }
 
   // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES

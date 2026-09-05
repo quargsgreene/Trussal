@@ -383,6 +383,31 @@ function handleMessage(msg) {
       emit('fleet-status', msg);
       break;
 
+    // File-attachment patterns (image()/video()/textFile()/pdfFile()/
+    // soundFile(), see src/file-cycles.js): one peer's file, broadcast once
+    // by the sidecar to everyone else in the room. Not roster state — nothing
+    // here belongs on a peer record — so it is relayed straight through as
+    // its own event rather than folded into peer-upsert.
+    case 'chat-file':
+      emit('chat-file', {
+        fromIndex: msg.fromIndex ?? null,
+        kind: msg.kind,
+        name: msg.name,
+        mime: msg.mime,
+        data: msg.data,
+      });
+      break;
+
+    // Meeting-poll click-to-vote (src/polls.js), relayed from another peer.
+    case 'poll-vote':
+      emit('poll-vote', {
+        pollId: msg.pollId,
+        option: msg.option ?? null,
+        previousOption: msg.previousOption ?? null,
+        voterToken: msg.voterToken,
+      });
+      break;
+
     case 'crdt-update':
       // Shared metaprogram doc sync (Yjs update, base64). Consumed by
       // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
@@ -778,4 +803,19 @@ export function sendFleetRequest(action, { count, targets, code } = {}) {
 export function sendSampleFile({ bank, name, data }) {
   if (typeof bank !== 'string' || typeof name !== 'string' || typeof data !== 'string') return;
   safeSend({ type: 'sample-file', bank, name, data });
+}
+
+// A file-attachment pattern's bytes, on their way to every other browser in
+// the room (see src/file-cycles.js — sent once per filename, the first time
+// a trigger fires for it in the authoring browser, never on a repeat).
+export function sendChatFile({ kind, name, mime, data }) {
+  if (typeof kind !== 'string' || typeof name !== 'string' || typeof mime !== 'string' || typeof data !== 'string') return;
+  safeSend({ type: 'chat-file', kind, name, mime, data });
+}
+
+// A meeting-poll click-to-vote, on its way to every other browser so their
+// tally for this poll agrees with ours (see src/polls.js).
+export function sendPollVote({ pollId, option, previousOption, voterToken }) {
+  if (typeof pollId !== 'string' || typeof voterToken !== 'string') return;
+  safeSend({ type: 'poll-vote', pollId, option: option ?? null, previousOption: previousOption ?? null, voterToken });
 }

@@ -27,6 +27,8 @@ import { bootStrudelOnUserGesture, stopStrudel, refreshLocalSamples, rebakeStrud
 import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
+import { uploadChatFilesToDB } from './file-cycles.js';
+import { panic as panicToMainRoom } from './panic-button.js';
 import { injectFacialGestureToggle } from './facial-gesture.js';
 import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
 import { attachPanelControls } from './panel-drag-resize.js';
@@ -584,6 +586,8 @@ function createLocalProgramSection(isLocal) {
         <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
         <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">Data</button>
         <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
+        <button class="ts-btn ghost" data-action="load-files" title="Load images/video/audio/pdf/txt (10MB each) to reference from image()/video()/textFile()/pdfFile()/soundFile()">Files</button>
+        <input type="file" class="ts-files-input" accept=".gif,.jpeg,.jpg,.png,.svg,.bmp,.mp4,.m4a,.mov,.txt,.pdf,.wav,.mp3,.ogg" multiple style="display:none">
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop · Ctrl+/ to comment</span>
       </div>`
     : `
@@ -662,10 +666,12 @@ function bindLocalProgramSection(el, peer, isLocal) {
     // const relayBtnEl = el.querySelector('[data-action="relay"]');
     // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
 
-    // One ingest path for both buttons: the folder picker takes audio and any
-    // data files sitting alongside it, the file picker takes data files chosen
-    // directly. uploadSamplesToDB sorts them out by extension either way.
-    const wireUpload = (buttonSelector, inputSelector) => {
+    // One picker-wiring path for every upload button: the folder picker takes
+    // audio and any data files sitting alongside it, the file picker takes
+    // data files chosen directly, and the files picker takes chat
+    // attachments — each of the three ingest functions sorts its own input by
+    // extension. `uploadFn` and `onResult` are the only parts that differ.
+    const wireUpload = (buttonSelector, inputSelector, uploadFn, onResult) => {
       const button = el.querySelector(buttonSelector);
       const input = el.querySelector(inputSelector);
       if (!button || !input) return;
@@ -686,35 +692,45 @@ function bindLocalProgramSection(el, peer, isLocal) {
           const files = input.files;
           if (!files || !files.length) return;
           setStatus('Loading…');
-          await uploadSamplesToDB(files, async ({ audio, images, packs, errors }) => {
-            if (!audio && !images && !packs) {
-              setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
-              return;
-            }
-            // Images are re-minted by the same refresh as the sounds, so an
-            // image-only upload has to trigger it too or img() resolves to nothing.
-            if (audio || images) await refreshLocalSamples();
-            await refreshSampleBanks();
-            const parts = [];
-            if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
-            if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
-            if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
-            const hint = packs
-              ? ' — reference a column as "Name:3"'
-              : images && !audio
-                ? ' — use img("foldername") in a Hydra preamble'
-                : ' — use s("foldername") in patterns';
-            setStatus(`Loaded ${parts.join(', ')}${hint}`
-              + (errors.length ? ` (${errors.length} rejected)` : ''));
-          });
+          await uploadFn(files, onResult);
           input.value = '';
         } finally {
           uploadPending = false;
         }
       });
     };
-    wireUpload('[data-action="load-samples"]', '.ts-samples-input');
-    wireUpload('[data-action="load-data"]', '.ts-data-input');
+    const onSamplesLoaded = async ({ audio, images, packs, errors }) => {
+      if (!audio && !images && !packs) {
+        setStatus(errors.length ? errors[0] : 'No audio, image or data files found');
+        return;
+      }
+      // Images are re-minted by the same refresh as the sounds, so an
+      // image-only upload has to trigger it too or img() resolves to nothing.
+      if (audio || images) await refreshLocalSamples();
+      await refreshSampleBanks();
+      const parts = [];
+      if (audio) parts.push(`${audio} sample${audio === 1 ? '' : 's'}`);
+      if (images) parts.push(`${images} image${images === 1 ? '' : 's'}`);
+      if (packs) parts.push(`${packs} data pack${packs === 1 ? '' : 's'}`);
+      const hint = packs
+        ? ' — reference a column as "Name:3"'
+        : images && !audio
+          ? ' — use img("foldername") in a Hydra preamble'
+          : ' — use s("foldername") in patterns';
+      setStatus(`Loaded ${parts.join(', ')}${hint}`
+        + (errors.length ? ` (${errors.length} rejected)` : ''));
+    };
+    wireUpload('[data-action="load-samples"]', '.ts-samples-input', uploadSamplesToDB, onSamplesLoaded);
+    wireUpload('[data-action="load-data"]', '.ts-data-input', uploadSamplesToDB, onSamplesLoaded);
+    wireUpload('[data-action="load-files"]', '.ts-files-input', uploadChatFilesToDB, ({ count, errors }) => {
+      if (!count) {
+        setStatus(errors.length ? errors[0] : 'No supported files found');
+        return;
+      }
+      setStatus(`Loaded ${count} file${count === 1 ? '' : 's'}`
+        + ' — use image()/video()/textFile()/pdfFile()/soundFile() in patterns'
+        + (errors.length ? ` (${errors.length} rejected)` : ''));
+    });
 
     el.querySelector('.ts-sample-banks-host').appendChild(createSampleBanksArea());
   } else {
@@ -1112,10 +1128,17 @@ function ensureOverlay() {
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;"></div>
+    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
+      <button class="ts-btn ghost ts-panic-btn" type="button" title="Stuck in a breakout room? Leave it and rejoin the meeting you originally opened.">⚠ Leave breakout room</button>
+    </div>
     <div class="ts-detail"></div>
   `;
   document.body.appendChild(overlay);
+
+  // Unconditional and independent of the metaprogram/moderator state above —
+  // see panic-button.js for why this is a full rejoin rather than an
+  // in-place room switch.
+  overlay.querySelector('.ts-panic-btn').addEventListener('click', panicToMainRoom);
 
   // Jitsi's own toolbar popovers (hangup menu, "..." overflow menu, etc.)
   // close themselves on any mousedown/click that bubbles to document and

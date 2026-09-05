@@ -372,6 +372,22 @@ export async function registerImagesFromDB() {
   return count;
 }
 
+// Every uploaded image's own filename → its object URL, regardless of which
+// folder it arrived in. Unlike img("folder", index) — addressed by the
+// upload's containing directory, for Hydra sources drawn from a whole bank —
+// panel() addresses one specific picture by the name a performer typed, the
+// same way image()/video() in file-cycles.js address one specific file.
+export function imageUrlByFilename(name) {
+  const key = String(name ?? '').toLowerCase();
+  if (!key) return null;
+  for (const entries of imageUrls.values()) {
+    for (const entry of entries) {
+      if (String(entry.title).toLowerCase() === key) return entry.url;
+    }
+  }
+  return null;
+}
+
 // `img("folder"[, index])` — the URL a Hydra preamble hands to initImage.
 // Returns an empty string for an unknown folder rather than throwing: a typo
 // in a live-coded preamble should draw nothing, not take the program down.

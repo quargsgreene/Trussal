@@ -32,6 +32,23 @@ const PACK_MAX_VALUES_PER_SAMPLE = 1024;
 const PACK_MAX_VALUES_TOTAL = 16384;
 const PACK_MAX_PACKS = 32;
 
+// File-attachment patterns (image()/video()/document()/soundFile(), see
+// src/file-cycles.js): the 10MB cap the feature spec requires, mirrored from
+// src/file-cycles-core.js — the client enforces it too, at upload time, so an
+// honest client never notices this check. It exists so a buggy or hostile
+// client cannot push an unbounded payload into every other browser in the
+// meeting, the same reasoning as sanitizeDataPacks above.
+const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024;
+const CHAT_FILE_KINDS = new Set(['image', 'video', 'document', 'sound']);
+
+// Decoded byte length of a base64 string, without the cost of actually
+// decoding it (cheap enough to check unconditionally on every attachment).
+function base64ByteLength(b64) {
+  const len = b64.length;
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.floor((len * 3) / 4) - padding;
+}
+
 function sanitizeDataPacks(packs) {
   if (!Array.isArray(packs)) return null;
   let budget = PACK_MAX_VALUES_TOTAL;
@@ -738,6 +755,56 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           logEvent(roomName, 'datapacks', {
             index: record.roomIndex,
             packs: packs.map(p => ({ name: p.name, kind: p.kind, samples: p.samples.length }))
+          });
+          break;
+        }
+
+        case 'chat-file': {
+          // A performer's image()/video()/document()/soundFile() pattern
+          // fired: the bytes travel over the wire exactly once (broadcast,
+          // never re-sent on a repeat trigger of the same file — the
+          // browser-side cache in file-cycles.js is what makes that true),
+          // so every OTHER browser can render the same chat attachment the
+          // author's own browser already has locally. Unlike sample-file
+          // (fleet-only — a sample library would cost every human nothing
+          // and every bot a copy of a library it will never play), a chat
+          // attachment's whole point is that everyone in the room sees it.
+          if (record.isBot || record.isFleet) break;
+          if (typeof msg.name !== 'string' || typeof msg.mime !== 'string' || typeof msg.data !== 'string') break;
+          if (!CHAT_FILE_KINDS.has(msg.kind)) break;
+          if (base64ByteLength(msg.data) > CHAT_FILE_MAX_BYTES) break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, {
+            type: 'chat-file',
+            fromIndex: record.roomIndex,
+            kind: msg.kind,
+            name: msg.name.slice(0, 200),
+            mime: msg.mime.slice(0, 100),
+            data: msg.data,
+          });
+          logEvent(roomName, 'chat-file', { index: record.roomIndex, kind: msg.kind, name: msg.name, bytes: base64ByteLength(msg.data) });
+          break;
+        }
+
+        case 'poll-vote': {
+          // A meeting-poll click-to-vote (see src/polls.js): relayed to the
+          // whole room so every viewer's tally agrees. No server-side tally
+          // is kept here — a late joiner starts from the poll's own seeded
+          // votes rather than the room's current live count; see polls.js's
+          // doc comment for that accepted limitation.
+          if (record.isBot || record.isFleet) break;
+          if (typeof msg.pollId !== 'string' || typeof msg.voterToken !== 'string') break;
+          if (msg.option != null && typeof msg.option !== 'string') break;
+          if (msg.previousOption != null && typeof msg.previousOption !== 'string') break;
+          const room = rooms.get(roomName);
+          if (!room) break;
+          broadcast(room, peerId, {
+            type: 'poll-vote',
+            pollId: msg.pollId.slice(0, 500),
+            option: msg.option ? msg.option.slice(0, 200) : null,
+            previousOption: msg.previousOption ? msg.previousOption.slice(0, 200) : null,
+            voterToken: msg.voterToken.slice(0, 32),
           });
           break;
         }

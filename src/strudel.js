@@ -23,6 +23,15 @@ import { installTextCycles, setTextAtoms, stopTextCycles } from './text-cycles.j
 import { hasTextCycles, rewriteTextCalls } from './text-cycles-core.js';
 import { installCssCycles, setCssAtoms, publishCssSheets, stopCssCycles } from './css-cycles.js';
 import { hasCssCycles, rewriteCssCalls, keepSilentStatements } from './css-cycles-core.js';
+import { installReactions, stopReactions } from './reactions.js';
+import { REACTION_CALL_RE } from './reactions-core.js';
+import { installPanelBg, stopPanelBg } from './panel-bg.js';
+import { PANEL_CALL_RE } from './panel-bg-core.js';
+import { appendRendererCalls, stripCalls, keepMatchingStatements } from './silent-voice-core.js';
+import { installFileCycles, setFileAtoms, stopFileCycles } from './file-cycles.js';
+import { hasFileCycles, rewriteFileCalls, FILE_CALL_RE } from './file-cycles-core.js';
+import { installPolls, setPollAtoms, stopPolls } from './polls.js';
+import { hasPollCycles, rewritePollCalls, POLL_CALL_RE } from './polls-core.js';
 import { getMode as getHydraVideoMode, MODE_DIRECT, resetHydraSync, ensureCameraBypass } from './hydra-video.js';
 import { normalizePeerCode, splitHydraCode, programDeclaresHydra, usesExternalSource } from './hydra-code.js';
 import { readDirective } from './program-directive.js';
@@ -136,7 +145,7 @@ function splitSilentCode(code) {
   // Before the first blank line — the preamble is where a declaration counts,
   // exactly as for Hydra.
   const preamble = blank ? code.slice(0, blank.index) : code;
-  if (!hasTextCycles(preamble) && !hasCssCycles(preamble)) return null;
+  if (!hasTextCycles(preamble) && !hasCssCycles(preamble) && !hasFileCycles(preamble) && !hasPollCycles(preamble)) return null;
   if (!blank) return { preamble: code, strudel: '' };
   return {
     preamble: preamble.trim(),
@@ -192,6 +201,35 @@ function applyCssRewrite(code, peer) {
   Object.assign(cssAtoms, atoms);
   cssSheets = cssSheets.concat(sheets);
   if (errors.length) console.error('[css-cycles]', errors.join('; '));
+  return rewritten;
+}
+
+// File-attachment atoms for the program currently being assembled — same
+// minting scheme as the text/css tables (see rewriteFileCalls' doc comment).
+let fileAtoms = {};
+let fileCounter = { n: 0 };
+
+function applyFileRewrite(code, peer) {
+  const { code: rewritten, atoms } = rewriteFileCalls(code, {
+    peer: peer.jitsiId,
+    counter: fileCounter,
+  });
+  Object.assign(fileAtoms, atoms);
+  return rewritten;
+}
+
+// Poll atoms for the program currently being assembled — same minting scheme
+// as the others (see rewritePollCalls' doc comment for why a poll's whole
+// JSON blob is minted as ONE atom rather than word-by-word).
+let pollAtoms = {};
+let pollCounter = { n: 0 };
+
+function applyPollRewrite(code, peer) {
+  const { code: rewritten, atoms } = rewritePollCalls(code, {
+    peer: peer.jitsiId,
+    counter: pollCounter,
+  });
+  Object.assign(pollAtoms, atoms);
   return rewritten;
 }
 
@@ -425,6 +463,18 @@ function buildPeerBlock(peer) {
     code = rewriteLiveCaptureCalls(code, { silent: !peer.isLocal });
   }
 
+  // reaction()/panel(): local-only capabilities (see reactions.js/panel-bg.js)
+  // — the author's own browser wires them to their renderer, every other
+  // browser evaluating the SAME combined program drops them outright rather
+  // than firing someone else's reaction from its own Jitsi connection or
+  // silently failing to reach superdough with no renderer attached.
+  if (peer.isLocal) {
+    code = appendRendererCalls(code, REACTION_CALL_RE, '._rxRender()');
+    code = appendRendererCalls(code, PANEL_CALL_RE, '._pbRender()');
+  } else if (REACTION_CALL_RE.test(code) || PANEL_CALL_RE.test(code)) {
+    code = stripCalls(stripCalls(code, REACTION_CALL_RE), PANEL_CALL_RE);
+  }
+
   // Per-human publish isolation: while a remote aggregator is present, this
   // client's masterStrudelGain IS its outgoing Jitsi track (latency-instrument
   // publishLocalStrudelToRoom), so the program must carry ONLY the local voice —
@@ -453,6 +503,11 @@ function buildPeerBlock(peer) {
   // you would only ever see your own words and your own styling.
   const isText = hasTextCycles(code);
   const isCss = hasCssCycles(code);
+  // File-attachment patterns are the same shape: painted per-page into each
+  // viewer's own chat panel from that viewer's own program, no sound, so they
+  // must survive the aggregator exclusion below for the same reason.
+  const isFile = hasFileCycles(code);
+  const isPoll = hasPollCycles(code);
 
   // Capability preamble, running to the first blank line: Hydra split by the
   // shared rule, so this page and the aggregator's mosaic never disagree about
@@ -495,9 +550,25 @@ function buildPeerBlock(peer) {
     // quotes for every URL/folder argument.
     const outPreamble = dropPreamble ? '' : (hydraSplit ? `/* mini-off */\n${preamble}\n/* mini-on */` : preamble);
     let strudelCode = split.strudel;
-    if (isText || isCss) {
-      // Excluded remote peer: keep the silent statements, drop the audio ones.
-      if (remoteVoiceExcluded) strudelCode = keepSilentStatements(strudelCode);
+    if (isText || isCss || isFile || isPoll) {
+      // Excluded remote peer: keep the silent statements, drop the audio
+      // ones. keepSilentStatements only knows about word()/css() — a file or
+      // poll statement it would otherwise drop as "audio" is salvaged
+      // separately (silent-voice-core.js's keepMatchingStatements) and
+      // appended back in; see that function's doc comment for the narrow
+      // edge case this leaves.
+      if (remoteVoiceExcluded) {
+        const rawStrudelCode = strudelCode;
+        strudelCode = keepSilentStatements(strudelCode);
+        if (isFile) {
+          const keptFile = keepMatchingStatements(rawStrudelCode, FILE_CALL_RE);
+          if (keptFile) strudelCode = strudelCode ? `${strudelCode}\n\n${keptFile}` : keptFile;
+        }
+        if (isPoll) {
+          const keptPoll = keepMatchingStatements(rawStrudelCode, POLL_CALL_RE);
+          if (keptPoll) strudelCode = strudelCode ? `${strudelCode}\n\n${keptPoll}` : keptPoll;
+        }
+      }
       if (isText) {
         textLogChanged(`peer-block:${peer.jitsiId ?? peer.peerId}`, {
           contributes: true,
@@ -514,6 +585,8 @@ function buildPeerBlock(peer) {
       // which would otherwise land between a css() call and its chain.
       if (strudelCode && isCss) strudelCode = applyCssRewrite(strudelCode, peer);
       if (strudelCode && isText) strudelCode = applyTextRewrite(strudelCode, peer);
+      if (strudelCode && isFile) strudelCode = applyFileRewrite(strudelCode, peer);
+      if (strudelCode && isPoll) strudelCode = applyPollRewrite(strudelCode, peer);
     } else if (remoteVoiceExcluded) {
       return outPreamble;
     }
@@ -656,6 +729,18 @@ async function ensureStrudel() {
     // initCss(). Silent by construction for the same reason — the renderer it
     // attaches carries a dominant trigger.
     const cssScope = installCssCycles(mod);
+    // Reactions / panel background: reaction()/unreact()/panel() plus their
+    // renderers. Both are local-only and silent by construction — see
+    // reactions.js / panel-bg.js.
+    const reactionScope = installReactions(mod);
+    const panelScope = installPanelBg(mod);
+    // File-attachment patterns: image()/video()/textFile()/pdfFile()/
+    // soundFile() plus initFileCycles(). Silent by construction, minted like
+    // word() — see file-cycles.js.
+    const fileScope = installFileCycles(mod);
+    // Meeting-poll patterns: poll()/close()/vote() plus initPolls(). Silent
+    // by construction, minted like word() — see polls.js.
+    const pollScope = installPolls(mod);
     // _data("Name",N): what the "Weather:3" rewrite calls. Falls back to mini
     // notation when the name is not a loaded pack, so a rewritten sound
     // reference behaves exactly as it did before data packs existed.
@@ -673,7 +758,7 @@ async function ensureStrudel() {
       try { ensureCameraBypass(); } catch (e) { console.warn('[strudel] camera bypass failed', e); }
       return result;
     };
-    await mod.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope });
+    await mod.evalScope({ sliderWithID, _jpGate, liveCapture, _liveCaptureSilent, _data, initHydra, mondo, mondi, mondolang, ...textScope, ...cssScope, ...reactionScope, ...panelScope, ...fileScope, ...pollScope });
     if (typeof initAudio === 'function') {
       try { await initAudio({ maxPolyphony: 128 }); } catch (e) { console.warn('[strudel] initAudio failed', e); }
     }
@@ -690,6 +775,10 @@ async function rebuildAndEvaluate() {
   cssAtoms = {};
   cssCounter = { n: 0 };
   cssSheets = [];
+  fileAtoms = {};
+  fileCounter = { n: 0 };
+  pollAtoms = {};
+  pollCounter = { n: 0 };
 
   const blocks = getAllPeers()
     .map(delayedPeerView)
@@ -743,6 +832,8 @@ async function rebuildAndEvaluate() {
     setTextAtoms(textAtoms);
     setCssAtoms(cssAtoms);
     publishCssSheets(cssSheets);
+    setFileAtoms(fileAtoms);
+    setPollAtoms(pollAtoms);
   }
 
   if (next === lastEvaluated) return;
@@ -857,6 +948,12 @@ export async function stopStrudel() {
   // Styling does NOT stay: every sheet is pulled and every custom property
   // released, so stopping is always a way back to a usable UI.
   stopCssCycles();
+  stopReactions();
+  stopPanelBg();
+  // Attachments already posted stay in the chat as history, exactly as
+  // Text Cycles' bubbles do — only new ones stop.
+  stopFileCycles();
+  stopPolls();
   anyPlaying = false;
   lastEvaluated = null;
   activeSliders = {};

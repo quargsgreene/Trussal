@@ -1,4 +1,7 @@
 import { JAMULUS_ROOM_MAP } from './jamulus.js';
+// Captures the entry URL for the breakout-room panic button as early as
+// possible — before anything else could plausibly redirect the page.
+import './panic-button.js';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import {renderAudioConfigCheck} from './audio-config-check.js';
