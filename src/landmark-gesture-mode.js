@@ -256,6 +256,8 @@ function _ensureDOM() {
   _syncGear();
 }
 
+// TODO: delete when done — or <kbd>→</kbd> <kbd>→</kbd> <kbd>→</kbd> quickly if you're in a text field</li>
+
 function _renderInstruction() {
   const el = document.getElementById(INSTRUCTION_ID);
   if (!el) return;
@@ -269,7 +271,7 @@ function _renderInstruction() {
     </div>
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
-      <li>press <kbd>→</kbd> (Right Arrow) — or <kbd>→</kbd> <kbd>→</kbd> <kbd>→</kbd> quickly if you're in a text field</li>
+      <li>press <kbd>→</kbd> (Right Arrow) 
       <li>tick it in the <strong>☰</strong> menu (top-left)</li>
       <li class="${blocked ? 'lg-blocked' : ''}">close one eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
@@ -393,18 +395,25 @@ function _watchShortcutsDialog() {
 // is the keyboard-only escape hatch for a performer whose sole input device is
 // the on-screen keyboard, which can't otherwise reach this switch.
 // ---------------------------------------------------------------------------
-let _arrowTaps = [];
+// let _arrowTaps = [];
+// function _onKeydown(e) {
+//   if (_modeOn) return;
+//   if (e.key !== 'ArrowRight' || e.repeat || e.defaultPrevented) return;
+//   const t = e.target;
+//   const tag = t && t.tagName;
+//   const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
+//   if (!inField) { enableMode(); return; }
+//   const now = Date.now();
+//   _arrowTaps = _arrowTaps.filter((ts) => now - ts < 800);
+//   _arrowTaps.push(now);
+//   if (_arrowTaps.length >= 3) { _arrowTaps = []; enableMode(); }
+// }
+
 function _onKeydown(e) {
-  if (_modeOn) return;
-  if (e.key !== 'ArrowRight' || e.repeat || e.defaultPrevented) return;
-  const t = e.target;
-  const tag = t && t.tagName;
-  const inField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
-  if (!inField) { enableMode(); return; }
-  const now = Date.now();
-  _arrowTaps = _arrowTaps.filter((ts) => now - ts < 800);
-  _arrowTaps.push(now);
-  if (_arrowTaps.length >= 3) { _arrowTaps = []; enableMode(); }
+  if(_modeOn) return;
+  if(e.key !== 'ArrowRight' || e.repeat || e.defaultPrevented) return;
+  enableMode();
+  return;
 }
 
 // ---------------------------------------------------------------------------
