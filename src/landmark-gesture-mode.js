@@ -205,8 +205,7 @@ function _injectStyles() {
   s.textContent = styles;
   document.head.appendChild(s);
 }
-
-// TODO: eliminate when rewritten function _ensureDOM() {
+function _ensureDOM() {
 //   if (document.getElementById(CORNER_ID)) return;
 //   if (!document.body) return;
 //   _injectStyles();
@@ -230,8 +229,8 @@ function _injectStyles() {
 //   `;
 
 
-//   const instruction = document.createElement('div');
-//   instruction.id = INSTRUCTION_ID;
+  const instruction = document.createElement('div');
+  instruction.id = INSTRUCTION_ID;
 
 //   corner.appendChild(gear);
 //   corner.appendChild(menu);
@@ -253,9 +252,9 @@ function _injectStyles() {
 //     e.target.checked ? enableMode() : disableMode();
 //   });
 
-//   _renderInstruction();
+  _renderInstruction();
 //   _syncGear();
-// }
+}
 
 function _renderInstruction() {
   const el = document.getElementById(INSTRUCTION_ID);
@@ -412,7 +411,7 @@ function init() {
 
   // window.gestureAndLandmarkConfig is already set at module load (above); this
   // is the DOM + camera wiring.
-  // _ensureDOM();
+   _ensureDOM();
   _watchShortcutsDialog();
   window.addEventListener('keydown', _onKeydown, true);
 
