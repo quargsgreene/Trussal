@@ -230,32 +230,32 @@ function _injectStyles() {
 //   `;
 
 
-  const instruction = document.createElement('div');
-  instruction.id = INSTRUCTION_ID;
+//   const instruction = document.createElement('div');
+//   instruction.id = INSTRUCTION_ID;
 
-  corner.appendChild(gear);
-  corner.appendChild(menu);
-  corner.appendChild(instruction);
-  document.body.appendChild(corner);
+//   corner.appendChild(gear);
+//   corner.appendChild(menu);
+//   corner.appendChild(instruction);
+//   document.body.appendChild(corner);
 
-  gear.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menu.classList.toggle('open');
-  });
-  // Click anywhere else closes the menu.
-  document.addEventListener('click', (e) => {
-    if (!menu.classList.contains('open')) return;
-    if (e.target === gear || menu.contains(e.target)) return;
-    menu.classList.remove('open');
-  });
+//   gear.addEventListener('click', (e) => {
+//     e.stopPropagation();
+//     menu.classList.toggle('open');
+//   });
+//   // Click anywhere else closes the menu.
+//   document.addEventListener('click', (e) => {
+//     if (!menu.classList.contains('open')) return;
+//     if (e.target === gear || menu.contains(e.target)) return;
+//     menu.classList.remove('open');
+//   });
 
-  menu.querySelector('#trussal-lg-mode-toggle').addEventListener('change', (e) => {
-    e.target.checked ? enableMode() : disableMode();
-  });
+//   menu.querySelector('#trussal-lg-mode-toggle').addEventListener('change', (e) => {
+//     e.target.checked ? enableMode() : disableMode();
+//   });
 
-  _renderInstruction();
-  _syncGear();
-}
+//   _renderInstruction();
+//   _syncGear();
+// }
 
 function _renderInstruction() {
   const el = document.getElementById(INSTRUCTION_ID);
