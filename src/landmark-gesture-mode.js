@@ -271,7 +271,7 @@ function _renderInstruction() {
     <ul>
       <li>press <kbd>→</kbd> (Right Arrow) 
       <li>tick it in the <strong>☰</strong> menu (top-left)</li>
-      <li class="${blocked ? 'lg-blocked' : ''}">close one eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
+      <li class="${blocked ? 'lg-blocked' : ''}">close your left eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
   `;
   el.querySelector('.lg-x').addEventListener('click', (e) => {
