@@ -206,9 +206,9 @@ function _injectStyles() {
   document.head.appendChild(s);
 }
 function _ensureDOM() {
-//   if (document.getElementById(CORNER_ID)) return;
-//   if (!document.body) return;
-//   _injectStyles();
+  if (document.getElementById(CORNER_ID)) return;
+  if (!document.body) return;
+  _injectStyles();
 
   const corner = document.createElement('div');
   corner.id = CORNER_ID;
@@ -235,7 +235,7 @@ function _ensureDOM() {
 //   corner.appendChild(gear);
 //   corner.appendChild(menu);
   corner.appendChild(instruction);
-//   document.body.appendChild(corner);
+  document.body.appendChild(corner);
 
 //   gear.addEventListener('click', (e) => {
 //     e.stopPropagation();
