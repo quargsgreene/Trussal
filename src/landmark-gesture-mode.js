@@ -210,8 +210,8 @@ function _ensureDOM() {
 //   if (!document.body) return;
 //   _injectStyles();
 
-//   const corner = document.createElement('div');
-//   corner.id = CORNER_ID;
+  const corner = document.createElement('div');
+  corner.id = CORNER_ID;
 
 //   const gear = document.createElement('button');
 //   gear.id = GEAR_ID;
@@ -234,7 +234,7 @@ function _ensureDOM() {
 
 //   corner.appendChild(gear);
 //   corner.appendChild(menu);
-//   corner.appendChild(instruction);
+  corner.appendChild(instruction);
 //   document.body.appendChild(corner);
 
 //   gear.addEventListener('click', (e) => {
