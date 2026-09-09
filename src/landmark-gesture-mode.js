@@ -229,12 +229,6 @@ function _injectStyles() {
 //     </label>
 //   `;
 
-function _ensureDOM() {
-  if(document.getElementById(CORNER_ID)) return;
-  if(!document.body) return;
-
-  _injectStyles();
-}
 
   const instruction = document.createElement('div');
   instruction.id = INSTRUCTION_ID;
@@ -418,7 +412,7 @@ function init() {
 
   // window.gestureAndLandmarkConfig is already set at module load (above); this
   // is the DOM + camera wiring.
-  _ensureDOM();
+  // _ensureDOM();
   _watchShortcutsDialog();
   window.addEventListener('keydown', _onKeydown, true);
 
