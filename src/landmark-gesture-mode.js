@@ -206,28 +206,35 @@ function _injectStyles() {
   document.head.appendChild(s);
 }
 
+// TODO: eliminate when rewritten function _ensureDOM() {
+//   if (document.getElementById(CORNER_ID)) return;
+//   if (!document.body) return;
+//   _injectStyles();
+
+//   const corner = document.createElement('div');
+//   corner.id = CORNER_ID;
+
+//   const gear = document.createElement('button');
+//   gear.id = GEAR_ID;
+//   gear.type = 'button';
+//   gear.title = 'Landmark and Gesture Mode';
+//   gear.textContent = '☰';
+
+//   const menu = document.createElement('div');
+//   menu.id = MENU_ID;
+//   menu.innerHTML = `
+//     <label>
+//       <input type="checkbox" id="trussal-lg-mode-toggle" />
+//       Landmark and Gesture Mode
+//     </label>
+//   `;
+
 function _ensureDOM() {
-  if (document.getElementById(CORNER_ID)) return;
-  if (!document.body) return;
+  if(document.getElementById(CORNER_ID)) return;
+  if(!document.body) return;
+
   _injectStyles();
-
-  const corner = document.createElement('div');
-  corner.id = CORNER_ID;
-
-  const gear = document.createElement('button');
-  gear.id = GEAR_ID;
-  gear.type = 'button';
-  gear.title = 'Landmark and Gesture Mode';
-  gear.textContent = '☰';
-
-  const menu = document.createElement('div');
-  menu.id = MENU_ID;
-  menu.innerHTML = `
-    <label>
-      <input type="checkbox" id="trussal-lg-mode-toggle" />
-      Landmark and Gesture Mode
-    </label>
-  `;
+}
 
   const instruction = document.createElement('div');
   instruction.id = INSTRUCTION_ID;
