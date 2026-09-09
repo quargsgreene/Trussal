@@ -213,47 +213,12 @@ function _ensureDOM() {
   const corner = document.createElement('div');
   corner.id = CORNER_ID;
 
-//   const gear = document.createElement('button');
-//   gear.id = GEAR_ID;
-//   gear.type = 'button';
-//   gear.title = 'Landmark and Gesture Mode';
-//   gear.textContent = '☰';
-
-//   const menu = document.createElement('div');
-//   menu.id = MENU_ID;
-//   menu.innerHTML = `
-//     <label>
-//       <input type="checkbox" id="trussal-lg-mode-toggle" />
-//       Landmark and Gesture Mode
-//     </label>
-//   `;
-
-
   const instruction = document.createElement('div');
   instruction.id = INSTRUCTION_ID;
-
-//   corner.appendChild(gear);
-//   corner.appendChild(menu);
   corner.appendChild(instruction);
   document.body.appendChild(corner);
 
-//   gear.addEventListener('click', (e) => {
-//     e.stopPropagation();
-//     menu.classList.toggle('open');
-//   });
-//   // Click anywhere else closes the menu.
-//   document.addEventListener('click', (e) => {
-//     if (!menu.classList.contains('open')) return;
-//     if (e.target === gear || menu.contains(e.target)) return;
-//     menu.classList.remove('open');
-//   });
-
-//   menu.querySelector('#trussal-lg-mode-toggle').addEventListener('change', (e) => {
-//     e.target.checked ? enableMode() : disableMode();
-//   });
-
   _renderInstruction();
-//   _syncGear();
 }
 
 function _renderInstruction() {
@@ -270,7 +235,6 @@ function _renderInstruction() {
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
       <li>press <kbd>→</kbd> (Right Arrow) 
-      <li>tick it in the <strong>☰</strong> menu (top-left)</li>
       <li class="${blocked ? 'lg-blocked' : ''}">close your left eye for two seconds${blocked ? ' — needs camera access' : ''}</li>
     </ul>
   `;
