@@ -77,7 +77,7 @@
 }
 .trussal-da-panel .da-body p { margin: 10px 0; }
 .trussal-da-panel .da-body h3 {
-  margin: 22px 0 4px; font-size: calc(15px * var(--trussal-font-scale, 1));
+  margin: 22px 0 4px; font-size: calc(20px * var(--trussal-font-scale, 1));
   padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);
 }
 .trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }
