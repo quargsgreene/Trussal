@@ -22,7 +22,7 @@
   display: flex; align-items: center; justify-content: center;
   background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
   border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;
-  font-family: inherit; font-size: calc(13px * var(--trussal-font-scale, 1));
+  font-family: inherit; font-size: calc(16px * var(--trussal-font-scale, 1));
   font-weight: 600; cursor: pointer;
 }
 #trussal-da-corner button:hover {
