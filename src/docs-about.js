@@ -498,7 +498,7 @@ const LIVE_CAPTURE_FUNCTIONS = [
         <tr><td><code>detectLocalDevices</code></td><td>boolean</td><td>dump YOUR camera/audio devices to the console</td></tr>
       </table>
       <p>Every string argument is rewritten to a single-quoted literal before
-      evaluation regardless of how you write it — a real device name like
+      evaluation regardless of how you write it — a real deviith video conferencing capabilities, ce name like
       <code>"Scarlett 2i2 (Focusrite)"</code> would otherwise break Strudel's
       mini-notation parser and kill the whole room's combined program.</p>
       <pre>$: liveCapture('audio', 'Ada').struct("x*4").lpf(800).room(1)
@@ -539,24 +539,22 @@ $: liveCapture('gesture').struct("x*2")</pre>`,
 // Content — About.
 // ---------------------------------------------------------------------------
 const ABOUT_HTML = `
-  <p><strong>Trussal</strong> is a networked algorave platform — a room where
-  every participant is also an instrument. It's built on top of Jitsi Meet,
-  with a live-coding music engine (<a href="https://strudel.cc" target="_blank" rel="noopener">Strudel</a>),
-  Hydra visual synthesis, and per-peer audio effects that respond to the
-  room's own network conditions layered on top.</p>
-  <p>Each participant runs their own personal Strudel + Hydra editor in the
-  <strong>Trussal Studio</strong> panel, and the room's <strong>JPattern</strong>
-  (metaprogram) editor — shared by everyone via CRDT — decides whose output
-  plays when, and lets network-driven effects (reverb, bitcrush, delay,
-  noise, and more) run on the room's combined mix. See the <strong>Docs</strong>
-  button for the full JPattern reference.</p>
-  <p><strong>Landmark &amp; Gesture Mode</strong> (the ☰ menu, top-left, or
-  press → three times) turns on an on-screen keyboard, a MediaPipe head
-  cursor, and facial-gesture control, so the whole editor can be driven
-  hands-free.</p>
-  <p>A room can also host <strong>bots</strong> — headless Puppeteer
-  performers a participant spawns and configures from the Studio panel —
-  whose combined audio and video is streamed into the room by an aggregator.</p>
+  <p>
+  The name "Trussal" is a combination of parts of the words "truss" and "algorave", and brings together 
+  the two concepts with software that provides a stage for online, real-time algorithmically-driven 
+  musical co-creation and multimedia artistic interaction, providing an alternative to strictly in-person venues. 
+  JPattern, Trussal Studio, <a href="https://jitsi.org/about/">Jitsi Meet</a>, 
+  <a href="https://pptr.dev/guides/what-is-puppeteer">Puppeteer</a>, <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API">Web Audio API </a>, 
+  and <a>MediaPipe</a> form the backbone for a hands-optional distributed live coding environment 
+  inside of a video conferencing system. JPattern is a superset of the Strudel and Hydra pattern languages, 
+  born out of Trussal's prototyping journey, and additionally enables one to live code with text, 
+  gestures, meeting reactions, participant polls, CSS, global meeting settings, and multimedia live 
+  capture patterns, while able to modulate numerous parameters using different network metrics. 
+  Trussal Studio houses the JPattern editors in addition to the status of the network, also serving as the interface for 
+  calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
+  Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
+  See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
+</p>
 `;
 
 // ---------------------------------------------------------------------------
