@@ -596,83 +596,190 @@ function _renderFnSection(fns) {
 
 function _buildDocsBody() {
   return `
-    <h3 id="trussal-da-usage">Basic usage</h3>
-    <p>Once you're in a room, click <strong>Studio</strong> (bottom-left) to
-    open Trussal Studio. It has one card per performer for their personal
-    Strudel + Hydra editor, plus one shared <strong>JPattern</strong> card
-    that everyone in the room edits together.</p>
-    <p>Every editor buffer opens with a required directive on its first line
-    — <code>'personal editor'</code>, <code>'bot editor'</code>, or
-    <code>'metaprogram editor'</code> for the JPattern card — that's already
-    prefilled; leave it in place.</p>
-    <p>A buffer is written entirely in one of two notations, never mixed:
-    <strong>mondo</strong> (<code>$ participants &lt;0 1&gt;</code> then one
-    <code># directive …</code> per line — what every example on this page
-    uses) or <strong>mini</strong>, Strudel's own dot-chained spelling of the
-    same thing (<code>$: participants("&lt;0 1&gt;").cycles("wcl", 10)</code>).</p>
-    <p>Write or edit the program in the JPattern card and press
-    <strong>▶ Apply</strong> to push it to the whole room. Any line prefixed
-    with <code>*</code> is a <em>declaration</em> instead — it renders as a
-    button under the editor rather than running immediately (see "Button
-    declarations" below).</p>
-    <p>For hands-free editing, see <strong>Landmark &amp; Gesture Mode</strong>
-    (☰ menu, top-left of any screen, or press → three times) — it adds an
-    on-screen keyboard and a head-cursor you can dwell-click with.</p>
+    <h3>Creating or Joining a Meeting</h3>
+        <h4> Starting a new meeting </h4>
+        <p>To create a new meeting room, focus the "Room name:" field.
+        Then enter a meeting room name 1023 characters or less using letters, numbers, "-", or "_". 
+        Each meeting room name must start with a letter or number. If the user enters an invalid meeting room name, 
+        the message "Use letters, numbers, -, or _, starting with a letter or number" will appear beneath 
+        the "Join session" button. Once a valid meeting name has been entered, click the 
+        "Join session" button, which then brings the user to the prejoin screen, where one may optionally 
+        enter a display name containing any characters. To enter the meeting room, click the "Join meeting" button. 
 
-    <h3 id="trussal-da-jpattern">JPattern function reference</h3>
-    <p>Every directive below is written on its own line in the shared
-    JPattern card, chained onto the <code>$ participants</code> voice. This
-    is the language <code>src/audio-net/MetaprogrammerParser.js</code>
-    parses — kept in sync with <code>src/features/jpattern.md</code> and
-    <code>src/features/turn-ring.md</code> in the repository.</p>
-    <div class="da-fn">
-      <div class="da-fn-name">The <code>#</code> prefix</div>
-      <p><code>#</code> is <strong>mondo</strong> notation's chaining
-      operator — how a line attaches to the voice <code>$ participants</code>
-      opened above it, the same job a mini-notation <code>.method(…)</code>
-      call does. It is not part of any directive's own name: <code>#
-      cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
-      (mini, chained onto <code>$: participants(…)</code>) are the same
-      statement written in the two surface notations. Every directive
-      below — <code>ring</code>, <code>cycles</code>, <code>room</code>,
-      <code>ply</code>, … — takes this same <code>#</code> in mondo; the
-      signatures on this page name the directive itself and omit it, the
-      way this page also doesn't repeat <code>$:</code> on every mini
-      example.</p>
-      <pre>'metaprogram editor'
-$ participants &lt;0 1&gt;
-# cycles "wcl" 10
-# room "wcl" 2</pre>
-    </div>
-    ${_renderFnSection(JPATTERN_FUNCTIONS)}
+        <h4> Joining a Preexisting Meeting Room </h4>
+        <p>A list of previously joined meetings will appear below the "Join meeting" button in reverse chronological order. 
+        To rejoin a meeting room, click on one of the meetings in the list. 
+        One will again reach the prejoin screen, where the most recently entered screen name will prepopulate.
+        However, one may change one's display name again at this time and an unlimited number of times throughout the meeting.
+        Clearing browser data will clear the list of previously joined meetings, as well as one's previously-chosen display name.
+        Clicking on the trash can icon can remove individual meetings from the list of existing meetings.
+        Note that clicking on the trash can icon or clearing browsing data <strong>does not</strong> end an existing meeting.
+        Alternitavely, one may join an existing meeting by typing or pasting its URL in the browser's address bar.
+        Trussal does not currently support password-protected meeting rooms or user account creation. </p>
 
-    <h3 id="trussal-da-textcycles">Text Cycles</h3>
-    <p>Not a JPattern <code>#</code> directive — a Strudel function available
-    in the <strong>personal</strong> or <strong>bot</strong> editor once a
-    buffer opens with <code>await initTextCycles()</code>. Paints words into
-    the room's chat instead of, or alongside, making sound. See
-    <code>src/features/textcycles.md</code> for the full write-up (escaping,
-    seeding, per-participant scoping, how the JPattern room effects reach
-    text).</p>
-    ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+        <h4> Inviting other users to an existing meeting room </h4>
+        <p> To invite users to an existing meeting, once inside a meeting room, click the icon that depicts a
+        humanoid bust with a plus icon to its top right, which is the icon that is the third from the right 
+        within the bottom toolbar and situated between the phone and three-dot icons.
+        Upon hovering over the correct icon, a tooltip that reads "Invite people" will appear, and once clicked,
+        a modal window will appear with a button underneath "Invite more people" and "Share the meeting link to invite others"
+        dialogs. Click this button, which contains an icon of two overlapping squares on the far left side, to copy
+        the meeting URL to the clipboard. Exit this modal window by clicking the "x" icon. </p>
 
-    <h3 id="trussal-da-csscycles">CSS Cycles</h3>
-    <p>Also a personal/bot-editor Strudel function, declared with
-    <code>await initCss()</code> — patterns that restyle the live page
-    instead of making sound. See <code>src/features/csscycles.md</code> for
-    the full write-up (the compile/broadcast pipeline, the trust model, and
-    every guardrail in detail).</p>
-    ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+        <h4> Using Landmark & Gesture Mode to join a meeting </h4>
+        <p>To activate Landmark & Gesture Mode on the landing page, close your left eye for at least two seconds or press the
+        right arrow key once. You will be prompted to give your browser permission to access your camera.
+        Before using your left eye to activate Landmark & Gesture mode, make sure your face is well-lit.
+        Otheriwse, MediaPipe's model will not detect your face. Once Landmark & Gesture Mode has been activated,
+        an additional cursor, which is a white square surrounding a black circle, and a virtual keyboard will appear within your browser. 
+        To enter a meeting name, focus the text field. The text field will stay focused when the cursor is moved away from it.
+        Then dwell upon each of the keys. A black progress circle will appear, as well as a gray vertical progress bar within each key.
+        Each key will briefly turn black as characters appear in the form. Note that if browsing Incognito, upon entering the
+        prejoin room, you will have to give permissio<h3 id="trussal-da_usage>Creating or Joining a Meeting</h3>n for your camera to be used once more. Then focus the text field to provide
+        a display name if desired, type a display name, and click the "Join meeting" button.
+        Dwelling upon the "✥" icon allows for dragging the virtual keyboard and subsequently holding one's head still refixes the keyboard's position, whereas
+        dwelling upon the "⇲" icon before moving one's head resizes the virtual keyboard.
+        Movement of the head up or right respectively increases the height and width of the keyboard with the opposite
+        occurring when respectively moving down or left. Dwelling on the "&#9660" icons collapses the virtual keyboard
+        and rotates the icon 90 degrees, upon which clicking re-expands the keyboard. To the left of the keyboard,
+        a grayscale face mesh will appear and can be moved, scaled and hidden using the same buttons in its respective toolbar.
+        The face mesh UI will also display each of the default gesture mappings as they are detected. </p>
 
-    <h3 id="trussal-da-livecapture">Live Capture — liveCapture()</h3>
-    <p>A Strudel source function usable directly in the personal/bot editor
-    (no preamble declaration needed) that captures and replays a room
-    medium — audio, video, editor text, CSS, your own gestures, or your own
-    head-cursor path — as a patternable handle. See
-    <code>src/features/live-capture.md</code> for the full write-up.</p>
-    ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
-  `;
+    <h3>Navigating the Meeting Room</h3>
+        <p>Much of a Trussal meeting room operates as it does within Jitsi Meet. However, there are some key differences that are discussed below. </p>
+
+        <h4>Video</h4>
+        <p>Participants cannot see their own or other participants' video by default, even when one permits webcam access.
+        A participant cannot turn on video by clicking the camera icon. In order to stream one's webcam to the meeting room,
+        one must fulfill two prerequisites which are: 1. The participant's join order participant index token must be included in the Metaprogram
+        and 2. The participant calls the initCam Hydra method and/or the device name corresponding to the participant's webcam
+        is passed as an argument to liveCapture. Live video streaming data may only be viewed globally within the Aggregator's video feed.
+        See the associated documentation regarding initCam, the Aggregator, and liveCapture for further
+        details on proper usage and the Aggregator's role within a meeting. If live webcam access is lost and the participant's index token
+        remains present within a valid Metaprogram, the last recorded buffer will be streamed until the token is removed from
+        the Metaprogram. If a participant's webcam live feed is requested within the Metaprogram, but it has not been provided,
+        the Aggregator will stream a black square in lieu of that participant's video.
+        </p>
+
+        <h4>Audio</h4>
+        <p>As is the case regarding video, one cannot hear one's own or other participants' audio by default.
+        In order to hear one's own or others' audio, in addition to giving the browser permission to access the microphone,
+        one must call the liveCapture method and provide a valid local audio device name. Note that Hydra's audio processing capabilities
+        only visualize audio data and do not support playback. 
+        </p>
+
+        <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
+        <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
+        However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
+        and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
+        performed by the Aggregator.
+        </p>
+    <h3>Trussal Studio</h3>
+        <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
+        Trussal Studio is where all of the live coding happens, as well as the interface for one's personal meeting theming, and
+        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). There is an editor for each bot and human participant,
+        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code. Trussal Studio also
+        displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
+        Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
+        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio.
+        </p>
+
+    <h3>MediaPipe in the Meeting Room</h3>
+        <p>As is the case regarding the face mesh display and virtual keyboard, dwelling upon the same icons allows one to drag the Trussal Studio user interface.
+        One may also focus other menus and text fields using the head landmark cursor. Inside of a meeting room, the virtual keyboard provides JPattern autocomplete suggestions using weighted trie search. By default, various gestures are
+        associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
+        To focus an editor while typing using the virtual keyboard, and fix the position of the blinking cursor, hover over it with the head 
+        landmark cursor and pucker your lips. One may also create new buttons inline, which, depending on the editor in which they are created,
+        may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns.
+        See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
+        </p>
+    <h3>JPattern Reference</h3>
+        <p>Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
+        external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of different JPattern functions.
+    </p>
+
+  `
 }
+
+// TODO: delete when finished: function _buildDocsBody() {
+//   return `
+//     <h3 id="trussal-da-usage">Basic usage</h3>
+//     <p>Once you're in a room, click <strong>Studio</strong> (bottom-left) to
+//     open Trussal Studio. It has one card per performer for their personal
+//     Strudel + Hydra editor, plus one shared <strong>JPattern</strong> card
+//     that everyone in the room edits together.</p>
+//     <p>Every editor buffer opens with a required directive on its first line
+//     — <code>'personal editor'</code>, <code>'bot editor'</code>, or
+//     <code>'metaprogram editor'</code> for the JPattern card — that's already
+//     prefilled; leave it in place.</p>
+//     <p>A buffer is written entirely in one of two notations, never mixed:
+//     <strong>mondo</strong> (<code>$ participants &lt;0 1&gt;</code> then one
+//     <code># directive …</code> per line — what every example on this page
+//     uses) or <strong>mini</strong>, Strudel's own dot-chained spelling of the
+//     same thing (<code>$: participants("&lt;0 1&gt;").cycles("wcl", 10)</code>).</p>
+//     <p>Write or edit the program in the JPattern card and press
+//     <strong>▶ Apply</strong> to push it to the whole room. Any line prefixed
+//     with <code>*</code> is a <em>declaration</em> instead — it renders as a
+//     button under the editor rather than running immediately (see "Button
+//     declarations" below).</p>
+//     <p>For hands-free editing, see <strong>Landmark &amp; Gesture Mode</strong>
+//     (☰ menu, top-left of any screen, or press → three times) — it adds an
+//     on-screen keyboard and a head-cursor you can dwell-click with.</p>
+
+//     <h3 id="trussal-da-jpattern">JPattern function reference</h3>
+//     <p>Every directive below is written on its own line in the shared
+//     JPattern card, chained onto the <code>$ participants</code> voice. This
+//     is the language <code>src/audio-net/MetaprogrammerParser.js</code>
+//     parses — kept in sync with <code>src/features/jpattern.md</code> and
+//     <code>src/features/turn-ring.md</code> in the repository.</p>
+//     <div class="da-fn">
+//       <div class="da-fn-name">The <code>#</code> prefix</div>
+//       <p><code>#</code> is <strong>mondo</strong> notation's chaining
+//       operator — how a line attaches to the voice <code>$ participants</code>
+//       opened above it, the same job a mini-notation <code>.method(…)</code>
+//       call does. It is not part of any directive's own name: <code>#
+//       cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
+//       (mini, chained onto <code>$: participants(…)</code>) are the same
+//       statement written in the two surface notations. Every directive
+//       below — <code>ring</code>, <code>cycles</code>, <code>room</code>,
+//       <code>ply</code>, … — takes this same <code>#</code> in mondo; the
+//       signatures on this page name the directive itself and omit it, the
+//       way this page also doesn't repeat <code>$:</code> on every mini
+//       example.</p>
+//       <pre>'metaprogram editor'
+// $ participants &lt;0 1&gt;
+// # cycles "wcl" 10
+// # room "wcl" 2</pre>
+//     </div>
+//     ${_renderFnSection(JPATTERN_FUNCTIONS)}
+
+//     <h3 id="trussal-da-textcycles">Text Cycles</h3>
+//     <p>Not a JPattern <code>#</code> directive — a Strudel function available
+//     in the <strong>personal</strong> or <strong>bot</strong> editor once a
+//     buffer opens with <code>await initTextCycles()</code>. Paints words into
+//     the room's chat instead of, or alongside, making sound. See
+//     <code>src/features/textcycles.md</code> for the full write-up (escaping,
+//     seeding, per-participant scoping, how the JPattern room effects reach
+//     text).</p>
+//     ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+
+//     <h3 id="trussal-da-csscycles">CSS Cycles</h3>
+//     <p>Also a personal/bot-editor Strudel function, declared with
+//     <code>await initCss()</code> — patterns that restyle the live page
+//     instead of making sound. See <code>src/features/csscycles.md</code> for
+//     the full write-up (the compile/broadcast pipeline, the trust model, and
+//     every guardrail in detail).</p>
+//     ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+
+//     <h3 id="trussal-da-livecapture">Live Capture — liveCapture()</h3>
+//     <p>A Strudel source function usable directly in the personal/bot editor
+//     (no preamble declaration needed) that captures and replays a room
+//     medium — audio, video, editor text, CSS, your own gestures, or your own
+//     head-cursor path — as a patternable handle. See
+//     <code>src/features/live-capture.md</code> for the full write-up.</p>
+//     ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
+//   `;
+// }
 
 function _buildPanel(id, titleText, bodyHtml) {
   const scrim = document.createElement('div');
@@ -708,7 +815,7 @@ function _ensureDOM() {
   const corner = document.createElement('div');
   corner.id = CORNER_ID;
   corner.innerHTML = `
-    <button id="${DOCS_BTN_ID}" type="button">Docs</button>
+    <button id="${DOCS_BTN_ID}" type="button">Documentation</button>
     <button id="${ABOUT_BTN_ID}" type="button">About</button>
   `;
   corner.addEventListener('mousedown', (e) => e.stopPropagation());
