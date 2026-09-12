@@ -29,248 +29,223 @@ import styles from './docs-about.css';
 // ---------------------------------------------------------------------------
 // Content — the JPattern function reference.
 // ---------------------------------------------------------------------------
+
+//TODO: remove when done
 const JPATTERN_FUNCTIONS = [
-  {
-    id: 'jp-participants',
-    name: '$ participants — the scheduling sequence',
-    sig: '$ participants <token token …>\n$ <token token …>            (the "participants" label is optional)',
-    body: `
-      <p>Opens the metaprogram's one scheduling voice: the sequence of tokens
-      that take turns streaming, in the order a <code>&lt;…&gt;</code>
-      alternation names them. A token is a participant's room index — <code>0</code>
-      for the first person to join a room, <code>1</code> the second, and so on
-      — or a bot's index plus a letter suffix (<code>0a</code>, the first
-      person's first bot; <code>0zb</code>, a later one). Under the default
-      <code># ring hash</code> (see below) the sequence's own contents don't
-      decide who plays — everyone present takes turns automatically — but the
-      statement must still be there, since the grammar requires a
-      <code>$</code> voice.</p>
-      <p>Turn-modifying operators are written glued to the token, no spaces:</p>
-      <table>
-        <tr><th>Operator</th><th>Effect</th></tr>
-        <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;…&gt;</code>) or a share of one cycle (in <code>[…]</code>).</td></tr>
-        <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
-        <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) — the cycle still advances.</td></tr>
-        <tr><td><code>&lt;…&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
-        <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
-      </table>
-      <p><code>0 .. 3</code> (or <code>0..3</code>) is a range, expanding to <code>0 1 2 3</code>.</p>
-      <pre>'metaprogram editor'
-$ participants &lt;0@2 1!3 0a?&gt;*2
-# cycles "wcl" 20</pre>`,
-  },
-  {
-    id: 'jp-ring',
-    name: 'ring — how the rotation order is chosen',
-    sig: 'ring hash [w <token> <weight> …]\nring explicit',
-    body: `
-      <p><code>hash</code> (the default in a fresh room) computes the rotation
-      as a consistent hash of whoever is <em>currently present</em>, reseeded
-      every cycle — joins and leaves reorder almost nothing else. <code>w</code>
-      pairs give individual tokens a bigger share of turns (<code>w 0 3</code>
-      is triple weight for token <code>0</code>); weights are only legal under
-      <code>hash</code>.</p>
-      <p><code>explicit</code> is the plain literal walk: the ring is exactly
-      what <code>$ participants &lt;…&gt;</code> lists, and anyone not listed
-      stays silent. An older program with no <code># ring</code> line at all
-      behaves as <code>explicit</code>.</p>
-      <pre># ring hash w 0 3 2a 2</pre>`,
-  },
-  {
-    id: 'jp-cycles',
-    name: 'cycles — the length of one cycle (and one turn)',
-    sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
-    body: `
-      <p>Sets how long one cycle — and so one performer's turn — lasts, as a
-      multiple of a live network metric: <code>"wcl"</code> (worst-case
-      mouth-to-ear latency) or <code>"wcpl"</code> (worst-case packet loss).
-      With just a scale factor the target tracks the metric live:
-      <code># cycles "wcl" 3</code> is 3× the current WCL. A third number
-      <em>pins</em> the metric at that fixed value (seconds for wcl, a 0–1
-      fraction for wcpl) while the scale still multiplies it — everything
-      else (effect intensities, the readout) keeps following the real
-      network. Exactly one <code># cycles</code> line is allowed per
-      program. Metric names are always quoted.</p>
-      <pre># cycles "wcl" 10 0.3   <span style="opacity:.7">// WCL pinned at 300ms, scaled ×10 → every cycle is 3s</span></pre>`,
-  },
-  {
-    id: 'jp-tempo',
-    name: 'tempo — quantization tempo',
-    sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
-    body: `
-      <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
-      (a plain number, or a fraction like <code>90/4</code>) and a unit:
-      beats, cycles, or cycles per minute. No <code># tempo</code> line is
-      injected by default — an unwritten tempo still falls back to 120bpm
-      for quantization purposes.</p>
-      <pre># tempo 90/4 cpm</pre>`,
-  },
+//   {
+//     id: 'jp-participants',
+//     name: '$ participants — the scheduling sequence',
+//     sig: '$ participants <token token …>\n$ <token token …>            (the "participants" label is optional)',
+//     body: `
+//       <p>Opens the metaprogram's one scheduling voice: the sequence of tokens
+//       that take turns streaming, in the order a <code>&lt;…&gt;</code>
+//       alternation names them. A token is a participant's room index — <code>0</code>
+//       for the first person to join a room, <code>1</code> the second, and so on
+//       — or a bot's index plus a letter suffix (<code>0a</code>, the first
+//       person's first bot; <code>0zb</code>, a later one). Under the default
+//       <code># ring hash</code> (see below) the sequence's own contents don't
+//       decide who plays — everyone present takes turns automatically — but the
+//       statement must still be there, since the grammar requires a
+//       <code>$</code> voice.</p>
+//       <p>Turn-modifying operators are written glued to the token, no spaces:</p>
+//       <table>
+//         <tr><th>Operator</th><th>Effect</th></tr>
+//         <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;…&gt;</code>) or a share of one cycle (in <code>[…]</code>).</td></tr>
+//         <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
+//         <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) — the cycle still advances.</td></tr>
+//         <tr><td><code>&lt;…&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
+//         <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
+//       </table>
+//       <p><code>0 .. 3</code> (or <code>0..3</code>) is a range, expanding to <code>0 1 2 3</code>.</p>
+//       <pre>'metaprogram editor'
+// $ participants &lt;0@2 1!3 0a?&gt;*2
+// # cycles "wcl" 20</pre>`,
+//   },
+//   {
+//     id: 'jp-ring',
+//     name: 'ring — how the rotation order is chosen',
+//     sig: 'ring hash [w <token> <weight> …]\nring explicit',
+//     body: `
+//       <p><code>hash</code> (the default in a fresh room) computes the rotation
+//       as a consistent hash of whoever is <em>currently present</em>, reseeded
+//       every cycle — joins and leaves reorder almost nothing else. <code>w</code>
+//       pairs give individual tokens a bigger share of turns (<code>w 0 3</code>
+//       is triple weight for token <code>0</code>); weights are only legal under
+//       <code>hash</code>.</p>
+//       <p><code>explicit</code> is the plain literal walk: the ring is exactly
+//       what <code>$ participants &lt;…&gt;</code> lists, and anyone not listed
+//       stays silent. An older program with no <code># ring</code> line at all
+//       behaves as <code>explicit</code>.</p>
+//       <pre># ring hash w 0 3 2a 2</pre>`,
+//   },
+//   {
+//     id: 'jp-cycles',
+//     name: 'cycles — the length of one cycle (and one turn)',
+//     sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
+//     body: `
+//       <p>Sets how long one cycle — and so one performer's turn — lasts, as a
+//       multiple of a live network metric: <code>"wcl"</code> (worst-case
+//       mouth-to-ear latency) or <code>"wcpl"</code> (worst-case packet loss).
+//       With just a scale factor the target tracks the metric live:
+//       <code># cycles "wcl" 3</code> is 3× the current WCL. A third number
+//       <em>pins</em> the metric at that fixed value (seconds for wcl, a 0–1
+//       fraction for wcpl) while the scale still multiplies it — everything
+//       else (effect intensities, the readout) keeps following the real
+//       network. Exactly one <code># cycles</code> line is allowed per
+//       program. Metric names are always quoted.</p>
+//       <pre># cycles "wcl" 10 0.3   <span style="opacity:.7">// WCL pinned at 300ms, scaled ×10 → every cycle is 3s</span></pre>`,
+//   },
+//   {
+//     id: 'jp-tempo',
+//     name: 'tempo — quantization tempo',
+//     sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
+//     body: `
+//       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
+//       (a plain number, or a fraction like <code>90/4</code>) and a unit:
+//       beats, cycles, or cycles per minute. No <code># tempo</code> line is
+//       injected by default — an unwritten tempo still falls back to 120bpm
+//       for quantization purposes.</p>
+//       <pre># tempo 90/4 cpm</pre>`,
+//   },
   {
     id: 'jp-room',
-    name: 'room — reverb (audio), blur (video/css), letter-spacing (text)',
-    sig: 'room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+    name: 'room',
+    sig: 'room [network_metric="wcl"] [scale_pattern] [fixed_amount_pattern] [pattern_medium_set]',
     body: `
-      <p>A Schroeder reverb whose decay time is <em>scale</em> × the metric,
-      in seconds — longer decay also closes a cascaded lowpass, so a long
-      tail is a darker one. Runs once on the room's shared mix, not per
-      client. The same decay drives a blur on the composited video and on
-      styled chat text, and widens letter-spacing. Any of the three worst-case
-      metrics may drive it, and every argument accepts a mini-notation pattern
-      (<code>&lt;a b&gt;</code>, <code>[a b]</code>, with <code>@ ? ! * /</code>)
-      instead of a constant. A trailing <code>[<wbr>"audio" "video"<wbr>]</code>
-      set narrows which of the four media (<code>audio css text video</code>)
-      the directive touches — omitted means all four.</p>
+      <p>Reverb whose decay time, whitespace amount, or visual blur varies with the supplied network metric value respectively
+       regarding the Aggregator's audio, video, or text output.</p> 
       <pre># room "wcl" 2 0.4        <span style="opacity:.7">// fixed 800ms decay</span>
-# room "wcl" 2 ["audio" "video"]</pre>`,
+# room "wcl" "2 3 4" ["audio" "video"] //audio and video reverb</pre>`,
   },
   {
     id: 'jp-crush',
-    name: 'crush — bitcrush (audio), pixelation (video/css/text)',
-    sig: 'crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+    name: 'crush',
+    sig: 'crush [network_metric="wcl"] [scale_pattern] [fixed_amount] [pattern_medium_set]',
     body: `
-      <p>Reduces bit-depth and sample rate as the metric worsens — 8 bits is
-      the resting depth, halving each time the metric climbs by its halving
-      amount, down to a 1-bit square wave on a bad enough network. Bypassed
-      until written. <em>scale</em> multiplies the resting depth (2 doubles
-      it to 16-bit; below 1 crushes harder). Runs once on the shared mix,
-      same medium-set and pattern-argument rules as <code># room</code>.</p>
+      <p>Varies the bit-depth and resolution of the Aggregator's audio and visual output according to the value of the currently
+      supplied network metric. </p>
       <pre># crush "wcpl" 1 0.25    <span style="opacity:.7">// pinned at 25% loss: a steady 4 bits</span></pre>`,
   },
   {
     id: 'jp-echo',
-    name: 'echo — feedback delay',
-    sig: 'echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]',
+    name: 'echo',
+    sig: 'echo [network_metric="wcl"] [length_in_cycles] [network_metric="wcl"] [feedback_percentage] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
-      <p>Three independently-metric-driven parameters — all six of the first
-      arguments are required together, or omit the whole directive for the
-      bare default (<code>wcl</code> driving all three). <em>length</em> is in
-      cycles (a fraction like <code>1/2</code> is legal), so the echo stays in
-      rhythm as the cycle length changes. <em>feedback</em> is clamped below
-      unity so it can never self-oscillate, and also darkens the composited
-      video as it rises. <em>gain</em> is the wet/dry balance. Each value is
-      <code>scale × min(metric / bound, 1)</code> — the optional bounds (ms
-      for wcl/wcrtt, percent for wcpl) cap how far a degrading network can
-      push it. <code>wcrtt</code> is legal here even though
-      <code># cycles</code> can't use it.</p>
+      <p>Applies a network-modulated echo effect to the Aggregator's audio and video output.</p>
       <pre># echo "wcl" 2 "wcpl" 0.3 "wcrtt" 3 1500 20 1200</pre>`,
   },
   {
     id: 'jp-noise',
-    name: 'noise — noise bed (audio), grain (video/css/text)',
-    sig: 'noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]',
+    name: 'noise',
+    sig: 'noise [network_metric="wcl"] [lowpass_cutoff_scale_factor] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
-      <p>Bypassed by default (no node exists until written). Two metrics —
-      each defaulting to <code>wcl</code> and each optional — independently
-      drive the bed's <em>spectrum</em> (0 brown … 1 white) and its
-      <em>volume</em> (25dB … 75dB, clamped). A metric keyword binds to the
-      factor written right after it. Re-derived once per cycle boundary, so
-      its arguments take <code>&lt;…&gt;</code> alternation at rate 1 or
-      slower only — <code>[…]</code> and a faster rate are parse errors here.</p>
+      <p>Adds pink, brown, or white noise to the Aggregator's audio and video output convolved with a lowpass filter, and inserts pseudorandomly-chosen characters
+      into the text output.</p>
       <pre># noise "wcl" 20 "wcrtt" 10</pre>`,
   },
-  {
-    id: 'jp-grid',
-    name: 'grid — the per-participant distance overlay',
-    sig: 'grid [landmarks: true|false]        (default false)',
-    body: `
-      <p>Marks each participant's video panel with a small grayscale circle
-      (darker = a greater modelled network distance) in the top-left corner;
-      your own panel's circle is always white from your own browser. With
-      <code>landmarks</code> on, a participant running MediaPipe also gets a
-      vector in the bottom-right showing their average facial-landmark
-      motion. Unrelated to <code># mosaic</code>.</p>
-      <pre># grid true</pre>`,
-  },
-  {
-    id: 'jp-mosaic',
-    name: 'mosaic — the aggregator\'s video layout',
-    sig: 'mosaic [true|false]        (default true — unwritten means on)',
-    body: `
-      <p>Controls how the room's published video is composited. On (the
-      default) tiles every Hydra-running participant into a square grid, only
-      ticking whoever currently holds the turn. <code>false</code> drops to a
-      single full-frame view of just the streaming participant.</p>
-      <pre># mosaic false</pre>`,
-  },
-  {
-    id: 'jp-ply',
-    name: 'ply — repeat each turn\'s buffer n times',
-    sig: 'ply <n>',
-    body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
-      buffer into <em>n</em> repeats.</p>
-      <pre># ply 2</pre>`,
-  },
-  {
-    id: 'jp-chop',
-    name: 'chop — chop each turn\'s buffer into n pieces',
-    sig: 'chop <n>',
-    body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
-      buffer into <em>n</em> consecutive pieces.</p>
-      <pre># chop 2</pre>`,
-  },
-  {
-    id: 'jp-shuffle',
-    name: 'shuffle — randomize buffer-piece order',
-    sig: 'shuffle [n]',
-    body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
-      of (optionally, <em>n</em>) buffer pieces, seeded so every listener
-      hears the same shuffle.</p>`,
-  },
-  {
-    id: 'jp-degrade',
-    name: 'degrade / degradeBy — drop events at random',
-    sig: 'degrade\ndegradeBy <probability 0–1>',
-    body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
-      default; <code>degradeBy</code> takes an explicit probability. Seeded,
-      so the draw is identical for every listener.</p>
-      <pre># degradeBy 0.25</pre>`,
-  },
-  {
-    id: 'jp-undegrade',
-    name: 'undegrade / undegradeBy — the inverse of degrade',
-    sig: 'undegrade\nundegradeBy <probability 0–1>',
-    body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
-      would have dropped — the complementary draw, same seed.</p>`,
-  },
-  {
-    id: 'jp-hush',
-    name: 'hush — silence the voice',
-    sig: 'hush',
-    body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
-      voice's output entirely without removing it from the scheduling
-      sequence.</p>`,
-  },
-  {
-    id: 'jp-jux',
-    name: 'jux — a stacked, cycle-offset duplicate',
-    sig: 'jux',
-    body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
-      metaprogram analog of Strudel's <code>.jux()</code>/the stack
-      (<code>,</code>) operator.</p>`,
-  },
-  {
-    id: 'jp-superimpose',
-    name: 'superimpose — layer a second sequence on top',
-    sig: 'superimpose [<sequence>]',
-    body: `<p>Like <code># jux</code>, but the optional bracketed sequence
-      lets the superimposed layer be a different pattern, not a plain copy.</p>
-      <pre># superimpose &lt;0 2&gt;</pre>`,
-  },
-  {
-    id: 'jp-buttons',
-    name: 'Button declarations — *$ / *#',
-    sig: '*$ participants <tokens>       // a voice, waiting for its button\n*# crush "wcl" 2               // an effect, waiting for its button',
-    body: `
-      <p>A statement written with a leading <code>*</code> is a
-      <strong>declaration</strong>, not a live statement — it's skipped by
-      the parser and instead rendered as a button under the JPattern editor
-      (also reachable by head-cursor dwell). Pressing a
-      <code>*$ participants …</code> button merges its tokens into the live
-      ring; pressing it again removes them. Pressing a
-      <code>*# …</code> effect button appends that directive line (pressing
-      again comments it back out). A declaration is one line, and may carry
-      a trailing <code>//</code> comment.</p>`,
-  },
+  // {
+  //   id: 'jp-grid',
+  //   name: 'grid — the per-participant distance overlay',
+  //   sig: 'grid [landmarks: true|false]        (default false)',
+  //   body: `
+  //     <p>Marks each participant's video panel with a small grayscale circle
+  //     (darker = a greater modelled network distance) in the top-left corner;
+  //     your own panel's circle is always white from your own browser. With
+  //     <code>landmarks</code> on, a participant running MediaPipe also gets a
+  //     vector in the bottom-right showing their average facial-landmark
+  //     motion. Unrelated to <code># mosaic</code>.</p>
+  //     <pre># grid true</pre>`,
+  // },
+  // {
+  //   id: 'jp-mosaic',
+  //   name: 'mosaic — the aggregator\'s video layout',
+  //   sig: 'mosaic [true|false]        (default true — unwritten means on)',
+  //   body: `
+  //     <p>Controls how the room's published video is composited. On (the
+  //     default) tiles every Hydra-running participant into a square grid, only
+  //     ticking whoever currently holds the turn. <code>false</code> drops to a
+  //     single full-frame view of just the streaming participant.</p>
+  //     <pre># mosaic false</pre>`,
+  // },
+  // {
+  //   id: 'jp-ply',
+  //   name: 'ply — repeat each turn\'s buffer n times',
+  //   sig: 'ply <n>',
+  //   body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
+  //     buffer into <em>n</em> repeats.</p>
+  //     <pre># ply 2</pre>`,
+  // },
+  // {
+  //   id: 'jp-chop',
+  //   name: 'chop — chop each turn\'s buffer into n pieces',
+  //   sig: 'chop <n>',
+  //   body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
+  //     buffer into <em>n</em> consecutive pieces.</p>
+  //     <pre># chop 2</pre>`,
+  // },
+  // {
+  //   id: 'jp-shuffle',
+  //   name: 'shuffle — randomize buffer-piece order',
+  //   sig: 'shuffle [n]',
+  //   body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
+  //     of (optionally, <em>n</em>) buffer pieces, seeded so every listener
+  //     hears the same shuffle.</p>`,
+  // },
+  // {
+  //   id: 'jp-degrade',
+  //   name: 'degrade / degradeBy — drop events at random',
+  //   sig: 'degrade\ndegradeBy <probability 0–1>',
+  //   body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
+  //     default; <code>degradeBy</code> takes an explicit probability. Seeded,
+  //     so the draw is identical for every listener.</p>
+  //     <pre># degradeBy 0.25</pre>`,
+  // },
+  // {
+  //   id: 'jp-undegrade',
+  //   name: 'undegrade / undegradeBy — the inverse of degrade',
+  //   sig: 'undegrade\nundegradeBy <probability 0–1>',
+  //   body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
+  //     would have dropped — the complementary draw, same seed.</p>`,
+  // },
+  // {
+  //   id: 'jp-hush',
+  //   name: 'hush — silence the voice',
+  //   sig: 'hush',
+  //   body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
+  //     voice's output entirely without removing it from the scheduling
+  //     sequence.</p>`,
+  // },
+  // {
+  //   id: 'jp-jux',
+  //   name: 'jux — a stacked, cycle-offset duplicate',
+  //   sig: 'jux',
+  //   body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
+  //     metaprogram analog of Strudel's <code>.jux()</code>/the stack
+  //     (<code>,</code>) operator.</p>`,
+  // },
+  // {
+  //   id: 'jp-superimpose',
+  //   name: 'superimpose — layer a second sequence on top',
+  //   sig: 'superimpose [<sequence>]',
+  //   body: `<p>Like <code># jux</code>, but the optional bracketed sequence
+  //     lets the superimposed layer be a different pattern, not a plain copy.</p>
+  //     <pre># superimpose &lt;0 2&gt;</pre>`,
+  // },
+  // {
+  //   id: 'jp-buttons',
+  //   name: 'Button declarations — *$ / *#',
+  //   sig: '*$ participants <tokens>       // a voice, waiting for its button\n*# crush "wcl" 2               // an effect, waiting for its button',
+  //   body: `
+  //     <p>A statement written with a leading <code>*</code> is a
+  //     <strong>declaration</strong>, not a live statement — it's skipped by
+  //     the parser and instead rendered as a button under the JPattern editor
+  //     (also reachable by head-cursor dwell). Pressing a
+  //     <code>*$ participants …</code> button merges its tokens into the live
+  //     ring; pressing it again removes them. Pressing a
+  //     <code>*# …</code> effect button appends that directive line (pressing
+  //     again comments it back out). A declaration is one line, and may carry
+  //     a trailing <code>//</code> comment.</p>`,
+  // },
 ];
 
 // ---------------------------------------------------------------------------
@@ -614,6 +589,8 @@ function _buildDocsBody() {
         Clearing browser data will clear the list of previously joined meetings, as well as one's previously-chosen display name.
         Clicking on the trash can icon can remove individual meetings from the list of existing meetings.
         Note that clicking on the trash can icon or clearing browsing data <strong>does not</strong> end an existing meeting.
+        Meetings may only be ended by a participant clicking on the telephone icon attached to the meeting room toolbar inside of the meeting,
+        or when no human meeting participant has been present inside of a meeting room for more than two minutes.
         Alternitavely, one may join an existing meeting by typing or pasting its URL in the browser's address bar.
         Trussal does not currently support password-protected meeting rooms or user account creation. </p>
 
@@ -658,7 +635,8 @@ function _buildDocsBody() {
         details on proper usage and the Aggregator's role within a meeting. If live webcam access is lost and the participant's index token
         remains present within a valid Metaprogram, the last recorded buffer will be streamed until the token is removed from
         the Metaprogram. If a participant's webcam live feed is requested within the Metaprogram, but it has not been provided,
-        the Aggregator will stream a black square in lieu of that participant's video.
+        the Aggregator will stream a black square in lieu of that participant's video. One may also individually view bots' videos and one's own
+        video output in minimized video panel squares.
         </p>
 
         <h4>Audio</h4>
@@ -674,14 +652,26 @@ function _buildDocsBody() {
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
         performed by the Aggregator.
         </p>
+
+    <h3>The Aggregator and Conductor</h3>
+      <p>The Aggregator is responsible for scheduling each participants streaming turn. It appears in the meeting room as a bot meeting participant with participant index 'pi'.
+      The Aggregator itself cannot be scheduled to have a turn and does not run any of its own code. Its output consists of that of participant who it has currently scheduled.
+      Only the Aggregator outputs the coordinated live coded patterns to the entire meeting room and alters room-wide CSS during a meeting. The conductor monitors the health of 
+      bot participants, as well as compliance with dynamic, automated memory and network bandwidth constraints, removing bot participants from the meeting room, and shutting off 
+      the Aggregator's video feed as it sees fit in order to preserve the navigability of the meeting.
+      </p>
+
     <h3>Trussal Studio</h3>
         <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
-        Trussal Studio is where all of the live coding happens, as well as the interface for one's personal meeting theming, and
-        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). There is an editor for each bot and human participant,
-        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code. Trussal Studio also
-        displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
+        Trussal Studio is where all of the live coding and coordination with the Aggregator happens, as well as the interface for one's personal meeting theming, and
+        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). Changes to the color scheme and font size only appear in one's own editor. There is an editor for each bot and human participant,
+        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code, as well as capture media assets from other participants.
+        Trussal Studio also displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
         Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
-        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio.
+        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio. As is the case in Strudel, the keyboard
+        shortcut "Ctrl" + "Enter" reevaluates the code in the currently focused editor, and "Ctrl" + "." pauses the running of the code
+        inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
+        Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
         </p>
 
     <h3>MediaPipe in the Meeting Room</h3>
@@ -690,14 +680,47 @@ function _buildDocsBody() {
         associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
         To focus an editor while typing using the virtual keyboard, and fix the position of the blinking cursor, hover over it with the head 
         landmark cursor and pucker your lips. One may also create new buttons inline, which, depending on the editor in which they are created,
-        may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns.
+        may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns. Code updates and pauses take place
+        respectively by hovering over and dwelling upon any of the "Eval" or "Stop" buttons.
         See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
         </p>
     <h3>JPattern Reference</h3>
         <p>Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
-        external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of different JPattern functions.
-    </p>
+        external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
+        </p>
 
+        <h4>The Metaprogram</h4>
+
+        <h4>Preprocessing Directives</h4>
+        
+        <h4>Strudel and Hydra</h4>
+
+        <h4>Global Room Effects</h4>
+        ${_renderFnSection(JPATTERN_FUNCTIONS)} 
+
+        <h4>Room Configuration</h4>
+
+        <h4>Mini and Mondo Notation</h4>
+
+        <h4>Text Patterns</h4>
+        ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+
+        <h4>CSS Patterns</h4>
+        ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+
+
+        <h4>Bot Configuration</h4>
+
+        <h4>Gesture Configuration</h4>
+
+        <h4>Live Capture Patterns</h4>
+        ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
+
+        <h4>Sampled and Synthesized Audio Patterns</h4>
+
+        <h4>Sampled and Synthesized Video Patterns</h4>
+
+        <h4>Jitsi UI Patterns</h4>
   `
 }
 
@@ -746,7 +769,7 @@ function _buildDocsBody() {
 //       signatures on this page name the directive itself and omit it, the
 //       way this page also doesn't repeat <code>$:</code> on every mini
 //       example.</p>
-//       <pre>'metaprogram editor'
+//   JPATTERN_FUNCTIONS    <pre>'metaprogram editor'
 // $ participants &lt;0 1&gt;
 // # cycles "wcl" 10
 // # room "wcl" 2</pre>
@@ -761,7 +784,7 @@ function _buildDocsBody() {
 //     <code>src/features/textcycles.md</code> for the full write-up (escaping,
 //     seeding, per-participant scoping, how the JPattern room effects reach
 //     text).</p>
-//     ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+//    
 
 //     <h3 id="trussal-da-csscycles">CSS Cycles</h3>
 //     <p>Also a personal/bot-editor Strudel function, declared with
