@@ -113,7 +113,7 @@ const JPATTERN_FUNCTIONS = [
     sig: 'room [network_metric="wcl"] [scale_pattern] [fixed_amount_pattern] [pattern_medium_set]',
     body: `
       <p>Reverb whose decay time, whitespace amount, or visual blur varies with the supplied network metric value respectively
-       regarding the Aggregator's audio, video, or text output.</p> 
+       regarding the Aggregator's audio, video, or text output. Example(s):</p> 
       <pre># room "wcl" 2 0.4        <span style="opacity:.7">// fixed 800ms decay</span>
 # room "wcl" "2 3 4" ["audio" "video"] //audio and video reverb</pre>`,
   },
@@ -123,7 +123,7 @@ const JPATTERN_FUNCTIONS = [
     sig: 'crush [network_metric="wcl"] [scale_pattern] [fixed_amount] [pattern_medium_set]',
     body: `
       <p>Varies the bit-depth and resolution of the Aggregator's audio and visual output according to the value of the currently
-      supplied network metric. </p>
+      supplied network metric. Example(s):</p>
       <pre># crush "wcpl" 1 0.25    <span style="opacity:.7">// pinned at 25% loss: a steady 4 bits</span></pre>`,
   },
   {
@@ -131,7 +131,7 @@ const JPATTERN_FUNCTIONS = [
     name: 'echo',
     sig: 'echo [network_metric="wcl"] [length_in_cycles] [network_metric="wcl"] [feedback_percentage] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
-      <p>Applies a network-modulated echo effect to the Aggregator's audio and video output.</p>
+      <p>Applies a network-modulated echo effect to the Aggregator's audio and video output. Example(s):</p>
       <pre># echo "wcl" 2 "wcpl" 0.3 "wcrtt" 3 1500 20 1200</pre>`,
   },
   {
@@ -140,7 +140,7 @@ const JPATTERN_FUNCTIONS = [
     sig: 'noise [network_metric="wcl"] [lowpass_cutoff_scale_factor] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
       <p>Adds pink, brown, or white noise to the Aggregator's audio and video output convolved with a lowpass filter, and inserts pseudorandomly-chosen characters
-      into the text output.</p>
+      into the text output. Example(s):</p>
       <pre># noise "wcl" 20 "wcrtt" 10</pre>`,
   },
   // {
@@ -676,8 +676,8 @@ function _buildDocsBody() {
 
     <h3>MediaPipe in the Meeting Room</h3>
         <p>As is the case regarding the face mesh display and virtual keyboard, dwelling upon the same icons allows one to drag the Trussal Studio user interface.
-        One may also focus other menus and text fields using the head landmark cursor. Inside of a meeting room, the virtual keyboard provides JPattern autocomplete suggestions using weighted trie search. By default, various gestures are
-        associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
+        One may also focus other menus and text fields using the head landmark cursor. Inside of a meeting room, the virtual keyboard provides JPattern autocomplete suggestions using weighted trie search. 
+        By default, various gestures are associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
         To focus an editor while typing using the virtual keyboard, and fix the position of the blinking cursor, hover over it with the head 
         landmark cursor and pucker your lips. One may also create new buttons inline, which, depending on the editor in which they are created,
         may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns. Code updates and pauses take place
@@ -685,29 +685,88 @@ function _buildDocsBody() {
         See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
         </p>
     <h3>JPattern Reference</h3>
-        <p>Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
-        external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
+        <p>
+          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
+          external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
         </p>
 
+        <h4>Design/h4>
+          <p>
+          JPattern is a domain-specific, multi-paradigm programming language. JPattern is a superset of Strudel and Hydra, extending them to support creating patterns using video conferencing features
+          that are not supported in either language. While maintaining Strudel's declarative approach, JPattern also handles complex immutable state conveyed through JavaScript objects as function arguments,
+          and overloads Strudel operators and functions. JPattern also supports distributed and metaprogramming through its simultaneous editing, and the configuration of bot code before spawning.
+          Within any editor that does not store the text of the Metaprogram, one may write Strudel and/or Hydra code. Unlike in the Strudel REPL, <code> await initHydra() </code> 
+          is not required at the beginning of the program.
+          </p>
+
         <h4>The Metaprogram</h4>
+            <p>The Metaprogram controls when each participant has a performance turn and is shared between all participants. 
+            All human participants can directly and simultaneously edit the Metaprogram, which is stored in a CRDT.</p>
+            <h5>Participant Identifiers</h5>
+            <p>As each participant joins the meeting, an ordered index token is assigned and persists for the entire meeting.
+            Human participants receive non-negative ordinal integer string tokens, starting with '0' for the first participant.
+            Bots receive a token that is prefixed with the human's token and a letter, starting with 'a'. Another letter,
+            starting with 'a', is appended when the number of bot participants spawned by a given human satisfies |bot participants| ≡ 1 mod 26. 
+            Note that these identifiers exist separately from the meeting identifier assigned by Jitsi Meet to make it easier for humans to type them 
+            into the Metaprogram. All valid Metaprograms must reference at least one participant.
+            </p>
+            <h5>Participant Turn Ordering</h5>
+            <p>
+            By default, human participants manually dictate the participant turn order by arranging participant tokens into patterns.
+            Both of the following are interchangeable examples of valid Metaprogram participant ordering syntax for a meeting
+            with at least three human participants and one bot participant spawned by participant '2':
+            <code>
+            $ participants <0 2a 1 0>
+            </code>
+            <code>
+            $: participants("<0 2a 1 0>")
+            </code>
+            Alternatively, one may allow the meeting participant turn ordering to be dictated by consistent hashing.
+            This means that every participant's ordinal identifier will be hashed as a node and any existing instructions
+            dictating ordering a literal ordering of a proper subset of the meeting participants will be overidden.
+            Example:
+            <code>
+            $ participants <0 2a 1 0>
+            # ring
+            </code>
+            </p>
+            <h5>Determining Participant Turn Length</h5>
+            <p>Each Metaprogram mandatorily calls the cycles method, which in turn multiplies a scale factor by a network metric,
+            outputting each participant's turn length unit.
+            </p>
+            <h5>Method Chaining Syntax</h5>
+            <p>
+            Room effects and other methods can be chained together. 
+            Currently, the participants, room, noise, crush, echo, grid, and mosaic, and cycles methods are supported.
+            Example:
+            <code>ode generation features.$ participants <1 3 2 0>
+            # cycles "wcl" 30
+            # room "wcpl" 10
+            # noise "wcl" 100 "wcrtt" 0.2
+            </code>
+            </p>
+            <h5>Operators</h5>
+            <p>JPattern overloads Strudel's @, !, *, ?, _, ~, and / operators. 
+            </p>
+            <h5>Overloaded Strudel Methods</h5>
+            <p>
+            The following Strudel methods, in addition to room, noise, crush, and echo, are overloaded:
+            </p>
 
         <h4>Preprocessing Directives</h4>
-        
-        <h4>Strudel and Hydra</h4>
+          <p>There are three different preprocessing directives, signifying who each program belongs to.
+          They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
+          a preprocessing directive, even if it only contains Strudel and/or Hydra code.
+          </p>
 
         <h4>Global Room Effects</h4>
         ${_renderFnSection(JPATTERN_FUNCTIONS)} 
-
-        <h4>Room Configuration</h4>
-
-        <h4>Mini and Mondo Notation</h4>
 
         <h4>Text Patterns</h4>
         ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
 
         <h4>CSS Patterns</h4>
         ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
-
 
         <h4>Bot Configuration</h4>
 
@@ -716,11 +775,7 @@ function _buildDocsBody() {
         <h4>Live Capture Patterns</h4>
         ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
 
-        <h4>Sampled and Synthesized Audio Patterns</h4>
-
-        <h4>Sampled and Synthesized Video Patterns</h4>
-
-        <h4>Jitsi UI Patterns</h4>
+        <h4>Jitsi UI Patterns and Configuration</h4>
   `
 }
 
