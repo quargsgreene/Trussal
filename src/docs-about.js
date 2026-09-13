@@ -17,6 +17,13 @@
 // `src/features/jpattern.md` and `src/features/turn-ring.md`. About is a
 // short plain-language summary of what Trussal is.
 
+// PUT SOMEWHERE ELSE:       <p>Single quotes opt out of mini entirely, so a phrase with its own
+//       spaces needs no escaping at all: <code>word('I like squirrels?')</code>
+//       is one whole phrase, one hap. The same rule applies to every text
+//       param, not only <code>word</code> — <code>.typeface("Times New Roman")</code>
+//       mints three separate steps; <code>.typeface('Times New Roman')</code>
+//       is one atom.</p>
+
 const CORNER_ID    = 'trussal-da-corner';
 const DOCS_BTN_ID  = 'trussal-da-docs-btn';
 const ABOUT_BTN_ID = 'trussal-da-about-btn';
@@ -255,32 +262,11 @@ const JPATTERN_FUNCTIONS = [
 // ---------------------------------------------------------------------------
 const TEXT_CYCLES_FUNCTIONS = [
   {
-    id: 'tc-init',
-    name: 'await initTextCycles() — declare a text presence',
-    sig: 'await initTextCycles()',
-    body: `
-      <p>Goes in the buffer's preamble, the same way <code>await initHydra()</code>
-      declares visuals — first line, blank line, then the patterns. A voice
-      carrying <code>word()</code>/<code>w()</code> paints one styled
-      <code>&lt;span&gt;</code> per hap into the Jitsi chat panel instead of
-      making sound — one bubble per cycle per performer, so a fast pattern
-      fills a line rather than flooding the panel. It enters the chat on the
-      performer's behalf (Jitsi otherwise hides the message log behind a
-      nickname prompt), using their JPattern room index as the nickname.
-      Nothing is sent over XMPP: every browser evaluates every peer's program
-      already, so each client paints the same words from the shared program.</p>
-      <pre>await initTextCycles()
-
-$: word("I like squirrels").typeface('Times New Roman')</pre>`,
-  },
-  {
     id: 'tc-word',
-    name: 'word() / w() — the text itself',
-    sig: '.word("<mini-notation pattern>")\n.w("<mini-notation pattern>")        (alias)',
+    name: 'word()/nw',
+    sig: '.word([pattern])\n.w([pattern])\n# word [pattern]\n#w [pattern]',
     body: `
-      <p>Every double-quoted text param is mini notation, same as any other
-      Strudel control — a bare space is a sequence separator, not a space in
-      the words. A few characters need escaping to render literally:</p>
+      <p>Sends the specified words to the meeting-wide chat window. A few characters need escaping to render literally:</p>
       <table>
         <tr><th>Written</th><th>Renders</th></tr>
         <tr><td><code>word("&lt;a ~ b&gt;")</code></td><td><code>a</code>, a rest, <code>b</code></td></tr>
@@ -288,52 +274,162 @@ $: word("I like squirrels").typeface('Times New Roman')</pre>`,
         <tr><td><code>word("squirrels?")</code></td><td><code>squirrels</code>, played only sometimes</td></tr>
         <tr><td><code>word("squirrels\\?")</code></td><td><code>squirrels?</code> every cycle</td></tr>
       </table>
-      <p>Single quotes opt out of mini entirely, so a phrase with its own
-      spaces needs no escaping at all: <code>word('I like squirrels?')</code>
-      is one whole phrase, one hap. The same rule applies to every text
-      param, not only <code>word</code> — <code>.typeface("Times New Roman")</code>
-      mints three separate steps; <code>.typeface('Times New Roman')</code>
-      is one atom.</p>`,
+`,
   },
   {
-    id: 'tc-style',
-    name: 'typeface() / weight() / slant() / spacing() / underline() — text styling',
-    sig: `.typeface("name")   —or—   .t("name")
-.weight("400 200 100 800")
-.slant("<italic none>")
-.spacing("<3px 6px 9px 12px>")
-.underline("underline")`,
-    body: `<p>Chained styling controls, each patternable like any other Strudel
-      param. <code>typeface</code>/<code>t</code> sets the font family,
-      <code>weight</code> the font weight, <code>slant</code> italic/none,
-      <code>spacing</code> letter-spacing, and <code>underline</code> toggles
-      an underline. With nothing set, words inherit Jitsi's own chat
-      typography — only properties you set are applied.</p>`,
+    id: 'tc-typeface',
+    name:'typeface/t',
+    sig: `.typeface([typeface_pattern="Arial"])\n.t([typeface_pattern="Arial"])`,
+    body: `<p>Selects a typeface for the specified text pattern.</p>
+    <span>Example(s):</span>
+    <code>$: typeface("Monaco").word("dachshund")</code>
+    <code>$ typeface("Monaco") # word "dachshund")</code>
+    <code>$: t("Monaco").w("dachshund")</code>
+    <code>$ t "Monaco" w "dachshund" </code>
+    <table>
+      <tr><th>Supported Typefaces</th></tr>
+      <tr>Times New Roman<tr>
+      <tr>Verdana</tr>
+      <tr>Trebuchet MS</tr>
+      <tr>Menlo</tr>
+      <tr>Verdana</tr>
+      <tr>Georgia</tr>
+      <tr>Arial</tr>
+      <tr>Helvetica</tr>
+      <tr>Courier New</tr>
+      <tr>Tahoma</tr>
+    </table>
+    `
   },
   {
-    id: 'tc-borrowed',
-    name: 'size() / color() — borrowed Strudel controls',
-    sig: '.size("<12px 24px 10px 1px>*2")\n.color("<#346234 #bfe968>")',
-    body: `<p><code>size</code> and <code>color</code> already exist in
-      Strudel, so Text Cycles reuses them rather than re-registering —
-      overriding <code>Pattern.prototype.size</code> would break
-      <code>.size()</code> for every audio voice in the room.
-      <code>size</code> arrives on the hap as the reverb <code>roomsize</code>
-      control under the hood, and both are only rewritten to their text
-      meaning inside a statement that also contains a <code>word()</code>
-      call — an audio voice's <code>.size(4)</code> still means reverb
-      size.</p>`,
+    id: 'tc-weight',
+    name:'weight',
+    sig: `.weight([font_weight_pattern])\n.t([font_weight_pattern])`,
+    body: `<p>Sets the font weight for the specified text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Times New Roman")
+    .word("ruppig")
+    .weight(400)
+    </code>
+    <code>$ typeface "Times New Roman"
+    # word "ruppig"
+    # weight 400
+    </code>
+    `
   },
   {
-    id: 'tc-link',
-    name: 'hover() / hyperlink() — interactive styling',
-    sig: '.hover("color:#ffffff")\n.hyperlink("<google.com reddit.com ca.gov>")',
-    body: `<p><code>hover</code> takes CSS declarations applied while the
-      word is moused over, scoped so one performer's hover rule can never
-      restyle another's lines. <code>hyperlink</code> turns the word into a
-      link: a bare domain gets <code>https://</code> added, only
-      http/https/mailto schemes are permitted, and every link carries
-      <code>rel="noopener noreferrer"</code> and opens in a new tab.</p>`,
+    id: 'tc-spacing',
+    name:'spacing',
+    sig: `.spacing([character_spacing_pattern])\n# spacing [character_spacing_pattern]`,
+    body: `<p>Sets the spacing amount between characters for the specified text pattern in pixels./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Verdana")
+    .word("Zecke")
+    .spacing("<3 30 300>")
+    </code>
+    <code>$ typeface "Verdana" 
+    # word "Zecke"
+    # spacing <3 30 300>
+    </code>
+    `
+  },
+  {
+    id: 'tc-underline',
+    name:'underline',
+    sig: `.underline()\n # underline`,
+    body: `<p>Underlines the selected text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Tahoma")
+    .word("Pudding mit Gabel")
+    .underline()
+    </code>
+    <code>$ typeface "Tahoma" 
+    # word "Pudding mit Gabel"
+    # underline
+    </code>
+    `
+  },
+  {
+    id: 'tc-slant',
+    name:'slant',
+    sig: `.slant()\n # slant`,
+    body: `<p>Italicizes the selected text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Trebuchet MS")
+    .word("Row row row your boat gently down the stream")
+    .slant()
+    </code>
+    <code>$ typeface "Trebuchet MS" 
+    # word "Row row row your boat gently down the stream"
+    # slant
+    </code>
+    `
+  },
+  {
+    id: 'tc-size',
+    name: 'size',
+    sig: '.size([font_size_pattern])\n# size [font_size_pattern]',
+    body: `<p>Sets the font size for the selected text pattern using any CSS unit 
+    or relative to the parent element. Overloads size in Strudel for text patterns.</p>
+    <code>$: typeface("Georgia")
+    .word("Colorless green ideas sleep furiously")
+    .size("<3em 4px 10pc 0.3ch>*2")
+    </code>
+    <code>$ typeface("Georgia")
+    # word("Colorless green ideas sleep furiously")
+    # size <3em 4px 10pc 0.3ch>*2
+    </code>     
+    `,
+  },
+  {
+    id: 'tc-color',
+    name: 'color',
+    sig: '.color([color_pattern])\n# color [color_pattern]',
+    body: `<p>Sets the CSS color value for the selected text. Overloads color in Strudel.</p>
+    <code>$: typeface("Trebuchet MS")
+    .word("nooooooooo")
+    .color("#abcdef")
+    </code>
+    <code>$ typeface("Tremuchet MS")
+    # word("nooooooooo")
+    # color "#abcdef"
+    </code>     
+    `,
+  },
+  {
+    id: 'tc-hyperlink',
+    name: 'hyperlink',
+    sig: 'hyperlink([hyperlink_pattern])\n hyperlink [hyperlink_pattern]',
+    body: `<p> Creates a pattern of hyperlinks into a
+      link. "https://" is appended to the beginning. 
+      Every hyperlink opens in a new tab.</p>
+      <code>
+      $: typeface("Times New Roman")
+      .hyperlink("<google.com reddit.com ca.gov>")
+      </code>
+      <code>
+      $ typeface
+      # hyperlink "<google.com reddit.com ca.gov>"
+      </code>
+      `,
+  },
+  {
+    id: 'tc-hover',
+    name: 'hover',
+    sig: 'hover([css_attribute:value]) \n hover [css_attribute:value]',
+    body: `<p>Takes CSS declarations applied while the
+      word is moused over, scoped to the calling performer's hover rule.
+      <code>
+       $: typeface("Times New Roman")
+      .hyperlink("<google.com reddit.com ca.gov>")
+      .hover("color:#ffffff font-size:12px")
+      </code>
+      <code>
+      $ typeface("Times New Roman")
+      # hyperlink("<google.com reddit.com ca.gov>")
+      # hover("color:#ffffff font-size:12px")
+      </code>
+      </p>`,
   },
 ];
 
@@ -342,17 +438,6 @@ $: word("I like squirrels").typeface('Times New Roman')</pre>`,
 // Also a personal/bot-editor Strudel function, not a JPattern `#` directive.
 // ---------------------------------------------------------------------------
 const CSS_CYCLES_FUNCTIONS = [
-  {
-    id: 'css-init',
-    name: 'await initCss() — declare a styling presence',
-    sig: 'await initCss()',
-    body: `<p>Declares a program's styling presence exactly as
-      <code>await initTextCycles()</code> declares its words — first line of
-      the preamble, then a blank line, then the patterns. Any of the
-      capability declarations may share one preamble. Silent by
-      construction: a css voice can never reach the speakers even if it also
-      names a sound.</p>`,
-  },
   {
     id: 'css-call',
     name: 'css(`…SCSS…`) — the two-part statement',
