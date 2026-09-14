@@ -440,60 +440,28 @@ const TEXT_CYCLES_FUNCTIONS = [
 const CSS_CYCLES_FUNCTIONS = [
   {
     id: 'css-call',
-    name: 'css(`…SCSS…`) — the two-part statement',
-    sig: 'css(`.selector { …SCSS… }`)\n  .propertyName("<pattern>")   // any camelCase CSS property, chained',
+    name: 'css',
+    sig: 'css(`[selector] [scss_code]`)\n',
     body: `
-      <p>The backticked argument is <strong>SCSS</strong> — nesting,
-      <code>&amp;</code>, <code>$variables</code>, <code>@media</code>,
-      <code>@keyframes</code>, <code>@mixin</code>. Backticks rather than
-      double quotes, because a double-quoted string is mini-parsed (
-      <code>.example</code> would hit <code>.</code> as the subdivision
-      operator) and <code>{}</code> never survives value sanitising.</p>
-      <p>Any camelCase name chained on that then becomes a
-      <strong>patterned declaration</strong> on the block's first top-level
-      selector if it's a real CSS property (<code>borderRadius</code> →
-      <code>border-radius</code>) — everything else in the chain
-      (<code>.fast()</code>, <code>.slow()</code>, <code>.every()</code>…)
-      is ordinary Strudel structure. <code>filter</code>, <code>mask</code>,
-      <code>scale</code>, <code>rotate</code>, <code>translate</code>,
-      <code>transition</code>, <code>order</code>, <code>offset</code>,
-      <code>content</code>, <code>clip</code>, <code>direction</code> and
-      <code>all</code> are both Strudel methods and CSS properties — inside
-      a <code>css()</code> chain the CSS meaning wins.</p>
-      <pre>css(\`.ts-chip { &:hover { border-color: #ffffff } }\`)
-  .backgroundColor("<#101014 #16161c>")
-  .fast(3)</pre>`,
+      <p>Creates a CSS pattern with a selector and SCSS code.</p>
+      <span>Example:</span>
+      <code>
+          css(\`.ts-chip { &:hover { border-color: #ffffff } }\`)
+      </code>`,
   },
-  {
-    id: 'css-fence',
-    name: 'The ^…^ fence — multi-part CSS values',
-    sig: '.borderRadius("^2em / 1em 3em 0.5em^")\n.borderRadius("&lt;^2em 1em^ ^0.2em 4em^&gt;")',
-    body: `<p>A double-quoted value is mini notation, so a bare space is a
-      step separator — <code>.borderRadius("2em 1em")</code> is two
-      one-cycle steps, not one two-part value. Carets fence one literal CSS
-      value: inside them, spaces, commas and slashes are CSS rather than
-      mini operators — the only way to write the slash form of
-      <code>border-radius</code>, or a multi-shadow <code>box-shadow</code>.
-      A function call needs no fence — <code>rgb(255, 0, 0)</code> is
-      already read as one value.</p>`,
-  },
-  {
-    id: 'css-reach',
-    name: 'Reach — Trussal surfaces vs. the rest of the page',
-    sig: '(governed by the selector, not a call of its own)',
-    body: `<p>The <strong>full</strong> property set applies only where a
-      rule matches inside a Trussal root (the Studio overlay, Text Cycles
-      bubbles, the Hydra/keyboard/facial-gesture panels, the welcome
-      overlays). Everywhere else on the page — Jitsi's own native UI — the
-      same rule is re-emitted carrying only <strong>colour</strong>,
-      <strong>border</strong> and <strong>font</strong> properties: a
-      performer may repaint the room's chrome, but layout, position, size
-      and visibility (<code>width</code>, <code>display</code>,
-      <code>position</code>, <code>opacity</code>, <code>margin</code>…)
-      stay Trussal-surface-only. Patterned declarations always carry
-      <code>!important</code>, so they visibly track the pattern rather
-      than losing to one of Trussal's own direct element rules.</p>`,
-  },
+  // {
+  //   id: 'css-fence',
+  //   name: 'The ^…^ fence — multi-part CSS values',
+  //   sig: '.borderRadius("^2em / 1em 3em 0.5em^")\n.borderRadius("&lt;^2em 1em^ ^0.2em 4em^&gt;")',
+  //   body: `<p>A double-quoted value is mini notation, so a bare space is a
+  //     step separator — <code>.borderRadius("2em 1em")</code> is two
+  //     one-cycle steps, not one two-part value. Carets fence one literal CSS
+  //     value: inside them, spaces, commas and slashes are CSS rather than
+  //     mini operators — the only way to write the slash form of
+  //     <code>border-radius</code>, or a multi-shadow <code>box-shadow</code>.
+  //     A function call needs no fence — <code>rgb(255, 0, 0)</code> is
+  //     already read as one value.</p>`,
+  // },
   {
     id: 'css-guard',
     name: 'Guardrails',
@@ -521,20 +489,6 @@ const CSS_CYCLES_FUNCTIONS = [
       <code>0.04</code>, <code>blur(80px)</code> becomes <code>blur(8px)</code>
       — rather than refused outright.</p>`,
   },
-  {
-    id: 'css-turn',
-    name: 'Turn ownership',
-    sig: '(governed by the JPattern ring — never fails open)',
-    body: `<p>Two performers can both target the same selector, so only
-      <strong>one</strong> peer's declared values for a given statement are
-      ever live at a time — whoever currently holds the JPattern ring's
-      slot. Everyone else's properties are pinned to the room's own captured
-      baseline (what the page looked like before any CSS Cycles rule ever
-      touched it), re-applied the instant the ring's token changes rather
-      than waiting on that peer's own next hap. Unlike Text Cycles, CSS
-      Cycles never opens every peer's styling to the shared cascade, even
-      when no ring is actively scheduling turns.</p>`,
-  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -544,55 +498,48 @@ const CSS_CYCLES_FUNCTIONS = [
 const LIVE_CAPTURE_FUNCTIONS = [
   {
     id: 'lc-main',
-    name: 'liveCapture(medium, name, detectLocalDevices)',
-    sig: "liveCapture(medium, name = '', detectLocalDevices = false)",
+    name: 'liveCapture',
+    sig: "liveCapture([pattern_medium], [device_name_pattern]='', [detect_local_devices]=false)/n liveCapture [medium] [device_name] [detect_local_devices]",
     body: `
-      <p>Records a rolling window of one medium from one source and returns
-      a patternable handle — every pattern event replays / refires / retraces
-      the freshest captured slice, the same "struct gates the live signal"
-      model <code>live()</code> uses for audio, generalised to six mediums.</p>
-      <table>
-        <tr><th>arg</th><th>type</th><th>meaning</th></tr>
-        <tr><td><code>medium</code></td><td>string</td><td>one of <code>audio</code>, <code>video</code>, <code>text</code>, <code>css</code>, <code>gesture</code>, <code>cursor</code></td></tr>
-        <tr><td><code>name</code></td><td>string</td><td>a participant (display name or room-index token), or for <code>audio</code> a local input device name; ignored for <code>gesture</code>/<code>cursor</code></td></tr>
-        <tr><td><code>detectLocalDevices</code></td><td>boolean</td><td>dump YOUR camera/audio devices to the console</td></tr>
-      </table>
-      <p>Every string argument is rewritten to a single-quoted literal before
-      evaluation regardless of how you write it — a real deviith video conferencing capabilities, ce name like
-      <code>"Scarlett 2i2 (Focusrite)"</code> would otherwise break Strudel's
-      mini-notation parser and kill the whole room's combined program.</p>
-      <pre>$: liveCapture('audio', 'Ada').struct("x*4").lpf(800).room(1)
-$: liveCapture('video', 'Ada').struct("x*8")
-$: liveCapture('gesture').struct("x*2")</pre>`,
+      <p>Records and stores the most recently played turn of one medium from one source.</p>
+      <span>Example:</span>
+      <code>liveCapture('audio', 'Scarlett 2i2 (Focusrite)', true)
+      .chop(8)
+      </code>
+      <code>liveCapture 'audio' 'Scarlett 2i2 (Focusrite)' true
+      # chop(8)
+      </code>
+      
+      `,
   },
-  {
-    id: 'lc-media',
-    name: 'The six mediums',
-    sig: 'audio | video | text | css | gesture | cursor',
-    body: `
-      <table>
-        <tr><th>medium</th><th>source</th><th>each event…</th></tr>
-        <tr><td><code>audio</code></td><td>the named peer's aggregator audio, or a local input device</td><td>plays the freshest ~10s of ring audio through the normal effects chain</td></tr>
-        <tr><td><code>video</code></td><td>the named peer's published video</td><td>steps a playback head over a rolling frame ring, blitted to a canvas for Hydra's <code>src()</code></td></tr>
-        <tr><td><code>text</code></td><td>the named peer's editor-change stream</td><td>paints the freshest added code fragment into an overlay (silent)</td></tr>
-        <tr><td><code>css</code></td><td>the named peer's compiled CSS Cycles sheet</td><td>re-applies it to your page via a dedicated stylesheet (silent)</td></tr>
-        <tr><td><code>gesture</code></td><td>YOUR OWN fired facial gestures</td><td>refires the next gesture in the recorded sequence (silent)</td></tr>
-        <tr><td><code>cursor</code></td><td>YOUR OWN head-cursor path</td><td>steps your head cursor along the recorded path (silent)</td></tr>
-      </table>`,
-  },
-  {
-    id: 'lc-replay',
-    name: 'Breaking a replay / multi-peer semantics',
-    sig: '(behavior of a running capture — no call of its own)',
-    body: `<p>Pressing <strong>Right Arrow</strong>, or holding your
-      <strong>right eye shut for two seconds</strong>, breaks every running
-      <code>gesture</code>/<code>cursor</code> replay; it stays broken until
-      the program is re-evaluated. Only the <strong>authoring</strong>
-      browser's <code>liveCapture()</code> calls actually run — every other
-      peer's copy of your program is silently rewritten to a no-op, so your
-      capture never opens your microphone or replays your gestures on
-      everyone else's machine.</p>`,
-  },
+  // {
+  //   id: 'lc-media',
+  //   name: 'The six mediums',
+  //   sig: 'audio | video | text | css | gesture | cursor',
+  //   body: `
+  //     <table>
+  //       <tr><th>medium</th><th>source</th><th>each event…</th></tr>
+  //       <tr><td><code>audio</code></td><td>the named peer's aggregator audio, or a local input device</td><td>plays the freshest ~10s of ring audio through the normal effects chain</td></tr>
+  //       <tr><td><code>video</code></td><td>the named peer's published video</td><td>steps a playback head over a rolling frame ring, blitted to a canvas for Hydra's <code>src()</code></td></tr>
+  //       <tr><td><code>text</code></td><td>the named peer's editor-change stream</td><td>paints the freshest added code fragment into an overlay (silent)</td></tr>
+  //       <tr><td><code>css</code></td><td>the named peer's compiled CSS Cycles sheet</td><td>re-applies it to your page via a dedicated stylesheet (silent)</td></tr>
+  //       <tr><td><code>gesture</code></td><td>YOUR OWN fired facial gestures</td><td>refires the next gesture in the recorded sequence (silent)</td></tr>
+  //       <tr><td><code>cursor</code></td><td>YOUR OWN head-cursor path</td><td>steps your head cursor along the recorded path (silent)</td></tr>
+  //     </table>`,
+  // },
+  // {
+  //   id: 'lc-replay',
+  //   name: 'Breaking a replay / multi-peer semantics',
+  //   sig: '(behavior of a running capture — no call of its own)',
+  //   body: `<p>Pressing <strong>Right Arrow</strong>, or holding your
+  //     <strong>right eye shut for two seconds</strong>, breaks every running
+  //     <code>gesture</code>/<code>cursor</code> replay; it stays broken until
+  //     the program is re-evaluated. Only the <strong>authoring</strong>
+  //     browser's <code>liveCapture()</code> calls actually run — every other
+  //     peer's copy of your program is silently rewritten to a no-op, so your
+  //     capture never opens your microphone or replays your gestures on
+  //     everyone else's machine.</p>`,
+  // },
 ];
 
 // ---------------------------------------------------------------------------
@@ -853,9 +800,7 @@ function _buildDocsBody() {
         <h4>CSS Patterns</h4>
         ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
 
-        <h4>Bot Configuration</h4>
-
-        <h4>Gesture Configuration</h4>
+        <h4>Configuration Methods</h4>
 
         <h4>Live Capture Patterns</h4>
         ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
