@@ -1,29 +1,3 @@
-// docs-about.js — the welcome-page Docs / About corner.
-//
-// Two buttons, fixed bottom-right of the welcome page — a plain-CSS corner
-// (docs-about.css), appended to document.body the same way
-// landmark-gesture-mode.js's own corner is, since it must not be grafted
-// into any of Jitsi's own React-owned DOM (a re-render would wipe it). An
-// earlier version sat top-right, tracking the live position of Jitsi's own
-// settings gear (`.welcome-page-settings`) to stay just left of it — that
-// covered (and ate clicks meant for) the gear itself, so it was moved down
-// here instead; see the removed `_positionCorner` in git history for the
-// bug if this ever needs resurrecting.
-//
-// Docs and About are each a centered modal panel. Docs documents the JPattern
-// (metaprogram) language end to end: what each chained function does, its
-// syntax, and a short example — the language `src/audio-net/
-// MetaprogrammerParser.js` actually parses, kept in sync with
-// `src/features/jpattern.md` and `src/features/turn-ring.md`. About is a
-// short plain-language summary of what Trussal is.
-
-// PUT SOMEWHERE ELSE:       <p>Single quotes opt out of mini entirely, so a phrase with its own
-//       spaces needs no escaping at all: <code>word('I like squirrels?')</code>
-//       is one whole phrase, one hap. The same rule applies to every text
-//       param, not only <code>word</code> — <code>.typeface("Times New Roman")</code>
-//       mints three separate steps; <code>.typeface('Times New Roman')</code>
-//       is one atom.</p>
-
 const CORNER_ID    = 'trussal-da-corner';
 const DOCS_BTN_ID  = 'trussal-da-docs-btn';
 const ABOUT_BTN_ID = 'trussal-da-about-btn';
@@ -39,81 +13,66 @@ import styles from './docs-about.css';
 
 //TODO: remove when done
 const JPATTERN_FUNCTIONS = [
-//   {
-//     id: 'jp-participants',
-//     name: '$ participants — the scheduling sequence',
-//     sig: '$ participants <token token …>\n$ <token token …>            (the "participants" label is optional)',
-//     body: `
-//       <p>Opens the metaprogram's one scheduling voice: the sequence of tokens
-//       that take turns streaming, in the order a <code>&lt;…&gt;</code>
-//       alternation names them. A token is a participant's room index — <code>0</code>
-//       for the first person to join a room, <code>1</code> the second, and so on
-//       — or a bot's index plus a letter suffix (<code>0a</code>, the first
-//       person's first bot; <code>0zb</code>, a later one). Under the default
-//       <code># ring hash</code> (see below) the sequence's own contents don't
-//       decide who plays — everyone present takes turns automatically — but the
-//       statement must still be there, since the grammar requires a
-//       <code>$</code> voice.</p>
-//       <p>Turn-modifying operators are written glued to the token, no spaces:</p>
-//       <table>
-//         <tr><th>Operator</th><th>Effect</th></tr>
-//         <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;…&gt;</code>) or a share of one cycle (in <code>[…]</code>).</td></tr>
-//         <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
-//         <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) — the cycle still advances.</td></tr>
-//         <tr><td><code>&lt;…&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
-//         <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
-//       </table>
-//       <p><code>0 .. 3</code> (or <code>0..3</code>) is a range, expanding to <code>0 1 2 3</code>.</p>
-//       <pre>'metaprogram editor'
-// $ participants &lt;0@2 1!3 0a?&gt;*2
-// # cycles "wcl" 20</pre>`,
-//   },
-//   {
-//     id: 'jp-ring',
-//     name: 'ring — how the rotation order is chosen',
-//     sig: 'ring hash [w <token> <weight> …]\nring explicit',
-//     body: `
-//       <p><code>hash</code> (the default in a fresh room) computes the rotation
-//       as a consistent hash of whoever is <em>currently present</em>, reseeded
-//       every cycle — joins and leaves reorder almost nothing else. <code>w</code>
-//       pairs give individual tokens a bigger share of turns (<code>w 0 3</code>
-//       is triple weight for token <code>0</code>); weights are only legal under
-//       <code>hash</code>.</p>
-//       <p><code>explicit</code> is the plain literal walk: the ring is exactly
-//       what <code>$ participants &lt;…&gt;</code> lists, and anyone not listed
-//       stays silent. An older program with no <code># ring</code> line at all
-//       behaves as <code>explicit</code>.</p>
-//       <pre># ring hash w 0 3 2a 2</pre>`,
-//   },
-//   {
-//     id: 'jp-cycles',
-//     name: 'cycles — the length of one cycle (and one turn)',
-//     sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
-//     body: `
-//       <p>Sets how long one cycle — and so one performer's turn — lasts, as a
-//       multiple of a live network metric: <code>"wcl"</code> (worst-case
-//       mouth-to-ear latency) or <code>"wcpl"</code> (worst-case packet loss).
-//       With just a scale factor the target tracks the metric live:
-//       <code># cycles "wcl" 3</code> is 3× the current WCL. A third number
-//       <em>pins</em> the metric at that fixed value (seconds for wcl, a 0–1
-//       fraction for wcpl) while the scale still multiplies it — everything
-//       else (effect intensities, the readout) keeps following the real
-//       network. Exactly one <code># cycles</code> line is allowed per
-//       program. Metric names are always quoted.</p>
-//       <pre># cycles "wcl" 10 0.3   <span style="opacity:.7">// WCL pinned at 300ms, scaled ×10 → every cycle is 3s</span></pre>`,
-//   },
-//   {
-//     id: 'jp-tempo',
-//     name: 'tempo — quantization tempo',
-//     sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
-//     body: `
-//       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
-//       (a plain number, or a fraction like <code>90/4</code>) and a unit:
-//       beats, cycles, or cycles per minute. No <code># tempo</code> line is
-//       injected by default — an unwritten tempo still falls back to 120bpm
-//       for quantization purposes.</p>
-//       <pre># tempo 90/4 cpm</pre>`,
-//   },
+  {
+    id: 'jp-participants',
+    name: '$ participants',
+    sig: 'participants([participant_tokens])\nparticipants [participant_tokens]',
+    body: `
+      <p>Orders participants' turns when ring is set to false.</p>
+      <p>Turn-modifying operators are written glued to the token, no spaces:</p>
+      <code>
+        $: participants("<0 9>")
+      </code>
+      <code>
+        $ participants <0 9>
+      </code>
+      `,
+  },
+  {
+    id: 'jp-ring',
+    name: 'ring',
+    sig: 'ring([boolean])\nring boolean',
+    body: `
+      <p>Sets the Metaprogram into consistent hashing mode.</p>
+      <code>
+        $: participants(3)
+        .ring(true)
+      </code>
+      <code>
+        $ participants 3
+        # ring true
+      </code>
+      `,
+  },
+  {
+    id: 'jp-cycles',
+    name: 'cycles',
+    sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
+    body: `
+      <p>Sets how long one cycle — and so one performer's turn — lasts, as a
+      multiple of a live network metric: <code>"wcl"</code> (worst-case
+      mouth-to-ear latency) or <code>"wcpl"</code> (worst-case packet loss).
+      With just a scale factor the target tracks the metric live:
+      <code># cycles "wcl" 3</code> is 3× the current WCL. A third number
+      <em>pins</em> the metric at that fixed value (seconds for wcl, a 0–1
+      fraction for wcpl) while the scale still multiplies it — everything
+      else (effect intensities, the readout) keeps following the real
+      network. Exactly one <code># cycles</code> line is allowed per
+      program. Metric names are always quoted.</p>
+      <pre># cycles "wcl" 10 0.3   <span style="opacity:.7">// WCL pinned at 300ms, scaled ×10 → every cycle is 3s</span></pre>`,
+  },
+  {
+    id: 'jp-tempo',
+    name: 'tempo ',
+    sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
+    body: `
+      <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
+      (a plain number, or a fraction like <code>90/4</code>) and a unit:
+      beats, cycles, or cycles per minute. No <code># tempo</code> line is
+      injected by default — an unwritten tempo still falls back to 120bpm
+      for quantization purposes.</p>
+      <pre># tempo 90/4 cpm</pre>`,
+  },
   {
     id: 'jp-room',
     name: 'room',
@@ -150,109 +109,7 @@ const JPATTERN_FUNCTIONS = [
       into the text output. Example(s):</p>
       <pre># noise "wcl" 20 "wcrtt" 10</pre>`,
   },
-  // {
-  //   id: 'jp-grid',
-  //   name: 'grid — the per-participant distance overlay',
-  //   sig: 'grid [landmarks: true|false]        (default false)',
-  //   body: `
-  //     <p>Marks each participant's video panel with a small grayscale circle
-  //     (darker = a greater modelled network distance) in the top-left corner;
-  //     your own panel's circle is always white from your own browser. With
-  //     <code>landmarks</code> on, a participant running MediaPipe also gets a
-  //     vector in the bottom-right showing their average facial-landmark
-  //     motion. Unrelated to <code># mosaic</code>.</p>
-  //     <pre># grid true</pre>`,
-  // },
-  // {
-  //   id: 'jp-mosaic',
-  //   name: 'mosaic — the aggregator\'s video layout',
-  //   sig: 'mosaic [true|false]        (default true — unwritten means on)',
-  //   body: `
-  //     <p>Controls how the room's published video is composited. On (the
-  //     default) tiles every Hydra-running participant into a square grid, only
-  //     ticking whoever currently holds the turn. <code>false</code> drops to a
-  //     single full-frame view of just the streaming participant.</p>
-  //     <pre># mosaic false</pre>`,
-  // },
-  // {
-  //   id: 'jp-ply',
-  //   name: 'ply — repeat each turn\'s buffer n times',
-  //   sig: 'ply <n>',
-  //   body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
-  //     buffer into <em>n</em> repeats.</p>
-  //     <pre># ply 2</pre>`,
-  // },
-  // {
-  //   id: 'jp-chop',
-  //   name: 'chop — chop each turn\'s buffer into n pieces',
-  //   sig: 'chop <n>',
-  //   body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
-  //     buffer into <em>n</em> consecutive pieces.</p>
-  //     <pre># chop 2</pre>`,
-  // },
-  // {
-  //   id: 'jp-shuffle',
-  //   name: 'shuffle — randomize buffer-piece order',
-  //   sig: 'shuffle [n]',
-  //   body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
-  //     of (optionally, <em>n</em>) buffer pieces, seeded so every listener
-  //     hears the same shuffle.</p>`,
-  // },
-  // {
-  //   id: 'jp-degrade',
-  //   name: 'degrade / degradeBy — drop events at random',
-  //   sig: 'degrade\ndegradeBy <probability 0–1>',
-  //   body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
-  //     default; <code>degradeBy</code> takes an explicit probability. Seeded,
-  //     so the draw is identical for every listener.</p>
-  //     <pre># degradeBy 0.25</pre>`,
-  // },
-  // {
-  //   id: 'jp-undegrade',
-  //   name: 'undegrade / undegradeBy — the inverse of degrade',
-  //   sig: 'undegrade\nundegradeBy <probability 0–1>',
-  //   body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
-  //     would have dropped — the complementary draw, same seed.</p>`,
-  // },
-  // {
-  //   id: 'jp-hush',
-  //   name: 'hush — silence the voice',
-  //   sig: 'hush',
-  //   body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
-  //     voice's output entirely without removing it from the scheduling
-  //     sequence.</p>`,
-  // },
-  // {
-  //   id: 'jp-jux',
-  //   name: 'jux — a stacked, cycle-offset duplicate',
-  //   sig: 'jux',
-  //   body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
-  //     metaprogram analog of Strudel's <code>.jux()</code>/the stack
-  //     (<code>,</code>) operator.</p>`,
-  // },
-  // {
-  //   id: 'jp-superimpose',
-  //   name: 'superimpose — layer a second sequence on top',
-  //   sig: 'superimpose [<sequence>]',
-  //   body: `<p>Like <code># jux</code>, but the optional bracketed sequence
-  //     lets the superimposed layer be a different pattern, not a plain copy.</p>
-  //     <pre># superimpose &lt;0 2&gt;</pre>`,
-  // },
-  // {
-  //   id: 'jp-buttons',
-  //   name: 'Button declarations — *$ / *#',
-  //   sig: '*$ participants <tokens>       // a voice, waiting for its button\n*# crush "wcl" 2               // an effect, waiting for its button',
-  //   body: `
-  //     <p>A statement written with a leading <code>*</code> is a
-  //     <strong>declaration</strong>, not a live statement — it's skipped by
-  //     the parser and instead rendered as a button under the JPattern editor
-  //     (also reachable by head-cursor dwell). Pressing a
-  //     <code>*$ participants …</code> button merges its tokens into the live
-  //     ring; pressing it again removes them. Pressing a
-  //     <code>*# …</code> effect button appends that directive line (pressing
-  //     again comments it back out). A declaration is one line, and may carry
-  //     a trailing <code>//</code> comment.</p>`,
-  // },
+
 ];
 
 // ---------------------------------------------------------------------------
@@ -284,7 +141,7 @@ const TEXT_CYCLES_FUNCTIONS = [
     <span>Example(s):</span>
     <code>$: typeface("Monaco").word("dachshund")</code>
     <code>$ typeface("Monaco") # word "dachshund")</code>
-    <code>$: t("Monaco").w("dachshund")</code>
+    <code>$: t("Monaco"text-cycles).w("dachshund")</code>
     <code>$ t "Monaco" w "dachshund" </code>
     <table>
       <tr><th>Supported Typefaces</th></tr>
@@ -449,19 +306,6 @@ const CSS_CYCLES_FUNCTIONS = [
           css(\`.ts-chip { &:hover { border-color: #ffffff } }\`)
       </code>`,
   },
-  // {
-  //   id: 'css-fence',
-  //   name: 'The ^…^ fence — multi-part CSS values',
-  //   sig: '.borderRadius("^2em / 1em 3em 0.5em^")\n.borderRadius("&lt;^2em 1em^ ^0.2em 4em^&gt;")',
-  //   body: `<p>A double-quoted value is mini notation, so a bare space is a
-  //     step separator — <code>.borderRadius("2em 1em")</code> is two
-  //     one-cycle steps, not one two-part value. Carets fence one literal CSS
-  //     value: inside them, spaces, commas and slashes are CSS rather than
-  //     mini operators — the only way to write the slash form of
-  //     <code>border-radius</code>, or a multi-shadow <code>box-shadow</code>.
-  //     A function call needs no fence — <code>rgb(255, 0, 0)</code> is
-  //     already read as one value.</p>`,
-  // },
   {
     id: 'css-guard',
     name: 'Guardrails',
@@ -491,6 +335,125 @@ const CSS_CYCLES_FUNCTIONS = [
   },
 ];
 
+const CONFIG_FUNCTIONS = [
+    {
+    id: 'bc-main',
+    name: 'botConfig',
+    sig: "botConfig([config_object])",
+    body: `
+      <p>Applies constraints for generated bot code upon spawn.</p>
+      <span>Example:</span>
+      <code>botConfig({"random":true, "quantity":3, "retroactive":true})
+      </code>
+      `,
+  },
+  {
+    id: 'gc-main',
+    name: 'gestureAndLandmarkConfig',
+    sig: "gestureAndLandmarkConfig([config_object])",
+    body: `
+      <p>Applies settings for gesture recognition and virtual keyboard use.</p>
+      <span>Example:</span>
+      <code>botConfig({"random":true, "quantity":3, "retroactive":true})
+      </code>
+      
+      `,
+  },
+  {
+    id: 'jp-grid',
+    name: 'grid',
+    sig: 'grid [boolean]=false',
+    body: `
+      <p>Marks each participant's video panel with a small grayscale circle in the top-left corner.
+      One's own panel's circle is always white, and the darkness of the circle is determined
+      according to estimated physical distance between participants.
+      With landmarks on, a participant running MediaPipe also gets a
+      vector in the bottom-right showing their average facial-landmark
+      motion.</p>
+      $: participants("<1 0 3z>")
+      .cycles("wcpl", 100)
+      .grid(true)
+      .fast(1.2)
+      </code>
+      <code>
+      $  participants <1 0 3z>
+      # cycles "wcpl" 100
+      # grid true
+      # fast 1.2
+      </code>  
+      `,
+  },
+  {
+    id: 'jp-mosaic',
+    name: 'mosaic',
+    sig: 'mosaic [boolean]=true',
+    body: `
+      <p>How the Aggregator's video feed is displayed. When set to true, when it is each participant's turn,
+      individual video squares are displayed as a part of a grid that is arranged as a square with 
+      a number of video tiles equal to the ceiling of the square root of the amount of participants. 
+      When it is set to false,
+      </p>
+      <code>
+      $: participants("0 1")
+      .cycles("wcl", 35)
+      .mosaic(true)
+      .slow(3)
+      </code>
+      <code>
+      $  participants "0 1"
+      # cycles "wcl" 35
+      # mosaic true
+      # slow 3
+      </code>     
+      `,
+  }
+
+];
+
+const UI_PATTERN_FUNCTIONS = [
+    {
+    id: 'meeting-reactions',
+    name: 'reaction',
+    sig: "reaction([meeting_reaction_pattern])",
+    body: `
+      <p>Broadcasts patterns of Jitsi Meet's built in reactions to the public chat window.</p>
+      <span>Example:</span>
+      <code>$: reaction("si tu@3 s!4")
+      .slow(2)
+      </code>
+      <code>
+      $ reaction "si tu@3 s!4" 
+      # slow 2
+      </code>
+      `,
+  },
+  {
+    id: 'breakout-patterns',
+    name: 'breakout',
+    sig: "breakout([breakout_room_assignment_pattern])",
+    body: `
+      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.</p>
+      <span>Example:</span>
+      <code>$: breakout({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$ breakout {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `,
+  },
+  {
+    id: 'assign',
+    name: 'assign',
+    sig: "assign([participant_name_pattern)",
+    body: `
+      <p>Assigns participants to breakout rooms. Does not reassign participants to a room to which they have already been assigned/</p>
+      <span>Example:</span>
+      <code>$: assign({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$  assign {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `,
+  },
+]
 // ---------------------------------------------------------------------------
 // Content — liveCapture() (src/live-capture.js, src/features/live-capture.md).
 // A Strudel source function, not a JPattern `#` directive.
@@ -508,40 +471,129 @@ const LIVE_CAPTURE_FUNCTIONS = [
       </code>
       <code>liveCapture 'audio' 'Scarlett 2i2 (Focusrite)' true
       # chop(8)
-      </code>
-      
+      </code>     
       `,
   },
-  // {
-  //   id: 'lc-media',
-  //   name: 'The six mediums',
-  //   sig: 'audio | video | text | css | gesture | cursor',
-  //   body: `
-  //     <table>
-  //       <tr><th>medium</th><th>source</th><th>each event…</th></tr>
-  //       <tr><td><code>audio</code></td><td>the named peer's aggregator audio, or a local input device</td><td>plays the freshest ~10s of ring audio through the normal effects chain</td></tr>
-  //       <tr><td><code>video</code></td><td>the named peer's published video</td><td>steps a playback head over a rolling frame ring, blitted to a canvas for Hydra's <code>src()</code></td></tr>
-  //       <tr><td><code>text</code></td><td>the named peer's editor-change stream</td><td>paints the freshest added code fragment into an overlay (silent)</td></tr>
-  //       <tr><td><code>css</code></td><td>the named peer's compiled CSS Cycles sheet</td><td>re-applies it to your page via a dedicated stylesheet (silent)</td></tr>
-  //       <tr><td><code>gesture</code></td><td>YOUR OWN fired facial gestures</td><td>refires the next gesture in the recorded sequence (silent)</td></tr>
-  //       <tr><td><code>cursor</code></td><td>YOUR OWN head-cursor path</td><td>steps your head cursor along the recorded path (silent)</td></tr>
-  //     </table>`,
-  // },
-  // {
-  //   id: 'lc-replay',
-  //   name: 'Breaking a replay / multi-peer semantics',
-  //   sig: '(behavior of a running capture — no call of its own)',
-  //   body: `<p>Pressing <strong>Right Arrow</strong>, or holding your
-  //     <strong>right eye shut for two seconds</strong>, breaks every running
-  //     <code>gesture</code>/<code>cursor</code> replay; it stays broken until
-  //     the program is re-evaluated. Only the <strong>authoring</strong>
-  //     browser's <code>liveCapture()</code> calls actually run — every other
-  //     peer's copy of your program is silently rewritten to a no-op, so your
-  //     capture never opens your microphone or replays your gestures on
-  //     everyone else's machine.</p>`,
-  // },
 ];
 
+const STRUDEL_OVERLOAD = [
+  {
+    id: 'jp-ply',
+    name: 'ply — repeat each turn\'s buffer n times',
+    sig: 'ply <n>',
+    body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
+      buffer into <em>n</em> repeats.</p>
+      <pre># ply 2</pre>`,
+  },
+  {
+    id: 'jp-chop',
+    name: 'chop — chop each turn\'s buffer into n pieces',
+    sig: 'chop <n>',
+    body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
+      buffer into <em>n</em> consecutive pieces.</p>
+      <pre># chop 2</pre>`,
+  },
+  {
+    id: 'jp-shuffle',
+    name: 'shuffle — randomize buffer-piece order',
+    sig: 'shuffle [n]',
+    body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
+      of (optionally, <em>n</em>) buffer pieces, seeded so every listener
+      hears the same shuffle.</p>`,
+  },
+  {
+    id: 'jp-degrade',
+    name: 'degrade / degradeBy — drop events at random',
+    sig: 'degrade\ndegradeBy <probability 0–1>',
+    body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
+      default; <code>degradeBy</code> takes an explicit probability. Seeded,
+      so the draw is identical for every listener.</p>
+      <pre># degradeBy 0.25</pre>`,
+  },
+  {
+    id: 'jp-undegrade',
+    name: 'undegrade / undegradeBy — the inverse of degrade',
+    sig: 'undegrade\nundegradeBy <probability 0–1>',
+    body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
+      would have dropped — the complementary draw, same seed.</p>`,
+  },
+  {
+    id: 'jp-hush',
+    name: 'hush — silence the voice',
+    sig: 'hush',
+    body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
+      voice's output entirely without removing it from the scheduling
+      sequence.</p>`,
+  },
+  {
+    id: 'jp-jux',
+    name: 'jux — a stacked, cycle-offset duplicate',
+    sig: 'jux',
+    body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
+      metaprogram analog of Strudel's <code>.jux()</code>/the stack
+      (<code>,</code>) operator.</p>`,
+  },
+  {
+    id: 'jp-superimpose',
+    name: 'superimpose — layer a second sequence on top',
+    sig: 'superimpose [<sequence>]',
+    body: `<p>Like <code># jux</code>, but the optional bracketed sequence
+      lets the superimposed layer be a different pattern, not a plain copy.</p>
+      <pre># superimpose &lt;0 2&gt;</pre>`,
+  },
+];
+
+const FETCH_PATTERNS = [
+  {
+    id:'image',
+    name:'image',
+    sig: 'image([image_file_name_pattern])\nimage image_file_name_pattern',
+    body:`<p>Sends image files up to 10MB in the public meeting chat window.
+    .jpeg, .jpg, .png, .gif, .bmp, and .svg files are supported.</p>
+    <code>$: image("<example.com/cat.png someplace.xyz/doggo.svg>")</code>
+    <code>$ image <example.com/cat.png someplace.xyz/doggo.svg> </code>
+    `
+  },
+  {
+    id:'video',
+    name:'video',
+    sig: 'video([video_file_name_pattern])\nvideo video_file_name_pattern',
+    body:`<p>Sends video files up to 10MB in the public meeting chat window.
+    .mp4, mov, and m4a files are supported.</p>
+    <code>$: video("example.com/pupper.mov")</code>
+    <code>$ video "example.com/pupper.mov" </code>
+    `
+  },
+  {
+    id:'soundFile',
+    name:'soundFile',
+    sig: 'soundFile([sound_file_name_pattern])\nsoundFile sound_file_name_pattern',
+    body:`<p>Sends audio files up to 10MB in the public meeting chat window.
+    .wav, mp3, and .ogg files are supported.</p>
+    <code>$: soundFile("example.com/ratchet.wav")</code>
+    <code>$ soundFile "example.com/ratchet.wav" </code>
+    `
+  },
+  {
+    id:'pdfFile',
+    name:'pdfFile',
+    sig: 'pdfFile([pdf_file_name_pattern])\npdfFile pdf_file_name_pattern',
+    body: `<p>Sends PDF files up to 10MB in the public meeting chat window</p>
+    <code>$: textFile("<example.com/shopping.pdf someplace.xyz/digeridoo.pdf>")</code>
+    <code>$ textFile <example.com/shopping.pdf someplace.xyz/digeridoo.pdf> </code>
+    `
+  },
+  {
+    id:'textFile',
+    name:'textFile',
+    sig: 'textFile([text_file_name_pattern])\ntextFile text_file_name_pattern',
+    body: `<p>Sends text files up to 10MB in the public meeting chat window</p>
+    <code>$: textFile("<example.com/satie.txt someplace.xyz/transistor.txt>")</code>
+    <code>$ textFile <example.com/satie.txt someplace.xyz/transistor.txt> </code>
+    `
+  },
+
+]
 // ---------------------------------------------------------------------------
 // Content — About.
 // ---------------------------------------------------------------------------
@@ -705,6 +757,18 @@ function _buildDocsBody() {
         inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
         Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
         </p>
+    <h3>Multi-Dimensional CSS Values</h3>
+        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
+        in a pair of carets. 
+        <span>Example:</span>
+        <code>$:css(".something")
+        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
+        </code>
+        <code>
+        $ css ".something"
+        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
+        </code>
+        </p>
 
     <h3>MediaPipe in the Meeting Room</h3>
         <p>As is the case regarding the face mesh display and virtual keyboard, dwelling upon the same icons allows one to drag the Trussal Studio user interface.
@@ -716,7 +780,17 @@ function _buildDocsBody() {
         respectively by hovering over and dwelling upon any of the "Eval" or "Stop" buttons.
         See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
         </p>
-    <h3>JPattern Reference</h3>
+        <h4>Adding Inline Buttons</h4>
+        <p>Adding an * to a voice name creates an inline button upon reevaluation.
+        </p>
+        <span>Example:</span>
+        <code>*btn: sound("piano:2")
+        .note("a4 b4 c4)
+        </code>
+        <code>*btn sound "piano:2"
+        # note "a4 b4 c4"
+        </code>
+        <h3>JPattern Reference</h3>
         <p>
           Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
           external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
@@ -778,11 +852,15 @@ function _buildDocsBody() {
             </code>
             </p>
             <h5>Operators</h5>
-            <p>JPattern overloads Strudel's @, !, *, ?, _, ~, and / operators. 
-            </p>
-            <h5>Overloaded Strudel Methods</h5>
-            <p>
-            The following Strudel methods, in addition to room, noise, crush, and echo, are overloaded:
+            <p>JPattern overloads Strudel's @, !, *, ?, _, ~, and / operators.
+            <table>
+              <tr><th>Operator</th><th>Effect</th></tr>
+              <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;…&gt;</code>) or a share of one cycle (in <code>[…]</code>).</td></tr>
+              <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
+              <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) — the cycle still advances.</td></tr>
+              <tr><td><code>&lt;…&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
+              <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
+            </table> 
             </p>
 
         <h4>Preprocessing Directives</h4>
@@ -791,7 +869,7 @@ function _buildDocsBody() {
           a preprocessing directive, even if it only contains Strudel and/or Hydra code.
           </p>
 
-        <h4>Global Room Effects</h4>
+        <h4>Global Room Pattern Functions</h4>
         ${_renderFnSection(JPATTERN_FUNCTIONS)} 
 
         <h4>Text Patterns</h4>
@@ -801,93 +879,21 @@ function _buildDocsBody() {
         ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
 
         <h4>Configuration Methods</h4>
+        ${_renderFnSection(CONFIG_FUNCTIONS)}
 
         <h4>Live Capture Patterns</h4>
         ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
 
-        <h4>Jitsi UI Patterns and Configuration</h4>
+        <h4>Jitsi UI Patterns</h4
+        ${_renderFnSection(UI_PATTERN_FUNCTIONS)}>
+
+        <h4>Other Overloaded Strudel Functions</h4>
+        ${_renderFnSection(STRUDEL_OVERLOAD)}
+
+        <h4>Data Fetching Patterns</h4>
+        ${_renderFnSection(FETCH_PATTERNS)}
   `
 }
-
-// TODO: delete when finished: function _buildDocsBody() {
-//   return `
-//     <h3 id="trussal-da-usage">Basic usage</h3>
-//     <p>Once you're in a room, click <strong>Studio</strong> (bottom-left) to
-//     open Trussal Studio. It has one card per performer for their personal
-//     Strudel + Hydra editor, plus one shared <strong>JPattern</strong> card
-//     that everyone in the room edits together.</p>
-//     <p>Every editor buffer opens with a required directive on its first line
-//     — <code>'personal editor'</code>, <code>'bot editor'</code>, or
-//     <code>'metaprogram editor'</code> for the JPattern card — that's already
-//     prefilled; leave it in place.</p>
-//     <p>A buffer is written entirely in one of two notations, never mixed:
-//     <strong>mondo</strong> (<code>$ participants &lt;0 1&gt;</code> then one
-//     <code># directive …</code> per line — what every example on this page
-//     uses) or <strong>mini</strong>, Strudel's own dot-chained spelling of the
-//     same thing (<code>$: participants("&lt;0 1&gt;").cycles("wcl", 10)</code>).</p>
-//     <p>Write or edit the program in the JPattern card and press
-//     <strong>▶ Apply</strong> to push it to the whole room. Any line prefixed
-//     with <code>*</code> is a <em>declaration</em> instead — it renders as a
-//     button under the editor rather than running immediately (see "Button
-//     declarations" below).</p>
-//     <p>For hands-free editing, see <strong>Landmark &amp; Gesture Mode</strong>
-//     (☰ menu, top-left of any screen, or press → three times) — it adds an
-//     on-screen keyboard and a head-cursor you can dwell-click with.</p>
-
-//     <h3 id="trussal-da-jpattern">JPattern function reference</h3>
-//     <p>Every directive below is written on its own line in the shared
-//     JPattern card, chained onto the <code>$ participants</code> voice. This
-//     is the language <code>src/audio-net/MetaprogrammerParser.js</code>
-//     parses — kept in sync with <code>src/features/jpattern.md</code> and
-//     <code>src/features/turn-ring.md</code> in the repository.</p>
-//     <div class="da-fn">
-//       <div class="da-fn-name">The <code>#</code> prefix</div>
-//       <p><code>#</code> is <strong>mondo</strong> notation's chaining
-//       operator — how a line attaches to the voice <code>$ participants</code>
-//       opened above it, the same job a mini-notation <code>.method(…)</code>
-//       call does. It is not part of any directive's own name: <code>#
-//       cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
-//       (mini, chained onto <code>$: participants(…)</code>) are the same
-//       statement written in the two surface notations. Every directive
-//       below — <code>ring</code>, <code>cycles</code>, <code>room</code>,
-//       <code>ply</code>, … — takes this same <code>#</code> in mondo; the
-//       signatures on this page name the directive itself and omit it, the
-//       way this page also doesn't repeat <code>$:</code> on every mini
-//       example.</p>
-//   JPATTERN_FUNCTIONS    <pre>'metaprogram editor'
-// $ participants &lt;0 1&gt;
-// # cycles "wcl" 10
-// # room "wcl" 2</pre>
-//     </div>
-//     ${_renderFnSection(JPATTERN_FUNCTIONS)}
-
-//     <h3 id="trussal-da-textcycles">Text Cycles</h3>
-//     <p>Not a JPattern <code>#</code> directive — a Strudel function available
-//     in the <strong>personal</strong> or <strong>bot</strong> editor once a
-//     buffer opens with <code>await initTextCycles()</code>. Paints words into
-//     the room's chat instead of, or alongside, making sound. See
-//     <code>src/features/textcycles.md</code> for the full write-up (escaping,
-//     seeding, per-participant scoping, how the JPattern room effects reach
-//     text).</p>
-//    
-
-//     <h3 id="trussal-da-csscycles">CSS Cycles</h3>
-//     <p>Also a personal/bot-editor Strudel function, declared with
-//     <code>await initCss()</code> — patterns that restyle the live page
-//     instead of making sound. See <code>src/features/csscycles.md</code> for
-//     the full write-up (the compile/broadcast pipeline, the trust model, and
-//     every guardrail in detail).</p>
-//     ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
-
-//     <h3 id="trussal-da-livecapture">Live Capture — liveCapture()</h3>
-//     <p>A Strudel source function usable directly in the personal/bot editor
-//     (no preamble declaration needed) that captures and replays a room
-//     medium — audio, video, editor text, CSS, your own gestures, or your own
-//     head-cursor path — as a patternable handle. See
-//     <code>src/features/live-capture.md</code> for the full write-up.</p>
-//     ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
-//   `;
-// }
 
 function _buildPanel(id, titleText, bodyHtml) {
   const scrim = document.createElement('div');
@@ -902,10 +908,7 @@ function _buildPanel(id, titleText, bodyHtml) {
       <div class="da-body">${bodyHtml}</div>
     </div>
   `;
-  // Trussal's other overlays stop mousedown/click here for the same reason:
-  // Jitsi's own popovers close themselves on any click that bubbles to
-  // document without landing inside their own DOM, so without this an
-  // interaction inside this panel would read to Jitsi as an outside click.
+
   scrim.querySelector('.trussal-da-panel').addEventListener('mousedown', (e) => e.stopPropagation());
   scrim.querySelector('.trussal-da-panel').addEventListener('click', (e) => e.stopPropagation());
   const close = () => scrim.classList.remove('open');
