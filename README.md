@@ -2,19 +2,17 @@
 ---
 | Name | Email |
 | :--- | :--- |
-| Quargs Greene | quargsgreene@gmail.com, qgreene@bu.edu |
+| Quargs Greene | quargsgreene@gmail.com|
 
 # Trussal - A Networked Algorave Platform
-
-## 0. Video
-[Link to Video](https://drive.google.com/file/d/1lUwyc61QysvvyS1FYGxXaMGErrUWAvnc/view?usp=sharing)
 
 ## Development
 
 Want to run a real Trussal meeting room to test a change? You don't need access to the production VMs — a local single-laptop dev stack is documented in [CONTRIBUTING.md](CONTRIBUTING.md#local-dev-environment-single-laptop-no-vm-access-needed):
 
 ```bash
-npm install
+npm install## 0. Video
+[Link to Video](https://drive.google.com/file/d/1lUwyc61QysvvyS1FYGxXaMGErrUWAvnc/view?usp=sharing)
 npm run dev:setup   # once
 npm run dev         # builds custom-config.js, starts a local Jitsi stack, watches src/
 ```
