@@ -11,4 +11,6 @@
   Trussal Studio houses the JPattern editors in addition to the status of the network, also serving as the interface for 
   calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
-  <img width="1427" height="611" alt="Trussal-UI-0" src="https://github.com/user-attachments/assets/a050bd57-bed8-4542-9a0f-c0dcc8b546fd" />
+  <img width="700" height="300" alt="Trussal-UI-0" src="https://github.com/user-attachments/assets/a050bd57-bed8-4542-9a0f-c0dcc8b546fd" />
+  <img width="550" height="710" alt="Punchcards" src="https://github.com/user-attachments/assets/376d556b-42eb-4c1c-aa17-80f0b7d021b1" />
+
