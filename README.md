@@ -12,14 +12,14 @@
   calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   
-<p align="left" width="100%">
+<p align="center" width="100%">
     <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
 </p>  
 
 <p align="center" width="100%">
     <img width="50%" alt="Triadic Hydra Oscs" src="https://github.com/user-attachments/assets/f8eb742e-de5e-40c5-a06a-18852ae730c4"/>
 </p>
-<center>Top: 12 human participants, Bottom: Bots creating a Hydra metapattern</center>
+<p style="text-align:center">Top: 12 human participants, Bottom: Bots creating a Hydra metapattern</p>
 
 
 
