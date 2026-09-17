@@ -879,7 +879,7 @@ function _buildDocsBody() {
         ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
 
         <h4>Jitsi UI Patterns</h4>
-        ${_renderFnSection(UI_PATTERN_FUNCTIONS)}>
+        ${_renderFnSection(UI_PATTERN_FUNCTIONS)}
 
         <h4>Other Overloaded Strudel Functions</h4>
         ${_renderFnSection(STRUDEL_OVERLOAD)}
