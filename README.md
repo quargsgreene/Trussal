@@ -14,10 +14,8 @@
   
 <p align="left" width="100%">
     <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
-</p> 
-<p align="right" width="100%">
     <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
-</p> 
+</p>  
 
 <p align="center" width="100%">
     <img width="50%" alt="Triadic Hydra Oscs" src="https://github.com/user-attachments/assets/f8eb742e-de5e-40c5-a06a-18852ae730c4"/>
