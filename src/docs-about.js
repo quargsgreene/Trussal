@@ -871,14 +871,6 @@ function _buildDocsBody() {
 
         <h4>CSS Patterns</h4>
         ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
-  `
-}
-
- /* 
-
-
-
-
 
         <h4>Configuration Methods</h4>
         ${_renderFnSection(CONFIG_FUNCTIONS)}
@@ -886,7 +878,7 @@ function _buildDocsBody() {
         <h4>Live Capture Patterns</h4>
         ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
 
-        <h4>Jitsi UI Patterns</h4
+        <h4>Jitsi UI Patterns</h4>
         ${_renderFnSection(UI_PATTERN_FUNCTIONS)}>
 
         <h4>Other Overloaded Strudel Functions</h4>
@@ -894,6 +886,12 @@ function _buildDocsBody() {
 
         <h4>Data Fetching Patterns</h4>
         ${_renderFnSection(FETCH_PATTERNS)}
+  `
+}
+
+ /* 
+
+
   */
 
 function _buildPanel(id, titleText, bodyHtml) {
