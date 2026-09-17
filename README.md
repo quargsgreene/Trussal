@@ -12,7 +12,10 @@
   calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   
-<p align="center" width="100%">
+<p align="left" width="100%">
+    <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
+</p> 
+<p align="right" width="100%">
     <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
 </p> 
 
