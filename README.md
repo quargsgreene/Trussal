@@ -16,6 +16,6 @@
   
   One human and nine bot participants sharing the human's screen as a Hydra input source
   
-  <img width="700" height="300" alt="12 humans running text, CSS, Strudel, and Hydra patterns" src="https://github.com/user-attachments/assets/376d556b-42eb-4c1c-aa17-80f0b7d021b1" />
+  <img width="550" height="710" alt="12 humans running text, CSS, Strudel, and Hydra patterns" src="https://github.com/user-attachments/assets/376d556b-42eb-4c1c-aa17-80f0b7d021b1" />
   
   12 humans running text, CSS, Strudel, and Hydra patterns
