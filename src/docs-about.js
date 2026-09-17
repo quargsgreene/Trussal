@@ -785,7 +785,7 @@ function _buildDocsBody() {
         <code>*btn sound "piano:2"
         # note "a4 b4 c4"
         </code>
-        <h3>JPattern Reference</h3>
+    <h3>JPattern Reference</h3>
         <p>
           Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
           external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
@@ -862,9 +862,13 @@ function _buildDocsBody() {
           <p>There are three different preprocessing directives, signifying who each program belongs to.
           They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
           a preprocessing directive, even if it only contains Strudel and/or Hydra code.
-          </p>
+        </p>
 
-        <h4>Global Room Pattern Functions</h4>
+
+  `
+}
+
+ /*       <h4>Global Room Pattern Functions</h4>
         ${_renderFnSection(JPATTERN_FUNCTIONS)} 
 
         <h4>Text Patterns</h4>
@@ -887,8 +891,7 @@ function _buildDocsBody() {
 
         <h4>Data Fetching Patterns</h4>
         ${_renderFnSection(FETCH_PATTERNS)}
-  `
-}
+  */
 
 function _buildPanel(id, titleText, bodyHtml) {
   const scrim = document.createElement('div');
