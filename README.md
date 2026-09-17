@@ -22,4 +22,4 @@
 <p align="center">Top: 12 human participants, Middle: 1 human participant, Bottom: Bots creating a Hydra metapattern</p>
 
 ## 2. Documentation
-Documentation can be found at [trussal.com](trussal.com). 
+Documentation can be found [here](https://trussal.com).
