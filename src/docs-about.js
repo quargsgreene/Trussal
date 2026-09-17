@@ -866,15 +866,14 @@ function _buildDocsBody() {
         <h4>Global Room Pattern Functions</h4>
         ${_renderFnSection(JPATTERN_FUNCTIONS)} 
 
-
+        <h4>Text Patterns</h4>
+        ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
   `
 }
 
- /*     <h4>Global Room Pattern Functions</h4>
-        ${_renderFnSection(JPATTERN_FUNCTIONS)} 
+ /* 
 
-        <h4>Text Patterns</h4>
-        ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+
 
         <h4>CSS Patterns</h4>
         ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
