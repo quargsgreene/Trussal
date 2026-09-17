@@ -868,6 +868,9 @@ function _buildDocsBody() {
 
         <h4>Text Patterns</h4>
         ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+
+        <h4>CSS Patterns</h4>
+        ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
   `
 }
 
@@ -875,8 +878,7 @@ function _buildDocsBody() {
 
 
 
-        <h4>CSS Patterns</h4>
-        ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+
 
         <h4>Configuration Methods</h4>
         ${_renderFnSection(CONFIG_FUNCTIONS)}
