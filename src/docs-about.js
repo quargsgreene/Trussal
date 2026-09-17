@@ -863,12 +863,14 @@ function _buildDocsBody() {
           They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
           a preprocessing directive, even if it only contains Strudel and/or Hydra code.
         </p>
+        <h4>Global Room Pattern Functions</h4>
+        ${_renderFnSection(JPATTERN_FUNCTIONS)} 
 
 
   `
 }
 
- /*       <h4>Global Room Pattern Functions</h4>
+ /*     <h4>Global Room Pattern Functions</h4>
         ${_renderFnSection(JPATTERN_FUNCTIONS)} 
 
         <h4>Text Patterns</h4>
