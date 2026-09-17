@@ -112,11 +112,6 @@ const JPATTERN_FUNCTIONS = [
 
 ];
 
-// ---------------------------------------------------------------------------
-// Content — Text Cycles (src/text-cycles.js, src/features/textcycles.md).
-// Not JPattern `#` directives — Strudel functions available in the personal
-// / bot editor once a buffer opens with `await initTextCycles()`.
-// ---------------------------------------------------------------------------
 const TEXT_CYCLES_FUNCTIONS = [
   {
     id: 'tc-word',
@@ -696,7 +691,7 @@ function _buildDocsBody() {
         To enter a meeting name, focus the text field. The text field will stay focused when the cursor is moved away from it.
         Then dwell upon each of the keys. A black progress circle will appear, as well as a gray vertical progress bar within each key.
         Each key will briefly turn black as characters appear in the form. Note that if browsing Incognito, upon entering the
-        prejoin room, you will have to give permissio<h3 id="trussal-da_usage>Creating or Joining a Meeting</h3>n for your camera to be used once more. Then focus the text field to provide
+        prejoin room, you will have to give permission for your camera to be used once more. Then focus the text field to provide
         a display name if desired, type a display name, and click the "Join meeting" button.
         Dwelling upon the "✥" icon allows for dragging the virtual keyboard and subsequently holding one's head still refixes the keyboard's position, whereas
         dwelling upon the "⇲" icon before moving one's head resizes the virtual keyboard.
@@ -954,23 +949,13 @@ function _ensureDOM() {
   });
 }
 
-// Bottom-right corner, fixed by plain CSS (see docs-about.css) — no JS
-// positioning needed. This used to track the live position of Jitsi's
-// welcome-page settings gear (top-right) to sit just left of it, but that
-// gear is centered inside a fixed-width content column rather than pinned to
-// the viewport edge, and the tracking logic left a stale `right` from the
-// stylesheet's base rule alongside the JS-set `left` on some layouts — with
-// both offsets present on a `position: fixed` box with no explicit width,
-// the browser stretches it to fill the whole gap between them, and the
-// resulting full-width strip sat on top of (and ate clicks meant for) the
-// gear itself. Bottom-right has nothing else to collide with.
 function _onWelcomePage() {
   return !!(document.body && document.body.classList.contains('welcome-page'));
 }
 
 function _boot() {
   let tries = 0;
-  const maxTries = 40; // ~10s at 250ms, same budget welcome-page.js's own poll uses
+  const maxTries = 40;
   const timer = setInterval(() => {
     tries += 1;
     if (_onWelcomePage()) _ensureDOM();
