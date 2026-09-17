@@ -19,7 +19,7 @@
 <p align="center" width="100%">
     <img width="50%" alt="Triadic Hydra Oscs" src="https://github.com/user-attachments/assets/f8eb742e-de5e-40c5-a06a-18852ae730c4"/>
 </p>
-<p style="text-align:center">Top: 12 human participants, Bottom: Bots creating a Hydra metapattern</p>
+<p align="center">Top: 12 human participants, Bottom: Bots creating a Hydra metapattern</p>
 
 
 
