@@ -15,11 +15,13 @@
 <p align="center" width="100%">
     <img width="50%" alt="Punchcards" src="https://github.com/user-attachments/assets/7286def9-14c3-4258-a572-1bc89ea883e3"/>
 </p>  
-
+<p align="center" width="100%">
+    <img width="50%" alt="ReactionPattern" src="https://github.com/user-attachments/assets/21e81630-8bc5-46bd-98c5-e450459a4244"/>
+</p> 
 <p align="center" width="100%">
     <img width="50%" alt="Triadic Hydra Oscs" src="https://github.com/user-attachments/assets/f8eb742e-de5e-40c5-a06a-18852ae730c4"/>
 </p>
-<p align="center">Top: 12 human participants, Bottom: Bots creating a Hydra metapattern</p>
+<p align="center">Top: 12 human participants, Middle: 1 human participant, Bottom: Bots creating a Hydra metapattern</p>
 
 
 
