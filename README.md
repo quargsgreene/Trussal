@@ -1,5 +1,4 @@
 # Trussal - A Networked Algorave Platform
-
 ## 1. About
   The name "Trussal" is a combination of parts of the words "truss" and "algorave", and brings together 
   the two concepts with software that provides a stage for online, real-time algorithmically-driven 
@@ -21,3 +20,6 @@
     <img width="50%" alt="Triadic Hydra Oscs" src="https://github.com/user-attachments/assets/f8eb742e-de5e-40c5-a06a-18852ae730c4"/>
 </p>
 <p align="center">Top: 12 human participants, Middle: 1 human participant, Bottom: Bots creating a Hydra metapattern</p>
+
+## 2. Documentation
+Documentation can be found at [trussal.com](trussal.com). 
