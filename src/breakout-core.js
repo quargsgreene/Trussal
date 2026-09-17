@@ -1,29 +1,3 @@
-// breakout-core.js — pure logic for breakout-room definitions and
-// assignments: the object-literal shape `# breakout` takes, and the
-// bookkeeping that decides which rooms exist and who currently belongs where.
-// Also, for each breakout room's OWN metaprogram (a separate CRDT-synced
-// program per declared room — see MetaprogrammerCrdtSync.js's
-// breakoutPrograms map and Metaprogrammer.js's seedBreakoutPrograms), the
-// default program a newly-declared room is seeded with.
-//
-// A breakout room's own program opens with the 'breakout room' directive
-// (program-directive.js's BREAKOUT) rather than 'metaprogram editor' — same
-// $/# grammar, but MetaprogrammerParser.js refuses # breakout / # assign
-// inside one: a breakout room's own program schedules and effects ITS room,
-// but only the MAIN room's metaprogram may create rooms or move participants
-// into them.
-//
-// No DOM, no Strudel, no Jitsi — runs identically in the browser bundle and
-// under node:test. Reading the parsed metaprogram AST and actually creating
-// Jitsi breakout rooms / moving participants lives in
-// src/audio-net/Breakout.js; the grammar itself (the `# breakout` / `# assign`
-// directives, and the single-quoted string literal that carries this JSON
-// past a tokenizer whose only other strings are bare metric/medium keywords)
-// lives in MetaprogrammerParser.js.
-//
-// Same reasoning as polls-core.js: strict JSON, not a lenient bespoke
-// grammar — a typo should be reported, not guessed around.
-
 import { BREAKOUT } from './program-directive.js';
 
 // The reserved room name assign() uses to send someone back to the main

@@ -1017,22 +1017,6 @@ async function onCaptureClick() {
   }
 }
 
-// Strudel's own `slider()` controls, re-rendered on every trussal-sliders-updated.
-// Target .ts-strudel-sliders, not bare .ts-sliders: any other panel that later
-// reuses the .ts-sliders styling class would get blanked out (the empty-list
-// early return below) on every render.
-// Strudel's slider() carries no name of its own — the transpiler keys each
-// one by its character range in the (multi-peer, combined) evaluated program,
-// not anything human-readable (strudel-fork/packages/transpiler/plugin-
-// widgets.mjs). The only signal studio.js has for "what does this control" is
-// the LOCAL peer's own last-evaluated pattern text: find the identifier
-// immediately wrapping each slider(...) call — ".gain(slider(...))" -> "gain"
-// — and pair the matches up positionally against `sliders` (both are
-// left-to-right source order, and currentSliders is only ever refreshed right
-// after THIS text was what got evaluated, so the two can't be out of sync).
-// Only trusted when the counts match exactly; any mismatch (a slider nested
-// in something this regex can't see through, e.g.) falls back to the plain
-// "slider N" label rather than risk mislabeling one.
 function deriveSliderLabels(sliders) {
   const local = getLocalPeer();
   const text = (local && local.pattern) || '';

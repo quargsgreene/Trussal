@@ -753,7 +753,7 @@
         "lobbyChatStartedNotification": "{{moderator}} started a lobby chat with {{attendee}}",
         "lobbyChatStartedTitle": "{{moderator}} has started a lobby chat with you.",
         "lobbyClosed": "The lobby room has been closed.",
-        "nameField": "Enter your name",
+        "nameField": "Enter an optional display name",
         "notificationLobbyAccessDenied": "{{targetParticipantName}} has been rejected to join by {{originParticipantName}}",
         "notificationLobbyAccessGranted": "{{targetParticipantName}} has been allowed to join by {{originParticipantName}}",
         "notificationLobbyDisabled": "Lobby has been disabled by {{originParticipantName}}",

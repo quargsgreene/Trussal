@@ -140,7 +140,6 @@ export function gestureAndLandmarkConfig(config) {
   const result = { ...getGestureConfig(), virtualKeyboardEnabled: isKeyboardStandalone() };
   // A write to the gesture map / cursor tuning has no on-screen effect of its
   // own, which reads as "the call did nothing" — so echo what landed both to
-  // the console and as a brief on-screen toast by the ☰ corner.
   const applied = Object.keys(norm);
   if (applied.length) {
     console.log('[landmark-gesture] applied', applied, '→', result);
