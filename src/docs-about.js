@@ -115,7 +115,7 @@ const JPATTERN_FUNCTIONS = [
 const TEXT_CYCLES_FUNCTIONS = [
   {
     id: 'tc-word',
-    name: 'word()/nw',
+    name: 'word()\n w',
     sig: '.word([pattern])\n.w([pattern])\n# word [pattern]\n#w [pattern]',
     body: `
       <p>Sends the specified words to the meeting-wide chat window. A few characters need escaping to render literally:</p>
@@ -131,7 +131,7 @@ const TEXT_CYCLES_FUNCTIONS = [
   {
     id: 'tc-typeface',
     name:'typeface/t',
-    sig: `.typeface([typeface_pattern="Arial"])\n.t([typeface_pattern="Arial"])`,
+    sig: `typeface([typeface_pattern="Arial"])\n t([typeface_pattern="Arial"])`,
     body: `<p>Selects a typeface for the specified text pattern.</p>
     <span>Example(s):</span>
     <code>$: typeface("Monaco").word("dachshund")</code>
@@ -156,7 +156,7 @@ const TEXT_CYCLES_FUNCTIONS = [
   {
     id: 'tc-weight',
     name:'weight',
-    sig: `.weight([font_weight_pattern])\n.t([font_weight_pattern])`,
+    sig: `weight([font_weight_pattern])\n w([font_weight_pattern])`,
     body: `<p>Sets the font weight for the specified text pattern./p>
     <span>Example(s):</span>
     <code>$: typeface("Times New Roman")
