@@ -38319,6 +38319,9 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       masterStrudelGain.channelCountMode = "explicit";
       Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
       masterStrudelGain.gain.value = 1;
+      masterLimiter = audioCtx.createDynamicsCompressor();
+      masterLimiter.threshold.value = -1;
+      masterStrudelGain.connect(masterLimiter);
       const meterAn = audioCtx.createAnalyser();
       meterAn.fftSize = 2048;
       masterStrudelGain.connect(meterAn);
@@ -38338,7 +38341,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       const distWS = audioCtx.createWaveShaper();
       distWS.oversample = "4x";
       distWS.curve = null;
-      masterStrudelGain.connect(distWS);
+      masterLimiter.connect(distWS);
       distWS.connect(strudelOut);
       let convolver = null, convGain = null;
       if (reverbBuffer) {
@@ -38346,7 +38349,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         convolver.buffer = reverbBuffer;
         convGain = audioCtx.createGain();
         convGain.gain.value = 0;
-        masterStrudelGain.connect(convolver);
+        masterLimiter.connect(convolver);
         convolver.connect(convGain);
         convGain.connect(strudelOut);
       }
@@ -38621,7 +38624,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
         if (!strudelSynthDest) {
           strudelSynthDest = audioCtx.createMediaStreamDestination();
           try {
-            masterStrudelGain.connect(strudelSynthDest);
+            masterLimiter.connect(strudelSynthDest);
           } catch (e30) {
           }
         }
@@ -38694,7 +38697,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       return false;
     }
     strudelPublishWarned = false;
-    const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
+    const effect = new NodeOutputEffect(audioCtx, masterLimiter);
     try {
       await track.setEffect(effect);
     } catch (e30) {
@@ -38713,7 +38716,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     strudelPublishBackoff = false;
     if (strudelSynthDest) {
       try {
-        masterStrudelGain && masterStrudelGain.disconnect(strudelSynthDest);
+        masterLimiter && masterLimiter.disconnect(strudelSynthDest);
       } catch (e30) {
       }
       strudelSynthDest = null;
@@ -38765,7 +38768,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, masterLimiter, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -38776,6 +38779,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       workletLoaded = null;
       reverbBuffer = null;
       masterStrudelGain = null;
+      masterLimiter = null;
       bootPromise = null;
       strudelFx = null;
       strudelOut = null;

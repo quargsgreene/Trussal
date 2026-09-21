@@ -19,6 +19,7 @@ let realDestination = null;
 let workletLoaded = null;
 let reverbBuffer = null;
 let masterStrudelGain = null;
+let masterLimiter = null; // DynamicsCompressor downstream of masterStrudelGain — see ensureMasterStrudelInput
 let bootPromise = null;
 
 // WebAudio effect chain applied to the local peer's Strudel master output.
@@ -623,6 +624,20 @@ export async function ensureMasterStrudelInput() {
     Object.defineProperty(masterStrudelGain, 'maxChannelCount', { value: 2, configurable: true });
     masterStrudelGain.gain.value = 1.0;
 
+    // Master limiter: masterStrudelGain sums EVERY simultaneous local voice
+    // (liveCapture's own makeup-gain/limiter in live-capture-core.js only
+    // keeps ITS voice under ~0.98 peak in isolation — it has no idea what
+    // other $:-labeled voices are playing at the same time). Live-confirmed
+    // as clipping/distortion on the published track once the rotation-dilution
+    // bug (see aggregator ghost-stuck-on-reconnect-churn fix) stopped masking
+    // it. The remote per-peer chain already has an equivalent compressor
+    // (see ensureChain's `limiter` below); this is the missing local-publish
+    // counterpart, sitting between masterStrudelGain and every consumer of it
+    // (local monitor AND both publish taps) so nothing downstream can clip.
+    masterLimiter = audioCtx.createDynamicsCompressor();
+    masterLimiter.threshold.value = -1.0;
+    masterStrudelGain.connect(masterLimiter);
+
     // Permanent, always-on meter: a manual ad-hoc console tap (connect an
     // analyser, poll it, disconnect) was giving inconsistent readings across
     // repeated calls during live debugging of a "published audio never
@@ -643,8 +658,8 @@ export async function ensureMasterStrudelInput() {
 
     // Build the Strudel-output effect chain. Every branch converges on
     // strudelOut (the aggregator-mode choke) before realDestination:
-    //   masterStrudelGain → distWS → strudelOut → realDestination  (dry + distortion)
-    //                              → convolver → convGain → strudelOut  (reverb wet)
+    //   masterStrudelGain → masterLimiter → distWS → strudelOut → realDestination  (dry + distortion)
+    //                                      → convolver → convGain → strudelOut  (reverb wet)
     //   noiseSource → noiseFilter → noiseGain → strudelOut  (noise)
 
     // strudelOut: single gain for ALL local Strudel FX audio, so aggregator mode
@@ -658,7 +673,7 @@ export async function ensureMasterStrudelInput() {
     distWS.oversample = '4x';
     distWS.curve = null; // identity (off) by default
 
-    masterStrudelGain.connect(distWS);
+    masterLimiter.connect(distWS);
     distWS.connect(strudelOut);
 
     // Reverb wet path
@@ -668,7 +683,7 @@ export async function ensureMasterStrudelInput() {
       convolver.buffer = reverbBuffer;
       convGain = audioCtx.createGain();
       convGain.gain.value = 0; // off until reverb toggled
-      masterStrudelGain.connect(convolver);
+      masterLimiter.connect(convolver);
       convolver.connect(convGain);
       convGain.connect(strudelOut);
     }
@@ -1085,7 +1100,7 @@ async function acquireLocalAudioTrackForStrudel() {
         && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       if (!strudelSynthDest) {
         strudelSynthDest = audioCtx.createMediaStreamDestination();
-        try { masterStrudelGain.connect(strudelSynthDest); } catch (e) {}
+        try { masterLimiter.connect(strudelSynthDest); } catch (e) {}
       }
       const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = async (c = {}) =>
@@ -1175,7 +1190,7 @@ export async function publishLocalStrudelToRoom() {
     return false;
   }
   strudelPublishWarned = false;
-  const effect = new NodeOutputEffect(audioCtx, masterStrudelGain);
+  const effect = new NodeOutputEffect(audioCtx, masterLimiter);
   try {
     await track.setEffect(effect);
   } catch (e) {
@@ -1196,7 +1211,7 @@ export async function unpublishLocalStrudelFromRoom() {
   strudelPublishWarned = false; // next aggregator re-arms the one-shot warning
   strudelPublishBackoff = false;
   if (strudelSynthDest) {
-    try { masterStrudelGain && masterStrudelGain.disconnect(strudelSynthDest); } catch (e) {}
+    try { masterLimiter && masterLimiter.disconnect(strudelSynthDest); } catch (e) {}
     strudelSynthDest = null;
   }
   if (!strudelRoomEffect) return;
