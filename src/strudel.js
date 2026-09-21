@@ -701,7 +701,16 @@ async function ensureStrudel() {
       }
     };
 
-    await initStrudel({ audioContext: audioCtx });
+    // sync: true switches the scheduler from Cyclist (plain setInterval on
+    // the main thread — drops a whole cycle's query outright, logged as
+    // "skip query: too late", whenever something else on the main thread
+    // delays the callback) to NeoCyclist (a SharedWorker clock, immune to
+    // main-thread jank). Every Trussal tab runs MediaPipe continuously from
+    // page load (facial-gesture.js), which is exactly that kind of jank
+    // source, so Cyclist silently drops most triggers under normal use. Falls
+    // back to Cyclist automatically where SharedWorker is unavailable (older
+    // mobile Safari) — see strudel-fork's repl.mjs.
+    await initStrudel({ audioContext: audioCtx, sync: true });
     // runPrebake fetches every CDN sample pack (piano, VCSL, drum machines,
     // Dirt-Samples, …) — tens of MB. Passing it as initStrudel's `prebake`
     // would block on the whole download before evaluate() below can run: on

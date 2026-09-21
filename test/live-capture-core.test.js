@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   LiveRing, EventLog, CursorPath,
   matchAudioDevice, captureSlug, parseLiveCaptureArgs, patternWordsToString,
-  rewriteLiveCaptureCalls, MEDIA,
+  rewriteLiveCaptureCalls, MEDIA, applyMakeupGainAndLimiter, applyEdgeFade,
 } from '../src/live-capture-core.js';
 
 const f32 = (...vals) => Float32Array.from(vals);
@@ -58,6 +58,79 @@ test('ring: many small writes across the seam', () => {
   const ring = new LiveRing(5);
   for (let i = 1; i <= 12; i++) ring.write(f32(i));
   assert.deepEqual([...ring.snapshot(5)], [8, 9, 10, 11, 12]);
+});
+
+// --- applyMakeupGainAndLimiter ----------------------------------------------
+
+test('gain: a quiet snapshot is boosted toward the target peak', () => {
+  // Peak 0.1 needs 7x gain to reach the 0.7 target — within maxGain (12), so
+  // the target wins rather than the cap (see the next test for that case).
+  const data = f32(0.05, -0.1, 0.08, -0.05);
+  applyMakeupGainAndLimiter(data);
+  let peak = 0;
+  for (const v of data) peak = Math.max(peak, Math.abs(v));
+  assert.ok(peak > 0.6 && peak <= 0.7 + 1e-9, `expected peak near 0.7, got ${peak}`);
+});
+
+test('gain: near-silence (below the noise floor) is left alone, not boosted into hiss', () => {
+  const data = f32(0.0001, -0.0002, 0.00015);
+  const before = [...data];
+  applyMakeupGainAndLimiter(data);
+  assert.deepEqual([...data], before);
+});
+
+test('gain: makeup gain is capped so a near-floor snapshot cannot blow up', () => {
+  const data = f32(0.0031, -0.002); // just above the noise floor
+  applyMakeupGainAndLimiter(data, { maxGain: 12 });
+  let peak = 0;
+  for (const v of data) peak = Math.max(peak, Math.abs(v));
+  // 0.0031 * 12 = 0.0372, far short of the 0.7 target — maxGain wins, not targetPeak.
+  assert.ok(peak < 0.05, `expected the gain cap to hold peak low, got ${peak}`);
+});
+
+test('gain: a loud transient the makeup gain does not touch is soft-limited, not hard-clipped', () => {
+  const data = f32(0.5, 1.5, -1.8, 0.3); // already past the ceiling before any makeup gain applies
+  applyMakeupGainAndLimiter(data, { targetPeak: 0.99 }); // avoid the makeup-gain branch interfering
+  for (const v of data) {
+    assert.ok(Math.abs(v) <= 1, `sample ${v} exceeds full scale`);
+    assert.ok(Math.abs(v) < 1.8, 'the loudest sample should have eased down, not stayed at its raw peak');
+  }
+});
+
+test('gain: an empty or null snapshot is a no-op', () => {
+  assert.deepEqual([...applyMakeupGainAndLimiter(f32())], []);
+  assert.equal(applyMakeupGainAndLimiter(null), null);
+});
+
+// --- applyEdgeFade -----------------------------------------------------------
+
+test('fade: the first and last sample are silenced, the middle is untouched', () => {
+  const data = new Float32Array(20).fill(1);
+  applyEdgeFade(data, 1000, 8); // 8ms @ 1000Hz = 8 samples faded per edge
+  assert.equal(data[0], 0);
+  assert.equal(data[19], 0);
+  assert.equal(data[10], 1); // well inside the unfaded middle
+});
+
+test('fade: ramps monotonically from the edge inward', () => {
+  const data = new Float32Array(20).fill(1);
+  applyEdgeFade(data, 1000, 8);
+  for (let i = 1; i < 8; i++) assert.ok(data[i] >= data[i - 1], `fade-in should be non-decreasing at ${i}`);
+  for (let i = 18; i >= 12; i--) assert.ok(data[i] >= data[i + 1], `fade-out should be non-decreasing at ${i}`);
+});
+
+test('fade: a snapshot shorter than the fade window still fades without over/underrun', () => {
+  const data = f32(1, 1, 1, 1);
+  applyEdgeFade(data, 1000, 8); // requested fade (8 samples) exceeds half the buffer
+  assert.equal(data.length, 4);
+  assert.equal(data[0], 0);
+  assert.equal(data[3], 0);
+});
+
+test('fade: an empty snapshot or a missing sample rate is a no-op', () => {
+  assert.deepEqual([...applyEdgeFade(f32(), 1000)], []);
+  const data = f32(1, 1);
+  assert.deepEqual([...applyEdgeFade(data, 0)], [1, 1]);
 });
 
 // --- EventLog -------------------------------------------------------------

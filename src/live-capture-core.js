@@ -52,6 +52,64 @@ export class LiveRing {
   }
 }
 
+// The audio ring captures raw input with no AGC (deliberate — AGC pumping is
+// unwanted on musical material), so a snapshot is exactly as loud as whatever
+// the input device happened to deliver: often much quieter than a normal
+// mic-level signal (a line-level input, low OS gain, …). Nothing upstream
+// compensates, so every snapshot gets makeup gain toward a target peak before
+// playback, plus a soft-knee limiter for any transient the makeup gain still
+// pushes over the ceiling. Below the noise floor, a snapshot is treated as
+// "nothing captured yet" rather than boosted — amplifying near-silence would
+// just turn hiss into audible noise.
+const NORMALIZE_TARGET_PEAK = 0.7;
+const NORMALIZE_NOISE_FLOOR = 0.003;
+const NORMALIZE_MAX_GAIN = 12;
+const LIMITER_CEILING = 0.98;
+
+// Makeup-gain + soft-limit a captured snapshot toward a consistent, audible
+// level without hard-clipping. Mutates `data` in place and returns it.
+export function applyMakeupGainAndLimiter(data, {
+  targetPeak = NORMALIZE_TARGET_PEAK,
+  noiseFloor = NORMALIZE_NOISE_FLOOR,
+  maxGain = NORMALIZE_MAX_GAIN,
+  ceiling = LIMITER_CEILING,
+} = {}) {
+  if (!data || !data.length) return data;
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) {
+    const a = data[i] < 0 ? -data[i] : data[i];
+    if (a > peak) peak = a;
+  }
+  if (peak > noiseFloor) {
+    const gain = Math.min(maxGain, targetPeak / peak);
+    if (gain > 1) for (let i = 0; i < data.length; i++) data[i] *= gain;
+  }
+  // tanh soft-knee: anything still past the ceiling (a transient the makeup
+  // gain didn't fully catch) eases toward it instead of hard-clipping flat.
+  const span = 1 - ceiling;
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i];
+    const a = v < 0 ? -v : v;
+    if (a > ceiling) data[i] = Math.sign(v) * (ceiling + span * Math.tanh((a - ceiling) / span));
+  }
+  return data;
+}
+
+// Short linear fade at both edges of a snapshot so the ring's arbitrary cut
+// point doesn't play back as an audible click/pop. Mutates `data` in place
+// and returns it.
+const EDGE_FADE_MS = 8;
+export function applyEdgeFade(data, sampleRate, fadeMs = EDGE_FADE_MS) {
+  if (!data || !data.length || !sampleRate) return data;
+  const fadeSamples = Math.min(Math.floor((fadeMs / 1000) * sampleRate), Math.floor(data.length / 2));
+  for (let i = 0; i < fadeSamples; i++) {
+    const g = i / fadeSamples;
+    data[i] *= g;
+    data[data.length - 1 - i] *= g;
+  }
+  return data;
+}
+
 // A bounded, time-ordered log of discrete events — the text/css deltas a peer
 // produces, and the gestures the local performer fires. push() appends; entries
 // past `capacity`, or older than `windowMs` behind the newest, are dropped.

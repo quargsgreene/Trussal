@@ -43,7 +43,7 @@ import { listAudioInputDevices } from './latency-instrument.js';
 import { getAllPeers, subscribePeerState } from './peer-state.js';
 import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
-  parseLiveCaptureArgs,
+  parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
 } from './live-capture-core.js';
 
 const RING_SECONDS = 10;
@@ -85,13 +85,22 @@ class TrussalLiveCapture extends AudioWorkletProcessor {
     if (ch && ch.length && ch[0].length) {
       const n = ch[0].length;
       const out = new Float32Array(n);
-      for (let c = 0; c < ch.length; c++) {
-        const d = ch[c];
-        for (let i = 0; i < n; i++) out[i] += d[i];
-      }
-      if (ch.length > 1) {
-        const inv = 1 / ch.length;
-        for (let i = 0; i < n; i++) out[i] *= inv;
+      if (ch.length === 1) {
+        out.set(ch[0]);
+      } else {
+        // Pick the loudest channel for this block rather than averaging all
+        // of them: a plain average halves the level whenever only one
+        // channel actually carries signal (a mono mic wired into one side of
+        // a stereo line-in is common), and can partially cancel channels
+        // that are out of phase.
+        let loudest = 0, loudestPeak = -1;
+        for (let c = 0; c < ch.length; c++) {
+          const d = ch[c];
+          let peak = 0;
+          for (let i = 0; i < n; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
+          if (peak > loudestPeak) { loudestPeak = peak; loudest = c; }
+        }
+        out.set(ch[loudest]);
       }
       this.batch.push(out);
       this.len += n;
@@ -217,10 +226,12 @@ function audioOnTrigger(cap, t, value, onEnded) {
   if (cap.state !== 'ready' || !cap.ring || !cap.ring.filled) return; // silent skip
   const speed = typeof value.speed === 'number' ? value.speed : 1;
   if (speed === 0) return;
-  const dur = Math.max(RING_SECONDS, Math.max(0.005, value.duration ?? 0.1));
+  const dur = Math.min(RING_SECONDS, Math.max(0.005, value.duration ?? 0.1));
   const data = cap.ring.snapshot(Math.round(dur * audioCtx.sampleRate));
   if (!data.length) return;
   if (speed < 0) data.reverse();
+  applyMakeupGainAndLimiter(data);
+  applyEdgeFade(data, audioCtx.sampleRate);
   const buffer = audioCtx.createBuffer(1, data.length, audioCtx.sampleRate);
   buffer.copyToChannel(data, 0);
   const node = audioCtx.createBufferSource();
