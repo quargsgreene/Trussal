@@ -90,6 +90,31 @@ const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
 function createLatencyServer({ port = 8081, server, logDir = null, controlToken = null } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
+  // Dead-peer sweep: a clean disconnect (browser tab close, `docker stop`)
+  // fires 'close' and the room-cleanup below runs normally. A connection that
+  // dies without a TCP FIN — a bot container hard-killed with `docker rm -f`,
+  // or a network drop — leaves the server-side socket registered forever,
+  // since nothing else ever notices it's gone: the app-level `ping` message
+  // (see the 'ping' case below) is client-initiated RTT telemetry, not a
+  // liveness probe, so a dead client simply stops sending it and nothing
+  // times out. That peer keeps its roomIndex and keeps taking NetCycles
+  // rotation turns indefinitely — reproduced live as bot ghosts still
+  // `playing:true` in the roster long after their containers were gone.
+  // Standard `ws` heartbeat: ping everyone every 30s, terminate() anyone who
+  // didn't pong since the last sweep. terminate() closes the raw socket,
+  // which fires the same per-connection 'close' handler as a graceful
+  // disconnect, so cleanup (room.delete, peer-leave broadcast, index
+  // release) is unchanged.
+  const HEARTBEAT_MS = 30000;
+  const heartbeatInterval = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch (e) { /* ignore */ }
+    }
+  }, HEARTBEAT_MS);
+  wss.on('close', () => clearInterval(heartbeatInterval));
+
   const rooms = new Map(); // roomName -> Map<peerId, peerRecord>
   // roomName -> { nextIndex, indexByStableId: Map<stableId, roomIndex>, crdtLog }.
   // nextIndex is the meeting's source of truth for HUMAN indices: join-ordered,
@@ -290,6 +315,9 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
     // every connect and every 2s reconnect. Only the Node conductor opens this
     // channel, so there is no browser WebSocket API constraint to work around.
     const connToken = req.headers[CONTROL_TOKEN_HEADER];
+
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
 
     const peerId = randomUUID();
 
