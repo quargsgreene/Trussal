@@ -1442,10 +1442,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     if (typeof bank2 !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
     safeSend({ type: "sample-file", bank: bank2, name: name3, data: data3 });
   }
-  function sendImageFile({ folder, name: name3, data: data3 }) {
-    if (typeof folder !== "string" || typeof name3 !== "string" || typeof data3 !== "string") return;
-    safeSend({ type: "image-file", folder, name: name3, data: data3 });
-  }
   function sendChatFile({ kind, name: name3, mime, data: data3 }) {
     if (typeof kind !== "string" || typeof name3 !== "string" || typeof mime !== "string" || typeof data3 !== "string") return;
     safeSend({ type: "chat-file", kind, name: name3, mime, data: data3 });
@@ -54018,15 +54014,6 @@ ${newBody}`).length === 0;
     }
     return [...banks.values()].sort((a2, b) => a2.name.localeCompare(b.name));
   }
-  async function readImageFolders() {
-    const records = await readAll();
-    if (!records?.length) return [];
-    return records.filter((r2) => !isDataRecord(r2) && isImageFile(r2.title)).map((r2) => ({
-      folder: folderOf(r2.id) || (r2.title || "").replace(/\.[^.]+$/, ""),
-      name: r2.title,
-      blob: r2.blob
-    }));
-  }
   async function getDataPacks() {
     const records = await readAll();
     return (records ?? []).filter(isDataRecord).map((r2) => r2.pack);
@@ -62708,11 +62695,6 @@ ${snippet}${JP_BTN_MARKER}`;
     for (const { bank: bank2, name: name3, blob } of banks) {
       const buffer = await blob.arrayBuffer();
       sendSampleFile({ bank: bank2, name: name3, data: base64FromBuffer(buffer) });
-    }
-    const images = await readImageFolders();
-    for (const { folder, name: name3, blob } of images) {
-      const buffer = await blob.arrayBuffer();
-      sendImageFile({ folder, name: name3, data: base64FromBuffer(buffer) });
     }
   }
   function base64FromBuffer(buffer) {
