@@ -16,8 +16,8 @@ export async function initHydra(options = {}) {
       src = 'https://unpkg.com/hydra-synth',
       feedStrudel = false,
       contextType = 'webgl',
-      pixelRatio = 1,
-      pixelated = true,
+      pixelRatio = window.devicePixelRatio,
+      pixelated = false,
       ...hydraConfig
     } = {
       detectAudio: false,

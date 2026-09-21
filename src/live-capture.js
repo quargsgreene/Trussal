@@ -79,37 +79,38 @@ function bucket(medium) {
 // batch to the main thread (transferable) where it lands in the LiveRing.
 const WORKLET_SOURCE = `
 class TrussalLiveCapture extends AudioWorkletProcessor {
-  constructor() { super(); this.batch = []; this.len = 0; }
+  constructor() { super(); this.chans = null; this.len = 0; }
   process(inputs) {
     const ch = inputs[0];
     if (ch && ch.length && ch[0].length) {
       const n = ch[0].length;
-      const out = new Float32Array(n);
-      if (ch.length === 1) {
-        out.set(ch[0]);
-      } else {
-        // Pick the loudest channel for this block rather than averaging all
-        // of them: a plain average halves the level whenever only one
-        // channel actually carries signal (a mono mic wired into one side of
-        // a stereo line-in is common), and can partially cancel channels
-        // that are out of phase.
-        let loudest = 0, loudestPeak = -1;
-        for (let c = 0; c < ch.length; c++) {
-          const d = ch[c];
-          let peak = 0;
-          for (let i = 0; i < n; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
-          if (peak > loudestPeak) { loudestPeak = peak; loudest = c; }
-        }
-        out.set(ch[loudest]);
-      }
-      this.batch.push(out);
+      if (!this.chans || this.chans.length !== ch.length) this.chans = Array.from({ length: ch.length }, () => []);
+      for (let c = 0; c < ch.length; c++) this.chans[c].push(ch[c].slice());
       this.len += n;
       if (this.len >= 2048) {
+        // Pick the loudest channel for the WHOLE flushed batch rather than
+        // averaging all of them (a plain average halves the level whenever
+        // only one channel actually carries signal, and can partially cancel
+        // channels that are out of phase) — but decide it ONCE per ~43ms
+        // batch, not per 128-sample render quantum. Re-deciding every
+        // quantum let the "loudest" channel flip several times within one
+        // batch on ordinary stereo input (e.g. a multi-channel interface
+        // like a MOTU M4), splicing together out-of-phase fragments every
+        // ~2.7ms — audible as zipper/glitch noise, which is what made
+        // captured audio sound poor even after the gain-floor fix.
+        let loudest = 0, loudestPeak = -1;
+        for (let c = 0; c < this.chans.length; c++) {
+          let peak = 0;
+          for (const block of this.chans[c]) {
+            for (let i = 0; i < block.length; i++) { const a = block[i] < 0 ? -block[i] : block[i]; if (a > peak) peak = a; }
+          }
+          if (peak > loudestPeak) { loudestPeak = peak; loudest = c; }
+        }
         const merged = new Float32Array(this.len);
         let o = 0;
-        for (const b of this.batch) { merged.set(b, o); o += b.length; }
+        for (const block of this.chans[loudest]) { merged.set(block, o); o += block.length; }
         this.port.postMessage(merged, [merged.buffer]);
-        this.batch = [];
+        this.chans = null;
         this.len = 0;
       }
     }

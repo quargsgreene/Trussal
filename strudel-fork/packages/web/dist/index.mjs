@@ -24646,8 +24646,8 @@ async function initHydra(e = {}) {
       src: t = "https://unpkg.com/hydra-synth",
       feedStrudel: o = !1,
       contextType: l = "webgl",
-      pixelRatio: d = 1,
-      pixelated: p = !0,
+      pixelRatio: d = window.devicePixelRatio,
+      pixelated: p = !1,
       ...b
     } = {
       detectAudio: !1,
