@@ -38319,6 +38319,19 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       masterStrudelGain.channelCountMode = "explicit";
       Object.defineProperty(masterStrudelGain, "maxChannelCount", { value: 2, configurable: true });
       masterStrudelGain.gain.value = 1;
+      const meterAn = audioCtx.createAnalyser();
+      meterAn.fftSize = 2048;
+      masterStrudelGain.connect(meterAn);
+      const meterBuf = new Float32Array(meterAn.fftSize);
+      setInterval(() => {
+        meterAn.getFloatTimeDomainData(meterBuf);
+        let peak = 0;
+        for (let i = 0; i < meterBuf.length; i++) {
+          const a2 = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i];
+          if (a2 > peak) peak = a2;
+        }
+        console.log("[trussal] masterStrudelGain persistent meter peak=", peak.toFixed(5));
+      }, 2e3);
       strudelOut = audioCtx.createGain();
       strudelOut.gain.value = localStrudelLevel();
       strudelOut.connect(realDestination);
@@ -38546,6 +38559,25 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   function isPropagatingToRoom() {
     return !!jitsiMixState;
   }
+  function createDitherNode(audioCtx3) {
+    const bufLen = Math.floor(audioCtx3.sampleRate * 2);
+    const buf = audioCtx3.createBuffer(1, bufLen, audioCtx3.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+    const src2 = audioCtx3.createBufferSource();
+    src2.buffer = buf;
+    src2.loop = true;
+    const gain2 = audioCtx3.createGain();
+    gain2.gain.value = DITHER_LEVEL;
+    src2.connect(gain2);
+    src2.start();
+    return { node: gain2, stop: () => {
+      try {
+        src2.stop();
+      } catch (e30) {
+      }
+    } };
+  }
   function stopStrudelPublishRetry() {
     if (strudelPublishRetryTimer) {
       clearInterval(strudelPublishRetryTimer);
@@ -38733,7 +38765,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -38841,10 +38873,13 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           }
         }
       };
+      DITHER_LEVEL = 3e-4;
       NodeOutputEffect = class {
         constructor(audioCtx3, node) {
+          this._ctx = audioCtx3;
           this._node = node;
           this._dest = audioCtx3.createMediaStreamDestination();
+          this._dither = null;
         }
         isEnabled() {
           return true;
@@ -38855,12 +38890,29 @@ When mixing down to 2 channels, the input channels are equally distributed over 
           } catch (e30) {
             console.warn("[latency] NodeOutputEffect connect failed", e30);
           }
+          try {
+            this._dither = createDitherNode(this._ctx);
+            this._dither.node.connect(this._dest);
+          } catch (e30) {
+            console.warn("[latency] NodeOutputEffect dither failed", e30);
+          }
           return this._dest.stream;
         }
         stopEffect() {
           try {
             this._node.disconnect(this._dest);
           } catch (e30) {
+          }
+          if (this._dither) {
+            try {
+              this._dither.node.disconnect(this._dest);
+            } catch (e30) {
+            }
+            try {
+              this._dither.stop();
+            } catch (e30) {
+            }
+            this._dither = null;
           }
         }
       };
@@ -54128,6 +54180,45 @@ ${newBody}`).length === 0;
       return out;
     }
   };
+  var NORMALIZE_TARGET_PEAK = 0.7;
+  var NORMALIZE_NOISE_FLOOR = 0.1;
+  var NORMALIZE_MAX_GAIN = 3;
+  var LIMITER_CEILING = 0.98;
+  function applyMakeupGainAndLimiter(data3, {
+    targetPeak = NORMALIZE_TARGET_PEAK,
+    noiseFloor = NORMALIZE_NOISE_FLOOR,
+    maxGain = NORMALIZE_MAX_GAIN,
+    ceiling = LIMITER_CEILING
+  } = {}) {
+    if (!data3 || !data3.length) return data3;
+    let peak = 0;
+    for (let i = 0; i < data3.length; i++) {
+      const a2 = data3[i] < 0 ? -data3[i] : data3[i];
+      if (a2 > peak) peak = a2;
+    }
+    if (peak > noiseFloor) {
+      const gain2 = Math.min(maxGain, targetPeak / peak);
+      if (gain2 > 1) for (let i = 0; i < data3.length; i++) data3[i] *= gain2;
+    }
+    const span = 1 - ceiling;
+    for (let i = 0; i < data3.length; i++) {
+      const v2 = data3[i];
+      const a2 = v2 < 0 ? -v2 : v2;
+      if (a2 > ceiling) data3[i] = Math.sign(v2) * (ceiling + span * Math.tanh((a2 - ceiling) / span));
+    }
+    return data3;
+  }
+  var EDGE_FADE_MS = 8;
+  function applyEdgeFade(data3, sampleRate, fadeMs = EDGE_FADE_MS) {
+    if (!data3 || !data3.length || !sampleRate) return data3;
+    const fadeSamples = Math.min(Math.floor(fadeMs / 1e3 * sampleRate), Math.floor(data3.length / 2));
+    for (let i = 0; i < fadeSamples; i++) {
+      const g2 = i / fadeSamples;
+      data3[i] *= g2;
+      data3[data3.length - 1 - i] *= g2;
+    }
+    return data3;
+  }
   var EventLog = class {
     constructor({ capacity = 256, windowMs = 3e4 } = {}) {
       this.capacity = Math.max(1, Math.floor(capacity));
@@ -54323,13 +54414,22 @@ class TrussalLiveCapture extends AudioWorkletProcessor {
     if (ch && ch.length && ch[0].length) {
       const n = ch[0].length;
       const out = new Float32Array(n);
-      for (let c = 0; c < ch.length; c++) {
-        const d = ch[c];
-        for (let i = 0; i < n; i++) out[i] += d[i];
-      }
-      if (ch.length > 1) {
-        const inv = 1 / ch.length;
-        for (let i = 0; i < n; i++) out[i] *= inv;
+      if (ch.length === 1) {
+        out.set(ch[0]);
+      } else {
+        // Pick the loudest channel for this block rather than averaging all
+        // of them: a plain average halves the level whenever only one
+        // channel actually carries signal (a mono mic wired into one side of
+        // a stereo line-in is common), and can partially cancel channels
+        // that are out of phase.
+        let loudest = 0, loudestPeak = -1;
+        for (let c = 0; c < ch.length; c++) {
+          const d = ch[c];
+          let peak = 0;
+          for (let i = 0; i < n; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > peak) peak = a; }
+          if (peak > loudestPeak) { loudestPeak = peak; loudest = c; }
+        }
+        out.set(ch[loudest]);
       }
       this.batch.push(out);
       this.len += n;
@@ -54434,6 +54534,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const data3 = cap.ring.snapshot(Math.round(dur2 * audioCtx2.sampleRate));
     if (!data3.length) return;
     if (speed2 < 0) data3.reverse();
+    applyMakeupGainAndLimiter(data3);
+    applyEdgeFade(data3, audioCtx2.sampleRate);
     const buffer = audioCtx2.createBuffer(1, data3.length, audioCtx2.sampleRate);
     buffer.copyToChannel(data3, 0);
     const node = audioCtx2.createBufferSource();
@@ -59367,7 +59469,7 @@ ${buildStrudelVoice(strudelCode, fx)}` : buildStrudelVoice(strudelCode, fx);
           safe(aliasBank2(`${baseCDN}/tidal-drum-machines-alias.json`));
         }
       };
-      await initStrudel2({ audioContext: audioCtx3 });
+      await initStrudel2({ audioContext: audioCtx3, sync: true });
       runPrebake().catch((e30) => console.warn("[strudel] prebake failed", e30));
       _sliderRef = mod2.ref;
       const _jpGate = (jitsiId) => _sliderRef(() => getGateLevel(jitsiId));
