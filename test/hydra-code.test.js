@@ -136,10 +136,27 @@ test('hydra-code: a camera-fed preamble is detected', () => {
   assert.equal(usesExternalSource('await initHydra()\nsrc(s0).out()'), true);
 });
 
-test('hydra-code: any of s0-s3 counts, not just s0', () => {
+test('hydra-code: any of s0-s3 counts for initCam/initScreen, not just s0', () => {
   assert.equal(usesExternalSource('await initHydra()\ns1.initCam()\nsrc(s1).out()'), true);
   assert.equal(usesExternalSource('await initHydra()\ns2.initScreen()\nsrc(s2).out()'), true);
-  assert.equal(usesExternalSource('await initHydra()\ns3.initVideo(\'x\')\nsrc(s3).out()'), true);
+});
+
+// initImage/initVideo populate a slot from an ADDRESSABLE URL — unlike
+// initCam/initScreen, which need the performer's own hardware, any other
+// browser can fetch and render the same URL, so a preamble whose only source
+// call is one of these does not need the performer's published track
+// (regression: bot clusters copying `s0.initImage("https://...")` got a
+// permanently-unready mosaic cell, since a plain bot never publishes video —
+// see fleet-video-blit.test.js for the other half of that fix).
+test('hydra-code: initImage/initVideo alone do not force a blit', () => {
+  assert.equal(usesExternalSource('await initHydra()\ns3.initVideo(\'x\')\nsrc(s3).out()'), false);
+  assert.equal(usesExternalSource('await initHydra()\ns0.initImage("https://example.com/x.png")\nsrc(s0).out()'), false);
+});
+
+test('hydra-code: initCam/initScreen still force a blit even alongside initImage/initVideo', () => {
+  assert.equal(usesExternalSource(
+    'await initHydra()\ns0.initImage("https://example.com/x.png")\ns1.initCam()\nsrc(s0).blend(src(s1)).out()'
+  ), true);
 });
 
 test('hydra-code: sN is matched as a whole word', () => {

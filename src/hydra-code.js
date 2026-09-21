@@ -208,21 +208,39 @@ export function hasHydraCode(code) {
   return splitHydraCode(code) != null;
 }
 
-// Does the preamble reference an External Source slot (s0-s3)? In Hydra those
-// exist ONLY to hold external media — initCam, initScreen, initImage,
-// initVideo, or a raw init({src}) — never a procedural generator, which
-// Hydra always exposes as a bare function (osc, noise, shape…) rather than
-// through a source slot. So naming sN at all — however it got populated: an
-// explicit call in this preamble, or hydra-video.js's own direct-mode camera
-// feed into s0 with no call visible here — means this cell shows something
-// the aggregator has no way to reproduce itself: no camera, no screen to
-// share, and no access to a URL that lives only in the performer's own
-// browser. The mosaic blits their published track instead of re-executing.
-// Matches s0-s3 as a whole word so `s01` or `foos0` don't trip it.
+// initCam/initScreen genuinely need hardware only the performer's own browser
+// has; initImage/initVideo populate a slot from an ADDRESSABLE URL instead
+// (Trussal's own local uploads excepted — see usesLocalImage, checked
+// separately), which the aggregator/a bot can fetch and render just as well
+// itself. Only the former forces a blit.
+const CAM_OR_SCREEN_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen)\s*\(/;
+// Any explicit call that populates a source slot — including initImage/
+// initVideo, which settle a bare sN reference as safely re-executable rather
+// than leaving it in the "no call visible" ambiguous case below.
+const ANY_SOURCE_INIT_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen|Image|Video)\s*\(/;
+
+// Does the preamble reference an External Source slot (s0-s3) in a way the
+// aggregator/a bot cannot reproduce itself? In Hydra those exist ONLY to hold
+// external media — initCam, initScreen, initImage, initVideo, or a raw
+// init({src}) — never a procedural generator, which Hydra always exposes as a
+// bare function (osc, noise, shape…) rather than through a source slot.
+// initCam/initScreen need the performer's own camera/screen, which no one
+// else has — always a blit. initImage/initVideo hand it a URL, which is just
+// as fetchable from any other browser (Trussal's own local-upload URLs
+// excepted — usesLocalImage catches those), so a preamble whose ONLY source
+// calls are initImage/initVideo does not need the performer's published
+// track. A bare sN reference with NO init call visible in this preamble at
+// all stays conservative — hydra-video.js's own direct-mode camera auto-feed
+// into s0 has no call visible here either, so it still means "could be the
+// camera" and still blits. Matches s0-s3 as a whole word so `s01` or `foos0`
+// don't trip it.
 export function usesExternalSource(code) {
   const split = splitHydraCode(code);
   if (!split) return false;
-  return /(^|[^\w$])s[0-3]($|[^\w$])/.test(split.preamble);
+  const { preamble } = split;
+  if (!/(^|[^\w$])s[0-3]($|[^\w$])/.test(preamble)) return false;
+  if (CAM_OR_SCREEN_RE.test(preamble)) return true;
+  return !ANY_SOURCE_INIT_RE.test(preamble);
 }
 
 // Does the preamble bind Hydra parameters to Strudel patterns via `H(...)`?

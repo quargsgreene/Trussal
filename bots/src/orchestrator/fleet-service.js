@@ -522,7 +522,7 @@ export class FleetService {
           type: 'remote-control',
           targetPeerId: peer.peerId,
           action: 'video',
-          videoOn: false,
+          videoOn: true,
         });
       }
     }

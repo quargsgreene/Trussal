@@ -490,6 +490,19 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
         editor.setAttribute('code', code);
         if (ed && typeof ed.evaluate === 'function') await ed.evaluate();
       }
+      // Re-announce the WHOLE program (preamble, blank line, Strudel — same
+      // shape pageStrudelBoot's own boot-time announce uses), so peer.pattern
+      // actually reflects this edit. Without this, patchLocalProgramSection's
+      // "unfocused always follows live" rule (studio.js) keeps painting the
+      // editor from the STALE pre-edit peer.pattern the moment the operator
+      // looks away — reading as the edit being silently discarded/reverted,
+      // even though the bot's own REPL is genuinely running the new code.
+      if (typeof window.__trussalAnnounceLocalPattern === 'function') {
+        const body = ownPreamble ? pushed : (hydra ? `${hydra}\n\n${pushed}` : pushed);
+        try { window.__trussalAnnounceLocalPattern(`'bot editor'\n${body}`); } catch (err) {
+          console.error('[trussal] announcing remote pattern edit failed', err);
+        }
+      }
     } catch (err) {
       // Deliberately NOT window.__trussalReportError: that array feeds
       // healthTick's "bot executed syntactically incorrect code → terminate
