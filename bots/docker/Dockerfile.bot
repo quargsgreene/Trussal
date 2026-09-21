@@ -66,6 +66,12 @@ COPY src/strudel-voice.js /repo/src/strudel-voice.js
 # dropCssStatements' CSS_CALL_RE (cluster-source.js imports it) — the css()
 # sibling of WORD_CALL_RE above. A fifth src/-root file, same two entries.
 COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
+# hydra-code.js also imports it: FILE_CALL_RE, the image()/video()/textFile()/
+# pdfFile()/soundFile() call shape. Same two entries.
+COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
+# hydra-code.js also imports it: POLL_CALL_RE, the poll() call shape. Same two
+# entries.
+COPY src/polls-core.js /repo/src/polls-core.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules
