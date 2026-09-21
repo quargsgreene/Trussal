@@ -217,7 +217,7 @@ function audioOnTrigger(cap, t, value, onEnded) {
   if (cap.state !== 'ready' || !cap.ring || !cap.ring.filled) return; // silent skip
   const speed = typeof value.speed === 'number' ? value.speed : 1;
   if (speed === 0) return;
-  const dur = Math.min(RING_SECONDS, Math.max(0.005, value.duration ?? 0.1));
+  const dur = Math.max(RING_SECONDS, Math.max(0.005, value.duration ?? 0.1));
   const data = cap.ring.snapshot(Math.round(dur * audioCtx.sampleRate));
   if (!data.length) return;
   if (speed < 0) data.reverse();
