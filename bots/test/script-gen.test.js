@@ -23,8 +23,8 @@ test('validateMasterScript enforces the JSON contract from the spec', () => {
   assert.equal(validateMasterScript({ strudel: 42, hydra: 'await initHydra()' }).ok, false, 'strings required');
   assert.equal(
     validateMasterScript({ strudel: 's("bd")', hydra: 'osc(8).out(o0)' }).ok,
-    false,
-    'hydra must start with await initHydra() per the spec',
+    true,
+    'hydra needs no await initHydra() preamble — optional everywhere, same as for a human',
   );
   assert.equal(
     validateMasterScript({ strudel: 's("bd"', hydra: 'await initHydra()' }).ok,
@@ -57,12 +57,14 @@ test('randomMasterScript is deterministic per seed and always self-valid', () =>
   assert.deepEqual(a, b, 'same seed → same script');
   assert.notDeepEqual(a, c, 'different seed → different script');
   assert.equal(validateMasterScript(a).ok, true, 'generated scripts must pass our own validator');
-  assert.ok(a.hydra.startsWith('await initHydra('));
+  // Shape only — a bot never spawns carrying the literal preamble call.
+  assert.ok(!a.hydra.includes('initHydra'));
+  assert.match(a.hydra, /\.out\(o0\)$/);
 });
 
 test('randomMasterScript also invents a css() voice, on the same footing as text', () => {
   const a = randomMasterScript(7);
-  assert.match(a.css, /await initCss\(\)/);
+  assert.ok(!/await\s+initCss/.test(a.css), 'shape only — no literal preamble call');
   assert.match(a.css, /\bcss\(/);
   assert.equal(validateCode(a.css).ok, true);
   const c = randomMasterScript(8);

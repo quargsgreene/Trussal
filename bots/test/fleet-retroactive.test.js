@@ -154,7 +154,11 @@ test('the re-latched code carries the hydra preamble as an editor block', async 
     await turn(fleet, '1a');
 
     const code = drives(sent)[0].code;
-    assert.match(code, /^await initHydra\(\)/, 'the preamble leads, as the page rule requires');
+    // Shape only — a bot never spawns/re-latches carrying the literal
+    // `await initHydra()` call; the page supplies it from the shape (see
+    // page-scripts.js's pageRemoteControl wrapPreambleMini).
+    assert.match(code, /^noise\(3\)\.out\(o0\)/, 'the hydra preamble leads, as the page rule requires');
+    assert.ok(!code.includes('initHydra'), 'a bot never spawns carrying the preamble');
     assert.match(code, /\n\n/, 'and the blank line that ends it survives');
     assert.match(code, /rim:7/);
     assert.ok(!code.includes('botConfig'), 'the declaration is not part of what plays');

@@ -70,9 +70,11 @@ conductor env (`JITSI_CHANNEL_LAST_N`, `JITSI_VIDEO_HEIGHT`, `JITSI_START_BITRAT
   scripts live.
 - **Health thresholds** — minimum fps cutoff and per-bot memory ceiling. Violations shrink
   the session's max bot count from 10 proportionally (never below 1).
-- **Master script upload** — a JSON file `{"strudel": "...", "hydra": "await initHydra()..."}`.
-  It is validated (shape, `await initHydra(` prefix, JS syntax) before distribution;
-  errors are shown inline.
+- **Master script upload** — a JSON file `{"strudel": "...", "hydra": "osc(...).out(o0)..."}`.
+  `hydra` needs no `await initHydra()` preamble — that call is optional everywhere in
+  Trussal and is supplied automatically wherever the code runs, same as for a human's own
+  shape-only Hydra code. It is validated (JSON shape, JS syntax) before distribution; errors
+  are shown inline.
 - **Per-bot code inspector** — one button per bot opens a modal (`<dialog>`) showing the
   exact Strudel/Hydra code and entry delay that bot is running.
 

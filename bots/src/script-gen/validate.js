@@ -23,12 +23,19 @@ export function validateCode(code) {
 }
 
 /**
- * JSON contract for a user-provided master script (spec): an object with
- * `strudel` and `hydra` string fields, hydra starting with `await
- * initHydra(`, plus optional `text` and `css` string fields (a bot's own
- * word()/css() voice — see cluster-source.js's botScriptFor). Returns
- * { ok, error? } rather than throwing so the config API can surface the
- * message straight to the admin page.
+ * JSON contract for a user-provided master script: an object with `strudel`
+ * and `hydra` string fields, plus optional `text` and `css` string fields (a
+ * bot's own word()/css() voice — see cluster-source.js's botScriptFor).
+ * Returns { ok, error? } rather than throwing so the config API can surface
+ * the message straight to the admin page.
+ *
+ * `hydra` no longer has to open with a literal `await initHydra(` call — that
+ * preamble is optional everywhere else in Trussal (ensureCapabilityPreambles,
+ * src/hydra-code.js) and bots follow the same rule: a bare `osc(...).out(o0)`
+ * is valid, and whoever evaluates it (the bot's own REPL — see
+ * pageStrudelBoot's own injection) supplies the call from the shape. An admin
+ * who writes the call explicitly still has it honoured, same as any other
+ * author's own text.
  */
 export function validateMasterScript(obj) {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -43,9 +50,6 @@ export function validateMasterScript(obj) {
     if (field in obj && typeof obj[field] !== 'string') {
       return { ok: false, error: `"${field}" must be a string` };
     }
-  }
-  if (!obj.hydra.trimStart().startsWith('await initHydra(')) {
-    return { ok: false, error: 'hydra code must start with `await initHydra(` (spec requirement)' };
   }
   const unknown = Object.keys(obj).filter((k) => !['strudel', 'hydra', 'text', 'css'].includes(k));
   if (unknown.length > 0) {

@@ -25,7 +25,7 @@
  * fx — stays in variation.js and is applied afterwards, unchanged.
  */
 
-import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
+import { splitHydraCode, normalizePeerCode, stripCapabilityPreambles } from '../../../src/hydra-code.js';
 import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
 import { LIVECAPTURE_CALL_RE } from '../../../src/live-capture-core.js';
@@ -46,13 +46,26 @@ import {
  * never disagree about where the preamble ends. `botConfig(...)` is stripped by
  * normalizePeerCode on the way through — the declaration configures the bots,
  * it is not part of what they play.
+ *
+ * normalizePeerCode's own `await initX()` injection (needed so splitHydraCode
+ * can find where a shape-only Hydra preamble ends — see hydra-code.js) is
+ * stripped back off both halves before they're captured: a bot must never
+ * spawn carrying one of those calls, whether the performer it was copied from
+ * wrote it explicitly or relied on the shape (see stripCapabilityPreambles's
+ * own doc). Whoever next evaluates `hydra`/`strudel` re-adds exactly what this
+ * removes, so nothing about what plays changes — only what gets stored.
  */
 export function masterFromPerformerCode(code) {
   const normalized = normalizePeerCode(code);
   if (!normalized) return null;
   const split = splitHydraCode(normalized);
-  if (split) return { strudel: split.strudel, hydra: split.preamble };
-  return { strudel: normalized, hydra: '' };
+  if (split) {
+    return {
+      strudel: stripCapabilityPreambles(split.strudel).trim(),
+      hydra: stripCapabilityPreambles(split.preamble).trim(),
+    };
+  }
+  return { strudel: stripCapabilityPreambles(normalized).trim(), hydra: '' };
 }
 
 /**

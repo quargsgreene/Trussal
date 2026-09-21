@@ -167,7 +167,8 @@ test('Conductor: listBots exposes the exact running code for the admin inspector
       assert.equal(typeof b.botId, 'number');
       assert.ok(b.name.length > 0, 'dog-breed name present');
       assert.ok(b.script.strudel.includes('('), 'exact strudel code exposed');
-      assert.ok(b.script.hydra.startsWith('await initHydra('), 'exact hydra code exposed');
+      assert.ok(!b.script.hydra.includes('initHydra'), 'a bot never spawns carrying the preamble');
+      assert.match(b.script.hydra, /\.out\(/, 'exact hydra code exposed');
     }
   } finally {
     await conductor.stop();

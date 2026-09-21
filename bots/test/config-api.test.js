@@ -53,7 +53,8 @@ test('GET /api/bots exposes each bot exact code for the inspector modal', async 
     for (const b of bots) {
       assert.ok(b.name, 'breed name');
       assert.ok(b.script.strudel, 'exact strudel code');
-      assert.ok(b.script.hydra.startsWith('await initHydra('), 'exact hydra code');
+      assert.ok(!b.script.hydra.includes('initHydra'), 'a bot never spawns carrying the preamble');
+      assert.match(b.script.hydra, /\.out\(/, 'exact hydra code');
       assert.equal(typeof b.script.entryDelayMs, 'number');
     }
   });

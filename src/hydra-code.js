@@ -88,6 +88,33 @@ export function ensureCapabilityPreambles(code) {
   return `${s.slice(0, cut).replace(/\s*$/, '')}\n${adds.join('\n')}${s.slice(cut)}`;
 }
 
+// Inverse of the three `await initX()` lines ensureCapabilityPreambles above
+// can add: strip them back off, leaving only the shape that implied them.
+// Whoever next evaluates the result re-adds exactly what this removed —
+// ensureCapabilityPreambles again for a browser (normalizePeerCode runs it on
+// every peer's code before use), pageStrudelBoot's own equivalent injection
+// for a bot's own REPL (see bots/src/bot/page-scripts.js) — so stripping here
+// never changes what runs, only what gets stored/announced.
+//
+// Used by the bots' cluster-source.js: normalizePeerCode's own injection
+// (needed so splitHydraCode can find where a shape-only Hydra preamble ends)
+// would otherwise leak an auto-added preamble into a bot's captured/announced
+// script even when the performer it was copied from never wrote one — unlike
+// a human, whose own broadcast pattern is always exactly what they typed
+// (peer-state.js's sendLocalPattern sends the raw editor text, never routed
+// through ensureCapabilityPreambles first).
+const STRIP_INIT_HYDRA_RE = /(^|\n)[ \t]*await\s+initHydra\s*\([^)]*\)\s*;?[ \t]*\n*/;
+const STRIP_INIT_TEXT_CYCLES_RE = /(^|\n)[ \t]*await\s+initTextCycles\s*\([^)]*\)\s*;?[ \t]*\n*/;
+const STRIP_INIT_CSS_RE = /(^|\n)[ \t]*await\s+initCss\s*\([^)]*\)\s*;?[ \t]*\n*/;
+
+export function stripCapabilityPreambles(code) {
+  let s = String(code ?? '');
+  s = s.replace(STRIP_INIT_HYDRA_RE, '$1');
+  s = s.replace(STRIP_INIT_TEXT_CYCLES_RE, '$1');
+  s = s.replace(STRIP_INIT_CSS_RE, '$1');
+  return s.replace(/^\n+/, '');
+}
+
 // A paragraph after the first still belongs to the Hydra preamble if it
 // contains a render call — `.out(...)`, bare or targeting o0-o3 — which is
 // Hydra's defining shape and something a Strudel pattern never writes. This

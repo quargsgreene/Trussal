@@ -121,10 +121,12 @@ const strudel = [
     `  ${pick(rand, MELODIES)}${pick(rand, FX)}`,
     ')',
   ].join('\n');
-const hydra = [
-    'await initHydra()',
-    `${pick(rand, HYDRA_SOURCES)}${pick(rand, HYDRA_MODS)}${pick(rand, HYDRA_MODS)}.out(o0)`,
-  ].join('\n');
+// Shape only, no leading `await initHydra()` — bots never spawn carrying that
+// call (see cluster-source.js's stripCapabilityPreambles); whoever evaluates
+// this (the bot's own REPL, another viewer's browser) supplies it themselves
+// from the shape, exactly as a human's own shape-only Hydra code already does.
+const hydra =
+    `${pick(rand, HYDRA_SOURCES)}${pick(rand, HYDRA_MODS)}${pick(rand, HYDRA_MODS)}.out(o0)`;
 
 const text = textPatternFrom(rand);
 const css = cssPatternFrom(rand);
@@ -136,8 +138,8 @@ const css = cssPatternFrom(rand);
 // plays (see cluster-source.js's botScriptFor).
 function textPatternFrom(rand) {
   return [
-    'await initTextCycles()',
-    '',
+    // No leading `await initTextCycles()` — shape only, same reasoning as the
+    // hydra template above.
     // The label MUST start at column 0: strudel-voice.js's wrapAsVoice finds
     // a paragraph's label with an anchored-at-line-start regex (no leading-
     // whitespace tolerance), the same way a performer's own `$:` line must.
@@ -171,9 +173,9 @@ function cssPatternFrom(rand) {
   const c3 = createRandomCssColor(rand);
   const hover = createRandomCssColor(rand);
   const speed = Math.floor(rand() * 4) + 1;
+  // No leading `await initCss()` — shape only, same reasoning as the hydra
+  // template above.
   return [
-    'await initCss()',
-    '',
     `$: css(\`.ts-chip {
          &:hover { border-color: ${hover} }
        }\`)

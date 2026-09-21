@@ -19,9 +19,15 @@ test('plain Strudel becomes a master with no hydra', () => {
   assert.deepEqual(masterFromPerformerCode('s("bd sd")'), { strudel: 's("bd sd")', hydra: '' });
 });
 
-test('a Hydra block splits at the blank line, as the browser splits it', () => {
+test('a Hydra block splits at the blank line, as the browser splits it, and the preamble call is stripped back off — a bot never spawns carrying it', () => {
   const master = masterFromPerformerCode('await initHydra()\nosc(10).out(o0)\n\ns("bd sd")');
-  assert.equal(master.hydra, 'await initHydra()\nosc(10).out(o0)');
+  assert.equal(master.hydra, 'osc(10).out(o0)');
+  assert.equal(master.strudel, 's("bd sd")');
+});
+
+test('a performer who never wrote the preamble at all (shape only) captures identically', () => {
+  const master = masterFromPerformerCode('osc(10).out(o0)\n\ns("bd sd")');
+  assert.equal(master.hydra, 'osc(10).out(o0)');
   assert.equal(master.strudel, 's("bd sd")');
 });
 
@@ -194,7 +200,8 @@ test('composed properties (paramFactor + harmony) all reach announceStrudel toge
 test('colorScheme chains onto the master pipeline, before its own .out(o0)', () => {
   const source = capture('botConfig({ colorScheme: "triadic" })\nawait initHydra()\nosc(10).out(o0)\n\ns("bd")');
   const script = botScriptFor(source, { index: 1, count: 3, seed: 7, botId: 1 });
-  assert.match(script.hydra, /^await initHydra\(\)/);
+  assert.ok(!script.hydra.includes('initHydra'), 'a bot never spawns carrying the preamble');
+  assert.match(script.hydra, /^osc\(10\)/);
   assert.match(script.hydra, /osc\(10\)\.hue\(0\.333\)\.out\(o0\)$/);
   assert.ok(!script.hydra.includes('src(o0)'), 'no separate src(o0) statement');
 });
@@ -241,6 +248,12 @@ test('no botConfig() at all announces the performer\'s own words and styling —
   assert.ok(!script.strudel.includes('word(') && !script.strudel.includes('css('), 'still never in eval — that REPL has neither capability');
   assert.match(script.announceStrudel, /word\("hello"\)/, 'undeclared means an exact copy includes the performer\'s words');
   assert.match(script.announceStrudel, /css\(`\.x\{color:red\}`\)/, 'and their styling too');
+  // Undeclared/exact-copy keeps the WORDS and STYLING, but never the literal
+  // `await initX()` calls that only exist because the performer explicitly
+  // wrote them here — a bot must never spawn carrying one, in eval OR
+  // announce, regardless of what capabilities its author's code declares.
+  assert.ok(!script.strudel.includes('initTextCycles') && !script.strudel.includes('initCss'));
+  assert.ok(!script.announceStrudel.includes('initTextCycles') && !script.announceStrudel.includes('initCss'));
 });
 
 test('an explicit but empty botConfig() is still a declaration — words and styling are dropped from the announce', () => {

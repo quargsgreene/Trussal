@@ -1134,6 +1134,20 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // Strudel pattern, so substituting it here lets the scheduler start
   // normally without producing any audio.
   const strudelSafe = strudel.trim() ? strudel : 'silence';
+  // A bot never spawns carrying a literal `await initHydra()` call any more
+  // (see cluster-source.js's masterFromPerformerCode/generator.js) — `hydra`
+  // arrives as shape only, e.g. `osc(10).out(o0)`. Unlike every OTHER
+  // consumer of a peer's code (another browser's normalizePeerCode, the
+  // aggregator's mosaic), this REPL is booted directly from the `{strudel,
+  // hydra}` pair rather than from one combined buffer normalizePeerCode has
+  // already run on, so nothing else supplies the call — splice it in here,
+  // the same shape-implies-preamble rule ensureCapabilityPreambles applies
+  // everywhere else (src/hydra-code.js), simplified: `hydra` is a dedicated
+  // field, always meant to be Hydra, so any non-empty value gets the call
+  // unless it is already declaring one itself.
+  const hydraWithInit = hydra.trim() && !/^\s*await\s+initHydra\s*\(/.test(hydra)
+    ? `await initHydra()\n\n${hydra}`
+    : hydra;
   // Strudel's transpiler mini-notation-parses EVERY double-quoted string in
   // the evaluated program, with no notion of which function it is an
   // argument to — so `s0.initImage("folder")` or `s0.initVideo("url")` would
@@ -1143,7 +1157,7 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
   // needs mini notation itself, so disable it for the whole preamble via
   // Strudel's own `mini-off`/`mini-on` comment-range convention rather than
   // asking every performer to remember single quotes for every URL argument.
-  const hydraSafe = hydra.trim() ? `/* mini-off */\n${hydra}\n/* mini-on */` : hydra;
+  const hydraSafe = hydraWithInit.trim() ? `/* mini-off */\n${hydraWithInit}\n/* mini-on */` : hydraWithInit;
   // The ';' is load-bearing: hydra ends in an expression and the strudel
   // wrapper starts with '(' — joined by bare newline, ASI reads it as a
   // call: `out(o0)(stack(...))`, which throws inside Strudel's own error
