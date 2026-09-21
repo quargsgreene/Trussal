@@ -761,10 +761,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     const toks = tokenizeSpaced(rest);
     const name3 = toks.shift() || "";
     const args2 = toks.map((t) => {
-      if (t[0] === "<" || t[0] === "[") return JSON.stringify(t);
+      if (t[0] === "<" || t[0] === "[") return quoteMiniPattern(t);
       return t;
     });
     return `${name3}(${args2.join(", ")})`;
+  }
+  function quoteMiniPattern(t) {
+    return t.includes('"') ? `'${t}'` : JSON.stringify(t);
   }
   function miniToMondo(body) {
     const src2 = String(body ?? "");
