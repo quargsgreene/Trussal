@@ -940,22 +940,62 @@ export function isPropagatingToRoom() {
 // one-participant-per-slot. In a normal room (no aggregator) the node carries
 // the combined program as before, for shared re-evaluation.
 
+// A continuous, ~-70dBFS white-noise source — far below the limiter and
+// normal room noise, inaudible in practice, but never literal digital zero.
+// Measured via the aggregator's own RTCPeerConnection.getStats() on a
+// published liveCapture() track: 91% of received samples were silence
+// concealment with zero actual packet loss, meaning the sender (this browser)
+// simply wasn't transmitting — some layer of Chrome's own encoder is
+// detecting a captured/replayed buffer's quiet stretches as "nothing to
+// send" and skipping them, the same way Opus DTX would, even though
+// config.audioQuality.enableOpusDtx is off (checked: lib-jitsi-meet only
+// negotiates usedtx=1 when that flag is explicitly true). Keeping the
+// published signal never-truly-silent defeats that without being audible.
+const DITHER_LEVEL = 0.0003;
+function createDitherNode(audioCtx) {
+  const bufLen = Math.floor(audioCtx.sampleRate * 2);
+  const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const gain = audioCtx.createGain();
+  gain.gain.value = DITHER_LEVEL;
+  src.connect(gain);
+  src.start();
+  return { node: gain, stop: () => { try { src.stop(); } catch (e) { /* already stopped */ } } };
+}
+
 // A jitsi-meet track effect whose output is exactly `node` — the mic input it is
 // handed is ignored. `node` connects straight into the effect's destination (no
-// MediaStream round-trip → no Chrome same-context loopback silence).
+// MediaStream round-trip → no Chrome same-context loopback silence). Also mixes
+// in the dither above, scoped to this effect's own destination only — it never
+// reaches the local monitor or any other consumer of `node`.
 class NodeOutputEffect {
   constructor(audioCtx, node) {
+    this._ctx = audioCtx;
     this._node = node;
     this._dest = audioCtx.createMediaStreamDestination();
+    this._dither = null;
   }
   isEnabled() { return true; }
   startEffect(_micStream) {
     try { this._node.connect(this._dest); }
     catch (e) { console.warn('[latency] NodeOutputEffect connect failed', e); }
+    try {
+      this._dither = createDitherNode(this._ctx);
+      this._dither.node.connect(this._dest);
+    } catch (e) { console.warn('[latency] NodeOutputEffect dither failed', e); }
     return this._dest.stream;
   }
   stopEffect() {
     try { this._node.disconnect(this._dest); } catch (e) {}
+    if (this._dither) {
+      try { this._dither.node.disconnect(this._dest); } catch (e) {}
+      try { this._dither.stop(); } catch (e) {}
+      this._dither = null;
+    }
   }
 }
 
