@@ -45,6 +45,9 @@ COPY src/program-directive.js /repo/src/program-directive.js
 COPY src/notation.js /repo/src/notation.js
 COPY src/text-cycles-core.js /repo/src/text-cycles-core.js
 COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
+# dropLiveCaptureStatements' LIVECAPTURE_CALL_RE (cluster-source.js imports
+# it) — same two entries as Dockerfile.bot.
+COPY src/live-capture-core.js /repo/src/live-capture-core.js
 COPY src/strudel-voice.js /repo/src/strudel-voice.js
 # hydra-code.js's ensureCapabilityPreambles also sniffs these two capabilities'
 # call shapes (file()/image()/etc., poll()) — same two entries as Dockerfile.bot.

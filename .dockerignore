@@ -12,6 +12,7 @@
 !src/bot-config.js
 !src/text-cycles-core.js
 !src/css-cycles-core.js
+!src/live-capture-core.js
 !src/file-cycles-core.js
 !src/polls-core.js
 !src/breakout-core.js

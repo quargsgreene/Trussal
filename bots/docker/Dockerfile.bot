@@ -66,6 +66,10 @@ COPY src/strudel-voice.js /repo/src/strudel-voice.js
 # dropCssStatements' CSS_CALL_RE (cluster-source.js imports it) — the css()
 # sibling of WORD_CALL_RE above. A fifth src/-root file, same two entries.
 COPY src/css-cycles-core.js /repo/src/css-cycles-core.js
+# dropLiveCaptureStatements' LIVECAPTURE_CALL_RE (cluster-source.js imports
+# it) — the liveCapture() sibling of WORD_CALL_RE/CSS_CALL_RE above. Same two
+# entries.
+COPY src/live-capture-core.js /repo/src/live-capture-core.js
 # hydra-code.js also imports it: FILE_CALL_RE, the image()/video()/textFile()/
 # pdfFile()/soundFile() call shape. Same two entries.
 COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
