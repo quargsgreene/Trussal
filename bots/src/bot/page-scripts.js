@@ -1199,6 +1199,19 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
     const ed = editor.editor;
     if (!ed) throw new Error('strudel editor failed to mount within 30s');
 
+    // StrudelMirror's constructor fires off `prebake()` (which populates
+    // window.registerSampleSource / loadWorklets / registerSynthSounds / etc.
+    // by assigning every @strudel/* export onto globalThis) but does not await
+    // it — `editor.editor` above is already truthy the instant connectedCallback
+    // runs, well before that assignment happens. Strudel's own evaluate() path
+    // is safe because its beforeEval hook awaits `this.prebaked` first, but that
+    // wait happens too late for us: we need those globals BEFORE the first
+    // evaluate (see the sample-registration comment below). Awaiting it
+    // ourselves here is a no-op once it has already resolved.
+    if (ed.prebaked && typeof ed.prebaked.then === 'function') {
+      await ed.prebaked.catch((err) => window.__trussalReportError(err));
+    }
+
     // Load the bot's OWN AudioWorklet processors and register its synth/
     // noise palette BEFORE the first evaluation, exactly as strudel.js's
     // ensureStrudel() does for a human's browser (loadWorklets, then

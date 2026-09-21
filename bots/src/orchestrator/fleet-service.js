@@ -1346,7 +1346,15 @@ export class FleetService {
     }
 
     // Sample bytes for a bot that just read the manifest above. Bots are
-    // host-networked on this VM, so this never leaves localhost.
+    // host-networked on this VM, so the REQUEST never leaves localhost — but
+    // it is still fetched by superdough's loadBuffer() running on the bot's
+    // Jitsi PAGE, whose origin is the Jitsi URL, not this service. A bare GET
+    // response is a cross-origin fetch to the browser regardless of network
+    // locality, and with no Access-Control-Allow-Origin the browser discards
+    // the (successfully-received) body — decodeAudioData never runs and the
+    // registered bank plays silence with no error surfaced anywhere this
+    // service can see. Already-unauthenticated GET, so this grants no new
+    // access, only lets the page's own fetch() read the bytes it already got.
     const sample = req.url.match(/^\/samples\/([^/]+)\/([^/]+)\/([^/]+)\/([^/?]+)/);
     if (req.method === 'GET' && sample) {
       const [, room, owner, bank, name] = sample.map(decodeURIComponent);
@@ -1355,6 +1363,7 @@ export class FleetService {
       res.writeHead(200, {
         'content-type': 'application/octet-stream',
         'content-length': file.bytes.length,
+        'access-control-allow-origin': '*',
       });
       return res.end(file.bytes);
     }
