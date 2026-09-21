@@ -1,15 +1,16 @@
 // Worst-case network metric calculation for JPattern.
 //
-// Every client computes WCL/WCRTT/WCPL from the same peer metrics broadcast
-// over the peer-state bus, so all browsers derive identical cycle lengths and
-// effect parameters from identical inputs. Pure module — no DOM, no WebAudio —
-// so it runs under node:test as-is.
+// Every client computes WCL/WCJ/WCRTT/WCPL from the same peer metrics
+// broadcast over the peer-state bus, so all browsers derive identical cycle
+// lengths and effect parameters from identical inputs. Pure module — no DOM,
+// no WebAudio — so it runs under node:test as-is.
 //
 // `percentile` is ported from bots/src/shared/stats.js (R-7 linear
 // interpolation, the numpy/Excel default) so fleet-side and room-side
 // statistics agree.
 
 import { IncreaseLatency } from './IncreaseLatency.js';
+import { IncreaseJitter } from './IncreaseJitter.js';
 import { IncreaseRTT } from './IncreaseRTT.js';
 import { IncreasePacketLoss } from './IncreasePacketLoss.js';
 
@@ -43,6 +44,18 @@ function peerRtt(peer) {
   // legs (worstCaseOneWayLatency) and, on its own, WCRTT.
   if (typeof peer.rtcRtt === 'number' && isFinite(peer.rtcRtt)) return peer.rtcRtt;
   if (typeof peer.rtt === 'number' && isFinite(peer.rtt)) return peer.rtt;
+  return null;
+}
+
+// Same media-path-first rule as peerRtt. `rtcJitter` is the RTP inter-arrival
+// jitter of the audio a peer is actually receiving, which is the quantity WCJ
+// is supposed to describe and the one that belongs with the rest of WCL's
+// inputs (rtcRtt, jitterBufferMs). `jitter` is the stdev of the WS ping/pong
+// RTT to the sidecar — a different network leg entirely (signalling, through
+// nginx), kept only as the fallback for a peer with no RTCStats sample yet.
+function peerJitter(peer) {
+  if (typeof peer.rtcJitter === 'number' && isFinite(peer.rtcJitter)) return peer.rtcJitter;
+  if (typeof peer.jitter === 'number' && isFinite(peer.jitter)) return peer.jitter;
   return null;
 }
 
@@ -93,6 +106,8 @@ export function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
 
 // Worst-case metrics over the whole roster:
 //   wcl   worst-case one-way mouth-to-ear latency, ms (see above)
+//   wcj   worst-case RTP inter-arrival jitter on the media path, ms —
+//         the WS ping/pong figure only for peers with no RTCStats sample yet
 //   wcrtt worst-case round-trip time, ms
 //   wcpl  worst-case packet loss, fraction in [0, 1]
 //
@@ -110,6 +125,7 @@ export function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
 export function computeWorstCaseMetrics(peers) {
   const list = Array.isArray(peers) ? peers : [];
   const rtts = [];
+  const jitters = [];
   const losses = [];
   const jitterBuffers = [];
   const pipelines = [];
@@ -117,6 +133,8 @@ export function computeWorstCaseMetrics(peers) {
     if (!peer) continue;
     const rtt = peerRtt(peer);
     if (rtt != null) rtts.push(rtt);
+    const jitter = peerJitter(peer);
+    if (jitter != null) jitters.push(jitter);
     if (typeof peer.jitterBufferMs === 'number' && isFinite(peer.jitterBufferMs)) {
       jitterBuffers.push(peer.jitterBufferMs);
     }
@@ -134,6 +152,7 @@ export function computeWorstCaseMetrics(peers) {
   const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
   return {
     wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
+    wcj: worstCase(jitters) ?? 0,
     wcrtt: worstCase(rtts) ?? 0,
     wcjb,
     wcpipe,
@@ -147,6 +166,7 @@ export function computeWorstCaseMetrics(peers) {
 
 export const INDUCTIONS = Object.freeze({
   wcl: IncreaseLatency,
+  wcj: IncreaseJitter,
   wcrtt: IncreaseRTT,
   wcpl: IncreasePacketLoss
 });

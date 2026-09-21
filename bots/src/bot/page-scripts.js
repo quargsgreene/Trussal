@@ -259,17 +259,38 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   // declaresOwnPreamble's own check and again here.
   const INIT_HYDRA_RE = /^\s*await\s+initHydra\s*\(/;
   const HYDRA_RENDER_RE = /\.out\s*\(/;
+  // Mirrors src/hydra-code.js's splitHydraCode walk, trailing check included:
+  // without it, a preamble whose LAST paragraph is separated from an earlier
+  // one by exactly one blank line (e.g. `await initHydra()\n\ns0.initImage(…)
+  // \nsrc(s0).out(o0)` — precisely the shape a shape-only push gets once
+  // `await initHydra()` is spliced in above) cut the wrap off right after the
+  // first paragraph, leaving the rest — including any double-quoted External
+  // Source argument — outside the mini-off/mini-on guard.
   const hydraPreambleEnd = (text) => {
     const blanks = [...text.matchAll(/\n\n+/g)];
     if (!blanks.length) return text.length;
     let cut = blanks[0];
     for (let i = 1; i < blanks.length; i++) {
       const paragraph = text.slice(cut.index + cut[0].length, blanks[i].index);
-      if (!HYDRA_RENDER_RE.test(paragraph)) break;
+      if (!HYDRA_RENDER_RE.test(paragraph)) return cut.index;
       cut = blanks[i];
     }
-    return cut.index;
+    const trailing = text.slice(cut.index + cut[0].length);
+    return HYDRA_RENDER_RE.test(trailing) ? text.length : cut.index;
   };
+
+  const cap = capabilityPatterns || {};
+  // The Hydra SHAPE pattern (src/hydra-code.js's HYDRA_SHAPE_PATTERN, passed
+  // alongside the capability patterns): a pushed edit that only shows Hydra's
+  // shape — a bare `s0.initImage(...)`/`.out(...)` with no literal `await
+  // initHydra(` — still declares its own preamble per declaresOwnPreamble
+  // below, exactly like ensureCapabilityPreambles treats it everywhere else
+  // (normalizePeerCode, used by both the browser's own program and
+  // cluster-source.js's spawn-time capture). wrapPreambleMini has to agree,
+  // or a shape-only edit reaches this REPL with no `await initHydra()` call
+  // and no mini-off/mini-on guard around its own string arguments.
+  const hydraShapeRe = cap.hydraShape && typeof cap.hydraShape.source === 'string'
+    ? toRegex(cap.hydraShape) : null;
   // Strudel's transpiler mini-notation-parses EVERY double-quoted string, so
   // a preamble's own s0.initImage("folder")/initVideo("url") needs the same
   // mini-off/mini-on guard pageStrudelBoot applies at boot — whether that
@@ -279,14 +300,16 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   // directly in what was just pushed. No-ops on text with no Hydra preamble
   // of its own. Wrapping only the preamble prefix, not the whole text, is why
   // this can't just wrap unconditionally — the Strudel voice after it
-  // legitimately needs mini notation.
+  // legitimately needs mini notation. A shape-only text (no literal call) gets
+  // `await initHydra()` spliced in first, same as ensureCapabilityPreambles.
   const wrapPreambleMini = (text) => {
-    if (!INIT_HYDRA_RE.test(text)) return text;
-    const end = hydraPreambleEnd(text);
-    return `/* mini-off */\n${text.slice(0, end)}\n/* mini-on */${text.slice(end)}`;
+    const hasCall = INIT_HYDRA_RE.test(text);
+    if (!hasCall && !(hydraShapeRe && hydraShapeRe.test(text))) return text;
+    const body = hasCall ? text : `await initHydra()\n\n${text}`;
+    const end = hydraPreambleEnd(body);
+    return `/* mini-off */\n${body.slice(0, end)}\n/* mini-on */${body.slice(end)}`;
   };
 
-  const cap = capabilityPatterns || {};
   // The leading 'personal editor' / 'bot editor' directive a pushed edit
   // carries (studio seeds the textarea with the bot's whole announced program,
   // directive included). It is a bare string literal the bare REPL has no use
@@ -1250,7 +1273,15 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
       // announcedStrudel, not the `strudel` this REPL evaluated: they differ
       // exactly when an undeclared (exact-copy) cluster kept a voice this REPL
       // can't run (see pageStrudelBoot's top).
-      const announced = hydra ? `${hydra}\n\n${announcedStrudel}` : announcedStrudel;
+      //
+      // 'bot editor' up front: every editable program buffer self-declares its
+      // kind (src/program-directive.js), and strudel.js's buildBotSilentBlock
+      // reads exactly this directive off `peer.pattern` to decide whether a
+      // bot's Text/CSS Cycles voice parrots to other viewers at all — with no
+      // directive here that check always failed, silently dropping every
+      // undeclared cluster's word()/css() voice.
+      const body = hydra ? `${hydra}\n\n${announcedStrudel}` : announcedStrudel;
+      const announced = `'bot editor'\n${body}`;
       try { window.__trussalAnnounceLocalPattern(announced); } catch (err) {
         window.__trussalReportError(err);
       }

@@ -367,7 +367,7 @@ function updateMetricsSection(el, peer, controls = '') {
     const wc = effectiveWorstCase();
     body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCRTT is the worst measured round trip across the roster.">${scopeTag('global')} WCL <b>${preciseMs(wc.wcl)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCJ is worst-case RTP inter-arrival jitter on the media path. WCRTT is the worst measured round trip across the roster.">${scopeTag('global')} WCL <b>${preciseMs(wc.wcl)}</b> · WCJ <b>${preciseMs(wc.wcj)}</b> · WCRTT <b>${preciseMs(wc.wcrtt)}</b> · WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;

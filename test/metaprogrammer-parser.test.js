@@ -441,7 +441,7 @@ test('room requires a metric keyword; scale and pinned amount are optional', () 
   ast = ok('$ participants <0>\n# room "wcl" 2\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: null });
   // Any worst-case metric may drive the decay, as it may drive crush.
-  for (const metric of ['wcl', 'wcpl', 'wcrtt']) {
+  for (const metric of ['wcl', 'wcj', 'wcpl', 'wcrtt']) {
     ast = ok(`$ participants <0>\n# room "${metric}" 2\n`);
     assert.equal(resolveEffectParams(ast.chain[0]).metric, metric);
   }
@@ -460,8 +460,8 @@ test('crush takes a metric keyword, a scale factor, and an optional pinned amoun
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: null });
   ast = ok('$ participants <0>\n# crush "wcl" 2 0.4\n');
   assert.deepEqual(resolveEffectParams(ast.chain[0]), { metric: 'wcl', scale: 2, fixedMetric: 0.4 });
-  // crush reads any worst-case metric, wcrtt included.
-  for (const metric of ['wcl', 'wcpl', 'wcrtt']) {
+  // crush reads any worst-case metric, wcj/wcrtt included.
+  for (const metric of ['wcl', 'wcj', 'wcpl', 'wcrtt']) {
     ast = ok(`$ participants <0>\n# crush "${metric}" 2\n`);
     assert.equal(resolveEffectParams(ast.chain[0]).metric, metric);
   }
@@ -795,6 +795,7 @@ test('cycles metric must be a timing metric; scale and amount must be positive',
   bad('$ participants <0>\n# cycles "wcl" 0\n', /scale factor must be a positive real/);
   bad('$ participants <0>\n# cycles "wcl" 10 0\n', /fixed amount must be a positive real/);
   ok('$ participants <0>\n# cycles "wcpl"\n');
+  ok('$ participants <0>\n# cycles "wcj"\n');
 });
 
 test('cycles args are positional: scale alone stays dynamic, amount pins the metric', () => {

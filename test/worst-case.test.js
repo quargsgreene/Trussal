@@ -26,9 +26,9 @@ test('worstCase is the max over finite samples, null when nothing usable', () =>
 
 test('computeWorstCaseMetrics over a mixed roster', () => {
   const peers = [
-    { rtt: 40, packetLoss: 0.01, rtcRtt: 60 },   // rtcRtt preferred
-    { rtt: 120, packetLoss: 0.2, rtcRtt: null }, // WS fallback
-    { rtt: null, packetLoss: null, rtcRtt: null } // contributes nothing
+    { rtt: 40, jitter: 2, packetLoss: 0.01, rtcRtt: 60 },   // rtcRtt preferred
+    { rtt: 120, jitter: 8, packetLoss: 0.2, rtcRtt: null }, // WS fallback
+    { rtt: null, jitter: null, packetLoss: null, rtcRtt: null } // contributes nothing
   ];
   const wc = computeWorstCaseMetrics(peers);
   assert.equal(wc.wcrtt, 120);
@@ -36,8 +36,29 @@ test('computeWorstCaseMetrics over a mixed roster', () => {
   // receiver), plus the measured de-jitter buffer, plus the fixed pipeline
   // allowance. No jitterBufferMs reported here, so that term is 0.
   assert.equal(wc.wcl, 120 / 2 + 60 / 2 + 0 + PIPELINE_ALLOWANCE_MS);
+  assert.equal(wc.wcj, 8);
   assert.equal(wc.wcpl, 0.2);
   assert.equal(wc.sampleCount, 2);
+});
+
+test('wcj prefers the media path, falling back to WS ping/pong per peer', () => {
+  // rtcJitter is RTP inter-arrival jitter on the audio path; `jitter` is the
+  // stdev of the WS ping/pong to the sidecar — a different leg. The media
+  // figure wins wherever it exists, exactly as rtcRtt does for wcrtt.
+  const wc = computeWorstCaseMetrics([
+    { jitter: 40, rtcJitter: 3 },   // signalling leg noisy, media path calm
+    { jitter: 1, rtcJitter: 5 },
+  ]);
+  assert.equal(wc.wcj, 5, 'the worst MEDIA jitter, not the worst ping/pong stdev');
+
+  const mixed = computeWorstCaseMetrics([
+    { jitter: 40, rtcJitter: 3 },   // measured: contributes 3
+    { jitter: 9 },                  // no RTCStats sample yet: contributes 9
+  ]);
+  assert.equal(mixed.wcj, 9, 'a peer with no media sample still contributes its fallback');
+
+  const none = computeWorstCaseMetrics([{ rtcRtt: 10 }]);
+  assert.equal(none.wcj, 0, 'no jitter of either kind degenerates to 0, not NaN');
 });
 
 test('the de-jitter buffer is measured, and normally dominates wcl', () => {
@@ -95,6 +116,7 @@ test('empty roster degrades to zeros, not NaN', () => {
   for (const roster of [[], null, undefined, [{}]]) {
     const wc = computeWorstCaseMetrics(roster);
     assert.equal(wc.wcl, 0);
+    assert.equal(wc.wcj, 0);
     assert.equal(wc.wcrtt, 0);
     assert.equal(wc.wcpl, 0);
     assert.equal(wc.sampleCount, 0);
@@ -102,18 +124,19 @@ test('empty roster degrades to zeros, not NaN', () => {
 });
 
 test('single peer roster (alone in room) assumes a symmetric partner leg', () => {
-  const wc = computeWorstCaseMetrics([{ rtt: 33, packetLoss: 0.05 }]);
+  const wc = computeWorstCaseMetrics([{ rtt: 33, jitter: 1.5, packetLoss: 0.05 }]);
   assert.equal(wc.wcrtt, 33);
   // No second peer to measure, so the partner leg is assumed to match: the
   // network term is 33/2 + 33/2 = one full leg RTT.
   assert.equal(wc.wcl, 33 + PIPELINE_ALLOWANCE_MS);
+  assert.equal(wc.wcj, 1.5);
   assert.equal(wc.wcpl, 0.05);
 });
 
 test('bot-only roster works like any other roster (bots self-report metrics too)', () => {
   const wc = computeWorstCaseMetrics([
-    { isBot: true, rtt: 200, packetLoss: 0.4 },
-    { isBot: true, rtt: 90, packetLoss: 0.1 }
+    { isBot: true, rtt: 200, jitter: 12, packetLoss: 0.4 },
+    { isBot: true, rtt: 90, jitter: 3, packetLoss: 0.1 }
   ]);
   assert.equal(wc.wcrtt, 200);
   assert.equal(wc.wcl, 200 / 2 + 90 / 2 + PIPELINE_ALLOWANCE_MS);

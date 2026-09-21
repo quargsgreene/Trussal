@@ -84,6 +84,12 @@ export class Bot {
       css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
       initTextCycles: INIT_TEXT_CYCLES_PATTERN,
       initCss: INIT_CSS_PATTERN,
+      // Same shape pattern as above, handed over again so wrapPreambleMini's
+      // mini-off/mini-on guard (and its `await initHydra()` injection) agrees
+      // with declaresOwnPreamble about what counts as a Hydra preamble — a
+      // shape-only edit (no literal `await initHydra(`) must not reach the
+      // REPL unwrapped.
+      hydraShape: HYDRA_SHAPE_PATTERN,
       // The 'personal editor' / 'bot editor' directive a pushed edit opens
       // with — a bare string literal the bare REPL has no use for, stripped
       // the same way the browser's normalizePeerCode strips it.

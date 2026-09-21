@@ -25,7 +25,7 @@
 // that a scale below 1 crushes harder rather than less.
 //
 // `# crush <metric> <scale> [<fixed metric amount>]` — with the optional third
-// token the metric is pinned (seconds for wcl/wcrtt, a loss fraction for
+// token the metric is pinned (seconds for wcl/wcj/wcrtt, a loss fraction for
 // wcpl) and live metrics no longer move it, exactly as `# room`'s third token
 // pins wcl. Any of the three may be a mini-notation pattern instead of a
 // constant, read at the caller's position on the cycle grid.
@@ -50,11 +50,11 @@ export const MAX_SR_DIVISOR = 64;
 
 // How much of a metric halves the bit depth. One constant per metric because
 // the metrics are not on one scale: mouth-to-ear latency runs to hundreds of
-// ms, round-trip time rarely past tens, and loss is a fraction. Each is set so
-// the metric's real operating range spends the bit budget rather than sitting
-// at either rail — the wcpl figure keeps the "a factor of 2 per 25 % packet
-// loss" this effect has always had.
-export const HALVING_AMOUNTS = { wcl: 100, wcrtt: 100, wcpl: 0.25 };
+// ms, jitter and round-trip time rarely past tens, and loss is a fraction.
+// Each is set so the metric's real operating range spends the bit budget
+// rather than sitting at either rail — the wcpl figure keeps the "a factor of
+// 2 per 25 % packet loss" this effect has always had.
+export const HALVING_AMOUNTS = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
 
 export const DEFAULT_METRIC = 'wcl';
 

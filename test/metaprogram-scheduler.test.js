@@ -112,10 +112,11 @@ test('describeCycleLength reports the length, the beat grid, and the metrics beh
   const live = describeCycleLength({
     cycles: { metric: 'wcl', factor: 2, fixed: null },
     tempo: { value: 120, unit: 'bpm' },
-    metrics: { wcl: 1500, wcpl: 0.02 }
+    metrics: { wcl: 1500, wcj: 3, wcrtt: 6, wcpl: 0.02 }
   });
   assert.match(live, /^3\.000s \[6 beat\(s\) @ 0\.500s\] ← # cycles "wcl" 2 target 3\.000s /);
   assert.match(live, /wcl 1500\.0ms/);
+  assert.match(live, /wcj 3\.0ms/);
   assert.match(live, /wcpl 2\.0%/);
   // A pinned amount says so, and reports the pinned target rather than the live one.
   const pinned = describeCycleLength({
@@ -164,8 +165,8 @@ test('tempo units: bpm and cpm are per minute, cps per second', () => {
   assert.equal(beatSeconds({ value: 2, unit: 'cps' }), 0.5);
 });
 
-test('wcl uses ms; wcpl maps loss fraction onto the 10 s full scale', () => {
-  assert.equal(timingTargetSeconds({ metric: 'wcl', factor: 2 }, { wcl: 250 }), 0.5);
+test('wcj uses ms; wcpl maps loss fraction onto the 10 s full scale', () => {
+  assert.equal(timingTargetSeconds({ metric: 'wcj', factor: 2 }, { wcj: 250 }), 0.5);
   assert.equal(timingTargetSeconds({ metric: 'wcpl', factor: 1 }, { wcpl: 0.5 }), 0.5 * WCPL_FULL_SCALE_S);
 });
 

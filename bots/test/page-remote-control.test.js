@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { pageRemoteControl } from '../src/bot/page-scripts.js';
-import { INIT_HYDRA_PATTERN } from '../../src/hydra-code.js';
+import { INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN } from '../../src/hydra-code.js';
 import { INIT_TEXT_CYCLES_PATTERN, WORD_CALL_RE } from '../../src/text-cycles-core.js';
 import { INIT_CSS_PATTERN, CSS_CALL_RE } from '../../src/css-cycles-core.js';
 
@@ -11,6 +11,7 @@ const DEFAULT_CAPABILITY_PATTERNS = {
   css: { source: CSS_CALL_RE.source, flags: CSS_CALL_RE.flags },
   initTextCycles: INIT_TEXT_CYCLES_PATTERN,
   initCss: INIT_CSS_PATTERN,
+  hydraShape: HYDRA_SHAPE_PATTERN,
 };
 
 /**
@@ -29,7 +30,7 @@ const DEFAULT_CAPABILITY_PATTERNS = {
  */
 function installControl({
   hydra = '',
-  patterns = [INIT_HYDRA_PATTERN, INIT_TEXT_CYCLES_PATTERN],
+  patterns = [INIT_HYDRA_PATTERN, HYDRA_SHAPE_PATTERN, INIT_TEXT_CYCLES_PATTERN],
   capabilityPatterns = DEFAULT_CAPABILITY_PATTERNS,
   evaluateThrows = false,
   sampleBanks = {},
@@ -131,6 +132,27 @@ test('an edit with its own Hydra preamble lands verbatim (mini-guarded), not dou
   );
   const preambles = ctl.evaluated[0].match(/initHydra/g) || [];
   assert.equal(preambles.length, 1, 'exactly one preamble must survive');
+});
+
+test('a shape-only Hydra edit (no literal await initHydra) still gets initHydra + the mini guard', async () => {
+  // hydra-code.js's "optional preamble" convention lets a buffer that only
+  // SHOWS Hydra's shape (an External Source call, a render call) skip typing
+  // `await initHydra()` — ensureCapabilityPreambles supplies it everywhere
+  // else (a human's own program, cluster-source.js's spawn-time capture).
+  // declaresOwnPreamble already treats this the same way (HYDRA_SHAPE_PATTERN
+  // is one of the patterns bot.js hands over) — wrapPreambleMini has to agree,
+  // or the pushed text reaches this REPL with no initHydra() call and no
+  // mini-off guard around its own string arguments (e.g. s0.initImage(url),
+  // whose URL is full of mini-notation-significant `:`/`/` characters).
+  const ctl = installControl({ hydra: 'await initHydra()\nosc(10).out(o0)' });
+  const pushed = 's0.initImage("https://example.com/a.png")\nsrc(s0).out(o0)';
+  await ctl.push(pushed);
+
+  assert.equal(
+    ctl.evaluated[0],
+    '/* mini-off */\nawait initHydra()\n\ns0.initImage("https://example.com/a.png")\nsrc(s0).out(o0)\n/* mini-on */',
+  );
+  assert.equal(ctl.storedHydra(), '', 'a self-describing shape-only edit still forgets the stored hydra');
 });
 
 test('a pure Text Cycles edit is stripped to silence, not evaluated verbatim', async () => {

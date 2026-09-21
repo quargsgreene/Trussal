@@ -39049,9 +39049,10 @@ When mixing down to 2 channels, the input channels are equally distributed over 
   var init_Echo = __esm({
     "src/audio-net/av-effects/Echo.js"() {
       init_ValuePattern();
-      ECHO_METRICS = ["wcl", "wcrtt", "wcpl"];
+      ECHO_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
       ECHO_METRIC_BOUNDS = Object.freeze({
         wcl: 500,
+        wcj: 50,
         wcrtt: 500,
         wcpl: 20
       });
@@ -39523,14 +39524,14 @@ $ participants <0>
       init_EffectMedia();
       init_program_directive();
       init_notation();
-      TIMING_METRICS = ["wcl", "wcpl"];
+      TIMING_METRICS = ["wcl", "wcj", "wcpl"];
       RING_MODES = ["explicit", "hash"];
-      EFFECT_METRICS = ["wcl", "wcrtt", "wcpl"];
-      METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcrtt", "wcpl"]);
+      EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
+      METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcj", "wcrtt", "wcpl"]);
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
       VALUE_ELEMENT_OPS = /* @__PURE__ */ new Set(["@", "?", "!", "*", "/"]);
       MAX_VALUE_REPEATS = 1024;
-      CRUSH_METRICS = ["wcl", "wcpl", "wcrtt"];
+      CRUSH_METRICS = ["wcl", "wcj", "wcpl", "wcrtt"];
       EFFECTS = {
         // scale=1, fixed metric amount=live. Any worst-case metric may drive the
         // decay, and all three arguments pattern — `# room <wcl wcrtt> <1 2 ~ 2 3>*2`.
@@ -40101,7 +40102,7 @@ $ participants <0>
         // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
         // With no amount the metric evolves with the live worst-case measurement;
         // an amount PINS it there regardless of network conditions (seconds for
-        // wcl, loss fraction for wcpl), pinning timing only — measured metrics
+        // wcl/wcj, loss fraction for wcpl), pinning timing only — measured metrics
         // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
@@ -41111,6 +41112,8 @@ $ participants <0>
     const factor = cycles && cycles.factor > 0 ? cycles.factor : 1;
     const fixed = cycles && cycles.fixed > 0 ? cycles.fixed : null;
     switch (cycles && cycles.metric) {
+      case "wcj":
+        return (fixed ?? (m2.wcj || 0) / 1e3) * factor;
       case "wcpl":
         return (fixed ?? (m2.wcpl || 0)) * WCPL_FULL_SCALE_S * factor;
       case "wcl":
@@ -41132,7 +41135,7 @@ $ participants <0>
     const targetS = timingTargetSeconds(cycles, metrics);
     const source2 = fixed != null ? `# cycles "${metric}" ${factor} ${fixed} (pinned)` : `# cycles "${metric}" ${factor}`;
     const m2 = metrics || {};
-    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcrtt ${(m2.wcrtt || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
+    return `${seconds2.toFixed(3)}s [${beats} beat(s) @ ${beatS.toFixed(3)}s] \u2190 ${source2} target ${targetS.toFixed(3)}s (wcl ${(m2.wcl || 0).toFixed(1)}ms, wcj ${(m2.wcj || 0).toFixed(1)}ms, wcrtt ${(m2.wcrtt || 0).toFixed(1)}ms, wcpl ${((m2.wcpl || 0) * 100).toFixed(1)}%)`;
   }
   function clampRate(rate) {
     if (!(rate > 0) || !isFinite(rate)) return 1;
@@ -41382,7 +41385,7 @@ $ participants <0>
           this._clearInterval = clearIntervalFn;
           this._ast = null;
           this._pendingAst = null;
-          this._metrics = { wcl: 0, wcrtt: 0, wcpl: 0 };
+          this._metrics = { wcl: 0, wcj: 0, wcrtt: 0, wcpl: 0 };
           this._pendingMetrics = null;
           this._running = false;
           this._timer = null;
@@ -41633,6 +41636,29 @@ $ participants <0>
     }
   });
 
+  // src/audio-net/network-modulation/IncreaseJitter.js
+  var IncreaseJitter;
+  var init_IncreaseJitter = __esm({
+    "src/audio-net/network-modulation/IncreaseJitter.js"() {
+      IncreaseJitter = Object.freeze({
+        key: "wcj",
+        label: "Induce jitter",
+        unit: "ms",
+        min: 0,
+        max: 1e3,
+        step: 1,
+        clamp(value2) {
+          const v2 = Number(value2);
+          if (!isFinite(v2)) return 0;
+          return Math.min(this.max, Math.max(this.min, v2));
+        },
+        applyTo(measured, induced) {
+          return Math.max(measured || 0, this.clamp(induced));
+        }
+      });
+    }
+  });
+
   // src/audio-net/network-modulation/IncreaseRTT.js
   var IncreaseRTT;
   var init_IncreaseRTT = __esm({
@@ -41691,6 +41717,11 @@ $ participants <0>
     if (typeof peer.rtt === "number" && isFinite(peer.rtt)) return peer.rtt;
     return null;
   }
+  function peerJitter(peer) {
+    if (typeof peer.rtcJitter === "number" && isFinite(peer.rtcJitter)) return peer.rtcJitter;
+    if (typeof peer.jitter === "number" && isFinite(peer.jitter)) return peer.jitter;
+    return null;
+  }
   function worstCaseOneWayLatency(rtts, jitterBufferMs, pipelineMs) {
     const sorted = [...rtts].sort((a2, b) => b - a2);
     if (!sorted.length) return 0;
@@ -41703,6 +41734,7 @@ $ participants <0>
   function computeWorstCaseMetrics(peers) {
     const list = Array.isArray(peers) ? peers : [];
     const rtts = [];
+    const jitters = [];
     const losses = [];
     const jitterBuffers = [];
     const pipelines = [];
@@ -41710,6 +41742,8 @@ $ participants <0>
       if (!peer) continue;
       const rtt = peerRtt(peer);
       if (rtt != null) rtts.push(rtt);
+      const jitter = peerJitter(peer);
+      if (jitter != null) jitters.push(jitter);
       if (typeof peer.jitterBufferMs === "number" && isFinite(peer.jitterBufferMs)) {
         jitterBuffers.push(peer.jitterBufferMs);
       }
@@ -41724,6 +41758,7 @@ $ participants <0>
     const wcpipe = worstCase(pipelines) ?? PIPELINE_ALLOWANCE_MS;
     return {
       wcl: worstCaseOneWayLatency(rtts, wcjb, wcpipe),
+      wcj: worstCase(jitters) ?? 0,
       wcrtt: worstCase(rtts) ?? 0,
       wcjb,
       wcpipe,
@@ -41747,11 +41782,13 @@ $ participants <0>
   var init_WorstCaseCalculationUtils = __esm({
     "src/audio-net/network-modulation/WorstCaseCalculationUtils.js"() {
       init_IncreaseLatency();
+      init_IncreaseJitter();
       init_IncreaseRTT();
       init_IncreasePacketLoss();
       PIPELINE_ALLOWANCE_MS = 40;
       INDUCTIONS = Object.freeze({
         wcl: IncreaseLatency,
+        wcj: IncreaseJitter,
         wcrtt: IncreaseRTT,
         wcpl: IncreasePacketLoss
       });
@@ -50893,7 +50930,7 @@ ${err.toString()}`);
       getInduced() {
         if (!modulation) return {};
         const out = {};
-        for (const key of ["wcl", "wcrtt", "wcpl"]) {
+        for (const key of ["wcl", "wcj", "wcrtt", "wcpl"]) {
           const v2 = modulation.get(key);
           if (typeof v2 === "number") out[key] = v2;
         }
@@ -51134,7 +51171,7 @@ ${err.toString()}`);
       LOWPASS_PER_SECOND = 12;
       MAX_COMB_FEEDBACK = 0.98;
       WET_GAIN = 0.5;
-      METRIC_PER_SECOND = { wcl: 1e3, wcrtt: 1e3, wcpl: 1 };
+      METRIC_PER_SECOND = { wcl: 1e3, wcj: 1e3, wcrtt: 1e3, wcpl: 1 };
       DEFAULT_METRIC = "wcl";
     }
   });
@@ -51210,7 +51247,7 @@ ${err.toString()}`);
       MIN_BIT_DEPTH = 1;
       MAX_BIT_DEPTH = 16;
       MAX_SR_DIVISOR = 64;
-      HALVING_AMOUNTS = { wcl: 100, wcrtt: 100, wcpl: 0.25 };
+      HALVING_AMOUNTS = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
       DEFAULT_METRIC2 = "wcl";
     }
   });
@@ -63123,8 +63160,8 @@ ${snippet}${JP_BTN_MARKER}`;
   // src/audio-net/RoomHealth.js
   function avDecouplingSeconds(cycleSeconds, metrics = {}) {
     const base = Math.max(0, cycleSeconds || 0);
-    const wcl = Math.max(0, metrics.wcl || 0);
-    const stretch2 = Math.min(2, 1 + wcl / 500);
+    const wcj = Math.max(0, metrics.wcj || 0);
+    const stretch2 = Math.min(2, 1 + wcj / 500);
     return base * stretch2;
   }
   function compressionParams(load2 = {}) {
@@ -63444,7 +63481,7 @@ ${snippet}${JP_BTN_MARKER}`;
       const wc = effectiveWorstCase();
       body.innerHTML = `
       ${metricsLine(peer)}
-      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCRTT is the worst measured round trip across the roster.">${scopeTag("global")} WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
+      <div class="ts-meta" title="WCL is worst-case one-way MOUTH-TO-EAR latency: both network legs + the measured de-jitter buffer + a fixed ${PIPELINE_ALLOWANCE_MS}ms encode/decode/device allowance. WCJ is worst-case RTP inter-arrival jitter on the media path. WCRTT is the worst measured round trip across the roster.">${scopeTag("global")} WCL <b>${preciseMs(wc.wcl)}</b> \xB7 WCJ <b>${preciseMs(wc.wcj)}</b> \xB7 WCRTT <b>${preciseMs(wc.wcrtt)}</b> \xB7 WCPL <b>${(wc.wcpl * 100).toFixed(1)}%</b>
         <span title="peers contributing samples">(${wc.sampleCount})</span></div>
       <div class="ts-meta">${cycleLengthReadout(wc)}</div>
     `;
@@ -64260,7 +64297,6 @@ ${snippet}${JP_BTN_MARKER}`;
   // src/landmark-gesture-mode.js
   var CORNER_ID = "trussal-lg-corner";
   var GEAR_ID = "trussal-lg-gear";
-  var MENU_ID = "trussal-lg-menu";
   var INSTRUCTION_ID = "trussal-lg-instruction";
   var STYLE_ID7 = "trussal-lg-style";
   var _modeOn = false;
@@ -64389,39 +64425,11 @@ ${snippet}${JP_BTN_MARKER}`;
     _injectStyles5();
     const corner = document.createElement("div");
     corner.id = CORNER_ID;
-    const gear = document.createElement("button");
-    gear.id = GEAR_ID;
-    gear.type = "button";
-    gear.title = "Landmark and Gesture Mode";
-    gear.textContent = "\u2630";
-    const menu = document.createElement("div");
-    menu.id = MENU_ID;
-    menu.innerHTML = `
-    <label>
-      <input type="checkbox" id="trussal-lg-mode-toggle" />
-      Landmark and Gesture Mode
-    </label>
-  `;
     const instruction = document.createElement("div");
     instruction.id = INSTRUCTION_ID;
-    corner.appendChild(gear);
-    corner.appendChild(menu);
     corner.appendChild(instruction);
     document.body.appendChild(corner);
-    gear.addEventListener("click", (e30) => {
-      e30.stopPropagation();
-      menu.classList.toggle("open");
-    });
-    document.addEventListener("click", (e30) => {
-      if (!menu.classList.contains("open")) return;
-      if (e30.target === gear || menu.contains(e30.target)) return;
-      menu.classList.remove("open");
-    });
-    menu.querySelector("#trussal-lg-mode-toggle").addEventListener("change", (e30) => {
-      e30.target.checked ? enableMode() : disableMode();
-    });
     _renderInstruction();
-    _syncGear();
   }
   function _renderInstruction() {
     const el = document.getElementById(INSTRUCTION_ID);
@@ -64439,9 +64447,8 @@ ${snippet}${JP_BTN_MARKER}`;
     </div>
     <div>Turn on the on-screen keyboard, head cursor, and face-gesture control:</div>
     <ul>
-      <li>press <kbd>\u2192</kbd> (Right Arrow) \u2014 or <kbd>\u2192</kbd> <kbd>\u2192</kbd> <kbd>\u2192</kbd> quickly if you're in a text field</li>
-      <li>tick it in the <strong>\u2630</strong> menu (top-left)</li>
-      <li class="${blocked ? "lg-blocked" : ""}">close one eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
+      <li>press <kbd>\u2192</kbd> (Right Arrow) 
+      <li class="${blocked ? "lg-blocked" : ""}">close your left eye for two seconds${blocked ? " \u2014 needs camera access" : ""}</li>
     </ul>
   `;
     el.querySelector(".lg-x").addEventListener("click", (e30) => {
@@ -64535,24 +64542,11 @@ ${snippet}${JP_BTN_MARKER}`;
     obs.observe(document.body, { childList: true, subtree: true });
     _maybeInjectShortcuts();
   }
-  var _arrowTaps = [];
   function _onKeydown(e30) {
     if (_modeOn) return;
     if (e30.key !== "ArrowRight" || e30.repeat || e30.defaultPrevented) return;
-    const t = e30.target;
-    const tag = t && t.tagName;
-    const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t && t.isContentEditable;
-    if (!inField) {
-      enableMode();
-      return;
-    }
-    const now = Date.now();
-    _arrowTaps = _arrowTaps.filter((ts) => now - ts < 800);
-    _arrowTaps.push(now);
-    if (_arrowTaps.length >= 3) {
-      _arrowTaps = [];
-      enableMode();
-    }
+    enableMode();
+    return;
   }
   function init() {
     if (_booted) return;
@@ -64581,7 +64575,7 @@ ${snippet}${JP_BTN_MARKER}`;
   }
 
   // src/docs-about.css
-  var docs_about_default = "/* docs-about.css \u2014 imported as raw text (build.mjs '.css': 'text') and\n   injected once by _injectStyles(). Covers the bottom-right Docs/About\n   corner (welcome page only \u2014 a plain fixed CSS position, deliberately with\n   no JS repositioning: an earlier top-right version tracked Jitsi's own\n   settings gear and ended up covering it, see docs-about.js) and the two\n   modal panels the corner opens.\n\n   Authored against the per-user Personal Theme vars (src/theme-context.js) \u2014\n   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale\n   on :root, each with its previous literal as the var() fallback \u2014 so this\n   corner and its panels retint with the rest of the app. */\n\n#trussal-da-corner {\n  position: fixed; bottom: 10px; right: 10px;\n  z-index: 1000003;\n  display: flex; flex-direction: row; align-items: center; gap: 6px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n\n#trussal-da-corner button {\n  height: 28px; padding: 0 12px; line-height: 1;\n  display: flex; align-items: center; justify-content: center;\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  font-family: inherit; font-size: calc(13px * var(--trussal-font-scale, 1));\n  font-weight: 600; cursor: pointer;\n}\n#trussal-da-corner button:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n/* Modal scrim + panel, shared by the Docs and About panels. */\n.trussal-da-scrim {\n  position: fixed; inset: 0;\n  z-index: 1000010;\n  background: rgba(0, 0, 0, 0.35);\n  display: none;\n  align-items: flex-start; justify-content: center;\n  padding: 6vh 16px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n.trussal-da-scrim.open { display: flex; }\n\n.trussal-da-panel {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 10px;\n  width: min(720px, 100%);\n  max-height: 86vh;\n  display: flex; flex-direction: column;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);\n}\n\n.trussal-da-panel .da-head {\n  display: flex; align-items: center; justify-content: space-between;\n  gap: 12px; padding: 14px 18px;\n  border-bottom: 1px solid var(--trussal-secondary, #111111);\n  flex: 0 0 auto;\n}\n.trussal-da-panel .da-head h2 {\n  margin: 0; font-size: calc(18px * var(--trussal-font-scale, 1)); font-weight: 700;\n}\n.trussal-da-panel .da-close {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  width: 26px; height: 26px; line-height: 1; padding: 0;\n  font-size: calc(13px * var(--trussal-font-scale, 1)); cursor: pointer; flex: 0 0 auto;\n}\n.trussal-da-panel .da-close:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n.trussal-da-panel .da-body {\n  overflow-y: auto;\n  padding: 4px 18px 18px;\n  font-size: calc(13.5px * var(--trussal-font-scale, 1));\n  line-height: 1.55;\n}\n.trussal-da-panel .da-body p { margin: 10px 0; }\n.trussal-da-panel .da-body h3 {\n  margin: 22px 0 4px; font-size: calc(15px * var(--trussal-font-scale, 1));\n  padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);\n}\n.trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }\n.trussal-da-panel .da-body h4 {\n  margin: 16px 0 2px; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body ul, .trussal-da-panel .da-body ol {\n  margin: 6px 0; padding-left: 20px;\n}\n.trussal-da-panel .da-body li { margin: 3px 0; }\n.trussal-da-panel .da-body code {\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 3px; padding: 1px 5px;\n}\n.trussal-da-panel .da-body pre {\n  font-family: monospace; font-size: calc(12px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;\n  line-height: 1.4;\n}\n.trussal-da-panel .da-body pre code { background: none; padding: 0; }\n.trussal-da-panel .da-body table {\n  border-collapse: collapse; width: 100%; margin: 8px 0;\n  font-size: calc(12.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body th, .trussal-da-panel .da-body td {\n  border: 1px solid var(--trussal-secondary, #111111);\n  padding: 4px 8px; text-align: left; vertical-align: top;\n}\n\n/* One JPattern function entry. */\n.trussal-da-panel .da-fn {\n  margin: 14px 0; padding: 10px 12px;\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;\n}\n.trussal-da-panel .da-fn .da-fn-name {\n  font-weight: 700; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-fn .da-fn-sig {\n  display: block; margin: 6px 0;\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 5px; padding: 6px 9px; white-space: pre-wrap; word-break: break-word;\n}\n.trussal-da-panel .da-fn p { margin: 6px 0; }\n\n/* Docs sub-nav: jump links at the top of the Docs panel body. */\n.trussal-da-panel .da-toc {\n  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 4px 0 16px;\n  font-size: calc(12px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-toc a {\n  color: var(--trussal-secondary, #111111);\n  text-decoration: underline; cursor: pointer;\n}\n";
+  var docs_about_default = "/* docs-about.css \u2014 imported as raw text (build.mjs '.css': 'text') and\n   injected once by _injectStyles(). Covers the bottom-right Docs/About\n   corner (welcome page only \u2014 a plain fixed CSS position, deliberately with\n   no JS repositioning: an earlier top-right version tracked Jitsi's own\n   settings gear and ended up covering it, see docs-about.js) and the two\n   modal panels the corner opens.\n\n   Authored against the per-user Personal Theme vars (src/theme-context.js) \u2014\n   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale\n   on :root, each with its previous literal as the var() fallback \u2014 so this\n   corner and its panels retint with the rest of the app. */\n\n#trussal-da-corner {\n  position: fixed; bottom: 10px; right: 10px;\n  z-index: 1000003;\n  display: flex; flex-direction: row; align-items: center; gap: 6px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n\n#trussal-da-corner button {\n  height: 28px; padding: 0 12px; line-height: 1;\n  display: flex; align-items: center; justify-content: center;\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  font-family: inherit; font-size: calc(16px * var(--trussal-font-scale, 1));\n  font-weight: 600; cursor: pointer;\n}\n#trussal-da-corner button:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n/* Modal scrim + panel, shared by the Docs and About panels. */\n.trussal-da-scrim {\n  position: fixed; inset: 0;\n  z-index: 1000010;\n  background: rgba(0, 0, 0, 0.35);\n  display: none;\n  align-items: flex-start; justify-content: center;\n  padding: 6vh 16px;\n  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);\n}\n.trussal-da-scrim.open { display: flex; }\n\n.trussal-da-panel {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 10px;\n  width: min(720px, 100%);\n  max-height: 86vh;\n  display: flex; flex-direction: column;\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);\n}\n\n.trussal-da-panel .da-head {\n  display: flex; align-items: center; justify-content: space-between;\n  gap: 12px; padding: 14px 18px;\n  border-bottom: 1px solid var(--trussal-secondary, #111111);\n  flex: 0 0 auto;\n}\n.trussal-da-panel .da-head h2 {\n  margin: 0; font-size: calc(18px * var(--trussal-font-scale, 1)); font-weight: 700;\n}\n.trussal-da-panel .da-close {\n  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 6px;\n  width: 26px; height: 26px; line-height: 1; padding: 0;\n  font-size: calc(13px * var(--trussal-font-scale, 1)); cursor: pointer; flex: 0 0 auto;\n}\n.trussal-da-panel .da-close:hover {\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n}\n\n.trussal-da-panel .da-body {\n  overflow-y: auto;\n  padding: 4px 18px 18px;\n  font-size: calc(13.5px * var(--trussal-font-scale, 1));\n  line-height: 1.55;\n}\n.trussal-da-panel .da-body p { margin: 10px 0; }\n.trussal-da-panel .da-body h3 {\n  margin: 22px 0 4px; font-size: calc(20px * var(--trussal-font-scale, 1));\n  padding-top: 14px; border-top: 1px solid var(--trussal-secondary, #111111);\n}\n.trussal-da-panel .da-body h3:first-child { padding-top: 0; border-top: none; margin-top: 8px; }\n.trussal-da-panel .da-body h4 {\n  margin: 16px 0 2px; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body ul, .trussal-da-panel .da-body ol {\n  margin: 6px 0; padding-left: 20px;\n}\n.trussal-da-panel .da-body li { margin: 3px 0; }\n.trussal-da-panel .da-body code {\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 3px; padding: 1px 5px;\n}\n.trussal-da-panel .da-body pre {\n  font-family: monospace; font-size: calc(12px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 8px 0;\n  line-height: 1.4;\n}\n.trussal-da-panel .da-body pre code { background: none; padding: 0; }\n.trussal-da-panel .da-body table {\n  border-collapse: collapse; width: 100%; margin: 8px 0;\n  font-size: calc(12.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-body th, .trussal-da-panel .da-body td {\n  border: 1px solid var(--trussal-secondary, #111111);\n  padding: 4px 8px; text-align: left; vertical-align: top;\n}\n\n/* One JPattern function entry. */\n.trussal-da-panel .da-fn {\n  margin: 14px 0; padding: 10px 12px;\n  border: 1px solid var(--trussal-secondary, #111111); border-radius: 8px;\n}\n.trussal-da-panel .da-fn .da-fn-name {\n  font-weight: 700; font-size: calc(13.5px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-fn .da-fn-sig {\n  display: block; margin: 6px 0;\n  font-family: monospace; font-size: calc(12.5px * var(--trussal-font-scale, 1));\n  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);\n  border-radius: 5px; padding: 6px 9px; white-space: pre-wrap; word-break: break-word;\n}\n.trussal-da-panel .da-fn p { margin: 6px 0; }\n\n/* Docs sub-nav: jump links at the top of the Docs panel body. */\n.trussal-da-panel .da-toc {\n  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 4px 0 16px;\n  font-size: calc(12px * var(--trussal-font-scale, 1));\n}\n.trussal-da-panel .da-toc a {\n  color: var(--trussal-secondary, #111111);\n  text-decoration: underline; cursor: pointer;\n}\n";
 
   // src/docs-about.js
   var CORNER_ID2 = "trussal-da-corner";
@@ -64593,53 +64587,38 @@ ${snippet}${JP_BTN_MARKER}`;
   var JPATTERN_FUNCTIONS = [
     {
       id: "jp-participants",
-      name: "$ participants \u2014 the scheduling sequence",
-      sig: '$ participants <token token \u2026>\n$ <token token \u2026>            (the "participants" label is optional)',
+      name: "$ participants",
+      sig: "participants([participant_tokens])\nparticipants [participant_tokens]",
       body: `
-      <p>Opens the metaprogram's one scheduling voice: the sequence of tokens
-      that take turns streaming, in the order a <code>&lt;\u2026&gt;</code>
-      alternation names them. A token is a participant's room index \u2014 <code>0</code>
-      for the first person to join a room, <code>1</code> the second, and so on
-      \u2014 or a bot's index plus a letter suffix (<code>0a</code>, the first
-      person's first bot; <code>0zb</code>, a later one). Under the default
-      <code># ring hash</code> (see below) the sequence's own contents don't
-      decide who plays \u2014 everyone present takes turns automatically \u2014 but the
-      statement must still be there, since the grammar requires a
-      <code>$</code> voice.</p>
+      <p>Orders participants' turns when ring is set to false.</p>
       <p>Turn-modifying operators are written glued to the token, no spaces:</p>
-      <table>
-        <tr><th>Operator</th><th>Effect</th></tr>
-        <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;\u2026&gt;</code>) or a share of one cycle (in <code>[\u2026]</code>).</td></tr>
-        <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
-        <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) \u2014 the cycle still advances.</td></tr>
-        <tr><td><code>&lt;\u2026&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
-        <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
-      </table>
-      <p><code>0 .. 3</code> (or <code>0..3</code>) is a range, expanding to <code>0 1 2 3</code>.</p>
-      <pre>'metaprogram editor'
-$ participants &lt;0@2 1!3 0a?&gt;*2
-# cycles "wcl" 20</pre>`
+      <code>
+        $: participants("<0 9>")
+      </code>
+      <code>
+        $ participants <0 9>
+      </code>
+      `
     },
     {
       id: "jp-ring",
-      name: "ring \u2014 how the rotation order is chosen",
-      sig: "ring hash [w <token> <weight> \u2026]\nring explicit",
+      name: "ring",
+      sig: "ring([boolean])\nring boolean",
       body: `
-      <p><code>hash</code> (the default in a fresh room) computes the rotation
-      as a consistent hash of whoever is <em>currently present</em>, reseeded
-      every cycle \u2014 joins and leaves reorder almost nothing else. <code>w</code>
-      pairs give individual tokens a bigger share of turns (<code>w 0 3</code>
-      is triple weight for token <code>0</code>); weights are only legal under
-      <code>hash</code>.</p>
-      <p><code>explicit</code> is the plain literal walk: the ring is exactly
-      what <code>$ participants &lt;\u2026&gt;</code> lists, and anyone not listed
-      stays silent. An older program with no <code># ring</code> line at all
-      behaves as <code>explicit</code>.</p>
-      <pre># ring hash w 0 3 2a 2</pre>`
+      <p>Sets the Metaprogram into consistent hashing mode.</p>
+      <code>
+        $: participants(3)
+        .ring(true)
+      </code>
+      <code>
+        $ participants 3
+        # ring true
+      </code>
+      `
     },
     {
       id: "jp-cycles",
-      name: "cycles \u2014 the length of one cycle (and one turn)",
+      name: "cycles",
       sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
       body: `
       <p>Sets how long one cycle \u2014 and so one performer's turn \u2014 lasts, as a
@@ -64656,7 +64635,7 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-tempo",
-      name: "tempo \u2014 quantization tempo",
+      name: "tempo ",
       sig: "tempo <number>[/<int>]  bpm | cps | cpm",
       body: `
       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
@@ -64668,91 +64647,393 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
     },
     {
       id: "jp-room",
-      name: "room \u2014 reverb (audio), blur (video/css), letter-spacing (text)",
-      sig: 'room <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+      name: "room",
+      sig: 'room [network_metric="wcl"] [scale_pattern] [fixed_amount_pattern] [pattern_medium_set]',
       body: `
-      <p>A Schroeder reverb whose decay time is <em>scale</em> \xD7 the metric,
-      in seconds \u2014 longer decay also closes a cascaded lowpass, so a long
-      tail is a darker one. Runs once on the room's shared mix, not per
-      client. The same decay drives a blur on the composited video and on
-      styled chat text, and widens letter-spacing. Any of the three worst-case
-      metrics may drive it, and every argument accepts a mini-notation pattern
-      (<code>&lt;a b&gt;</code>, <code>[a b]</code>, with <code>@ ? ! * /</code>)
-      instead of a constant. A trailing <code>[<wbr>"audio" "video"<wbr>]</code>
-      set narrows which of the four media (<code>audio css text video</code>)
-      the directive touches \u2014 omitted means all four.</p>
+      <p>Reverb whose decay time, whitespace amount, or visual blur varies with the supplied network metric value respectively
+       regarding the Aggregator's audio, video, or text output. Example(s):</p> 
       <pre># room "wcl" 2 0.4        <span style="opacity:.7">// fixed 800ms decay</span>
-# room "wcl" 2 ["audio" "video"]</pre>`
+# room "wcl" "2 3 4" ["audio" "video"] //audio and video reverb</pre>`
     },
     {
       id: "jp-crush",
-      name: "crush \u2014 bitcrush (audio), pixelation (video/css/text)",
-      sig: 'crush <"wcl"|"wcpl"|"wcrtt"> [scale] [fixed amount] [medium set]',
+      name: "crush",
+      sig: 'crush [network_metric="wcl"] [scale_pattern] [fixed_amount] [pattern_medium_set]',
       body: `
-      <p>Reduces bit-depth and sample rate as the metric worsens \u2014 8 bits is
-      the resting depth, halving each time the metric climbs by its halving
-      amount, down to a 1-bit square wave on a bad enough network. Bypassed
-      until written. <em>scale</em> multiplies the resting depth (2 doubles
-      it to 16-bit; below 1 crushes harder). Runs once on the shared mix,
-      same medium-set and pattern-argument rules as <code># room</code>.</p>
+      <p>Varies the bit-depth and resolution of the Aggregator's audio and visual output according to the value of the currently
+      supplied network metric. Example(s):</p>
       <pre># crush "wcpl" 1 0.25    <span style="opacity:.7">// pinned at 25% loss: a steady 4 bits</span></pre>`
     },
     {
       id: "jp-echo",
-      name: "echo \u2014 feedback delay",
-      sig: "echo <metric> <length> <metric> <feedback> <metric> <gain>  [bound bound bound]  [medium set]",
+      name: "echo",
+      sig: 'echo [network_metric="wcl"] [length_in_cycles] [network_metric="wcl"] [feedback_percentage] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
       body: `
-      <p>Three independently-metric-driven parameters \u2014 all six of the first
-      arguments are required together, or omit the whole directive for the
-      bare default (<code>wcl</code> driving all three). <em>length</em> is in
-      cycles (a fraction like <code>1/2</code> is legal), so the echo stays in
-      rhythm as the cycle length changes. <em>feedback</em> is clamped below
-      unity so it can never self-oscillate, and also darkens the composited
-      video as it rises. <em>gain</em> is the wet/dry balance. Each value is
-      <code>scale \xD7 min(metric / bound, 1)</code> \u2014 the optional bounds (ms
-      for wcl/wcrtt, percent for wcpl) cap how far a degrading network can
-      push it. <code>wcrtt</code> is legal here even though
-      <code># cycles</code> can't use it.</p>
+      <p>Applies a network-modulated echo effect to the Aggregator's audio and video output. Example(s):</p>
       <pre># echo "wcl" 2 "wcpl" 0.3 "wcrtt" 3 1500 20 1200</pre>`
     },
     {
       id: "jp-noise",
-      name: "noise \u2014 noise bed (audio), grain (video/css/text)",
-      sig: "noise [<metric>] [spectrum factor] [<metric>] [volume factor] [fixed 1] [fixed 2]  [medium set]",
+      name: "noise",
+      sig: 'noise [network_metric="wcl"] [lowpass_cutoff_scale_factor] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
       body: `
-      <p>Bypassed by default (no node exists until written). Two metrics \u2014
-      each defaulting to <code>wcl</code> and each optional \u2014 independently
-      drive the bed's <em>spectrum</em> (0 brown \u2026 1 white) and its
-      <em>volume</em> (25dB \u2026 75dB, clamped). A metric keyword binds to the
-      factor written right after it. Re-derived once per cycle boundary, so
-      its arguments take <code>&lt;\u2026&gt;</code> alternation at rate 1 or
-      slower only \u2014 <code>[\u2026]</code> and a faster rate are parse errors here.</p>
+      <p>Adds pink, brown, or white noise to the Aggregator's audio and video output convolved with a lowpass filter, and inserts pseudorandomly-chosen characters
+      into the text output. Example(s):</p>
       <pre># noise "wcl" 20 "wcrtt" 10</pre>`
+    }
+  ];
+  var TEXT_CYCLES_FUNCTIONS = [
+    {
+      id: "tc-word",
+      name: "word()\n w",
+      sig: ".word([pattern])\n.w([pattern])\n# word [pattern]\n#w [pattern]",
+      body: `
+      <p>Sends the specified words to the meeting-wide chat window. A few characters need escaping to render literally:</p>
+      <table>
+        <tr><th>Written</th><th>Renders</th></tr>
+        <tr><td><code>word("&lt;a ~ b&gt;")</code></td><td><code>a</code>, a rest, <code>b</code></td></tr>
+        <tr><td><code>word("&lt;a \\~ b&gt;")</code></td><td><code>a</code>, a literal <code>~</code>, <code>b</code></td></tr>
+        <tr><td><code>word("squirrels?")</code></td><td><code>squirrels</code>, played only sometimes</td></tr>
+        <tr><td><code>word("squirrels\\?")</code></td><td><code>squirrels?</code> every cycle</td></tr>
+      </table>
+`
+    },
+    {
+      id: "tc-typeface",
+      name: "typeface/t",
+      sig: `typeface([typeface_pattern="Arial"])
+ t([typeface_pattern="Arial"])`,
+      body: `<p>Selects a typeface for the specified text pattern.</p>
+    <span>Example(s):</span>
+    <code>$: typeface("Monaco").word("dachshund")</code>
+    <code>$ typeface("Monaco") # word "dachshund")</code>
+    <code>$: t("Monaco"text-cycles).w("dachshund")</code>
+    <code>$ t "Monaco" w "dachshund" </code>
+    <table>
+      <tr><th>Supported Typefaces</th></tr>
+      <tr>Times New Roman<tr>
+      <tr>Verdana</tr>
+      <tr>Trebuchet MS</tr>
+      <tr>Menlo</tr>
+      <tr>Verdana</tr>
+      <tr>Georgia</tr>
+      <tr>Arial</tr>
+      <tr>Helvetica</tr>
+      <tr>Courier New</tr>
+      <tr>Tahoma</tr>
+    </table>
+    `
+    },
+    {
+      id: "tc-weight",
+      name: "weight",
+      sig: `weight([font_weight_pattern])
+ w([font_weight_pattern])`,
+      body: `<p>Sets the font weight for the specified text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Times New Roman")
+    .word("ruppig")
+    .weight(400)
+    </code>
+    <code>$ typeface "Times New Roman"
+    # word "ruppig"
+    # weight 400
+    </code>
+    `
+    },
+    {
+      id: "tc-spacing",
+      name: "spacing",
+      sig: `.spacing([character_spacing_pattern])
+# spacing [character_spacing_pattern]`,
+      body: `<p>Sets the spacing amount between characters for the specified text pattern in pixels./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Verdana")
+    .word("Zecke")
+    .spacing("<3 30 300>")
+    </code>
+    <code>$ typeface "Verdana" 
+    # word "Zecke"
+    # spacing <3 30 300>
+    </code>
+    `
+    },
+    {
+      id: "tc-underline",
+      name: "underline",
+      sig: `.underline()
+ # underline`,
+      body: `<p>Underlines the selected text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Tahoma")
+    .word("Pudding mit Gabel")
+    .underline()
+    </code>
+    <code>$ typeface "Tahoma" 
+    # word "Pudding mit Gabel"
+    # underline
+    </code>
+    `
+    },
+    {
+      id: "tc-slant",
+      name: "slant",
+      sig: `.slant()
+ # slant`,
+      body: `<p>Italicizes the selected text pattern./p>
+    <span>Example(s):</span>
+    <code>$: typeface("Trebuchet MS")
+    .word("Row row row your boat gently down the stream")
+    .slant()
+    </code>
+    <code>$ typeface "Trebuchet MS" 
+    # word "Row row row your boat gently down the stream"
+    # slant
+    </code>
+    `
+    },
+    {
+      id: "tc-size",
+      name: "size",
+      sig: ".size([font_size_pattern])\n# size [font_size_pattern]",
+      body: `<p>Sets the font size for the selected text pattern using any CSS unit 
+    or relative to the parent element. Overloads size in Strudel for text patterns.</p>
+    <code>$: typeface("Georgia")
+    .word("Colorless green ideas sleep furiously")
+    .size("<3em 4px 10pc 0.3ch>*2")
+    </code>
+    <code>$ typeface("Georgia")
+    # word("Colorless green ideas sleep furiously")
+    # size <3em 4px 10pc 0.3ch>*2
+    </code>     
+    `
+    },
+    {
+      id: "tc-color",
+      name: "color",
+      sig: ".color([color_pattern])\n# color [color_pattern]",
+      body: `<p>Sets the CSS color value for the selected text. Overloads color in Strudel.</p>
+    <code>$: typeface("Trebuchet MS")
+    .word("nooooooooo")
+    .color("#abcdef")
+    </code>
+    <code>$ typeface("Tremuchet MS")
+    # word("nooooooooo")
+    # color "#abcdef"
+    </code>     
+    `
+    },
+    {
+      id: "tc-hyperlink",
+      name: "hyperlink",
+      sig: "hyperlink([hyperlink_pattern])\n hyperlink [hyperlink_pattern]",
+      body: `<p> Creates a pattern of hyperlinks into a
+      link. "https://" is appended to the beginning. 
+      Every hyperlink opens in a new tab.</p>
+      <code>
+      $: typeface("Times New Roman")
+      .hyperlink("<google.com reddit.com ca.gov>")
+      </code>
+      <code>
+      $ typeface
+      # hyperlink "<google.com reddit.com ca.gov>"
+      </code>
+      `
+    },
+    {
+      id: "tc-hover",
+      name: "hover",
+      sig: "hover([css_attribute:value]) \n hover [css_attribute:value]",
+      body: `<p>Takes CSS declarations applied while the
+      word is moused over, scoped to the calling performer's hover rule.
+      <code>
+       $: typeface("Times New Roman")
+      .hyperlink("<google.com reddit.com ca.gov>")
+      .hover("color:#ffffff font-size:12px")
+      </code>
+      <code>
+      $ typeface("Times New Roman")
+      # hyperlink("<google.com reddit.com ca.gov>")
+      # hover("color:#ffffff font-size:12px")
+      </code>
+      </p>`
+    }
+  ];
+  var CSS_CYCLES_FUNCTIONS = [
+    {
+      id: "css-call",
+      name: "css",
+      sig: "css(`[selector] [scss_code]`)\n",
+      body: `
+      <p>Creates a CSS pattern with a selector and SCSS code.</p>
+      <span>Example:</span>
+      <code>
+          css(\`.ts-chip { &:hover { border-color: #ffffff } }\`)
+      </code>`
+    },
+    {
+      id: "css-guard",
+      name: "Guardrails",
+      sig: "(enforced automatically \u2014 outbound in your browser, inbound in every peer's)",
+      body: `
+      <p>A statement is refused whole if any value its pattern can produce
+      is illegal \u2014 including one that only surfaces on the third cycle of a
+      four-step pattern:</p>
+      <table>
+        <tr><th>Refused</th></tr>
+        <tr><td><code>display: none</code></td></tr>
+        <tr><td><code>overflow</code>/<code>visibility</code>/<code>content-visibility</code> set to hidden</td></tr>
+        <tr><td>any size property at <code>0</code> (except margin, padding, radii, border/outline widths)</td></tr>
+        <tr><td><code>opacity: 0</code>, or an alpha of 0 on <code>color</code> (a transparent <em>background</em> is fine)</td></tr>
+        <tr><td><code>z-index</code>, on any selector</td></tr>
+        <tr><td>off-screen positions (<code>top</code>/<code>left</code>/<code>inset</code>/negative margins/<code>text-indent</code>/<code>translate()</code>)</td></tr>
+        <tr><td><code>filter: opacity(0)/brightness(0)/contrast(0)</code>, or <code>blur()</code> over 8px</td></tr>
+        <tr><td><code>clip-path</code> shapes that enclose nothing</td></tr>
+        <tr><td><code>pointer-events: none</code></td></tr>
+        <tr><td><code>url()</code> outside background/border-image, or on an unsafe scheme</td></tr>
+        <tr><td><code>expression()</code>, <code>javascript:</code>, <code>@import</code>, <code>behavior</code>, <code>-moz-binding</code></td></tr>
+      </table>
+      <p>A value only knowable at runtime (a slider, a gesture) is instead
+      <strong>clamped per hap</strong> \u2014 <code>opacity: 0</code> becomes
+      <code>0.04</code>, <code>blur(80px)</code> becomes <code>blur(8px)</code>
+      \u2014 rather than refused outright.</p>`
+    }
+  ];
+  var CONFIG_FUNCTIONS = [
+    {
+      id: "bc-main",
+      name: "botConfig",
+      sig: "botConfig([config_object])",
+      body: `
+      <p>Applies constraints for generated bot code upon spawn.</p>
+      <span>Example:</span>
+      <code>botConfig({"random":true, "quantity":3, "retroactive":true})
+      </code>
+      `
+    },
+    {
+      id: "gc-main",
+      name: "gestureAndLandmarkConfig",
+      sig: "gestureAndLandmarkConfig([config_object])",
+      body: `
+      <p>Applies settings for gesture recognition and virtual keyboard use.</p>
+      <span>Example:</span>
+      <code>botConfig({"random":true, "quantity":3, "retroactive":true})
+      </code>
+      
+      `
     },
     {
       id: "jp-grid",
-      name: "grid \u2014 the per-participant distance overlay",
-      sig: "grid [landmarks: true|false]        (default false)",
+      name: "grid",
+      sig: "grid [boolean]=false",
       body: `
-      <p>Marks each participant's video panel with a small grayscale circle
-      (darker = a greater modelled network distance) in the top-left corner;
-      your own panel's circle is always white from your own browser. With
-      <code>landmarks</code> on, a participant running MediaPipe also gets a
+      <p>Marks each participant's video panel with a small grayscale circle in the top-left corner.
+      One's own panel's circle is always white, and the darkness of the circle is determined
+      according to estimated physical distance between participants.
+      With landmarks on, a participant running MediaPipe also gets a
       vector in the bottom-right showing their average facial-landmark
-      motion. Unrelated to <code># mosaic</code>.</p>
-      <pre># grid true</pre>`
+      motion.</p>
+      $: participants("<1 0 3z>")
+      .cycles("wcpl", 100)
+      .grid(true)
+      .fast(1.2)
+      </code>
+      <code>
+      $  participants <1 0 3z>
+      # cycles "wcpl" 100
+      # grid true
+      # fast 1.2
+      </code>  
+      `
     },
     {
       id: "jp-mosaic",
-      name: "mosaic \u2014 the aggregator's video layout",
-      sig: "mosaic [true|false]        (default true \u2014 unwritten means on)",
+      name: "mosaic",
+      sig: "mosaic [boolean]=true",
       body: `
-      <p>Controls how the room's published video is composited. On (the
-      default) tiles every Hydra-running participant into a square grid, only
-      ticking whoever currently holds the turn. <code>false</code> drops to a
-      single full-frame view of just the streaming participant.</p>
-      <pre># mosaic false</pre>`
+      <p>How the Aggregator's video feed is displayed. When set to true, when it is each participant's turn,
+      individual video squares are displayed as a part of a grid that is arranged as a square with 
+      a number of video tiles equal to the ceiling of the square root of the amount of participants. 
+      When it is set to false,
+      </p>
+      <code>
+      $: participants("0 1")
+      .cycles("wcl", 35)
+      .mosaic(true)
+      .slow(3)
+      </code>
+      <code>
+      $  participants "0 1"
+      # cycles "wcl" 35
+      # mosaic true
+      # slow 3
+      </code>     
+      `
+    }
+  ];
+  var UI_PATTERN_FUNCTIONS = [
+    {
+      id: "meeting-reactions",
+      name: "reaction",
+      sig: "reaction([meeting_reaction_pattern])",
+      body: `
+      <p>Broadcasts patterns of Jitsi Meet's built in reactions to the public chat window.</p>
+      <span>Example:</span>
+      <code>$: reaction("si tu@3 s!4")
+      .slow(2)
+      </code>
+      <code>
+      $ reaction "si tu@3 s!4" 
+      # slow 2
+      </code>
+      `
     },
+    {
+      id: "breakout-patterns",
+      name: "breakout",
+      sig: "breakout([breakout_room_assignment_pattern])",
+      body: `
+      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.</p>
+      <span>Example:</span>
+      <code>$: breakout({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$ breakout {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `
+    },
+    {
+      id: "assign",
+      name: "assign",
+      sig: "assign([participant_name_pattern)",
+      body: `
+      <p>Assigns participants to breakout rooms. Does not reassign participants to a room to which they have already been assigned/</p>
+      <span>Example:</span>
+      <code>$: assign({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$  assign {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `
+    }
+  ];
+  var LIVE_CAPTURE_FUNCTIONS = [
+    {
+      id: "lc-main",
+      name: "liveCapture",
+      sig: "liveCapture([pattern_medium], [device_name_pattern]='', [detect_local_devices]=false)/n liveCapture [medium] [device_name] [detect_local_devices]",
+      body: `
+      <p>Records and stores the most recently played turn of one medium from one source.</p>
+      <span>Example:</span>
+      <code>liveCapture('audio', 'Scarlett 2i2 (Focusrite)', true)
+      .chop(8)
+      </code>
+      <code>liveCapture 'audio' 'Scarlett 2i2 (Focusrite)' true
+      # chop(8)
+      </code>     
+      `
+    }
+  ];
+  var STRUDEL_OVERLOAD = [
     {
       id: "jp-ply",
       name: "ply \u2014 repeat each turn's buffer n times",
@@ -64816,288 +65097,75 @@ $ participants &lt;0@2 1!3 0a?&gt;*2
       body: `<p>Like <code># jux</code>, but the optional bracketed sequence
       lets the superimposed layer be a different pattern, not a plain copy.</p>
       <pre># superimpose &lt;0 2&gt;</pre>`
-    },
-    {
-      id: "jp-buttons",
-      name: "Button declarations \u2014 *$ / *#",
-      sig: '*$ participants <tokens>       // a voice, waiting for its button\n*# crush "wcl" 2               // an effect, waiting for its button',
-      body: `
-      <p>A statement written with a leading <code>*</code> is a
-      <strong>declaration</strong>, not a live statement \u2014 it's skipped by
-      the parser and instead rendered as a button under the JPattern editor
-      (also reachable by head-cursor dwell). Pressing a
-      <code>*$ participants \u2026</code> button merges its tokens into the live
-      ring; pressing it again removes them. Pressing a
-      <code>*# \u2026</code> effect button appends that directive line (pressing
-      again comments it back out). A declaration is one line, and may carry
-      a trailing <code>//</code> comment.</p>`
     }
   ];
-  var TEXT_CYCLES_FUNCTIONS = [
+  var FETCH_PATTERNS = [
     {
-      id: "tc-init",
-      name: "await initTextCycles() \u2014 declare a text presence",
-      sig: "await initTextCycles()",
-      body: `
-      <p>Goes in the buffer's preamble, the same way <code>await initHydra()</code>
-      declares visuals \u2014 first line, blank line, then the patterns. A voice
-      carrying <code>word()</code>/<code>w()</code> paints one styled
-      <code>&lt;span&gt;</code> per hap into the Jitsi chat panel instead of
-      making sound \u2014 one bubble per cycle per performer, so a fast pattern
-      fills a line rather than flooding the panel. It enters the chat on the
-      performer's behalf (Jitsi otherwise hides the message log behind a
-      nickname prompt), using their JPattern room index as the nickname.
-      Nothing is sent over XMPP: every browser evaluates every peer's program
-      already, so each client paints the same words from the shared program.</p>
-      <pre>await initTextCycles()
-
-$: word("I like squirrels").typeface('Times New Roman')</pre>`
+      id: "image",
+      name: "image",
+      sig: "image([image_file_name_pattern])\nimage image_file_name_pattern",
+      body: `<p>Sends image files up to 10MB in the public meeting chat window.
+    .jpeg, .jpg, .png, .gif, .bmp, and .svg files are supported.</p>
+    <code>$: image("<example.com/cat.png someplace.xyz/doggo.svg>")</code>
+    <code>$ image <example.com/cat.png someplace.xyz/doggo.svg> </code>
+    `
     },
     {
-      id: "tc-word",
-      name: "word() / w() \u2014 the text itself",
-      sig: '.word("<mini-notation pattern>")\n.w("<mini-notation pattern>")        (alias)',
-      body: `
-      <p>Every double-quoted text param is mini notation, same as any other
-      Strudel control \u2014 a bare space is a sequence separator, not a space in
-      the words. A few characters need escaping to render literally:</p>
-      <table>
-        <tr><th>Written</th><th>Renders</th></tr>
-        <tr><td><code>word("&lt;a ~ b&gt;")</code></td><td><code>a</code>, a rest, <code>b</code></td></tr>
-        <tr><td><code>word("&lt;a \\~ b&gt;")</code></td><td><code>a</code>, a literal <code>~</code>, <code>b</code></td></tr>
-        <tr><td><code>word("squirrels?")</code></td><td><code>squirrels</code>, played only sometimes</td></tr>
-        <tr><td><code>word("squirrels\\?")</code></td><td><code>squirrels?</code> every cycle</td></tr>
-      </table>
-      <p>Single quotes opt out of mini entirely, so a phrase with its own
-      spaces needs no escaping at all: <code>word('I like squirrels?')</code>
-      is one whole phrase, one hap. The same rule applies to every text
-      param, not only <code>word</code> \u2014 <code>.typeface("Times New Roman")</code>
-      mints three separate steps; <code>.typeface('Times New Roman')</code>
-      is one atom.</p>`
+      id: "video",
+      name: "video",
+      sig: "video([video_file_name_pattern])\nvideo video_file_name_pattern",
+      body: `<p>Sends video files up to 10MB in the public meeting chat window.
+    .mp4, mov, and m4a files are supported.</p>
+    <code>$: video("example.com/pupper.mov")</code>
+    <code>$ video "example.com/pupper.mov" </code>
+    `
     },
     {
-      id: "tc-style",
-      name: "typeface() / weight() / slant() / spacing() / underline() \u2014 text styling",
-      sig: `.typeface("name")   \u2014or\u2014   .t("name")
-.weight("400 200 100 800")
-.slant("<italic none>")
-.spacing("<3px 6px 9px 12px>")
-.underline("underline")`,
-      body: `<p>Chained styling controls, each patternable like any other Strudel
-      param. <code>typeface</code>/<code>t</code> sets the font family,
-      <code>weight</code> the font weight, <code>slant</code> italic/none,
-      <code>spacing</code> letter-spacing, and <code>underline</code> toggles
-      an underline. With nothing set, words inherit Jitsi's own chat
-      typography \u2014 only properties you set are applied.</p>`
+      id: "soundFile",
+      name: "soundFile",
+      sig: "soundFile([sound_file_name_pattern])\nsoundFile sound_file_name_pattern",
+      body: `<p>Sends audio files up to 10MB in the public meeting chat window.
+    .wav, mp3, and .ogg files are supported.</p>
+    <code>$: soundFile("example.com/ratchet.wav")</code>
+    <code>$ soundFile "example.com/ratchet.wav" </code>
+    `
     },
     {
-      id: "tc-borrowed",
-      name: "size() / color() \u2014 borrowed Strudel controls",
-      sig: '.size("<12px 24px 10px 1px>*2")\n.color("<#346234 #bfe968>")',
-      body: `<p><code>size</code> and <code>color</code> already exist in
-      Strudel, so Text Cycles reuses them rather than re-registering \u2014
-      overriding <code>Pattern.prototype.size</code> would break
-      <code>.size()</code> for every audio voice in the room.
-      <code>size</code> arrives on the hap as the reverb <code>roomsize</code>
-      control under the hood, and both are only rewritten to their text
-      meaning inside a statement that also contains a <code>word()</code>
-      call \u2014 an audio voice's <code>.size(4)</code> still means reverb
-      size.</p>`
+      id: "pdfFile",
+      name: "pdfFile",
+      sig: "pdfFile([pdf_file_name_pattern])\npdfFile pdf_file_name_pattern",
+      body: `<p>Sends PDF files up to 10MB in the public meeting chat window</p>
+    <code>$: textFile("<example.com/shopping.pdf someplace.xyz/digeridoo.pdf>")</code>
+    <code>$ textFile <example.com/shopping.pdf someplace.xyz/digeridoo.pdf> </code>
+    `
     },
     {
-      id: "tc-link",
-      name: "hover() / hyperlink() \u2014 interactive styling",
-      sig: '.hover("color:#ffffff")\n.hyperlink("<google.com reddit.com ca.gov>")',
-      body: `<p><code>hover</code> takes CSS declarations applied while the
-      word is moused over, scoped so one performer's hover rule can never
-      restyle another's lines. <code>hyperlink</code> turns the word into a
-      link: a bare domain gets <code>https://</code> added, only
-      http/https/mailto schemes are permitted, and every link carries
-      <code>rel="noopener noreferrer"</code> and opens in a new tab.</p>`
-    }
-  ];
-  var CSS_CYCLES_FUNCTIONS = [
-    {
-      id: "css-init",
-      name: "await initCss() \u2014 declare a styling presence",
-      sig: "await initCss()",
-      body: `<p>Declares a program's styling presence exactly as
-      <code>await initTextCycles()</code> declares its words \u2014 first line of
-      the preamble, then a blank line, then the patterns. Any of the
-      capability declarations may share one preamble. Silent by
-      construction: a css voice can never reach the speakers even if it also
-      names a sound.</p>`
-    },
-    {
-      id: "css-call",
-      name: "css(`\u2026SCSS\u2026`) \u2014 the two-part statement",
-      sig: 'css(`.selector { \u2026SCSS\u2026 }`)\n  .propertyName("<pattern>")   // any camelCase CSS property, chained',
-      body: `
-      <p>The backticked argument is <strong>SCSS</strong> \u2014 nesting,
-      <code>&amp;</code>, <code>$variables</code>, <code>@media</code>,
-      <code>@keyframes</code>, <code>@mixin</code>. Backticks rather than
-      double quotes, because a double-quoted string is mini-parsed (
-      <code>.example</code> would hit <code>.</code> as the subdivision
-      operator) and <code>{}</code> never survives value sanitising.</p>
-      <p>Any camelCase name chained on that then becomes a
-      <strong>patterned declaration</strong> on the block's first top-level
-      selector if it's a real CSS property (<code>borderRadius</code> \u2192
-      <code>border-radius</code>) \u2014 everything else in the chain
-      (<code>.fast()</code>, <code>.slow()</code>, <code>.every()</code>\u2026)
-      is ordinary Strudel structure. <code>filter</code>, <code>mask</code>,
-      <code>scale</code>, <code>rotate</code>, <code>translate</code>,
-      <code>transition</code>, <code>order</code>, <code>offset</code>,
-      <code>content</code>, <code>clip</code>, <code>direction</code> and
-      <code>all</code> are both Strudel methods and CSS properties \u2014 inside
-      a <code>css()</code> chain the CSS meaning wins.</p>
-      <pre>css(\`.ts-chip { &:hover { border-color: #ffffff } }\`)
-  .backgroundColor("<#101014 #16161c>")
-  .fast(3)</pre>`
-    },
-    {
-      id: "css-fence",
-      name: "The ^\u2026^ fence \u2014 multi-part CSS values",
-      sig: '.borderRadius("^2em / 1em 3em 0.5em^")\n.borderRadius("&lt;^2em 1em^ ^0.2em 4em^&gt;")',
-      body: `<p>A double-quoted value is mini notation, so a bare space is a
-      step separator \u2014 <code>.borderRadius("2em 1em")</code> is two
-      one-cycle steps, not one two-part value. Carets fence one literal CSS
-      value: inside them, spaces, commas and slashes are CSS rather than
-      mini operators \u2014 the only way to write the slash form of
-      <code>border-radius</code>, or a multi-shadow <code>box-shadow</code>.
-      A function call needs no fence \u2014 <code>rgb(255, 0, 0)</code> is
-      already read as one value.</p>`
-    },
-    {
-      id: "css-reach",
-      name: "Reach \u2014 Trussal surfaces vs. the rest of the page",
-      sig: "(governed by the selector, not a call of its own)",
-      body: `<p>The <strong>full</strong> property set applies only where a
-      rule matches inside a Trussal root (the Studio overlay, Text Cycles
-      bubbles, the Hydra/keyboard/facial-gesture panels, the welcome
-      overlays). Everywhere else on the page \u2014 Jitsi's own native UI \u2014 the
-      same rule is re-emitted carrying only <strong>colour</strong>,
-      <strong>border</strong> and <strong>font</strong> properties: a
-      performer may repaint the room's chrome, but layout, position, size
-      and visibility (<code>width</code>, <code>display</code>,
-      <code>position</code>, <code>opacity</code>, <code>margin</code>\u2026)
-      stay Trussal-surface-only. Patterned declarations always carry
-      <code>!important</code>, so they visibly track the pattern rather
-      than losing to one of Trussal's own direct element rules.</p>`
-    },
-    {
-      id: "css-guard",
-      name: "Guardrails",
-      sig: "(enforced automatically \u2014 outbound in your browser, inbound in every peer's)",
-      body: `
-      <p>A statement is refused whole if any value its pattern can produce
-      is illegal \u2014 including one that only surfaces on the third cycle of a
-      four-step pattern:</p>
-      <table>
-        <tr><th>Refused</th></tr>
-        <tr><td><code>display: none</code></td></tr>
-        <tr><td><code>overflow</code>/<code>visibility</code>/<code>content-visibility</code> set to hidden</td></tr>
-        <tr><td>any size property at <code>0</code> (except margin, padding, radii, border/outline widths)</td></tr>
-        <tr><td><code>opacity: 0</code>, or an alpha of 0 on <code>color</code> (a transparent <em>background</em> is fine)</td></tr>
-        <tr><td><code>z-index</code>, on any selector</td></tr>
-        <tr><td>off-screen positions (<code>top</code>/<code>left</code>/<code>inset</code>/negative margins/<code>text-indent</code>/<code>translate()</code>)</td></tr>
-        <tr><td><code>filter: opacity(0)/brightness(0)/contrast(0)</code>, or <code>blur()</code> over 8px</td></tr>
-        <tr><td><code>clip-path</code> shapes that enclose nothing</td></tr>
-        <tr><td><code>pointer-events: none</code></td></tr>
-        <tr><td><code>url()</code> outside background/border-image, or on an unsafe scheme</td></tr>
-        <tr><td><code>expression()</code>, <code>javascript:</code>, <code>@import</code>, <code>behavior</code>, <code>-moz-binding</code></td></tr>
-      </table>
-      <p>A value only knowable at runtime (a slider, a gesture) is instead
-      <strong>clamped per hap</strong> \u2014 <code>opacity: 0</code> becomes
-      <code>0.04</code>, <code>blur(80px)</code> becomes <code>blur(8px)</code>
-      \u2014 rather than refused outright.</p>`
-    },
-    {
-      id: "css-turn",
-      name: "Turn ownership",
-      sig: "(governed by the JPattern ring \u2014 never fails open)",
-      body: `<p>Two performers can both target the same selector, so only
-      <strong>one</strong> peer's declared values for a given statement are
-      ever live at a time \u2014 whoever currently holds the JPattern ring's
-      slot. Everyone else's properties are pinned to the room's own captured
-      baseline (what the page looked like before any CSS Cycles rule ever
-      touched it), re-applied the instant the ring's token changes rather
-      than waiting on that peer's own next hap. Unlike Text Cycles, CSS
-      Cycles never opens every peer's styling to the shared cascade, even
-      when no ring is actively scheduling turns.</p>`
-    }
-  ];
-  var LIVE_CAPTURE_FUNCTIONS = [
-    {
-      id: "lc-main",
-      name: "liveCapture(medium, name, detectLocalDevices)",
-      sig: "liveCapture(medium, name = '', detectLocalDevices = false)",
-      body: `
-      <p>Records a rolling window of one medium from one source and returns
-      a patternable handle \u2014 every pattern event replays / refires / retraces
-      the freshest captured slice, the same "struct gates the live signal"
-      model <code>live()</code> uses for audio, generalised to six mediums.</p>
-      <table>
-        <tr><th>arg</th><th>type</th><th>meaning</th></tr>
-        <tr><td><code>medium</code></td><td>string</td><td>one of <code>audio</code>, <code>video</code>, <code>text</code>, <code>css</code>, <code>gesture</code>, <code>cursor</code></td></tr>
-        <tr><td><code>name</code></td><td>string</td><td>a participant (display name or room-index token), or for <code>audio</code> a local input device name; ignored for <code>gesture</code>/<code>cursor</code></td></tr>
-        <tr><td><code>detectLocalDevices</code></td><td>boolean</td><td>dump YOUR camera/audio devices to the console</td></tr>
-      </table>
-      <p>Every string argument is rewritten to a single-quoted literal before
-      evaluation regardless of how you write it \u2014 a real device name like
-      <code>"Scarlett 2i2 (Focusrite)"</code> would otherwise break Strudel's
-      mini-notation parser and kill the whole room's combined program.</p>
-      <pre>$: liveCapture('audio', 'Ada').struct("x*4").lpf(800).room(1)
-$: liveCapture('video', 'Ada').struct("x*8")
-$: liveCapture('gesture').struct("x*2")</pre>`
-    },
-    {
-      id: "lc-media",
-      name: "The six mediums",
-      sig: "audio | video | text | css | gesture | cursor",
-      body: `
-      <table>
-        <tr><th>medium</th><th>source</th><th>each event\u2026</th></tr>
-        <tr><td><code>audio</code></td><td>the named peer's aggregator audio, or a local input device</td><td>plays the freshest ~10s of ring audio through the normal effects chain</td></tr>
-        <tr><td><code>video</code></td><td>the named peer's published video</td><td>steps a playback head over a rolling frame ring, blitted to a canvas for Hydra's <code>src()</code></td></tr>
-        <tr><td><code>text</code></td><td>the named peer's editor-change stream</td><td>paints the freshest added code fragment into an overlay (silent)</td></tr>
-        <tr><td><code>css</code></td><td>the named peer's compiled CSS Cycles sheet</td><td>re-applies it to your page via a dedicated stylesheet (silent)</td></tr>
-        <tr><td><code>gesture</code></td><td>YOUR OWN fired facial gestures</td><td>refires the next gesture in the recorded sequence (silent)</td></tr>
-        <tr><td><code>cursor</code></td><td>YOUR OWN head-cursor path</td><td>steps your head cursor along the recorded path (silent)</td></tr>
-      </table>`
-    },
-    {
-      id: "lc-replay",
-      name: "Breaking a replay / multi-peer semantics",
-      sig: "(behavior of a running capture \u2014 no call of its own)",
-      body: `<p>Pressing <strong>Right Arrow</strong>, or holding your
-      <strong>right eye shut for two seconds</strong>, breaks every running
-      <code>gesture</code>/<code>cursor</code> replay; it stays broken until
-      the program is re-evaluated. Only the <strong>authoring</strong>
-      browser's <code>liveCapture()</code> calls actually run \u2014 every other
-      peer's copy of your program is silently rewritten to a no-op, so your
-      capture never opens your microphone or replays your gestures on
-      everyone else's machine.</p>`
+      id: "textFile",
+      name: "textFile",
+      sig: "textFile([text_file_name_pattern])\ntextFile text_file_name_pattern",
+      body: `<p>Sends text files up to 10MB in the public meeting chat window</p>
+    <code>$: textFile("<example.com/satie.txt someplace.xyz/transistor.txt>")</code>
+    <code>$ textFile <example.com/satie.txt someplace.xyz/transistor.txt> </code>
+    `
     }
   ];
   var ABOUT_HTML = `
-  <p><strong>Trussal</strong> is a networked algorave platform \u2014 a room where
-  every participant is also an instrument. It's built on top of Jitsi Meet,
-  with a live-coding music engine (<a href="https://strudel.cc" target="_blank" rel="noopener">Strudel</a>),
-  Hydra visual synthesis, and per-peer audio effects that respond to the
-  room's own network conditions layered on top.</p>
-  <p>Each participant runs their own personal Strudel + Hydra editor in the
-  <strong>Trussal Studio</strong> panel, and the room's <strong>JPattern</strong>
-  (metaprogram) editor \u2014 shared by everyone via CRDT \u2014 decides whose output
-  plays when, and lets network-driven effects (reverb, bitcrush, delay,
-  noise, and more) run on the room's combined mix. See the <strong>Docs</strong>
-  button for the full JPattern reference.</p>
-  <p><strong>Landmark &amp; Gesture Mode</strong> (the \u2630 menu, top-left, or
-  press \u2192 three times) turns on an on-screen keyboard, a MediaPipe head
-  cursor, and facial-gesture control, so the whole editor can be driven
-  hands-free.</p>
-  <p>A room can also host <strong>bots</strong> \u2014 headless Puppeteer
-  performers a participant spawns and configures from the Studio panel \u2014
-  whose combined audio and video is streamed into the room by an aggregator.</p>
+  <p>
+  The name "Trussal" is a combination of parts of the words "truss" and "algorave", and brings together 
+  the two concepts with software that provides a stage for online, real-time algorithmically-driven 
+  musical co-creation and multimedia artistic interaction, providing an alternative to strictly in-person venues. 
+  JPattern, Trussal Studio, <a href="https://jitsi.org/about/">Jitsi Meet</a>, 
+  <a href="https://pptr.dev/guides/what-is-puppeteer">Puppeteer</a>, <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API">Web Audio API </a>, 
+  and <a>MediaPipe</a> form the backbone for a hands-optional distributed live coding environment 
+  inside of a video conferencing system. JPattern is a superset of the Strudel and Hydra pattern languages, 
+  born out of Trussal's prototyping journey, and additionally enables one to live code with text, 
+  gestures, meeting reactions, participant polls, CSS, global meeting settings, and multimedia live 
+  capture patterns, while able to modulate numerous parameters using different network metrics. 
+  Trussal Studio houses the JPattern editors in addition to the status of the network, also serving as the interface for 
+  calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
+  Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
+  See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
+</p>
 `;
   function _injectStyles6() {
     if (document.getElementById(STYLE_ID8)) return;
@@ -65121,81 +65189,242 @@ $: liveCapture('gesture').struct("x*2")</pre>`
   }
   function _buildDocsBody() {
     return `
-    <h3 id="trussal-da-usage">Basic usage</h3>
-    <p>Once you're in a room, click <strong>Studio</strong> (bottom-left) to
-    open Trussal Studio. It has one card per performer for their personal
-    Strudel + Hydra editor, plus one shared <strong>JPattern</strong> card
-    that everyone in the room edits together.</p>
-    <p>Every editor buffer opens with a required directive on its first line
-    \u2014 <code>'personal editor'</code>, <code>'bot editor'</code>, or
-    <code>'metaprogram editor'</code> for the JPattern card \u2014 that's already
-    prefilled; leave it in place.</p>
-    <p>A buffer is written entirely in one of two notations, never mixed:
-    <strong>mondo</strong> (<code>$ participants &lt;0 1&gt;</code> then one
-    <code># directive \u2026</code> per line \u2014 what every example on this page
-    uses) or <strong>mini</strong>, Strudel's own dot-chained spelling of the
-    same thing (<code>$: participants("&lt;0 1&gt;").cycles("wcl", 10)</code>).</p>
-    <p>Write or edit the program in the JPattern card and press
-    <strong>\u25B6 Apply</strong> to push it to the whole room. Any line prefixed
-    with <code>*</code> is a <em>declaration</em> instead \u2014 it renders as a
-    button under the editor rather than running immediately (see "Button
-    declarations" below).</p>
-    <p>For hands-free editing, see <strong>Landmark &amp; Gesture Mode</strong>
-    (\u2630 menu, top-left of any screen, or press \u2192 three times) \u2014 it adds an
-    on-screen keyboard and a head-cursor you can dwell-click with.</p>
+    <h3>Creating or Joining a Meeting</h3>
+        <h4> Starting a new meeting </h4>
+        <p>To create a new meeting room, focus the "Room name:" field.
+        Then enter a meeting room name 1023 characters or less using letters, numbers, "-", or "_". 
+        Each meeting room name must start with a letter or number. If the user enters an invalid meeting room name, 
+        the message "Use letters, numbers, -, or _, starting with a letter or number" will appear beneath 
+        the "Join session" button. Once a valid meeting name has been entered, click the 
+        "Join session" button, which then brings the user to the prejoin screen, where one may optionally 
+        enter a display name containing any characters. To enter the meeting room, click the "Join meeting" button. 
 
-    <h3 id="trussal-da-jpattern">JPattern function reference</h3>
-    <p>Every directive below is written on its own line in the shared
-    JPattern card, chained onto the <code>$ participants</code> voice. This
-    is the language <code>src/audio-net/MetaprogrammerParser.js</code>
-    parses \u2014 kept in sync with <code>src/features/jpattern.md</code> and
-    <code>src/features/turn-ring.md</code> in the repository.</p>
-    <div class="da-fn">
-      <div class="da-fn-name">The <code>#</code> prefix</div>
-      <p><code>#</code> is <strong>mondo</strong> notation's chaining
-      operator \u2014 how a line attaches to the voice <code>$ participants</code>
-      opened above it, the same job a mini-notation <code>.method(\u2026)</code>
-      call does. It is not part of any directive's own name: <code>#
-      cycles "wcl" 10</code> (mondo) and <code>.cycles("wcl", 10)</code>
-      (mini, chained onto <code>$: participants(\u2026)</code>) are the same
-      statement written in the two surface notations. Every directive
-      below \u2014 <code>ring</code>, <code>cycles</code>, <code>room</code>,
-      <code>ply</code>, \u2026 \u2014 takes this same <code>#</code> in mondo; the
-      signatures on this page name the directive itself and omit it, the
-      way this page also doesn't repeat <code>$:</code> on every mini
-      example.</p>
-      <pre>'metaprogram editor'
-$ participants &lt;0 1&gt;
-# cycles "wcl" 10
-# room "wcl" 2</pre>
-    </div>
-    ${_renderFnSection(JPATTERN_FUNCTIONS)}
+        <h4> Joining a Preexisting Meeting Room </h4>
+        <p>A list of previously joined meetings will appear below the "Join meeting" button in reverse chronological order. 
+        To rejoin a meeting room, click on one of the meetings in the list. 
+        One will again reach the prejoin screen, where the most recently entered screen name will prepopulate.
+        However, one may change one's display name again at this time and an unlimited number of times throughout the meeting.
+        Clearing browser data will clear the list of previously joined meetings, as well as one's previously-chosen display name.
+        Clicking on the trash can icon can remove individual meetings from the list of existing meetings.
+        Note that clicking on the trash can icon or clearing browsing data <strong>does not</strong> end an existing meeting.
+        Meetings may only be ended by a participant clicking on the telephone icon attached to the meeting room toolbar inside of the meeting,
+        or when no human meeting participant has been present inside of a meeting room for more than two minutes.
+        Alternitavely, one may join an existing meeting by typing or pasting its URL in the browser's address bar.
+        Trussal does not currently support password-protected meeting rooms or user account creation. </p>
 
-    <h3 id="trussal-da-textcycles">Text Cycles</h3>
-    <p>Not a JPattern <code>#</code> directive \u2014 a Strudel function available
-    in the <strong>personal</strong> or <strong>bot</strong> editor once a
-    buffer opens with <code>await initTextCycles()</code>. Paints words into
-    the room's chat instead of, or alongside, making sound. See
-    <code>src/features/textcycles.md</code> for the full write-up (escaping,
-    seeding, per-participant scoping, how the JPattern room effects reach
-    text).</p>
-    ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+        <h4> Inviting other users to an existing meeting room </h4>
+        <p> To invite users to an existing meeting, once inside a meeting room, click the icon that depicts a
+        humanoid bust with a plus icon to its top right, which is the icon that is the third from the right 
+        within the bottom toolbar and situated between the phone and three-dot icons.
+        Upon hovering over the correct icon, a tooltip that reads "Invite people" will appear, and once clicked,
+        a modal window will appear with a button underneath "Invite more people" and "Share the meeting link to invite others"
+        dialogs. Click this button, which contains an icon of two overlapping squares on the far left side, to copy
+        the meeting URL to the clipboard. Exit this modal window by clicking the "x" icon. </p>
 
-    <h3 id="trussal-da-csscycles">CSS Cycles</h3>
-    <p>Also a personal/bot-editor Strudel function, declared with
-    <code>await initCss()</code> \u2014 patterns that restyle the live page
-    instead of making sound. See <code>src/features/csscycles.md</code> for
-    the full write-up (the compile/broadcast pipeline, the trust model, and
-    every guardrail in detail).</p>
-    ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+        <h4> Using Landmark & Gesture Mode to join a meeting </h4>
+        <p>To activate Landmark & Gesture Mode on the landing page, close your left eye for at least two seconds or press the
+        right arrow key once. You will be prompted to give your browser permission to access your camera.
+        Before using your left eye to activate Landmark & Gesture mode, make sure your face is well-lit.
+        Otheriwse, MediaPipe's model will not detect your face. Once Landmark & Gesture Mode has been activated,
+        an additional cursor, which is a white square surrounding a black circle, and a virtual keyboard will appear within your browser. 
+        To enter a meeting name, focus the text field. The text field will stay focused when the cursor is moved away from it.
+        Then dwell upon each of the keys. A black progress circle will appear, as well as a gray vertical progress bar within each key.
+        Each key will briefly turn black as characters appear in the form. Note that if browsing Incognito, upon entering the
+        prejoin room, you will have to give permission for your camera to be used once more. Then focus the text field to provide
+        a display name if desired, type a display name, and click the "Join meeting" button.
+        Dwelling upon the "\u2725" icon allows for dragging the virtual keyboard and subsequently holding one's head still refixes the keyboard's position, whereas
+        dwelling upon the "\u21F2" icon before moving one's head resizes the virtual keyboard.
+        Movement of the head up or right respectively increases the height and width of the keyboard with the opposite
+        occurring when respectively moving down or left. Dwelling on the "&#9660" icons collapses the virtual keyboard
+        and rotates the icon 90 degrees, upon which clicking re-expands the keyboard. To the left of the keyboard,
+        a grayscale face mesh will appear and can be moved, scaled and hidden using the same buttons in its respective toolbar.
+        The face mesh UI will also display each of the default gesture mappings as they are detected. </p>
 
-    <h3 id="trussal-da-livecapture">Live Capture \u2014 liveCapture()</h3>
-    <p>A Strudel source function usable directly in the personal/bot editor
-    (no preamble declaration needed) that captures and replays a room
-    medium \u2014 audio, video, editor text, CSS, your own gestures, or your own
-    head-cursor path \u2014 as a patternable handle. See
-    <code>src/features/live-capture.md</code> for the full write-up.</p>
-    ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
+    <h3>Navigating the Meeting Room</h3>
+        <p>Much of a Trussal meeting room operates as it does within Jitsi Meet. However, there are some key differences that are discussed below. </p>
+
+        <h4>Video</h4>
+        <p>Participants cannot see their own or other participants' video by default, even when one permits webcam access.
+        A participant cannot turn on video by clicking the camera icon. In order to stream one's webcam to the meeting room,
+        one must fulfill two prerequisites which are: 1. The participant's join order participant index token must be included in the Metaprogram
+        and 2. The participant calls the initCam Hydra method and/or the device name corresponding to the participant's webcam
+        is passed as an argument to liveCapture. Live video streaming data may only be viewed globally within the Aggregator's video feed.
+        See the associated documentation regarding initCam, the Aggregator, and liveCapture for further
+        details on proper usage and the Aggregator's role within a meeting. If live webcam access is lost and the participant's index token
+        remains present within a valid Metaprogram, the last recorded buffer will be streamed until the token is removed from
+        the Metaprogram. If a participant's webcam live feed is requested within the Metaprogram, but it has not been provided,
+        the Aggregator will stream a black square in lieu of that participant's video. One may also individually view bots' videos and one's own
+        video output in minimized video panel squares.
+        </p>
+
+        <h4>Audio</h4>
+        <p>As is the case regarding video, one cannot hear one's own or other participants' audio by default.
+        In order to hear one's own or others' audio, in addition to giving the browser permission to access the microphone,
+        one must call the liveCapture method and provide a valid local audio device name. Note that Hydra's audio processing capabilities
+        only visualize audio data and do not support playback. 
+        </p>
+
+        <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
+        <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
+        However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
+        and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
+        performed by the Aggregator.
+        </p>
+
+    <h3>The Aggregator and Conductor</h3>
+      <p>The Aggregator is responsible for scheduling each participants streaming turn. It appears in the meeting room as a bot meeting participant with participant index 'pi'.
+      The Aggregator itself cannot be scheduled to have a turn and does not run any of its own code. Its output consists of that of participant who it has currently scheduled.
+      Only the Aggregator outputs the coordinated live coded patterns to the entire meeting room and alters room-wide CSS during a meeting. The conductor monitors the health of 
+      bot participants, as well as compliance with dynamic, automated memory and network bandwidth constraints, removing bot participants from the meeting room, and shutting off 
+      the Aggregator's video feed as it sees fit in order to preserve the navigability of the meeting.
+      </p>
+
+    <h3>Trussal Studio</h3>
+        <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
+        Trussal Studio is where all of the live coding and coordination with the Aggregator happens, as well as the interface for one's personal meeting theming, and
+        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). Changes to the color scheme and font size only appear in one's own editor. There is an editor for each bot and human participant,
+        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code, as well as capture media assets from other participants.
+        Trussal Studio also displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
+        Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
+        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio. As is the case in Strudel, the keyboard
+        shortcut "Ctrl" + "Enter" reevaluates the code in the currently focused editor, and "Ctrl" + "." pauses the running of the code
+        inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
+        Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
+        </p>
+    <h3>Multi-Dimensional CSS Values</h3>
+        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
+        in a pair of carets. 
+        <span>Example:</span>
+        <code>$:css(".something")
+        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
+        </code>
+        <code>
+        $ css ".something"
+        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
+        </code>
+        </p>
+
+    <h3>MediaPipe in the Meeting Room</h3>
+        <p>As is the case regarding the face mesh display and virtual keyboard, dwelling upon the same icons allows one to drag the Trussal Studio user interface.
+        One may also focus other menus and text fields using the head landmark cursor. Inside of a meeting room, the virtual keyboard provides JPattern autocomplete suggestions using weighted trie search. 
+        By default, various gestures are associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
+        To focus an editor while typing using the virtual keyboard, and fix the position of the blinking cursor, hover over it with the head 
+        landmark cursor and pucker your lips. One may also create new buttons inline, which, depending on the editor in which they are created,
+        may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns. Code updates and pauses take place
+        respectively by hovering over and dwelling upon any of the "Eval" or "Stop" buttons.
+        See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
+        </p>
+        <h4>Adding Inline Buttons</h4>
+        <p>Adding an * to a voice name creates an inline button upon reevaluation.
+        </p>
+        <span>Example:</span>
+        <code>*btn: sound("piano:2")
+        .note("a4 b4 c4)
+        </code>
+        <code>*btn sound "piano:2"
+        # note "a4 b4 c4"
+        </code>
+    <h3>JPattern Reference</h3>
+        <p>
+          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
+          external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
+        </p>
+
+        <h4>Design</h4>
+          <p>
+          JPattern is a domain-specific, multi-paradigm programming language. JPattern is a superset of Strudel and Hydra, extending them to support creating patterns using video conferencing features
+          that are not supported in either language. While maintaining Strudel's declarative approach, JPattern also handles complex immutable state conveyed through JavaScript objects as function arguments,
+          and overloads Strudel operators and functions. JPattern also supports distributed and metaprogramming through its simultaneous editing, and the configuration of bot code before spawning.
+          Within any editor that does not store the text of the Metaprogram, one may write Strudel and/or Hydra code. Unlike in the Strudel REPL, <code> await initHydra() </code> 
+          is not required at the beginning of the program.
+          </p>
+
+        <h4>The Metaprogram</h4>
+            <p>The Metaprogram controls when each participant has a performance turn and is shared between all participants. 
+            All human participants can directly and simultaneously edit the Metaprogram, which is stored in a CRDT.</p>
+            <h5>Participant Identifiers</h5>
+            <p>As each participant joins the meeting, an ordered index token is assigned and persists for the entire meeting.
+            Human participants receive non-negative ordinal integer string tokens, starting with '0' for the first participant.
+            Bots receive a token that is prefixed with the human's token and a letter, starting with 'a'. Another letter,
+            starting with 'a', is appended when the number of bot participants spawned by a given human satisfies |bot participants| \u2261 1 mod 26. 
+            Note that these identifiers exist separately from the meeting identifier assigned by Jitsi Meet to make it easier for humans to type them 
+            into the Metaprogram. All valid Metaprograms must reference at least one participant.
+            </p>
+            <h5>Participant Turn Ordering</h5>
+            <p>
+            By default, human participants manually dictate the participant turn order by arranging participant tokens into patterns.
+            Both of the following are interchangeable examples of valid Metaprogram participant ordering syntax for a meeting
+            with at least three human participants and one bot participant spawned by participant '2':
+            <code>
+            $ participants <0 2a 1 0>
+            </code>
+            <code>
+            $: participants("<0 2a 1 0>")
+            </code>
+            Alternatively, one may allow the meeting participant turn ordering to be dictated by consistent hashing.
+            This means that every participant's ordinal identifier will be hashed as a node and any existing instructions
+            dictating ordering a literal ordering of a proper subset of the meeting participants will be overidden.
+            Example:
+            <code>
+            $ participants <0 2a 1 0>
+            # ring
+            </code>
+            </p>
+            <h5>Determining Participant Turn Length</h5>
+            <p>Each Metaprogram mandatorily calls the cycles method, which in turn multiplies a scale factor by a network metric,
+            outputting each participant's turn length unit.
+            </p>
+            <h5>Method Chaining Syntax</h5>
+            <p>
+            Room effects and other methods can be chained together. 
+            Currently, the participants, room, noise, crush, echo, grid, and mosaic, and cycles methods are supported.
+            Example:
+            <code>ode generation features.$ participants <1 3 2 0>
+            # cycles "wcl" 30
+            # room "wcpl" 10
+            # noise "wcl" 100 "wcrtt" 0.2
+            </code>
+            </p>
+            <h5>Operators</h5>
+            <p>JPattern overloads Strudel's @, !, *, ?, _, ~, and / operators.
+            <table>
+              <tr><th>Operator</th><th>Effect</th></tr>
+              <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;\u2026&gt;</code>) or a share of one cycle (in <code>[\u2026]</code>).</td></tr>
+              <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
+              <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) \u2014 the cycle still advances.</td></tr>
+              <tr><td><code>&lt;\u2026&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
+              <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
+            </table> 
+            </p>
+
+        <h4>Preprocessing Directives</h4>
+          <p>There are three different preprocessing directives, signifying who each program belongs to.
+          They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
+          a preprocessing directive, even if it only contains Strudel and/or Hydra code.
+        </p>
+        <h4>Global Room Pattern Functions</h4>
+        ${_renderFnSection(JPATTERN_FUNCTIONS)} 
+
+        <h4>Text Patterns</h4>
+        ${_renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+
+        <h4>CSS Patterns</h4>
+        ${_renderFnSection(CSS_CYCLES_FUNCTIONS)}
+
+        <h4>Configuration Methods</h4>
+        ${_renderFnSection(CONFIG_FUNCTIONS)}
+
+        <h4>Live Capture Patterns</h4>
+        ${_renderFnSection(LIVE_CAPTURE_FUNCTIONS)}
+
+        <h4>Jitsi UI Patterns</h4>
+        ${_renderFnSection(UI_PATTERN_FUNCTIONS)}
+
+        <h4>Other Overloaded Strudel Functions</h4>
+        ${_renderFnSection(STRUDEL_OVERLOAD)}
+
+        <h4>Data Fetching Patterns</h4>
+        ${_renderFnSection(FETCH_PATTERNS)}
   `;
   }
   function _buildPanel2(id3, titleText, bodyHtml) {
@@ -65226,7 +65455,7 @@ $ participants &lt;0 1&gt;
     const corner = document.createElement("div");
     corner.id = CORNER_ID2;
     corner.innerHTML = `
-    <button id="${DOCS_BTN_ID}" type="button">Docs</button>
+    <button id="${DOCS_BTN_ID}" type="button">Documentation</button>
     <button id="${ABOUT_BTN_ID}" type="button">About</button>
   `;
     corner.addEventListener("mousedown", (e30) => e30.stopPropagation());

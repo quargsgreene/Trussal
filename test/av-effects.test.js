@@ -293,8 +293,8 @@ test('crush: the scale factor multiplies the resting depth (higher = less crush)
 });
 
 test('crush: every worst-case metric can drive it, each on its own scale', () => {
-  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcl', 'wcpl', 'wcrtt']);
-  const metrics = { wcl: 100, wcrtt: 100, wcpl: 0.25 };
+  assert.deepEqual(Object.keys(HALVING_AMOUNTS).sort(), ['wcj', 'wcl', 'wcpl', 'wcrtt']);
+  const metrics = { wcl: 100, wcj: 20, wcrtt: 100, wcpl: 0.25 };
   // One halving of the 8-bit base for each metric at its own halving amount.
   for (const metric of Object.keys(HALVING_AMOUNTS)) {
     assert.equal(crushParams(metrics, { metric }).bitDepth, 4, metric);

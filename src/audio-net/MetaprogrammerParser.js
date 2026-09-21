@@ -59,7 +59,7 @@ import { readDirective, stripDirective } from '../program-directive.js';
 // tokenising. See src/notation.js.
 import { detectNotation, miniToMondo } from '../notation.js';
 
-export const TIMING_METRICS = ['wcl', 'wcpl'];
+export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 
 // `# ring <mode>` selects how the turn rotation order is derived:
 //   explicit  the literal `$ participants <…>` sequence, walked cyclically
@@ -77,7 +77,7 @@ export const RING_MODES = ['explicit', 'hash'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
 // cannot set a cycle length (it is a round trip, not a turn) but it is a
 // perfectly good modulation source.
-export const EFFECT_METRICS = ['wcl', 'wcrtt', 'wcpl'];
+export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 
 // A metric keyword is ALWAYS quoted — `# cycles "wcl" 20`, `# room "wcpl" 2`,
 // `# crush <"wcl" "wcpl"> <2 4>` — so it tokenises as a `string`, never a bare
@@ -91,7 +91,7 @@ function isMetricKeywordToken(t) {
 
 // Every metric keyword, for spotting a bare (unquoted) one and telling the
 // author to quote it rather than falling through to a vaguer error.
-const METRIC_WORDS = new Set(['wcl', 'wcrtt', 'wcpl']);
+const METRIC_WORDS = new Set(['wcl', 'wcj', 'wcrtt', 'wcpl']);
 
 // A room with no `# mosaic` directive still tiles: the mosaic is the resting
 // state of the aggregator's video, and `# mosaic false` is the deviation from
@@ -131,7 +131,7 @@ export const MAX_VALUE_REPEATS = 1024;
 
 // crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
 // which turns its metric into a duration and has no meaning for a round trip.
-export const CRUSH_METRICS = ['wcl', 'wcpl', 'wcrtt'];
+export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
 
 // name → { minArgs, maxArgs, kind } for every legal `#` directive besides
 // cycles/tempo. Args are positive reals unless noted. `metricKeywords`
@@ -845,7 +845,7 @@ class Parser {
   // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
   // With no amount the metric evolves with the live worst-case measurement;
   // an amount PINS it there regardless of network conditions (seconds for
-  // wcl, loss fraction for wcpl), pinning timing only — measured metrics
+  // wcl/wcj, loss fraction for wcpl), pinning timing only — measured metrics
   // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
