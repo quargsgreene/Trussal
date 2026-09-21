@@ -623,6 +623,24 @@ export async function ensureMasterStrudelInput() {
     Object.defineProperty(masterStrudelGain, 'maxChannelCount', { value: 2, configurable: true });
     masterStrudelGain.gain.value = 1.0;
 
+    // Permanent, always-on meter: a manual ad-hoc console tap (connect an
+    // analyser, poll it, disconnect) was giving inconsistent readings across
+    // repeated calls during live debugging of a "published audio never
+    // reaches the room" report — this replaces that with a persistent
+    // analyser, connected once and never disconnected, polled on a fixed
+    // interval, so there is no per-call connect/disconnect cycle to distrust.
+    // Remove once the underlying issue is resolved.
+    const meterAn = audioCtx.createAnalyser();
+    meterAn.fftSize = 2048;
+    masterStrudelGain.connect(meterAn);
+    const meterBuf = new Float32Array(meterAn.fftSize);
+    setInterval(() => {
+      meterAn.getFloatTimeDomainData(meterBuf);
+      let peak = 0;
+      for (let i = 0; i < meterBuf.length; i++) { const a = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i]; if (a > peak) peak = a; }
+      console.log('[trussal] masterStrudelGain persistent meter peak=', peak.toFixed(5));
+    }, 2000);
+
     // Build the Strudel-output effect chain. Every branch converges on
     // strudelOut (the aggregator-mode choke) before realDestination:
     //   masterStrudelGain → distWS → strudelOut → realDestination  (dry + distortion)
