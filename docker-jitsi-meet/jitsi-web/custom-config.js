@@ -58328,10 +58328,15 @@ ${adds.join("\n")}${s2.slice(cut2)}`;
   function programDeclaresHydra(code2) {
     return PROGRAM_INIT_HYDRA_RE.test(code2 || "");
   }
+  var CAM_OR_SCREEN_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen)\s*\(/;
+  var ANY_SOURCE_INIT_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen|Image|Video)\s*\(/;
   function usesExternalSource(code2) {
     const split = splitHydraCode(code2);
     if (!split) return false;
-    return /(^|[^\w$])s[0-3]($|[^\w$])/.test(split.preamble);
+    const { preamble } = split;
+    if (!/(^|[^\w$])s[0-3]($|[^\w$])/.test(preamble)) return false;
+    if (CAM_OR_SCREEN_RE.test(preamble)) return true;
+    return !ANY_SOURCE_INIT_RE.test(preamble);
   }
 
   // src/strudel.js
