@@ -972,7 +972,16 @@ export async function stopStrudel() {
 // Re-register local IDB samples with the already-loaded Strudel module.
 // Call this after uploading new samples so they become available immediately
 // without requiring a full page reload.
+//
+// Boots Strudel first rather than reading strudelMod directly: an upload that
+// happens before the performer has ever evaluated a pattern (Strudel not yet
+// booted — a perfectly normal "upload samples, then write the pattern" order)
+// used to hit strudelMod === null here and return with no log and no retry,
+// so the bank silently never registered even once the performer did evaluate
+// — live-confirmed as "stored 4 sample(s)..." with no matching "local samples
+// registered" ever appearing. ensureStrudel() is a no-op once already booted.
 export async function refreshLocalSamples() {
+  await ensureStrudel().catch(e => console.warn('[strudel] refreshLocalSamples: strudel failed to boot', e));
   const mod = strudelMod;
   if (!mod || typeof mod.registerSampleSource !== 'function') return;
   await registerSamplesFromDB(mod.registerSampleSource).catch(e =>

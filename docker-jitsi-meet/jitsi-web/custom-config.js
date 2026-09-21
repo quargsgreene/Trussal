@@ -59628,6 +59628,7 @@ ${next}`;
     document.dispatchEvent(new CustomEvent("trussal-sliders-updated", { detail: [] }));
   }
   async function refreshLocalSamples() {
+    await ensureStrudel().catch((e30) => console.warn("[strudel] refreshLocalSamples: strudel failed to boot", e30));
     const mod2 = strudelMod;
     if (!mod2 || typeof mod2.registerSampleSource !== "function") return;
     await registerSamplesFromDB(mod2.registerSampleSource).catch(
