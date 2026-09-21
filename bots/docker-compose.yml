@@ -64,6 +64,12 @@ services:
       FLEET_CONTROL_TOKEN: "${FLEET_CONTROL_TOKEN:-}"
       # No room setting exists: the fleet serves every room it discovers and
       # points each container at its own meeting through JITSI_URL.
+      # Per-participant hold window on the aggregator (ms), forwarded to
+      # spawned aggregator containers by orchestrator/index.js. Empty/unset
+      # falls back to AggregatorBot's own RING_BUFFER_SIZE-sample default
+      # (1s) — too small to survive a real rotation's off-turn wait or the
+      # ingest/drain rate's own jitter without evicting unplayed audio.
+      HOLD_MS: "${HOLD_MS:-}"
     # The conductor is bridge-networked. Home LANs often can't hairpin the public
     # Jitsi hostname, and the sidecar's TLS cert is for that name (not the LAN
     # IP), so alias the hostname to the video VM's LAN IP: the fleet then reaches

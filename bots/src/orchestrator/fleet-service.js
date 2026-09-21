@@ -689,6 +689,12 @@ export class FleetService {
     const headroom = Math.max(0, this.activeCeiling - this.bots.size);
     const toSpawn = Math.min(count, headroom);
     for (let i = 0; i < toSpawn; i++) {
+      // `docker run -d` (inside #startBot) returns as soon as the container
+      // is created — long before Chromium, the Jitsi join, and the CDN
+      // fetches inside it finish — so awaiting it alone does not actually
+      // stagger the CPU-heavy part of boot. A real delay between spawns is
+      // what prevents the whole batch's boot sequences from landing at once.
+      if (i > 0) await new Promise((r) => setTimeout(r, this.cfg.botSpawnStaggerMs));
       const botId = this.#nextBotId();
       await this.#startBot(botId, room, ownerIndex);
     }

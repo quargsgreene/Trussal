@@ -53,17 +53,22 @@ export class LiveRing {
 }
 
 // The audio ring captures raw input with no AGC (deliberate — AGC pumping is
-// unwanted on musical material), so a snapshot is exactly as loud as whatever
-// the input device happened to deliver: often much quieter than a normal
-// mic-level signal (a line-level input, low OS gain, …). Nothing upstream
-// compensates, so every snapshot gets makeup gain toward a target peak before
-// playback, plus a soft-knee limiter for any transient the makeup gain still
-// pushes over the ceiling. Below the noise floor, a snapshot is treated as
-// "nothing captured yet" rather than boosted — amplifying near-silence would
-// just turn hiss into audible noise.
+// unwanted on musical material). Measured directly against a real mic on this
+// project (raw getUserMedia, no Trussal code in the path): room tone alone
+// peaks around 0.05, a light clap hits 1.0 — the input is NOT quiet. An
+// earlier version of this function assumed it was and set the noise floor at
+// 0.003, far below real room tone; on any 2-second snapshot that happened to
+// contain only ambient noise (no deliberate sound), it read that ~0.05 peak
+// as "too quiet, needs boosting" and applied up to 12x gain — turning
+// inaudible room noise into audible hiss around whatever real content was
+// also in the snapshot ("recognizable content, just super noisy" — live-
+// confirmed). The floor now sits above typical room tone so an ambient-only
+// snapshot is left alone, and the max gain is much lower since genuine
+// content rarely needs much help. The soft limiter (for the rare transient
+// that already clips at the source, like the clap above) stays essential.
 const NORMALIZE_TARGET_PEAK = 0.7;
-const NORMALIZE_NOISE_FLOOR = 0.003;
-const NORMALIZE_MAX_GAIN = 12;
+const NORMALIZE_NOISE_FLOOR = 0.1;
+const NORMALIZE_MAX_GAIN = 3;
 const LIMITER_CEILING = 0.98;
 
 // Makeup-gain + soft-limit a captured snapshot toward a consistent, audible
@@ -283,6 +288,12 @@ export function matchAudioDevice(devices, name) {
 // parseable on older Safari.
 const CALL_RE = /(^|[^\w.$])liveCapture\s*\(\s*((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|[^()'"`])*?)\s*\)/g;
 const NAME_RE = /(^|[^\w.$])liveCapture\s*\(/g;
+
+// Non-global, single-test sibling of NAME_RE, matching text-cycles-core.js's
+// WORD_CALL_RE / css-cycles-core.js's CSS_CALL_RE — for callers (bots'
+// cluster-source.js) that need "does this statement call liveCapture(" rather
+// than a rewriting pass.
+export const LIVECAPTURE_CALL_RE = /(?:^|[^\w.$])liveCapture\s*\(/;
 
 // Split a raw argument list on top-level commas, respecting quotes. There are
 // no nested parentheses to worry about — CALL_RE only matches when every paren

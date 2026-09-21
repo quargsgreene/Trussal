@@ -62,30 +62,36 @@ test('ring: many small writes across the seam', () => {
 
 // --- applyMakeupGainAndLimiter ----------------------------------------------
 
-test('gain: a quiet snapshot is boosted toward the target peak', () => {
-  // Peak 0.1 needs 7x gain to reach the 0.7 target — within maxGain (12), so
-  // the target wins rather than the cap (see the next test for that case).
-  const data = f32(0.05, -0.1, 0.08, -0.05);
+test('gain: a snapshot above the noise floor is boosted toward the target peak', () => {
+  // Peak 0.3 needs ~2.33x gain to reach the 0.7 target — within maxGain (3),
+  // so the target wins rather than the cap (see the next test for that case).
+  const data = f32(0.15, -0.3, 0.24, -0.15);
   applyMakeupGainAndLimiter(data);
   let peak = 0;
   for (const v of data) peak = Math.max(peak, Math.abs(v));
   assert.ok(peak > 0.6 && peak <= 0.7 + 1e-9, `expected peak near 0.7, got ${peak}`);
 });
 
-test('gain: near-silence (below the noise floor) is left alone, not boosted into hiss', () => {
-  const data = f32(0.0001, -0.0002, 0.00015);
+test('gain: room tone (below the noise floor) is left alone, not boosted into hiss', () => {
+  // Measured directly against a real mic: ambient room tone alone (fan
+  // running, nobody talking) peaks around 0.05 — comfortably under the 0.1
+  // floor, so a 2-second window with no deliberate sound must not be
+  // amplified into audible static.
+  const data = f32(0.03, -0.05, 0.04, -0.02);
   const before = [...data];
   applyMakeupGainAndLimiter(data);
   assert.deepEqual([...data], before);
 });
 
-test('gain: makeup gain is capped so a near-floor snapshot cannot blow up', () => {
-  const data = f32(0.0031, -0.002); // just above the noise floor
-  applyMakeupGainAndLimiter(data, { maxGain: 12 });
+test('gain: makeup gain is capped so a just-above-floor snapshot cannot be blasted to target', () => {
+  const data = f32(0.11, -0.09); // just above the 0.1 noise floor
+  applyMakeupGainAndLimiter(data);
   let peak = 0;
   for (const v of data) peak = Math.max(peak, Math.abs(v));
-  // 0.0031 * 12 = 0.0372, far short of the 0.7 target — maxGain wins, not targetPeak.
-  assert.ok(peak < 0.05, `expected the gain cap to hold peak low, got ${peak}`);
+  // 0.11 * 3 (default maxGain) = 0.33, far short of the 0.7 target — the cap
+  // wins, not targetPeak, so a snapshot barely past "ambient" doesn't get
+  // slammed all the way up.
+  assert.ok(peak > 0.32 && peak < 0.34, `expected the gain cap (~0.33) to hold, got ${peak}`);
 });
 
 test('gain: a loud transient the makeup gain does not touch is soft-limited, not hard-clipped', () => {

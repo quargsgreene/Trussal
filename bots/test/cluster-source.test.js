@@ -6,6 +6,7 @@ import {
   captureClusterSource,
   dropTextStatements,
   dropCssStatements,
+  dropLiveCaptureStatements,
   masterFromPerformerCode,
 } from '../src/script-gen/cluster-source.js';
 import { validateCode } from '../src/script-gen/validate.js';
@@ -331,6 +332,77 @@ test('css() inside a stack() loses only its own branch, not its siblings', () =>
   assert.match(out, /s\("bd sd"\)\.room\(\.3\)/, 'the audio branch survives');
   assert.ok(!out.includes('css('), 'the css() branch is gone');
   assert.equal(validateCode(out).ok, true);
+});
+
+// --- Live capture: dropLiveCaptureStatements, another css()/word() sibling ---
+//
+// A bot's own audio-producing REPL never runs strudel.js's
+// installLiveCapture() either, so `liveCapture(` is undefined there too.
+// Unlike css()/word() there is no init preamble to also strip — a
+// liveCapture() call needs no `await initX()` before it.
+
+test('dropLiveCaptureStatements leaves liveCapture-free code untouched', () => {
+  assert.equal(dropLiveCaptureStatements('s("bd sd")'), 's("bd sd")');
+});
+
+test('dropLiveCaptureStatements drops a liveCapture() voice entirely', () => {
+  const code = "$: liveCapture('audio', 'Built-in Audio Analog Stereo', true).delay(.4)\n\nn(\"<0 1>\").s(\"piano\")";
+  const out = dropLiveCaptureStatements(code);
+  assert.ok(!out.includes('liveCapture('), 'the liveCapture() call is gone');
+  assert.match(out, /n\("<0 1>"\)\.s\("piano"\)/, 'the audio pattern survives');
+  assert.equal(validateCode(out).ok, true);
+});
+
+test('liveCapture() inside a stack() loses only its own branch, not its siblings', () => {
+  const code = [
+    'stack(',
+    '  s("bd sd").room(.3),',
+    "  liveCapture('audio', '', true).gain(.7)",
+    ')',
+  ].join('\n');
+  const out = dropLiveCaptureStatements(code);
+  assert.match(out, /s\("bd sd"\)\.room\(\.3\)/, 'the audio branch survives');
+  assert.ok(!out.includes('liveCapture('), 'the liveCapture() branch is gone');
+  assert.equal(validateCode(out).ok, true);
+});
+
+// Live-confirmed: a room whose sole performer's entire repertoire was
+// `$: liveCapture('audio', 'Built-in Audio Analog Stereo', true)` left every
+// spawned bot with `repl.state.evalError: "ReferenceError: liveCapture is not
+// defined"`, caught silently inside @strudel/repl — no thrown error reached
+// window.__trussalErrors, so the bot sat with a mounted-but-never-started
+// scheduler and never announced a pattern (the Studio showed no code for it
+// at all) until botScriptFor started stripping liveCapture() the same way it
+// already stripped css()/word().
+test('botScriptFor never hands the bot REPL a liveCapture() voice, end to end', () => {
+  const source = captureClusterSource(
+    "$: liveCapture('audio', 'Built-in Audio Analog Stereo', true).delay(.4).delaytime(0.08)",
+    { seed: 3 },
+  ).source;
+  const { strudel, announceStrudel } = botScriptFor(source, { index: 0, count: 1, seed: 3, botId: 0 });
+  assert.ok(!strudel.includes('liveCapture('), 'the bot REPL never sees liveCapture(');
+  // The performer's WHOLE repertoire was this one liveCapture() voice, so
+  // stripping it leaves nothing — falls back to 'silence' (see botScriptFor)
+  // rather than handing the REPL an empty, invalid program.
+  assert.equal(strudel, 'silence');
+  assert.equal(validateCode(strudel).ok, true);
+  // Undeclared (exact-copy) cluster: the capture call still rides the
+  // announce, because every OTHER viewer's own buildPeerBlock (strudel.js)
+  // rewrites a non-local peer's liveCapture(...) to _liveCaptureSilent(...)
+  // itself — the pattern shape reaches other browsers fine, only the bot's
+  // own (nonexistent) REPL needed it stripped.
+  assert.ok(announceStrudel.includes('liveCapture('), 'the announce keeps liveCapture() for other viewers');
+});
+
+test('botScriptFor keeps the silence fallback out of the way when real audio survives stripping', () => {
+  const source = captureClusterSource(
+    's("bd sd")\n\n$: liveCapture(\'audio\', \'\', true).gain(.5)',
+    { seed: 3 },
+  ).source;
+  const { strudel } = botScriptFor(source, { index: 0, count: 1, seed: 3, botId: 0 });
+  assert.notEqual(strudel, 'silence');
+  assert.match(strudel, /s\("bd sd"\)/, 'the surviving audio pattern is untouched');
+  assert.equal(validateCode(strudel).ok, true);
 });
 
 // The exact shape captured live: Hydra split off by masterFromPerformerCode,

@@ -54,6 +54,20 @@ export const defaultConfig = Object.freeze({
   conductorPort: 7700,    // bots POST metrics here
   adminPort: 7777,        // admin page, bound 0.0.0.0 so it is reachable outside the VM
 
+  // Delay between successive `docker run`s in one spawnCluster() call.
+  // `docker run -d` itself returns almost instantly — long before Chromium,
+  // the Jitsi join, and the CDN sample/worklet fetches inside the new
+  // container finish — so awaiting it in a loop does NOT actually stagger
+  // the CPU-heavy part of boot. Spawning 10 bots at once with no stagger at
+  // all live-confirmed a thundering herd (load average 28 on the bots VM)
+  // that left every one of them stuck with a mounted-but-never-started
+  // Strudel scheduler (no thrown error — just starved indefinitely). This is
+  // a separate concern from the entryDelayMs `staggeredRound` role (a
+  // musical "Global Drum Circle" effect, off by default, and which only
+  // delays a bot's own evaluate()/play once it's already fully booted) —
+  // this stagger applies to every spawn regardless of role.
+  botSpawnStaggerMs: 1500,
+
   // Fleet service (JPattern): per-user bot clusters driven by in-room
   // requests relayed through the latency sidecar.
   sidecarWsUrl: 'ws://localhost:8081/ws', // peer-state bus the fleet listens on

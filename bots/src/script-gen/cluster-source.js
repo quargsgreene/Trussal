@@ -28,6 +28,7 @@
 import { splitHydraCode, normalizePeerCode } from '../../../src/hydra-code.js';
 import { splitStatements, WORD_CALL_RE } from '../../../src/text-cycles-core.js';
 import { CSS_CALL_RE } from '../../../src/css-cycles-core.js';
+import { LIVECAPTURE_CALL_RE } from '../../../src/live-capture-core.js';
 import { defaultBotConfig, parseBotConfig } from '../../../src/bot-config.js';
 import { wrapAsVoice } from '../../../src/strudel-voice.js';
 import { insertBeforeHydraOut } from '../shared/hydra-chain.js';
@@ -267,6 +268,35 @@ export function dropCssStatements(strudel) {
 }
 
 /**
+ * Strip the statements that capture live audio/video/text/css/gesture/cursor.
+ * Always applied to what the bot's OWN REPL evaluates (see botScriptFor) —
+ * `liveCapture(` is undefined there for the same reason css()/word() are (see
+ * dropCssStatements): bots boot a separate, vanilla `@strudel/repl` that never
+ * runs strudel.js's installLiveCapture(), so a performer's repertoire that
+ * uses liveCapture() throws ReferenceError the instant a cloning bot
+ * evaluates it — live-confirmed as `repl.state.evalError`, caught silently
+ * inside @strudel/repl (no thrown error reaches window.__trussalErrors), so
+ * the bot is left with a mounted-but-never-started scheduler and the Studio
+ * shows no code for it at all (evaluate() never got far enough to announce
+ * the pattern). No init preamble exists for this capability (unlike
+ * initTextCycles()/initCss()), so initRe is a pattern that can never match —
+ * dropCapabilityParagraphs only needs callRe to do the actual stripping.
+ *
+ * Not applied to announceStrudel: a bot IS just another peer on the peer-state
+ * bus, so every OTHER viewer's own buildPeerBlock (strudel.js) already rewrites
+ * a non-local peer's liveCapture(...) to _liveCaptureSilent(...) — the pattern
+ * SHAPE still reaches other browsers' combined programs, only the capture
+ * itself (which only ever made sense on the authoring browser to begin with)
+ * doesn't ride along, same as it wouldn't for a human's own remote voice.
+ */
+export function dropLiveCaptureStatements(strudel) {
+  return dropCapabilityParagraphs(strudel, {
+    initRe: /(?!)/, // never matches — liveCapture has no init preamble
+    callRe: LIVECAPTURE_CALL_RE,
+  });
+}
+
+/**
  * The {strudel, hydra} one bot boots with, before variation.js positions it in
  * the mix.
  *
@@ -378,17 +408,34 @@ export function botScriptFor(source, { index, count = 1, seed = 0, botId = 0 } =
       : generatedCss;
   }
 
-  // What the bot's OWN REPL evaluates. ALWAYS stripped of both, declared or
-  // not: that REPL is a separate, vanilla @strudel/repl instance (see
+  // What the bot's OWN REPL evaluates. ALWAYS stripped of all three, declared
+  // or not: that REPL is a separate, vanilla @strudel/repl instance (see
   // page-scripts.js's pageStrudelBoot) that never gets Trussal's
-  // installTextCycles/installCssCycles, so `word`/`css`/their init calls are
-  // undefined there. Announcing a word()/css() voice is a broadcast-only
-  // concept — the bot's own eval can never run either. `generatedText`/
+  // installTextCycles/installCssCycles/installLiveCapture, so `word`/`css`/
+  // `liveCapture`/their init calls are undefined there. Announcing a
+  // word()/css() voice is a broadcast-only concept — the bot's own eval can
+  // never run either — and liveCapture() only ever made sense on the
+  // authoring browser to begin with, so dropping it here costs the bot
+  // nothing it could have done anyway. Without this a cluster built from a
+  // liveCapture()-based repertoire threw ReferenceError on evaluate() for
+  // every bot, silently (no thrown error reaches window.__trussalErrors —
+  // @strudel/repl catches it internally), leaving a mounted-but-never-started
+  // scheduler and no pattern ever announced to the Studio. `generatedText`/
   // `generatedCss` never reach `strudel` to begin with, so there is nothing
   // of them to strip here. Derived from the SAME shaped `strudel`
   // announceStrudel came from, so the two never diverge on what audio they
-  // describe — only on whether a text/css voice rides along.
-  strudel = dropCssStatements(dropTextStatements(strudel));
+  // describe — only on whether a text/css/liveCapture voice rides along.
+  strudel = dropLiveCaptureStatements(dropCssStatements(dropTextStatements(strudel)));
+  // A repertoire that was ENTIRELY capability-only content (live-confirmed:
+  // a performer whose whole editor was `$: liveCapture(...)`, nothing else)
+  // strips down to an empty string here — not just liveCapture-free but
+  // gone outright, and validateCode()/the bot's own REPL both reject an
+  // empty program rather than silently playing nothing. `silence` is
+  // Strudel's own built-in "no sound" pattern: always valid, so the bot
+  // still evaluates successfully and joins the room instead of getting
+  // stuck exactly like the liveCapture ReferenceError did, just for a
+  // different reason.
+  if (!strudel.trim()) strudel = 'silence';
 
   return { strudel, hydra, announceStrudel };
 }

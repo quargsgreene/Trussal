@@ -38,6 +38,10 @@ const runner = makeDockerRunner({
     JITSI_VIDEO_HEIGHT: String(cfg.jitsiVideoHeight),
     JITSI_START_BITRATE_KBPS: String(cfg.jitsiStartBitrateKbps),
     CAPTURE_FPS: String(cfg.captureFps),
+    // Only the aggregator reads this (bots/src/bot/index.js's aggregatorMain),
+    // but it's harmless as a no-op env var on player bots, and keeping one
+    // whitelist here avoids a second, aggregator-only spawn path.
+    ...(process.env.HOLD_MS ? { HOLD_MS: process.env.HOLD_MS } : {}),
   },
 });
 
