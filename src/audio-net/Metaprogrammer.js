@@ -722,10 +722,10 @@ function startScheduler() {
     now: networkSeconds,
     onEvent: onSchedulerEvent
   });
-  // `# ring hash`: the rotation order is the consistent-hash order of the
+  // A bare `# ring`: the rotation order is the consistent-hash order of the
   // room's present tokens, recomputed each cycle. Seed = the room name, so it
   // is deterministic across every client with nothing stored (see TurnRing.js).
-  // Inert unless the active program carries `# ring hash`.
+  // Inert unless the active program carries `# ring`.
   scheduler.setRing({
     // Lowercased to match the sidecar's room-name normalization, so the browser
     // and the aggregator hash against the identical seed.

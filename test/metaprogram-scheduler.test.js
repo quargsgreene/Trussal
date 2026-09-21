@@ -762,11 +762,11 @@ test('the roster helpers edit the LIVE statement, not a declaration or a comment
   assert.match(appendParticipantToProgram('$ participants <>\n', '0'), /<0>/);
 });
 
-// --- # ring hash: rotation follows the consistent-hash order of the roster ---
+// --- # ring: rotation follows the consistent-hash order of the roster --------
 
-test('# ring hash schedules the hashed roster order, not the written $ participants', () => {
+test('a bare # ring schedules the hashed roster order, not the written $ participants', () => {
   const { sched, events, advance } = makeScheduler(
-    '$ participants <0>\n# ring hash\n# cycles "wcl" 1\n', { wcl: 4000 }, // 4 s cycles
+    '$ participants <0>\n# ring\n# cycles "wcl" 1\n', { wcl: 4000 }, // 4 s cycles
   );
   const roster = ['3', '1', '4', '1', '5', '9', '2', '6'];
   sched.setRing({ seed: 'room-x', roster: () => roster });
@@ -781,9 +781,9 @@ test('# ring hash schedules the hashed roster order, not the written $ participa
   assert.ok(!opens.some(e => e.token === '0'));
 });
 
-test('# ring hash falls back to $ participants until a roster is known', () => {
+test('# ring falls back to $ participants until a roster is known', () => {
   const { sched, events, advance } = makeScheduler(
-    '$ participants <7>\n# ring hash\n# cycles "wcl" 1\n', { wcl: 4000 },
+    '$ participants <7>\n# ring\n# cycles "wcl" 1\n', { wcl: 4000 },
   );
   sched.setRing({ seed: 'r', roster: () => [] }); // empty roster
   sched.start(0);

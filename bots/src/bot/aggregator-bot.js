@@ -1282,7 +1282,7 @@ export class AggregatorBot extends Bot {
      * replaying until the performer actually re-applies.
      */
     // Present participant tokens (room-index strings), aggregator excluded —
-    // the input set for `# ring hash`. Mirrors the browser's roster provider
+    // the input set for a bare `# ring`. Mirrors the browser's roster provider
     // (Metaprogrammer.startScheduler) so both hash against the same set.
     #presentTokens() {
         return [...this.#peers.values()]
@@ -1299,7 +1299,7 @@ export class AggregatorBot extends Bot {
 
     #applyOrderFromProgram(ast, { programUpdate = false } = {}) {
         if (!ast || !ast.participants) return;
-        // `# ring hash`: the rotation order is the consistent-hash order of the
+        // A bare `# ring`: the rotation order is the consistent-hash order of the
         // present tokens, not the written `$ participants` sequence. Same
         // TurnRing.orderTokens + same seed as every browser, so the ring the
         // aggregator streams matches the one each client outlines.
@@ -1366,9 +1366,9 @@ export class AggregatorBot extends Bot {
             onEvent: (ev) => this.#onSchedulerEvent(ev),
             label: 'jpattern/aggregator',
         });
-        // `# ring hash`: same TurnRing.orderTokens + same room-name seed the
+        // A bare `# ring`: same TurnRing.orderTokens + same room-name seed the
         // browsers use, so the ring the aggregator streams matches the one each
-        // client outlines. Inert unless the active program carries `# ring hash`.
+        // client outlines. Inert unless the active program carries `# ring`.
         this.scheduler.setRing({ seed: this.#ringSeed(), roster: () => this.#presentTokens() });
         this.#pushProgramToScheduler();
         this.scheduler.setMetrics(this.#worstCase);

@@ -470,9 +470,9 @@ export class MetaprogramScheduler {
     this._nextCycleStart = null;
     this._grid = [];              // recent { cycle, t0, seconds }, newest last
 
-    // `# ring hash` support: a provider of the room's present participant
+    // Support for a bare `# ring`: a provider of the room's present participant
     // tokens and a room-wide seed. Left null until setRing() is called, so a
-    // program without `# ring hash` behaves exactly as before.
+    // program without `# ring` behaves exactly as before.
     this._rosterTokens = null;    // () → string[]
     this._ringSeed = 'trussal';
   }
@@ -480,14 +480,14 @@ export class MetaprogramScheduler {
   // Wire the consistent-hash ring: `roster()` returns the present participant
   // tokens (room-index strings, aggregator excluded), `seed` is shared by
   // every client for this room. Only consulted while the active program
-  // carries `# ring hash`.
+  // carries `# ring`.
   setRing({ roster, seed } = {}) {
     if (typeof roster === 'function') this._rosterTokens = roster;
     if (seed != null) this._ringSeed = String(seed);
   }
 
   // The participant sequence to expand this cycle. Normally the literal
-  // `$ participants` AST; under `# ring hash` (with a roster wired) a synthetic
+  // `$ participants` AST; under a bare `# ring` (with a roster wired) a synthetic
   // one-per-cycle alternation built from TurnRing.orderTokens, so the rotation
   // follows the live roster with no `$ participants` edit and no broadcast.
   _effectiveParticipants() {

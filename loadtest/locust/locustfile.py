@@ -19,7 +19,7 @@ User classes
                          paces off fleet-status (S2).
   MetaprogramEditorUser  owns the shared metaprogram: grows `$ participants` (S3),
                          or in S5/S6 either maintains the literal on every roster
-                         change (explicit arm) or writes `# ring hash` once (hash
+                         change (explicit arm) or writes a bare `# ring` once (hash
                          arm), chosen by the target's turn_mode.
   ChurnUser              one slot in the churn pool (S5/S6): join -> hold -> leave
                          (a share as SIGKILL = involuntary) -> rejoin, at the
@@ -336,7 +336,7 @@ class MetaprogramEditorUser(User):
       S3            grows `$ participants < ... >` toward current_level() tokens.
       S5 / S6 explicit  re-writes `$ participants <all present tokens>` on every
                         roster change (the literal that must be maintained).
-      S5 / S6 hash      writes `$ participants <0>\\n# ring hash` ONCE, then idles —
+      S5 / S6 hash      writes `$ participants <0>\\n# ring` ONCE, then idles —
                         the scheduler follows the live roster on its own.
     All via a Yjs crdt-update with modality:'apply'.
     """
@@ -416,10 +416,10 @@ class MetaprogramEditorUser(User):
 
         # S5 / S6
         if self._turn_mode == "hash":
-            # `# ring hash` is the buildDefaultProgram default, but write it
+            # A bare `# ring` is the buildDefaultProgram default, but write it
             # explicitly so the arm does not depend on the room's seed text.
             # Written once; the scheduler tracks the roster from here on.
-            self._publish(build_program(["0"], "# ring hash\n" + self._directives), tokens=0)
+            self._publish(build_program(["0"], "# ring\n" + self._directives), tokens=0)
             gevent.sleep(5)
         else:  # explicit: keep the literal in step with the live roster
             # `# ring explicit` — the default is now hash, so the literal arm

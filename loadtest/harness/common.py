@@ -55,7 +55,7 @@ class RunContext:
     target_name: str = ""
     # The turn-assignment mode the harness should write into the shared
     # metaprogram for this target: "explicit" (a literal `$ participants` list)
-    # or "hash" (a `# ring hash` directive). Empty = leave the program alone.
+    # or "hash" (a bare `# ring` directive). Empty = leave the program alone.
     turn_mode: str = ""
 
     @classmethod

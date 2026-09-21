@@ -3,7 +3,7 @@
 Turn-ring A/B, self-contained (same pattern as proxmox/cpa-smoke-driver.py):
 runs the S5 churn shape's core idea — a stable ring + a churn pool cycling
 join/leave/rejoin — against ONE real target, once with `# ring explicit`
-(a maintained literal `$ participants <...>`) and once with `# ring hash`
+(a maintained literal `$ participants <...>`) and once with a bare `# ring`
 (written once, then left alone), back to back, same room population shape,
 same host. A `sidecar_observer.py` runs the whole time; the JSONL it writes is
 ordinary `analysis/ingest.py` -> `analysis/metrics.py` -> `figures/fig09_*` input
@@ -166,7 +166,7 @@ def run_arm(arm: str):
                                    modality="apply", channel="metaprogram")
 
     if arm == "hash":
-        publish(build_program(["0"], "# ring hash\n" + DIRECTIVES))
+        publish(build_program(["0"], "# ring\n" + DIRECTIVES))
     else:
         publish(build_program(["0"], "# ring explicit\n" + DIRECTIVES))
 

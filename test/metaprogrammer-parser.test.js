@@ -825,11 +825,11 @@ test('errors carry 1-based line/col for editor squiggles', () => {
 // --- Defaults / helpers --------------------------------------------------------
 
 test('buildDefaultProgram emits the always-on default and round-trips the parser', () => {
-  // `# ring hash`: the rotation is the consistent-hash order of the present
+  // A bare `# ring`: the rotation is the consistent-hash order of the present
   // roster, so every joiner takes turns immediately. `$ participants <0>` is
   // still required by the grammar but seeds nothing in hash mode.
   const text = buildDefaultProgram();
-  assert.equal(text, "'metaprogram editor'\n$ participants <0>\n# ring hash\n# cycles \"wcl\" 20\n");
+  assert.equal(text, "'metaprogram editor'\n$ participants <0>\n# ring\n# cycles \"wcl\" 20\n");
   const ast = ok(text);
   assert.deepEqual(ast.participants.stacks[0].elements.map(e => e.token), ['0']);
   assert.deepEqual(ast.ring, { mode: 'hash', weights: {} });
@@ -918,21 +918,22 @@ test('the colon binds an identifier to digits and nothing else', () => {
 
 // --- # ring (consistent-hash turn ordering) ----------------------------------
 
-test('# ring hash parses to a ring node; an unwritten # ring stays null', () => {
+test('a bare # ring parses to a hash-mode ring node; an unwritten # ring stays null', () => {
   assert.equal(ok(PARTS).ring, null);
-  assert.deepEqual(ok(`${PARTS}# ring hash`).ring, { mode: 'hash', weights: {} });
+  assert.deepEqual(ok(`${PARTS}# ring`).ring, { mode: 'hash', weights: {} });
   assert.deepEqual(ok(`${PARTS}# ring explicit`).ring, { mode: 'explicit', weights: {} });
 });
 
-test('# ring hash takes optional w <token> <weight> pairs', () => {
-  assert.deepEqual(ok(`${PARTS}# ring hash w 0 3 1 2`).ring,
+test('# ring takes optional w <token> <weight> pairs', () => {
+  assert.deepEqual(ok(`${PARTS}# ring w 0 3 1 2`).ring,
     { mode: 'hash', weights: { '0': 3, '1': 2 } });
 });
 
-test('# ring rejects a bad mode, a lone w, weights on explicit, and duplicates', () => {
-  bad(`${PARTS}# ring roundrobin`, /ring needs a mode/);
-  bad(`${PARTS}# ring hash w`, /at least one/);
-  bad(`${PARTS}# ring hash w 0`, /positive number/);
+test('# ring rejects a bad mode (including the old "hash" spelling), a lone w, weights on explicit, and duplicates', () => {
+  bad(`${PARTS}# ring roundrobin`, /ring's mode must be 'explicit'/);
+  bad(`${PARTS}# ring hash`, /ring's mode must be 'explicit'/);
+  bad(`${PARTS}# ring w`, /at least one/);
+  bad(`${PARTS}# ring w 0`, /positive number/);
   bad(`${PARTS}# ring explicit w 0 3`, /weights only apply/);
-  bad(`${PARTS}# ring hash\n# ring hash`, /duplicate # ring/);
+  bad(`${PARTS}# ring\n# ring`, /duplicate # ring/);
 });

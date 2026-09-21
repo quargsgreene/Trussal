@@ -39478,7 +39478,7 @@ $ participants <${tokens}>
   function buildDefaultProgram() {
     return `'metaprogram editor'
 $ participants <0>
-# ring hash
+# ring
 # cycles "wcl" 20
 `;
   }
@@ -39525,7 +39525,7 @@ $ participants <0>
       init_program_directive();
       init_notation();
       TIMING_METRICS = ["wcl", "wcj", "wcpl"];
-      RING_MODES = ["explicit", "hash"];
+      RING_MODES = ["explicit"];
       EFFECT_METRICS = ["wcl", "wcj", "wcrtt", "wcpl"];
       METRIC_WORDS = /* @__PURE__ */ new Set(["wcl", "wcj", "wcrtt", "wcpl"]);
       TEMPO_UNITS = ["bpm", "cps", "cpm"];
@@ -40189,24 +40189,29 @@ $ participants <0>
           }
           program.tempo = { value: value2, unit: unitTok.value };
         }
-        // `# ring <mode> [w <token> <weight> …]`
+        // `# ring [explicit] [w <token> <weight> …]` — a bare `# ring` (no mode
+        // word) selects hash mode, the default and the only way to spell it.
         parseRing(program, nameTok) {
           if (program.ring) {
             this.error("duplicate # ring directive", nameTok);
             this.recover();
             return;
           }
+          let mode2 = "hash";
           const modeTok = this.peek();
-          if (modeTok.type !== "word" || !RING_MODES.includes(modeTok.value)) {
-            this.error(`ring needs a mode (${RING_MODES.join("|")})`, modeTok);
+          const isWTok = modeTok.type === "word" && modeTok.value === "w";
+          if (modeTok.type === "word" && RING_MODES.includes(modeTok.value)) {
+            mode2 = modeTok.value;
+            this.next();
+          } else if (!isWTok && !this.atStatementEnd()) {
+            this.error(`ring's mode must be 'explicit' \u2014 bare '# ring' already means hash \u2014 got '${tokenText(modeTok)}'`, modeTok);
             this.recover();
             return;
           }
-          this.next();
-          const ring2 = { mode: modeTok.value, weights: {} };
+          const ring2 = { mode: mode2, weights: {} };
           if (this.peek().type === "word" && this.peek().value === "w") {
             if (ring2.mode !== "hash") {
-              this.error("weights only apply to '# ring hash'", this.peek());
+              this.error("weights only apply to hash mode (bare '# ring'), not '# ring explicit'", this.peek());
               this.recover();
               return;
             }
@@ -40237,7 +40242,7 @@ $ participants <0>
             }
           }
           if (!this.atStatementEnd()) {
-            this.error(`ring got an unexpected argument '${tokenText(this.peek())}' \u2014 the syntax is '# ring <mode> [w <token> <weight> \u2026]'`, this.peek());
+            this.error(`ring got an unexpected argument '${tokenText(this.peek())}' \u2014 the syntax is '# ring [explicit] [w <token> <weight> \u2026]'`, this.peek());
             this.recover();
             return;
           }
@@ -41398,13 +41403,13 @@ $ participants <0>
         // Wire the consistent-hash ring: `roster()` returns the present participant
         // tokens (room-index strings, aggregator excluded), `seed` is shared by
         // every client for this room. Only consulted while the active program
-        // carries `# ring hash`.
+        // carries `# ring`.
         setRing({ roster, seed: seed2 } = {}) {
           if (typeof roster === "function") this._rosterTokens = roster;
           if (seed2 != null) this._ringSeed = String(seed2);
         }
         // The participant sequence to expand this cycle. Normally the literal
-        // `$ participants` AST; under `# ring hash` (with a roster wired) a synthetic
+        // `$ participants` AST; under a bare `# ring` (with a roster wired) a synthetic
         // one-per-cycle alternation built from TurnRing.orderTokens, so the rotation
         // follows the live roster with no `$ participants` edit and no broadcast.
         _effectiveParticipants() {

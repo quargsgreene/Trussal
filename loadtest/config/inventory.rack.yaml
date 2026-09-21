@@ -2,7 +2,7 @@
 #
 # Two uses:
 #   * turn-assignment study (S5/S6, fig09/fig10): the two Dells are the matched
-#     pair — one arm writes `# ring explicit`, the other leaves the `# ring hash`
+#     pair — one arm writes `# ring explicit`, the other leaves the bare `# ring`
 #     default. The AMD is the generator + break-finder. Each Dell is a plain
 #     standalone Trussal stack here; the edge tier is NOT involved.
 #   * shard-balance study (fig11): the whole rack as ONE sharded system — the
@@ -26,7 +26,7 @@ targets:
     scheme: https
     ws_path: /ws
     xmpp_ws_path: /xmpp-websocket
-    turn_mode: hash              # harness leaves the `# ring hash` default alone
+    turn_mode: hash              # harness leaves the bare `# ring` default alone
 
 sut_bots:
   sut_explicit:

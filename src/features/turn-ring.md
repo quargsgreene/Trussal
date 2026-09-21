@@ -7,16 +7,16 @@ tokens that take turns and, in `<…>` alternation, the order they take them. Th
 ```
 'metaprogram editor'
 $ participants <0>
-# ring hash
+# ring
 # cycles "wcl" 20
 ```
 
 That is the default program (`buildDefaultProgram()`), so a fresh room already
-runs `# ring hash`.
+runs a bare `# ring`.
 
 ## The two modes
 
-### `# ring hash` (default)
+### `# ring` (default)
 
 The rotation is the **consistent-hash order of the room's PRESENT tokens**,
 recomputed every cycle from the live roster (`src/audio-net/TurnRing.js`,
@@ -44,11 +44,11 @@ edit adds their token. This is byte-identical to Trussal before `# ring` existed
 
 ## Biasing turn share — `w <token> <weight> …`
 
-Only with `# ring hash`. Each pair gives a token a weight (a positive number;
+Only on a bare `# ring`. Each pair gives a token a weight (a positive number;
 absent = 1); a token with twice the weight wins about twice as many turns.
 
 ```
-# ring hash w 0 3 2a 2
+# ring w 0 3 2a 2
 ```
 
 Token `0` gets ~3× a normal share of turns, `2a` ~2×, everyone else 1×.
@@ -56,7 +56,8 @@ Weights on `# ring explicit` are a parse error.
 
 ## Errors
 
-- `# ring` with no mode, or a mode other than `explicit` / `hash`
+- a mode other than `explicit` (there is no `hash` keyword — bare `# ring` is
+  hash mode)
 - a second `# ring` line (`duplicate # ring directive`)
 - `w` with no `<token> <weight>` pair, or a non-positive / non-numeric weight
 - `w` on `# ring explicit`

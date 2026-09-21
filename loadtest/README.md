@@ -19,7 +19,7 @@ S1–S4 run once per **network profile** (§3) — headline figure shape is *met
 vs load, one line per network profile*. S5/S6 are the **turn-assignment study**
 (§9): the same load against two identical Trussal clones that differ only in how
 the rotation ring is derived — a maintained literal `$ participants` vs a
-consistent-hash ring (`# ring hash`, `src/audio-net/TurnRing.js`).
+consistent-hash ring (a bare `# ring`, `src/audio-net/TurnRing.js`).
 
 ---
 
@@ -314,14 +314,14 @@ whose turn it is. The alternative is a **consistent-hash ring**: derive the
 rotation from hashing each present room-index token
 (`src/audio-net/TurnRing.js`, rendezvous / weighted-rendezvous), recomputed
 each cycle from the live roster, so a join/leave perturbs *who-follows-whom* for
-O(1/N) tokens and needs no edit and no broadcast. Selected by `# ring hash` in
-the metaprogram (`# ring hash w <token> <weight> …` to bias turn share);
+O(1/N) tokens and needs no edit and no broadcast. Selected by a bare `# ring` in
+the metaprogram (`# ring w <token> <weight> …` to bias turn share);
 consumed identically by every browser and the aggregator.
 
 **Design.** Two **identical `trussal-sut` clones** — `sut_explicit` and
 `sut_hash` — differing only in `targets.<name>.turn_mode` in
 `config/inventory.proxmox-C.yaml` (the harness writes `# ring explicit` + a
-maintained literal, or writes `# ring hash` once). There is **no per-SUT build**.
+maintained literal, or writes a bare `# ring` once). There is **no per-SUT build**.
 
 - **S5 — matched load.** `run_turnstudy.sh` applies one WWAN profile and runs
   `distributed.sh` for **both** targets concurrently (same schedule, wall clock,
@@ -388,7 +388,7 @@ Same family as `tools/proxmox/cpa-smoke-driver.py` — a single script that talk
 `harness.sidecar.SidecarClient` straight to a live target, no locust/distributed.sh
 needed, safe against a staging box (`assert_not_prod`, bounded population).
 
-- **`tools/turnring_ab_driver.py`** — `# ring explicit` vs `# ring hash`, same
+- **`tools/turnring_ab_driver.py`** — `# ring explicit` vs a bare `# ring`, same
   churn shape, back to back, same host. Writes ordinary `sidecar_observer.py`
   JSONL (ingest.py -> metrics.py -> fig09 as usual) **plus** the
   `crdt_update_bytes` metric `summary.parquet` already tracks — that alone is
@@ -489,12 +489,12 @@ Landed on `main` (all `npm test` green + 20 new tests):
 | file | change |
 |---|---|
 | `src/audio-net/TurnRing.js` | **new** pure module — `orderTokens`, `weightedRingSlots`, `nextOwner`, `ringDisruption` / `positionDisruption` / `rejoinRestoresSlot`, `jainFairness` |
-| `src/audio-net/MetaprogrammerParser.js` | `# ring <explicit\|hash> [w …]` directive → `program.ring`; `buildDefaultProgram()` now ships `# ring hash` |
-| `src/audio-net/MetaprogramScheduler.js` | `setRing({roster, seed})` + `_effectiveParticipants()` — under `# ring hash`, expand the hashed roster order instead of `$ participants`; **inert** without the directive |
+| `src/audio-net/MetaprogrammerParser.js` | `# ring [explicit] [w …]` directive → `program.ring`; `buildDefaultProgram()` now ships a bare `# ring` |
+| `src/audio-net/MetaprogramScheduler.js` | `setRing({roster, seed})` + `_effectiveParticipants()` — under a bare `# ring`, expand the hashed roster order instead of `$ participants`; **inert** without the directive |
 | `src/audio-net/Metaprogrammer.js` | wires `setRing` (roster = present tokens, seed = room name) |
 | `bots/src/bot/aggregator-bot.js` | same wiring for the aggregator's own scheduler + `CircularParticipantQueue` |
 
-`# ring hash` is now the **default** (`buildDefaultProgram()`); an explicit
+A bare `# ring` is now the **default** (`buildDefaultProgram()`); an explicit
 `# ring explicit`, or any older program with no `# ring` line, is byte-identical
 to the pre-hash literal walk. So the `turn_mode: explicit` arm writes
 `# ring explicit` (or a maintained literal `$ participants <…>`); the

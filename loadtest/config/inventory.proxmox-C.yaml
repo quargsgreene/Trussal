@@ -30,7 +30,7 @@ targets:
     scheme: https
     ws_path: /ws
     xmpp_ws_path: /xmpp-websocket
-    turn_mode: hash             # harness writes `# ring hash` into the metaprogram
+    turn_mode: hash             # harness writes a bare `# ring` into the metaprogram
     proxmox:
       node: c3
       template: trussal-sut

@@ -151,7 +151,7 @@ scenarios:
     involuntary_frac: 0.35           # of churn-outs, this share are hard kills
     rejoin_delay_s: [3, 12]          # a leaver waits this long, then rejoins
     # explicit arm writes `# ring explicit` and maintains `$ participants
-    # <literal>` on every roster change; hash arm writes `# ring hash` once
+    # <literal>` on every roster change; hash arm writes a bare `# ring` once
     # (also the room default). The harness picks by target.turn_mode.
     program_directives: "# cycles \"wcl\"\n# tempo 110 bpm"
 
@@ -164,7 +164,7 @@ scenarios:
       when BreakDetector reports a SUSTAINED break — involuntary-dropout hazard
       over threshold, nc-active turn gap over N x the ideal slot, aggregator or
       JVB CPU pegged, or join-success rate collapsed. The recorded break_level
-      is the headline: does `# ring hash` sustain more participants / churn
+      is the headline: does a bare `# ring` sustain more participants / churn
       before turn scheduling falls apart than the maintained literal.
     shape: BreakFindShape
     room_mode: single

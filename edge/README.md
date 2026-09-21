@@ -114,10 +114,10 @@ part of the rack:
   run the edge in front of a single `server s1 127.0.0.1:<web-port>`.
 - **`make deploy-all`** with `SHARD_VMS` / `EDGE_VM` unset in `.env.deploy` is
   byte-identical to the historical single-VM deploy.
-- **`# ring hash`** (the room turn ring) is pure per-browser logic —
+- **A bare `# ring`** (the room turn ring) is pure per-browser logic —
   `orderTokens(local roster, room-name seed)` — with no shard or edge awareness
   at all. It behaves identically on one machine or fifty; `test/turn-ring.test.js`
-  and the `# ring hash` cases in `test/metaprogram-scheduler.test.js` are the
+  and the `# ring` cases in `test/metaprogram-scheduler.test.js` are the
   single-machine proof (a fake local roster, no network).
 
 ## Add or drain a shard

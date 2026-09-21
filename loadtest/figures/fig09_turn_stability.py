@@ -24,7 +24,7 @@ from _data import load_turn_stability, CHURN_RATE_STEPS, is_synthetic, ensure_sc
 OUTPUT_NAME = "fig09_turn_stability"
 PROFILE = "p3_lte_busy"
 MODE_COLOR = {"hash": CATEGORICAL_COLORS[0], "explicit": CATEGORICAL_COLORS[1]}
-MODE_LABEL = {"hash": "ring hash", "explicit": "maintained literal"}
+MODE_LABEL = {"hash": "# ring", "explicit": "maintained literal"}
 
 
 def _series(frame, turn_mode, metric):

@@ -61,19 +61,19 @@ import { detectNotation, miniToMondo } from '../notation.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 
-// `# ring <mode>` selects how the turn rotation order is derived:
+// `# ring [explicit]` selects how the turn rotation order is derived:
+//   (bare)    a written `# ring` with no mode word is the consistent-hash
+//             order of the room's PRESENT tokens (TurnRing.orderTokens),
+//             recomputed each cycle from the live roster, so a join/leave
+//             needs no `$ participants` edit and no CRDT round-trip.
+//             `$ participants` must still be present syntactically (a
+//             program has one); its contents seed nothing in this mode.
+//             Optional `w <token> <weight> …` pairs bias a token's share of
+//             turns (weighted rendezvous — see weightedRingSlots).
 //   explicit  the literal `$ participants <…>` sequence, walked cyclically
-//             (an unwritten `# ring` means this — byte-identical to the old
-//             behaviour). `buildDefaultProgram()` now ships `# ring hash`, so
-//             a fresh room starts in hash mode; edit the line to opt out.
-//   hash      the consistent-hash order of the room's PRESENT tokens
-//             (TurnRing.orderTokens), recomputed each cycle from the live
-//             roster, so a join/leave perturbs O(1/N) of the ring and needs
-//             no `$ participants` edit. `$ participants` must still be present
-//             syntactically (a program has one); its contents seed nothing in
-//             hash mode. Optional `w <token> <weight> …` pairs bias a token's
-//             share of turns (weighted rendezvous — see weightedRingSlots).
-export const RING_MODES = ['explicit', 'hash'];
+//             (an UNWRITTEN `# ring` — no line at all — also means this,
+//             byte-identical to the old behaviour before `# ring` existed).
+export const RING_MODES = ['explicit'];
 // Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
 // cannot set a cycle length (it is a round trip, not a turn) but it is a
 // perfectly good modulation source.
@@ -937,26 +937,31 @@ class Parser {
     program.tempo = { value, unit: unitTok.value };
   }
 
-  // `# ring <mode> [w <token> <weight> …]`
+  // `# ring [explicit] [w <token> <weight> …]` — a bare `# ring` (no mode
+  // word) selects hash mode, the default and the only way to spell it.
   parseRing(program, nameTok) {
     if (program.ring) {
       this.error('duplicate # ring directive', nameTok);
       this.recover();
       return;
     }
+    let mode = 'hash';
     const modeTok = this.peek();
-    if (modeTok.type !== 'word' || !RING_MODES.includes(modeTok.value)) {
-      this.error(`ring needs a mode (${RING_MODES.join('|')})`, modeTok);
+    const isWTok = modeTok.type === 'word' && modeTok.value === 'w';
+    if (modeTok.type === 'word' && RING_MODES.includes(modeTok.value)) {
+      mode = modeTok.value;
+      this.next();
+    } else if (!isWTok && !this.atStatementEnd()) {
+      this.error(`ring's mode must be 'explicit' — bare '# ring' already means hash — got '${tokenText(modeTok)}'`, modeTok);
       this.recover();
       return;
     }
-    this.next();
-    const ring = { mode: modeTok.value, weights: {} };
+    const ring = { mode, weights: {} };
 
     // optional weight pairs: `w <token> <weight> <token> <weight> …`
     if (this.peek().type === 'word' && this.peek().value === 'w') {
       if (ring.mode !== 'hash') {
-        this.error("weights only apply to '# ring hash'", this.peek());
+        this.error("weights only apply to hash mode (bare '# ring'), not '# ring explicit'", this.peek());
         this.recover();
         return;
       }
@@ -989,7 +994,7 @@ class Parser {
     }
 
     if (!this.atStatementEnd()) {
-      this.error(`ring got an unexpected argument '${tokenText(this.peek())}' — the syntax is '# ring <mode> [w <token> <weight> …]'`, this.peek());
+      this.error(`ring got an unexpected argument '${tokenText(this.peek())}' — the syntax is '# ring [explicit] [w <token> <weight> …]'`, this.peek());
       this.recover();
       return;
     }
@@ -1961,7 +1966,7 @@ export function mosaicEnabled(ast) {
 
 // The default program every room starts under (JPattern is always on).
 //
-// `# ring hash` derives the rotation from a consistent hash of the PRESENT
+// A bare `# ring` derives the rotation from a consistent hash of the PRESENT
 // roster (TurnRing.orderTokens), so every joiner takes turns immediately and a
 // join/leave needs no `$ participants` edit and no CRDT round-trip. The
 // `$ participants <0>` line is still required by the grammar (a program has a
@@ -1978,7 +1983,7 @@ export function mosaicEnabled(ast) {
 // editor. Cycle length still quantizes onto the parser's 120 bpm default —
 // writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
-  return `'metaprogram editor'\n$ participants <0>\n# ring hash\n# cycles "wcl" 20\n`;
+  return `'metaprogram editor'\n$ participants <0>\n# ring\n# cycles "wcl" 20\n`;
 }
 
 // --- Program-text roster edits ----------------------------------------------

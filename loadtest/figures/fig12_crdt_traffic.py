@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fig 12 — REAL measurement (not part of the S1-S6/turn_study matrix, so no
-synthetic fallback): `# ring explicit` vs `# ring hash` CRDT (Yjs metaprogram)
+synthetic fallback): `# ring explicit` vs a bare `# ring` CRDT (Yjs metaprogram)
 update traffic under the SAME roster churn, from tools/turnring_ab_driver.py
 against a live staging Trussal. Left: update COUNT over the run. Right: total
 BYTES moved. This is the mechanism behind fig09/10's headline claim ("hash
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plotstyle import apply_style, new_figure, CATEGORICAL_COLORS
 
 OUTPUT_NAME = "fig12_crdt_traffic"
-MODE_LABEL = {"hash": "ring hash", "explicit": "maintained literal"}
+MODE_LABEL = {"hash": "# ring", "explicit": "maintained literal"}
 MODE_ORDER = ["explicit", "hash"]
 
 
