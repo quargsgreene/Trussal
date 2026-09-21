@@ -34,10 +34,34 @@ subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, p
 // publish their pattern onto the peer-state bus so it shows (and can be edited)
 // in every studio. strudel.js skips isBot peers in the combined mix, so marking
 // the bot "playing" here doesn't double its audio.
+let lastAnnouncedPattern = null;
 window.__trussalAnnounceLocalPattern = (code) => {
-  sendLocalPattern(typeof code === 'string' ? code : '');
+  const c = typeof code === 'string' ? code : '';
+  lastAnnouncedPattern = c;
+  sendLocalPattern(c);
   sendLocalPlaying(true);
 };
+
+// A bot's peer-state WebSocket can drop and reconnect for reasons that have
+// nothing to do with its own Strudel REPL — the video VM's sidecar container
+// being recreated during an unrelated deploy, a network blip, or the socket's
+// own 2s ping missing its 8s pong timeout (see peer-state.js) — while the
+// REPL itself never stops running the code it was last given. A reconnect
+// gets a brand-new peerId and a blank server-side record, so without this the
+// room (and anyone editing the bot from Studio) sees it snap back to "Idle"
+// with no pattern, reading as the bot's code silently reverting even though
+// nothing about what it's actually playing changed. Live-confirmed 2026-09-21:
+// a mid-session sidecar recreate during unrelated deploy activity reset three
+// running bots' peer-state exactly this way. Re-announcing on every
+// 'connected' (peer-state.js's 'welcome' handler) is a no-op before a bot has
+// announced anything yet (lastAnnouncedPattern is still null) and otherwise
+// just repeats what was already true.
+subscribePeerState((event) => {
+  if (event === 'connected' && lastAnnouncedPattern) {
+    sendLocalPattern(lastAnnouncedPattern);
+    sendLocalPlaying(true);
+  }
+});
 
 // The aggregator bot taps remote participants' <audio> elements (id
 // "remoteAudio_<jitsiId>") and needs to file each one's audio under its Net

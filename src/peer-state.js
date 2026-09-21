@@ -318,6 +318,14 @@ function handleMessage(msg) {
       // safe — safeSend buffers until hello completes.)
       if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
       sendHelloIfReady();
+      // Fires on EVERY successful handshake, not just the first — including a
+      // reconnect the WS's own ping/pong liveness check (or the server side
+      // dropping/recreating the connection) can trigger mid-session. A fresh
+      // welcome means a fresh peerId and an EMPTY server-side record: whatever
+      // this browser had announced before is gone from the room's point of
+      // view even though nothing about what it's actually doing changed. See
+      // index.js's subscriber for what re-announces after this.
+      emit('connected', { peerId: myPeerId });
       break;
 
     case 'roster':

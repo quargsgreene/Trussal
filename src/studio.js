@@ -542,7 +542,31 @@ function renderDetail(container) {
   const peerKey = isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
 
   if (container.dataset.peerKey !== peerKey) {
+    // The same bot's peerId can also change out from under us — its
+    // peer-state WebSocket reconnecting (sidecar redeploy, a missed liveness
+    // pong; see index.js's 'connected' subscriber) hands it a fresh peerId
+    // and a blank server-side pattern, with nothing about jitsiId (this
+    // peer's Jitsi identity, unaffected by that reconnect) changing. That
+    // reads here as "switched to a different participant" exactly like a
+    // deliberate chip click does, so an edit the operator is mid-typing —
+    // still focused, not yet sent — would otherwise be wiped by the rebuild
+    // below even though patchLocalProgramSection's own hasUnsentEdit guard
+    // would have protected the very same edit one tick earlier or later.
+    // Carry it across the rebuild instead of losing it.
+    const prevCodeEl = container.querySelector('.ts-code');
+    const samePeer = !isLocal && container.dataset.jitsiId === (peer.jitsiId || '');
+    const unsent = (samePeer && prevCodeEl && document.activeElement === prevCodeEl
+      && prevCodeEl.value !== prevCodeEl.dataset.lastSynced)
+      ? { value: prevCodeEl.value, selStart: prevCodeEl.selectionStart, selEnd: prevCodeEl.selectionEnd }
+      : null;
     buildDetailShell(container, peer, peerKey, isLocal);
+    container.dataset.jitsiId = peer.jitsiId || '';
+    if (unsent) {
+      const codeEl = container.querySelector('.ts-code');
+      codeEl.value = unsent.value;
+      codeEl.focus();
+      codeEl.setSelectionRange(unsent.selStart, unsent.selEnd);
+    }
   }
   patchDetailForPeer(container, peer, isLocal);
 }
