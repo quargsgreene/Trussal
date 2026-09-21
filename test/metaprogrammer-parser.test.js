@@ -96,6 +96,23 @@ test("mixing mini and mondo in one buffer is a parse error", () => {
   bad('$: participants("<0>")\n# cycles "wcl" 10', /entirely in one notation/);
 });
 
+// Regression: a bracket pattern holding double-quoted strings — a media set
+// (`["audio" "video"]`) or a quoted-metric pattern (`<"wcl" "wcrtt">`) — used
+// to come out of mondoToMini double-escaped, which the mini side then failed
+// to parse at all. src/notation.js now single-quotes such a group instead.
+test('mini: a media set argument parses the same as its mondo equivalent', () => {
+  const mini = ok('$: participants("<0>").room("wcl", 2, 0.4, \'["audio" "video"]\')');
+  const mondo = ok('$ participants <0>\n# room "wcl" 2 0.4 ["audio" "video"]\n');
+  assert.deepEqual(resolveEffectParams(mini.chain[0]), resolveEffectParams(mondo.chain[0]));
+});
+
+test('mini: a quoted-metric pattern argument parses the same as its mondo equivalent', () => {
+  const mini = ok('$: participants("<0>").crush(\'<"wcl" "wcpl">\', "<2 4>")');
+  const mondo = ok('$ participants <0>\n# crush <"wcl" "wcpl"> <2 4>\n');
+  assert.deepEqual(resolveEffectParams(mini.chain[0]).metric.terms, resolveEffectParams(mondo.chain[0]).metric.terms);
+  assert.deepEqual(resolveEffectParams(mini.chain[0]).scale.terms, resolveEffectParams(mondo.chain[0]).scale.terms);
+});
+
 // --- metric keywords must be quoted ("wcl" / "wcpl"), never bare ---------
 
 test('a bare metric keyword is a parse error that says to quote it', () => {

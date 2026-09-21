@@ -77,6 +77,29 @@ test('the glued * (and every mini modifier) survives both directions', () => {
   }
 });
 
+test('mondoToMini: a bracket group holding double-quoted strings (a media set, a quoted-metric pattern) is single-quoted, not escaped', () => {
+  assert.equal(
+    mondoToMini('# room "wcl" 2 0.4 ["audio" "video"]'),
+    '.room("wcl", 2, 0.4, \'["audio" "video"]\')',
+  );
+  assert.equal(
+    mondoToMini('# noise <"wcl" "wcrtt"> <1 2>'),
+    '.noise(\'<"wcl" "wcrtt">\', "<1 2>")',
+  );
+});
+
+test('a media set / quoted-metric pattern survives both directions (regression: used to double-escape and fail to parse back)', () => {
+  for (const [mondo, mini] of [
+    ['$ participants <0 1>\n# room "wcl" 2 0.4 ["audio" "video"]',
+      '$: participants("<0 1>")\n.room("wcl", 2, 0.4, \'["audio" "video"]\')'],
+    ['$ participants <0 1>\n# noise <"wcl" "wcrtt"> <1 2> <"wcpl" "wcl"> <3 4> ["video"]',
+      '$: participants("<0 1>")\n.noise(\'<"wcl" "wcrtt">\', "<1 2>", \'<"wcpl" "wcl">\', "<3 4>", \'["video"]\')'],
+  ]) {
+    assert.equal(mondoToMini(mondo), mini, `mondo→mini: ${mondo}`);
+    assert.equal(miniToMondo(mini), mondo, `mini→mondo: ${mini}`);
+  }
+});
+
 test('miniToMondo lowers a *$: button declaration to the *$ scanner form', () => {
   assert.equal(
     miniToMondo('$: participants("<0>")\n*$: participants("<2a 2b>")'),

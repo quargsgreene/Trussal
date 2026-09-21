@@ -176,10 +176,21 @@ function lowerMondoCall(rest) {
     // A bracket group (with any glued modifiers) is a mini-notation pattern —
     // quote it so Strudel mini-parses it. Anything else — a quoted string, a
     // number, a bare identifier, a `(expr)` — is carried through as written.
-    if (t[0] === '<' || t[0] === '[') return JSON.stringify(t);
+    if (t[0] === '<' || t[0] === '[') return quoteMiniPattern(t);
     return t;
   });
   return `${name}(${args.join(', ')})`;
+}
+
+// Quote a bracket-group token for the mini side, picking a quote character
+// the group cannot already contain. A metric-keyword pattern (`<"wcl"
+// "wcrtt">`) or a media set (`["audio" "video"]`) is itself double-quoted, so
+// wrapping it in another pair of double quotes needs real backslash-escaping
+// — which unquoteMiniPattern, on the way back, never reverses (it only strips
+// the outer quote pair). Single-quoting instead needs no escaping, since
+// nothing a bracket group holds ever contains a single quote.
+function quoteMiniPattern(t) {
+  return t.includes('"') ? `'${t}'` : JSON.stringify(t);
 }
 
 // --- mini → mondo --------------------------------------------------------
