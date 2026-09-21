@@ -72,6 +72,10 @@ COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
 # hydra-code.js also imports it: POLL_CALL_RE, the poll() call shape. Same two
 # entries.
 COPY src/polls-core.js /repo/src/polls-core.js
+# MetaprogrammerParser.js imports it: the `# breakout`/`# assign` literal
+# shape and resolveBreakoutState. A src/-root file (not under src/audio-net,
+# which the tree COPY above already covers), same two entries.
+COPY src/breakout-core.js /repo/src/breakout-core.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules
