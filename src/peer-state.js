@@ -463,7 +463,15 @@ function handleMessage(msg) {
         // it reaches that REPL (pageRemoteControl) or peer.pattern.
         const code = detectNotation(msg.code) === 'mondo' ? mondoToMini(msg.code) : msg.code;
         localPeer.pattern = code;
-        document.dispatchEvent(new CustomEvent('trussal-remote-pattern', { detail: { code } }));
+        // A retroactive relatch (fleet-service.js's #relatchToken) rides its
+        // owner's CURRENT sample manifest along with the new code, so a bank
+        // uploaded/shared after this bot's original boot still resolves —
+        // see pageRemoteControl's merge-before-re-register step. Absent on a
+        // human's own direct per-bot edit from Studio, which carries no
+        // manifest of its own.
+        document.dispatchEvent(new CustomEvent('trussal-remote-pattern', {
+          detail: { code, samples: msg.samples },
+        }));
         emit('peer-upsert', localPeer);
       } else if (msg.action === 'mute') {
         localPeer.muted = !!msg.muted;

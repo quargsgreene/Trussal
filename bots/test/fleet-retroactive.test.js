@@ -245,6 +245,48 @@ test('an edit from a bot is ignored', async () => {
   });
 });
 
+test('a retroactive relatch carries the owner\'s current sample manifest, including a bank shared after spawn', async () => {
+  // A sample shared retroactively (UserBotOrchestration.js's
+  // shareSamplesIfAsked, now also fired on a retroactive edit, not just the
+  // original spawn) arrives at the fleet as an ordinary sample-file message —
+  // exactly like one shared at spawn time, just later. #relatchToken has to
+  // read the CURRENT manifest, not one captured at spawn, or a bank uploaded
+  // in between never reaches the already-running bot.
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, 'botConfig({ retroactive: true })\ns("cp:3")');
+    await joinBots(fleet);
+
+    await fleet.handleBusMessage(
+      {
+        type: 'sample-file', fromIndex: HUMAN.index,
+        bank: 'mykit', name: 'kick.wav',
+        data: Buffer.from('fake wav bytes').toString('base64'),
+      },
+      ROOM,
+    );
+
+    await edit(fleet, 'botConfig({ retroactive: true })\ns("mykit:0")');
+    await turn(fleet, '1a');
+
+    assert.equal(drives(sent).length, 1);
+    assert.ok(drives(sent)[0].samples, 'the relatch message carries a samples manifest');
+    assert.match(drives(sent)[0].samples.mykit?.[0] ?? '', /\/samples\/test-room\/1\/mykit\/kick\.wav/);
+  });
+});
+
+test('a retroactive relatch for an owner who never shared any samples carries an empty manifest, not an error', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await spawn(fleet, 'botConfig({ retroactive: true })\ns("cp:3")');
+    await joinBots(fleet);
+
+    await edit(fleet, 'botConfig({ retroactive: true })\ns("rim:7")');
+    await turn(fleet, '1a');
+
+    assert.equal(drives(sent).length, 1);
+    assert.deepEqual(drives(sent)[0].samples, {});
+  });
+});
+
 test('a direct edit to one bot cancels its stale queued relatch, without touching its sibling', async () => {
   // Reproduces "eval button still reverts the code": an operator pastes new
   // code straight into one bot's own tile (a peer-update for THAT bot's own

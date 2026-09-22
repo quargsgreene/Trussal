@@ -1085,6 +1085,15 @@ export class FleetService {
       targetPeerId: target.peerId,
       action: 'pattern',
       code: scriptToEditorCode(bot.script),
+      // The owner's CURRENT sample manifest, same shape (relative paths) as
+      // the boot-time /assignment response — a bank shared AFTER this bot's
+      // container started (see shareSamplesIfAsked's retroactive call in
+      // UserBotOrchestration.js) never reached its original boot manifest,
+      // so a retroactive edit naming it needs this to resolve.
+      // page-scripts.js's pageRemoteControl merges this into what it already
+      // knows before re-registering, using the conductorUrl it was given at
+      // boot to make the relative paths absolute again.
+      samples: this.samples.manifestFor(room, bot.ownerIndex),
     });
   }
 

@@ -34,6 +34,7 @@ function installControl({
   capabilityPatterns = DEFAULT_CAPABILITY_PATTERNS,
   evaluateThrows = false,
   sampleBanks = {},
+  conductorUrl = '',
 } = {}) {
   const listeners = new Map();
   const evaluated = [];
@@ -58,6 +59,7 @@ function installControl({
     __trussalHydra: hydra,
     __trussalReportError: (err) => errors.push(err),
     __trussalSamples: sampleBanks,
+    __trussalConductorUrl: conductorUrl,
     __trussalFanGain: { gain: { value: 1 } },
     loadWorklets: async () => { registrationCalls.push('loadWorklets'); },
     registerSynthSounds: async () => { registrationCalls.push('registerSynthSounds'); },
@@ -73,9 +75,10 @@ function installControl({
     evaluated,
     errors,
     registrationCalls,
-    async push(code) {
-      await listeners.get('trussal-remote-pattern')({ detail: { code } });
+    async push(code, { samples } = {}) {
+      await listeners.get('trussal-remote-pattern')({ detail: { code, samples } });
     },
+    currentSamples: () => global.window.__trussalSamples,
     storedHydra: () => global.window.__trussalHydra,
     mute(muted) { listeners.get('trussal-remote-mute')({ detail: { muted } }); },
     stop(stopped) { listeners.get('trussal-remote-stop')({ detail: { stopped } }); },
@@ -114,6 +117,42 @@ test('a pushed edit re-registers worklets/synths/samples before evaluating, same
   // Registration must land before evaluate(), not after — otherwise the
   // first post-edit cycle still races the worklet load.
   assert.equal(ctl.evaluated.length, 1, 'registration must not block the eval itself');
+});
+
+test('a retroactive relatch merges a fresh sample manifest, resolved against the conductor URL, before registering', async () => {
+  // fleet-service.js's #relatchToken rides the owner's CURRENT manifest along
+  // with a retroactive edit — a bank shared after this bot's original boot
+  // (see UserBotOrchestration.js's shareSamplesIfAsked, now also fired on a
+  // retroactive edit) never reached the boot-time __trussalSamples, so it has
+  // to be merged in here, in the same relative-path shape the fleet always
+  // hands out.
+  const ctl = installControl({
+    sampleBanks: { cp: ['http://192.168.1.232:7700/samples/r/1/cp/0.wav'] },
+    conductorUrl: 'http://192.168.1.232:7700',
+  });
+  await ctl.push('s("mykit:0")', { samples: { mykit: ['/samples/r/1/mykit/kick.wav'] } });
+
+  assert.deepEqual(ctl.currentSamples().mykit, ['http://192.168.1.232:7700/samples/r/1/mykit/kick.wav']);
+  // The boot-time bank survives the merge — it is not replaced wholesale.
+  assert.deepEqual(ctl.currentSamples().cp, ['http://192.168.1.232:7700/samples/r/1/cp/0.wav']);
+  assert.ok(ctl.registrationCalls.includes('registerSampleSource:mykit'));
+  assert.ok(ctl.registrationCalls.includes('registerSampleSource:cp'));
+});
+
+test('a direct per-bot edit with no manifest of its own leaves the known samples untouched', async () => {
+  // A human's own Studio per-bot edit (sendRemotePattern) carries no manifest
+  // — only a fleet-driven relatch does. Must be a no-op, not clear the banks.
+  const ctl = installControl({ sampleBanks: { cp: ['http://host/samples/r/1/cp/0.wav'] } });
+  await ctl.push('s("cp:0")');
+
+  assert.deepEqual(ctl.currentSamples(), { cp: ['http://host/samples/r/1/cp/0.wav'] });
+});
+
+test('an already-absolute URL in a relatched manifest is passed through, not double-prefixed', async () => {
+  const ctl = installControl({ conductorUrl: 'http://192.168.1.232:7700' });
+  await ctl.push('s("mykit:0")', { samples: { mykit: ['https://other-host/mykit/kick.wav'] } });
+
+  assert.deepEqual(ctl.currentSamples().mykit, ['https://other-host/mykit/kick.wav']);
 });
 
 test('an edit with its own Hydra preamble lands verbatim (mini-guarded), not doubled', async () => {

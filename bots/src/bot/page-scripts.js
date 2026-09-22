@@ -427,6 +427,29 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   document.addEventListener('trussal-remote-pattern', async (e) => {
     const raw = e && e.detail && e.detail.code;
     if (typeof raw !== 'string') return;
+    // A retroactive relatch (fleet-service.js's #relatchToken) rides its
+    // owner's CURRENT sample manifest along with the new code, so a bank
+    // shared AFTER this bot's original boot still resolves — merged in (not
+    // replacing) before the re-registration block below, which reads
+    // window.__trussalSamples regardless of where it came from. Relative
+    // paths, same shape pageStrudelBoot's own boot-time manifest arrived in;
+    // resolved against the conductor address this bot was given at boot,
+    // mirroring bots/src/shared/sample-urls.js's absoluteSampleUrls (can't
+    // import it here — see the file-level note). Absent on a human's own
+    // direct per-bot edit from Studio, which carries no manifest of its own —
+    // a no-op, since `e.detail.samples` is then undefined.
+    const resolveManifest = (manifest) => {
+      if (!manifest || typeof manifest !== 'object') return null;
+      const base = String(window.__trussalConductorUrl || '').replace(/\/+$/, '');
+      const out = {};
+      for (const [key, paths] of Object.entries(manifest)) {
+        if (!Array.isArray(paths)) continue;
+        out[key] = paths.map((p) => (/^https?:\/\//i.test(p) ? p : `${base}${p}`));
+      }
+      return out;
+    };
+    const freshSamples = resolveManifest(e.detail.samples);
+    if (freshSamples) window.__trussalSamples = { ...(window.__trussalSamples || {}), ...freshSamples };
     const pushed = stripDirectiveLine(raw);
     const editor = window.__trussalStrudelEditor;
     const ed = editor && editor.editor;
@@ -1113,9 +1136,15 @@ export async function pageEnsureVideoPublished() {
  * incorrect code → terminate and replace" policy when an error slips past
  * static validation.
  */
-export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples }) {
+export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples, conductorUrl }) {
   window.__trussalErrors = window.__trussalErrors || [];
   window.__trussalReportError = (e) => window.__trussalErrors.push(String((e && e.stack) || e));
+  // How this bot addresses the fleet — needed again later if a retroactive
+  // relatch (pageRemoteControl) hands over a FRESH manifest: the fleet always
+  // hands out relative paths (it cannot know how any given container
+  // addresses it), and this is what resolves them the same way Node did for
+  // this boot-time manifest (see bots/src/shared/sample-urls.js).
+  window.__trussalConductorUrl = typeof conductorUrl === 'string' ? conductorUrl : '';
   // The owner's shared sample banks, registered under the SAME folder names
   // their own editor uses so `s("mykit")` means one thing across the room. Kept
   // on window because registration has to happen after the REPL defines

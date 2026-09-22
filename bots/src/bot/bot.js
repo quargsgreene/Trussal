@@ -155,6 +155,7 @@ export class Bot {
         // too, never into `strudel` — that REPL can't run it either.
         announceStrudel: script.announceStrudel ?? script.strudel,
         samples: this.cfg.samples || {},
+        conductorUrl: this.cfg.conductorUrl || '',
       });
     } catch (err) {
       if (attempt === 0 && /context was destroyed/i.test(String(err.message))) {

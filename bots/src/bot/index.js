@@ -179,6 +179,11 @@ async function playerMain() {
       // how this container addresses it; resolving them here is what makes
       // CONDUCTOR_URL the single answer to that question.
       samples: absoluteSampleUrls(samples, conductorUrl),
+      // Handed to the page too (see pageStrudelBoot) so a LATER retroactive
+      // relatch — which arrives as relative paths over the peer-state bus,
+      // same as the fleet always hands out — can resolve them the identical
+      // way, in-page, without another round trip through this Node process.
+      conductorUrl,
     },
     { launcher: puppeteer },
   );

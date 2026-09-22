@@ -210,6 +210,19 @@ export function applyBotClusterDirectives(code) {
   }
 
   const c = parsed.config;
+
+  // Samples are otherwise only ever pushed at the ORIGINAL spawn (see
+  // spawnBots) — a bank uploaded, or a `samples: true` turned on, after that
+  // never reaches the fleet without this. Fired on every retroactive eval
+  // that asks for it, not deduped alongside the action directives below:
+  // those dedupe repeat spawns/mutes, but re-sending unchanged sample bytes
+  // on an unrelated retroactive edit is harmless, and skipping it here would
+  // silently miss a bank added between two otherwise-identical edits.
+  if (flag(c.retroactive)) {
+    shareSamplesIfAsked(parsed)
+      .catch((err) => console.error('[trussal] sharing samples with bots (retroactive) failed', err));
+  }
+
   const directives = {
     spawn: spawnCount(c.spawn),
     remove: indexList(c.remove),
