@@ -1256,7 +1256,9 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
         if (msg.action === "pattern" && typeof msg.code === "string") {
           const code2 = detectNotation(msg.code) === "mondo" ? mondoToMini(msg.code) : msg.code;
           localPeer.pattern = code2;
-          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", { detail: { code: code2 } }));
+          document.dispatchEvent(new CustomEvent("trussal-remote-pattern", {
+            detail: { code: code2, samples: msg.samples }
+          }));
           emit2("peer-upsert", localPeer);
         } else if (msg.action === "mute") {
           localPeer.muted = !!msg.muted;
@@ -62744,6 +62746,9 @@ ${snippet}${JP_BTN_MARKER}`;
       return null;
     }
     const c2 = parsed.config;
+    if (flag(c2.retroactive)) {
+      shareSamplesIfAsked(parsed).catch((err) => console.error("[trussal] sharing samples with bots (retroactive) failed", err));
+    }
     const directives = {
       spawn: spawnCount(c2.spawn),
       remove: indexList(c2.remove),
