@@ -608,6 +608,12 @@ const ABOUT_HTML = `
   calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
+  <figure>
+  <img
+    src="/docs-images/about-fig.png"
+    alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself" />
+  <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself</figcaption>
+</figure>
 </p>
 `;
 
