@@ -52,15 +52,17 @@ const CLOCK_SYNC_POLL_MS = 100;
 const EPOCH_PLAUSIBLE_PAST_S = 24 * 60 * 60;
 // Ceiling on the per-participant ghost-replay retention window. Cycle length
 // tracks the network and has no upper bound, but the window costs
-// ~192 kB/s/participant at 48 kHz Float32 — past this a ghost loops what it has.
+// ~384 kB/s/participant at 48 kHz Float32 interleaved stereo — past this a
+// ghost loops what it has.
 const MAX_RETAIN_MS = 10000;
 // Delayed Streaming (opt-in, room-wide toggle over the CRDT settings map): how
 // much of each performer's OFF-TURN output the aggregator banks per performer
 // before the oldest samples are overwritten. A turn only drains one turn/cycle
 // of it, while an off-turn performer fills it at real-time rate, so the backlog
 // climbs to this cap and then holds a steady ~cap-seconds of deliberate delay.
-// ~192 kB/s/participant at 48 kHz Float32, so 30 s ≈ 5.8 MB each — override with
-// BACKLOG_MS. Never below one turn (the drain slice would starve otherwise).
+// ~384 kB/s/participant at 48 kHz Float32 interleaved stereo, so 30 s ≈ 11.5 MB
+// each — override with BACKLOG_MS. Never below one turn (the drain slice would
+// starve otherwise).
 const DEFAULT_BACKLOG_MS = 30000;
 // Ceiling on banked-but-unplayed scheduler slots. The scheduler only emits a
 // lookahead ahead of real time, so this is slack for a stalled playback loop,
@@ -78,9 +80,20 @@ const EMPTY_TURN_LOG_MS = 3000;
 // session reset) learns it without waiting for the ring to rotate.
 const JP_ACTIVE_HEARTBEAT_MS = 2000;
 // Sample rate the page-side taps run at (the shared AudioContext defaults to
-// 48 kHz on Chrome). Used only to convert a cfg.holdMs hold window into a
-// per-participant RingBuffer capacity in samples.
+// 48 kHz on Chrome), PER CHANNEL. Used only to convert ms-measured windows
+// (cfg.holdMs, playback interval, backlog cap, …) into sample counts.
 const DEFAULT_SAMPLE_RATE = 48000;
+// Channel layout of the whole audio pipeline: the capture tap interleaves
+// (L,R) per frame, so every buffer, slice and retained window below holds
+// interleaved stereo — one second of audio is sampleRate × AUDIO_CHANNELS
+// samples. The room's instruments are stereo (the deployment runs
+// ENABLE_STEREO + high-bitrate stereo Opus end to end), and a mono master
+// would collapse panned sources (e.g. the fleet's stereoTiles role) before
+// any client heard them. RingBuffer stores raw sample values, so it needs no
+// channel awareness of its own; alignment is preserved by keeping every
+// ms→samples conversion a whole number of FRAMES (even) — see
+// #audioSamplesForMs. Exported so tests quote the same factor.
+export const AUDIO_CHANNELS = 2;
 // Master output ceiling for gain staging: the peak amplitude the assembled mix
 // is allowed to reach before it is scaled down. 1.0 is full scale for the
 // float32 (and any fixed bit-depth) sample stream — beyond it the stream clips.
@@ -329,12 +342,14 @@ export class AggregatorBot extends Bot {
         // Per-participant hold buffers are MEASURED IN MS (requirement 4): a
         // participant retains cfg.holdMs of audio while it waits for its turn.
         // When cfg.holdMs is set we derive the RingBuffer capacity from it and
-        // the sample rate; otherwise the explicit bufferSize (samples) is used
-        // directly so unit tests can pin an exact capacity.
+        // the sample rate (× channels — the pipeline is interleaved stereo, so
+        // the TIME window is what stays constant); otherwise the explicit
+        // bufferSize (samples) is used directly so unit tests can pin an exact
+        // capacity.
         this.sampleRate = Math.max(1, Number(cfg.sampleRate ?? DEFAULT_SAMPLE_RATE));
         this.holdMs = cfg.holdMs != null ? Math.max(1, Number(cfg.holdMs)) : null;
         this.bufferSize = this.holdMs != null
-            ? Math.max(1, Math.round(this.holdMs * this.sampleRate / 1000))
+            ? this.#audioSamplesForMs(this.holdMs)
             : Math.max(1, Math.floor(bufferSize));
         this.epoch = null;
         // Delayed Streaming: the room-wide toggle's boot default (env
@@ -360,7 +375,7 @@ export class AggregatorBot extends Bot {
         // large sane number rather than 0.
         const playbackMs = Number(cfg.playbackIntervalMs) > 0
             ? Number(cfg.playbackIntervalMs) : DEFAULT_PLAYBACK_INTERVAL_MS;
-        this.masterSliceSamples = Math.max(1, Math.round(playbackMs * this.sampleRate / 1000));
+        this.masterSliceSamples = this.#audioSamplesForMs(playbackMs);
         // How much of a participant's most-recently-STREAMED audio to retain for a
         // ghost replay: one full turn (slotMs — the ~4s "cycle" a turn lasts), so a
         // departed ghost's turn replays a whole cycle of distinct audio rather than
@@ -1872,8 +1887,9 @@ export class AggregatorBot extends Bot {
         }
         this.#activeToken = active;
         this.#broadcastActiveToken(active, position, null);
-        // this.buffers[token] is a RingBuffer (mono Float32 PCM) or undefined when
-        // the active token has no buffer yet — hence the guard below.
+        // this.buffers[token] is a RingBuffer (interleaved-stereo Float32 PCM)
+        // or undefined when the active token has no buffer yet — hence the
+        // guard below.
         const currentRingBuffer = this.buffers[active];
         // Release at most ONE playback interval's worth of the active buffer per
         // tick (masterSliceSamples), rate-matching the drain to real time: draining
@@ -1980,6 +1996,18 @@ export class AggregatorBot extends Bot {
     }
 
     /**
+     * Milliseconds → pipeline samples: this.sampleRate × AUDIO_CHANNELS per
+     * second, rounded to a whole frame (even) so no slice, retention window or
+     * backlog cap can split an L/R pair — an odd offset would swap the channels
+     * for everything read downstream of it. Callable from the constructor
+     * (private methods install before it runs).
+     */
+    #audioSamplesForMs(ms) {
+        const n = Math.round(ms * this.sampleRate * AUDIO_CHANNELS / 1000);
+        return Math.max(AUDIO_CHANNELS, n - (n % AUDIO_CHANNELS));
+    }
+
+    /**
      * How much of a participant's most-recently-STREAMED audio to retain for a
      * ghost replay: ONE FULL TURN, so a departed ghost's turn replays a whole
      * cycle of distinct audio rather than looping a sub-second fragment.
@@ -1992,14 +2020,14 @@ export class AggregatorBot extends Bot {
      * running, matching the fallback pacing.
      *
      * Bounded by MAX_RETAIN_MS: cycle length has no upper limit, and at 48 kHz
-     * a Float32 window costs ~192 kB/s PER PARTICIPANT. Past the cap a ghost
-     * loops its retained window, which is the documented short-capture
-     * behaviour anyway (see #replayDepartedGhost).
+     * a Float32 window costs ~384 kB/s PER PARTICIPANT (interleaved stereo).
+     * Past the cap a ghost loops its retained window, which is the documented
+     * short-capture behaviour anyway (see #replayDepartedGhost).
      */
     get slotSamples() {
         const cycle = this.scheduler ? this.scheduler.getCycleLength() : null;
         const turnMs = cycle ? cycle.seconds * 1000 : this.slotMs;
-        return Math.max(1, Math.round(Math.min(turnMs, MAX_RETAIN_MS) * this.sampleRate / 1000));
+        return this.#audioSamplesForMs(Math.min(turnMs, MAX_RETAIN_MS));
     }
 
     /**
@@ -2198,7 +2226,7 @@ export class AggregatorBot extends Bot {
      */
     #backlogCapacitySamples() {
         return Math.max(this.masterSliceSamples,
-            Math.round(this.backlogMs * this.sampleRate / 1000));
+            this.#audioSamplesForMs(this.backlogMs));
     }
 
     /** Existing or freshly-created backlog FIFO for a token. */

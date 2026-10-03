@@ -105,17 +105,51 @@ function installTap() {
     procs: procsByJitsiId,
     // The one shared AudioContext every participant's tap actually uses.
     sharedCtx: () => sharedCtx,
-    // One ScriptProcessor frame from this peer's tap (2048 samples, like the
-    // real FRAME size). Works after the participant has been scanned once.
+    // One ScriptProcessor frame from this peer's tap (2048 frames × 2
+    // channels, like the real stereo FRAME). Works after the participant has
+    // been scanned once.
     pushFrame: (jitsiId, sample = 0.1) => {
       const proc = procsByJitsiId.get(jitsiId);
       assert.ok(proc && proc.onaudioprocess, `tap exists for ${jitsiId}`);
+      const left = new Float32Array(2048).fill(sample);
+      const right = new Float32Array(2048).fill(sample);
       proc.onaudioprocess({
-        inputBuffer: { getChannelData: () => new Float32Array(2048).fill(sample) },
+        inputBuffer: { numberOfChannels: 2, getChannelData: (i) => (i === 0 ? left : right) },
       });
     },
   };
 }
+
+// Stereo: the tap must carry BOTH channels, interleaved L,R per frame — the
+// room's instruments are stereo (ENABLE_STEREO + stereo Opus end to end), and
+// the mono tap this replaced collapsed the stereo field (panned sources like
+// the fleet's stereoTiles role) before the master mix ever carried it.
+test('the tap captures stereo, interleaved L,R per frame', () => {
+  const tap = installTap();
+  tap.addToRoster('human-a');
+  tap.resolverMap.set('human-a', '0');
+  tap.playingSet.add('human-a');
+  tap.scan();
+
+  const proc = tap.procs.get('human-a');
+  const left = Float32Array.from([1, 0.5, -0.5]);
+  const right = Float32Array.from([-1, 0.25, -0.25]);
+  proc.onaudioprocess({
+    inputBuffer: { numberOfChannels: 2, getChannelData: (i) => (i === 0 ? left : right) },
+  });
+  assert.deepEqual(
+    tap.cap.drain()[0].samples,
+    [1, -1, 0.5, 0.25, -0.5, -0.25],
+    'frames land interleaved L,R so the master mix keeps the stereo field',
+  );
+
+  // A mono source (a one-channel input buffer) up-mixes to dual-mono rather
+  // than dropping half of every frame.
+  proc.onaudioprocess({
+    inputBuffer: { numberOfChannels: 1, getChannelData: () => Float32Array.from([0.5, 0.25]) },
+  });
+  assert.deepEqual(tap.cap.drain()[0].samples, [0.5, 0.5, 0.25, 0.25]);
+});
 
 // The live incident, step for step: on an in-app hangup the Jitsi presence
 // leave lands BEFORE the sidecar peer-leave, so right after the roster

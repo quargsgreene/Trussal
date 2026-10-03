@@ -38,10 +38,15 @@ const runner = makeDockerRunner({
     JITSI_VIDEO_HEIGHT: String(cfg.jitsiVideoHeight),
     JITSI_START_BITRATE_KBPS: String(cfg.jitsiStartBitrateKbps),
     CAPTURE_FPS: String(cfg.captureFps),
-    // Only the aggregator reads this (bots/src/bot/index.js's aggregatorMain),
-    // but it's harmless as a no-op env var on player bots, and keeping one
-    // whitelist here avoids a second, aggregator-only spawn path.
+    // Only the aggregator reads these (bots/src/bot/index.js's aggregatorMain),
+    // but they're harmless as no-op env vars on player bots, and keeping one
+    // whitelist here avoids a second, aggregator-only spawn path. The
+    // AGGREGATOR_* trio tunes the published stage's video quality; defaults
+    // live in aggregatorBandwidthFromEnv.
     ...(process.env.HOLD_MS ? { HOLD_MS: process.env.HOLD_MS } : {}),
+    ...(process.env.AGGREGATOR_VIDEO_HEIGHT ? { AGGREGATOR_VIDEO_HEIGHT: process.env.AGGREGATOR_VIDEO_HEIGHT } : {}),
+    ...(process.env.AGGREGATOR_CAPTURE_FPS ? { AGGREGATOR_CAPTURE_FPS: process.env.AGGREGATOR_CAPTURE_FPS } : {}),
+    ...(process.env.AGGREGATOR_START_BITRATE_KBPS ? { AGGREGATOR_START_BITRATE_KBPS: process.env.AGGREGATOR_START_BITRATE_KBPS } : {}),
   },
 });
 

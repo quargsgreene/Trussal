@@ -79,6 +79,23 @@ function bandwidthFromEnv() {
   };
 }
 
+// The aggregator's published video is the room's STAGE — its mosaic is the
+// one tile every viewer actually watches — so it must NOT inherit the
+// player-bot bandwidth guards above (360p/15fps, sized for tiles nobody ever
+// opens). Its defaults are stage-appropriate (720p/30) and its knobs separate
+// (AGGREGATOR_*), so tightening or loosening the fleet's guard stays an
+// independent decision. Every consumer of cfg.bandwidth in aggregator-bot.js
+// keys off these values: the mosaic canvas size (#mosaicFrame), the
+// captureStream frame rate (pageGumOverride) and the join URL's send-side
+// constraints (jitsiRoomUrl), so one change here moves the whole chain.
+function aggregatorBandwidthFromEnv() {
+  return {
+    videoHeight: Number(env('AGGREGATOR_VIDEO_HEIGHT', '720')),
+    startBitrateKbps: Number(env('AGGREGATOR_START_BITRATE_KBPS', '2500')),
+    captureFps: Number(env('AGGREGATOR_CAPTURE_FPS', '30')),
+  };
+}
+
 // Report metrics to the conductor on a cadence, measuring latency as the HTTP
 // round-trip of each POST. `extra` is merged into the body (the aggregator
 // tags role:'aggregator' so the fleet keeps it out of the health summary).
@@ -113,7 +130,7 @@ async function aggregatorMain() {
     name: env('BOT_NAME', 'Aggregator'),
     jitsiUrl,
     executablePath,
-    bandwidth: bandwidthFromEnv(),
+    bandwidth: aggregatorBandwidthFromEnv(),
     ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '500')),
     playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '250')),
     slotMs: Number(env('SLOT_MS', '4000')),

@@ -17,6 +17,10 @@ export const defaultConfig = Object.freeze({
   // senders: they never need to watch each other, so channelLastN=0 cuts
   // the n×(n-1) download fan-out to zero; the bridge only fans out to
   // human viewers. Send side is capped at 360p / ~800 kbps / 15 fps.
+  // These guard PLAYER-bot tiles (nobody opens them). The aggregator's mosaic
+  // is the room's stage and publishes higher by default — 720p/30, tuned by
+  // the AGGREGATOR_VIDEO_HEIGHT / AGGREGATOR_CAPTURE_FPS /
+  // AGGREGATOR_START_BITRATE_KBPS envs (bots/src/bot/index.js).
   jitsiChannelLastN: 0,
   jitsiVideoHeight: 360,
   jitsiStartBitrateKbps: 800,

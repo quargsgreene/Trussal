@@ -683,3 +683,38 @@ test('pageMasterPlayer: master effects pushed before the context exists are appl
     if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
   }
 });
+
+// The master is the sole audio every client hears in aggregator mode, so the
+// room's stereo field must survive it: Node hands over interleaved stereo
+// (L,R per frame — the layout pageAggregatorCapture captures and the whole
+// pipeline carries), and the player's ScriptProcessor de-interleaves it into
+// the two output channels. The mono player this replaced flattened both
+// channels into one.
+test('pageMasterPlayer: interleaved stereo plays out de-interleaved, channels intact', () => {
+  const { byId, StubCtx } = masterPlayerStub();
+  const savedWindow = global.window;
+  global.window = { AudioContext: StubCtx };
+  try {
+    pageMasterPlayer();
+    const player = global.window.__trussalMasterPlayer;
+    player.enqueue([0.5, -0.5, 0.25, -0.25]); // two frames: (0.5,-0.5) (0.25,-0.25)
+    const proc = [...byId.values()].find((n) => n.id.startsWith('proc#'));
+
+    const left = new Float32Array(4);
+    const right = new Float32Array(4);
+    proc.onaudioprocess({ outputBuffer: { getChannelData: (i) => (i === 0 ? left : right) } });
+    assert.deepEqual([...left], [0.5, 0.25, 0, 0], 'left channel carries the L samples, then silence');
+    assert.deepEqual([...right], [-0.5, -0.25, 0, 0], 'right channel carries the R samples, then silence');
+
+    // A malformed odd-length chunk must not put a NaN on the bus (an
+    // out-of-range typed-array read is undefined -> NaN in a Float32Array).
+    player.enqueue([0.75]);
+    const left2 = new Float32Array(2);
+    const right2 = new Float32Array(2);
+    proc.onaudioprocess({ outputBuffer: { getChannelData: (i) => (i === 0 ? left2 : right2) } });
+    assert.deepEqual([...left2], [0.75, 0]);
+    assert.deepEqual([...right2], [0, 0], 'the missing half of a split frame reads as 0, not NaN');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});

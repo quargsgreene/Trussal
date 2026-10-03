@@ -13,8 +13,8 @@
  *   - one shared RingBuffer (all participants concatenated into the master mix)
  *
  * Sample interpretation (mono vs interleaved stereo) is left to the caller;
- * the buffer only moves Float32 samples. Audio streaming is implemented first,
- * so callers currently push mono PCM.
+ * the buffer only moves Float32 samples. Callers push interleaved stereo
+ * (L,R per frame — see AggregatorBot's AUDIO_CHANNELS).
  */
 
 const BYTES_PER_SAMPLE = Float32Array.BYTES_PER_ELEMENT; // 4

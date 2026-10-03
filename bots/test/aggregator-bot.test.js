@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { RingBuffer } from '../src/bot/ring-buffer.js';
-import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from '../src/bot/aggregator-bot.js';
+import { AggregatorBot, AGGREGATOR_SLOT_TAKEN, AUDIO_CHANNELS } from '../src/bot/aggregator-bot.js';
 import { computeWorstCaseMetrics } from '../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { crushParams } from '../../src/audio-net/av-effects/Crush.js';
 
@@ -734,10 +734,11 @@ test('single human, no bots: one continuous stream, never alternating', async ()
 // their turn — resuming where the previous turn left off, falling through to
 // live only when it drains, overwriting the oldest samples past the cap.
 //
-// sampleRate 1000 + playbackIntervalMs 10 -> masterSliceSamples 10 (one turn
-// drains 10 samples per read), so a handful of samples per batch is a whole
-// turn's worth and the FIFO arithmetic is legible. Batch levels are all
-// float32-exact (k / 2^n) so Float32Array round-trips them for deepEqual.
+// sampleRate 1000 + playbackIntervalMs 5 -> masterSliceSamples 10 (5 ms ×
+// 1000 Hz × 2 interleaved stereo channels — one turn drains 10 samples per
+// read), so a handful of samples per batch is a whole turn's worth and the
+// FIFO arithmetic is legible. Batch levels are all float32-exact (k / 2^n) so
+// Float32Array round-trips them for deepEqual.
 
 test('delayed streaming: OFF by default — a turn drains the live buffer (onset), no backlog', async () => {
   const { fakeLauncher } = makeFakes();
@@ -767,7 +768,7 @@ test('delayed streaming: ON — a performer\'s off-turn output is banked and str
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 1000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 100000 },
+    { ...cfg, slotMs: 1000, sampleRate: 1000, playbackIntervalMs: 5, delayedStreaming: true, backlogMs: 100000 },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
@@ -822,7 +823,7 @@ test('delayed streaming: a turn that outruns the backlog falls through to live, 
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 100000 },
+    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 5, delayedStreaming: true, backlogMs: 100000 },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
@@ -859,7 +860,7 @@ test('delayed streaming: the backlog is bounded — past the cap the oldest samp
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
   const bot = new AggregatorBot(
-    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 10, delayedStreaming: true, backlogMs: 20 },
+    { ...cfg, slotMs: 100000, sampleRate: 1000, playbackIntervalMs: 5, delayedStreaming: true, backlogMs: 10 },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
@@ -1151,9 +1152,9 @@ test('a departed listed participant keeps its slot and buffer until the program 
 test('a departed ghost replays its last scheduled buffer even after its live turn drained it', async () => {
   let clock = 0;
   const { fakeLauncher } = makeFakes();
-  // masterSliceSamples is huge (250ms @ 48kHz), so a live turn drains the whole
-  // small buffer in one tick — exactly the production case where, by the time a
-  // participant leaves, its RingBuffer is already empty.
+  // masterSliceSamples is huge (250ms @ 48kHz stereo), so a live turn drains
+  // the whole small buffer in one tick — exactly the production case where, by
+  // the time a participant leaves, its RingBuffer is already empty.
   const bot = new AggregatorBot(
     { ...cfg, slotMs: 1000 },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
@@ -1195,34 +1196,34 @@ test('a departed ghost replays its last scheduled buffer even after its live tur
 test('a departed ghost replays a FULL cycle of accumulated audio, not a sub-second fragment looped', async () => {
   const { calls, fakeLauncher } = makeFakes();
   let clock = 0;
-  // sampleRate 4 + playbackIntervalMs 0 (loops off) -> masterSliceSamples 1 (one
-  // sample streamed per tick); slotMs 1000 -> slotSamples 4 (a "cycle" is 4
-  // samples, i.e. 4 ticks); holdMs 500 -> the per-participant RingBuffer holds
-  // only 2 samples at once — HALF a cycle — so a single snapshot could never
-  // retain a whole cycle; only cross-tick accumulation can. Values are exactly
-  // representable in float32 so they survive the Array round-trip unchanged.
+  // sampleRate 2 + playbackIntervalMs 0 (loops off) -> masterSliceSamples 2
+  // (250 ms × 2 Hz × 2 interleaved stereo channels = one FRAME streamed per
+  // tick — the pipeline never splits an L/R pair); slotMs 1000 -> slotSamples
+  // 4 (a "cycle" is 4 samples, i.e. 2 ticks); holdMs 500 -> the
+  // per-participant RingBuffer holds only 2 samples at once — HALF a cycle —
+  // so a single snapshot could never retain a whole cycle; only cross-tick
+  // accumulation can. Values are exactly representable in float32 so they
+  // survive the Array round-trip unchanged.
   const bot = new AggregatorBot(
-    { ...cfg, sampleRate: 4, slotMs: 1000, holdMs: 500 },
+    { ...cfg, sampleRate: 2, slotMs: 1000, holdMs: 500 },
     { launcher: fakeLauncher, logIngest: false, now: () => clock },
     {}, 1024,
   );
   await bot.start();               // installs the page playback sink (calls.enqueued)
-  assert.equal(bot.masterSliceSamples, 1);
+  assert.equal(bot.masterSliceSamples, 2);
   assert.equal(bot.slotSamples, 4);
   bot.applyProgramText('$ participants <0>');   // single listed participant -> ghosts on leave
 
   const tick = async (t) => { clock = t; await bot.readAndAssembleMasterBuffer(); await bot.playMasterBufferToClient(); return calls.enqueued.at(-1); };
   const feed = (samples) => bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'h0', token: '0', samples }]);
 
-  // Live turn (slot 0), streaming four distinct samples one per tick while the
-  // 2-sample buffer is refilled between ticks — no instant ever holds > 2 samples.
+  // Live turn (slot 0), streaming four distinct samples two per tick while
+  // the 2-sample buffer is refilled between ticks — no instant ever holds
+  // > 2 samples.
   await feed([0.5, 0.25]);
-  assert.deepEqual(await tick(0), [0.5]);
-  await feed([0.125]);
-  assert.deepEqual(await tick(1), [0.25]);
-  await feed([0.0625]);
-  assert.deepEqual(await tick(2), [0.125]);
-  assert.deepEqual(await tick(3), [0.0625]);
+  assert.deepEqual(await tick(0), [0.5, 0.25]);
+  await feed([0.125, 0.0625]);
+  assert.deepEqual(await tick(1), [0.125, 0.0625]);
   assert.equal(bot.buffers['0'].length, 0, 'the live turn drained the buffer');
 
   // 0 leaves; still listed -> ghost. Its retained window is the WHOLE cycle.
@@ -1231,11 +1232,11 @@ test('a departed ghost replays a FULL cycle of accumulated audio, not a sub-seco
   // Over the ghost's next turn (slot 1) it replays all four samples IN ORDER —
   // the full cycle — instead of looping the ~half-cycle a snapshot would hold
   // (which would give 0.5,0.25,0.5,0.25).
-  const g = [await tick(1000), await tick(1001), await tick(1002), await tick(1003)].flat();
+  const g = [await tick(1000), await tick(1001)].flat();
   assert.deepEqual(g, [0.5, 0.25, 0.125, 0.0625], 'ghost replays a full cycle end-to-end');
 
   // Only at the NEXT turn does it loop back to the top of the cycle.
-  assert.deepEqual(await tick(2000), [0.5], 'a new turn restarts the cycle from the start');
+  assert.deepEqual(await tick(2000), [0.5, 0.25], 'a new turn restarts the cycle from the start');
 });
 
 test('re-applying a program that still lists a departed participant silences it (Case 2) and drops its buffer', async () => {
@@ -1840,7 +1841,8 @@ test('the ghost retention window follows the cycle length and is capped', async 
   );
   try {
     // No scheduler yet: the window falls back to slotMs, as the pacing does.
-    assert.equal(bot.slotSamples, Math.round(bot.slotMs * bot.sampleRate / 1000));
+    // (Seconds × per-channel rate × AUDIO_CHANNELS — interleaved stereo.)
+    assert.equal(bot.slotSamples, Math.round(bot.slotMs * bot.sampleRate / 1000) * AUDIO_CHANNELS);
 
     await bot.interpretAndExecuteMetaprogram();
     bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
@@ -1848,14 +1850,14 @@ test('the ghost retention window follows the cycle length and is capped', async 
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 40 },   // 20+40+40 = 100 ms -> 2 s
     ] });
     clockRef.ms = 30000; await bot.readAndAssembleMasterBuffer();
-    assert.equal(bot.slotSamples, 2 * bot.sampleRate, 'retains exactly one 2 s turn');
+    assert.equal(bot.slotSamples, 2 * bot.sampleRate * AUDIO_CHANNELS, 'retains exactly one 2 s turn');
 
     // A badly degraded room would demand an unbounded window; it is capped so
     // the per-participant cost cannot grow without limit.
     bus.rec.deliver({ type: 'peer-update', peerId: 'p0', patch: { jitterBufferMs: 2940 } }); // 3000 ms -> 60 s
     clockRef.ms = 300000; await bot.readAndAssembleMasterBuffer();
     assert.equal(bot.scheduler.getCycleLength().seconds, 60);
-    assert.equal(bot.slotSamples, 10 * bot.sampleRate, 'capped at MAX_RETAIN_MS, not 60 s');
+    assert.equal(bot.slotSamples, 10 * bot.sampleRate * AUDIO_CHANNELS, 'capped at MAX_RETAIN_MS, not 60 s');
   } finally {
     await bot.stop();
   }

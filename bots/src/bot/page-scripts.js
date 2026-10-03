@@ -1432,10 +1432,10 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
-  const store = new Map();            // endpoint jitsiId -> number[] of accumulated mono PCM
+  const store = new Map();            // endpoint jitsiId -> number[] of accumulated interleaved stereo PCM (L,R per frame)
   const tappedTracks = new WeakSet(); // remote audio JitsiTracks already wired
   const FRAME = 2048;
-  const MAX_BACKLOG = FRAME * 64;     // cap page-side buffering if Node never drains
+  const MAX_BACKLOG = FRAME * 2 * 64; // cap page-side buffering (~1.4s stereo) if Node never drains
   // jitsiId -> { src, proc, sink }, so a departure can tear the tap down.
   // Without this, nothing external references a departed peer's
   // MediaStreamAudioSourceNode/ScriptProcessorNode/GainNode once the
@@ -1494,12 +1494,24 @@ export function pageAggregatorCapture() {
     const ctx = new AudioContext();
     let src;
     try { src = ctx.createMediaStreamSource(stream); } catch (e) { tappedTracks.add(jitsiTrack); return; }
-    const proc = ctx.createScriptProcessor(FRAME, 1, 1);
+    // Two channels, INTERLEAVED (L,R per frame) into the store: the room's
+    // instruments are stereo (the deployment runs ENABLE_STEREO + high-bitrate
+    // stereo Opus end to end), so a mono tap would collapse the stereo field —
+    // e.g. the fleet's stereoTiles role, which pans the bots hard left to hard
+    // right — before the master mix ever carried it. The Node pipeline, the
+    // RingBuffers and pageMasterPlayer all carry this same interleaved layout,
+    // so every count downstream stays a whole number of frames. A mono source
+    // up-mixes to dual-mono (both channels identical), so nothing downstream
+    // special-cases it.
+    const proc = ctx.createScriptProcessor(FRAME, 2, 2);
     proc.onaudioprocess = (ev) => {
-      const inp = ev.inputBuffer.getChannelData(0);
+      const buf = ev.inputBuffer;
+      const left = buf.getChannelData(0);
+      const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
       let arr = store.get(jitsiId);
       if (!arr) { arr = []; store.set(jitsiId, arr); }
-      if (arr.length < MAX_BACKLOG) for (let i = 0; i < inp.length; i++) arr.push(inp[i]);
+      if (arr.length >= MAX_BACKLOG) return;
+      for (let i = 0; i < left.length; i++) arr.push(left[i], right[i]);
     };
     // A zero-gain sink keeps the ScriptProcessor pulling without re-emitting the
     // peer's audio to the device a second time.
@@ -1806,8 +1818,10 @@ export function pageAggregatorTrackMapDiag() {
 
 /**
  * Aggregator playback sink — the return leg of the round trip, mirror of
- * pageAggregatorCapture. The Node side hands assembled master-mix PCM to
- * enqueue(); a ScriptProcessor streams it out through the SHARED AudioContext's
+ * pageAggregatorCapture. The Node side hands assembled master-mix PCM
+ * (interleaved stereo, L,R per frame — the one layout the whole pipeline
+ * carries) to enqueue(); a stereo ScriptProcessor de-interleaves and streams
+ * it out through the SHARED AudioContext's
  * destination, which pageAudioBridge has rerouted to the fan → the
  * MediaStreamDestination that is the bot's published "microphone". So the
  * assembled master reaches every other client. When the queue is starved
@@ -1858,12 +1872,20 @@ export function pageMasterPlayer() {
       console.error('[trussal] master player could not open an AudioContext', e);
       return;
     }
-    proc = ctx.createScriptProcessor(FRAME, 1, 1);
+    proc = ctx.createScriptProcessor(FRAME, 2, 2);
     proc.onaudioprocess = (ev) => {
-      const out = ev.outputBuffer.getChannelData(0);
-      for (let i = 0; i < out.length; i++) {
-        if (!chunks.length) { out[i] = 0; continue; } // starved -> silence
-        out[i] = chunks[0][head++];
+      const outL = ev.outputBuffer.getChannelData(0);
+      const outR = ev.outputBuffer.getChannelData(1);
+      for (let i = 0; i < outL.length; i++) {
+        if (!chunks.length) { outL[i] = 0; outR[i] = 0; continue; } // starved -> silence
+        // Chunks are interleaved stereo (L,R per frame — the layout
+        // pageAggregatorCapture captures and the whole Node pipeline carries),
+        // de-interleaved here into the two output channels so the published
+        // master keeps the room's stereo field. The `?? 0` guards a malformed
+        // odd-length chunk: an out-of-range typed-array read is undefined,
+        // which written to a Float32Array lands on the bus as NaN.
+        outL[i] = chunks[0][head++] ?? 0;
+        outR[i] = chunks[0][head++] ?? 0;
         if (head >= chunks[0].length) { chunks.shift(); head = 0; }
       }
     };
