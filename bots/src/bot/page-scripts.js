@@ -1719,6 +1719,36 @@ export function pageAggregatorCapture() {
       if (room && typeof room.getParticipants === 'function') participantCount = room.getParticipants().length;
       return { store: storeSizes, resolverType, resolved, participantCount };
     },
+    // Lets another page-side module (pageMosaic, for a Hydra `initVideo()`
+    // clip's own soundtrack) mix extra audio into a participant's EXISTING
+    // tap rather than opening a second one: two sources connected to the same
+    // ScriptProcessor sum at its input, so this peer's mic/Strudel tap and
+    // their video clip's audio are captured as one signal through the one
+    // onaudioprocess callback already accumulating their samples — exactly
+    // the mix every OTHER listener in the room would hear if this clip's
+    // audio reached them at all. Returns false (no tap yet for this jitsiId —
+    // they may not have published an audio track yet, or this scan hasn't
+    // reached them) so the caller can retry on its own cadence; never queues
+    // internally, since a cell can be destroyed before any tap ever appears.
+    addExtraSource(jitsiId, node) {
+      const tap = taps.get(jitsiId);
+      if (!tap) return false;
+      try {
+        node.connect(tap.proc);
+      } catch (e) {
+        console.error(`[trussal] aggregator capture: addExtraSource failed for ${jitsiId}: ${e.message}`);
+        return false;
+      }
+      return true;
+    },
+    // Undoes addExtraSource. A no-op (not an error) once the tap itself is
+    // already gone — teardownTap disconnects `proc` wholesale, so there is
+    // nothing left to unhook this node from.
+    removeExtraSource(jitsiId, node) {
+      const tap = taps.get(jitsiId);
+      if (!tap) return;
+      try { node.disconnect(tap.proc); } catch (e) { /* already disconnected */ }
+    },
   };
 }
 
@@ -2610,6 +2640,69 @@ export function pageMosaic(options = {}) {
     });
   }
 
+  // Hydra's own s*.initVideo(url) hardcodes its <video> element to
+  // `muted = true` (its own fix for autoplay-without-a-gesture) and never
+  // routes the clip's own soundtrack anywhere — it exists purely as a WebGL
+  // texture source. A regular browser re-executing the SAME preamble patches
+  // this to leave the element unmuted, so the clip's audio reaches that
+  // viewer's own speakers in step with the pixels it's already drawing from
+  // the same element (src/hydra-video.js's own ensureCameraBypass). This page
+  // has no human listening to it, though — its whole reason to exist is
+  // producing the ONE track every OTHER client hears — so the fix here is
+  // different: keep the element muted (nothing local to lose) and instead tap
+  // its decoded audio with a MediaElementAudioSourceNode, mixed into this
+  // peer's EXISTING capture tap (pageAggregatorCapture's addExtraSource) so
+  // the clip's soundtrack rides the same turn/backlog path as their Strudel
+  // voice straight into the room's master mix.
+  //
+  // Must run SYNCHRONOUSLY right after the cell's Hydra instance is created
+  // and before its preamble runs, mirroring ensureCameraBypass's own timing
+  // requirement — a preamble's very next line is routinely `s0.initVideo(...)`.
+  function patchInitVideoAudio(entry, jitsiId) {
+    const synth = entry.hydra && entry.hydra.synth;
+    if (!synth || !jitsiId) return;
+    for (let i = 0; i < 4; i++) {
+      const source = synth['s' + i];
+      if (!source || typeof source.initVideo !== 'function') continue;
+      source.initVideo = (url, params) => {
+        try {
+          const video = document.createElement('video');
+          video.crossOrigin = 'anonymous';
+          video.autoplay = true;
+          video.loop = true;
+          video.muted = true; // this page's own output is never heard — audio reaches the room via the tap below
+          video.playsInline = true;
+          video.addEventListener('loadeddata', () => { video.play().catch(() => {}); });
+          video.src = url;
+          source.init({ src: video, dynamic: true }, params);
+
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          const ctx = new AudioContext(); // the page-wide shared instance (pageAudioBridge)
+          const node = ctx.createMediaElementSource(video);
+          const nodeEntry = { video, node, jitsiId, connected: false };
+          entry.videoAudioNodes = entry.videoAudioNodes || [];
+          entry.videoAudioNodes.push(nodeEntry);
+          connectVideoAudio(nodeEntry);
+        } catch (e) {
+          noteError(`initVideo audio ${jitsiId}`, e);
+        }
+        return source;
+      };
+    }
+  }
+
+  // The peer's own mic/Strudel capture tap may not exist yet (they may not
+  // have published an audio track the instant their initVideo() call fires,
+  // or this page's own 1s roster scan hasn't reached them yet) — retried from
+  // retryAttachments() on the same cadence as the blit-video reattachment it
+  // already does, until addExtraSource reports the tap is live.
+  function connectVideoAudio(nodeEntry) {
+    if (nodeEntry.connected || !window.__trussalAggCapture) return;
+    if (window.__trussalAggCapture.addExtraSource(nodeEntry.jitsiId, nodeEntry.node)) {
+      nodeEntry.connected = true;
+    }
+  }
+
   function ensureInstance(cell) {
     const existing = instances.get(cell.token);
     if (existing && existing.preamble === cell.preamble && existing.source === cell.source) return;
@@ -2656,6 +2749,9 @@ export function pageMosaic(options = {}) {
           width,
           height,
         });
+        // Before any user code runs — a preamble's very next line is
+        // routinely `s0.initVideo(...)`.
+        patchInitVideoAudio(entry, cell.jitsiId);
         return runPreamble(entry.hydra, cell.preamble);
       })
       .catch((e) => {
@@ -2728,6 +2824,23 @@ export function pageMosaic(options = {}) {
       entry.video.remove();
     }
     if (entry.canvas) entry.canvas.remove();
+    // Every initVideo() clip this cell's old preamble opened: unhook from the
+    // peer's capture tap (a no-op if it never connected) and stop the element
+    // — otherwise a departed cell's video keeps decoding and feeding audio
+    // into the room forever, the exact leak pageAggregatorCapture's own
+    // teardownTap guards against for the mic tap itself.
+    if (entry.videoAudioNodes) {
+      for (const nodeEntry of entry.videoAudioNodes) {
+        try {
+          if (nodeEntry.connected && window.__trussalAggCapture) {
+            window.__trussalAggCapture.removeExtraSource(nodeEntry.jitsiId, nodeEntry.node);
+          }
+          nodeEntry.node.disconnect();
+        } catch (e) { noteError(`initVideo audio teardown ${token}`, e); }
+        try { nodeEntry.video.pause(); nodeEntry.video.removeAttribute('src'); nodeEntry.video.load(); } catch (e) { /* already gone */ }
+      }
+      entry.videoAudioNodes = null;
+    }
   }
 
   // --- compositing -----------------------------------------------------------
@@ -2979,6 +3092,12 @@ export function pageMosaic(options = {}) {
         const entry = instances.get(cell.token);
         if (entry && entry.video && !entry.video.srcObject) attachRemoteVideo(entry, cell.jitsiId);
       }
+      for (const entry of instances.values()) {
+        if (!entry.videoAudioNodes) continue;
+        for (const nodeEntry of entry.videoAudioNodes) {
+          if (!nodeEntry.connected) connectVideoAudio(nodeEntry);
+        }
+      }
     },
     diag() {
       return {
@@ -2993,6 +3112,7 @@ export function pageMosaic(options = {}) {
           kind: e.video ? 'blit' : 'hydra',
           ready: Boolean(e.hydra) || Boolean(e.video && e.video.srcObject),
           error: e.error || null,
+          videoAudio: (e.videoAudioNodes || []).map((n) => ({ connected: n.connected })),
         })),
         errors: errors.slice(),
       };

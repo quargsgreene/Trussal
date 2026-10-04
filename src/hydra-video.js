@@ -7,17 +7,31 @@
 // (split mode only) via CSS filters + canvas noise overlays, driven by the local
 // peer's rtt/jitter when the corresponding effect toggle is on.
 //
-// Also exports ensureCameraBypass(), which patches Hydra's own External
-// Sources API (s0-s3 .initCam()) so a performer's own code can pull in a real
-// camera. Hydra's initCam() calls navigator.mediaDevices.getUserMedia
-// directly, which published-video.js's publish override intercepts and hands
-// back the (black, self-referential) published canvas instead. strudel.js
-// calls this synchronously from its own wrapped initHydra(), right after the
-// real one resolves and before any user code runs — patching it lazily from
-// this module's own RAF loop loses the race: a preamble's very next line is
-// often `s0.initCam()`, called before the next animation frame ever fires.
-// initImage/initVideo/initScreen/init don't touch getUserMedia and need no
-// such bypass.
+// Also exports ensureCameraBypass(), which patches two of Hydra's own
+// External Sources methods (s0-s3 .initCam() and .initVideo()) right after
+// initHydra() creates them:
+//
+//  - .initCam() calls navigator.mediaDevices.getUserMedia directly, which
+//    published-video.js's publish override intercepts and hands back the
+//    (black, self-referential) published canvas instead of a real camera —
+//    patched to route through openCamera(), the real-camera escape hatch.
+//  - .initVideo(url) hardcodes its <video> element to `muted = true` (Hydra's
+//    own fix for autoplay-without-a-gesture), which silently throws away
+//    whatever soundtrack the clip has. By the time a performer's preamble
+//    runs, the page has already had a real user gesture (joining the
+//    meeting), so patched here to leave the element unmuted instead — its
+//    audio then plays locally the same deterministic way its pixels and any
+//    Strudel pattern already do: every browser that re-executes this peer's
+//    preamble (strudel.js's combined program) independently plays the same
+//    file from its own <video>, no network round-trip needed.
+//
+// strudel.js calls this synchronously from its own wrapped initHydra(), right
+// after the real one resolves and before any user code runs — patching it
+// lazily from this module's own RAF loop loses the race: a preamble's very
+// next line is routinely `s0.initCam()` or `s0.initVideo(...)`, called before
+// the next animation frame ever fires. initImage/initScreen/init don't need
+// either bypass (initImage touches no audio or camera; initScreen's own
+// getDisplayMedia call isn't intercepted by the publish override).
 
 import { subscribePeerState } from './peer-state.js';
 // The REAL camera. A plain getUserMedia here would be intercepted by the
@@ -44,8 +58,8 @@ let _lastSyncedVideoEl = undefined; // undefined = "needs sync"; null = "synced 
 // s0.initCam()/initImage()/initVideo()/init() from their own Hydra code.
 let _ownsS0 = false;
 
-// Sources (s0-s3) whose .initCam has already been patched to bypass the
-// publish-video getUserMedia override — see ensureCameraBypass.
+// Sources (s0-s3) whose .initCam/.initVideo have already been patched — see
+// ensureCameraBypass.
 const _camPatched = new WeakSet();
 
 // Globals read by Hydra's dynamic-parameter callbacks for the s0 blend.
@@ -151,6 +165,22 @@ function _videoFromStream(stream) {
   });
 }
 
+// Rebuilds Hydra's own initVideo() element, unmuted. Mirrors the native
+// implementation (crossOrigin for a texture-readable cross-origin fetch,
+// loop, play-on-loadeddata) with one change: muted stays false so the clip's
+// audio reaches this browser's normal audio output same as any other
+// <video> — it never needs to be inserted into the document to do so.
+function _videoFromUrl(url) {
+  const video = document.createElement('video');
+  video.crossOrigin = 'anonymous';
+  video.autoplay = true;
+  video.loop = true;
+  video.playsInline = true;
+  video.addEventListener('loadeddata', () => { video.play().catch(() => {}); });
+  video.src = url;
+  return video;
+}
+
 // Hydra's own s*.initCam() calls navigator.mediaDevices.getUserMedia
 // directly, which published-video.js intercepts for every video request so a
 // performer's raw camera never reaches the wire — s*.initCam() would get back
@@ -166,17 +196,29 @@ function _videoFromStream(stream) {
 export function ensureCameraBypass() {
   for (let i = 0; i < 4; i++) {
     const source = globalThis['s' + i];
-    if (!source || typeof source.initCam !== 'function' || _camPatched.has(source)) continue;
-    source.initCam = async (index, params) => {
-      try {
-        const constraints = await _camConstraintsForIndex(index);
-        const stream = await openCamera(constraints);
-        const video = await _videoFromStream(stream);
-        source.init({ src: video, dynamic: true }, params);
-      } catch (e) {
-        console.warn('[hydra-video] initCam failed', e);
-      }
-    };
+    if (!source || _camPatched.has(source)) continue;
+    if (typeof source.initCam === 'function') {
+      source.initCam = async (index, params) => {
+        try {
+          const constraints = await _camConstraintsForIndex(index);
+          const stream = await openCamera(constraints);
+          const video = await _videoFromStream(stream);
+          source.init({ src: video, dynamic: true }, params);
+        } catch (e) {
+          console.warn('[hydra-video] initCam failed', e);
+        }
+      };
+    }
+    if (typeof source.initVideo === 'function') {
+      source.initVideo = (url, params) => {
+        try {
+          source.init({ src: _videoFromUrl(url), dynamic: true }, params);
+        } catch (e) {
+          console.warn('[hydra-video] initVideo failed', e);
+        }
+        return source;
+      };
+    }
     _camPatched.add(source);
   }
 }

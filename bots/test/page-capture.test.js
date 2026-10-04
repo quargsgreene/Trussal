@@ -361,3 +361,43 @@ test('tearing down a departed peer\'s tap never closes the shared AudioContext, 
     'a still-present peer keeps delivering after another peer\'s departure is torn down',
   );
 });
+
+// addExtraSource/removeExtraSource: pageMosaic's hook for mixing a Hydra
+// `initVideo()` clip's own soundtrack into the same peer's existing mic/
+// Strudel tap, so both reach the master as one signal rather than two.
+test('addExtraSource: connects into the SAME ScriptProcessor the mic tap uses, so the two sum', () => {
+  const tap = installTap();
+  tap.addToRoster('human-a');
+  tap.resolverMap.set('human-a', '0');
+  tap.playingSet.add('human-a');
+  tap.scan();
+
+  const extra = {
+    connectedTo: null,
+    disconnectCalls: 0,
+    connect(target) { this.connectedTo = target; },
+    disconnect(target) { this.disconnectCalls++; assert.equal(target, this.connectedTo); },
+  };
+  const ok = tap.cap.addExtraSource('human-a', extra);
+  assert.equal(ok, true, 'a tap already exists for this jitsiId');
+  assert.equal(extra.connectedTo, tap.procs.get('human-a'), 'mixes into the existing tap\'s processor, not a second one');
+
+  tap.cap.removeExtraSource('human-a', extra);
+  assert.equal(extra.disconnectCalls, 1);
+});
+
+test('addExtraSource: reports no tap yet for a jitsiId nothing has scanned', () => {
+  const tap = installTap();
+  const extra = { connect() {}, disconnect() {} };
+  assert.equal(
+    tap.cap.addExtraSource('nobody', extra),
+    false,
+    'caller (pageMosaic) must retry once a tap for this jitsiId appears',
+  );
+});
+
+test('removeExtraSource: a no-op once the tap itself is already gone', () => {
+  const tap = installTap();
+  const extra = { connect() {}, disconnect() { throw new Error('must not be called — nothing to disconnect from'); } };
+  assert.doesNotThrow(() => tap.cap.removeExtraSource('nobody', extra));
+});

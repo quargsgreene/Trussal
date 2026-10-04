@@ -57868,20 +57868,45 @@ ${rendererCall}` : text2).join("\n");
       });
     });
   }
+  function _videoFromUrl(url2) {
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.autoplay = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.addEventListener("loadeddata", () => {
+      video.play().catch(() => {
+      });
+    });
+    video.src = url2;
+    return video;
+  }
   function ensureCameraBypass() {
     for (let i = 0; i < 4; i++) {
       const source2 = globalThis["s" + i];
-      if (!source2 || typeof source2.initCam !== "function" || _camPatched.has(source2)) continue;
-      source2.initCam = async (index2, params2) => {
-        try {
-          const constraints = await _camConstraintsForIndex(index2);
-          const stream = await openCamera(constraints);
-          const video = await _videoFromStream(stream);
-          source2.init({ src: video, dynamic: true }, params2);
-        } catch (e30) {
-          console.warn("[hydra-video] initCam failed", e30);
-        }
-      };
+      if (!source2 || _camPatched.has(source2)) continue;
+      if (typeof source2.initCam === "function") {
+        source2.initCam = async (index2, params2) => {
+          try {
+            const constraints = await _camConstraintsForIndex(index2);
+            const stream = await openCamera(constraints);
+            const video = await _videoFromStream(stream);
+            source2.init({ src: video, dynamic: true }, params2);
+          } catch (e30) {
+            console.warn("[hydra-video] initCam failed", e30);
+          }
+        };
+      }
+      if (typeof source2.initVideo === "function") {
+        source2.initVideo = (url2, params2) => {
+          try {
+            source2.init({ src: _videoFromUrl(url2), dynamic: true }, params2);
+          } catch (e30) {
+            console.warn("[hydra-video] initVideo failed", e30);
+          }
+          return source2;
+        };
+      }
       _camPatched.add(source2);
     }
   }
@@ -65302,6 +65327,12 @@ ${snippet}${JP_BTN_MARKER}`;
   calling upon bots to accompany oneself based on direct mutations of one's original pattern(s). 
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
+  <figure>
+  <img
+    src="/docs-images/about-fig.png"
+    alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself" />
+  <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself</figcaption>
+</figure>
 </p>
 `;
   function _injectStyles6() {
