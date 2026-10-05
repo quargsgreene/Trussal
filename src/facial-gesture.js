@@ -229,6 +229,10 @@ let _camRetryAt      = 0;     // performance.now() of the watchdog's last re-acq
 let _headCursor      = false; // head cursor + dwell active (isHeadCursorEnabled)
 let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-gesture-mode)
 let _sharedWithHydra = false;
+// The facial panel was closed with its ✕ — keep it hidden (despite the head
+// cursor and/or gesture actions being on) until something turns one of those
+// back on, which reads as the performer opening it again.
+let _panelHidden  = false;
 let _leftEyeClosedSince   = 0;
 let _leftEyeOpenGraceUntil = 0; // tolerate a brief eyes-open flicker mid-hold
 let _lastSynthMove   = 0;    // throttle the toolbar-keep-alive mousemove
@@ -1172,6 +1176,7 @@ function _ensureDOM() {
     <div class="fg-row fg-drag-handle">
       <span class="fg-title">facial control</span>
       <button class="ts-dwell-btn" id="trussal-fg-collapse" title="Collapse / expand panel">▼</button>
+      <button class="ts-dwell-btn" id="trussal-fg-close" title="Close facial control">✕</button>
       <span id="trussal-fg-status" style="font-size:11px;">idle</span>
     </div>
     <div id="trussal-fg-body">
@@ -1202,6 +1207,19 @@ function _ensureDOM() {
     });
   }
 
+  // ✕ closes the facial panel and switches gesture ACTIONS off until the
+  // panel is opened again (head cursor stays on so the performer keeps a
+  // pointer). Reopening — turning gesture detection and/or the head cursor
+  // back on, or Landmark and Gesture Mode off → on — clears _panelHidden
+  // in the setters above and brings the panel (and detection) back.
+  const fgCloseBtn = panel.querySelector('#trussal-fg-close');
+  if (fgCloseBtn) {
+    fgCloseBtn.addEventListener('click', () => {
+      _panelHidden = true;
+      setGestureDetectionEnabled(false);
+    });
+  }
+
   // Move it by the handle (mouse) or the ✥ / ⇲ handle buttons (head cursor),
   // and resize it from any corner — same window behaviour as the keyboard.
   attachPanelControls(panel, {
@@ -1213,7 +1231,7 @@ function _ensureDOM() {
 
 function _syncPanelVisibility() {
   const panel = document.getElementById(FG_PANEL_ID);
-  if (panel) panel.style.display = (_headCursor || _gestures) ? 'flex' : 'none';
+  if (panel) panel.style.display = (!_panelHidden && (_headCursor || _gestures)) ? 'flex' : 'none';
 }
 
 function _ensureCameraRunning() {
@@ -1329,6 +1347,8 @@ export function stopFacial() {
 export function setHeadCursorEnabled(on) {
   _headCursor = !!on;
   if (_headCursor) {
+    // An explicit head-cursor turn-on reopens the facial panel after an ✕.
+    _panelHidden = false;
     _ensureCameraRunning();
   } else {
     if (_cursorEl) _cursorEl.style.display = 'none';
@@ -1349,7 +1369,11 @@ export function setHeadCursorEnabled(on) {
  */
 export function setGestureDetectionEnabled(on) {
   _gestures = !!on;
-  if (_gestures) _ensureCameraRunning();
+  if (_gestures) {
+    // An explicit gesture-detection turn-on reopens the facial panel after ✕.
+    _panelHidden = false;
+    _ensureCameraRunning();
+  }
   _syncPanelVisibility();
   _syncHydraShare();
 }

@@ -344,6 +344,19 @@ function _moveLine(ta, dir) {
   }
 }
 
+// ── Close (✕) ────────────────────────────────────────────────────────────────
+// Closing the keyboard with the ✕ — never by collapsing it — also switches off
+// its head-cursor dwell detection (the _dwellTick loop driving keys, chips and
+// both header buttons) until the keyboard is opened again. Hiding stops that
+// loop via _showPanel; dropping the standalone hold keeps Landmark and Gesture
+// Mode from re-raising the panel under it (tickKbdUi), so it stays closed until
+// the performer reopens it (Keys toggle, gestureAndLandmarkConfig, or
+// Landmark and Gesture Mode off → on).
+function _closeKeyboard() {
+  _standalone = false;
+  _showPanel(false);
+}
+
 // ── Collapse ───────────────────────────────────────────────────────────────────
 function _setCollapsed(val) {
   _collapsed = val;
@@ -558,6 +571,32 @@ function _injectStyles() {
       background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
+    /* The ✕ mirrors the collapse button exactly. */
+    .ts-kbd-close-btn {
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
+      line-height: 1.5;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s;
+    }
+    .ts-kbd-close-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-close-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-kbd-close-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-close-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
+      pointer-events: none;
+    }
     .ts-kbd-body {
       flex: 1 1 auto;
       min-height: 0;
@@ -715,6 +754,16 @@ function _buildPanel() {
 
   header.appendChild(title);
   header.appendChild(collapseBtn);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'ts-kbd-close-btn';
+  closeBtn.type      = 'button';
+  closeBtn.title     = 'Close keyboard';
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('mousedown', e => e.preventDefault());
+  closeBtn.addEventListener('click', _closeKeyboard);
+  header.appendChild(closeBtn);
+
   panel.appendChild(header);
 
   // ── Body (predictions + key rows) ──
@@ -822,7 +871,7 @@ function _dwellTick() {
   let hoveredEl = null;
 
   // Detect over keys, predictions, and the collapse button.
-  for (const el of panel.querySelectorAll('.ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn')) {
+  for (const el of panel.querySelectorAll('.ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn, .ts-kbd-close-btn')) {
     const r = el.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       hoveredEl = el; break;
@@ -857,6 +906,10 @@ function _activateDwelled(el) {
   _flash(el);
   if (el.classList.contains('ts-kbd-collapse-btn')) {
     _setCollapsed(!_collapsed);
+    return;
+  }
+  if (el.classList.contains('ts-kbd-close-btn')) {
+    _closeKeyboard();
     return;
   }
   if (el.classList.contains('ts-kbd-pred-btn')) {
