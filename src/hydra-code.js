@@ -124,6 +124,17 @@ export function stripCapabilityPreambles(code) {
 // whole room's program down with it.
 const HYDRA_RENDER_RE = /\.out\s*\(/;
 
+// A paragraph that only sets up an external source (`s0.initImage(...)`,
+// `s1.initVideo(...)`, `s0.init(...)`) renders nothing itself, but it is
+// Hydra, not a Strudel pattern: left for the Strudel remainder it is wrapped
+// into a `$:` voice and the transpiler rejects the block, taking the whole
+// room's program down.
+const HYDRA_SOURCE_SETUP_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen|Image|Video)?\s*\(/;
+
+function isHydraParagraph(paragraph) {
+  return HYDRA_RENDER_RE.test(paragraph) || HYDRA_SOURCE_SETUP_RE.test(paragraph);
+}
+
 // The same marker, asked of a COMBINED program rather than one performer's
 // block. strudel.js stacks every playing peer into a single program, so the
 // preamble that INIT_HYDRA_RE requires at the start of a block legitimately
@@ -192,7 +203,7 @@ export function splitHydraCode(code) {
   let cut = blanks[0];
   for (let i = 1; i < blanks.length; i++) {
     const paragraph = normalized.slice(cut.index + cut[0].length, blanks[i].index);
-    if (!HYDRA_RENDER_RE.test(paragraph)) {
+    if (!isHydraParagraph(paragraph)) {
       return {
         preamble: normalized.slice(0, cut.index).trim(),
         strudel: normalized.slice(cut.index).trim()
@@ -212,7 +223,7 @@ export function splitHydraCode(code) {
   // video at all, no matter how many times a runtime setReceiverConstraints
   // asks for it — see that file's own comment on why it must be set at join).
   const trailing = normalized.slice(cut.index + cut[0].length);
-  if (HYDRA_RENDER_RE.test(trailing)) {
+  if (isHydraParagraph(trailing)) {
     return { preamble: normalized.trim(), strudel: '' };
   }
   return {

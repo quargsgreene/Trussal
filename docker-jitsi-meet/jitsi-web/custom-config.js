@@ -58427,6 +58427,10 @@ ${s2}`;
 ${adds.join("\n")}${s2.slice(cut2)}`;
   }
   var HYDRA_RENDER_RE = /\.out\s*\(/;
+  var HYDRA_SOURCE_SETUP_RE = /(^|[^\w$])s[0-3]\s*\.\s*init(?:Cam|Screen|Image|Video)?\s*\(/;
+  function isHydraParagraph(paragraph) {
+    return HYDRA_RENDER_RE.test(paragraph) || HYDRA_SOURCE_SETUP_RE.test(paragraph);
+  }
   var PROGRAM_INIT_HYDRA_RE = /(^|\n)\s*await\s+initHydra\s*\(/;
   var INIT_HYDRA_PATTERN = { source: INIT_HYDRA_RE.source, flags: INIT_HYDRA_RE.flags };
   var HYDRA_SHAPE_PATTERN = { source: HYDRA_SHAPE_RE.source, flags: HYDRA_SHAPE_RE.flags };
@@ -58443,7 +58447,7 @@ ${adds.join("\n")}${s2.slice(cut2)}`;
     let cut2 = blanks[0];
     for (let i = 1; i < blanks.length; i++) {
       const paragraph = normalized.slice(cut2.index + cut2[0].length, blanks[i].index);
-      if (!HYDRA_RENDER_RE.test(paragraph)) {
+      if (!isHydraParagraph(paragraph)) {
         return {
           preamble: normalized.slice(0, cut2.index).trim(),
           strudel: normalized.slice(cut2.index).trim()
@@ -58452,7 +58456,7 @@ ${adds.join("\n")}${s2.slice(cut2)}`;
       cut2 = blanks[i];
     }
     const trailing = normalized.slice(cut2.index + cut2[0].length);
-    if (HYDRA_RENDER_RE.test(trailing)) {
+    if (isHydraParagraph(trailing)) {
       return { preamble: normalized.trim(), strudel: "" };
     }
     return {
@@ -60458,6 +60462,7 @@ ${snippet}${JP_BTN_MARKER}`;
   var _headCursor2 = false;
   var _gestures = false;
   var _sharedWithHydra = false;
+  var _panelHidden = false;
   var _leftEyeClosedSince = 0;
   var _leftEyeOpenGraceUntil = 0;
   var _lastSynthMove = 0;
@@ -61177,6 +61182,7 @@ ${snippet}${JP_BTN_MARKER}`;
     <div class="fg-row fg-drag-handle">
       <span class="fg-title">facial control</span>
       <button class="ts-dwell-btn" id="trussal-fg-collapse" title="Collapse / expand panel">\u25BC</button>
+      <button class="ts-dwell-btn" id="trussal-fg-close" title="Close facial control">\u2715</button>
       <span id="trussal-fg-status" style="font-size:11px;">idle</span>
     </div>
     <div id="trussal-fg-body">
@@ -61209,6 +61215,13 @@ ${snippet}${JP_BTN_MARKER}`;
         }
       });
     }
+    const fgCloseBtn = panel.querySelector("#trussal-fg-close");
+    if (fgCloseBtn) {
+      fgCloseBtn.addEventListener("click", () => {
+        _panelHidden = true;
+        setGestureDetectionEnabled(false);
+      });
+    }
     attachPanelControls(panel, {
       handle: panel.querySelector(".fg-drag-handle"),
       minW: 200,
@@ -61217,7 +61230,7 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   function _syncPanelVisibility() {
     const panel = document.getElementById(FG_PANEL_ID);
-    if (panel) panel.style.display = _headCursor2 || _gestures ? "flex" : "none";
+    if (panel) panel.style.display = !_panelHidden && (_headCursor2 || _gestures) ? "flex" : "none";
   }
   function _ensureCameraRunning() {
     if (_cameraOn || _cameraStarting) return;
@@ -61309,6 +61322,7 @@ ${snippet}${JP_BTN_MARKER}`;
   function setHeadCursorEnabled(on) {
     _headCursor2 = !!on;
     if (_headCursor2) {
+      _panelHidden = false;
       _ensureCameraRunning();
     } else {
       if (_cursorEl) _cursorEl.style.display = "none";
@@ -61324,7 +61338,10 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   function setGestureDetectionEnabled(on) {
     _gestures = !!on;
-    if (_gestures) _ensureCameraRunning();
+    if (_gestures) {
+      _panelHidden = false;
+      _ensureCameraRunning();
+    }
     _syncPanelVisibility();
     _syncHydraShare();
   }
@@ -61821,6 +61838,10 @@ ${snippet}${JP_BTN_MARKER}`;
       );
     }
   }
+  function _closeKeyboard() {
+    _standalone = false;
+    _showPanel(false);
+  }
   function _setCollapsed(val2) {
     _collapsed = val2;
     const panel = document.getElementById(KBD_PANEL_ID);
@@ -62008,6 +62029,32 @@ ${snippet}${JP_BTN_MARKER}`;
       background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
       pointer-events: none;
     }
+    /* The \u2715 mirrors the collapse button exactly. */
+    .ts-kbd-close-btn {
+      background: var(--trussal-primary, #eeeeee);
+      border: 1px solid var(--trussal-secondary, #111111);
+      color: var(--trussal-secondary, #111111);
+      cursor: pointer;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: calc(10px * var(--trussal-font-scale, 1));
+      line-height: 1.5;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.1s, color 0.1s;
+    }
+    .ts-kbd-close-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-close-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
+    .ts-kbd-close-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+    .ts-kbd-close-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0;
+      width: 100%;
+      height: calc(var(--dwell,0) * 100%);
+      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
+      pointer-events: none;
+    }
     .ts-kbd-body {
       flex: 1 1 auto;
       min-height: 0;
@@ -62159,6 +62206,14 @@ ${snippet}${JP_BTN_MARKER}`;
     collapseBtn.addEventListener("click", () => _setCollapsed(!_collapsed));
     header.appendChild(title);
     header.appendChild(collapseBtn);
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "ts-kbd-close-btn";
+    closeBtn.type = "button";
+    closeBtn.title = "Close keyboard";
+    closeBtn.textContent = "\u2715";
+    closeBtn.addEventListener("mousedown", (e30) => e30.preventDefault());
+    closeBtn.addEventListener("click", _closeKeyboard);
+    header.appendChild(closeBtn);
     panel.appendChild(header);
     const body = document.createElement("div");
     body.className = "ts-kbd-body";
@@ -62250,7 +62305,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const cx = ctx2.cursorX;
     const cy = ctx2.cursorY;
     let hoveredEl = null;
-    for (const el of panel.querySelectorAll(".ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn")) {
+    for (const el of panel.querySelectorAll(".ts-kbd-key, .ts-kbd-pred-btn, .ts-kbd-collapse-btn, .ts-kbd-close-btn")) {
       const r2 = el.getBoundingClientRect();
       if (cx >= r2.left && cx <= r2.right && cy >= r2.top && cy <= r2.bottom) {
         hoveredEl = el;
@@ -62283,6 +62338,10 @@ ${snippet}${JP_BTN_MARKER}`;
     _flash2(el);
     if (el.classList.contains("ts-kbd-collapse-btn")) {
       _setCollapsed(!_collapsed);
+      return;
+    }
+    if (el.classList.contains("ts-kbd-close-btn")) {
+      _closeKeyboard();
       return;
     }
     if (el.classList.contains("ts-kbd-pred-btn")) {

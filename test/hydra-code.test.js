@@ -180,3 +180,11 @@ test('hydra-code: external-source cells are blitted, everything else re-executed
   assert.equal(mosaicCellSource('await initHydra()\nosc(10).out()'), 'reexecute');
   assert.equal(mosaicCellSource('s("bd")'), null);
 });
+
+test('hydra-code: a source-setup paragraph with no .out() stays in the Hydra preamble', () => {
+  const code = `'personal editor'\n\ns0.initImage("https://x/a.png")\n\nsrc(s0).out(o0)`;
+  const split = splitHydraCode(code);
+  assert.equal(split.strudel, '');
+  assert.match(split.preamble, /s0\.initImage/);
+  assert.match(split.preamble, /src\(s0\)\.out\(o0\)/);
+});
