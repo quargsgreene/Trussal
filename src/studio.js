@@ -47,7 +47,7 @@ import {
   propagateExternalStreamToRoom,
   stopPropagatingExternalStream,
   isPropagatingToRoom,
-  setJamulusMode,
+  // setJamulusMode,
   getAudioContext,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
@@ -996,7 +996,7 @@ async function onCaptureClick() {
     // Jitsi never sees a stopped track on the wire.
     await stopPropagatingExternalStream();
     detachExternalStreamForPeer(local.jitsiId);
-    setJamulusMode(false);
+    // setJamulusMode(false);
     setStatus('Input detached');
     renderAll();
     return;
@@ -1009,7 +1009,7 @@ async function onCaptureClick() {
     if (devices.length > 1) {
       const choice = window.prompt(
         'Select an audio input by number to route through your effects chain ' +
-        '(use a virtual device that carries Jamulus to feed Jamulus through here):\n\n' +
+        // '(use a virtual device that carries Jamulus to feed Jamulus through here):\n\n' +
         devices.map((d, i) => `${i + 1}. ${d.label}`).join('\n'),
         '1'
       );
@@ -1032,7 +1032,7 @@ async function onCaptureClick() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     await attachExternalStreamForPeer(local.jitsiId, stream, label, { monitorLocally: false });
     const propagated = await propagateExternalStreamToRoom(stream);
-    setJamulusMode(true);
+    // setJamulusMode(true);
     setStatus(propagated ? `Capturing ${label} → room` : `Capturing ${label} (local only — no Jitsi mic hook)`);
     renderAll();
   } catch (e) {

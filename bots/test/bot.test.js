@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
 import { ffmpegBedArgs } from '../src/bot/ffmpeg-bed.js';
-import { jamulusArgs } from '../src/bot/jamulus.js';
+// import { jamulusArgs } from '../src/bot/jamulus.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
   pageEnsureAudioPublished, pageMasterPlayer,
@@ -70,20 +70,20 @@ test('ffmpegBedArgs renders the bot band as an ALSA loopback bed with staged gai
   assert.ok(args.at(-1) === 'plughw:Loopback,0,0');
 });
 
-test('jamulusArgs connects headless to the spec server with the breed name', () => {
-  const args = jamulusArgs({ server: 'trussal.duckdns.org:22000', name: 'Beagle' });
-  const cmd = args.join(' ');
-  assert.match(cmd, /--connect trussal\.duckdns\.org:22000/);
-  assert.match(cmd, /--clientname Beagle/);
-  assert.match(cmd, /--nogui/);
-});
+// test('jamulusArgs connects headless to the spec server with the breed name', () => {
+//   const args = jamulusArgs({ server: 'trussal.duckdns.org:22000', name: 'Beagle' });
+//   const cmd = args.join(' ');
+//   assert.match(cmd, /--connect trussal\.duckdns\.org:22000/);
+//   assert.match(cmd, /--clientname Beagle/);
+//   assert.match(cmd, /--nogui/);
+// });
 
-test('jamulusArgs truncates long breed names to fit JACK\'s 33-char client limit', () => {
-  const args = jamulusArgs({ server: 'x:22000', name: 'Petit Basset Griffon Vendeen' });
-  const clientname = args[args.indexOf('--clientname') + 1];
-  assert.ok(clientname.length <= 25, `"Jamulus ${clientname}" must fit in 33 chars`);
-  assert.ok('Petit Basset Griffon Vendeen'.startsWith(clientname));
-});
+// test('jamulusArgs truncates long breed names to fit JACK\'s 33-char client limit', () => {
+//   const args = jamulusArgs({ server: 'x:22000', name: 'Petit Basset Griffon Vendeen' });
+//   const clientname = args[args.indexOf('--clientname') + 1];
+//   assert.ok(clientname.length <= 25, `"Jamulus ${clientname}" must fit in 33 chars`);
+//   assert.ok('Petit Basset Griffon Vendeen'.startsWith(clientname));
+// });
 
 // Page scripts are real functions Puppeteer serializes into the page; we
 // assert on their serialized form, which is exactly what the page receives.

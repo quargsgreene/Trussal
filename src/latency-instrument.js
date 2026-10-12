@@ -46,8 +46,8 @@ const routingSubscribers = new Set();
 // Jamulus mode: aggregate Jamulus audio is routed through the local peer's
 // effects chain; all other Jitsi peer audio tags are silenced so the Jamulus
 // mix is the sole audio source.
-let jamulusMode = false;
-const jamulasMutedTags = new Set(); // tags we silenced on mode entry
+// let jamulusMode = false;
+// const jamulasMutedTags = new Set(); // tags we silenced on mode entry
 let audioTagObserver = null;
 
 // Aggregator mode: when a remote aggregator bot is in the room it gathers every
@@ -71,33 +71,33 @@ export function subscribeAudioRouting(fn) {
   return () => routingSubscribers.delete(fn);
 }
 
-function applyJamulusMuteToAllTags() {
-  document.querySelectorAll('audio').forEach(tag => {
-    if (!tag.srcObject) return;
-    if (tag.id === 'userAudio') return;
-    // Skip tags already silenced by captureJitsiAudio — they're in remoteSources.
-    const jitsiId = getParticipantIdForAudioTag(tag);
-    if (jitsiId && remoteSources.has(jitsiId)) return;
-    if (jamulasMutedTags.has(tag)) return;
-    tag.muted = true;
-    tag.volume = 0;
-    jamulasMutedTags.add(tag);
-  });
-}
+// function applyJamulusMuteToAllTags() {
+//   document.querySelectorAll('audio').forEach(tag => {
+//     if (!tag.srcObject) return;
+//     if (tag.id === 'userAudio') return;
+//     // Skip tags already silenced by captureJitsiAudio — they're in remoteSources.
+//     const jitsiId = getParticipantIdForAudioTag(tag);
+//     if (jitsiId && remoteSources.has(jitsiId)) return;
+//     if (jamulasMutedTags.has(tag)) return;
+//     tag.muted = true;
+//     tag.volume = 0;
+//     jamulasMutedTags.add(tag);
+//   });
+// }
 
-export function setJamulusMode(enabled) {
-  if (enabled === jamulusMode) return;
-  jamulusMode = enabled;
-  if (enabled) {
-    applyJamulusMuteToAllTags();
-  } else {
-    for (const tag of jamulasMutedTags) {
-      tag.muted = false;
-      tag.volume = 1;
-    }
-    jamulasMutedTags.clear();
-  }
-}
+// export function setJamulusMode(enabled) {
+//   if (enabled === jamulusMode) return;
+//   jamulusMode = enabled;
+//   if (enabled) {
+//     applyJamulusMuteToAllTags();
+//   } else {
+//     for (const tag of jamulasMutedTags) {
+//       tag.muted = false;
+//       tag.volume = 1;
+//     }
+//     jamulasMutedTags.clear();
+//   }
+// }
 
 // Aggregator mode: gain for a peer's chain given the current aggregator. 1 when
 // no aggregator is present (normal mix) or for the aggregator's own chain; 0 for
@@ -479,7 +479,7 @@ function startAudioTagsObserver() {
   if (audioTagObserver) return;
   audioTagObserver = new MutationObserver(() => {
     captureJitsiAudio();
-    if (jamulusMode) applyJamulusMuteToAllTags();
+    // if (jamulusMode) applyJamulusMuteToAllTags();
   });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
   // A renegotiation can swap a tag's srcObject without touching the DOM tree,
