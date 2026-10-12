@@ -18,7 +18,7 @@ import { Bot } from './bot.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from './aggregator-bot.js';
 import { makeWsSidecarConnector } from '../orchestrator/fleet-service.js';
 import { ffmpegBedArgs } from './ffmpeg-bed.js';
-import { jamulusArgs, jamulusIniContent } from './jamulus.js';
+// import { jamulusArgs, jamulusIniContent } from './jamulus.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { gainForBotCount } from '../shared/audio-math.js';
 import { frequencyBand } from '../script-gen/variation.js';
@@ -31,7 +31,7 @@ const botId = Number(env('BOT_ID', '0'));
 const sessionSeed = Number(env('SESSION_SEED', '1'));
 const conductorUrl = env('CONDUCTOR_URL', 'http://conductor:7700');
 const jitsiUrl = env('JITSI_URL', 'http://localhost/0');
-const jamulusServer = env('JAMULUS_SERVER', 'trussal.duckdns.org:22000');
+// const jamulusServer = env('JAMULUS_SERVER', 'trussal.duckdns.org:22000');
 const executablePath = env('CHROMIUM_PATH', '/usr/bin/chromium');
 const metricsIntervalMs = Number(env('METRICS_INTERVAL_MS', '2000'));
 // One container per room runs as the aggregator (BOT_ROLE=aggregator): no
@@ -46,29 +46,29 @@ async function fetchAssignment() {
   return res.json(); // { script: {strudel, hydra, entryDelayMs}, botCount, samples }
 }
 
-function startSidecars(botCount) {
-  const { lo, hi } = frequencyBand(botId % botCount, botCount);
-  const bed = spawn('ffmpeg', ffmpegBedArgs({
-    loFreq: Math.round(lo),
-    hiFreq: Math.round(hi),
-    gain: gainForBotCount(botCount),
-    // Set by the entrypoint to this bot's own loopback subdevice.
-    alsaDevice: env('ALSA_PLAYBACK_DEVICE', 'plughw:Loopback,0,0'),
-  }), { stdio: 'inherit' });
-  // Debian's jamulus package installs the binary as capital-J "Jamulus".
-  const iniFile = `/tmp/jamulus-bot-${botId}.ini`;
-  writeFileSync(iniFile, jamulusIniContent(name));
-  const jamulus = spawn('Jamulus', jamulusArgs({ server: jamulusServer, name, iniFile }), { stdio: 'inherit' });
-  for (const proc of [bed, jamulus]) {
-    proc.on('error', (err) => {
-      // Missing binary/spawn failure: exit loudly (conductor replace policy)
-      // instead of letting the unhandled 'error' event produce a bare crash.
-      console.error(`[bot ${botId}] sidecar failed to start:`, err.message);
-      process.exit(1);
-    });
-  }
-  return [bed, jamulus];
-}
+// function startSidecars(botCount) {
+//   const { lo, hi } = frequencyBand(botId % botCount, botCount);
+//   const bed = spawn('ffmpeg', ffmpegBedArgs({
+//     loFreq: Math.round(lo),
+//     hiFreq: Math.round(hi),
+//     gain: gainForBotCount(botCount),
+//     // Set by the entrypoint to this bot's own loopback subdevice.
+//     alsaDevice: env('ALSA_PLAYBACK_DEVICE', 'plughw:Loopback,0,0'),
+//   }), { stdio: 'inherit' });
+//   // Debian's jamulus package installs the binary as capital-J "Jamulus".
+//   const iniFile = `/tmp/jamulus-bot-${botId}.ini`;
+//   writeFileSync(iniFile, jamulusIniContent(name));
+//   const jamulus = spawn('Jamulus', jamulusArgs({ server: jamulusServer, name, iniFile }), { stdio: 'inherit' });
+//   for (const proc of [bed, jamulus]) {
+//     proc.on('error', (err) => {
+//       // Missing binary/spawn failure: exit loudly (conductor replace policy)
+//       // instead of letting the unhandled 'error' event produce a bare crash.
+//       console.error(`[bot ${botId}] sidecar failed to start:`, err.message);
+//       process.exit(1);
+//     });
+//   }
+//   return [bed, jamulus];
+// }
 
 function bandwidthFromEnv() {
   return {

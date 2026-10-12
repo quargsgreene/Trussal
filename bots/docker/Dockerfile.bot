@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     alsa-utils \
     jackd2 \
-    jamulus \
+    # jamulus \
     ca-certificates \
     fonts-liberation \
  && rm -rf /var/lib/apt/lists/*

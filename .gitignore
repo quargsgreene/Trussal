@@ -15,8 +15,8 @@ ehthumbs.db
 /cfg/
 
 # Jamulus logs / runtime
-jamulus/logs/
-jamulus/*.log
+# jamulus/logs/
+# jamulus/*.log
 
 # --- Editors / IDEs ---
 .vscode/
@@ -266,3 +266,5 @@ session-summaries
 overviews
 **/*devibe*
 tech-debt-summaries/
+
+dead-code/

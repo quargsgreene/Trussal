@@ -29,11 +29,11 @@ ENV_DEPLOY ?= .env.deploy
 -include $(ENV_DEPLOY)
 
 VIDEO_VM        ?= trussal-video@192.168.1.254
-AUDIO_VM        ?= trussal-audio@192.168.1.120
+# AUDIO_VM        ?= trussal-audio@192.168.1.120
 BOTS_VM         ?= trussal-bot-vm@192.168.1.232
 REPO_PATH       ?= ~/Trussal
 VIDEO_REPO_PATH ?= $(REPO_PATH)
-AUDIO_REPO_PATH ?= $(REPO_PATH)
+# AUDIO_REPO_PATH ?= $(REPO_PATH)
 BOTS_REPO_PATH  ?= $(REPO_PATH)
 
 # Multi-shard (edge/README.md, docker-jitsi-meet/MULTISHARD.md): SHARD_VMS is a
@@ -50,22 +50,26 @@ EDGE_REPO_PATH  ?= $(REPO_PATH)
 # VM has). Passing it here is what keeps that rebuild from silently baking the
 # jamulus.example.com default into the SERVED bundle and leaving the tracked
 # custom-config.js dirty, which breaks the next `git pull --ff-only`.
-JAMULUS_HOST    ?= jamulus.trussal.com
+# JAMULUS_HOST    ?= jamulus.trussal.com
 
-.PHONY: deploy-video deploy-shards deploy-edge deploy-audio deploy-bots \
+# .PHONY: deploy-video deploy-shards deploy-edge deploy-audio deploy-bots \
+#         deploy-all deploy-multishard check-tokens collect-session-logs
+
+.PHONY: deploy-video deploy-shards deploy-edge deploy-bots \
         deploy-all deploy-multishard check-tokens collect-session-logs
-
 deploy-video:
-	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh'
+#	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh'
+	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && ./run.sh'
 
 # One FULL Jitsi stack per shard host. `run.sh` is already per-host and needs no
 # shard argument — shard identity (DEPLOYMENTINFO_SHARD, JVB_* ) lives in that
 # host's gitignored docker-jitsi-meet/.env (docker-jitsi-meet/MULTISHARD.md).
 # Serial, and it aborts on the first failure rather than half-deploying the rack.
+# ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; \
 deploy-shards:
 	@for vm in $(SHARD_VMS); do \
 	  echo "=== shard $$vm ==="; \
-	  ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; \
+	  	ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only || exit 1; \
 	done
 
 # The edge host: the consistent-hash LB (edge/README.md) plus the rack's one
@@ -84,11 +88,11 @@ deploy-edge:
 	       echo "*/5 * * * * cd $(EDGE_REPO_PATH) && TURN_ENV_FILE=edge/.env TURN_COMPOSE_DIR=edge bash scripts/refresh-turn-external-ip.sh >> \$$HOME/turn-ip-refresh.log 2>&1" ) | crontab - \
 	  && echo "edge reloaded; TURN IP refresh cron installed"'
 
-deploy-audio:
-	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
-	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \
-	  && sudo -n systemctl daemon-reload \
-	  && sudo -n systemctl restart "jamulus@*"'
+# deploy-audio:
+# 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
+# 	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \
+# 	  && sudo -n systemctl daemon-reload \
+# 	  && sudo -n systemctl restart "jamulus@*"'
 
 deploy-bots:
 	ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && git pull --ff-only \
@@ -138,8 +142,10 @@ collect-session-logs:
 	done
 
 # Single-stack deploy (unchanged): one video VM, no edge.
-deploy-all: deploy-video deploy-audio deploy-bots check-tokens
+# deploy-all: deploy-video deploy-audio deploy-bots check-tokens
+deploy-all: deploy-video deploy-bots check-tokens
 
 # Sharded rack: edge first, then every shard, then audio + bots, then verify the
 # control token across the whole set.
-deploy-multishard: deploy-edge deploy-shards deploy-audio deploy-bots check-tokens
+# deploy-multishard: deploy-edge deploy-shards deploy-audio deploy-bots check-tokens
+deploy-multishard: deploy-edge deploy-shards deploy-bots check-tokens
