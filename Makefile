@@ -58,14 +58,13 @@ EDGE_REPO_PATH  ?= $(REPO_PATH)
 .PHONY: deploy-video deploy-shards deploy-edge deploy-bots \
         deploy-all deploy-multishard check-tokens collect-session-logs
 deploy-video:
-#	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh'
 	ssh $(VIDEO_VM) 'cd $(VIDEO_REPO_PATH) && git pull --ff-only && ./run.sh'
 
 # One FULL Jitsi stack per shard host. `run.sh` is already per-host and needs no
 # shard argument — shard identity (DEPLOYMENTINFO_SHARD, JVB_* ) lives in that
 # host's gitignored docker-jitsi-meet/.env (docker-jitsi-meet/MULTISHARD.md).
 # Serial, and it aborts on the first failure rather than half-deploying the rack.
-# ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; \
+# ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; 
 deploy-shards:
 	@for vm in $(SHARD_VMS); do \
 	  echo "=== shard $$vm ==="; \
