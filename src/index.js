@@ -1,4 +1,4 @@
-import { JAMULUS_ROOM_MAP } from './jamulus.js';
+//import { JAMULUS_ROOM_MAP } from './jamulus.js';
 // Captures the entry URL for the breakout-room panic button as early as
 // possible — before anything else could plausibly redirect the page.
 import './panic-button.js';
@@ -19,7 +19,7 @@ import './studio.js';
 import './landmark-gesture-mode.js';
 import './docs-about.js';
 
-window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
+//window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
 
 // Let a metaprogram read the room's data packs (`# cycles Weather:3`).
 // ValuePattern.js ships inside the bot image and stays free of the registry, so
