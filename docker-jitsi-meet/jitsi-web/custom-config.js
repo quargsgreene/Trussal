@@ -39093,7 +39093,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (!m2) {
       return {
         kind: null,
-        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor', 'bot editor' or 'breakout room'",
+        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor', or 'bot editor'",
         lineIndex: idx
       };
     }
@@ -39115,89 +39115,24 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     return `'${phrase}'
 ${s2}`;
   }
-  var PERSONAL, METAPROGRAM, BOT, BREAKOUT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
+  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
   var init_program_directive = __esm({
     "src/program-directive.js"() {
       PERSONAL = "personal editor";
       METAPROGRAM = "metaprogram editor";
       BOT = "bot editor";
-      BREAKOUT = "breakout room";
       KIND_BY_TEXT = {
         [PERSONAL]: "personal",
         [METAPROGRAM]: "metaprogram",
         [BOT]: "bot",
-        [BREAKOUT]: "breakout",
         "personal program": "personal",
         "metaprogram": "metaprogram",
         "bot program": "bot"
       };
-      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT, breakout: BREAKOUT };
+      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT};
       SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
-      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|breakout room|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
       DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
-    }
-  });
-
-  // src/breakout-core.js
-  function validateBreakoutLiteral(obj) {
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-      throw new Error('breakout(): expected a JSON object with "name"');
-    }
-    if (typeof obj.name !== "string" || !obj.name.trim()) {
-      throw new Error('breakout(): "name" must be a non-empty string');
-    }
-    if (obj.name.trim() === MAIN_ROOM) {
-      throw new Error(`breakout(): "${MAIN_ROOM}" is the reserved name for the main room \u2014 pick another`);
-    }
-    const participants = obj.participants == null ? [] : obj.participants;
-    if (!Array.isArray(participants) || participants.some((p) => typeof p !== "string" && typeof p !== "number")) {
-      throw new Error('breakout(): "participants" must be an array of participant tokens');
-    }
-    return { name: obj.name.trim(), participants: participants.map(String) };
-  }
-  function parseBreakoutLiteral(raw) {
-    let obj;
-    try {
-      obj = JSON.parse(String(raw ?? ""));
-    } catch (e30) {
-      throw new Error(`breakout(): not valid JSON \u2014 ${e30.message}`);
-    }
-    return validateBreakoutLiteral(obj);
-  }
-  function resolveBreakoutState(breakouts, assignments) {
-    const rooms = /* @__PURE__ */ new Map();
-    for (const spec of breakouts ?? []) {
-      rooms.set(spec.name, { name: spec.name, participants: new Set(spec.participants) });
-    }
-    const assignedTo = /* @__PURE__ */ new Map();
-    for (const { token, room: room2 } of assignments ?? []) {
-      assignedTo.set(String(token), room2);
-      if (room2 !== MAIN_ROOM) {
-        if (!rooms.has(room2)) rooms.set(room2, { name: room2, participants: /* @__PURE__ */ new Set() });
-        rooms.get(room2).participants.add(String(token));
-      }
-    }
-    for (const room2 of rooms.values()) {
-      for (const token of room2.participants) {
-        if (!assignedTo.has(token)) assignedTo.set(token, room2.name);
-      }
-    }
-    return {
-      rooms: [...rooms.values()].map((r2) => ({ name: r2.name, participants: [...r2.participants] })),
-      assignedTo
-    };
-  }
-  function buildDefaultBreakoutProgram(participants) {
-    const tokens = participants && participants.length ? participants.join(" ") : "~";
-    return `'${BREAKOUT}'
-$ participants <${tokens}>
-`;
-  }
-  var MAIN_ROOM;
-  var init_breakout_core = __esm({
-    "src/breakout-core.js"() {
-      init_program_directive();
-      MAIN_ROOM = "main";
     }
   });
 
@@ -39292,21 +39227,6 @@ $ participants <${tokens}>
         advance(j2 - i + (terminated ? 1 : 0));
         continue;
       }
-      if (ch2 === "'") {
-        let j2 = i + 1;
-        while (j2 < n2 && text2[j2] !== "'" && text2[j2] !== "\n") j2++;
-        const terminated = text2[j2] === "'";
-        if (!terminated) {
-          errors.push({
-            message: `unterminated string \u2014 a breakout/assign literal closes with a "'" on the same line`,
-            line: startLine,
-            col: startCol
-          });
-        }
-        push("string", text2.slice(i + 1, j2), startLine, startCol, text2.slice(i, terminated ? j2 + 1 : j2));
-        advance(j2 - i + (terminated ? 1 : 0));
-        continue;
-      }
       if (ch2 === "$" || ch2 === "#") {
         push("sigil", ch2, startLine, startCol);
         advance();
@@ -39387,7 +39307,7 @@ $ participants <${tokens}>
   function parseMetaprogram(text2) {
     const src2 = typeof text2 === "string" ? text2 : "";
     const dir = readDirective(src2);
-    const isMetaprogramBuffer = dir.kind === "metaprogram" || dir.kind === "breakout";
+    const isMetaprogramBuffer = dir.kind === "metaprogram";
     const rawBody = isMetaprogramBuffer ? stripDirective(src2) : src2;
     const notation = detectNotation(rawBody);
     const body = notation === "mini" ? miniToMondo(rawBody) : rawBody;
@@ -39401,12 +39321,12 @@ $ participants <${tokens}>
     }
     if (!isMetaprogramBuffer) {
       errors.push({
-        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram editor' or 'breakout room' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram editor' or 'breakout room'`,
+        message: dir.kind == null ? dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line" : `this is a '${dir.phrase}' buffer, not a metaprogram \u2014 the first line must be 'metaprogram editor'`,
         line: (dir.lineIndex ?? 0) + 1,
         col: 1
       });
     }
-    const parser = new Parser2(tokens, errors, dir.kind === "breakout" ? "breakout" : "metaprogram");
+    const parser = new Parser2(tokens, errors, "metaprogram");
     const ast2 = parser.parseProgram();
     errors.sort((a2, b) => a2.line - b.line || a2.col - b.col);
     return { ast: ast2, errors, valid: errors.length === 0 };
@@ -39520,7 +39440,6 @@ $ participants <0>
     "src/audio-net/MetaprogrammerParser.js"() {
       import_room_indices = __toESM(require_room_indices(), 1);
       init_Echo();
-      init_breakout_core();
       init_ValuePattern();
       init_EffectMedia();
       init_program_directive();
@@ -39579,12 +39498,6 @@ $ participants <0>
       OPS = /* @__PURE__ */ new Set(["*", "/", "@", "!", "?", "%", ":"]);
       RESTS = /* @__PURE__ */ new Set(["~", "_", "-"]);
       Parser2 = class {
-        // `directiveKind` is 'metaprogram' (the main room's program) or 'breakout'
-        // (one breakout room's own program, program-directive.js's BREAKOUT) — the
-        // only difference the grammar makes on it is parseBreakout/parseAssign
-        // refusing to run inside a 'breakout' buffer: a breakout room's own program
-        // schedules and effects ITS room, but only the main room's metaprogram may
-        // create rooms or move participants into them.
         constructor(tokens, errors, directiveKind = "metaprogram") {
           this.tokens = tokens.filter((t) => t.type !== "newline" || true);
           this.pos = 0;
@@ -39644,12 +39557,7 @@ $ participants <0>
             cycles: null,
             tempo: null,
             ring: null,
-            chain: [],
-            // # breakout / # assign — see breakout-core.js. Both repeatable, folded
-            // in source order by resolveBreakoutState rather than treated as a
-            // singleton the way cycles/tempo/ring are.
-            breakouts: [],
-            assignments: []
+            chain: []
           };
           this.skipNewlines();
           while (!this.atEof()) {
@@ -40078,14 +39986,6 @@ $ participants <0>
             this.parseRing(program, nameTok);
             return;
           }
-          if (name3 === "breakout") {
-            this.parseBreakout(program, nameTok);
-            return;
-          }
-          if (name3 === "assign") {
-            this.parseAssign(program, nameTok);
-            return;
-          }
           if (PATTERN_FNS[name3]) {
             this.parseChainFn(program, name3, nameTok, PATTERN_FNS[name3]);
             return;
@@ -40249,91 +40149,7 @@ $ participants <0>
           }
           program.ring = ring2;
         }
-        // `# breakout '{"name":"Room A","participants":["0","1"]}'` — declares or
-        // redeclares one breakout room. The argument is single-quoted, not the
-        // double-quoted string every other directive's metric/medium keywords use
-        // — see the tokenizer's `'` branch for why (a JSON blob's own quotes would
-        // terminate a double-quoted token at the first one). Repeatable: several
-        // `# breakout` lines declare several rooms, folded in source order by
-        // breakout-core.js's resolveBreakoutState (the actual room-creation and
-        // participant-moving side effects live in src/audio-net/Breakout.js).
-        parseBreakout(program, nameTok) {
-          if (this.directiveKind === "breakout") {
-            this.error("# breakout is not allowed in a breakout room's own program \u2014 rooms are created only from the main room's metaprogram", nameTok);
-            this.recover();
-            return;
-          }
-          const litTok = this.peek();
-          if (litTok.type !== "string") {
-            this.error(`breakout needs a single-quoted JSON object \u2014 the syntax is # breakout '{"name":"Room A","participants":["0","1"]}'`, litTok);
-            this.recover();
-            return;
-          }
-          this.next();
-          let spec;
-          try {
-            spec = parseBreakoutLiteral(litTok.value);
-          } catch (e30) {
-            this.error(e30.message, litTok);
-            this.recover();
-            return;
-          }
-          if (!this.atStatementEnd()) {
-            this.error(`breakout takes exactly one argument \u2014 the syntax is # breakout '{"name":"Room A"}'`, this.peek());
-            this.recover();
-            return;
-          }
-          program.breakouts.push(spec);
-        }
-        // `# assign "<participant token>" "<room name>"` — moves one participant
-        // into a breakout room, or back to breakout-core.js's reserved "main" room.
-        // Repeatable and order-sensitive: the last # assign for a given token wins
-        // (resolveBreakoutState), the same "read top-to-bottom as current desired
-        // state" rule # ring's weights and the participants sequence already follow.
-        parseAssign(program, nameTok) {
-          if (this.directiveKind === "breakout") {
-            this.error("# assign is not allowed in a breakout room's own program \u2014 participants are assigned only from the main room's metaprogram", nameTok);
-            this.recover();
-            return;
-          }
-          const tokenTok = this.peek();
-          if (tokenTok.type !== "string" || !tokenTok.value.trim()) {
-            this.error('assign needs a quoted participant token \u2014 the syntax is # assign "0" "Room A"', tokenTok);
-            this.recover();
-            return;
-          }
-          this.next();
-          const roomTok = this.peek();
-          if (roomTok.type !== "string" || !roomTok.value.trim()) {
-            this.error('assign needs a quoted room name after the participant token \u2014 the syntax is # assign "0" "Room A"', roomTok);
-            this.recover();
-            return;
-          }
-          this.next();
-          if (!this.atStatementEnd()) {
-            this.error(`assign takes exactly two arguments \u2014 the syntax is # assign "<token>" "<room>"`, this.peek());
-            this.recover();
-            return;
-          }
-          program.assignments.push({ token: tokenTok.value.trim(), room: roomTok.value.trim() });
-        }
-        // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
-        // (numbers or metric words) rather than over participants, so it needs its
-        // own reader — parseSequenceGroup's elements are participant indices.
-        //
-        // `kind` is 'metric', 'number', or 'any' where the slot is positional and
-        // could be either (`# noise <wcl wcpl> <20 5>`); 'any' infers it from the
-        // leaves and refuses a pattern that mixes the two. `alternationOnly` rejects
-        // `[…]` and any rate above 1: an effect re-derived once per cycle boundary
-        // has nowhere to put a sub-cycle step, so it is an error rather than quietly
-        // aliasing to something the performer did not write. Nesting otherwise mixes
-        // modes and rates freely.
-        //
-        // A `~` leaf is a REST — no value for that span. It parses to null, which
-        // ValuePattern.js reads back unchanged and each effect's params function
-        // already treats as "use the default", so a rest leaves the parameter alone
-        // for as long as it is in force. Rests settle nothing about the leaf kind:
-        // `<wcl ~ wcpl>` is still a pattern of metrics.
+
         parseValueSequence(name3, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
           const open = this.next();
           const close = open.value === "<" ? ">" : "]";
@@ -41004,72 +40820,6 @@ $ participants <0>
         }
       };
       SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
-    }
-  });
-
-  // src/audio-net/Breakout.js
-  function conference() {
-    return typeof window !== "undefined" ? window.APP?.conference : null;
-  }
-  function breakoutApi() {
-    const conf = conference();
-    return conf && typeof conf.getBreakoutRooms === "function" ? conf.getBreakoutRooms() : null;
-  }
-  function jidForToken(token) {
-    const conf = conference();
-    if (!conf || typeof conf.getParticipantById !== "function") return null;
-    const peer = getAllPeers().find((p) => String(p.roomIndex) === String(token));
-    if (!peer?.jitsiId) return null;
-    try {
-      return conf.getParticipantById(peer.jitsiId)?.getJid?.() ?? null;
-    } catch (e30) {
-      return null;
-    }
-  }
-  function knownRoomJidByName(api2) {
-    const byName = /* @__PURE__ */ new Map();
-    for (const [jid, room2] of Object.entries(api2._rooms || {})) {
-      if (room2 && typeof room2.name === "string") byName.set(room2.name, jid);
-    }
-    return byName;
-  }
-  function applyBreakoutDirectives(breakouts, assignments) {
-    const api2 = breakoutApi();
-    if (!api2 || !api2.isSupported()) return;
-    const state2 = resolveBreakoutState(breakouts, assignments);
-    for (const room2 of state2.rooms) {
-      if (createdRooms.has(room2.name)) continue;
-      createdRooms.add(room2.name);
-      try {
-        api2.createBreakoutRoom(room2.name);
-      } catch (e30) {
-        console.warn("[breakout] createBreakoutRoom failed", e30);
-      }
-    }
-    const roomJidByName = knownRoomJidByName(api2);
-    for (const [token, room2] of state2.assignedTo) {
-      if (room2 === MAIN_ROOM) continue;
-      const key = `${token}\0${room2}`;
-      if (movedAssignments.has(key)) continue;
-      const roomJid = roomJidByName.get(room2);
-      if (!roomJid) continue;
-      const participantJid = jidForToken(token);
-      if (!participantJid) continue;
-      movedAssignments.add(key);
-      try {
-        api2.sendParticipantToRoom(participantJid, roomJid);
-      } catch (e30) {
-        console.warn("[breakout] sendParticipantToRoom failed", e30);
-      }
-    }
-  }
-  var createdRooms, movedAssignments;
-  var init_Breakout = __esm({
-    "src/audio-net/Breakout.js"() {
-      init_breakout_core();
-      init_peer_state();
-      createdRooms = /* @__PURE__ */ new Set();
-      movedAssignments = /* @__PURE__ */ new Set();
     }
   });
 
@@ -50822,8 +50572,7 @@ ${err.toString()}`);
       // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
       // program nor perturbs the worst-case metrics; rides the 'metaprogram'
       // channel so the same people who may edit the program may flip it.
-      settings: doc2.getMap(SETTINGS_KEY),
-      breakoutPrograms: doc2.getMap(BREAKOUT_PROGRAMS_KEY)
+      settings: doc2.getMap(SETTINGS_KEY)
     };
   }
   function encodeUpdateB64(update) {
@@ -50865,7 +50614,7 @@ ${err.toString()}`);
   function setDocText(ytext, value2, origin = "local") {
     return applyTextDiff(ytext, value2, origin);
   }
-  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings, breakoutPrograms }, bus2, { modality = "keyboard" } = {}) {
+  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings }, bus2, { modality = "keyboard" } = {}) {
     let localUpdates = 0;
     const listeners = /* @__PURE__ */ new Set();
     let lastAuthorIndex = null;
@@ -51015,44 +50764,13 @@ ${err.toString()}`);
         settings.observe(h2);
         return () => settings.unobserve(h2);
       },
-      // Each breakout room's own metaprogram (roomName → whole program text).
-      // Rides the 'metaprogram' channel, same edit privilege as the main
-      // program and the settings map above.
-      getBreakoutProgram(roomName) {
-        return breakoutPrograms && breakoutPrograms.get(roomName) || "";
-      },
-      // Every declared room's program at once, for a room-selector UI to list
-      // from without a separate "which rooms exist" channel.
-      getBreakoutPrograms() {
-        const out = {};
-        if (breakoutPrograms) breakoutPrograms.forEach((v2, k2) => {
-          out[k2] = v2;
-        });
-        return out;
-      },
-      setBreakoutProgram(roomName, value2, origin = "settings") {
-        if (!breakoutPrograms || !roomName) return;
-        doc2.transact(() => breakoutPrograms.set(roomName, String(value2 ?? "")), origin);
-      },
-      onBreakoutProgramsChange(fn) {
-        if (!breakoutPrograms) return () => {
-        };
-        const h2 = () => {
-          try {
-            fn(this.getBreakoutPrograms());
-          } catch (e30) {
-          }
-        };
-        breakoutPrograms.observe(h2);
-        return () => breakoutPrograms.unobserve(h2);
-      },
       disconnect() {
         doc2.off("update", onDocUpdate);
         unsubscribe();
       }
     };
   }
-  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, BREAKOUT_PROGRAMS_KEY, SNAPSHOT_EVERY;
+  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, SNAPSHOT_EVERY;
   var init_MetaprogrammerCrdtSync = __esm({
     "src/audio-net/MetaprogrammerCrdtSync.js"() {
       init_yjs();
@@ -51060,7 +50778,6 @@ ${err.toString()}`);
       MODULATION_KEY = "modulation";
       VLANS_KEY = "vlans";
       SETTINGS_KEY = "settings";
-      BREAKOUT_PROGRAMS_KEY = "breakoutPrograms";
       SNAPSHOT_EVERY = 25;
     }
   });
@@ -51862,8 +51579,6 @@ ${err.toString()}`);
     effectiveWorstCase: () => effectiveWorstCase,
     ensureMetaprogramSync: () => ensureMetaprogramSync,
     getActivePattern: () => getActivePattern,
-    getBreakoutProgramText: () => getBreakoutProgramText,
-    getBreakoutRoomNames: () => getBreakoutRoomNames,
     getGateLevel: () => getGateLevel,
     getInducedMetrics: () => getInducedMetrics,
     getProgramText: () => getProgramText,
@@ -51875,14 +51590,12 @@ ${err.toString()}`);
     isJPatternActive: () => isJPatternActive,
     onDelayedStreamingChange: () => onDelayedStreamingChange,
     removeVlan: () => removeVlan,
-    setBreakoutProgramText: () => setBreakoutProgramText,
     setBufferReplayEnabled: () => setBufferReplayEnabled,
     setDelayedStreaming: () => setDelayedStreaming,
     setInducedMetric: () => setInducedMetric,
     setJPatternActive: () => setJPatternActive,
     setVlan: () => setVlan,
     startLocalCapture: () => startLocalCapture,
-    subscribeBreakoutPrograms: () => subscribeBreakoutPrograms,
     subscribeSlotEvents: () => subscribeSlotEvents,
     toggleEffectShortcut: () => toggleEffectShortcut
   });
@@ -52018,29 +51731,6 @@ ${err.toString()}`);
     currentAst = ast2;
     if (scheduler) scheduler.setProgram(ast2);
     if (effects) effects.setChain(ast2.chain, effectiveWorstCase());
-    applyBreakoutDirectives(ast2.breakouts, ast2.assignments);
-    seedBreakoutPrograms(ast2.breakouts);
-  }
-  function seedBreakoutPrograms(breakouts) {
-    if (!crdt || !breakouts?.length || !isRosterEditLeader()) return;
-    for (const spec of breakouts) {
-      if (crdt.getBreakoutProgram(spec.name)) continue;
-      crdt.setBreakoutProgram(spec.name, buildDefaultBreakoutProgram(spec.participants), "roster");
-    }
-  }
-  function getBreakoutRoomNames() {
-    return Object.keys(ensureMetaprogramSync().getBreakoutPrograms()).sort();
-  }
-  function getBreakoutProgramText(roomName) {
-    return ensureMetaprogramSync().getBreakoutProgram(roomName);
-  }
-  function setBreakoutProgramText(roomName, text2) {
-    const { errors, valid } = parseMetaprogram(text2);
-    if (valid) ensureMetaprogramSync().setBreakoutProgram(roomName, text2, "apply");
-    return errors;
-  }
-  function subscribeBreakoutPrograms(fn) {
-    return ensureMetaprogramSync().onBreakoutProgramsChange(fn);
   }
   function applyProgramText(text2, { broadcast = true } = {}) {
     const { errors, valid } = parseMetaprogram(text2);
@@ -52346,8 +52036,6 @@ ${newBody}`).length === 0;
   var init_Metaprogrammer = __esm({
     "src/audio-net/Metaprogrammer.js"() {
       init_MetaprogrammerParser();
-      init_Breakout();
-      init_breakout_core();
       init_notation();
       init_MetaprogramScheduler();
       init_WorstCaseCalculationUtils();
@@ -63206,87 +62894,6 @@ ${snippet}${JP_BTN_MARKER}`;
     return overlay;
   }
 
-  // components/BreakoutProgramEditor.js
-  init_Metaprogrammer();
-  var esc = (s2) => String(s2).replace(
-    /[&<>"']/g,
-    (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
-  );
-  function mountBreakoutProgramEditor(container4) {
-    if (!container4 || container4.querySelector(".bo-editor")) return null;
-    const wrap = document.createElement("div");
-    wrap.className = "ts-section bo-editor";
-    wrap.innerHTML = `
-    <div class="ts-section-head">
-      <div class="ts-section-title">Breakout room metaprogram</div>
-      <div class="ts-section-controls">
-        <select class="bo-room-select"></select>
-        <button class="ts-btn eval bo-apply" type="button">Apply</button>
-        <span class="ts-shortcuts">No # breakout / # assign here \u2014 only the main JPattern card above creates rooms or moves participants.</span>
-      </div>
-    </div>
-    <textarea class="ts-code bo-code" spellcheck="false" style="min-height:72px;"></textarea>
-    <div class="ts-meta bo-errors" style="color:var(--trussal-secondary, #111111);"></div>
-    <div class="ts-meta bo-empty">No breakout rooms declared yet \u2014 add one with # breakout in the JPattern card above.</div>
-  `;
-    container4.appendChild(wrap);
-    const select = wrap.querySelector(".bo-room-select");
-    const ta = wrap.querySelector(".bo-code");
-    const errorsEl = wrap.querySelector(".bo-errors");
-    const emptyEl = wrap.querySelector(".bo-empty");
-    const applyBtn = wrap.querySelector(".bo-apply");
-    attachUndoHistory(ta);
-    let currentRoom2 = null;
-    let optionsKey = null;
-    function loadRoom(name3) {
-      currentRoom2 = name3;
-      ta.value = name3 ? getBreakoutProgramText(name3) : "";
-      resetUndoBaseline(ta);
-      errorsEl.textContent = "";
-    }
-    function refreshRoomList() {
-      const names2 = getBreakoutRoomNames();
-      const hasRooms = names2.length > 0;
-      select.hidden = !hasRooms;
-      ta.hidden = !hasRooms;
-      applyBtn.hidden = !hasRooms;
-      emptyEl.hidden = hasRooms;
-      if (!hasRooms) {
-        currentRoom2 = null;
-        return;
-      }
-      const key = names2.join("\0");
-      if (key !== optionsKey) {
-        optionsKey = key;
-        select.innerHTML = names2.map((n2) => `<option value="${esc(n2)}">${esc(n2)}</option>`).join("");
-      }
-      if (!names2.includes(currentRoom2)) currentRoom2 = names2[0];
-      select.value = currentRoom2;
-      const stored = getBreakoutProgramText(currentRoom2);
-      if (ta.value !== stored && document.activeElement !== ta) {
-        ta.value = stored;
-        resetUndoBaseline(ta);
-        errorsEl.textContent = "";
-      }
-    }
-    select.addEventListener("change", () => loadRoom(select.value));
-    function apply2() {
-      if (!currentRoom2) return;
-      const errors = setBreakoutProgramText(currentRoom2, ta.value);
-      errorsEl.textContent = errors.length ? errors.map((e30) => `${e30.line}:${e30.col} ${e30.message}`).join("  \xB7  ") : "saved";
-    }
-    applyBtn.addEventListener("click", apply2);
-    ta.addEventListener("keydown", (e30) => {
-      if ((e30.ctrlKey || e30.metaKey) && e30.key === "Enter") {
-        e30.preventDefault();
-        apply2();
-      }
-    });
-    subscribeBreakoutPrograms(refreshRoomList);
-    refreshRoomList();
-    return wrap;
-  }
-
   // src/audio-net/RoomHealth.js
   function avDecouplingSeconds(cycleSeconds, metrics = {}) {
     const base = Math.max(0, cycleSeconds || 0);
@@ -64176,9 +63783,6 @@ ${snippet}${JP_BTN_MARKER}`;
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
-      <button class="ts-btn ghost ts-panic-btn" type="button" title="Stuck in a breakout room? Leave it and rejoin the meeting you originally opened.">\u26A0 Leave breakout room</button>
-    </div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
@@ -64186,13 +63790,7 @@ ${snippet}${JP_BTN_MARKER}`;
     overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
     overlay.addEventListener("click", (e30) => e30.stopPropagation());
     const ncHost = overlay.querySelector(".ts-jpattern");
-    try {
-      mountMetaprogrammerEditor(ncHost);
-      mountMetaprogrammerCycleHighlighter(ncHost);
-      mountBreakoutProgramEditor(ncHost);
-    } catch (e30) {
-      console.warn("[studio] JPattern card mount failed", e30);
-    }
+
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
       tickKbdUi();
@@ -65126,32 +64724,6 @@ ${snippet}${JP_BTN_MARKER}`;
       # slow 2
       </code>
       `
-    },
-    {
-      id: "breakout-patterns",
-      name: "breakout",
-      sig: "breakout([breakout_room_assignment_pattern])",
-      body: `
-      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.</p>
-      <span>Example:</span>
-      <code>$: breakout({"name":"room", "participants": ["0", "1", "2b"]})
-      </code>
-      <code>$ breakout {"name":"room", "participants": ["0", "1", "2b"]}
-      </code>
-      `
-    },
-    {
-      id: "assign",
-      name: "assign",
-      sig: "assign([participant_name_pattern)",
-      body: `
-      <p>Assigns participants to breakout rooms. Does not reassign participants to a room to which they have already been assigned/</p>
-      <span>Example:</span>
-      <code>$: assign({"name":"room", "participants": ["0", "1", "2b"]})
-      </code>
-      <code>$  assign {"name":"room", "participants": ["0", "1", "2b"]}
-      </code>
-      `
     }
   ];
   var LIVE_CAPTURE_FUNCTIONS = [
@@ -65408,7 +64980,7 @@ ${snippet}${JP_BTN_MARKER}`;
         only visualize audio data and do not support playback. 
         </p>
 
-        <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
+        <h4>Meeting Chat, Polls, Screen Sharing, and Reactions</h4>
         <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
         However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
@@ -65470,8 +65042,8 @@ ${snippet}${JP_BTN_MARKER}`;
         </code>
     <h3>JPattern Reference</h3>
         <p>
-          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
-          external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
+          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS, and
+          external data fetching. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
         </p>
 
         <h4>Design</h4>
