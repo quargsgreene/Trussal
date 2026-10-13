@@ -21,18 +21,7 @@ let reverbBuffer = null;
 let masterStrudelGain = null;
 let masterLimiter = null; // DynamicsCompressor downstream of masterStrudelGain — see ensureMasterStrudelInput
 let bootPromise = null;
-
-// WebAudio effect chain applied to the local peer's Strudel master output.
-// These run post-mix on the combined instrument bus, guaranteeing audible
-// effects regardless of whether the Strudel evaluate() succeeds.
-let strudelFx = null; // { distWS, noiseGain, noiseFilter, convGain } | null
-
-// Aggregator mode silences the LOCAL Strudel FX output too, so a listening
-// client hears nothing but the aggregator's master. Every Strudel branch
-// (dry/distortion, reverb, noise) converges on this one gain before
-// realDestination, making it the single choke point aggregator mode toggles —
-// independent of monitor mode (masterStrudelGain) and the effect controllers
-// (noiseGain), which drive their own nodes. Null until the Strudel input boots.
+let strudelFx = null; 
 let strudelOut = null;
 
 const chains = new Map();           // jitsiId -> chain
@@ -44,14 +33,6 @@ const audioRouted = new Set();      // jitsiIds whose chain has any live source
 const routingSubscribers = new Set();
 
 let audioTagObserver = null;
-
-// Aggregator mode: when a remote aggregator bot is in the room it gathers every
-// participant's audio and streams back one assembled master. On every OTHER
-// client we then silence all non-aggregator peer chains (via each chain's
-// dedicated `presence` gain) so the aggregator's master is the sole audio the
-// client hears — the participants' raw audio reaches them only through it. Held
-// as the aggregator's jitsiId, or null when no remote aggregator is present
-// (including on the aggregator's own page, where it must hear everyone to tap).
 let aggregatorJitsiId = null;
 
 function notifyRoutingChange() {
@@ -66,39 +47,19 @@ export function subscribeAudioRouting(fn) {
   return () => routingSubscribers.delete(fn);
 }
 
-
-// Aggregator mode: gain for a peer's chain given the current aggregator. 1 when
-// no aggregator is present (normal mix) or for the aggregator's own chain; 0 for
-// every other peer (silenced — heard only via the aggregator's master).
 function presenceLevelFor(jitsiId) {
   if (!aggregatorJitsiId) return 1;
   return jitsiId === aggregatorJitsiId ? 1 : 0;
 }
 
-// Local Strudel FX level: silenced in aggregator mode (hear only the master), 1
-// otherwise. Mirrors presenceLevelFor for the one non-peer local audio source.
 function localStrudelLevel() { return aggregatorJitsiId ? 0 : 1; }
 
-// Set (or clear, with null) the remote aggregator whose master mix is the sole
-// audio source, ramping every existing chain — and the local Strudel output — to
-// its new level.
 export function setAggregatorPeer(jitsiId) {
   const next = jitsiId || null;
   if (next === aggregatorJitsiId) return;
   aggregatorJitsiId = next;
-  // Publish this user's Strudel onto the outgoing Jitsi mic while an aggregator
-  // is present (so it can tap it), and stop when it leaves. Async + fire-and-
-  // forget: setAggregatorPeer is sync and called from roster handlers, and the
-  // publish boots the Strudel input engine itself if needed. Done before the
-  // audioCtx guard so it still fires when Strudel hasn't booted yet.
   if (next) publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish failed', e));
   else unpublishLocalStrudelFromRoom().catch((e) => console.warn('[latency] strudel unpublish failed', e));
-  // The peer set folded into the local Strudel program depends on aggregator
-  // mode (strudel.js drops remote humans' audio voices while one is present, so
-  // the published masterStrudelGain carries only the local voice — per-human
-  // publish isolation). A DOM event rather than a direct call: strudel.js
-  // imports this module, so the reverse import would be a cycle. Dispatched
-  // before the audioCtx guard — the program must re-stack even pre-boot.
   document.dispatchEvent(new CustomEvent('trussal-aggregator-mode-change'));
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
@@ -109,15 +70,6 @@ export function setAggregatorPeer(jitsiId) {
 }
 
 export function getAggregatorPeer() { return aggregatorJitsiId; }
-
-// Recompute aggregator mode from the current roster. Several peers may announce
-// themselves as aggregators (a spawn race, or a lingering container from a
-// redeploy), but only ONE may be honored — otherwise their masters feed back and
-// both mute. electAggregator deterministically picks the single winner so every
-// client agrees on the same one. A remote winner switches this client into
-// aggregator mode; no aggregator, or being the winner ourselves (we must hear
-// everyone to tap), leaves the normal mix. Called whenever the roster changes,
-// so losing the winner promotes another announcer automatically.
 function refreshAggregatorPeer() {
   const winner = electAggregator(getAllPeers());
   setAggregatorPeer(winner && !winner.isLocal ? winner.jitsiId : null);
@@ -128,9 +80,6 @@ function ensureAudioContext() {
   if (!Ctor) return Promise.reject(new Error('WebAudio not supported'));
   if (!audioCtx) {
     audioCtx = new Ctor({ sampleRate: 48000 });
-    // Master bus: every chain/effect that used to target audioCtx.destination
-    // now converges on this gain node, giving the room health compressor one
-    // place to tap the full mix.
     const masterBus = audioCtx.createGain();
     masterBus.gain.value = 1.0;
     masterBus.connect(audioCtx.destination);
@@ -173,9 +122,6 @@ function makeDistortionCurve(amount) {
   return curve;
 }
 
-// Apply or update the Strudel WebAudio effect chain.  Called whenever the
-// local peer's effects or metrics change so the master bus always reflects
-// the current toggle state regardless of Strudel evaluate() success.
 function updateStrudelFx(effects, rtt, jitter) {
   if (!strudelFx || !audioCtx) return;
   const e   = effects || {};
@@ -271,14 +217,6 @@ async function buildChain(jitsiId) {
   input.channelCountMode = 'explicit';
   Object.defineProperty(input, 'maxChannelCount', { value: 2, configurable: true });
 
-  // Keep a stereo bus through the effect node so the stereo Opus path
-  // (ENABLE_STEREO) isn't flattened. Configure the channels explicitly rather
-  // than relying on AudioWorkletNode's implicit channelCountMode default, which
-  // is browser-dependent; with `channelCount: 1` the node could down-mix to
-  // mono. The processor already iterates every channel, so it applies the
-  // distortion/noise to L and R independently. Mono sources (a DI, or a peer
-  // sending mono) are up-mixed to dual-mono here, which is the correct centered
-  // result.
   const worklet = new AudioWorkletNode(audioCtx, 'latency-processor-v2', {
     numberOfInputs: 1,
     numberOfOutputs: 1,
@@ -301,10 +239,6 @@ async function buildChain(jitsiId) {
     reverbGain.connect(realDestination);
   }
 
-  // Presence gain: aggregator-mode solo. Silences this peer locally when a
-  // remote aggregator is the sole audio source, independent of the JPattern
-  // slot gate (chain.input), so the two multiply cleanly. 1 (audible) unless
-  // aggregator mode mutes this peer.
   const presence = audioCtx.createGain();
   presence.gain.value = presenceLevelFor(jitsiId);
 
@@ -339,20 +273,7 @@ function destroyChain(jitsiId) {
   chains.delete(jitsiId);
 }
 
-// Capture every remote Jitsi <audio> element exactly once and route it to its
-// owner's effect chain. The tag id (remoteAudio_<jitsiId>) is the bridge. Any
-// audio that reaches the browser via Jitsi mic
-// upstream peer is loopback-routing into their mic — is captured here
 function captureJitsiAudio() {
-  // Bot/aggregator pages publish the shared fan (pageAudioBridge overrides
-  // ctx.destination): routing remote peers into local chains would land their
-  // audio on the fan — realDestination sits on the shared context — and the
-  // page would REPUBLISH everything it hears. Every bot re-broadcasting the
-  // room, the aggregator re-tapping it: instant feedback, heard live
-  // 2026-07-12 the moment track-identity resolution made routing work on bot
-  // pages (generic tag ids had made it a silent no-op there before).
-  // Listener-side routing is for human clients only; bot pages keep native
-  // tag playback, exactly the pre-track-identity behavior.
   if (window.__trussalIsBot || window.__trussalIsAggregator) return;
   if (!audioCtx) return;
   const local = getLocalParticipant();
@@ -379,29 +300,11 @@ function captureJitsiAudio() {
       const member = conf && typeof conf.getParticipantById === 'function'
         ? conf.getParticipantById(jitsiId) : null;
       if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
-    } catch (e) { /* ignore — if we can't tell, proceed */ }
-    // Only route audio through WebAudio for peers in our signalling system.
-    // Ghost/stale sessions (e.g. SMACKS hibernating sessions) never connect to
-    // our WS server, so they stay with native Jitsi playback where the browser's
-    // AEC reference is intact. Bypassing AEC for those participants is what lets
-    // their audio (which is often an echo of your own voice from the JVB) loop
-    // back through your mic uncancelled — persisting even when you mute Jitsi.
+    } catch (e) {}
     if (!getPeerByJitsiId(jitsiId)) return;
-    // Guard against concurrent async captures for the same jitsiId (MutationObserver
-    // can fire multiple times before the first await resolves, which would create
-    // duplicate MediaStreamSource nodes on the same chain and cause doubled audio).
     if (pendingCaptures.has(jitsiId)) return;
     const existing = remoteSources.get(jitsiId);
     if (existing) {
-      // A wiring is only as live as the MediaStreamTrack it was built from. A
-      // renegotiation (the P2P↔JVB flip at the 3rd join, a device change)
-      // replaces the peer's stream/track under the same jitsiId, leaving the
-      // old MediaStreamSource reading a dead track while the tag sits muted —
-      // that peer is silent forever. In aggregator mode the aggregator is such
-      // a peer and the sole audio source, so one flip used to mute the whole
-      // room (the bots-spawn total-mute). Three independent staleness signals:
-      // the tag left the DOM, the tag's srcObject was swapped, or the wired
-      // track itself ended.
       const live = existing.tag && existing.tag.isConnected
         && existing.tag.srcObject === existing.stream
         && existing.track && existing.track.readyState === 'live';
@@ -446,10 +349,6 @@ function startAudioTagsObserver() {
     captureJitsiAudio();
   });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
-  // A renegotiation can swap a tag's srcObject without touching the DOM tree,
-  // so the observer alone never sees it — re-verify every wiring on the same
-  // 1s cadence the rest of the codebase polls Jitsi state at (participants.js,
-  // the aggregator page's capture rescan). Cheap: healthy wirings early-return.
   setInterval(captureJitsiAudio, 1000);
   captureJitsiAudio();
 }
@@ -546,16 +445,6 @@ export function resetChainGates() {
 
 export async function bootAudioEngine() {
   if (bootPromise) {
-    // The first call is often this module's own eager warm-up at page load
-    // (before any user gesture), whose resume() can be left permanently
-    // pending by browsers that require resume() to run synchronously inside
-    // a real gesture's call stack (mobile Safari, strict mobile Chrome) —
-    // awaiting bootPromise first would either hang forever on that stuck
-    // promise or, once past it, fire this retry too late (after an await,
-    // no longer inside the gesture). Fire it immediately instead, before
-    // awaiting anything, so a gesture-backed call (Play) gets a real shot
-    // at unlocking audio. Both resolve on the same underlying transition,
-    // so this also unblocks the original pending resume() if it was stuck.
     if (audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume().catch(() => { /* still blocked */ });
     }
@@ -573,11 +462,6 @@ export async function bootAudioEngine() {
   return bootPromise;
 }
 
-// Strudel hands its stacked output here. We mix into the local user's chain so
-// per-peer effect toggles applied via Strudel-native operators in strudel.js
-// still flow through the master output without going through any one peer's
-// worklet (which would re-color everyone). One dedicated gain node sits in
-// front of realDestination for Strudel-only volume control.
 export async function ensureMasterStrudelInput() {
   await bootAudioEngine();
   await loadReverbBuffer();
@@ -587,28 +471,10 @@ export async function ensureMasterStrudelInput() {
     masterStrudelGain.channelCountMode = 'explicit';
     Object.defineProperty(masterStrudelGain, 'maxChannelCount', { value: 2, configurable: true });
     masterStrudelGain.gain.value = 1.0;
-
-    // Master limiter: masterStrudelGain sums EVERY simultaneous local voice
-    // (liveCapture's own makeup-gain/limiter in live-capture-core.js only
-    // keeps ITS voice under ~0.98 peak in isolation — it has no idea what
-    // other $:-labeled voices are playing at the same time). Live-confirmed
-    // as clipping/distortion on the published track once the rotation-dilution
-    // bug (see aggregator ghost-stuck-on-reconnect-churn fix) stopped masking
-    // it. The remote per-peer chain already has an equivalent compressor
-    // (see ensureChain's `limiter` below); this is the missing local-publish
-    // counterpart, sitting between masterStrudelGain and every consumer of it
-    // (local monitor AND both publish taps) so nothing downstream can clip.
     masterLimiter = audioCtx.createDynamicsCompressor();
     masterLimiter.threshold.value = -1.0;
     masterStrudelGain.connect(masterLimiter);
 
-    // Permanent, always-on meter: a manual ad-hoc console tap (connect an
-    // analyser, poll it, disconnect) was giving inconsistent readings across
-    // repeated calls during live debugging of a "published audio never
-    // reaches the room" report — this replaces that with a persistent
-    // analyser, connected once and never disconnected, polled on a fixed
-    // interval, so there is no per-call connect/disconnect cycle to distrust.
-    // Remove once the underlying issue is resolved.
     const meterAn = audioCtx.createAnalyser();
     meterAn.fftSize = 2048;
     masterStrudelGain.connect(meterAn);
@@ -620,15 +486,6 @@ export async function ensureMasterStrudelInput() {
       console.log('[trussal] masterStrudelGain persistent meter peak=', peak.toFixed(5));
     }, 2000);
 
-    // Build the Strudel-output effect chain. Every branch converges on
-    // strudelOut (the aggregator-mode choke) before realDestination:
-    //   masterStrudelGain → masterLimiter → distWS → strudelOut → realDestination  (dry + distortion)
-    //                                      → convolver → convGain → strudelOut  (reverb wet)
-    //   noiseSource → noiseFilter → noiseGain → strudelOut  (noise)
-
-    // strudelOut: single gain for ALL local Strudel FX audio, so aggregator mode
-    // can silence it with one node. Starts muted if a remote aggregator is
-    // already present when Strudel boots.
     strudelOut = audioCtx.createGain();
     strudelOut.gain.value = localStrudelLevel();
     strudelOut.connect(realDestination);
@@ -681,13 +538,6 @@ export async function getStrudelAudioContext() {
   return { audioCtx: ctx, destinationNode: out, realDestination: rd };
 }
 
-// Attach any MediaStream to a participant's effects chain. Used by the studio
-// UI to bring in a system-level audio input so it flows through the same worklet +
-// reverb path as remote Jitsi audio.
-//
-// monitorLocally controls whether the stream is also played out of THIS
-// browser's speakers (source → chain → realDestination). For a peer's incoming
-// audio that is the whole point, but for the LOCAL user capturing their own
 export async function attachExternalStreamForPeer(jitsiId, stream, label = 'external', { monitorLocally = true } = {}) {
   if (!jitsiId || !stream) return null;
   await bootAudioEngine();
@@ -726,16 +576,7 @@ export function getExternalStreamLabel(jitsiId) {
   return ext ? ext.label : null;
 }
 
-// ---- Outgoing Jitsi mic propagation -------------------------------------
-//
-// When the local user captures an external stream,
-// we mix that stream into the OUTGOING Jitsi audio track so other peers in the
-// meeting receive it as part of our mic. Their browsers run our mic through
-// our per-peer chain (which is keyed by our jitsiId), so the room hears the
-// processed result everywhere. The local user still also routes the raw
-// stream into their local chain for self-monitoring (separate path).
-
-let jitsiMixState = null; // { track, effect, replacedSender, originalTrack }
+let jitsiMixState = null;
 
 function findLocalJitsiAudioTrack() {
   try {
@@ -894,53 +735,6 @@ export function isPropagatingToRoom() {
   return !!jitsiMixState;
 }
 
-// ---- Local Strudel → room publishing ------------------------------------
-//
-// A human's Strudel normally never leaves their browser: every client reproduces
-// it by re-evaluating the shared pattern (strudel.js), not by streaming audio.
-// That breaks under an aggregator, which assembles the room from each peer's
-// *Jitsi audio track* — so a human who only re-evaluates locally contributes
-// nothing to the master and is heard by no one (their local monitor is muted in
-// aggregator mode). To fix that, while an aggregator is present we tap the
-// Strudel program (masterStrudelGain — full level, upstream of the strudelOut
-// monitor mute) directly onto the outgoing Jitsi audio track via a setEffect
-// whose output is ONLY that node.
-//
-// Two things learned the hard way here:
-//  - Connect the node DIRECTLY into the effect's MediaStreamDestination. Routing
-//    it through an intermediate MediaStreamDestination and reading it back with
-//    createMediaStreamSource in the SAME AudioContext hits a Chrome bug that
-//    emits pure silence (Firefox is unaffected) — that was the aggregator's rms=0
-//    on a healthy Strudel signal.
-//  - Publish Strudel ONLY, not mic+Strudel: once the aggregator's master plays
-//    back out the speakers a live mic recaptures it and loops (feedback), and for
-//    a Strudel algorave the mic isn't the source anyway.
-//
-// setEffect (vs a raw sender.replaceTrack) so it survives Jitsi's P2P/JVB flips.
-// It still needs a local audio track to attach to, so the mic must be enabled
-// once — but its audio is replaced by Strudel, so no room noise/voice goes out.
-//
-// Only in aggregator mode, so a normal room still relies on shared re-evaluation
-// and never double-plays a human over both the Strudel-eval and Jitsi-mic paths.
-//
-// Per-human publish isolation: while an aggregator is present, strudel.js
-// excludes remote humans' audio voices from the locally evaluated program
-// (buildPeerBlock), so masterStrudelGain carries ONLY this human's voice and the
-// published track really is theirs alone — the aggregator's master stays
-// one-participant-per-slot. In a normal room (no aggregator) the node carries
-// the combined program as before, for shared re-evaluation.
-
-// A continuous, ~-70dBFS white-noise source — far below the limiter and
-// normal room noise, inaudible in practice, but never literal digital zero.
-// Measured via the aggregator's own RTCPeerConnection.getStats() on a
-// published liveCapture() track: 91% of received samples were silence
-// concealment with zero actual packet loss, meaning the sender (this browser)
-// simply wasn't transmitting — some layer of Chrome's own encoder is
-// detecting a captured/replayed buffer's quiet stretches as "nothing to
-// send" and skipping them, the same way Opus DTX would, even though
-// config.audioQuality.enableOpusDtx is off (checked: lib-jitsi-meet only
-// negotiates usedtx=1 when that flag is explicitly true). Keeping the
-// published signal never-truly-silent defeats that without being audible.
 const DITHER_LEVEL = 0.0003;
 function createDitherNode(audioCtx) {
   const bufLen = Math.floor(audioCtx.sampleRate * 2);
@@ -1019,23 +813,6 @@ function pollForLocalAudioTrack(timeoutMs) {
   });
 }
 
-// A performer who lives in the Strudel editor never unmutes their mic — and
-// often has it hard-blocked (Chrome then fails getUserMedia with NotAllowedError
-// and no prompt). Either way no local Jitsi audio track exists, so the
-// aggregator's master (one performer per slot) streams dead air for their turn.
-// Get a track without needing a working microphone:
-//   1. If mic permission IS granted, the cheapest path is to let jitsi-meet
-//      unmute — it runs the gUM and adds+signals the track itself.
-//   2. Otherwise publish a permission-free MediaStreamAudioDestinationNode
-//      carrying masterStrudelGain as the local audio track. It goes through
-//      createLocalTracks (the path jitsi wraps in a JitsiLocalTrack and
-//      renegotiates itself) via a getUserMedia shim scoped to that one call —
-//      the same substitution the bots' pageAudioBridge makes permanently.
-// The published track carries only Strudel: the caller then attaches
-// NodeOutputEffect (masterStrudelGain), and in aggregator mode every other
-// client holds this performer's chain gain at 0. Runs only with an aggregator
-// present (every caller of publishLocalStrudelToRoom guarantees that).
-// Rate-limited because the publish guard re-fires every second.
 async function acquireLocalAudioTrackForStrudel() {
   const existing = findLocalJitsiAudioTrack();
   if (existing && typeof existing.setEffect === 'function') return existing;
@@ -1089,28 +866,13 @@ async function acquireLocalAudioTrackForStrudel() {
   return findLocalJitsiAudioTrack();
 }
 
-// Publish guard, running for the whole time an aggregator is present. Two jobs:
-//  - The mic is usually muted at join, so no local Jitsi audio track exists yet
-//    when the aggregator is first detected — the initial publish then drives
-//    acquireLocalAudioTrackForStrudel() (unmute → gUM, or build the track
-//    directly), which is rate-limited, so re-attempt every second until one of
-//    those takes hold. Without this the aggregator taps silence forever.
-//  - The publish is only as durable as the JitsiLocalTrack it rides. A
-//    renegotiation (the P2P↔JVB flip when the 3rd participant joins, a device
-//    change) can replace the local track, leaving the effect attached to a dead
-//    object — this human then contributes silence to the master forever. Verify
-//    the published track is still the live one and re-publish when it isn't.
-// Jitsi tracks are polled here, not evented (matching participants.js), because
-// Jitsi's event API is unstable; the poll is cheap (a track lookup + compare).
 function ensureStrudelPublishGuard() {
   if (strudelPublishRetryTimer) return; // already polling
   strudelPublishRetryTimer = setInterval(() => {
     if (!aggregatorJitsiId) { stopStrudelPublishRetry(); return; }
     if (strudelRoomEffect) {
       const current = findLocalJitsiAudioTrack();
-      if (current === strudelRoomEffect.track) return; // still riding the live track
-      // Track replaced (or gone): stopEffect disconnects masterStrudelGain from
-      // the orphaned destination, then fall through to publish on the new track.
+      if (current === strudelRoomEffect.track) return;
       try { strudelRoomEffect.effect.stopEffect(); } catch (e) {}
       strudelRoomEffect = null;
       console.warn('[latency] published Strudel track was replaced (renegotiation?) — re-publishing');
@@ -1120,22 +882,12 @@ function ensureStrudelPublishGuard() {
 }
 
 export async function publishLocalStrudelToRoom() {
-  // A bot's outgoing audio is its own Strudel via the page-side direct tap
-  // (bots/src/bot/page-scripts.js pageEnsureAudioPublished); the bundle's
-  // masterStrudelGain is SILENT on bot pages (their REPL is the CDN
-  // strudel-editor, not strudel.js). Attaching it here on aggregator
-  // detection would hijack the track effect and silence the bot — the likely
-  // mechanism behind the original "a few blips then silence".
   if (window.__trussalIsBot || window.__trussalIsAggregator) return false;
   if (strudelRoomEffect) return true; // already publishing
   await ensureMasterStrudelInput(); // guarantees masterStrudelGain + audioCtx
   if (!masterStrudelGain) return false;
   let track = findLocalJitsiAudioTrack();
   if (!track || typeof track.setEffect !== 'function') {
-    // A performer using Strudel as their instrument never unmutes (and may have
-    // the mic blocked), so there is no track to attach to. Acquire one — jitsi's
-    // unmute if the mic is available, else a synthetic Strudel-only track —
-    // rather than waiting forever for a mic gesture that never comes.
     track = await acquireLocalAudioTrackForStrudel();
   }
   if (!track || typeof track.setEffect !== 'function') {
@@ -1185,11 +937,6 @@ export async function unpublishLocalStrudelFromRoom() {
 if (typeof window !== 'undefined') {
   window.__trussalPublishStrudelToRoom = publishLocalStrudelToRoom;
   window.__trussalUnpublishStrudelFromRoom = unpublishLocalStrudelFromRoom;
-
-  // Source-side probe: is the shared AudioContext actually running, and is
-  // Strudel producing signal at masterStrudelGain (the exact node the publish
-  // taps)? Distinguishes "context suspended → everything silent" from "Strudel
-  // plays but the publish tap is broken". Run: await window.__trussalAudioDiag()
   window.__trussalAudioDiag = async () => {
     const out = {
       aggregatorJitsiId,                                   // non-null => in aggregator mode
