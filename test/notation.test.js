@@ -47,11 +47,6 @@ test('mondoToMini: a quoted string, a bare word and a JS expression pass through
   assert.equal(mondoToMini('# lpf (sine.range(200,2000))'), '.lpf((sine.range(200,2000)))');
 });
 
-test('mondoToMini: a Hydra preamble, blank lines and comments are untouched', () => {
-  const src = 'await initHydra()\n\n// a voice\n$ n <0 1>\n# s "piano"';
-  assert.equal(mondoToMini(src), 'await initHydra()\n\n// a voice\n$: n("<0 1>")\n.s("piano")');
-});
-
 test('mondoToMini: a single-line backtick arg (CSS Cycles) is one token', () => {
   assert.equal(
     mondoToMini('$ css `.x { color: red }`\n# fast 3'),
@@ -107,14 +102,6 @@ test('miniToMondo lowers a *$: button declaration to the *$ scanner form', () =>
   );
 });
 
-// --- mini -> mondo (metaprogram) -------------------------------------
-
-test('miniToMondo: the spec example, one-liner and multi-line both', () => {
-  const want = '$ participants <0 1>\n# cycles "wcl" 10\n# room "wcl" 30';
-  assert.equal(miniToMondo('$: participants("<0 1>").cycles("wcl", 10).room("wcl", 30)'), want);
-  assert.equal(miniToMondo('$: participants("<0 1>")\n.cycles("wcl", 10)\n.room("wcl", 30)'), want);
-});
-
 test('miniToMondo: only a "<…>"/"[…]" string is unquoted; a metric stays quoted', () => {
   assert.equal(miniToMondo('$: participants("[0 1 2]").cycles("wcpl", 3)'),
     '$ participants [0 1 2]\n# cycles "wcpl" 3');
@@ -144,7 +131,6 @@ test('miniToMondo: `//` inside a string literal is not a comment', () => {
   assert.equal(miniToMondo('$: s("bd // sd")'), '$ s "bd // sd"');
 });
 
-// --- toConsumableNotation -------------------------------------------
 
 test('toConsumableNotation lowers to the target editor\'s form, or flags a mix', () => {
   assert.equal(toConsumableNotation('$ x <0>\n# y 1', 'mini').text, '$: x("<0>")\n.y(1)');

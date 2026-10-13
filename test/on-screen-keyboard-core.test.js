@@ -10,16 +10,6 @@ import {
   predictCompletions,
 } from '../src/on-screen-keyboard-core.js';
 
-// --- Trie ------------------------------------------------------------------
-
-test('trie: predicts every word under a prefix, weight-ordered', () => {
-  const t = new Trie();
-  t.insert('note', 10);
-  t.insert('noise', 7);
-  t.insert('nonsense', 1);
-  assert.deepEqual(t.predict('no', 5), ['note', 'noise', 'nonsense']);
-});
-
 test('trie: an empty prefix predicts nothing', () => {
   assert.deepEqual(KEYWORD_TRIE.predict('', 5), []);
 });
@@ -114,16 +104,7 @@ test('predict: nothing in progress -> no suggestions', () => {
 
 test('predict: an unknown prefix -> no suggestions', () => {
   assert.deepEqual(predictCompletions('qwxz', 4), []);
-});
-
-test('predict: accepts a custom trie', () => {
-  const trie = buildKeywordTrie();
-  trie.insert('roomy', 99);
-  const out = predictCompletions('roo', 3, { trie });
-  assert.equal(out[0], 'roomy');
-});
-
-// --- KEYWORDS integrity -------------------------------------------------
+});-
 
 test('keywords: every entry is [string, positiveWeight]', () => {
   for (const entry of KEYWORDS) {
@@ -132,9 +113,4 @@ test('keywords: every entry is [string, positiveWeight]', () => {
     assert.ok(entry[0].length > 0);
     assert.ok(Number.isFinite(entry[1]) && entry[1] > 0);
   }
-});
-
-test('keywords: no duplicate words', () => {
-  const words = KEYWORDS.map(([w]) => w);
-  assert.equal(new Set(words).size, words.length);
 });

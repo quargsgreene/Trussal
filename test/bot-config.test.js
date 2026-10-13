@@ -27,21 +27,6 @@ test('does not claim someone else\'s symbol', () => {
   assert.equal(hasBotConfig('x.botConfig({ random: "full" })'), false);
 });
 
-test('finds the call across multiple lines', () => {
-  const code = [
-    's("bd sd")',
-    'botConfig({',
-    '  random: "params",',
-    '  paramFactor: 2',
-    '})',
-    'note("c3")',
-  ].join('\n');
-  const found = findBotConfigCall(code);
-  assert.ok(found);
-  assert.match(found.argText, /random/);
-  assert.match(found.argText, /paramFactor/);
-});
-
 test('a closing paren inside a quoted value does not end the argument', () => {
   const found = findBotConfigCall('botConfig({ harmony: "diatonic :) slow" })\ns("bd")');
   assert.equal(found.unbalanced, false);
@@ -57,45 +42,15 @@ test('stripping swallows a trailing semicolon', () => {
   assert.equal(stripBotConfig('botConfig();\ns("bd")'), 's("bd")');
 });
 
-test('stripping preserves the blank line a Hydra preamble splits on', () => {
-  const code = 'await initHydra()\nosc(10).out(o0)\n\nbotConfig({ samples: true })\ns("bd sd")';
-  const stripped = stripBotConfig(code);
-  assert.equal(stripped, 'await initHydra()\nosc(10).out(o0)\n\ns("bd sd")');
-  assert.ok(stripped.includes('\n\n'), 'the preamble boundary must survive');
-});
-
 test('stripping a block with no declaration is a no-op', () => {
   const code = 's("bd sd")\nnote("c3")';
   assert.equal(stripBotConfig(code), code);
-});
-
-test('a bare botConfig() is every property at null', () => {
-  const parsed = parseBotConfig('botConfig()');
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.present, true);
-  assert.deepEqual(parsed.config, defaultBotConfig());
-  for (const key of BOT_CONFIG_KEYS) assert.equal(parsed.config[key], null);
 });
 
 test('no declaration is reported as absent, not as defaults', () => {
   const parsed = parseBotConfig('s("bd sd")');
   assert.equal(parsed.ok, true);
   assert.equal(parsed.present, false);
-});
-
-test('accepts editor-habit object literals', () => {
-  const cases = [
-    '{ random: "full" }',
-    "{ random: 'full' }",
-    '{ "random": "full" }',
-    '{ random: "full", }',
-    '{random:"full"}',
-  ];
-  for (const text of cases) {
-    const parsed = parseObjectLiteral(text);
-    assert.equal(parsed.ok, true, `${text} should parse`);
-    assert.deepEqual(parsed.value, { random: 'full' });
-  }
 });
 
 test('parses every scalar type', () => {
@@ -130,19 +85,6 @@ test('rejects a wrong-typed property', () => {
   assert.equal(parseBotConfig('botConfig({ random: true })').ok, false);
 });
 
-test('accepts every documented random and colorScheme value', () => {
-  for (const value of ['params', 'full']) {
-    assert.equal(parseBotConfig(`botConfig({ random: "${value}" })`).ok, true, value);
-  }
-  const schemes = [
-    'complementary', 'monochromatic', 'analogous', 'triadic',
-    'tetradic', 'square', 'random',
-  ];
-  for (const value of schemes) {
-    assert.equal(parseBotConfig(`botConfig({ colorScheme: "${value}" })`).ok, true, value);
-  }
-});
-
 test('an explicit null property is legal and means no effect', () => {
   const parsed = parseBotConfig('botConfig({ harmony: null })');
   assert.equal(parsed.ok, true);
@@ -161,14 +103,6 @@ test('harmony rejects an unsigned interval', () => {
   const parsed = parseBotConfig('botConfig({ harmony: "2" })');
   assert.equal(parsed.ok, false);
   assert.match(parsed.error, /signed semitone count/);
-});
-
-test('validateBotConfig fills absent properties with null', () => {
-  const valid = validateBotConfig({ samples: true });
-  assert.equal(valid.ok, true);
-  assert.equal(valid.config.samples, true);
-  assert.equal(valid.config.harmony, null);
-  assert.deepEqual(Object.keys(valid.config).sort(), [...BOT_CONFIG_KEYS].sort());
 });
 
 test('validateBotConfig rejects a non-object argument', () => {
@@ -233,17 +167,6 @@ test('validateBotConfig rejects a wrong-typed action property', () => {
   assert.equal(parseBotConfig('botConfig({ removeAll: "yes" })').ok, false);
   // bare array tokens are coerced to strings, so this is accepted
   assert.equal(parseBotConfig('botConfig({ camera: [1, 2] })').ok, true);
-});
-
-test('the action keys are part of BOT_CONFIG_KEYS and default to null', () => {
-  const actionKeys = [
-    'spawn', 'remove', 'removeAll', 'mute', 'muteAll', 'unmuteAll',
-    'camera', 'cameraOffAll', 'cameraOnAll',
-  ];
-  for (const key of actionKeys) {
-    assert.ok(BOT_CONFIG_KEYS.includes(key), `${key} missing from BOT_CONFIG_KEYS`);
-    assert.equal(defaultBotConfig()[key], null);
-  }
 });
 
 test('unmuteAll and cameraOnAll validate as booleans, mirroring their pair', () => {

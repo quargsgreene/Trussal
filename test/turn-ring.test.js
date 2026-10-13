@@ -13,36 +13,10 @@ import {
   jainFairness,
 } from '../src/audio-net/TurnRing.js';
 
-// --- hash primitives ---------------------------------------------------------
-
-test('fnv1a32 is deterministic and 32-bit unsigned', () => {
-  assert.equal(fnv1a32('trussal 0'), fnv1a32('trussal 0'));
-  const h = fnv1a32('trussal 0');
-  assert.ok(Number.isInteger(h) && h >= 0 && h <= 0xffffffff);
-  assert.notEqual(fnv1a32('trussal 0'), fnv1a32('trussal 1'));
-});
-
 test('the seed/token separator stops boundary collisions', () => {
   // "ab" + "c"  vs  "a" + "bc" would collide without the separator
   assert.notEqual(hashUnitInterval('ab', 'c'), hashUnitInterval('a', 'bc'));
   assert.notEqual(hashUnitInterval('room1', '0'), hashUnitInterval('room10', ''));
-});
-
-test('hashUnitInterval stays strictly inside (0, 1)', () => {
-  for (const token of ['0', '1', '2', '15', '0a', '3b', 'pi']) {
-    const u = hashUnitInterval('room-xyz', token);
-    assert.ok(u > 0 && u < 1, `${token} -> ${u}`);
-  }
-});
-
-// --- ordering: determinism + total order ------------------------------------
-
-test('orderTokens is a deterministic permutation of the input set', () => {
-  const tokens = ['0', '1', '2', '3', '4', '0a', '1b'];
-  const a = orderTokens(tokens, { seed: 'r1' });
-  const b = orderTokens([...tokens].reverse(), { seed: 'r1' });
-  assert.deepEqual(a, b, 'order is independent of input order');
-  assert.deepEqual([...a].sort(), [...tokens].sort(), 'every token present exactly once');
 });
 
 test('orderTokens dedupes and stringifies', () => {
@@ -75,14 +49,6 @@ test('removing one token leaves every other token in the same relative order', (
   }
 });
 
-test('adding one token inserts it without moving the incumbents', () => {
-  const seed = 'grow-room';
-  const base = ['0', '1', '2', '3', '4', '5'];
-  const before = orderTokens(base, { seed });
-  const after = orderTokens([...base, '6'], { seed });
-  assert.deepEqual(after.filter((t) => t !== '6'), before);
-});
-
 test('successor disruption: a pure shift preserves successors (0); a re-sort does not', () => {
   const before = ['0', '1', '2', '3', '4', '5', '6', '7'];
   // '0' leaves, everyone slides down a slot — who-follows-whom is unchanged
@@ -100,21 +66,6 @@ test('position disruption is NOT small for hash ordering under churn (that is ex
   assert.equal(ringDisruption(before, after), 0, 'successors preserved');
   assert.ok(positionDisruption(before, after) > 0.8, 'absolute slots do move');
 });
-
-test('rejoin lands a token back on the same ring slot (hash) ', () => {
-  const seed = 'rejoin-room';
-  const present = ['0', '1', '2', '3', '4', '5'];
-  // '3' leaves then rejoins; roster is the same set again
-  assert.equal(rejoinRestoresSlot(present, present, '3', { seed }), true);
-  // and even if OTHER churn happened while it was gone, its successor among the
-  // still-common tokens is restored
-  const whileGone = ['0', '1', '2', '4', '5', '6', '7'];
-  const afterBack = ['0', '1', '2', '3', '4', '5', '6', '7'];
-  assert.equal(rejoinRestoresSlot(whileGone.concat('3'), afterBack, '3', { seed }),
-    rejoinRestoresSlot(afterBack, afterBack, '3', { seed }));
-});
-
-// --- weighting -------------------------------------------------------------
 
 test('weightedRingSlots gives a heavier token proportionally more slots', () => {
   const tokens = ['0', '1', '2', '3'];

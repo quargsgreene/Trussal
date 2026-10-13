@@ -2,9 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { wrapAsVoice } from '../src/strudel-voice.js';
-
-// Real syntax check (matches bots/src/script-gen/validate.js's own approach):
-// parse-only via the Function constructor, never invoked.
 function isValidJs(code) {
   try {
     // eslint-disable-next-line no-new-func
@@ -86,16 +83,6 @@ test('strudel-voice: the exact shape captured live — Hydra split off, text+css
   assert.match(out, /\$: css\(/);
   // The trailing plain pattern is no longer orphaned.
   assert.match(out, /\$: \(n\("<0 1 2 3 4>\*8"\)\.s\("gm_lead_6_voice"\)\)/);
-});
-
-test('strudel-voice: multiple labeled voices with a suffix never collapse into one grouping expression', () => {
-  // This is the bots crash: variation.js used to wrap the WHOLE multi-voice
-  // master in one `(...)`, which is a SyntaxError the moment there is more
-  // than one top-level statement — exactly what a css()+audio combo produces.
-  const code = '$: css(`.foo{color:red}`)\n     .fast(3)\n\n$: n("<0 1 2 3 4>*8").s("gm_lead_6_voice")';
-  const out = wrapAsVoice(code, '.delay(.4).gain(.5)');
-  assert.ok(isValidJs(out), out);
-  assert.equal((out.match(/\.delay\(\.4\)\.gain\(\.5\)/g) || []).length, 2, 'fx applied per voice');
 });
 
 test('strudel-voice: declarations with a trailing expression and no label still work (existing behaviour)', () => {

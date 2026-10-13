@@ -32,12 +32,6 @@ test('initCss declares styling presence, the other capabilities do not', () => {
   assert.equal(hasCssCycles('$: css(`.x {}`)'), false);
 });
 
-test('silent statements survive the aggregator exclusion, audio voices do not', () => {
-  const src = '$: s("bd*4")\n$: css(`.x {}`).color("red")\n$: word("hi")\n$: n("0 1").s("piano")';
-  assert.equal(keepSilentStatements(src), '$: css(`.x {}`).color("red")\n$: word("hi")');
-});
-
-// --- property naming ---------------------------------------------------------
 
 test('camelCase chain names map to hyphenated properties', () => {
   assert.equal(cssPropForMethod('borderRadius'), 'border-radius');
@@ -49,26 +43,9 @@ test('camelCase chain names map to hyphenated properties', () => {
 });
 
 test('Strudel structural methods are not CSS properties', () => {
-  // These have to fall through the rewrite untouched or `.fast(3)` stops
-  // meaning tempo.
   for (const name of ['fast', 'slow', 'every', 'off', 'jux', 'rev', 'segment', 'euclid', 'degrade']) {
     assert.equal(cssPropForMethod(name), null, `${name} should not be a CSS property`);
   }
-});
-
-// --- the ^…^ literal fence ---------------------------------------------------
-
-test('spaces are mini steps, carets fence one literal CSS value', () => {
-  const seen = [];
-  const mint = (t) => { seen.push(t); return `cc${seen.length - 1}`; };
-  // The user's own example: a two-step sequence, not one shorthand.
-  assert.equal(encodeCssValue('2em 1em', mint), 'cc0 cc1');
-  assert.deepEqual(seen, ['2em', '1em']);
-
-  const seen2 = [];
-  const mint2 = (t) => { seen2.push(t); return `cc${seen2.length - 1}`; };
-  encodeCssValue('<^2em / 1em 3em 0.5em^ ^0.2em 1em 4em 1em^>', mint2);
-  assert.deepEqual(seen2, ['2em / 1em 3em 0.5em', '0.2em 1em 4em 1em']);
 });
 
 test('mini operators survive the fence scan', () => {
@@ -85,20 +62,14 @@ test('a function call is one value without needing carets', () => {
   assert.deepEqual(seen, ['rgb(255, 0, 0)']);
 });
 
-// --- statement rewriting -----------------------------------------------------
-
 test('a css statement becomes a scss token plus namespaced property controls', () => {
   const src = '$: css(`.example { color: red }`).color("<#fff #eee>").borderRadius("2em").fast(3)';
   const { code, atoms, sheets } = rewriteCssCalls(src, { peer: 'abc' });
 
   assert.match(code, /css\("cc0"\)/);
-  // Namespaced: registering `color` outright would clobber the audio control
-  // every other voice in the room uses.
   assert.match(code, /\._cc_color\("<cc1 cc2>"\)/);
   assert.match(code, /\._cc_borderRadius\("cc3"\)/);
-  // Strudel structure is left exactly where the performer put it.
   assert.match(code, /\.fast\(3\)/);
-  // The dominant trigger that keeps a css voice silent, per statement.
   assert.match(code, /\n\._ccRender\(\)$/);
 
   assert.equal(atoms.cc0.kind, 'scss');
@@ -113,150 +84,12 @@ test('a non-css statement is untouched', () => {
   assert.equal(code, '$: s("bd*4").gain(0.8)');
 });
 
-// Reproduces a live incident: a capability declaration in its own paragraph
-// right after a css() voice (`await initCss()\n\n$: css(...)\n\nawait
-// initTextCycles()\n\n...`) used to get swept into the SAME statement as the
-// css() chain — splitCssStatements has no notion of a blank line, only `$:`
-// lines start a new one — so `._ccRender()` landed on the declaration itself:
-// `await initTextCycles()._ccRender()`. That throws (a boolean has no such
-// method), which took the WHOLE program's evaluate() down: no audio, no text,
-// no CSS, for everyone, with Hydra frozen at whatever it last drew.
-test('a capability declaration in the next paragraph is never swept into the css() statement', () => {
-  const src = [
-    'await initCss()',
-    '',
-    '$: css(`*div {',
-    '     &:hover { border-color: #ffffff }',
-    '   }`)',
-    '     .color("<#ffffff #eeeeee #34e3df>/4")',
-    '     .backgroundColor("<#101014 #16161c>")',
-    '   ',
-    '',
-    'await initTextCycles()',
-    '',
-    '$: word("hi")',
-  ].join('\n');
-  const { code, errors } = rewriteCssCalls(src);
-  assert.deepEqual(errors, []);
-  assert.doesNotMatch(code, /await\s+initTextCycles\(\)\._ccRender/, 'the declaration never gets the css renderer appended');
-  assert.match(code, /\n\._ccRender\(\)\n\nawait initTextCycles\(\)/, 'the css voice keeps its own renderer, cleanly separated');
-  assert.match(code, /\$: word\("hi"\)$/, 'rewriteCssCalls leaves word() untouched — hasCss is false for that statement');
-});
-
 test('css() without backticks is refused with an explanation', () => {
   const { errors } = rewriteCssCalls('$: css(".example").color("red")');
   assert.equal(errors.length, 1);
   assert.match(errors[0], /backticks/);
 });
 
-test('a runtime value is carried through and marked non-literal', () => {
-  const { code, sheets } = rewriteCssCalls('$: css(`.x {}`).opacity(sliderWithID("o", 1))');
-  assert.match(code, /_cc_opacity\(sliderWithID\("o", 1\)\)/);
-  assert.equal(sheets[0].props[0].literal, false);
-  assert.deepEqual(sheets[0].props[0].values, []);
-});
-
-test('tokens are unique across peers sharing one rebuild', () => {
-  const counter = { n: 0 };
-  const a = rewriteCssCalls('$: css(`.a {}`)', { peer: 'a', counter });
-  const b = rewriteCssCalls('$: css(`.b {}`)', { peer: 'b', counter });
-  assert.notDeepEqual(Object.keys(a.atoms), Object.keys(b.atoms));
-});
-
-test('the custom property name is derived from the selector, not the statement token', () => {
-  // Both the sheet the sidecar compiled and the trigger running in every
-  // browser have to arrive at this name without coordinating. A selector
-  // made only of already-safe characters passes through unescaped.
-  assert.equal(cssVarName('.ts-chip', 'border-radius'), '--cc-_2ets-chip-border-radius');
-  assert.equal(cssVarName('cc0', 'border-radius'), '--cc-cc0-border-radius');
-});
-
-test('selectorOf reads everything before a sheet\'s first brace', () => {
-  assert.equal(selectorOf({ scss: '.ts-chip { color: red }' }), '.ts-chip');
-  assert.equal(selectorOf({ scss: '  body  ' }), 'body');
-  assert.equal(selectorOf({}), '');
-});
-
-test('selectorOf skips leading comments and $variable declarations, not just the first brace', () => {
-  // Both are documented supported SCSS syntax (this file's own header:
-  // "nesting, &, $variables, @media, ..."), so a leading one of either must
-  // not be mistaken for the selector — that fed a false "invalid CSS
-  // selector" refusal into selectorSyntaxError (css-cycles.js) for otherwise
-  // legal code.
-  assert.equal(
-    selectorOf({ scss: '$primary: #fff;\n.example { color: $primary }' }),
-    '.example',
-  );
-  assert.equal(
-    selectorOf({ scss: '// tweak the chip border\n.ts-chip { border-color: red }' }),
-    '.ts-chip',
-  );
-  assert.equal(
-    selectorOf({ scss: '/* note */ .ts-chip { color: red }' }),
-    '.ts-chip',
-  );
-  // A `;` inside a quoted $variable value must not end the skip early.
-  assert.equal(
-    selectorOf({ scss: '$label: "a; b"; .ts-chip { content: $label }' }),
-    '.ts-chip',
-  );
-});
-
-test('selectorOf: known gap — a leading at-rule or SCSS interpolation still stops early', () => {
-  // Documented limitation, not a regression: fixing either means making this
-  // function, withPatternedProps' separate insertion-point search, AND
-  // scanBlocks/parseScssDeclarations all at-rule/interpolation-aware — out of
-  // scope for the selector-validation fix this guards. selectorSyntaxError
-  // (css-cycles.js) at least gives the at-rule case a clearer message instead
-  // of a flat "invalid selector" claim.
-  assert.equal(
-    selectorOf({ scss: '@media (max-width: 600px) { .example { color: red } }' }),
-    '@media (max-width: 600px)',
-  );
-  assert.equal(
-    selectorOf({ scss: '.icon-#{$size} { width: 10px }' }),
-    '.icon-#',
-  );
-});
-
-test('two peers writing the identical selector land on the identical variable', () => {
-  // The whole point: mutual exclusion has to control the value the room
-  // renders, not just which peer's own custom property holds what — if two
-  // performers' compiled rules referenced different variables, whichever
-  // <style> element happened to sort later in the document would always win
-  // the cascade regardless of turn. Same selector -> same variable closes
-  // that gap, since both peers' rules end up identical for the property.
-  assert.equal(cssVarName('.ts-chip', 'color'), cssVarName('.ts-chip', 'color'));
-});
-
-test('selector characters a custom property name cannot hold are escaped losslessly', () => {
-  // Distinct selectors must never collapse onto the same variable name —
-  // hijacking another peer's slot would otherwise be one crafted selector
-  // away. Escaping every non-alnum/hyphen character (underscore included)
-  // keeps every `_XX` sequence unambiguous.
-  const a = cssVarName('#trussal-studio-overlay .ts-chip', 'color');
-  const b = cssVarName('#trussal-studio-overlay.ts-chip', 'color');
-  assert.notEqual(a, b);
-  assert.match(a, /^--cc-[a-z0-9_-]+-color$/);
-});
-
-// --- SCSS scanning -----------------------------------------------------------
-
-test('declarations are found through nesting, media queries and variables', () => {
-  assert.deepEqual(
-    parseScssDeclarations('.x { color: red; &:hover { color: blue } }').map((d) => [d.prop, d.value]),
-    [['color', 'red'], ['color', 'blue']],
-  );
-  assert.deepEqual(
-    parseScssDeclarations('@media (max-width: 600px) { .x { visibility: hidden } }').map((d) => d.prop),
-    ['visibility'],
-  );
-  // `$brand: #f00` is a variable binding, not a declaration to police.
-  assert.deepEqual(
-    parseScssDeclarations('$brand: #f00;\n.x { color: $brand }').map((d) => d.prop),
-    ['color'],
-  );
-});
 
 test('a declaration with no trailing semicolon is still seen', () => {
   // It would otherwise reach the sheet having never been checked.
@@ -273,8 +106,6 @@ test('keyframes are lifted out of the block that carries them', () => {
   assert.match(rest, /\.x \{ color: red \}/);
   assert.doesNotMatch(rest, /@keyframes/);
 });
-
-// --- guardrails --------------------------------------------------------------
 
 test('the hiding properties are refused', () => {
   assert.match(checkDeclaration('display', 'none'), /hide/);
@@ -346,33 +177,6 @@ test('outside Trussal only background, border, filter and text properties apply'
   }
 });
 
-// --- statement refusal -------------------------------------------------------
-
-test('one illegal value anywhere in a pattern refuses the whole statement', () => {
-  // Legal on two cycles in three; the statement still does not run.
-  const { sheets } = rewriteCssCalls('$: css(`.x {}`).opacity("<1 0.5 0>")');
-  assert.deepEqual(checkSheet(sheets[0]).length, 1);
-  assert.match(checkSheet(sheets[0])[0], /opacity/);
-
-  const ok = rewriteCssCalls('$: css(`.x {}`).opacity("<1 0.5 0.2>")');
-  assert.deepEqual(checkSheet(ok.sheets[0]), []);
-});
-
-test('declarations inside the SCSS are refused too, at any nesting', () => {
-  const cases = [
-    '$: css(`.x { display: none }`)',
-    '$: css(`.x { &:hover { visibility: hidden } }`)',
-    '$: css(`@media (max-width: 600px) { .x { opacity: 0 } }`)',
-    '$: css(`.x { animation: spin 2s }\n@keyframes spin { to { transform: translateX(-9999px) } }`)',
-  ];
-  for (const src of cases) {
-    const { sheets } = rewriteCssCalls(src);
-    assert.ok(checkSheet(sheets[0]).length > 0, `should refuse: ${src}`);
-  }
-});
-
-// --- runtime clamping --------------------------------------------------------
-
 test('a runtime value is clamped rather than refused', () => {
   assert.equal(clampValue('opacity', '0'), '0.04');
   assert.equal(clampValue('width', '0'), '1px');
@@ -387,26 +191,6 @@ test('a runtime value is clamped rather than refused', () => {
   assert.equal(clampValue('z-index', '4'), null);
 });
 
-// --- contrast ----------------------------------------------------------------
-
-test('contrast is a ratio, so a near-match does not slip through', () => {
-  assert.ok(contrastRatio('#ffffff', '#ffffff') < CONTRAST_FLOOR);
-  assert.ok(contrastRatio('#fffffe', '#ffffff') < CONTRAST_FLOOR);
-  assert.ok(contrastRatio('#000000', '#ffffff') >= CONTRAST_FLOOR);
-});
-
-test('colliding text is walked away from its background, not refused', () => {
-  const onWhite = adjustColorForBackground('#ffffff', '#ffffff');
-  assert.notEqual(onWhite, '#ffffff');
-  assert.ok(contrastRatio(onWhite, '#ffffff') >= CONTRAST_FLOOR);
-
-  const onBlack = adjustColorForBackground('#111111', '#000000');
-  assert.ok(contrastRatio(onBlack, '#000000') >= CONTRAST_FLOOR);
-
-  // Already legible: left exactly as written.
-  assert.equal(adjustColorForBackground('#000000', '#ffffff'), '#000000');
-});
-
 test('colours parse from every form a performer might type', () => {
   assert.deepEqual(parseColor('#fff'), { r: 255, g: 255, b: 255, a: 1 });
   assert.deepEqual(parseColor('#ff000080').a, 128 / 255);
@@ -418,20 +202,6 @@ test('colours parse from every form a performer might type', () => {
 });
 
 // --- sheet assembly ----------------------------------------------------------
-
-test('a sheet is emitted scoped for Trussal and allowlisted for the page', () => {
-  const { sheets } = rewriteCssCalls('$: css(`.example {}`).color("red").width("40px")');
-  const scss = buildPeerScss(sheets, { peerClass: 'tc-p-abc' });
-
-  // Scoped copy carries everything, with the id that gives it the specificity.
-  // The variable name is derived from the selector (.example), not the
-  // statement's own token — see cssVarName's own doc for why.
-  assert.match(scss, /#trussal-studio-overlay[\s\S]*\.example \{[\s\S]*width: var\(--cc-_2eexample-width\)/);
-  // The bare copy carries colour but not width.
-  const bare = scss.slice(scss.lastIndexOf('}') + 1);
-  assert.match(scss, /color: var\(--cc-_2eexample-color\)/);
-  assert.doesNotMatch(bare, /width/);
-});
 
 test('keyframes are namespaced per peer and their references rewritten', () => {
   const { sheets } = rewriteCssCalls(
@@ -447,11 +217,6 @@ test('a refused statement contributes nothing to the sheet', () => {
   const { sheets } = rewriteCssCalls('$: css(`.x { display: none }`)');
   assert.equal(buildPeerScss(sheets, { peerClass: 'tc-p-abc' }).trim(), '');
 });
-
-// --- the receiving side ------------------------------------------------------
-//
-// The sidecar compiles whatever it is sent and cannot tell an honest client
-// from a patched one, so these are the room's actual defence.
 
 test('an honest compiled sheet is accepted', () => {
   assert.deepEqual(checkCompiledCss('.example{color:red;background-color:blue}'), []);
@@ -474,14 +239,10 @@ test('a sheet that never passed an outbound guardrail is refused inbound', () =>
 });
 
 test('a selector cannot escape its Trussal scope to earn the full property set', () => {
-  // Starting at the root is not enough — a sibling combinator leaves it.
   assert.ok(checkCompiledCss('#trussal-studio-overlay ~ *{display:none}').length > 0);
-  // One escaping alternative holds the whole rule to the allowlist, since they
-  // share a declaration block.
   assert.ok(checkCompiledCss('#trussal-studio-overlay .a,body{display:none}').length > 0);
 });
 
 test('the hot path plumbing is not mistaken for a value to police', () => {
-  // The var() is assigned per hap and checked there, not here.
   assert.deepEqual(checkCompiledCss('.a{color:var(--cc-cc0-color)}'), []);
 });

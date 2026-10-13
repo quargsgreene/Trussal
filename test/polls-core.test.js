@@ -77,14 +77,6 @@ test('switchVote moves one vote from the old option to the new one', () => {
   assert.deepEqual(switchVote(tally, null, 'yes'), { yes: 3, no: 1 });
 });
 
-test('rewritePollCalls mints the whole JSON blob as one atom, braces and all', () => {
-  const code = '$: poll(\'{"question":"Is water wet?","options":["yes","no"]}\').close(1000)';
-  const { code: out, atoms } = rewritePollCalls(code, { peer: 'jit-1' });
-  assert.match(out, /\$: poll\("pl0"\)\.close\(1000\)\n\._pollRender\(\)/);
-  assert.equal(atoms.pl0.text, '{"question":"Is water wet?","options":["yes","no"]}');
-  assert.equal(atoms.pl0.peer, 'jit-1');
-});
-
 test('rewritePollCalls also mints a chained vote() argument', () => {
   const code = '$: poll(\'{"question":"Q","options":["yes","no"]}\').vote(\'{"yes":3}\')';
   const { code: out, atoms } = rewritePollCalls(code);

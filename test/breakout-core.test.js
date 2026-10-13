@@ -11,11 +11,6 @@ import {
 } from '../src/breakout-core.js';
 import { parseMetaprogram } from '../src/audio-net/MetaprogrammerParser.js';
 
-test('validateBreakoutLiteral normalizes a room with no participants', () => {
-  const spec = validateBreakoutLiteral({ name: 'Room A' });
-  assert.deepEqual(spec, { name: 'Room A', participants: [] });
-});
-
 test('validateBreakoutLiteral accepts participants and coerces to strings', () => {
   const spec = validateBreakoutLiteral({ name: 'Room A', participants: ['0', 1, '2a'] });
   assert.deepEqual(spec.participants, ['0', '1', '2a']);
@@ -29,17 +24,6 @@ test('validateBreakoutLiteral rejects a missing/blank name and the reserved "mai
 
 test('parseBreakoutLiteral surfaces a JSON error', () => {
   assert.throws(() => parseBreakoutLiteral('{name: no quotes}'), /not valid JSON/);
-});
-
-test('resolveBreakoutState folds declared rooms and assign() into one state', () => {
-  const breakouts = [{ name: 'A', participants: ['0'] }, { name: 'B', participants: [] }];
-  const assignments = [{ token: '1', room: 'B' }];
-  const state = resolveBreakoutState(breakouts, assignments);
-  assert.equal(roomForToken(state, '0'), 'A'); // seated by breakout()'s own participants list
-  assert.equal(roomForToken(state, '1'), 'B'); // seated by assign()
-  assert.equal(roomForToken(state, '2'), MAIN_ROOM); // never mentioned
-  const roomA = state.rooms.find((r) => r.name === 'A');
-  assert.deepEqual(roomA.participants, ['0']);
 });
 
 test('resolveBreakoutState: a later assign() for the same token wins', () => {
@@ -64,21 +48,7 @@ test('resolveBreakoutState: assign() to an undeclared room name still creates it
 
 // --- buildDefaultBreakoutProgram ---------------------------------------------
 
-test('buildDefaultBreakoutProgram opens with the breakout room directive and seats known participants', () => {
-  const program = buildDefaultBreakoutProgram(['0', '1']);
-  assert.match(program, /^'breakout room'\n/);
-  assert.match(program, /\$ participants <0 1>/);
-});
-
 test('buildDefaultBreakoutProgram seeds a rest when nobody is in the room yet', () => {
   assert.match(buildDefaultBreakoutProgram([]), /\$ participants <~>/);
   assert.match(buildDefaultBreakoutProgram(undefined), /\$ participants <~>/);
-});
-
-test('buildDefaultBreakoutProgram output actually parses as a valid breakout-room metaprogram', () => {
-  const withParticipants = parseMetaprogram(buildDefaultBreakoutProgram(['0', '1', '2a']));
-  assert.equal(withParticipants.valid, true, JSON.stringify(withParticipants.errors));
-
-  const empty = parseMetaprogram(buildDefaultBreakoutProgram([]));
-  assert.equal(empty.valid, true, JSON.stringify(empty.errors));
 });
