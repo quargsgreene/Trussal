@@ -52762,20 +52762,6 @@ ${newBody}`).length === 0;
     );
     return true;
   }
-  function renderAudioConfigCheck() {
-    window.trussalAudioConfigCheck = runCheck;
-    let tries = 0;
-    const tick3 = () => {
-      if (runCheck()) return;
-      if (++tries > 10) {
-        console.warn("[trussal] audio config guard: window.config never appeared");
-        return;
-      }
-      setTimeout(tick3, 500);
-    };
-    tick3();
-  }
-
   // src/index.js
   init_peer_state();
   init_aggregator_election();
@@ -65687,7 +65673,6 @@ ${snippet}${JP_BTN_MARKER}`;
     installPublishedVideoOverride();
     startWithVideoMuted();
   }
-  renderAudioConfigCheck();
   renderRecentListText();
   renderWelcomeOverlay();
   renderHideStartMeetingButton();
