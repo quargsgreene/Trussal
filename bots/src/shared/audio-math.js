@@ -1,6 +1,5 @@
 /**
- * Audio math shared by the script generator (per-bot gain/effects params) and
- * the bot's ffmpeg bed generator.
+ * Audio math shared by the script generator (per-bot gain/effects params)
  *
  * Gain staging: N uncorrelated sources summed at the mix grows in
  * power, not amplitude, so per-bot gain scales by 1/sqrt(N). A fixed 3 dB

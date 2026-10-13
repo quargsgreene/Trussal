@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
-import { ffmpegBedArgs } from '../src/bot/ffmpeg-bed.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
   pageEnsureAudioPublished, pageMasterPlayer,
@@ -56,17 +55,6 @@ test('jitsiRoomUrl applies home-network bandwidth guards by default', () => {
   const hd = jitsiRoomUrl('http://jitsi.lan/0', 'Beagle', { videoHeight: 720, channelLastN: 2 });
   assert.match(hd, /height\.max=720/);
   assert.match(hd, /channelLastN=2/);
-});
-
-test('ffmpegBedArgs renders the bot band as an ALSA loopback bed with staged gain', () => {
-  const args = ffmpegBedArgs({ loFreq: 200, hiFreq: 400, gain: 0.22, alsaDevice: 'plughw:Loopback,0,0' });
-  const cmd = args.join(' ');
-  assert.match(cmd, /anoisesrc/, 'noise source band-passed to the bot band');
-  assert.match(cmd, /highpass=f=200/);
-  assert.match(cmd, /lowpass=f=400/);
-  assert.match(cmd, /volume=0\.22/);
-  assert.match(cmd, /-f alsa/);
-  assert.ok(args.at(-1) === 'plughw:Loopback,0,0');
 });
 
 // Page scripts are real functions Puppeteer serializes into the page; we

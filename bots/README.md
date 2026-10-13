@@ -84,9 +84,7 @@ conductor env (`JITSI_CHANNEL_LAST_N`, `JITSI_VIDEO_HEIGHT`, `JITSI_START_BITRAT
   `--use-fake-device-for-media-stream`; a `getUserMedia` override hands Jitsi a video track
   captured from the Hydra canvas and an audio track tapped from Strudel's WebAudio output.
   The bot joins unmuted, so Jitsi carries the music directly to listeners. The same tap is
-  also fanned out to the bot's own ALSA loopback subdevice, where — alongside an ffmpeg
-  pink-noise bed (band-limited to the bot's frequency band, gain-staged `0.7/√N`). ach bot is named after a dog breed,
-  deterministic per `(botId, sessionSeed)`.
+  also fanned out to the bot's own ALSA loopback subdevice.
 
 ## Develop
 

@@ -16,7 +16,6 @@ import WebSocket from 'ws';
 import { Bot } from './bot.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from './aggregator-bot.js';
 import { makeWsSidecarConnector } from '../orchestrator/fleet-service.js';
-import { ffmpegBedArgs } from './ffmpeg-bed.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { gainForBotCount } from '../shared/audio-math.js';
 import { frequencyBand } from '../script-gen/variation.js';
