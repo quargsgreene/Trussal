@@ -1,90 +1,20 @@
-// JPattern metaprogram parser: text → AST.
-//
-// The metaprogramming language is Mondo-flavoured (strudel.cc mini-notation
-// sequences) but deliberately tiny: one `$ participants` scheduling sequence
-// plus `#`-chained directives (one cyclic timing mode, a tempo, network-
-// modulated AV effects, and a whitelist of Strudel-analog pattern functions).
-// Everything else — arbitrary Strudel calls, any Hydra call, a parenthesized
-// expression anywhere — is a validation error. Effect arguments are plain
-// positive numbers, except where a signature opts in to mini-notation values
-// (`# room` and `# crush`'s metric/scale/pinned amount, `# echo`'s scales and
-// bounds, `# noise`'s every slot): those parse to a `valueSeq` node the caller
-// reads per cycle via ValuePattern.js, and may carry rests and a `*n` / `/n`
-// rate. `# noise` takes `<…>` alternation at rate 1 or slower only — it is
-// re-derived once per cycle boundary, so a `[…]` subdivision or a `*2` has
-// nowhere to land.
-//
-// A statement written with a leading `*` (`*$ participants <2a 2b>`) is a
-// BUTTON DECLARATION rather than a statement: inert to this parser, rendered
-// as a button by the JPattern editor, and written into the program only when
-// that button is pressed. It is the metaprogram's `*name: code`.
-//
-// Pure module: no DOM, no WebAudio, no Strudel import, so it runs identically
-// in the browser bundle, in bots, and under node:test. Errors carry
-// line/col (1-based) for editor squiggles.
-
-// Participant token validation shares the sidecar's index rules.
-// (CJS module; esbuild interops it into the browser bundle.)
 import {
   isValidParticipantToken,
   parseParticipantToken
 } from '../../latency-instrument/room-indices.js';
-// echo's slot names, legal metrics and default slots are the effect's own
-// business (av-effects/Echo.js), not the grammar's — the parser reads them
-// from there rather than keeping a second copy that could drift. Nothing in
-// that module touches WebAudio until createEchoNode() is CALLED with a
-// context, so importing it keeps this parser loadable in the bots process.
 import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.js';
-// # breakout's JSON-object argument shape and validation — one rule, shared
-// with src/audio-net/Breakout.js (which reads program.breakouts/assignments
-// to actually create rooms and move participants).
-import { parseBreakoutLiteral } from '../breakout-core.js';
-// The one reader for every patterned `#` argument, whatever the effect — and
-// the bare-`?` probability, which is that reader's to define rather than the
-// grammar's.
 import {
   evaluateValuePattern, isValuePattern, isDataRefNode, DEFAULT_DROP_CHANCE,
 } from './ValuePattern.js';
-// Which media an effect may name, and how a written set resolves. The grammar
-// validates against the same list the four consumers gate on.
 import { MEDIA, isMedium, normalizeMediaSet } from './EffectMedia.js';
-// The one rule for which of Trussal's three program kinds a buffer is. A
-// metaprogram must open with the `'metaprogram editor'` directive — it is what
-// tells this parser it is looking at a metaprogram, so `participants` no longer
-// has to be a reserved word carrying that signal.
 import { readDirective, stripDirective } from '../program-directive.js';
-// The two surface notations a metaprogram may be written in. This parser is
-// the `$`/`#` ("mondo") grammar, so a "mini" buffer — Strudel-style
-// `$: participants("<0 1>").cycles("wcl", 10)` — is lowered to it here before
-// tokenising. See src/notation.js.
 import { detectNotation, miniToMondo } from '../notation.js';
 
 export const TIMING_METRICS = ['wcl', 'wcj', 'wcpl'];
 
-// `# ring [explicit]` selects how the turn rotation order is derived:
-//   (bare)    a written `# ring` with no mode word is the consistent-hash
-//             order of the room's PRESENT tokens (TurnRing.orderTokens),
-//             recomputed each cycle from the live roster, so a join/leave
-//             needs no `$ participants` edit and no CRDT round-trip.
-//             `$ participants` must still be present syntactically (a
-//             program has one); its contents seed nothing in this mode.
-//             Optional `w <token> <weight> …` pairs bias a token's share of
-//             turns (weighted rendezvous — see weightedRingSlots).
-//   explicit  the literal `$ participants <…>` sequence, walked cyclically
-//             (an UNWRITTEN `# ring` — no line at all — also means this,
-//             byte-identical to the old behaviour before `# ring` existed).
 export const RING_MODES = ['explicit'];
-// Metrics an effect may be modulated by. Wider than TIMING_METRICS: wcrtt
-// cannot set a cycle length (it is a round trip, not a turn) but it is a
-// perfectly good modulation source.
 export const EFFECT_METRICS = ['wcl', 'wcj', 'wcrtt', 'wcpl'];
 
-// A metric keyword is ALWAYS quoted — `# cycles "wcl" 20`, `# room "wcpl" 2`,
-// `# crush <"wcl" "wcpl"> <2 4>` — so it tokenises as a `string`, never a bare
-// `word`. This is the one spelling mini notation can express, and keeping it
-// the only one means the two surface notations read a metric identically.
-// `"audio"`/`"video"`/… are media names, a disjoint set; atMediaArg gates on
-// isMedium() so a quoted metric is never taken for one.
 function isMetricKeywordToken(t) {
   return !!t && t.type === 'string';
 }
@@ -93,11 +23,7 @@ function isMetricKeywordToken(t) {
 // author to quote it rather than falling through to a vaguer error.
 const METRIC_WORDS = new Set(['wcl', 'wcj', 'wcrtt', 'wcpl']);
 
-// A room with no `# mosaic` directive still tiles: the mosaic is the resting
-// state of the aggregator's video, and `# mosaic false` is the deviation from
-// it. Kept as a consumer-side default rather than a line injected into
-// buildDefaultProgram, for the same reason `# tempo` is left unwritten — the
-// AST should report the directives performers actually typed.
+
 export const MOSAIC_ENABLED_BY_DEFAULT = true;
 
 // Whether a parsed pattern holds metric keywords or numbers, taken from its
@@ -132,17 +58,6 @@ export const MAX_VALUE_REPEATS = 1024;
 // crush reads any worst-case metric, wcrtt included — unlike `# cycles`,
 // which turns its metric into a duration and has no meaning for a round trip.
 export const CRUSH_METRICS = ['wcl', 'wcj', 'wcpl', 'wcrtt'];
-
-// name → { minArgs, maxArgs, kind } for every legal `#` directive besides
-// cycles/tempo. Args are positive reals unless noted. `metricKeywords`
-// requires a leading metric word before the numeric args (`# room wcl 2 0.4`);
-// `metricPairs` instead takes that many <metric> <scale> pairs, one per
-// parameter, followed by that many optional upper bounds (`# echo`, below).
-// `patternArgs` additionally lets the metric and the numbers be written as
-// mini-notation sequences (`# crush <wcl wcrtt> <2 4>`), read per cycle — rests
-// and a trailing `*n` / `/n` rate included. `mediaArg` allows the trailing
-// medium set (`# crush wcl 2 ["audio" "video"]`), which narrows the effect
-// from its whole-room default and patterns like any other argument.
 const EFFECTS = {
   // scale=1, fixed metric amount=live. Any worst-case metric may drive the
   // decay, and all three arguments pattern — `# room <wcl wcrtt> <1 2 ~ 2 3>*2`.
@@ -157,16 +72,8 @@ const EFFECTS = {
   },
   // scale=1 (8-bit base), fixed metric amount=live
   crush: { minArgs: 0, maxArgs: 2, kind: 'effect', metricKeywords: CRUSH_METRICS, patternArgs: true, mediaArg: true },
-  // noise interleaves two metric keywords with its numbers and takes patterns
-  // in any slot, which parseChainFn's positional-numbers grammar cannot
-  // express — it parses in parseNoise instead.
   noise: { kind: 'effect', grammar: 'noise', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }, // landmarks=false
-  // How the aggregator arranges the room's Hydra output in its published
-  // frame: true (or bare) tiles every Hydra participant into a square mosaic,
-  // false shows only whoever is streaming, full-frame. Unwritten means the
-  // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
-  // rather than in an injected directive nobody typed.
   mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
 };
 
@@ -238,21 +145,12 @@ function tokenize(text) {
       continue;
     }
     if (ch === "'") {
-      // A second, DIFFERENT quote character exists solely so `# breakout` and
-      // `# assign` can carry a JSON object literal (breakout-core.js): JSON's
-      // own strings are double-quoted, so wrapping the whole blob in single
-      // quotes instead is what lets `'{"name":"Room A"}'` tokenize as ONE
-      // string rather than terminating at the first internal `"`. Same
-      // no-escaping, same-line-only scan as the `"` branch above; still
-      // produces a 'string' token so every existing `t.type === 'string'`
-      // check (medium sets, metric keywords) is unaffected by a directive
-      // that happens to use this instead.
       let j = i + 1;
       while (j < n && text[j] !== "'" && text[j] !== '\n') j++;
       const terminated = text[j] === "'";
       if (!terminated) {
         errors.push({
-          message: "unterminated string — a breakout/assign literal closes with a \"'\" on the same line",
+          message: "unterminated string",
           line: startLine, col: startCol
         });
       }
@@ -315,29 +213,15 @@ function tokenize(text) {
   return { tokens, errors };
 }
 
-// ---------------------------------------------------------------------------
-// Parser
-
-// How many source characters a token spans. Numbers carry their raw spelling
-// because parseFloat loses it (`0.50`, `007`); every other token is written
-// exactly as its value.
 function tokenWidth(t) {
   return String(t.raw != null ? t.raw : (t.value ?? '')).length;
 }
 
-// A token as it was written, for error messages. Only `dataref` carries a
-// structured value, which would otherwise read as '[object Object]'.
 function tokenText(t) {
   return String(t.raw != null ? t.raw : (t.value ?? ''));
 }
 
 class Parser {
-  // `directiveKind` is 'metaprogram' (the main room's program) or 'breakout'
-  // (one breakout room's own program, program-directive.js's BREAKOUT) — the
-  // only difference the grammar makes on it is parseBreakout/parseAssign
-  // refusing to run inside a 'breakout' buffer: a breakout room's own program
-  // schedules and effects ITS room, but only the main room's metaprogram may
-  // create rooms or move participants into them.
   constructor(tokens, errors, directiveKind = 'metaprogram') {
     this.tokens = tokens.filter(t => t.type !== 'newline' || true); // keep newlines: statement boundaries
     this.pos = 0;
@@ -354,10 +238,6 @@ class Parser {
   }
   skipNewlines() { while (this.peek().type === 'newline') this.next(); }
 
-  // A bare (unquoted) metric keyword where a quoted one belongs. Records the
-  // "quote it" error and returns true so the caller can bail; false leaves the
-  // caller to its own "needs a metric" path for a token that is not a metric
-  // word at all.
   rejectBareMetric(t) {
     if (t && t.type === 'word' && METRIC_WORDS.has(t.value)) {
       this.error(`metric keywords are quoted — write "${t.value}", not ${t.value}`, t);
@@ -396,21 +276,11 @@ class Parser {
 
   parseProgram() {
     const program = {
-      participants: null, cycles: null, tempo: null, ring: null, chain: [],
-      // # breakout / # assign — see breakout-core.js. Both repeatable, folded
-      // in source order by resolveBreakoutState rather than treated as a
-      // singleton the way cycles/tempo/ring are.
-      breakouts: [], assignments: [],
+      participants: null, cycles: null, tempo: null, ring: null, chain: []
     };
     this.skipNewlines();
     while (!this.atEof()) {
       const t = this.peek();
-      // `*$ …` / `*# …` — a BUTTON DECLARATION, not a statement. The personal
-      // Strudel editor's `*name: code` lines are stripped before evaluation
-      // (strudel.js) and surface as voice buttons instead; these are the same
-      // thing for the metaprogram, so the grammar has to see them as inert
-      // rather than as a broken statement. Pressing the button is what puts
-      // the declared voice into the program (editor-router-core.js).
       if (t.type === 'op' && t.value === '*' && this.peek(1).type === 'sigil') {
         this.skipDeclarationLine();
         this.skipNewlines();
@@ -431,25 +301,13 @@ class Parser {
     if (!program.participants) {
       this.errors.push({ message: "missing '$' scheduling sequence", line: 1, col: 1 });
     }
-    // Defaults per spec: cycles wcl 20 (mirrors buildDefaultProgram — wcl is
-    // mouth-to-ear latency in the tens of ms, so a small scale gives seconds).
     if (!program.cycles) program.cycles = { metric: 'wcl', factor: 20, fixed: null, defaulted: true };
-    // No tempo is injected: an unwritten `# tempo` leaves program.tempo null,
-    // so the AST reports honestly that no tempo directive is in force. This is
-    // behaviourally a no-op — beatSeconds(null) already falls back to 120 bpm,
-    // which is what quantizes cycle length and what a pinned `# cycles`
-    // amount lands on — but it stops the default program from carrying a
-    // directive nobody wrote.
     return program;
   }
 
   parseDollar(program) {
     const sigil = this.next(); // '$'
     const name = this.peek();
-    // `participants` is no longer reserved: the `'metaprogram editor'` directive
-    // is what identifies this buffer, so the label after `$` is optional sugar.
-    // `$ <0 1 2>` and `$ participants <0 1 2>` are the same statement. A word
-    // that is anything else is still an error — `$` has exactly one statement.
     if (name.type === 'word') {
       if (name.value !== 'participants') {
         this.error(`unknown '$' statement '${name.value}' — '$' takes an optional 'participants' label then a sequence`, name);
@@ -802,11 +660,7 @@ class Parser {
       }
       accept({ op: t.value, value: val });
     }
-    // Merge rather than overwrite: every element/`<…>`/`[…]` arrives with
-    // `modifiers: []`, so this is identical to assignment for them — but a
-    // Mondo `(fast N X)` / `(slow N X)` group arrives already carrying the
-    // `*N` / `/N` it desugars to, and that must survive a trailing-operator
-    // scan that finds nothing.
+
     node.modifiers = [...(node.modifiers || []), ...mods];
     if (extent) { node.endLine = extent.line; node.endCol = extent.col; }
     return node.modifiers;
@@ -826,9 +680,6 @@ class Parser {
     if (name === 'cycles') { this.parseCycles(program, nameTok); return; }
     if (name === 'tempo') { this.parseTempo(program, nameTok); return; }
     if (name === 'ring') { this.parseRing(program, nameTok); return; }
-    if (name === 'breakout') { this.parseBreakout(program, nameTok); return; }
-    if (name === 'assign') { this.parseAssign(program, nameTok); return; }
-
     if (PATTERN_FNS[name]) { this.parseChainFn(program, name, nameTok, PATTERN_FNS[name]); return; }
     if (EFFECTS[name]) {
       const sig = EFFECTS[name];
@@ -1001,96 +852,6 @@ class Parser {
     program.ring = ring;
   }
 
-  // `# breakout '{"name":"Room A","participants":["0","1"]}'` — declares or
-  // redeclares one breakout room. The argument is single-quoted, not the
-  // double-quoted string every other directive's metric/medium keywords use
-  // — see the tokenizer's `'` branch for why (a JSON blob's own quotes would
-  // terminate a double-quoted token at the first one). Repeatable: several
-  // `# breakout` lines declare several rooms, folded in source order by
-  // breakout-core.js's resolveBreakoutState (the actual room-creation and
-  // participant-moving side effects live in src/audio-net/Breakout.js).
-  parseBreakout(program, nameTok) {
-    if (this.directiveKind === 'breakout') {
-      this.error("# breakout is not allowed in a breakout room's own program — " +
-        "rooms are created only from the main room's metaprogram", nameTok);
-      this.recover();
-      return;
-    }
-    const litTok = this.peek();
-    if (litTok.type !== 'string') {
-      this.error('breakout needs a single-quoted JSON object — the syntax is ' +
-        `# breakout '{"name":"Room A","participants":["0","1"]}'`, litTok);
-      this.recover();
-      return;
-    }
-    this.next();
-    let spec;
-    try {
-      spec = parseBreakoutLiteral(litTok.value);
-    } catch (e) {
-      this.error(e.message, litTok);
-      this.recover();
-      return;
-    }
-    if (!this.atStatementEnd()) {
-      this.error(`breakout takes exactly one argument — the syntax is # breakout '{"name":"Room A"}'`, this.peek());
-      this.recover();
-      return;
-    }
-    program.breakouts.push(spec);
-  }
-
-  // `# assign "<participant token>" "<room name>"` — moves one participant
-  // into a breakout room, or back to breakout-core.js's reserved "main" room.
-  // Repeatable and order-sensitive: the last # assign for a given token wins
-  // (resolveBreakoutState), the same "read top-to-bottom as current desired
-  // state" rule # ring's weights and the participants sequence already follow.
-  parseAssign(program, nameTok) {
-    if (this.directiveKind === 'breakout') {
-      this.error("# assign is not allowed in a breakout room's own program — " +
-        "participants are assigned only from the main room's metaprogram", nameTok);
-      this.recover();
-      return;
-    }
-    const tokenTok = this.peek();
-    if (tokenTok.type !== 'string' || !tokenTok.value.trim()) {
-      this.error('assign needs a quoted participant token — the syntax is # assign "0" "Room A"', tokenTok);
-      this.recover();
-      return;
-    }
-    this.next();
-    const roomTok = this.peek();
-    if (roomTok.type !== 'string' || !roomTok.value.trim()) {
-      this.error('assign needs a quoted room name after the participant token — the syntax is # assign "0" "Room A"', roomTok);
-      this.recover();
-      return;
-    }
-    this.next();
-    if (!this.atStatementEnd()) {
-      this.error(`assign takes exactly two arguments — the syntax is # assign "<token>" "<room>"`, this.peek());
-      this.recover();
-      return;
-    }
-    program.assignments.push({ token: tokenTok.value.trim(), room: roomTok.value.trim() });
-  }
-
-  // A `<…>` / `[…]` argument to a `#` effect: mini notation over VALUES
-  // (numbers or metric words) rather than over participants, so it needs its
-  // own reader — parseSequenceGroup's elements are participant indices.
-  //
-  // `kind` is 'metric', 'number', or 'any' where the slot is positional and
-  // could be either (`# noise <wcl wcpl> <20 5>`); 'any' infers it from the
-  // leaves and refuses a pattern that mixes the two. `alternationOnly` rejects
-  // `[…]` and any rate above 1: an effect re-derived once per cycle boundary
-  // has nowhere to put a sub-cycle step, so it is an error rather than quietly
-  // aliasing to something the performer did not write. Nesting otherwise mixes
-  // modes and rates freely.
-  //
-  // A `~` leaf is a REST — no value for that span. It parses to null, which
-  // ValuePattern.js reads back unchanged and each effect's params function
-  // already treats as "use the default", so a rest leaves the parameter alone
-  // for as long as it is in force. Rests settle nothing about the leaf kind:
-  // `<wcl ~ wcpl>` is still a pattern of metrics.
   parseValueSequence(name, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
     const open = this.next(); // '<' or '['
     const close = open.value === '<' ? '>' : ']';
@@ -1842,23 +1603,12 @@ class Parser {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
 
 export function parseMetaprogram(text) {
   const src = typeof text === 'string' ? text : '';
-  // The directive is required, with no heuristic fallback: a buffer that does
-  // not open with `'metaprogram editor'` (the main room) or `'breakout room'`
-  // (one breakout room's own program — program-directive.js's BREAKOUT) is not
-  // a metaprogram at all, and the rest is parsed only so the editor can still
-  // squiggle whatever else is wrong. Blanking the directive line in place
-  // keeps every downstream line/col exactly where the author typed it.
   const dir = readDirective(src);
-  const isMetaprogramBuffer = dir.kind === 'metaprogram' || dir.kind === 'breakout';
+  const isMetaprogramBuffer = dir.kind === 'metaprogram';
   const rawBody = isMetaprogramBuffer ? stripDirective(src) : src;
-  // A whole-buffer notation choice: mini ($: … .method(…)) is lowered to the
-  // mondo grammar this parser tokenises; a mondo buffer passes straight
-  // through; a buffer that mixes the two is refused before parsing.
   const notation = detectNotation(rawBody);
   const body = notation === 'mini' ? miniToMondo(rawBody) : rawBody;
   const { tokens, errors } = tokenize(body);
@@ -1872,13 +1622,13 @@ export function parseMetaprogram(text) {
   if (!isMetaprogramBuffer) {
     errors.push({
       message: dir.kind == null
-        ? (dir.reason || "a metaprogram must open with the 'metaprogram editor' or 'breakout room' directive line")
-        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram editor' or 'breakout room'`,
+        ? (dir.reason || "a metaprogram must open with the 'metaprogram editor' directive line")
+        : `this is a '${dir.phrase}' buffer, not a metaprogram — the first line must be 'metaprogram editor'`,
       line: (dir.lineIndex ?? 0) + 1,
       col: 1,
     });
   }
-  const parser = new Parser(tokens, errors, dir.kind === 'breakout' ? 'breakout' : 'metaprogram');
+  const parser = new Parser(tokens, errors, 'metaprogram');
   const ast = parser.parseProgram();
   errors.sort((a, b) => a.line - b.line || a.col - b.col);
   return { ast, errors, valid: errors.length === 0 };

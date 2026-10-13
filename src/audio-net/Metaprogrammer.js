@@ -1,50 +1,7 @@
-// Metaprogrammer — the JPattern eval driver (browser side).
-//
-// The shared metaprogram is ALWAYS IN FORCE — there is no on/off button. Its
-// live capabilities today are ORDERING and TIMING: the program text syncs over
-// the CRDT doc to the aggregator bot, whose ring adopts the $ participants
-// membership and written order, and whose rotation is paced by that program's
-// scheduler slot grid — so a turn lasts the cycle length `# cycles` derives
-// from the live worst-case metrics (bots/src/bot/aggregator-bot.js). Typing only
-// syncs the shared TEXT; the ring (and programText here) adopt a program
-// solely on an explicit apply (Apply / Ctrl+Enter / /jp/apply), the
-// one-time roster seed, or a late joiner's catch-up. The room
-// starts under the default program — `$ participants <0>`, the first
-// participant to join streaming continuously — seeded into the shared doc
-// once by the roster leader. Membership is edits-only from there: a newcomer
-// stays silent until someone adds their token, and a leaver stays listed
-// (their held audio keeps streaming through the aggregator as a ghost) until
-// someone drops it.
-//
-// Everything below that gates/transforms audio in THIS browser is a further
-// transformational capability being brought up one at a time (to keep
-// confounding variables out of testing the live one), so it stays dormant:
-// setJPatternActive(true) arms it, and no UI currently calls it. When armed,
-// this module parses edits and drives the pure MetaprogramScheduler with
-// ClockSync network time. Scheduler slot events become:
-//   - Strudel voice gates: strudel.js wraps every voice in
-//     .gain(_jpGate(jitsiId)) and _jpGate reads getGateLevel() reactively —
-//     outside their slot a performer's instrument is silent.
-//   - Mic/chain gates: latency-instrument's per-peer chain input gain is
-//     ramped at the slot boundary (bots' Jitsi-published audio included).
-//   - Buffer dequeue: each participant's AV buffer queue enqueues one AV
-//     object per cycle (pattern text + o2lite messages + performance
-//     status; audio blob when capture is enabled). When the metapattern
-//     reaches them, the head buffer is dequeued and its pattern update is
-//     applied — an editor change therefore lands at the *next* slot, not
-//     immediately.
-//
-// Cross-browser agreement: same CRDT-shared program text (Phase 6), same
-// broadcast worst-case metrics, and a shared epoch — every client
-// broadcasts its epoch on /jp/epoch over the O2 relay and adopts the
-// smallest it hears, so all schedulers converge on one cycle grid.
-
 import {
   parseMetaprogram,
   buildDefaultProgram
 } from './MetaprogrammerParser.js';
-import { applyBreakoutDirectives } from './Breakout.js';
-import { buildDefaultBreakoutProgram } from '../breakout-core.js';
 import { detectNotation, miniToMondo, mondoToMini } from '../notation.js';
 import { MetaprogramScheduler, AVBufferQueue, beatSeconds, cycleLength } from './MetaprogramScheduler.js';
 import { computeWorstCaseMetrics, mergeInducedMetrics, INDUCTIONS } from './network-modulation/WorstCaseCalculationUtils.js';
@@ -232,46 +189,12 @@ export function getInducedMetrics() {
   return crdt ? crdt.getInduced() : {};
 }
 
-// --- Delayed Streaming toggle -------------------------------------------------
-//
-// A room-wide switch, shared over the CRDT doc's `settings` map, that changes
-// how the aggregator serves each performer's turn:
-//
-//   OFF (default) — a turn onsets the performer's LIVE output the instant the
-//   ring reaches them. Everything they played while waiting was only ever held
-//   in a sub-second rolling buffer and is gone, so the room hears an abrupt
-//   jump-in every turn (the "hiccup").
-//
-//   ON — the aggregator accumulates each performer's off-turn output into a
-//   bounded per-performer backlog and streams THAT on their turn, picking up
-//   where the previous turn left off. If the backlog drains before the turn
-//   ends it falls through to live; if the turn ends first the remainder is kept
-//   for next time. Past the cap the oldest samples are overwritten.
-//
-// The aggregator's audio backlog is the primary effect (it serves each turn
-// from a bounded per-performer FIFO), but the same delay is mirrored by every
-// browser onto the OTHER media that ride a performer's turn: the mosaic cell
-// and the Text/CSS Cycles bubbles are built from that performer's code as it
-// stood `getStreamDelayMs()` ago, so their whole turn — sound, visuals, words,
-// styling — lands together, delayed, rather than the audio alone.
-//
-// The delay is a fixed room-wide value, `backlogMs` in the settings map (the
-// aggregator's per-performer backlog cap). The backlog itself climbs from 0 to
-// that cap over the first ~cap ms after a flip, so the audio and the mirrored
-// media only fully agree once it is warm; `setDelayedStreaming` stamps the
-// value so the aggregator (which owns the real BACKLOG_MS) and every browser
-// read one number.
 export const DEFAULT_STREAM_DELAY_MS = 30000;
 
 export function isDelayedStreaming() {
   return !!(crdt && crdt.getSettings && crdt.getSettings().delayedStreaming);
 }
 
-// The room-wide media delay in ms: the settings-map `backlogMs` when Delayed
-// Streaming is on, else 0. Read by strudel.js (Text/CSS Cycles + mosaic-preamble
-// delay-line) and anything else mirroring the aggregator's audio backlog onto a
-// turn's other media. Never throws — an absent/blank value falls back to the
-// default cap, an unset toggle to 0.
 export function getStreamDelayMs() {
   if (!crdt || !crdt.getSettings) return 0;
   const s = crdt.getSettings();
@@ -327,25 +250,7 @@ function isRosterEditLeader() {
   return parseInt(me.roomIndex, 10) === Math.min(...humanIndices);
 }
 
-// --- Program text maintenance --------------------------------------------------
-
-// Seed the room's default program — participant 0 streaming continuously —
-// exactly once: only when the shared doc is still empty (nothing typed or
-// applied anywhere) and only from the leader, so concurrent joins can't
-// double-seed. Membership never auto-follows the roster after this: a
-// newcomer stays unlisted (silent) until an edit adds them, and a leaver
-// stays listed as a ghost until an edit drops them.
 function maybeSeedDefaultProgram() {
-  // Establish the doc (and its crdt-state subscription) unconditionally and
-  // FIRST: this runs synchronously off the very first peer-upsert, which
-  // fires while handling the sidecar's 'roster' message — the message
-  // immediately before 'crdt-state' on the same socket. Bailing out early
-  // when !caughtUp without calling ensureMetaprogramSync() would mean, on a
-  // session where nothing else has called it yet, that no listener exists
-  // when 'crdt-state' arrives moments later — the bus has no replay buffer
-  // (peer-state.js's emit is fire-and-forget), so that one-shot catch-up is
-  // lost forever, caughtUp never flips true, and the room's real history (or
-  // the default seed) never lands: an empty, permanently-unseeded doc.
   const sync = ensureMetaprogramSync();
   if (!caughtUp) return; // don't know yet whether real history is still in flight
   const docText = sync.getText();
@@ -358,87 +263,19 @@ function maybeSeedDefaultProgram() {
   document.dispatchEvent(new CustomEvent('trussal-jpattern-program', { detail: { text: programText } }));
 }
 
-// The CircularParticipantQueue lives in the aggregator bot's own process; the
-// bot's #pushProgramToScheduler (bots/src/bot/aggregator-bot.js) receives the
-// same program over CRDT//jp/apply and pushes the ordering into the queue there.
 function pushProgramToScheduler() {
   if (programText == null) return;
   const { ast, errors, valid } = parseMetaprogram(programText);
   if (!valid) {
-    // programText only ever holds APPLIED text, so invalid here is not a
-    // half-typed line — it is a program the room is running that this client
-    // cannot parse (a peer on an older bundle, or a directive whose syntax
-    // changed under a saved doc). The whole program is refused, `$
-    // participants` included, and the last valid one stays in force; say so
-    // rather than leaving the room's ordering silently frozen.
     console.error('[metaprogrammer] refused an applied program this client cannot parse — ' +
       'still running the previous one', errors, programText);
     return;
   }
   currentAst = ast;
   if (scheduler) scheduler.setProgram(ast);
-  // The program's #-chain drives this browser's Effects Service, which today
-  // computes only the Hydra counterparts — every audio node it knows about
-  // runs on the aggregator's master bus instead (av-effects/index.js).
   if (effects) effects.setChain(ast.chain, effectiveWorstCase());
-  // # breakout / # assign: best-effort onto Jitsi's own native breakout-rooms
-  // feature (Breakout.js). Independent of the turn-scheduling capability
-  // above (setJPatternActive) — breakout rooms are not gated behind it.
-  applyBreakoutDirectives(ast.breakouts, ast.assignments);
-  // Give every newly-declared room its own metaprogram, seeded once — see
-  // seedBreakoutPrograms.
-  seedBreakoutPrograms(ast.breakouts);
 }
 
-// Each declared breakout room gets its own CRDT-synced program (the
-// 'breakout room' directive — see program-directive.js's BREAKOUT and
-// breakout-core.js's buildDefaultBreakoutProgram), seeded ONCE from that
-// room's own participants at the moment it was declared. Leader-gated the
-// same way maybeSeedDefaultProgram is, so concurrent browsers parsing the
-// same freshly-applied program don't race to seed the same room; harmless
-// even if they did (Yjs Map.set is idempotent for identical values), but
-// there is no reason to pay for the redundant CRDT write on every parse.
-function seedBreakoutPrograms(breakouts) {
-  if (!crdt || !breakouts?.length || !isRosterEditLeader()) return;
-  for (const spec of breakouts) {
-    if (crdt.getBreakoutProgram(spec.name)) continue; // already seeded (or edited since)
-    crdt.setBreakoutProgram(spec.name, buildDefaultBreakoutProgram(spec.participants), 'roster');
-  }
-}
-
-// --- Breakout-room program access, for the Studio UI ------------------------
-//
-// Which room a participant belongs to is NOT editable from here —
-// MetaprogrammerParser.js refuses # breakout / # assign under the 'breakout
-// room' directive — only that room's own $ participants / # cycles / # tempo
-// / # room / etc.
-
-export function getBreakoutRoomNames() {
-  return Object.keys(ensureMetaprogramSync().getBreakoutPrograms()).sort();
-}
-
-export function getBreakoutProgramText(roomName) {
-  return ensureMetaprogramSync().getBreakoutProgram(roomName);
-}
-
-// Validates before writing — a breakout room's program has no scheduler
-// reading it yet (see audio-net/Breakout.js's own doc comment), so there is
-// no "apply" moment that runs it the way the main program's does; the only
-// thing "applying" means here is "save it to the shared doc as this room's
-// current program", which happens iff it is syntactically valid.
-export function setBreakoutProgramText(roomName, text) {
-  const { errors, valid } = parseMetaprogram(text);
-  if (valid) ensureMetaprogramSync().setBreakoutProgram(roomName, text, 'apply');
-  return errors;
-}
-
-export function subscribeBreakoutPrograms(fn) {
-  return ensureMetaprogramSync().onBreakoutProgramsChange(fn);
-}
-
-// Explicit apply from the editor. Valid text lands in the shared doc, in the
-// local scheduler (next boundary), and — via /jp/apply — in everyone else's
-// scheduler. Returns parse errors for squiggles.
 export function applyProgramText(text, { broadcast = true } = {}) {
   const { errors, valid } = parseMetaprogram(text);
   if (valid) {
@@ -458,26 +295,10 @@ export function applyProgramText(text, { broadcast = true } = {}) {
 }
 
 export function getProgramText() { return programText; }
-
-// Tell every other HUMAN peer running the shared metaprogram to silence
-// their local ensemble the same way this browser's Stop does. Does NOT
-// reach bots — a bot's page never mounts components/MetaprogrammerEditor.js
-// (nothing ever opens the Studio overlay there), and its actual audio is a
-// separate standalone @strudel/repl instance this signal couldn't touch
-// anyway; see stopAllBots (UserBotOrchestration.js) for that path. Leaves
-// programText/the CRDT text untouched, so a later Apply resumes exactly what
-// was running. Local silencing is the caller's job (see
-// components/MetaprogrammerEditor.js, which also owns stopStrudel() and
-// would create an import cycle if that call lived here instead).
 export function broadcastStopSignal() {
   ensureMetaprogramSync().broadcastStop();
 }
 
-// Studio effect toggles double as metaprogram shortcuts under JPattern:
-// toggling adds/removes the corresponding # line and applies it, so the
-// buttons and the shared editor never disagree. The `#` line is the mondo
-// spelling; when the shared buffer is written in mini the edit round-trips
-// through mondo (miniToMondo → edit → mondoToMini) so it stays one notation.
 const SHORTCUT_LINES = { room: '# room "wcl" 2', echo: '# echo', crush: '# crush "wcl" 1', noise: '# noise' };
 
 // Split a program into its first-line directive and the body below it. The
@@ -569,20 +390,11 @@ function scheduleGate(jitsiId, level, atNetworkT) {
   slotTimers.add(timer);
 }
 
-// --- Slot handling ----------------------------------------------------------------
-// The $ participants token-order hookup to the CircularParticipantQueue lives in
-// the aggregator bot (bots/src/bot/aggregator-bot.js #onSchedulerEvent), which
-// runs its own scheduler over the same shared program — not in this browser-side
-// handler, whose job stays gating the local Strudel voices and chains.
 function onSchedulerEvent(ev) {
   emitSlot(ev);
   if (ev.type === 'cycle-start') {
     const lengthChanged = !cycleGrid || cycleGrid.seconds !== ev.seconds;
     cycleGrid = { cycle: ev.cycle, t: ev.t, seconds: ev.seconds };
-    // A boundary is the only moment the cycle LENGTH can change, and the
-    // scheduler applies pending metrics here rather than when they arrived —
-    // so an echo written in cycles has to be re-derived now. Nothing else
-    // would: pushEffectiveMetrics ran before the swap, with the old length.
     if (lengthChanged && effects) effects.updateMetrics(effectiveWorstCase());
     enqueueCycleBuffers(ev.cycle);
     return;
@@ -591,7 +403,7 @@ function onSchedulerEvent(ev) {
   if (!peer || !peer.jitsiId) return;
 
   if (ev.type === 'slot-open') {
-    const av = queueFor(ev.token).dequeue(); // empty → null: silence, cycle advances
+    const av = queueFor(ev.token).dequeue(); 
     if (av) {
       if (typeof av.pattern === 'string') {
         activePatterns.set(peer.jitsiId, av.pattern);
@@ -607,9 +419,6 @@ function onSchedulerEvent(ev) {
   }
 }
 
-// Pattern applied by the last dequeued buffer — strudel.js prefers this over
-// the live peer.pattern while JPattern is active, which is what delays an
-// edit to the performer's next slot.
 export function getActivePattern(jitsiId) {
   return activePatterns.has(jitsiId) ? activePatterns.get(jitsiId) : null;
 }
@@ -619,14 +428,6 @@ export function subscribeSlotEvents(fn) {
   return () => slotSubscribers.delete(fn);
 }
 
-// --- Optional audio buffer capture/replay -------------------------------------------
-//
-// True sample capture: the local performer's master Strudel output is
-// recorded per cycle via MediaRecorder on a MediaStreamAudioDestinationNode
-// and enqueued as { blob, bytes }; at slot-open the head take is decoded and
-// replayed through the performer's chain. Off by default until it has
-// cross-browser soak time — gating alone already realizes the slot
-// semantics, capture adds the deliberate-delay material.
 
 export let bufferReplayEnabled = false;
 export function setBufferReplayEnabled(v) { bufferReplayEnabled = !!v; }
