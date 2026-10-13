@@ -81,7 +81,6 @@ const options = {
 		js: `var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || (typeof location !== 'undefined' ? location.href : '');`
 	},
 	define: {
-//		'process.env.JAMULUS_HOST': JSON.stringify(process.env.JAMULUS_HOST || 'jamulus.example.com'),
 		'import.meta.url': '__TRUSSAL_BUNDLE_URL'
 	},
 	// Modules inject their own <style> tags at runtime (no <link> mechanism

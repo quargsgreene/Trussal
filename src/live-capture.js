@@ -193,7 +193,7 @@ async function startAudioCapture(cap) {
       cap.state = 'failed';
       return;
     }
-    // Music, not telephony: raw capture, same rationale as the Jamulus path.
+  
     const audioConstraints = { echoCancellation: false, autoGainControl: false, noiseSuppression: false };
     if (match) audioConstraints.deviceId = { exact: match.deviceId };
     stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });

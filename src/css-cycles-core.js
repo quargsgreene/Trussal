@@ -140,9 +140,7 @@ export const TRUSSAL_ROOTS = [
   '#trussal-kbd-panel',
   '#trussal-fg-panel',
   '#trussal-fg-cursor',
-  '#trussal-welcome-overlay',
-  '#jamulus-welcome-panel',
-  '#jamulus-info-banner',
+  '#trussal-welcome-overlay'
 ];
 
 // Every addressable property, hyphenated. The glue registers one `_cc_*`

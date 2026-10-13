@@ -14,7 +14,7 @@
  * its own chain suffix / hydra postlude / entry delay, and they compose.
  *
  * Always applied regardless of roles:
- *  - gain staging (gainForBotCount) so the Jamulus mix can't clip, and
+ *  - gain staging (gainForBotCount) 
  *  - the Trussal latency/jitter effects chain (effectsChain) from the bot's
  *    OWN measured link stats.
  */
@@ -101,7 +101,7 @@ export function variationFor(botId, master, opts) {
   // after it can push the level back up.
   const fx = effectsChain({ latencyMs, jitterMs });
   // Latency-as-echo, baked in at the source so it is heard over any path
-  // (Jamulus or Jitsi) with no double-processing: latency sets the echo time,
+  // Jitsi with no double-processing: latency sets the echo time,
   // jitter the feedback. Worklet effects (distort/crush) mute headless bots, so
   // the native delay is the audible latency tell. Gain staging stays last.
   strudelChain.push(

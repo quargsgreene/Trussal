@@ -6,7 +6,7 @@
 // it obvious that each person owns their own chain and editor.
 
 import studioStyles from './studio.css';
-import { getRoomNameFromUrl } from './jamulus.js';
+import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import {
   subscribeParticipants,
   getLocalParticipant
@@ -47,7 +47,6 @@ import {
   propagateExternalStreamToRoom,
   stopPropagatingExternalStream,
   isPropagatingToRoom,
-  // setJamulusMode,
   getAudioContext,
 } from './latency-instrument.js';
 import { startNetStatsPolling } from './audio-net/observability/NetStats.js';
@@ -292,9 +291,7 @@ function metricsLine(peer) {
 
 // The one network panel: this peer's measured link and the room-wide
 // worst-case basis every client shares (identical everywhere — it sets Net
-// Cycles cycle lengths). `controls` is dropped into the header; the Jamulus
-// capture buttons live there when re-enabled, since routing them is exactly
-// what the peer line's `routed` state reports.
+// Cycles cycle lengths). `controls` is dropped into the header.
 //
 // effectiveWorstCase() layers the CRDT induced floors over the measured
 // roster metrics, and carries measured's own `sampleCount` through the
@@ -798,9 +795,6 @@ function patchDetailForPeer(container, peer, isLocal) {
     botBadge.remove();
   }
 
-  // Jamulus capture + relay controls are detached for now (kept for later
-  // use — see the commented-out block in createLocalProgramSection). This is
-  // what used to feed networkMetricsBlock's header controls.
   updateMetricsSection(container.querySelector('.ts-metrics-section'), peer, '');
 
   // The Personal Theme card is user-driven (Apply) and reads its values from
@@ -976,17 +970,6 @@ async function onStopClick() {
   }
 }
 
-// Capture an external audio input (e.g. a virtual device that loopback-carries
-// Jamulus output) and propagate it to the room: the stream is mixed into the
-// outgoing Jitsi mic via an audio mixing effect, so every other peer receives
-// it as part of our mic stream and renders it through OUR per-peer chain on
-// their side — the room hears the processed signal.
-//
-// We deliberately do NOT monitor the captured stream through the local speakers
-// (monitorLocally: false). The capture device is almost always a monitor/loopback
-// of the same output the browser plays to, so self-monitoring would re-emit the
-// signal into the very device we're capturing and howl ("nothing but feedback").
-// The local user already hears Jamulus natively, so local playback is redundant.
 async function onCaptureClick() {
   const local = getLocalPeer();
   if (!local || !local.jitsiId) return;
@@ -996,7 +979,6 @@ async function onCaptureClick() {
     // Jitsi never sees a stopped track on the wire.
     await stopPropagatingExternalStream();
     detachExternalStreamForPeer(local.jitsiId);
-    // setJamulusMode(false);
     setStatus('Input detached');
     renderAll();
     return;
@@ -1009,7 +991,6 @@ async function onCaptureClick() {
     if (devices.length > 1) {
       const choice = window.prompt(
         'Select an audio input by number to route through your effects chain ' +
-        // '(use a virtual device that carries Jamulus to feed Jamulus through here):\n\n' +
         devices.map((d, i) => `${i + 1}. ${d.label}`).join('\n'),
         '1'
       );
@@ -1020,9 +1001,7 @@ async function onCaptureClick() {
       deviceId = devices[0].deviceId;
       label = devices[0].label;
     }
-    // Disable the voice-telephony processing chain. Jamulus output is music;
-    // AGC pumps it, noise suppression chews sustained notes, echo cancellation
-    // comb-filters anything that resembles a loopback. We want the raw stream.
+
     const audioConstraints = {
       echoCancellation: false,
       autoGainControl: false,
@@ -1032,7 +1011,6 @@ async function onCaptureClick() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     await attachExternalStreamForPeer(local.jitsiId, stream, label, { monitorLocally: false });
     const propagated = await propagateExternalStreamToRoom(stream);
-    // setJamulusMode(true);
     setStatus(propagated ? `Capturing ${label} → room` : `Capturing ${label} (local only — no Jitsi mic hook)`);
     renderAll();
   } catch (e) {

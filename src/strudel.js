@@ -236,8 +236,7 @@ function applyPollRewrite(code, peer) {
 // A bot's contribution to this page's program: its Text/CSS Cycles
 // statements, or nothing at all.
 //
-// A bot's audio arrives as audio (its own headless browser plays it into Jitsi
-// or Jamulus), so folding its pattern in here would play it twice. Its WORDS
+// A bot's audio arrives as audio, so folding its pattern in here would play it twice. Its WORDS
 // and STYLING are the opposite case — both are painted per-page from the
 // program and never ride any track, so a bot's words/CSS reach a viewer only
 // if that viewer's own program carries them. This is the whole mechanism by
@@ -409,7 +408,7 @@ function delayedPeerView(peer) {
 // Users can write hydra-only blocks (no strudel voice after the blank line).
 function buildPeerBlock(peer) {
   // Bots play their own Strudel inside their headless browser and reach the room
-  // through their Jitsi mic / Jamulus, so their pattern is shown in the studio
+  // through their Jitsi mic, so their pattern is shown in the studio
   // for display + remote editing only — never folded into each viewer's combined
   // mix, which would play it a second time on top of the bot's incoming audio.
   // Under JPattern their incoming audio is slot-gated at the chain instead.

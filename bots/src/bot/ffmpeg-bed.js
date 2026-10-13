@@ -6,9 +6,7 @@
  * Implementation: a band-limited noise bed confined to the SAME frequency
  * band the bot's Strudel variation occupies (role 1), at the SAME staged
  * gain — so the bed reinforces rather than fights the mix. It writes to the
- * ALSA loopback playback device; the Jamulus client captures the loopback's
- * other end, so the bed and the browser's Strudel audio sum on the same
- * virtual cable.
+ * ALSA loopback playback device.
  *
  * Returned as an argv array (not a shell string) so no escaping bugs can
  * reach spawn().
@@ -19,7 +17,7 @@ export function ffmpegBedArgs({
   hiFreq,
   gain,
   alsaDevice = 'plughw:Loopback,0,0',
-  sampleRate = 48000, // Jamulus operates at 48 kHz; match it to skip resampling
+  sampleRate = 48000, 
 }) {
   if (!(loFreq > 0 && hiFreq > loFreq)) throw new RangeError('need 0 < loFreq < hiFreq');
   if (!(gain > 0 && gain <= 1)) throw new RangeError('gain must be in (0, 1]');

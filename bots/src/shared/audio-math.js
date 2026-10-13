@@ -2,7 +2,7 @@
  * Audio math shared by the script generator (per-bot gain/effects params) and
  * the bot's ffmpeg bed generator.
  *
- * Gain staging: N uncorrelated sources summed at the Jamulus mix grow in
+ * Gain staging: N uncorrelated sources summed at the mix grows in
  * power, not amplitude, so per-bot gain scales by 1/sqrt(N). A fixed 3 dB
  * headroom (HEADROOM = 0.7) keeps even correlated peaks (perfect-unison role!)
  * from clipping the server mix.
@@ -34,7 +34,7 @@ export function gainForBotCount(n) {
  *
  * - MAX_FEEDBACK 0.85: buildup 1/(1-0.85) ~= 6.7x (+16.5 dB), the most the
  *   HEADROOM/sqrt(N) staging plus Strudel's wet mix (< 1) can absorb without
- *   clipping the Jamulus mix; also the conventional musical ceiling before a
+ *   clipping the mix; also the conventional musical ceiling before a
  *   delay tail reads as runaway.
  * - BASE_FEEDBACK 0.2: floor at zero jitter; the 2nd repeat sits at -28 dB,
  *   so latency is audible as one discrete slap echo without smearing.

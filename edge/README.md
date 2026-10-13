@@ -2,7 +2,7 @@
 
 The public deployment fronts **N full Jitsi shards** (one complete
 `docker-jitsi-meet` stack per rack machine — `web` + `prosody` + `jicofo` +
-`jvb` + `latency` + `jamulus-relay`) with an HAProxy load balancer that maps
+`jvb` + `latency`) with an HAProxy load balancer that maps
 each **room** to exactly one shard by a consistent hash of the room name.
 
 ```
@@ -12,7 +12,7 @@ Cloudflare (TLS)                          rack LAN 10.20.0.0/24
   AMD :80  ── HAProxy ───────────┤  s2  Dell B  10.20.0.21  (full stack)
    edge/haproxy.cfg              │ (s3  AMD     10.20.0.31  — later)
       │                          └────────────────────────────────┘
-   coturn · Jamulus · bot conductor  also on the AMD
+   coturn · bot conductor  also on the AMD
 ```
 
 ## Why a room may never span shards
@@ -40,7 +40,6 @@ The Trussal room is the **last path segment** of the URL
 | `/http-bind` , `/xmpp-websocket` | *(room is in the body)* | `jitsi_xmpp` | follows the `SHARD` cookie the SPA set, then a per-client-IP stick-table |
 | `/libs/…` `/css/…` `/static/…` `/` `/config.js` … | *(none)* | `jitsi_spa` | session-pinned per client IP + `SHARD` cookie, so the `?v=` cache-bust in `index.html` matches the assets that serve it |
 | `/colibri-ws/<bridgeId>/…` | `<bridgeId>` (path seg 2) | `jitsi_colibri` | each shard's JVB id **is** the shard name (`JVB_WS_SERVER_ID` / `COLIBRI_WEBSOCKET_REGEX`) |
-| `/jamulus-audio` | *(none)* | `jamulus_relays` | every shard relays to the same Jamulus on the AMD — round-robin |
 
 Client IP is taken from `CF-Connecting-IP` (Cloudflare is in front), falling back
 to `src`.
@@ -124,8 +123,7 @@ part of the rack:
 
 1. Bring the new shard up as a full stack with its own `DEPLOYMENTINFO_SHARD`.
 2. Add a `server s3 10.20.0.31:80 check …` line to **every** backend in
-   `haproxy.cfg` (`jitsi_room`, `jitsi_spa`, `jitsi_xmpp`, `jitsi_colibri`,
-   `jamulus_relays`) and the matching `use-server s3 if …` lines in
+   `haproxy.cfg` (`jitsi_room`, `jitsi_spa`, `jitsi_xmpp`, `jitsi_colibri`) and the matching `use-server s3 if …` lines in
    `jitsi_xmpp` and `jitsi_colibri`. Keep existing names unchanged.
 3. `docker compose exec edge haproxy -c -f …` then `docker compose kill -s HUP edge`
    (seamless reload).

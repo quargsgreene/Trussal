@@ -5,17 +5,10 @@
 #   2. Each VM must have the repo cloned at REPO_PATH and your SSH public key
 #      in authorized_keys.
 #   3. Video VM: user must be in the docker group.
-#   4. Audio VM: the Jamulus servers run as SYSTEM units
-#      (/etc/systemd/system/jamulus@<port>.service, User=trussal-audio). The
-#      deploy user needs passwordless sudo (NOPASSWD) for the three commands
-#      `deploy-audio` runs: installing the unit file, `systemctl daemon-reload`,
-#      and `systemctl restart jamulus@*`. NOTE: deploy-audio overwrites the
-#      deployed unit from system/jamulus@.service — edit the unit in the repo,
-#      not on the box, or your change will be reverted on the next deploy.
+
 #
 # Usage:
 #   make deploy-video   rebuild custom-config.js, push to video VM, restart Jitsi
-#   make deploy-audio   push updated Jamulus unit file, restart Jamulus instances
 #   make deploy-bots    rebuild bot images, restart conductor
 #   make deploy-all     all three in sequence
 #
@@ -29,11 +22,9 @@ ENV_DEPLOY ?= .env.deploy
 -include $(ENV_DEPLOY)
 
 VIDEO_VM        ?= trussal-video@192.168.1.254
-# AUDIO_VM        ?= trussal-audio@192.168.1.120
 BOTS_VM         ?= trussal-bot-vm@192.168.1.232
 REPO_PATH       ?= ~/Trussal
 VIDEO_REPO_PATH ?= $(REPO_PATH)
-# AUDIO_REPO_PATH ?= $(REPO_PATH)
 BOTS_REPO_PATH  ?= $(REPO_PATH)
 
 # Multi-shard (edge/README.md, docker-jitsi-meet/MULTISHARD.md): SHARD_VMS is a
@@ -45,16 +36,6 @@ EDGE_VM         ?=
 SHARD_REPO_PATH ?= $(REPO_PATH)
 EDGE_REPO_PATH  ?= $(REPO_PATH)
 
-# run.sh rebuilds the bundle on the video VM, and build.mjs bakes in the
-# Jamulus hostname from JAMULUS_HOST (shell env or a repo-root .env, which no
-# VM has). Passing it here is what keeps that rebuild from silently baking the
-# jamulus.example.com default into the SERVED bundle and leaving the tracked
-# custom-config.js dirty, which breaks the next `git pull --ff-only`.
-# JAMULUS_HOST    ?= jamulus.trussal.com
-
-# .PHONY: deploy-video deploy-shards deploy-edge deploy-audio deploy-bots \
-#         deploy-all deploy-multishard check-tokens collect-session-logs
-
 .PHONY: deploy-video deploy-shards deploy-edge deploy-bots \
         deploy-all deploy-multishard check-tokens collect-session-logs
 deploy-video:
@@ -64,7 +45,6 @@ deploy-video:
 # shard argument — shard identity (DEPLOYMENTINFO_SHARD, JVB_* ) lives in that
 # host's gitignored docker-jitsi-meet/.env (docker-jitsi-meet/MULTISHARD.md).
 # Serial, and it aborts on the first failure rather than half-deploying the rack.
-# ssh $$vm 'cd $(SHARD_REPO_PATH) && git pull --ff-only && JAMULUS_HOST=$(JAMULUS_HOST) ./run.sh' || exit 1; 
 deploy-shards:
 	@for vm in $(SHARD_VMS); do \
 	  echo "=== shard $$vm ==="; \
@@ -86,12 +66,6 @@ deploy-edge:
 	  && ( crontab -l 2>/dev/null | grep -vF "refresh-turn-external-ip.sh"; \
 	       echo "*/5 * * * * cd $(EDGE_REPO_PATH) && TURN_ENV_FILE=edge/.env TURN_COMPOSE_DIR=edge bash scripts/refresh-turn-external-ip.sh >> \$$HOME/turn-ip-refresh.log 2>&1" ) | crontab - \
 	  && echo "edge reloaded; TURN IP refresh cron installed"'
-
-# deploy-audio:
-# 	ssh $(AUDIO_VM) 'cd $(AUDIO_REPO_PATH) && git pull --ff-only \
-# 	  && sudo -n install -m 0644 system/jamulus@.service /etc/systemd/system/jamulus@.service \
-# 	  && sudo -n systemctl daemon-reload \
-# 	  && sudo -n systemctl restart "jamulus@*"'
 
 deploy-bots:
 	ssh $(BOTS_VM) 'cd $(BOTS_REPO_PATH) && git pull --ff-only \

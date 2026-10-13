@@ -1,16 +1,10 @@
-# Trussal Bots
-
-Ten headless-browser bots join a shared Jitsi meeting (`http://localhost/0`) and a Jamulus
-server (`trussal.duckdns.org:22000`), each playing an individualized variation of a master
-Strudel + Hydra script under a centralized conductor.
-
 ## Layout
 
 ```
 bots/
   src/shared/        config, dog-breed names, percentile/WCL stats, gain & fx math
   src/script-gen/    master script generation, JSON validation, per-bot variation
-  src/bot/           Puppeteer bot, page-injected scripts, ffmpeg/Jamulus sidecars
+  src/bot/           Puppeteer bot, page-injected scripts
   src/orchestrator/  conductor (health policy, lifecycle), docker runner, entrypoint
   src/config-api/    admin HTTP server + unstyled admin page
   test/              node:test suites (45 tests, no external deps)
@@ -52,11 +46,6 @@ self-hosted Jitsi bridge:
   the bridge only sends streams to human viewers);
 - send capped at 360p, start bitrate 800 kbps, Hydra canvas captured at 15 fps.
 
-Worst case with 10 bots: ≈ 8 Mbps total upload into the bridge, near-zero bot download.
-Each Jamulus client adds ~0.2 Mbps both ways to the Jamulus server. The health policy is
-also a circuit-breaker: if median bot latency exceeds 400 ms the fleet automatically
-scales down.
-
 Point the fleet at your Jitsi by setting `JITSI_URL` (e.g. in a `.env` next to
 docker-compose.yml: `JITSI_URL=http://your-jitsi-host/0`). Tune the guards via the
 conductor env (`JITSI_CHANNEL_LAST_N`, `JITSI_VIDEO_HEIGHT`, `JITSI_START_BITRATE_KBPS`,
@@ -96,8 +85,7 @@ conductor env (`JITSI_CHANNEL_LAST_N`, `JITSI_VIDEO_HEIGHT`, `JITSI_START_BITRAT
   captured from the Hydra canvas and an audio track tapped from Strudel's WebAudio output.
   The bot joins unmuted, so Jitsi carries the music directly to listeners. The same tap is
   also fanned out to the bot's own ALSA loopback subdevice, where — alongside an ffmpeg
-  pink-noise bed (band-limited to the bot's frequency band, gain-staged `0.7/√N`) — a
-  per-container `jackd` bridges into the Jamulus client. Each bot is named after a dog breed,
+  pink-noise bed (band-limited to the bot's frequency band, gain-staged `0.7/√N`). ach bot is named after a dog breed,
   deterministic per `(botId, sessionSeed)`.
 
 ## Develop

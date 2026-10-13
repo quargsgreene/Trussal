@@ -52,7 +52,7 @@ import { makeClockSyncOverO2 } from './ClockSync.js';
 import { O2LiteClient } from '../../public/lib/o2lite-web.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from './MetaprogrammerCrdtSync.js';
 import { subscribePeerState, getAllPeers, getLocalPeer, sendCrdtUpdate } from '../peer-state.js';
-import { getRoomNameFromUrl } from '../jamulus.js';
+import { getRoomNameFromUrl } from '../get-room-name-from-url.js';
 import {
   getAudioContext,
   setChainGate,

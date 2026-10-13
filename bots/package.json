@@ -1,7 +1,7 @@
 {
   "name": "trussal-bots",
   "version": "1.0.0",
-  "description": "10 headless-browser bots that join a shared Jitsi meeting and Jamulus server, each playing a varied Strudel+Hydra master script under a centralized conductor.",
+  "description": "10 headless-browser bots that join a shared Jitsi meeting.",
   "type": "module",
   "engines": {
     "node": ">=20"

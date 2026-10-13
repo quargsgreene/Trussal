@@ -46,8 +46,7 @@ export function chromiumArgs({ width = 1280, height = 720 } = {}) {
  * reliably; ignoreDefaultArgs also drops --mute-audio (the bot needs audio) and
  * puppeteer's temp-profile flag, so userDataDir is explicit.
  *
- * headless:false because Xvfb is already up per bot — non-headless X11 audio
- * falls through to ALSA (loopback → JACK → Jamulus); headless:'new' would route
+ * headless:false because Xvfb is already up per bot, eadless:'new' would route
  * Web Audio to a null sink. extraArgs lets the build smoke test add
  * --disable-dev-shm-usage for the constrained 64 MB /dev/shm build environment.
  */

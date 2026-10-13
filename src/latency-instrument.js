@@ -43,11 +43,6 @@ const externalNodes = new Map();    // jitsiId -> { node, label }  (WebAudio nod
 const audioRouted = new Set();      // jitsiIds whose chain has any live source
 const routingSubscribers = new Set();
 
-// Jamulus mode: aggregate Jamulus audio is routed through the local peer's
-// effects chain; all other Jitsi peer audio tags are silenced so the Jamulus
-// mix is the sole audio source.
-// let jamulusMode = false;
-// const jamulasMutedTags = new Set(); // tags we silenced on mode entry
 let audioTagObserver = null;
 
 // Aggregator mode: when a remote aggregator bot is in the room it gathers every
@@ -71,33 +66,6 @@ export function subscribeAudioRouting(fn) {
   return () => routingSubscribers.delete(fn);
 }
 
-// function applyJamulusMuteToAllTags() {
-//   document.querySelectorAll('audio').forEach(tag => {
-//     if (!tag.srcObject) return;
-//     if (tag.id === 'userAudio') return;
-//     // Skip tags already silenced by captureJitsiAudio — they're in remoteSources.
-//     const jitsiId = getParticipantIdForAudioTag(tag);
-//     if (jitsiId && remoteSources.has(jitsiId)) return;
-//     if (jamulasMutedTags.has(tag)) return;
-//     tag.muted = true;
-//     tag.volume = 0;
-//     jamulasMutedTags.add(tag);
-//   });
-// }
-
-// export function setJamulusMode(enabled) {
-//   if (enabled === jamulusMode) return;
-//   jamulusMode = enabled;
-//   if (enabled) {
-//     applyJamulusMuteToAllTags();
-//   } else {
-//     for (const tag of jamulasMutedTags) {
-//       tag.muted = false;
-//       tag.volume = 1;
-//     }
-//     jamulasMutedTags.clear();
-//   }
-// }
 
 // Aggregator mode: gain for a peer's chain given the current aggregator. 1 when
 // no aggregator is present (normal mix) or for the aggregator's own chain; 0 for
@@ -159,8 +127,6 @@ function ensureAudioContext() {
   const Ctor = window.AudioContext || window.webkitAudioContext;
   if (!Ctor) return Promise.reject(new Error('WebAudio not supported'));
   if (!audioCtx) {
-    // 48 kHz matches the Jamulus relay PCM stream and WebRTC Opus codec rate,
-    // avoiding pitch-shift when relay audio flows through the effects chain.
     audioCtx = new Ctor({ sampleRate: 48000 });
     // Master bus: every chain/effect that used to target audioCtx.destination
     // now converges on this gain node, giving the room health compressor one
@@ -375,9 +341,8 @@ function destroyChain(jitsiId) {
 
 // Capture every remote Jitsi <audio> element exactly once and route it to its
 // owner's effect chain. The tag id (remoteAudio_<jitsiId>) is the bridge. Any
-// audio that reaches the browser via Jitsi mic — including Jamulus content the
-// upstream peer is loopback-routing into their mic — is captured here, which
-// is how Jamulus audio ends up running through the per-peer worklet chain.
+// audio that reaches the browser via Jitsi mic
+// upstream peer is loopback-routing into their mic — is captured here
 function captureJitsiAudio() {
   // Bot/aggregator pages publish the shared fan (pageAudioBridge overrides
   // ctx.destination): routing remote peers into local chains would land their
@@ -479,7 +444,6 @@ function startAudioTagsObserver() {
   if (audioTagObserver) return;
   audioTagObserver = new MutationObserver(() => {
     captureJitsiAudio();
-    // if (jamulusMode) applyJamulusMuteToAllTags();
   });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
   // A renegotiation can swap a tag's srcObject without touching the DOM tree,
@@ -718,19 +682,12 @@ export async function getStrudelAudioContext() {
 }
 
 // Attach any MediaStream to a participant's effects chain. Used by the studio
-// UI to bring in a system-level audio input (e.g. a virtual device that
-// loopback-carries Jamulus output) so it flows through the same worklet +
+// UI to bring in a system-level audio input so it flows through the same worklet +
 // reverb path as remote Jitsi audio.
 //
 // monitorLocally controls whether the stream is also played out of THIS
 // browser's speakers (source → chain → realDestination). For a peer's incoming
 // audio that is the whole point, but for the LOCAL user capturing their own
-// Jamulus/system output it must be false: the capture device is typically a
-// monitor/loopback of the same output realDestination feeds, so playing it back
-// re-emits the captured signal into the very device we're capturing — it gets
-// re-captured, re-emitted, and howls ("nothing but feedback"). The local user
-// already hears Jamulus natively, so we only propagate the stream to the room
-// (see propagateExternalStreamToRoom) rather than monitoring it here.
 export async function attachExternalStreamForPeer(jitsiId, stream, label = 'external', { monitorLocally = true } = {}) {
   if (!jitsiId || !stream) return null;
   await bootAudioEngine();
@@ -771,7 +728,7 @@ export function getExternalStreamLabel(jitsiId) {
 
 // ---- Outgoing Jitsi mic propagation -------------------------------------
 //
-// When the local user captures an external stream (e.g. a Jamulus loopback),
+// When the local user captures an external stream,
 // we mix that stream into the OUTGOING Jitsi audio track so other peers in the
 // meeting receive it as part of our mic. Their browsers run our mic through
 // our per-peer chain (which is keyed by our jitsiId), so the room hears the
@@ -1264,7 +1221,6 @@ if (typeof window !== 'undefined') {
 }
 
 // Attach a pre-built WebAudio node directly to a peer's effects chain.
-// Used by the Jamulus relay to avoid the MediaStream round-trip: the relay
 // AudioWorklet output connects straight into the chain input node.
 export async function attachNodeToChain(jitsiId, node, label = 'relay') {
   if (!jitsiId || !node) return;

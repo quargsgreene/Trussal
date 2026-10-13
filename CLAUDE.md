@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Trussal is a networked algorave platform — a customization of Jitsi Meet that adds a live-coding instrument (Strudel), per-peer audio effects chains driven by network conditions (RTT/jitter), facial gesture control via MediaPipe, Hydra visual synthesis, and Jamulus integration for low-latency audio. All custom JavaScript is bundled into a single `custom-config.js` that Jitsi loads on page start.
+Trussal is a networked algorave platform — a customization of Jitsi Meet that adds a live-coding instrument (Strudel), per-peer audio effects chains driven by network conditions (RTT/jitter), facial gesture control via MediaPipe, and Hydra visual synthesis. All custom JavaScript is bundled into a single `custom-config.js` that Jitsi loads on page start.
 
 ## Commands
 
@@ -39,12 +39,9 @@ cd docker-jitsi-meet
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
 ```
 
-Set `JAMULUS_HOST` before building to override the default Jamulus hostname baked into the bundle. `build.mjs` reads it from the shell environment or a **repo-root `.env`** (via `dotenv/config`, resolved against the build's working directory). It does **not** read `docker-jitsi-meet/.env` — that file is for docker compose only, so a `JAMULUS_HOST` set there never reaches the bundle. With the variable unset the build silently bakes in `jamulus.example.com`.
-
 ## Git workflow
 
-Work on `main`. **Commit directly to `main` and push to `origin/main` by default** — do not create feature branches. The production deploy targets pull from `origin/main`, so a change is not deployable until it is pushed there. When a bundle (`src/`) change is committed, also commit the regenerated `docker-jitsi-meet/jitsi-web/custom-config.js` (it is tracked); build it with the production host via `JAMULUS_HOST=jamulus.trussal.com npm run deploy:local` so the tracked artifact isn't polluted with the `jamulus.example.com` default.
-
+Work on `main`. **Commit directly to `main` and push to `origin/main` by default** — do not create feature branches. The production deploy targets pull from `origin/main`, so a change is not deployable until it is pushed there. When a bundle (`src/`) change is committed, also commit the regenerated `docker-jitsi-meet/jitsi-web/custom-config.js` (it is tracked)
 **Do not build the tracked bundle from a git worktree.** A worktree has no `node_modules` of its own, so esbuild resolves it in the parent checkout and bakes `../../../node_modules/…` path comments into `custom-config.js`. The output is functionally identical to a root-checkout build but differs on ~124 lines, so the video VM's own rebuild reverts them — leaving `custom-config.js` permanently dirty there and failing the next `git pull --ff-only`. Build and commit the bundle from the repo root; if a worktree build has already been committed, replace it with a root-checkout build (verify with `grep -c '\.\./\.\./\.\./node_modules' docker-jitsi-meet/jitsi-web/custom-config.js`, which must print 0).
 
 ## Removing UI elements (reproducible)
@@ -62,7 +59,7 @@ The overlay UI lives in `src/studio.js` (participant strip, Latency Effects, Str
 Then rebuild and verify before committing:
 
 ```bash
-JAMULUS_HOST=jamulus.trussal.com npm run deploy:local      # prod host, per Git workflow above
+npm run deploy:local      # prod host, per Git workflow above
 diff -q dist/custom-config.js docker-jitsi-meet/jitsi-web/custom-config.js   # must be identical
 grep -c '<removed-symbol>' docker-jitsi-meet/jitsi-web/custom-config.js      # must print 0
 npm test                                                   # suite still green
@@ -75,7 +72,6 @@ Commit `src/` **and** the regenerated `docker-jitsi-meet/jitsi-web/custom-config
 Trussal runs across three SSH-reachable VMs; addresses live in gitignored `.env.deploy` (the `Makefile` falls back to LAN-IP defaults):
 
 - **video** `trussal-video@192.168.1.254` — Jitsi Docker stack in `~/Trussal/docker-jitsi-meet` (`web`, `jvb`, `jicofo`, `prosody`, and the `latency` sidecar). Serves the bundle. Public name `trussal.com` (the legacy `meet.trussal.com` 301-redirects to it).
-- **audio** `trussal-audio@192.168.1.120` — Jamulus servers as systemd units (`jamulus@22000`–`22010`, room N → port 22000+N).
 - **bots** `trussal-bot-vm@192.168.1.232` — the conductor + dynamically-spawned `trussal-bot-*` containers (including one aggregator per active room; the first gets `trussal-bot-99999` and further rooms count down).
 
 **Push to `origin/main` first** — every target does `git pull --ff-only`.
@@ -83,12 +79,10 @@ Trussal runs across three SSH-reachable VMs; addresses live in gitignored `.env.
 ```bash
 make deploy-video   # ssh video: git pull + ./run.sh (full rebuild + stack restart)
 make deploy-bots    # ssh bots:  git pull + rebuild image + up -d conductor
-make deploy-audio   # ssh audio: git pull + reinstall + restart jamulus@* units
 make deploy-all     # all three
 ```
 
-Which target to run depends on what changed: `src/` (bundle) or `latency-instrument/server.js` (sidecar) → **video**; `bots/` → **bots**; `system/jamulus@.service` → **audio**.
-
+Which target to run depends on what changed: `src/` (bundle) or `latency-instrument/server.js` (sidecar) → **video**; `bots/` → **bots**;
 ### Multi-shard rack (optional)
 
 The deployment can instead run **one full Jitsi stack per rack machine**
@@ -176,7 +170,6 @@ scripts/check-control-token.sh video    # or bots — checks one side, on that h
 | `silent-voice-core.js` | Shared statement-splitting + renderer-attachment for a silent voice whose arguments are already grammar-legal mini-notation atoms (no literal-text minting needed) — `appendRendererCalls`/`stripCalls`/`keepMatchingStatements`, used by `reactions-core.js`, `panel-bg-core.js` and `file-cycles-core.js`/`polls-core.js`'s remote-exclusion salvage in `strudel.js` |
 | `panic-button.js` | The breakout-room "panic button": captures the URL a performer actually arrived on (before any breakout-room redirection) into `sessionStorage` at page load, and unconditionally reloads there on click — a full rejoin rather than an in-place room switch, since Jitsi's own room-switch API needs moderator rights even to move yourself (see `audio-net/Breakout.js`) |
 | `breakout-core.js` | Pure logic for `# breakout`/`# assign` (the Metaprogram's breakout-room directives — see `jpattern.md` and `MetaprogrammerParser.js`): the `{name, participants}` JSON literal shape and `resolveBreakoutState`, which folds a program's declared rooms and assignments (in source order — a later line wins) into one `{rooms, assignedTo}` view. `audio-net/Breakout.js` reads it to drive Jitsi's real breakout-rooms feature. Also `buildDefaultBreakoutProgram`, the seed for a newly-declared room's OWN metaprogram (the `'breakout room'` directive — `program-directive.js`'s `BREAKOUT`) — stored per-room in the CRDT doc's `breakoutPrograms` Y.Map (`MetaprogrammerCrdtSync.js`) and surfaced by `Metaprogrammer.js`'s `getBreakoutRoomNames`/`getBreakoutProgramText`/`setBreakoutProgramText`/`subscribeBreakoutPrograms`, edited via `components/BreakoutProgramEditor.js`. That room's own program schedules and effects ITS room but can never itself create rooms or move participants (`# breakout`/`# assign` are parser errors under `'breakout room'`); see `Breakout.js`'s doc comment for what's still NOT implemented (a breakout room's program isn't yet read by any live scheduler — there's no separate aggregator per room in this lightweight design) |
-| `jamulus.js` | Jamulus room map + welcome panel/banner injection; `JAMULUS_ROOM_MAP` is exported to `window` |
 | `welcome-page.js` | Jitsi welcome-page and prejoin-screen customizations |
 | `meeting.js` | In-meeting customizations (e.g. no-audio toast) |
 | `editor-router.js` | Routes head-cursor/keyboard input to whichever editor is focused (personal Strudel vs shared JPattern) |

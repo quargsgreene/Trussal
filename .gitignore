@@ -14,10 +14,6 @@ ehthumbs.db
 /config/
 /cfg/
 
-# Jamulus logs / runtime
-# jamulus/logs/
-# jamulus/*.log
-
 # --- Editors / IDEs ---
 .vscode/
 .idea/

@@ -17,12 +17,8 @@
  * show "the running Hydra pattern" as the bot's camera. The Strudel REPL is
  * then booted in the same page.
  *
- * Audio takes two paths from one source. pageAudioBridge taps Strudel's
- * WebAudio output and fans it out to BOTH (a) the page's default device — the
- * ALSA loopback → Jamulus, the original path — and (b) a MediaStreamDestination
- * that the getUserMedia override hands Jitsi as the bot's "microphone". So the
- * same music reaches Jamulus listeners and, now that the bot joins unmuted,
- * Jitsi listeners too.
+ * A MediaStreamDestination
+ * that the getUserMedia override hands Jitsi as the bot's "microphone".
  *
  * The gUM-handed "microphone" gets the bot a local audio track, but what the
  * track SENDS is replaced post-join by pageEnsureAudioPublished step 3: a
@@ -41,7 +37,7 @@
  * and a MediaStreamDestination needs a context, so we wrap the AudioContext
  * constructor: every `new AudioContext()` returns one shared instance whose
  * `.destination` is rerouted through a fan-out gain. The fan feeds both the
- * real hardware output (the ALSA loopback → Jamulus path) and a
+ * real hardware output  and a
  * MediaStreamDestination exposed as window.__trussalMicStream, which the
  * getUserMedia override publishes to Jitsi. The stream is live from page load,
  * so Jitsi's early gUM call gets a real track that starts carrying audio the
@@ -64,11 +60,11 @@ export function pageAudioBridge() {
   // post-navigation, so worklet loading — and thus sound — works. Strudel,
   // Jitsi, and the gUM fallback all funnel through `new AudioContext()`, so
   // whoever asks first creates the one shared instance and its output lands on
-  // our fan (→ hardware/Jamulus + the Jitsi tap).
+  // our fan (the Jitsi tap).
   let shared = null;
   function build(args) {
     const ctx = new Native(...args);
-    const hardware = ctx.destination; // real device → ALSA loopback → Jamulus
+    const hardware = ctx.destination;
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
     const fan = ctx.createGain();
     fan.connect(hardware);
@@ -85,7 +81,7 @@ export function pageAudioBridge() {
       get: () => fan,
     });
     window.__trussalMicStream = tap.stream;
-    // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware/Jamulus),
+    // The fan carries ALL of this bot's audio (→ Jitsi tap AND → hardware),
     // so zeroing its gain is a complete mute of the bot from both paths. Exposed
     // for the studio's per-bot mute (driven via the peer-state bus → page event).
     window.__trussalFanGain = fan;
@@ -94,7 +90,7 @@ export function pageAudioBridge() {
     // running — it stays true through every silent-routing failure (superdough's
     // NaN channel math, a suspended context, a wrong-origin worklet), which is
     // exactly how a bot streams silence with no thrown error. Tap the fan's OUTPUT
-    // (what feeds the Jitsi track AND the ALSA→Jamulus path) with an AnalyserNode:
+    // (what feeds the Jitsi track) with an AnalyserNode:
     // it is a passive observer, so its own output need not be connected anywhere.
     const meter = ctx.createAnalyser();
     meter.fftSize = 2048;
@@ -190,7 +186,7 @@ export function pageIsActiveAggregator() {
  *     code, recombined with the bot's original Hydra preamble unless the edit
  *     brings a preamble of its own.
  *   - trussal-remote-mute: zero/restore the shared audio fan gain, muting the
- *     bot on both the Jitsi and Jamulus paths at once.
+ *     bot on both the Jitsi path once.
  *   - trussal-remote-stop: a room-wide ■ Stop reaching this bot. Same fan gain
  *     as mute, but a SEPARATE gate multiplied in alongside it (applyFanGain)
  *     — this bot's own REPL is a standalone @strudel/repl instance the
@@ -952,7 +948,7 @@ export async function pageEnsureAudioPublished() {
     //    library re-wires the sender itself across P2P/JVB flips and
     //    renegotiations. The fan is the tap point: all of superdough's output
     //    lands on it (destination override in pageAudioBridge), it feeds fanRms,
-    //    and zeroing it still mutes this path and Jamulus together.
+    //    and zeroing it still mutes this path.
     const fan = window.__trussalFanGain;
     if (!fan) {
       // The shared-context build above guarantees the fan; missing means

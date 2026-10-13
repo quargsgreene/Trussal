@@ -2,7 +2,7 @@
  * Bot display names: randomly chosen dog breeds (spec constraint).
  *
  * Names must be (a) random-feeling, (b) unique within a session so operators
- * can tell bots apart in Jitsi/Jamulus, and (c) reproducible from (botId,
+ * can tell bots apart in Jitsi, and (c) reproducible from (botId,
  * sessionSeed) so a replaced bot's logs can be correlated. We get all three by
  * seeding a Fisher-Yates shuffle with the session seed and indexing by botId.
  *

@@ -3,7 +3,7 @@
 The public deployment fronts **one full `docker-jitsi-meet` stack per rack
 machine** ("shard") with the consistent-hash edge LB in `../edge/`. Each shard
 is an ordinary single-host Trussal stack — `web` + `prosody` + `jicofo` + `jvb`
-+ `latency` + `jamulus-relay` — brought up by `./run.sh` exactly as today. The
++ `latency` — brought up by `./run.sh` exactly as today. The
 only differences are a handful of per-shard `.env` values and the edge in front.
 
 A room lives **entirely on one shard** (the edge pins every one of its surfaces
@@ -60,10 +60,10 @@ or by hand:
 1. **AMD (edge)**: `cd edge && cp .env.example .env` (fill `CF_API_TOKEN`,
    `TURN_CREDENTIALS`, `TURN_HOST`), then `make deploy-edge` — HAProxy + the
    rack's one `coturn` + `ddns`, config validated, TURN-IP refresh cron
-   installed. Jamulus systemd units and the bot conductor also live here.
+   installed. The bot conductor also live here.
    Point Cloudflare's origin for `trussal.com` at the AMD:80.
 2. **Each shard**, on its own host: `.env` per the tables above (incl.
-   `EDGE_MODE=shard`), then `JAMULUS_HOST=jamulus.trussal.com ./run.sh`
+   `EDGE_MODE=shard`)
    (full single-host build + stack, coturn/ddns skipped). Confirm the served
    bundle: `curl -sk https://localhost/custom-config.js | grep -a orderTokens`,
    and the `?v=` matches the commit: `curl -sk https://localhost/ | grep -o 'v=[0-9a-f-]*'`.

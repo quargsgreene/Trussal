@@ -143,7 +143,6 @@ const SSH_COMMANDS = {
   ].join(' && '),
 
   audio: [
-    'systemctl list-units "jamulus@*" --no-legend --plain 2>/dev/null | head -20',
     'echo "--- disk ---" && df -h / | tail -1',
     'echo "--- memory ---" && free -h | grep Mem',
   ].join(' && '),
@@ -199,7 +198,7 @@ const TOOLS = [
   },
   {
     name: 'get_conductor_config',
-    description: 'Returns the conductor\'s current configuration: maxBots, roles, health thresholds, Jitsi URL, Jamulus server.',
+    description: 'Returns the conductor\'s current configuration.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -222,7 +221,6 @@ const TOOLS = [
     description:
       'SSHes into a VM and returns service health. ' +
       'video: Docker Compose service table, disk, memory. ' +
-      'audio: Jamulus systemd instance statuses, disk, memory. ' +
       'bots: Docker Compose table, running bot containers, disk, memory.',
     inputSchema: {
       type: 'object',

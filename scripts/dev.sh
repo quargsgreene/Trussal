@@ -14,8 +14,7 @@ DJM="$REPO/docker-jitsi-meet"
 [ -f "$DJM/.env" ] || { echo "No docker-jitsi-meet/.env — run: npm run dev:setup" >&2; exit 1; }
 
 # Only the services needed to serve the app + signalling. Skips ddns and
-# jamulus-relay (the latter needs a real Jamulus host and isn't required to
-# exercise the browser code).
+
 SERVICES="web prosody jicofo jvb latency"
 
 echo "[dev] building bundle + seeding jitsi-web/"

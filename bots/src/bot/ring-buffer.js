@@ -1,8 +1,7 @@
 /**
  * RingBuffer — a fixed-capacity circular buffer of Float32 audio samples.
  *
- * Modeled on the AudioWorklet ring in docker-jitsi-meet/jitsi-web/
- * jamulus-relay-player.js: a single Float32Array with independent read/write
+ * A single Float32Array with independent read/write
  * cursors and a `filled` count. The difference is the overflow policy — the
  * relay drops incoming audio when full; here a full buffer EVICTS the oldest
  * sample (advances the read cursor) so a participant whose buffer is never

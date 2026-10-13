@@ -6,8 +6,7 @@
  * The bot fetches its script from the conductor (not from env) so a replaced
  * bot always gets the CURRENT master variation, then starts the metrics
  * report loop. Latency is measured as the HTTP round-trip of each metrics
- * POST — the same path Jamulus audio takes off-box, and free of extra ping
- * infrastructure.
+ * POST
  */
 
 import { spawn } from 'node:child_process';
@@ -18,7 +17,6 @@ import { Bot } from './bot.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from './aggregator-bot.js';
 import { makeWsSidecarConnector } from '../orchestrator/fleet-service.js';
 import { ffmpegBedArgs } from './ffmpeg-bed.js';
-// import { jamulusArgs, jamulusIniContent } from './jamulus.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { gainForBotCount } from '../shared/audio-math.js';
 import { frequencyBand } from '../script-gen/variation.js';
@@ -31,13 +29,10 @@ const botId = Number(env('BOT_ID', '0'));
 const sessionSeed = Number(env('SESSION_SEED', '1'));
 const conductorUrl = env('CONDUCTOR_URL', 'http://conductor:7700');
 const jitsiUrl = env('JITSI_URL', 'http://localhost/0');
-// const jamulusServer = env('JAMULUS_SERVER', 'trussal.duckdns.org:22000');
 const executablePath = env('CHROMIUM_PATH', '/usr/bin/chromium');
 const metricsIntervalMs = Number(env('METRICS_INTERVAL_MS', '2000'));
-// One container per room runs as the aggregator (BOT_ROLE=aggregator): no
-// Strudel/Jamulus, it taps every participant and will stream back the mix.
+// One container per room runs as the aggregator (BOT_ROLE=aggregator): no Strudel
 const botRole = env('BOT_ROLE', 'player');
-
 const name = breedNameFor(botId, sessionSeed);
 
 async function fetchAssignment() {
@@ -45,30 +40,6 @@ async function fetchAssignment() {
   if (!res.ok) throw new Error(`conductor refused assignment: ${res.status}`);
   return res.json(); // { script: {strudel, hydra, entryDelayMs}, botCount, samples }
 }
-
-// function startSidecars(botCount) {
-//   const { lo, hi } = frequencyBand(botId % botCount, botCount);
-//   const bed = spawn('ffmpeg', ffmpegBedArgs({
-//     loFreq: Math.round(lo),
-//     hiFreq: Math.round(hi),
-//     gain: gainForBotCount(botCount),
-//     // Set by the entrypoint to this bot's own loopback subdevice.
-//     alsaDevice: env('ALSA_PLAYBACK_DEVICE', 'plughw:Loopback,0,0'),
-//   }), { stdio: 'inherit' });
-//   // Debian's jamulus package installs the binary as capital-J "Jamulus".
-//   const iniFile = `/tmp/jamulus-bot-${botId}.ini`;
-//   writeFileSync(iniFile, jamulusIniContent(name));
-//   const jamulus = spawn('Jamulus', jamulusArgs({ server: jamulusServer, name, iniFile }), { stdio: 'inherit' });
-//   for (const proc of [bed, jamulus]) {
-//     proc.on('error', (err) => {
-//       // Missing binary/spawn failure: exit loudly (conductor replace policy)
-//       // instead of letting the unhandled 'error' event produce a bare crash.
-//       console.error(`[bot ${botId}] sidecar failed to start:`, err.message);
-//       process.exit(1);
-//     });
-//   }
-//   return [bed, jamulus];
-// }
 
 function bandwidthFromEnv() {
   return {
@@ -121,7 +92,7 @@ function startMetricsReporting(bot, extra = {}) {
   }, metricsIntervalMs);
 }
 
-// The aggregator: no assignment/script, no ffmpeg/Jamulus sidecars. It joins,
+// The aggregator: It joins,
 // taps every participant into per-room-index ring buffers (its own ingest
 // loop), and reports metrics + buffer stats tagged as the aggregator.
 async function aggregatorMain() {

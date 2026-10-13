@@ -1,7 +1,7 @@
 # One container per bot (spec): headless Chromium + Xvfb + ALSA loopback
-# client side + ffmpeg + Jamulus client + the Node bot driver.
+# client side + the Node bot driver.
 #
-# Debian base rather than Alpine: Chromium, ALSA and Jamulus are all packaged
+# Debian base rather than Alpine: Chromium, ALSA are all packaged
 # and battle-tested on glibc; Alpine's musl builds of Chromium lag and break
 # WebGL (which Hydra needs).
 #
@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     alsa-utils \
     jackd2 \
-    # jamulus \
     ca-certificates \
     fonts-liberation \
  && rm -rf /var/lib/apt/lists/*

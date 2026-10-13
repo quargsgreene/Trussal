@@ -7,7 +7,7 @@
 // every browser drives each peer's effects chain from that peer's network
 // conditions.
 
-import { getRoomNameFromUrl } from './jamulus.js';
+import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { setPeerPacks, removePeerPacks } from './data-ref.js';
 import { hasTextCycles } from './text-cycles-core.js';
