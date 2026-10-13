@@ -88,7 +88,7 @@ Keep staging's VM addresses in their own gitignored file, separate from `.env.de
 
 ```bash
 cp .env.deploy.example .env.deploy.staging
-# edit VIDEO_VM / AUDIO_VM / BOTS_VM / REPO_PATH for the staging hosts
+# edit VIDEO_VM / BOTS_VM / REPO_PATH for the staging hosts
 ```
 
 Then pass `ENV_DEPLOY` to target it instead of the default `.env.deploy`:

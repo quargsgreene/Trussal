@@ -33,30 +33,11 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     mod2
   ));
 
-  // src/jamulus.js
   function getRoomNameFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     const roomName = parts.length ? parts[parts.length - 1] : null;
     return roomName ? roomName.toLowerCase() : roomName;
   }
-  var JAMULUS_ROOM_MAP;
-  var init_jamulus = __esm({
-    "src/jamulus.js"() {
-      JAMULUS_ROOM_MAP = {
-        "0": { host: "jamulus.trussal.com", port: 22e3 },
-        "1": { host: "jamulus.trussal.com", port: 22001 },
-        "2": { host: "jamulus.trussal.com", port: 22002 },
-        "3": { host: "jamulus.trussal.com", port: 22003 },
-        "4": { host: "jamulus.trussal.com", port: 22004 },
-        "5": { host: "jamulus.trussal.com", port: 22005 },
-        "6": { host: "jamulus.trussal.com", port: 22006 },
-        "7": { host: "jamulus.trussal.com", port: 22007 },
-        "8": { host: "jamulus.trussal.com", port: 22008 },
-        "9": { host: "jamulus.trussal.com", port: 22009 },
-        "10": { host: "jamulus.trussal.com", port: 22010 }
-      };
-    }
-  });
 
   // src/participants.js
   function emit(event, payload) {
@@ -1455,7 +1436,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeJPatternToken, activeJPatternIndex, activeJPatternKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
-      init_jamulus();
       init_participants();
       init_data_ref();
       init_text_cycles_core();
@@ -37927,31 +37907,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return () => routingSubscribers.delete(fn);
   }
-  function applyJamulusMuteToAllTags() {
-    document.querySelectorAll("audio").forEach((tag) => {
-      if (!tag.srcObject) return;
-      if (tag.id === "userAudio") return;
-      const jitsiId = getParticipantIdForAudioTag(tag);
-      if (jitsiId && remoteSources.has(jitsiId)) return;
-      if (jamulasMutedTags.has(tag)) return;
-      tag.muted = true;
-      tag.volume = 0;
-      jamulasMutedTags.add(tag);
-    });
-  }
-  function setJamulusMode(enabled) {
-    if (enabled === jamulusMode) return;
-    jamulusMode = enabled;
-    if (enabled) {
-      applyJamulusMuteToAllTags();
-    } else {
-      for (const tag of jamulasMutedTags) {
-        tag.muted = false;
-        tag.volume = 1;
-      }
-      jamulasMutedTags.clear();
-    }
-  }
+
   function presenceLevelFor(jitsiId) {
     if (!aggregatorJitsiId) return 1;
     return jitsiId === aggregatorJitsiId ? 1 : 0;
@@ -38241,7 +38197,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     if (audioTagObserver) return;
     audioTagObserver = new MutationObserver(() => {
       captureJitsiAudio();
-      if (jamulusMode) applyJamulusMuteToAllTags();
     });
     audioTagObserver.observe(document.body, { childList: true, subtree: true });
     setInterval(captureJitsiAudio, 1e3);
@@ -38771,7 +38726,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, masterLimiter, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulusMode, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, masterLimiter, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -38793,8 +38748,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
       externalNodes = /* @__PURE__ */ new Map();
       audioRouted = /* @__PURE__ */ new Set();
       routingSubscribers = /* @__PURE__ */ new Set();
-      jamulusMode = false;
-      jamulasMutedTags = /* @__PURE__ */ new Set();
       audioTagObserver = null;
       aggregatorJitsiId = null;
       subscribePeerState((event, payload) => {
@@ -52416,7 +52369,6 @@ ${newBody}`).length === 0;
       init_o2lite_web();
       init_MetaprogrammerCrdtSync();
       init_peer_state();
-      init_jamulus();
       init_latency_instrument();
       init_av_effects();
       EPOCH_ADDR = "/jp/epoch";
@@ -52476,8 +52428,6 @@ ${newBody}`).length === 0;
     }
   });
 
-  // src/index.js
-  init_jamulus();
 
   // src/panic-button.js
   var KEY = "trussal-main-room-url";
@@ -53619,7 +53569,6 @@ ${newBody}`).length === 0;
 `;
 
   // src/studio.js
-  init_jamulus();
   init_participants();
   init_peer_state();
 
@@ -55779,9 +55728,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     "#trussal-kbd-panel",
     "#trussal-fg-panel",
     "#trussal-fg-cursor",
-    "#trussal-welcome-overlay",
-    "#jamulus-welcome-panel",
-    "#jamulus-info-banner"
+    "#trussal-welcome-overlay"
   ];
   var CSS_PROPERTY_LIST = [...CSS_PROPERTIES];
   function methodForCssProp(prop) {
@@ -64135,7 +64082,6 @@ ${snippet}${JP_BTN_MARKER}`;
     if (getExternalStreamLabel(local2.jitsiId)) {
       await stopPropagatingExternalStream();
       detachExternalStreamForPeer(local2.jitsiId);
-      setJamulusMode(false);
       setStatus("Input detached");
       renderAll();
       return;
@@ -64147,7 +64093,7 @@ ${snippet}${JP_BTN_MARKER}`;
       let label2 = "default";
       if (devices.length > 1) {
         const choice = window.prompt(
-          "Select an audio input by number to route through your effects chain (use a virtual device that carries Jamulus to feed Jamulus through here):\n\n" + devices.map((d, i) => `${i + 1}. ${d.label}`).join("\n"),
+          "Select an audio input by number to route through your effects chain:\n\n" + devices.map((d, i) => `${i + 1}. ${d.label}`).join("\n"),
           "1"
         );
         if (!choice) {
@@ -64172,7 +64118,6 @@ ${snippet}${JP_BTN_MARKER}`;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       await attachExternalStreamForPeer(local2.jitsiId, stream, label2, { monitorLocally: false });
       const propagated = await propagateExternalStreamToRoom(stream);
-      setJamulusMode(true);
       setStatus(propagated ? `Capturing ${label2} \u2192 room` : `Capturing ${label2} (local only \u2014 no Jitsi mic hook)`);
       renderAll();
     } catch (e30) {
@@ -65725,7 +65670,6 @@ ${snippet}${JP_BTN_MARKER}`;
   init2();
 
   // src/index.js
-  window.JAMULUS_ROOM_MAP = JAMULUS_ROOM_MAP;
   setDataRefReader(sampleDataRefAt);
   subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
   var lastAnnouncedPattern = null;
