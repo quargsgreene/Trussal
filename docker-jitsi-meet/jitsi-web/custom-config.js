@@ -54029,16 +54029,6 @@ class TrussalLiveCapture extends AudioWorkletProcessor {
       for (let c = 0; c < ch.length; c++) this.chans[c].push(ch[c].slice());
       this.len += n;
       if (this.len >= 2048) {
-        // Pick the loudest channel for the WHOLE flushed batch rather than
-        // averaging all of them (a plain average halves the level whenever
-        // only one channel actually carries signal, and can partially cancel
-        // channels that are out of phase) \u2014 but decide it ONCE per ~43ms
-        // batch, not per 128-sample render quantum. Re-deciding every
-        // quantum let the "loudest" channel flip several times within one
-        // batch on ordinary stereo input (e.g. a multi-channel interface
-        // like a MOTU M4), splicing together out-of-phase fragments every
-        // ~2.7ms \u2014 audible as zipper/glitch noise, which is what made
-        // captured audio sound poor even after the gain-floor fix.
         let loudest = 0, loudestPeak = -1;
         for (let c = 0; c < this.chans.length; c++) {
           let peak = 0;

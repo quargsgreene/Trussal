@@ -655,11 +655,6 @@ div.hangup-menu-button svg {
   color: var(--trussal-secondary, #111111) !important;
 }
 
-/* Hovering a settings-dialog row / sidebar tab, an overflow-menu item, or the
-   welcome-page settings gear inverts it to the same solid #111 pill the
-   selected state already uses (glyph + label #eee) — the theme's one
-   hover/selected treatment, matching a toggled toolbar icon. `:not(-selected)`
-   keeps this off the already-inverted current tab so nothing double-applies. */
 .settings-dialog [role="tab"]:hover,
 [class*="-contextMenuItem"]:not([class*="-selected"]):hover,
 [class*="-overflowMenuDrawer"] [role="button"]:hover,

@@ -114,8 +114,6 @@ fi
 
 # Fleet control-channel secret, checked LAST so it lands at the bottom of the
 # screen rather than under a full docker build, and after the stack is up so it
-# can read the value the fresh container actually got. Deliberately non-fatal:
-# the meeting platform is useful without the bot fleet, and failing a video
-# deploy over it would be worse than the silence it prevents.
+# can read the value the fresh container actually got.
 bash "$REPO/scripts/check-control-token.sh" video \
   || echo "WARNING: deploy finished, but fleet room discovery is off — no aggregator will spawn."
