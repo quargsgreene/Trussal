@@ -3,7 +3,6 @@
 import './panic-button.js';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
-import {renderAudioConfigCheck} from './audio-config-check.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';

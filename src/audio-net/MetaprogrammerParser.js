@@ -594,12 +594,7 @@ class Parser {
       end = { line: t.line, col: t.col + tokenWidth(t) };
       return t;
     };
-    // Set once a glue error has swallowed text for recovery: from there on the
-    // scan position is past a gap, so nothing more may widen the extent — the
-    // element still ends where it did before the mistake.
     let detached = false;
-    // A modifier that survived validation: it is part of the element, so the
-    // element now reaches to the end of it.
     const accept = (mod) => { mods.push(mod); if (!detached) extent = end; };
     for (;;) {
       const t = this.peek();
@@ -607,8 +602,6 @@ class Parser {
       if (!glued(t)) {
         this.error(
           `'${t.value}' has to be attached to what it modifies — write '0${t.value}2', not '0 ${t.value}2'`, t);
-        // Swallow the operator and its operand: one stray space is one error,
-        // not that plus 'unexpected @ in sequence' from the caller's loop.
         detached = true;
         take();
         const operand = this.peek();
@@ -616,9 +609,6 @@ class Parser {
         continue;
       }
       take();
-      // `?` and `!` may stand alone (Strudel's "half the time" and "once
-      // more"). Their count must be GLUED to the operator to belong to it —
-      // with a gap it is the next sequence element ("4? 10", "0! 2").
       if (t.value === '?' || t.value === '!') {
         const p = this.peek();
         const bare = t.value === '?' ? { op: '?', value: null } : { op: '!', value: 2 };
@@ -644,8 +634,6 @@ class Parser {
         continue;
       }
       if (!glued(arg)) {
-        // The other half of the same rule: `0@ 3` is no more one weighted turn
-        // than `0 @3` is.
         this.error(
           `'${t.value}' has to be attached to its number — write '0${t.value}2', not '0${t.value} 2'`, arg);
         detached = true;
@@ -693,11 +681,6 @@ class Parser {
     this.recover();
   }
 
-  // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
-  // With no amount the metric evolves with the live worst-case measurement;
-  // an amount PINS it there regardless of network conditions (seconds for
-  // wcl/wcj, loss fraction for wcpl), pinning timing only — measured metrics
-  // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
   parseCycles(program, nameTok) {
     const metricTok = this.peek();
     if (this.rejectBareMetric(metricTok)) { this.recover(); return; }
@@ -729,9 +712,6 @@ class Parser {
     }
     if (!this.atStatementEnd()) {
       const trailing = this.peek();
-      // A data reference is accepted exactly where a `<…>` pattern is, and the
-      // cycles scale/amount are read once per program rather than per cycle —
-      // so say that, instead of reporting it as a stray argument.
       if (trailing.type === 'dataref') {
         this.error(`'# cycles' takes fixed numbers, so it cannot read '${tokenText(trailing)}' —`
           + ' a data reference belongs in an effect argument (# crush / # echo / # room / # noise)', trailing);
@@ -742,7 +722,6 @@ class Parser {
       return;
     }
     if (program.cycles) {
-      // "Overarching cyclic timing modes cannot be chained together."
       this.error('cyclic timing modes cannot be chained — exactly one # cycles directive is allowed', nameTok);
       return;
     }
@@ -750,7 +729,6 @@ class Parser {
   }
 
   parseTempo(program, nameTok) {
-    // quantity: number | int | int/int (e.g. 90/4)
     const q = this.peek();
     let value = null;
     if (q.type === 'number' || q.type === 'intlike') {
@@ -788,8 +766,6 @@ class Parser {
     program.tempo = { value, unit: unitTok.value };
   }
 
-  // `# ring [explicit] [w <token> <weight> …]` — a bare `# ring` (no mode
-  // word) selects hash mode, the default and the only way to spell it.
   parseRing(program, nameTok) {
     if (program.ring) {
       this.error('duplicate # ring directive', nameTok);
@@ -808,8 +784,6 @@ class Parser {
       return;
     }
     const ring = { mode, weights: {} };
-
-    // optional weight pairs: `w <token> <weight> <token> <weight> …`
     if (this.peek().type === 'word' && this.peek().value === 'w') {
       if (ring.mode !== 'hash') {
         this.error("weights only apply to hash mode (bare '# ring'), not '# ring explicit'", this.peek());
@@ -857,8 +831,6 @@ class Parser {
     const close = open.value === '<' ? '>' : ']';
     const mode = open.value === '<' ? 'alternate' : 'subdivide';
     const terms = [];
-    // Parallel to `terms`, and left sparse: a pattern nobody weighted, dropped
-    // or rated keeps the node shape it has always had.
     const weights = [];
     const chances = [];
     const rates = [];
@@ -879,8 +851,6 @@ class Parser {
 
     for (;;) {
       const t = this.peek();
-      // A directive is one line: an unclosed pattern ends at the line break
-      // rather than swallowing the statements below it.
       if (t.type === 'eof' || t.type === 'sigil') {
         this.error(`unclosed pattern argument to '${name}' — expected '${close}'`, t);
         return null;
@@ -893,11 +863,6 @@ class Parser {
         break;
       }
       if (kind === 'media' && t.type === 'punct' && t.value === '[') {
-        // In a MEDIA pattern `[…]` is a SET, not a subdivision — the elements
-        // of `<["audio" "video"] "css">` are sets. Subdividing has nothing to
-        // offer here anyway: an effect is either acting on a medium for the
-        // span or it is not, so splitting that span would only mean switching
-        // media faster, which the alternation already expresses.
         const set = this.parseMediaSet(name);
         if (!set) return null;
         terms.push(set);
@@ -954,10 +919,6 @@ class Parser {
         if (!settleKind('metric', t)) return null;
         if (!sig.metricKeywords.includes(t.value)) {
           this.error(`'${t.value}' is not a metric '${name}' can read (${sig.metricKeywords.join('|')})`, t);
-          // Stand a rest in its place so the parallel weight/chance arrays stay
-          // aligned with `terms`. The program is already invalid, so nothing
-          // downstream reads this — but a misaligned array would make the
-          // errors that follow describe the wrong element.
           terms.push(null);
         } else {
           terms.push(t.value);
@@ -982,12 +943,6 @@ class Parser {
         continue;
       }
       if (t.type === 'op') {
-        // `@` and `?` are consumed by parseValueElementModifiers as part of
-        // the element they follow, and a group eats its own rate, so anything
-        // reaching here has no element to attach to (a leading `<*2 …>`) or is
-        // an operator a value cannot carry. Name it rather than letting the
-        // leaf error blame it for not being a number, and swallow its operand
-        // too so the count is not then read as another element.
         this.error(
           `'${name}' pattern elements take '@' (weight) and '?' (chance); ` +
           `'${t.value}' is not one of them — '*' and '/' set the rate of a whole <…> or […] group`, t);
@@ -1013,11 +968,6 @@ class Parser {
       return null;
     }
     const speed = this.parseValueRate(name);
-    // Nested, an element modifier here belongs to the PARENT — this group is
-    // one of its elements — so leave it. (`*` and `/` never reach this point:
-    // parseValueRate above has already taken them as this sequence's own rate.)
-    // At the top level there is no parent to attach to, and saying so beats the
-    // generic trailing-argument error.
     const after = this.peek();
     if (after.type === 'op') {
       const elementModifier = VALUE_ELEMENT_OPS.has(after.value);
@@ -1031,10 +981,6 @@ class Parser {
     }
     return this.finishValueSequence({ mode, terms, weights, chances, rates, speed, open, name, alternationOnly });
   }
-
-  // Assemble the node, dropping the parallel arrays and the rate when nothing
-  // wrote them — an unmodified pattern keeps the shape it has always had
-  // rather than growing fields that always read 1 and null.
   finishValueSequence({ mode, terms, weights, chances, rates, speed, open, name, alternationOnly }) {
     if (alternationOnly && speed > 1) {
       this.error(`'${name}' arguments are sampled once per cycle — a rate above 1 ` +
@@ -1049,21 +995,6 @@ class Parser {
     return node;
   }
 
-  // Every element-level modifier a value pattern takes, after one element:
-  //
-  //   `@n`   how much of the sequence the element takes
-  //   `?[p]` dropped with probability p, reading as a rest
-  //   `!n`   taken n times in a row, as n independent elements
-  //   `*n` `/n`  the rate the element's OWN content is read at
-  //
-  // The same four are element-level in the `$ participants` grammar. `*n` and
-  // `/n` are the one spelling that is both: written after a whole `<…>` /
-  // `[…]` they set that sequence's rate, and a nested group has already eaten
-  // its own by the time we get here — so a rate reaching this point belongs to
-  // the element it follows.
-  //
-  // Fills the caller's parallel arrays in place and expands `!` into repeated
-  // terms; errors are recorded, never thrown.
   parseValueElementModifiers(name, index, terms, weights, chances, rates) {
     let repeats = 1;
     let rate = 1;
@@ -1072,14 +1003,6 @@ class Parser {
       if (op.type !== 'op' || !VALUE_ELEMENT_OPS.has(op.value)) break;
       this.next();
       const countTok = this.peek();
-      // The count must be GLUED to the operator to belong to it — with a gap
-      // it is the next element of the sequence (`<1? 2>` is a maybe-1 followed
-      // by 2, `<1! 2>` a doubled 1 followed by 2), as in a participants
-      // sequence. `@` demands the same here, where parseModifiers lets it take
-      // the next numeric token whatever the gap: the elements of a value
-      // pattern are usually bare numbers, so a stray space in `<1@ 2>` would
-      // quietly eat the 2 as a weight and leave a one-element pattern that
-      // still parses.
       const glued = (countTok.type === 'number' || countTok.type === 'intlike')
         && countTok.line === op.line && countTok.col === op.col + 1;
       const count = glued
@@ -1126,11 +1049,6 @@ class Parser {
     }
 
     if (rate !== 1) rates[index] = rate;
-    // `!` replicates the element into that many INDEPENDENT ones, each keeping
-    // its weight, chance and rate — so a `?` on a replicated element draws once
-    // per copy rather than once for all of them, which is what the scheduler
-    // does with `entry.replica`. Expanding here rather than at read time keeps
-    // the node a plain list of terms for everything downstream.
     for (let copy = 1; copy < repeats; copy++) {
       terms.push(terms[index]);
       weights[terms.length - 1] = weights[index];
@@ -1139,11 +1057,6 @@ class Parser {
     }
   }
 
-  // Trailing `*n` / `/n` on a value sequence: the rate the argument is read
-  // at, in the sequence's own units. `*2` fits both elements of a `<a b>` into
-  // one cycle, `/2` holds each for two. They compose the way they do on a
-  // `$ participants` sequence, so `*4/2` is ×2. Returns the folded multiplier
-  // (1 when nothing was written); errors are recorded, never thrown.
   parseValueRate(name) {
     let speed = 1;
     for (;;) {
@@ -1170,10 +1083,6 @@ class Parser {
     return t.type === 'newline' || t.type === 'eof' || t.type === 'sigil';
   }
 
-  // Consume a balanced `(…)` run. A rejected Strudel call is skipped whole
-  // because its innards are not this language's tokens — in particular a '#'
-  // inside it is a statement sigil to the tokenizer, and leaving it for
-  // recover() turns one honest error into two.
   skipParenBlob() {
     let depth = 0;
     while (!this.atEof()) {
@@ -1183,17 +1092,6 @@ class Parser {
     }
   }
 
-  // One <metric> <scale> pair per parameter, then an optional upper bound per
-  // parameter in the same order:
-  //
-  //   # echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200
-  //          |----| |------| |----| |---------|
-  //          length  feedbk   gain    bounds
-  //
-  // All the pairs or none — a half-written chain (`# echo wcl 2`) is far more
-  // likely a mistake than an intention, and silently defaulting the rest would
-  // hide it. Bounds are individually optional, filling their slots left to
-  // right; each omitted one falls back to that metric's default.
   parseMetricPairFn(program, name, nameTok, sig) {
     const slots = sig.metricPairs;
     const pairs = [];
@@ -1279,14 +1177,6 @@ class Parser {
     return i;
   }
 
-  // Whether what follows opens the trailing MEDIUM argument rather than
-  // another numeric one. Both are written with the same brackets, so the LEAF
-  // settles it: a quoted MEDIUM NAME (`"audio"`) can only be a medium, and a
-  // number can never be one. A quoted metric (`"wcl"`) is a string leaf too
-  // now, so the test is isMedium(), not "is a string" — media and metric
-  // names are disjoint. That is what keeps `# crush <"wcl" "wcpl"> <2 4>`
-  // (patterned metric) and `# echo … [1 4] ["audio"]` (numeric bound then a
-  // medium set) reading unambiguously.
   atMediaArg() {
     const t = this.peek();
     if (t.type !== 'punct' || (t.value !== '[' && t.value !== '<')) return false;
@@ -1301,10 +1191,6 @@ class Parser {
     return !!leaf && leaf.type === 'string' && isMedium(leaf.value);
   }
 
-  // `["audio" "video"]` — one set of media, space-separated. A comma is
-  // refused by name rather than as a generic unexpected token: it is the one
-  // separator a performer arriving from JSON would reach for, and the error
-  // has to teach the convention rather than just reject the character.
   parseMediaSet(name) {
     const open = this.next(); // '['
     const names = [];
@@ -1595,9 +1481,6 @@ class Parser {
     }
     const entry = { fn: name, args: args.map(a => a.value), line: nameTok.line, col: nameTok.col };
     if (metric) entry.metric = metric;
-    // Left off entirely when unwritten, so the AST reports the directives
-    // performers actually typed and the whole-room default lives in one place
-    // (EffectMedia.resolveMedia) rather than being baked into every entry.
     if (media) entry.media = media;
     program.chain.push(entry);
   }
@@ -1634,27 +1517,10 @@ export function parseMetaprogram(text) {
   return { ast, errors, valid: errors.length === 0 };
 }
 
-// export function getTokens(text) {
-//   const { tokens, _ } = tokenize(typeof text === 'string' ? text: '');
-//   return tokens;
-// }
-// Resolved effect parameter objects for the chain (validation must have
-// passed). Consumed by the Metaprogrammer when instantiating av-effects.
-// `cycle` selects the element of any `<…>` argument pattern; effects without
-// patterned arguments ignore it entirely.
 export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
   const { fn, args } = chainEntry;
   switch (fn) {
-    // `# room <metric> [scale] [fixed metric amount]` — decay = scale × the
-    // named metric; the optional third token pins it (0.4 = 400 ms) instead of
-    // reading live metrics. Any of the three may be a valueSeq node
-    // (`# room <wcl wcpl> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
     case 'room': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
-    // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
-    // per parameter, each carrying its own metric, scale (number or pattern)
-    // and upper bound. Written-out pairs win; anything missing takes the
-    // bare-`# echo` default, and a null bound defers to the metric's own
-    // (av-effects/Echo.js owns both the bounds and the normalization).
     case 'echo': {
       const pairs = chainEntry.pairs || [];
       const bounds = chainEntry.bounds || [];
@@ -1667,20 +1533,8 @@ export function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
         }))
       };
     }
-    // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
-    // halved as the metric climbs. Any of the three may be a valueSeq node
-    // (`# crush <wcl wcpl> <2 4>`); crushParams reads them per cycle.
+
     case 'crush': return { metric: chainEntry.metric ?? 'wcl', scale: args[0] ?? 1, fixedMetric: args[1] ?? null };
-    // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
-    // [<amount 1>] [<amount 2>]` — one slot per axis, each naming the metric
-    // that modulates it, how hard, and (optionally) a value pinning that
-    // metric. A factor defaults to 1 only when its metric keyword was
-    // written; unwritten means 0, which is "this axis does not modulate" and
-    // is what leaves a bare `# noise` at brown, 25 dB.
-    //
-    // Unlike crush and echo — whose params functions sample their own patterns
-    // — noise is resolved to plain numbers HERE, because the aggregator's
-    // master bus rebuilds the bed from the resolved values once per cycle.
     case 'noise': {
       const metrics = chainEntry.metrics || [];
       const axis = (i) => {
@@ -1714,42 +1568,10 @@ export function mosaicEnabled(ast) {
   return MOSAIC_ENABLED_BY_DEFAULT;
 }
 
-// The default program every room starts under (JPattern is always on).
-//
-// A bare `# ring` derives the rotation from a consistent hash of the PRESENT
-// roster (TurnRing.orderTokens), so every joiner takes turns immediately and a
-// join/leave needs no `$ participants` edit and no CRDT round-trip. The
-// `$ participants <0>` line is still required by the grammar (a program has a
-// `$` scheduling sequence) but seeds nothing in hash mode; edit the line to
-// `# ring explicit` to walk it literally instead — the old behaviour, where
-// only the listed tokens play.
-//
-// wcl is the worst-case mouth-to-ear latency a performer actually hears — tens
-// of ms, the de-jitter buffer dominating — so a scale of 20 turns a ~100 ms
-// room into ~2 s solos. Raise it for longer turns, lower it for a faster round.
-//
-// No `# tempo` line: the room's default program leaves the tempo unwritten so
-// the beat grid is not part of what a performer reads when they open the
-// editor. Cycle length still quantizes onto the parser's 120 bpm default —
-// writing an explicit `# tempo` is how you change that.
 export function buildDefaultProgram() {
   return `'metaprogram editor'\n$ participants <0>\n# ring\n# cycles "wcl" 20\n`;
 }
 
-// --- Program-text roster edits ----------------------------------------------
-//
-// Append to / remove from the scheduling sequence *as text*, preserving
-// whatever else the users wrote. These are deliberate-edit helpers (nothing
-// auto-applies them on join/leave: newcomers wait unlisted and silent, and
-// departed-but-listed participants persist as ghosts until an edit drops
-// them). Pure so the CRDT layer can apply the same edits to the shared doc.
-
-// The LIVE scheduling statement: a `$` opening a line, with the now-optional
-// `participants` label. Anchoring matters — an unanchored match finds
-// `$ <…>` anywhere, including inside a `*$` button declaration or a
-// commented-out line, and every helper below would then edit text that is not
-// the running program. Groups: prefix, open bracket, body, close bracket. The
-// body may span lines, as a wrapped sequence does.
 const SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
 
 function escapeForRegExp(s) {
@@ -1773,9 +1595,6 @@ export function programHasParticipant(text, token) {
   return !!m && sequenceLists(m, token);
 }
 
-// Whether the program has a live scheduling sequence to append to at all. An
-// empty doc has none, and a caller that wants a token in the ring has to write
-// the whole `$ participants <…>` statement instead.
 export function hasParticipantSequence(text) {
   return !!matchSequence(text);
 }
