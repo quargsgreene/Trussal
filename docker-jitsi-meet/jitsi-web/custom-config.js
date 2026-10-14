@@ -27,10 +27,6 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return to;
   };
   var __toESM = (mod2, isNodeMode, target) => (target = mod2 != null ? __create(__getProtoOf(mod2)) : {}, __copyProps(
-    // If the importer is in node compatibility mode or this is not an ESM
-    // file that has been converted to a CommonJS file using a Babel-
-    // compatible transform (i.e. "__esModule" has not been set), then set
-    // "default" to the CommonJS "module.exports" for node compatibility.
     isNodeMode || !mod2 || !mod2.__esModule ? __defProp(target, "default", { value: mod2, enumerable: true }) : target,
     mod2
   ));
@@ -52175,7 +52171,7 @@ ${newBody}`).length === 0;
             Room name:
           </label>
           <input id="trussal-room-input"
-                 type="text"
+                 type="textwelcome"
                  required
                  autocomplete="off"
                  autocapitalize="none"
