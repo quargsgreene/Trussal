@@ -78,6 +78,12 @@ fi
 # next `git pull --ff-only`, and it installs newly-added deps (e.g. yjs) that a
 # plain `git pull` leaves absent from node_modules. --include=dev keeps esbuild
 # et al. even if NODE_ENV=production on the host.
+# The web container bind-mounts this path; if it was removed while a container
+# was running, Docker recreates it as a DIRECTORY, which then blocks the
+# `cp dist/custom-config.js ...` below ("cannot overwrite directory with
+# non-directory"). Clear any stale file or directory before (re)building so a
+# fresh bundle can always land.
+rm -rf docker-jitsi-meet/jitsi-web/custom-config.js
 npm ci --include=dev
 npm run clean
 npm run deploy:local
