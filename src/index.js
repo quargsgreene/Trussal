@@ -49,7 +49,6 @@ if (!window.__trussalIsBot) {
   startWithVideoMuted();
 }
 
-renderAudioConfigCheck();
 renderRecentListText();
 renderWelcomeOverlay();
 renderHideStartMeetingButton();
