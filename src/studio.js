@@ -1,4 +1,9 @@
 // Unified Trussal Studio UI.
+//
+// One toggleable overlay surfaces a participant strip + a detail panel split
+// into a Latency Effects card and a Strudel card. Every participant gets a
+// chip with effect indicators, play state, and an "audio routed" dot — making
+// it obvious that each person owns their own chain and editor.
 
 import studioStyles from './studio.css';
 import { getRoomNameFromUrl } from './get-room-name-from-url.js';
@@ -136,6 +141,20 @@ function initial(name) {
   return trimmed ? trimmed[0].toUpperCase() : '?';
 }
 
+// Keeps `container`'s children in sync with `items` without recreating a node
+// for any item whose key is still present. A full teardown-and-rebuild (the
+// previous design here) needed a click's mousedown and mouseup to land on the
+// SAME node, dropped a focused input's cursor whenever its node got replaced,
+// and reset a container's scroll position on every replacement — all because
+// nothing survived the rebuild except by value. Reconciling by key means an
+// unrelated data refresh never touches a node the user is mid-gesture with.
+//
+// keyFn(item) must return a stable identity for that item. createFn(item)
+// builds a fresh node and binds ITS OWN listeners once, reading current values
+// off the node's dataset/DOM at call time rather than closing over `item` (a
+// later update replaces the node's content, not the node, so a closure over
+// the original item would go stale). updateFn(node, item) patches an existing
+// (or just-created) node's live-changing content in place.
 function reconcileList(container, items, keyFn, createFn, updateFn) {
   const existing = new Map();
   for (const child of Array.from(container.children)) {
@@ -160,6 +179,10 @@ function reconcileList(container, items, keyFn, createFn, updateFn) {
   for (const node of existing.values()) node.remove();
 }
 
+// Styles live in studio.css (imported as raw text — see build.mjs's '.css':
+// 'text' loader) rather than a template literal here. #trussal-studio-overlay
+// and #trussal-studio-toggle in that file are OVERLAY_ID/BUTTON_ID hardcoded
+// as literal strings; keep them in sync if either constant is ever renamed.
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -218,7 +241,12 @@ function renderStrip(container) {
   reconcileList(container, getAllPeers(), chipKey, createChip, updateChip);
 }
 
-
+// PERSONAL vs GLOBAL: every reading in this panel is either one participant's
+// own number (the selected chip — "personal") or the room-wide worst case
+// every client computes identically from the same broadcast metrics
+// ("global"). The tag is the first thing on each line so the two kinds are
+// never mistaken for each other — a personal RTT of 0.4ms next to a global
+// WCRTT of 40ms is two different peers' links, not a contradiction.
 function scopeTag(kind) {
   return `<span class="ts-scope" title="${kind === 'personal'
     ? 'this participant’s own reading'
@@ -250,7 +278,19 @@ function metricsLine(peer) {
   return `<div class="ts-meta" title="RTT is the WS ping/pong signalling leg to the sidecar">${scopeTag('personal')} RTT <b>${rtt}</b> · ${routedTxt}</div>`;
 }
 
-
+// The one network panel: this peer's measured link and the room-wide
+// worst-case basis every client shares (identical everywhere — it sets Net
+// Cycles cycle lengths). `controls` is dropped into the header.
+//
+// effectiveWorstCase() layers the CRDT induced floors over the measured
+// roster metrics, and carries measured's own `sampleCount` through the
+// merge — so one call covers both and there is nothing to show twice.
+// The turn length the running metaprogram's `# cycles` directive derives from
+// `wc` — what the aggregator actually paces each performer's solo by. Shown
+// next to the metrics that produce it so a WCL that moves without the turn
+// following is visible in the UI, not only in the aggregator's log. Computed
+// here rather than read off a scheduler because the browser-side scheduler is
+// dormant (see setJPatternActive); this is the same pure calculation.
 function cycleLengthReadout(wc) {
   const text = getProgramText();
   if (!text) return `${scopeTag('global')} Current turn length: <b>&mdash;</b> <span title="no metaprogram running yet">(no program)</span>`;
@@ -349,6 +389,11 @@ subscribeFleetStatus((status) => {
   if (line) setStatus(line);
 });
 
+// The Personal Theme card replaces the old Bot Cluster panel. Every control is
+// local-only: Apply writes this viewer's own theme (src/theme-context.js) and
+// repaints just this browser — nothing goes on the wire. Built once per
+// peer-selection; it reads the stored theme at build time and needs no
+// per-tick patch, so there is no update* counterpart.
 function createThemePickerSection() {
   const el = document.createElement('div');
   el.className = 'ts-section ts-theme-section';
@@ -415,8 +460,25 @@ function createThemePickerSection() {
   return el;
 }
 
+// Resolves whichever peer is currently selected, repairing selectedJitsiId
+// if it's gone stale (see selectedPeerKey's declaration comment) rather than
+// letting a caller fall back to the local peer on a merely-renamed jitsiId.
+// Callers that DO want a "nothing selected yet" fallback to the local peer
+// (only renderDetail, which must always show SOMETHING) do that themselves
+// afterward; a caller that should do nothing when the selection is
+// unresolvable (the in-place remote-tile sync in renderAll) can just check
+// the return value.
 function resolveSelectedPeer() {
   let peer = getPeerByJitsiId(selectedJitsiId);
+  // selectedJitsiId can go stale out from under an otherwise-unchanged
+  // selection: a P2P<->JVB renegotiation re-keys jitsiId for ANY
+  // participant (human or bot — see peerKeyAttr's comment on the remote-tile
+  // textarea), never peerId. Recover by the stable id instead of silently
+  // treating the selection as gone, which used to make renderDetail snap
+  // back to the local peer with no indication anything happened — reading
+  // as "my bot edit reverted" when what actually happened is the studio
+  // quietly switched to showing an unrelated (the operator's own) tile, and
+  // any further edits/evals were going to THAT tile instead.
   if (!peer && selectedPeerKey && selectedPeerKey !== 'local') {
     peer = getAllPeers().find(p => p.peerId === selectedPeerKey) || null;
     if (peer) selectedJitsiId = peer.jitsiId;
@@ -424,6 +486,11 @@ function resolveSelectedPeer() {
   return peer;
 }
 
+// Top-level entry point, called every tick. Decides whether the selected
+// peer's identity actually changed (rare — a deliberate chip click, or the
+// very first render) and only rebuilds structure then; otherwise it just
+// patches the existing structure with fresh data. See buildDetailShell and
+// patchDetailForPeer for what each half does.
 function renderDetail(container) {
   let peer = resolveSelectedPeer();
   if (!peer) {
@@ -442,10 +509,36 @@ function renderDetail(container) {
   }
 
   const isLocal = !!peer.isLocal;
+  // Track the stable id behind whatever jitsiId ended up selected, so the
+  // NEXT jitsiId flip (this peer's or anyone else's) can recover the same
+  // way rather than only the first one.
   selectedPeerKey = isLocal ? 'local' : (peer.peerId || null);
+  // The LOCAL peer's key must be the constant 'local', NOT peer.jitsiId:
+  // participants.js polls window.APP.conference and emits 'local-update' with
+  // a new id across a P2P<->JVB renegotiation (room crossing the 2<->3-
+  // participant boundary — see pageEnsureAudioPublished's watchdog for the
+  // same underlying flip on the bot side), which is a real, observed
+  // mid-session event with nothing to do with the editor. Keying local on
+  // jitsiId used to make that moment look like "a different peer" and
+  // rebuild the shell, silently reverting the box to peer.pattern (the last
+  // EVALUATED text) and losing everything typed since. A remote tile has the
+  // same flip on the bot side, so its key is peer.peerId — the
+  // websocket-assigned id that never changes for the life of the connection
+  // — rather than jitsiId.
   const peerKey = isLocal ? 'local' : String(peer.peerId || peer.jitsiId || '');
 
   if (container.dataset.peerKey !== peerKey) {
+    // The same bot's peerId can also change out from under us — its
+    // peer-state WebSocket reconnecting (sidecar redeploy, a missed liveness
+    // pong; see index.js's 'connected' subscriber) hands it a fresh peerId
+    // and a blank server-side pattern, with nothing about jitsiId (this
+    // peer's Jitsi identity, unaffected by that reconnect) changing. That
+    // reads here as "switched to a different participant" exactly like a
+    // deliberate chip click does, so an edit the operator is mid-typing —
+    // still focused, not yet sent — would otherwise be wiped by the rebuild
+    // below even though patchLocalProgramSection's own hasUnsentEdit guard
+    // would have protected the very same edit one tick earlier or later.
+    // Carry it across the rebuild instead of losing it.
     const prevCodeEl = container.querySelector('.ts-code');
     const samePeer = !isLocal && container.dataset.jitsiId === (peer.jitsiId || '');
     const unsent = (samePeer && prevCodeEl && document.activeElement === prevCodeEl
@@ -490,6 +583,11 @@ function buildDetailShell(container, peer, peerKey, isLocal) {
 function createLocalProgramSection(isLocal) {
   const el = document.createElement('div');
   el.className = 'ts-section ts-local-program-section';
+  // Remote tiles are editable too: an operator can drive a participant's
+  // pattern from here. The server only applies edits/mutes to bots (humans
+  // own their own state), so for a human peer the textarea is a no-op
+  // scratchpad. The mute button only makes sense for a bot, so it starts
+  // hidden and patchLocalProgramSection shows it when peer.isBot.
   const controls = isLocal
     ? `
       <div class="ts-section-controls">
@@ -521,6 +619,16 @@ function createLocalProgramSection(isLocal) {
   return el;
 }
 
+// Binds everything that only needs binding once per peer selection — this
+// runs a single time when buildDetailShell creates the section, not on every
+// data tick, so it's safe to close over `peer`/`isLocal`/`targetPeerId`
+// (fixed for the shell's whole lifetime). Anything that needs a value that
+// can change while the shell is alive (peer.muted, peer.pattern) re-reads it
+// fresh at the point of use instead — see the mute handler and
+// patchLocalProgramSection.
+// Ctrl+/ line-comment toggle for a plain textarea: replacing .value resets
+// the caret to the end, so the pure toggle's remapped selection has to be
+// restored explicitly afterward.
 function applyCommentToggle(codeEl) {
   const { value, selectionStart, selectionEnd } =
     toggleLineComment(codeEl.value, codeEl.selectionStart, codeEl.selectionEnd);
@@ -566,11 +674,29 @@ function bindLocalProgramSection(el, peer, isLocal) {
     el.querySelector('[data-action="stop"]').addEventListener('click', onStopClick);
     const captureBtnEl = el.querySelector('[data-action="capture"]');
     if (captureBtnEl) captureBtnEl.addEventListener('click', onCaptureClick);
+    // const relayBtnEl = el.querySelector('[data-action="relay"]');
+    // if (relayBtnEl) relayBtnEl.addEventListener('click', onRelayClick);
+
+    // One picker-wiring path for every upload button: the folder picker takes
+    // audio and any data files sitting alongside it, the file picker takes
+    // data files chosen directly, and the files picker takes chat
+    // attachments — each of the three ingest functions sorts its own input by
+    // extension. `uploadFn` and `onResult` are the only parts that differ.
     const wireUpload = (buttonSelector, inputSelector, uploadFn, onResult) => {
       const button = el.querySelector(buttonSelector);
       const input = el.querySelector(inputSelector);
       if (!button || !input) return;
+      // uploadPending must be set BEFORE input.click() opens the native
+      // picker: that dialog can sit open for as long as the user takes to
+      // find a file. This section is now stable across peer-state ticks (it
+      // only rebuilds on a deliberate peer-selection change), so the old "a
+      // background tick tears the input out mid-dialog" race is gone; this
+      // still guards the one remaining path — switching the selected peer
+      // while the dialog is open.
       button.addEventListener('click', () => { uploadPending = true; input.click(); });
+      // Modern Chromium fires 'cancel' when the user dismisses the picker
+      // without choosing a file; without this the flag would stay stuck true
+      // and freeze the shell rebuild path until the next successful upload.
       input.addEventListener('cancel', () => { uploadPending = false; });
       input.addEventListener('change', async () => {
         try {
@@ -682,6 +808,12 @@ function patchLocalProgramSection(el, peer, isLocal) {
   muteBtnEl.textContent = peer.muted ? 'Muted' : 'Mute';
   muteBtnEl.classList.toggle('on', !!peer.muted);
 
+  // Never stomp an unsent edit: while focused, only follow a live pattern
+  // change if nothing has been typed since the last sync (still equal to
+  // what this box was last painted from — a genuinely new peer.pattern, e.g.
+  // a retroactive botConfig relatch changing what the bot is actually
+  // playing, is still safe to show even while focused). Unfocused always
+  // follows live — there's no in-progress edit to lose.
   const codeEl = el.querySelector('.ts-code');
   const active = document.activeElement === codeEl;
   const hasUnsentEdit = active && codeEl.value !== codeEl.dataset.lastSynced;
@@ -695,6 +827,9 @@ function patchLocalProgramSection(el, peer, isLocal) {
   }
 }
 
+// Delegated: bank chips and their delete buttons are fully regenerated on
+// every upload/delete anyway (low-frequency, user-initiated), so one
+// listener on the wrapper avoids rebinding per-chip on every refresh.
 function createSampleBanksArea() {
   const el = document.createElement('div');
   el.className = 'ts-sample-banks-area';
@@ -794,6 +929,10 @@ async function onEvalAndPlay(code) {
     await bootAudioEngine();
     if (typeof code === 'string') {
       sendLocalPattern(code);
+      // "The next update to the personal editor" — carry out any one-shot
+      // cluster directives declared in botConfig({ spawn / remove / mute /
+      // camera / … }). Deduped inside, so an unchanged directive set does not
+      // re-fire; a broken botConfig is left to the fleet's config-error path.
       try {
         applyBotClusterDirectives(code);
       } catch (e) {
@@ -913,6 +1052,13 @@ function setStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
+// Every entry point in this file that used to mean "something changed, tear
+// down and rebuild" now just means "resync" — renderStrip/renderDetail patch
+// their existing DOM in place (see reconcileList and buildDetailShell's
+// comment) rather than blowing it away, so calling this on every peer-state
+// broadcast (every ~2s per peer) or click no longer costs a focused input's
+// cursor, a click gesture in flight, or a scroll position. rAF-batched so a
+// burst of updates in one frame only patches once.
 let renderQueued = false;
 function renderAll() {
   if (renderQueued) return;
@@ -924,6 +1070,13 @@ function renderAll() {
     const strip = overlay.querySelector('.ts-strip');
     const detail = overlay.querySelector('.ts-detail');
     if (strip) renderStrip(strip);
+    // A native file picker opened by wireUpload's Samples/Data button holds a
+    // reference to the .ts-data-input/.ts-samples-input node inside this very
+    // panel. That node is now stable across ordinary patches (see
+    // buildDetailShell), so the only remaining way to detach it from under an
+    // open dialog is a genuine peer-selection change landing in that window —
+    // still worth guarding against, since Chromium never fires 'change' on a
+    // detached input and the upload would silently go nowhere.
     if (detail && !uploadPending) renderDetail(detail);
     if (detail) renderSliders(detail, currentSliders);
   });
@@ -962,6 +1115,13 @@ function ensureOverlay() {
   // in-place room switch.
   overlay.querySelector('.ts-panic-btn').addEventListener('click', panicToMainRoom);
 
+  // Jitsi's own toolbar popovers (hangup menu, "..." overflow menu, etc.)
+  // close themselves on any mousedown/click that bubbles to document and
+  // doesn't land inside their own DOM. Trussal Studio is a separate DOM
+  // subtree, so without this guard every interaction inside it — collapsing,
+  // closing, clicking a button — reads to Jitsi as an outside click and
+  // closes whatever Jitsi menu happens to be open. Stop both event types
+  // here so nothing from within Studio ever reaches document.
   overlay.addEventListener('mousedown', (e) => e.stopPropagation());
   overlay.addEventListener('click', (e) => e.stopPropagation());
 
