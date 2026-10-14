@@ -85,9 +85,15 @@ npm run deploy:local
 # Stamp the static-asset `?v=` from the commit, not the wall clock, so a rack's
 # shards that build the same commit serve byte-identical files at identical URLs
 # (see jitsi-web/Dockerfile). `-dirty` if the tree carries uncommitted changes.
-export ASSET_VERSION="$(git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || true)"
-[ -n "$ASSET_VERSION" ] && ! git -C "$REPO" diff --quiet 2>/dev/null && ASSET_VERSION="${ASSET_VERSION}-dirty"
-echo "ASSET_VERSION=${ASSET_VERSION:-<none, will use build timestamp>}"
+# export ASSET_VERSION="$(git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || true)"
+# [ -n "$ASSET_VERSION" ] && ! git -C "$REPO" diff --quiet 2>/dev/null && ASSET_VERSION="${ASSET_VERSION}-dirty"
+# echo "ASSET_VERSION=${ASSET_VERSION:-<none, will use build timestamp>}"
+ASSET_VERSION="cc-$(sha256sum docker-jitsi-meet/jitsi-web/custom-config.js | cut -c1-12)"
+export ASSET_VERSION
+
+cd "$REPO"
+rm -f docker-jitsi-meet/jitsi-web/custom-config.js
+rm -rf custom-config/prosody/config/*.lua custom-config/prosody/config/conf.d custom-config/prosody/config/rules.d 2>/dev/null || true
 
 cd "$REPO/docker-jitsi-meet"
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
