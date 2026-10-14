@@ -21,7 +21,10 @@
 // in an atom table set by strudel.js before each evaluate.
 
 import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn, sendChatFile, subscribePeerState } from './peer-state.js';
+import { localToken } from './polls.js';
 import { FILE_KINDS, mimeOfFilename, validateUpload } from './file-cycles-core.js';
+import { req } from './user-samples.js';
+export { req } from './user-samples.js';
 import { ensureChatEntry } from './chat-entry.js';
 
 const CONTAINER_ID = 'trussal-file-cycles';
@@ -84,13 +87,6 @@ async function withStore(mode, fn) {
     tx.oncomplete = () => resolve(result);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
-  });
-}
-
-function req(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -221,11 +217,6 @@ function ensureContainer() {
   }
   ensureStyle();
   return container;
-}
-
-function localToken() {
-  const index = getLocalPeer()?.roomIndex;
-  return index == null || index === '' ? null : String(index);
 }
 
 function mediaElementFor(kind, url, name, mime) {

@@ -11,12 +11,12 @@
 const CHAT_ENTRY_MAX_TRIES = 40;
 const CHAT_ENTRY_INTERVAL_MS = 500;
 
-function jitsiState() {
+export function jitsiState() {
   const store = typeof window !== 'undefined' ? window.APP?.store : null;
   return store && typeof store.getState === 'function' ? store.getState() : null;
 }
 
-function localParticipantName() {
+export function localParticipantName() {
   const state = jitsiState();
   const name = state?.['features/base/participants']?.local?.name;
   return typeof name === 'string' && name.trim() ? name : null;
@@ -24,7 +24,7 @@ function localParticipantName() {
 
 // Exactly what Jitsi's own nickname form dispatches — see text-cycles.js's
 // setNickname for the fuller rationale.
-function setNickname(name) {
+export function setNickname(name) {
   const store = typeof window !== 'undefined' ? window.APP?.store : null;
   if (!store || typeof store.dispatch !== 'function') return false;
   store.dispatch({ type: 'SETTINGS_UPDATED', settings: { displayName: name } });

@@ -20,7 +20,8 @@
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 import { isHeadCursorEnabled } from './facial-gesture.js';
-import { attachHeadDragResize, isHeadDragActive } from './panel-drag-resize.js';
+import { attachHeadDragResize, isHeadDragActive, pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
+export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 
 const KBD_STYLE_ID  = 'trussal-kbd-style';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
@@ -128,7 +129,7 @@ document.addEventListener('focusin', (e) => {
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-function _esc(s) {
+export function _esc(s) {
   return String(s).replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
@@ -386,13 +387,6 @@ const MIN_H = 170;
 // inline value but leaves the stylesheet's `bottom: 60px` in force — a fixed
 // element then honours BOTH top and bottom and stretches vertically, which is
 // the "dead space grows as you drag it up" bug. `'auto'` actually cancels it.
-function _pinTopLeft(panel, rect) {
-  panel.style.bottom = 'auto';
-  panel.style.right  = 'auto';
-  panel.style.top    = `${rect.top}px`;
-  panel.style.left   = `${rect.left}px`;
-}
-
 // ── Drag ───────────────────────────────────────────────────────────────────────
 function _makeDraggable(panel, handle) {
   handle.style.cursor = 'grab';

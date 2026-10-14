@@ -41,6 +41,7 @@ import {
 } from './editor-router.js';
 import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
 import { DEFAULT_GESTURE_MAPPINGS } from './landmark-gesture-core.js';
+import { applyRegexMutation } from './editor-router-core.js';
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -205,10 +206,6 @@ function parseMediapipeConfigs(code) {
     try { configs.push(JSON.parse(m[1])); } catch {}
   }
   return configs;
-}
-
-function applyRegexMutation(code, pattern, replacement) {
-  try { return code.replace(new RegExp(pattern, 'g'), replacement ?? ''); } catch { return code; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1447,3 +1444,5 @@ export function injectFacialGestureToggle(headerEl) {
   const closeBtn = headerEl.querySelector('.ts-close');
   headerEl.insertBefore(btn, closeBtn);
 }
+
+export { applyRegexMutation } from './editor-router-core.js';

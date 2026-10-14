@@ -92,7 +92,7 @@ async function withStore(mode, fn) {
 }
 
 // Promisify one IDBRequest.
-function req(request) {
+export function req(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

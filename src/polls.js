@@ -79,7 +79,7 @@ function ensureContainer() {
   return container;
 }
 
-function localToken() {
+export function localToken() {
   const index = getLocalPeer()?.roomIndex;
   return index == null || index === '' ? null : String(index);
 }

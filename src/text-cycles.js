@@ -29,7 +29,10 @@
 // which bypass mini entirely (see rewriteTextCalls in text-cycles-core.js) —
 // double-quoting it would mint three separate one-third-cycle steps.
 
+import { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
+export { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
 import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
+import { localToken } from './polls.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
 import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip } from './text-debug.js';
 // The room's `#` effects, as they apply to words and their styling. The
@@ -170,36 +173,13 @@ function chatAbsenceReason() {
   return 'the chat panel is closed (words are collecting in a detached container and appear when it reopens)';
 }
 
-function jitsiState() {
-  const store = typeof window !== 'undefined' ? window.APP?.store : null;
-  return store && typeof store.getState === 'function' ? store.getState() : null;
-}
-
-function localParticipantName() {
-  const state = jitsiState();
-  const name = state?.['features/base/participants']?.local?.name;
-  return typeof name === 'string' && name.trim() ? name : null;
-}
-
 // The performer's JPattern token. Assigned by the sidecar in its roster, so
 // it can arrive after the first evaluate — which is why the entry below
 // retries rather than giving up on the first miss.
-function localToken() {
-  const index = getLocalPeer()?.roomIndex;
-  return index == null || index === '' ? null : String(index);
-}
-
 // Exactly what Jitsi's own nickname form dispatches (updateSettings →
 // SETTINGS_UPDATED). The base/settings middleware copies displayName onto the
 // local participant as `name`, which is the field the chat panel's prompt
 // tests, so this both dismisses the prompt and names us in the room.
-function setNickname(name) {
-  const store = typeof window !== 'undefined' ? window.APP?.store : null;
-  if (!store || typeof store.dispatch !== 'function') return false;
-  store.dispatch({ type: 'SETTINGS_UPDATED', settings: { displayName: name } });
-  return true;
-}
-
 // Ask Jitsi to open the chat panel. OPEN_CHAT is a real action type in the
 // deployed bundle; if the store shape ever changes this simply does nothing
 // and words accumulate until the user opens chat themselves.

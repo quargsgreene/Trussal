@@ -30,7 +30,8 @@ import {
 import { uploadChatFilesToDB } from './file-cycles.js';
 import { panic as panicToMainRoom } from './panic-button.js';
 import { injectFacialGestureToggle } from './facial-gesture.js';
-import { injectKeyboardToggle, tickKbdUi } from './on-screen-keyboard.js';
+import { injectKeyboardToggle, tickKbdUi, _esc as escapeHtml } from './on-screen-keyboard.js';
+export { _esc as escapeHtml } from './on-screen-keyboard.js';
 import { attachPanelControls } from './panel-drag-resize.js';
 import { toggleLineComment } from './editor-router-core.js';
 import { readDirective, ensureDirective, stripDirective } from './program-directive.js';
@@ -138,10 +139,6 @@ function initial(name) {
   if (!name) return '?';
   const trimmed = name.trim();
   return trimmed ? trimmed[0].toUpperCase() : '?';
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 }
 
 // Keeps `container`'s children in sync with `items` without recreating a node

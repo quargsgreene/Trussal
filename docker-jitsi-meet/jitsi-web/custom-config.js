@@ -51839,7 +51839,7 @@ ${newBody}`).length === 0;
   function setBufferReplayEnabled(v2) {
     bufferReplayEnabled = !!v2;
   }
-  function startLocalCapture(sourceNode2, localToken4) {
+  function startLocalCapture(sourceNode2, localToken2) {
     if (!bufferReplayEnabled || recorder || typeof MediaRecorder === "undefined") return;
     const ctx2 = getAudioContext2();
     if (!ctx2 || !sourceNode2) return;
@@ -51853,7 +51853,7 @@ ${newBody}`).length === 0;
     rec.onstop = () => {
       if (chunks.length) {
         const blob = new Blob(chunks.splice(0), { type: "audio/webm" });
-        captureTakes.set(localToken4, { blob, bytes: blob.size });
+        captureTakes.set(localToken2, { blob, bytes: blob.size });
       }
       if (recorder === rec) {
         try {
@@ -54540,18 +54540,361 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     if (!captures.size) stopDeviceWatch();
   }
 
+  // src/chat-entry.js
+  var CHAT_ENTRY_MAX_TRIES = 40;
+  var CHAT_ENTRY_INTERVAL_MS = 500;
+  function jitsiState() {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    return store && typeof store.getState === "function" ? store.getState() : null;
+  }
+  function localParticipantName() {
+    const state2 = jitsiState();
+    const name3 = state2?.["features/base/participants"]?.local?.name;
+    return typeof name3 === "string" && name3.trim() ? name3 : null;
+  }
+  function setNickname(name3) {
+    const store = typeof window !== "undefined" ? window.APP?.store : null;
+    if (!store || typeof store.dispatch !== "function") return false;
+    store.dispatch({ type: "SETTINGS_UPDATED", settings: { displayName: name3 } });
+    return true;
+  }
+  function openChatPanel() {
+    try {
+      window.APP?.store?.dispatch({ type: "OPEN_CHAT" });
+    } catch (e30) {
+      console.warn("[chat-entry] could not open the chat panel", e30);
+    }
+  }
+  function attachToChatLog(container4) {
+    const log3 = document.getElementById("chatconversation");
+    if (log3 && container4.parentNode !== log3) {
+      const sentinel = document.getElementById("messagesListEnd");
+      if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container4, sentinel);
+      else log3.appendChild(container4);
+    }
+    return container4.parentNode === log3 && !!log3;
+  }
+  function ensureChatEntry(container4, fallbackName, isActive = () => true) {
+    let tries = 0;
+    const attempt = () => {
+      if (!isActive()) return;
+      tries++;
+      if (!localParticipantName() && fallbackName) setNickname(fallbackName);
+      openChatPanel();
+      if (attachToChatLog(container4)) return;
+      if (tries >= CHAT_ENTRY_MAX_TRIES) return;
+      setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS);
+    };
+    attempt();
+  }
+
   // src/text-cycles.js
   init_peer_state();
+
+  // src/polls.js
+  init_peer_state();
+
+  // src/polls-core.js
   init_text_cycles_core();
-  init_text_debug();
-  init_TextState();
-  var CONTAINER_ID = "trussal-text-cycles";
-  var STYLE_ID = "trussal-text-cycles-style";
-  var MAX_BUBBLES = 200;
+  var DEFAULT_POLL_TEXT_COLOR = "#111111";
+  function parsePollLiteral(raw) {
+    let obj;
+    try {
+      obj = JSON.parse(String(raw ?? ""));
+    } catch (e30) {
+      throw new Error(`poll(): not valid JSON \u2014 ${e30.message}`);
+    }
+    return validatePollLiteral(obj);
+  }
+  function validatePollLiteral(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new Error('poll(): expected a JSON object with "question" and "options"');
+    }
+    if (typeof obj.question !== "string" || !obj.question.trim()) {
+      throw new Error('poll(): "question" must be a non-empty string');
+    }
+    if (!Array.isArray(obj.options) || !obj.options.length || obj.options.some((o) => typeof o !== "string" || !o.trim())) {
+      throw new Error('poll(): "options" must be a non-empty array of non-empty strings');
+    }
+    const options = [...new Set(obj.options)];
+    if (options.length !== obj.options.length) {
+      throw new Error('poll(): "options" must not repeat the same option twice');
+    }
+    const participants = Array.isArray(obj.participants) ? obj.participants.map(String) : [];
+    const tally = Object.fromEntries(options.map((o) => [o, 0]));
+    if (obj.votes != null) {
+      const entries2 = Array.isArray(obj.votes) ? obj.votes : [obj.votes];
+      for (const entry of entries2) {
+        if (!entry || typeof entry !== "object") continue;
+        for (const [option, count] of Object.entries(entry)) {
+          if (!(option in tally)) throw new Error(`poll(): "votes" names an option not in "options": "${option}"`);
+          if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+            throw new Error(`poll(): "votes"."${option}" must be a non-negative number`);
+          }
+          tally[option] += count;
+        }
+      }
+    }
+    return { question: obj.question.trim(), options, participants, tally };
+  }
+  function canVote(spec, voterToken) {
+    return !spec.participants.length || spec.participants.includes(String(voterToken));
+  }
+  function applyVoteDelta(tally, delta) {
+    const out = { ...tally };
+    if (!delta || typeof delta !== "object") return out;
+    for (const [option, count] of Object.entries(delta)) {
+      if (!(option in out) || typeof count !== "number" || !Number.isFinite(count)) continue;
+      out[option] = Math.max(0, out[option] + count);
+    }
+    return out;
+  }
+  function switchVote(tally, from2, to) {
+    const delta = {};
+    if (from2 && from2 in tally) delta[from2] = -1;
+    if (to && to in tally) delta[to] = 1;
+    return applyVoteDelta(tally, delta);
+  }
+  var POLL_CALL_RE = /(?:^|[^\w$])poll\s*\(/;
+  var STRING_LITERAL2 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
+  function literalBody2(raw) {
+    return { quote: raw[0], body: raw.slice(1, -1) };
+  }
+  function rewritePollCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
+    const atoms5 = {};
+    const mint = (text2) => {
+      const token = `pl${counter.n++}`;
+      atoms5[token] = { text: text2, peer };
+      return token;
+    };
+    const re2 = new RegExp(`((?:^|[^\\w$])(?:poll|vote)\\s*\\(\\s*)${STRING_LITERAL2}`, "g");
+    const rewriteStatement = (text2) => {
+      if (!POLL_CALL_RE.test(text2)) return text2;
+      const out = text2.replace(re2, (match2, head, raw) => {
+        if (raw[0] === "`" && raw.includes("${")) return match2;
+        const { body } = literalBody2(raw);
+        return `${head}"${mint(body)}"`;
+      });
+      return `${out.replace(/[\s;]+$/, "")}
+._pollRender()`;
+    };
+    const rewritten = splitStatements(String(code2 ?? "")).map(({ text: text2 }) => rewriteStatement(text2)).join("\n");
+    return { code: rewritten, atoms: atoms5 };
+  }
+  var INIT_POLLS_RE = /^\s*await\s+initPolls\s*\(/m;
+  var INIT_POLLS_PATTERN = { source: INIT_POLLS_RE.source, flags: INIT_POLLS_RE.flags };
+  function hasPollCycles(code2) {
+    return INIT_POLLS_RE.test(String(code2 ?? ""));
+  }
+
+  // src/polls.js
+  var CONTAINER_ID = "trussal-polls";
+  var STYLE_ID = "trussal-polls-style";
   var atoms = {};
   var active2 = false;
   var container = null;
   var styleEl = null;
+  var polls = /* @__PURE__ */ new Map();
+  function setPollAtoms(table) {
+    atoms = table || {};
+  }
+  function resolve(value2) {
+    if (value2 == null) return null;
+    const atom2 = atoms[String(value2)];
+    return atom2 ? atom2.text : String(value2);
+  }
+  function peerOf(value2) {
+    const atom2 = atoms[String(value2)];
+    return atom2 ? atom2.peer : null;
+  }
+  function ensureStyle() {
+    if (styleEl && document.contains(styleEl)) return styleEl;
+    styleEl = document.getElementById(STYLE_ID) || document.createElement("style");
+    styleEl.id = STYLE_ID;
+    if (!styleEl.textContent) {
+      styleEl.textContent = `
+#${CONTAINER_ID} .pl-bubble { margin: 4px 0; padding: 6px 16px; color: ${DEFAULT_POLL_TEXT_COLOR}; background: #eeeeee; border-radius: 6px; }
+#${CONTAINER_ID} .pl-name { font-size: 12px; opacity: .6; }
+#${CONTAINER_ID} .pl-question { font-weight: 600; margin: 2px 0 4px; }
+#${CONTAINER_ID} .pl-option { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; margin: 2px 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff; }
+#${CONTAINER_ID} .pl-option.pl-mine { border-color: #111111; font-weight: 600; }
+#${CONTAINER_ID} .pl-option.pl-closed { cursor: default; opacity: .8; }
+#${CONTAINER_ID} .pl-status { font-size: 11px; opacity: .7; margin-top: 2px; }
+`;
+    }
+    if (!document.contains(styleEl)) document.head.appendChild(styleEl);
+    return styleEl;
+  }
+  function ensureContainer() {
+    if (!container) {
+      container = document.createElement("div");
+      container.id = CONTAINER_ID;
+    }
+    ensureStyle();
+    return container;
+  }
+  function localToken() {
+    const index2 = getLocalPeer()?.roomIndex;
+    return index2 == null || index2 === "" ? null : String(index2);
+  }
+  function isClosed(entry) {
+    return entry.closesAt != null && Date.now() >= entry.closesAt;
+  }
+  function scoreboard(entry) {
+    const total = Object.values(entry.tally).reduce((a2, b) => a2 + b, 0);
+    return total;
+  }
+  function renderPoll(question) {
+    const entry = polls.get(question);
+    if (!entry) return;
+    ensureChatEntry(ensureContainer(), localToken(), () => active2);
+    if (!entry.bubbleEl || !entry.bubbleEl.isConnected) {
+      entry.bubbleEl = document.createElement("div");
+      entry.bubbleEl.className = "pl-bubble";
+      container.appendChild(entry.bubbleEl);
+    }
+    const bubble = entry.bubbleEl;
+    bubble.innerHTML = "";
+    const peer = entry.peerId ? getPeerByJitsiId(entry.peerId) : null;
+    const name3 = document.createElement("div");
+    name3.className = "pl-name";
+    name3.textContent = peer?.displayName || "poll";
+    bubble.appendChild(name3);
+    const q2 = document.createElement("div");
+    q2.className = "pl-question";
+    q2.textContent = entry.spec.question;
+    bubble.appendChild(q2);
+    const closed = isClosed(entry);
+    const myToken = localToken();
+    const myChoice = myToken ? entry.voterChoice.get(myToken) : null;
+    const eligible = myToken != null && canVote(entry.spec, myToken);
+    const total = scoreboard(entry);
+    for (const option of entry.spec.options) {
+      const row = document.createElement("div");
+      row.className = `pl-option${option === myChoice ? " pl-mine" : ""}${closed ? " pl-closed" : ""}`;
+      const label2 = document.createElement("span");
+      label2.textContent = option;
+      const count = document.createElement("span");
+      const votes = entry.tally[option] || 0;
+      const pct = total > 0 ? Math.round(votes / total * 100) : 0;
+      count.textContent = `${votes} (${pct}%)`;
+      row.appendChild(label2);
+      row.appendChild(count);
+      if (!closed && eligible) {
+        row.addEventListener("click", () => castVote(question, option));
+      }
+      bubble.appendChild(row);
+    }
+    const status = document.createElement("div");
+    status.className = "pl-status";
+    status.textContent = closed ? "Poll closed" : !eligible ? "You're not eligible to vote in this poll" : myChoice ? `You voted "${myChoice}" \u2014 click another option to change your vote` : "Click an option to vote";
+    bubble.appendChild(status);
+    const log3 = container.parentNode;
+    if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
+      log3.scrollTop = log3.scrollHeight;
+    }
+  }
+  function castVote(question, option) {
+    const entry = polls.get(question);
+    if (!entry || isClosed(entry)) return;
+    const voterToken = localToken();
+    if (voterToken == null || !canVote(entry.spec, voterToken)) return;
+    const previous = entry.voterChoice.get(voterToken) || null;
+    if (previous === option) return;
+    entry.tally = switchVote(entry.tally, previous, option);
+    entry.voterChoice.set(voterToken, option);
+    sendPollVote({ pollId: question, option, previousOption: previous, voterToken });
+    renderPoll(question);
+  }
+  subscribePeerState((event, payload) => {
+    if (event !== "poll-vote") return;
+    const entry = polls.get(payload.pollId);
+    if (!entry) return;
+    entry.tally = switchVote(entry.tally, payload.previousOption, payload.option);
+    entry.voterChoice.set(payload.voterToken, payload.option);
+    renderPoll(payload.pollId);
+  });
+  function handleTrigger(hap, currentTime, cps2, targetTime) {
+    if (!active2) return;
+    const value2 = hap?.value;
+    if (!value2 || value2.poll == null) return;
+    const pollJson = resolve(value2.poll);
+    const peerId = peerOf(value2.poll);
+    const voteJson = value2.vote != null ? resolve(value2.vote) : null;
+    const closeMs = value2.close != null ? Number(value2.close) : null;
+    const lead = Number(targetTime) - Number(currentTime);
+    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
+    setTimeout(() => {
+      if (!isPeerJPatternTurn(peerId)) return;
+      let spec;
+      try {
+        spec = parsePollLiteral(pollJson);
+      } catch (e30) {
+        console.error("[polls]", e30.message);
+        return;
+      }
+      let entry = polls.get(spec.question);
+      if (!entry) {
+        entry = {
+          spec,
+          tally: spec.tally,
+          voterChoice: /* @__PURE__ */ new Map(),
+          createdAt: Date.now(),
+          closesAt: null,
+          closeTimer: null,
+          peerId,
+          bubbleEl: null
+        };
+        polls.set(spec.question, entry);
+      }
+      if (Number.isFinite(closeMs) && closeMs > 0) {
+        entry.closesAt = entry.createdAt + closeMs;
+        clearTimeout(entry.closeTimer);
+        const remaining = entry.closesAt - Date.now();
+        if (remaining > 0) entry.closeTimer = setTimeout(() => renderPoll(spec.question), remaining);
+      }
+      if (voteJson) {
+        try {
+          entry.tally = applyVoteDelta(entry.tally, JSON.parse(voteJson));
+        } catch (e30) {
+          console.warn("[polls] .vote() argument is not valid JSON", e30);
+        }
+      }
+      renderPoll(spec.question);
+    }, delayMs);
+  }
+  function installPolls(mod2) {
+    const { registerControl: registerControl2, register: register2 } = mod2;
+    const scope2 = {
+      ...registerControl2("poll"),
+      ...registerControl2("close"),
+      ...registerControl2("vote")
+    };
+    register2("_pollRender", (pat) => pat.onTrigger(handleTrigger, true));
+    scope2.initPolls = async () => {
+      const wasActive = active2;
+      active2 = true;
+      if (!wasActive) ensureChatEntry(ensureContainer(), localToken(), () => active2);
+      return true;
+    };
+    return scope2;
+  }
+  function stopPolls() {
+    active2 = false;
+    for (const entry of polls.values()) clearTimeout(entry.closeTimer);
+  }
+
+  // src/text-cycles.js
+  init_text_cycles_core();
+  init_text_debug();
+  init_TextState();
+  var CONTAINER_ID2 = "trussal-text-cycles";
+  var STYLE_ID2 = "trussal-text-cycles-style";
+  var MAX_BUBBLES = 200;
+  var atoms2 = {};
+  var active3 = false;
+  var container2 = null;
+  var styleEl2 = null;
   var bubbles = /* @__PURE__ */ new Map();
   var hoverClasses = /* @__PURE__ */ new Map();
   var hoverSeq = 0;
@@ -54565,55 +54908,55 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     ["underline", "text-decoration"]
   ];
   function setTextAtoms(table) {
-    atoms = table || {};
+    atoms2 = table || {};
     textLogChanged("atoms", {
-      count: Object.keys(atoms).length,
-      table: Object.fromEntries(Object.entries(atoms).map(([t, a2]) => [t, `${a2.text} (${a2.peer ?? "no peer"})`]))
+      count: Object.keys(atoms2).length,
+      table: Object.fromEntries(Object.entries(atoms2).map(([t, a2]) => [t, `${a2.text} (${a2.peer ?? "no peer"})`]))
     });
   }
-  function resolve(value2) {
+  function resolve2(value2) {
     if (value2 == null) return null;
     const key = String(value2);
-    const atom2 = atoms[key];
+    const atom2 = atoms2[key];
     return atom2 ? atom2.text : key;
   }
-  function peerOf(value2) {
-    const atom2 = atoms[String(value2)];
+  function peerOf2(value2) {
+    const atom2 = atoms2[String(value2)];
     return atom2 ? atom2.peer : null;
   }
-  function ensureStyle() {
-    if (styleEl && document.contains(styleEl)) return styleEl;
-    styleEl = document.getElementById(STYLE_ID) || document.createElement("style");
-    styleEl.id = STYLE_ID;
-    if (!styleEl.textContent) {
-      styleEl.textContent = `
-#${CONTAINER_ID} .tc-bubble { margin: 4px 0; padding: 0 16px; overflow-wrap: anywhere; }
-#${CONTAINER_ID} .tc-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID} .tc-line { white-space: pre-wrap; }
+  function ensureStyle2() {
+    if (styleEl2 && document.contains(styleEl2)) return styleEl2;
+    styleEl2 = document.getElementById(STYLE_ID2) || document.createElement("style");
+    styleEl2.id = STYLE_ID2;
+    if (!styleEl2.textContent) {
+      styleEl2.textContent = `
+#${CONTAINER_ID2} .tc-bubble { margin: 4px 0; padding: 0 16px; overflow-wrap: anywhere; }
+#${CONTAINER_ID2} .tc-name { font-size: 12px; opacity: .6; }
+#${CONTAINER_ID2} .tc-line { white-space: pre-wrap; }
 `;
     }
-    if (!document.contains(styleEl)) document.head.appendChild(styleEl);
-    return styleEl;
+    if (!document.contains(styleEl2)) document.head.appendChild(styleEl2);
+    return styleEl2;
   }
-  function ensureContainer() {
-    if (!container) {
-      container = document.createElement("div");
-      container.id = CONTAINER_ID;
+  function ensureContainer2() {
+    if (!container2) {
+      container2 = document.createElement("div");
+      container2.id = CONTAINER_ID2;
     }
-    ensureStyle();
+    ensureStyle2();
     const log3 = document.getElementById("chatconversation");
-    if (log3 && container.parentNode !== log3) {
+    if (log3 && container2.parentNode !== log3) {
       const sentinel = document.getElementById("messagesListEnd");
-      if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container, sentinel);
-      else log3.appendChild(container);
+      if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container2, sentinel);
+      else log3.appendChild(container2);
     }
     textLogChanged("container", {
-      attached: container.parentNode === log3 && !!log3,
+      attached: container2.parentNode === log3 && !!log3,
       chatLogInDocument: !!log3,
       bubbles: bubbles.size,
       ...log3 ? {} : { why: chatAbsenceReason() }
     });
-    return container;
+    return container2;
   }
   function chatAbsenceReason() {
     const state2 = jitsiState();
@@ -54624,26 +54967,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     return "the chat panel is closed (words are collecting in a detached container and appear when it reopens)";
   }
-  function jitsiState() {
-    const store = typeof window !== "undefined" ? window.APP?.store : null;
-    return store && typeof store.getState === "function" ? store.getState() : null;
-  }
-  function localParticipantName() {
-    const state2 = jitsiState();
-    const name3 = state2?.["features/base/participants"]?.local?.name;
-    return typeof name3 === "string" && name3.trim() ? name3 : null;
-  }
-  function localToken() {
-    const index2 = getLocalPeer()?.roomIndex;
-    return index2 == null || index2 === "" ? null : String(index2);
-  }
-  function setNickname(name3) {
-    const store = typeof window !== "undefined" ? window.APP?.store : null;
-    if (!store || typeof store.dispatch !== "function") return false;
-    store.dispatch({ type: "SETTINGS_UPDATED", settings: { displayName: name3 } });
-    return true;
-  }
-  function openChatPanel() {
+  function openChatPanel2() {
     try {
       window.APP?.store?.dispatch({ type: "OPEN_CHAT" });
     } catch (e30) {
@@ -54652,14 +54976,14 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   }
   var chatEntryTimer = null;
   var chatEntryTries = 0;
-  var CHAT_ENTRY_MAX_TRIES = 40;
-  var CHAT_ENTRY_INTERVAL_MS = 500;
-  function ensureChatEntry() {
+  var CHAT_ENTRY_MAX_TRIES2 = 40;
+  var CHAT_ENTRY_INTERVAL_MS2 = 500;
+  function ensureChatEntry2() {
     if (chatEntryTimer !== null) return;
     chatEntryTries = 0;
     const attempt = () => {
       chatEntryTimer = null;
-      if (!active2) {
+      if (!active3) {
         textLog("chat-entry:abandoned", { reason: "text cycles stopped before the chat opened" });
         return;
       }
@@ -54681,8 +55005,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
           });
         }
       }
-      openChatPanel();
-      const attached = ensureContainer().parentNode != null;
+      openChatPanel2();
+      const attached = ensureContainer2().parentNode != null;
       textLog("chat-entry", {
         try: chatEntryTries,
         participantName: localParticipantName(),
@@ -54691,14 +55015,14 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
         attached
       });
       if (attached) return;
-      if (chatEntryTries >= CHAT_ENTRY_MAX_TRIES) {
+      if (chatEntryTries >= CHAT_ENTRY_MAX_TRIES2) {
         textWarn("chat-entry", "gave up opening the chat; words are collecting in a detached container and will appear if it opens later", {
           tries: chatEntryTries,
           why: chatAbsenceReason()
         });
         return;
       }
-      chatEntryTimer = setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS);
+      chatEntryTimer = setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS2);
     };
     attempt();
   }
@@ -54709,8 +55033,8 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     if (hoverClasses.has(key)) return hoverClasses.get(key);
     const cls = `tc-h${hoverSeq++}`;
     const body = decls.map(([p, v2]) => `${p}:${v2}`).join(";");
-    ensureStyle().textContent += `
-#${CONTAINER_ID} .${peerClass} .${cls}:hover { ${body} }`;
+    ensureStyle2().textContent += `
+#${CONTAINER_ID2} .${peerClass} .${cls}:hover { ${body} }`;
     hoverClasses.set(key, cls);
     return cls;
   }
@@ -54718,7 +55042,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const key = `${peerId}:${cycle}`;
     if (!bubbles.has(key)) echoLastWord(peerId);
     const existing = bubbles.get(key);
-    if (existing && existing.parentNode === container) return existing;
+    if (existing && existing.parentNode === container2) return existing;
     const bubble = document.createElement("div");
     bubble.className = `tc-bubble ${peerClass}`;
     const peer = peerId ? getPeerByJitsiId(peerId) : null;
@@ -54729,7 +55053,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const line = document.createElement("div");
     line.className = "tc-line";
     bubble.appendChild(line);
-    container.appendChild(bubble);
+    container2.appendChild(bubble);
     bubbles.set(key, bubble);
     while (bubbles.size > MAX_BUBBLES) {
       const oldest = bubbles.keys().next().value;
@@ -54816,13 +55140,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
   }
   var lastWordOfTurn = /* @__PURE__ */ new Map();
   function paint(value2, cycle) {
-    ensureContainer();
-    let text2 = resolve(value2.word);
+    ensureContainer2();
+    let text2 = resolve2(value2.word);
     if (text2 == null || text2 === "") {
       textHapLog("paint:empty", { token: value2.word, note: "token resolved to nothing \u2014 it is not in the atom table for the program that is running" });
       return;
     }
-    const peerId = peerOf(value2.word);
+    const peerId = peerOf2(value2.word);
     const peerClass = peerTextClass(peerId);
     if (!isPeerJPatternTurn(peerId)) {
       textHapLog("paint:gated", {
@@ -54854,12 +55178,12 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const styleFx = active6 ? active6.css : null;
     for (const [param, prop] of CSS_BY_PARAM) {
       if (value2[param] == null) continue;
-      for (const [p, v2] of sanitizeDeclarations(`${prop}: ${resolve(value2[param])}`)) {
+      for (const [p, v2] of sanitizeDeclarations(`${prop}: ${resolve2(value2[param])}`)) {
         span.style.setProperty(p, mutateDeclaration(p, v2, styleFx, seedCycle, seedPeer, wordIndex));
       }
     }
     if (value2.hover != null) {
-      const cls = hoverClassFor(peerClass, resolve(value2.hover));
+      const cls = hoverClassFor(peerClass, resolve2(value2.hover));
       if (cls) span.classList.add(cls);
     }
     if (styleFx) {
@@ -54873,7 +55197,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     }
     let node = span;
     if (value2.hyperlink != null) {
-      const href = sanitizeHref(resolve(value2.hyperlink));
+      const href = sanitizeHref(resolve2(value2.hyperlink));
       if (href) {
         const a2 = document.createElement("a");
         a2.href = href;
@@ -54889,7 +55213,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       text: text2,
       peer: peerId,
       cycle,
-      visible: !!container.parentNode,
+      visible: !!container2.parentNode,
       style: span.style.cssText || "(inherited from Jitsi chat)"
     });
     if (active6 && active6.text.repeats > 0 && active6.text.repeatAlpha > 0) {
@@ -54901,13 +55225,13 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
         alpha: active6.text.repeatAlpha
       });
     }
-    const log3 = container.parentNode;
+    const log3 = container2.parentNode;
     if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
       log3.scrollTop = log3.scrollHeight;
     }
   }
-  function handleTrigger(hap, currentTime, cps2, targetTime) {
-    if (!active2) {
+  function handleTrigger2(hap, currentTime, cps2, targetTime) {
+    if (!active3) {
       textHapLog("trigger:inactive", { note: "a hap arrived but initTextCycles() has not run in this evaluate", value: hap?.value });
       return;
     }
@@ -54920,7 +55244,7 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     const cycle = Math.floor(Number(begin2?.valueOf?.() ?? begin2 ?? 0));
     const lead = Number(targetTime) - Number(currentTime);
     const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
-    textHapLog("trigger", { token: value2.word, text: resolve(value2.word), cycle, delayMs: Math.round(delayMs) });
+    textHapLog("trigger", { token: value2.word, text: resolve2(value2.word), cycle, delayMs: Math.round(delayMs) });
     setTimeout(() => {
       try {
         paint(value2, cycle);
@@ -54942,26 +55266,26 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
       ...registerControl2("hyperlink"),
       ...registerControl2("underline")
     };
-    register2("_tcRender", (pat) => pat.onTrigger(handleTrigger, true));
+    register2("_tcRender", (pat) => pat.onTrigger(handleTrigger2, true));
     scope2.initTextCycles = async () => {
-      const wasActive = active2;
-      active2 = true;
+      const wasActive = active3;
+      active3 = true;
       if (!wasActive) {
         textLog("init", {
           note: "a program declared text presence \u2014 taking a nickname and opening the chat",
           participantName: localParticipantName(),
           token: localToken()
         });
-        ensureChatEntry();
+        ensureChatEntry2();
       }
-      ensureContainer();
+      ensureContainer2();
       return true;
     };
     return scope2;
   }
   function stopTextCycles() {
     textLog("stop", { bubblesKept: bubbles.size });
-    active2 = false;
+    active3 = false;
     if (chatEntryTimer !== null) {
       clearTimeout(chatEntryTimer);
       chatEntryTimer = null;
@@ -54971,18 +55295,18 @@ registerProcessor('trussal-live-capture', TrussalLiveCapture);
     wordCounters.clear();
   }
   registerTextProbe("renderer", () => ({
-    active: active2,
-    atoms: Object.keys(atoms).length,
+    active: active3,
+    atoms: Object.keys(atoms2).length,
     bubbles: bubbles.size,
-    containerAttached: !!(container && container.parentNode),
+    containerAttached: !!(container2 && container2.parentNode),
     chatLogInDocument: !!document.getElementById("chatconversation"),
     chatAbsenceReason: document.getElementById("chatconversation") ? null : chatAbsenceReason(),
     participantName: localParticipantName(),
     token: localToken(),
-    wordsPainted: container ? container.querySelectorAll(".tc-word").length : 0,
+    wordsPainted: container2 ? container2.querySelectorAll(".tc-word").length : 0,
     // The characters currently in the chat, so a page can be asked what it is
     // showing without reading the DOM by hand.
-    lines: container ? Array.from(container.querySelectorAll(".tc-line")).slice(-5).map((el) => clip(el.textContent, 120)) : []
+    lines: container2 ? Array.from(container2.querySelectorAll(".tc-line")).slice(-5).map((el) => clip(el.textContent, 120)) : []
   }));
 
   // src/strudel.js
@@ -56218,8 +56542,8 @@ ${full}
   // src/css-cycles.js
   init_text_cycles_core();
   var STYLE_PREFIX = "trussal-css-cycles-";
-  var atoms2 = {};
-  var active3 = false;
+  var atoms3 = {};
+  var active4 = false;
   var sheetsByToken = /* @__PURE__ */ new Map();
   var refused = /* @__PURE__ */ new Set();
   var styleEls = /* @__PURE__ */ new Map();
@@ -56229,12 +56553,12 @@ ${full}
   var baselineValues = /* @__PURE__ */ new Map();
   var BG_CACHE_MS = 250;
   function setCssAtoms(table) {
-    atoms2 = table || {};
+    atoms3 = table || {};
   }
-  function resolve2(value2) {
+  function resolve3(value2) {
     if (value2 == null) return null;
     const key = String(value2);
-    const atom2 = atoms2[key];
+    const atom2 = atoms3[key];
     return atom2 ? atom2.text : key;
   }
   function selectorSyntaxError(sheet) {
@@ -56395,7 +56719,7 @@ ${full}
         if (baseline != null) document.documentElement.style.setProperty(varName, baseline);
         continue;
       }
-      let resolved = resolve2(raw);
+      let resolved = resolve3(raw);
       if (resolved == null || resolved === "") continue;
       const declared = sheet.props.find((p) => p.prop === prop);
       if (!declared?.literal) {
@@ -56428,8 +56752,8 @@ ${full}
     lastJPatternTurnKey = key;
     resetAllCssToBaseline();
   }
-  function handleTrigger2(hap, currentTime, cps2, targetTime) {
-    if (!active3) return;
+  function handleTrigger3(hap, currentTime, cps2, targetTime) {
+    if (!active4) return;
     const value2 = hap?.value;
     if (!value2 || value2.css == null) return;
     const lead = Number(targetTime) - Number(currentTime);
@@ -56450,9 +56774,9 @@ ${full}
     for (const prop of CSS_PROPERTY_LIST) {
       Object.assign(scope2, registerControl2(`_cc_${methodForCssProp(prop)}`));
     }
-    register2("_ccRender", (pat) => pat.onTrigger(handleTrigger2, true));
+    register2("_ccRender", (pat) => pat.onTrigger(handleTrigger3, true));
     scope2.initCss = async () => {
-      active3 = true;
+      active4 = true;
       if (!cssSubscribed) {
         cssSubscribed = true;
         subscribePeerState(syncFromPeers);
@@ -56471,7 +56795,7 @@ ${full}
     return scope2;
   }
   function stopCssCycles() {
-    active3 = false;
+    active4 = false;
     for (const [peerId] of [...styleEls]) installPeerCss(peerId, "");
     for (const sheet of sheetsByToken.values()) {
       const selector = selectorOf(sheet);
@@ -56530,7 +56854,7 @@ ${full}
     }
   }
   var lastFiredAt = /* @__PURE__ */ new Map();
-  function handleTrigger3(hap, currentTime, cps2, targetTime) {
+  function handleTrigger4(hap, currentTime, cps2, targetTime) {
     const value2 = hap?.value;
     if (!value2 || value2.reaction == null) return;
     const reaction = resolveReaction(value2.reaction);
@@ -56555,7 +56879,7 @@ ${full}
       ...registerControl2("reaction"),
       ...registerControl2("unreact")
     };
-    register2("_rxRender", (pat) => pat.onTrigger(handleTrigger3, true));
+    register2("_rxRender", (pat) => pat.onTrigger(handleTrigger4, true));
     return scope2;
   }
   function stopReactions() {
@@ -56584,7 +56908,7 @@ ${full}
     const uploaded = imageUrlByFilename(name3);
     return uploaded || name3;
   }
-  function handleTrigger4(hap, currentTime, cps2, targetTime) {
+  function handleTrigger5(hap, currentTime, cps2, targetTime) {
     const value2 = hap?.value;
     if (!value2 || value2.panel == null) return;
     const name3 = String(value2.panel);
@@ -56600,7 +56924,7 @@ ${full}
   function installPanelBg(mod2) {
     const { registerControl: registerControl2, register: register2 } = mod2;
     const scope2 = { ...registerControl2("panel") };
-    register2("_pbRender", (pat) => pat.onTrigger(handleTrigger4, true));
+    register2("_pbRender", (pat) => pat.onTrigger(handleTrigger5, true));
     return scope2;
   }
   function stopPanelBg() {
@@ -56681,8 +57005,8 @@ ${rendererCall}` : text2).join("\n");
   }
   var FILE_PARAMS = Object.keys(FILE_KINDS).sort((a2, b) => b.length - a2.length);
   var FILE_CALL_RE = new RegExp(`(?:^|[^\\w$])(?:${FILE_PARAMS.join("|")})\\s*\\(`);
-  var STRING_LITERAL2 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
-  function literalBody2(raw) {
+  var STRING_LITERAL3 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
+  function literalBody3(raw) {
     return { quote: raw[0], body: raw.slice(1, -1) };
   }
   function rewriteFileCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
@@ -56692,12 +57016,12 @@ ${rendererCall}` : text2).join("\n");
       atoms5[token] = { text: text2, peer };
       return token;
     };
-    const re2 = new RegExp(`((?:^|[^\\w$])(?:${FILE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL2}`, "g");
+    const re2 = new RegExp(`((?:^|[^\\w$])(?:${FILE_PARAMS.join("|")})\\s*\\(\\s*)${STRING_LITERAL3}`, "g");
     const rewriteStatement = (text2) => {
       if (!FILE_CALL_RE.test(text2)) return text2;
       const out = text2.replace(re2, (match2, head, raw) => {
         if (raw[0] === "`" && raw.includes("${")) return match2;
-        const { quote, body } = literalBody2(raw);
+        const { quote, body } = literalBody3(raw);
         const encoded = quote === "'" ? mint(body) : encodeMiniText(body, mint);
         return `${head}"${encoded}"`;
       });
@@ -56713,73 +57037,25 @@ ${rendererCall}` : text2).join("\n");
     return INIT_FILE_CYCLES_RE.test(String(code2 ?? ""));
   }
 
-  // src/chat-entry.js
-  var CHAT_ENTRY_MAX_TRIES2 = 40;
-  var CHAT_ENTRY_INTERVAL_MS2 = 500;
-  function jitsiState2() {
-    const store = typeof window !== "undefined" ? window.APP?.store : null;
-    return store && typeof store.getState === "function" ? store.getState() : null;
-  }
-  function localParticipantName2() {
-    const state2 = jitsiState2();
-    const name3 = state2?.["features/base/participants"]?.local?.name;
-    return typeof name3 === "string" && name3.trim() ? name3 : null;
-  }
-  function setNickname2(name3) {
-    const store = typeof window !== "undefined" ? window.APP?.store : null;
-    if (!store || typeof store.dispatch !== "function") return false;
-    store.dispatch({ type: "SETTINGS_UPDATED", settings: { displayName: name3 } });
-    return true;
-  }
-  function openChatPanel2() {
-    try {
-      window.APP?.store?.dispatch({ type: "OPEN_CHAT" });
-    } catch (e30) {
-      console.warn("[chat-entry] could not open the chat panel", e30);
-    }
-  }
-  function attachToChatLog(container4) {
-    const log3 = document.getElementById("chatconversation");
-    if (log3 && container4.parentNode !== log3) {
-      const sentinel = document.getElementById("messagesListEnd");
-      if (sentinel && sentinel.parentNode === log3) log3.insertBefore(container4, sentinel);
-      else log3.appendChild(container4);
-    }
-    return container4.parentNode === log3 && !!log3;
-  }
-  function ensureChatEntry2(container4, fallbackName, isActive = () => true) {
-    let tries = 0;
-    const attempt = () => {
-      if (!isActive()) return;
-      tries++;
-      if (!localParticipantName2() && fallbackName) setNickname2(fallbackName);
-      openChatPanel2();
-      if (attachToChatLog(container4)) return;
-      if (tries >= CHAT_ENTRY_MAX_TRIES2) return;
-      setTimeout(attempt, CHAT_ENTRY_INTERVAL_MS2);
-    };
-    attempt();
-  }
-
   // src/file-cycles.js
-  var CONTAINER_ID2 = "trussal-file-cycles";
-  var STYLE_ID2 = "trussal-file-cycles-style";
+  var CONTAINER_ID3 = "trussal-file-cycles";
+  var STYLE_ID3 = "trussal-file-cycles-style";
   var MAX_BUBBLES2 = 100;
-  var atoms3 = {};
-  var active4 = false;
-  var container2 = null;
-  var styleEl2 = null;
+  var atoms4 = {};
+  var active5 = false;
+  var container3 = null;
+  var styleEl3 = null;
   var bubbleCount = 0;
   function setFileAtoms(table) {
-    atoms3 = table || {};
+    atoms4 = table || {};
   }
-  function resolve3(value2) {
+  function resolve4(value2) {
     if (value2 == null) return null;
-    const atom2 = atoms3[String(value2)];
+    const atom2 = atoms4[String(value2)];
     return atom2 ? atom2.text : String(value2);
   }
-  function peerOf2(value2) {
-    const atom2 = atoms3[String(value2)];
+  function peerOf3(value2) {
+    const atom2 = atoms4[String(value2)];
     return atom2 ? atom2.peer : null;
   }
   var DB_NAME2 = "trussal-attachments";
@@ -56817,12 +57093,6 @@ ${rendererCall}` : text2).join("\n");
       tx.onabort = () => reject(tx.error);
     });
   }
-  function req2(request) {
-    return new Promise((resolve5, reject) => {
-      request.onsuccess = () => resolve5(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
   async function uploadChatFilesToDB(files2, onDone) {
     const all3 = Array.from(files2 ?? []);
     const errors = [];
@@ -56849,7 +57119,7 @@ ${rendererCall}` : text2).join("\n");
     onDone?.({ count: records.length, errors });
   }
   function getLocalFile(name3) {
-    return withStore2("readonly", (store) => req2(store.get(name3))).catch((e30) => {
+    return withStore2("readonly", (store) => req(store.get(name3))).catch((e30) => {
       console.error("[file-cycles] read failed", e30);
       return null;
     });
@@ -56893,32 +57163,28 @@ ${rendererCall}` : text2).join("\n");
       console.error("[file-cycles] could not decode a received attachment", e30);
     }
   });
-  function ensureStyle2() {
-    if (styleEl2 && document.contains(styleEl2)) return styleEl2;
-    styleEl2 = document.getElementById(STYLE_ID2) || document.createElement("style");
-    styleEl2.id = STYLE_ID2;
-    if (!styleEl2.textContent) {
-      styleEl2.textContent = `
-#${CONTAINER_ID2} .fc-bubble { margin: 4px 0; padding: 0 16px; }
-#${CONTAINER_ID2} .fc-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID2} .fc-media { max-width: 240px; max-height: 240px; display: block; margin-top: 2px; border-radius: 4px; }
-#${CONTAINER_ID2} .fc-link { display: inline-block; margin-top: 2px; }
+  function ensureStyle3() {
+    if (styleEl3 && document.contains(styleEl3)) return styleEl3;
+    styleEl3 = document.getElementById(STYLE_ID3) || document.createElement("style");
+    styleEl3.id = STYLE_ID3;
+    if (!styleEl3.textContent) {
+      styleEl3.textContent = `
+#${CONTAINER_ID3} .fc-bubble { margin: 4px 0; padding: 0 16px; }
+#${CONTAINER_ID3} .fc-name { font-size: 12px; opacity: .6; }
+#${CONTAINER_ID3} .fc-media { max-width: 240px; max-height: 240px; display: block; margin-top: 2px; border-radius: 4px; }
+#${CONTAINER_ID3} .fc-link { display: inline-block; margin-top: 2px; }
 `;
     }
-    if (!document.contains(styleEl2)) document.head.appendChild(styleEl2);
-    return styleEl2;
+    if (!document.contains(styleEl3)) document.head.appendChild(styleEl3);
+    return styleEl3;
   }
-  function ensureContainer2() {
-    if (!container2) {
-      container2 = document.createElement("div");
-      container2.id = CONTAINER_ID2;
+  function ensureContainer3() {
+    if (!container3) {
+      container3 = document.createElement("div");
+      container3.id = CONTAINER_ID3;
     }
-    ensureStyle2();
-    return container2;
-  }
-  function localToken2() {
-    const index2 = getLocalPeer()?.roomIndex;
-    return index2 == null || index2 === "" ? null : String(index2);
+    ensureStyle3();
+    return container3;
   }
   function mediaElementFor(kind, url2, name3, mime) {
     if (kind === "image") {
@@ -56951,7 +57217,7 @@ ${rendererCall}` : text2).join("\n");
     return a2;
   }
   function renderBubble(name3, record2, peerId) {
-    ensureContainer2();
+    ensureContainer3();
     const bubble = document.createElement("div");
     bubble.className = "fc-bubble";
     const label2 = document.createElement("div");
@@ -56961,31 +57227,31 @@ ${rendererCall}` : text2).join("\n");
     bubble.appendChild(label2);
     const url2 = URL.createObjectURL(record2.blob);
     bubble.appendChild(mediaElementFor(record2.kind, url2, name3, record2.mime));
-    ensureChatEntry2(container2, localToken2(), () => active4);
-    container2.appendChild(bubble);
+    ensureChatEntry(container3, localToken(), () => active5);
+    container3.appendChild(bubble);
     bubbleCount++;
-    while (bubbleCount > MAX_BUBBLES2 && container2.firstChild) {
-      for (const media of container2.firstChild.querySelectorAll("img,video,audio,a")) {
+    while (bubbleCount > MAX_BUBBLES2 && container3.firstChild) {
+      for (const media of container3.firstChild.querySelectorAll("img,video,audio,a")) {
         const src2 = media.src || media.href;
         if (src2) URL.revokeObjectURL(src2);
       }
-      container2.removeChild(container2.firstChild);
+      container3.removeChild(container3.firstChild);
       bubbleCount--;
     }
-    const log3 = container2.parentNode;
+    const log3 = container3.parentNode;
     if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
       log3.scrollTop = log3.scrollHeight;
     }
   }
-  function handleTrigger5(hap, currentTime, cps2, targetTime) {
-    if (!active4) return;
+  function handleTrigger6(hap, currentTime, cps2, targetTime) {
+    if (!active5) return;
     const value2 = hap?.value;
     if (!value2) return;
     const param = Object.keys(FILE_KINDS).find((k2) => value2[k2] != null);
     if (!param) return;
-    const name3 = resolve3(value2[param]);
+    const name3 = resolve4(value2[param]);
     if (!name3) return;
-    const peerId = peerOf2(value2[param]);
+    const peerId = peerOf3(value2[param]);
     const lead = Number(targetTime) - Number(currentTime);
     const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
     setTimeout(async () => {
@@ -57004,310 +57270,17 @@ ${rendererCall}` : text2).join("\n");
     for (const kind of Object.keys(FILE_KINDS)) {
       Object.assign(scope2, registerControl2(kind));
     }
-    register2("_fcRender", (pat) => pat.onTrigger(handleTrigger5, true));
+    register2("_fcRender", (pat) => pat.onTrigger(handleTrigger6, true));
     scope2.initFileCycles = async () => {
-      const wasActive = active4;
-      active4 = true;
-      if (!wasActive) ensureChatEntry2(ensureContainer2(), localToken2(), () => active4);
+      const wasActive = active5;
+      active5 = true;
+      if (!wasActive) ensureChatEntry(ensureContainer3(), localToken(), () => active5);
       return true;
     };
     return scope2;
   }
   function stopFileCycles() {
-    active4 = false;
-  }
-
-  // src/polls.js
-  init_peer_state();
-
-  // src/polls-core.js
-  init_text_cycles_core();
-  var DEFAULT_POLL_TEXT_COLOR = "#111111";
-  function parsePollLiteral(raw) {
-    let obj;
-    try {
-      obj = JSON.parse(String(raw ?? ""));
-    } catch (e30) {
-      throw new Error(`poll(): not valid JSON \u2014 ${e30.message}`);
-    }
-    return validatePollLiteral(obj);
-  }
-  function validatePollLiteral(obj) {
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-      throw new Error('poll(): expected a JSON object with "question" and "options"');
-    }
-    if (typeof obj.question !== "string" || !obj.question.trim()) {
-      throw new Error('poll(): "question" must be a non-empty string');
-    }
-    if (!Array.isArray(obj.options) || !obj.options.length || obj.options.some((o) => typeof o !== "string" || !o.trim())) {
-      throw new Error('poll(): "options" must be a non-empty array of non-empty strings');
-    }
-    const options = [...new Set(obj.options)];
-    if (options.length !== obj.options.length) {
-      throw new Error('poll(): "options" must not repeat the same option twice');
-    }
-    const participants = Array.isArray(obj.participants) ? obj.participants.map(String) : [];
-    const tally = Object.fromEntries(options.map((o) => [o, 0]));
-    if (obj.votes != null) {
-      const entries2 = Array.isArray(obj.votes) ? obj.votes : [obj.votes];
-      for (const entry of entries2) {
-        if (!entry || typeof entry !== "object") continue;
-        for (const [option, count] of Object.entries(entry)) {
-          if (!(option in tally)) throw new Error(`poll(): "votes" names an option not in "options": "${option}"`);
-          if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
-            throw new Error(`poll(): "votes"."${option}" must be a non-negative number`);
-          }
-          tally[option] += count;
-        }
-      }
-    }
-    return { question: obj.question.trim(), options, participants, tally };
-  }
-  function canVote(spec, voterToken) {
-    return !spec.participants.length || spec.participants.includes(String(voterToken));
-  }
-  function applyVoteDelta(tally, delta) {
-    const out = { ...tally };
-    if (!delta || typeof delta !== "object") return out;
-    for (const [option, count] of Object.entries(delta)) {
-      if (!(option in out) || typeof count !== "number" || !Number.isFinite(count)) continue;
-      out[option] = Math.max(0, out[option] + count);
-    }
-    return out;
-  }
-  function switchVote(tally, from2, to) {
-    const delta = {};
-    if (from2 && from2 in tally) delta[from2] = -1;
-    if (to && to in tally) delta[to] = 1;
-    return applyVoteDelta(tally, delta);
-  }
-  var POLL_CALL_RE = /(?:^|[^\w$])poll\s*\(/;
-  var STRING_LITERAL3 = "(\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|`(?:[^`\\\\]|\\\\.)*`)";
-  function literalBody3(raw) {
-    return { quote: raw[0], body: raw.slice(1, -1) };
-  }
-  function rewritePollCalls(code2, { peer = null, counter = { n: 0 } } = {}) {
-    const atoms5 = {};
-    const mint = (text2) => {
-      const token = `pl${counter.n++}`;
-      atoms5[token] = { text: text2, peer };
-      return token;
-    };
-    const re2 = new RegExp(`((?:^|[^\\w$])(?:poll|vote)\\s*\\(\\s*)${STRING_LITERAL3}`, "g");
-    const rewriteStatement = (text2) => {
-      if (!POLL_CALL_RE.test(text2)) return text2;
-      const out = text2.replace(re2, (match2, head, raw) => {
-        if (raw[0] === "`" && raw.includes("${")) return match2;
-        const { body } = literalBody3(raw);
-        return `${head}"${mint(body)}"`;
-      });
-      return `${out.replace(/[\s;]+$/, "")}
-._pollRender()`;
-    };
-    const rewritten = splitStatements(String(code2 ?? "")).map(({ text: text2 }) => rewriteStatement(text2)).join("\n");
-    return { code: rewritten, atoms: atoms5 };
-  }
-  var INIT_POLLS_RE = /^\s*await\s+initPolls\s*\(/m;
-  var INIT_POLLS_PATTERN = { source: INIT_POLLS_RE.source, flags: INIT_POLLS_RE.flags };
-  function hasPollCycles(code2) {
-    return INIT_POLLS_RE.test(String(code2 ?? ""));
-  }
-
-  // src/polls.js
-  var CONTAINER_ID3 = "trussal-polls";
-  var STYLE_ID3 = "trussal-polls-style";
-  var atoms4 = {};
-  var active5 = false;
-  var container3 = null;
-  var styleEl3 = null;
-  var polls = /* @__PURE__ */ new Map();
-  function setPollAtoms(table) {
-    atoms4 = table || {};
-  }
-  function resolve4(value2) {
-    if (value2 == null) return null;
-    const atom2 = atoms4[String(value2)];
-    return atom2 ? atom2.text : String(value2);
-  }
-  function peerOf3(value2) {
-    const atom2 = atoms4[String(value2)];
-    return atom2 ? atom2.peer : null;
-  }
-  function ensureStyle3() {
-    if (styleEl3 && document.contains(styleEl3)) return styleEl3;
-    styleEl3 = document.getElementById(STYLE_ID3) || document.createElement("style");
-    styleEl3.id = STYLE_ID3;
-    if (!styleEl3.textContent) {
-      styleEl3.textContent = `
-#${CONTAINER_ID3} .pl-bubble { margin: 4px 0; padding: 6px 16px; color: ${DEFAULT_POLL_TEXT_COLOR}; background: #eeeeee; border-radius: 6px; }
-#${CONTAINER_ID3} .pl-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID3} .pl-question { font-weight: 600; margin: 2px 0 4px; }
-#${CONTAINER_ID3} .pl-option { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; margin: 2px 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff; }
-#${CONTAINER_ID3} .pl-option.pl-mine { border-color: #111111; font-weight: 600; }
-#${CONTAINER_ID3} .pl-option.pl-closed { cursor: default; opacity: .8; }
-#${CONTAINER_ID3} .pl-status { font-size: 11px; opacity: .7; margin-top: 2px; }
-`;
-    }
-    if (!document.contains(styleEl3)) document.head.appendChild(styleEl3);
-    return styleEl3;
-  }
-  function ensureContainer3() {
-    if (!container3) {
-      container3 = document.createElement("div");
-      container3.id = CONTAINER_ID3;
-    }
-    ensureStyle3();
-    return container3;
-  }
-  function localToken3() {
-    const index2 = getLocalPeer()?.roomIndex;
-    return index2 == null || index2 === "" ? null : String(index2);
-  }
-  function isClosed(entry) {
-    return entry.closesAt != null && Date.now() >= entry.closesAt;
-  }
-  function scoreboard(entry) {
-    const total = Object.values(entry.tally).reduce((a2, b) => a2 + b, 0);
-    return total;
-  }
-  function renderPoll(question) {
-    const entry = polls.get(question);
-    if (!entry) return;
-    ensureChatEntry2(ensureContainer3(), localToken3(), () => active5);
-    if (!entry.bubbleEl || !entry.bubbleEl.isConnected) {
-      entry.bubbleEl = document.createElement("div");
-      entry.bubbleEl.className = "pl-bubble";
-      container3.appendChild(entry.bubbleEl);
-    }
-    const bubble = entry.bubbleEl;
-    bubble.innerHTML = "";
-    const peer = entry.peerId ? getPeerByJitsiId(entry.peerId) : null;
-    const name3 = document.createElement("div");
-    name3.className = "pl-name";
-    name3.textContent = peer?.displayName || "poll";
-    bubble.appendChild(name3);
-    const q2 = document.createElement("div");
-    q2.className = "pl-question";
-    q2.textContent = entry.spec.question;
-    bubble.appendChild(q2);
-    const closed = isClosed(entry);
-    const myToken = localToken3();
-    const myChoice = myToken ? entry.voterChoice.get(myToken) : null;
-    const eligible = myToken != null && canVote(entry.spec, myToken);
-    const total = scoreboard(entry);
-    for (const option of entry.spec.options) {
-      const row = document.createElement("div");
-      row.className = `pl-option${option === myChoice ? " pl-mine" : ""}${closed ? " pl-closed" : ""}`;
-      const label2 = document.createElement("span");
-      label2.textContent = option;
-      const count = document.createElement("span");
-      const votes = entry.tally[option] || 0;
-      const pct = total > 0 ? Math.round(votes / total * 100) : 0;
-      count.textContent = `${votes} (${pct}%)`;
-      row.appendChild(label2);
-      row.appendChild(count);
-      if (!closed && eligible) {
-        row.addEventListener("click", () => castVote(question, option));
-      }
-      bubble.appendChild(row);
-    }
-    const status = document.createElement("div");
-    status.className = "pl-status";
-    status.textContent = closed ? "Poll closed" : !eligible ? "You're not eligible to vote in this poll" : myChoice ? `You voted "${myChoice}" \u2014 click another option to change your vote` : "Click an option to vote";
-    bubble.appendChild(status);
-    const log3 = container3.parentNode;
-    if (log3 && log3.scrollHeight - log3.scrollTop - log3.clientHeight < 80) {
-      log3.scrollTop = log3.scrollHeight;
-    }
-  }
-  function castVote(question, option) {
-    const entry = polls.get(question);
-    if (!entry || isClosed(entry)) return;
-    const voterToken = localToken3();
-    if (voterToken == null || !canVote(entry.spec, voterToken)) return;
-    const previous = entry.voterChoice.get(voterToken) || null;
-    if (previous === option) return;
-    entry.tally = switchVote(entry.tally, previous, option);
-    entry.voterChoice.set(voterToken, option);
-    sendPollVote({ pollId: question, option, previousOption: previous, voterToken });
-    renderPoll(question);
-  }
-  subscribePeerState((event, payload) => {
-    if (event !== "poll-vote") return;
-    const entry = polls.get(payload.pollId);
-    if (!entry) return;
-    entry.tally = switchVote(entry.tally, payload.previousOption, payload.option);
-    entry.voterChoice.set(payload.voterToken, payload.option);
-    renderPoll(payload.pollId);
-  });
-  function handleTrigger6(hap, currentTime, cps2, targetTime) {
-    if (!active5) return;
-    const value2 = hap?.value;
-    if (!value2 || value2.poll == null) return;
-    const pollJson = resolve4(value2.poll);
-    const peerId = peerOf3(value2.poll);
-    const voteJson = value2.vote != null ? resolve4(value2.vote) : null;
-    const closeMs = value2.close != null ? Number(value2.close) : null;
-    const lead = Number(targetTime) - Number(currentTime);
-    const delayMs = Number.isFinite(lead) ? Math.max(0, lead * 1e3) : 0;
-    setTimeout(() => {
-      if (!isPeerJPatternTurn(peerId)) return;
-      let spec;
-      try {
-        spec = parsePollLiteral(pollJson);
-      } catch (e30) {
-        console.error("[polls]", e30.message);
-        return;
-      }
-      let entry = polls.get(spec.question);
-      if (!entry) {
-        entry = {
-          spec,
-          tally: spec.tally,
-          voterChoice: /* @__PURE__ */ new Map(),
-          createdAt: Date.now(),
-          closesAt: null,
-          closeTimer: null,
-          peerId,
-          bubbleEl: null
-        };
-        polls.set(spec.question, entry);
-      }
-      if (Number.isFinite(closeMs) && closeMs > 0) {
-        entry.closesAt = entry.createdAt + closeMs;
-        clearTimeout(entry.closeTimer);
-        const remaining = entry.closesAt - Date.now();
-        if (remaining > 0) entry.closeTimer = setTimeout(() => renderPoll(spec.question), remaining);
-      }
-      if (voteJson) {
-        try {
-          entry.tally = applyVoteDelta(entry.tally, JSON.parse(voteJson));
-        } catch (e30) {
-          console.warn("[polls] .vote() argument is not valid JSON", e30);
-        }
-      }
-      renderPoll(spec.question);
-    }, delayMs);
-  }
-  function installPolls(mod2) {
-    const { registerControl: registerControl2, register: register2 } = mod2;
-    const scope2 = {
-      ...registerControl2("poll"),
-      ...registerControl2("close"),
-      ...registerControl2("vote")
-    };
-    register2("_pollRender", (pat) => pat.onTrigger(handleTrigger6, true));
-    scope2.initPolls = async () => {
-      const wasActive = active5;
-      active5 = true;
-      if (!wasActive) ensureChatEntry2(ensureContainer3(), localToken3(), () => active5);
-      return true;
-    };
-    return scope2;
-  }
-  function stopPolls() {
     active5 = false;
-    for (const entry of polls.values()) clearTimeout(entry.closeTimer);
   }
 
   // src/hydra-video.js
@@ -59243,6 +59216,13 @@ ${next}`;
     if (set2.has("ts-code")) return "strudel";
     return null;
   }
+  function applyRegexMutation(code2, pattern2, replacement) {
+    try {
+      return code2.replace(new RegExp(pattern2, "g"), replacement ?? "");
+    } catch {
+      return code2;
+    }
+  }
   function toggleLineComment(value2, selectionStart, selectionEnd) {
     const text2 = String(value2 ?? "");
     const start = Math.max(0, Math.min(selectionStart ?? 0, text2.length));
@@ -59967,13 +59947,6 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     return configs;
   }
-  function applyRegexMutation2(code2, pattern2, replacement) {
-    try {
-      return code2.replace(new RegExp(pattern2, "g"), replacement ?? "");
-    } catch {
-      return code2;
-    }
-  }
   var _landmarker = null;
   var _gestureRecognizer = null;
   var _mpClasses = null;
@@ -60133,7 +60106,7 @@ ${snippet}${JP_BTN_MARKER}`;
       case "regex-swap":
         if (m2.regex) {
           _flash(trigger, m2.action);
-          mutateAndEvaluate((c2) => applyRegexMutation2(c2, m2.regex, m2.replacement));
+          mutateAndEvaluate((c2) => applyRegexMutation(c2, m2.regex, m2.replacement));
         }
         break;
       case "apply-metaprogram":
@@ -61386,12 +61359,6 @@ ${snippet}${JP_BTN_MARKER}`;
   }
   var MIN_W = 320;
   var MIN_H = 170;
-  function _pinTopLeft(panel, rect) {
-    panel.style.bottom = "auto";
-    panel.style.right = "auto";
-    panel.style.top = `${rect.top}px`;
-    panel.style.left = `${rect.left}px`;
-  }
   function _makeDraggable(panel, handle) {
     handle.style.cursor = "grab";
     handle.addEventListener("mousedown", (e30) => {
@@ -61401,7 +61368,7 @@ ${snippet}${JP_BTN_MARKER}`;
       const rect = panel.getBoundingClientRect();
       const startX = e30.clientX;
       const startY = e30.clientY;
-      _pinTopLeft(panel, rect);
+      pinTopLeft(panel, rect);
       const origL = rect.left;
       const origT = rect.top;
       function onMove(ev) {
@@ -61426,7 +61393,7 @@ ${snippet}${JP_BTN_MARKER}`;
         e30.stopPropagation();
         const r2 = panel.getBoundingClientRect();
         const sx = e30.clientX, sy = e30.clientY;
-        _pinTopLeft(panel, r2);
+        pinTopLeft(panel, r2);
         panel.style.width = `${r2.width}px`;
         panel.style.height = `${r2.height}px`;
         const maxW = window.innerWidth - 20;
@@ -63004,9 +62971,6 @@ ${snippet}${JP_BTN_MARKER}`;
     const trimmed = name3.trim();
     return trimmed ? trimmed[0].toUpperCase() : "?";
   }
-  function escapeHtml(s2) {
-    return String(s2).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
-  }
   function reconcileList(container4, items, keyFn, createFn, updateFn) {
     const existing = /* @__PURE__ */ new Map();
     for (const child of Array.from(container4.children)) {
@@ -63088,7 +63052,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const propagating = peer.isLocal && isPropagatingToRoom();
     let routedTxt;
     if (routed && extLabel) {
-      routedTxt = `<b>routed</b> \xB7 ${escapeHtml(extLabel)}${propagating ? " \xB7 <b>\u2192 room</b>" : ""}`;
+      routedTxt = `<b>routed</b> \xB7 ${_esc(extLabel)}${propagating ? " \xB7 <b>\u2192 room</b>" : ""}`;
     } else if (routed) {
       routedTxt = "<b>routed</b>";
     } else if (peer.isLocal) {
@@ -63107,7 +63071,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const targetS = timingTargetSeconds(ast2.cycles, wc);
     const { metric, factor, fixed } = ast2.cycles;
     const source2 = fixed != null ? `pinned ${fixed}s` : `${metric.toUpperCase()} ${preciseMs(wc[metric] ?? 0)}`;
-    return `${scopeTag("global")} Current turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${escapeHtml(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
+    return `${scopeTag("global")} Current turn length: <b>${seconds2.toFixed(3)}s</b> <span class="ts-dim">= ${_esc(source2)} &times; ${factor} = ${targetS.toFixed(3)}s, rounded up to ${beats} &times; ${beatSeconds2.toFixed(3)}s beat</span>`;
   }
   function preciseMs(v2) {
     const n2 = Number(v2) || 0;
@@ -63143,7 +63107,7 @@ ${snippet}${JP_BTN_MARKER}`;
     `;
     } catch (e30) {
       console.error("[studio] network metrics block failed to render", e30);
-      body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${escapeHtml(String(e30 && e30.message || e30))}</div>`;
+      body.innerHTML = `<div class="ts-meta">unavailable &mdash; ${_esc(String(e30 && e30.message || e30))}</div>`;
     }
   }
   subscribeFleetStatus((status) => {
@@ -63166,7 +63130,7 @@ ${snippet}${JP_BTN_MARKER}`;
     const t = getTheme2();
     const check = (key, label2) => `<label class="ts-theme-check"><input type="checkbox" data-theme="${key}"${t[key] ? " checked" : ""}> ${label2}</label>`;
     const fontOptions = WEB_SAFE_FONTS.map(
-      (f2) => `<option value="${escapeHtml(f2.value)}"${f2.value === t.font ? " selected" : ""}>${escapeHtml(f2.label)}</option>`
+      (f2) => `<option value="${_esc(f2.value)}"${f2.value === t.font ? " selected" : ""}>${_esc(f2.label)}</option>`
     ).join("");
     el.innerHTML = `
     <div class="ts-section-head">
@@ -63183,11 +63147,11 @@ ${snippet}${JP_BTN_MARKER}`;
     <div class="ts-theme-fields">
       <label class="ts-theme-field">Primary color:
         <input type="text" class="ts-theme-color" data-theme="primary" spellcheck="false"
-          autocapitalize="off" placeholder="${DEFAULT_PRIMARY}" value="${escapeHtml(t.primary)}">
+          autocapitalize="off" placeholder="${DEFAULT_PRIMARY}" value="${_esc(t.primary)}">
       </label>
       <label class="ts-theme-field">Secondary color:
         <input type="text" class="ts-theme-color" data-theme="secondary" spellcheck="false"
-          autocapitalize="off" placeholder="${DEFAULT_SECONDARY}" value="${escapeHtml(t.secondary)}">
+          autocapitalize="off" placeholder="${DEFAULT_SECONDARY}" value="${_esc(t.secondary)}">
       </label>
       <label class="ts-theme-field">Font:
         <select class="ts-theme-font" data-theme="font">${fontOptions}</select>
@@ -63195,7 +63159,7 @@ ${snippet}${JP_BTN_MARKER}`;
       <label class="ts-theme-field">Font scale:
         <input type="number" class="ts-theme-scale" data-theme="fontScale"
           min="${MIN_FONT_SCALE}" max="${MAX_FONT_SCALE}" step="0.1" inputmode="decimal"
-          value="${escapeHtml(String(t.fontScale))}">
+          value="${_esc(String(t.fontScale))}">
       </label>
     </div>
     <div class="ts-meta ts-theme-status"></div>
@@ -63508,10 +63472,10 @@ ${snippet}${JP_BTN_MARKER}`;
       return;
     }
     const bankChip = (b) => {
-      const label2 = b.kind === "audio" ? `${escapeHtml(b.name)} (${b.count})` : `${escapeHtml(b.name)}:${b.count}`;
+      const label2 = b.kind === "audio" ? `${_esc(b.name)} (${b.count})` : `${_esc(b.name)}:${b.count}`;
       const open = expandedBank === b.name;
       return `<button class="ts-sample-bank${b.kind === "audio" ? "" : " data"}${open ? " open" : ""}"
-      data-action="toggle-bank" data-bank="${escapeHtml(b.name)}"
+      data-action="toggle-bank" data-bank="${_esc(b.name)}"
       title="${b.kind === "audio" ? "audio bank" : `${b.kind.toUpperCase()} data pack`}${b.truncated ? " \u2014 truncated to fit the memory budget" : ""}">${label2}${b.truncated ? " (truncated)" : ""}</button>`;
     };
     const openBank = sampleBanks.find((b) => b.name === expandedBank);
@@ -63520,9 +63484,9 @@ ${snippet}${JP_BTN_MARKER}`;
       ${openBank.samples.map((s2, i) => `
         <span class="ts-sample-item">
           <span class="ts-sample-idx">${openBank.kind === "audio" ? i : i + 1}</span>
-          <span class="ts-sample-label"${s2.preview ? ` title="${escapeHtml(s2.preview)}"` : ""}>${escapeHtml(s2.label)}</span>
+          <span class="ts-sample-label"${s2.preview ? ` title="${_esc(s2.preview)}"` : ""}>${_esc(s2.label)}</span>
           ${s2.length != null ? `<span class="ts-sample-len">${s2.length}${s2.truncated ? " (truncated)" : ""}</span>` : ""}
-          <button class="ts-sample-x" data-action="delete-sample" data-sample="${escapeHtml(s2.id)}"
+          <button class="ts-sample-x" data-action="delete-sample" data-sample="${_esc(s2.id)}"
             title="delete this sample">\xD7</button>
         </span>`).join("")}
     </div>` : "";
@@ -63643,9 +63607,9 @@ ${snippet}${JP_BTN_MARKER}`;
     }
     const labels = deriveSliderLabels(sliders);
     area.innerHTML = sliders.map((s2, i) => `
-    <div class="ts-slider-row" data-slider-id="${escapeHtml(String(s2.id))}">
+    <div class="ts-slider-row" data-slider-id="${_esc(String(s2.id))}">
       <div class="ts-slider-label">
-        <span>${escapeHtml(labels[i])}</span>
+        <span>${_esc(labels[i])}</span>
         <span class="ts-slider-val">${Number(s2.value).toFixed(3)}</span>
       </div>
       <input class="ts-slider-input" type="range"
