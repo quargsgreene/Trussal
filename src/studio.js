@@ -57,7 +57,6 @@ import { PIPELINE_ALLOWANCE_MS } from './audio-net/network-modulation/WorstCaseC
 import { parseMetaprogram } from './audio-net/MetaprogrammerParser.js';
 import { mountMetaprogrammerEditor } from '../components/MetaprogrammerEditor.js';
 import { mountMetaprogrammerCycleHighlighter } from '../components/MetaprogrammerCycleHighlighter.js';
-import { mountBreakoutProgramEditor } from '../components/BreakoutProgramEditor.js';
 import {
   applyBotClusterDirectives,
   resetBotClusterDirectives,
@@ -82,13 +81,6 @@ const STYLE_ID   = 'trussal-studio-style';
 const STORAGE_KEY = 'trussal.studio.pattern';
 
 let selectedJitsiId = null;
-// The stable identity behind selectedJitsiId ('local', or a peer.peerId) —
-// jitsiId is what selection is KEYED by (it's what a chip's click handler
-// has on hand), but it isn't stable: a P2P<->JVB renegotiation re-keys it
-// for any participant. selectedPeerKey is what renderDetail's fallback
-// recovers the CORRECT selection with when that happens, instead of
-// silently snapping to the local peer. Kept in sync with selectedJitsiId
-// everywhere the latter is assigned.
 let selectedPeerKey = null;
 let initedRoom = null;
 let codeDebounce = null;
@@ -1143,7 +1135,6 @@ function ensureOverlay() {
   try {
     mountMetaprogrammerEditor(ncHost);
     mountMetaprogrammerCycleHighlighter(ncHost);
-    mountBreakoutProgramEditor(ncHost);
   } catch (e) {
     console.warn('[studio] JPattern card mount failed', e);
   }
