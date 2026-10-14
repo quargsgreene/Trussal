@@ -28,7 +28,6 @@ import {
   uploadSamplesToDB, getSampleBanks, clearSamplesDB, deleteSample, getDataPacks,
 } from './user-samples.js';
 import { uploadChatFilesToDB } from './file-cycles.js';
-import { panic as panicToMainRoom } from './panic-button.js';
 import { injectFacialGestureToggle } from './facial-gesture.js';
 import { injectKeyboardToggle, tickKbdUi, _esc as escapeHtml } from './on-screen-keyboard.js';
 export { _esc as escapeHtml } from './on-screen-keyboard.js';
@@ -1110,10 +1109,8 @@ function ensureOverlay() {
   `;
   document.body.appendChild(overlay);
 
-  // Unconditional and independent of the metaprogram/moderator state above —
-  // see panic-button.js for why this is a full rejoin rather than an
-  // in-place room switch.
-  overlay.querySelector('.ts-panic-btn').addEventListener('click', panicToMainRoom);
+  // The breakout-room panic button was removed from this overlay (see commit
+  // "remove extraneous breakout room button"); leave no dangling listener.
 
   // Jitsi's own toolbar popovers (hangup menu, "..." overflow menu, etc.)
   // close themselves on any mousedown/click that bubbles to document and

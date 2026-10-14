@@ -52090,15 +52090,6 @@ ${newBody}`).length === 0;
     } catch (e30) {
     }
   }
-  function panic() {
-    let url2 = null;
-    try {
-      if (typeof sessionStorage !== "undefined") url2 = sessionStorage.getItem(KEY);
-    } catch (e30) {
-    }
-    if (url2) window.location.href = url2;
-    else window.location.reload();
-  }
   captureMainRoomUrl();
 
   // src/welcome-page.js
@@ -63667,12 +63658,10 @@ ${snippet}${JP_BTN_MARKER}`;
     </div>
     <div class="ts-strip"></div>
     <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
-      <button class="ts-btn ghost ts-panic-btn" type="button" title="Stuck in a breakout room? Leave it and rejoin the meeting you originally opened.">\u26A0 Leave breakout room</button>
     </div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
-    overlay.querySelector(".ts-panic-btn").addEventListener("click", panic);
     overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
     overlay.addEventListener("click", (e30) => e30.stopPropagation());
     const ncHost = overlay.querySelector(".ts-jpattern");
