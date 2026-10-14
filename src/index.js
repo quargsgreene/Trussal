@@ -1,5 +1,3 @@
-// Captures the entry URL for the breakout-room panic button as early as
-// possible — before anything else could plausibly redirect the page.
 import './panic-button.js';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
@@ -10,26 +8,14 @@ import { installPublishedVideoOverride, startWithVideoMuted } from './published-
 import { installHydraParamApi } from './hydra-params.js';
 import { sampleDataRefAt } from './data-ref.js';
 import { setDataRefReader } from './audio-net/ValuePattern.js';
-// Applies this browser's saved personal theme as early as possible — on the
-// lobby and prejoin screen as well as in-call. Self-initialising on import.
 import './theme-context.js';
 import './studio.js';
 import './landmark-gesture-mode.js';
 import './docs-about.js';
 
-// Let a metaprogram read the room's data packs (`# cycles Weather:3`).
-// ValuePattern.js ships inside the bot image and stays free of the registry, so
-// the reader is handed to it here rather than imported there.
 setDataRefReader(sampleDataRefAt);
-
-// Keep the XMPP↔O2 mapping current: every peer with a room index gets an O2
-// service name (/perf/<index>) the moment the sidecar announces it.
 subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
 
-// Bots call this from inside their page once their Strudel REPL is running, to
-// publish their pattern onto the peer-state bus so it shows (and can be edited)
-// in every studio. strudel.js skips isBot peers in the combined mix, so marking
-// the bot "playing" here doesn't double its audio.
 let lastAnnouncedPattern = null;
 window.__trussalAnnounceLocalPattern = (code) => {
   const c = typeof code === 'string' ? code : '';
@@ -38,20 +24,6 @@ window.__trussalAnnounceLocalPattern = (code) => {
   sendLocalPlaying(true);
 };
 
-// A bot's peer-state WebSocket can drop and reconnect for reasons that have
-// nothing to do with its own Strudel REPL — the video VM's sidecar container
-// being recreated during an unrelated deploy, a network blip, or the socket's
-// own 2s ping missing its 8s pong timeout (see peer-state.js) — while the
-// REPL itself never stops running the code it was last given. A reconnect
-// gets a brand-new peerId and a blank server-side record, so without this the
-// room (and anyone editing the bot from Studio) sees it snap back to "Idle"
-// with no pattern, reading as the bot's code silently reverting even though
-// nothing about what it's actually playing changed. Live-confirmed 2026-09-21:
-// a mid-session sidecar recreate during unrelated deploy activity reset three
-// running bots' peer-state exactly this way. Re-announcing on every
-// 'connected' (peer-state.js's 'welcome' handler) is a no-op before a bot has
-// announced anything yet (lastAnnouncedPattern is still null) and otherwise
-// just repeats what was already true.
 subscribePeerState((event) => {
   if (event === 'connected' && lastAnnouncedPattern) {
     sendLocalPattern(lastAnnouncedPattern);
@@ -59,59 +31,19 @@ subscribePeerState((event) => {
   }
 });
 
-// The aggregator bot taps remote participants' <audio> elements (id
-// "remoteAudio_<jitsiId>") and needs to file each one's audio under its Net
-// Cycles room-index token (0, 0a, 1, …). The room mapper above already keeps
-// the jitsiId ↔ roomIndex bijection current, so expose the lookup to the page.
 window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
-
-// The inverse: a player bot copying its owner's Hydra code needs the
-// OWNER's jitsiId to blit their published video into an External Source
-// (s0-s3) it has no camera of its own to satisfy — pageMarkBot already
-// stamps window.__trussalBotOwnerIndex with the owner's room-index token
-// before this bundle loads, so the bot's own gUM override (page-scripts.js's
-// pageGumOverride) can resolve it to a live participant via this lookup.
 window.__trussalJitsiIdForRoomIndex = (roomIndex) => roomMapper.jitsiIdForIndex(roomIndex);
-
-// The aggregator bot's capture tap also needs to know whether a peer is
-// ACTUALLY playing (vs merely present in the Jitsi conference) so a peer who
-// has joined but not yet pressed play — or who has paused — never claims a
-// turn in the rotation: presence alone would otherwise seat them and produce
-// a silent slot exactly like an unremoved departure did before removeParticipant.
 window.__trussalPeerIsPlaying = (jitsiId) => {
   const peer = getPeerByJitsiId(jitsiId);
   return !!(peer && peer.playing);
 };
-
-// The aggregator bot's page polls this to decide whether IT is the room's ACTIVE
-// aggregator. Only one aggregator may stream at a time (see electAggregator):
-// two active aggregators tap and re-emit each other's master, so both feed back
-// and mute. True iff the local peer is the elected aggregator — so a second
-// aggregator that joins publishes nothing until the first leaves and it is
-// promoted. Every browser client honors the same winner independently
-// (latency-instrument's refreshAggregatorPeer), so bot and clients never disagree.
 window.__trussalIsActiveAggregator = () => {
   const winner = electAggregator(getAllPeers());
   const local = getLocalPeer();
   return !!(winner && local && local.isAggregator && winner.jitsiId === local.jitsiId);
 };
 
-// The mosaic re-executes participants' Hydra preambles, which may bind
-// parameters to Strudel patterns via `H(...)`. Lend the aggregator the pattern
-// half of Strudel so those animate instead of holding at a constant.
 if (window.__trussalIsAggregator) installHydraParamApi();
-
-// Before anything can ask for a camera. A participant's published video is
-// their Hydra output or black — never the raw camera — so this has to be in
-// place ahead of lib-jitsi-meet's first getUserMedia, and ahead of the
-// video-off default, which only decides whether that canvas is sent.
-//
-// Bots are exempt, aggregator included (pageMarkBot sets this on both). They
-// install their own getUserMedia override at document-start — before this
-// bundle runs — and it already hands Jitsi the right canvas: a regular bot's
-// Hydra canvas, or the aggregator's composited mosaic. Wrapping it again would
-// publish a copy of a copy, and `startWithVideoMuted` here would fight the
-// videoMuted flag their join URL already sets deliberately per bot kind.
 if (!window.__trussalIsBot) {
   installPublishedVideoOverride();
   startWithVideoMuted();
@@ -119,10 +51,6 @@ if (!window.__trussalIsBot) {
 
 renderAudioConfigCheck();
 renderRecentListText();
-// The overlay is the ONLY way into a room from the welcome page, because
-// renderHideStartMeetingButton() below hides Jitsi's native "Start meeting"
-// button. Disabling one without the other leaves the address bar as the sole
-// entrance, which is exactly what happened in bcf48ea.
 renderWelcomeOverlay();
 renderHideStartMeetingButton();
 renderPrejoinScreen();
