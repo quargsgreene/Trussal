@@ -681,7 +681,7 @@ function patchLocalProgramSection(el, peer, isLocal) {
   muteBtnEl.style.display = peer.isBot ? '' : 'none';
   muteBtnEl.textContent = peer.muted ? 'Muted' : 'Mute';
   muteBtnEl.classList.toggle('on', !!peer.muted);
-.
+
   const codeEl = el.querySelector('.ts-code');
   const active = document.activeElement === codeEl;
   const hasUnsentEdit = active && codeEl.value !== codeEl.dataset.lastSynced;
