@@ -1,5 +1,3 @@
-import { electAggregator } from "../../src/aggregator-election";
-
 var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || (typeof location !== 'undefined' ? location.href : '');
 (() => {
   var __create = Object.create;
@@ -27,15 +25,13 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     return to;
   };
   var __toESM = (mod2, isNodeMode, target) => (target = mod2 != null ? __create(__getProtoOf(mod2)) : {}, __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
     isNodeMode || !mod2 || !mod2.__esModule ? __defProp(target, "default", { value: mod2, enumerable: true }) : target,
     mod2
   ));
-
-  function getRoomNameFromUrl() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const roomName = parts.length ? parts[parts.length - 1] : null;
-    return roomName ? roomName.toLowerCase() : roomName;
-  }
 
   // src/participants.js
   function emit(event, payload) {
@@ -198,6 +194,17 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
       missingLocalTicks = 0;
       pollTimer = null;
       startPolling();
+    }
+  });
+
+  // src/get-room-name-from-url.js
+  function getRoomNameFromUrl() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const roomName = parts.length ? parts[parts.length - 1] : null;
+    return roomName ? roomName.toLowerCase() : roomName;
+  }
+  var init_get_room_name_from_url = __esm({
+    "src/get-room-name-from-url.js"() {
     }
   });
 
@@ -1434,6 +1441,7 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
   var subscribers2, peersByPeerId, peerIdByJitsiId, LOCAL_IS_BOT, LOCAL_IS_AGGREGATOR, LOCAL_OWNER_INDEX, localPeer, ws, wantConnection, myPeerId, helloSent, pingTimer, reconnectTimer, reconnectDelay, lastPongAt, currentRoom, activeJPatternToken, activeJPatternIndex, activeJPatternKind, MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS, rttSamples, localRtt, localJitter, pendingSends, NET_STAT_FIELDS;
   var init_peer_state = __esm({
     "src/peer-state.js"() {
+      init_get_room_name_from_url();
       init_participants();
       init_data_ref();
       init_text_cycles_core();
@@ -1546,6 +1554,22 @@ var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentS
     }
   });
 
+  // src/aggregator-election.js
+  function electAggregator(peers) {
+    let best = null;
+    let bestIdx = Infinity;
+    for (const p of peers || []) {
+      if (!p || !p.isAggregator || !p.jitsiId) continue;
+      const raw = p.roomIndex;
+      const parsed = raw === null || raw === void 0 || raw === "" ? NaN : Number(raw);
+      const idx = Number.isFinite(parsed) ? parsed : Infinity;
+      if (best === null || idx < bestIdx || idx === bestIdx && String(p.jitsiId) < String(best.jitsiId)) {
+        best = p;
+        bestIdx = idx;
+      }
+    }
+    return best;
+  }
   var init_aggregator_election = __esm({
     "src/aggregator-election.js"() {
     }
@@ -37889,7 +37913,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return () => routingSubscribers.delete(fn);
   }
-
   function presenceLevelFor(jitsiId) {
     if (!aggregatorJitsiId) return 1;
     return jitsiId === aggregatorJitsiId ? 1 : 0;
@@ -38708,7 +38731,7 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
     return inputs.map((d) => ({ deviceId: d.deviceId, label: d.label || "Unnamed audio input" }));
   }
-  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, masterLimiter, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, jamulasMutedTags, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
+  var audioCtx, realDestination, workletLoaded, reverbBuffer, masterStrudelGain, masterLimiter, bootPromise, strudelFx, strudelOut, chains, remoteSources, pendingCaptures, externalSources, externalNodes, audioRouted, routingSubscribers, audioTagObserver, aggregatorJitsiId, jitsiMixState, JitsiMicMixEffect, DITHER_LEVEL, NodeOutputEffect, strudelRoomEffect, strudelPublishRetryTimer, strudelTrackAcquiring, strudelTrackAcquireAt, strudelPublishWarned, strudelSynthDest, strudelPublishBackoff, STRUDEL_TRACK_ACQUIRE_COOLDOWN_MS, STRUDEL_TRACK_ACQUIRE_BACKOFF_MS;
   var init_latency_instrument = __esm({
     "src/latency-instrument.js"() {
       init_participants();
@@ -39069,69 +39092,6 @@ When mixing down to 2 channels, the input channels are equally distributed over 
     }
   });
 
-  // src/program-directive.js
-  function splitLines(text2) {
-    return String(text2 ?? "").split("\n");
-  }
-  function firstRealLine(lines) {
-    for (let i = 0; i < lines.length; i++) {
-      if (!SKIPPABLE_RE.test(lines[i])) return i;
-    }
-    return -1;
-  }
-  function readDirective(text2) {
-    const lines = splitLines(text2);
-    const idx = firstRealLine(lines);
-    if (idx === -1) {
-      return { kind: null, reason: "empty program \u2014 expected a leading directive line", lineIndex: 0 };
-    }
-    const m2 = lines[idx].match(DIRECTIVE_RE);
-    if (!m2) {
-      return {
-        kind: null,
-        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor', or 'bot editor'",
-        lineIndex: idx
-      };
-    }
-    const kind = KIND_BY_TEXT[m2[2]];
-    return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
-  }
-  function stripDirective(text2) {
-    const info = readDirective(text2);
-    if (info.kind == null) return String(text2 ?? "");
-    const lines = splitLines(text2);
-    lines[info.lineIndex] = "";
-    return lines.join("\n");
-  }
-  function ensureDirective(text2, kind) {
-    const phrase = CANONICAL_BY_KIND[kind];
-    if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
-    const s2 = String(text2 ?? "");
-    if (readDirective(s2).kind === kind) return s2;
-    return `'${phrase}'
-${s2}`;
-  }
-  var PERSONAL, METAPROGRAM, BOT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
-  var init_program_directive = __esm({
-    "src/program-directive.js"() {
-      PERSONAL = "personal editor";
-      METAPROGRAM = "metaprogram editor";
-      BOT = "bot editor";
-      KIND_BY_TEXT = {
-        [PERSONAL]: "personal",
-        [METAPROGRAM]: "metaprogram",
-        [BOT]: "bot",
-        "personal program": "personal",
-        "metaprogram": "metaprogram",
-        "bot program": "bot"
-      };
-      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT};
-      SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
-      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
-      DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
-    }
-  });
-
   // src/audio-net/EffectMedia.js
   function isMedium(name3) {
     return MEDIA.includes(name3);
@@ -39155,6 +39115,71 @@ ${s2}`;
     "src/audio-net/EffectMedia.js"() {
       init_ValuePattern();
       MEDIA = Object.freeze(["audio", "css", "text", "video"]);
+    }
+  });
+
+  // src/program-directive.js
+  function splitLines(text2) {
+    return String(text2 ?? "").split("\n");
+  }
+  function firstRealLine(lines) {
+    for (let i = 0; i < lines.length; i++) {
+      if (!SKIPPABLE_RE.test(lines[i])) return i;
+    }
+    return -1;
+  }
+  function readDirective(text2) {
+    const lines = splitLines(text2);
+    const idx = firstRealLine(lines);
+    if (idx === -1) {
+      return { kind: null, reason: "empty program \u2014 expected a leading directive line", lineIndex: 0 };
+    }
+    const m2 = lines[idx].match(DIRECTIVE_RE);
+    if (!m2) {
+      return {
+        kind: null,
+        reason: "missing directive \u2014 the first line must be 'personal editor', 'metaprogram editor', 'bot editor' or 'breakout room'",
+        lineIndex: idx
+      };
+    }
+    const kind = KIND_BY_TEXT[m2[2]];
+    return { kind, phrase: CANONICAL_BY_KIND[kind], lineIndex: idx };
+  }
+  function stripDirective(text2) {
+    const info = readDirective(text2);
+    if (info.kind == null) return String(text2 ?? "");
+    const lines = splitLines(text2);
+    lines[info.lineIndex] = "";
+    return lines.join("\n");
+  }
+  function ensureDirective(text2, kind) {
+    const phrase = CANONICAL_BY_KIND[kind];
+    if (!phrase) throw new Error(`ensureDirective: unknown kind '${kind}'`);
+    const s2 = String(text2 ?? "");
+    if (readDirective(s2).kind === kind) return s2;
+    return `'${phrase}'
+${s2}`;
+  }
+  var PERSONAL, METAPROGRAM, BOT, BREAKOUT, KIND_BY_TEXT, CANONICAL_BY_KIND, SKIPPABLE_RE, DIRECTIVE_RE, DIRECTIVE_LINE_PATTERN;
+  var init_program_directive = __esm({
+    "src/program-directive.js"() {
+      PERSONAL = "personal editor";
+      METAPROGRAM = "metaprogram editor";
+      BOT = "bot editor";
+      BREAKOUT = "breakout room";
+      KIND_BY_TEXT = {
+        [PERSONAL]: "personal",
+        [METAPROGRAM]: "metaprogram",
+        [BOT]: "bot",
+        [BREAKOUT]: "breakout",
+        "personal program": "personal",
+        "metaprogram": "metaprogram",
+        "bot program": "bot"
+      };
+      CANONICAL_BY_KIND = { personal: PERSONAL, metaprogram: METAPROGRAM, bot: BOT, breakout: BREAKOUT };
+      SKIPPABLE_RE = /^\s*(\/\/.*)?$/;
+      DIRECTIVE_RE = /^\s*(['"])(personal editor|metaprogram editor|bot editor|breakout room|personal program|metaprogram|bot program)\1\s*;?\s*(\/\/.*)?$/;
+      DIRECTIVE_LINE_PATTERN = { source: DIRECTIVE_RE.source, flags: DIRECTIVE_RE.flags };
     }
   });
 
@@ -39215,6 +39240,21 @@ ${s2}`;
         if (!terminated) {
           errors.push({
             message: `unterminated string \u2014 a medium name closes with a '"' on the same line`,
+            line: startLine,
+            col: startCol
+          });
+        }
+        push("string", text2.slice(i + 1, j2), startLine, startCol, text2.slice(i, terminated ? j2 + 1 : j2));
+        advance(j2 - i + (terminated ? 1 : 0));
+        continue;
+      }
+      if (ch2 === "'") {
+        let j2 = i + 1;
+        while (j2 < n2 && text2[j2] !== "'" && text2[j2] !== "\n") j2++;
+        const terminated = text2[j2] === "'";
+        if (!terminated) {
+          errors.push({
+            message: "unterminated string",
             line: startLine,
             col: startCol
           });
@@ -39330,17 +39370,8 @@ ${s2}`;
   function resolveEffectParams(chainEntry, { cycle = 0 } = {}) {
     const { fn, args: args2 } = chainEntry;
     switch (fn) {
-      // `# room <metric> [scale] [fixed metric amount]` — decay = scale × the
-      // named metric; the optional third token pins it (0.4 = 400 ms) instead of
-      // reading live metrics. Any of the three may be a valueSeq node
-      // (`# room <wcl wcpl> <1 2 ~ 2 3>*2`); roomParams reads them per cycle.
       case "room":
         return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedMetric: args2[1] ?? null };
-      // `# echo <m> <length> <m> <feedback> <m> <gain> [<bound>×3]` — one slot
-      // per parameter, each carrying its own metric, scale (number or pattern)
-      // and upper bound. Written-out pairs win; anything missing takes the
-      // bare-`# echo` default, and a null bound defers to the metric's own
-      // (av-effects/Echo.js owns both the bounds and the normalization).
       case "echo": {
         const pairs2 = chainEntry.pairs || [];
         const bounds = chainEntry.bounds || [];
@@ -39353,21 +39384,8 @@ ${s2}`;
           }))
         };
       }
-      // `# crush <metric> [scale] [fixed metric amount]` — bit depth = 8 × scale,
-      // halved as the metric climbs. Any of the three may be a valueSeq node
-      // (`# crush <wcl wcpl> <2 4>`); crushParams reads them per cycle.
       case "crush":
         return { metric: chainEntry.metric ?? "wcl", scale: args2[0] ?? 1, fixedMetric: args2[1] ?? null };
-      // `# noise [<metric>] [<spectrum factor>] [<metric>] [<volume factor>]
-      // [<amount 1>] [<amount 2>]` — one slot per axis, each naming the metric
-      // that modulates it, how hard, and (optionally) a value pinning that
-      // metric. A factor defaults to 1 only when its metric keyword was
-      // written; unwritten means 0, which is "this axis does not modulate" and
-      // is what leaves a bare `# noise` at brown, 25 dB.
-      //
-      // Unlike crush and echo — whose params functions sample their own patterns
-      // — noise is resolved to plain numbers HERE, because the aggregator's
-      // master bus rebuilds the bed from the resolved values once per cycle.
       case "noise": {
         const metrics = chainEntry.metrics || [];
         const axis = (i) => {
@@ -39464,17 +39482,9 @@ $ participants <0>
         },
         // scale=1 (8-bit base), fixed metric amount=live
         crush: { minArgs: 0, maxArgs: 2, kind: "effect", metricKeywords: CRUSH_METRICS, patternArgs: true, mediaArg: true },
-        // noise interleaves two metric keywords with its numbers and takes patterns
-        // in any slot, which parseChainFn's positional-numbers grammar cannot
-        // express — it parses in parseNoise instead.
         noise: { kind: "effect", grammar: "noise", metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
         grid: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true },
         // landmarks=false
-        // How the aggregator arranges the room's Hydra output in its published
-        // frame: true (or bare) tiles every Hydra participant into a square mosaic,
-        // false shows only whoever is streaming, full-frame. Unwritten means the
-        // mosaic — see MOSAIC_ENABLED_BY_DEFAULT, which is where that default lives
-        // rather than in an injected directive nobody typed.
         mosaic: { minArgs: 0, maxArgs: 1, kind: "effect", boolArg: true }
       };
       PATTERN_FNS = {
@@ -39516,10 +39526,6 @@ $ participants <0>
         skipNewlines() {
           while (this.peek().type === "newline") this.next();
         }
-        // A bare (unquoted) metric keyword where a quoted one belongs. Records the
-        // "quote it" error and returns true so the caller can bail; false leaves the
-        // caller to its own "needs a metric" path for a token that is not a metric
-        // word at all.
         rejectBareMetric(t) {
           if (t && t.type === "word" && METRIC_WORDS.has(t.value)) {
             this.error(`metric keywords are quoted \u2014 write "${t.value}", not ${t.value}`, t);
@@ -39996,11 +40002,6 @@ $ participants <0>
           this.error(`'${name3}' is not a JPattern function \u2014 Strudel and Hydra functions cannot be executed in the JPattern editor`, nameTok);
           this.recover();
         }
-        // `# cycles "<metric>" [scale factor] [amount]` — target = scale × metric.
-        // With no amount the metric evolves with the live worst-case measurement;
-        // an amount PINS it there regardless of network conditions (seconds for
-        // wcl/wcj, loss fraction for wcpl), pinning timing only — measured metrics
-        // still drive effects and readouts. `# cycles "wcl" 10 0.3` = 3 s.
         parseCycles(program, nameTok) {
           const metricTok = this.peek();
           if (this.rejectBareMetric(metricTok)) {
@@ -40086,8 +40087,6 @@ $ participants <0>
           }
           program.tempo = { value: value2, unit: unitTok.value };
         }
-        // `# ring [explicit] [w <token> <weight> …]` — a bare `# ring` (no mode
-        // word) selects hash mode, the default and the only way to spell it.
         parseRing(program, nameTok) {
           if (program.ring) {
             this.error("duplicate # ring directive", nameTok);
@@ -40145,7 +40144,6 @@ $ participants <0>
           }
           program.ring = ring2;
         }
-
         parseValueSequence(name3, kind, sig, { alternationOnly = false, topLevel = true } = {}) {
           const open = this.next();
           const close = open.value === "<" ? ">" : "]";
@@ -40286,9 +40284,6 @@ $ participants <0>
           }
           return this.finishValueSequence({ mode: mode2, terms, weights, chances, rates, speed: speed2, open, name: name3, alternationOnly });
         }
-        // Assemble the node, dropping the parallel arrays and the rate when nothing
-        // wrote them — an unmodified pattern keeps the shape it has always had
-        // rather than growing fields that always read 1 and null.
         finishValueSequence({ mode: mode2, terms, weights, chances, rates, speed: speed2, open, name: name3, alternationOnly }) {
           if (alternationOnly && speed2 > 1) {
             this.error(`'${name3}' arguments are sampled once per cycle \u2014 a rate above 1 steps within a cycle, which has nowhere to land here`, open);
@@ -40301,21 +40296,6 @@ $ participants <0>
           if (rates.some((rate) => rate != null)) node.rates = Array.from(terms, (_3, i) => rates[i] ?? 1);
           return node;
         }
-        // Every element-level modifier a value pattern takes, after one element:
-        //
-        //   `@n`   how much of the sequence the element takes
-        //   `?[p]` dropped with probability p, reading as a rest
-        //   `!n`   taken n times in a row, as n independent elements
-        //   `*n` `/n`  the rate the element's OWN content is read at
-        //
-        // The same four are element-level in the `$ participants` grammar. `*n` and
-        // `/n` are the one spelling that is both: written after a whole `<…>` /
-        // `[…]` they set that sequence's rate, and a nested group has already eaten
-        // its own by the time we get here — so a rate reaching this point belongs to
-        // the element it follows.
-        //
-        // Fills the caller's parallel arrays in place and expands `!` into repeated
-        // terms; errors are recorded, never thrown.
         parseValueElementModifiers(name3, index2, terms, weights, chances, rates) {
           let repeats = 1;
           let rate = 1;
@@ -40371,11 +40351,6 @@ $ participants <0>
             rates[terms.length - 1] = rates[index2];
           }
         }
-        // Trailing `*n` / `/n` on a value sequence: the rate the argument is read
-        // at, in the sequence's own units. `*2` fits both elements of a `<a b>` into
-        // one cycle, `/2` holds each for two. They compose the way they do on a
-        // `$ participants` sequence, so `*4/2` is ×2. Returns the folded multiplier
-        // (1 when nothing was written); errors are recorded, never thrown.
         parseValueRate(name3) {
           let speed2 = 1;
           for (; ; ) {
@@ -40400,10 +40375,6 @@ $ participants <0>
           const t = this.peek();
           return t.type === "newline" || t.type === "eof" || t.type === "sigil";
         }
-        // Consume a balanced `(…)` run. A rejected Strudel call is skipped whole
-        // because its innards are not this language's tokens — in particular a '#'
-        // inside it is a statement sigil to the tokenizer, and leaving it for
-        // recover() turns one honest error into two.
         skipParenBlob() {
           let depth = 0;
           while (!this.atEof()) {
@@ -40415,17 +40386,6 @@ $ participants <0>
             }
           }
         }
-        // One <metric> <scale> pair per parameter, then an optional upper bound per
-        // parameter in the same order:
-        //
-        //   # echo wcl 2 wcpl 0.3 wcl 3 1500 20 1200
-        //          |----| |------| |----| |---------|
-        //          length  feedbk   gain    bounds
-        //
-        // All the pairs or none — a half-written chain (`# echo wcl 2`) is far more
-        // likely a mistake than an intention, and silently defaulting the rest would
-        // hide it. Bounds are individually optional, filling their slots left to
-        // right; each omitted one falls back to that metric's default.
         parseMetricPairFn(program, name3, nameTok, sig) {
           const slots = sig.metricPairs;
           const pairs2 = [];
@@ -40513,14 +40473,6 @@ $ participants <0>
           while (this.peek(i) && this.peek(i).type === "newline") i++;
           return i;
         }
-        // Whether what follows opens the trailing MEDIUM argument rather than
-        // another numeric one. Both are written with the same brackets, so the LEAF
-        // settles it: a quoted MEDIUM NAME (`"audio"`) can only be a medium, and a
-        // number can never be one. A quoted metric (`"wcl"`) is a string leaf too
-        // now, so the test is isMedium(), not "is a string" — media and metric
-        // names are disjoint. That is what keeps `# crush <"wcl" "wcpl"> <2 4>`
-        // (patterned metric) and `# echo … [1 4] ["audio"]` (numeric bound then a
-        // medium set) reading unambiguously.
         atMediaArg() {
           const t = this.peek();
           if (t.type !== "punct" || t.value !== "[" && t.value !== "<") return false;
@@ -40532,10 +40484,6 @@ $ participants <0>
           const leaf = this.peek(i);
           return !!leaf && leaf.type === "string" && isMedium(leaf.value);
         }
-        // `["audio" "video"]` — one set of media, space-separated. A comma is
-        // refused by name rather than as a generic unexpected token: it is the one
-        // separator a performer arriving from JSON would reach for, and the error
-        // has to teach the convention rather than just reject the character.
         parseMediaSet(name3) {
           const open = this.next();
           const names2 = [];
@@ -50568,7 +50516,8 @@ ${err.toString()}`);
       // instead of onsetting live). Its own Y.Map so a toggle neither re-runs the
       // program nor perturbs the worst-case metrics; rides the 'metaprogram'
       // channel so the same people who may edit the program may flip it.
-      settings: doc2.getMap(SETTINGS_KEY)
+      settings: doc2.getMap(SETTINGS_KEY),
+      breakoutPrograms: doc2.getMap(BREAKOUT_PROGRAMS_KEY)
     };
   }
   function encodeUpdateB64(update) {
@@ -50610,7 +50559,7 @@ ${err.toString()}`);
   function setDocText(ytext, value2, origin = "local") {
     return applyTextDiff(ytext, value2, origin);
   }
-  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings }, bus2, { modality = "keyboard" } = {}) {
+  function connectMetaprogramSync({ doc: doc2, text: text2, modulation, vlans, settings, breakoutPrograms }, bus2, { modality = "keyboard" } = {}) {
     let localUpdates = 0;
     const listeners = /* @__PURE__ */ new Set();
     let lastAuthorIndex = null;
@@ -50760,13 +50709,44 @@ ${err.toString()}`);
         settings.observe(h2);
         return () => settings.unobserve(h2);
       },
+      // Each breakout room's own metaprogram (roomName → whole program text).
+      // Rides the 'metaprogram' channel, same edit privilege as the main
+      // program and the settings map above.
+      getBreakoutProgram(roomName) {
+        return breakoutPrograms && breakoutPrograms.get(roomName) || "";
+      },
+      // Every declared room's program at once, for a room-selector UI to list
+      // from without a separate "which rooms exist" channel.
+      getBreakoutPrograms() {
+        const out = {};
+        if (breakoutPrograms) breakoutPrograms.forEach((v2, k2) => {
+          out[k2] = v2;
+        });
+        return out;
+      },
+      setBreakoutProgram(roomName, value2, origin = "settings") {
+        if (!breakoutPrograms || !roomName) return;
+        doc2.transact(() => breakoutPrograms.set(roomName, String(value2 ?? "")), origin);
+      },
+      onBreakoutProgramsChange(fn) {
+        if (!breakoutPrograms) return () => {
+        };
+        const h2 = () => {
+          try {
+            fn(this.getBreakoutPrograms());
+          } catch (e30) {
+          }
+        };
+        breakoutPrograms.observe(h2);
+        return () => breakoutPrograms.unobserve(h2);
+      },
       disconnect() {
         doc2.off("update", onDocUpdate);
         unsubscribe();
       }
     };
   }
-  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, SNAPSHOT_EVERY;
+  var TEXT_KEY, MODULATION_KEY, VLANS_KEY, SETTINGS_KEY, BREAKOUT_PROGRAMS_KEY, SNAPSHOT_EVERY;
   var init_MetaprogrammerCrdtSync = __esm({
     "src/audio-net/MetaprogrammerCrdtSync.js"() {
       init_yjs();
@@ -50774,6 +50754,7 @@ ${err.toString()}`);
       MODULATION_KEY = "modulation";
       VLANS_KEY = "vlans";
       SETTINGS_KEY = "settings";
+      BREAKOUT_PROGRAMS_KEY = "breakoutPrograms";
       SNAPSHOT_EVERY = 25;
     }
   });
@@ -52039,6 +52020,7 @@ ${newBody}`).length === 0;
       init_o2lite_web();
       init_MetaprogrammerCrdtSync();
       init_peer_state();
+      init_get_room_name_from_url();
       init_latency_instrument();
       init_av_effects();
       EPOCH_ADDR = "/jp/epoch";
@@ -52097,7 +52079,6 @@ ${newBody}`).length === 0;
       });
     }
   });
-
 
   // src/panic-button.js
   var KEY = "trussal-main-room-url";
@@ -52171,7 +52152,7 @@ ${newBody}`).length === 0;
             Room name:
           </label>
           <input id="trussal-room-input"
-                 type="textwelcome"
+                 type="text"
                  required
                  autocomplete="off"
                  autocapitalize="none"
@@ -52387,65 +52368,6 @@ ${newBody}`).length === 0;
     });
   }
 
-  // src/audio-config-check.js
-  var EXPECTED = [
-    {
-      ok: (c2) => c2.disableAP === true,
-      key: "config.disableAP === true",
-      env: "ENABLE_AUDIO_PROCESSING=false",
-      why: "echo cancellation / noise suppression / AGC mangle instruments"
-    },
-    {
-      ok: (c2) => !!c2.audioQuality && c2.audioQuality.stereo === true,
-      key: "config.audioQuality.stereo === true",
-      env: "ENABLE_STEREO=true",
-      why: "mono collapses stereo instrument feeds"
-    },
-    {
-      ok: (c2) => !!c2.audioQuality && Number(c2.audioQuality.opusMaxAverageBitrate) >= 256e3,
-      key: "config.audioQuality.opusMaxAverageBitrate >= 256000",
-      env: "AUDIO_QUALITY_OPUS_BITRATE=510000",
-      why: "default speech bitrate is too low for music"
-    },
-    {
-      ok: (c2) => c2.enableNoAudioDetection === false,
-      key: "config.enableNoAudioDetection === false",
-      env: "ENABLE_NO_AUDIO_DETECTION=false",
-      why: 'false "is your mic working?" prompts on quiet instruments'
-    },
-    {
-      ok: (c2) => c2.enableNoisyMicDetection === false,
-      key: "config.enableNoisyMicDetection === false",
-      env: "ENABLE_NOISY_MIC_DETECTION=false",
-      why: 'flags instruments as a "noisy" microphone'
-    },
-    {
-      ok: (c2) => !!c2.p2p && c2.p2p.enabled === false,
-      key: "config.p2p.enabled === false",
-      env: "ENABLE_P2P=false",
-      why: "the P2P\u2192JVB switch at the 3rd join renegotiates every track; a human+aggregator room always crosses it (bots-spawn room mute)"
-    }
-  ];
-  function runCheck() {
-    const c2 = window.config;
-    if (!c2 || typeof c2 !== "object") return false;
-    const failures = EXPECTED.filter((e30) => {
-      try {
-        return !e30.ok(c2);
-      } catch (_3) {
-        return true;
-      }
-    });
-    if (!failures.length) {
-      console.info("[trussal] music-mode audio config OK");
-      return true;
-    }
-    console.warn(
-      "[trussal] Jitsi is NOT in music/instrument mode \u2014 config.js looks stale or unset.\nInstruments will be degraded (speech DSP, mono, low bitrate). Set these in\ndocker-jitsi-meet/.env and recreate the web container:\n" + failures.map((f2) => `  \u2022 ${f2.env}  (${f2.why})
-      missing: ${f2.key}`).join("\n")
-    );
-    return true;
-  }
   // src/index.js
   init_peer_state();
   init_aggregator_election();
@@ -53225,6 +53147,7 @@ ${newBody}`).length === 0;
 `;
 
   // src/studio.js
+  init_get_room_name_from_url();
   init_participants();
   init_peer_state();
 
@@ -54029,6 +53952,16 @@ class TrussalLiveCapture extends AudioWorkletProcessor {
       for (let c = 0; c < ch.length; c++) this.chans[c].push(ch[c].slice());
       this.len += n;
       if (this.len >= 2048) {
+        // Pick the loudest channel for the WHOLE flushed batch rather than
+        // averaging all of them (a plain average halves the level whenever
+        // only one channel actually carries signal, and can partially cancel
+        // channels that are out of phase) \u2014 but decide it ONCE per ~43ms
+        // batch, not per 128-sample render quantum. Re-deciding every
+        // quantum let the "loudest" channel flip several times within one
+        // batch on ordinary stereo input (e.g. a multi-channel interface
+        // like a MOTU M4), splicing together out-of-phase fragments every
+        // ~2.7ms \u2014 audible as zipper/glitch noise, which is what made
+        // captured audio sound poor even after the gain-floor fix.
         let loudest = 0, loudestPeak = -1;
         for (let c = 0; c < this.chans.length; c++) {
           let peak = 0;
@@ -57857,8 +57790,8 @@ ${rendererCall}` : text2).join("\n");
       while (i < src2.length && src2[i] !== quote) {
         if (src2[i] === "\\") {
           i++;
-          const esc2 = src2[i];
-          str += esc2 === "n" ? "\n" : esc2 === "t" ? "	" : esc2;
+          const esc = src2[i];
+          str += esc === "n" ? "\n" : esc === "t" ? "	" : esc;
         } else {
           str += src2[i];
         }
@@ -62533,7 +62466,7 @@ ${snippet}${JP_BTN_MARKER}`;
         }, APPLIED_FADE_MS);
       }
     }
-    const esc2 = (s2) => String(s2).replace(
+    const esc = (s2) => String(s2).replace(
       /[&<>"']/g,
       (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]
     );
@@ -62544,7 +62477,7 @@ ${snippet}${JP_BTN_MARKER}`;
       if (key !== btnsKey) {
         btnsKey = key;
         btnsEl.innerHTML = buttons.map(
-          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc2(b.snippet)}" title="${esc2(b.snippet)}"${readOnly ? " disabled" : ""}>${esc2(b.label)}</button>`
+          (b) => `<button class="ts-voice-btn jp-head-btn${b.active ? " on" : ""}" type="button" data-jpattern-code="${esc(b.snippet)}" title="${esc(b.snippet)}"${readOnly ? " disabled" : ""}>${esc(b.label)}</button>`
         ).join("");
         btnsEl.querySelectorAll(".jp-head-btn").forEach((btn) => {
           btn.addEventListener("click", () => press2(btn.dataset.jpatternCode));
@@ -63658,7 +63591,7 @@ ${snippet}${JP_BTN_MARKER}`;
       let label2 = "default";
       if (devices.length > 1) {
         const choice = window.prompt(
-          "Select an audio input by number to route through your effects chain:\n\n" + devices.map((d, i) => `${i + 1}. ${d.label}`).join("\n"),
+          "Select an audio input by number to route through your effects chain " + devices.map((d, i) => `${i + 1}. ${d.label}`).join("\n"),
           "1"
         );
         if (!choice) {
@@ -63769,6 +63702,9 @@ ${snippet}${JP_BTN_MARKER}`;
       <button class="ts-close" type="button">\u2715</button>
     </div>
     <div class="ts-strip"></div>
+    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
+      <button class="ts-btn ghost ts-panic-btn" type="button" title="Stuck in a breakout room? Leave it and rejoin the meeting you originally opened.">\u26A0 Leave breakout room</button>
+    </div>
     <div class="ts-detail"></div>
   `;
     document.body.appendChild(overlay);
@@ -63776,7 +63712,12 @@ ${snippet}${JP_BTN_MARKER}`;
     overlay.addEventListener("mousedown", (e30) => e30.stopPropagation());
     overlay.addEventListener("click", (e30) => e30.stopPropagation());
     const ncHost = overlay.querySelector(".ts-jpattern");
-
+    try {
+      mountMetaprogrammerEditor(ncHost);
+      mountMetaprogrammerCycleHighlighter(ncHost);
+    } catch (e30) {
+      console.warn("[studio] JPattern card mount failed", e30);
+    }
     overlay.querySelector(".ts-close").addEventListener("click", () => {
       overlay.style.display = "none";
       tickKbdUi();
@@ -64710,6 +64651,32 @@ ${snippet}${JP_BTN_MARKER}`;
       # slow 2
       </code>
       `
+    },
+    {
+      id: "breakout-patterns",
+      name: "breakout",
+      sig: "breakout([breakout_room_assignment_pattern])",
+      body: `
+      <p>Creates a pattern of breakout room names and assignments. Does not recreate a preexisting breakout room.</p>
+      <span>Example:</span>
+      <code>$: breakout({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$ breakout {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `
+    },
+    {
+      id: "assign",
+      name: "assign",
+      sig: "assign([participant_name_pattern)",
+      body: `
+      <p>Assigns participants to breakout rooms. Does not reassign participants to a room to which they have already been assigned/</p>
+      <span>Example:</span>
+      <code>$: assign({"name":"room", "participants": ["0", "1", "2b"]})
+      </code>
+      <code>$  assign {"name":"room", "participants": ["0", "1", "2b"]}
+      </code>
+      `
     }
   ];
   var LIVE_CAPTURE_FUNCTIONS = [
@@ -64966,7 +64933,7 @@ ${snippet}${JP_BTN_MARKER}`;
         only visualize audio data and do not support playback. 
         </p>
 
-        <h4>Meeting Chat, Polls, Screen Sharing, and Reactions</h4>
+        <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
         <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
         However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
@@ -65028,8 +64995,8 @@ ${snippet}${JP_BTN_MARKER}`;
         </code>
     <h3>JPattern Reference</h3>
         <p>
-          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS, and
-          external data fetching. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
+          Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
+          external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
         </p>
 
         <h4>Design</h4>

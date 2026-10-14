@@ -91,10 +91,6 @@ npm run deploy:local
 ASSET_VERSION="cc-$(sha256sum docker-jitsi-meet/jitsi-web/custom-config.js | cut -c1-12)"
 export ASSET_VERSION
 
-cd "$REPO"
-rm -f docker-jitsi-meet/jitsi-web/custom-config.js
-rm -rf custom-config/prosody/config/*.lua custom-config/prosody/config/conf.d custom-config/prosody/config/rules.d 2>/dev/null || true
-
 cd "$REPO/docker-jitsi-meet"
 docker compose build --no-cache web && docker compose rm -sf web && docker compose up -d web
 docker compose build --no-cache latency && docker compose rm -sf latency && docker compose up -d latency
