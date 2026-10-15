@@ -3,11 +3,16 @@
 // conference through meeting-adapter.js so the polling code never reaches for
 // window.APP directly; swapping the backend is a change to that module only.
 
-import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference } from './meeting-adapter.js';
+import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference, subscribeConferenceEvents } from './meeting-adapter.js';
 
 const subscribers = new Set();
 let local = null;
 const remotes = new Map();
+
+// Step 3: event-driven backend. Keep the conference we are subscribed to and
+// its teardown so a backend swap (APP <-> injected lib-jitsi-meet) resubscribes.
+let activeConference = null;
+let rosterTeardown = null;
 
 // A single null read of the local participant is NOT a departure. Jitsi tears
 // down and rebuilds APP.conference for transient reasons that are not a
@@ -36,7 +41,25 @@ function readRemotes() {
   return adapterReadRemotes();
 }
 
+function syncConferenceSubscription() {
+  const conf = getConference();
+  if (conf === activeConference) return;
+  if (rosterTeardown) {
+    try { rosterTeardown(); } catch (e) { console.warn('[participants] teardown failed', e); }
+    rosterTeardown = null;
+  }
+  activeConference = conf;
+  // A conference identity changed: drop the cached roster and repopulate.
+  local = null;
+  remotes.clear();
+  missingLocalTicks = 0;
+  rosterTeardown = conf
+    ? subscribeConferenceEvents(conf, () => { try { tick(); } catch (e) { console.warn('[participants] event-driven tick failed', e); } })
+    : null;
+}
+
 function tick() {
+  try { syncConferenceSubscription(); } catch (e) { console.warn('[participants] conference sync failed', e); }
   const newLocal = readLocal();
   if (!newLocal) {
     // We were in a conference and now read as absent (APP.conference torn

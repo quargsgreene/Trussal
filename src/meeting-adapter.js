@@ -141,3 +141,55 @@ export function isJoined() {
 export function getRawConference() {
   return getConference();
 }
+
+// Step 3: give participants an event-driven trigger layer. Both backends
+// (Jitsi web's APP.conference and a directly injected lib-jitsi-meet
+// conference) expose an underlying lib-jitsi-meet JitsiConference through
+// `conf._room` (or `conf` itself when it already is one), and that object is
+// an EventEmitter over `JitsiMeetJS.events.conference`. We attach the caller's
+// `handler` to every known membership/track event so the roster can refresh
+// promptly instead of waiting for the next poll. Returns a teardown or null
+// when no event surface is available, in which case callers keep polling.
+export function subscribeConferenceEvents(conf, handler) {
+  try {
+    if (typeof handler !== 'function') return null;
+    const target = conf && (conf._room || conf);
+    if (!target) return null;
+
+    const JitsiMeetJS = (typeof window !== 'undefined' && window.JitsiMeetJS) ? window.JitsiMeetJS : null;
+    let names = [];
+    try {
+      const ev = JitsiMeetJS && JitsiMeetJS.events && JitsiMeetJS.events.conference;
+      if (ev && typeof ev === 'object') names = Object.values(ev);
+    } catch (e) { /* ignore */ }
+    // Cover the common lib-jitsi-meet event names even without the global.
+    if (!names.length) {
+      names = [
+        'conference.joined',
+        'conference.left',
+        'participant.joined',
+        'participant.left',
+        'display.name.changed',
+        'track.added',
+        'track.removed',
+      ];
+    }
+
+    const disposers = [];
+    for (const name of names) {
+      if (typeof target.on !== 'function') break;
+      try {
+        const cb = () => { try { handler(name); } catch (e) { console.warn('[meeting-adapter] roster event handler threw', e); } };
+        target.on(name, cb);
+        disposers.push(() => { try { if (typeof target.off === 'function') target.off(name, cb); } catch (e) { /* ignore */ } });
+      } catch (e) {
+        console.warn('[meeting-adapter] subscribeConferenceEvents: on(' + name + ') failed', e);
+      }
+    }
+    if (!disposers.length) return null;
+    return () => { for (const d of disposers) { try { d(); } catch (e) {} } };
+  } catch (e) {
+    console.warn('[meeting-adapter] subscribeConferenceEvents failed', e);
+    return null;
+  }
+}
