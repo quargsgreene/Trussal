@@ -1,19 +1,22 @@
-import { getConference } from './meeting-adapter.js';
+import { getConference, readRemoteTracks } from './meeting-adapter.js';
 // Audio engine for the distributed instrument.
 //
 // One AudioContext per browser. For every meeting participant we maintain a
 // dedicated effects chain (worklet → limiter → optional reverb → realDestination).
-// Remote peers' mic audio is routed to their chain via the matching Jitsi
-// `<audio>` tag; the local participant's chain hosts Strudel's output (see
+// Remote peers' mic audio is routed to their chain from the conference's live
+// remote tracks (remote-tracks.js), so the same path works whether the meeting
+// is the Jitsi web app or a bare lib-jitsi-meet conference (which injects no
+// <audio> elements); the local participant's chain hosts Strudel's output (see
 // strudel.js).
 //
 // Each chain's effect parameters are computed from that peer's
 // effects toggles plus their network metrics (rtt/jitter), broadcast over the
 // peer-state bus, so every browser produces the same audio for the same peer.
 
-import { subscribeParticipants, getLocalParticipant, getParticipantIdForAudioTag } from './participants.js';
+import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { subscribePeerState, getPeerByJitsiId, getAllPeers } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
+import { getRemoteAudioStream, findRemoteAudioElement } from './remote-tracks.js';
 
 let audioCtx = null;
 let realDestination = null;
@@ -274,74 +277,96 @@ function destroyChain(jitsiId) {
   chains.delete(jitsiId);
 }
 
+async function wireRemoteAudio({ jitsiId, stream, tag }) {
+  if (!jitsiId || !stream) return;
+  if (pendingCaptures.has(jitsiId)) return;
+  pendingCaptures.add(jitsiId);
+  try {
+    const chain = await ensureChain(jitsiId);
+    if (!chain) return;
+    // Re-check after the async gap — another pass may have completed first.
+    if (remoteSources.has(jitsiId)) return;
+    const source = audioCtx.createMediaStreamSource(stream);
+    source.connect(chain.input);
+    if (tag) { tag.muted = true; tag.volume = 0; }
+    const audioTracks = stream.getAudioTracks?.() || [];
+    const trackLabels = audioTracks.map(t => t.label || 'audio');
+    remoteSources.set(jitsiId, { tag: tag || null, stream, track: audioTracks[0] || null, source, label: trackLabels.join(',') || 'mic' });
+    audioRouted.add(jitsiId);
+    console.log('[latency] routed Jitsi audio →', jitsiId, 'tracks:', trackLabels);
+    notifyRoutingChange();
+  } catch (e) {
+    console.warn('[latency] failed to wire audio for', jitsiId, e);
+  } finally {
+    pendingCaptures.delete(jitsiId);
+  }
+}
+
 function captureJitsiAudio() {
   if (window.__trussalIsBot || window.__trussalIsAggregator) return;
   if (!audioCtx) return;
   const local = getLocalParticipant();
   const localJitsiId = local ? local.id : null;
-  const tags = document.querySelectorAll('audio');
-  tags.forEach(async tag => {
-    if (!tag.srcObject) return;
-    if (tag.id === 'userAudio') return; // local mic, never route locally
-    const jitsiId = getParticipantIdForAudioTag(tag);
-    if (!jitsiId) {
-      // Unrecognized tag layout — log once so we can adapt the matcher if
-      // Jitsi renames things in the future.
-      if (!tag.dataset.trussalUnmatched) {
-        console.warn('[latency] unmatched audio tag (no participant id)', { id: tag.id, srcTracks: tag.srcObject.getAudioTracks?.().length });
-        tag.dataset.trussalUnmatched = '1';
+  // Drive routing from the conference's participant/track model rather than
+  // from Jitsi's injected <audio> elements. A bare lib-jitsi-meet conference
+  // creates no such elements, and even under the Jitsi web app the track model
+  // is the authoritative owner→track mapping (this deployment labels the
+  // elements with generic ids that do not embed the endpoint id — see
+  // participants.js). readRemoteTracks() already excludes local + hidden.
+  const media = readRemoteTracks();
+  for (const [jitsiId, entry] of media) {
+    const hasAudio = entry && entry.audio && entry.audio.length;
+    if (!hasAudio) {
+      // Audio stopped (muted/removed): drop a stale tap so it does not hold the
+      // chain open. The tag, if any, goes back to native playback.
+      const stale = remoteSources.get(jitsiId);
+      if (stale) {
+        try { stale.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+        if (stale.tag) { try { stale.tag.muted = false; stale.tag.volume = 1; } catch (e) { console.warn('[swallowed error]', e); } }
+        remoteSources.delete(jitsiId);
+        if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
+          if (audioRouted.delete(jitsiId)) notifyRoutingChange();
+        }
       }
-      return;
+      continue;
     }
     // Never route the local user's own audio back to their speakers.
-    if (localJitsiId && jitsiId === localJitsiId) return;
-    // Skip hidden participants (Jicofo, virtual sources, etc.).
-    try {
-      const conf = getConference();
-      const member = conf && typeof conf.getParticipantById === 'function'
-        ? conf.getParticipantById(jitsiId) : null;
-      if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
-    } catch (e) { console.warn('[swallowed error]', e); }
-    if (!getPeerByJitsiId(jitsiId)) return;
-    if (pendingCaptures.has(jitsiId)) return;
+    if (localJitsiId && jitsiId === localJitsiId) continue;
+    // Only peers the sidecar knows about are part of the instrument.
+    if (!getPeerByJitsiId(jitsiId)) continue;
+    if (pendingCaptures.has(jitsiId)) continue;
+    const stream = getRemoteAudioStream(jitsiId);
+    if (!stream) continue;
     const existing = remoteSources.get(jitsiId);
     if (existing) {
-      const live = existing.tag && existing.tag.isConnected
-        && existing.tag.srcObject === existing.stream
+      const live = existing.stream === stream
         && existing.track && existing.track.readyState === 'live';
-      if (live) return; // healthy wiring (on this tag or another) — nothing to do
+      if (live) {
+        // Routing is track-driven, so we may have tapped the track before the
+        // Jitsi web app injected its <audio> element. Mute it now that it
+        // exists, otherwise the same audio plays twice.
+        if (!existing.tag) {
+          const tagNow = findRemoteAudioElement(jitsiId);
+          if (tagNow) {
+            try { tagNow.muted = true; tagNow.volume = 0; } catch (e) { console.warn('[swallowed error]', e); }
+            existing.tag = tagNow;
+          }
+        }
+        continue; // healthy wiring — nothing else to do
+      }
       try { existing.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+      if (existing.tag) { try { existing.tag.muted = false; existing.tag.volume = 1; } catch (e) { console.warn('[swallowed error]', e); } }
       remoteSources.delete(jitsiId);
       if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
         if (audioRouted.delete(jitsiId)) notifyRoutingChange();
       }
       console.log('[latency] audio wiring for', jitsiId, 'went stale (track replaced) — re-wiring');
     }
-    pendingCaptures.add(jitsiId);
-
-    try {
-      const chain = await ensureChain(jitsiId);
-      if (!chain) return;
-      // Re-check after the async gap — another call may have completed first.
-      if (remoteSources.has(jitsiId)) return;
-      const stream = tag.srcObject;
-      if (!stream) return; // swapped away mid-wire; the next pass handles it
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(chain.input);
-      tag.muted = true;
-      tag.volume = 0;
-      const audioTracks = stream.getAudioTracks?.() || [];
-      const trackLabels = audioTracks.map(t => t.label || 'audio');
-      remoteSources.set(jitsiId, { tag, stream, track: audioTracks[0] || null, source, label: trackLabels.join(',') || 'mic' });
-      audioRouted.add(jitsiId);
-      console.log('[latency] routed Jitsi audio →', jitsiId, 'tracks:', trackLabels);
-      notifyRoutingChange();
-    } catch (e) {
-      console.warn('[latency] failed to wire audio tag for', jitsiId, e);
-    } finally {
-      pendingCaptures.delete(jitsiId);
-    }
-  });
+    // Under the Jitsi web app the same track is also playing natively through
+    // an <audio> element; mute it once we tap it. Null under lib-jitsi-meet.
+    const tag = findRemoteAudioElement(jitsiId);
+    wireRemoteAudio({ jitsiId, stream, tag });
+  }
 }
 
 function startAudioTagsObserver() {
@@ -355,8 +380,8 @@ function startAudioTagsObserver() {
 }
 
 // React to peer state updates: rebuild effect params for that peer's chain,
-// and re-scan audio tags when a peer first appears (their Jitsi audio element
-// may have arrived before their WS hello, so captureJitsiAudio skipped them).
+// and re-scan remote media when a peer first appears (their tracks may have
+// arrived before their WS hello, so captureJitsiAudio skipped them).
 subscribePeerState((event, payload) => {
   if (event !== 'peer-upsert') return;
   if (!payload.jitsiId) return;

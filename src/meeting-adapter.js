@@ -68,19 +68,62 @@ export function getConference() {
   }
 }
 
+// The underlying lib-jitsi-meet JitsiConference for the active meeting. It is
+// reachable directly (a conference injected via setConference) or through the
+// Jitsi web app wrapper's `_room`. Both expose the authoritative participant
+// model; the web wrapper is the only one with listMembers().
+function getRoomFor(conf) {
+  if (!conf) return null;
+  return conf._room || conf;
+}
+
+// Our own endpoint id, from whichever backend is active. The web wrapper
+// exposes getMyUserId(); a bare JitsiConference exposes myUserId().
+function getLocalUserIdFrom(conf) {
+  try {
+    if (conf && typeof conf.getMyUserId === 'function') return conf.getMyUserId();
+    const room = getRoomFor(conf);
+    if (room && typeof room.myUserId === 'function') return room.myUserId();
+  } catch (e) { console.warn('[meeting-adapter] reading local user id failed', e); }
+  return null;
+}
+
+// The remote member objects, from whichever backend is active. Prefer the web
+// wrapper's listMembers() when present (it filters for display), otherwise fall
+// back to the lib-jitsi JitsiConference's getParticipants(). Both return
+// JitsiParticipant-shaped objects.
+function listRemoteMembers(conf) {
+  if (!conf) return [];
+  try {
+    if (typeof conf.listMembers === 'function') return conf.listMembers() || [];
+  } catch (e) { console.warn('[meeting-adapter] listMembers failed', e); }
+  try {
+    const room = getRoomFor(conf);
+    if (room && typeof room.getParticipants === 'function') return room.getParticipants() || [];
+  } catch (e) { console.warn('[meeting-adapter] getParticipants failed', e); }
+  return [];
+}
+
 // Read the local participant in a normalised { id, displayName, isLocal } shape,
 // or null when not joined. Returns null (rather than throwing) for every
 // transient/missing state so callers can keep polling.
 export function readLocal() {
   try {
     const conf = getConference();
-    if (!conf || typeof conf.getMyUserId !== 'function') return null;
-    const id = conf.getMyUserId();
+    if (!conf) return null;
+    const id = getLocalUserIdFrom(conf);
     if (!id) return null;
 
     let displayName = null;
     if (typeof conf.getLocalDisplayName === 'function') {
       try { displayName = conf.getLocalDisplayName(); } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
+    }
+    if (!displayName) {
+      const room = getRoomFor(conf);
+      try {
+        const me = room && typeof room.getParticipantById === 'function' ? room.getParticipantById(id) : null;
+        if (me && typeof me.getDisplayName === 'function') displayName = me.getDisplayName();
+      } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
     }
     if (!displayName) {
       const store = getStore();
@@ -106,8 +149,8 @@ export function readRemotes() {
   try {
     const conf = getConference();
     if (!conf) return map;
-    const localId = typeof conf.getMyUserId === 'function' ? conf.getMyUserId() : null;
-    const members = typeof conf.listMembers === 'function' ? conf.listMembers() : [];
+    const localId = getLocalUserIdFrom(conf);
+    const members = listRemoteMembers(conf);
     for (const m of members) {
       const id = typeof m.getId === 'function' ? m.getId() : m._id;
       if (!id) continue;
@@ -118,6 +161,53 @@ export function readRemotes() {
       map.set(id, { id, displayName: displayName || 'Participant', isLocal: false });
     }
   } catch (e) { console.warn('[meeting-adapter] readRemotes failed', e); }
+  return map;
+}
+
+// Read remote participants' live media tracks straight from the conference
+// model, as a Map<id, { audio: MediaStreamTrack[], video: MediaStreamTrack[] }>.
+// Local and hidden participants are excluded, matching readRemotes().
+//
+// This is the backend-neutral replacement for scraping Jitsi's injected
+// <audio>/<video> elements. The Jitsi web app hangs each remote stream off such
+// an element; a bare lib-jitsi-meet conference injects none, so consumers that
+// want remote media must read participant.getTracks() instead. The web app's
+// own elements are not the source of truth even under the web backend — its
+// element ids are generic in this deployment (see participants.js) — so callers
+// get the same tracks here either way.
+export function readRemoteTracks() {
+  const map = new Map();
+  try {
+    const conf = getConference();
+    const room = getRoomFor(conf);
+    if (!room || typeof room.getParticipants !== 'function') return map;
+    const localId = getLocalUserIdFrom(conf);
+    for (const p of room.getParticipants()) {
+      const id = typeof p.getId === 'function' ? p.getId() : (p && p._id);
+      if (!id) continue;
+      if (localId && id === localId) continue;
+      try { if (typeof p.isHidden === 'function' && p.isHidden()) continue; } catch (e) { console.warn('[meeting-adapter] reading remote tracks failed', e); continue; }
+      const audio = [];
+      const video = [];
+      let tracks = [];
+      try { tracks = typeof p.getTracks === 'function' ? (p.getTracks() || []) : []; } catch (e) {
+        console.warn('[meeting-adapter] reading remote tracks failed', e);
+        continue;
+      }
+      for (const t of tracks) {
+        let kind = null;
+        try { kind = typeof t.getType === 'function' ? t.getType() : null; } catch (e) { /* fall through to predicates */ }
+        if (kind !== 'audio' && kind !== 'video') {
+          if (typeof t.isVideoTrack === 'function' && t.isVideoTrack()) kind = 'video';
+          else if (typeof t.isAudioTrack === 'function' && t.isAudioTrack()) kind = 'audio';
+        }
+        const mediaStreamTrack = typeof t.getTrack === 'function' ? t.getTrack() : (t && t.track) || null;
+        if (!mediaStreamTrack || !kind) continue;
+        (kind === 'video' ? video : audio).push(mediaStreamTrack);
+      }
+      map.set(id, { audio, video });
+    }
+  } catch (e) { console.warn('[meeting-adapter] readRemoteTracks failed', e); }
   return map;
 }
 

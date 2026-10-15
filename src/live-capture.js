@@ -12,11 +12,12 @@
 //
 // medium ∈ audio | video | text | css | gesture | cursor.
 //
-// - audio / video: the named PARTICIPANT's aggregator output (their routed
-//   Jitsi <audio>/<video>), or — for audio only — a local input device when the
-//   name matches one instead of a participant. Audio flows through superdough's
-//   normal chain like any sample; video scrubs a rolling frame ring exposed at
-//   window._liveCapture.video[slug].canvas for a Hydra src().
+// - audio / video: the named PARTICIPANT's aggregator output (their live Jitsi
+//   remote track, read from the conference model), or — for audio only — a
+//   local input device when the name matches one instead of a participant.
+//   Audio flows through superdough's normal chain like any sample; video scrubs
+//   a rolling frame ring exposed at window._liveCapture.video[slug].canvas for a
+//   Hydra src().
 // - text / css: the named participant's editor-change / CSS-change stream. Each
 //   event paints the freshest captured fragment / re-applies the freshest
 //   compiled sheet on THIS page. Silent by construction.
@@ -41,6 +42,7 @@
 
 import { listAudioInputDevices } from './latency-instrument.js';
 import { getAllPeers, subscribePeerState } from './peer-state.js';
+import { getRemoteAudioStream, ensureRemoteVideoElement, releaseRemoteVideoElement } from './remote-tracks.js';
 import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
   parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
@@ -142,19 +144,30 @@ function resolvePeerByName(name) {
       || null;
 }
 
-// The MediaStream a routed remote participant's audio is playing through —
-// latency-instrument mutes the tag and pipes it into that peer's chain, but the
-// srcObject is still the live stream. id convention: remoteAudio_<jitsiId>.
+// The MediaStream a routed remote participant's audio is playing through.
+// latency-instrument mutes the Jitsi element and pipes the same track into that
+// peer's chain; remote-tracks builds a stable stream for it whether or not the
+// backend injected an element. Falls back to a Jitsi <audio> tag for layouts
+// whose element carries the stream before the track model reports it.
 function remoteAudioStream(jitsiId) {
-  if (!jitsiId || typeof document === 'undefined') return null;
+  if (!jitsiId) return null;
+  const byTracks = getRemoteAudioStream(jitsiId);
+  if (byTracks) return byTracks;
+  if (typeof document === 'undefined') return null;
   const el = document.getElementById(`remoteAudio_${jitsiId}`)
     || Array.from(document.querySelectorAll('audio')).find(a => a.id && a.id.includes(jitsiId));
   return el && el.srcObject ? el.srcObject : null;
 }
 
 // The <video> element a remote participant's published track renders into.
+// Under the Jitsi web app this is its tile; under a bare lib-jitsi-meet
+// conference remote-tracks creates and owns a hidden element bound to the
+// participant's video stream.
 function remoteVideoEl(jitsiId) {
-  if (!jitsiId || typeof document === 'undefined') return null;
+  if (!jitsiId) return null;
+  const byTracks = ensureRemoteVideoElement(jitsiId);
+  if (byTracks) return byTracks;
+  if (typeof document === 'undefined') return null;
   let scoped = null;
   try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { console.warn('[swallowed error]', e); }
   return scoped
@@ -277,7 +290,7 @@ async function startVideoCapture(cap) {
   }, Math.round(1000 / 15));
   const timer = setInterval(grab, Math.round(1000 / VIDEO_FPS));
   bucket('video')[cap.slug] = { canvas: playback, playback, live: liveCanvas };
-  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer });
+  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer, jitsiId: peer.jitsiId });
   console.log(`[liveCapture] video ← participant ${peer.displayName} → window._liveCapture.video["${cap.slug}"].canvas`);
 }
 
@@ -591,6 +604,7 @@ function makeOnTrigger(slug) {
 }
 
 function teardown(slug, cap) {
+  try { if (cap.medium === 'video' && cap.jitsiId) releaseRemoteVideoElement(cap.jitsiId); } catch (e) { console.warn('[swallowed error]', e); }
   try { if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
   try { cap.source && cap.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
   try { cap.worklet && cap.worklet.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }

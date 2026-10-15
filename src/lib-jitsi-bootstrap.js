@@ -21,6 +21,7 @@
 
 import { setConference, clearConference } from './meeting-adapter.js';
 import { ensureLibJitsi } from './lib-jitsi-loader.js';
+import { resetRemoteTracks } from './remote-tracks.js';
 
 export function isLibJitsiEnabled() {
   try {
@@ -113,11 +114,13 @@ export async function connectLibJitsiConference(overrides = {}) {
       startWithVideoMuted,
     });
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
+      resetRemoteTracks(); // drop any cache from a previous conference
       setConference(conference);
       console.log('[lib-jitsi-bootstrap] conference joined', cfg.domain, cfg.room);
     });
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_LEFT, () => {
       clearConference();
+      resetRemoteTracks();
     });
     conference.join();
     return conference;
@@ -125,6 +128,7 @@ export async function connectLibJitsiConference(overrides = {}) {
     console.error('[lib-jitsi-bootstrap] connect failed', e);
     try { connection && connection.disconnect?.(); } catch (err) { console.warn('[lib-jitsi-bootstrap] disconnect failed', err); }
     clearConference();
+    resetRemoteTracks();
     return null;
   }
 }
