@@ -8,10 +8,11 @@
 // off, behaviour is byte-identical to today's build (getConference() keeps
 // reading window.APP.conference).
 //
-// This module only SCAFFOLDS the connection. The roster (participants.js) and
-// local video publication (published-video.js's ensureVideoPublished) already
-// run through backend-neutral seams; track management beyond video, prejoin,
-// screen-share and bots are subsequent migration steps. The point here is to
+// This module only SCAFFOLDS the connection. The roster (participants.js), the
+// local microphone and video publication (published-audio.js and
+// published-video.js's ensureVideoPublished) and remote media consumption
+// (remote-tracks.js) already run through backend-neutral seams; screen-share,
+// prejoin and bots are subsequent migration steps. The point here is to
 // exercise the seam end to end against a real lib-jitsi-meet conference and
 // prove the adapter can serve one.
 //
@@ -22,6 +23,7 @@
 import { setConference, clearConference } from './meeting-adapter.js';
 import { ensureLibJitsi } from './lib-jitsi-loader.js';
 import { resetRemoteTracks } from './remote-tracks.js';
+import { ensureAudioPublishedWhenReady } from './published-audio.js';
 
 export function isLibJitsiEnabled() {
   try {
@@ -108,6 +110,8 @@ export async function connectLibJitsiConference(overrides = {}) {
     // published-video.js's ensureVideoPublished().
     const startWithVideoMuted = !!(typeof window !== 'undefined'
       && window.config && window.config.startWithVideoMuted);
+    const startWithAudioMuted = !!(typeof window !== 'undefined'
+      && window.config && window.config.startWithAudioMuted);
 
     conference = connection.initJitsiConference(cfg.room, {
       openBridgeChannel: true,
@@ -116,6 +120,15 @@ export async function connectLibJitsiConference(overrides = {}) {
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
       resetRemoteTracks(); // drop any cache from a previous conference
       setConference(conference);
+      // Parity with the Jitsi web app, which publishes the microphone itself at
+      // join (unmuted by default). A bare lib-jitsi-meet conference creates no
+      // tracks, so publish the mic through the backend-neutral seam unless the
+      // deployment asked to start muted.
+      if (!startWithAudioMuted) {
+        ensureAudioPublishedWhenReady({ conference })
+          .then((ok) => { if (!ok) console.warn('[lib-jitsi-bootstrap] could not publish the microphone'); })
+          .catch((e) => console.warn('[lib-jitsi-bootstrap] publishing the microphone failed', e));
+      }
       console.log('[lib-jitsi-bootstrap] conference joined', cfg.domain, cfg.room);
     });
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_LEFT, () => {

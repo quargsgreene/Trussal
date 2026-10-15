@@ -17,6 +17,7 @@ import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { subscribePeerState, getPeerByJitsiId, getAllPeers } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { getRemoteAudioStream, findRemoteAudioElement } from './remote-tracks.js';
+import { readLocalAudioTrack } from './published-audio.js';
 
 let audioCtx = null;
 let realDestination = null;
@@ -605,26 +606,13 @@ export function getExternalStreamLabel(jitsiId) {
 let jitsiMixState = null;
 
 function findLocalJitsiAudioTrack() {
+  // Where each backend keeps the local mic is published-audio.js's business —
+  // it is the audio twin of the local video finder, and the publisher that puts
+  // the track there in the first place under a bare lib-jitsi-meet conference.
+  // Kept as a named wrapper because this module asks for it in five places and
+  // wants to swallow (and log) any read failure rather than throw.
   try {
-    const conf = getConference();
-    if (!conf) return null;
-    // Modern jitsi-meet keeps it as a direct property.
-    if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === 'function') return conf.localAudioTrack;
-    // Some builds expose a getter.
-    if (typeof conf.getLocalAudioTrack === 'function') {
-      const t = conf.getLocalAudioTrack();
-      if (t) return t;
-    }
-    // Fall back to the underlying lib-jitsi-meet conference object.
-    if (conf._room && typeof conf._room.getLocalAudioTrack === 'function') {
-      const t = conf._room.getLocalAudioTrack();
-      if (t) return t;
-    }
-    // Last-ditch: scan _localTracks for an audio track.
-    if (Array.isArray(conf._localTracks)) {
-      const t = conf._localTracks.find(t => t && (t.isAudioTrack?.() || t.type === 'audio'));
-      if (t) return t;
-    }
+    return readLocalAudioTrack(getConference()) || null;
   } catch (e) { console.warn('[swallowed error]', e); }
   return null;
 }
