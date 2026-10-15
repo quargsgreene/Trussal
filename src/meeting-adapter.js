@@ -65,8 +65,7 @@ export function getConference() {
   try {
     if (injectedConference) return injectedConference;
     if (typeof window === 'undefined') return null;
-    const app = window.APP;
-    return app && app.conference ? app.conference : null;
+    return null;
   } catch (e) {
     console.warn('[meeting-adapter] getConference failed', e);
     return null;

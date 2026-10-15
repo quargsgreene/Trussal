@@ -36,15 +36,17 @@ import { normaliseDisplayName, shouldOwnPrejoin } from './prejoin-core.js';
 export function isLibJitsiEnabled() {
   try {
     if (typeof window === 'undefined') return false;
+    if (window.__TRUSSAL_USE_LIB_JITSI === false) return false;
     if (window.__TRUSSAL_USE_LIB_JITSI === true) return true;
     try {
       const params = new URLSearchParams(window.location && window.location.search ? window.location.search : '');
+      if (params.get('libjitsi') === '0' || params.get('libJitsi') === '0') return false;
       if (params.get('libjitsi') === '1' || params.get('libJitsi') === '1') return true;
     } catch (e) { /* ignore */ }
-    return false;
+    return true;
   } catch (e) {
     console.warn('[lib-jitsi-bootstrap] isLibJitsiEnabled failed', e);
-    return false;
+    return true;
   }
 }
 

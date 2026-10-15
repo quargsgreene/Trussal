@@ -104,20 +104,20 @@ afterEach(() => { clearConference(); resetPublishedAudio(); delete globalThis.wi
 
 // --- the flag --------------------------------------------------------------
 
-test('bootstrap: is disabled by default', () => {
+test('bootstrap: is enabled by default (web UI retired)', () => {
   installWindow();
+  assert.equal(isLibJitsiEnabled(), true);
+});
+
+test('bootstrap: is disabled only when explicitly false', () => {
+  installWindow();
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = false;
   assert.equal(isLibJitsiEnabled(), false);
 });
 
-test('bootstrap: is enabled by window.__TRUSSAL_USE_LIB_JITSI', () => {
-  installWindow();
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
-  assert.equal(isLibJitsiEnabled(), true);
-});
-
-test('bootstrap: is enabled by the ?libjitsi=1 query param', () => {
-  installWindow({ location: { search: '?libjitsi=1' } });
-  assert.equal(isLibJitsiEnabled(), true);
+test('bootstrap: can be disabled by ?libjitsi=0', () => {
+  installWindow({ location: { search: '?libjitsi=0' } });
+  assert.equal(isLibJitsiEnabled(), false);
 });
 
 // --- connect / join --------------------------------------------------------

@@ -218,7 +218,7 @@ export async function ensureAudioPublished({
  */
 export async function ensureAudioPublishedWhenReady({ attempts = 40, intervalMs = 500, ...options } = {}) {
   for (let i = 0; i < attempts; i++) {
-    const conf = options.conference || getConference();
+    const conf = options.conference || getConference() || (typeof window !== 'undefined' && window.APP && window.APP.conference);
     if (conf) return ensureAudioPublished({ ...options, conference: conf });
     await sleep(intervalMs);
   }
