@@ -144,7 +144,6 @@ async function aggregatorMain() {
 
 async function playerMain() {
   const { script, botCount, samples } = await fetchAssignment();
-  const sidecars = startSidecars(botCount);
   const ownerIndex = env('BOT_OWNER_INDEX', '');
   const bandwidth = bandwidthFromEnv();
   // A copied preamble that reads an External Source (s0-s3) can't be
@@ -178,7 +177,6 @@ async function playerMain() {
   startMetricsReporting(bot);
 
   const shutdown = async () => {
-    sidecars.forEach((p) => p.kill('SIGTERM'));
     await bot.stop();
     process.exit(0);
   };
