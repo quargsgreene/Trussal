@@ -314,6 +314,21 @@ export async function ensureVideoPublished({ conference, JitsiMeetJS, waitMs = P
 }
 
 /**
+ * Wait for a conference to exist, then publish once. The lib-jitsi-meet
+ * bootstrap connects asynchronously, so the Hydra camera gesture can fire
+ * before getConference() is non-null. Deliberately does NOT retry after a
+ * conference is present: a failure there could otherwise create a second track.
+ */
+export async function ensureVideoPublishedWhenReady({ attempts = 40, intervalMs = 500, ...options } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    const conf = options.conference || getConference();
+    if (conf) return ensureVideoPublished({ ...options, conference: conf });
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
+/**
  * Stop publishing the local video track. Prefers the conference's own
  * removeTrack/dispose path and falls back to the Jitsi web app's muteVideo.
  * Idempotent.

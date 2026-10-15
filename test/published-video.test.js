@@ -183,3 +183,58 @@ test('published video: ensureVideoPublished is inert without a conference', asyn
   assert.equal(await mod.ensureVideoPublished({ conference: null, waitMs: 10 }), false);
   assert.equal(mod.hasPublishedVideoTrack(), false);
 });
+
+test('published video: lib-jitsi createLocalTracks is fed the Hydra canvas, not the camera', async () => {
+  // Exercises the real chain the lib-jitsi backend uses: createLocalTracks ->
+  // RTC.obtainAudioAndVideoPermissions -> navigator.mediaDevices.getUserMedia,
+  // which the override answers with the composited canvas. The fake below
+  // stands in only for RTC._createLocalTracks wrapping the raw track.
+  mod.installPublishedVideoOverride();
+  const published = [];
+  const conf = {
+    _localTracks: [],
+    _room: {
+      async addTrack(track) {
+        published.push(track);
+        conf._localTracks.push(track);
+      },
+    },
+  };
+  const JitsiMeetJS = {
+    async createLocalTracks({ devices }) {
+      assert.deepEqual(devices, ['video']);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { height: { ideal: 720 }, width: { ideal: 1280 } },
+      });
+      return stream.getVideoTracks().map((raw) => ({
+        type: 'video',
+        kind: 'video',
+        source: raw,
+        isVideoTrack: () => true,
+      }));
+    },
+  };
+  assert.equal(await mod.ensureVideoPublished({ conference: conf, JitsiMeetJS, waitMs: 50 }), true);
+  assert.equal(published.length, 1);
+  assert.equal(published[0].source.label, 'canvas', 'the room sees the Hydra canvas');
+  assert.deepEqual(cameraRequests, [], 'no camera was ever opened');
+});
+
+test('published video: whenReady waits for an async conference and publishes once', async () => {
+  const track = new FakeTrack('video', 'canvas');
+  const added = [];
+  const conf = {
+    _localTracks: [],
+    _room: { async addTrack(t) { added.push(t); conf._localTracks.push(t); } },
+  };
+  const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
+  // Monkey-patch the module's own getConference dependency by using the global
+  // APP path the adapter falls back to, once we look.
+  let injected = null;
+  globalThis.window.APP = { get conference() { return injected; } };
+  const p = mod.ensureVideoPublishedWhenReady({ attempts: 5, intervalMs: 5, JitsiMeetJS });
+  // Conference shows up a couple of ticks later, as it does after join.
+  setTimeout(() => { injected = conf; }, 8);
+  assert.equal(await p, true);
+  assert.deepEqual(added, [track]);
+});

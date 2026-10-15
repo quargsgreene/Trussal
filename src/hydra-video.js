@@ -15,6 +15,9 @@
 //    published-video.js's publish override intercepts and hands back the
 //    (black, self-referential) published canvas instead of a real camera —
 //    patched to route through openCamera(), the real-camera escape hatch.
+//    Under the direct lib-jitsi-meet backend (where no Jitsi camera button
+//    exists to publish for us) the same gesture also asks published-video.js
+//    to publish the Hydra canvas to the conference.
 //  - .initVideo(url) hardcodes its <video> element to `muted = true` (Hydra's
 //    own fix for autoplay-without-a-gesture), which silently throws away
 //    whatever soundtrack the clip has. By the time a performer's preamble
@@ -37,7 +40,8 @@ import { subscribePeerState } from './peer-state.js';
 // The REAL camera. A plain getUserMedia here would be intercepted by the
 // published-video override and hand back the canvas the room sees, leaving
 // `s0` (and this panel) showing their own output instead of the camera.
-import { openCamera } from './published-video.js';
+import { openCamera, ensureVideoPublishedWhenReady } from './published-video.js';
+import { isLibJitsiEnabled } from './lib-jitsi-bootstrap.js';
 
 export const MODE_SPLIT  = 'split';
 export const MODE_DIRECT = 'direct';
@@ -204,6 +208,18 @@ export function ensureCameraBypass() {
           const stream = await openCamera(constraints);
           const video = await _videoFromStream(stream);
           source.init({ src: video, dynamic: true }, params);
+          // Under the direct lib-jitsi-meet backend there is no Jitsi camera
+          // button, so the gesture that means "use my camera" also publishes
+          // the Hydra output (the override's canvas) to the room. The Jitsi
+          // web backend keeps publishing through its own button, so this stays
+          // behind the migration flag and its behaviour is unchanged.
+          if (isLibJitsiEnabled()) {
+            ensureVideoPublishedWhenReady()
+              .then((ok) => {
+                if (!ok) console.warn('[hydra-video] could not publish the Hydra output to the lib-jitsi-meet conference');
+              })
+              .catch((e) => console.warn('[hydra-video] publishing the Hydra output failed', e));
+          }
         } catch (e) {
           console.warn('[hydra-video] initCam failed', e);
         }
