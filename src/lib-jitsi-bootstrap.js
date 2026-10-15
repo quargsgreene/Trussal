@@ -1,25 +1,23 @@
-// lib-jitsi-bootstrap.js — Step 2 of the migration: connect to a Jitsi
-// deployment with lib-jitsi-meet (no Jitsi web app involved) and inject the
-// resulting conference into meeting-adapter.js so the rest of Trussal treats it
-// as "the meeting".
+// lib-jitsi-bootstrap.js — connect to a Jitsi deployment with lib-jitsi-meet
+// and inject the resulting conference into meeting-adapter.js so the rest of
+// Trussal treats it as "the meeting". The Jitsi web app shell may host the page,
+// but its own client must never join a conference: this bootstrap is the only
+// path into a meeting, for humans, bots and the aggregator alike.
 //
-// This is OFF by default. Enable it with either `window.__TRUSSAL_USE_LIB_JITSI
-// = true` before the bundle runs, or `?libjitsi=1` in the page URL. With it
-// off, behaviour is byte-identical to today's build (getConference() keeps
-// reading window.APP.conference).
+// There is deliberately no opt-out flag. Dropping one backend for another is
+// now the whole point — a flag that let the Jitsi web app join *in addition*
+// produced two presences for one client (the bot double-join).
 //
-// This module only SCAFFOLDS the connection. The roster (participants.js), the
-// local microphone and video publication (published-audio.js and
-// published-video.js's ensureVideoPublished) and remote media consumption
-// (remote-tracks.js) already run through backend-neutral seams; screen-share
-// and bots are subsequent migration steps. The point here is to exercise the
-// seam end to end against a real lib-jitsi-meet conference and prove the
-// adapter can serve one.
+// The roster (participants.js), the local microphone and video publication
+// (published-audio.js and published-video.js's ensureVideoPublished) and remote
+// media consumption (remote-tracks.js) all run through backend-neutral seams,
+// so the adapter below can serve a bare lib-jitsi-meet conference.
 //
-// The prejoin is handled here too: under this backend there is no Jitsi web
-// app, so Trussal renders its own prejoin (prejoin.js) and the conference
-// starts on its Join, carrying the display name it collected — rather than
-// connecting at page load and bypassing the Join step.
+// The prejoin is handled here too: Trussal renders its own (prejoin.js) and the
+// conference starts on its Join, carrying the display name it collected —
+// rather than connecting at page load and bypassing the Join step. Bots and the
+// aggregator must join unattended, so they skip the prejoin and carry the name
+// the meeting URL already specifies (the `userInfo.displayName` fragment).
 //
 // On a page that does not already ship the library (a standalone deployment
 // with no Jitsi web app), the bundle is loaded on demand by lib-jitsi-loader.js
@@ -33,20 +31,24 @@ import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import { renderPrejoin } from './prejoin.js';
 import { normaliseDisplayName, shouldOwnPrejoin } from './prejoin-core.js';
 
-export function isLibJitsiEnabled() {
+// The display name a Jitsi meeting URL carries in its fragment
+// (`userInfo.displayName`, e.g. a bot's dog-breed identity). lib-jitsi-meet
+// parses no URL of its own, so without this a bot — which skips the prejoin and
+// never collects a name — would join with no name at all. Trussal's prejoin
+// supplies the name directly for humans, which takes precedence over this.
+//
+// Jitsi writes the value quoted (`userInfo.displayName="Bloodhound"`); the
+// surrounding quotes are delimiters, not part of the name.
+export function displayNameFromUrl() {
   try {
-    if (typeof window === 'undefined') return false;
-    if (window.__TRUSSAL_USE_LIB_JITSI === false) return false;
-    if (window.__TRUSSAL_USE_LIB_JITSI === true) return true;
-    try {
-      const params = new URLSearchParams(window.location && window.location.search ? window.location.search : '');
-      if (params.get('libjitsi') === '0' || params.get('libJitsi') === '0') return false;
-      if (params.get('libjitsi') === '1' || params.get('libJitsi') === '1') return true;
-    } catch (e) { /* ignore */ }
-    return true;
+    if (typeof window === 'undefined' || !window.location) return '';
+    const hash = String(window.location.hash || '').replace(/^#/, '');
+    if (!hash) return '';
+    const raw = new URLSearchParams(hash).get('userInfo.displayName');
+    if (!raw) return '';
+    return normaliseDisplayName(raw.replace(/^"(.*)"$/, '$1'));
   } catch (e) {
-    console.warn('[lib-jitsi-bootstrap] isLibJitsiEnabled failed', e);
-    return true;
+    return '';
   }
 }
 
@@ -81,7 +83,7 @@ function resolveConfig(overrides = {}) {
 export async function connectLibJitsiConference(overrides = {}) {
   const JitsiMeetJS = getLibJitsi() || await ensureLibJitsi();
   if (!JitsiMeetJS) {
-    console.warn('[lib-jitsi-bootstrap] window.JitsiMeetJS not available and could not be loaded; falling back to APP conference');
+    console.warn('[lib-jitsi-bootstrap] window.JitsiMeetJS not available and could not be loaded');
     return null;
   }
   const cfg = resolveConfig(overrides);
@@ -90,7 +92,11 @@ export async function connectLibJitsiConference(overrides = {}) {
     return null;
   }
 
-  const displayName = normaliseDisplayName(overrides.displayName);
+  // An explicitly supplied name (the prejoin's, even if blank) wins; otherwise
+  // fall back to the name the meeting URL already specifies (bots/aggregator).
+  const displayName = normaliseDisplayName(
+    overrides.displayName !== undefined ? overrides.displayName : displayNameFromUrl()
+  );
 
   let connection = null;
   let conference = null;
@@ -145,9 +151,8 @@ export async function connectLibJitsiConference(overrides = {}) {
         try { conference.setDisplayName(displayName); }
         catch (e) { console.warn('[lib-jitsi-bootstrap] could not set the display name', e); }
       }
-      // Parity with the Jitsi web app, which publishes the microphone itself at
-      // join (unmuted by default). A bare lib-jitsi-meet conference creates no
-      // tracks, so publish the mic through the backend-neutral seam unless the
+      // A bare lib-jitsi-meet conference creates no tracks, so publish the mic
+      // through the backend-neutral seam (joining unmuted) unless the
       // deployment asked to start muted.
       if (!startWithAudioMuted) {
         ensureAudioPublishedWhenReady({ conference })
@@ -175,23 +180,17 @@ export function disconnectLibJitsiConference() {
   clearConference();
 }
 
-// Only attempt a bootstrap when explicitly enabled. Returning false preserves
-// the current deployment behaviour.
-//
-// With the flag on, the display name is collected through Trussal's own prejoin
-// (prejoin.js) and the conference starts on the user's Join — the backend's
-// equivalent of the Jitsi web app's prejoin step. On the welcome page no room is
-// resolvable yet (a room is chosen there and the browser then navigates to
+// Start a conference for this page. Trussal's own prejoin (prejoin.js) collects
+// the display name and the conference starts on the user's Join — the
+// equivalent of the Jitsi web app's prejoin step. On the welcome page no room
+// is resolvable yet (a room is chosen there and the browser then navigates to
 // /<room>), so there is nothing to join and we do nothing. Bots and the
 // aggregator must join unattended and skip the prejoin entirely.
 export async function maybeBootstrapLibJitsi({ renderPrejoinFn = renderPrejoin } = {}) {
-  const enabled = isLibJitsiEnabled();
-  if (!enabled) return null;
-
   const w = (typeof window !== 'undefined') ? window : {};
   const isBot = !!w.__trussalIsBot;
   const isAggregator = !!w.__trussalIsAggregator;
-  if (!shouldOwnPrejoin({ libJitsiEnabled: enabled, isBot, isAggregator })) {
+  if (!shouldOwnPrejoin({ isBot, isAggregator })) {
     return connectLibJitsiConference();
   }
 

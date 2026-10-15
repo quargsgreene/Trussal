@@ -15,13 +15,10 @@
 // hydra-video.js still needs the real camera (that is what feeds `s0`), so the
 // pre-override getUserMedia is kept and exported as openCamera().
 //
-// Step 4 makes *what gets published* backend-agnostic. Under the Jitsi Meet
-// web app the camera button's own unmute path creates and publishes the track,
-// so nothing here has to drive it. A direct lib-jitsi-meet conference has no
-// such UI: it only ever publishes a track someone explicitly adds. The
-// ensureVideoPublished()/unpublishVideo() pair below is that explicit path,
-// built on the same canvas the override already serves — so both backends
-// publish the same pixels and the raw camera still never reaches the wire.
+// Publication is explicit: a conference only ever publishes a track someone
+// adds, so the ensureVideoPublished()/unpublishVideo() pair below is that path,
+// built on the same canvas the override already serves — so the published
+// pixels are the Hydra output and the raw camera still never reaches the wire.
 
 import { getConference } from './meeting-adapter.js';
 
@@ -141,17 +138,14 @@ export function startWithVideoMuted() {
   config.startWithVideoMuted = true;
 }
 
-// ---------------------------------------------------------------------------
-// Step 4: explicit local video track plumbing.
+// Explicit local video track plumbing.
 //
-// The Jitsi web backend publishes video through its own camera button, which
-// ends in a gUM call the override above answers with the canvas. The direct
-// lib-jitsi-meet backend has no camera button, so `ensureVideoPublished()`
-// drives the same publication itself: create a video track (again routed
-// through the override) and add it to the conference. Both functions take the
-// conference/test doubles as options so the path stays unit-testable outside a
-// browser, and both are inert until a caller runs them — the default backend's
-// behaviour is unchanged.
+// A direct lib-jitsi-meet conference has no camera button: it only ever
+// publishes a track someone explicitly adds. `ensureVideoPublished()` drives
+// that publication: create a video track (routed through the override above)
+// and add it to the conference. Both functions take the conference/test doubles
+// as options so the path stays unit-testable outside a browser, and both are
+// inert until a caller runs them.
 // ---------------------------------------------------------------------------
 
 const PUBLISH_POLL_MS = 150;
@@ -177,13 +171,13 @@ function libJitsiGlobal() {
 
 function roomFor(conf) {
   if (!conf) return null;
-  // The object that actually owns the track API. Prefer `_room` (the Jitsi web
-  // wrapper parks the lib-jitsi-meet JitsiConference there); otherwise a bare
-  // JitsiConference is that object itself. NB: a real JitsiConference ALSO
-  // exposes `conf.room`, but that is its XMPP room (addListener/
-  // muteParticipant — no track API), so it must never be chosen over the
-  // conference. Capability-check each candidate so a wrapper that parks the
-  // conference on `.room` still resolves.
+  // The object that actually owns the track API. Prefer `_room` if a wrapper
+  // parked the JitsiConference there; otherwise the conference itself (a bare
+  // JitsiConference IS that object). NB: a real JitsiConference ALSO exposes
+  // `conf.room`, but that is its XMPP room (addListener/muteParticipant — no
+  // track API), so it must never be chosen over the conference. Capability-check
+  // each candidate so a wrapper that parks the conference on `.room` still
+  // resolves.
   const hasTrackApi = (o) => !!o && (typeof o.addTrack === 'function' || typeof o.removeTrack === 'function');
   if (hasTrackApi(conf._room)) return conf._room;
   if (hasTrackApi(conf)) return conf;
@@ -288,9 +282,9 @@ export async function ensureVideoPublished({ conference, JitsiMeetJS, waitMs = P
     return true;
   }
 
-  // Path 1 — the Jitsi web app's own unmute. It triggers gUM (the override
-  // above answers with the canvas) and publishes the result. This is exactly
-  // what the toolbar camera button does, so the default backend is unchanged.
+  // Path 1 — the conference's own unmute. It triggers gUM (the override above
+  // answers with the canvas) and publishes the result. This is exactly what a
+  // toolbar camera button does, so that path is unchanged.
   if (typeof conf.muteVideo === 'function') {
     try {
       await conf.muteVideo(false);
@@ -333,7 +327,7 @@ export async function ensureVideoPublished({ conference, JitsiMeetJS, waitMs = P
  */
 export async function ensureVideoPublishedWhenReady({ attempts = 40, intervalMs = 500, ...options } = {}) {
   for (let i = 0; i < attempts; i++) {
-    const conf = options.conference || getConference() || (typeof window !== 'undefined' && window.APP && window.APP.conference);
+    const conf = options.conference || getConference();
     if (conf) return ensureVideoPublished({ ...options, conference: conf });
     await sleep(intervalMs);
   }
@@ -342,7 +336,7 @@ export async function ensureVideoPublishedWhenReady({ attempts = 40, intervalMs 
 
 /**
  * Stop publishing the local video track. Prefers the conference's own
- * removeTrack/dispose path and falls back to the Jitsi web app's muteVideo.
+ * removeTrack/dispose path and falls back to the conference's muteVideo.
  * Idempotent.
  */
 export async function unpublishVideo({ conference } = {}) {
@@ -382,10 +376,10 @@ export function resetPublishedVideo() {
   publishedTrack = null;
 }
 
-// Manual hooks for driving publication while the lib-jitsi-meet backend has no
-// toolbar of its own (the Jitsi web backend keeps using its camera button, and
-// these are inert until called). The bot bundle installs its own
-// __trussalEnsureVideoPublished at document-start; never clobber that.
+// Manual hooks for driving publication (the lib-jitsi-meet backend has no
+// toolbar of its own, so these are the way in; they are inert until called).
+// The bot bundle installs its own __trussalEnsureVideoPublished at
+// document-start; never clobber that.
 if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussalIsAggregator) {
   if (typeof window.__trussalEnsureVideoPublished !== 'function') {
     window.__trussalEnsureVideoPublished = () => ensureVideoPublished();

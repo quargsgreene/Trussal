@@ -44,7 +44,6 @@ import { subscribePeerState } from './peer-state.js';
 // published-video override and hand back the canvas the room sees, leaving
 // `s0` (and this panel) showing their own output instead of the camera.
 import { openCamera, ensureVideoPublishedWhenReady } from './published-video.js';
-import { isLibJitsiEnabled } from './lib-jitsi-bootstrap.js';
 
 export const MODE_SPLIT  = 'split';
 export const MODE_DIRECT = 'direct';
@@ -191,10 +190,9 @@ function _videoFromUrl(url) {
 // The gestures that would make the room see this performer — starting the
 // camera, sharing the screen — also publish the Hydra output (the override's
 // canvas) to the conference, because the direct lib-jitsi-meet backend has no
-// Jitsi camera button to do it. Behind the migration flag: on the Jitsi web
-// backend publishing stays the button's job and nothing here fires.
+// Jitsi camera button to do it. lib-jitsi-meet is the only backend now, so
+// nothing gates this: publishing is always this module's job.
 function _publishHydraOutput(what) {
-  if (!isLibJitsiEnabled()) return;
   ensureVideoPublishedWhenReady()
     .then((ok) => {
       if (!ok) console.warn(`[hydra-video] could not publish the Hydra output to the lib-jitsi-meet conference (${what})`);

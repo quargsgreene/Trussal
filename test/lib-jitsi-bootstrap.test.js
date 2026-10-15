@@ -1,14 +1,15 @@
 // lib-jitsi-bootstrap is the one place Trussal builds a bare lib-jitsi-meet
 // conference and injects it into meeting-adapter. These tests drive it with a
 // fake JitsiMeetJS (no network, no browser) and assert the contract the rest of
-// the migration depends on: the flag gates it, a joined conference is injected,
-// the microphone is published through the backend-neutral seam, and every
-// failure path clears the injected conference rather than leaving it dangling.
+// the migration depends on: there is no opt-out (every client joins through
+// here), a joined conference is injected, the microphone is published through
+// the backend-neutral seam, and every failure path clears the injected
+// conference rather than leaving it dangling.
 
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectLibJitsiConference, isLibJitsiEnabled, maybeBootstrapLibJitsi } from '../src/lib-jitsi-bootstrap.js';
+import { connectLibJitsiConference, maybeBootstrapLibJitsi } from '../src/lib-jitsi-bootstrap.js';
 import { getConference, clearConference } from '../src/meeting-adapter.js';
 import { hasPublishedAudioTrack, getPublishedAudioTrack, resetPublishedAudio } from '../src/published-audio.js';
 
@@ -102,22 +103,19 @@ async function waitFor(predicate, { attempts = 100, intervalMs = 5 } = {}) {
 beforeEach(() => { clearConference(); resetPublishedAudio(); });
 afterEach(() => { clearConference(); resetPublishedAudio(); delete globalThis.window; });
 
-// --- the flag --------------------------------------------------------------
+// --- no opt-out ------------------------------------------------------------
 
-test('bootstrap: is enabled by default (web UI retired)', () => {
-  installWindow();
-  assert.equal(isLibJitsiEnabled(), true);
-});
-
-test('bootstrap: is disabled only when explicitly false', () => {
-  installWindow();
+test('bootstrap: the legacy opt-outs cannot switch lib-jitsi-meet off', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG, location: { search: '?libjitsi=0' } });
+  // Left over from the escape hatch the migration dropped. Whatever they are
+  // set to, the bot must still join through lib-jitsi-meet.
   globalThis.window.__TRUSSAL_USE_LIB_JITSI = false;
-  assert.equal(isLibJitsiEnabled(), false);
-});
+  globalThis.window.__trussalIsBot = true;
 
-test('bootstrap: can be disabled by ?libjitsi=0', () => {
-  installWindow({ location: { search: '?libjitsi=0' } });
-  assert.equal(isLibJitsiEnabled(), false);
+  const conf = await maybeBootstrapLibJitsi({ renderPrejoinFn: async () => 'x' });
+  assert.ok(conf, 'the bot still joins through lib-jitsi-meet');
+  assert.ok(await waitFor(() => getConference() === conf));
 });
 
 // --- connect / join --------------------------------------------------------
@@ -216,12 +214,36 @@ test('bootstrap: a blank display name is trimmed away and never sent', async () 
   assert.deepEqual(conf._displayNames, []);
 });
 
+test('bootstrap: without a prejoin name, the meeting URL names the participant', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  // jitsiRoomUrl writes the name quoted in the fragment: userInfo.displayName="…"
+  installWindow({
+    jitsi,
+    config: BASE_CONFIG,
+    location: { hash: '#config.startWithAudioMuted=false&userInfo.displayName="Ada%20Lovelace"' },
+  });
+  const conf = await connectLibJitsiConference();
+  assert.ok(await waitFor(() => conf._displayNames.includes('Ada Lovelace')));
+});
+
+test('bootstrap: an explicit (blank) prejoin name suppresses the URL fallback', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: BASE_CONFIG,
+    location: { hash: '#userInfo.displayName="Ada"' },
+  });
+  const conf = await connectLibJitsiConference({ displayName: '   ' });
+  assert.ok(await waitFor(() => getConference() === conf));
+  await delay(20);
+  assert.deepEqual(conf._displayNames, [], "the human's prejoin choice wins over the URL");
+});
+
 // --- prejoin handoff -------------------------------------------------------
 
 test('maybeBootstrapLibJitsi: renders the prejoin and connects with the chosen name', async () => {
   const jitsi = fakeJitsiMeetJS();
   installWindow({ jitsi, config: BASE_CONFIG });
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
 
   let renderedWith = null;
   const conf = await maybeBootstrapLibJitsi({
@@ -237,7 +259,6 @@ test('maybeBootstrapLibJitsi: renders the prejoin and connects with the chosen n
 test('maybeBootstrapLibJitsi: does nothing on a page with no room (welcome page)', async () => {
   const jitsi = fakeJitsiMeetJS();
   installWindow({ jitsi, config: { hosts: BASE_CONFIG.hosts }, location: { pathname: '/', hash: '' } });
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
 
   let rendered = false;
   const result = await maybeBootstrapLibJitsi({
@@ -249,10 +270,13 @@ test('maybeBootstrapLibJitsi: does nothing on a page with no room (welcome page)
   assert.equal(getConference(), null);
 });
 
-test('maybeBootstrapLibJitsi: a bot skips the prejoin and joins unattended', async () => {
+test('maybeBootstrapLibJitsi: a bot skips the prejoin and joins with the URL name', async () => {
   const jitsi = fakeJitsiMeetJS();
-  installWindow({ jitsi, config: BASE_CONFIG });
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+  installWindow({
+    jitsi,
+    config: BASE_CONFIG,
+    location: { hash: '#userInfo.displayName="Bloodhound"' },
+  });
   globalThis.window.__trussalIsBot = true;
 
   let rendered = false;
@@ -263,12 +287,12 @@ test('maybeBootstrapLibJitsi: a bot skips the prejoin and joins unattended', asy
   assert.equal(rendered, false, 'the prejoin is never shown to a bot');
   assert.ok(conf);
   assert.ok(await waitFor(() => getConference() === conf));
+  assert.ok(await waitFor(() => conf._displayNames.includes('Bloodhound')), 'the bot keeps its breed identity under lib-jitsi-meet');
 });
 
 test('maybeBootstrapLibJitsi: the aggregator skips the prejoin too', async () => {
   const jitsi = fakeJitsiMeetJS();
   installWindow({ jitsi, config: BASE_CONFIG });
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
   globalThis.window.__trussalIsAggregator = true;
 
   let rendered = false;
@@ -284,7 +308,6 @@ test('maybeBootstrapLibJitsi: the aggregator skips the prejoin too', async () =>
 test('maybeBootstrapLibJitsi: a failing prejoin still joins, without a display name', async () => {
   const jitsi = fakeJitsiMeetJS();
   installWindow({ jitsi, config: BASE_CONFIG });
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
 
   const conf = await maybeBootstrapLibJitsi({
     renderPrejoinFn: async () => { throw new Error('boom'); },

@@ -90,11 +90,17 @@ export function spoofedUserAgent(botId) {
  *    audio processor (AGC/AEC/noise suppression/high-pass) would gate and
  *    mangle music, and the default mono Opus would collapse the stereo
  *    field. disableAP=true sends the tap untouched; stereo=true preserves it.
- *  - prejoinConfig.enabled=false: a bot cannot click "Join meeting".
- *  - displayName: the dog-breed identity.
+ *  - displayName: the dog-breed identity. The Jitsi web app no longer joins a
+ *    conference (see below), so this is the name lib-jitsi-bootstrap.js reads
+ *    to name the bot's own conference — it has to travel in the meeting URL.
  *  - channelLastN / resolution / startBitrate: bandwidth guards for a
  *    self-hosted bridge — bots send, never watch, so they receive no
  *    remote streams and send capped video.
+ *
+ * There is deliberately NO `prejoinConfig.enabled=false`. Bots join through
+ * lib-jitsi-meet (the Trussal bundle); the Jitsi web app shell that serves the
+ * page must not auto-join a second conference behind it. Leaving the prejoin up
+ * keeps the web app out of the meeting, and a bot cannot click its way in.
  */
 export function jitsiRoomUrl(baseUrl, displayName, {
   channelLastN = 0,
@@ -110,7 +116,6 @@ export function jitsiRoomUrl(baseUrl, displayName, {
     'config.startWithAudioMuted=false',
     'config.disableAP=true',
     'config.stereo=true',
-    'config.prejoinConfig.enabled=false',
     `config.startWithVideoMuted=${videoMuted}`,
     `config.channelLastN=${channelLastN}`,
     `config.startBitrate=${startBitrateKbps}`,

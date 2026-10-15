@@ -4,8 +4,8 @@
 // Inside the Jitsi Meet web app page, /libs/lib-jitsi-meet.min.js has already
 // run by the time custom-config.js is evaluated, so window.JitsiMeetJS exists
 // and this module is a no-op. A standalone Trussal deployment (no Jitsi web
-// app) has to bring the library itself; the migration flag says to use it, so
-// load it from a configured URL and wait for the global.
+// app) has to bring the library itself, so load it from a configured URL and
+// wait for the global.
 //
 // URL resolution, in order:
 //   1. an explicit `url` option (tests / callers that already resolved one);

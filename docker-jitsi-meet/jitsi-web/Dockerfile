@@ -30,6 +30,13 @@ COPY latency-worklet-v2.js     /usr/share/jitsi-meet/latency-worklet-v2.js
 COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js
 COPY assets /usr/share/jitsi-meet/assets
+# Optional pinned lib-jitsi-meet (see build-lib-jitsi.mjs / build.mjs).
+# deploy:local always creates this dir before the build; an empty one is a
+# no-op, so the Jitsi image's own /libs/lib-jitsi-meet.min.js stays in place. A
+# supplied bundle merges over just that file — the web app keeps its own copy
+# inside app.bundle.min.js, so only the Trussal loader (which fetches
+# /libs/lib-jitsi-meet.min.js) picks up the pinned version.
+COPY libs /usr/share/jitsi-meet/libs
 
 # Per-build cache-bust for the two assets a Trussal deploy actually changes.
 # jitsi pins `css/all.css?v=<n>` with a 1-year max-age and body.html loads

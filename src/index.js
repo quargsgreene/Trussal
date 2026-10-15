@@ -47,10 +47,9 @@ window.__trussalIsActiveAggregator = () => {
 
 // Backend-neutral handles to "the meeting", for code that runs in the page but
 // cannot import this module (the bot page scripts, serialised into the page by
-// puppeteer). They resolve the injected lib-jitsi-meet conference first and
-// fall back to the Jitsi web app's, exactly like meeting-adapter.js itself —
-// so the bot track/roster paths work under either backend without reaching for
-// window.APP directly.
+// puppeteer). They expose the lib-jitsi-meet conference lib-jitsi-bootstrap.js
+// injects — the only conference there is — so the bot track/roster paths never
+// reach for window.APP directly.
 window.__trussalGetConference = () => getConference();
 window.__trussalGetMeetingRoom = () => getMeetingRoom();
 

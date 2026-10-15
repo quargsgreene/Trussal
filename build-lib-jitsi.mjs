@@ -15,6 +15,10 @@
 //
 // Nothing here is fatal: with no bundle supplied the build succeeds and simply
 // leaves dist/libs/ out, exactly as before this step existed.
+//
+// The container deploy mirrors the same bundle into jitsi-web/libs/ (so the web
+// image's `COPY libs` can bake it); when nothing is supplied the dir is empty
+// and the image's own lib-jitsi-meet.min.js is what the loader fetches.
 
 import { existsSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';

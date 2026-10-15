@@ -58,7 +58,8 @@ export class Bot {
     // Must be installed before navigation: Jitsi enumerates devices on load.
     // pageInstallMeetingAccessor first — it defines the backend-neutral
     // window.__trussalConf()/__trussalRoom() every later page script resolves
-    // "the meeting" through, so they work under either backend.
+    // "the meeting" through (the lib-jitsi-meet conference the Trussal bundle
+    // injects).
     await this.page.evaluateOnNewDocument(pageInstallMeetingAccessor);
     // pageMarkBot next — it sets window.__trussalIsBot before the Trussal bundle
     // loads, so peer-state announces this peer as a bot (studio can drive/mute it).
@@ -117,8 +118,9 @@ export class Bot {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
-    // Belt and braces: wait until the meeting is up (the Jitsi app object
-    // exists, or the direct lib-jitsi-meet conference has joined). Optional —
+    // Belt and braces: wait until the meeting is up — the Trussal bundle's
+    // direct lib-jitsi-meet conference has joined. The Jitsi web app shell that
+    // serves the page never joins, so it is not a readiness signal. Optional —
     // older/customized Jitsi builds may differ.
     if (this.page.waitForFunction) {
       await this.page
@@ -202,8 +204,7 @@ export class Bot {
     // meet wrapper's hangup().
     if (this.page && typeof this.page.evaluate === 'function') {
       await this.page.evaluate(() => {
-        const conf = (typeof window.__trussalConf === 'function' && window.__trussalConf())
-          || (window.APP && window.APP.conference);
+        const conf = (typeof window.__trussalConf === 'function' && window.__trussalConf()) || null;
         const room = conf && (window.__trussalRoom ? window.__trussalRoom(conf) : (conf._room || conf.room));
         if (room && typeof room.leave === 'function') return room.leave();
         if (conf && typeof conf.hangup === 'function') return conf.hangup();

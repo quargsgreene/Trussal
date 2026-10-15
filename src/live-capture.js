@@ -159,10 +159,9 @@ function remoteAudioStream(jitsiId) {
   return el && el.srcObject ? el.srcObject : null;
 }
 
-// The <video> element a remote participant's published track renders into.
-// Under the Jitsi web app this is its tile; under a bare lib-jitsi-meet
-// conference remote-tracks creates and owns a hidden element bound to the
-// participant's video stream.
+// The <video> element a remote participant's published track renders into:
+// remote-tracks creates and owns a hidden element bound to the participant's
+// video stream (and finds Jitsi's own tile if the shell renders one).
 function remoteVideoEl(jitsiId) {
   if (!jitsiId) return null;
   const byTracks = ensureRemoteVideoElement(jitsiId);

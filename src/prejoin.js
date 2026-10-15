@@ -1,20 +1,18 @@
 // prejoin.js — Trussal's own prejoin screen: the DOM half of prejoin-core.js.
 //
-// Under the default Jitsi web backend the web app draws the prejoin and
-// welcome-page.js only relabels it. A bare lib-jitsi-meet deployment has no web
-// app, so this renders Trussal's own screen and resolves with the chosen
-// display name once the user joins; lib-jitsi-bootstrap.js then starts the
-// conference on that Join — the same "connect at Join, not at load" moment the
-// Jitsi web app gives for free.
+// Trussal renders and owns the prejoin. lib-jitsi-bootstrap.js starts the
+// conference on this screen's Join, with the chosen display name — rather than
+// connecting at load. The Jitsi web app shell that serves the page never joins,
+// so nothing else can start a conference here.
 //
-// While the screen is up, Jitsi's own prejoin (if the web app happens to be
-// present too) is hidden by prejoin-core.js's suppression rule, so there is
-// exactly one Join on the page and Jitsi is not started behind Trussal's back.
+// While the screen is up, Jitsi's own prejoin (present because the shell is)
+// is hidden by prejoin-core.js's suppression rule, so there is exactly one Join
+// on the page and Jitsi is not started behind Trussal's back.
 //
 // The screen reuses the contract the rest of the bundle already keys off the
 // Jitsi prejoin — the #premeeting-name-input id and a .premeeting-screen
 // container — so on-screen-keyboard.js, facial-gesture.js and studio.js keep
-// working across the backend swap without knowing it happened.
+// working without knowing where the screen came from.
 
 import {
   PREJOIN_SCREEN_ID,

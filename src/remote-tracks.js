@@ -1,18 +1,15 @@
-// remote-tracks.js — backend-neutral access to remote participants' live media.
+// remote-tracks.js — access to remote participants' live media.
 //
-// The Jitsi web app renders each remote participant's media into its own
-// injected <audio>/<video> element and hangs the live MediaStream off
-// element.srcObject. A bare lib-jitsi-meet conference injects no such elements,
-// so any code that wants a remote participant's audio or video must read the
-// conference model instead of the DOM. This module normalises both backends to
-// the same shape: a stable MediaStream per participant (built from the tracks
-// the conference reports), plus — where the Jitsi web app did inject an element
-// — that element, so its native playback can be muted once we tap the same
-// track ourselves.
+// The conference model is authoritative: the direct lib-jitsi-meet conference
+// injects no <audio>/<video> elements, so any code that wants a remote
+// participant's audio or video reads the conference model instead of the DOM.
+// This module builds a stable MediaStream per participant from the tracks the
+// conference reports.
 //
-// The conference model is authoritative in both backends (the web app's own
-// element ids are generic in this deployment), and readRemoteTracks() already
-// handles local/hidden filtering.
+// The findRemote*Element() helpers locate Jitsi's own injected elements if the
+// shell ever renders them (it does not join a conference, so today it does not),
+// so native playback can be muted once we tap the same track ourselves.
+// readRemoteTracks() already handles local/hidden filtering.
 
 import { getConference, readRemoteTracks } from './meeting-adapter.js';
 
@@ -79,10 +76,10 @@ export function getRemoteVideoStream(id) {
   return streamFor(videoStreams, id, media.get(id) && media.get(id).video);
 }
 
-// The Jitsi web app's own <audio> element for a participant, matched by track
-// identity (its element ids are generic in this deployment). Null under a bare
-// lib-jitsi conference, which injects no element. Used to mute native playback
-// once the same track is routed through the audio engine.
+// Jitsi's own <audio> element for a participant, if the page carries one, matched
+// by track identity. Null under the direct lib-jitsi conference, which injects no
+// element. Used to mute native playback once the same track is routed through the
+// audio engine.
 export function findRemoteAudioElement(id) {
   if (!id || typeof document === 'undefined') return null;
   const media = currentMedia();
@@ -98,9 +95,9 @@ export function findRemoteAudioElement(id) {
   return null;
 }
 
-// The Jitsi web app's own <video> element for a participant. Prefer its tile
-// (the visible one the web app manages); fall back to matching by track
-// identity for layouts whose ids do not embed the participant id.
+// Jitsi's own <video> element for a participant, if the page carries one. Prefer
+// its tile; fall back to matching by track identity for layouts whose ids do not
+// embed the participant id.
 export function findRemoteVideoElement(id) {
   if (!id || typeof document === 'undefined') return null;
   let scoped = null;

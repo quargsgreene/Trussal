@@ -1,11 +1,13 @@
-// The local microphone, made backend-agnostic. The web app publishes the mic
-// itself; a bare lib-jitsi-meet conference creates no tracks, so without this
-// seam it would carry no microphone at all. This covers the finder (where each
-// backend keeps the track), the explicit publisher, the finder/publisher the
-// Strudel path reuses, and the unpublish/teardown path.
+// The local microphone, made backend-agnostic. A bare lib-jitsi-meet conference
+// creates no tracks, so without this seam it would carry no microphone at all.
+// This covers the finder (where the conference keeps the track), the explicit
+// publisher, the finder/publisher the Strudel path reuses, and the
+// unpublish/teardown path.
 
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+
+import { setConference, clearConference } from '../src/meeting-adapter.js';
 
 class FakeTrack {
   constructor(kind, label) { this.kind = kind; this.label = label; }
@@ -18,7 +20,7 @@ beforeEach(async () => {
   globalThis.window = { config: {} };
   mod = await import(`../src/published-audio.js?t=${Date.now()}`);
 });
-afterEach(() => { if (mod) mod.resetPublishedAudio(); });
+afterEach(() => { if (mod) mod.resetPublishedAudio(); clearConference(); });
 
 test('published audio: readLocalAudioTrack finds the web wrapper direct property', () => {
   const track = new FakeTrack('audio', 'mic');
@@ -191,10 +193,8 @@ test('published audio: whenReady waits for an async conference and publishes onc
     _room: { async addTrack(t) { added.push(t); conf._localTracks.push(t); } },
   };
   const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
-  let injected = null;
-  globalThis.window.APP = { get conference() { return injected; } };
   const p = mod.ensureAudioPublishedWhenReady({ attempts: 5, intervalMs: 5, JitsiMeetJS });
-  setTimeout(() => { injected = conf; }, 8);
+  setTimeout(() => { setConference(conf); }, 8);
   assert.equal(await p, true);
   assert.deepEqual(added, [track]);
 });

@@ -5,10 +5,11 @@ import { pageAggregatorCapture, pageInstallMeetingAccessor } from '../src/bot/pa
 
 /**
  * Runs the page-side aggregator capture tap outside a browser so its gate
- * logic is testable under node:test: a fake `window`/`APP.conference._room`,
- * an AudioContext stand-in that hands each participant's ScriptProcessor back
- * to the test (so PCM frames are pushed by hand), and the tap's 1s roster
- * scan captured from setInterval so tests advance it explicitly.
+ * logic is testable under node:test: a fake `window` whose
+ * `__trussalGetConference` exposes a `_room`, an AudioContext stand-in that
+ * hands each participant's ScriptProcessor back to the test (so PCM frames are
+ * pushed by hand), and the tap's 1s roster scan captured from setInterval so
+ * tests advance it explicitly.
  *
  * The scenarios mirror the leave sequences observed live (2026-07-13):
  * which of the three drain() gates — roster membership, playing flag,
@@ -75,16 +76,18 @@ function installTap() {
   const resolverMap = new Map(); // jitsiId -> room-index token (sidecar view)
   const playingSet = new Set();  // jitsiIds the peer-state bus reports playing
 
-  globalThis.APP = { conference: { _room: { getParticipants: () => roster.slice() } } };
+  const conference = { _room: { getParticipants: () => roster.slice() } };
   globalThis.window = {
     AudioContext: FakeAudioContext,
     __trussalRoomIndexForJitsiId: (jitsiId) => resolverMap.get(jitsiId) ?? null,
     __trussalPeerIsPlaying: (jitsiId) => playingSet.has(jitsiId),
+    // The page tap resolves the conference/room through the backend-neutral
+    // accessor (window.__trussalConf/__trussalRoom). The only conference is the
+    // lib-jitsi-meet one the Trussal bundle injects; there is no window.APP.
+    __trussalGetConference: () => conference,
   };
-  // The page tap resolves the conference/room through the backend-neutral
-  // accessor (window.__trussalConf/__trussalRoom) rather than window.APP —
-  // install it here so the same resolution the live bot page performs is
-  // exercised.
+  // Install the accessor here so the same resolution the live bot page performs
+  // is exercised.
   pageInstallMeetingAccessor();
 
   // Capture the scan the tap schedules so tests drive roster ticks by hand.

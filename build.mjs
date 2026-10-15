@@ -35,9 +35,11 @@ function copyStrudelAssets() {
 }
 
 // Optional: put a supplied lib-jitsi-meet bundle under dist/libs/ so a
-// standalone deployment (no Jitsi web app) is self-contained. No bundle
-// supplied is not an error — the loader can still fetch one at runtime, or the
-// Jitsi web page provides the global itself.
+// standalone deployment (no Jitsi web app) is self-contained, and mirror it
+// into the container bind mount (deployToContainer) so the web image bakes the
+// same file. No bundle supplied is not an error — the loader can still fetch
+// one at runtime, or the Jitsi web page provides the global itself, and the
+// image's own /libs/lib-jitsi-meet.min.js is left untouched.
 function copyLibJitsiBundle() {
 	const { source, dest, explicit } = stageLibJitsiBundle({ argv: [...argv], env: process.env });
 	if (!source) {
@@ -58,6 +60,12 @@ function deployToContainer() {
 	const assetsDest = join(DEPLOY_DIR, 'assets');
 	mkdirSync(assetsDest, { recursive: true });
 	cpSync('dist/assets', assetsDest, { recursive: true });
+	// Optional pinned lib-jitsi-meet, if copyLibJitsiBundle() staged one. The dir
+	// is always created so the image's `COPY libs` has a source; leaving it empty
+	// keeps the Jitsi image's own /libs/lib-jitsi-meet.min.js in place.
+	const libsDest = join(DEPLOY_DIR, 'libs');
+	mkdirSync(libsDest, { recursive: true });
+	if (existsSync('dist/libs')) cpSync('dist/libs', libsDest, { recursive: true });
 }
 
 // esbuild runs onEnd after every (re)build — including the first — so the copy

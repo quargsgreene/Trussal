@@ -1,10 +1,9 @@
 // prejoin-core.js — pure logic for Trussal's own prejoin screen.
 //
-// The Jitsi web app draws its own prejoin (name field, device preview, a Join
-// button Trussal relabels in welcome-page.js). A bare lib-jitsi-meet deployment
-// has none: it is Trussal's bundle on an essentially empty page, so under that
-// backend Trussal must collect the display name itself and only then start the
-// conference — the same "join" moment the web app gives for free.
+// The Jitsi shell may draw its own prejoin (name field, device preview, a Join
+// button Trussal relabels in welcome-page.js), but it never joins a conference.
+// Trussal collects the display name itself and only then starts the conference
+// (lib-jitsi-bootstrap.js) — the "join" moment.
 //
 // No DOM, no storage, no network here — the storage key, the name
 // normalisation, the decision to own the screen, and the overlay markup all run
@@ -14,7 +13,7 @@
 // keys off the Jitsi prejoin: the display-name input id that on-screen-keyboard,
 // facial-gesture and studio.js look for, and a class that makes them treat the
 // page as "not yet in a meeting". Reusing them means those features keep working
-// across the backend swap without knowing it happened.
+// without knowing where the screen came from.
 
 export const DISPLAY_NAME_STORAGE_KEY = 'trussal.displayName.v1';
 
@@ -68,11 +67,11 @@ export function writeStoredDisplayName(storage, name) {
   return clean;
 }
 
-// Whether Trussal owns the prejoin at all. Off for the default Jitsi web backend
-// (the web app has its own) and for bots/aggregators, which must join
-// unattended rather than wait on a human to submit a form.
-export function shouldOwnPrejoin({ libJitsiEnabled, isBot = false, isAggregator = false } = {}) {
-  return !!libJitsiEnabled && !isBot && !isAggregator;
+// Whether Trussal owns the prejoin. lib-jitsi-meet is the only backend, so the
+// sole question is whether the client is one that can submit a form: bots and
+// the aggregator must join unattended rather than wait on a human.
+export function shouldOwnPrejoin({ isBot = false, isAggregator = false } = {}) {
+  return !isBot && !isAggregator;
 }
 
 // While Trussal's prejoin is up, Jitsi's must not be: two prejoins invite the

@@ -60,12 +60,11 @@ test('storage helpers tolerate a store that throws (disabled storage)', () => {
   assert.equal(writeStoredDisplayName(throwing, ' Ada '), 'Ada');
 });
 
-test('shouldOwnPrejoin: only when the backend is on and no unattended client', () => {
-  assert.equal(shouldOwnPrejoin(), false);
-  assert.equal(shouldOwnPrejoin({ libJitsiEnabled: false }), false);
-  assert.equal(shouldOwnPrejoin({ libJitsiEnabled: true }), true);
-  assert.equal(shouldOwnPrejoin({ libJitsiEnabled: true, isBot: true }), false);
-  assert.equal(shouldOwnPrejoin({ libJitsiEnabled: true, isAggregator: true }), false);
+test('shouldOwnPrejoin: every client owns it except the unattended ones', () => {
+  assert.equal(shouldOwnPrejoin(), true);
+  assert.equal(shouldOwnPrejoin({}), true);
+  assert.equal(shouldOwnPrejoin({ isBot: true }), false);
+  assert.equal(shouldOwnPrejoin({ isAggregator: true }), false);
 });
 
 test('prejoinMarkup carries the contract the rest of the bundle keys off', () => {

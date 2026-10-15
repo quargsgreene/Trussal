@@ -3,10 +3,12 @@
 // the wire, and the two code paths that legitimately want a camera (the `s0`
 // Hydra source and the landmarks UI) must still get a real one. The second half
 // covers the step-4 explicit publisher a direct lib-jitsi-meet conference needs
-// (no Jitsi web camera button exists to drive it).
+// (there is no Jitsi web camera button to drive it).
 
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+
+import { setConference, clearConference } from '../src/meeting-adapter.js';
 
 // Minimal DOM/media stubs — the module only needs createElement, a canvas with
 // captureStream, and navigator.mediaDevices.
@@ -60,7 +62,7 @@ beforeEach(async () => {
   installDom();
   mod = await import(`../src/published-video.js?t=${Date.now()}`);
 });
-afterEach(() => { if (mod) mod.resetPublishedVideo(); });
+afterEach(() => { if (mod) mod.resetPublishedVideo(); clearConference(); });
 
 test('published video: a video request gets the canvas, never the camera', async () => {
   mod.installPublishedVideoOverride();
@@ -245,13 +247,9 @@ test('published video: whenReady waits for an async conference and publishes onc
     _room: { async addTrack(t) { added.push(t); conf._localTracks.push(t); } },
   };
   const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
-  // Monkey-patch the module's own getConference dependency by using the global
-  // APP path the adapter falls back to, once we look.
-  let injected = null;
-  globalThis.window.APP = { get conference() { return injected; } };
   const p = mod.ensureVideoPublishedWhenReady({ attempts: 5, intervalMs: 5, JitsiMeetJS });
   // Conference shows up a couple of ticks later, as it does after join.
-  setTimeout(() => { injected = conf; }, 8);
+  setTimeout(() => { setConference(conf); }, 8);
   assert.equal(await p, true);
   assert.deepEqual(added, [track]);
 });

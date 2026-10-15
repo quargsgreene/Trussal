@@ -2,8 +2,9 @@
 // means what it says. These tests cover the lib-jitsi-meet-only half of that
 // added with the screen-share migration: s0.initScreen() must still acquire the
 // display and feed Hydra (Hydra's original returns nothing and swallows
-// failures, so it is reimplemented), and, under the migration flag, must also
-// publish the composited output to the conference the way initCam already does.
+// failures, so it is reimplemented), and must also publish the composited output
+// to the conference the way initCam already does. lib-jitsi-meet is the only
+// backend, so there is no flag to gate publication on.
 
 import test, { beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -119,22 +120,7 @@ test('hydra-video: initScreen acquires the display and feeds Hydra', async () =>
   assert.deepEqual(globalThis.s0.calls.init[0].params, { texParams: true });
 });
 
-test('hydra-video: initScreen does not publish on the Jitsi web backend', async () => {
-  // No lib-jitsi flag: publishing stays the Jitsi camera button's job.
-  globalThis.s0 = makeSource();
-  hydra.ensureCameraBypass();
-
-  globalThis.s0.initScreen();
-  await flush();
-  videoEls[0]._fire('loadedmetadata');
-  await flush();
-
-  assert.equal(globalThis.s0.calls.init.length, 1, 'the display still fed Hydra');
-  assert.equal(getPublishedVideoTrack(), null, 'but nothing was published');
-});
-
-test('hydra-video: initScreen publishes the composited output under lib-jitsi', async () => {
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+test('hydra-video: initScreen publishes the composited output', async () => {
   const track = new FakeTrack('video', 'canvas');
   setConference({ _localTracks: [track] });
   globalThis.s0 = makeSource();
@@ -148,8 +134,7 @@ test('hydra-video: initScreen publishes the composited output under lib-jitsi', 
   assert.equal(getPublishedVideoTrack(), track);
 });
 
-test('hydra-video: initCam still publishes under lib-jitsi (helper regression)', async () => {
-  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+test('hydra-video: initCam still publishes (helper regression)', async () => {
   const track = new FakeTrack('video', 'canvas');
   setConference({ _localTracks: [track] });
   globalThis.s0 = makeSource();

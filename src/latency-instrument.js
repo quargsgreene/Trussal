@@ -4,10 +4,9 @@ import { getConference, readRemoteTracks } from './meeting-adapter.js';
 // One AudioContext per browser. For every meeting participant we maintain a
 // dedicated effects chain (worklet → limiter → optional reverb → realDestination).
 // Remote peers' mic audio is routed to their chain from the conference's live
-// remote tracks (remote-tracks.js), so the same path works whether the meeting
-// is the Jitsi web app or a bare lib-jitsi-meet conference (which injects no
-// <audio> elements); the local participant's chain hosts Strudel's output (see
-// strudel.js).
+// remote tracks (remote-tracks.js) — the direct lib-jitsi-meet conference
+// injects no <audio> elements, so the track model is the only source. The local
+// participant's chain hosts Strudel's output (see strudel.js).
 //
 // Each chain's effect parameters are computed from that peer's
 // effects toggles plus their network metrics (rtt/jitter), broadcast over the
@@ -309,11 +308,10 @@ function captureJitsiAudio() {
   const local = getLocalParticipant();
   const localJitsiId = local ? local.id : null;
   // Drive routing from the conference's participant/track model rather than
-  // from Jitsi's injected <audio> elements. A bare lib-jitsi-meet conference
-  // creates no such elements, and even under the Jitsi web app the track model
-  // is the authoritative owner→track mapping (this deployment labels the
-  // elements with generic ids that do not embed the endpoint id — see
-  // participants.js). readRemoteTracks() already excludes local + hidden.
+  // from injected <audio> elements. There are none to scrape: the direct
+  // lib-jitsi-meet conference creates no such elements, and the track model is
+  // the authoritative owner→track mapping (see participants.js).
+  // readRemoteTracks() already excludes local + hidden.
   const media = readRemoteTracks();
   for (const [jitsiId, entry] of media) {
     const hasAudio = entry && entry.audio && entry.audio.length;
@@ -343,9 +341,8 @@ function captureJitsiAudio() {
       const live = existing.stream === stream
         && existing.track && existing.track.readyState === 'live';
       if (live) {
-        // Routing is track-driven, so we may have tapped the track before the
-        // Jitsi web app injected its <audio> element. Mute it now that it
-        // exists, otherwise the same audio plays twice.
+        // Routing is track-driven. If an <audio> element for this peer ever
+        // appears, mute it so the same audio does not play twice.
         if (!existing.tag) {
           const tagNow = findRemoteAudioElement(jitsiId);
           if (tagNow) {
@@ -363,8 +360,8 @@ function captureJitsiAudio() {
       }
       console.log('[latency] audio wiring for', jitsiId, 'went stale (track replaced) — re-wiring');
     }
-    // Under the Jitsi web app the same track is also playing natively through
-    // an <audio> element; mute it once we tap it. Null under lib-jitsi-meet.
+    // If the track is also playing natively through an <audio> element, mute it
+    // once we tap it. Null under lib-jitsi-meet, which injects no elements.
     const tag = findRemoteAudioElement(jitsiId);
     wireRemoteAudio({ jitsiId, stream, tag });
   }
@@ -822,9 +819,8 @@ async function acquireLocalAudioTrackForStrudel() {
   try {
     const conf = getConference();
     // 1) Publish the real microphone through the backend-neutral seam — the
-    //    Jitsi web app's own unmute, or an explicit createLocalTracks+add under
-    //    lib-jitsi-meet. This is the same publisher published-audio.js runs at
-    //    join, so the track (and the backend it was obtained from) is one
+    //    conference's own unmute, or an explicit createLocalTracks+add. This is
+    //    the same publisher published-audio.js runs at join, so the track is one
     //    implementation, not one per caller.
     if (await ensureAudioPublished({ conference: conf, waitMs: 2000 })) {
       const t = getPublishedAudioTrack() || findLocalJitsiAudioTrack();

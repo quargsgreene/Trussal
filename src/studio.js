@@ -495,10 +495,10 @@ function renderDetail(container) {
   // way rather than only the first one.
   selectedPeerKey = isLocal ? 'local' : (peer.peerId || null);
   // The LOCAL peer's key must be the constant 'local', NOT peer.jitsiId:
-  // participants.js polls window.APP.conference and emits 'local-update' with
-  // a new id across a P2P<->JVB renegotiation (room crossing the 2<->3-
-  // participant boundary — see pageEnsureAudioPublished's watchdog for the
-  // same underlying flip on the bot side), which is a real, observed
+  // participants.js polls the conference (through meeting-adapter.js) and emits
+  // 'local-update' with a new id across a P2P<->JVB renegotiation (room crossing
+  // the 2<->3-participant boundary — see pageEnsureAudioPublished's watchdog for
+  // the same underlying flip on the bot side), which is a real, observed
   // mid-session event with nothing to do with the editor. Keying local on
   // jitsiId used to make that moment look like "a different peer" and
   // rebuild the shell, silently reverting the box to peer.pattern (the last

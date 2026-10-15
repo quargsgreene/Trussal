@@ -917,9 +917,9 @@ function _activateDwelled(el) {
 }
 
 // ── Meeting visibility ──────────────────────────────────────────────────────────
-// Backend-neutral: the adapter reconciles the conference (a bare lib-jitsi-meet
-// one reports joined) with the Jitsi web app's DOM signals, so the keyboard
-// still retracts correctly on the prejoin/welcome screens under either backend.
+// Backend-neutral: the adapter reconciles the lib-jitsi-meet conference (which
+// reports joined) with the premeeting-screen DOM, so the keyboard still retracts
+// correctly on the prejoin/welcome screens.
 function _inMeeting() {
   return isInMeeting();
 }

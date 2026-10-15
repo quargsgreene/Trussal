@@ -1,7 +1,7 @@
 // Wraps the Jitsi participant list behind a tiny pub-sub so the studio UI can
 // stay in sync with who is actually in the meeting. We poll the active
-// conference through meeting-adapter.js so the polling code never reaches for
-// window.APP directly; swapping the backend is a change to that module only.
+// conference through meeting-adapter.js so the polling code never reaches for a
+// backend object directly; the implementation lives in that module only.
 
 import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference, subscribeConferenceEvents } from './meeting-adapter.js';
 
@@ -9,13 +9,13 @@ const subscribers = new Set();
 let local = null;
 const remotes = new Map();
 
-// Step 3: event-driven backend. Keep the conference we are subscribed to and
-// its teardown so a backend swap (APP <-> injected lib-jitsi-meet) resubscribes.
+// Event-driven roster. Keep the conference we are subscribed to and its
+// teardown so a new conference (a reconnect, a fresh join) resubscribes.
 let activeConference = null;
 let rosterTeardown = null;
 
-// A single null read of the local participant is NOT a departure. Jitsi tears
-// down and rebuilds APP.conference for transient reasons that are not a
+// A single null read of the local participant is NOT a departure. The
+// conference is torn down and rebuilt for transient reasons that are not a
 // hangup — most visibly moving into or out of a breakout room, where the
 // client leaves the main MUC and joins the breakout MUC with a multi-second
 // gap during which getMyUserId() is null (a P2P<->JVB flip or a bridge
@@ -23,7 +23,7 @@ let rosterTeardown = null;
 // subscribers (meeting.js navigates the whole page to the lobby; peer-state
 // closes its sidecar socket), so require the absence to hold across several
 // consecutive polls before treating it as real. A breakout switch / reconnect
-// repopulates APP.conference well within this window and never fires the event.
+// repopulates the conference well within this window and never fires the event.
 const LOCAL_LEAVE_CONFIRM_TICKS = 6; // ~6s at the 1s poll interval
 let missingLocalTicks = 0;
 
@@ -62,7 +62,7 @@ function tick() {
   try { syncConferenceSubscription(); } catch (e) { console.warn('[participants] conference sync failed', e); }
   const newLocal = readLocal();
   if (!newLocal) {
-    // We were in a conference and now read as absent (APP.conference torn
+    // We were in a conference and now read as absent (the conference torn
     // down or getMyUserId() gone null). This is a genuine local departure —
     // an in-app hangup that leaves the tab open on a post-call/welcome screen
     // rather than closing or reloading it — ONLY if it persists: a breakout

@@ -165,19 +165,19 @@ export function pageMarkAggregator() {
 
 /**
  * Install the page-side halves of the backend seam, at document-start, so every
- * other page script can resolve "the meeting" without knowing which backend is
- * in play:
+ * other page script can resolve "the meeting" without knowing how the page was
+ * bootstrapped:
  *
  *   window.__trussalConf()       — the active conference, or null.
  *   window.__trussalRoom(conf?)  — the object owning the track/participant API.
  *
  * These are page globals rather than module imports because puppeteer serialises
  * each page script as a bare function body: a script cannot see another module's
- * helpers, but it CAN see window. They mirror src/meeting-adapter.js: prefer the
- * Trussal bundle's injected lib-jitsi-meet conference (exposed as
- * window.__trussalGetConference) and fall back to the Jitsi web app's
- * window.APP.conference, so a bot's track and roster paths — which used to reach
- * straight for window.APP — survive the swap to the direct lib-jitsi backend.
+ * helpers, but it CAN see window. They mirror src/meeting-adapter.js and resolve
+ * exactly one conference — the lib-jitsi-meet one the Trussal bundle injects
+ * (exposed as window.__trussalGetConference). The Jitsi web app is only the
+ * shell that serves the page; it never joins, so there is no window.APP
+ * conference to fall back to.
  *
  * __trussalRoom is capability-checked for the same reason published-video.js's
  * roomFor() is: a bare JitsiConference's own `.room` is its XMPP room (no
@@ -195,9 +195,8 @@ export function pageInstallMeetingAccessor() {
         const injected = window.__trussalGetConference();
         if (injected) return injected;
       }
-    } catch (e) { /* fall through to the Jitsi web app */ }
-    const app = globalThis.APP;
-    return (app && app.conference) || null;
+    } catch (e) { /* the bundle has not defined it yet */ }
+    return null;
   };
 
   window.__trussalRoom = function trussalRoom(conf) {
@@ -211,15 +210,13 @@ export function pageInstallMeetingAccessor() {
 }
 
 /**
- * Wait predicate (passed to page.waitForFunction) for "the meeting is up":
- * either the Jitsi web app has settled (globalThis.APP) or the direct
- * lib-jitsi-meet conference has joined (the bundle's __trussalGetConference
- * returns a conference). Without the second arm, a bare lib-jitsi deployment —
- * which never defines window.APP — would make every bot wait out the full
- * timeout before publishing.
+ * Wait predicate (passed to page.waitForFunction) for "the meeting is up": the
+ * direct lib-jitsi-meet conference has joined (the bundle's
+ * __trussalGetConference returns a conference). The Jitsi web app shell defines
+ * window.APP on every page but never joins, so APP is not a readiness signal —
+ * waiting on it let a bot start before its own conference existed.
  */
 export function pageConferenceReady() {
-  if (globalThis.APP !== undefined) return true;
   try {
     if (typeof window.__trussalGetConference === 'function' && window.__trussalGetConference()) return true;
   } catch (e) { /* not ready yet */ }
@@ -628,7 +625,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   document.addEventListener('trussal-remote-video', async (e) => {
     const on = !!(e && e.detail && e.detail.videoOn);
     try {
-      const conf = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+      const conf = window.__trussalConf ? window.__trussalConf() : null;
       if (!conf) return;
       const localTrack = () => {
         try {
@@ -810,7 +807,7 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
     // once the deadline passes rather than hang forever.
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
-      const conf = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+      const conf = window.__trussalConf ? window.__trussalConf() : null;
       const room = window.__trussalRoom ? window.__trussalRoom(conf) : (conf && (conf._room || conf.room));
       if (room && typeof room.getParticipants === 'function') {
         ensureReceiverConstraints(room);
@@ -944,7 +941,7 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
 export async function pageEnsureAudioPublished() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
-    const conf = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+    const conf = window.__trussalConf ? window.__trussalConf() : null;
     if (!conf) return;
     const room = () => (window.__trussalRoom ? window.__trussalRoom(conf) : (conf._room || conf.room));
     const localTrack = () => {
@@ -1141,7 +1138,7 @@ export function pageInstallVideoPublisher() {
   window.__trussalEnsureVideoPublished = async function ensureVideoPublished() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
-    const conf = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+    const conf = window.__trussalConf ? window.__trussalConf() : null;
     if (!conf) return;
     const room = () => (window.__trussalRoom ? window.__trussalRoom(conf) : (conf._room || conf.room));
     const localTrack = () => { try { const r = room(); return r && r.getLocalVideoTrack && r.getLocalVideoTrack(); } catch (e) { return null; } };
@@ -1678,7 +1675,7 @@ export function pageAggregatorCapture() {
 
     const room = window.__trussalRoom
       ? window.__trussalRoom()
-      : (globalThis.APP && globalThis.APP.conference && globalThis.APP.conference._room);
+      : null;
     if (!room || typeof room.getParticipants !== 'function') return; // conference not ready yet
     const participants = room.getParticipants().filter((participant) => participant.getId());
     const currentIds = new Set(participants.map((participant) => participant.getId()));
@@ -1791,7 +1788,7 @@ export function pageAggregatorCapture() {
       let participantCount = null;
       const room = window.__trussalRoom
         ? window.__trussalRoom()
-        : (globalThis.APP && globalThis.APP.conference && globalThis.APP.conference._room);
+        : null;
       if (room && typeof room.getParticipants === 'function') participantCount = room.getParticipants().length;
       return { store: storeSizes, resolverType, resolved, participantCount };
     },
@@ -1862,7 +1859,7 @@ export function pageAggregatorCaptureDiag() {
  * (a corrupt member must not be silently reported as having none).
  */
 export function pageAggregatorTrackMapDiag() {
-  const appConference = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+  const appConference = window.__trussalConf ? window.__trussalConf() : null;
   const room = window.__trussalRoom
     ? window.__trussalRoom(appConference)
     : (appConference && appConference._room); // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
@@ -2477,7 +2474,7 @@ export function pageReadSamples() {
   const repl = editor && editor.editor && editor.editor.repl;
   const fan = window.__trussalFanGain;
   const readFanRms = window.__trussalReadFanRms;
-  const conf = window.__trussalConf ? window.__trussalConf() : (globalThis.APP && globalThis.APP.conference);
+  const conf = window.__trussalConf ? window.__trussalConf() : null;
   const jitsiJoined = Boolean(conf && conf.isJoined && conf.isJoined());
   // Whether the bot is genuinely AUDIBLE, not just "playing": fanRms>0 means sound
   // reached the fan (→ Jitsi track → aggregator) this window; ==0 while
@@ -2865,7 +2862,7 @@ export function pageMosaic(options = {}) {
     try {
       const room = window.__trussalRoom
         ? window.__trussalRoom()
-        : (window.APP && window.APP.conference && window.APP.conference._room);
+        : null;
       if (!room || typeof room.getParticipants !== 'function') return;
       ensureReceiverConstraints(room);
       const participant = room.getParticipants().find((p) => p.getId() === jitsiId);
@@ -3167,7 +3164,7 @@ export function pageMosaic(options = {}) {
     retryAttachments() {
       const room = window.__trussalRoom
         ? window.__trussalRoom()
-        : (window.APP && window.APP.conference && window.APP.conference._room);
+        : null;
       if (room && cells.some((c) => c.source === 'blit')) ensureReceiverConstraints(room);
       for (const cell of cells) {
         if (cell.source !== 'blit') continue;

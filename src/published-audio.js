@@ -1,24 +1,20 @@
-// published-audio.js — the local microphone track, made backend-agnostic.
+// published-audio.js — the local microphone track.
 //
-// The Jitsi Meet web app publishes the microphone itself: joining unmuted (the
-// default) ends in jitsi-meet creating the local audio track and adding it to
-// the conference. A direct lib-jitsi-meet conference has no such UI — it only
-// ever publishes a track someone explicitly adds — so, left alone, it would
-// carry no microphone at all. ensureAudioPublished()/unpublishAudio() is that
-// explicit path: the audio twin of published-video.js's video pair.
+// A direct lib-jitsi-meet conference only ever publishes a track someone
+// explicitly adds, so, left alone, it would carry no microphone at all.
+// ensureAudioPublished()/unpublishAudio() is that explicit path: the audio twin
+// of published-video.js's video pair.
 //
 // Unlike video, audio is NOT replaced: the raw microphone is exactly what the
 // room should hear. (published-video.js swaps the camera for the Hydra canvas
 // only because a performer's camera must never reach the wire; the mic has no
 // such rule.) This same track is what latency-instrument.js layers effects onto
 // through JitsiTrack.setEffect() when Strudel is published to the room — so the
-// finder here is the one place that knows where each backend keeps it.
+// finder here is the one place that knows where the conference keeps it.
 //
-// Both the web wrapper and a bare lib-jitsi-meet JitsiConference expose the
-// local tracks, so readLocalAudioTrack() reads whichever is present. Everything
-// takes an optional conference/test double so the paths stay unit-testable
-// outside a browser, and both publishers are inert until called — the default
-// Jitsi web backend keeps publishing through its own unmute, unchanged.
+// readLocalAudioTrack() reads the conference's local tracks. Everything takes an
+// optional conference/test double so the paths stay unit-testable outside a
+// browser, and both publishers are inert until called.
 
 import { getConference } from './meeting-adapter.js';
 
@@ -44,13 +40,13 @@ function libJitsiGlobal() {
 
 function roomFor(conf) {
   if (!conf) return null;
-  // The object that actually owns the track API. Prefer `_room` (the Jitsi web
-  // wrapper parks the lib-jitsi-meet JitsiConference there); otherwise a bare
-  // JitsiConference is that object itself. NB: a real JitsiConference ALSO
-  // exposes `conf.room`, but that is its XMPP room (addListener/
-  // muteParticipant — no track API), so it must never be chosen over the
-  // conference. Capability-check each candidate so a wrapper that parks the
-  // conference on `.room` still resolves.
+  // The object that actually owns the track API. Prefer `_room` if a wrapper
+  // parked the JitsiConference there; otherwise the conference itself (a bare
+  // JitsiConference IS that object). NB: a real JitsiConference ALSO exposes
+  // `conf.room`, but that is its XMPP room (addListener/muteParticipant — no
+  // track API), so it must never be chosen over the conference. Capability-check
+  // each candidate so a wrapper that parks the conference on `.room` still
+  // resolves.
   const hasTrackApi = (o) => !!o && (typeof o.addTrack === 'function' || typeof o.removeTrack === 'function');
   if (hasTrackApi(conf._room)) return conf._room;
   if (hasTrackApi(conf)) return conf;
@@ -67,8 +63,8 @@ export function isAudioTrack(track) {
 }
 
 /**
- * The live local audio track, wherever the backend keeps it. Jitsi Meet's APP
- * conference exposes getLocalAudioTrack()/localAudioTrack; a bare lib-jitsi-meet
+ * The live local audio track, wherever the conference keeps it. Prefer a
+ * getLocalAudioTrack()/localAudioTrack accessor; a bare lib-jitsi-meet
  * JitsiConference keeps its JitsiLocalTracks in `_localTracks` (reachable via
  * getLocalTracks()).
  */
@@ -151,7 +147,7 @@ export function hasPublishedAudioTrack() {
  * Publish the local microphone, if it is not already published. Backend-neutral
  * and idempotent: a live local track short-circuits.
  *
- * `unmuteFirst` (default true) lets the Jitsi web app's own unmute produce the
+ * `unmuteFirst` (default true) lets the conference's own unmute produce the
  * track. The Strudel-publish path passes false when it has substituted a
  * synthetic stream at getUserMedia and wants createLocalTracks() to build the
  * track from that, not to disturb (or wait on) the real microphone first.
@@ -173,9 +169,9 @@ export async function ensureAudioPublished({
     return true;
   }
 
-  // Path 1 — the Jitsi web app's own unmute. This is exactly what joining
-  // unmuted (or the toolbar mic button) does, so the default backend is
-  // unchanged.
+  // Path 1 — the conference's own unmute (its `muteAudio`). This is exactly
+  // what joining unmuted (or a toolbar mic button) does when the conference
+  // supports it, so that path is unchanged.
   if (unmuteFirst && typeof conf.muteAudio === 'function') {
     try {
       await conf.muteAudio(false);
@@ -218,7 +214,7 @@ export async function ensureAudioPublished({
  */
 export async function ensureAudioPublishedWhenReady({ attempts = 40, intervalMs = 500, ...options } = {}) {
   for (let i = 0; i < attempts; i++) {
-    const conf = options.conference || getConference() || (typeof window !== 'undefined' && window.APP && window.APP.conference);
+    const conf = options.conference || getConference();
     if (conf) return ensureAudioPublished({ ...options, conference: conf });
     await sleep(intervalMs);
   }
@@ -227,7 +223,7 @@ export async function ensureAudioPublishedWhenReady({ attempts = 40, intervalMs 
 
 /**
  * Stop publishing the local microphone. Prefers the conference's own
- * removeTrack/dispose path and falls back to the Jitsi web app's muteAudio.
+ * removeTrack/dispose path and falls back to the conference's muteAudio.
  * Idempotent.
  */
 export async function unpublishAudio({ conference } = {}) {
@@ -260,10 +256,10 @@ export function resetPublishedAudio() {
   publishedTrack = null;
 }
 
-// Manual hooks for driving microphone publication while the lib-jitsi-meet
-// backend has no toolbar of its own (the Jitsi web backend keeps using its own
-// unmute, and these are inert until called). The bot bundle installs its own
-// __trussalEnsureAudioPublished at document-start; never clobber that.
+// Manual hooks for driving microphone publication (the lib-jitsi-meet backend
+// has no toolbar of its own, so these are the way in; they are inert until
+// called). The bot bundle installs its own __trussalEnsureAudioPublished at
+// document-start; never clobber that.
 if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussalIsAggregator) {
   if (typeof window.__trussalEnsureAudioPublished !== 'function') {
     window.__trussalEnsureAudioPublished = () => ensureAudioPublished();

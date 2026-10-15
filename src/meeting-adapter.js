@@ -1,13 +1,12 @@
 // meeting-adapter.js — the single, swappable seam between Trussal and the
 // underlying meeting implementation.
 //
-// Today the meeting implementation is the Jitsi Meet web app, whose `APP`
-// singleton exposes a `conference` we poll for roster data (see
-// participants.js). Tomorrow it will be a direct lib-jitsi-meet conference
-// object. Everything else in the bundle (participants.js, studio.js, the
-// latency/analytics code) should talk to *this* module and never reach for
-// `window.APP` directly, so that swapping the backend is a localised change
-// in this file rather than a hunt through the whole tree.
+// The meeting implementation is a direct lib-jitsi-meet conference object,
+// created by lib-jitsi-bootstrap.js and handed in via setConference(). The Jitsi
+// Meet web app may still be hosting the page, but its `APP.conference` is no
+// longer consulted: `participants.js` and everything else talk to *this* module
+// and never reach for `window.APP` directly, so the backend stays a localised
+// change in this file rather than a hunt through the whole tree.
 //
 // The interface is deliberately tiny and read-only: Trussal's audio/UI layers
 // only need to know who is in the room and whether the local peer has joined.
@@ -34,10 +33,8 @@ export function getStore() {
 }
 
 // The one conference handle the rest of Trussal should treat as "the meeting".
-// Step 2: this is no longer hard-wired to window.APP. A lib-jitsi-meet
-// bootstrap can inject a conference directly, which takes precedence; when
-// nothing has been injected we keep reading the Jitsi Meet web app's
-// conference so nothing regresses.
+// Only ever the conference lib-jitsi-bootstrap.js injects: nothing else joins a
+// meeting, so there is no second conference to fall back to.
 let injectedConference = null;
 
 export function setConference(conf) {
@@ -59,8 +56,8 @@ export function hasInjectedConference() {
 }
 
 // Return the active conference object, or null when none is joined / not yet
-// initialised. Under the current backend this is `window.APP.conference`;
-// under lib-jitsi-meet it is the conference injected via setConference(...).
+// initialised. This is the conference lib-jitsi-bootstrap.js injected; there is
+// no other backend to read from.
 export function getConference() {
   try {
     if (injectedConference) return injectedConference;
@@ -72,22 +69,20 @@ export function getConference() {
   }
 }
 
-// The underlying lib-jitsi-meet JitsiConference for the active meeting. It is
-// reachable directly (a conference injected via setConference) or through the
-// Jitsi web app wrapper's `_room`. Both expose the authoritative participant
-// model; the web wrapper is the only one with listMembers().
+// The underlying lib-jitsi-meet JitsiConference for the active meeting (the
+// conference injected via setConference). It exposes the authoritative
+// participant model.
 function getRoomFor(conf) {
   if (!conf) return null;
   return conf._room || conf;
 }
 
 // The object that owns the conference's track/participant API. Prefer `_room`
-// (the Jitsi web wrapper parks the lib-jitsi-meet JitsiConference there);
-// otherwise the conference itself (a bare JitsiConference IS that object, and
-// its own `.room` is its XMPP room — no addTrack/getLocalTrack API — so it must
-// never be chosen over the conference). Capability-checked so a wrapper that
-// parks the conference on `.room` still resolves. Mirrors published-video.js's
-// roomFor() so the bundle and the bot page scripts agree on "the room".
+// if a wrapper parked the JitsiConference there; otherwise the conference
+// itself (a bare JitsiConference IS that object, and its own `.room` is its
+// XMPP room — no addTrack/getLocalTrack API — so it must never be chosen over
+// the conference). Capability-checked. Mirrors published-video.js's roomFor()
+// so the bundle and the bot page scripts agree on "the room".
 export function getMeetingRoom(conf = null) {
   try {
     const c = conf || getConference();
@@ -103,8 +98,8 @@ export function getMeetingRoom(conf = null) {
   }
 }
 
-// Our own endpoint id, from whichever backend is active. The web wrapper
-// exposes getMyUserId(); a bare JitsiConference exposes myUserId().
+// Our own endpoint id. A wrapper exposes getMyUserId(); a bare JitsiConference
+// exposes myUserId().
 function getLocalUserIdFrom(conf) {
   try {
     if (conf && typeof conf.getMyUserId === 'function') return conf.getMyUserId();
@@ -197,10 +192,9 @@ export function readRemotes() {
 // This is the backend-neutral replacement for scraping Jitsi's injected
 // <audio>/<video> elements. The Jitsi web app hangs each remote stream off such
 // an element; a bare lib-jitsi-meet conference injects none, so consumers that
-// want remote media must read participant.getTracks() instead. The web app's
-// own elements are not the source of truth even under the web backend — its
-// element ids are generic in this deployment (see participants.js) — so callers
-// get the same tracks here either way.
+// want remote media must read participant.getTracks() instead. Its element ids
+// are generic in this deployment (see participants.js), so callers get the same
+// tracks here either way.
 export function readRemoteTracks() {
   const map = new Map();
   try {
@@ -251,15 +245,13 @@ export function isJoined() {
   }
 }
 
-// Whether the local user is in the meeting, reconciling both backends in one
-// place. The conference is authoritative when it can answer (a bare
-// lib-jitsi-meet conference reports joined via isJoined()); otherwise fall back
-// to the DOM signals the Jitsi web app provides — which is all Trussal had
-// before the seam existed, so the default backend is unchanged. This is the
-// backend-neutral replacement for the scattered
+// Whether the local user is in the meeting. The conference is authoritative when
+// it can answer (the injected lib-jitsi-meet conference reports joined via
+// isJoined()); otherwise fall back to the premeeting-screen DOM — the
+// prejoin/welcome screens, where the page is up but no conference exists yet.
+// This is the backend-neutral replacement for the scattered
 // `document.getElementById('largeVideoContainer')` checks (studio.js,
-// on-screen-keyboard.js, facial-gesture.js): a bare lib-jitsi-meet deployment
-// has no largeVideoContainer, yet it is very much in the meeting.
+// on-screen-keyboard.js, facial-gesture.js).
 export function isInMeeting() {
   try {
     const conf = getConference();
@@ -286,21 +278,19 @@ export function isInMeeting() {
   }
 }
 
-// Escape hatch for the long tail of code that has not yet been ported and still
-// needs the raw conference object (published-video tag resolution, NetStats,
-// bots). New code should prefer getConference() over `window.APP.conference`.
+// The raw conference object for the long tail of code that still needs it
+// (published-video tag resolution, NetStats, bots). Identical to
+// getConference(); new code should prefer that name.
 export function getRawConference() {
   return getConference();
 }
 
-// Step 3: give participants an event-driven trigger layer. Both backends
-// (Jitsi web's APP.conference and a directly injected lib-jitsi-meet
-// conference) expose an underlying lib-jitsi-meet JitsiConference through
-// `conf._room` (or `conf` itself when it already is one), and that object is
-// an EventEmitter over `JitsiMeetJS.events.conference`. We attach the caller's
-// `handler` to every known membership/track event so the roster can refresh
-// promptly instead of waiting for the next poll. Returns a teardown or null
-// when no event surface is available, in which case callers keep polling.
+// Give participants an event-driven trigger layer. The conference lib-jitsi-
+// bootstrap.js injects is an EventEmitter over `JitsiMeetJS.events.conference`;
+// we attach the caller's `handler` to every known membership/track event so the
+// roster can refresh promptly instead of waiting for the next poll. Returns a
+// teardown or null when no event surface is available, in which case callers
+// keep polling.
 export function subscribeConferenceEvents(conf, handler) {
   try {
     if (typeof handler !== 'function') return null;
