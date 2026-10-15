@@ -14,8 +14,13 @@
 // screen-share and bots are subsequent migration steps. The point here is to
 // exercise the seam end to end against a real lib-jitsi-meet conference and
 // prove the adapter can serve one.
+//
+// On a page that does not already ship the library (a standalone deployment
+// with no Jitsi web app), the bundle is loaded on demand by lib-jitsi-loader.js
+// before connecting.
 
 import { setConference, clearConference } from './meeting-adapter.js';
+import { ensureLibJitsi } from './lib-jitsi-loader.js';
 
 export function isLibJitsiEnabled() {
   try {
@@ -55,9 +60,9 @@ function resolveConfig(overrides = {}) {
 }
 
 export async function connectLibJitsiConference(overrides = {}) {
-  const JitsiMeetJS = getLibJitsi();
+  const JitsiMeetJS = getLibJitsi() || await ensureLibJitsi();
   if (!JitsiMeetJS) {
-    console.warn('[lib-jitsi-bootstrap] window.JitsiMeetJS not available; falling back to APP conference');
+    console.warn('[lib-jitsi-bootstrap] window.JitsiMeetJS not available and could not be loaded; falling back to APP conference');
     return null;
   }
   const cfg = resolveConfig(overrides);
