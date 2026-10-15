@@ -118,6 +118,14 @@ function startPolling() {
   tick();
 }
 
+// Teardown counterpart of startPolling(). The bundle starts the roster poll at
+// module load and never stops it (a meeting lives as long as the tab), but a
+// test harness that imports this module must be able to release the interval —
+// an active setInterval would otherwise keep a Node process alive forever.
+export function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
 export function subscribeParticipants(fn) {
   subscribers.add(fn);
   if (local) fn('local', local);

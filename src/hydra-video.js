@@ -7,9 +7,9 @@
 // (split mode only) via CSS filters + canvas noise overlays, driven by the local
 // peer's rtt/jitter when the corresponding effect toggle is on.
 //
-// Also exports ensureCameraBypass(), which patches two of Hydra's own
-// External Sources methods (s0-s3 .initCam() and .initVideo()) right after
-// initHydra() creates them:
+// Also exports ensureCameraBypass(), which patches Hydra's own External
+// Sources methods (s0-s3 .initCam(), .initVideo() and .initScreen()) right
+// after initHydra() creates them:
 //
 //  - .initCam() calls navigator.mediaDevices.getUserMedia directly, which
 //    published-video.js's publish override intercepts and hands back the
@@ -27,14 +27,17 @@
 //    Strudel pattern already do: every browser that re-executes this peer's
 //    preamble (strudel.js's combined program) independently plays the same
 //    file from its own <video>, no network round-trip needed.
+//  - .initScreen() is reimplemented faithfully (its original returns nothing
+//    and swallows failures, so there is no hook to know when the screen is
+//    live) purely so the same gesture can also publish the Hydra output under
+//    the lib-jitsi-meet backend, once the display stream arrives.
 //
 // strudel.js calls this synchronously from its own wrapped initHydra(), right
 // after the real one resolves and before any user code runs — patching it
 // lazily from this module's own RAF loop loses the race: a preamble's very
 // next line is routinely `s0.initCam()` or `s0.initVideo(...)`, called before
-// the next animation frame ever fires. initImage/initScreen/init don't need
-// either bypass (initImage touches no audio or camera; initScreen's own
-// getDisplayMedia call isn't intercepted by the publish override).
+// the next animation frame ever fires. initImage/init don't need a bypass
+// (initImage touches no audio or camera; init is the raw escape hatch).
 
 import { subscribePeerState } from './peer-state.js';
 // The REAL camera. A plain getUserMedia here would be intercepted by the
@@ -185,6 +188,20 @@ function _videoFromUrl(url) {
   return video;
 }
 
+// The gestures that would make the room see this performer — starting the
+// camera, sharing the screen — also publish the Hydra output (the override's
+// canvas) to the conference, because the direct lib-jitsi-meet backend has no
+// Jitsi camera button to do it. Behind the migration flag: on the Jitsi web
+// backend publishing stays the button's job and nothing here fires.
+function _publishHydraOutput(what) {
+  if (!isLibJitsiEnabled()) return;
+  ensureVideoPublishedWhenReady()
+    .then((ok) => {
+      if (!ok) console.warn(`[hydra-video] could not publish the Hydra output to the lib-jitsi-meet conference (${what})`);
+    })
+    .catch((e) => console.warn(`[hydra-video] publishing the Hydra output failed (${what})`, e));
+}
+
 // Hydra's own s*.initCam() calls navigator.mediaDevices.getUserMedia
 // directly, which published-video.js intercepts for every video request so a
 // performer's raw camera never reaches the wire — s*.initCam() would get back
@@ -208,18 +225,7 @@ export function ensureCameraBypass() {
           const stream = await openCamera(constraints);
           const video = await _videoFromStream(stream);
           source.init({ src: video, dynamic: true }, params);
-          // Under the direct lib-jitsi-meet backend there is no Jitsi camera
-          // button, so the gesture that means "use my camera" also publishes
-          // the Hydra output (the override's canvas) to the room. The Jitsi
-          // web backend keeps publishing through its own button, so this stays
-          // behind the migration flag and its behaviour is unchanged.
-          if (isLibJitsiEnabled()) {
-            ensureVideoPublishedWhenReady()
-              .then((ok) => {
-                if (!ok) console.warn('[hydra-video] could not publish the Hydra output to the lib-jitsi-meet conference');
-              })
-              .catch((e) => console.warn('[hydra-video] publishing the Hydra output failed', e));
-          }
+          _publishHydraOutput('initCam');
         } catch (e) {
           console.warn('[hydra-video] initCam failed', e);
         }
@@ -231,6 +237,38 @@ export function ensureCameraBypass() {
           source.init({ src: _videoFromUrl(url), dynamic: true }, params);
         } catch (e) {
           console.warn('[hydra-video] initVideo failed', e);
+        }
+        return source;
+      };
+    }
+    // Hydra's own s*.initScreen() reaches straight for getDisplayMedia (via
+    // lib/screenmedia.js), which published-video.js's override does NOT
+    // intercept — correctly, since a screen is real media the performer chose
+    // to share. Reimplemented here for one reason: Hydra's version returns
+    // nothing and swallows failures, so there is no point at which we could
+    // learn the screen is live and publish. Mirroring screenmedia.js (get the
+    // display, wrap it in a <video>, hand it to init()) lets the same gesture
+    // also publish the Hydra output under the lib-jitsi-meet backend, and only
+    // once the stream actually arrives.
+    if (typeof source.initScreen === 'function') {
+      source.initScreen = (index = 0, params) => {
+        try {
+          navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+            .then((stream) => {
+              const video = document.createElement('video');
+              video.autoplay = true;
+              video.muted = true;
+              video.playsInline = true;
+              video.srcObject = stream;
+              video.addEventListener('loadedmetadata', () => {
+                video.play().catch(() => {});
+                source.init({ src: video, dynamic: true }, params);
+                _publishHydraOutput('initScreen');
+              });
+            })
+            .catch((e) => console.warn('[hydra-video] initScreen could not get screen', e));
+        } catch (e) {
+          console.warn('[hydra-video] initScreen failed', e);
         }
         return source;
       };
