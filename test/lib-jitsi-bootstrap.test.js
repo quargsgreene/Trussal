@@ -31,9 +31,10 @@ function fakeJitsiMeetJS({ failConnect = false } = {}) {
   const localTracks = [];
   const jitsiTrack = { kind: 'audio', isAudioTrack: () => true, isVideoTrack: () => false };
   const created = [];
+  const connectionOptions = [];
 
   class FakeConnection {
-    constructor() { this._listeners = {}; }
+    constructor(appID, token, options) { this._listeners = {}; connectionOptions.push(options); }
     addEventListener(name, cb) { (this._listeners[name] ||= []).push(cb); }
     _emit(name, arg) { for (const cb of this._listeners[name] || []) cb(arg); }
     connect() {
@@ -70,6 +71,7 @@ function fakeJitsiMeetJS({ failConnect = false } = {}) {
     jitsiTrack,
     localTracks,
     created,
+    connectionOptions,
     init() {},
     async createLocalTracks(options) {
       created.push(options);
@@ -176,6 +178,77 @@ test('bootstrap: an explicit room override wins over the URL path', async () => 
   });
   const conf = await connectLibJitsiConference({ room: 'explicit' });
   assert.equal(conf.room.name, 'explicit');
+});
+
+// --- service URL (BOSH / websocket) ----------------------------------------
+
+test('bootstrap: a websocket URL is preferred and passed as serviceUrl, never bosh', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: {
+      hosts: BASE_CONFIG.hosts,
+      roomName: 'room1',
+      bosh: 'https://meet.example/http-bind',
+      websocket: 'wss://meet.example/xmpp-websocket',
+      startWithAudioMuted: true,
+    },
+  });
+
+  const conf = await connectLibJitsiConference();
+  assert.ok(conf);
+  assert.equal(jitsi.connectionOptions.length, 1);
+  const options = jitsi.connectionOptions[0];
+  assert.equal(options.serviceUrl, 'wss://meet.example/xmpp-websocket');
+  assert.equal('bosh' in options, false, 'the removed bosh option is never passed');
+});
+
+test('bootstrap: a BOSH-only deployment passes config.bosh as serviceUrl, not bosh', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: {
+      hosts: BASE_CONFIG.hosts,
+      roomName: 'room1',
+      bosh: 'https://meet.example/http-bind',
+      startWithAudioMuted: true,
+    },
+  });
+
+  const conf = await connectLibJitsiConference();
+  assert.ok(conf);
+  const options = jitsi.connectionOptions[0];
+  assert.equal(options.serviceUrl, 'https://meet.example/http-bind');
+  assert.equal('bosh' in options, false);
+});
+
+test('bootstrap: an explicit serviceUrl override wins over websocket/bosh', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: {
+      hosts: BASE_CONFIG.hosts,
+      roomName: 'room1',
+      bosh: 'https://meet.example/http-bind',
+      websocket: 'wss://meet.example/xmpp-websocket',
+      startWithAudioMuted: true,
+    },
+  });
+
+  const conf = await connectLibJitsiConference({ serviceUrl: 'wss://override.example/ws' });
+  assert.ok(conf);
+  assert.equal(jitsi.connectionOptions[0].serviceUrl, 'wss://override.example/ws');
+});
+
+test('bootstrap: no bosh/websocket configured leaves serviceUrl unset', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: { ...BASE_CONFIG, startWithAudioMuted: true } });
+
+  const conf = await connectLibJitsiConference();
+  assert.ok(conf);
+  const options = jitsi.connectionOptions[0];
+  assert.equal(options.serviceUrl, undefined);
+  assert.equal('bosh' in options, false);
 });
 
 // --- failure paths ---------------------------------------------------------

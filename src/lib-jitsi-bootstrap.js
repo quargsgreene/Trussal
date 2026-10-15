@@ -75,8 +75,14 @@ function resolveConfig(overrides = {}) {
     muc: overrides.muc || hosts.muc || ('conference.' + (hosts.domain || (typeof window !== 'undefined' ? window.location.hostname : ''))),
     focus: overrides.focus || hosts.focus || ('focus.' + (hosts.domain || (typeof window !== 'undefined' ? window.location.hostname : ''))),
     room: overrides.room || cfg.roomName || urlRoom || (typeof window !== 'undefined' ? (window.location.hash || '').replace(/^#/, '') || cfg.room : '') || '',
-    serviceUrl: overrides.serviceUrl || cfg.serviceUrl || null,
-    bosh: overrides.bosh || cfg.bosh || null,
+    // lib-jitsi-meet no longer accepts a separate `bosh` option: the XMPP
+    // constructor throws "The \"bosh\" option is no longer supported, please
+    // use \"serviceUrl\" instead". A single `serviceUrl` drives both transports,
+    // chosen by scheme (`wss://` → websocket, `https://` → BOSH), so collapse
+    // the deployment's `websocket`/`bosh` pair into it, preferring the
+    // websocket URL exactly like the Jitsi web bundle (`config.websocket ||
+    // config.bosh`).
+    serviceUrl: overrides.serviceUrl || cfg.serviceUrl || cfg.websocket || cfg.bosh || null,
   };
 }
 
@@ -107,7 +113,6 @@ export async function connectLibJitsiConference(overrides = {}) {
       hosts: { domain: cfg.domain, muc: cfg.muc, focus: cfg.focus },
     };
     if (cfg.serviceUrl) options.serviceUrl = cfg.serviceUrl;
-    if (cfg.bosh) options.bosh = cfg.bosh;
 
     connection = new JitsiMeetJS.JitsiConnection(null, null, options);
 
