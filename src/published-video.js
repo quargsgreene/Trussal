@@ -14,6 +14,16 @@
 //
 // hydra-video.js still needs the real camera (that is what feeds `s0`), so the
 // pre-override getUserMedia is kept and exported as openCamera().
+//
+// Step 4 makes *what gets published* backend-agnostic. Under the Jitsi Meet
+// web app the camera button's own unmute path creates and publishes the track,
+// so nothing here has to drive it. A direct lib-jitsi-meet conference has no
+// such UI: it only ever publishes a track someone explicitly adds. The
+// ensureVideoPublished()/unpublishVideo() pair below is that explicit path,
+// built on the same canvas the override already serves — so both backends
+// publish the same pixels and the raw camera still never reaches the wire.
+
+import { getConference } from './meeting-adapter.js';
 
 const CANVAS_ID = 'trussal-published-video';
 const CAPTURE_FPS = 15;
@@ -131,6 +141,208 @@ export function startWithVideoMuted() {
   config.startWithVideoMuted = true;
 }
 
+// ---------------------------------------------------------------------------
+// Step 4: explicit local video track plumbing.
+//
+// The Jitsi web backend publishes video through its own camera button, which
+// ends in a gUM call the override above answers with the canvas. The direct
+// lib-jitsi-meet backend has no camera button, so `ensureVideoPublished()`
+// drives the same publication itself: create a video track (again routed
+// through the override) and add it to the conference. Both functions take the
+// conference/test doubles as options so the path stays unit-testable outside a
+// browser, and both are inert until a caller runs them — the default backend's
+// behaviour is unchanged.
+// ---------------------------------------------------------------------------
+
+const PUBLISH_POLL_MS = 150;
+const PUBLISH_WAIT_MS = 3000;
+
+// The one track this module last published. Kept here (rather than re-derived
+// from the conference every time) because a renegotiation can leave the
+// conference object briefly unaware of the live track; the seam makes the
+// previous one reachable for unpublish/teardown.
+let publishedTrack = null;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function libJitsiGlobal() {
+  try {
+    return (typeof window !== 'undefined' && window.JitsiMeetJS) ? window.JitsiMeetJS : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function roomFor(conf) {
+  return conf ? (conf._room || conf.room || conf) : null;
+}
+
+function isVideoTrack(track) {
+  if (!track) return false;
+  try {
+    if (typeof track.isVideoTrack === 'function') return track.isVideoTrack();
+  } catch (e) { /* fall through to the shape checks */ }
+  return track.type === 'video' || track.kind === 'video';
+}
+
+// The live local video track, wherever the backend keeps it. Jitsi Meet's APP
+// conference exposes getLocalVideoTrack(); a bare lib-jitsi-meet JitsiConference
+// keeps its JitsiLocalTracks in `_localTracks`.
+function readLocalVideoTrack(conf) {
+  try {
+    if (!conf) return null;
+    if (typeof conf.getLocalVideoTrack === 'function') {
+      const track = conf.getLocalVideoTrack();
+      if (track) return track;
+    }
+    const room = conf._room;
+    if (room && typeof room.getLocalVideoTrack === 'function') {
+      const track = room.getLocalVideoTrack();
+      if (track) return track;
+    }
+    for (const list of [conf._localTracks, room && room._localTracks]) {
+      if (!Array.isArray(list)) continue;
+      const track = list.find(isVideoTrack);
+      if (track) return track;
+    }
+  } catch (e) {
+    console.warn('[published-video] reading the local video track failed', e);
+  }
+  return null;
+}
+
+async function waitForLocalVideoTrack(conf, timeoutMs) {
+  const startedAt = Date.now();
+  for (;;) {
+    const track = readLocalVideoTrack(conf);
+    if (track) return track;
+    if (Date.now() - startedAt >= timeoutMs) return null;
+    await sleep(PUBLISH_POLL_MS);
+  }
+}
+
+async function attachVideoTrack(conf, track) {
+  try {
+    // Jitsi Meet's APP conference takes the track through useVideoStream; a
+    // bare lib-jitsi-meet conference only has addTrack.
+    if (typeof conf.useVideoStream === 'function') {
+      await conf.useVideoStream(track);
+      return true;
+    }
+    const room = roomFor(conf);
+    if (room && typeof room.addTrack === 'function') {
+      await room.addTrack(track);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[published-video] attaching the video track failed', e);
+  }
+  return false;
+}
+
+/** Track this module last published, or null. Test/inspection seam. */
+export function getPublishedVideoTrack() {
+  return publishedTrack;
+}
+
+export function setPublishedVideoTrack(track) {
+  publishedTrack = track || null;
+  return publishedTrack;
+}
+
+export function clearPublishedVideoTrack() {
+  publishedTrack = null;
+}
+
+export function hasPublishedVideoTrack() {
+  return !!publishedTrack;
+}
+
+/**
+ * Publish the composited canvas as the local video track, if it is not already
+ * published. Backend-agnostic and idempotent: a live local track short-circuits.
+ *
+ * Returns true when the conference now has a local video track.
+ */
+export async function ensureVideoPublished({ conference, JitsiMeetJS, waitMs = PUBLISH_WAIT_MS } = {}) {
+  const conf = conference || getConference();
+  if (!conf) return false;
+
+  const existing = readLocalVideoTrack(conf);
+  if (existing) {
+    setPublishedVideoTrack(existing);
+    return true;
+  }
+
+  // Path 1 — the Jitsi web app's own unmute. It triggers gUM (the override
+  // above answers with the canvas) and publishes the result. This is exactly
+  // what the toolbar camera button does, so the default backend is unchanged.
+  if (typeof conf.muteVideo === 'function') {
+    try {
+      await conf.muteVideo(false);
+    } catch (e) {
+      console.warn('[published-video] muteVideo(false) failed', e);
+    }
+    const track = await waitForLocalVideoTrack(conf, waitMs);
+    if (track) {
+      setPublishedVideoTrack(track);
+      return true;
+    }
+  }
+
+  // Path 2 — direct lib-jitsi-meet. No muteVideo to lean on: create the track
+  // (through the same override) and attach it explicitly.
+  const meetjs = JitsiMeetJS || libJitsiGlobal();
+  if (meetjs && typeof meetjs.createLocalTracks === 'function') {
+    let tracks = null;
+    try {
+      tracks = await meetjs.createLocalTracks({ devices: ['video'] });
+    } catch (e) {
+      console.warn('[published-video] createLocalTracks failed', e);
+    }
+    const track = Array.isArray(tracks) ? tracks[0] : tracks;
+    if (track && await attachVideoTrack(conf, track)) {
+      const live = await waitForLocalVideoTrack(conf, waitMs);
+      setPublishedVideoTrack(live || track);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Stop publishing the local video track. Prefers the conference's own
+ * removeTrack/dispose path and falls back to the Jitsi web app's muteVideo.
+ * Idempotent.
+ */
+export async function unpublishVideo({ conference } = {}) {
+  const conf = conference || getConference();
+  const track = readLocalVideoTrack(conf) || publishedTrack;
+  clearPublishedVideoTrack();
+  if (!conf) return false;
+  try {
+    const room = roomFor(conf);
+    if (track && room && typeof room.removeTrack === 'function') {
+      await room.removeTrack(track);
+      return true;
+    }
+    if (track && typeof track.dispose === 'function') {
+      track.dispose();
+      return true;
+    }
+    if (typeof conf.muteVideo === 'function') {
+      await conf.muteVideo(true);
+      return true;
+    }
+  } catch (e) {
+    console.warn('[published-video] unpublishVideo failed', e);
+  }
+  return false;
+}
+
 // Test seam: drop the override and the canvas so a suite can install it again.
 export function resetPublishedVideo() {
   if (realGetUserMedia) navigator.mediaDevices.getUserMedia = realGetUserMedia;
@@ -140,4 +352,16 @@ export function resetPublishedVideo() {
   if (canvas) canvas.remove();
   canvas = null;
   ctx = null;
+  publishedTrack = null;
+}
+
+// Manual hooks for driving publication while the lib-jitsi-meet backend has no
+// toolbar of its own (the Jitsi web backend keeps using its camera button, and
+// these are inert until called). The bot bundle installs its own
+// __trussalEnsureVideoPublished at document-start; never clobber that.
+if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussalIsAggregator) {
+  if (typeof window.__trussalEnsureVideoPublished !== 'function') {
+    window.__trussalEnsureVideoPublished = () => ensureVideoPublished();
+  }
+  window.__trussalUnpublishVideo = () => unpublishVideo();
 }

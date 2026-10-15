@@ -8,11 +8,12 @@
 // off, behaviour is byte-identical to today's build (getConference() keeps
 // reading window.APP.conference).
 //
-// This module only SCAFFOLDS the connection. Published video, track
-// management, prejoin, screen-share and bots still use Jitsi's own APIs today;
-// those are subsequent migration steps. The point here is to exercise the seam
-// end to end against a real lib-jitsi-meet conference and prove the adapter can
-// serve one.
+// This module only SCAFFOLDS the connection. The roster (participants.js) and
+// local video publication (published-video.js's ensureVideoPublished) already
+// run through backend-neutral seams; track management beyond video, prejoin,
+// screen-share and bots are subsequent migration steps. The point here is to
+// exercise the seam end to end against a real lib-jitsi-meet conference and
+// prove the adapter can serve one.
 
 import { setConference, clearConference } from './meeting-adapter.js';
 
@@ -95,8 +96,16 @@ export async function connectLibJitsiConference(overrides = {}) {
       connection.connect();
     });
 
+    // Mirror the web bundle's startWithVideoMuted() default: lib-jitsi-meet
+    // would otherwise create and publish a camera track at join, and the
+    // raw camera must never reach the wire. Publication is explicit —
+    // published-video.js's ensureVideoPublished().
+    const startWithVideoMuted = !!(typeof window !== 'undefined'
+      && window.config && window.config.startWithVideoMuted);
+
     conference = connection.initJitsiConference(cfg.room, {
       openBridgeChannel: true,
+      startWithVideoMuted,
     });
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
       setConference(conference);
