@@ -4,6 +4,8 @@ import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:f
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { stageLibJitsiBundle } from './build-lib-jitsi.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
 const STRUDEL_ASSETS_SRC = join(STRUDEL_FORK_WEB, 'dist/assets');
@@ -32,6 +34,23 @@ function copyStrudelAssets() {
 	}
 }
 
+// Optional: put a supplied lib-jitsi-meet bundle under dist/libs/ so a
+// standalone deployment (no Jitsi web app) is self-contained. No bundle
+// supplied is not an error — the loader can still fetch one at runtime, or the
+// Jitsi web page provides the global itself.
+function copyLibJitsiBundle() {
+	const { source, dest, explicit } = stageLibJitsiBundle({ argv: [...argv], env: process.env });
+	if (!source) {
+		if (explicit) {
+			console.warn('[build] LIB_JITSI_MEET_PATH/--lib-jitsi was set but no lib-jitsi-meet bundle was found there; skipping dist/libs');
+		} else {
+			console.log('[build] no lib-jitsi-meet bundle supplied — skipping dist/libs (set LIB_JITSI_MEET_PATH or --lib-jitsi=<path> to stage one)');
+		}
+		return;
+	}
+	console.log(`[build] staged lib-jitsi-meet → ${dest}`);
+}
+
 // Mirror dist/ into the container's bind-mount dir (same effect as the
 // `deploy:local` npm script, but callable on every incremental rebuild).
 function deployToContainer() {
@@ -49,6 +68,7 @@ const postBuild = {
 		build.onEnd((result) => {
 			if (result.errors.length) return; // leave stale output on a failed rebuild
 			copyStrudelAssets();
+			copyLibJitsiBundle();
 			if (DEPLOY) {
 				deployToContainer();
 				console.log(`[build] deployed → docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);

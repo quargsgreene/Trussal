@@ -19,6 +19,10 @@
 // There is deliberately no cross-origin default. A multi-megabyte,
 // security-relevant library should only ever come from a host the operator
 // named, so a CDN is opt-in via (2)/(3) rather than a hard-coded fallback.
+//
+// For a self-contained dist/, build.mjs can stage a supplied bundle under
+// dist/libs/ (see build-lib-jitsi.mjs), which option (4) then finds with no
+// runtime configuration at all.
 
 const DEFAULT_LIB_PATH = 'libs/lib-jitsi-meet.min.js';
 const ROOT_LIB_PATH = '/libs/lib-jitsi-meet.min.js';
