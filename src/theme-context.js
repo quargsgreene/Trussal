@@ -152,7 +152,7 @@ export function setTheme(patch) {
   persist();
   applyTheme();
   for (const fn of subscribers) {
-    try { fn(getTheme()); } catch (e) { /* a subscriber throwing is its own problem */ }
+    try { fn(getTheme()); } catch (e) { console.warn('[swallowed error]', e); }
   }
   return getTheme();
 }

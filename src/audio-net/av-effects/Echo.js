@@ -206,7 +206,7 @@ export function createEchoNode(audioCtx, params) {
       rampTo(wet.gain, next.wetGain);
     },
     dispose() {
-      [input, output, delay, fb, wet, limiter].forEach(n => { try { n.disconnect(); } catch (e) {} });
+      [input, output, delay, fb, wet, limiter].forEach(n => { try { n.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } });
     }
   };
 }

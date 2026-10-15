@@ -280,7 +280,7 @@ function muteByIndex(tokens, muted) {
 const statusSubscribers = new Set();
 subscribePeerState((event, payload) => {
   if (event !== 'fleet-status') return;
-  statusSubscribers.forEach(fn => { try { fn(payload); } catch (e) {} });
+  statusSubscribers.forEach(fn => { try { fn(payload); } catch (e) { console.warn('[swallowed error]', e); } });
 });
 
 export function subscribeFleetStatus(fn) {

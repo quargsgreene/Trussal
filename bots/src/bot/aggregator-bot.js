@@ -1750,7 +1750,7 @@ export class AggregatorBot extends Bot {
         this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
-        try { conn.send({ type: 'jp-active', token: t, index: i, kind: k }); } catch (e) { /* cosmetic */ }
+        try { conn.send({ type: 'jp-active', token: t, index: i, kind: k }); } catch (e) { console.warn('[swallowed error]', e); }
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {

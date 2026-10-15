@@ -170,7 +170,7 @@ function openSocket() {
 
   if (ws) {
     ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-    try { ws.close(); } catch (e) {}
+    try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
     ws = null;
   }
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
@@ -198,7 +198,7 @@ function openSocket() {
     pingTimer = setInterval(() => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (Date.now() - lastPongAt > PONG_TIMEOUT_MS) {
-        try { ws.close(); } catch (e) {}
+        try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
         return;
       }
       ws.send(JSON.stringify({ type: 'ping', sentAt: Date.now() }));
@@ -213,7 +213,7 @@ function openSocket() {
   };
 
   ws.onerror = () => {
-    try { if (ws) ws.close(); } catch (e) {}
+    try { if (ws) ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
   };
 
   ws.onmessage = (evt) => {
@@ -526,7 +526,7 @@ subscribeParticipants((event, payload) => {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (ws) {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-      try { ws.close(); } catch (e) {}
+      try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
       ws = null;
     }
     helloSent = false;

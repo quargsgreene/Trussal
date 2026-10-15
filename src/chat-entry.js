@@ -1,3 +1,4 @@
+import { getStore } from './meeting-adapter.js';
 // chat-entry.js — shared "make sure the performer is IN Jitsi's chat panel"
 // bootstrap for silent-by-construction voices that render into the chat log
 // (file-cycles.js, polls.js). Text Cycles solves this same problem with its
@@ -12,7 +13,7 @@ const CHAT_ENTRY_MAX_TRIES = 40;
 const CHAT_ENTRY_INTERVAL_MS = 500;
 
 export function jitsiState() {
-  const store = typeof window !== 'undefined' ? window.APP?.store : null;
+  const store = typeof window !== 'undefined' ? getStore() : null;
   return store && typeof store.getState === 'function' ? store.getState() : null;
 }
 
@@ -25,7 +26,7 @@ export function localParticipantName() {
 // Exactly what Jitsi's own nickname form dispatches — see text-cycles.js's
 // setNickname for the fuller rationale.
 export function setNickname(name) {
-  const store = typeof window !== 'undefined' ? window.APP?.store : null;
+  const store = typeof window !== 'undefined' ? getStore() : null;
   if (!store || typeof store.dispatch !== 'function') return false;
   store.dispatch({ type: 'SETTINGS_UPDATED', settings: { displayName: name } });
   return true;
@@ -33,7 +34,7 @@ export function setNickname(name) {
 
 function openChatPanel() {
   try {
-    window.APP?.store?.dispatch({ type: 'OPEN_CHAT' });
+    getStore()?.dispatch({ type: 'OPEN_CHAT' });
   } catch (e) {
     console.warn('[chat-entry] could not open the chat panel', e);
   }

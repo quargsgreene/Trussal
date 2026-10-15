@@ -1,3 +1,4 @@
+import { getConference } from './meeting-adapter.js';
 // Audio engine for the distributed instrument.
 //
 // One AudioContext per browser. For every meeting participant we maintain a
@@ -43,7 +44,7 @@ function notifyRoutingChange() {
 
 export function subscribeAudioRouting(fn) {
   routingSubscribers.add(fn);
-  try { fn(new Set(audioRouted)); } catch (e) {}
+  try { fn(new Set(audioRouted)); } catch (e) { console.warn('[swallowed error]', e); }
   return () => routingSubscribers.delete(fn);
 }
 
@@ -200,7 +201,7 @@ function applyParams(chain, params) {
   // convolver (whose output we already wired to realDestination).
   if (chain.reverbOn === params.reverb) return;
   chain.reverbOn = params.reverb;
-  try { chain.limiter.disconnect(); } catch (e) {}
+  try { chain.limiter.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
   if (params.reverb && chain.reverb) {
     chain.limiter.connect(chain.reverb);
   } else {
@@ -264,12 +265,12 @@ async function ensureChain(jitsiId) {
 function destroyChain(jitsiId) {
   const chain = chains.get(jitsiId);
   if (!chain) return;
-  try { chain.input.disconnect(); } catch (e) {}
-  if (chain.presence) { try { chain.presence.disconnect(); } catch (e) {} }
-  try { chain.worklet.disconnect(); } catch (e) {}
-  try { chain.limiter.disconnect(); } catch (e) {}
-  if (chain.reverb) { try { chain.reverb.disconnect(); } catch (e) {} }
-  if (chain.reverbGain) { try { chain.reverbGain.disconnect(); } catch (e) {} }
+  try { chain.input.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  if (chain.presence) { try { chain.presence.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } }
+  try { chain.worklet.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { chain.limiter.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  if (chain.reverb) { try { chain.reverb.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } }
+  if (chain.reverbGain) { try { chain.reverbGain.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } }
   chains.delete(jitsiId);
 }
 
@@ -296,11 +297,11 @@ function captureJitsiAudio() {
     if (localJitsiId && jitsiId === localJitsiId) return;
     // Skip hidden participants (Jicofo, virtual sources, etc.).
     try {
-      const conf = window.APP && window.APP.conference;
+      const conf = getConference();
       const member = conf && typeof conf.getParticipantById === 'function'
         ? conf.getParticipantById(jitsiId) : null;
       if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
-    } catch (e) {}
+    } catch (e) { console.warn('[swallowed error]', e); }
     if (!getPeerByJitsiId(jitsiId)) return;
     if (pendingCaptures.has(jitsiId)) return;
     const existing = remoteSources.get(jitsiId);
@@ -309,7 +310,7 @@ function captureJitsiAudio() {
         && existing.tag.srcObject === existing.stream
         && existing.track && existing.track.readyState === 'live';
       if (live) return; // healthy wiring (on this tag or another) — nothing to do
-      try { existing.source.disconnect(); } catch (e) {}
+      try { existing.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
       remoteSources.delete(jitsiId);
       if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
         if (audioRouted.delete(jitsiId)) notifyRoutingChange();
@@ -378,14 +379,14 @@ subscribeParticipants((event, payload) => {
   if (event === 'leave' && payload && payload.id) {
     const src = remoteSources.get(payload.id);
     if (src) {
-      try { src.source.disconnect(); } catch (e) {}
+      try { src.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
       if (src.tag) { src.tag.muted = false; src.tag.volume = 1; }
       remoteSources.delete(payload.id);
     }
     const ext = externalSources.get(payload.id);
     if (ext) {
-      try { ext.source && ext.source.disconnect(); } catch (e) {}
-      try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      try { ext.source && ext.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+      try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
       externalSources.delete(payload.id);
     }
     if (audioRouted.delete(payload.id)) notifyRoutingChange();
@@ -420,7 +421,7 @@ export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
 // The spectrum analyser's parallel tap on the master bus is unaffected.
 export function insertMasterChain(endpoints) {
   if (!audioCtx || !realDestination || !endpoints) return false;
-  try { realDestination.disconnect(audioCtx.destination); } catch (e) {}
+  try { realDestination.disconnect(audioCtx.destination); } catch (e) { console.warn('[swallowed error]', e); }
   realDestination.connect(endpoints.input);
   endpoints.output.connect(audioCtx.destination);
   return true;
@@ -428,9 +429,9 @@ export function insertMasterChain(endpoints) {
 
 export function removeMasterChain(endpoints) {
   if (!audioCtx || !realDestination || !endpoints) return;
-  try { realDestination.disconnect(endpoints.input); } catch (e) {}
-  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) {}
-  try { realDestination.connect(audioCtx.destination); } catch (e) {}
+  try { realDestination.disconnect(endpoints.input); } catch (e) { console.warn('[swallowed error]', e); }
+  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) { console.warn('[swallowed error]', e); }
+  try { realDestination.connect(audioCtx.destination); } catch (e) { console.warn('[swallowed error]', e); }
 }
 
 // Leaving JPattern mode: every chain back to unity immediately.
@@ -545,8 +546,8 @@ export async function attachExternalStreamForPeer(jitsiId, stream, label = 'exte
   if (!chain) return null;
   const existing = externalSources.get(jitsiId);
   if (existing) {
-    try { existing.source && existing.source.disconnect(); } catch (e) {}
-    try { existing.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { existing.source && existing.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+    try { existing.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
   }
   let source = null;
   if (monitorLocally) {
@@ -563,8 +564,8 @@ export async function attachExternalStreamForPeer(jitsiId, stream, label = 'exte
 export function detachExternalStreamForPeer(jitsiId) {
   const ext = externalSources.get(jitsiId);
   if (!ext) return;
-  try { ext.source && ext.source.disconnect(); } catch (e) {}
-  try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { ext.source && ext.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
   externalSources.delete(jitsiId);
   if (!remoteSources.has(jitsiId)) {
     if (audioRouted.delete(jitsiId)) notifyRoutingChange();
@@ -580,7 +581,7 @@ let jitsiMixState = null;
 
 function findLocalJitsiAudioTrack() {
   try {
-    const conf = window.APP && window.APP.conference;
+    const conf = getConference();
     if (!conf) return null;
     // Modern jitsi-meet keeps it as a direct property.
     if (conf.localAudioTrack && typeof conf.localAudioTrack.setEffect === 'function') return conf.localAudioTrack;
@@ -599,13 +600,13 @@ function findLocalJitsiAudioTrack() {
       const t = conf._localTracks.find(t => t && (t.isAudioTrack?.() || t.type === 'audio'));
       if (t) return t;
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
   return null;
 }
 
 function findOutgoingAudioSender() {
   try {
-    const conf = window.APP && window.APP.conference;
+    const conf = getConference();
     if (!conf) return null;
     // jitsi-meet stores the PeerConnection wrapper under tpc; the underlying
     // RTCPeerConnection is .peerconnection.
@@ -621,7 +622,7 @@ function findOutgoingAudioSender() {
         }
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
   return null;
 }
 
@@ -646,8 +647,8 @@ class JitsiMicMixEffect {
     return this._dest.stream;
   }
   stopEffect() {
-    try { if (this._micSource) this._micSource.disconnect(); } catch (e) {}
-    try { if (this._extSource) this._extSource.disconnect(); } catch (e) {}
+    try { if (this._micSource) this._micSource.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+    try { if (this._extSource) this._extSource.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
   }
 }
 
@@ -694,8 +695,8 @@ async function propagateViaReplaceTrack(stream) {
       originalTrack,
       mixedTrack,
       _disposers: [
-        () => { try { micSource && micSource.disconnect(); } catch (e) {} },
-        () => { try { extSource && extSource.disconnect(); } catch (e) {} }
+        () => { try { micSource && micSource.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } },
+        () => { try { extSource && extSource.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } }
       ]
     };
     console.log('[latency] propagation: replaceTrack on outgoing sender');
@@ -748,7 +749,7 @@ function createDitherNode(audioCtx) {
   gain.gain.value = DITHER_LEVEL;
   src.connect(gain);
   src.start();
-  return { node: gain, stop: () => { try { src.stop(); } catch (e) { /* already stopped */ } } };
+  return { node: gain, stop: () => { try { src.stop(); } catch (e) { console.warn('[swallowed error]', e); } } };
 }
 
 // A jitsi-meet track effect whose output is exactly `node` — the mic input it is
@@ -774,10 +775,10 @@ class NodeOutputEffect {
     return this._dest.stream;
   }
   stopEffect() {
-    try { this._node.disconnect(this._dest); } catch (e) {}
+    try { this._node.disconnect(this._dest); } catch (e) { console.warn('[swallowed error]', e); }
     if (this._dither) {
-      try { this._dither.node.disconnect(this._dest); } catch (e) {}
-      try { this._dither.stop(); } catch (e) {}
+      try { this._dither.node.disconnect(this._dest); } catch (e) { console.warn('[swallowed error]', e); }
+      try { this._dither.stop(); } catch (e) { console.warn('[swallowed error]', e); }
       this._dither = null;
     }
   }
@@ -822,10 +823,10 @@ async function acquireLocalAudioTrackForStrudel() {
   strudelTrackAcquiring = true;
   strudelTrackAcquireAt = Date.now();
   try {
-    const conf = window.APP && window.APP.conference;
+    const conf = getConference();
     // 1) Mic permission granted → jitsi-meet's own unmute is simplest.
     if (conf && typeof conf.muteAudio === 'function') {
-      try { await conf.muteAudio(false); } catch (e) { /* denied — fall through to (2) */ }
+      try { await conf.muteAudio(false); } catch (e) { console.warn('[swallowed error]', e); }
       const t = await pollForLocalAudioTrack(2000);
       if (t) { strudelPublishBackoff = false; return t; }
     }
@@ -834,7 +835,7 @@ async function acquireLocalAudioTrackForStrudel() {
         && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       if (!strudelSynthDest) {
         strudelSynthDest = audioCtx.createMediaStreamDestination();
-        try { masterLimiter.connect(strudelSynthDest); } catch (e) {}
+        try { masterLimiter.connect(strudelSynthDest); } catch (e) { console.warn('[swallowed error]', e); }
       }
       const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = async (c = {}) =>
@@ -873,7 +874,7 @@ function ensureStrudelPublishGuard() {
     if (strudelRoomEffect) {
       const current = findLocalJitsiAudioTrack();
       if (current === strudelRoomEffect.track) return;
-      try { strudelRoomEffect.effect.stopEffect(); } catch (e) {}
+      try { strudelRoomEffect.effect.stopEffect(); } catch (e) { console.warn('[swallowed error]', e); }
       strudelRoomEffect = null;
       console.warn('[latency] published Strudel track was replaced (renegotiation?) — re-publishing');
     }
@@ -920,7 +921,7 @@ export async function unpublishLocalStrudelFromRoom() {
   strudelPublishWarned = false; // next aggregator re-arms the one-shot warning
   strudelPublishBackoff = false;
   if (strudelSynthDest) {
-    try { masterLimiter && masterLimiter.disconnect(strudelSynthDest); } catch (e) {}
+    try { masterLimiter && masterLimiter.disconnect(strudelSynthDest); } catch (e) { console.warn('[swallowed error]', e); }
     strudelSynthDest = null;
   }
   if (!strudelRoomEffect) return;
@@ -957,7 +958,7 @@ if (typeof window !== 'undefined') {
         an.getFloatTimeDomainData(buf);
         for (const v of buf) { const a = v < 0 ? -v : v; if (a > peak) peak = a; sumSq += v * v; n++; }
       }
-      try { masterStrudelGain.disconnect(an); } catch (e) {}
+      try { masterStrudelGain.disconnect(an); } catch (e) { console.warn('[swallowed error]', e); }
       out.strudelPeak = +peak.toFixed(5);                  // >0 => Strudel IS producing sound
       out.strudelRms = +Math.sqrt(sumSq / (n || 1)).toFixed(5);
       out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3); // ~0 => context frozen/suspended
@@ -976,7 +977,7 @@ export async function attachNodeToChain(jitsiId, node, label = 'relay') {
   if (!chain) return;
   const existing = externalNodes.get(jitsiId);
   if (existing) {
-    try { existing.node.disconnect(chain.input); } catch (_) {}
+    try { existing.node.disconnect(chain.input); } catch (_) { console.warn('[swallowed error]'); }
   }
   node.connect(chain.input);
   externalNodes.set(jitsiId, { node, label });
@@ -990,7 +991,7 @@ export function detachNodeFromChain(jitsiId) {
   if (!entry) return;
   const chain = chains.get(jitsiId);
   if (chain) {
-    try { entry.node.disconnect(chain.input); } catch (_) {}
+    try { entry.node.disconnect(chain.input); } catch (_) { console.warn('[swallowed error]'); }
   }
   externalNodes.delete(jitsiId);
   if (!remoteSources.has(jitsiId) && !externalSources.has(jitsiId)) {
@@ -1017,7 +1018,7 @@ export async function listAudioInputDevices() {
       probe.getTracks().forEach(t => t.stop());
       devices = await navigator.mediaDevices.enumerateDevices();
       inputs = devices.filter(d => d.kind === 'audioinput');
-    } catch (e) { /* user denied */ }
+    } catch (e) { console.warn('[swallowed error]', e); }
   }
   return inputs.map(d => ({ deviceId: d.deviceId, label: d.label || 'Unnamed audio input' }));
 }

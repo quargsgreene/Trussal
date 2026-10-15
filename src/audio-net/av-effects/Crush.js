@@ -143,7 +143,7 @@ export function createCrushNode(audioCtx, params) {
       lp.frequency.value = audioCtx.sampleRate / 2 / next.srDivisor;
     },
     dispose() {
-      [input, output, shaper, lp].forEach(n => { try { n.disconnect(); } catch (e) {} });
+      [input, output, shaper, lp].forEach(n => { try { n.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } });
     }
   };
 }

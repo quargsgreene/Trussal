@@ -134,7 +134,7 @@ if (typeof document !== 'undefined') {
 function _fireGestureEvent(name) {
   try {
     document.dispatchEvent(new CustomEvent('trussal-gesture-fired', { detail: { name } }));
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
 }
 
 // Replay half of liveCapture('gesture'): re-run the gesture's currently-mapped
@@ -723,7 +723,7 @@ function _detectionLoop() {
       under?.dispatchEvent(new MouseEvent('mousemove', {
         clientX: cx, clientY: cy, bubbles: true, cancelable: true, view: window,
       }));
-    } catch (e) { /* SecurityError from a cross-origin frame under the point */ }
+    } catch (e) { console.warn('[swallowed error]', e); }
   }
 
   // Head cursor over a Studio code editor → focus that textarea and (unless the
@@ -1292,7 +1292,7 @@ function _persistCursorTuning() {
       cursorGain: _cursorGain,
       meetingLoadSensitivity: _meetingLoadSensitivity,
     }));
-  } catch (e) { /* storage disabled — non-fatal */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
 }
 
 function _restoreCursorTuning() {
@@ -1301,7 +1301,7 @@ function _restoreCursorTuning() {
     if (Number.isFinite(t.cursorSpeed))            _cursorAlpha = t.cursorSpeed;
     if (Number.isFinite(t.cursorGain))             _cursorGain = t.cursorGain;
     if (Number.isFinite(t.meetingLoadSensitivity)) _meetingLoadSensitivity = t.meetingLoadSensitivity;
-  } catch (e) { /* absent or malformed — keep the defaults */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
 }
 
 /** cursorSpeed — per-frame EMA follow fraction for the head cursor. */

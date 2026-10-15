@@ -126,10 +126,10 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     if (event === 'crdt-update' && payload && payload.update) {
       lastAuthorIndex = payload.authorIndex ?? lastAuthorIndex;
       applyRemoteUpdate(doc, payload.update);
-      listeners.forEach(fn => { try { fn(text.toString(), payload); } catch (e) {} });
+      listeners.forEach(fn => { try { fn(text.toString(), payload); } catch (e) { console.warn('[swallowed error]', e); } });
     } else if (event === 'crdt-state' && payload && Array.isArray(payload.updates)) {
       for (const u of payload.updates) applyRemoteUpdate(doc, u);
-      listeners.forEach(fn => { try { fn(text.toString(), { catchUp: true }); } catch (e) {} });
+      listeners.forEach(fn => { try { fn(text.toString(), { catchUp: true }); } catch (e) { console.warn('[swallowed error]', e); } });
     }
   });
 
@@ -180,7 +180,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     onModulationChange(fn) {
       if (!modulation) return () => {};
-      const h = () => { try { fn(this.getInduced()); } catch (e) {} };
+      const h = () => { try { fn(this.getInduced()); } catch (e) { console.warn('[swallowed error]', e); } };
       modulation.observe(h);
       return () => modulation.unobserve(h);
     },
@@ -201,7 +201,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     onVlansChange(fn) {
       if (!vlans) return () => {};
-      const h = () => { try { fn(this.getVlans()); } catch (e) {} };
+      const h = () => { try { fn(this.getVlans()); } catch (e) { console.warn('[swallowed error]', e); } };
       vlans.observe(h);
       return () => vlans.unobserve(h);
     },
@@ -223,7 +223,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     onSettingsChange(fn) {
       if (!settings) return () => {};
-      const h = () => { try { fn(this.getSettings()); } catch (e) {} };
+      const h = () => { try { fn(this.getSettings()); } catch (e) { console.warn('[swallowed error]', e); } };
       settings.observe(h);
       return () => settings.unobserve(h);
     },
@@ -247,7 +247,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     onBreakoutProgramsChange(fn) {
       if (!breakoutPrograms) return () => {};
-      const h = () => { try { fn(this.getBreakoutPrograms()); } catch (e) {} };
+      const h = () => { try { fn(this.getBreakoutPrograms()); } catch (e) { console.warn('[swallowed error]', e); } };
       breakoutPrograms.observe(h);
       return () => breakoutPrograms.unobserve(h);
     },

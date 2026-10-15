@@ -156,7 +156,7 @@ function remoteAudioStream(jitsiId) {
 function remoteVideoEl(jitsiId) {
   if (!jitsiId || typeof document === 'undefined') return null;
   let scoped = null;
-  try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { /* bad id → fall through */ }
+  try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { console.warn('[swallowed error]', e); }
   return scoped
     || document.getElementById(`remoteVideo_${jitsiId}`)
     || Array.from(document.querySelectorAll('video')).find(v => v.id && v.id.includes(jitsiId) && v.srcObject)
@@ -240,7 +240,7 @@ function audioOnTrigger(cap, t, value, onEnded) {
   node.playbackRate.value = Math.abs(speed);
   node.onended = onEnded;
   node.start(t);
-  return { node, stop: (time) => { try { node.stop(time); } catch (e) { /* already ended */ } } };
+  return { node, stop: (time) => { try { node.stop(time); } catch (e) { console.warn('[swallowed error]', e); } } };
 }
 
 // --- video ---------------------------------------------------------------
@@ -273,7 +273,7 @@ async function startVideoCapture(cap) {
   const liveCanvas = document.createElement('canvas');
   liveCanvas.width = VIDEO_W; liveCanvas.height = VIDEO_H;
   const liveTimer = setInterval(() => {
-    if (srcEl.videoWidth) { try { liveCanvas.getContext('2d').drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H); } catch (e) { /* ignore */ } }
+    if (srcEl.videoWidth) { try { liveCanvas.getContext('2d').drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H); } catch (e) { console.warn('[swallowed error]', e); } }
   }, Math.round(1000 / 15));
   const timer = setInterval(grab, Math.round(1000 / VIDEO_FPS));
   bucket('video')[cap.slug] = { canvas: playback, playback, live: liveCanvas };
@@ -289,7 +289,7 @@ function videoOnTrigger(cap, value) {
   const ringIdx = (vid.writePos - vid.filled + vid.playIdx + VIDEO_FRAMES * 2) % VIDEO_FRAMES;
   try {
     cap.playback.getContext('2d').drawImage(vid.frames[ringIdx], 0, 0);
-  } catch (e) { /* ignore a torn frame */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
   return; // silent
 }
 
@@ -351,7 +351,7 @@ function textOnTrigger(cap, value) {
   if (value && typeof value.typeface === 'string') span.style.fontFamily = value.typeface;
   el.appendChild(span);
   while (el.childNodes.length > 8) el.removeChild(el.firstChild);
-  setTimeout(() => { try { span.remove(); } catch (err) { /* gone */ } }, 6000);
+  setTimeout(() => { try { span.remove(); } catch (err) { console.warn('[swallowed error]', err); } }, 6000);
   return; // silent
 }
 
@@ -412,7 +412,7 @@ function gestureOnTrigger(cap) {
   gestureReplaying = true;
   try {
     document.dispatchEvent(new CustomEvent('trussal-gesture-refire', { detail: { name: e.value } }));
-  } catch (err) { /* ignore */ } finally {
+  } catch (err) { console.warn('[swallowed error]', err); } finally {
     gestureReplaying = false;
   }
   return; // silent
@@ -542,7 +542,7 @@ async function startDeviceWatch(cap) {
 
 function stopDeviceWatch() {
   if (!deviceWatch) return;
-  try { deviceWatch.stop(); } catch (e) { /* ignore */ }
+  try { deviceWatch.stop(); } catch (e) { console.warn('[swallowed error]', e); }
   deviceWatch = null;
 }
 
@@ -591,18 +591,18 @@ function makeOnTrigger(slug) {
 }
 
 function teardown(slug, cap) {
-  try { if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* ignore */ }
-  try { cap.source && cap.source.disconnect(); } catch (e) { /* ignore */ }
-  try { cap.worklet && cap.worklet.disconnect(); } catch (e) { /* ignore */ }
-  try { cap.sink && cap.sink.disconnect(); } catch (e) { /* ignore */ }
-  try { cap.timer && clearInterval(cap.timer); } catch (e) { /* ignore */ }
-  try { cap.liveTimer && clearInterval(cap.liveTimer); } catch (e) { /* ignore */ }
-  try { cap.sampleTimer && clearInterval(cap.sampleTimer); } catch (e) { /* ignore */ }
-  try { cap.unsub && cap.unsub(); } catch (e) { /* ignore */ }
-  try { cap.onFired && document.removeEventListener('trussal-gesture-fired', cap.onFired); } catch (e) { /* ignore */ }
-  try { cap.onMouse && window.removeEventListener('mousemove', cap.onMouse); } catch (e) { /* ignore */ }
-  try { cap.styleEl && cap.styleEl.remove(); } catch (e) { /* ignore */ }
-  try { cap.dotEl && cap.dotEl.remove(); } catch (e) { /* ignore */ }
+  try { if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.source && cap.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.worklet && cap.worklet.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.sink && cap.sink.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.timer && clearInterval(cap.timer); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.liveTimer && clearInterval(cap.liveTimer); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.sampleTimer && clearInterval(cap.sampleTimer); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.unsub && cap.unsub(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.onFired && document.removeEventListener('trussal-gesture-fired', cap.onFired); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.onMouse && window.removeEventListener('mousemove', cap.onMouse); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.styleEl && cap.styleEl.remove(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { cap.dotEl && cap.dotEl.remove(); } catch (e) { console.warn('[swallowed error]', e); }
   if (cap.medium === 'cursor') window._lcCursorOverride = null;
   const b = typeof window !== 'undefined' && window._liveCapture && window._liveCapture[cap.medium];
   if (b) delete b[slug];

@@ -543,7 +543,7 @@ export function pageRemoteControl(preamblePatterns, capabilityPatterns) {
   let __trussalStopGate = 1;
   const applyFanGain = () => {
     const fan = window.__trussalFanGain;
-    if (fan && fan.gain) { try { fan.gain.value = __trussalMuteGate * __trussalStopGate; } catch (_) {} }
+    if (fan && fan.gain) { try { fan.gain.value = __trussalMuteGate * __trussalStopGate; } catch (_) { console.warn('[swallowed error]'); } }
   };
   document.addEventListener('trussal-remote-mute', (e) => {
     __trussalMuteGate = (e && e.detail && e.detail.muted) ? 0 : 1;
@@ -900,7 +900,7 @@ export async function pageEnsureAudioPublished() {
     // 1) Ask jitsi-meet to unmute; if it had no/muted track this triggers a
     //    gUM (→ our tap) and publishes it.
     if (typeof conf.muteAudio === 'function') {
-      try { await conf.muteAudio(false); } catch (e) {}
+      try { await conf.muteAudio(false); } catch (e) { console.warn('[swallowed error]', e); }
       await sleep(1500);
     }
 
@@ -934,7 +934,7 @@ export async function pageEnsureAudioPublished() {
           if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
           else { const r = room(); if (r && r.addTrack) await r.addTrack(at); }
         }
-      } catch (e) {}
+      } catch (e) { console.warn('[swallowed error]', e); }
     }
 
     // 3) Tap Strudel DIRECTLY onto the published track via lib-jitsi-meet's
@@ -972,7 +972,7 @@ export async function pageEnsureAudioPublished() {
       // the old effect's fan connection so the fan doesn't accumulate dangling
       // destinations.
       if (attached && attached.effect && typeof attached.effect.stopEffect === 'function') {
-        try { attached.effect.stopEffect(); } catch (_) {}
+        try { attached.effect.stopEffect(); } catch (_) { console.warn('[swallowed error]'); }
       }
       const dest = fan.context.createMediaStreamDestination();
       const effect = {
@@ -982,7 +982,7 @@ export async function pageEnsureAudioPublished() {
         // between the same nodes are ignored per the WebAudio spec, so a
         // stop/start cycle (jitsi mute flips) is safe.
         startEffect() { fan.connect(dest); return dest.stream; },
-        stopEffect() { try { fan.disconnect(dest); } catch (_) {} },
+        stopEffect() { try { fan.disconnect(dest); } catch (_) { console.warn('[swallowed error]'); } },
       };
       await publishedTrack.setEffect(effect);
       window.__trussalDirectTapEffect = { track: publishedTrack, effect };
@@ -1743,7 +1743,7 @@ export function pageAggregatorCapture() {
     removeExtraSource(jitsiId, node) {
       const tap = taps.get(jitsiId);
       if (!tap) return;
-      try { node.disconnect(tap.proc); } catch (e) { /* already disconnected */ }
+      try { node.disconnect(tap.proc); } catch (e) { console.warn('[swallowed error]', e); }
     },
   };
 }
@@ -2833,7 +2833,7 @@ export function pageMosaic(options = {}) {
           }
           nodeEntry.node.disconnect();
         } catch (e) { noteError(`initVideo audio teardown ${token}`, e); }
-        try { nodeEntry.video.pause(); nodeEntry.video.removeAttribute('src'); nodeEntry.video.load(); } catch (e) { /* already gone */ }
+        try { nodeEntry.video.pause(); nodeEntry.video.removeAttribute('src'); nodeEntry.video.load(); } catch (e) { console.warn('[swallowed error]', e); }
       }
       entry.videoAudioNodes = null;
     }

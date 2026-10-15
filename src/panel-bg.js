@@ -19,6 +19,7 @@
 // mini-notation atom (a name with a space needs single quotes instead, which
 // bypass mini entirely — see text-cycles.js's doc comment for the same rule).
 
+import { getStore } from './meeting-adapter.js';
 import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { imageUrlByFilename } from './user-samples.js';
 
@@ -36,7 +37,7 @@ let currentSource = null; // the last name actually applied, so a repeated
 // own web client; a build against a live deployment should confirm it lands.
 function dispatchVirtualBackground(virtualSource) {
   try {
-    const store = typeof window !== 'undefined' ? window.APP?.store : null;
+    const store = typeof window !== 'undefined' ? getStore() : null;
     if (!store || typeof store.dispatch !== 'function') return false;
     store.dispatch({
       type: 'SET_VIRTUAL_BACKGROUND',

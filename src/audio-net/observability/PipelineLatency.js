@@ -133,8 +133,8 @@ async function measureLoopbackSeconds(ctx) {
     console.error(`[pipeline-latency] loopback measurement failed: ${e.message}`);
     return null;
   } finally {
-    for (const n of nodes) { try { n.disconnect(); } catch (e) { /* already gone */ } }
-    for (const pc of pcs) { try { pc.close(); } catch (e) { /* already closed */ } }
+    for (const n of nodes) { try { n.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } }
+    for (const pc of pcs) { try { pc.close(); } catch (e) { console.warn('[swallowed error]', e); } }
   }
 }
 

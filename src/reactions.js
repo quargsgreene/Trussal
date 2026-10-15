@@ -19,6 +19,7 @@
 // needed (unlike word()): every reaction() atom is one of reactions-core.js's
 // abbreviations, already a grammar-legal mini-notation atom.
 
+import { getStore } from './meeting-adapter.js';
 import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { resolveReaction, resolveUnreactMs } from './reactions-core.js';
 
@@ -28,7 +29,7 @@ import { resolveReaction, resolveUnreactMs } from './reactions-core.js';
 // rather than throwing and taking the room's whole program down with it.
 function sendJitsiReaction(id) {
   try {
-    const store = typeof window !== 'undefined' ? window.APP?.store : null;
+    const store = typeof window !== 'undefined' ? getStore() : null;
     if (!store || typeof store.dispatch !== 'function') return false;
     store.dispatch({ type: 'ADD_REACTION_BUFFER', reaction: id });
     return true;

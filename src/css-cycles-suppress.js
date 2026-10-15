@@ -22,7 +22,7 @@ export function setCssCyclesSuppressed(on) {
   if (next === suppressed) return;
   suppressed = next;
   for (const fn of subscribers) {
-    try { fn(suppressed); } catch (e) { /* a listener throwing is not this module's problem */ }
+    try { fn(suppressed); } catch (e) { console.warn('[swallowed error]', e); }
   }
 }
 

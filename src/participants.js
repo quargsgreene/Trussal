@@ -1,6 +1,9 @@
 // Wraps the Jitsi participant list behind a tiny pub-sub so the studio UI can
-// stay in sync with who is actually in the meeting. We poll APP.conference
-// because the underlying event emitter is not part of any stable surface.
+// stay in sync with who is actually in the meeting. We poll the active
+// conference through meeting-adapter.js so the polling code never reaches for
+// window.APP directly; swapping the backend is a change to that module only.
+
+import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference } from './meeting-adapter.js';
 
 const subscribers = new Set();
 let local = null;
@@ -26,46 +29,11 @@ function emit(event, payload) {
 }
 
 function readLocal() {
-  try {
-    const conf = window.APP && window.APP.conference;
-    if (!conf || typeof conf.getMyUserId !== 'function') return null;
-    const id = conf.getMyUserId();
-    if (!id) return null;
-
-    let displayName = null;
-    if (typeof conf.getLocalDisplayName === 'function') {
-      try { displayName = conf.getLocalDisplayName(); } catch (e) { /* ignore */ }
-    }
-    if (!displayName && window.APP.store && typeof window.APP.store.getState === 'function') {
-      try {
-        const st = window.APP.store.getState();
-        const s = st['features/base/settings'];
-        if (s && typeof s.displayName === 'string') displayName = s.displayName;
-      } catch (e) { /* ignore */ }
-    }
-    return { id, displayName: displayName || 'You', isLocal: true };
-  } catch (e) { return null; }
+  return adapterReadLocal();
 }
 
 function readRemotes() {
-  const map = new Map();
-  try {
-    const conf = window.APP && window.APP.conference;
-    if (!conf) return map;
-    const localId = typeof conf.getMyUserId === 'function' ? conf.getMyUserId() : null;
-    const members = typeof conf.listMembers === 'function' ? conf.listMembers() : [];
-    for (const m of members) {
-      const id = typeof m.getId === 'function' ? m.getId() : m._id;
-      if (!id) continue;
-      if (localId && id === localId) continue;
-      // Skip hidden participants (Jicofo, SMACKS ghost sessions, virtual sources).
-      try { if (typeof m.isHidden === 'function' && m.isHidden()) continue; } catch (e) {}
-      let displayName = null;
-      try { displayName = typeof m.getDisplayName === 'function' ? m.getDisplayName() : m._displayName; } catch (e) {}
-      map.set(id, { id, displayName: displayName || 'Participant', isLocal: false });
-    }
-  } catch (e) { /* ignore */ }
-  return map;
+  return adapterReadRemotes();
 }
 
 function tick() {
@@ -152,7 +120,7 @@ function ownerIdForAudioSrcObject(srcObject) {
     if (!srcObject || typeof srcObject.getAudioTracks !== 'function') return null;
     const tagTrackIds = new Set(srcObject.getAudioTracks().map((t) => t.id));
     if (!tagTrackIds.size) return null;
-    const conf = window.APP && window.APP.conference;
+    const conf = getConference();
     const room = conf && conf._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
     if (!room || typeof room.getParticipants !== 'function') return null;
     const match = room.getParticipants()

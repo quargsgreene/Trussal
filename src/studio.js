@@ -1,3 +1,4 @@
+import { getConference } from './meeting-adapter.js';
 // Unified Trussal Studio UI.
 //
 // One toggleable overlay surfaces a participant strip + a detail panel split
@@ -112,12 +113,12 @@ function isInMeeting() {
   const body = document.body;
   if (!body) return false;
   try {
-    const conf = window.APP && window.APP.conference;
+    const conf = getConference();
     if (conf) {
       if (typeof conf.isJoined === 'function') return !!conf.isJoined();
       if (conf._room && typeof conf._room.isJoined === 'function') return !!conf._room.isJoined();
     }
-  } catch (e) { /* fall through */ }
+  } catch (e) { console.warn('[swallowed error]', e); }
   if (body.classList.contains('welcome-page')) return false;
   if (document.querySelector('.prejoin-screen, .premeeting-screen, [class*="premeeting"], [class*="prejoin"]')) return false;
   if (document.getElementById('trussal-welcome-overlay')) return false;
@@ -650,7 +651,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
     codeEl.addEventListener('input', () => {
       clearTimeout(codeDebounce);
       codeDebounce = setTimeout(() => {
-        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
+        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) { console.warn('[swallowed error]', e); }
       }, 200);
     });
     codeEl.addEventListener('keydown', (e) => {
@@ -1176,7 +1177,7 @@ function ensureOverlay() {
       // A draft saved before the directive existed is migrated in place — the
       // editor pre-fills the line, the same as the default seed carrying it.
       if (saved && saved.trim()) seed = ensureDirective(saved, 'personal');
-    } catch (e) {}
+    } catch (e) { console.warn('[swallowed error]', e); }
     sendLocalPattern(seed);
   }
 

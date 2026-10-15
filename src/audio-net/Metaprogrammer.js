@@ -449,14 +449,14 @@ export function startLocalCapture(sourceNode, localToken) {
       const blob = new Blob(chunks.splice(0), { type: 'audio/webm' });
       captureTakes.set(localToken, { blob, bytes: blob.size });
     }
-    if (recorder === rec) { try { rec.start(); } catch (e) {} }
+    if (recorder === rec) { try { rec.start(); } catch (e) { console.warn('[swallowed error]', e); } }
   };
   rec.start();
   recorder = rec;
   // Cut a take at each cycle boundary so every enqueue carries fresh audio.
   subscribeSlotEvents((ev) => {
     if (ev.type === 'cycle-start' && recorder === rec && rec.state === 'recording') {
-      try { rec.stop(); } catch (e) {}
+      try { rec.stop(); } catch (e) { console.warn('[swallowed error]', e); }
     }
   });
 }

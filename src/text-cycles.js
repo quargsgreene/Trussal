@@ -29,6 +29,7 @@
 // which bypass mini entirely (see rewriteTextCalls in text-cycles-core.js) —
 // double-quoting it would mint three separate one-third-cycle steps.
 
+import { getStore } from './meeting-adapter.js';
 import { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
 export { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
 import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
@@ -185,7 +186,7 @@ function chatAbsenceReason() {
 // and words accumulate until the user opens chat themselves.
 function openChatPanel() {
   try {
-    window.APP?.store?.dispatch({ type: 'OPEN_CHAT' });
+    getStore()?.dispatch({ type: 'OPEN_CHAT' });
   } catch (e) {
     console.warn('[text-cycles] could not open the chat panel', e);
   }
