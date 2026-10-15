@@ -17,7 +17,7 @@ import { subscribeParticipants, getLocalParticipant } from './participants.js';
 import { subscribePeerState, getPeerByJitsiId, getAllPeers } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { getRemoteAudioStream, findRemoteAudioElement } from './remote-tracks.js';
-import { readLocalAudioTrack } from './published-audio.js';
+import { readLocalAudioTrack, ensureAudioPublished, getPublishedAudioTrack } from './published-audio.js';
 
 let audioCtx = null;
 let realDestination = null;
@@ -811,22 +811,6 @@ function stopStrudelPublishRetry() {
   if (strudelPublishRetryTimer) { clearInterval(strudelPublishRetryTimer); strudelPublishRetryTimer = null; }
 }
 
-// Resolve once a local Jitsi audio track with a usable setEffect API exists, or
-// after timeoutMs with null. Polled (like participants.js) because track
-// creation is driven by jitsi-meet internals we don't get events for.
-function pollForLocalAudioTrack(timeoutMs) {
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const tick = () => {
-      const t = findLocalJitsiAudioTrack();
-      if (t && typeof t.setEffect === 'function') return resolve(t);
-      if (Date.now() - started >= timeoutMs) return resolve(null);
-      setTimeout(tick, 120);
-    };
-    tick();
-  });
-}
-
 async function acquireLocalAudioTrackForStrudel() {
   const existing = findLocalJitsiAudioTrack();
   if (existing && typeof existing.setEffect === 'function') return existing;
@@ -837,13 +821,21 @@ async function acquireLocalAudioTrackForStrudel() {
   strudelTrackAcquireAt = Date.now();
   try {
     const conf = getConference();
-    // 1) Mic permission granted → jitsi-meet's own unmute is simplest.
-    if (conf && typeof conf.muteAudio === 'function') {
-      try { await conf.muteAudio(false); } catch (e) { console.warn('[swallowed error]', e); }
-      const t = await pollForLocalAudioTrack(2000);
+    // 1) Publish the real microphone through the backend-neutral seam — the
+    //    Jitsi web app's own unmute, or an explicit createLocalTracks+add under
+    //    lib-jitsi-meet. This is the same publisher published-audio.js runs at
+    //    join, so the track (and the backend it was obtained from) is one
+    //    implementation, not one per caller.
+    if (await ensureAudioPublished({ conference: conf, waitMs: 2000 })) {
+      const t = getPublishedAudioTrack() || findLocalJitsiAudioTrack();
       if (t) { strudelPublishBackoff = false; return t; }
     }
-    // 2) No track (mic muted or blocked) → publish a synthetic Strudel track.
+    // 2) No real mic (permission blocked, or muted and never granted) → publish
+    //    a SYNTHETIC Strudel track instead. The synth destination stands in for
+    //    the microphone at getUserMedia, and ensureAudioPublished creates and
+    //    attaches it exactly as it would the mic — including on a bare
+    //    lib-jitsi-meet conference, where there is no useAudioStream and the
+    //    track must go through the conference's own addTrack.
     if (audioCtx && masterStrudelGain && window.JitsiMeetJS
         && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       if (!strudelSynthDest) {
@@ -853,25 +845,16 @@ async function acquireLocalAudioTrackForStrudel() {
       const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = async (c = {}) =>
         (c && c.audio && !c.video && strudelSynthDest) ? strudelSynthDest.stream : realGUM(c);
-      let at = null;
       try {
-        const tracks = await window.JitsiMeetJS.createLocalTracks({ devices: ['audio'] });
-        at = tracks && tracks[0];
-      } catch (e) {
-        console.warn('[latency] strudel publish: synthetic-track create failed', e);
+        // unmuteFirst:false — we already tried the real mic above; go straight
+        // to building the track from the substituted stream.
+        if (await ensureAudioPublished({ conference: conf, waitMs: 2500, unmuteFirst: false })) {
+          strudelPublishBackoff = false;
+          return getPublishedAudioTrack() || findLocalJitsiAudioTrack();
+        }
       } finally {
         navigator.mediaDevices.getUserMedia = realGUM; // restore before anything else can gUM
       }
-      if (at && conf) {
-        try {
-          if (typeof conf.useAudioStream === 'function') await conf.useAudioStream(at);
-          else if (conf._room && typeof conf._room.addTrack === 'function') await conf._room.addTrack(at);
-        } catch (e) {
-          console.warn('[latency] strudel publish: useAudioStream failed', e);
-        }
-      }
-      const t = await pollForLocalAudioTrack(2500);
-      if (t) { strudelPublishBackoff = false; return t; }
     }
     strudelPublishBackoff = true; // nothing took — slow the retry down
   } finally {

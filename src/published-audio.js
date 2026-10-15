@@ -151,9 +151,19 @@ export function hasPublishedAudioTrack() {
  * Publish the local microphone, if it is not already published. Backend-neutral
  * and idempotent: a live local track short-circuits.
  *
+ * `unmuteFirst` (default true) lets the Jitsi web app's own unmute produce the
+ * track. The Strudel-publish path passes false when it has substituted a
+ * synthetic stream at getUserMedia and wants createLocalTracks() to build the
+ * track from that, not to disturb (or wait on) the real microphone first.
+ *
  * Returns true when the conference now has a local audio track.
  */
-export async function ensureAudioPublished({ conference, JitsiMeetJS, waitMs = PUBLISH_WAIT_MS } = {}) {
+export async function ensureAudioPublished({
+  conference,
+  JitsiMeetJS,
+  waitMs = PUBLISH_WAIT_MS,
+  unmuteFirst = true,
+} = {}) {
   const conf = conference || getConference();
   if (!conf) return false;
 
@@ -166,7 +176,7 @@ export async function ensureAudioPublished({ conference, JitsiMeetJS, waitMs = P
   // Path 1 — the Jitsi web app's own unmute. This is exactly what joining
   // unmuted (or the toolbar mic button) does, so the default backend is
   // unchanged.
-  if (typeof conf.muteAudio === 'function') {
+  if (unmuteFirst && typeof conf.muteAudio === 'function') {
     try {
       await conf.muteAudio(false);
     } catch (e) {

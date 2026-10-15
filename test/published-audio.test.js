@@ -100,6 +100,25 @@ test('published audio: ensureAudioPublished publishes explicitly under lib-jitsi
   assert.equal(mod.getPublishedAudioTrack(), track);
 });
 
+test('published audio: unmuteFirst:false skips the web unmute and creates the track', async () => {
+  // The Strudel-publish path substitutes a synthetic stream at getUserMedia and
+  // wants createLocalTracks() to build the track from it — not to disturb the
+  // real microphone first.
+  const track = new FakeTrack('audio', 'synth');
+  let muteCalls = 0;
+  const added = [];
+  const conf = {
+    _localTracks: [],
+    async muteAudio() { muteCalls += 1; },
+    _room: { async addTrack(t) { added.push(t); conf._localTracks.push(t); } },
+  };
+  const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
+  assert.equal(await mod.ensureAudioPublished({ conference: conf, JitsiMeetJS, waitMs: 50, unmuteFirst: false }), true);
+  assert.equal(muteCalls, 0, 'the real microphone was not unmuted');
+  assert.deepEqual(added, [track]);
+  assert.equal(mod.getPublishedAudioTrack(), track);
+});
+
 test('published audio: a bare JitsiConference publishes on itself, not its XMPP room', async () => {
   // A real JitsiConference exposes `room` — its XMPP room, which has no track
   // API. ensureAudioPublished must attach via the conference's own addTrack.
