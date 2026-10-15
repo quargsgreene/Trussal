@@ -1,4 +1,4 @@
-import { getConference } from '../meeting-adapter.js';
+import { getConference } from '../../meeting-adapter.js';
 // RTCStatsReport polling for the Network Metrics service.
 //
 // Walks the same lib-jitsi-meet peer-connection map latency-instrument.js
