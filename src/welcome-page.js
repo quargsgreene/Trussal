@@ -14,6 +14,8 @@
 // This validates and rejects rather than normalising: silently reshaping
 // "My Jam Session!" into "my-jam-session" would land two people who typed
 // visibly different names in the same room without telling either of them.
+import { isInMeeting } from './meeting-adapter.js';
+
 export const MAX_ROOM_NAME_LENGTH = 1023;
 const ROOM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -222,9 +224,11 @@ function startPrejoinRender() {
     // React re-renders a lot, so keep re-patching when DOM changes. The prejoin
     // screen can never come back once the meeting itself has mounted, so stop
     // scanning the whole document on every mutation the moment that happens —
-    // otherwise this runs for the rest of the session for no purpose.
+    // otherwise this runs for the rest of the session for no purpose. isInMeeting()
+    // is backend-neutral, so this also stops under a lib-jitsi-meet deployment,
+    // where no #largeVideoContainer ever appears.
     const obs = new MutationObserver(() => {
-      if (document.getElementById('largeVideoContainer')) { obs.disconnect(); return; }
+      if (isInMeeting()) { obs.disconnect(); return; }
       patchPrejoinButton();
     });
     obs.observe(document.documentElement || document.body, {

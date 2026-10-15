@@ -21,6 +21,7 @@
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 import { isHeadCursorEnabled } from './facial-gesture.js';
 import { attachHeadDragResize, isHeadDragActive, pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
+import { isInMeeting } from './meeting-adapter.js';
 export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 
 const KBD_STYLE_ID  = 'trussal-kbd-style';
@@ -916,13 +917,11 @@ function _activateDwelled(el) {
 }
 
 // ── Meeting visibility ──────────────────────────────────────────────────────────
+// Backend-neutral: the adapter reconciles the conference (a bare lib-jitsi-meet
+// one reports joined) with the Jitsi web app's DOM signals, so the keyboard
+// still retracts correctly on the prejoin/welcome screens under either backend.
 function _inMeeting() {
-  if (document.getElementById('trussal-welcome-overlay')) return false;
-  if (document.querySelector('.prejoin-screen,.premeeting-screen,[class*="premeeting"],[class*="prejoin"]')) return false;
-  const lv = document.getElementById('largeVideoContainer');
-  if (!lv) return false;
-  const r = lv.getBoundingClientRect();
-  return r.width > 0 && r.height > 0;
+  return isInMeeting();
 }
 
 function _showPanel(on) {

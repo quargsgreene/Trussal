@@ -5,6 +5,8 @@ import {
   DISPLAY_NAME_STORAGE_KEY,
   PREJOIN_NAME_INPUT_ID,
   PREJOIN_SCREEN_ID,
+  PREMEETING_SCREEN_SELECTORS,
+  PREMEETING_SCREEN_SELECTOR,
   prejoinSuppressionCss,
   normaliseDisplayName,
   readStoredDisplayName,
@@ -97,4 +99,14 @@ test('prejoinSuppressionCss hides the native prejoin but spares our root', () =>
   assert.match(css, new RegExp(`\\.premeeting-screen:not\\(#${PREJOIN_SCREEN_ID}\\)`));
   assert.match(css, /\[class\*="prejoin"\]/);
   assert.match(css, /display: none !important/);
+});
+
+test('PREMEETING_SCREEN_SELECTOR is the shared pre-meeting set the CSS suppresses', () => {
+  // meeting-adapter.js's isInMeeting() uses this same string to decide the
+  // local user is not yet in the meeting; the suppression rule must cover it.
+  assert.match(PREMEETING_SCREEN_SELECTOR, /\.premeeting-screen/);
+  assert.match(PREMEETING_SCREEN_SELECTOR, /\[class\*="prejoin"\]/);
+  for (const sel of PREMEETING_SCREEN_SELECTORS) {
+    assert.ok(prejoinSuppressionCss().includes(`${sel}:not(#${PREJOIN_SCREEN_ID})`));
+  }
 });

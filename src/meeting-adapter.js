@@ -14,6 +14,11 @@
 // Track publishing, mute, and video overrides remain gUM/app concerns and are
 // deliberately left to their own modules (published-video.js etc.).
 
+// The set of selectors that mark a pre-meeting screen (Jitsi's prejoin, the
+// lobby knock, Trussal's own prejoin). A page showing one is not yet in the
+// meeting — see isInMeeting().
+import { PREMEETING_SCREEN_SELECTOR } from './prejoin-core.js';
+
 // Return the Jitsi Meet Redux store when available, or null. Many UI-facing
 // features (reactions, chat-entry, panel-bg) only use it to dispatch a kept
 // set of actions such as `OPEN_CHAT`; callers should degrade to no-ops.
@@ -221,6 +226,41 @@ export function isJoined() {
     return false;
   } catch (e) {
     console.warn('[meeting-adapter] isJoined failed', e);
+    return false;
+  }
+}
+
+// Whether the local user is in the meeting, reconciling both backends in one
+// place. The conference is authoritative when it can answer (a bare
+// lib-jitsi-meet conference reports joined via isJoined()); otherwise fall back
+// to the DOM signals the Jitsi web app provides — which is all Trussal had
+// before the seam existed, so the default backend is unchanged. This is the
+// backend-neutral replacement for the scattered
+// `document.getElementById('largeVideoContainer')` checks (studio.js,
+// on-screen-keyboard.js, facial-gesture.js): a bare lib-jitsi-meet deployment
+// has no largeVideoContainer, yet it is very much in the meeting.
+export function isInMeeting() {
+  try {
+    const conf = getConference();
+    if (conf) {
+      if (typeof conf.isJoined === 'function' && conf.isJoined()) return true;
+      if (conf._room && typeof conf._room.isJoined === 'function' && conf._room.isJoined()) return true;
+    }
+  } catch (e) {
+    console.warn('[meeting-adapter] isInMeeting: conference check failed', e);
+  }
+
+  try {
+    if (typeof document === 'undefined' || !document.body) return false;
+    if (document.body.classList && document.body.classList.contains('welcome-page')) return false;
+    if (document.getElementById('trussal-welcome-overlay')) return false;
+    if (document.querySelector(PREMEETING_SCREEN_SELECTOR)) return false;
+    const largeVideo = document.getElementById('largeVideoContainer');
+    if (!largeVideo || typeof largeVideo.getBoundingClientRect !== 'function') return false;
+    const rect = largeVideo.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  } catch (e) {
+    console.warn('[meeting-adapter] isInMeeting: DOM check failed', e);
     return false;
   }
 }

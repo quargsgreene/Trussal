@@ -31,6 +31,7 @@ import { getLocalPeer, sendLocalPattern, sendLocalPlaying, sendLocalEffects } fr
 import { bootStrudelOnUserGesture, stopStrudel } from './strudel.js';
 import { setVideoStream } from './hydra-video.js';
 import { openCamera } from './published-video.js';
+import { isInMeeting } from './meeting-adapter.js';
 import {
   trackEditorFocus,
   readActiveEditor,
@@ -921,8 +922,10 @@ function _toggleFxEffect(fxName) {
 function _syncHydraShare() {
   // Only lend the camera to Hydra's `s0` inside a meeting — setVideoStream()
   // builds the Hydra split panel, which has no place on the welcome/prejoin
-  // screens the watcher also runs on.
-  const want = !!(_stream && (_headCursor || _gestures) && document.getElementById('largeVideoContainer'));
+  // screens the watcher also runs on. isInMeeting() is backend-neutral: a bare
+  // lib-jitsi-meet deployment has no #largeVideoContainer, yet it is still a
+  // meeting.
+  const want = !!(_stream && (_headCursor || _gestures) && isInMeeting());
   if (want && !_sharedWithHydra) { setVideoStream(_stream); _sharedWithHydra = true; }
   else if (!want && _sharedWithHydra) { setVideoStream(null); _sharedWithHydra = false; }
 }

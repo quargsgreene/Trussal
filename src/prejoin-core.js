@@ -22,15 +22,18 @@ export const PREJOIN_SCREEN_ID = 'trussal-prejoin-screen';
 export const PREJOIN_NAME_INPUT_ID = 'premeeting-name-input';
 export const PREJOIN_SCREEN_CLASS = 'premeeting-screen';
 
-// The selectors the rest of the bundle uses to recognise a pre-meeting screen.
-// Suppression hides Jitsi's own prejoin containers while flagged; ours carries
-// the same class, hence the :not() excluding our root by id.
-const NATIVE_PREJOIN_SELECTORS = [
+// Every selector that marks a pre-meeting screen: Jitsi's own prejoin, the lobby
+// knock screen, or Trussal's own prejoin. Two consumers share this one list —
+// the suppression rule below (which hides Jitsi's copies while Trussal's is up)
+// and meeting-adapter.js's isInMeeting() (a page showing one of these is not yet
+// in the meeting). Keeping it in one place stops the two from drifting.
+export const PREMEETING_SCREEN_SELECTORS = [
   '.prejoin-screen',
   '.premeeting-screen',
   '[class*="premeeting"]',
   '[class*="prejoin"]',
 ];
+export const PREMEETING_SCREEN_SELECTOR = PREMEETING_SCREEN_SELECTORS.join(', ');
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -77,7 +80,7 @@ export function shouldOwnPrejoin({ libJitsiEnabled, isBot = false, isAggregator 
 // own root carries the same class as Jitsi's, so it is excluded by id.
 export function prejoinSuppressionCss() {
   const not = `:not(#${PREJOIN_SCREEN_ID})`;
-  return `${NATIVE_PREJOIN_SELECTORS.map((s) => `${s}${not}`).join(',\n')} { display: none !important; }`;
+  return `${PREMEETING_SCREEN_SELECTORS.map((s) => `${s}${not}`).join(',\n')} { display: none !important; }`;
 }
 
 // The overlay's inner markup. The room name is deliberately NOT rendered, for

@@ -1,4 +1,4 @@
-import { getConference } from './meeting-adapter.js';
+import { isInMeeting } from './meeting-adapter.js';
 // Unified Trussal Studio UI.
 //
 // One toggleable overlay surfaces a participant strip + a detail panel split
@@ -107,25 +107,6 @@ async function refreshSampleBanks() {
   // room would hear a different program than we do.
   sendLocalDataPacks(await getDataPacks().catch(() => []));
   renderAll();
-}
-
-function isInMeeting() {
-  const body = document.body;
-  if (!body) return false;
-  try {
-    const conf = getConference();
-    if (conf) {
-      if (typeof conf.isJoined === 'function') return !!conf.isJoined();
-      if (conf._room && typeof conf._room.isJoined === 'function') return !!conf._room.isJoined();
-    }
-  } catch (e) { console.warn('[swallowed error]', e); }
-  if (body.classList.contains('welcome-page')) return false;
-  if (document.querySelector('.prejoin-screen, .premeeting-screen, [class*="premeeting"], [class*="prejoin"]')) return false;
-  if (document.getElementById('trussal-welcome-overlay')) return false;
-  const largeVideo = document.getElementById('largeVideoContainer');
-  if (!largeVideo) return false;
-  const rect = largeVideo.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
 }
 
 function hueFor(jitsiId) {
