@@ -265,6 +265,9 @@ function startRecentListTextRender() {
     obs.observe(target, { childList: true, subtree: true });
   }
 
+// Relabel and restyle the JITSI web app's prejoin. This is the default backend
+// path. Under the lib-jitsi backend there is no Jitsi prejoin to patch; Trussal
+// renders its own (src/prejoin.js) and suppresses this one.
 export function renderPrejoinScreen() {
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
         startPrejoinRender();

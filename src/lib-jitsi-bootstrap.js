@@ -11,10 +11,15 @@
 // This module only SCAFFOLDS the connection. The roster (participants.js), the
 // local microphone and video publication (published-audio.js and
 // published-video.js's ensureVideoPublished) and remote media consumption
-// (remote-tracks.js) already run through backend-neutral seams; screen-share,
-// prejoin and bots are subsequent migration steps. The point here is to
-// exercise the seam end to end against a real lib-jitsi-meet conference and
-// prove the adapter can serve one.
+// (remote-tracks.js) already run through backend-neutral seams; screen-share
+// and bots are subsequent migration steps. The point here is to exercise the
+// seam end to end against a real lib-jitsi-meet conference and prove the
+// adapter can serve one.
+//
+// The prejoin is handled here too: under this backend there is no Jitsi web
+// app, so Trussal renders its own prejoin (prejoin.js) and the conference
+// starts on its Join, carrying the display name it collected — rather than
+// connecting at page load and bypassing the Join step.
 //
 // On a page that does not already ship the library (a standalone deployment
 // with no Jitsi web app), the bundle is loaded on demand by lib-jitsi-loader.js
@@ -25,6 +30,8 @@ import { ensureLibJitsi } from './lib-jitsi-loader.js';
 import { resetRemoteTracks } from './remote-tracks.js';
 import { ensureAudioPublishedWhenReady } from './published-audio.js';
 import { getRoomNameFromUrl } from './get-room-name-from-url.js';
+import { renderPrejoin } from './prejoin.js';
+import { normaliseDisplayName, shouldOwnPrejoin } from './prejoin-core.js';
 
 export function isLibJitsiEnabled() {
   try {
@@ -81,6 +88,8 @@ export async function connectLibJitsiConference(overrides = {}) {
     return null;
   }
 
+  const displayName = normaliseDisplayName(overrides.displayName);
+
   let connection = null;
   let conference = null;
   try {
@@ -127,6 +136,13 @@ export async function connectLibJitsiConference(overrides = {}) {
     conference.addEventListener?.(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
       resetRemoteTracks(); // drop any cache from a previous conference
       setConference(conference);
+      // The display name travels as the MUC presence nick, so it has to be set
+      // once the room is actually joined (setDisplayName sends presence). An
+      // empty name is simply left unset; the roster then shows its own default.
+      if (displayName && typeof conference.setDisplayName === 'function') {
+        try { conference.setDisplayName(displayName); }
+        catch (e) { console.warn('[lib-jitsi-bootstrap] could not set the display name', e); }
+      }
       // Parity with the Jitsi web app, which publishes the microphone itself at
       // join (unmuted by default). A bare lib-jitsi-meet conference creates no
       // tracks, so publish the mic through the backend-neutral seam unless the
@@ -159,7 +175,29 @@ export function disconnectLibJitsiConference() {
 
 // Only attempt a bootstrap when explicitly enabled. Returning false preserves
 // the current deployment behaviour.
-export async function maybeBootstrapLibJitsi() {
-  if (!isLibJitsiEnabled()) return null;
-  return connectLibJitsiConference();
+//
+// With the flag on, the display name is collected through Trussal's own prejoin
+// (prejoin.js) and the conference starts on the user's Join — the backend's
+// equivalent of the Jitsi web app's prejoin step. On the welcome page no room is
+// resolvable yet (a room is chosen there and the browser then navigates to
+// /<room>), so there is nothing to join and we do nothing. Bots and the
+// aggregator must join unattended and skip the prejoin entirely.
+export async function maybeBootstrapLibJitsi({ renderPrejoinFn = renderPrejoin } = {}) {
+  const enabled = isLibJitsiEnabled();
+  if (!enabled) return null;
+
+  const w = (typeof window !== 'undefined') ? window : {};
+  const isBot = !!w.__trussalIsBot;
+  const isAggregator = !!w.__trussalIsAggregator;
+  if (!shouldOwnPrejoin({ libJitsiEnabled: enabled, isBot, isAggregator })) {
+    return connectLibJitsiConference();
+  }
+
+  const cfg = resolveConfig();
+  if (!cfg.domain || !cfg.room) return null;
+
+  let displayName = '';
+  try { displayName = await renderPrejoinFn({ room: cfg.room }); }
+  catch (e) { console.warn('[lib-jitsi-bootstrap] prejoin failed; joining without a display name', e); }
+  return connectLibJitsiConference({ displayName });
 }

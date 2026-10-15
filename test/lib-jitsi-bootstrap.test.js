@@ -8,7 +8,7 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectLibJitsiConference, isLibJitsiEnabled } from '../src/lib-jitsi-bootstrap.js';
+import { connectLibJitsiConference, isLibJitsiEnabled, maybeBootstrapLibJitsi } from '../src/lib-jitsi-bootstrap.js';
 import { getConference, clearConference } from '../src/meeting-adapter.js';
 import { hasPublishedAudioTrack, getPublishedAudioTrack, resetPublishedAudio } from '../src/published-audio.js';
 
@@ -51,6 +51,8 @@ function fakeJitsiMeetJS({ failConnect = false } = {}) {
         getLocalTracks: () => localTracks.slice(),
         getLocalAudioTrack: () => localTracks.find((t) => t.isAudioTrack()) || null,
         addTrack(t) { localTracks.push(t); },
+        _displayNames: [],
+        setDisplayName(name) { this._displayNames.push(name); },
         _listeners: {},
         addEventListener(name, cb) { (this._listeners[name] ||= []).push(cb); },
         _emit(name) { for (const cb of this._listeners[name] || []) cb(); },
@@ -194,4 +196,102 @@ test('bootstrap: a failed connection returns null and injects nothing', async ()
   assert.equal(await connectLibJitsiConference(), null);
   assert.equal(getConference(), null);
   assert.equal(hasPublishedAudioTrack(), false);
+});
+
+// --- display name ----------------------------------------------------------
+
+test('bootstrap: sets the display name on the conference once joined', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  const conf = await connectLibJitsiConference({ displayName: 'Ada Lovelace' });
+  assert.ok(await waitFor(() => conf._displayNames.includes('Ada Lovelace')));
+});
+
+test('bootstrap: a blank display name is trimmed away and never sent', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  const conf = await connectLibJitsiConference({ displayName: '   ' });
+  assert.ok(await waitFor(() => getConference() === conf));
+  await delay(20);
+  assert.deepEqual(conf._displayNames, []);
+});
+
+// --- prejoin handoff -------------------------------------------------------
+
+test('maybeBootstrapLibJitsi: renders the prejoin and connects with the chosen name', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+
+  let renderedWith = null;
+  const conf = await maybeBootstrapLibJitsi({
+    renderPrejoinFn: async (opts) => { renderedWith = opts; return 'Grace Hopper'; },
+  });
+
+  assert.deepEqual(renderedWith, { room: 'room1' }, 'the prejoin is handed the room');
+  assert.ok(conf, 'a conference is started on submit');
+  assert.ok(await waitFor(() => getConference() === conf));
+  assert.ok(await waitFor(() => conf._displayNames.includes('Grace Hopper')));
+});
+
+test('maybeBootstrapLibJitsi: does nothing on a page with no room (welcome page)', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: { hosts: BASE_CONFIG.hosts }, location: { pathname: '/', hash: '' } });
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+
+  let rendered = false;
+  const result = await maybeBootstrapLibJitsi({
+    renderPrejoinFn: async () => { rendered = true; return 'x'; },
+  });
+
+  assert.equal(result, null);
+  assert.equal(rendered, false, 'no prejoin is rendered before a room is chosen');
+  assert.equal(getConference(), null);
+});
+
+test('maybeBootstrapLibJitsi: a bot skips the prejoin and joins unattended', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+  globalThis.window.__trussalIsBot = true;
+
+  let rendered = false;
+  const conf = await maybeBootstrapLibJitsi({
+    renderPrejoinFn: async () => { rendered = true; return 'x'; },
+  });
+
+  assert.equal(rendered, false, 'the prejoin is never shown to a bot');
+  assert.ok(conf);
+  assert.ok(await waitFor(() => getConference() === conf));
+});
+
+test('maybeBootstrapLibJitsi: the aggregator skips the prejoin too', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+  globalThis.window.__trussalIsAggregator = true;
+
+  let rendered = false;
+  const conf = await maybeBootstrapLibJitsi({
+    renderPrejoinFn: async () => { rendered = true; return 'x'; },
+  });
+
+  assert.equal(rendered, false);
+  assert.ok(conf);
+  assert.ok(await waitFor(() => getConference() === conf));
+});
+
+test('maybeBootstrapLibJitsi: a failing prejoin still joins, without a display name', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({ jitsi, config: BASE_CONFIG });
+  globalThis.window.__TRUSSAL_USE_LIB_JITSI = true;
+
+  const conf = await maybeBootstrapLibJitsi({
+    renderPrejoinFn: async () => { throw new Error('boom'); },
+  });
+
+  assert.ok(conf, 'a broken prejoin must not strand the join');
+  assert.ok(await waitFor(() => getConference() === conf));
+  await delay(20);
+  assert.deepEqual(conf._displayNames, []);
 });
