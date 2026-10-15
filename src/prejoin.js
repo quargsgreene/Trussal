@@ -58,7 +58,7 @@ export function removePrejoin() {
 // possibly empty, since the name is optional. Where there is no DOM (or no body
 // yet) it resolves immediately with whatever was stored, so a non-browser caller
 // gets a usable value instead of a promise that never settles.
-export function renderPrejoin({ initialName, buttonLabel = 'Join session' } = {}) {
+export function renderPrejoin({ initialName, buttonLabel = 'Join meeting' } = {}) {
   return new Promise((resolve) => {
     const stored = initialName !== undefined
       ? normaliseDisplayName(initialName)

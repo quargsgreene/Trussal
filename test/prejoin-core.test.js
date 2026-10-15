@@ -73,7 +73,7 @@ test('prejoinMarkup carries the contract the rest of the bundle keys off', () =>
   assert.match(html, new RegExp(`id="${PREJOIN_NAME_INPUT_ID}"`));
   assert.match(html, /type="submit"/);
   assert.match(html, /value="Ada"/);
-  assert.match(html, /Join session/);
+  assert.match(html, /Join meeting/);
 });
 
 test('prejoinMarkup escapes a hostile display name', () => {

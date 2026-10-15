@@ -92,7 +92,7 @@ export function prejoinSuppressionCss() {
 // suppression rule hides `[class*="prejoin"]`, and the only thing it must spare
 // is our root (excluded by id) — an inner class carrying the substring would be
 // hidden along with Jitsi's screen.
-export function prejoinMarkup({ initialName = '', buttonLabel = 'Join session' } = {}) {
+export function prejoinMarkup({ initialName = '', buttonLabel = 'Join meeting' } = {}) {
   const value = escapeHtml(normaliseDisplayName(initialName));
   const label = escapeHtml(buttonLabel);
   const fieldStyle =
