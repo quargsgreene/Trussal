@@ -6,6 +6,7 @@ import {
   setConference,
   clearConference,
   hasInjectedConference,
+  getMeetingRoom,
   isInMeeting,
 } from '../src/meeting-adapter.js';
 
@@ -103,4 +104,35 @@ test('isInMeeting: a conference whose isJoined throws degrades to the DOM', () =
   setConference({ isJoined: () => { throw new Error('boom'); } });
   installDocument({ largeVideo: { width: 100, height: 100 } });
   assert.equal(isInMeeting(), true);
+});
+
+test('meeting-adapter: getMeetingRoom resolves the track-owning object', () => {
+  // Jitsi web wrapper: _room holds the lib-jitsi JitsiConference (addTrack).
+  const webRoom = { addTrack: () => {} };
+  setConference({ _room: webRoom });
+  assert.equal(getMeetingRoom(), webRoom);
+
+  // Bare lib-jitsi conference: IS the track-owning object itself.
+  const bare = { addTrack: () => {} };
+  setConference(bare);
+  assert.equal(getMeetingRoom(), bare);
+
+  // A conference whose own `.room` is its XMPP room (no track API) must not
+  // win over the conference.
+  setConference({ addTrack: () => {}, room: { getParticipants: () => [] } });
+  assert.equal(getMeetingRoom(), getConference());
+});
+
+test('meeting-adapter: getMeetingRoom falls back to the conference when nothing has a track API', () => {
+  const wrapper = { _room: { getParticipants: () => [] } };
+  setConference(wrapper);
+  assert.equal(getMeetingRoom(), wrapper._room);
+
+  clearConference();
+  assert.equal(getMeetingRoom(), null);
+});
+
+test('meeting-adapter: getMeetingRoom takes an explicit conference argument', () => {
+  const room = { addTrack: () => {} };
+  assert.equal(getMeetingRoom({ _room: room }), room);
 });

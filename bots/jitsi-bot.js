@@ -105,11 +105,16 @@ try {
 // Wait until Jitsi has joined the conference. Mirrors the same check used in
 // studio.js's isInMeeting() to avoid a second source of truth.
 console.log('waiting for conference join...');
+// Wait until Jitsi has joined the conference. Prefers the Trussal bundle's
+// backend-neutral accessor (which works whether the backend is the Jitsi web
+// app or a bare lib-jitsi-meet conference) and falls back to window.APP.
 await page.waitForFunction(() => {
   try {
-    const conf = window.APP?.conference;
-    if (typeof conf?.isJoined === 'function' && conf.isJoined()) return true;
-    if (conf?._room && typeof conf._room.isJoined === 'function' && conf._room.isJoined()) return true;
+    const injected = typeof window.__trussalGetConference === 'function' && window.__trussalGetConference();
+    const conf = injected || window.APP?.conference;
+    if (!conf) return false;
+    if (typeof conf.isJoined === 'function' && conf.isJoined()) return true;
+    if (conf._room && typeof conf._room.isJoined === 'function' && conf._room.isJoined()) return true;
   } catch { /* ignore */ }
   return false;
 }, { timeout: 60000, polling: 1000 });

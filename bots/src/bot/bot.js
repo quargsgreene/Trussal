@@ -16,7 +16,7 @@ import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
   pageEnsureAudioPublished, pageInstallVideoPublisher, pageFpsSampler, pageReadSamples,
-  pageMarkBot, pageRemoteControl,
+  pageMarkBot, pageRemoteControl, pageInstallMeetingAccessor, pageConferenceReady,
 } from './page-scripts.js';
 
 export class Bot {
@@ -56,7 +56,11 @@ export class Bot {
     }
 
     // Must be installed before navigation: Jitsi enumerates devices on load.
-    // pageMarkBot first — it sets window.__trussalIsBot before the Trussal bundle
+    // pageInstallMeetingAccessor first — it defines the backend-neutral
+    // window.__trussalConf()/__trussalRoom() every later page script resolves
+    // "the meeting" through, so they work under either backend.
+    await this.page.evaluateOnNewDocument(pageInstallMeetingAccessor);
+    // pageMarkBot next — it sets window.__trussalIsBot before the Trussal bundle
     // loads, so peer-state announces this peer as a bot (studio can drive/mute it).
     await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
     // pageAudioBridge next — it creates window.__trussalMicStream, which the
@@ -113,11 +117,12 @@ export class Bot {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
-    // Belt and braces: wait until Jitsi's app object exists (i.e. the SPA
-    // has settled). Optional — older/customized Jitsi builds may differ.
+    // Belt and braces: wait until the meeting is up (the Jitsi app object
+    // exists, or the direct lib-jitsi-meet conference has joined). Optional —
+    // older/customized Jitsi builds may differ.
     if (this.page.waitForFunction) {
       await this.page
-        .waitForFunction(() => globalThis.APP !== undefined, { timeout: 30000 })
+        .waitForFunction(pageConferenceReady, { timeout: 30000 })
         .catch(() => {});
     }
 
@@ -197,8 +202,9 @@ export class Bot {
     // meet wrapper's hangup().
     if (this.page && typeof this.page.evaluate === 'function') {
       await this.page.evaluate(() => {
-        const conf = window.APP && window.APP.conference;
-        const room = conf && (conf._room || conf.room);
+        const conf = (typeof window.__trussalConf === 'function' && window.__trussalConf())
+          || (window.APP && window.APP.conference);
+        const room = conf && (window.__trussalRoom ? window.__trussalRoom(conf) : (conf._room || conf.room));
         if (room && typeof room.leave === 'function') return room.leave();
         if (conf && typeof conf.hangup === 'function') return conf.hangup();
       }).catch((e) => console.error(`[bot] conference leave before stop failed: ${e.message}`));

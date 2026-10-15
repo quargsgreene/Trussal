@@ -12,6 +12,7 @@ import {
   pageMosaicDiag, pageSetMosaicVideo,
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
+  pageInstallMeetingAccessor, pageConferenceReady,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -454,8 +455,11 @@ export class AggregatorBot extends Bot {
         await this.page.setUserAgent(spoofedUserAgent(botId));
 
         // Installed before navigation (Jitsi enumerates devices / renders peers
-        // on load). Order matches Bot: mark-as-bot first, then the audio bridge
-        // (its shared AudioContext is what the capture tap reuses).
+        // on load). Order matches Bot: the meeting accessor first (every later
+        // script resolves the conference/room through it), then mark-as-bot,
+        // then the audio bridge (its shared AudioContext is what the capture
+        // tap reuses).
+        await this.page.evaluateOnNewDocument(pageInstallMeetingAccessor);
         await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
         // Announce as the room's aggregator so every other client silences all
         // non-aggregator peers, leaving this bot's assembled master the only
@@ -499,7 +503,7 @@ export class AggregatorBot extends Bot {
         });
         if (this.page.waitForFunction) {
             await this.page
-                .waitForFunction(() => globalThis.APP !== undefined, { timeout: 30000 })
+                .waitForFunction(pageConferenceReady, { timeout: 30000 })
                 .catch(() => {});
         }
 

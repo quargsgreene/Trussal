@@ -82,6 +82,28 @@ function getRoomFor(conf) {
   return conf._room || conf;
 }
 
+// The object that owns the conference's track/participant API. Prefer `_room`
+// (the Jitsi web wrapper parks the lib-jitsi-meet JitsiConference there);
+// otherwise the conference itself (a bare JitsiConference IS that object, and
+// its own `.room` is its XMPP room — no addTrack/getLocalTrack API — so it must
+// never be chosen over the conference). Capability-checked so a wrapper that
+// parks the conference on `.room` still resolves. Mirrors published-video.js's
+// roomFor() so the bundle and the bot page scripts agree on "the room".
+export function getMeetingRoom(conf = null) {
+  try {
+    const c = conf || getConference();
+    if (!c) return null;
+    const hasTrackApi = (o) => !!o && (typeof o.addTrack === 'function' || typeof o.removeTrack === 'function');
+    if (hasTrackApi(c._room)) return c._room;
+    if (hasTrackApi(c)) return c;
+    if (hasTrackApi(c.room)) return c.room;
+    return c._room || c || null;
+  } catch (e) {
+    console.warn('[meeting-adapter] getMeetingRoom failed', e);
+    return null;
+  }
+}
+
 // Our own endpoint id, from whichever backend is active. The web wrapper
 // exposes getMyUserId(); a bare JitsiConference exposes myUserId().
 function getLocalUserIdFrom(conf) {

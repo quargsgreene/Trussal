@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
-  pageEnsureAudioPublished, pageMasterPlayer,
+  pageEnsureAudioPublished, pageMasterPlayer, pageInstallMeetingAccessor, pageConferenceReady,
 } from '../src/bot/page-scripts.js';
 import {
   noiseParams, fillNoise, normalizeRms, NOISE_RMS, NOISE_LOOP_S
@@ -186,6 +186,10 @@ test('direct-tap watchdog re-attaches the effect when the published track is rep
     // no muteAudio → step 1 (and its 1.5s sleep) is skipped
     conference: { _room: { getLocalAudioTrack: () => currentTrack } },
   };
+  // The publish path resolves the conference through the backend-neutral
+  // accessor; install it so the same resolution the live bot page performs is
+  // exercised.
+  pageInstallMeetingAccessor();
   const intervals = [];
   globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pageAggregatorCapture } from '../src/bot/page-scripts.js';
+import { pageAggregatorCapture, pageInstallMeetingAccessor } from '../src/bot/page-scripts.js';
 
 /**
  * Runs the page-side aggregator capture tap outside a browser so its gate
@@ -81,6 +81,11 @@ function installTap() {
     __trussalRoomIndexForJitsiId: (jitsiId) => resolverMap.get(jitsiId) ?? null,
     __trussalPeerIsPlaying: (jitsiId) => playingSet.has(jitsiId),
   };
+  // The page tap resolves the conference/room through the backend-neutral
+  // accessor (window.__trussalConf/__trussalRoom) rather than window.APP —
+  // install it here so the same resolution the live bot page performs is
+  // exercised.
+  pageInstallMeetingAccessor();
 
   // Capture the scan the tap schedules so tests drive roster ticks by hand.
   let scan = null;
