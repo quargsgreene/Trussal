@@ -176,7 +176,19 @@ function libJitsiGlobal() {
 }
 
 function roomFor(conf) {
-  return conf ? (conf._room || conf.room || conf) : null;
+  if (!conf) return null;
+  // The object that actually owns the track API. Prefer `_room` (the Jitsi web
+  // wrapper parks the lib-jitsi-meet JitsiConference there); otherwise a bare
+  // JitsiConference is that object itself. NB: a real JitsiConference ALSO
+  // exposes `conf.room`, but that is its XMPP room (addListener/
+  // muteParticipant — no track API), so it must never be chosen over the
+  // conference. Capability-check each candidate so a wrapper that parks the
+  // conference on `.room` still resolves.
+  const hasTrackApi = (o) => !!o && (typeof o.addTrack === 'function' || typeof o.removeTrack === 'function');
+  if (hasTrackApi(conf._room)) return conf._room;
+  if (hasTrackApi(conf)) return conf;
+  if (hasTrackApi(conf.room)) return conf.room;
+  return conf._room || conf;
 }
 
 function isVideoTrack(track) {

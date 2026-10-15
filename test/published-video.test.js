@@ -147,6 +147,23 @@ test('published video: ensureVideoPublished publishes explicitly under lib-jitsi
   assert.equal(mod.getPublishedVideoTrack(), track);
 });
 
+test('published video: a bare JitsiConference publishes on itself, not its XMPP room', async () => {
+  // A real JitsiConference exposes `room` — its XMPP room, which has no track
+  // API. ensureVideoPublished must attach via the conference's own addTrack,
+  // never hand the track to the XMPP room.
+  const track = new FakeTrack('video', 'canvas');
+  const added = [];
+  const conf = {
+    room: { name: 'room1', addListener() {} },
+    getLocalVideoTrack: () => added[0] || null,
+    async addTrack(t) { added.push(t); },
+  };
+  const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
+  assert.equal(await mod.ensureVideoPublished({ conference: conf, JitsiMeetJS, waitMs: 50 }), true);
+  assert.deepEqual(added, [track]);
+  assert.equal(mod.getPublishedVideoTrack(), track);
+});
+
 test('published video: a live track short-circuits, so mute is not re-driven', async () => {
   const track = new FakeTrack('video', 'canvas');
   let muteCalls = 0;

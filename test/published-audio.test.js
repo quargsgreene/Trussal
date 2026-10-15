@@ -100,6 +100,22 @@ test('published audio: ensureAudioPublished publishes explicitly under lib-jitsi
   assert.equal(mod.getPublishedAudioTrack(), track);
 });
 
+test('published audio: a bare JitsiConference publishes on itself, not its XMPP room', async () => {
+  // A real JitsiConference exposes `room` — its XMPP room, which has no track
+  // API. ensureAudioPublished must attach via the conference's own addTrack.
+  const track = new FakeTrack('audio', 'mic');
+  const added = [];
+  const conf = {
+    room: { name: 'room1', addListener() {} },
+    getLocalAudioTrack: () => added[0] || null,
+    async addTrack(t) { added.push(t); },
+  };
+  const JitsiMeetJS = { async createLocalTracks() { return [track]; } };
+  assert.equal(await mod.ensureAudioPublished({ conference: conf, JitsiMeetJS, waitMs: 50 }), true);
+  assert.deepEqual(added, [track]);
+  assert.equal(mod.getPublishedAudioTrack(), track);
+});
+
 test('published audio: the web useAudioStream path is preferred over addTrack', async () => {
   const track = new FakeTrack('audio', 'mic');
   const used = [];
