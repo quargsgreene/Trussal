@@ -24,6 +24,7 @@ import { setConference, clearConference } from './meeting-adapter.js';
 import { ensureLibJitsi } from './lib-jitsi-loader.js';
 import { resetRemoteTracks } from './remote-tracks.js';
 import { ensureAudioPublishedWhenReady } from './published-audio.js';
+import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 
 export function isLibJitsiEnabled() {
   try {
@@ -52,11 +53,17 @@ export function getLibJitsi() {
 function resolveConfig(overrides = {}) {
   const cfg = (typeof window !== 'undefined' && window.config) ? window.config : {};
   const hosts = (cfg && cfg.hosts) ? cfg.hosts : {};
+  // The room lives in the URL PATH (`/<room>`), the same source studio.js and
+  // peer-state.js read via getRoomNameFromUrl(). Joining a different room than
+  // the sidecar/studio do would split the roster in two, so prefer the path
+  // over a hash or a config.roomName that this deployment does not set.
+  let urlRoom = null;
+  try { urlRoom = getRoomNameFromUrl(); } catch (e) { /* no window.location — leave null */ }
   return {
     domain: overrides.domain || hosts.domain || (typeof window !== 'undefined' ? window.location.hostname : ''),
     muc: overrides.muc || hosts.muc || ('conference.' + (hosts.domain || (typeof window !== 'undefined' ? window.location.hostname : ''))),
     focus: overrides.focus || hosts.focus || ('focus.' + (hosts.domain || (typeof window !== 'undefined' ? window.location.hostname : ''))),
-    room: overrides.room || (typeof window !== 'undefined' ? (cfg.roomName || (window.location.hash || '').replace(/^#/, '') || cfg.room) : ''),
+    room: overrides.room || cfg.roomName || urlRoom || (typeof window !== 'undefined' ? (window.location.hash || '').replace(/^#/, '') || cfg.room : '') || '',
     serviceUrl: overrides.serviceUrl || cfg.serviceUrl || null,
     bosh: overrides.bosh || cfg.bosh || null,
   };

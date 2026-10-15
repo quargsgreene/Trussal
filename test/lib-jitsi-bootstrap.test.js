@@ -78,7 +78,7 @@ function fakeJitsiMeetJS({ failConnect = false } = {}) {
 function installWindow({ jitsi, config = {}, location = {} } = {}) {
   globalThis.window = {
     config,
-    location: { hostname: 'meet.example', search: '', hash: '', ...location },
+    location: { hostname: 'meet.example', search: '', hash: '', pathname: '/', ...location },
   };
   if (jitsi) globalThis.window.JitsiMeetJS = jitsi;
 }
@@ -154,6 +154,28 @@ test('bootstrap: startWithVideoMuted is forwarded to the conference', async () =
   // cannot leak into the next test's module state.
   assert.ok(await waitFor(() => getConference() === conf));
   await waitFor(() => hasPublishedAudioTrack());
+});
+
+test('bootstrap: resolves the room from the URL path, lowercased like the sidecar', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: { hosts: BASE_CONFIG.hosts, startWithAudioMuted: true },
+    location: { pathname: '/MyRoom' },
+  });
+  const conf = await connectLibJitsiConference();
+  assert.equal(conf.room.name, 'myroom');
+});
+
+test('bootstrap: an explicit room override wins over the URL path', async () => {
+  const jitsi = fakeJitsiMeetJS();
+  installWindow({
+    jitsi,
+    config: { hosts: BASE_CONFIG.hosts, startWithAudioMuted: true },
+    location: { pathname: '/from-path' },
+  });
+  const conf = await connectLibJitsiConference({ room: 'explicit' });
+  assert.equal(conf.room.name, 'explicit');
 });
 
 // --- failure paths ---------------------------------------------------------
