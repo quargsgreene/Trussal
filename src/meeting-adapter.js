@@ -28,12 +28,37 @@ export function getStore() {
   }
 }
 
+// The one conference handle the rest of Trussal should treat as "the meeting".
+// Step 2: this is no longer hard-wired to window.APP. A lib-jitsi-meet
+// bootstrap can inject a conference directly, which takes precedence; when
+// nothing has been injected we keep reading the Jitsi Meet web app's
+// conference so nothing regresses.
+let injectedConference = null;
+
+export function setConference(conf) {
+  try {
+    injectedConference = conf || null;
+    return injectedConference;
+  } catch (e) {
+    console.warn('[meeting-adapter] setConference failed', e);
+    return null;
+  }
+}
+
+export function clearConference() {
+  injectedConference = null;
+}
+
+export function hasInjectedConference() {
+  return !!injectedConference;
+}
+
 // Return the active conference object, or null when none is joined / not yet
 // initialised. Under the current backend this is `window.APP.conference`;
-// under lib-jitsi-meet it will be the conference returned by
-// `connection.createConference(...)`.
+// under lib-jitsi-meet it is the conference injected via setConference(...).
 export function getConference() {
   try {
+    if (injectedConference) return injectedConference;
     if (typeof window === 'undefined') return null;
     const app = window.APP;
     return app && app.conference ? app.conference : null;

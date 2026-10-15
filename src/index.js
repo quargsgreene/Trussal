@@ -5,6 +5,7 @@ import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, ge
 import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import { installPublishedVideoOverride, startWithVideoMuted } from './published-video.js';
+import { maybeBootstrapLibJitsi } from './lib-jitsi-bootstrap.js';
 import { installHydraParamApi } from './hydra-params.js';
 import { sampleDataRefAt } from './data-ref.js';
 import { setDataRefReader } from './audio-net/ValuePattern.js';
@@ -55,3 +56,5 @@ renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();
 renderReturnToLobbyOnMeetingEnd();
+
+maybeBootstrapLibJitsi();
