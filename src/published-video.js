@@ -248,9 +248,24 @@ async function attachVideoTrack(conf, track) {
   return false;
 }
 
-/** Track this module last published, or null. Test/inspection seam. */
+/** The local video track the room is seeing, or null. Test/inspection seam.
+ *
+ * Prefers this module's own published record, then falls back to whatever local
+ * video track the conference actually holds — a track created at join when
+ * startWithVideoMuted is off, or one another path attached. The video panel
+ * shows exactly what the room receives, so without that fallback a live local
+ * track still leaves the local tile black. Deliberately uncached: `publishedTrack`
+ * stays this module's own record (see unpublishVideo/clearPublishedVideoTrack).
+ */
 export function getPublishedVideoTrack() {
-  return publishedTrack;
+  if (publishedTrack) return publishedTrack;
+  try {
+    const conf = getConference();
+    return conf ? readLocalVideoTrack(conf) : null;
+  } catch (e) {
+    console.warn('[published-video] reading the live local video track failed', e);
+    return null;
+  }
 }
 
 export function setPublishedVideoTrack(track) {
