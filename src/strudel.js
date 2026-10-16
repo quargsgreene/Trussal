@@ -874,7 +874,7 @@ async function rebuildAndEvaluate() {
 
   if (!next) {
     anyPlaying = false;
-    try { hush(); } catch (e) { console.warn('[swallowed error]', e); }
+    try { hush(); } catch (e) { /* ignore */ }
     // Nothing is playing, so no liveCapture() call can still want its source.
     stopLiveCaptures();
     return;
@@ -946,8 +946,8 @@ export async function bootStrudelOnUserGesture() {
 export async function stopStrudel() {
   if (!strudelBoot) return;
   const { hush, clearHydra } = await loadStrudel();
-  try { hush(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { if (typeof clearHydra === 'function') clearHydra(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { hush(); } catch (e) { /* ignore */ }
+  try { if (typeof clearHydra === 'function') clearHydra(); } catch (e) { /* ignore */ }
   // Release captured sources with the music; the next evaluate that still
   // contains liveCapture() restarts its capture.
   stopLiveCaptures();

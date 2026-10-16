@@ -1,34 +1,41 @@
-// Reaction patterns — Strudel patterns that fire Trussal-native meeting
+// Reaction patterns — Strudel patterns that fire Jitsi's own native meeting
 // reactions (👍 😲 🤫 😂 👎 ❤️ 👏) instead of making sound.
 //
 //   $: reaction("<su la*3 b? [c, h] si>/3").fast(4).unreact(10)
 //
 // LOCAL ONLY BY CONSTRUCTION. A reaction can only ever be sent from the
-// reacting participant's own browser: every browser evaluates every peer's
-// program (see strudel.js), so buildPeerBlock strips reaction() out of anyone
-// else's contribution before it reaches this renderer (silent-voice-core.js's
-// stripCalls) — only the authoring peer's own browser ever calls handleTrigger
-// for their own reaction() voice. Once sent, the Trussal WS sidecar bus relays
-// it to everyone else (the job Jitsi's own conference relay used to do), and
-// every client renders the same overlay.
+// reacting participant's own Jitsi connection — there is no such thing as
+// making a REMOTE participant's client emit a reaction on their behalf. Every
+// browser evaluates every peer's program (see strudel.js), so buildPeerBlock
+// strips reaction() out of anyone else's contribution before it ever reaches
+// this renderer (silent-voice-core.js's stripCalls) — only the authoring
+// peer's own browser ever calls handleTrigger for their own reaction() voice.
+// Once sent, Jitsi's own conference relay is what makes it visible to
+// everyone else, exactly as it already does for a manually-clicked reaction.
 //
 // SILENT BY CONSTRUCTION. The renderer is attached with onTrigger(fn, dominant
 // = true) — see text-cycles.js's doc comment for why that keeps a reaction
 // voice out of superdough even if it names a sound too. No atom minting is
-// needed: every reaction() atom is one of reactions-core.js's abbreviations,
-// already a grammar-legal mini-notation atom.
+// needed (unlike word()): every reaction() atom is one of reactions-core.js's
+// abbreviations, already a grammar-legal mini-notation atom.
 
-import { getLocalPeer, isPeerJPatternTurn, sendReaction } from './peer-state.js';
+import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { resolveReaction, resolveUnreactMs } from './reactions-core.js';
-import { showReaction } from './reaction-overlay.js';
 
-// Fire a reaction: show the overlay locally and relay it to the room via the
-// WS sidecar bus so everyone else renders it too.
-function fireReaction(id) {
-  const idx = getLocalPeer()?.roomIndex;
-  showReaction(id, idx);
-  sendReaction(id);
-  return true;
+// Best-effort dispatch into Jitsi's own reactions feature, exactly the way
+// text-cycles.js's openChatPanel()/setNickname() reach into APP.store: if the
+// internal Redux shape this targets ever drifts, this simply does nothing
+// rather than throwing and taking the room's whole program down with it.
+function sendJitsiReaction(id) {
+  try {
+    const store = typeof window !== 'undefined' ? window.APP?.store : null;
+    if (!store || typeof store.dispatch !== 'function') return false;
+    store.dispatch({ type: 'ADD_REACTION_BUFFER', reaction: id });
+    return true;
+  } catch (e) {
+    console.warn('[reactions] could not dispatch to Jitsi', e);
+    return false;
+  }
 }
 
 // Per-reaction-id cooldown, local to this browser: Jitsi's reactions are a
@@ -59,7 +66,7 @@ function handleTrigger(hap, currentTime, cps, targetTime) {
     const now = Date.now();
     if (now - (lastFiredAt.get(reaction.id) || 0) < unreactMs) return;
     lastFiredAt.set(reaction.id, now);
-    fireReaction(reaction.id);
+    sendJitsiReaction(reaction.id);
   }, delayMs);
 }
 

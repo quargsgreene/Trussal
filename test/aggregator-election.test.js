@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 
 import { electAggregator } from '../src/aggregator-election.js';
 
-const agg = (roomIndex, jitsiId, extra = {}) => ({
-  isAggregator: true, jitsiId, roomIndex, ...extra,
-});
-const human = (roomIndex, jitsiId) => ({ isAggregator: false, jitsiId, roomIndex });
+// const agg = (roomIndex, jitsiId, extra = {}) => ({
+//   isAggregator: true, jitsiId, roomIndex, ...extra,
+// });
+// const human = (roomIndex, jitsiId) => ({ isAggregator: false, jitsiId, roomIndex });
 
 test('electAggregator: no peers / no aggregator -> null', () => {
   assert.equal(electAggregator([]), null);

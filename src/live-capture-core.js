@@ -327,7 +327,7 @@ function splitArgs(raw) {
 function decodeLiteral(raw) {
   const body = raw.slice(1, -1);
   if (raw[0] === '"') {
-    try { return JSON.parse(raw); } catch (e) { console.warn('[swallowed error]', e); }
+    try { return JSON.parse(raw); } catch (e) { /* fall through to manual unescape */ }
   }
   return body.replace(/\\(.)/g, '$1');
 }

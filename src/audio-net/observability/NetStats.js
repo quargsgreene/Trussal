@@ -1,4 +1,3 @@
-import { getConference } from '../../meeting-adapter.js';
 // RTCStatsReport polling for the Network Metrics service.
 //
 // Walks the same lib-jitsi-meet peer-connection map latency-instrument.js
@@ -157,7 +156,7 @@ export function mergeSamples(samples) {
 function listPeerConnections() {
   const out = [];
   try {
-    const conf = getConference();
+    const conf = window.APP && window.APP.conference;
     const pcWrapper = conf?._room?.rtc?.peerConnections;
     if (pcWrapper) {
       // peerConnections is a Map in lib-jitsi-meet.
@@ -167,7 +166,7 @@ function listPeerConnections() {
         if (pc && typeof pc.getStats === 'function') out.push(pc);
       }
     }
-  } catch (e) { console.warn('[swallowed error]', e); }
+  } catch (e) { /* conference not up yet */ }
   return out;
 }
 
@@ -188,7 +187,7 @@ async function pollOnce(send) {
       const { sample, totals } = deriveNetSample(entries, totalsByPc.get(pc) || null);
       totalsByPc.set(pc, totals);
       samples.push(sample);
-    } catch (e) { console.warn('[swallowed error]', e); }
+    } catch (e) { /* connection closed mid-poll */ }
   }
   const merged = mergeSamples(samples);
   if (merged) send(merged);

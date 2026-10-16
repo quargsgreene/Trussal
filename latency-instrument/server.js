@@ -39,7 +39,6 @@ const PACK_MAX_PACKS = 32;
 // client cannot push an unbounded payload into every other browser in the
 // meeting, the same reasoning as sanitizeDataPacks above.
 const CHAT_FILE_MAX_BYTES = 10 * 1024 * 1024;
-const CHAT_MESSAGE_MAX_LEN = 2000;
 const CHAT_FILE_KINDS = new Set(['image', 'video', 'document', 'sound']);
 
 // Decoded byte length of a base64 string, without the cost of actually
@@ -835,32 +834,6 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             previousOption: msg.previousOption ? msg.previousOption.slice(0, 200) : null,
             voterToken: msg.voterToken.slice(0, 32),
           });
-          break;
-        }
-
-        case 'chat-message': {
-          // A plain chat line (src/chat-panel.js): relayed to the whole room so
-          // every viewer sees it in their own Trussal chat panel. No history is
-          // kept server-side — a late joiner sees only messages sent after they
-          // arrive, exactly like the live feature it replaces.
-          if (record.isBot || record.isFleet) break;
-          if (typeof msg.text !== 'string') break;
-          const text = msg.text.trim().slice(0, 2000);
-          if (!text) break;
-          const room = rooms.get(roomName);
-          if (!room) break;
-          broadcast(room, peerId, { type: 'chat-message', fromIndex: record.roomIndex, text });
-          break;
-        }
-
-        case 'reaction': {
-          // A reaction() voice fired (src/reactions.js): relayed to the whole room
-          // so every viewer's Trussal overlay animates it.
-          if (record.isBot || record.isFleet) break;
-          if (typeof msg.reaction !== 'string' || !msg.reaction) break;
-          const room = rooms.get(roomName);
-          if (!room) break;
-          broadcast(room, peerId, { type: 'reaction', fromIndex: record.roomIndex, reaction: msg.reaction.trim().slice(0, 32) });
           break;
         }
 

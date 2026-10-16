@@ -1,4 +1,3 @@
-import { isInMeeting } from './meeting-adapter.js';
 // Unified Trussal Studio UI.
 //
 // One toggleable overlay surfaces a participant strip + a detail panel split
@@ -107,6 +106,25 @@ async function refreshSampleBanks() {
   // room would hear a different program than we do.
   sendLocalDataPacks(await getDataPacks().catch(() => []));
   renderAll();
+}
+
+function isInMeeting() {
+  const body = document.body;
+  if (!body) return false;
+  try {
+    const conf = window.APP && window.APP.conference;
+    if (conf) {
+      if (typeof conf.isJoined === 'function') return !!conf.isJoined();
+      if (conf._room && typeof conf._room.isJoined === 'function') return !!conf._room.isJoined();
+    }
+  } catch (e) { /* fall through */ }
+  if (body.classList.contains('welcome-page')) return false;
+  if (document.querySelector('.prejoin-screen, .premeeting-screen, [class*="premeeting"], [class*="prejoin"]')) return false;
+  if (document.getElementById('trussal-welcome-overlay')) return false;
+  const largeVideo = document.getElementById('largeVideoContainer');
+  if (!largeVideo) return false;
+  const rect = largeVideo.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 function hueFor(jitsiId) {
@@ -495,10 +513,10 @@ function renderDetail(container) {
   // way rather than only the first one.
   selectedPeerKey = isLocal ? 'local' : (peer.peerId || null);
   // The LOCAL peer's key must be the constant 'local', NOT peer.jitsiId:
-  // participants.js polls the conference (through meeting-adapter.js) and emits
-  // 'local-update' with a new id across a P2P<->JVB renegotiation (room crossing
-  // the 2<->3-participant boundary — see pageEnsureAudioPublished's watchdog for
-  // the same underlying flip on the bot side), which is a real, observed
+  // participants.js polls window.APP.conference and emits 'local-update' with
+  // a new id across a P2P<->JVB renegotiation (room crossing the 2<->3-
+  // participant boundary — see pageEnsureAudioPublished's watchdog for the
+  // same underlying flip on the bot side), which is a real, observed
   // mid-session event with nothing to do with the editor. Keying local on
   // jitsiId used to make that moment look like "a different peer" and
   // rebuild the shell, silently reverting the box to peer.pattern (the last
@@ -632,7 +650,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
     codeEl.addEventListener('input', () => {
       clearTimeout(codeDebounce);
       codeDebounce = setTimeout(() => {
-        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) { console.warn('[swallowed error]', e); }
+        try { localStorage.setItem(STORAGE_KEY, codeEl.value); } catch (e) {}
       }, 200);
     });
     codeEl.addEventListener('keydown', (e) => {
@@ -1158,7 +1176,7 @@ function ensureOverlay() {
       // A draft saved before the directive existed is migrated in place — the
       // editor pre-fills the line, the same as the default seed carrying it.
       if (saved && saved.trim()) seed = ensureDirective(saved, 'personal');
-    } catch (e) { console.warn('[swallowed error]', e); }
+    } catch (e) {}
     sendLocalPattern(seed);
   }
 

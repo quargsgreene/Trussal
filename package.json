@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import ./test/register-css.mjs --test test/*.test.js",
+    "test": "node --test test/*.test.js",
     "build": "node build.mjs",
-    "deploy:local": "npm run build && cp dist/custom-config.js docker-jitsi-meet/jitsi-web/ && cp dist/index.html docker-jitsi-meet/jitsi-web/ && cp dist/page.css docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets docker-jitsi-meet/jitsi-web/libs && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/ && (cp -r dist/libs/. docker-jitsi-meet/jitsi-web/libs/ 2>/dev/null || true)",
+    "deploy:local": "npm run build && cp dist/custom-config.js docker-jitsi-meet/jitsi-web/ && mkdir -p docker-jitsi-meet/jitsi-web/assets && cp -r dist/assets/. docker-jitsi-meet/jitsi-web/assets/",
     "watch": "node build.mjs --watch",
     "dev": "bash scripts/dev.sh",
     "dev:setup": "bash scripts/dev-setup.sh",

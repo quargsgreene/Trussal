@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
-  pageEnsureAudioPublished, pageMasterPlayer, pageInstallMeetingAccessor, pageConferenceReady,
+  pageEnsureAudioPublished, pageMasterPlayer,
 } from '../src/bot/page-scripts.js';
 import {
   noiseParams, fillNoise, normalizeRms, NOISE_RMS, NOISE_LOOP_S
@@ -44,7 +44,7 @@ test('jitsiRoomUrl joins unmuted with music-friendly audio config and the breed 
   assert.match(url, /config\.disableAP=true/, 'speech audio processing would mangle music');
   assert.match(url, /config\.stereo=true/, 'preserve the stereo field for music');
   assert.match(url, /userInfo\.displayName="Bloodhound"/);
-  assert.doesNotMatch(url, /prejoinConfig\.enabled=false/, 'the Jitsi web app must not auto-join a second conference');
+  assert.match(url, /config\.prejoinConfig\.enabled=false/, 'bots must not stop at the prejoin screen');
 });
 
 test('jitsiRoomUrl applies home-network bandwidth guards by default', () => {
@@ -153,9 +153,11 @@ test('pageEnsureAudioPublished never rebinds away an effect-carrying track', () 
 // the direct tap to whatever track is current, exactly once per replacement.
 test('direct-tap watchdog re-attaches the effect when the published track is replaced', async (t) => {
   const savedWindow = globalThis.window;
+  const savedAPP = globalThis.APP;
   const savedSetInterval = globalThis.setInterval;
   t.after(() => {
     globalThis.window = savedWindow;
+    globalThis.APP = savedAPP;
     globalThis.setInterval = savedSetInterval;
   });
 
@@ -178,16 +180,12 @@ test('direct-tap watchdog re-attaches the effect when the published track is rep
       connect() {},
       disconnect(dest) { fanDisconnects.push(dest); },
     },
-    // The bot page resolves "the meeting" through the injected lib-jitsi-meet
-    // conference the bundle exposes; the Jitsi web app shell never joins.
-    // No muteAudio → step 1 (and its 1.5s sleep) is skipped.
-    __trussalGetConference: () => ({ _room: { getLocalAudioTrack: () => currentTrack } }),
     // no JitsiMeetJS: the createLocalTracks rebind path stays out of the test
   };
-  // The publish path resolves the conference through the backend-neutral
-  // accessor; install it so the same resolution the live bot page performs is
-  // exercised.
-  pageInstallMeetingAccessor();
+  globalThis.APP = {
+    // no muteAudio → step 1 (and its 1.5s sleep) is skipped
+    conference: { _room: { getLocalAudioTrack: () => currentTrack } },
+  };
   const intervals = [];
   globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 

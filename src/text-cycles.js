@@ -29,9 +29,8 @@
 // which bypass mini entirely (see rewriteTextCalls in text-cycles-core.js) —
 // double-quoting it would mint three separate one-third-cycle steps.
 
-import { localParticipantName, setNickname } from './chat-entry.js';
-import { openChatPanel } from './chat-entry.js';
-export { localParticipantName, setNickname } from './chat-entry.js';
+import { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
+export { jitsiState, localParticipantName, setNickname } from './chat-entry.js';
 import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { localToken } from './polls.js';
 import { sanitizeDeclarations, sanitizeHref, peerTextClass } from './text-cycles-core.js';
@@ -165,9 +164,13 @@ function ensureContainer() {
 // The chat DOM is missing for two quite different reasons and the fix differs,
 // so say which.
 function chatAbsenceReason() {
-  const log = typeof document !== 'undefined' ? document.getElementById('chatconversation') : null;
-  if (!log) return 'the Trussal chat log (#chatconversation) is not in the document — chat-panel.js should have built it at load';
-  return 'the Trussal chat panel is closed (words are collecting in a detached container and appear when it reopens)';
+  const state = jitsiState();
+  if (!state) return 'no Jitsi store yet';
+  const local = state['features/base/participants']?.local;
+  if (!local?.name) {
+    return 'the local participant has no display name — Jitsi is showing the chat nickname prompt instead of the message list';
+  }
+  return 'the chat panel is closed (words are collecting in a detached container and appear when it reopens)';
 }
 
 // The performer's JPattern token. Assigned by the sidecar in its roster, so
@@ -177,21 +180,12 @@ function chatAbsenceReason() {
 // SETTINGS_UPDATED). The base/settings middleware copies displayName onto the
 // local participant as `name`, which is the field the chat panel's prompt
 // tests, so this both dismisses the prompt and names us in the room.
-// Ask the Trussal chat panel to open (text-cycles always wants it visible
-// when words are about to paint). The chat-panel.js launcher also exists for
-// manual toggle; opening here is automatic on first text trigger.
-function openChatPanelFromEntryFn() {
+// Ask Jitsi to open the chat panel. OPEN_CHAT is a real action type in the
+// deployed bundle; if the store shape ever changes this simply does nothing
+// and words accumulate until the user opens chat themselves.
+function openChatPanel() {
   try {
-    openChatPanelLocal();
-  } catch (e) {
-    console.warn('[text-cycles] could not open the chat panel', e);
-  }
-}
-const openChatPanelFromEntry = openChatPanelFromEntryFn;
-
-function openChatPanelLocal() {
-  try {
-    openChatPanelLocal();
+    window.APP?.store?.dispatch({ type: 'OPEN_CHAT' });
   } catch (e) {
     console.warn('[text-cycles] could not open the chat panel', e);
   }
@@ -227,7 +221,7 @@ function ensureChatEntry() {
         textLog('chat-entry:nickname', {
           token,
           dispatched,
-          note: dispatched ? 'set as the display name — this is what dismisses the chat nickname prompt' : 'could not set a fallback name',
+          note: dispatched ? 'set as the display name — this is what dismisses the chat nickname prompt' : 'no Jitsi store to dispatch to',
         });
       } else {
         textLog('chat-entry:waiting', {
@@ -236,7 +230,7 @@ function ensureChatEntry() {
         });
       }
     }
-    openChatPanelLocal();
+    openChatPanel();
     const attached = ensureContainer().parentNode != null;
 
     textLog('chat-entry', {

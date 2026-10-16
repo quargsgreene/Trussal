@@ -12,12 +12,11 @@
 //
 // medium ∈ audio | video | text | css | gesture | cursor.
 //
-// - audio / video: the named PARTICIPANT's aggregator output (their live Jitsi
-//   remote track, read from the conference model), or — for audio only — a
-//   local input device when the name matches one instead of a participant.
-//   Audio flows through superdough's normal chain like any sample; video scrubs
-//   a rolling frame ring exposed at window._liveCapture.video[slug].canvas for a
-//   Hydra src().
+// - audio / video: the named PARTICIPANT's aggregator output (their routed
+//   Jitsi <audio>/<video>), or — for audio only — a local input device when the
+//   name matches one instead of a participant. Audio flows through superdough's
+//   normal chain like any sample; video scrubs a rolling frame ring exposed at
+//   window._liveCapture.video[slug].canvas for a Hydra src().
 // - text / css: the named participant's editor-change / CSS-change stream. Each
 //   event paints the freshest captured fragment / re-applies the freshest
 //   compiled sheet on THIS page. Silent by construction.
@@ -42,7 +41,6 @@
 
 import { listAudioInputDevices } from './latency-instrument.js';
 import { getAllPeers, subscribePeerState } from './peer-state.js';
-import { getRemoteAudioStream, ensureRemoteVideoElement, releaseRemoteVideoElement } from './remote-tracks.js';
 import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
   parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
@@ -144,31 +142,21 @@ function resolvePeerByName(name) {
       || null;
 }
 
-// The MediaStream a routed remote participant's audio is playing through.
-// latency-instrument mutes the Jitsi element and pipes the same track into that
-// peer's chain; remote-tracks builds a stable stream for it whether or not the
-// backend injected an element. Falls back to a Jitsi <audio> tag for layouts
-// whose element carries the stream before the track model reports it.
+// The MediaStream a routed remote participant's audio is playing through —
+// latency-instrument mutes the tag and pipes it into that peer's chain, but the
+// srcObject is still the live stream. id convention: remoteAudio_<jitsiId>.
 function remoteAudioStream(jitsiId) {
-  if (!jitsiId) return null;
-  const byTracks = getRemoteAudioStream(jitsiId);
-  if (byTracks) return byTracks;
-  if (typeof document === 'undefined') return null;
+  if (!jitsiId || typeof document === 'undefined') return null;
   const el = document.getElementById(`remoteAudio_${jitsiId}`)
     || Array.from(document.querySelectorAll('audio')).find(a => a.id && a.id.includes(jitsiId));
   return el && el.srcObject ? el.srcObject : null;
 }
 
-// The <video> element a remote participant's published track renders into:
-// remote-tracks creates and owns a hidden element bound to the participant's
-// video stream (and finds Jitsi's own tile if the shell renders one).
+// The <video> element a remote participant's published track renders into.
 function remoteVideoEl(jitsiId) {
-  if (!jitsiId) return null;
-  const byTracks = ensureRemoteVideoElement(jitsiId);
-  if (byTracks) return byTracks;
-  if (typeof document === 'undefined') return null;
+  if (!jitsiId || typeof document === 'undefined') return null;
   let scoped = null;
-  try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { console.warn('[swallowed error]', e); }
+  try { scoped = document.querySelector(`#participant_${jitsiId} video`); } catch (e) { /* bad id → fall through */ }
   return scoped
     || document.getElementById(`remoteVideo_${jitsiId}`)
     || Array.from(document.querySelectorAll('video')).find(v => v.id && v.id.includes(jitsiId) && v.srcObject)
@@ -252,7 +240,7 @@ function audioOnTrigger(cap, t, value, onEnded) {
   node.playbackRate.value = Math.abs(speed);
   node.onended = onEnded;
   node.start(t);
-  return { node, stop: (time) => { try { node.stop(time); } catch (e) { console.warn('[swallowed error]', e); } } };
+  return { node, stop: (time) => { try { node.stop(time); } catch (e) { /* already ended */ } } };
 }
 
 // --- video ---------------------------------------------------------------
@@ -285,11 +273,11 @@ async function startVideoCapture(cap) {
   const liveCanvas = document.createElement('canvas');
   liveCanvas.width = VIDEO_W; liveCanvas.height = VIDEO_H;
   const liveTimer = setInterval(() => {
-    if (srcEl.videoWidth) { try { liveCanvas.getContext('2d').drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H); } catch (e) { console.warn('[swallowed error]', e); } }
+    if (srcEl.videoWidth) { try { liveCanvas.getContext('2d').drawImage(srcEl, 0, 0, VIDEO_W, VIDEO_H); } catch (e) { /* ignore */ } }
   }, Math.round(1000 / 15));
   const timer = setInterval(grab, Math.round(1000 / VIDEO_FPS));
   bucket('video')[cap.slug] = { canvas: playback, playback, live: liveCanvas };
-  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer, jitsiId: peer.jitsiId });
+  Object.assign(cap, { state: 'ready', vid, playback, liveCanvas, timer, liveTimer });
   console.log(`[liveCapture] video ← participant ${peer.displayName} → window._liveCapture.video["${cap.slug}"].canvas`);
 }
 
@@ -301,7 +289,7 @@ function videoOnTrigger(cap, value) {
   const ringIdx = (vid.writePos - vid.filled + vid.playIdx + VIDEO_FRAMES * 2) % VIDEO_FRAMES;
   try {
     cap.playback.getContext('2d').drawImage(vid.frames[ringIdx], 0, 0);
-  } catch (e) { console.warn('[swallowed error]', e); }
+  } catch (e) { /* ignore a torn frame */ }
   return; // silent
 }
 
@@ -363,7 +351,7 @@ function textOnTrigger(cap, value) {
   if (value && typeof value.typeface === 'string') span.style.fontFamily = value.typeface;
   el.appendChild(span);
   while (el.childNodes.length > 8) el.removeChild(el.firstChild);
-  setTimeout(() => { try { span.remove(); } catch (err) { console.warn('[swallowed error]', err); } }, 6000);
+  setTimeout(() => { try { span.remove(); } catch (err) { /* gone */ } }, 6000);
   return; // silent
 }
 
@@ -424,7 +412,7 @@ function gestureOnTrigger(cap) {
   gestureReplaying = true;
   try {
     document.dispatchEvent(new CustomEvent('trussal-gesture-refire', { detail: { name: e.value } }));
-  } catch (err) { console.warn('[swallowed error]', err); } finally {
+  } catch (err) { /* ignore */ } finally {
     gestureReplaying = false;
   }
   return; // silent
@@ -554,7 +542,7 @@ async function startDeviceWatch(cap) {
 
 function stopDeviceWatch() {
   if (!deviceWatch) return;
-  try { deviceWatch.stop(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { deviceWatch.stop(); } catch (e) { /* ignore */ }
   deviceWatch = null;
 }
 
@@ -603,19 +591,18 @@ function makeOnTrigger(slug) {
 }
 
 function teardown(slug, cap) {
-  try { if (cap.medium === 'video' && cap.jitsiId) releaseRemoteVideoElement(cap.jitsiId); } catch (e) { console.warn('[swallowed error]', e); }
-  try { if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.source && cap.source.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.worklet && cap.worklet.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.sink && cap.sink.disconnect(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.timer && clearInterval(cap.timer); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.liveTimer && clearInterval(cap.liveTimer); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.sampleTimer && clearInterval(cap.sampleTimer); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.unsub && cap.unsub(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.onFired && document.removeEventListener('trussal-gesture-fired', cap.onFired); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.onMouse && window.removeEventListener('mousemove', cap.onMouse); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.styleEl && cap.styleEl.remove(); } catch (e) { console.warn('[swallowed error]', e); }
-  try { cap.dotEl && cap.dotEl.remove(); } catch (e) { console.warn('[swallowed error]', e); }
+  try { if (cap.ownsStream && cap.stream) cap.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* ignore */ }
+  try { cap.source && cap.source.disconnect(); } catch (e) { /* ignore */ }
+  try { cap.worklet && cap.worklet.disconnect(); } catch (e) { /* ignore */ }
+  try { cap.sink && cap.sink.disconnect(); } catch (e) { /* ignore */ }
+  try { cap.timer && clearInterval(cap.timer); } catch (e) { /* ignore */ }
+  try { cap.liveTimer && clearInterval(cap.liveTimer); } catch (e) { /* ignore */ }
+  try { cap.sampleTimer && clearInterval(cap.sampleTimer); } catch (e) { /* ignore */ }
+  try { cap.unsub && cap.unsub(); } catch (e) { /* ignore */ }
+  try { cap.onFired && document.removeEventListener('trussal-gesture-fired', cap.onFired); } catch (e) { /* ignore */ }
+  try { cap.onMouse && window.removeEventListener('mousemove', cap.onMouse); } catch (e) { /* ignore */ }
+  try { cap.styleEl && cap.styleEl.remove(); } catch (e) { /* ignore */ }
+  try { cap.dotEl && cap.dotEl.remove(); } catch (e) { /* ignore */ }
   if (cap.medium === 'cursor') window._lcCursorOverride = null;
   const b = typeof window !== 'undefined' && window._liveCapture && window._liveCapture[cap.medium];
   if (b) delete b[slug];

@@ -4,8 +4,6 @@ import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:f
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { stageLibJitsiBundle } from './build-lib-jitsi.mjs';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
 const STRUDEL_ASSETS_SRC = join(STRUDEL_FORK_WEB, 'dist/assets');
@@ -15,13 +13,6 @@ const STRUDEL_ASSETS_DEST = 'dist/assets';
 // from (see docker-compose.yml). Copying the fresh bundle here is all a running
 // container needs to pick up a rebuild — no image rebuild, no restart.
 const DEPLOY_DIR = resolve(__dirname, 'docker-jitsi-meet/jitsi-web');
-
-// Trussal's own page shell. index.html replaces the Jitsi web app's index.html
-// (the web app bundle is never loaded, so it never draws a prejoin or joins a
-// conference); page.css is its base stylesheet. Both live in public/ and are
-// mirrored into dist/ and the container bind mount alongside the bundle.
-const PUBLIC_DIR = resolve(__dirname, 'public');
-const PAGE_SHELL_FILES = ['index.html', 'page.css'];
 
 const argv = new Set(process.argv.slice(2));
 const WATCH = argv.has('--watch');
@@ -41,55 +32,13 @@ function copyStrudelAssets() {
 	}
 }
 
-// Optional: put a supplied lib-jitsi-meet bundle under dist/libs/ so a
-// standalone deployment (no Jitsi web app) is self-contained, and mirror it
-// into the container bind mount (deployToContainer) so the web image bakes the
-// same file. No bundle supplied is not an error — the loader can still fetch
-// one at runtime, or the Jitsi web page provides the global itself, and the
-// image's own /libs/lib-jitsi-meet.min.js is left untouched.
-function copyLibJitsiBundle() {
-	const { source, dest, explicit } = stageLibJitsiBundle({ argv: [...argv], env: process.env });
-	if (!source) {
-		if (explicit) {
-			console.warn('[build] LIB_JITSI_MEET_PATH/--lib-jitsi was set but no lib-jitsi-meet bundle was found there; skipping dist/libs');
-		} else {
-			console.log('[build] no lib-jitsi-meet bundle supplied — skipping dist/libs (set LIB_JITSI_MEET_PATH or --lib-jitsi=<path> to stage one)');
-		}
-		return;
-	}
-	console.log(`[build] staged lib-jitsi-meet → ${dest}`);
-}
-
-// Copy Trussal's page shell into dist/ so a deploy (or a plain static host) has
-// index.html + page.css beside the bundle.
-function copyPageShell() {
-	mkdirSync('dist', { recursive: true });
-	for (const f of PAGE_SHELL_FILES) {
-		const src = join(PUBLIC_DIR, f);
-		if (!existsSync(src)) {
-			console.warn('[build] page-shell file not found:', src);
-			continue;
-		}
-		copyFileSync(src, join('dist', f));
-	}
-}
-
 // Mirror dist/ into the container's bind-mount dir (same effect as the
 // `deploy:local` npm script, but callable on every incremental rebuild).
 function deployToContainer() {
 	copyFileSync('dist/custom-config.js', join(DEPLOY_DIR, 'custom-config.js'));
-	for (const f of PAGE_SHELL_FILES) {
-		if (existsSync(join('dist', f))) copyFileSync(join('dist', f), join(DEPLOY_DIR, f));
-	}
 	const assetsDest = join(DEPLOY_DIR, 'assets');
 	mkdirSync(assetsDest, { recursive: true });
 	cpSync('dist/assets', assetsDest, { recursive: true });
-	// Optional pinned lib-jitsi-meet, if copyLibJitsiBundle() staged one. The dir
-	// is always created so the image's `COPY libs` has a source; leaving it empty
-	// keeps the Jitsi image's own /libs/lib-jitsi-meet.min.js in place.
-	const libsDest = join(DEPLOY_DIR, 'libs');
-	mkdirSync(libsDest, { recursive: true });
-	if (existsSync('dist/libs')) cpSync('dist/libs', libsDest, { recursive: true });
 }
 
 // esbuild runs onEnd after every (re)build — including the first — so the copy
@@ -100,8 +49,6 @@ const postBuild = {
 		build.onEnd((result) => {
 			if (result.errors.length) return; // leave stale output on a failed rebuild
 			copyStrudelAssets();
-			copyLibJitsiBundle();
-			copyPageShell();
 			if (DEPLOY) {
 				deployToContainer();
 				console.log(`[build] deployed → docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);

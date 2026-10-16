@@ -12,7 +12,6 @@ import {
   pageMosaicDiag, pageSetMosaicVideo,
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
-  pageInstallMeetingAccessor, pageConferenceReady,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -455,11 +454,8 @@ export class AggregatorBot extends Bot {
         await this.page.setUserAgent(spoofedUserAgent(botId));
 
         // Installed before navigation (Jitsi enumerates devices / renders peers
-        // on load). Order matches Bot: the meeting accessor first (every later
-        // script resolves the conference/room through it), then mark-as-bot,
-        // then the audio bridge (its shared AudioContext is what the capture
-        // tap reuses).
-        await this.page.evaluateOnNewDocument(pageInstallMeetingAccessor);
+        // on load). Order matches Bot: mark-as-bot first, then the audio bridge
+        // (its shared AudioContext is what the capture tap reuses).
         await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
         // Announce as the room's aggregator so every other client silences all
         // non-aggregator peers, leaving this bot's assembled master the only
@@ -503,7 +499,7 @@ export class AggregatorBot extends Bot {
         });
         if (this.page.waitForFunction) {
             await this.page
-                .waitForFunction(pageConferenceReady, { timeout: 30000 })
+                .waitForFunction(() => globalThis.APP !== undefined, { timeout: 30000 })
                 .catch(() => {});
         }
 
@@ -1321,14 +1317,9 @@ export class AggregatorBot extends Bot {
         // A bare `# ring`: the rotation order is the consistent-hash order of the
         // present tokens, not the written `$ participants` sequence. Same
         // TurnRing.orderTokens + same seed as every browser, so the ring the
-        // aggregator streams matches the one each client outlines. Until the
-        // roster is known (no peer has announced a room index yet) hash mode has
-        // nothing to order, so — exactly like MetaprogramScheduler's
-        // _effectiveParticipants — fall back to the written sequence rather than
-        // emptying the ring.
-        const present = this.#presentTokens();
-        const tokenSequence = (ast.ring && ast.ring.mode === 'hash' && present.length)
-            ? orderTokens(present, { seed: this.#ringSeed(), weights: ast.ring.weights || null })
+        // aggregator streams matches the one each client outlines.
+        const tokenSequence = (ast.ring && ast.ring.mode === 'hash')
+            ? orderTokens(this.#presentTokens(), { seed: this.#ringSeed(), weights: ast.ring.weights || null })
             : metaprogramTokenSequence(ast.participants);
         const retired = this.order.applyMetaprogramOrder(tokenSequence, { programUpdate });
         if (!retired.length) return;
@@ -1759,7 +1750,7 @@ export class AggregatorBot extends Bot {
         this.#lastBroadcastActiveAt = now;
         const conn = this.#metaprogramConn;
         if (!conn || typeof conn.send !== 'function') return;
-        try { conn.send({ type: 'jp-active', token: t, index: i, kind: k }); } catch (e) { console.warn('[swallowed error]', e); }
+        try { conn.send({ type: 'jp-active', token: t, index: i, kind: k }); } catch (e) { /* cosmetic */ }
     }
 
     async writeToIndividualParticipantBufferQueues(captures) {

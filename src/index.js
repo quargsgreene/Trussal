@@ -1,22 +1,17 @@
 import './panic-button.js';
-import { renderWelcomeOverlay } from './welcome-page.js';
+import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
 import { roomMapper, syncMapperFromPeerEvent } from './bridges/XMPPtoO2Mapper.js';
 import { installPublishedVideoOverride, startWithVideoMuted } from './published-video.js';
-import { getConference, getMeetingRoom } from './meeting-adapter.js';
-import { maybeBootstrapLibJitsi } from './lib-jitsi-bootstrap.js';
 import { installHydraParamApi } from './hydra-params.js';
 import { sampleDataRefAt } from './data-ref.js';
 import { setDataRefReader } from './audio-net/ValuePattern.js';
 import './theme-context.js';
 import './studio.js';
 import './landmark-gesture-mode.js';
-import './reaction-overlay.js';
-import './chat-panel.js';
-import './video-panel.js';
-import './in-call-toolbar.js';
+import './docs-about.js';
 
 setDataRefReader(sampleDataRefAt);
 subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
@@ -48,22 +43,15 @@ window.__trussalIsActiveAggregator = () => {
   return !!(winner && local && local.isAggregator && winner.jitsiId === local.jitsiId);
 };
 
-// Backend-neutral handles to "the meeting", for code that runs in the page but
-// cannot import this module (the bot page scripts, serialised into the page by
-// puppeteer). They expose the lib-jitsi-meet conference lib-jitsi-bootstrap.js
-// injects — the only conference there is — so the bot track/roster paths never
-// reach for window.APP directly.
-window.__trussalGetConference = () => getConference();
-window.__trussalGetMeetingRoom = () => getMeetingRoom();
-
 if (window.__trussalIsAggregator) installHydraParamApi();
 if (!window.__trussalIsBot) {
   installPublishedVideoOverride();
   startWithVideoMuted();
 }
 
+renderRecentListText();
 renderWelcomeOverlay();
+renderHideStartMeetingButton();
+renderPrejoinScreen();
 renderNoAudioToast();
 renderReturnToLobbyOnMeetingEnd();
-
-maybeBootstrapLibJitsi();

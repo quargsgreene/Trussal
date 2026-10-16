@@ -38,7 +38,7 @@ export function panic() {
   let url = null;
   try {
     if (typeof sessionStorage !== 'undefined') url = sessionStorage.getItem(KEY);
-  } catch (e) { console.warn('[swallowed error]', e); }
+  } catch (e) { /* ignore */ }
   // Assigning the SAME href a page is already on is a no-op in some browsers
   // rather than a reload, so the no-captured-URL fallback calls reload()
   // explicitly instead of re-assigning href to itself.

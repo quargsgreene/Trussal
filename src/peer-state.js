@@ -170,7 +170,7 @@ function openSocket() {
 
   if (ws) {
     ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-    try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
+    try { ws.close(); } catch (e) {}
     ws = null;
   }
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
@@ -198,7 +198,7 @@ function openSocket() {
     pingTimer = setInterval(() => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (Date.now() - lastPongAt > PONG_TIMEOUT_MS) {
-        try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
+        try { ws.close(); } catch (e) {}
         return;
       }
       ws.send(JSON.stringify({ type: 'ping', sentAt: Date.now() }));
@@ -213,7 +213,7 @@ function openSocket() {
   };
 
   ws.onerror = () => {
-    try { if (ws) ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
+    try { if (ws) ws.close(); } catch (e) {}
   };
 
   ws.onmessage = (evt) => {
@@ -416,24 +416,6 @@ function handleMessage(msg) {
       });
       break;
 
-    // Plain chat line (src/chat-panel.js), relayed from another peer. The
-    // authoring browser has already shown it locally, so others render it.
-    case 'chat-message':
-      emit('chat-message', {
-        fromIndex: msg.fromIndex ?? null,
-        text: typeof msg.text === 'string' ? msg.text : '',
-      });
-      break;
-
-    // Reaction (src/reactions.js), relayed from another peer so every viewer
-    // shows the overlay.
-    case 'reaction':
-      emit('reaction', {
-        fromIndex: msg.fromIndex ?? null,
-        reaction: typeof msg.reaction === 'string' ? msg.reaction : '',
-      });
-      break;
-
     case 'crdt-update':
       // Shared metaprogram doc sync (Yjs update, base64). Consumed by
       // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
@@ -544,7 +526,7 @@ subscribeParticipants((event, payload) => {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (ws) {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
-      try { ws.close(); } catch (e) { console.warn('[swallowed error]', e); }
+      try { ws.close(); } catch (e) {}
       ws = null;
     }
     helloSent = false;
@@ -852,25 +834,4 @@ export function sendChatFile({ kind, name, mime, data }) {
 export function sendPollVote({ pollId, option, previousOption, voterToken }) {
   if (typeof pollId !== 'string' || typeof voterToken !== 'string') return;
   safeSend({ type: 'poll-vote', pollId, option: option ?? null, previousOption: previousOption ?? null, voterToken });
-}
-
-// A plain chat line, on its way to every other browser in the room (see
-// src/chat-panel.js). The sender is excluded from the relay by the sidecar so
-// it does not receive its own line twice; the authoring browser renders it
-// locally.
-export function sendChatMessage(text) {
-  if (typeof text !== 'string') return;
-  const clean = text.trim();
-  if (!clean) return;
-  safeSend({ type: 'chat-message', text: clean.slice(0, 2000) });
-}
-
-// A reaction fired, on its way to every other browser so their overlay renders
-// it (see src/reactions.js and src/reaction-overlay.js). The sender is excluded
-// from the relay; the authoring browser shows and relays it.
-export function sendReaction(reaction) {
-  if (typeof reaction !== 'string') return;
-  const rid = reaction.trim();
-  if (!rid) return;
-  safeSend({ type: 'reaction', reaction: rid.slice(0, 32) });
 }

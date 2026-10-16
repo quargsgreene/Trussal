@@ -176,7 +176,7 @@ export function createRoomNode(audioCtx, params) {
     },
     dispose() {
       [input, output, wet, combSum, lp1, lp2, ...combs.map(c => c.delay), ...combs.map(c => c.fb), ...allpasses]
-        .forEach(n => { try { n.disconnect(); } catch (e) { console.warn('[swallowed error]', e); } });
+        .forEach(n => { try { n.disconnect(); } catch (e) {} });
     }
   };
 }

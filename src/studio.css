@@ -1,11 +1,12 @@
 /* Styles for the Trussal Studio overlay (src/studio.js). Imported as raw text
-   (see build.mjs's '.css': 'text' loader) and injected via injectStyles() — the
-   CSS ships inside custom-config.js, authored here instead of inside a JS
-   template literal.
+   (see build.mjs's '.css': 'text' loader) and injected via injectStyles() —
+   Jitsi's page has no <link> mechanism this bundle can hook into, so the CSS
+   still ships inside custom-config.js, just authored here instead of inside
+   a JS template literal.
 
-   Palette: flat monochrome. Authored against two CSS custom properties rather
-   than hard hex so the per-user Personal Theme picker (src/theme-context.js)
-   can retint the overlay by reassigning them on :root:
+   Palette: flat monochrome, matching custom.css. Authored against two CSS
+   custom properties rather than hard hex so the per-user Personal Theme picker
+   (src/theme-context.js) can retint the overlay by reassigning them on :root:
 
      --trussal-primary    the light anchor — surfaces, "inverted" text
      --trussal-secondary  the dark anchor  — text, borders, icons

@@ -6,7 +6,6 @@ const ABOUT_ID     = 'trussal-da-about-scrim';
 const STYLE_ID     = 'trussal-da-style';
 
 import styles from './docs-about.css';
-import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 
 // ---------------------------------------------------------------------------
 // Content — the JPattern function reference.
@@ -713,8 +712,7 @@ function _buildDocsBody() {
 
         <h4>Video</h4>
         <p>Participants cannot see their own or other participants' video by default, even when one permits webcam access.
-        The meeting room's camera button (see the toolbar below) publishes one's own Hydra output; it never reveals a raw
-        webcam. In order to stream one's webcam to the meeting room,
+        A participant cannot turn on video by clicking the camera icon. In order to stream one's webcam to the meeting room,
         one must fulfill two prerequisites which are: 1. The participant's join order participant index token must be included in the Metaprogram
         and 2. The participant calls the initCam Hydra method and/or the device name corresponding to the participant's webcam
         is passed as an argument to liveCapture. Live video streaming data may only be viewed globally within the Aggregator's video feed.
@@ -726,17 +724,6 @@ function _buildDocsBody() {
         video output in minimized video panel squares.
         </p>
 
-        <h4>Meeting Room Toolbar and Video Panel</h4>
-        <p>Along the bottom of the meeting room is Trussal's own toolbar: <strong>Mic</strong> mutes or unmutes your
-        microphone, <strong>Camera</strong> starts or stops publishing your Hydra output, <strong>Share</strong> shares your
-        screen (and publishes the Hydra output along with it), <strong>View</strong> switches the video panel between the
-        large-video layout and a tile view (an even grid of every participant), <strong>Chat</strong> opens the chat
-        panel, <strong>React</strong> sends a reaction, <strong>People</strong> lists who is in the meeting (tagging bots
-        and the Aggregator), and <strong>Leave</strong> returns you to the lobby. Along the top of the room is the video
-        panel: in the default speaker view, a large video showing the Aggregator's feed, or a participant you pin by
-        clicking their square, above a row of minimized squares, one per participant.
-        </p>
-
         <h4>Audio</h4>
         <p>As is the case regarding video, one cannot hear one's own or other participants' audio by default.
         In order to hear one's own or others' audio, in addition to giving the browser permission to access the microphone,
@@ -745,8 +732,8 @@ function _buildDocsBody() {
         </p>
 
         <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
-        <p>Each of these features is provided by Trussal's own meeting-room UI and toolbar (see the toolbar above) rather than by
-        a native Jitsi Meet client. However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
+        <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
+        However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
         performed by the Aggregator.
         </p>
@@ -973,10 +960,7 @@ function _ensureDOM() {
 }
 
 function _onWelcomePage() {
-  // Trussal owns the page: the welcome screen is the site root, i.e. a URL that
-  // names no room. (Previously this keyed off the Jitsi web app's
-  // `body.welcome-page` class, which no longer exists.)
-  return !!(document.body && !getRoomNameFromUrl());
+  return !!(document.body && document.body.classList.contains('welcome-page'));
 }
 
 function _boot() {

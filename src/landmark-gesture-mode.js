@@ -65,7 +65,7 @@ function _persistMode(on) {
   try {
     if (on) sessionStorage.setItem(PERSIST_KEY, '1');
     else sessionStorage.removeItem(PERSIST_KEY);
-  } catch (e) { console.warn('[swallowed error]', e); }
+  } catch (e) { /* private mode / storage disabled — non-fatal */ }
 }
 function _wasModeOn() {
   try { return sessionStorage.getItem(PERSIST_KEY) === '1'; } catch (e) { return false; }

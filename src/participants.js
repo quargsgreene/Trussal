@@ -1,21 +1,13 @@
 // Wraps the Jitsi participant list behind a tiny pub-sub so the studio UI can
-// stay in sync with who is actually in the meeting. We poll the active
-// conference through meeting-adapter.js so the polling code never reaches for a
-// backend object directly; the implementation lives in that module only.
-
-import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference, getMeetingRoom, subscribeConferenceEvents } from './meeting-adapter.js';
+// stay in sync with who is actually in the meeting. We poll APP.conference
+// because the underlying event emitter is not part of any stable surface.
 
 const subscribers = new Set();
 let local = null;
 const remotes = new Map();
 
-// Event-driven roster. Keep the conference we are subscribed to and its
-// teardown so a new conference (a reconnect, a fresh join) resubscribes.
-let activeConference = null;
-let rosterTeardown = null;
-
-// A single null read of the local participant is NOT a departure. The
-// conference is torn down and rebuilt for transient reasons that are not a
+// A single null read of the local participant is NOT a departure. Jitsi tears
+// down and rebuilds APP.conference for transient reasons that are not a
 // hangup — most visibly moving into or out of a breakout room, where the
 // client leaves the main MUC and joins the breakout MUC with a multi-second
 // gap during which getMyUserId() is null (a P2P<->JVB flip or a bridge
@@ -23,7 +15,7 @@ let rosterTeardown = null;
 // subscribers (meeting.js navigates the whole page to the lobby; peer-state
 // closes its sidecar socket), so require the absence to hold across several
 // consecutive polls before treating it as real. A breakout switch / reconnect
-// repopulates the conference well within this window and never fires the event.
+// repopulates APP.conference well within this window and never fires the event.
 const LOCAL_LEAVE_CONFIRM_TICKS = 6; // ~6s at the 1s poll interval
 let missingLocalTicks = 0;
 
@@ -34,46 +26,52 @@ function emit(event, payload) {
 }
 
 function readLocal() {
-  return adapterReadLocal();
+  try {
+    const conf = window.APP && window.APP.conference;
+    if (!conf || typeof conf.getMyUserId !== 'function') return null;
+    const id = conf.getMyUserId();
+    if (!id) return null;
+
+    let displayName = null;
+    if (typeof conf.getLocalDisplayName === 'function') {
+      try { displayName = conf.getLocalDisplayName(); } catch (e) { /* ignore */ }
+    }
+    if (!displayName && window.APP.store && typeof window.APP.store.getState === 'function') {
+      try {
+        const st = window.APP.store.getState();
+        const s = st['features/base/settings'];
+        if (s && typeof s.displayName === 'string') displayName = s.displayName;
+      } catch (e) { /* ignore */ }
+    }
+    return { id, displayName: displayName || 'You', isLocal: true };
+  } catch (e) { return null; }
 }
 
 function readRemotes() {
-  return adapterReadRemotes();
-}
-
-function syncConferenceSubscription() {
-  const conf = getConference();
-  if (conf === activeConference) return;
-  if (rosterTeardown) {
-    try { rosterTeardown(); } catch (e) { console.warn('[participants] teardown failed', e); }
-    rosterTeardown = null;
-  }
-  // A conference identity changed: drop the cached roster and repopulate. Tell
-  // subscribers the old REMOTES are gone first — they are, and a consumer that
-  // keys its own roster by participant id (video-panel.js) would otherwise keep
-  // the departed tiles alongside the repopulated ones and draw duplicates.
-  // Deliberately NOT a 'local-leave': that is the irreversible hangup signal
-  // (meeting.js returns the tab to the lobby on it), while a conference swap is
-  // exactly the transient teardown that must NOT. The local tile is reconciled
-  // by the next 'local' (the id differs), which is why video-panel.js purges a
-  // stale local entry on every 'local'.
-  if (activeConference) {
-    for (const r of remotes.values()) emit('leave', r);
-  }
-  activeConference = conf;
-  local = null;
-  remotes.clear();
-  missingLocalTicks = 0;
-  rosterTeardown = conf
-    ? subscribeConferenceEvents(conf, () => { try { tick(); } catch (e) { console.warn('[participants] event-driven tick failed', e); } })
-    : null;
+  const map = new Map();
+  try {
+    const conf = window.APP && window.APP.conference;
+    if (!conf) return map;
+    const localId = typeof conf.getMyUserId === 'function' ? conf.getMyUserId() : null;
+    const members = typeof conf.listMembers === 'function' ? conf.listMembers() : [];
+    for (const m of members) {
+      const id = typeof m.getId === 'function' ? m.getId() : m._id;
+      if (!id) continue;
+      if (localId && id === localId) continue;
+      // Skip hidden participants (Jicofo, SMACKS ghost sessions, virtual sources).
+      try { if (typeof m.isHidden === 'function' && m.isHidden()) continue; } catch (e) {}
+      let displayName = null;
+      try { displayName = typeof m.getDisplayName === 'function' ? m.getDisplayName() : m._displayName; } catch (e) {}
+      map.set(id, { id, displayName: displayName || 'Participant', isLocal: false });
+    }
+  } catch (e) { /* ignore */ }
+  return map;
 }
 
 function tick() {
-  try { syncConferenceSubscription(); } catch (e) { console.warn('[participants] conference sync failed', e); }
   const newLocal = readLocal();
   if (!newLocal) {
-    // We were in a conference and now read as absent (the conference torn
+    // We were in a conference and now read as absent (APP.conference torn
     // down or getMyUserId() gone null). This is a genuine local departure —
     // an in-app hangup that leaves the tab open on a post-call/welcome screen
     // rather than closing or reloading it — ONLY if it persists: a breakout
@@ -129,14 +127,6 @@ function startPolling() {
   tick();
 }
 
-// Teardown counterpart of startPolling(). The bundle starts the roster poll at
-// module load and never stops it (a meeting lives as long as the tab), but a
-// test harness that imports this module must be able to release the interval —
-// an active setInterval would otherwise keep a Node process alive forever.
-export function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-}
-
 export function subscribeParticipants(fn) {
   subscribers.add(fn);
   if (local) fn('local', local);
@@ -162,12 +152,8 @@ function ownerIdForAudioSrcObject(srcObject) {
     if (!srcObject || typeof srcObject.getAudioTracks !== 'function') return null;
     const tagTrackIds = new Set(srcObject.getAudioTracks().map((t) => t.id));
     if (!tagTrackIds.size) return null;
-    const conf = getConference();
-    // The conference (not `conf._room`, which no lib-jitsi-meet build sets —
-    // JitsiConference keeps its participant/track API on itself and its XMPP
-    // room on `.room`) owns getParticipants()/getTracks(). Reading the wrong
-    // object here returned null for EVERY tag, so this identity match never ran.
-    const room = getMeetingRoom(conf);
+    const conf = window.APP && window.APP.conference;
+    const room = conf && conf._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
     if (!room || typeof room.getParticipants !== 'function') return null;
     const match = room.getParticipants()
       .flatMap((participant) => (typeof participant.getTracks === 'function' ? participant.getTracks() : [])
