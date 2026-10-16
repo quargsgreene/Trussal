@@ -15,6 +15,8 @@ import './studio.js';
 import './landmark-gesture-mode.js';
 import './reaction-overlay.js';
 import './chat-panel.js';
+import './video-panel.js';
+import './in-call-toolbar.js';
 
 setDataRefReader(sampleDataRefAt);
 subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));

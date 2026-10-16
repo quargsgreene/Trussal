@@ -1,0 +1,158 @@
+/* in-call-toolbar.css — Trussal's own in-call toolbar (in-call-toolbar.js).
+ *
+ * Imported as raw text and injected once by in-call-toolbar.js (the same
+ * mechanism studio.js uses for studio.css) — no inline style attributes,
+ * nothing reaching into native Jitsi. Colours/font come from the per-user
+ * Personal Theme (theme-context.js) with the previous literals kept as var()
+ * fallbacks.
+ *
+ * z-index 9000 matches the chat launcher/panel: the toolbar sits with the rest
+ * of the meeting chrome, below the prejoin/welcome overlays (9999) and the
+ * Studio overlay (999999). It is anchored bottom-centre so it clears the
+ * bottom-right corner the chat launcher and Studio toggle already occupy.
+ */
+
+#trussal-toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+
+#trussal-toolbar.is-hidden {
+  display: none;
+}
+
+.tic-btn {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font: inherit;
+  font-size: calc(0.82rem * var(--trussal-font-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tic-btn.is-on {
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
+}
+
+.tic-btn.tic-danger {
+  border-color: #b3261e;
+  color: #b3261e;
+}
+
+/* --- Reaction picker ---------------------------------------------------- */
+
+.tic-popover {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 9100;
+  display: none;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+}
+
+.tic-popover.is-open {
+  display: flex;
+}
+
+.tic-reaction {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+/* --- Participants panel ------------------------------------------------- */
+
+.tic-people {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 9000;
+  display: none;
+  flex-direction: column;
+  width: min(280px, calc(100vw - 32px));
+  max-height: min(60vh, 420px);
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 12px;
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  overflow: hidden;
+}
+
+.tic-people.is-open {
+  display: flex;
+}
+
+.tic-people-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--trussal-secondary, #111111);
+  font-weight: 600;
+}
+
+.tic-people-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tic-people-list {
+  overflow-y: auto;
+  padding: 0.35rem 0;
+}
+
+.tic-people-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.3rem 0.75rem;
+}
+
+.tic-people-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tic-tag {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--trussal-secondary, #111111);
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.tic-tag-aggregator {
+  font-weight: 600;
+  opacity: 1;
+}
