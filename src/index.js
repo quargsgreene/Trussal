@@ -1,5 +1,5 @@
 import './panic-button.js';
-import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
+import { renderWelcomeOverlay } from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId } from './peer-state.js';
 import { electAggregator } from './aggregator-election.js';
@@ -59,10 +59,7 @@ if (!window.__trussalIsBot) {
   startWithVideoMuted();
 }
 
-renderRecentListText();
 renderWelcomeOverlay();
-renderHideStartMeetingButton();
-renderPrejoinScreen();
 renderNoAudioToast();
 renderReturnToLobbyOnMeetingEnd();
 

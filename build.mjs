@@ -16,6 +16,13 @@ const STRUDEL_ASSETS_DEST = 'dist/assets';
 // container needs to pick up a rebuild — no image rebuild, no restart.
 const DEPLOY_DIR = resolve(__dirname, 'docker-jitsi-meet/jitsi-web');
 
+// Trussal's own page shell. index.html replaces the Jitsi web app's index.html
+// (the web app bundle is never loaded, so it never draws a prejoin or joins a
+// conference); page.css is its base stylesheet. Both live in public/ and are
+// mirrored into dist/ and the container bind mount alongside the bundle.
+const PUBLIC_DIR = resolve(__dirname, 'public');
+const PAGE_SHELL_FILES = ['index.html', 'page.css'];
+
 const argv = new Set(process.argv.slice(2));
 const WATCH = argv.has('--watch');
 const DEPLOY = argv.has('--deploy'); // also copy into the container bind mount
@@ -53,10 +60,27 @@ function copyLibJitsiBundle() {
 	console.log(`[build] staged lib-jitsi-meet → ${dest}`);
 }
 
+// Copy Trussal's page shell into dist/ so a deploy (or a plain static host) has
+// index.html + page.css beside the bundle.
+function copyPageShell() {
+	mkdirSync('dist', { recursive: true });
+	for (const f of PAGE_SHELL_FILES) {
+		const src = join(PUBLIC_DIR, f);
+		if (!existsSync(src)) {
+			console.warn('[build] page-shell file not found:', src);
+			continue;
+		}
+		copyFileSync(src, join('dist', f));
+	}
+}
+
 // Mirror dist/ into the container's bind-mount dir (same effect as the
 // `deploy:local` npm script, but callable on every incremental rebuild).
 function deployToContainer() {
 	copyFileSync('dist/custom-config.js', join(DEPLOY_DIR, 'custom-config.js'));
+	for (const f of PAGE_SHELL_FILES) {
+		if (existsSync(join('dist', f))) copyFileSync(join('dist', f), join(DEPLOY_DIR, f));
+	}
 	const assetsDest = join(DEPLOY_DIR, 'assets');
 	mkdirSync(assetsDest, { recursive: true });
 	cpSync('dist/assets', assetsDest, { recursive: true });
@@ -77,6 +101,7 @@ const postBuild = {
 			if (result.errors.length) return; // leave stale output on a failed rebuild
 			copyStrudelAssets();
 			copyLibJitsiBundle();
+			copyPageShell();
 			if (DEPLOY) {
 				deployToContainer();
 				console.log(`[build] deployed → docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);

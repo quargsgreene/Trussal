@@ -1,0 +1,75 @@
+/* welcome.css — styles for Trussal's welcome (room picker) overlay
+ * (welcome-page.js).
+ *
+ * Imported as raw text and injected once by welcome-page.js (the same mechanism
+ * studio.js uses for studio.css) — no inline style attributes, and nothing here
+ * reaches into native Jitsi. Colours/font come from the per-user Personal Theme
+ * (theme-context.js) with the previous literals kept as var() fallbacks.
+ */
+
+#trussal-welcome-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--trussal-primary, #eeeeee);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  z-index: 9999;
+}
+
+.trussal-room-panel {
+  width: min(480px, 90vw);
+  max-width: 90vw;
+  padding: 1.5rem 2rem;
+  background: var(--trussal-primary, #eeeeee);
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 1rem;
+}
+
+.trussal-room-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trussal-room-label {
+  color: var(--trussal-secondary, #111111);
+  font-size: calc(1rem * var(--trussal-font-scale, 1));
+}
+
+#trussal-room-input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font: inherit;
+}
+
+#trussal-room-input::placeholder {
+  color: var(--trussal-secondary, #111111);
+  opacity: 1; /* some browsers dim the placeholder unless you force this */
+}
+
+.trussal-room-button {
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#trussal-room-error {
+  display: none;
+  color: var(--trussal-secondary, #111111);
+  font-size: 0.85rem;
+}
+
+/* Toggled by welcome-page.js — visibility is a class, not an inline style. */
+#trussal-room-error.is-visible {
+  display: block;
+}

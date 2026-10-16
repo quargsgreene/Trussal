@@ -10,19 +10,11 @@ import {
   isInMeeting,
 } from '../src/meeting-adapter.js';
 
-// A document just rich enough for isInMeeting()'s DOM fallback.
-function installDocument({ welcome = false, welcomeOverlay = false, premeeting = false, largeVideo = null } = {}) {
-  const els = {};
-  if (welcomeOverlay) els['trussal-welcome-overlay'] = {};
-  if (largeVideo) els['largeVideoContainer'] = { getBoundingClientRect: () => largeVideo };
-  globalThis.document = {
-    body: { classList: { contains: (c) => c === 'welcome-page' && welcome } },
-    getElementById: (id) => els[id] || null,
-    querySelector: () => (premeeting ? {} : null),
-  };
-}
+// With the Jitsi web app shell gone, the injected conference is the only
+// authority for "in a meeting": there is no large-video element and no
+// premeeting-screen DOM to fall back to.
 
-afterEach(() => { clearConference(); delete globalThis.document; });
+afterEach(() => { clearConference(); });
 
 test('meeting-adapter: no conference by default in Node', () => {
   clearConference();
@@ -49,7 +41,7 @@ test('meeting-adapter: setConference(null) clears the injected handle', () => {
 
 // --- isInMeeting -----------------------------------------------------------
 
-test('isInMeeting: false with no conference and no DOM', () => {
+test('isInMeeting: false with no conference', () => {
   clearConference();
   assert.equal(isInMeeting(), false);
 });
@@ -64,46 +56,14 @@ test('isInMeeting: true for a bare lib-jitsi conference (joined via _room)', () 
   assert.equal(isInMeeting(), true);
 });
 
-test('isInMeeting: conference is authoritative over a stray pre-meeting screen', () => {
-  setConference({ isJoined: () => true });
-  installDocument({ premeeting: true });
-  assert.equal(isInMeeting(), true);
-});
-
-test('isInMeeting: an unjoined conference falls back to the Jitsi large video', () => {
+test('isInMeeting: an unjoined conference is not a meeting', () => {
   setConference({ isJoined: () => false });
-  installDocument({ largeVideo: { width: 100, height: 100 } });
-  assert.equal(isInMeeting(), true);
-});
-
-test('isInMeeting: a zero-sized large video is not a meeting', () => {
-  clearConference();
-  installDocument({ largeVideo: { width: 0, height: 0 } });
   assert.equal(isInMeeting(), false);
 });
 
-test('isInMeeting: the welcome overlay means not in a meeting', () => {
-  clearConference();
-  installDocument({ welcomeOverlay: true, largeVideo: { width: 100, height: 100 } });
-  assert.equal(isInMeeting(), false);
-});
-
-test('isInMeeting: a pre-meeting screen (prejoin/lobby) means not in a meeting', () => {
-  clearConference();
-  installDocument({ premeeting: true, largeVideo: { width: 100, height: 100 } });
-  assert.equal(isInMeeting(), false);
-});
-
-test('isInMeeting: the welcome page body class means not in a meeting', () => {
-  clearConference();
-  installDocument({ welcome: true, largeVideo: { width: 100, height: 100 } });
-  assert.equal(isInMeeting(), false);
-});
-
-test('isInMeeting: a conference whose isJoined throws degrades to the DOM', () => {
+test('isInMeeting: a conference whose isJoined throws is not a meeting', () => {
   setConference({ isJoined: () => { throw new Error('boom'); } });
-  installDocument({ largeVideo: { width: 100, height: 100 } });
-  assert.equal(isInMeeting(), true);
+  assert.equal(isInMeeting(), false);
 });
 
 test('meeting-adapter: getMeetingRoom resolves the track-owning object', () => {

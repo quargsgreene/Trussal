@@ -1,38 +1,24 @@
 // prejoin-core.js — pure logic for Trussal's own prejoin screen.
 //
-// The Jitsi shell may draw its own prejoin (name field, device preview, a Join
-// button Trussal relabels in welcome-page.js), but it never joins a conference.
-// Trussal collects the display name itself and only then starts the conference
-// (lib-jitsi-bootstrap.js) — the "join" moment.
+// Trussal owns the page now: the Jitsi web app shell no longer hosts the
+// meeting, so there is no native prejoin to relabel, suppress or otherwise
+// reach into. Trussal draws its own screen, collects the display name, and only
+// then starts the conference (lib-jitsi-bootstrap.js) — the "join" moment.
 //
 // No DOM, no storage, no network here — the storage key, the name
 // normalisation, the decision to own the screen, and the overlay markup all run
 // under node:test. prejoin.js does the wiring.
 //
-// The screen deliberately presents the CONTRACT the rest of the bundle already
-// keys off the Jitsi prejoin: the display-name input id that on-screen-keyboard,
-// facial-gesture and studio.js look for, and a class that makes them treat the
-// page as "not yet in a meeting". Reusing them means those features keep working
-// without knowing where the screen came from.
+// The screen presents the CONTRACT the rest of the bundle keys off: the
+// display-name input id that on-screen-keyboard, facial-gesture and studio.js
+// look for, and a root class that marks the page as "not yet in a meeting".
+// Those features keep working without knowing where the screen came from.
 
 export const DISPLAY_NAME_STORAGE_KEY = 'trussal.displayName.v1';
 
 export const PREJOIN_SCREEN_ID = 'trussal-prejoin-screen';
 export const PREJOIN_NAME_INPUT_ID = 'premeeting-name-input';
 export const PREJOIN_SCREEN_CLASS = 'premeeting-screen';
-
-// Every selector that marks a pre-meeting screen: Jitsi's own prejoin, the lobby
-// knock screen, or Trussal's own prejoin. Two consumers share this one list —
-// the suppression rule below (which hides Jitsi's copies while Trussal's is up)
-// and meeting-adapter.js's isInMeeting() (a page showing one of these is not yet
-// in the meeting). Keeping it in one place stops the two from drifting.
-export const PREMEETING_SCREEN_SELECTORS = [
-  '.prejoin-screen',
-  '.premeeting-screen',
-  '[class*="premeeting"]',
-  '[class*="prejoin"]',
-];
-export const PREMEETING_SCREEN_SELECTOR = PREMEETING_SCREEN_SELECTORS.join(', ');
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -74,49 +60,24 @@ export function shouldOwnPrejoin({ isBot = false, isAggregator = false } = {}) {
   return !isBot && !isAggregator;
 }
 
-// While Trussal's prejoin is up, Jitsi's must not be: two prejoins invite the
-// user to click the wrong Join, and Jitsi's would start its own conference. Our
-// own root carries the same class as Jitsi's, so it is excluded by id.
-export function prejoinSuppressionCss() {
-  const not = `:not(#${PREJOIN_SCREEN_ID})`;
-  return `${PREMEETING_SCREEN_SELECTORS.map((s) => `${s}${not}`).join(',\n')} { display: none !important; }`;
-}
-
-// The overlay's inner markup. The room name is deliberately NOT rendered, for
-// the same reason the welcome overlay never renders it (see welcome-page.js):
-// nothing here should have to reason about a 1023-character room name, and the
-// performer already typed it one screen ago.
+// The overlay's inner markup. Styling lives in prejoin.css (imported as raw
+// text by prejoin.js) — no inline style attributes.
 //
-// Note the inner class names avoid the substrings "prejoin"/"premeeting": the
-// suppression rule hides `[class*="prejoin"]`, and the only thing it must spare
-// is our root (excluded by id) — an inner class carrying the substring would be
-// hidden along with Jitsi's screen.
+// The room name is deliberately NOT rendered, for the same reason the welcome
+// overlay never renders it (see welcome-page.js): nothing here should have to
+// reason about a 1023-character room name, and the performer already typed it
+// one screen ago.
 export function prejoinMarkup({ initialName = '', buttonLabel = 'Join meeting' } = {}) {
   const value = escapeHtml(normaliseDisplayName(initialName));
   const label = escapeHtml(buttonLabel);
-  const fieldStyle =
-    'padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--trussal-secondary, #111111);'
-    + 'background:var(--trussal-primary, #eeeeee);color:var(--trussal-secondary, #111111);font:inherit;';
   return `
-    <div class="trussal-join-panel" style="
-      position: fixed;
-      left: 50%;
-      top: 40%;
-      transform: translate(-50%, -50%);
-      background: var(--trussal-primary, #eeeeee);
-      padding: 1.5rem 2rem;
-      border: 1px solid var(--trussal-secondary, #111111);
-      border-radius: 1rem;
-      max-width: 480px;
-      width: 90%;
-      z-index: 9999;
-      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
-    ">
-      <form class="trussal-join-form" style="display:flex;flex-direction:column;gap:0.75rem;">
-        <label for="${PREJOIN_NAME_INPUT_ID}" style="color:var(--trussal-secondary, #111111);font-size:1rem;">
+    <div class="trussal-join-panel">
+      <form class="trussal-join-form">
+        <label class="trussal-join-label" for="${PREJOIN_NAME_INPUT_ID}">
           Display name (optional):
         </label>
         <input id="${PREJOIN_NAME_INPUT_ID}"
+               class="trussal-join-input"
                name="displayName"
                type="text"
                autocomplete="off"
@@ -124,13 +85,8 @@ export function prejoinMarkup({ initialName = '', buttonLabel = 'Join meeting' }
                autocorrect="off"
                spellcheck="false"
                placeholder="Display name"
-               value="${value}"
-               style="${fieldStyle}"/>
-        <button type="submit" style="
-          padding:0.6rem 0.9rem;border-radius:0.5rem;
-          border:1px solid var(--trussal-secondary, #111111);
-          background:var(--trussal-primary, #eeeeee);color:var(--trussal-secondary, #111111);
-          font:inherit;font-weight:600;cursor:pointer;">
+               value="${value}"/>
+        <button class="trussal-join-button" type="submit">
           ${label}
         </button>
       </form>

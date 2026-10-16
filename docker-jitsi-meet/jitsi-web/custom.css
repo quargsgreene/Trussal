@@ -1,6 +1,10 @@
-/* Trussal welcome / prejoin / in-call theme overrides.
-   Appended to Jitsi's css/all.css at image-build time (see Dockerfile:
-   `cat custom.css >> all.css`). Tracked in the repo — never generated.
+/* Retired — NO LONGER appended to Jitsi's css/all.css.
+   This stylesheet restyled the Jitsi web app's own chrome (welcome page,
+   prejoin, in-call UI). Trussal no longer loads the Jitsi web app: jitsi-web's
+   index.html is replaced by public/index.html, so none of these selectors exist
+   and nothing is injected over native Jitsi. Kept for reference only — the live
+   UI styles are in src/*.css (imported as raw text by the bundle) and
+   public/page.css. Tracked in the repo, never generated.
 
    Palette: flat monochrome, authored against CSS custom properties so the
    per-user Personal Theme picker (src/theme-context.js, in the bundle) can

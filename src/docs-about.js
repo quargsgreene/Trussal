@@ -6,6 +6,7 @@ const ABOUT_ID     = 'trussal-da-about-scrim';
 const STYLE_ID     = 'trussal-da-style';
 
 import styles from './docs-about.css';
+import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 
 // ---------------------------------------------------------------------------
 // Content — the JPattern function reference.
@@ -960,7 +961,10 @@ function _ensureDOM() {
 }
 
 function _onWelcomePage() {
-  return !!(document.body && document.body.classList.contains('welcome-page'));
+  // Trussal owns the page: the welcome screen is the site root, i.e. a URL that
+  // names no room. (Previously this keyed off the Jitsi web app's
+  // `body.welcome-page` class, which no longer exists.)
+  return !!(document.body && !getRoomNameFromUrl());
 }
 
 function _boot() {

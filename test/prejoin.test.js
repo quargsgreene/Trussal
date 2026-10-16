@@ -1,14 +1,17 @@
 // prejoin.js is the DOM half: it renders the overlay, wires the form, persists
 // the chosen name and clears itself. These tests drive it with a hand-rolled
-// document/window (no jsdom) and assert the two behaviours the bootstrap relies
-// on — the promise resolves with the submitted name once, and the screen leaves
-// the DOM so the rest of the bundle stops treating the page as pre-meeting.
+// document/window (no jsdom) and assert the behaviours the bootstrap relies on —
+// the promise resolves with the submitted name once, the screen leaves the DOM
+// so the rest of the bundle stops treating the page as pre-meeting, and
+// prejoin.css is injected exactly once (styling lives in that file, not inline).
 
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { renderPrejoin, getPrejoinDisplayName, hasRenderedPrejoin, removePrejoin } from '../src/prejoin.js';
 import { DISPLAY_NAME_STORAGE_KEY, PREJOIN_NAME_INPUT_ID, PREJOIN_SCREEN_ID } from '../src/prejoin-core.js';
+
+const PREJOIN_STYLE_ID = 'trussal-prejoin-style';
 
 function fakeLocalStorage(initial = '') {
   const m = new Map();
@@ -82,6 +85,29 @@ test('renderPrejoin resolves with the typed name, persists it, and clears itself
   assert.equal(await promise, 'Ada');
   assert.equal(getPrejoinDisplayName(), 'Ada');
   assert.equal(hasRenderedPrejoin(), false, 'the overlay is gone once joined');
+});
+
+test('renderPrejoin injects the prejoin stylesheet once', () => {
+  const { byId } = installDom();
+  renderPrejoin({});
+  const first = byId.get(PREJOIN_STYLE_ID);
+  assert.ok(first, 'prejoin.css is injected');
+  renderPrejoin({});
+  assert.equal(byId.get(PREJOIN_STYLE_ID), first, 'the same stylesheet is reused, never stacked');
+  assert.equal(globalThis.document.getElementById(PREJOIN_SCREEN_ID) !== null, true, 'the overlay is present');
+});
+
+test('renderPrejoin leaves no stylesheet behind when the overlay is dismissed', async () => {
+  installDom();
+  const promise = renderPrejoin({});
+  fireSubmit();
+  await promise;
+
+  assert.equal(hasRenderedPrejoin(), false, 'the overlay is dismissed');
+  // Nothing is injected over native Jitsi — there is no native Jitsi. The
+  // stylesheet is Trussal's own and simply stays put; the point is that no
+  // suppression rule was ever written.
+  assert.ok(globalThis.document.getElementById(PREJOIN_STYLE_ID), 'the prejoin stylesheet remains');
 });
 
 test('renderPrejoin prefills the field from the stored name', () => {

@@ -23,9 +23,6 @@ COPY main.json /usr/share/jitsi-meet/lang/main.json
 COPY main.json /usr/share/jitsi-meet/lang/main-enGB.json
 # Title / meta tags
 COPY title.html /usr/share/jitsi-meet/title.html
-# CSS overrides (already working for you)
-COPY custom.css /tmp/custom.css
-RUN cat /tmp/custom.css >> /usr/share/jitsi-meet/css/all.css
 COPY latency-worklet-v2.js     /usr/share/jitsi-meet/latency-worklet-v2.js
 COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js
@@ -33,29 +30,23 @@ COPY assets /usr/share/jitsi-meet/assets
 # Optional pinned lib-jitsi-meet (see build-lib-jitsi.mjs / build.mjs).
 # deploy:local always creates this dir before the build; an empty one is a
 # no-op, so the Jitsi image's own /libs/lib-jitsi-meet.min.js stays in place. A
-# supplied bundle merges over just that file — the web app keeps its own copy
-# inside app.bundle.min.js, so only the Trussal loader (which fetches
-# /libs/lib-jitsi-meet.min.js) picks up the pinned version.
+# supplied bundle merges over just that file. Since the Jitsi web app is no
+# longer loaded, the Trussal loader is the only consumer of
+# /libs/lib-jitsi-meet.min.js.
 COPY libs /usr/share/jitsi-meet/libs
 
-# Per-build cache-bust for the two assets a Trussal deploy actually changes.
-# jitsi pins `css/all.css?v=<n>` with a 1-year max-age and body.html loads
-# `/custom-config.js` with no version at all, so Cloudflare's edge cache (per
-# POP, keyed on the exact URL) and the browser kept serving the pre-deploy
-# files — every theme deploy was invisible until a manual CDN purge. The room
-# HTML is assembled with SSI and never cached (`cf-cache-status: DYNAMIC`), so
-# rewriting the query string here makes the next page load fetch fresh URLs
-# with no purge. Only these two — NOT app.bundle.min.js / lib-jitsi-meet.min.js,
-# which don't change between deploys and are multi-MB. run.sh builds web with
-# --no-cache so `date` re-runs every deploy; body.html's mount is removed from
-# docker-compose.yml so this baked copy is the one SSI includes.
-RUN BID="${ASSET_VERSION:-$(date +%Y%m%d%H%M%S)}" && \
-    sed -i -E "s#(all\.css\?v=)[0-9a-zA-Z._-]+#\1${BID}#g" /usr/share/jitsi-meet/*.html && \
-    printf '<script src="/custom-config.js?v=%s"></script>\n' "${BID}" > /usr/share/jitsi-meet/body.html
+# Trussal's own page shell replaces the Jitsi web app's index.html. The web app
+# bundle is never loaded, so there is no native prejoin/UI to inject over and
+# nothing that could join a second conference; lib-jitsi-meet is the only client.
+COPY index.html /usr/share/jitsi-meet/index.html
+COPY page.css   /usr/share/jitsi-meet/page.css
 
-# **Patch the React bundle fallback strings**
-RUN sed -i \
-  -e 's|"headerTitle":"Jitsi Meet"|"headerTitle":"Trussal"|' \
-  -e 's|"headerSubtitle":"Secure and high quality meetings"|"headerSubtitle":"   "|' \
-  /usr/share/jitsi-meet/libs/app.bundle.min.js
+# Per-build cache-bust for the assets a Trussal deploy actually changes. The
+# shell references `/custom-config.js?v=__ASSET_VERSION__` and
+# `/page.css?v=__ASSET_VERSION__`, so stamping the build id in makes Cloudflare's
+# edge cache (per POP, keyed on the exact URL) and the browser fetch fresh URLs
+# with no manual purge. run.sh builds web with --no-cache so `date` re-runs every
+# deploy.
+RUN BID="${ASSET_VERSION:-$(date +%Y%m%d%H%M%S)}" && \
+    sed -i -E "s#__ASSET_VERSION__#${BID}#g" /usr/share/jitsi-meet/index.html
 

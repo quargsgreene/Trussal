@@ -7,10 +7,11 @@
 // one browser that changed it (unlike CSS Cycles, which every peer receives).
 //
 // The flat monochrome theme is authored against four CSS custom properties —
-// in docker-jitsi-meet/jitsi-web/custom.css (Jitsi's own chrome) and in every
-// bundle-injected stylesheet (src/studio.css and the inline <style> blocks in
-// on-screen-keyboard / facial-gesture / landmark-gesture-mode / panel-drag-resize
-// / hydra-video), so one personal theme repaints the whole app for this viewer:
+// in public/page.css (the page shell) and in every bundle-injected stylesheet
+// (src/studio.css, src/prejoin.css, src/welcome.css and the inline <style>
+// blocks in on-screen-keyboard / facial-gesture / landmark-gesture-mode /
+// panel-drag-resize / hydra-video), so one personal theme repaints the whole
+// app for this viewer:
 //
 //   --trussal-primary     the light anchor — "what is currently #EEEEEE"
 //   --trussal-secondary   the dark anchor  — "what is currently #111111"

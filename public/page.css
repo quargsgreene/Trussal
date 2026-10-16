@@ -1,0 +1,24 @@
+/* page.css — base styles for Trussal's own page shell (public/index.html).
+ *
+ * The page no longer loads the Jitsi web app (no all.css), so this is the only
+ * stylesheet the shell itself brings. Feature UI (studio.css, prejoin.css,
+ * welcome.css, …) is imported as raw text by the bundle and injected at run
+ * time. Colours/font start from the Personal Theme defaults and are overridden
+ * by theme-context.js once it runs.
+ */
+
+:root {
+  --trussal-primary: #eeeeee;
+  --trussal-secondary: #111111;
+  --trussal-font: Arial, Helvetica, sans-serif;
+  --trussal-font-scale: 1;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}

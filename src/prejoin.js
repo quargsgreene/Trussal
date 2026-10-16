@@ -1,18 +1,18 @@
 // prejoin.js — Trussal's own prejoin screen: the DOM half of prejoin-core.js.
 //
-// Trussal renders and owns the prejoin. lib-jitsi-bootstrap.js starts the
-// conference on this screen's Join, with the chosen display name — rather than
-// connecting at load. The Jitsi web app shell that serves the page never joins,
-// so nothing else can start a conference here.
+// Trussal owns the page. lib-jitsi-bootstrap.js starts the conference on this
+// screen's Join, with the chosen display name — rather than connecting at load.
+// There is no Jitsi web app shell hosting the page, so there is no native
+// prejoin to hide or restyle: the screen below is the only prejoin, and its Join
+// is the only way to start a conference.
 //
-// While the screen is up, Jitsi's own prejoin (present because the shell is)
-// is hidden by prejoin-core.js's suppression rule, so there is exactly one Join
-// on the page and Jitsi is not started behind Trussal's back.
+// The screen reuses the contract the rest of the bundle keys off — the
+// #premeeting-name-input id and a .premeeting-screen container — so
+// on-screen-keyboard.js, facial-gesture.js and studio.js keep working without
+// knowing where the screen came from.
 //
-// The screen reuses the contract the rest of the bundle already keys off the
-// Jitsi prejoin — the #premeeting-name-input id and a .premeeting-screen
-// container — so on-screen-keyboard.js, facial-gesture.js and studio.js keep
-// working without knowing where the screen came from.
+// Styling lives in prejoin.css, imported as raw text and injected once (the same
+// mechanism studio.js uses for studio.css) — no inline style attributes.
 
 import {
   PREJOIN_SCREEN_ID,
@@ -22,14 +22,24 @@ import {
   readStoredDisplayName,
   writeStoredDisplayName,
   prejoinMarkup,
-  prejoinSuppressionCss,
 } from './prejoin-core.js';
+import prejoinStyles from './prejoin.css';
 
-const SUPPRESSION_STYLE_ID = PREJOIN_SCREEN_ID + '-style';
+const STYLE_ID = 'trussal-prejoin-style';
 
 function safeStorage() {
   try { return (typeof window !== 'undefined' && window.localStorage) || null; }
   catch (e) { return null; } // storage can throw when disabled by the browser
+}
+
+// Inject prejoin.css once. Idempotent: re-rendering the screen must not stack a
+// second copy.
+function ensurePrejoinStyle(doc) {
+  if (doc.getElementById(STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = prejoinStyles;
+  (doc.head || doc.body).appendChild(style);
 }
 
 // The display name last chosen, from this browser's storage ('' if none).
@@ -42,13 +52,13 @@ export function hasRenderedPrejoin() {
   catch (e) { return false; }
 }
 
+// Dismiss the overlay. Nothing else to tear down: this screen owns the page, so
+// removing it is all there is to it.
 export function removePrejoin() {
   try {
     if (typeof document === 'undefined') return;
     const screen = document.getElementById(PREJOIN_SCREEN_ID);
     if (screen && screen.remove) screen.remove();
-    const style = document.getElementById(SUPPRESSION_STYLE_ID);
-    if (style && style.remove) style.remove();
   } catch (e) { /* nothing rendered to remove */ }
 }
 
@@ -70,11 +80,7 @@ export function renderPrejoin({ initialName, buttonLabel = 'Join meeting' } = {}
     const doc = document;
     try {
       removePrejoin(); // never two Trussal prejoins
-
-      const style = doc.createElement('style');
-      style.id = SUPPRESSION_STYLE_ID;
-      style.textContent = prejoinSuppressionCss();
-      (doc.head || doc.body).appendChild(style);
+      ensurePrejoinStyle(doc);
 
       const screen = doc.createElement('div');
       screen.id = PREJOIN_SCREEN_ID;
@@ -93,7 +99,7 @@ export function renderPrejoin({ initialName, buttonLabel = 'Join meeting' } = {}
       if (form) form.addEventListener('submit', (e) => { if (e && e.preventDefault) e.preventDefault(); submit(); });
       else screen.addEventListener('click', submit); // no form: any click joins
 
-      // The Jitsi prejoin autofocuses this field, and landmark-gesture-mode.js
+      // The screen autofocuses the name field, and landmark-gesture-mode.js
       // relies on that to know where the caret is; keep parity.
       try { if (input && input.focus) input.focus(); } catch (e) { /* focus is best-effort */ }
     } catch (e) {

@@ -13,11 +13,6 @@
 // Track publishing, mute, and video overrides remain gUM/app concerns and are
 // deliberately left to their own modules (published-video.js etc.).
 
-// The set of selectors that mark a pre-meeting screen (Jitsi's prejoin, the
-// lobby knock, Trussal's own prejoin). A page showing one is not yet in the
-// meeting — see isInMeeting().
-import { PREMEETING_SCREEN_SELECTOR } from './prejoin-core.js';
-
 // Return the Jitsi Meet Redux store when available, or null. Many UI-facing
 // features (reactions, chat-entry, panel-bg) only use it to dispatch a kept
 // set of actions such as `OPEN_CHAT`; callers should degrade to no-ops.
@@ -245,35 +240,22 @@ export function isJoined() {
   }
 }
 
-// Whether the local user is in the meeting. The conference is authoritative when
-// it can answer (the injected lib-jitsi-meet conference reports joined via
-// isJoined()); otherwise fall back to the premeeting-screen DOM — the
-// prejoin/welcome screens, where the page is up but no conference exists yet.
-// This is the backend-neutral replacement for the scattered
+// Whether the local user is in the meeting. The injected lib-jitsi-meet
+// conference is the sole authority: it reports joined via isJoined(). A page
+// with no conference — the welcome screen or the prejoin — is not in a meeting.
+// This is the backend-neutral replacement for the old scattered
 // `document.getElementById('largeVideoContainer')` checks (studio.js,
-// on-screen-keyboard.js, facial-gesture.js).
+// on-screen-keyboard.js, facial-gesture.js): with the Jitsi web app shell gone,
+// there is no large-video element and no premeeting-screen DOM to consult.
 export function isInMeeting() {
   try {
     const conf = getConference();
-    if (conf) {
-      if (typeof conf.isJoined === 'function' && conf.isJoined()) return true;
-      if (conf._room && typeof conf._room.isJoined === 'function' && conf._room.isJoined()) return true;
-    }
+    if (!conf) return false;
+    if (typeof conf.isJoined === 'function' && conf.isJoined()) return true;
+    if (conf._room && typeof conf._room.isJoined === 'function' && conf._room.isJoined()) return true;
+    return false;
   } catch (e) {
     console.warn('[meeting-adapter] isInMeeting: conference check failed', e);
-  }
-
-  try {
-    if (typeof document === 'undefined' || !document.body) return false;
-    if (document.body.classList && document.body.classList.contains('welcome-page')) return false;
-    if (document.getElementById('trussal-welcome-overlay')) return false;
-    if (document.querySelector(PREMEETING_SCREEN_SELECTOR)) return false;
-    const largeVideo = document.getElementById('largeVideoContainer');
-    if (!largeVideo || typeof largeVideo.getBoundingClientRect !== 'function') return false;
-    const rect = largeVideo.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  } catch (e) {
-    console.warn('[meeting-adapter] isInMeeting: DOM check failed', e);
     return false;
   }
 }

@@ -4,10 +4,6 @@ import assert from 'node:assert/strict';
 import {
   DISPLAY_NAME_STORAGE_KEY,
   PREJOIN_NAME_INPUT_ID,
-  PREJOIN_SCREEN_ID,
-  PREMEETING_SCREEN_SELECTORS,
-  PREMEETING_SCREEN_SELECTOR,
-  prejoinSuppressionCss,
   normaliseDisplayName,
   readStoredDisplayName,
   writeStoredDisplayName,
@@ -85,27 +81,8 @@ test('prejoinMarkup takes a custom button label', () => {
   assert.match(prejoinMarkup({ buttonLabel: 'Enter' }), /Enter/);
 });
 
-test('prejoinMarkup keeps the suppressed substrings out of inner classes', () => {
-  // The suppression rule hides [class*="prejoin"] / [class*="premeeting"]; the
-  // only thing it must spare is our root, which is excluded by id. An inner
-  // class carrying the substring would be hidden along with Jitsi's screen.
-  const html = prejoinMarkup({ initialName: 'x' });
-  assert.ok(!/class="[^"]*(?:prejoin|premeeting)/i.test(html));
-});
-
-test('prejoinSuppressionCss hides the native prejoin but spares our root', () => {
-  const css = prejoinSuppressionCss();
-  assert.match(css, new RegExp(`\\.premeeting-screen:not\\(#${PREJOIN_SCREEN_ID}\\)`));
-  assert.match(css, /\[class\*="prejoin"\]/);
-  assert.match(css, /display: none !important/);
-});
-
-test('PREMEETING_SCREEN_SELECTOR is the shared pre-meeting set the CSS suppresses', () => {
-  // meeting-adapter.js's isInMeeting() uses this same string to decide the
-  // local user is not yet in the meeting; the suppression rule must cover it.
-  assert.match(PREMEETING_SCREEN_SELECTOR, /\.premeeting-screen/);
-  assert.match(PREMEETING_SCREEN_SELECTOR, /\[class\*="prejoin"\]/);
-  for (const sel of PREMEETING_SCREEN_SELECTORS) {
-    assert.ok(prejoinSuppressionCss().includes(`${sel}:not(#${PREJOIN_SCREEN_ID})`));
-  }
+test('prejoinMarkup carries no inline style attributes', () => {
+  // Styling lives in prejoin.css; the markup is class-only so the two can be
+  // authored and reviewed separately.
+  assert.ok(!/style="/.test(prejoinMarkup({ initialName: 'x' })));
 });

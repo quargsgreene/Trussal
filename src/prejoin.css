@@ -1,0 +1,69 @@
+/* prejoin.css — styles for Trussal's own prejoin screen (prejoin.js).
+ *
+ * Imported as raw text and injected once by prejoin.js (the same mechanism
+ * studio.js uses for studio.css). Nothing here reaches into native Jitsi: the
+ * Jitsi web app shell no longer hosts the page, so this only ever styles
+ * Trussal's own overlay.
+ *
+ * Colours, font and font-scale come from the per-user Personal Theme
+ * (theme-context.js): --trussal-primary (light anchor), --trussal-secondary
+ * (dark anchor), --trussal-font and --trussal-font-scale on :root. Every value
+ * keeps the previous literal as the var() fallback, so the screen renders
+ * correctly before theme-context.js runs.
+ */
+
+#trussal-prejoin-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--trussal-primary, #eeeeee);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  z-index: 9999;
+}
+
+.trussal-join-panel {
+  width: min(480px, 90vw);
+  max-width: 90vw;
+  padding: 1.5rem 2rem;
+  background: var(--trussal-primary, #eeeeee);
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 1rem;
+}
+
+.trussal-join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trussal-join-label {
+  color: var(--trussal-secondary, #111111);
+  font-size: calc(1rem * var(--trussal-font-scale, 1));
+}
+
+.trussal-join-input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font: inherit;
+}
+
+.trussal-join-input::placeholder {
+  color: var(--trussal-secondary, #111111);
+  opacity: 1; /* some browsers dim the placeholder unless you force this */
+}
+
+.trussal-join-button {
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

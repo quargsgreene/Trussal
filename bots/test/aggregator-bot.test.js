@@ -1474,6 +1474,23 @@ test('the default program does not auto-admit a joining bot: it waits until list
   await bot.stop();
 });
 
+test('an explicit # ring falls back to the written order until the roster is known', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+
+  // A bare `# ring` hashes the present roster. With no peer announced yet that
+  // roster is empty, so — exactly like MetaprogramScheduler._effectiveParticipants
+  // — the queue must walk the written `$ participants` order rather than
+  // emptying the ring.
+  assert.deepEqual(
+    bot.applyProgramText(`'metaprogram editor'\n$ participants <0>\n# ring\n# cycles "wcl" 20\n`),
+    [],
+  );
+  assert.deepEqual(bot.order.order(), ['0'], 'the written order stands in until a roster arrives');
+
+  await bot.stop();
+});
+
 // --- clock timebase ------------------------------------------------------------
 // The O2 relay's reference clock is process.hrtime since the SIDECAR started
 // (latency-instrument/o2-relay.js) — a small number. The bot's own clock must
