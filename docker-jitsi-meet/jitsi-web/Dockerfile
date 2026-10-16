@@ -13,16 +13,14 @@ FROM jitsi/web:${JITSI_IMAGE_VERSION}
 # to a per-build timestamp when unset (a manual `docker build`).
 ARG ASSET_VERSION=
 
-# Images
-COPY trussal-watermark.svg   /usr/share/jitsi-meet/images/trussal-watermark.svg
+# Images. Trussal's own page shell (index.html, below) replaces the Jitsi web
+# app's, so the app's branding assets are no longer shipped: its translations
+# (main.json), its <title> fragment (title.html), the watermark it drew during
+# calls, and the welcome-page background are all never loaded, and the app's
+# custom.css was never COPY'd here at all. Only the favicon is kept (browsers
+# still request /favicon.ico), alongside the latency worklet Trussal fetches.
 COPY favicon.ico             /usr/share/jitsi-meet/images/favicon.ico
-COPY welcome-background.png  /usr/share/jitsi-meet/images/welcome-background.png
 
-# Translations (English)
-COPY main.json /usr/share/jitsi-meet/lang/main.json
-COPY main.json /usr/share/jitsi-meet/lang/main-enGB.json
-# Title / meta tags
-COPY title.html /usr/share/jitsi-meet/title.html
 COPY latency-worklet-v2.js     /usr/share/jitsi-meet/latency-worklet-v2.js
 COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js

@@ -41,7 +41,8 @@ function injectStyleOnce() {
   if (document.getElementById('jp-play-style')) return;
   const style = document.createElement('style');
   style.id = 'jp-play-style';
-  // No !important: `html, body, body * { background: #ffffff }` (custom.css) is a
+  // No !important: `html, body, body * { background: #ffffff }` (shipped by the
+  // retired Jitsi-shell stylesheet) is a
   // default, not a forced override (fixed in 0f02e39), and every class selector
   // here already outspecifies the bare `body *` it used to need beating. This host
   // mounts inside #trussal-studio-overlay, a Trussal root, so leaving these plain
@@ -95,7 +96,8 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
   // exactly as the textarea does.
   //
-  // setProperty(..., 'important'), not a plain assignment: custom.css ships
+  // setProperty(..., 'important'), not a plain assignment: the retired Jitsi-shell
+  // stylesheet shipped
   // `*, ::before, ::after { font-family: … !important }` (the flat-theme font
   // override). A <textarea> keeps its own stack via a more specific `textarea`
   // rule, but a plain <div> like this mirror does not — so a plain

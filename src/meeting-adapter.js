@@ -13,14 +13,6 @@
 // Track publishing, mute, and video overrides remain gUM/app concerns and are
 // deliberately left to their own modules (published-video.js etc.).
 
-// Return the Jitsi Meet Redux store when available, or null. The Jitsi web app
-// shell has been removed: Trussal runs its own page with lib-jitsi-meet as the
-// only backend. The store is no longer consulted anywhere, so this always
-// returns null in the standalone build.
-export function getStore() {
-  return null;
-}
-
 // The one conference handle the rest of Trussal should treat as "the meeting".
 // Only ever the conference lib-jitsi-bootstrap.js injects: nothing else joins a
 // meeting, so there is no second conference to fall back to.
