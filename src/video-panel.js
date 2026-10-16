@@ -360,8 +360,18 @@ export function tickVideoPanel() {
 
 subscribeParticipants((event, p) => {
   if (!p || !p.id) return;
-  if (event === 'local' || event === 'local-update') roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: true });
-  else if (event === 'join' || event === 'update') roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: false });
+  if (event === 'local' || event === 'local-update') {
+    // The local endpoint id can change under a live session (participants.js
+    // clears its cache and re-emits 'local' when the conference identity
+    // changes — a reconnect / rebuild — and it deliberately does NOT emit
+    // 'local-leave', because that would navigate the tab back to the lobby).
+    // Drop any earlier local entry, or the filmstrip keeps the stale tile and
+    // draws two "You"s.
+    for (const id of Array.from(roster.keys())) {
+      if (id !== p.id && roster.get(id) && roster.get(id).isLocal) roster.delete(id);
+    }
+    roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: true });
+  } else if (event === 'join' || event === 'update') roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: false });
   else if (event === 'leave') roster.delete(p.id);
   else if (event === 'local-leave') { roster.clear(); pinnedId = null; }
   scheduleSync();

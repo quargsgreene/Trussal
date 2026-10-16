@@ -37,6 +37,29 @@ export function reactionEmojiById(id) {
   return entry ? entry.emoji : null;
 }
 
+// The bundled sound for each reaction, mirroring the Jitsi web app's own
+// reactions/sounds.ts. The Jitsi image ships these under /sounds/ and Trussal's
+// Dockerfile only ADDS files, so it never removes them: the standalone page can
+// play exactly the sound the reaction had before the shell was replaced. The
+// filenames are Jitsi's, so `heart` maps to love.mp3 (Jitsi calls that reaction
+// "love"; Trussal names it heart) and `clap` to applause.mp3.
+const SOUND_FILE_BY_ID = {
+  like: 'reactions-thumbs-up.mp3',
+  surprised: 'reactions-surprise.mp3',
+  silence: 'reactions-crickets.mp3',
+  laugh: 'reactions-laughter.mp3',
+  boo: 'reactions-boo.mp3',
+  heart: 'reactions-love.mp3',
+  clap: 'reactions-applause.mp3',
+};
+
+// The sound file (relative to the deployment's sounds/ directory) for a
+// reaction id, or null for an unknown id. Pure so the overlay's player can stay
+// a thin DOM wrapper and the mapping is unit-tested here.
+export function reactionSoundFileById(id) {
+  return SOUND_FILE_BY_ID[String(id ?? '').toLowerCase()] || null;
+}
+
 // The abbreviation, or Jitsi's own reaction id, case-insensitively — either
 // is a legal bare mini-notation atom. Anything else is unresolved rather
 // than guessed.

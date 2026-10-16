@@ -48,8 +48,19 @@ function syncConferenceSubscription() {
     try { rosterTeardown(); } catch (e) { console.warn('[participants] teardown failed', e); }
     rosterTeardown = null;
   }
+  // A conference identity changed: drop the cached roster and repopulate. Tell
+  // subscribers the old REMOTES are gone first — they are, and a consumer that
+  // keys its own roster by participant id (video-panel.js) would otherwise keep
+  // the departed tiles alongside the repopulated ones and draw duplicates.
+  // Deliberately NOT a 'local-leave': that is the irreversible hangup signal
+  // (meeting.js returns the tab to the lobby on it), while a conference swap is
+  // exactly the transient teardown that must NOT. The local tile is reconciled
+  // by the next 'local' (the id differs), which is why video-panel.js purges a
+  // stale local entry on every 'local'.
+  if (activeConference) {
+    for (const r of remotes.values()) emit('leave', r);
+  }
   activeConference = conf;
-  // A conference identity changed: drop the cached roster and repopulate.
   local = null;
   remotes.clear();
   missingLocalTicks = 0;
