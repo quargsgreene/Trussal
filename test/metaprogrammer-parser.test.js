@@ -191,3 +191,11 @@ test('# ring takes optional w <token> <weight> pairs', () => {
   assert.deepEqual(ok(`${PARTS}# ring w 0 3 1 2`).ring,
     { mode: 'hash', weights: { '0': 3, '1': 2 } });
 });
+
+test('the default program has no # ring, so a fresh room orders participants manually', () => {
+  const text = buildDefaultProgram();
+  assert.doesNotMatch(text, /# ring/, 'the hash ring is opt-in, never the default');
+  const { ast, valid } = parseMetaprogram(text);
+  assert.ok(valid, 'the default program parses');
+  assert.equal(ast.ring, null, 'no ring node -> the written $ participants order is walked');
+});

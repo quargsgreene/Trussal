@@ -1321,9 +1321,14 @@ export class AggregatorBot extends Bot {
         // A bare `# ring`: the rotation order is the consistent-hash order of the
         // present tokens, not the written `$ participants` sequence. Same
         // TurnRing.orderTokens + same seed as every browser, so the ring the
-        // aggregator streams matches the one each client outlines.
-        const tokenSequence = (ast.ring && ast.ring.mode === 'hash')
-            ? orderTokens(this.#presentTokens(), { seed: this.#ringSeed(), weights: ast.ring.weights || null })
+        // aggregator streams matches the one each client outlines. Until the
+        // roster is known (no peer has announced a room index yet) hash mode has
+        // nothing to order, so — exactly like MetaprogramScheduler's
+        // _effectiveParticipants — fall back to the written sequence rather than
+        // emptying the ring.
+        const present = this.#presentTokens();
+        const tokenSequence = (ast.ring && ast.ring.mode === 'hash' && present.length)
+            ? orderTokens(present, { seed: this.#ringSeed(), weights: ast.ring.weights || null })
             : metaprogramTokenSequence(ast.participants);
         const retired = this.order.applyMetaprogramOrder(tokenSequence, { programUpdate });
         if (!retired.length) return;

@@ -5,6 +5,7 @@ import { RingBuffer } from '../src/bot/ring-buffer.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN, AUDIO_CHANNELS } from '../src/bot/aggregator-bot.js';
 import { computeWorstCaseMetrics } from '../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { crushParams } from '../../src/audio-net/av-effects/Crush.js';
+import { buildDefaultProgram } from '../../src/audio-net/MetaprogrammerParser.js';
 
 // A fake sidecar connector (shape: (url, {onOpen, onMessage}) => {send, close})
 // that answers the aggregator-claim with a fixed verdict. Records the URL it was
@@ -90,6 +91,12 @@ function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [] } = {}
 // default so tests drive writeTo…/ingestTick and readAndAssemble…/play…
 // deterministically; each loop has its own test.
 const cfg = { botId: 1, name: 'Aggregator', jitsiUrl: 'http://localhost/0', ingestIntervalMs: 0, playbackIntervalMs: 0 };
+
+// Every buffer the parser accepts now opens with a program-kind directive
+// (src/program-directive.js). The fixtures below are metaprogram BODIES; mprog()
+// gives the full buffer applyProgramText/parseMetaprogram accept — without it,
+// parseMetaprogram rejects the text and no metaprogram is ever applied.
+const mprog = (body) => `'metaprogram editor'\n${body}`;
 
 // --- start() ------------------------------------------------------------------
 
@@ -304,7 +311,7 @@ test('ingestTick: under an active metaprogram, a page-reported stop does not gho
   const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
   await bot.start();
   await bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'human-0', token: '0', samples: [0.5] }]);
-  bot.applyProgramText('$ participants <0>');
+  bot.applyProgramText(mprog('$ participants <0>'));
   assert.ok(bot.order.hasValidMetaprogram(), 'a metaprogram is in force');
 
   await bot.ingestTick(); // page reports human-0 stopped playing (still connected)
@@ -1070,7 +1077,7 @@ test('applyProgramText re-orders the rotation to the $ participants written orde
   ]);
   assert.deepEqual(bot.order.order(), ['0', '1', '2'], 'join order before a program lands');
 
-  const errors = bot.applyProgramText('$ participants <2 0 1>');
+  const errors = bot.applyProgramText(mprog('$ participants <2 0 1>'));
   assert.deepEqual(errors, []);
   assert.deepEqual(bot.order.order(), ['2', '0', '1'], 'the written order takes over');
 });
@@ -1082,7 +1089,7 @@ test('invalid program text is rejected and leaves the rotation untouched', async
     { jitsiId: 'human-0', token: '0', samples: [0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2] },
   ]);
-  const errors = bot.applyProgramText('$ participants <1 0');
+  const errors = bot.applyProgramText(mprog('$ participants <1 0'));
   assert.ok(errors.length > 0, 'parse errors are surfaced to the caller');
   assert.deepEqual(bot.order.order(), ['0', '1'], 'rotation unchanged by the invalid text');
 });
@@ -1100,7 +1107,7 @@ test('the master streams participants in the metaprogram order, not join order',
     { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2, 0.2] },
   ]);
-  bot.applyProgramText('$ participants <1 0>');
+  bot.applyProgramText(mprog('$ participants <1 0>'));
 
   clock = 0;
   assert.equal((await bot.readAndAssembleMasterBuffer()).active, '1', 'the program lists 1 first');
@@ -1116,7 +1123,7 @@ test('a newcomer stays silent until the metaprogram adds them; their audio buffe
   await bot.writeToIndividualParticipantBufferQueues([
     { jitsiId: 'human-0', token: '0', samples: [0.5] },
   ]);
-  bot.applyProgramText('$ participants <0>');
+  bot.applyProgramText(mprog('$ participants <0>'));
 
   await bot.writeToIndividualParticipantBufferQueues([
     { jitsiId: 'human-1', token: '1', samples: [0.25, 0.25] },
@@ -1125,7 +1132,7 @@ test('a newcomer stays silent until the metaprogram adds them; their audio buffe
   assert.deepEqual(bot.order.waitingTokens(), ['1'], 'they wait off the ring');
   assert.equal(bot.buffers['1'].length, 2, 'but their audio keeps buffering');
 
-  bot.applyProgramText('$ participants <1 0>');
+  bot.applyProgramText(mprog('$ participants <1 0>'));
   assert.deepEqual(bot.order.order(), ['1', '0'], 'added to the program -> they join the rotation');
   assert.equal(bot.buffers['1'].length, 2, 'their buffered material is ready for their first turn');
 });
@@ -1137,14 +1144,14 @@ test('a departed listed participant keeps its slot and buffer until the program 
     { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2] },
   ]);
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
 
   bot.removeParticipant('human-0');
   assert.deepEqual(bot.order.order(), ['0', '1'], 'the metaprogram still lists 0 -> ghost keeps its turn');
   assert.ok(bot.buffers['0'], 'its most recent queued buffer survives the leave');
   assert.equal(bot.buffers['0'].length, 2);
 
-  bot.applyProgramText('$ participants <1>');
+  bot.applyProgramText(mprog('$ participants <1>'));
   assert.deepEqual(bot.order.order(), ['1'], 'dropping 0 from the program retires the ghost');
   assert.equal(bot.buffers['0'], undefined, 'and only then is its buffer removed');
 });
@@ -1165,7 +1172,7 @@ test('a departed ghost replays its last scheduled buffer even after its live tur
     { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5, 0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2] },
   ]);
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
 
   // Participant 0 takes a LIVE turn first: its buffer is snapshotted (before the
   // drain) and then consumed to empty.
@@ -1189,7 +1196,7 @@ test('a departed ghost replays its last scheduled buffer even after its live tur
   assert.equal((await bot.readAndAssembleMasterBuffer()).assembled, 3, 'the ghost keeps replaying');
 
   // Only dropping 0 from the program retires it (snapshot + buffer gone for good).
-  bot.applyProgramText('$ participants <1>');
+  bot.applyProgramText(mprog('$ participants <1>'));
   assert.equal(bot.buffers['0'], undefined, 'the metaprogram dropping 0 finally deletes its buffer');
 });
 
@@ -1212,7 +1219,7 @@ test('a departed ghost replays a FULL cycle of accumulated audio, not a sub-seco
   await bot.start();               // installs the page playback sink (calls.enqueued)
   assert.equal(bot.masterSliceSamples, 2);
   assert.equal(bot.slotSamples, 4);
-  bot.applyProgramText('$ participants <0>');   // single listed participant -> ghosts on leave
+  bot.applyProgramText(mprog('$ participants <0>'));   // single listed participant -> ghosts on leave
 
   const tick = async (t) => { clock = t; await bot.readAndAssembleMasterBuffer(); await bot.playMasterBufferToClient(); return calls.enqueued.at(-1); };
   const feed = (samples) => bot.writeToIndividualParticipantBufferQueues([{ jitsiId: 'h0', token: '0', samples }]);
@@ -1252,7 +1259,7 @@ test('re-applying a program that still lists a departed participant silences it 
     { jitsiId: 'human-0', token: '0', samples: [0.5, 0.5, 0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2] },
   ]);
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
 
   // 0 takes a live turn (snapshotting its buffer) and then leaves -> ghost replay.
   clock = 0;
@@ -1264,7 +1271,7 @@ test('re-applying a program that still lists a departed participant silences it 
   // The performer re-applies the SAME program; nobody rejoined as 0. Case 2:
   // 0 is reset to a silent placeholder and its retained audio is dropped —
   // it is now treated like a token listed but never seen.
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
   assert.deepEqual(bot.order.order(), ['0', '1'], '0 keeps its ring position — now a silent placeholder');
   assert.equal(bot.buffers['0'], undefined, 'its stale buffer is dropped on the re-apply');
 
@@ -1287,7 +1294,7 @@ test('a rejoin on the departed index reclaims the slot (Case 3); a later re-appl
     { jitsiId: 'human-0', token: '0', samples: [0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2] },
   ]);
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
   clock = 0;
   assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0');
 
@@ -1304,7 +1311,7 @@ test('a rejoin on the departed index reclaims the slot (Case 3); a later re-appl
 
   // A genuine re-apply that still lists 0 keeps the reclaimed slot LIVE and
   // does NOT drop its buffer — it is a live participant, not a stale ghost.
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
   assert.deepEqual(bot.order.order(), ['0', '1']);
   assert.ok(bot.buffers['0'] && bot.buffers['0'].length > 0, "the rejoiner's live buffer survives the re-apply");
 
@@ -1324,7 +1331,7 @@ test('a participant that delivered audio while UNLISTED is not stranded off-ring
     1024,
   );
   // Program lists only 0. 0a delivers audio while UNLISTED -> parks off-ring.
-  bot.applyProgramText('$ participants <0>');
+  bot.applyProgramText(mprog('$ participants <0>'));
   await bot.writeToIndividualParticipantBufferQueues([
     { jitsiId: 'human-0', token: '0', samples: [0.5] },
     { jitsiId: 'bot-0a', token: '0a', samples: [0.3, 0.3, 0.3] },
@@ -1338,7 +1345,7 @@ test('a participant that delivered audio while UNLISTED is not stranded off-ring
   assert.deepEqual(bot.order.waitingTokens(), ['0a'], 'one off-ring pin (real source), no pseudo-id duplicate');
 
   // Listing 0a folds the REAL source into the ring (not a silent placeholder).
-  bot.applyProgramText('$ participants <0 0a>');
+  bot.applyProgramText(mprog('$ participants <0 0a>'));
   assert.equal(bot.order.jitsiIdFor('0a'), 'bot-0a', 'the ring slot binds 0a\'s real media-stream id');
   assert.deepEqual(bot.order.waitingTokens(), [], 'nothing stranded off-ring');
 
@@ -1367,7 +1374,7 @@ test('fresh audio revives a spuriously-departed participant so it plays live, no
     { jitsiId: 'human-0', token: '0', samples: [0.5] },
     { jitsiId: 'human-1', token: '1', samples: [0.2, 0.2] },
   ]);
-  bot.applyProgramText('$ participants <0 1>');
+  bot.applyProgramText(mprog('$ participants <0 1>'));
 
   clock = 0; // anchor the rotation's start (first serve pins slot 0)
   assert.equal((await bot.readAndAssembleMasterBuffer()).active, '0');
@@ -1425,7 +1432,7 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
 
   await bot.interpretAndExecuteMetaprogram();
 
-  assert.equal(bot.programText, '$ participants <0>\n# cycles wcl 20\n');
+  assert.equal(bot.programText, `'metaprogram editor'\n$ participants <0>\n# cycles "wcl" 20\n`);
   assert.ok(bot.order.hasValidMetaprogram(), 'the default program puts the ring in metaprogram mode');
   assert.ok(bot.scheduler, 'the scheduler runs the default program');
 
@@ -1436,6 +1443,33 @@ test('with no shared program, the metaprogram defaults to participant 0 streamin
   assert.deepEqual(bot.order.order(), ['0'], 'only participant 0 rotates (continuously)');
   assert.deepEqual(bot.order.waitingTokens(), ['1'], 'a joiner waits silent until an edit lists them');
   assert.equal(bot.buffers['1'].length, 1, 'their audio buffers all along');
+
+  await bot.stop();
+});
+
+test('the default program does not auto-admit a joining bot: it waits until listed', async () => {
+  const { fakeLauncher } = makeFakes();
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false }, {}, 1024);
+
+  // The default program a fresh room starts under opts out of the hash ring,
+  // which would otherwise auto-admit the live roster.
+  assert.doesNotMatch(buildDefaultProgram(), /# ring/, 'no # ring in the default');
+  assert.deepEqual(bot.applyProgramText(buildDefaultProgram()), []);
+
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'human-0', token: '0', samples: [0.5] },
+  ]);
+
+  await bot.writeToIndividualParticipantBufferQueues([
+    { jitsiId: 'bot-0a', token: '0a', samples: [0.3, 0.3] },
+  ]);
+  assert.deepEqual(bot.order.order(), ['0'], 'the unlisted bot gets no slot');
+  assert.deepEqual(bot.order.waitingTokens(), ['0a'], 'the bot waits off the ring');
+  assert.equal(bot.buffers['0a'].length, 2, 'but its audio keeps buffering');
+
+  bot.applyProgramText(`'metaprogram editor'\n$ participants <0 0a>\n# cycles "wcl" 20\n`);
+  assert.deepEqual(bot.order.order(), ['0', '0a'], 'listing the bot folds it into the rotation');
+  assert.deepEqual(bot.order.waitingTokens(), [], 'nothing left waiting');
 
   await bot.stop();
 });
@@ -1506,7 +1540,7 @@ test('the cycle grid survives a ClockSync convergence jump', async () => {
   );
   try {
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
     bot.buffers['0'] = new RingBuffer(4096);
     bot.buffers['1'] = new RingBuffer(4096);
@@ -1595,7 +1629,7 @@ test('turn length follows the cycle length # cycles computes, not the fixed slot
     // buffer (240) + the fixed pipeline allowance (40) = 300 ms; x 20 = 6 s.
     // Deliberately NOT the configured 4000 ms slotMs, so a turn still coming
     // from the write pointer would be obvious.
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 240 },
     ] });
@@ -1640,7 +1674,7 @@ test('a metaprogram rest schedules silence; an empty grid falls back to the writ
 
     await bot.interpretAndExecuteMetaprogram();
     // `<0 ~>`: participant 0 plays one cycle, the next cycle is a rest.
-    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 ~>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },  // 20+140+40 = 200 ms
     ] });
@@ -1675,7 +1709,7 @@ test('a rest names the `~` it is resting at, and leaves the master output path a
   try {
     await bot.start();
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 ~>\n# cycles wcl 20\n# room wcl 2\n');
+    bot.applyProgramText(mprog('$ participants <0 ~>\n# cycles "wcl" 20\n# room "wcl" 2\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },  // 4 s cycles
     ] });
@@ -1751,7 +1785,7 @@ test('a `?` that degrades to a rest still reports resting, with no glyph to name
     // No `~` anywhere: every rest here is a token the cycle's RNG dropped, so
     // it has no written glyph and no rest index — but the room IS resting, and
     // must not be reported as merely idle.
-    bot.applyProgramText('$ participants <0? 1?>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0? 1?>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },
       { peerId: 'p1', roomIndex: '1', rtcRtt: 20, jitterBufferMs: 140 },
@@ -1795,7 +1829,7 @@ test('a rest in one stack does not silence a participant playing in another', as
     // Stack 0 rests on even effective cycles; stack 1 (offset one cycle) plays
     // `0` throughout. Requirement 1 still holds — one voice at a time — but the
     // voice must be the participant, not the concurrent rest.
-    bot.applyProgramText('$ participants <~ 1, 0>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <~ 1, 0>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 140 },
       { peerId: 'p1', roomIndex: '1', rtcRtt: 20, jitterBufferMs: 140 },
@@ -1845,7 +1879,7 @@ test('the ghost retention window follows the cycle length and is capped', async 
     assert.equal(bot.slotSamples, Math.round(bot.slotMs * bot.sampleRate / 1000) * AUDIO_CHANNELS);
 
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 40 },   // 20+40+40 = 100 ms -> 2 s
     ] });
@@ -1878,7 +1912,7 @@ test('an unusable slot grid falls back to the write pointer instead of going sil
   );
   try {
     await bot.interpretAndExecuteMetaprogram();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
     bot.buffers['0'] = new RingBuffer(4096); bot.buffers['0'].write(new Array(50).fill(0.5));
     bot.buffers['1'] = new RingBuffer(4096); bot.buffers['1'].write(new Array(50).fill(0.25));
@@ -1938,7 +1972,7 @@ test('# room wcl scales the master reverb decay by the room worst-case latency',
   // the expectation comes from that same function rather than a copied formula.
   const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 4 }, { peerId: 'p1', roomIndex: '1', rtt: 2 }];
   bus.rec.deliver({ type: 'roster', peers });
-  bot.applyProgramText('$ participants <0 1>\n# room wcl 2\n');
+  bot.applyProgramText(mprog('$ participants <0 1>\n# room "wcl" 2\n'));
 
   const pushed = calls.roomPushes.at(-1);
   assert.ok(pushed, 'room params reach the page master player');
@@ -1961,7 +1995,7 @@ test('# room wcl with a fixed amount pins the decay against live metrics', async
   }, {}, 1024);
   await bot.start();
 
-  bot.applyProgramText('$ participants <0>\n# room wcl 2 0.4\n');
+  bot.applyProgramText(mprog('$ participants <0>\n# room "wcl" 2 0.4\n'));
   assert.equal(calls.roomPushes.at(-1).decayS, 0.8, '2 x 400 ms');
 
   const pushesBefore = calls.roomPushes.length;
@@ -1988,7 +2022,7 @@ test('# room arguments may be patterns, re-read as the cycle grid advances', asy
     bus.rec.deliver({ type: 'roster', peers: [
       { peerId: 'p0', roomIndex: '0', rtcRtt: 20, jitterBufferMs: 240 },
     ] });
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20 0.3\n# room wcl <1 4>\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20 0.3\n# room "wcl" <1 4>\n'));
     clockRef.ms += 1000; bot.scheduler.tick();
 
     const first = calls.roomPushes.at(-1);
@@ -2037,7 +2071,7 @@ test('room and crush sample one cycle position, including off a stale grid', asy
     // Pinned 6 s cycles (wcl 300 ms x 20), so the alternation's boundaries are
     // not chasing the metrics.
     bot.applyProgramText(
-      '$ participants <0 1>\n# cycles wcl 20 0.3\n# room <wcl wcpl>\n# crush <wcl wcpl>\n');
+      mprog('$ participants <0 1>\n# cycles "wcl" 20 0.3\n# room <"wcl" "wcpl">\n# crush <"wcl" "wcpl">\n'));
     clockRef.ms += 1000; bot.scheduler.tick();
 
     const [room0, crush0] = bothMetrics();
@@ -2077,12 +2111,12 @@ test('dropping # room from the program clears the master reverb', async () => {
   await bot.start();
 
   // The page starts dry, so a program with no `# room` must not push at all.
-  bot.applyProgramText('$ participants <0>\n');
+  bot.applyProgramText(mprog('$ participants <0>\n'));
   assert.deepEqual(calls.roomPushes, [], 'no reverb directive -> nothing pushed');
 
-  bot.applyProgramText('$ participants <0>\n# room wcl 2 0.4\n');
+  bot.applyProgramText(mprog('$ participants <0>\n# room "wcl" 2 0.4\n'));
   assert.ok(calls.roomPushes.at(-1), 'reverb applied');
-  bot.applyProgramText('$ participants <0>\n');
+  bot.applyProgramText(mprog('$ participants <0>\n'));
   assert.equal(calls.roomPushes.at(-1), null, 'removing the directive tears the reverb down');
 
   await bot.stop();
@@ -2101,7 +2135,7 @@ test('# crush drives the master bit crusher from the room worst-case metric', as
   try {
     await bot.start();
 
-    bot.applyProgramText('$ participants <0>\n');
+    bot.applyProgramText(mprog('$ participants <0>\n'));
     assert.deepEqual(calls.crushPushes, [], 'no crush directive -> nothing pushed');
 
     // wcl is mouth-to-ear, so the pipeline allowance alone puts a quiet room
@@ -2109,7 +2143,7 @@ test('# crush drives the master bit crusher from the room worst-case metric', as
     // rather than a copied formula.
     const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 4 }, { peerId: 'p1', roomIndex: '1', rtt: 2 }];
     bus.rec.deliver({ type: 'roster', peers });
-    bot.applyProgramText('$ participants <0 1>\n# crush wcl 1\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# crush "wcl" 1\n'));
 
     const pushed = calls.crushPushes.at(-1);
     assert.ok(pushed, 'crush params reach the page master player');
@@ -2123,7 +2157,7 @@ test('# crush drives the master bit crusher from the room worst-case metric', as
     // Constant arguments follow the metrics alone; nothing polls the grid.
     assert.equal(bot.patternTicking(), false, 'a chain of constants armed the pattern tick');
 
-    bot.applyProgramText('$ participants <0 1>\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n'));
     assert.equal(calls.crushPushes.at(-1), null, 'removing the directive tears the crusher down');
   } finally {
     await bot.stop();
@@ -2171,12 +2205,12 @@ test('# echo drives the master delay, and re-times when the cycle length moves',
   try {
     await bot.start();
 
-    bot.applyProgramText('$ participants <0>\n');
+    bot.applyProgramText(mprog('$ participants <0>\n'));
     assert.deepEqual(calls.echoPushes, [], 'no echo directive -> nothing pushed');
 
     const peers = [{ peerId: 'p0', roomIndex: '0', rtt: 40 }, { peerId: 'p1', roomIndex: '1', rtt: 20 }];
     bus.rec.deliver({ type: 'roster', peers });
-    bot.applyProgramText('$ participants <0 1>\n# echo wcl 2 wcl 0.5 wcl 1\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# echo "wcl" 2 "wcl" 0.5 "wcl" 1\n'));
 
     const pushed = calls.echoPushes.at(-1);
     assert.ok(pushed, 'echo params reach the page master player');
@@ -2190,7 +2224,7 @@ test('# echo drives the master delay, and re-times when the cycle length moves',
     const after = calls.echoPushes.at(-1);
     assert.ok(after.delayS > pushed.delayS, 'a worse room lengthens the echo');
 
-    bot.applyProgramText('$ participants <0 1>\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n'));
     assert.equal(calls.echoPushes.at(-1), null, 'removing the directive tears the delay down');
   } finally {
     await bot.stop();
@@ -2323,20 +2357,20 @@ test('mosaic: # mosaic false drops to the single streaming cell, and back', asyn
     // than leaving the page to be trusted to have started tiled.
     assert.deepEqual(calls.mosaicEnabled, [true], 'startup asserts the tiled default');
 
-    bot.applyProgramText('$ participants <0>\n# mosaic false\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# mosaic false\n'));
     assert.equal(calls.mosaicEnabled.at(-1), false);
 
-    bot.applyProgramText('$ participants <0>\n# mosaic true\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# mosaic true\n'));
     assert.equal(calls.mosaicEnabled.at(-1), true);
 
     // Dropping the directive returns to the tiled default, not to whatever
     // was last set.
-    bot.applyProgramText('$ participants <0>\n# mosaic false\n');
-    bot.applyProgramText('$ participants <0>\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# mosaic false\n'));
+    bot.applyProgramText(mprog('$ participants <0>\n'));
     assert.equal(calls.mosaicEnabled.at(-1), true, 'an unwritten # mosaic tiles');
 
     const pushes = calls.mosaicEnabled.length;
-    bot.applyProgramText('$ participants <0 1>\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n'));
     assert.equal(calls.mosaicEnabled.length, pushes, 'an unchanged mode is not re-pushed');
   } finally {
     await bot.stop();
@@ -2351,7 +2385,7 @@ test('mosaic: the lit cell follows the turn', async () => {
       { peerId: 'p1', roomIndex: '1', jitsiId: 'j1', pattern: HYDRA },
     ] });
 
-    bot.applyProgramText('$ participants <0 1>\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n'));
     bot.buffers['0'] = new RingBuffer(4096);
     bot.buffers['1'] = new RingBuffer(4096);
     bot.buffers['0'].write(new Float32Array(2048).fill(0.1));
@@ -2377,7 +2411,7 @@ test('mosaic: the cycle grid is pushed so H() parameters advance on the room clo
   );
   try {
     await bot.start();
-    bot.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+    bot.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
 
     clockRef.ms += 30000;
@@ -2466,7 +2500,7 @@ test('mosaic: Delayed Streaming rolls the H() cycle anchor back by the delay', a
     delayed.bot.metaprogramDoc.setSetting('backlogMs', 3000);
     delayed.bot.metaprogramDoc.setSetting('delayedStreaming', true);
     for (const b of [live.bot, delayed.bot]) {
-      b.applyProgramText('$ participants <0 1>\n# cycles wcl 20\n');
+      b.applyProgramText(mprog('$ participants <0 1>\n# cycles "wcl" 20\n'));
     }
     for (const g of [live, delayed]) {
       g.bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', rtt: 4 }] });
@@ -2509,16 +2543,16 @@ test('a patterned effect argument arms the aggregator pattern tick; a constant o
   try {
     await bot.start();
 
-    bot.applyProgramText('$ participants <0>\n# crush wcl 1\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# crush "wcl" 1\n'));
     assert.equal(bot.patternTicking(), false);
 
-    bot.applyProgramText('$ participants <0>\n# crush wcl [2 8]\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# crush "wcl" [2 8]\n'));
     assert.equal(bot.patternTicking(), true, 'a sub-cycle argument needs its own clock');
 
-    bot.applyProgramText('$ participants <0>\n# echo wcl <1 2> wcl 0.5 wcl 1\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# echo "wcl" <1 2> "wcl" 0.5 "wcl" 1\n'));
     assert.equal(bot.patternTicking(), true, 'echo scales are patterned too');
 
-    bot.applyProgramText('$ participants <0>\n# room wcl 2\n');
+    bot.applyProgramText(mprog('$ participants <0>\n# room "wcl" 2\n'));
     assert.equal(bot.patternTicking(), false, 'the tick disarms with the pattern');
   } finally {
     await bot.stop();

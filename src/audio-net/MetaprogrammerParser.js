@@ -1568,8 +1568,15 @@ export function mosaicEnabled(ast) {
   return MOSAIC_ENABLED_BY_DEFAULT;
 }
 
+// The default Metaprogram a fresh room starts under: participant 0 streams
+// continuously and every later joiner — human or bot — waits off the ring
+// until a performer lists their token in `$ participants`. Deliberately does
+// NOT ship `# ring`: the hash ring auto-admits the present roster, which would
+// start a joining bot playing without ever being added to the Metaprogram.
+// `# ring` remains available as an opt-in (see docs-about.js, "Participant
+// Turn Ordering").
 export function buildDefaultProgram() {
-  return `'metaprogram editor'\n$ participants <0>\n# ring\n# cycles "wcl" 20\n`;
+  return `'metaprogram editor'\n$ participants <0>\n# cycles "wcl" 20\n`;
 }
 
 const SEQUENCE_RE = /^([ \t]*\$[ \t]*(?:participants[ \t]*)?)([<[])([^\]>]*)([\]>])/m;
