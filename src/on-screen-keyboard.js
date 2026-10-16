@@ -19,7 +19,7 @@
 // closed or the meeting ends.
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
-import { isHeadCursorEnabled } from './facial-gesture.js';
+import { isHeadCursorEnabled, setHeadCursorEnabled, setGestureDetectionEnabled } from './facial-gesture.js';
 import { attachHeadDragResize, isHeadDragActive, pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 
@@ -346,16 +346,28 @@ function _moveLine(ta, dir) {
 }
 
 // ── Close (✕) ────────────────────────────────────────────────────────────────
-// Closing the keyboard with the ✕ — never by collapsing it — also switches off
-// its head-cursor dwell detection (the _dwellTick loop driving keys, chips and
-// both header buttons) until the keyboard is opened again. Hiding stops that
-// loop via _showPanel; dropping the standalone hold keeps Landmark and Gesture
-// Mode from re-raising the panel under it (tickKbdUi), so it stays closed until
-// the performer reopens it (Keys toggle, gestureAndLandmarkConfig, or
-// Landmark and Gesture Mode off → on).
+// Closing the keyboard with the ✕ — never by collapsing it — takes the rest of
+// Landmark and Gesture Mode with it: the MediaPipe head cursor, gesture actions
+// and the mode flag itself, so no cursor is left drifting after the window
+// closes. Hiding stops this panel's own dwell loop via _showPanel; dropping the
+// standalone hold keeps Landmark and Gesture Mode from re-raising the panel
+// under it (tickKbdUi). Everything stays down until the performer retriggers the
+// mode — hold one eye shut for 2s (the camera keeps running watch-only), press
+// →, tick the ☰ menu / the Face button, or call gestureAndLandmarkConfig.
 function _closeKeyboard() {
   _standalone = false;
   _showPanel(false);
+  // The event flips the mode off through landmark-gesture-mode's shared handler
+  // so its bookkeeping, gear and instruction card all stay in step; the direct
+  // calls guarantee the cursor and gesture actions are gone even if that flag
+  // had drifted out of sync.
+  setHeadCursorEnabled(false);
+  setGestureDetectionEnabled(false);
+  try {
+    document.dispatchEvent(new CustomEvent('trussal-landmark-gesture-mode', {
+      detail: { on: false, source: 'keyboard-close' },
+    }));
+  } catch (e) { /* document not ready — cursor and gestures are already off */ }
 }
 
 // ── Collapse ───────────────────────────────────────────────────────────────────

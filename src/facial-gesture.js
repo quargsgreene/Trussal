@@ -226,9 +226,10 @@ let _camRetryAt      = 0;     // performance.now() of the watchdog's last re-acq
 let _headCursor      = false; // head cursor + dwell active (isHeadCursorEnabled)
 let _gestures        = false; // gesture ACTIONS active (beyond enable-landmark-gesture-mode)
 let _sharedWithHydra = false;
-// The facial panel was closed with its ✕ — keep it hidden (despite the head
-// cursor and/or gesture actions being on) until something turns one of those
-// back on, which reads as the performer opening it again.
+// The facial panel was closed with its ✕. _disableMediapipeUI() has switched
+// the whole Landmark and Gesture Mode off with it (head cursor, gesture actions
+// and the keyboard), and this keeps the panel itself down until the performer
+// retriggers the mode, which reads as them opening it again.
 let _panelHidden  = false;
 let _leftEyeClosedSince   = 0;
 let _leftEyeOpenGraceUntil = 0; // tolerate a brief eyes-open flicker mid-hold
@@ -1204,17 +1205,15 @@ function _ensureDOM() {
     });
   }
 
-  // ✕ closes the facial panel and switches gesture ACTIONS off until the
-  // panel is opened again (head cursor stays on so the performer keeps a
-  // pointer). Reopening — turning gesture detection and/or the head cursor
-  // back on, or Landmark and Gesture Mode off → on — clears _panelHidden
-  // in the setters above and brings the panel (and detection) back.
+  // ✕ closes the WHOLE Landmark and Gesture Mode — the facial panel, the head
+  // cursor, gesture actions and the on-screen keyboard — and nothing of it
+  // comes back until the performer retriggers it: hold one eye shut for 2s (the
+  // camera keeps running in its watch-only state, so the enable gesture still
+  // has a detector to fire on), press →, tick the ☰ menu / the Face button, or
+  // call gestureAndLandmarkConfig.
   const fgCloseBtn = panel.querySelector('#trussal-fg-close');
   if (fgCloseBtn) {
-    fgCloseBtn.addEventListener('click', () => {
-      _panelHidden = true;
-      setGestureDetectionEnabled(false);
-    });
+    fgCloseBtn.addEventListener('click', () => _disableMediapipeUI());
   }
 
   // Move it by the handle (mouse) or the ✥ / ⇲ handle buttons (head cursor),
@@ -1224,6 +1223,25 @@ function _ensureDOM() {
     minW: 200,
     minH: 200,
   });
+}
+
+// The ✕ on the facial panel: take the whole thing down in one go — the panel,
+// the head-cursor overlay (and its dwell loop), gesture actions and the
+// on-screen keyboard — rather than leaving the cursor drifting with nothing to
+// point at. The camera stays up in its watch-only state so the one-eye-held-shut
+// enable gesture can still bring it all back; any re-enable clears _panelHidden.
+// The keyboard belongs to landmark-gesture-mode.js, and importing it here would
+// be a cycle, so the mode is switched off through its own shared event; every
+// limb then reads off and every enable path is armed again.
+function _disableMediapipeUI() {
+  _panelHidden = true;
+  setHeadCursorEnabled(false);   // hides the overlay and tears down any dwell
+  setGestureDetectionEnabled(false);
+  try {
+    document.dispatchEvent(new CustomEvent('trussal-landmark-gesture-mode', {
+      detail: { on: false, source: 'facial-close' },
+    }));
+  } catch (e) { /* document not ready — the cursor and gestures are already off */ }
 }
 
 function _syncPanelVisibility() {
