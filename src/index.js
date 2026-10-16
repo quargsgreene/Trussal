@@ -13,7 +13,8 @@ import { setDataRefReader } from './audio-net/ValuePattern.js';
 import './theme-context.js';
 import './studio.js';
 import './landmark-gesture-mode.js';
-import './docs-about.js';
+import './reaction-overlay.js';
+import './chat-panel.js';
 
 setDataRefReader(sampleDataRefAt);
 subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));

@@ -1,8 +1,9 @@
 // reactions-core.js — pure logic for Reaction patterns: the abbreviation
 // table a reaction() mini-notation atom resolves against, and the
 // default/clamped unreact() duration. No DOM, no Strudel — runs identically
-// in the browser bundle and under node:test. The browser glue (dispatching
-// Jitsi's own reaction, and the JPattern turn gate) lives in reactions.js.
+// in the browser bundle and under node:test. The browser glue (rendering the
+// Trussal reaction overlay and relaying it to the room) lives in
+// reaction-overlay.js / reactions.js.
 //
 // A reaction() atom is always one of the abbreviations below, never the full
 // Jitsi name — a name like "Thumbs Up" contains a space and so is not a
@@ -26,6 +27,15 @@ export const REACTIONS = {
 export const REACTION_CALL_RE = /(?:^|[^\w$])reaction\s*\(/;
 
 const BY_ID = Object.fromEntries(Object.values(REACTIONS).map((r) => [r.id, r]));
+
+// The emoji for a reaction id ("like" → 👍), or null for an unknown id. Used by
+// the Trussal reaction overlay (reaction-overlay.js), which renders reactions
+// itself now that the Jitsi web app — whose conference relay used to carry them
+// — is gone.
+export function reactionEmojiById(id) {
+  const entry = BY_ID[String(id ?? '').toLowerCase()];
+  return entry ? entry.emoji : null;
+}
 
 // The abbreviation, or Jitsi's own reaction id, case-insensitively — either
 // is a legal bare mini-notation atom. Anything else is unresolved rather

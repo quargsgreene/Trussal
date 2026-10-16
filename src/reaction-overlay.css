@@ -1,0 +1,48 @@
+/* reaction-overlay.css — Trussal's own reaction overlay (reaction-overlay.js).
+ *
+ * Imported as raw text and injected once by reaction-overlay.js — no inline
+ * styling. The overlay renders emoji bursts above the meeting that everybody in
+ * the room can see (relayed over the WS sidecar). z-index sits above content
+ * but well below any full-screen overlays (prejoin/welcome: 9999), so it never
+ * blocks them; the numeric values below remain small and clearly demarcate this
+ * UI layer.
+ */
+
+#trussal-reaction-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8000;
+  overflow: hidden;
+}
+
+.tr-reaction {
+  position: absolute;
+  font-size: 3rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+  animation: tr-reaction-rise 2.6s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+.tr-reaction-p0 { left: 15%; }
+.tr-reaction-p1 { left: 35%; }
+.tr-reaction-p2 { left: 55%; }
+.tr-reaction-p3 { left: 75%; }
+.tr-reaction-p4 { left: 25%; }
+.tr-reaction-p5 { left: 65%; }
+
+@keyframes tr-reaction-rise {
+  0% {
+    transform: translateY(120%);
+    opacity: 1;
+  }
+  90% {
+    transform: translateY(-30%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-40%);
+    opacity: 0;
+  }
+}

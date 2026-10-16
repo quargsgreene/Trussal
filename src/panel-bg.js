@@ -1,54 +1,27 @@
-// Panel background patterns — Strudel patterns that swap the performer's own
-// Jitsi video-tile virtual background, timed by the usual fast/slow/sometimes/
-// degrade family (free, since panel() returns an ordinary Strudel Pattern):
-//
-//   $: panel("<forest.jpg office.jpg>").slow(4)
-//   $: panel('my background.png')   // a name with a space bypasses mini
-//
-// LOCAL ONLY BY CONSTRUCTION, for the same reason reactions.js is: a virtual
-// background is an effect on the AUTHOR's own outgoing video track, so
-// buildPeerBlock strips panel() out of every other peer's contribution
-// before it reaches this renderer (silent-voice-core.js's stripCalls) — only
-// the peer who wrote it ever has their own browser apply it. Once applied,
-// the resulting video is what the rest of the room already sees, the same
-// way it already sees the outcome of anyone else's local video effects.
-//
-// SILENT BY CONSTRUCTION, same mechanism as reaction()/word() — the renderer
-// carries a dominant onTrigger so a panel() voice never also tries to reach
-// superdough. No atom minting: a plain filename is already a grammar-legal
-// mini-notation atom (a name with a space needs single quotes instead, which
-// bypass mini entirely — see text-cycles.js's doc comment for the same rule).
+// Panel background patterns — RETIRED.
+// 
+// The original implementation dispatched a SET_VIRTUAL_BACKGROUND action to the
+// Jitsi web app's Redux store. With Trussal serving its own standalone page and
+// no longer injecting into the Jitsi web app shell, there is no Jitsi web app
+// background effect pipeline to target. lib-jitsi-meet alone does not provide
+// the same out-of-the-box virtual-background effect without vendoring the Jitsi
+// web client's effect implementation. The `panel()` control is kept present so
+// existing programs do not break, but it is a no-op under the standalone
+// backend. If you need virtual backgrounds in the standalone build, they will
+// need a Trussal-native track-effect pipeline.
 
-import { getStore } from './meeting-adapter.js';
 import { getLocalPeer, isPeerJPatternTurn } from './peer-state.js';
 import { imageUrlByFilename } from './user-samples.js';
 
-let currentSource = null; // the last name actually applied, so a repeated
-                           // fire under fast()/degrade() is a no-op rather
-                           // than re-running Jitsi's effect pipeline.
+let currentSource = null; // retained only so the renderer can detect repeats
+let warnedRetired = false;
 
-// Best-effort dispatch into Jitsi's own virtual-background feature — the same
-// "if the internal shape drifts this simply does nothing" contract as
-// text-cycles.js's openChatPanel() and reactions.js's sendJitsiReaction().
-// Unlike those, setting a REAL virtual background is not just a state flip —
-// Jitsi's own Background dialog builds a JitsiStreamBackgroundEffect and
-// calls track.setEffect() on the local video track — so this dispatch is the
-// best that can be done from outside that pipeline without vendoring Jitsi's
-// own web client; a build against a live deployment should confirm it lands.
 function dispatchVirtualBackground(virtualSource) {
-  try {
-    const store = typeof window !== 'undefined' ? getStore() : null;
-    if (!store || typeof store.dispatch !== 'function') return false;
-    store.dispatch({
-      type: 'SET_VIRTUAL_BACKGROUND',
-      virtualSource,
-      backgroundType: virtualSource ? 'image' : 'none',
-    });
-    return true;
-  } catch (e) {
-    console.warn('[panel-bg] could not dispatch to Jitsi', e);
-    return false;
+  if (!warnedRetired) {
+    warnedRetired = true;
+    console.warn('[panel-bg] virtual background (panel()) is retired in the standalone build — no Jitsi web app backend available');
   }
+  return true;
 }
 
 // Filename → image source. An upload by that exact name wins (the picture

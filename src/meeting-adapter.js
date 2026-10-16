@@ -13,18 +13,12 @@
 // Track publishing, mute, and video overrides remain gUM/app concerns and are
 // deliberately left to their own modules (published-video.js etc.).
 
-// Return the Jitsi Meet Redux store when available, or null. Many UI-facing
-// features (reactions, chat-entry, panel-bg) only use it to dispatch a kept
-// set of actions such as `OPEN_CHAT`; callers should degrade to no-ops.
+// Return the Jitsi Meet Redux store when available, or null. The Jitsi web app
+// shell has been removed: Trussal runs its own page with lib-jitsi-meet as the
+// only backend. The store is no longer consulted anywhere, so this always
+// returns null in the standalone build.
 export function getStore() {
-  try {
-    if (typeof window === 'undefined') return null;
-    const app = window.APP;
-    return app && app.store ? app.store : null;
-  } catch (e) {
-    console.warn('[meeting-adapter] operation failed', e);
-    return null;
-  }
+  return null;
 }
 
 // The one conference handle the rest of Trussal should treat as "the meeting".
@@ -141,16 +135,8 @@ export function readLocal() {
         if (me && typeof me.getDisplayName === 'function') displayName = me.getDisplayName();
       } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
     }
-    if (!displayName) {
-      const store = getStore();
-      if (store && typeof store.getState === 'function') {
-        try {
-          const st = store.getState();
-          const s = st && st['features/base/settings'];
-          if (s && typeof s.displayName === 'string') displayName = s.displayName;
-        } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
-      }
-    }
+    // No Jitsi Redux store fallback: Trussal runs standalone with
+    // lib-jitsi-meet; display names are sourced from the conference only.
     return { id, displayName: displayName || 'You', isLocal: true };
   } catch (e) {
     console.warn('[meeting-adapter] operation failed', e);
