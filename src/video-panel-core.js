@@ -52,6 +52,16 @@ export function chooseLargeVideoId(list, { pinnedId = null } = {}) {
   return ordered[0].id;
 }
 
+// Which layout the video panel draws. 'speaker' is a large video plus a
+// filmstrip; 'tiles' is Jitsi's "tile view", an even grid of every participant.
+// Anything other than the literal 'tiles' — a missing/absent stored preference,
+// a stale value, a value from some other app on the origin — falls back to
+// 'speaker', so a corrupt localStorage entry can never leave the panel with no
+// layout at all.
+export function normalizeLayout(value) {
+  return value === 'tiles' ? 'tiles' : 'speaker';
+}
+
 // The receiver constraints are asserted on every participant-video sync. The
 // human UI modules (video-panel.js, in-call-toolbar.js) share this predicate:
 // bots and the aggregator load the same bundle but run headless and composite

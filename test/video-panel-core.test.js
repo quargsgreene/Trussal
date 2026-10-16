@@ -5,6 +5,7 @@ import {
   remoteVideoIdFor,
   orderPanelParticipants,
   chooseLargeVideoId,
+  normalizeLayout,
   receiverConstraintsPayload,
   humanUiWanted,
 } from '../src/video-panel-core.js';
@@ -57,6 +58,17 @@ test('chooseLargeVideoId falls back: aggregator, then first remote, then local',
 
   assert.equal(chooseLargeVideoId([{ id: 'me', isLocal: true }]), 'me');
   assert.equal(chooseLargeVideoId([]), null);
+});
+
+test('normalizeLayout accepts only the two known layouts', () => {
+  assert.equal(normalizeLayout('tiles'), 'tiles');
+  assert.equal(normalizeLayout('speaker'), 'speaker');
+  // Anything else — missing, stale, or foreign localStorage — is speaker view.
+  assert.equal(normalizeLayout(undefined), 'speaker');
+  assert.equal(normalizeLayout(null), 'speaker');
+  assert.equal(normalizeLayout(''), 'speaker');
+  assert.equal(normalizeLayout('grid'), 'speaker');
+  assert.equal(normalizeLayout('TILES'), 'speaker');
 });
 
 test('receiverConstraintsPayload asks for every participant at 360p', () => {

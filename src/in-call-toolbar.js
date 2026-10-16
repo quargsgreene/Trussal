@@ -38,6 +38,7 @@ import { showReaction } from './reaction-overlay.js';
 import { sendReaction, getLocalPeer, getAllPeers } from './peer-state.js';
 import { subscribeParticipants } from './participants.js';
 import { humanUiWanted } from './video-panel-core.js';
+import { toggleVideoLayout, getVideoLayout } from './video-panel.js';
 import toolbarStyles from './in-call-toolbar.css';
 
 const TOOLBAR_ID = 'trussal-toolbar';
@@ -80,13 +81,14 @@ function buildToolbar() {
   const mic = button('mic', 'Mic', 'Mute or unmute your microphone');
   const camera = button('camera', 'Camera', 'Start or stop publishing your video');
   const screen = button('screen', 'Share', 'Share your screen with the room');
+  const view = button('view', 'Speaker', 'Switch between tile view and speaker view');
   const chat = button('chat', 'Chat', 'Open the chat panel');
   const react = button('reactions', 'React', 'Send a reaction');
   const people = button('participants', 'People', 'Show who is in the meeting');
   const leave = button('leave', 'Leave', 'Leave the meeting');
   leave.classList.add('tic-danger');
 
-  toolbarEl.append(mic, camera, screen, chat, react, people, leave);
+  toolbarEl.append(mic, camera, screen, view, chat, react, people, leave);
 
   toolbarEl.addEventListener('click', (e) => {
     const target = e.target && e.target.closest ? e.target.closest('.tic-btn') : null;
@@ -190,6 +192,10 @@ function syncState() {
   setPressed('camera', on);
   const camEl = toolbarEl.querySelector('.tic-btn[data-action="camera"]');
   if (camEl) camEl.textContent = on ? 'Stop video' : 'Camera';
+  const tiles = getVideoLayout() === 'tiles';
+  setPressed('view', tiles);
+  const viewEl = toolbarEl.querySelector('.tic-btn[data-action="view"]');
+  if (viewEl) viewEl.textContent = tiles ? 'Tiles' : 'Speaker';
 }
 
 // --- Actions ----------------------------------------------------------------
@@ -260,6 +266,7 @@ function handleAction(action) {
     case 'mic': toggleMic(); break;
     case 'camera': toggleCamera(); break;
     case 'screen': shareScreen(); break;
+    case 'view': toggleVideoLayout(); syncState(); break;
     case 'chat': toggleChatPanel(); break;
     case 'reactions': togglePicker(); break;
     case 'participants': setPeopleOpen(!peopleOpen); break;

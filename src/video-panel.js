@@ -35,6 +35,7 @@ import {
   remoteVideoIdFor,
   orderPanelParticipants,
   chooseLargeVideoId,
+  normalizeLayout,
   receiverConstraintsPayload,
   humanUiWanted,
 } from './video-panel-core.js';
@@ -59,6 +60,27 @@ let largeNameEl = null;
 // A participant the user pinned into the large video by clicking their tile.
 // Null means "choose automatically" (Aggregator, then first remote, then local).
 let pinnedId = null;
+
+// Which layout the panel draws: 'speaker' (a large video plus a filmstrip) or
+// 'tiles' (an even grid of every participant, Jitsi's "tile view"). Persisted
+// so the choice survives a reload.
+const VIEW_STORAGE_KEY = 'trussal.videoView.v1';
+let layout = readStoredLayout();
+
+function readStoredLayout() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return 'speaker';
+    return normalizeLayout(window.localStorage.getItem(VIEW_STORAGE_KEY));
+  } catch (e) { return 'speaker'; }
+}
+
+function persistLayout() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, layout);
+    }
+  } catch (e) { /* storage disabled — the choice just will not persist */ }
+}
 
 let syncScheduled = false;
 
@@ -112,6 +134,7 @@ export function ensureVideoPanel() {
   }
   largeNameEl = panelEl.querySelector('#' + LARGE_NAME_ID);
   filmstripEl = panelEl.querySelector('#' + FILMSTRIP_ID);
+  applyLayoutClass();
   return panelEl;
 }
 
@@ -287,6 +310,27 @@ export function syncVideoPanel() {
   applyReceiverConstraints();
 }
 
+// --- Layout (speaker view vs tile view) -------------------------------------
+
+function applyLayoutClass() {
+  const el = getVideoPanelElement();
+  if (el) el.classList.toggle('is-tiles', layout === 'tiles');
+}
+
+export function getVideoLayout() { return layout; }
+
+export function setVideoLayout(next) {
+  layout = normalizeLayout(next);
+  persistLayout();
+  applyLayoutClass();
+  if (isInMeeting()) syncVideoPanel();
+  return layout;
+}
+
+export function toggleVideoLayout() {
+  return setVideoLayout(layout === 'tiles' ? 'speaker' : 'tiles');
+}
+
 function scheduleSync() {
   if (!humanUiWanted()) return;
   if (syncScheduled) return;
@@ -310,6 +354,7 @@ export function tickVideoPanel() {
   const el = ensureVideoPanel();
   if (!el) return;
   el.classList.remove('is-hidden');
+  applyLayoutClass();
   syncVideoPanel();
 }
 

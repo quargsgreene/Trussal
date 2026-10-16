@@ -136,3 +136,36 @@
     height: 63px;
   }
 }
+
+/* --- Tile view ---------------------------------------------------------- */
+
+/* Jitsi's "tile view": every participant in an even, responsive grid instead
+   of a large video plus a filmstrip. The tiles are the same elements, so
+   Grid.js marks and the muted <video> bindings carry over unchanged. */
+#trussal-video-panel.is-tiles #largeVideoContainer {
+  display: none;
+}
+
+#trussal-video-panel.is-tiles .vp-filmstrip {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-auto-rows: 1fr;
+  align-content: stretch;
+  gap: 8px;
+  padding: 8px;
+  overflow-y: auto;
+  background: #000;
+}
+
+#trussal-video-panel.is-tiles .vp-tile {
+  width: auto;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 640px) {
+  #trussal-video-panel.is-tiles .vp-filmstrip {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}

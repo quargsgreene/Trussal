@@ -729,11 +729,12 @@ function _buildDocsBody() {
         <h4>Meeting Room Toolbar and Video Panel</h4>
         <p>Along the bottom of the meeting room is Trussal's own toolbar: <strong>Mic</strong> mutes or unmutes your
         microphone, <strong>Camera</strong> starts or stops publishing your Hydra output, <strong>Share</strong> shares your
-        screen (and publishes the Hydra output along with it), <strong>Chat</strong> opens the chat panel,
-        <strong>React</strong> sends a reaction, <strong>People</strong> lists who is in the meeting (tagging bots and the
-        Aggregator), and <strong>Leave</strong> returns you to the lobby. Along the top of the room is the video panel: a
-        large video showing the Aggregator's feed, or a participant you pin by clicking their square, above a row of
-        minimized squares, one per participant.
+        screen (and publishes the Hydra output along with it), <strong>View</strong> switches the video panel between the
+        large-video layout and a tile view (an even grid of every participant), <strong>Chat</strong> opens the chat
+        panel, <strong>React</strong> sends a reaction, <strong>People</strong> lists who is in the meeting (tagging bots
+        and the Aggregator), and <strong>Leave</strong> returns you to the lobby. Along the top of the room is the video
+        panel: in the default speaker view, a large video showing the Aggregator's feed, or a participant you pin by
+        clicking their square, above a row of minimized squares, one per participant.
         </p>
 
         <h4>Audio</h4>
