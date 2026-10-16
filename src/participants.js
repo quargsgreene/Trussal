@@ -3,7 +3,7 @@
 // conference through meeting-adapter.js so the polling code never reaches for a
 // backend object directly; the implementation lives in that module only.
 
-import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference, subscribeConferenceEvents } from './meeting-adapter.js';
+import { readLocal as adapterReadLocal, readRemotes as adapterReadRemotes, getConference, getMeetingRoom, subscribeConferenceEvents } from './meeting-adapter.js';
 
 const subscribers = new Set();
 let local = null;
@@ -163,7 +163,11 @@ function ownerIdForAudioSrcObject(srcObject) {
     const tagTrackIds = new Set(srcObject.getAudioTracks().map((t) => t.id));
     if (!tagTrackIds.size) return null;
     const conf = getConference();
-    const room = conf && conf._room; // lib-jitsi-meet JitsiConference (underscore-convention, reachable)
+    // The conference (not `conf._room`, which no lib-jitsi-meet build sets —
+    // JitsiConference keeps its participant/track API on itself and its XMPP
+    // room on `.room`) owns getParticipants()/getTracks(). Reading the wrong
+    // object here returned null for EVERY tag, so this identity match never ran.
+    const room = getMeetingRoom(conf);
     if (!room || typeof room.getParticipants !== 'function') return null;
     const match = room.getParticipants()
       .flatMap((participant) => (typeof participant.getTracks === 'function' ? participant.getTracks() : [])

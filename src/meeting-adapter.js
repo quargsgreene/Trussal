@@ -18,6 +18,23 @@
 // meeting, so there is no second conference to fall back to.
 let injectedConference = null;
 
+// The display name this page gave the meeting. Remembered because a bare
+// lib-jitsi-meet JitsiConference cannot read its own name back: its participant
+// list excludes the local user (getParticipantCount() adds one for it) and the
+// name lives only in the room's local MUC presence node. Recording what
+// lib-jitsi-bootstrap.js set keeps the local peer's name available during the
+// window before the room reflects it.
+let notedLocalDisplayName = null;
+
+// Record the name this page is joining with. lib-jitsi-bootstrap.js calls this
+// as soon as it resolves the name — before the conference is even created — so
+// the first roster tick already sees it.
+export function noteLocalDisplayName(name) {
+  const clean = typeof name === 'string' ? name.trim() : '';
+  notedLocalDisplayName = clean || null;
+  return notedLocalDisplayName;
+}
+
 export function setConference(conf) {
   try {
     injectedConference = conf || null;
@@ -30,6 +47,7 @@ export function setConference(conf) {
 
 export function clearConference() {
   injectedConference = null;
+  notedLocalDisplayName = null;
 }
 
 export function hasInjectedConference() {
@@ -106,6 +124,43 @@ function listRemoteMembers(conf) {
   return [];
 }
 
+// Resolve the local user's display name from the live meeting, in preference
+// order, without ever inventing one.
+//
+// A bare JitsiConference cannot answer this from its participant list: the local
+// user is not in it (see getParticipantCount() in lib-jitsi-meet, which adds one
+// for the local participant). The room's own presence 'nick' node — the very
+// node JitsiConference.setDisplayName() writes — is therefore the primary
+// source, with the name this page supplied (noteLocalDisplayName) as a fallback
+// for the window before the room reflects it.
+function readLocalDisplayName(conf, id) {
+  // 1. A wrapper (or a future lib-jitsi-meet) may expose it directly.
+  try {
+    if (conf && typeof conf.getLocalDisplayName === 'function') {
+      const n = conf.getLocalDisplayName();
+      if (typeof n === 'string' && n.trim()) return n.trim();
+    }
+  } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
+  // 2. The local nickname lives in the room's own presence map, under 'nick'.
+  try {
+    const chat = conf && conf.room; // lib-jitsi-meet JitsiConference.room (the ChatRoom)
+    const node = chat && typeof chat.getFromPresence === 'function' ? chat.getFromPresence('nick') : null;
+    const value = node && node.value;
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  } catch (e) { console.warn('[meeting-adapter] reading the local presence nick failed', e); }
+  // 3. Some backends do list the local member among the participants.
+  try {
+    const room = getRoomFor(conf);
+    const me = room && typeof room.getParticipantById === 'function' ? room.getParticipantById(id) : null;
+    if (me && typeof me.getDisplayName === 'function') {
+      const n = me.getDisplayName();
+      if (typeof n === 'string' && n.trim()) return n.trim();
+    }
+  } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
+  // 4. The name this page joined with, if the live sources have not caught up.
+  return notedLocalDisplayName || null;
+}
+
 // Read the local participant in a normalised { id, displayName, isLocal } shape,
 // or null when not joined. Returns null (rather than throwing) for every
 // transient/missing state so callers can keep polling.
@@ -116,20 +171,12 @@ export function readLocal() {
     const id = getLocalUserIdFrom(conf);
     if (!id) return null;
 
-    let displayName = null;
-    if (typeof conf.getLocalDisplayName === 'function') {
-      try { displayName = conf.getLocalDisplayName(); } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
-    }
-    if (!displayName) {
-      const room = getRoomFor(conf);
-      try {
-        const me = room && typeof room.getParticipantById === 'function' ? room.getParticipantById(id) : null;
-        if (me && typeof me.getDisplayName === 'function') displayName = me.getDisplayName();
-      } catch (e) { console.warn('[meeting-adapter] reading local display name failed', e); }
-    }
-    // No Jitsi Redux store fallback: Trussal runs standalone with
-    // lib-jitsi-meet; display names are sourced from the conference only.
-    return { id, displayName: displayName || 'You', isLocal: true };
+    // Never fabricate a name. 'You' is a label for the local row (video-panel.js,
+    // studio.js) — not a name to publish — and an unnamed participant must stay
+    // unnamed so the roster labels it, rather than announcing "You" to the whole
+    // room over the peer sidecar.
+    const displayName = readLocalDisplayName(conf, id);
+    return { id, displayName, isLocal: true };
   } catch (e) {
     console.warn('[meeting-adapter] operation failed', e);
     return null;

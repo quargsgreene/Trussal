@@ -354,7 +354,17 @@ subscribeParticipants((event, p) => {
   if (!p || !p.id) return;
   if (event === 'leave') roster.delete(p.id);
   else if (event === 'local-leave') roster.clear();
-  else roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: event === 'local' || event === 'local-update' || !!p.isLocal });
+  else if (event === 'local' || event === 'local-update' || p.isLocal) {
+    // The local endpoint id can change under a live session (participants.js
+    // re-emits 'local' with the new id and deliberately does NOT emit
+    // 'local-leave'). Purge the earlier local entry, or the People list keeps
+    // the stale row next to the new one and draws two "You"s — the same fix
+    // video-panel.js applies to its filmstrip.
+    for (const id of Array.from(roster.keys())) {
+      if (id !== p.id && roster.get(id) && roster.get(id).isLocal) roster.delete(id);
+    }
+    roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: true });
+  } else roster.set(p.id, { id: p.id, displayName: p.displayName, isLocal: false });
   if (peopleOpen) renderPeople();
 });
 

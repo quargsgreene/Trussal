@@ -23,7 +23,7 @@
 // with no Jitsi web app), the bundle is loaded on demand by lib-jitsi-loader.js
 // before connecting.
 
-import { setConference, clearConference } from './meeting-adapter.js';
+import { setConference, clearConference, noteLocalDisplayName } from './meeting-adapter.js';
 import { ensureLibJitsi } from './lib-jitsi-loader.js';
 import { resetRemoteTracks } from './remote-tracks.js';
 import { ensureAudioPublishedWhenReady } from './published-audio.js';
@@ -103,6 +103,10 @@ export async function connectLibJitsiConference(overrides = {}) {
   const displayName = normaliseDisplayName(
     overrides.displayName !== undefined ? overrides.displayName : displayNameFromUrl()
   );
+  // Record it now, before the conference exists: a bare JitsiConference cannot
+  // read its own display name back (its participant list excludes the local
+  // user), so readLocal() needs this for the first roster tick.
+  noteLocalDisplayName(displayName);
 
   let connection = null;
   let conference = null;
