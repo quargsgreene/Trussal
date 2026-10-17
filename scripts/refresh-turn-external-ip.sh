@@ -12,10 +12,14 @@
 # fallback once a mobile client's direct UDP path drops (root-caused 2026-08-10,
 # after 98e5f5f's coturn addition already went stale once before anyone noticed).
 #
-# TURN_HOST already tracks the current WAN IP via the same DNS the deployment's
-# own --realm relies on (verified against `curl ifconfig.me` run on this host),
-# so resolving it is the primary source of truth; a public IP-echo service is a
-# fallback only for the rare case DNS itself is unreachable from here.
+# The WAN IP is learned from public IP-echo services. It used to be read by
+# resolving TURN_HOST, which only works while that name is a direct
+# (grey-cloud) A record: once meet.trussal.com moved behind Cloudflare's proxy,
+# its DNS began returning Cloudflare edge IPs, which are never coturn's own
+# address. On 2026-10-17 that had put 172.67.173.3 into TURN_EXTERNAL_IP and
+# broken relaying. So: IP echoes only, and no DNS fallback — a proxied
+# TURN_HOST can only ever resolve to edge IPs, and a bad value is worse than
+# none.
 #
 # Meant to run unattended and often (cron — see below), so failures to determine
 # the current IP must no-op rather than write a bad value or crash a caller's
@@ -38,15 +42,17 @@ case "$COMPOSE_DIR" in /*) : ;; *) COMPOSE_DIR="$REPO/$COMPOSE_DIR" ;; esac
 
 [ -f "$ENV_FILE" ] || { echo "[turn-ip] $ENV_FILE missing, nothing to do"; exit 0; }
 
-TURN_HOST=$(sed -n 's/^TURN_HOST=//p' "$ENV_FILE" | tail -n1)
-TURN_HOST=${TURN_HOST:-trussal.com}
-
-current_ip=$(getent ahostsv4 "$TURN_HOST" 2>/dev/null | awk '{print $1; exit}')
+current_ip=""
+for url in ${TURN_IP_ECHO_URLS:-https://api.ipify.org https://ifconfig.me https://icanhazip.com}; do
+  candidate=$(curl -s4 --max-time 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)
+  case "$candidate" in
+    ''|*[!0-9.]*) continue ;;   # empty or not a bare dotted-quad -> try next
+  esac
+  current_ip=$candidate
+  break
+done
 if [ -z "$current_ip" ]; then
-  current_ip=$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null || true)
-fi
-if [ -z "$current_ip" ]; then
-  echo "[turn-ip] could not determine current public IP (DNS and ifconfig.me both failed) — leaving TURN_EXTERNAL_IP untouched"
+  echo "[turn-ip] could not determine current public IP (all IP echoes failed) — leaving TURN_EXTERNAL_IP untouched"
   exit 0
 fi
 
