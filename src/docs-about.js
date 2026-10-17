@@ -609,8 +609,13 @@ const ABOUT_HTML = `
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
   <figure>
+  <!-- Served from the repo's src/ tree (mounted at /usr/share/jitsi-meet/css/src
+       and exposed by nginx's /css/src/ location). Jitsi's meet.conf static
+       allowlist has no /docs-images/ entry, so an image under that path falls
+       through to the room catch-all and is returned as text/html, which nosniff
+       rejects -> only this alt text would show. -->
   <img
-    src="/docs-images/about-fig.png"
+    src="/css/src/docs-images/about-fig.png"
     alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself" />
   <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself</figcaption>
 </figure>
