@@ -24,4 +24,4 @@
 Documentation can be found [here](https://trussal.com).
 
 ## 3. Running locally
-Simply run `npm run dev` and visit `https://localhost:8443`.
+Simply clone this repository, install the dependencies, and run `npm run dev` and visit `https://localhost:8443`.
