@@ -24,4 +24,4 @@
 Documentation can be found [here](https://trussal.com).
 
 ## 3. Running locally
-Simple run `npm run dev` and visit https://localhost:8443.
+Simple run `npm run dev` and visit `https://localhost:8443`.
