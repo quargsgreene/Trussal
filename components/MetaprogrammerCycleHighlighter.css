@@ -1,0 +1,74 @@
+/* MetaprogrammerCycleHighlighter.css — imported as raw text (build.mjs
+   '.css': 'text') and injected once by _injectStyles(). The outline around
+   the token the aggregator is playing right now (see
+   MetaprogrammerCycleHighlighter.js), drawn inside the shared editor.
+
+   Geometry arrives entirely as custom properties, written per render by the
+   module: --jp-hl-x/y/w/h place and clip the overlay to the textarea, the
+   --jp-hl-<prop> family mirrors the textarea's computed font/box metrics onto
+   the hidden measure mirror, and --jp-box-w/h/tf size/move the outline box
+   itself. No inline styles are written.
+
+   The overlay and box rules deliberately carry no !important (the mirror's
+   metrics are the one exception — see below): custom.css's
+   `html, body, body * { background: #ffffff }` is a default, not a forced
+   override (fixed in 0f02e39), and these class selectors already outspecify
+   the bare `body *` they once had to beat. This host mounts inside
+   #trussal-studio-overlay, a Trussal root, so leaving them plain lets a CSS
+   Cycles sheet targeting .jp-play-overlay/.jp-play-box win normally through
+   the cascade instead of being unconditionally refused. */
+
+.jp-play-host { position: relative; }
+
+.jp-play-overlay {
+  position: absolute; overflow: hidden; pointer-events: none; z-index: 2; background: transparent;
+  left: var(--jp-hl-x, 0); top: var(--jp-hl-y, 0);
+  width: var(--jp-hl-w, 0); height: var(--jp-hl-h, 0);
+}
+
+/* Hidden mirror: replicates the textarea's box model and lays the same text
+   out at left: -99999px, so the module can measure where a token's glyphs
+   actually sit. The --jp-hl-* metrics are !important because custom.css ships
+   `*, ::before, ::after { font-family: … !important }` (the flat-theme font
+   override): a plain <div> keeps no font stack of its own the way a
+   <textarea> does, and measuring in the theme font rather than the
+   textarea's real font silently pushed the outline off its token. This
+   class selector outspecifies the theme's bare `*` rule, so its !important
+   declaration wins. */
+.jp-play-mirror {
+  position: absolute; top: 0; left: -99999px; visibility: hidden;
+  white-space: pre-wrap; overflow-wrap: break-word; word-wrap: break-word;
+  background: transparent;
+  width: var(--jp-hl-width, auto);
+  font-family: var(--jp-hl-font-family) !important;
+  font-size: var(--jp-hl-font-size) !important;
+  font-weight: var(--jp-hl-font-weight) !important;
+  font-style: var(--jp-hl-font-style) !important;
+  font-variant: var(--jp-hl-font-variant) !important;
+  letter-spacing: var(--jp-hl-letter-spacing) !important;
+  text-transform: var(--jp-hl-text-transform) !important;
+  word-spacing: var(--jp-hl-word-spacing) !important;
+  text-indent: var(--jp-hl-text-indent) !important;
+  line-height: var(--jp-hl-line-height) !important;
+  tab-size: var(--jp-hl-tab-size) !important;
+  padding-top: var(--jp-hl-padding-top) !important;
+  padding-right: var(--jp-hl-padding-right) !important;
+  padding-bottom: var(--jp-hl-padding-bottom) !important;
+  padding-left: var(--jp-hl-padding-left) !important;
+  border-top-width: var(--jp-hl-border-top-width) !important;
+  border-right-width: var(--jp-hl-border-right-width) !important;
+  border-bottom-width: var(--jp-hl-border-bottom-width) !important;
+  border-left-width: var(--jp-hl-border-left-width) !important;
+  box-sizing: var(--jp-hl-box-sizing) !important;
+}
+
+/* One reused box, moved between tokens. Hidden until a render has both a
+   token to sit on and its measured rect (see .jp-shown). */
+.jp-play-box {
+  position: absolute; left: 0; top: 0; box-sizing: border-box;
+  border: 2.25px solid var(--trussal-secondary, #111111); border-radius: 0;
+  background: transparent; display: none;
+  width: var(--jp-box-w, 0); height: var(--jp-box-h, 0);
+  transform: var(--jp-box-tf, none);
+}
+.jp-play-box.jp-shown { display: block; }

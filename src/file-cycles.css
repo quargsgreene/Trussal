@@ -1,0 +1,11 @@
+/* file-cycles.css — imported as raw text (build.mjs '.css': 'text') and
+   injected once by _injectStyles(). Chat bubbles posted by image() / video()
+   / textFile() / pdfFile() / soundFile() attachment patterns
+   (src/file-cycles.js). */
+
+#trussal-file-cycles .fc-bubble { margin: 4px 0; padding: 0 16px; }
+#trussal-file-cycles .fc-name { font-size: 12px; opacity: .6; }
+#trussal-file-cycles .fc-media {
+  max-width: 240px; max-height: 240px; display: block; margin-top: 2px; border-radius: 4px;
+}
+#trussal-file-cycles .fc-link { display: inline-block; margin-top: 2px; }

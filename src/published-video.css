@@ -1,0 +1,16 @@
+/* Styles for the published-video compositor canvas (src/published-video.js).
+   Imported as raw text (see build.mjs's '.css': 'text' loader) and injected
+   once under the id `trussal-published-video-style` when the canvas is first
+   created.
+
+   Kept out of sight but composited: a display:none canvas is not guaranteed to
+   produce frames, so it is parked far off-screen instead — the same spelling
+   the aggregator's off-screen mosaic container uses in
+   bots/src/bot/page-scripts.js. */
+
+#trussal-published-video {
+  position: fixed;
+  left: -20000px;
+  top: 0;
+  pointer-events: none;
+}

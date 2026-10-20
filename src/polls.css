@@ -1,0 +1,20 @@
+/* polls.css — imported as raw text (build.mjs '.css': 'text') and injected
+   once by _injectStyles(). Chat bubbles posted by poll() patterns
+   (src/polls.js), rendered identically for every viewer. */
+
+#trussal-polls .pl-bubble {
+  margin: 4px 0; padding: 6px 16px;
+  /* polls-core.js's DEFAULT_POLL_TEXT_COLOR ('#111111') — bubbles are chat
+     content, deliberately fixed rather than themed. */
+  color: #111111; background: #eeeeee; border-radius: 6px;
+}
+#trussal-polls .pl-name { font-size: 12px; opacity: .6; }
+#trussal-polls .pl-question { font-weight: 600; margin: 2px 0 4px; }
+#trussal-polls .pl-option {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 3px 6px; margin: 2px 0;
+  border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff;
+}
+#trussal-polls .pl-option.pl-mine { border-color: #111111; font-weight: 600; }
+#trussal-polls .pl-option.pl-closed { cursor: default; opacity: .8; }
+#trussal-polls .pl-status { font-size: 11px; opacity: .7; margin-top: 2px; }

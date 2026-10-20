@@ -56,6 +56,9 @@
   cursor: pointer; font-size: calc(10px * var(--trussal-font-scale, 1)); line-height: 1; padding: 1px 5px;
 }
 #trussal-lg-instruction .lg-x:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
+/* Taken out of the corner column while the mode is on or the card dismissed
+   (was an inline display:none/block pair in landmark-gesture-mode.js). */
+#trussal-lg-instruction.lg-hidden { display: none; }
 #trussal-lg-instruction ul { margin: 6px 0 0; padding-left: 18px; }
 #trussal-lg-instruction kbd {
   border: 1px solid var(--trussal-secondary, #111111); border-radius: 3px;

@@ -1,0 +1,24 @@
+/* MetaprogrammerEditor.css — imported as raw text (build.mjs '.css': 'text')
+   and injected once by _injectStyles(). Styles for the shared JPattern
+   metaprogram editor's own markup (components/MetaprogrammerEditor.js): the
+   textarea's working minimum, the error line's colour, and the byline's timed
+   fade. The rest of this card comes from studio.css's .ts-* rules. */
+
+/* The JPattern textarea's 96px working minimum. The .ts-code.jp-code pairing
+   is deliberate: studio.css gives the shared .ts-code its own
+   min-height: min(160px, 26vh), and the former inline style here outranked
+   it — this selector out-specifies that rule the same way, whichever sheet
+   lands first. */
+#trussal-studio-overlay .ts-code.jp-code { min-height: 96px; }
+
+/* Apply errors / attribution line; re-tints with the rest of the app
+   (--trussal-secondary, src/theme-context.js). Scoped past studio.css's
+   shared .ts-meta rule (which carries the same colour today) to keep the
+   precedence the former inline style had against user stylesheets. */
+#trussal-studio-overlay .ts-meta.nc-errors { color: var(--trussal-secondary, #111111); }
+
+/* Applied by setByline's fade timer. The transition lives on this class
+   ALONE, so removing the class snaps the byline back to full opacity in the
+   same step (no transition present to animate from) — the reset setByline's
+   old inline writes relied on. */
+.nc-fade { opacity: 0; transition: opacity 0.6s ease; }

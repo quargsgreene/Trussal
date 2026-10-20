@@ -28,20 +28,29 @@
    #trussal-studio-overlay / #trussal-studio-toggle are OVERLAY_ID/BUTTON_ID
    from studio.js hardcoded as literal strings — safe because those are
    build-time constants that never change at runtime. If either constant is
-   ever renamed in studio.js, update the matching selectors here too. */
+   ever renamed in studio.js, update the matching selectors here too.
+
+   Visibility and window geometry are class/property driven, never inline:
+   `.ts-open` shows the overlay, `.ts-collapsed` shrinks it to its header,
+   `.ts-hidden` takes a control off the page, and the drag/resize custom
+   properties (--tdr-top/left/right/bottom/w/h, see panel-drag-resize.css)
+   override the authored anchors below once the user moves or resizes it. */
 
 #trussal-studio-overlay {
-  position: fixed; right: 16px; bottom: 88px;
-  width: min(640px, 92vw);
+  position: fixed;
+  right: var(--tdr-right, 16px); bottom: var(--tdr-bottom, 88px);
+  top: var(--tdr-top, auto); left: var(--tdr-left, auto);
+  width: var(--tdr-w, min(640px, 92vw));
   /* Explicit default height (like the on-screen keyboard's), NOT a tall
      max-height with content-driven height: the panel is bottom-anchored, so a
      content-tall panel grows UPWARD and shoves its own header (the drag
      handle) and the Face/Keys toggles off the top of the screen — then it
      can't be moved and it buries the keyboard. The 108px keeps the top on
      screen next to the 88px bottom anchor; .ts-detail scrolls the overflow.
-     Drag/resize (src/panel-drag-resize.js) then writes top/left/width/height
-     inline and switches to top-anchoring, so max-height is the resize ceiling. */
-  height: min(600px, calc(100vh - 108px));
+     Drag/resize (src/panel-drag-resize.js) then overrides this through
+     --tdr-h and switches to top-anchoring via the --tdr-* properties, so
+     max-height is the resize ceiling. */
+  height: var(--tdr-h, min(600px, calc(100vh - 108px)));
   min-width: 320px; min-height: 220px;
   max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
   background: var(--trussal-primary, #eeeeee);
@@ -50,20 +59,33 @@
   border-radius: 10px;
   z-index: 999999;
   font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
-  display: flex; flex-direction: column;
+  /* Hidden until the Studio toggle adds .ts-open. */
+  display: none; flex-direction: column;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0,0,0,0.18);
 }
-/* Collapsed = header only (strip + detail hidden by the collapse button): drop
-   the height floor and any resized inline height so it shrinks to the bar. */
+#trussal-studio-overlay.ts-open { display: flex; }
+/* Collapsed = header only: hide the strip + detail and drop the height floor
+   and the resized window height so it shrinks to the bar. `height: auto`
+   out-specifies the var(--tdr-h, …) base rule; the user's --tdr-h survives
+   untouched for the expand back. */
 #trussal-studio-overlay.ts-collapsed { min-height: 0; height: auto; }
+#trussal-studio-overlay.ts-collapsed .ts-strip,
+#trussal-studio-overlay.ts-collapsed .ts-detail { display: none; }
+/* Generic visibility switch (file inputs, the remote mute button when the
+   selected peer is not a bot, the Studio toggle outside a meeting). */
+.ts-hidden { display: none !important; }
 /* The header and strip keep their intrinsic height; the detail panel is the
    one that grows and scrolls to fill whatever the window is resized to. The
    JPattern card may shrink (min-height:0) so a short window still leaves the
    detail panel something rather than clipping it to nothing. */
 #trussal-studio-overlay .ts-header,
 #trussal-studio-overlay .ts-strip { flex: 0 0 auto; }
-#trussal-studio-overlay .ts-jpattern { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+#trussal-studio-overlay .ts-jpattern {
+  /* Was an inline style on the element in studio.js; moved here wholesale. */
+  padding: 0 14px; display: flex; flex-direction: column; gap: 12px;
+  flex: 0 1 auto; min-height: 0; overflow-y: auto;
+}
 #trussal-studio-overlay .ts-header {
   display:flex; align-items:center; justify-content:space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--trussal-secondary, #111111);
@@ -343,7 +365,9 @@
   color: var(--trussal-secondary, #111111);
   font-weight: 600;
   cursor: pointer;
-  display: none;
+  /* Shown whenever the room is live; tickUi() removes it from the page with
+     .ts-hidden outside a meeting (it is only ever created in one). */
+  display: block;
 }
 
 /* Below the phone/small-tablet boundary, `width: min(640px, 92vw)` on the
@@ -354,8 +378,8 @@
    touch device that has no Ctrl key to hold. */
 @media (max-width: 480px) {
   #trussal-studio-overlay {
-    right: 6px; left: 6px; bottom: 6px;
-    width: auto;
+    right: var(--tdr-right, 6px); left: var(--tdr-left, 6px); bottom: var(--tdr-bottom, 6px);
+    width: var(--tdr-w, auto);
     max-height: 85vh;
   }
   #trussal-studio-overlay .ts-header { padding: 8px 10px; }

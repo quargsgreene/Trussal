@@ -1,0 +1,30 @@
+/* Grid.css — imported as raw text (build.mjs '.css': 'text') and injected
+   once by _injectStyles() (Grid.js). Overlay styles for the grid effect: a
+   grayscale distance circle pinned to each video panel's top-left and an
+   optional landmark-displacement arrow at its bottom-right.
+
+   Per-render values arrive as custom properties — --jp-grid-color (the
+   circle's grayscale shade, echoed by the arrow) and --jp-grid-angle (the
+   arrow's rotation) — so the module writes no element styles directly. */
+
+/* Added to a panel whose computed position is static, so the absolutely
+   positioned marks anchor to the panel itself. */
+.jp-grid-host { position: relative; }
+
+/* Distance circle: white = self / nearest, black = the room's farthest. */
+.jp-grid-mark {
+  position: absolute; top: 4px; left: 4px; width: 14px; height: 14px;
+  border-radius: 50%; z-index: 20; pointer-events: none;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: var(--jp-grid-color, transparent);
+}
+
+/* Landmark displacement vector: an arrow rotated to the direction of
+   greatest average movement, tinted like the circle. */
+.jp-grid-vec {
+  position: absolute; bottom: 4px; right: 4px; width: 18px; height: 18px;
+  z-index: 20; pointer-events: none;
+  font-size: 14px; line-height: 18px; text-align: center;
+  color: var(--jp-grid-color, inherit);
+  transform: rotate(var(--jp-grid-angle, 0rad));
+}

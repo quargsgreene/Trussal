@@ -1,0 +1,36 @@
+/* Styles for Live Capture (src/live-capture.js). Imported as raw text (see
+   build.mjs's '.css': 'text' loader) and injected once under the id
+   `trussal-livecapture-style` by ensureStyles(), called from the two overlay
+   builders below.
+
+   The overlays and their elements are LIVE-CAPTURE OUTPUT, not app chrome:
+   a capture replays someone else's content into them, so the per-span values
+   a text capture paints with (colour / size / typeface) stay arbitrary user
+   CSS — carried here as --lc-color / --lc-size / --lc-font custom properties
+   with `inherit` fallbacks so an unpainted span keeps the overlay's own
+   typography. The cursor dot's position rides on --lc-dot-x/--lc-dot-y and it
+   is shown with .lc-visible, so the replay loop never writes element styles. */
+
+#trussal-livecapture-text {
+  position: fixed; left: 12px; bottom: 12px; z-index: 1000000; max-width: 40vw;
+  font-family: monospace; font-size: 13px; line-height: 1.5; color: #eeeeee;
+  pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  display: flex; flex-direction: column; gap: 2px;
+}
+#trussal-livecapture-text span {
+  color: var(--lc-color, inherit);
+  font-size: var(--lc-size, inherit);
+  font-family: var(--lc-font, inherit);
+}
+
+#trussal-livecapture-cursor {
+  position: fixed; z-index: 9999998;
+  left: var(--lc-dot-x, 0px); top: var(--lc-dot-y, 0px);
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid #eeeeee; background: rgba(238,238,238,0.25);
+  pointer-events: none;
+  transform: translate(-50%,-50%);
+  transition: left 0.08s linear, top 0.08s linear;
+  display: none;
+}
+#trussal-livecapture-cursor.lc-visible { display: block; }

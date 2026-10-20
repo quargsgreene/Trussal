@@ -1,0 +1,85 @@
+/* Styles for the hydra video panel + the network-driven visual effects
+   (src/hydra-video.js). Imported as raw text (see build.mjs's '.css': 'text'
+   loader) and injected via that module's _injectStyles() under the id
+   `trussal-hv-style`.
+
+   #trussal-hv-panel / #trussal-hv-toggle are PANEL_ID / TOGGLE_ID from
+   hydra-video.js hardcoded as literal strings — update the matching selectors
+   here if either constant is ever renamed.
+
+   Authored against the per-user Personal Theme vars (src/theme-context.js):
+   --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
+   on :root, each keeping its previous literal as the var() fallback, so this
+   panel retints with the Strudel overlay and the rest of the app.
+
+   The per-frame effects never write an element style: the RAF loop writes the
+   --hv-filter / --hv-transform custom properties (removing them when an
+   effect is off, so the fallback — scaleX(-1) on the panel preview, none on
+   the Hydra canvas — takes over), and the noise overlay canvas gets its box
+   through --hv-ov-x/y/w/h. */
+
+#trussal-hv-panel {
+  position:fixed; top:64px; right:16px; z-index:1000000;
+  background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+  border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
+  font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
+  padding:10px 12px; width:300px;
+  display:none; flex-direction:column; gap:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
+}
+#trussal-hv-panel video {
+  width:100%; border-radius:4px; display:block;
+  /* The mirror is the resting transform; the reverb stretch overrides it via
+     --hv-transform and removes the property again on release. */
+  transform:var(--hv-transform, scaleX(-1));
+  transform-origin: center center;
+  filter:var(--hv-filter, none);
+  background:var(--trussal-secondary, #111111);
+}
+#trussal-hv-panel .hv-mode-row { display:flex; gap:6px; }
+#trussal-hv-panel .hv-mode-btn {
+  flex:1; padding:3px 0; border-radius:4px;
+  border:1px solid var(--trussal-secondary, #111111);
+  background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
+  font-size:calc(11px * var(--trussal-font-scale, 1)); cursor:pointer; text-align:center;
+  transition:background 0.15s, color 0.15s;
+}
+#trussal-hv-panel .hv-mode-btn.on {
+  background:var(--trussal-secondary, #111111); color:var(--trussal-primary, #eeeeee);
+  border-color:var(--trussal-secondary, #111111);
+}
+#trussal-hv-panel .hv-header { display:flex; align-items:center; justify-content:space-between; }
+#trussal-hv-panel .hv-title { font-weight:600; color:var(--trussal-secondary, #111111); }
+#trussal-hv-panel .hv-collapse-btn {
+  background:none; border:none; color:var(--trussal-secondary, #111111); cursor:pointer;
+  font-size:calc(13px * var(--trussal-font-scale, 1)); line-height:1; padding:0 2px; transition:color 0.15s;
+}
+#trussal-hv-panel .hv-collapse-btn:hover { color:var(--trussal-secondary, #111111); }
+#trussal-hv-panel .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+#trussal-hv-panel .hv-body.collapsed { display:none; }
+#trussal-hv-panel .hv-status { font-size:calc(10px * var(--trussal-font-scale, 1)); color:var(--trussal-secondary, #111111); line-height:1.5; }
+
+#trussal-hv-toggle {
+  background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
+  cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
+  transition:color 0.15s, background 0.15s, border-color 0.15s;
+  line-height:1; display:flex; align-items:center; gap:4px;
+  font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
+}
+#trussal-hv-toggle:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
+#trussal-hv-toggle.on { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
+
+/* The colour/tint effects the RAF loop applies to the Hydra canvas. */
+#hydra-canvas {
+  filter: var(--hv-filter, none);
+  transform: var(--hv-transform, none);
+  transform-origin: center center;
+}
+
+/* One fixed-position grain canvas per effect target, stretched over it at 1/4
+   backing-store resolution (the canvas bitmap is set in JS). */
+.hv-noise-overlay {
+  position:fixed; pointer-events:none; z-index:9999998; mix-blend-mode:screen;
+  left:   var(--hv-ov-x, 0px); top:    var(--hv-ov-y, 0px);
+  width:  var(--hv-ov-w, 0px); height: var(--hv-ov-h, 0px);
+}

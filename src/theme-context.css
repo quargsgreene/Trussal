@@ -1,0 +1,27 @@
+/* Styles for the per-user theme store (src/theme-context.js). Imported as raw
+   text (see build.mjs's '.css': 'text' loader) and injected once under the id
+   `trussal-theme-style` by applyTheme() the first time it runs with a <head>
+   to inject into.
+
+   The Invert toggle is the only rule set here: flip the whole document, then
+   flip real media back so only the chrome inverts. `filter` on <html>
+   establishes a containing block for fixed elements — acceptable for an
+   opt-in personal toggle. The class (not a stylesheet per toggle) is what
+   .applyTheme() flips; the anchors / font / font-scale stay custom-property
+   writes on :root (see theme-context.js). */
+
+html.trussal-invert {
+  filter: invert(1) hue-rotate(180deg);
+}
+html.trussal-invert img,
+html.trussal-invert video,
+html.trussal-invert canvas,
+html.trussal-invert iframe,
+html.trussal-invert #largeVideo,
+html.trussal-invert #largeVideoWrapper,
+html.trussal-invert #hydra-canvas,
+html.trussal-invert [id^="hydra"],
+html.trussal-invert .videocontainer video,
+html.trussal-invert .videocontainer canvas {
+  filter: invert(1) hue-rotate(180deg);
+}

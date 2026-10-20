@@ -1,0 +1,35 @@
+/* Base styles for Text Cycles (src/text-cycles.js) — the chat bubbles a text
+   program paints into. Imported as raw text (see build.mjs's '.css': 'text'
+   loader) and injected once under the id `trussal-text-cycles-base-style`.
+
+   Kept separate from the generated hover rules (a second <style> element with
+   id `trussal-text-cycles-style`, see hoverClassFor in text-cycles.js): those
+   are minted per (participant, declaration) pair at runtime, so this file is
+   the static half only.
+
+   Deliberately minimal: with no user CSS, words must inherit Jitsi's own chat
+   typography, so nothing here sets a font, colour or size. The per-word
+   declarations a performer writes (.typeface/.color/…) stay as arbitrary
+   live-coded CSS on the span; the app-owned effect values below ride on custom
+   properties written by the renderer:
+
+     --tc-echo-opacity   each echo repeat's fading alpha
+     --tc-fade-s         echo's crossfade-from-previous-turn duration
+     --tc-blur           room's blur tail
+     --tc-spacing-extra  room's letter-spacing push (added to the performer's
+                         own spacing, which lives in --tc-letter-spacing) */
+
+#trussal-text-cycles .tc-bubble { margin: 4px 0; padding: 0 16px; overflow-wrap: anywhere; }
+#trussal-text-cycles .tc-name { font-size: 12px; opacity: .6; }
+#trussal-text-cycles .tc-line { white-space: pre-wrap; }
+
+.tc-echo { opacity: var(--tc-echo-opacity, 1); }
+.tc-fade { transition: all var(--tc-fade-s, 0.2s) linear; }
+.tc-word { filter: var(--tc-blur, none); }
+/* The performer's own .spacing() value rides in --tc-letter-spacing (so the
+   room's tail can add to it without reading back an inline style); a span
+   with either value carries .tc-spaced. calc() needs both operands to be
+   lengths, so the class gates the rule rather than letter-spacing: normal. */
+.tc-word.tc-spaced {
+  letter-spacing: calc(var(--tc-letter-spacing, 0px) + var(--tc-spacing-extra, 0px));
+}

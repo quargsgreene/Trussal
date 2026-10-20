@@ -1,0 +1,53 @@
+/* docs-page.css — page-mode layout for the standalone /documentation and
+   /about pages. build-pages.mjs inlines this after docs-about.css, so the
+   .trussal-da-panel markup those pages render keeps the exact styles the
+   modal panels had; this file only turns the box into the page: the panel
+   fills a reading column, the document scrolls instead of an inner pane, and
+   the title row stays put. The theme vars (with the plain fallbacks
+   docs-about.css also uses) are what one would get on the lobby before the
+   bundle's theme module runs. */
+
+html {
+  background: var(--trussal-primary, #eeeeee);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+
+/* The old modal panel, un-boxed and widened to a comfortable measure. */
+.trussal-da-panel {
+  width: 100%;
+  max-width: 860px;
+  min-height: 100vh;
+  margin: 0 auto;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Title row stays visible while the reference scrolls; the close ✕ is now a
+   link back to the lobby. */
+.trussal-da-panel .da-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--trussal-primary, #eeeeee);
+}
+
+/* The document itself scrolls — no inner scroll pane, the modal's
+   max-height cap is gone. */
+.trussal-da-panel .da-body {
+  overflow: visible;
+  padding-top: 8px;
+}
+
+/* #anchor jumps from the docs table of contents must clear the sticky head. */
+.trussal-da-panel .da-fn {
+  scroll-margin-top: 72px;
+}

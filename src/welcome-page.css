@@ -1,0 +1,93 @@
+/* Styles for the Trussal welcome-page overlay + the prejoin Join button patch
+   (src/welcome-page.js). Imported as raw text (see build.mjs's '.css': 'text'
+   loader) and injected once under the id `trussal-welcome-style`.
+
+   Three groups:
+    1. the room-name overlay (was inline styles + an inline <style> block on
+       the overlay markup),
+    2. the placeholder rule for its input (custom.css carries the same rule
+       for a rebuilt web image),
+    3. the patch classes applied to JITSI's own prejoin markup. Those
+       deliberately carry !important: the Join button in this build is an
+       Emotion CSS-in-JS `<div class="css-<hash>-actionButton primary">` whose
+       blue fill comes from an injected <style>, so nothing weaker reaches it.
+       The classes are re-applied on every observer tick (see
+       patchPrejoinButton), because a React re-render drops them. */
+
+#trussal-welcome-overlay .trw-panel {
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  background: var(--trussal-primary, #eeeeee);
+  padding: 1.5rem 2rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 1rem;
+  max-width: 480px;
+  width: 90%;
+  z-index: 9999;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+#trussal-welcome-overlay .trussal-room-form {
+  display: flex; flex-direction: column; gap: 0.75rem;
+}
+#trussal-welcome-overlay .trw-label {
+  color: var(--trussal-secondary, #111111);
+  font-size: 1rem;
+}
+#trussal-welcome-overlay #trussal-room-input {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+}
+/* Placeholder text is #111 like the rest of the palette — browsers
+   otherwise render it at a reduced default opacity. custom.css carries the
+   same rule for a rebuilt web image. */
+#trussal-welcome-overlay #trussal-room-input::placeholder {
+  color: var(--trussal-secondary, #111111);
+  opacity: 1;
+}
+#trussal-welcome-overlay .trw-submit {
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-weight: 600;
+  cursor: pointer;
+}
+#trussal-welcome-overlay #trussal-room-error {
+  display: none;
+  color: var(--trussal-secondary, #111111);
+  font-size: 0.85rem;
+}
+#trussal-welcome-overlay #trussal-room-error.trw-visible { display: block; }
+
+/* ── Jitsi prejoin patch classes ─────────────────────────────────────────── */
+
+/* Flat #111 fill for the prejoin "Join session" button (Emotion-rendered). */
+.trussal-flat-join {
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
+}
+.trussal-flat-join * {
+  color: var(--trussal-primary, #eeeeee) !important;
+}
+.trussal-flat-join svg {
+  fill: var(--trussal-primary, #eeeeee) !important;
+}
+/* The amber "you need to enable microphone and camera access" pill
+   (css-<hash>-deviceStatus device-status-error) — flattened. */
+.trussal-flat-status {
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
+}
+/* The welcome page's Start meeting button (hidden + disabled so it cannot be
+   clicked; hideStartMeetingButton re-applies this on every observer tick). */
+.trussal-jitsi-hidden { display: none !important; }
