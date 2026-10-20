@@ -756,8 +756,8 @@ export const ABOUT_HTML = `
        rejects -> only this alt text would show. -->
   <img
     src="https://trussal-docs.quargsgreene.workers.dev/about-trussal-in-action.png"
-    alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-  <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+    alt="A person at a computer running a Trussal meeting Photo credit: Jennifer Deafenbaugh" />
+  <figcaption>A person at a computer running a Trussal meeting Photo credit: Jennifer Deafenbaugh</figcaption>
 </figure>
 </p>
 `;
@@ -804,16 +804,16 @@ export function buildDocsBody() {
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/trussal_meeting_name_example.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            alt="The Trussal welcome page, showing the Room name field and the Join session button, with the meeting name 'someplace'" />
+          <figcaption>The Trussal welcome page, showing the Room name field and the Join session button, with the meeting name 'someplace'</figcaption>
         </figure>
         Each meeting room name must start with a letter or number. If the user enters an invalid meeting room name, 
         the message "Use letters, numbers, -, or _, starting with a letter or number" will appear beneath the "Join session" button. 
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/invalid_meeting_name.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            alt="The Trussal welcome page, showing the Room name field and the Join session button, with the invalid meeting name '@'" />
+          <figcaption>The Trussal welcome page, showing the Room name field and the Join session button, with the invalid meeting name '@'</figcaption>
         </figure>
         Once a valid meeting name has been entered, click the 
         "Join meeting" button, which then brings the user to the prejoin screen, where one may optionally 
@@ -821,8 +821,8 @@ export function buildDocsBody() {
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            alt="The prejoin screen with the display name 'someone' entered" />
+          <figcaption>The prejoin screen with the display name 'someone' entered</figcaption>
         </figure> 
 
         <h4> Joining a Preexisting Meeting Room </h4>
@@ -831,8 +831,8 @@ export function buildDocsBody() {
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/meeting_list.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            alt="A list of meeting names on the landing page with trashcan icons to the right" />
+          <figcaption>A list of meeting names on the landing page</figcaption>
         </figure>
         One will again reach the prejoin screen, where the most recently entered screen name will prepopulate.
         However, one may change one's display name again at this time and an unlimited number of times throughout the meeting.
@@ -852,8 +852,8 @@ export function buildDocsBody() {
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/invite_to_meeting_toolbar.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            alt="A trackpad-controlled cursor hovering over a humanoid icon with a plus icon in the top right showing a tooltip that reads 'Invite people' on the bottom toolbar" />
+          <figcaption>The invite button in the bottom toolbar</figcaption>
         </figure>
         Upon hovering over the correct icon, a tooltip that reads "Invite people" will appear, and once clicked,
         a modal window will appear with a button underneath "Invite more people" and "Share the meeting link to invite others"
@@ -861,15 +861,9 @@ export function buildDocsBody() {
         the meeting URL to the clipboard. Exit this modal window by clicking the "x" icon. </p>
         <figure>
           <img
-            src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
-        </figure>
-        <figure>
-          <img
-            src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
-            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
-          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+            src="https://trussal-docs.quargsgreene.workers.dev/meeting_invite_modal.png"
+            alt="The meeting invite modal, which has copy, Google, Outlook, Yahoo, and email icons and the text 'Invite more people', 'Share the meeting link to invite others', 'trussal.com/someplace', and 'Share meeting invitation'" />
+          <figcaption>The meeting invite modal</figcaption>
         </figure>
 
         <h4> Using Landmark & Gesture Mode to join a meeting </h4>
@@ -879,6 +873,7 @@ export function buildDocsBody() {
         Otheriwse, MediaPipe's model will not detect your face. Once Landmark & Gesture Mode has been activated,
         an additional cursor, which is a white square surrounding a black circle, and a virtual keyboard will appear within your browser. 
         To enter a meeting name, focus the text field. The text field will stay focused when the cursor is moved away from it.
+        <br />
         Then dwell upon each of the keys. A black progress circle will appear, as well as a gray vertical progress bar within each key.
         Each key will briefly turn black as characters appear in the form. Note that if browsing Incognito, upon entering the
         prejoin room, you will have to give permission for your camera to be used once more. Then focus the text field to provide
