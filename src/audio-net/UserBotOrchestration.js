@@ -161,8 +161,11 @@ export function muteBots(selector, muted) {
 // room, regardless of owner, since the JPattern Stop it backs is a
 // room-wide "everyone go silent" rather than a per-cluster action. Rides the
 // SAME remote-control channel as mute but a separate 'stop' action/gate (see
-// sendRemoteStop, page-scripts.js's trussal-remote-stop) so a Stop/Apply
-// cycle never touches anyone's deliberately-set individual bot mute.
+// sendRemoteStop, page-scripts.js's trussal-remote-stop) so a Stop here /
+// un-stop on a local editor's Play never touches anyone's deliberately-set
+// individual bot mute. Callers: MetaprogrammerEditor's Stop passes `true`,
+// studio.js's onEvalAndPlay (the personal editor's Play) passes `false` —
+// the metaprogram's Apply & Start deliberately never touches the gate.
 export function stopAllBots(stopped) {
   for (const bot of getAllPeers().filter(p => p.isBot)) {
     sendRemoteStop(bot.peerId, stopped);

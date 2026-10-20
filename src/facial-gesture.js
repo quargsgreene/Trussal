@@ -42,6 +42,9 @@ import {
 import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
 import { DEFAULT_GESTURE_MAPPINGS } from './landmark-gesture-core.js';
 import { applyRegexMutation } from './editor-router-core.js';
+import fgStyles from './facial-gesture.css';
+import { upsertStyle } from './style-injection.js';
+
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
 const WASM_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
@@ -348,18 +351,24 @@ function _genericDwellEls(now) {
 function _flash(trigger, action) {
   if (!_flashEl) return;
   _flashEl.textContent = action ? `${trigger} → ${action}` : trigger;
-  _flashEl.style.opacity = '1';
+  _flashEl.classList.add('fg-flash-on');
   clearTimeout(_flashTimeout);
-  _flashTimeout = setTimeout(() => { if (_flashEl) _flashEl.style.opacity = '0'; }, 900);
+  _flashTimeout = setTimeout(() => { _flashEl?.classList.remove('fg-flash-on'); }, 900);
 }
 
 function _setStatus(s) {
   if (!_statusEl) return;
-  // Flat theme: the status word itself carries the meaning, so every state is
-  // the same dark anchor rather than a colour. Tracks the per-user Personal
-  // Theme via the CSS var (literal kept as the fallback).
+  // Flat theme: the status word itself carries the meaning, and the colour is
+  // a stylesheet rule (#trussal-fg-status in facial-gesture.css) tracking the
+  // per-user Personal Theme — nothing to write here.
   _statusEl.textContent = s;
-  _statusEl.style.color = 'var(--trussal-secondary, #111111)';
+}
+
+// The dwell ring's progress rides in --fg-ring-offset (the stylesheet's
+// stroke-dashoffset fallback is the same RING_C "empty ring"). Callers pass
+// px; the property is formatted to the same 2 decimals as before.
+function _setRingOffset(px) {
+  if (_progressRing) _progressRing.style.setProperty('--fg-ring-offset', px.toFixed(2));
 }
 
 // For `trigger`, an in-code @mediapipe annotation wins over the configured
@@ -683,16 +692,16 @@ function _detectionLoop() {
   // Everything below is head-cursor work — skipped entirely in the watch-only
   // state (camera up purely to catch the enable gesture).
   if (!_headCursor) {
-    if (_cursorEl && _cursorEl.style.display !== 'none') _cursorEl.style.display = 'none';
+    _cursorEl?.classList.remove('fg-visible');
     _rafId = requestAnimationFrame(_detectionLoop);
     return;
   }
 
   // Move head cursor.
   if (_cursorEl) {
-    _cursorEl.style.left    = `${_ema.cursorX}px`;
-    _cursorEl.style.top     = `${_ema.cursorY}px`;
-    _cursorEl.style.display = 'block';
+    _cursorEl.style.setProperty('--fg-cursor-x', `${_ema.cursorX}px`);
+    _cursorEl.style.setProperty('--fg-cursor-y', `${_ema.cursorY}px`);
+    _cursorEl.classList.add('fg-visible');
   }
 
   // A panel is being flown around by the head cursor (panel-drag-resize.js).
@@ -704,7 +713,7 @@ function _detectionLoop() {
     }
     _dwell.key = null; _dwell.type = null; _dwell.el = null;
     _dwell.startMs = 0; _dwell.fired = false;
-    if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
+    _setRingOffset(RING_C);
     _rafId = requestAnimationFrame(_detectionLoop);
     return;
   }
@@ -781,7 +790,7 @@ function _detectionLoop() {
     _dwell.el      = hoveredEl;
     _dwell.startMs = hoveredKey ? now : 0;
     _dwell.fired   = false;
-    if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
+    _setRingOffset(RING_C);
   }
 
   if (hoveredKey && !_dwell.fired) {
@@ -790,7 +799,7 @@ function _detectionLoop() {
       _dwell.el.classList.add(_dwell.type === 'native' ? 'trussal-hc-dwell' : 'strudel-dwell-hover');
       if (_dwell.type === 'action') _dwell.el.style.setProperty('--dwell-prog', progress.toFixed(3));
     }
-    if (_progressRing) _progressRing.style.strokeDashoffset = (RING_C * (1 - progress)).toFixed(2);
+    _setRingOffset(RING_C * (1 - progress));
     if (progress >= 1) {
       _dwell.fired = true;
       if (_dwell.el) {
@@ -799,7 +808,7 @@ function _detectionLoop() {
         if (_dwell.type === 'action') _dwell.el.style.removeProperty('--dwell-prog');
         setTimeout(() => _dwell.el?.classList.remove('strudel-btn-active'), 600);
       }
-      if (_progressRing) _progressRing.style.strokeDashoffset = RING_C.toFixed(2);
+      _setRingOffset(RING_C);
       if (_dwell.type === 'fx') {
         _toggleFxEffect(_dwell.key);
       } else if (_dwell.type === 'jpattern') {
@@ -1017,14 +1026,10 @@ function _stopCamera() {
   _caretLocked  = false;
   _caretEl      = null;
   _setHcFocus(null);
-  if (_cursorEl) _cursorEl.style.display = 'none';
+  _cursorEl?.classList.remove('fg-visible');
   _syncPanelVisibility();
   _setStatus('idle');
 }
-
-// Height stashed while the panel is collapsed to its drag handle, restored on
-// expand — so a head/mouse-resized panel doesn't leave a tall empty shell.
-let _savedFgHeight = '';
 
 // ---------------------------------------------------------------------------
 // DOM — styles, cursor overlay, and the face-mesh panel.
@@ -1034,112 +1039,9 @@ const FG_PANEL_ID  = 'trussal-fg-panel';
 const FG_CURSOR_ID = 'trussal-fg-cursor';
 
 function _injectStyles() {
-  if (document.getElementById(FG_STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = FG_STYLE_ID;
-  // Palette / font / font-scale come from the per-user Personal Theme
-  // (src/theme-context.js) via --trussal-primary / --trussal-secondary /
-  // --trussal-font / --trussal-font-scale on :root, each with its previous
-  // literal as the var() fallback — so a personal theme repaints this panel,
-  // the head cursor and the shared .ts-dwell-btn just as it does the Strudel
-  // overlay. Dwell-progress fills are a color-mix of the dark anchor;
-  // box-shadows stay literal.
-  s.textContent = `
-    #${FG_CURSOR_ID} {
-      position:fixed; pointer-events:none; z-index:9999999;
-      transform:translate(-50%,-50%); display:none;
-    }
-    #${FG_CURSOR_ID} circle { fill: var(--trussal-secondary, #111111); }
-    #${FG_CURSOR_ID} #trussal-fg-ring { fill: none; stroke: var(--trussal-secondary, #111111); }
-    #${FG_PANEL_ID} {
-      position:fixed; top:64px; left:16px;
-      z-index:1000000;
-      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
-      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
-      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
-      padding:10px 12px; width:220px;
-      min-width:200px; min-height:200px;
-      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-      overflow: hidden;
-      display:none; flex-direction:column; gap:8px;
-      box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
-    }
-    #${FG_PANEL_ID}.fg-collapsed { min-height:0; height:auto; }
-    #${FG_PANEL_ID} #trussal-fg-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
-    #${FG_PANEL_ID} .fg-drag-handle {
-      cursor:grab; margin:-10px -12px 0; padding:8px 12px 6px;
-      border-radius:10px 10px 0 0; flex:0 0 auto;
-    }
-    #${FG_PANEL_ID} .fg-drag-handle:active { cursor:grabbing; }
-    #${FG_PANEL_ID} .fg-drag-handle button { position:relative; z-index:21; }
-    #${FG_PANEL_ID} .fg-row { display:flex; align-items:center; justify-content:space-between; }
-    #${FG_PANEL_ID} .fg-title { font-weight:600; color:var(--trussal-secondary, #111111); }
-    #${FG_PANEL_ID} .fg-video-wrap { position:relative; width:100%; }
-    #${FG_PANEL_ID} video { width:100%; border-radius:4px; display:block; transform:scaleX(-1); }
-    #${FG_PANEL_ID} canvas {
-      position:absolute; inset:0; width:100%; height:100%;
-      border-radius:4px; pointer-events:none; transform:scaleX(-1);
-    }
-    #${FG_PANEL_ID} .fg-flash {
-      font-size:calc(11px * var(--trussal-font-scale, 1)); font-weight:600; text-align:center;
-      color:var(--trussal-secondary, #111111); opacity:0; transition:opacity 0.15s; min-height:1.2em;
-      font-family:monospace;
-    }
-
-    #trussal-fg-toggle {
-      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
-      transition:color 0.15s, background 0.15s, border-color 0.15s;
-      line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
-    }
-    #trussal-fg-toggle:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
-    #trussal-fg-toggle.on    { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
-
-    /* Head-cursor feedback on plain (non-Trussal) controls: the field it is
-       holding focus on, and the button/link it is currently dwelling. Jitsi's
-       own inputs and buttons suppress the focus ring, so state this loudly.
-       !important — these sit over Emotion class styles on the prejoin. */
-    .trussal-hc-focus {
-      outline: 2px solid var(--trussal-secondary, #111111) !important;
-      outline-offset: 1px !important;
-      border-radius: 2px;
-    }
-    .trussal-hc-dwell {
-      outline: 2px solid var(--trussal-secondary, #111111) !important;
-      outline-offset: 2px !important;
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 6%, transparent) !important;
-    }
-
-    .ts-dwell-btn {
-      background: var(--trussal-primary, #eeeeee);
-      border: 1px solid var(--trussal-secondary, #111111);
-      color: var(--trussal-secondary, #111111);
-      cursor: pointer;
-      border-radius: 4px;
-      padding: 2px 7px;
-      font-size: calc(10px * var(--trussal-font-scale, 1));
-      line-height: 1.5;
-      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
-      position: relative;
-      overflow: hidden;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-    }
-    .ts-dwell-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-dwell-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
-    .ts-dwell-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-dwell-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell-prog, 0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
-      pointer-events: none;
-    }
-  `;
-  document.head.appendChild(s);
+  upsertStyle(FG_STYLE_ID, fgStyles);
 }
+
 
 function _ensureDOM() {
   if (document.getElementById(FG_PANEL_ID)) return;
@@ -1175,7 +1077,7 @@ function _ensureDOM() {
       <span class="fg-title">facial control</span>
       <button class="ts-dwell-btn" id="trussal-fg-collapse" title="Collapse / expand panel">▼</button>
       <button class="ts-dwell-btn" id="trussal-fg-close" title="Close facial control">✕</button>
-      <span id="trussal-fg-status" style="font-size:11px;">idle</span>
+      <span id="trussal-fg-status">idle</span>
     </div>
     <div id="trussal-fg-body">
       <div class="fg-video-wrap">
@@ -1194,14 +1096,12 @@ function _ensureDOM() {
   const fgCollapseBtn = panel.querySelector('#trussal-fg-collapse');
   if (fgCollapseBtn) {
     fgCollapseBtn.addEventListener('click', () => {
-      const body = panel.querySelector('#trussal-fg-body');
-      if (!body) return;
-      const collapsed = body.style.display === 'none';
-      body.style.display    = collapsed ? '' : 'none';
-      fgCollapseBtn.textContent = collapsed ? '▼' : '▲';
+      // Collapsed is entirely CSS (.fg-collapsed hides the body and drops the
+      // height back to auto, which also takes a resized --tdr-h out of the
+      // picture; the property survives for the expand back).
+      const collapsed = panel.classList.contains('fg-collapsed');
       panel.classList.toggle('fg-collapsed', !collapsed);
-      if (!collapsed) { _savedFgHeight = panel.style.height; panel.style.height = ''; }
-      else { panel.style.height = _savedFgHeight; }
+      fgCollapseBtn.textContent = collapsed ? '▼' : '▲';
     });
   }
 
@@ -1246,7 +1146,7 @@ function _disableMediapipeUI() {
 
 function _syncPanelVisibility() {
   const panel = document.getElementById(FG_PANEL_ID);
-  if (panel) panel.style.display = (!_panelHidden && (_headCursor || _gestures)) ? 'flex' : 'none';
+  if (panel) panel.classList.toggle('fg-open', !_panelHidden && (_headCursor || _gestures));
 }
 
 function _ensureCameraRunning() {
@@ -1366,7 +1266,7 @@ export function setHeadCursorEnabled(on) {
     _panelHidden = false;
     _ensureCameraRunning();
   } else {
-    if (_cursorEl) _cursorEl.style.display = 'none';
+    _cursorEl?.classList.remove('fg-visible');
     // The detection loop stops running its head-cursor block the moment
     // _headCursor is false, so it never gets to tidy these up itself.
     _setHcFocus(null);

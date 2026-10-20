@@ -9,6 +9,22 @@
 // pairwise paths, so peer↔peer distance is approximated by the relayed
 // path: (rtt_i + rtt_j)/2 one-way ms × ~100 km/ms (light in fiber ≈
 // 200 000 km/s). Self-distance is 0.
+//
+// Overlay styles live in Grid.css, imported as raw text and injected on the
+// first render; per-render colour/angle ride as --jp-grid-* custom
+// properties (see the CSS file).
+
+import gridStyles from './Grid.css';
+import { upsertStyle } from '../../style-injection.js';
+
+
+const STYLE_ID = 'trussal-grid-style';
+
+// Overlay styles (Grid.css), upserted in place (style-injection.js).
+function _injectStyles() {
+  upsertStyle(STYLE_ID, gridStyles);
+}
+
 
 export const KM_PER_ONE_WAY_MS = 100;
 
@@ -67,6 +83,7 @@ function findVideoPanel(jitsiId) {
 }
 
 export function renderGridOverlays(peers, localJitsiId, { landmarks = false, displacement = null } = {}) {
+  _injectStyles();
   const view = gridView(peers, localJitsiId);
   for (const entry of view.shades) {
     const panel = findVideoPanel(entry.jitsiId);
@@ -75,12 +92,12 @@ export function renderGridOverlays(peers, localJitsiId, { landmarks = false, dis
     if (!mark) {
       mark = document.createElement('div');
       mark.className = OVERLAY_CLASS;
-      mark.style.cssText = 'position:absolute;top:4px;left:4px;width:14px;height:14px;border-radius:50%;z-index:20;pointer-events:none;border:1px solid rgba(0,0,0,0.4);';
-      if (getComputedStyle(panel).position === 'static') panel.style.position = 'relative';
+      if (getComputedStyle(panel).position === 'static') panel.classList.add('jp-grid-host');
       panel.appendChild(mark);
     }
     const v = Math.round(entry.shade * 255);
-    mark.style.background = `rgb(${v},${v},${v})`;
+    const color = `rgb(${v},${v},${v})`;
+    mark.style.setProperty('--jp-grid-color', color);
     mark.title = `≈${entry.distanceKm.toFixed(0)} km`;
 
     // Landmark displacement vector, bottom-right. Hidden for bots and peers
@@ -92,13 +109,12 @@ export function renderGridOverlays(peers, localJitsiId, { landmarks = false, dis
       if (!arrow) {
         arrow = document.createElement('div');
         arrow.className = 'jp-grid-vec';
-        arrow.style.cssText = 'position:absolute;bottom:4px;right:4px;width:18px;height:18px;z-index:20;pointer-events:none;font-size:14px;line-height:18px;text-align:center;';
         panel.appendChild(arrow);
       }
       const angle = Math.atan2(vec.dy || 0, vec.dx || 0);
       arrow.textContent = '→';
-      arrow.style.color = mark.style.background;
-      arrow.style.transform = `rotate(${angle}rad)`;
+      arrow.style.setProperty('--jp-grid-color', color);
+      arrow.style.setProperty('--jp-grid-angle', `${angle}rad`);
     } else if (arrow) {
       arrow.remove();
     }

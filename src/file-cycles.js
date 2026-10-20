@@ -26,6 +26,9 @@ import { FILE_KINDS, mimeOfFilename, validateUpload } from './file-cycles-core.j
 import { req } from './user-samples.js';
 export { req } from './user-samples.js';
 import { ensureChatEntry } from './chat-entry.js';
+import fileCycleStyles from './file-cycles.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const CONTAINER_ID = 'trussal-file-cycles';
 const STYLE_ID = 'trussal-file-cycles-style';
@@ -34,7 +37,6 @@ const MAX_BUBBLES = 100;
 let atoms = {};      // token -> { text, peer }
 let active = false;
 let container = null;
-let styleEl = null;
 let bubbleCount = 0;
 
 // Replace the atom table. Called by strudel.js immediately before evaluate(),
@@ -194,28 +196,19 @@ subscribePeerState((event, payload) => {
 
 // --- chat rendering ----------------------------------------------------------
 
-function ensureStyle() {
-  if (styleEl && document.contains(styleEl)) return styleEl;
-  styleEl = document.getElementById(STYLE_ID) || document.createElement('style');
-  styleEl.id = STYLE_ID;
-  if (!styleEl.textContent) {
-    styleEl.textContent = `
-#${CONTAINER_ID} .fc-bubble { margin: 4px 0; padding: 0 16px; }
-#${CONTAINER_ID} .fc-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID} .fc-media { max-width: 240px; max-height: 240px; display: block; margin-top: 2px; border-radius: 4px; }
-#${CONTAINER_ID} .fc-link { display: inline-block; margin-top: 2px; }
-`;
-  }
-  if (!document.contains(styleEl)) document.head.appendChild(styleEl);
-  return styleEl;
+// The bubble styles live in file-cycles.css (imported as raw text, per
+// build.mjs's '.css': 'text'), upserted in place so CSS edits hot-reload.
+function _injectStyles() {
+  upsertStyle(STYLE_ID, fileCycleStyles);
 }
+
 
 function ensureContainer() {
   if (!container) {
     container = document.createElement('div');
     container.id = CONTAINER_ID;
   }
-  ensureStyle();
+  _injectStyles();
   return container;
 }
 

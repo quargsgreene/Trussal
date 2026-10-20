@@ -39,9 +39,15 @@ import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip 
 // mutations are pure and SEEDED there, so every browser paints the same
 // characters from the same shared program.
 import { crushWord, noiseWord, mutateNumber } from './audio-net/av-effects/TextState.js';
+import textCyclesStyles from './text-cycles.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const CONTAINER_ID = 'trussal-text-cycles';
 const STYLE_ID = 'trussal-text-cycles-style';
+// The static base rules live in their own sheet (text-cycles.css) so the
+// STYLE_ID element below only ever holds generated :hover rules.
+const BASE_STYLE_ID = 'trussal-text-cycles-base-style';
 // Chat scrollback cap. Bubbles are per cycle, so a fast pattern still only adds
 // one per cycle per performer, but a long set would grow without this.
 const MAX_BUBBLES = 200;
@@ -94,21 +100,24 @@ function peerOf(value) {
 }
 
 function ensureStyle() {
+  ensureBaseStyle();
   if (styleEl && document.contains(styleEl)) return styleEl;
   styleEl = document.getElementById(STYLE_ID) || document.createElement('style');
   styleEl.id = STYLE_ID;
-  if (!styleEl.textContent) {
-    // Deliberately minimal: with no user CSS, words must inherit Jitsi's own
-    // chat typography, so nothing here sets a font, colour or size.
-    styleEl.textContent = `
-#${CONTAINER_ID} .tc-bubble { margin: 4px 0; padding: 0 16px; overflow-wrap: anywhere; }
-#${CONTAINER_ID} .tc-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID} .tc-line { white-space: pre-wrap; }
-`;
-  }
   if (!document.contains(styleEl)) document.head.appendChild(styleEl);
   return styleEl;
 }
+
+// The static base rules (bubble margin, name opacity, line wrapping, and the
+// custom-property hooks for the effect values) are authored in text-cycles.css
+// and upserted in place so CSS edits hot-reload. Deliberately minimal: with no
+// user CSS, words must
+// inherit Jitsi's own chat typography, so nothing there sets a font, colour or
+// size.
+function ensureBaseStyle() {
+  upsertStyle(BASE_STYLE_ID, textCyclesStyles);
+}
+
 
 // Attach (or re-attach) our container inside Jitsi's chat log. The panel is
 // unmounted whenever chat is closed and React re-renders the log on every real
@@ -257,7 +266,9 @@ function ensureChatEntry() {
 }
 
 // One reusable hover rule per (participant, declaration) pair. Inline styles
-// cannot express :hover, so these are the only generated stylesheet rules.
+// cannot express :hover, so these are the only generated stylesheet rules —
+// appended to the STYLE_ID sheet (the static base rules live in
+// text-cycles.css, a separate element).
 function hoverClassFor(peerClass, declarations) {
   const decls = sanitizeDeclarations(declarations);
   if (!decls.length) return null;
@@ -382,18 +393,25 @@ function rememberTurnStyle(peerId, span) {
 // Paint the span with the PREVIOUS turn's declarations, then let the real ones
 // transition in. A span is created fresh for every word, so there is otherwise
 // nothing for a CSS transition to move from and the styling switches hard at
-// the turn boundary — which is precisely what echo should soften.
+// the turn boundary — which is precisely what echo should soften. The
+// transition itself is a stylesheet rule (.tc-fade, keyed on --tc-fade-s), so
+// no element style is written here beyond the two scoped declarations.
 function crossfadeFromPreviousTurn(span, peerId, fx) {
   const previous = previousTurnStyle.get(String(peerId));
   if (!previous) return;
   const target = span.style.cssText;
   if (previous === target) return;
   const seconds = Math.max(0.05, fx.fadeFromPrevious * 2);
+  const fade = `${seconds.toFixed(2)}s`;
   span.style.cssText = previous;
-  span.style.transition = `all ${seconds.toFixed(2)}s linear`;
+  span.style.setProperty('--tc-fade-s', fade);
+  span.classList.add('tc-fade');
   // Next frame, so the browser has the starting values before they change.
   requestAnimationFrame(() => {
-    span.style.cssText = `${target};transition:all ${seconds.toFixed(2)}s linear`;
+    // cssText assignment replaces every inline declaration — re-apply the
+    // fade duration (.tc-fade itself is a class and survives).
+    span.style.cssText = target;
+    span.style.setProperty('--tc-fade-s', fade);
   });
 }
 
@@ -409,8 +427,9 @@ function echoLastWord(peerId) {
     const echo = document.createElement('span');
     echo.className = `tc-word tc-echo ${peerClass}`;
     echo.textContent = text;
-    // Each repeat quieter than the last, as a delay's are.
-    echo.style.opacity = String(Math.max(0.05, alpha * Math.pow(0.6, i)));
+    // Each repeat quieter than the last, as a delay's are. The alpha is read
+    // by the .tc-echo rule (text-cycles.css).
+    echo.style.setProperty('--tc-echo-opacity', String(Math.max(0.05, alpha * Math.pow(0.6, i))));
     line.appendChild(document.createTextNode(' '));
     line.appendChild(echo);
   }
@@ -483,7 +502,16 @@ function paint(value, cycle) {
     // Sanitised even though these are named params, so "underline" or a colour
     // cannot smuggle a url() into a style attribute.
     for (const [p, v] of sanitizeDeclarations(`${prop}: ${resolve(value[param])}`)) {
-      span.style.setProperty(p, mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex));
+      const painted = mutateDeclaration(p, v, styleFx, seedCycle, seedPeer, wordIndex);
+      // The performer's own declarations land on the span as live-coded CSS.
+      // letter-spacing is the exception: the room's tail ADDS to it, so it is
+      // carried in --tc-letter-spacing and combined in text-cycles.css.
+      if (p === 'letter-spacing') {
+        span.style.setProperty('--tc-letter-spacing', painted);
+        span.classList.add('tc-spaced');
+      } else {
+        span.style.setProperty(p, painted);
+      }
     }
   }
   if (value.hover != null) {
@@ -493,12 +521,13 @@ function paint(value, cycle) {
 
   if (styleFx) {
     // room — the tail pushes the letters apart. ADDED to whatever the
-    // performer wrote, so their own .spacing() stays legible in the result and
-    // a room with no decay is a no-op rather than an override.
-    if (styleFx.blurPx > 0) span.style.filter = `blur(${styleFx.blurPx.toFixed(2)}px)`;
+    // performer wrote (--tc-letter-spacing, see above), so their own
+    // .spacing() stays legible in the result and a room with no decay is a
+    // no-op rather than an override.
+    if (styleFx.blurPx > 0) span.style.setProperty('--tc-blur', `blur(${styleFx.blurPx.toFixed(2)}px)`);
     if (active.text.spacingPx > 0) {
-      const authored = parseFloat(span.style.letterSpacing) || 0;
-      span.style.letterSpacing = `${(authored + active.text.spacingPx).toFixed(2)}px`;
+      span.style.setProperty('--tc-spacing-extra', `${active.text.spacingPx.toFixed(2)}px`);
+      span.classList.add('tc-spaced');
     }
     // echo — each turn's styling arrives out of the previous turn's instead of
     // switching hard. The span is new every time, so there is nothing for a

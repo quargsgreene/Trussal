@@ -6,6 +6,8 @@
 // it obvious that each person owns their own chain and editor.
 
 import studioStyles from './studio.css';
+import { upsertStyle } from './style-injection.js';
+
 import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import {
   subscribeParticipants,
@@ -60,6 +62,7 @@ import { mountMetaprogrammerCycleHighlighter } from '../components/Metaprogramme
 import {
   applyBotClusterDirectives,
   resetBotClusterDirectives,
+  stopAllBots,
   subscribeFleetStatus
 } from './audio-net/UserBotOrchestration.js';
 import { startRoomHealth } from './audio-net/RoomHealthService.js';
@@ -91,9 +94,6 @@ let routedSet = new Set();
 let sampleBanks = [];
 let expandedBank = null; // which bank's per-sample list is open, if any
 let currentSliders = []; // most recent slider configs from strudel eval
-// Overlay height stashed while collapsed (strip + detail hidden), restored on
-// expand — so a resized panel doesn't leave a tall empty shell when collapsed.
-let savedStudioHeight = '';
 // True while a native file picker opened by wireUpload is on screen, or while
 // the files it returned are still being read. renderAll() skips rebuilding
 // the detail shell during this window — see the guard there for why.
@@ -183,12 +183,9 @@ function reconcileList(container, items, keyFn, createFn, updateFn) {
 // and #trussal-studio-toggle in that file are OVERLAY_ID/BUTTON_ID hardcoded
 // as literal strings; keep them in sync if either constant is ever renamed.
 function injectStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = studioStyles;
-  document.head.appendChild(style);
+  upsertStyle(STYLE_ID, studioStyles);
 }
+
 
 // Feeds the --ts-chip-color / --ts-detail-color custom properties. The flat
 // monochrome theme (studio.css) no longer reads either, so this has no visual
@@ -593,17 +590,17 @@ function createLocalProgramSection(isLocal) {
         <button class="ts-btn play" data-action="play">Play</button>
         <button class="ts-btn stop" data-action="stop">Stop</button>
         <button class="ts-btn ghost" data-action="load-samples" title="Load a folder of audio files (and any JSON/CSV/TSV inside it) into Strudel">Samples</button>
-        <input type="file" class="ts-samples-input" webkitdirectory style="display:none">
+        <input type="file" class="ts-samples-input ts-hidden" webkitdirectory>
         <button class="ts-btn ghost" data-action="load-data" title="Load JSON/CSV/TSV files as data packs — reference a column as &quot;Name:3&quot;">Data</button>
-        <input type="file" class="ts-data-input" accept=".json,.csv,.tsv" multiple style="display:none">
+        <input type="file" class="ts-data-input ts-hidden" accept=".json,.csv,.tsv" multiple>
         <button class="ts-btn ghost" data-action="load-files" title="Load images/video/audio/pdf/txt (10MB each) to reference from image()/video()/textFile()/pdfFile()/soundFile()">Files</button>
-        <input type="file" class="ts-files-input" accept=".gif,.jpeg,.jpg,.png,.svg,.bmp,.mp4,.m4a,.mov,.txt,.pdf,.wav,.mp3,.ogg" multiple style="display:none">
+        <input type="file" class="ts-files-input ts-hidden" accept=".gif,.jpeg,.jpg,.png,.svg,.bmp,.mp4,.m4a,.mov,.txt,.pdf,.wav,.mp3,.ogg" multiple>
         <span class="ts-shortcuts">Ctrl+Enter to eval · Ctrl+. to stop · Ctrl+/ to comment</span>
       </div>`
     : `
       <div class="ts-section-controls">
         <button class="ts-btn eval" data-action="remote-eval">Eval</button>
-        <button class="ts-btn mute ts-remote-mute-btn" data-action="mute" style="display:none;"></button>
+        <button class="ts-btn mute ts-remote-mute-btn ts-hidden" data-action="mute"></button>
         <span class="ts-shortcuts">Ctrl+Enter to send · Ctrl+/ to comment</span>
       </div>`;
   el.innerHTML = `
@@ -803,7 +800,7 @@ function patchLocalProgramSection(el, peer, isLocal) {
   }
 
   const muteBtnEl = el.querySelector('.ts-remote-mute-btn');
-  muteBtnEl.style.display = peer.isBot ? '' : 'none';
+  muteBtnEl.classList.toggle('ts-hidden', !peer.isBot);
   muteBtnEl.textContent = peer.muted ? 'Muted' : 'Mute';
   muteBtnEl.classList.toggle('on', !!peer.muted);
 
@@ -939,6 +936,12 @@ async function onEvalAndPlay(code) {
       }
     }
     await bootStrudelOnUserGesture();
+    // The user hit Play in their own editor — their local audio is about to
+    // run again, so release the bots' stop gate (if this Play was preceded by
+    // a Stop). Bots stay silenced until the metaprogram touches them again.
+    // This is the ONLY place that un-stops bots; the metaprogram's
+    // "Apply & Start" is pure and no longer releases the gate.
+    stopAllBots(false);
     sendLocalPlaying(true);
     setStatus('Playing');
     document.dispatchEvent(new CustomEvent('trussal-eval'));
@@ -1095,7 +1098,6 @@ function ensureOverlay() {
   injectStyles();
   overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
-  overlay.style.display = 'none';
   overlay.innerHTML = `
     <div class="ts-header">
       <div class="ts-title">Trussal Studio <small>each participant owns their own instrument</small></div>
@@ -1103,8 +1105,7 @@ function ensureOverlay() {
       <button class="ts-close" type="button">✕</button>
     </div>
     <div class="ts-strip"></div>
-    <div class="ts-jpattern" style="padding: 0 14px; display:flex; flex-direction:column; gap:12px;">
-    </div>
+    <div class="ts-jpattern"></div>
     <div class="ts-detail"></div>
   `;
   document.body.appendChild(overlay);
@@ -1133,25 +1134,20 @@ function ensureOverlay() {
   }
 
   overlay.querySelector('.ts-close').addEventListener('click', () => {
-    overlay.style.display = 'none';
+    overlay.classList.remove('ts-open');
     tickKbdUi(); // and take the body-level keyboard panel down with it
   });
 
   const studioCollapseBtn = overlay.querySelector('#trussal-studio-collapse');
   if (studioCollapseBtn) {
     studioCollapseBtn.addEventListener('click', () => {
-      const strip  = overlay.querySelector('.ts-strip');
-      const detail = overlay.querySelector('.ts-detail');
-      if (!strip || !detail) return;
-      const collapsed = strip.style.display === 'none';
-      strip.style.display  = collapsed ? '' : 'none';
-      detail.style.display = collapsed ? '' : 'none';
-      studioCollapseBtn.textContent = collapsed ? '▼' : '▲';
-      // Drop a resized panel's explicit height while collapsed so the hidden
-      // strip/detail don't leave dead space; put it back on expand.
+      // The collapsed state lives entirely in CSS: .ts-collapsed hides the
+      // strip + detail and drops the height back to auto, which also takes a
+      // resized window's explicit height out of the picture (height: auto
+      // out-specifies the var(--tdr-h) base) — nothing to save/restore here.
+      const collapsed = overlay.classList.contains('ts-collapsed');
       overlay.classList.toggle('ts-collapsed', !collapsed);
-      if (!collapsed) { savedStudioHeight = overlay.style.height; overlay.style.height = ''; }
-      else { overlay.style.height = savedStudioHeight; }
+      studioCollapseBtn.textContent = collapsed ? '▼' : '▲';
     });
   }
 
@@ -1200,8 +1196,8 @@ function ensureToggle() {
     e.stopPropagation();
     const overlay = ensureOverlay();
     if (!overlay) return;
-    overlay.style.display = (overlay.style.display === 'none') ? 'flex' : 'none';
-    if (overlay.style.display === 'flex') renderAll();
+    overlay.classList.toggle('ts-open');
+    if (overlay.classList.contains('ts-open')) renderAll();
     else tickKbdUi(); // hiding Studio from its toggle takes the keyboard panel too
   });
   document.body.appendChild(btn);
@@ -1213,8 +1209,8 @@ function tickUi() {
   if (!room || !isInMeeting()) {
     const btn = document.getElementById(BUTTON_ID);
     const overlay = document.getElementById(OVERLAY_ID);
-    if (btn) btn.style.display = 'none';
-    if (overlay) overlay.style.display = 'none';
+    if (btn) btn.classList.add('ts-hidden');
+    if (overlay) overlay.classList.remove('ts-open');
     tickKbdUi(); // retract the body-level keyboard panel once Studio is hidden
     initedRoom = null;
     return;
@@ -1225,7 +1221,7 @@ function tickUi() {
     if (local && !selectedJitsiId) { selectedJitsiId = local.id; selectedPeerKey = 'local'; }
   }
   const btn = ensureToggle();
-  if (btn) btn.style.display = 'block';
+  if (btn) btn.classList.remove('ts-hidden');
 
   tickKbdUi(); // retract the keyboard panel if Studio was closed while it was open
   startNetStatsPolling(sendLocalNetStats);

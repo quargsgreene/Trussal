@@ -1,9 +1,9 @@
 // on-screen-keyboard.js
 // On-screen QWERTY keyboard with head-cursor dwell, drag, collapse, and word
 // autocomplete ("autopredict"). It types into whichever Trussal Studio code
-// editor was last focused — the personal Strudel textarea or the shared Net
-// Cycles editor — and its Eval key routes the same way studio.js's own eval
-// does. Outside a meeting, where Studio doesn't exist, it targets the two
+// editor was last focused — the personal Strudel textarea or the shared
+// JPattern metaprogram editor — and its Eval key routes the same way
+// studio.js's own eval does. Outside a meeting, where Studio doesn't exist, it targets the two
 // Jitsi-native name fields instead: the prejoin screen's display-name input
 // and the lobby knock screen's name field (Eval is a no-op on those — see
 // _isTypingTarget / PREJOIN_NAME_ID / LOBBY_NAME_ID).
@@ -20,7 +20,12 @@
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 import { isHeadCursorEnabled, setHeadCursorEnabled, setGestureDetectionEnabled } from './facial-gesture.js';
-import { attachHeadDragResize, isHeadDragActive, pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
+import {
+  attachHeadDragResize, isHeadDragActive, setPanelBox, pinTopLeft as _pinTopLeft,
+} from './panel-drag-resize.js';
+import kbdStyles from './on-screen-keyboard.css';
+import { upsertStyle } from './style-injection.js';
+
 export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 
 const KBD_STYLE_ID  = 'trussal-kbd-style';
@@ -116,7 +121,6 @@ let _dwellStart   = 0;
 let _dwellFired   = false;
 let _rafId        = null;
 let _activityBound = false;
-let _savedHeight  = ''; // panel height stashed while collapsed, restored on expand
 
 // Latch the editor the user last touched so on-screen keys and completions
 // target it. Detached nodes (a peer switch rebuilds the detail panel) are
@@ -139,11 +143,11 @@ function _getTA() {
   // participant rebuilds the detail panel, so the textarea it pointed at is
   // now detached — reads see empty/old text and writes land nowhere. Drop it
   // the moment it leaves the document and fall back to the live personal
-  // editor. :not(.nc-code) — the shared Net Cycles textarea is also a .ts-code.
+  // editor. :not(.jp-code) — the shared JPattern textarea is also a .ts-code.
   if (_lastTA && _lastTA.isConnected) return _lastTA;
   _lastTA = null;
-  return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.nc-code)')
-      || document.querySelector('#trussal-studio-overlay .ts-code:not(.nc-code)')
+  return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.jp-code)')
+      || document.querySelector('#trussal-studio-overlay .ts-code:not(.jp-code)')
       // Studio only mounts in a meeting, which is exactly when none of these
       // single-line fields exists — never a Studio editor and one of these
       // at once.
@@ -163,7 +167,7 @@ function _updatePredictions() {
   // so the row only earns its space above the keys while the MediaPipe head
   // cursor is on.
   if (!ta || !ta.classList?.contains('ts-code') || !isHeadCursorEnabled()) {
-    row.style.display = 'none';
+    row.classList.remove('ts-kbd-pred-on');
     if (row.childElementCount) row.innerHTML = '';
     return;
   }
@@ -173,7 +177,7 @@ function _updatePredictions() {
   // Hide the row entirely when there is nothing to suggest — an always-present
   // empty strip below the title bar is the "rectangle that does nothing".
   if (!preds.length) {
-    row.style.display = 'none';
+    row.classList.remove('ts-kbd-pred-on');
     if (row.childElementCount) row.innerHTML = '';
     return;
   }
@@ -184,7 +188,7 @@ function _updatePredictions() {
     btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => _insertCompletion(btn.dataset.completion));
   });
-  row.style.display = 'flex';
+  row.classList.add('ts-kbd-pred-on');
 }
 
 function _insertCompletion(word) {
@@ -249,16 +253,19 @@ function _typeKey(key) {
 
   if (key === 'Eval') {
     const ta = _getTA();
-    // Eval routes by editor: the shared Net Cycles editor (.nc-code) applies
-    // the metaprogram; the personal editor evals Strudel. studio.js handles
-    // the dispatch either way. Not a real editor (e.g. the prejoin/lobby name
-    // field) → nothing to run; studio.js's listener would otherwise try to
-    // eval whatever name the performer just typed as a Strudel pattern.
+    // Eval routes by editor: the shared JPattern textarea (.jp-code — it also
+    // carries .ts-code) applies the metaprogram; the personal editor evals
+    // Strudel. studio.js handles the dispatch either way, keyed on the
+    // 'jpattern' kind — the same name classifyEditor() uses, so every input
+    // modality agrees on one vocabulary. Not a real editor (e.g. the
+    // prejoin/lobby name field) → nothing to run; studio.js's listener would
+    // otherwise try to eval whatever name the performer just typed as a
+    // Strudel pattern.
     if (!ta || !ta.classList?.contains('ts-code')) return;
     document.dispatchEvent(new CustomEvent('trussal-kbd-eval', {
       detail: {
         code: ta.value,
-        editor: ta.classList.contains('nc-code') ? 'netcycles' : 'strudel'
+        editor: ta.classList.contains('jp-code') ? 'jpattern' : 'strudel'
       }
     }));
     return;
@@ -375,37 +382,29 @@ function _setCollapsed(val) {
   _collapsed = val;
   const panel = document.getElementById(KBD_PANEL_ID);
   if (!panel) return;
-  const body = panel.querySelector('.ts-kbd-body');
   const btn  = panel.querySelector('.ts-kbd-collapse-btn');
+  // The collapsed look is entirely CSS (.ts-kbd-collapsed hides the body and
+  // drops the height back to auto, which also takes a resized window's
+  // --tdr-h out of the picture; the property survives for the expand back).
   panel.classList.toggle('ts-kbd-collapsed', val);
-  // A body-less panel must not keep a resized (or default) height, or the
-  // hidden body becomes dead space below the title bar. Drop the height while
-  // collapsed and put the user's size back on expand.
-  if (val) {
-    _savedHeight = panel.style.height || '';
-    panel.style.height = 'auto';
-  } else {
-    panel.style.height = _savedHeight;
-  }
-  if (body) body.style.display = val ? 'none' : 'flex';
-  if (btn)  btn.textContent    = val ? '▲' : '▼';
+  if (btn) btn.textContent = val ? '▲' : '▼';
 }
 
 const MIN_W = 320;
 const MIN_H = 170;
 
-// Pin the panel to a top/left box: clear the CSS bottom/right anchors so an
-// inline top/left is the ONLY constraint. `style.bottom = ''` removes the
-// inline value but leaves the stylesheet's `bottom: 60px` in force — a fixed
-// element then honours BOTH top and bottom and stretches vertically, which is
-// the "dead space grows as you drag it up" bug. `'auto'` actually cancels it.
 // ── Drag ───────────────────────────────────────────────────────────────────────
+// Pin the panel to a top/left box. _pinTopLeft clears the CSS bottom/right
+// anchors (--tdr-bottom/--tdr-right: auto) so a moved top/left is the ONLY
+// constraint — a fixed element that honours both top and bottom stretches
+// vertically, the "dead space grows as you drag it up" bug (see
+// panel-drag-resize.js).
 function _makeDraggable(panel, handle) {
-  handle.style.cursor = 'grab';
+  handle.classList.add('tdr-draggable');
   handle.addEventListener('mousedown', (e) => {
     if (e.target.closest('button, .ts-kbd-resize')) return;
     e.preventDefault();
-    handle.style.cursor = 'grabbing';
+    handle.classList.add('tdr-dragging');
     const rect   = panel.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
@@ -413,11 +412,10 @@ function _makeDraggable(panel, handle) {
     const origL = rect.left;
     const origT = rect.top;
     function onMove(ev) {
-      panel.style.left = `${origL + ev.clientX - startX}px`;
-      panel.style.top  = `${origT + ev.clientY - startY}px`;
+      setPanelBox(panel, { left: origL + ev.clientX - startX, top: origT + ev.clientY - startY });
     }
     function onUp() {
-      handle.style.cursor = 'grab';
+      handle.classList.remove('tdr-dragging');
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     }
@@ -439,25 +437,22 @@ function _makeResizable(panel) {
       const r  = panel.getBoundingClientRect();
       const sx = e.clientX, sy = e.clientY;
       _pinTopLeft(panel, r);
-      panel.style.width  = `${r.width}px`;
-      panel.style.height = `${r.height}px`;
+      setPanelBox(panel, { width: r.width, height: r.height });
       const maxW = window.innerWidth  - 20;
       const maxH = window.innerHeight - 20;
       function onMove(ev) {
         const dx = ev.clientX - sx, dy = ev.clientY - sy;
         if (west) {
           const w = Math.min(maxW, Math.max(MIN_W, r.width - dx));
-          panel.style.width = `${w}px`;
-          panel.style.left  = `${r.left + (r.width - w)}px`;
+          setPanelBox(panel, { width: w, left: r.left + (r.width - w) });
         } else {
-          panel.style.width = `${Math.min(maxW, Math.max(MIN_W, r.width + dx))}px`;
+          setPanelBox(panel, { width: Math.min(maxW, Math.max(MIN_W, r.width + dx)) });
         }
         if (north) {
           const ht = Math.min(maxH, Math.max(MIN_H, r.height - dy));
-          panel.style.height = `${ht}px`;
-          panel.style.top    = `${r.top + (r.height - ht)}px`;
+          setPanelBox(panel, { height: ht, top: r.top + (r.height - ht) });
         } else {
-          panel.style.height = `${Math.min(maxH, Math.max(MIN_H, r.height + dy))}px`;
+          setPanelBox(panel, { height: Math.min(maxH, Math.max(MIN_H, r.height + dy)) });
         }
       }
       function onUp() {
@@ -472,271 +467,9 @@ function _makeResizable(panel) {
 
 // ── DOM construction ───────────────────────────────────────────────────────────
 function _injectStyles() {
-  if (document.getElementById(KBD_STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = KBD_STYLE_ID;
-  // Palette / font / font-scale come from the per-user Personal Theme
-  // (src/theme-context.js): --trussal-primary (light anchor), --trussal-secondary
-  // (dark anchor), --trussal-font, --trussal-font-scale on :root. Every colour,
-  // font-family and font-size below is authored against those vars — with the
-  // previous literal kept as the var() fallback — so a personal theme (dark
-  // mode, a recolour, a bigger font) repaints this keyboard exactly as it does
-  // the Strudel overlay. Translucent dwell-progress fills are a color-mix of the
-  // dark anchor; box-shadows stay literal (shadow, not palette).
-  s.textContent = `
-    #${KBD_PANEL_ID} {
-      position: fixed;
-      bottom: 60px; left: 10px;
-      width: min(840px, calc(100vw - 20px));
-      /* Explicit height so the flex:1 rows below have something to divide —
-         drag and resize only ever touch top/left/width/height, never bottom. */
-      height: 264px;
-      min-width: 320px; min-height: 170px;
-      max-width: calc(100vw - 20px); max-height: calc(100vh - 20px);
-      z-index: 1000001;
-      background: var(--trussal-primary, #eeeeee);
-      border: 1px solid var(--trussal-secondary, #111111);
-      border-radius: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      display: none;
-      flex-direction: column;
-      user-select: none;
-      font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
-      overflow: hidden;
-    }
-    /* Collapsed = title bar only: drop the height floor so it can shrink to
-       the header (JS also clears the inline height while collapsed). */
-    #${KBD_PANEL_ID}.ts-kbd-collapsed { min-height: 0; }
-    #${KBD_PANEL_ID}.ts-kbd-collapsed .ts-kbd-resize { display: none; }
-    .ts-kbd-resize {
-      position: absolute;
-      width: 18px; height: 18px;
-      z-index: 6;
-      background: transparent;
-    }
-    .ts-kbd-resize-nw { top: 0;    left: 0;  cursor: nwse-resize; }
-    .ts-kbd-resize-ne { top: 0;    right: 0; cursor: nesw-resize; }
-    .ts-kbd-resize-sw { bottom: 0; left: 0;  cursor: nesw-resize; }
-    .ts-kbd-resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
-    /* Faint diagonal grip so the bottom-right corner reads as resizable. */
-    .ts-kbd-resize-se::after {
-      content: '';
-      position: absolute;
-      right: 3px; bottom: 3px;
-      width: 8px; height: 8px;
-      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
-      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
-    }
-    /* The deployed Trussal theme (all.css) carries a blunt
-       "html, body, body star { background-color: var(--trussal-primary) }" rule.
-       Every structural container below still states its OWN background so a
-       CSS Cycles sheet or a future theme change can't paint over the panel. A
-       bare class selector (0,1,0) already out-ranks that rule (0,0,1). */
-    .ts-kbd-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 6px 10px;
-      border-bottom: 1px solid var(--trussal-secondary, #111111);
-      cursor: grab;
-      background: var(--trussal-primary, #eeeeee);
-    }
-    .ts-kbd-header:active { cursor: grabbing; }
-    /* Collapse + the ✥ / ⇲ head buttons sit above the corner resize grips
-       (z-index 6) so a grip at the NE corner can't eat their clicks. */
-    #${KBD_PANEL_ID} .ts-kbd-header > button { position: relative; z-index: 7; }
-    .ts-kbd-title {
-      font-size: calc(11px * var(--trussal-font-scale, 1));
-      font-weight: 600;
-      color: var(--trussal-secondary, #111111);
-      letter-spacing: 0.5px;
-      pointer-events: none;
-    }
-    .ts-kbd-collapse-btn {
-      background: var(--trussal-primary, #eeeeee);
-      border: 1px solid var(--trussal-secondary, #111111);
-      color: var(--trussal-secondary, #111111);
-      cursor: pointer;
-      border-radius: 4px;
-      padding: 1px 7px;
-      font-size: calc(10px * var(--trussal-font-scale, 1));
-      line-height: 1.5;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.1s, color 0.1s;
-    }
-    .ts-kbd-collapse-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-collapse-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
-    .ts-kbd-collapse-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-collapse-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
-      pointer-events: none;
-    }
-    /* The ✕ mirrors the collapse button exactly. */
-    .ts-kbd-close-btn {
-      background: var(--trussal-primary, #eeeeee);
-      border: 1px solid var(--trussal-secondary, #111111);
-      color: var(--trussal-secondary, #111111);
-      cursor: pointer;
-      border-radius: 4px;
-      padding: 1px 7px;
-      font-size: calc(10px * var(--trussal-font-scale, 1));
-      line-height: 1.5;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.1s, color 0.1s;
-    }
-    .ts-kbd-close-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-close-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
-    .ts-kbd-close-btn.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-close-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
-      pointer-events: none;
-    }
-    .ts-kbd-body {
-      flex: 1 1 auto;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      padding: 8px;
-      background: var(--trussal-primary, #eeeeee);
-    }
-    /* Shown only when it holds suggestions (see _updatePredictions) — an empty
-       row here was the "rectangle that does nothing" between the title bar and
-       the keys. min-height keeps the keys from jumping when it appears. */
-    .ts-kbd-pred-row {
-      flex: 0 0 auto;
-      display: none;
-      gap: 4px;
-      overflow-x: auto;
-      min-height: 22px;
-      padding-bottom: 2px;
-      scrollbar-width: none;
-      background: var(--trussal-primary, #eeeeee);
-    }
-    .ts-kbd-pred-btn {
-      flex: 0 0 auto;
-      padding: 1px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--trussal-secondary, #111111);
-      background: var(--trussal-primary, #eeeeee);
-      color: var(--trussal-secondary, #111111);
-      font-family: ui-monospace, monospace;
-      font-size: calc(11px * var(--trussal-font-scale, 1));
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.08s;
-    }
-    .ts-kbd-pred-btn:hover, .ts-kbd-pred-btn.ts-kbd-dwelling {
-      background: var(--trussal-secondary, #111111);
-      color: var(--trussal-primary, #eeeeee);
-    }
-    .ts-kbd-pred-btn::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 35%, transparent);
-      pointer-events: none;
-    }
-    .ts-kbd-row {
-      flex: 1 1 0;
-      min-height: 0;
-      display: flex;
-      gap: 3px;
-      background: var(--trussal-primary, #eeeeee);
-    }
-    .ts-kbd-key {
-      min-height: 22px;
-      padding: 0 2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 5px;
-      border: 1px solid var(--trussal-secondary, #111111);
-      background: var(--trussal-primary, #eeeeee);
-      color: var(--trussal-secondary, #111111);
-      font-size: calc(12px * var(--trussal-font-scale, 1));
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: background 0.05s;
-    }
-    .ts-kbd-key:hover {
-      background: var(--trussal-secondary, #111111);
-      color: var(--trussal-primary, #eeeeee);
-      border-color: var(--trussal-secondary, #111111);
-    }
-    .ts-kbd-key.ts-kbd-dwelling { border-color: var(--trussal-secondary, #111111); }
-    .ts-kbd-key.ts-kbd-mod-on {
-      background: var(--trussal-secondary, #111111);
-      border-color: var(--trussal-secondary, #111111);
-      color: var(--trussal-primary, #eeeeee);
-    }
-    /* No !important: default flash colour, not a forced override — #trussal-kbd-panel
-       is a Trussal root, so a CSS Cycles sheet targeting this class wins normally
-       through the cascade (its wrapping id selector already out-specifies this). */
-    .ts-kbd-key.ts-kbd-flash { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-key[data-k="Eval"] {
-      background: var(--trussal-primary, #eeeeee);
-      border-color: var(--trussal-secondary, #111111);
-      color: var(--trussal-secondary, #111111);
-      font-size: calc(10px * var(--trussal-font-scale, 1));
-      font-weight: 600;
-    }
-    .ts-kbd-key[data-k="Eval"]:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .ts-kbd-key::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell,0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
-      pointer-events: none;
-    }
-    .ts-kbd-label { pointer-events: none; font-size: calc(11px * var(--trussal-font-scale, 1)); color: inherit; }
-
-    /* The Studio-header toggle. Mirrors #trussal-fg-toggle so the Keys button
-       sits flush beside the Face button whether or not the facial-gesture
-       panel (which injects the shared .ts-dwell-btn base rules) has ever
-       been opened. */
-    #${KBD_TOGGLE_ID} {
-      background: var(--trussal-primary, #eeeeee); border: 1px solid var(--trussal-secondary, #111111);
-      cursor: pointer; padding: 3px 8px; border-radius: 4px; color: var(--trussal-secondary, #111111);
-      transition: color 0.15s, background 0.15s, border-color 0.15s;
-      line-height: 1; display: flex; align-items: center; gap: 4px;
-      font-size: calc(11px * var(--trussal-font-scale, 1)); font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
-      position: relative; overflow: hidden;
-    }
-    #${KBD_TOGGLE_ID}:hover { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
-    #${KBD_TOGGLE_ID}.on    { color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); border-color: var(--trussal-secondary, #111111); }
-    #${KBD_TOGGLE_ID}.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
-    #${KBD_TOGGLE_ID}.strudel-btn-active  { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    #${KBD_TOGGLE_ID}::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%;
-      height: calc(var(--dwell-prog, 0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent);
-      pointer-events: none;
-    }
-  `;
-  document.head.appendChild(s);
+  upsertStyle(KBD_STYLE_ID, kbdStyles);
 }
+
 
 function _buildPanel() {
   const panel = document.createElement('div');
@@ -790,7 +523,9 @@ function _buildPanel() {
       btn.dataset.k    = kd.k;
       btn.dataset.row  = ri;
       btn.dataset.key  = ki;
-      btn.style.flex   = String(kd.w || 1);
+      // Width in flex units; the stylesheet reads --tsk-flex (see the .ts-kbd-key
+      // rule) so no element styles are written here.
+      if (kd.w) btn.style.setProperty('--tsk-flex', String(kd.w));
       if (kd.s) {
         btn.dataset.lower        = kd.l;
         btn.dataset.shiftedLabel = kd.s;
@@ -870,7 +605,7 @@ function _dwellTick() {
   if (!ctx || (ctx.cursorX === window.innerWidth / 2 && ctx.cursorY === window.innerHeight / 2)) return;
 
   const panel = document.getElementById(KBD_PANEL_ID);
-  if (!panel || panel.style.display === 'none') return;
+  if (!panel || !panel.classList.contains('ts-kbd-on')) return;
 
   const cx = ctx.cursorX;
   const cy = ctx.cursorY;
@@ -940,7 +675,7 @@ function _inMeeting() {
 function _showPanel(on) {
   _visible = on;
   const panel = document.getElementById(KBD_PANEL_ID);
-  if (panel) panel.style.display = on ? 'flex' : 'none';
+  if (panel) panel.classList.toggle('ts-kbd-on', on);
   const toggle = document.getElementById(KBD_TOGGLE_ID);
   if (toggle) toggle.classList.toggle('on', on);
   if (on) { _startDwellLoop(); _updatePredictions(); }
@@ -1013,7 +748,8 @@ export function tickKbdUi() {
   }
   if (!_visible) return;
   const overlay   = document.getElementById('trussal-studio-overlay');
-  const studioOpen = !!overlay && overlay.style.display !== 'none';
+  // Studio's open state lives in its .ts-open class (studio.js / studio.css).
+  const studioOpen = !!overlay && overlay.classList.contains('ts-open');
   if (!studioOpen || !_inMeeting()) { _showPanel(false); return; }
   // Reflect a head-cursor toggle on the autopredict row without waiting for
   // the next editor keystroke to call _updatePredictions().

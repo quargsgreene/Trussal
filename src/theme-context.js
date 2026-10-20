@@ -8,9 +8,12 @@
 //
 // The flat monochrome theme is authored against four CSS custom properties —
 // in docker-jitsi-meet/jitsi-web/custom.css (Jitsi's own chrome) and in every
-// bundle-injected stylesheet (src/studio.css and the inline <style> blocks in
-// on-screen-keyboard / facial-gesture / landmark-gesture-mode / panel-drag-resize
-// / hydra-video), so one personal theme repaints the whole app for this viewer:
+// bundle-injected stylesheet (src/studio.css, src/*.css and the stylesheets
+// injected alongside their modules — on-screen-keyboard / facial-gesture /
+// landmark-gesture-mode / panel-drag-resize / hydra-video / welcome-page /
+// text-cycles / live-capture / MetaprogrammerEditor /
+// MetaprogrammerCycleHighlighter), so one personal theme repaints the whole app
+// for this viewer:
 //
 //   --trussal-primary     the light anchor — "what is currently #EEEEEE"
 //   --trussal-secondary   the dark anchor  — "what is currently #111111"
@@ -31,6 +34,9 @@
 //     sheets stop restyling this view, so the personal theme is not overridden.
 
 import { setCssCyclesSuppressed } from './css-cycles-suppress.js';
+import themeStyles from './theme-context.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const STORAGE_KEY = 'trussal.theme.v1';
 
@@ -164,35 +170,26 @@ export function subscribeTheme(fn) {
 
 // --- Apply --------------------------------------------------------------
 
-const INVERT_STYLE_ID = 'trussal-personal-invert';
+const THEME_STYLE_ID = 'trussal-theme-style';
 
-function ensureInvertStyle(on) {
-  const doc = globalThis.document;
-  if (!doc?.head) return;
-  let el = doc.getElementById(INVERT_STYLE_ID);
-  if (!on) {
-    el?.remove();
-    return;
-  }
-  if (!el) {
-    el = doc.createElement('style');
-    el.id = INVERT_STYLE_ID;
-    doc.head.appendChild(el);
-  }
-  // Flip the whole document, then flip real media back so only the chrome
-  // inverts. `filter` on <html> establishes a containing block for fixed
-  // elements — acceptable for an opt-in personal toggle.
-  el.textContent = [
-    'html { filter: invert(1) hue-rotate(180deg); }',
-    'img, video, canvas, iframe, #largeVideo, #largeVideoWrapper,',
-    '#hydra-canvas, [id^="hydra"], .videocontainer video, .videocontainer canvas',
-    '{ filter: invert(1) hue-rotate(180deg); }',
-  ].join('\n');
+// Inject theme-context.css once (the html.trussal-invert rules). Called from
+// applyTheme(), so it is retried until a <head> exists.
+function ensureStyleSheet(doc) {
+  upsertStyle(THEME_STYLE_ID, themeStyles, doc);
+}
+
+
+// Flip the whole document, then flip real media back so only the chrome
+// inverts — a class on <html>, with the rules in theme-context.css.
+function applyInvert(doc, on) {
+  const root = doc?.documentElement;
+  if (!root?.classList) return;
+  root.classList.toggle('trussal-invert', !!on);
 }
 
 // Write the resolved theme onto the live page. Safe to call repeatedly and
-// safe to call before <head> exists (the invert <style> is simply deferred to
-// the next call).
+// safe to call before <head> exists (the stylesheet injection is simply
+// deferred to the next call).
 export function applyTheme() {
   const doc = globalThis.document;
   const root = doc?.documentElement;
@@ -203,7 +200,8 @@ export function applyTheme() {
     root.style.setProperty('--trussal-font', state.font || DEFAULT_FONT);
     root.style.setProperty('--trussal-font-scale', String(normalizeFontScale(state.fontScale)));
   }
-  ensureInvertStyle(state.invert);
+  ensureStyleSheet(doc);
+  applyInvert(doc, state.invert);
   setCssCyclesSuppressed(state.disableCss);
 }
 
@@ -213,6 +211,6 @@ loadState();
 applyTheme();
 
 if (globalThis.document && globalThis.document.readyState === 'loading') {
-  // <head> may not exist yet for the invert <style>; re-apply once it does.
+  // <head> may not exist yet for the stylesheet; re-apply once it does.
   globalThis.document.addEventListener('DOMContentLoaded', applyTheme, { once: true });
 }

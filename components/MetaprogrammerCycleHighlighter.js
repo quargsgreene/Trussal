@@ -19,16 +19,22 @@
 // the textarea's box model, so the outline tracks the live text (edits,
 // wrapping, scroll) with no framework. The pure text→offset half lives in
 // metaprogrammer-cycle-highlighter-core.js (node:test covers it); this file is
-// only the DOM.
+// only the DOM. Its styles (overlay, mirror, outline box) live in
+// MetaprogrammerCycleHighlighter.css, imported as raw text and upserted in
+// place (style-injection.js).
 
 import { participantPositions, restPositions } from './metaprogrammer-cycle-highlighter-core.js';
 import {
   getActiveJPatternToken, getActiveJPatternIndex, getActiveJPatternKind
 } from '../src/peer-state.js';
+import highlightStyles from './MetaprogrammerCycleHighlighter.css';
+import { upsertStyle } from '../src/style-injection.js';
+
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
-// to line up. width/whiteSpace are set explicitly (see syncMetrics). Kebab-case
-// because syncMetrics writes them with setProperty(..., 'important') — see there.
+// to line up. width is set explicitly too (see syncMetrics). syncMetrics hands
+// each of these to the element as a --jp-hl-<prop> custom property; the
+// .jp-play-mirror rule consumes them with !important — see the CSS file.
 const MIRROR_PROPS = [
   'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
   'letter-spacing', 'text-transform', 'word-spacing', 'text-indent', 'line-height',
@@ -37,31 +43,17 @@ const MIRROR_PROPS = [
   'box-sizing'
 ];
 
-function injectStyleOnce() {
-  if (document.getElementById('jp-play-style')) return;
-  const style = document.createElement('style');
-  style.id = 'jp-play-style';
-  // No !important: `html, body, body * { background: #ffffff }` (custom.css) is a
-  // default, not a forced override (fixed in 0f02e39), and every class selector
-  // here already outspecifies the bare `body *` it used to need beating. This host
-  // mounts inside #trussal-studio-overlay, a Trussal root, so leaving these plain
-  // lets a CSS Cycles sheet targeting .jp-play-overlay/.jp-play-box win normally
-  // through the cascade instead of being unconditionally refused.
-  style.textContent = `
-    .jp-play-overlay { position:absolute; overflow:hidden; pointer-events:none; z-index:2; background:transparent; }
-    .jp-play-mirror {
-      position:absolute; top:0; left:-99999px; visibility:hidden;
-      white-space:pre-wrap; overflow-wrap:break-word; word-wrap:break-word;
-      background:transparent;
-    }
-    .jp-play-box {
-      position:absolute; left:0; top:0; box-sizing:border-box;
-      border:2.25px solid var(--trussal-secondary, #111111); border-radius:0;
-      background:transparent;
-    }
-  `;
-  document.head.appendChild(style);
+const STYLE_ID = 'trussal-jp-play-style';
+
+// The overlay/mirror/box rules live in MetaprogrammerCycleHighlighter.css
+// (imported as raw text — build.mjs's '.css': 'text'), upserted in place so a
+// CSS edit hot-reloads. The
+// CSS file carries the notes on those rules' deliberate lack of !important so
+// a CSS Cycles sheet can still restyle the overlay and box.
+function _injectStyles() {
+  upsertStyle(STYLE_ID, highlightStyles);
 }
+
 
 export function mountMetaprogrammerCycleHighlighter(container) {
   if (!container) return null;
@@ -70,18 +62,17 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   const host = ta.parentElement;
   if (!host || host.querySelector('.jp-play-overlay')) return null; // idempotent
 
-  injectStyleOnce();
-  if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+  _injectStyles();
+  if (getComputedStyle(host).position === 'static') host.classList.add('jp-play-host');
 
   const overlay = document.createElement('div');
   overlay.className = 'jp-play-overlay';
   const mirror = document.createElement('div');
   mirror.className = 'jp-play-mirror';
   // One reused box, moved between tokens — avoids churning a DOM node on every
-  // reposition (new turn, edit, scroll, resize).
+  // reposition (new turn, edit, scroll, resize). Hidden until .jp-shown.
   const box = document.createElement('div');
   box.className = 'jp-play-box';
-  box.style.display = 'none';
   overlay.appendChild(box);
   host.append(overlay, mirror);
 
@@ -95,26 +86,28 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   // textarea. clientWidth already excludes any scrollbar, so the mirror wraps
   // exactly as the textarea does.
   //
-  // setProperty(..., 'important'), not a plain assignment: custom.css ships
-  // `*, ::before, ::after { font-family: … !important }` (the flat-theme font
-  // override). A <textarea> keeps its own stack via a more specific `textarea`
-  // rule, but a plain <div> like this mirror does not — so a plain
-  // `mirror.style.fontFamily = cs.fontFamily` was silently overridden back to
-  // the theme font, and the mirror measured glyph advances in a DIFFERENT font
-  // than the textarea renders. On any machine where the two fonts have unequal
-  // metrics that pushed the outline box further off the token the further into
-  // the line it sat. An inline !important beats the author !important, so the
-  // mirror now always lays text out in the textarea's real computed font.
+  // The metrics ride as --jp-hl-* custom properties, consumed with !important
+  // by .jp-play-mirror: custom.css ships `*, ::before, ::after { font-family: …
+  // !important }` (the flat-theme font override). A <textarea> keeps its own
+  // stack via a more specific `textarea` rule, but a plain <div> like this
+  // mirror does not — so a plain `mirror.style.fontFamily = cs.fontFamily` was
+  // silently overridden back to the theme font, and the mirror measured glyph
+  // advances in a DIFFERENT font than the textarea renders. On any machine
+  // where the two fonts have unequal metrics that pushed the outline box
+  // further off the token the further into the line it sat. The
+  // .jp-play-mirror class rule outspecifies the theme's bare `*`, so its
+  // !important declarations win and the mirror always lays text out in the
+  // textarea's real computed font.
   function syncMetrics() {
     const cs = getComputedStyle(ta);
-    for (const p of MIRROR_PROPS) mirror.style.setProperty(p, cs.getPropertyValue(p), 'important');
+    for (const p of MIRROR_PROPS) mirror.style.setProperty(`--jp-hl-${p}`, cs.getPropertyValue(p));
     const bl = parseFloat(cs.borderLeftWidth) || 0;
     const br = parseFloat(cs.borderRightWidth) || 0;
-    mirror.style.width = (ta.clientWidth + bl + br) + 'px'; // border-box → content matches
-    overlay.style.left = ta.offsetLeft + 'px';
-    overlay.style.top = ta.offsetTop + 'px';
-    overlay.style.width = ta.offsetWidth + 'px';
-    overlay.style.height = ta.offsetHeight + 'px';
+    mirror.style.setProperty('--jp-hl-width', (ta.clientWidth + bl + br) + 'px'); // border-box → content matches
+    overlay.style.setProperty('--jp-hl-x', ta.offsetLeft + 'px');
+    overlay.style.setProperty('--jp-hl-y', ta.offsetTop + 'px');
+    overlay.style.setProperty('--jp-hl-w', ta.offsetWidth + 'px');
+    overlay.style.setProperty('--jp-hl-h', ta.offsetHeight + 'px');
   }
 
   // Pixel rect of [offset, offset+len) relative to the textarea's border-box
@@ -159,14 +152,14 @@ export function mountMetaprogrammerCycleHighlighter(container) {
         ? atIndex
         : positions.find(p => p.token === activeToken);
     }
-    if (!pos) { box.style.display = 'none'; return; }
+    if (!pos) { box.classList.remove('jp-shown'); return; }
     syncMetrics();
     const m = measureToken(text, pos.offset, pos.len);
-    box.style.display = '';
-    box.style.width = (m.width + PAD * 2) + 'px';
-    box.style.height = (m.height + 2) + 'px';
-    box.style.transform =
-      `translate(${m.left - ta.scrollLeft - PAD}px, ${m.top - ta.scrollTop - 1}px)`;
+    box.style.setProperty('--jp-box-w', (m.width + PAD * 2) + 'px');
+    box.style.setProperty('--jp-box-h', (m.height + 2) + 'px');
+    box.style.setProperty('--jp-box-tf',
+      `translate(${m.left - ta.scrollLeft - PAD}px, ${m.top - ta.scrollTop - 1}px)`);
+    box.classList.add('jp-shown');
   }
 
   // New turn from the aggregator → move (or clear) the outline.

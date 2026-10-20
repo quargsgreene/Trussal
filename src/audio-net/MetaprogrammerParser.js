@@ -1,7 +1,9 @@
-import {
-  isValidParticipantToken,
-  parseParticipantToken
-} from '../../latency-instrument/room-indices.js';
+// CommonJS module (see its header comment): the prod bundle gets esbuild's
+// CJS interop, where the default import is `module.exports`, and the dev
+// server serves the same shape (vite.config.js "trussal-latency-cjs") — so
+// import the default and destructure instead of using named imports.
+import roomIndices from '../../latency-instrument/room-indices.js';
+const { isValidParticipantToken, parseParticipantToken } = roomIndices;
 import { ECHO_METRICS, ECHO_SLOTS, ECHO_DEFAULT_SLOTS } from './av-effects/Echo.js';
 import {
   evaluateValuePattern, isValuePattern, isDataRefNode, DEFAULT_DROP_CHANCE,
@@ -75,6 +77,79 @@ const EFFECTS = {
   noise: { kind: 'effect', grammar: 'noise', metricKeywords: EFFECT_METRICS, patternArgs: true, mediaArg: true },
   grid: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }, // landmarks=false
   mosaic: { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true }
+};
+
+// The Aggregator's published frame can be re-rendered as a SHAPE — the frame
+// itself becomes the texture on its surface — with three.js for the 3D shapes
+// and p5.js for the 2D ones. Each shape directive takes up to three POSITIONAL
+// bracket groups (geometry, scene, animation — SHAPE_GROUPS), so
+// `# tetrahedron [1.5] [2 3 4 5] [0.5 ~ 0.1]` is radius 1.5, then scene params,
+// then spin. Every element of a group may itself be a `<…>`/`[…]` pattern,
+// sampled per cycle the way every other `#` argument is.
+//
+// These three shape tables are also what OutputState.js resolves against and
+// what the docs list, so a name is written exactly once here.
+export const THREE_SHAPES = {
+  tetrahedron: ['radius', 'detail'],
+  box: ['width', 'height', 'depth'],
+  sphere: ['radius', 'widthSegments', 'heightSegments'],
+  icosahedron: ['radius', 'detail'],
+  octahedron: ['radius', 'detail'],
+  dodecahedron: ['radius', 'detail'],
+  torus: ['radius', 'tube', 'radialSegments', 'tubularSegments'],
+  torusknot: ['radius', 'tube', 'tubularSegments', 'radialSegments', 'p', 'q'],
+  cylinder: ['radiusTop', 'radiusBottom', 'height', 'radialSegments'],
+  cone: ['radius', 'height', 'radialSegments']
+};
+
+export const P5_SHAPES = {
+  square: ['size'],
+  circle: ['radius'],
+  triangle: ['radius'],
+  star: ['outerRadius', 'points', 'innerRatio'],
+  polygon: ['sides', 'radius']
+};
+
+// The positional bracket groups: first = geometry (shape-specific, see the
+// tables above), second = scene, third = animation. `# square [……]` with one
+// group is legal — every group is optional, later ones only need earlier ones.
+export const SHAPE_GROUPS = ['geometry', 'scene', 'animation'];
+
+// Parameter names of the non-geometry groups, for "too many parameters" errors
+// and the docs.
+export const SHAPE_SLOTS = {
+  three: {
+    scene: ['scale', 'distance', 'repeatU', 'repeatV'],
+    animation: ['spinX', 'spinY', 'spinZ']
+  },
+  p5: {
+    scene: ['scale', 'repeatU', 'repeatV'],
+    animation: ['spin']
+  }
+};
+
+// How the frame is repeated when a shape is instanced across the output.
+export const TILING_MODES = ['none', 'grid', 'hex', 'strip'];
+
+// Shared signature for every directive read as bracket groups of numeric
+// parameters: patternable (`<…>` elements resample per cycle), media-gated
+// (so `# tetrahedron … ["audio"]` leaves the image alone), never metric-keyed.
+const GROUP_SIG = { kind: 'effect', maxGroups: 3, patternArgs: true, metricKeywords: [], mediaArg: true };
+
+for (const name of Object.keys(THREE_SHAPES)) EFFECTS[name] = { ...GROUP_SIG, shape: 'three' };
+for (const name of Object.keys(P5_SHAPES)) EFFECTS[name] = { ...GROUP_SIG, shape: 'p5' };
+// The layers that compose with a shape (and with each other): a 2D particle
+// system of the frame's own pixels, a 3D one, a 2D tessellation of it, and a
+// shape-instance tiling. One bracket group each — counts/sizes, no scene.
+EFFECTS.particle2 = { ...GROUP_SIG, maxGroups: 1 };
+EFFECTS.particle3 = { ...GROUP_SIG, maxGroups: 1 };
+EFFECTS.tessellation = { ...GROUP_SIG, maxGroups: 1 };
+EFFECTS.tiling = { ...GROUP_SIG, maxGroups: 1, tiling: true };
+// The video as an environment around the camera (three.js), off by default.
+EFFECTS.skybox = { minArgs: 0, maxArgs: 1, kind: 'effect', boolArg: true };
+// What surrounds the shape: a color, a two-color gradient, or an image URL.
+EFFECTS.background = {
+  kind: 'effect', grammar: 'background', patternArgs: true, metricKeywords: [], mediaArg: true
 };
 
 const PATTERN_FNS = {
@@ -672,7 +747,10 @@ class Parser {
     if (EFFECTS[name]) {
       const sig = EFFECTS[name];
       if (sig.grammar === 'noise') this.parseNoise(program, nameTok, sig);
+      else if (sig.grammar === 'background') this.parseBackground(program, name, nameTok, sig);
       else if (sig.metricPairs) this.parseMetricPairFn(program, name, nameTok, sig);
+      else if (sig.tiling) this.parseTilingFn(program, name, nameTok, sig);
+      else if (sig.shape || sig.maxGroups != null) this.parseGroupFn(program, name, nameTok, sig);
       else this.parseChainFn(program, name, nameTok, sig);
       return;
     }
@@ -1370,6 +1448,331 @@ class Parser {
     }
     metrics[slot] = value;
     return true;
+  }
+
+  // One bracket group of parameters: positive numbers (fractions like `1/2`
+  // allowed), rests (`~` — this parameter falls back to its default), data
+  // references, and nested `<…>`/`[…]` patterns — `# box [2 <1 2> 3]` is a box
+  // whose height alternates per cycle. Commas are accepted between parameters
+  // because mini-notation writes lists that way: `.box("[2, 1, 3]")` lowers to
+  // exactly this group.
+  parseParamGroup(name, open, sig) {
+    const close = open.value === '[' ? ']' : '>';
+    this.next(); // consume the opening bracket itself
+    const params = [];
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof' || t.type === 'sigil') {
+        this.error(`unclosed parameter group on '${name}' — expected '${close}'`, t);
+        return null;
+      }
+      if (t.type === 'newline') { this.next(); continue; } // groups may wrap lines
+      if (t.type === 'punct' && t.value === close) { this.next(); break; }
+      if (t.type === 'punct' && (t.value === '>' || t.value === ']')) {
+        this.error(`mismatched '${t.value}' — expected '${close}'`, t);
+        this.next();
+        break;
+      }
+      if (t.type === 'punct' && t.value === ',') { this.next(); continue; }
+      if (t.type === 'rest') { this.next(); params.push(null); continue; }
+      if (t.type === 'number' || t.type === 'intlike') {
+        const val = this.readPositiveNumber(name, 'parameter');
+        if (val == null) return null;
+        params.push(val);
+        continue;
+      }
+      if (t.type === 'dataref') {
+        this.next();
+        params.push({ type: 'dataRef', name: t.value.name, index: t.value.index });
+        continue;
+      }
+      if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        const seq = this.parseValueSequence(name, 'number', sig, { topLevel: false });
+        if (!seq) return null;
+        params.push(seq);
+        continue;
+      }
+      this.error(
+        `'${name}' parameters are positive numbers, rests (~), or <…> patterns, got '${tokenText(t)}'` +
+        (t.type === 'string'
+          ? ' — a quoted name (a medium set like ["video"]) belongs at the END of the directive'
+          : ''),
+        t);
+      this.next();
+      return null;
+    }
+    if (!params.length) {
+      this.error(`empty parameter group on '${name}' — drop the brackets rather than writing them empty`, open);
+      return null;
+    }
+    return params;
+  }
+
+  // The argument half every group-taking directive shares: bracket groups of
+  // parameters (parseParamGroup), then an optional trailing medium set.
+  // Returns { groups, media }, or null once an error has been recorded — the
+  // cursor is at the statement boundary in the success case either way.
+  parseGroupArgs(name, nameTok, sig) {
+    const groups = [];
+    let media = null;
+    for (;;) {
+      const t = this.peek();
+      if (sig.mediaArg && this.atMediaArg()) {
+        if (media) {
+          this.error(`'${name}' already has a medium set`, t);
+          this.recover();
+          return null;
+        }
+        media = this.parseMediaArg(name, sig);
+        if (!media) { this.recover(); return null; }
+        continue;
+      }
+      if (media && !this.atStatementEnd()) {
+        this.error(`'${name}' takes its medium set last — move it to the end of the directive`, t);
+        this.recover();
+        return null;
+      }
+      if (t.type === 'punct' && (t.value === '[' || t.value === '<')) {
+        if (groups.length >= sig.maxGroups) {
+          this.error(sig.shape
+            ? `'${name}' takes at most ${sig.maxGroups} bracket groups — ${SHAPE_GROUPS.map((g, i) => `${i + 1}: ${g}`).join(', ')}`
+            : `'${name}' takes at most ${sig.maxGroups} bracket group(s)`, t);
+          this.recover();
+          return null;
+        }
+        const group = this.parseParamGroup(name, t, sig);
+        if (!group) { this.recover(); return null; }
+        groups.push(group);
+        continue;
+      }
+      if (t.type === 'punct' && t.value === '(') {
+        this.error(`'${name}' cannot take Strudel-call arguments — its parameters are bracket groups like [1.5 0.4]`, t);
+        this.skipParenBlob();
+        return null;
+      }
+      break;
+    }
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
+      this.error(`'${name}' got an unexpected argument '${tokenText(trailing)}' — parameters are bracket groups like [1.5 0.4]`, trailing);
+      this.recover();
+      return null;
+    }
+    return { groups, media };
+  }
+
+  // A shape / particle / tessellation directive: its bracket groups read by
+  // parseGroupArgs, then checked against the parameter counts in the tables
+  // above — `# sphere [30 32 16 9]` names its extra parameter here rather than
+  // rendering with it silently dropped.
+  parseGroupFn(program, name, nameTok, sig) {
+    const read = this.parseGroupArgs(name, nameTok, sig);
+    if (!read) return;
+    const { groups, media } = read;
+    if (sig.shape) {
+      const geom = (sig.shape === 'three' ? THREE_SHAPES : P5_SHAPES)[name] || [];
+      const slots = SHAPE_SLOTS[sig.shape];
+      for (let i = 0; i < groups.length; i++) {
+        const names = i === 0 ? geom : (i === 1 ? slots.scene : slots.animation);
+        if (groups[i].length > names.length) {
+          this.error(`'${name}' ${SHAPE_GROUPS[i]} takes ${names.length} parameter` +
+            `${names.length === 1 ? '' : 's'} (${names.join(', ')}), got ${groups[i].length}`, nameTok);
+          return;
+        }
+      }
+    }
+    const entry = { fn: name, args: groups, line: nameTok.line, col: nameTok.col };
+    if (media) entry.media = media;
+    program.chain.push(entry);
+  }
+
+  // `# tiling <mode> [count]` — instance the active SHAPE across the frame:
+  // "none" clears, "grid" rows and columns, "hex" honeycomb, "strip" one
+  // horizontal band. The mode is a required word — a bare `# tiling` would
+  // otherwise silently mean nothing — and count (tiles across) patterns like
+  // any other numeric parameter.
+  parseTilingFn(program, name, nameTok, sig) {
+    const modeTok = this.peek();
+    let mode = null;
+    if (modeTok.type === 'word' && TILING_MODES.includes(modeTok.value)) {
+      mode = modeTok.value;
+      this.next();
+    } else if (modeTok.type === 'newline' || modeTok.type === 'eof' || modeTok.type === 'sigil'
+      || (modeTok.type === 'punct' && (modeTok.value === '[' || modeTok.value === '<'))) {
+      this.error(`tiling needs a mode (${TILING_MODES.join(' | ')}) — write '# tiling grid' to instance the shape, '# tiling none' to clear it`, modeTok);
+      this.recover();
+      return;
+    } else {
+      this.error(`'tiling' mode must be one of ${TILING_MODES.join(', ')} — got '${tokenText(modeTok)}'`, modeTok);
+      this.recover();
+      return;
+    }
+    const read = this.parseGroupArgs(name, nameTok, sig);
+    if (!read) return;
+    const entry = { fn: 'tiling', mode, args: read.groups, line: nameTok.line, col: nameTok.col };
+    if (read.media) entry.media = read.media;
+    program.chain.push(entry);
+  }
+
+  // `<"#ff0000" "#00ff00">` — colors sampled once per cycle, the same
+  // alternation a numeric argument gets. A hand-rolled reader because the
+  // shared pattern reader's string leaves are metric keywords or media names;
+  // colors are neither, and growing that reader's leaf kinds for one directive
+  // is how the shared one stops being trustworthy. Rests are allowed (a cycle
+  // with no color falls back to the default); weights and chances are not
+  // offered on colors.
+  parseColorPattern(name, open) {
+    const close = open.value === '[' ? ']' : '>';
+    const mode = open.value === '<' ? 'alternate' : 'subdivide';
+    this.next(); // consume the opening bracket itself
+    const terms = [];
+    for (;;) {
+      const t = this.peek();
+      if (t.type === 'eof' || t.type === 'sigil') {
+        this.error(`unclosed color pattern on '${name}' — expected '${close}'`, t);
+        return null;
+      }
+      if (t.type === 'newline') { this.next(); continue; }
+      if (t.type === 'punct' && t.value === close) { this.next(); break; }
+      if (t.type === 'punct' && t.value === ',') { this.next(); continue; }
+      if (t.type === 'string') { this.next(); terms.push(t.value); continue; }
+      if (t.type === 'rest') { this.next(); terms.push(null); continue; }
+      this.error(`'${name}' color patterns hold quoted colors ("#ff8800", "orange", …), got '${tokenText(t)}'`, t);
+      this.next();
+      return null;
+    }
+    if (!terms.length) {
+      this.error(`empty color pattern on '${name}'`, open);
+      return null;
+    }
+    return { type: 'valueSeq', mode, terms, line: open.line, col: open.col };
+  }
+
+  // `# background "red"` — what surrounds the shape (or, with no shape in the
+  // program, under nothing at all):
+  //   color    any one quoted CSS color
+  //   gradient `"gradient" <c1> <c2> [angle in degrees]` — c1/c2 patternable
+  //            per cycle, the angle as a number or a pattern
+  //   image    `"image" "<url>"` — the URL must allow CORS (it is drawn into
+  //            the captured canvas, which taints otherwise)
+  //   clear    bare `# background`
+  parseBackground(program, name, nameTok, sig) {
+    const strings = [];   // quoted colors / the mode word / the URL, in order
+    let angle = null;     // number or pattern; gradient only
+    let media = null;
+    for (;;) {
+      const t = this.peek();
+      if (sig.mediaArg && this.atMediaArg()) {
+        if (media) {
+          this.error(`'${name}' already has a medium set`, t);
+          this.recover();
+          return;
+        }
+        media = this.parseMediaArg(name, sig);
+        if (!media) { this.recover(); return; }
+        continue;
+      }
+      if (media && !this.atStatementEnd()) {
+        this.error(`'${name}' takes its medium set last — move it to the end of the directive`, t);
+        this.recover();
+        return;
+      }
+      if (t.type === 'string') {
+        this.next();
+        if (strings.length >= 3) {
+          this.error(`'${name}' takes at most 3 strings — a mode, then colors or a URL`, t);
+          this.recover();
+          return;
+        }
+        strings.push(t.value);
+        continue;
+      }
+      if (t.type === 'punct' && (t.value === '<' || t.value === '[')) {
+        // The bracket's first leaf tells the two pattern kinds apart: quoted
+        // strings are colors sampled per cycle, numbers are the gradient angle.
+        const leaf = this.peek(this.nextMeaningful(1));
+        if (leaf && leaf.type === 'string') {
+          if (strings.length >= 3) {
+            this.error(`'${name}' takes at most 3 strings — a mode, then colors or a URL`, t);
+            this.recover();
+            return;
+          }
+          const node = this.parseColorPattern(name, t);
+          if (!node) { this.recover(); return; }
+          strings.push(node);
+          continue;
+        }
+        if (angle != null) {
+          this.error(`'${name}' already has an angle`, t);
+          this.recover();
+          return;
+        }
+        const seq = this.parseValueSequence(name, 'number', sig);
+        if (!seq) { this.recover(); return; }
+        angle = seq;
+        continue;
+      }
+      if (t.type === 'number' || t.type === 'intlike') {
+        this.next();
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value);
+        if (!isFinite(val) || val < 0) {
+          this.error(`'${name}' gradient angle must be a non-negative number of degrees`, t);
+        }
+        if (angle != null) {
+          this.error(`'${name}' already has an angle`, t);
+          this.recover();
+          return;
+        }
+        angle = val;
+        continue;
+      }
+      if (t.type === 'punct' && t.value === '(') {
+        this.error(`'${name}' cannot take Strudel-call arguments — its arguments are quoted colors, a quoted URL, and an angle`, t);
+        this.skipParenBlob();
+        return;
+      }
+      break;
+    }
+    if (!this.atStatementEnd()) {
+      const trailing = this.peek();
+      this.error(trailing.type === 'word'
+        ? `'${name}' colors are quoted — write '# background "${tokenText(trailing)}"'`
+        : `'${name}' got an unexpected argument '${tokenText(trailing)}'`, trailing);
+      this.recover();
+      return;
+    }
+
+    const first = strings[0];
+    let background = null;
+    if (first === 'gradient') {
+      if (strings.length !== 3) {
+        this.error(`'# background "gradient"' takes two colors — write '# background "gradient" "#ff0000" "#0000ff" 45'`, nameTok);
+        return;
+      }
+      background = { mode: 'gradient', from: strings[1], to: strings[2], angle };
+    } else if (first === 'image') {
+      if (strings.length !== 2) {
+        this.error(`'# background "image"' takes one URL — write '# background "image" "https://…/sky.jpg"'`, nameTok);
+        return;
+      }
+      if (angle != null) {
+        this.error(`'# background "image"' takes no angle — the image covers the frame`, nameTok);
+        return;
+      }
+      background = { mode: 'image', url: strings[1] };
+    } else if (angle != null) {
+      this.error(`'${name}' angle belongs to a gradient — write '# background "gradient" c1 c2 45'`, nameTok);
+      return;
+    } else if (strings.length > 1) {
+      this.error(`'${name}' takes one color, or "gradient"/"image" first — got ${strings.length} strings`, nameTok);
+      return;
+    } else if (strings.length === 1) {
+      background = { mode: 'color', color: strings[0] };
+    } // else: bare `# background` — background stays null, which clears it
+
+    const entry = { fn: 'background', background, line: nameTok.line, col: nameTok.col };
+    if (media) entry.media = media;
+    program.chain.push(entry);
   }
 
   parseChainFn(program, name, nameTok, sig) {

@@ -15,7 +15,12 @@
 // hydra-video.js still needs the real camera (that is what feeds `s0`), so the
 // pre-override getUserMedia is kept and exported as openCamera().
 
+import pvStyles from './published-video.css';
+import { upsertStyle } from './style-injection.js';
+
+
 const CANVAS_ID = 'trussal-published-video';
+const STYLE_ID = 'trussal-published-video-style';
 const CAPTURE_FPS = 15;
 const FRAME_INTERVAL_MS = 1000 / CAPTURE_FPS;
 
@@ -24,6 +29,13 @@ let canvas = null;
 let ctx = null;
 let rafId = null;
 let lastDrawMs = -Infinity;
+
+// The canvas is parked off-screen by CSS (published-video.css), never by an
+// inline style — see the stylesheet for why off-screen beats display:none.
+function ensureStyles() {
+  upsertStyle(STYLE_ID, pvStyles);
+}
+
 
 // The camera, for the code that legitimately wants it: hydra-video.js's `s0`
 // feed and its local panel. Bypasses the override below — that exists to stop
@@ -36,13 +48,11 @@ export function openCamera(constraints = { video: true }) {
 
 function ensureCanvas(width, height) {
   if (canvas) return canvas;
+  ensureStyles();
   canvas = document.createElement('canvas');
   canvas.id = CANVAS_ID;
   canvas.width = width;
   canvas.height = height;
-  // Kept out of sight but composited: a display:none canvas is not guaranteed
-  // to produce frames.
-  canvas.style.cssText = 'position:fixed;left:-20000px;top:0;pointer-events:none;';
   (document.body || document.documentElement).appendChild(canvas);
   ctx = canvas.getContext('2d');
   startCompositing();

@@ -23,9 +23,12 @@
 
 import { getPeerByJitsiId, getLocalPeer, isPeerJPatternTurn, sendPollVote, subscribePeerState } from './peer-state.js';
 import {
-  DEFAULT_POLL_TEXT_COLOR, parsePollLiteral, canVote, applyVoteDelta, switchVote,
+  parsePollLiteral, canVote, applyVoteDelta, switchVote,
 } from './polls-core.js';
 import { ensureChatEntry } from './chat-entry.js';
+import pollsStyles from './polls.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const CONTAINER_ID = 'trussal-polls';
 const STYLE_ID = 'trussal-polls-style';
@@ -33,7 +36,6 @@ const STYLE_ID = 'trussal-polls-style';
 let atoms = {};   // token -> { text, peer }
 let active = false;
 let container = null;
-let styleEl = null;
 
 // question -> { spec, tally, voterChoice: Map<voterToken, option>, createdAt,
 //               closesAt, closeTimer, peerId, bubbleEl }
@@ -51,31 +53,20 @@ function peerOf(value) {
   return atom ? atom.peer : null;
 }
 
-function ensureStyle() {
-  if (styleEl && document.contains(styleEl)) return styleEl;
-  styleEl = document.getElementById(STYLE_ID) || document.createElement('style');
-  styleEl.id = STYLE_ID;
-  if (!styleEl.textContent) {
-    styleEl.textContent = `
-#${CONTAINER_ID} .pl-bubble { margin: 4px 0; padding: 6px 16px; color: ${DEFAULT_POLL_TEXT_COLOR}; background: #eeeeee; border-radius: 6px; }
-#${CONTAINER_ID} .pl-name { font-size: 12px; opacity: .6; }
-#${CONTAINER_ID} .pl-question { font-weight: 600; margin: 2px 0 4px; }
-#${CONTAINER_ID} .pl-option { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; margin: 2px 0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #fff; }
-#${CONTAINER_ID} .pl-option.pl-mine { border-color: #111111; font-weight: 600; }
-#${CONTAINER_ID} .pl-option.pl-closed { cursor: default; opacity: .8; }
-#${CONTAINER_ID} .pl-status { font-size: 11px; opacity: .7; margin-top: 2px; }
-`;
-  }
-  if (!document.contains(styleEl)) document.head.appendChild(styleEl);
-  return styleEl;
+// The bubble styles live in polls.css (imported as raw text, per build.mjs's
+// '.css': 'text') and are upserted in place (style-injection.js), so a CSS
+// edit hot-reloads.
+function _injectStyles() {
+  upsertStyle(STYLE_ID, pollsStyles);
 }
+
 
 function ensureContainer() {
   if (!container) {
     container = document.createElement('div');
     container.id = CONTAINER_ID;
   }
-  ensureStyle();
+  _injectStyles();
   return container;
 }
 

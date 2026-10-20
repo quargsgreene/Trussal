@@ -45,11 +45,22 @@ import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
   parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
 } from './live-capture-core.js';
+import lcStyles from './live-capture.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const RING_SECONDS = 10;
 const RETRY_MS = 10000;
 const SILENT_SOUND = '_livecapsilent';
 const VIDEO_W = 240, VIDEO_H = 180, VIDEO_FRAMES = 120, VIDEO_FPS = 12;
+const LC_STYLE_ID = 'trussal-livecapture-style';
+
+// The overlays' rules (live-capture.css) are upserted lazily — the
+// module loads on every page but a capture is only started by an eval.
+function ensureStyles() {
+  upsertStyle(LC_STYLE_ID, lcStyles);
+}
+
 
 // slug → capture record. Common fields: { medium, name, slug, state, attemptAt,
 // epoch, broken }. Medium-specific fields hang off the same object.
@@ -309,11 +320,9 @@ const TEXT_OVERLAY_ID = 'trussal-livecapture-text';
 function textOverlay() {
   let el = document.getElementById(TEXT_OVERLAY_ID);
   if (!el) {
+    ensureStyles();
     el = document.createElement('div');
     el.id = TEXT_OVERLAY_ID;
-    el.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:1000000;max-width:40vw;' +
-      'font-family:monospace;font-size:13px;line-height:1.5;color:#eeeeee;pointer-events:none;' +
-      'text-shadow:0 1px 3px rgba(0,0,0,0.8);display:flex;flex-direction:column;gap:2px;';
     document.body.appendChild(el);
   }
   return el;
@@ -344,11 +353,15 @@ function textOnTrigger(cap, value) {
   const el = textOverlay();
   const span = document.createElement('div');
   span.textContent = e.value;
-  if (value && typeof value.color === 'string') span.style.color = value.color;
+  // The captured values are arbitrary (they come from the source's own
+  // program), so each rides a custom property the overlay's span rule
+  // resolves — see live-capture.css. Absent values fall back to `inherit`,
+  // i.e. the overlay's own monospace typography.
+  if (value && typeof value.color === 'string') span.style.setProperty('--lc-color', value.color);
   if (value && (typeof value.size === 'number' || typeof value.size === 'string')) {
-    span.style.fontSize = typeof value.size === 'number' ? `${value.size}px` : value.size;
+    span.style.setProperty('--lc-size', typeof value.size === 'number' ? `${value.size}px` : value.size);
   }
-  if (value && typeof value.typeface === 'string') span.style.fontFamily = value.typeface;
+  if (value && typeof value.typeface === 'string') span.style.setProperty('--lc-font', value.typeface);
   el.appendChild(span);
   while (el.childNodes.length > 8) el.removeChild(el.firstChild);
   setTimeout(() => { try { span.remove(); } catch (err) { /* gone */ } }, 6000);
@@ -424,11 +437,9 @@ const CURSOR_DOT_ID = 'trussal-livecapture-cursor';
 function cursorDot() {
   let el = document.getElementById(CURSOR_DOT_ID);
   if (!el) {
+    ensureStyles();
     el = document.createElement('div');
     el.id = CURSOR_DOT_ID;
-    el.style.cssText = 'position:fixed;width:14px;height:14px;border-radius:50%;z-index:9999998;' +
-      'border:2px solid #eeeeee;background:rgba(238,238,238,0.25);pointer-events:none;' +
-      'transform:translate(-50%,-50%);transition:left 0.08s linear,top 0.08s linear;display:none;';
     document.body.appendChild(el);
   }
   return el;
@@ -455,7 +466,7 @@ function startCursorCapture(cap) {
 
 function cursorOnTrigger(cap, value) {
   if (cap.broken || !cap.path || !cap.path.length) {
-    if (cap.dotEl) cap.dotEl.style.display = 'none';
+    if (cap.dotEl) cap.dotEl.classList.remove('lc-visible');
     return;
   }
   const speed = typeof value.speed === 'number' && value.speed !== 0 ? value.speed : 1;
@@ -467,9 +478,9 @@ function cursorOnTrigger(cap, value) {
   // activation) follows the retrace; also show our own dot as a fallback.
   window._lcCursorOverride = { x: p.x, y: p.y, until: Date.now() + 2000 };
   if (cap.dotEl) {
-    cap.dotEl.style.display = 'block';
-    cap.dotEl.style.left = `${p.x}px`;
-    cap.dotEl.style.top = `${p.y}px`;
+    cap.dotEl.classList.add('lc-visible');
+    cap.dotEl.style.setProperty('--lc-dot-x', `${p.x}px`);
+    cap.dotEl.style.setProperty('--lc-dot-y', `${p.y}px`);
   }
   return; // silent
 }
@@ -503,7 +514,7 @@ function breakReplay(why) {
       any = true;
       if (cap.medium === 'cursor') {
         window._lcCursorOverride = null;
-        if (cap.dotEl) cap.dotEl.style.display = 'none';
+        if (cap.dotEl) cap.dotEl.classList.remove('lc-visible');
       }
     }
   }

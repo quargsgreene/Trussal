@@ -87,7 +87,18 @@ function sanitizeDataPacks(packs) {
 // (see makeWsSidecarConnector in bots/src/orchestrator/fleet-service.js).
 const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
 
-function createLatencyServer({ port = 8081, server, logDir = null, controlToken = null } = {}) {
+// How long a room's aggregator slot stays reserved for a claim holder whose
+// probe connection dropped WITHOUT releasing it (see the 'aggregator-claim'
+// handler). The probe is a long-lived socket that sends nothing between
+// renewals, so proxies, heartbeats and sidecar restarts routinely close it for
+// a moment; releasing the slot on that close is what used to open the window a
+// second aggregator slipped through. Renewals (every AGGREGATOR_CLAIM_RENEW_MS
+// from the bot) keep the lease alive, an explicit
+// 'aggregator-claim-release' frees the slot immediately, and a holder that
+// dies outright only holds the room for this long.
+const DEFAULT_AGGREGATOR_CLAIM_LEASE_MS = 30000;
+
+function createLatencyServer({ port = 8081, server, logDir = null, controlToken = null, aggregatorClaimLeaseMs = DEFAULT_AGGREGATOR_CLAIM_LEASE_MS } = {}) {
   const wss = server ? new WebSocketServer({ server }) : new WebSocketServer({ port });
 
   // Dead-peer sweep: a clean disconnect (browser tab close, `docker stop`)
@@ -145,14 +156,47 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
   function getRoomMeta(name) {
     let meta = roomMeta.get(name);
     if (!meta) {
-      // aggregatorClaimPeerId: the connection currently holding the room's
-      // single aggregator slot (see the 'aggregator-claim' handler). A losing
-      // aggregator bot never joins Jitsi, so a room can only ever contain one.
-      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), aggregatorClaimPeerId: null, lastActiveToken: null, lastActiveIndex: null, lastActiveKind: null };
+      meta = { nextIndex: 0, indexByStableId: new Map(), crdtLog: [], sessionId: randomUUID(), lastActiveToken: null, lastActiveIndex: null, lastActiveKind: null };
       roomMeta.set(name, meta);
     }
     return meta;
   }
+
+  // roomName -> { token, peerId, expiresAt }: the room's single aggregator slot.
+  //
+  // Deliberately its OWN map, not a field on roomMeta: roomMeta dies whenever a
+  // room empties (or becomes fleet-only), and wiping the claim with it let a
+  // second aggregator be admitted while the first was still sitting in the
+  // Jitsi meeting — its roster record and its probe both hiccup around exactly
+  // those transitions. A claim instead outlives room churn and expires only by
+  // lease: renewed by re-claims (same token, from the same aggregator's
+  // reconnecting probe or its periodic renewals) and freed immediately by an
+  // explicit release.
+  const roomClaims = new Map();
+
+  // The room's live aggregator claim, or null once its lease has run out.
+  function liveClaim(roomName, now = Date.now()) {
+    const claim = roomClaims.get(roomName);
+    if (!claim) return null;
+    if (claim.expiresAt <= now) {
+      logEvent(roomName, 'aggregator-claim-expired', { token: claim.token });
+      roomClaims.delete(roomName);
+      return null;
+    }
+    return claim;
+  }
+
+  // Expiry sweep so an abandoned room's claim doesn't linger in memory. Claims
+  // are also dropped lazily by liveClaim, so this is housekeeping, not a
+  // correctness dependency.
+  const claimSweep = setInterval(() => {
+    const now = Date.now();
+    for (const [name, claim] of [...roomClaims.entries()]) {
+      if (claim.expiresAt <= now) roomClaims.delete(name);
+    }
+  }, Math.max(1000, aggregatorClaimLeaseMs));
+  if (claimSweep.unref) claimSweep.unref();
+  wss.on('close', () => clearInterval(claimSweep));
 
   // Research session log: one timestamped JSONL file per room-session,
   // written server-side so client clock skew can't corrupt event ordering.
@@ -410,9 +454,38 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // for events but are not participants: no index, invisible in
           // rosters, never announced.
           record.isFleet = !!msg.isFleet || connRole === 'observer' || connRole === 'fleet';
+          // An aggregator's page carries the claim token its bot won the slot
+          // with, so the roster record can be tied back to that claim: the
+          // claim gate then tells the aggregator's OWN page (which speaks over
+          // this socket, a different connection than its probe) apart from a
+          // second aggregator trying to get in. Without it every aggregator in
+          // the room looked like a rival to every re-claim the same bot made.
+          record.claimToken = (record.isAggregator && typeof msg.claimToken === 'string' && msg.claimToken)
+            ? msg.claimToken : null;
           if (record.isBot) {
             record.canEditMetaprogram = false;
             record.canWriteModulation = false;
+          }
+
+          // Last line of admission control: a page announcing isAggregator while
+          // ANOTHER token holds the room's live aggregator claim never becomes a
+          // roster participant at all — no index, invisible to the room (and
+          // therefore never tapped by the aggregator that does hold the slot, so
+          // the two can't feed back into each other). It is told why
+          // ('aggregator-slot-taken'), which the bundle turns into a permanent
+          // stand-down and its bot into an exit: a duplicate that got this far
+          // still leaves the meeting, it just doesn't get to disturb it first.
+          // This is the backstop for everything the pre-join claim can't see —
+          // a claim that expired between claim and join, a room reset mid-boot,
+          // or a fleet that lost its state and spawned a second aggregator.
+          if (record.isAggregator && !record.isFleet) {
+            const held = liveClaim(roomName);
+            if (held && held.token && held.token !== record.claimToken) {
+              record.isAggregator = false;
+              record.isFleet = true; // invisible: takes no index, appears in no roster
+              send(ws, { type: 'aggregator-slot-taken', heldForMs: Math.max(0, held.expiresAt - Date.now()) });
+              logEvent(roomName, 'aggregator-join-refused', { jitsiId: record.jitsiId });
+            }
           }
 
           // A persistent per-browser identity (localStorage 'trussal:clientId'),
@@ -540,23 +613,65 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
           // messages one at a time, this election is race-free — the first claim
           // to arrive wins even if several bots start together.
           //
-          // Granted iff no OTHER connection already holds the claim and no
+          // The holder is a TOKEN, not this socket. A claim keyed to the socket
+          // could not survive the socket: the probe reconnects (proxies,
+          // heartbeats, sidecar restarts) as a NEW connection with a new peerId,
+          // and the old one's close used to release the slot — so a single blip
+          // opened a window a second aggregator could claim through. Worse, the
+          // re-claim was answered "denied" by the roster check below (the
+          // aggregator's own roster record lives on its SEPARATE page socket, so
+          // its peerId never matches the probe's) and ignored by the bot, which
+          // left the slot unheld for the rest of a live aggregator's life.
+          // Re-presenting the same token therefore RE-HOLDS unconditionally:
+          // it is the same aggregator reconnecting, not a rival.
+          //
+          // Granted iff no other token holds an unexpired lease and no OTHER
           // aggregator has already joined (its bundle announced isAggregator in
-          // the roster). The claim is held by this connection — the probe never
-          // sends `hello`, so it is not a roster participant (no ghost) — and is
-          // released when the socket closes (see ws.on('close')). The winner
-          // keeps the probe open for its lifetime so nothing can claim during the
-          // ~seconds between winning and its browser joining.
-          const meta = getRoomMeta(roomName);
+          // the roster — a record carrying our own claimToken is us, not a
+          // rival). The lease outlives a reconnect gap; an explicit
+          // 'aggregator-claim-release' (sent by a stopping bot) frees the slot
+          // at once, and a bot that dies without releasing holds it only until
+          // the lease runs out. `heldForMs` tells a denied claimant how long
+          // that is, so it can wait out a predecessor's stale lease instead of
+          // giving the room up for good.
+          const now = Date.now();
+          const claim = liveClaim(roomName, now);
+          const token = typeof msg.token === 'string' && msg.token ? msg.token : null;
+          const sameHolder = !!(claim && token && claim.token === token);
           const existingRoom = rooms.get(roomName);
-          const claimHeldByOther = meta.aggregatorClaimPeerId != null
-            && meta.aggregatorClaimPeerId !== peerId;
-          const aggregatorJoined = existingRoom
-            && [...existingRoom.values()].some(r => r.isAggregator && r.peerId !== peerId);
-          const granted = !claimHeldByOther && !aggregatorJoined;
-          if (granted) meta.aggregatorClaimPeerId = peerId;
-          send(ws, { type: 'aggregator-claim-result', granted });
-          logEvent(roomName, 'aggregator-claim', { peerId, granted });
+          // A roster record carrying OUR token is our own page (its socket is a
+          // different connection, so peerId can't identify it) — never a rival.
+          // A tokenless claim exempts nothing: it can't prove anything is itself.
+          const otherAggregator = existingRoom
+            && [...existingRoom.values()].some(r => r.isAggregator && r.peerId !== peerId && !(token && r.claimToken === token));
+          const granted = sameHolder || (!claim && !otherAggregator);
+          if (granted) {
+            roomClaims.set(roomName, { token, peerId, expiresAt: now + aggregatorClaimLeaseMs });
+          }
+          send(ws, {
+            type: 'aggregator-claim-result',
+            granted,
+            leaseMs: aggregatorClaimLeaseMs,
+            // On a denial: how long the current holder's lease still has to run
+            // (0 when the denial came from an already-joined aggregator rather
+            // than from a lease).
+            heldForMs: granted ? 0 : Math.max(0, (claim ? claim.expiresAt : now) - now),
+          });
+          logEvent(roomName, 'aggregator-claim', { peerId, granted: !!granted, reheld: sameHolder });
+          break;
+        }
+
+        case 'aggregator-claim-release': {
+          // A stopping aggregator frees its slot at once rather than making a
+          // replacement wait out the lease. Only the holder may release: a
+          // late release from a bot that already lost the slot must not free
+          // whoever holds it now.
+          const held = liveClaim(roomName);
+          const token = typeof msg.token === 'string' && msg.token ? msg.token : null;
+          if (held && ((token && held.token === token) || held.peerId === peerId)) {
+            roomClaims.delete(roomName);
+            logEvent(roomName, 'aggregator-claim-released', { peerId });
+          }
           break;
         }
 
@@ -952,12 +1067,15 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
     });
 
     ws.on('close', () => {
-      // Release the aggregator claim if this socket held it, so a replacement
-      // aggregator can take the slot. Done before the room cleanup below (which
-      // may delete the meta entirely when the room empties).
-      const meta = roomMeta.get(roomName);
-      if (meta && meta.aggregatorClaimPeerId === peerId) meta.aggregatorClaimPeerId = null;
-
+      // The aggregator claim is deliberately NOT released here. The probe is a
+      // long-lived socket that routinely drops for a moment (proxy idle
+      // timeouts, heartbeats, a sidecar restart) and reconnects as a NEW
+      // connection — releasing on close is what used to leave the room's slot
+      // unheld, letting a second aggregator in while the first was still in
+      // the meeting. The claim now rides a lease instead: it survives the
+      // gap, is renewed by the holder's re-claims, and is freed either by an
+      // explicit 'aggregator-claim-release' (a stopping bot) or by expiry
+      // (see liveClaim) when the holder is truly gone.
       const room = rooms.get(roomName);
       if (room && room.has(peerId)) {
         room.delete(peerId);

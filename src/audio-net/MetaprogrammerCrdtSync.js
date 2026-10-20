@@ -8,8 +8,11 @@
 //
 // The doc/diff helpers are pure (two in-memory docs converge under
 // node:test); only connectMetaprogramSync touches the peer-state bus.
+//
+// Yjs documents are now held in stable-state.js to survive HMR updates.
 
 import * as Y from 'yjs';
+import { getYjsDoc, setYjsDoc } from '../stable-state.js';
 
 export const TEXT_KEY = 'metaprogram';
 export const MODULATION_KEY = 'modulation'; // induced wcl/wcj/wcrtt/wcpl floors
@@ -25,6 +28,9 @@ export const SETTINGS_KEY = 'settings';     // room-wide runtime toggles (not pr
 // and last-write-wins is an acceptable simplification for now.
 export const BREAKOUT_PROGRAMS_KEY = 'breakoutPrograms';
 const SNAPSHOT_EVERY = 25;
+
+// Doc key for stable-state storage
+const METAPROGRAM_DOC_KEY = 'metaprogram';
 
 export function createMetaprogramDoc() {
   const doc = new Y.Doc();
@@ -42,6 +48,18 @@ export function createMetaprogramDoc() {
     settings: doc.getMap(SETTINGS_KEY),
     breakoutPrograms: doc.getMap(BREAKOUT_PROGRAMS_KEY)
   };
+}
+
+// Get or create the metaprogram doc from stable-state (persists across HMR)
+export function getMetaprogramDoc() {
+  let mp = getYjsDoc(METAPROGRAM_DOC_KEY);
+  if (!mp) {
+    mp = createMetaprogramDoc();
+    setYjsDoc(METAPROGRAM_DOC_KEY, mp.doc);
+    // Store the full object for easy access
+    getYjsDoc(METAPROGRAM_DOC_KEY + '_full').doc = mp;
+  }
+  return mp;
 }
 
 export function encodeUpdateB64(update) {
@@ -154,7 +172,8 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
 
     // Another zero-diff signal, stamped 'stop' instead of 'apply': the
-    // program text is untouched (a later Apply resumes it unchanged), and
+    // program text is untouched (a later Play in a human's OWN editor resumes
+    // their ensemble — the metaprogram's Apply no longer does that), and
     // every receiving HUMAN is told to silence its local ensemble. Bots don't
     // react to this at all — see Metaprogrammer.js's broadcastStopSignal for
     // why, and UserBotOrchestration.js's stopAllBots for how they're reached
@@ -243,7 +262,7 @@ export function connectMetaprogramSync({ doc, text, modulation, vlans, settings,
     },
     setBreakoutProgram(roomName, value, origin = 'settings') {
       if (!breakoutPrograms || !roomName) return;
-      doc.transact(() => breakoutPrograms.set(roomName, String(value ?? '')), origin);
+      doc.transact(() => breakoutPrograms.set(name, String(value ?? '')), origin);
     },
     onBreakoutProgramsChange(fn) {
       if (!breakoutPrograms) return () => {};

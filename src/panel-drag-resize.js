@@ -14,6 +14,24 @@
 // pause their own dwell firing while a panel is being flown around — otherwise
 // the same 1s hover that steers the panel also types a key / toggles a voice
 // under it.
+//
+// Geometry never touches element styles directly. A panel's stylesheet
+// declares its authored position/size, reading these custom properties as
+// overrides — see panel-drag-resize.css for the full contract:
+//
+//   --tdr-top / --tdr-left    where the window has been moved to
+//   --tdr-right/ --tdr-bottom 'auto' once moved, cancelling the panel's
+//                             default bottom/right anchoring
+//   --tdr-w  / --tdr-h        the resized window box
+//   --tdr-hint-x / -y         the head-cursor hint bubble's position
+//
+// pinTopLeft() and setPanelBox() are exported alongside the attach* helpers
+// so modules that keep their own drag/resize (on-screen-keyboard.js) can write
+// the same properties instead of picking their own.
+
+import panelDragResizeStyles from './panel-drag-resize.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const STYLE_ID = 'trussal-panel-dr-style';
 const HINT_ID  = 'trussal-panel-dr-hint';
@@ -38,76 +56,34 @@ export function isHeadDragActive() {
   return !!_headMode;
 }
 
-// Clear the CSS bottom/right anchors so an inline top/left is the ONLY
+// Clear the CSS bottom/right anchors so a moved top/left is the ONLY
 // constraint. A fixed element that honours both top and bottom (or both left
 // and right) stretches instead of moving — the "dead space grows as you drag
-// it up" bug the keyboard hit. 'auto' actually cancels the stylesheet value;
-// '' only removes the inline one.
+// it up" bug the keyboard hit. Writing `--tdr-bottom/--tdr-right: auto` makes
+// the panel's stylesheet resolve `bottom`/`right` to auto; the fallback (its
+// authored anchor) applies only while the properties are unset.
 export function pinTopLeft(panel, rect) {
-  panel.style.bottom = 'auto';
-  panel.style.right  = 'auto';
-  panel.style.top    = `${rect.top}px`;
-  panel.style.left   = `${rect.left}px`;
+  panel.style.setProperty('--tdr-bottom', 'auto');
+  panel.style.setProperty('--tdr-right', 'auto');
+  panel.style.setProperty('--tdr-top', `${rect.top}px`);
+  panel.style.setProperty('--tdr-left', `${rect.left}px`);
+}
+
+// Write any subset of a window box as the custom properties the panel's
+// stylesheet consumes. The shared drag/resize below goes through this, and
+// on-screen-keyboard.js (which owns its own drag/resize for historical
+// reasons) imports it so every panel keeps one geometry vocabulary.
+export function setPanelBox(panel, { top, left, width, height } = {}) {
+  if (top != null)    panel.style.setProperty('--tdr-top', `${top}px`);
+  if (left != null)   panel.style.setProperty('--tdr-left', `${left}px`);
+  if (width != null)  panel.style.setProperty('--tdr-w', `${width}px`);
+  if (height != null) panel.style.setProperty('--tdr-h', `${height}px`);
 }
 
 function _injectStyles() {
-  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  // Authored against the per-user Personal Theme vars (src/theme-context.js):
-  // --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
-  // on :root, each with its previous literal as the var() fallback, so these
-  // shared drag/resize affordances retint with the rest of the app.
-  s.textContent = `
-    .tdr-grip {
-      position: absolute; width: 18px; height: 18px; z-index: 20;
-      background: transparent;
-    }
-    .tdr-grip-nw { top: 0;    left: 0;  cursor: nwse-resize; }
-    .tdr-grip-ne { top: 0;    right: 0; cursor: nesw-resize; }
-    .tdr-grip-sw { bottom: 0; left: 0;  cursor: nesw-resize; }
-    .tdr-grip-se { bottom: 0; right: 0; cursor: nwse-resize; }
-    /* Faint diagonal grip so the bottom-right corner reads as resizable. */
-    .tdr-grip-se::after {
-      content: ''; position: absolute; right: 3px; bottom: 3px;
-      width: 8px; height: 8px;
-      border-right: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
-      border-bottom: 2px solid color-mix(in srgb, var(--trussal-secondary, #111111) 45%, transparent);
-    }
-    /* Head-cursor move / resize buttons. They also carry .ts-dwell-btn so
-       facial-gesture.js's dwell loop clicks them for free; these rules stand
-       on their own so they still look right if that panel never opened. */
-    .tdr-head-btn {
-      background: var(--trussal-primary, #eeeeee);
-      border: 1px solid var(--trussal-secondary, #111111);
-      color: var(--trussal-secondary, #111111); cursor: pointer; border-radius: 4px;
-      padding: 1px 6px; font-size: calc(11px * var(--trussal-font-scale, 1)); line-height: 1.5;
-      font-family: var(--trussal-font, Arial, Helvetica, sans-serif); white-space: nowrap;
-      /* Above the z-index:20 corner grips so a corner grip can't eat the
-         button's clicks when it sits near a panel corner. */
-      position: relative; z-index: 21; overflow: hidden;
-      transition: background 0.1s, color 0.1s, border-color 0.1s;
-    }
-    .tdr-head-btn:hover { background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .tdr-head-btn.on { border-color: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); background: var(--trussal-secondary, #111111); }
-    .tdr-head-btn.strudel-dwell-hover { border-color: var(--trussal-secondary, #111111); }
-    .tdr-head-btn.strudel-btn-active  { border-color: var(--trussal-secondary, #111111); background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee); }
-    .tdr-head-btn::after {
-      content: ''; position: absolute; bottom: 0; left: 0;
-      width: 100%; height: calc(var(--dwell-prog, 0) * 100%);
-      background: color-mix(in srgb, var(--trussal-secondary, #111111) 28%, transparent); pointer-events: none;
-    }
-    .tdr-head-target { outline: 2px solid var(--trussal-secondary, #111111); outline-offset: 2px; }
-    #${HINT_ID} {
-      position: fixed; z-index: 1000002; pointer-events: none;
-      background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
-      border: 1px solid var(--trussal-secondary, #111111); border-radius: 999px;
-      font: 600 calc(11px * var(--trussal-font-scale, 1))/1.4 var(--trussal-font, Arial, Helvetica, sans-serif); padding: 3px 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-    }
-  `;
-  document.head.appendChild(s);
+  upsertStyle(STYLE_ID, panelDragResizeStyles);
 }
+
 
 function _ensureGrips(panel) {
   if (panel.querySelector(':scope > .tdr-grip')) return;
@@ -120,7 +96,7 @@ function _ensureGrips(panel) {
 
 // ── Mouse drag ────────────────────────────────────────────────────────────────
 function _makeMouseDraggable(panel, handle) {
-  if (!handle.style.cursor) handle.style.cursor = 'grab';
+  handle.classList.add('tdr-draggable');
   handle.addEventListener('mousedown', (e) => {
     if (e.target.closest('button, select, input, textarea, a, .tdr-grip')) return;
     e.preventDefault();
@@ -128,11 +104,12 @@ function _makeMouseDraggable(panel, handle) {
     const sx = e.clientX, sy = e.clientY;
     pinTopLeft(panel, rect);
     const ol = rect.left, ot = rect.top;
+    handle.classList.add('tdr-dragging');
     const onMove = (ev) => {
-      panel.style.left = `${ol + ev.clientX - sx}px`;
-      panel.style.top  = `${ot + ev.clientY - sy}px`;
+      setPanelBox(panel, { left: ol + ev.clientX - sx, top: ot + ev.clientY - sy });
     };
     const onUp = () => {
+      handle.classList.remove('tdr-dragging');
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -153,25 +130,22 @@ function _makeMouseResizable(panel, minW, minH) {
       const r  = panel.getBoundingClientRect();
       const sx = e.clientX, sy = e.clientY;
       pinTopLeft(panel, r);
-      panel.style.width  = `${r.width}px`;
-      panel.style.height = `${r.height}px`;
+      setPanelBox(panel, { width: r.width, height: r.height });
       const maxW = window.innerWidth  - 20;
       const maxH = window.innerHeight - 20;
       const onMove = (ev) => {
         const dx = ev.clientX - sx, dy = ev.clientY - sy;
         if (west) {
           const w = Math.min(maxW, Math.max(minW, r.width - dx));
-          panel.style.width = `${w}px`;
-          panel.style.left  = `${r.left + (r.width - w)}px`;
+          setPanelBox(panel, { width: w, left: r.left + (r.width - w) });
         } else {
-          panel.style.width = `${Math.min(maxW, Math.max(minW, r.width + dx))}px`;
+          setPanelBox(panel, { width: Math.min(maxW, Math.max(minW, r.width + dx)) });
         }
         if (north) {
           const ht = Math.min(maxH, Math.max(minH, r.height - dy));
-          panel.style.height = `${ht}px`;
-          panel.style.top    = `${r.top + (r.height - ht)}px`;
+          setPanelBox(panel, { height: ht, top: r.top + (r.height - ht) });
         } else {
-          panel.style.height = `${Math.min(maxH, Math.max(minH, r.height + dy))}px`;
+          setPanelBox(panel, { height: Math.min(maxH, Math.max(minH, r.height + dy)) });
         }
       };
       const onUp = () => {
@@ -213,11 +187,10 @@ function _startHeadMode(panel, kind, minW, minH, forced) {
   pinTopLeft(panel, r);
   // An explicit box so resize has something concrete to grow from and move
   // doesn't fight a percentage width mid-drag.
-  panel.style.width  = `${r.width}px`;
-  panel.style.height = `${r.height}px`;
+  setPanelBox(panel, { width: r.width, height: r.height });
   // Absolute mapping from a rect captured ONCE — re-reading getBoundingClientRect
   // every frame and feeding width back in makes the panel creep (border-box vs
-  // the content-box style.width we write), even with the head held still.
+  // the content-box width we write), even with the head held still.
   _headMode = {
     panel, kind,
     originX: p.x, originY: p.y,
@@ -264,14 +237,18 @@ function _headTick() {
   if (m.kind === 'move') {
     const maxLeft = window.innerWidth  - 48;
     const maxTop  = window.innerHeight - 40;
-    panel.style.left = `${_clamp(m.startLeft + totalX, 48 - m.startW, maxLeft)}px`;
-    panel.style.top  = `${_clamp(m.startTop  + totalY, 0, maxTop)}px`;
+    setPanelBox(panel, {
+      left: _clamp(m.startLeft + totalX, 48 - m.startW, maxLeft),
+      top:  _clamp(m.startTop  + totalY, 0, maxTop),
+    });
   } else {
     // Bottom-right corner tracks the head; top-left stays pinned.
     const maxW = Math.max(m.minW, window.innerWidth  - m.startLeft - 10);
     const maxH = Math.max(m.minH, window.innerHeight - m.startTop  - 10);
-    panel.style.width  = `${_clamp(m.startW + totalX, m.minW, maxW)}px`;
-    panel.style.height = `${_clamp(m.startH + totalY, m.minH, maxH)}px`;
+    setPanelBox(panel, {
+      width:  _clamp(m.startW + totalX, m.minW, maxW),
+      height: _clamp(m.startH + totalY, m.minH, maxH),
+    });
   }
 
   // Hold the head still to release. The cursor EMA is smooth enough that a
@@ -294,13 +271,14 @@ function _showHint(kind, x, y) {
   _hintEl.textContent = kind === 'move'
     ? '✥ steering — hold still to drop'
     : '⇲ resizing — hold still to set';
-  document.body.appendChild(_hintEl);
+  // Position before it enters the DOM so it never paints a frame at 0,0.
   _moveHint(x, y);
+  document.body.appendChild(_hintEl);
 }
 function _moveHint(x, y) {
   if (!_hintEl) return;
-  _hintEl.style.left = `${_clamp(x + 18, 4, window.innerWidth  - 220)}px`;
-  _hintEl.style.top  = `${_clamp(y + 18, 4, window.innerHeight -  28)}px`;
+  _hintEl.style.setProperty('--tdr-hint-x', `${_clamp(x + 18, 4, window.innerWidth  - 220)}px`);
+  _hintEl.style.setProperty('--tdr-hint-y', `${_clamp(y + 18, 4, window.innerHeight -  28)}px`);
 }
 function _hideHint() {
   if (_hintEl) { _hintEl.remove(); _hintEl = null; }

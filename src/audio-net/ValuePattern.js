@@ -107,19 +107,30 @@ export function setDataRefReader(fn) {
 // Every argument shape counts, since a directive uses one of them: the
 // positional `args` (with `metric` in front) that `# crush` and `# room` take,
 // the metric/scale `pairs` plus `bounds` that `# echo` takes, the two
-// interleaved `metrics` that `# noise` takes, and the trailing `media` set any
-// of them may carry. A patterned medium moves nothing about an effect's
-// PARAMETERS, but it switches the effect on and off across the media as the
-// cycle advances, which needs re-deriving on exactly the same tick.
+// interleaved `metrics` that `# noise` takes, the bracket GROUPS the output
+// directives take (each group a little array of params, each param itself
+// possibly a pattern), the patterned colors/angle of `# background`, and the
+// trailing `media` set any of them may carry. A patterned medium moves
+// nothing about an effect's PARAMETERS, but it switches the effect on and
+// off across the media as the cycle advances, which needs re-deriving on
+// exactly the same tick.
 export function entryHasValuePattern(entry) {
   if (!entry) return false;
   const candidates = [
     entry.metric,
     entry.media,
     ...(entry.metrics || []),
-    ...(entry.args || []),
+    // `args` is flat for the audio/video effects, but the output directives
+    // (shapes, particles, tessellation, tiling) push bracket GROUPS — arrays
+    // — whose members are the patternable slots. One flatten level covers
+    // both, leaving scalars untouched.
+    ...(entry.args || []).flatMap(a => (Array.isArray(a) ? a : [a])),
     ...(entry.pairs || []).map(p => p && p.value),
-    ...(entry.bounds || [])
+    ...(entry.bounds || []),
+    entry.background && entry.background.color,
+    entry.background && entry.background.from,
+    entry.background && entry.background.to,
+    entry.background && entry.background.angle
   ];
   return candidates.some(isValuePattern);
 }

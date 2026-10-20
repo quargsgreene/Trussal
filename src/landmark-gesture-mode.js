@@ -43,6 +43,8 @@ import {
 import { setKeyboardStandalone, isKeyboardStandalone } from './on-screen-keyboard.js';
 import { normalizeGestureAndLandmarkConfig, DEFAULT_GESTURE_MAPPINGS, CURSOR_TUNING } from './landmark-gesture-core.js';
 import styles from './landmark-gesture-mode.css';
+import { upsertStyle } from './style-injection.js';
+
 
 const CORNER_ID      = 'trussal-lg-corner';
 const GEAR_ID        = 'trussal-lg-gear';
@@ -198,12 +200,9 @@ if (typeof window !== 'undefined' && !window.__trussalIsBot && !window.__trussal
 // once here — same mechanism studio.js uses for studio.css).
 // ---------------------------------------------------------------------------
 function _injectStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  s.textContent = styles;
-  document.head.appendChild(s);
+  upsertStyle(STYLE_ID, styles);
 }
+
 function _ensureDOM() {
   if (document.getElementById(CORNER_ID)) return;
   if (!document.body) return;
@@ -223,8 +222,9 @@ function _ensureDOM() {
 function _renderInstruction() {
   const el = document.getElementById(INSTRUCTION_ID);
   if (!el) return;
-  if (_modeOn || _dismissed) { el.style.display = 'none'; return; }
-  el.style.display = 'block';
+  const hidden = _modeOn || _dismissed;
+  el.classList.toggle('lg-hidden', hidden);
+  if (hidden) return;
   const blocked = isCameraBlocked();
   el.innerHTML = `
     <div class="lg-row">

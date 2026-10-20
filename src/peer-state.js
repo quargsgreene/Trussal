@@ -6,6 +6,8 @@
 // the existing ping/pong RTT measurement and broadcasts our local metrics so
 // every browser drives each peer's effects chain from that peer's network
 // conditions.
+//
+// State is now held in stable-state.js to survive HMR updates.
 
 import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import { subscribeParticipants, getLocalParticipant } from './participants.js';
@@ -14,106 +16,58 @@ import { hasTextCycles } from './text-cycles-core.js';
 import { textLog, clip } from './text-debug.js';
 import { detectNotation, mondoToMini } from './notation.js';
 
-const subscribers = new Set();
+// Import all state and helpers from stable-state (with ss_ prefix to avoid conflicts)
+import {
+  getWs as ss_getWs, setWs as ss_setWs,
+  getWsConfig as ss_getWsConfig, setWsConfig as ss_setWsConfig,
+  getPeersByPeerId as ss_getPeersByPeerId, getPeerIdByJitsiId as ss_getPeerIdByJitsiId, getLocalPeer as ss_getLocalPeer, getSubscribers as ss_getSubscribers,
+  getAggregatorSlotTaken as ss_getAggregatorSlotTaken, setAggregatorSlotTaken as ss_setAggregatorSlotTaken,
+  getActiveJPatternToken as ss_getActiveJPatternToken, setActiveJPatternToken as ss_setActiveJPatternToken,
+  getActiveJPatternIndex as ss_getActiveJPatternIndex, setActiveJPatternIndex as ss_setActiveJPatternIndex,
+  getActiveJPatternKind as ss_getActiveJPatternKind, setActiveJPatternKind as ss_setActiveJPatternKind,
+  getMyPeerId as ss_getMyPeerId, setMyPeerId as ss_setMyPeerId,
+  getHelloSent as ss_getHelloSent, setHelloSent as ss_setHelloSent,
+  getPingTimer as ss_getPingTimer, setPingTimer as ss_setPingTimer,
+  getReconnectTimer as ss_getReconnectTimer, setReconnectTimer as ss_setReconnectTimer,
+  getReconnectDelay as ss_getReconnectDelay, setReconnectDelay as ss_setReconnectDelay,
+  getLastPongAt as ss_getLastPongAt, setLastPongAt as ss_setLastPongAt,
+  getCurrentRoom as ss_getCurrentRoom, setCurrentRoom as ss_setCurrentRoom,
+  getWantConnection as ss_getWantConnection, setWantConnection as ss_setWantConnection,
+  getPendingSends as ss_getPendingSends, getRttSamples as ss_getRttSamples,
+  getLocalRtt as ss_getLocalRtt, setLocalRtt as ss_setLocalRtt,
+  getLocalJitter as ss_getLocalJitter, setLocalJitter as ss_setLocalJitter,
+  MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS,
+  subscribe, emit, defaultPeer,
+} from './stable-state.js';
 
-// Indexed two ways: peerId (WS-assigned) is authoritative for routing; jitsiId
-// is what the UI / audio engine looks up against APP.conference.
-const peersByPeerId = new Map();
-const peerIdByJitsiId = new Map();
-
-// The local peer is tracked separately because the server never echoes our own
-// state back to us. Stays in sync with what we broadcast so the studio UI and
-// the Strudel stack treat the local user identically to remote peers.
-// Bots set this global (before the bundle loads) so they announce themselves as
-// bots and the room can drive/mute them from the studio without hijacking humans.
+// Local constants (read from window at module load)
 const LOCAL_IS_BOT = !!(typeof window !== 'undefined' && window.__trussalIsBot);
-// The aggregator bot sets this (before the bundle loads) so it announces itself
-// as the room's audio aggregator. Every other client silences all non-aggregator
-// peers locally so the aggregator's assembled master is the sole audio source.
 const LOCAL_IS_AGGREGATOR = !!(typeof window !== 'undefined' && window.__trussalIsAggregator);
-// Bots spawned on a user's behalf carry their owner's room index so the
-// sidecar can assign them a cluster suffix (e.g. owner 1 → bots 1a, 1b, …).
+const LOCAL_AGGREGATOR_CLAIM_TOKEN = (typeof window !== 'undefined' && typeof window.__trussalAggregatorClaimToken === 'string')
+  ? window.__trussalAggregatorClaimToken : null;
 const LOCAL_OWNER_INDEX = (typeof window !== 'undefined' && typeof window.__trussalBotOwnerIndex === 'string')
   ? window.__trussalBotOwnerIndex : null;
 
-const localPeer = {
-  peerId: null,
-  roomIndex: null,
-  jitsiId: null,
-  displayName: null,
-  isLocal: true,
-  isBot: LOCAL_IS_BOT,
-  isAggregator: LOCAL_IS_AGGREGATOR,
-  muted: false,
-  pattern: '',
-  // CSS Cycles: this peer's SCSS as compiled by the sidecar. Set from the bus
-  // for everyone including ourselves — the compile is never done in a browser.
-  compiledCss: '',
-  dataPacks: [],
-  effects: { distortion: false, noise: false, reverb: false },
-  playing: false,
-  rtt: null,
-  jitter: null,
-  packetLoss: null,
-  rtcRtt: null,
-  rtcJitter: null,
-  jitterBufferMs: null,
-  pipelineMs: null,
-  canEditMetaprogram: !LOCAL_IS_BOT,
-  canWriteModulation: !LOCAL_IS_BOT
-};
-
-let ws = null;
-let wantConnection = false;
-let myPeerId = null;
-let helloSent = false;
-let pingTimer = null;
-let reconnectTimer = null;
-let reconnectDelay = 1000;
-let lastPongAt = 0;
-let currentRoom = null;
-let activeJPatternToken = null; // aggregator's current ring turn (jp-active)
-let activeJPatternIndex = null; // ring-slot index of that turn (repeats-aware)
-let activeJPatternKind = null;  // 'rest' when the turn is a written `~`, else null
-const MAX_RECONNECT_DELAY = 15000;
-const PONG_TIMEOUT_MS = 8000;
-
-const rttSamples = [];
-let localRtt = null;
-let localJitter = null;
-
-// Buffer outgoing messages while we wait for hello / reconnect.
-const pendingSends = [];
-
-function emit(event, payload) {
-  subscribers.forEach(fn => {
-    try { fn(event, payload); } catch (e) { console.warn('[peer-state] subscriber threw', e); }
-  });
-}
+// --- Internal Helpers -------------------------------------------------------
 
 function safeSend(msg) {
+  const ws = ss_getWs();
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    pendingSends.push(msg);
+    ss_getPendingSends().push(msg);
     return;
   }
   try { ws.send(JSON.stringify(msg)); } catch (e) { console.warn('[peer-state] send failed', e); }
 }
 
 function flushPending() {
-  while (pendingSends.length && ws && ws.readyState === WebSocket.OPEN) {
-    const msg = pendingSends.shift();
-    try { ws.send(JSON.stringify(msg)); } catch (e) { pendingSends.unshift(msg); break; }
+  const ws = ss_getWs();
+  const pending = ss_getPendingSends();
+  while (pending.length && ws && ws.readyState === WebSocket.OPEN) {
+    const msg = pending.shift();
+    try { ws.send(JSON.stringify(msg)); } catch (e) { pending.unshift(msg); break; }
   }
 }
 
-// A persistent per-browser identity, so a genuine leave→rejoin (which mints a
-// fresh Jitsi endpoint id each time) is recognized by the sidecar and handed
-// back the SAME room index it held before — keeping the returning peer in the
-// aggregator's rotation and the metaprogram's slot (see indexByStableId in
-// latency-instrument/server.js). Persisted in localStorage so it survives the
-// tab close a real rejoin implies; a fresh one per browser keeps it unique.
-// Bots are excluded: their storage is ephemeral (a fresh container each spawn),
-// so a UUID here would never actually recur — they keep the fresh-index path.
 function stableClientId() {
   try {
     const KEY = 'trussal:clientId';
@@ -126,14 +80,14 @@ function stableClientId() {
     }
     return id;
   } catch (e) {
-    // Storage blocked (private mode / disabled) — fall back to the fresh-index
-    // behavior rather than a per-session id that would falsely reclaim.
     return null;
   }
 }
 
 function sendHelloIfReady() {
-  if (helloSent || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if (ss_getHelloSent()) return;
+  const ws = ss_getWs();
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   const local = getLocalParticipant();
   if (!local) return;
   const hello = {
@@ -143,80 +97,85 @@ function sendHelloIfReady() {
     isBot: LOCAL_IS_BOT,
     isAggregator: LOCAL_IS_AGGREGATOR
   };
+  if (LOCAL_IS_AGGREGATOR && LOCAL_AGGREGATOR_CLAIM_TOKEN) hello.claimToken = LOCAL_AGGREGATOR_CLAIM_TOKEN;
   if (LOCAL_IS_BOT && LOCAL_OWNER_INDEX) hello.ownerIndex = LOCAL_OWNER_INDEX;
   if (!LOCAL_IS_BOT) {
     const stableId = stableClientId();
     if (stableId) hello.stableId = stableId;
   }
   ws.send(JSON.stringify(hello));
-  helloSent = true;
+  ss_setHelloSent(true);
   flushPending();
 }
 
 function scheduleReconnect() {
-  if (!wantConnection || !currentRoom) return;
-  if (reconnectTimer) return;
-  const delay = reconnectDelay;
-  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
+  if (!ss_getWantConnection() || !ss_getCurrentRoom()) return;
+  if (ss_getReconnectTimer()) return;
+  const delay = ss_getReconnectDelay();
+  ss_setReconnectDelay(Math.min(ss_getReconnectDelay() * 2, MAX_RECONNECT_DELAY));
+  const timer = setTimeout(() => {
+    ss_setReconnectTimer(null);
     openSocket();
   }, delay);
+  ss_setReconnectTimer(timer);
 }
 
 function openSocket() {
-  if (!wantConnection || !currentRoom) return;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (!ss_getWantConnection() || !ss_getCurrentRoom()) return;
+  if (ss_getReconnectTimer()) { clearTimeout(ss_getReconnectTimer()); ss_setReconnectTimer(null); }
 
+  const ws = ss_getWs();
   if (ws) {
     ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
     try { ws.close(); } catch (e) {}
-    ws = null;
+    ss_setWs(null);
   }
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  helloSent = false;
+  if (ss_getPingTimer()) { clearInterval(ss_getPingTimer()); ss_setPingTimer(null); }
+  ss_setHelloSent(false);
 
-  // Discard all remote peer state from the previous room so stale entries
-  // don't bleed into the new room's participant strip.
-  peersByPeerId.clear();
-  peerIdByJitsiId.clear();
+  // Discard all remote peer state from the previous room
+  ss_getPeersByPeerId().clear();
+  ss_getPeerIdByJitsiId().clear();
 
   const loc = window.location;
   const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${proto}//${loc.host}/ws?room=${encodeURIComponent(currentRoom)}&role=player`;
+  const url = `${proto}//${loc.host}/ws?room=${encodeURIComponent(ss_getCurrentRoom())}&role=player`;
 
   let socket;
   try { socket = new WebSocket(url); }
   catch (e) { console.warn('[peer-state] WS construct failed', e); scheduleReconnect(); return; }
-  ws = socket;
+  ss_setWs(socket);
 
-  ws.onopen = () => {
-    reconnectDelay = 1000;
-    lastPongAt = Date.now();
+  socket.onopen = () => {
+    ss_setReconnectDelay(1000);
+    ss_setLastPongAt(Date.now());
     sendHelloIfReady();
-    if (pingTimer) clearInterval(pingTimer);
-    pingTimer = setInterval(() => {
+    if (ss_getPingTimer()) clearInterval(ss_getPingTimer());
+    const timer = setInterval(() => {
+      const ws = ss_getWs();
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      if (Date.now() - lastPongAt > PONG_TIMEOUT_MS) {
+      if (Date.now() - ss_getLastPongAt() > PONG_TIMEOUT_MS) {
         try { ws.close(); } catch (e) {}
         return;
       }
       ws.send(JSON.stringify({ type: 'ping', sentAt: Date.now() }));
     }, 2000);
+    ss_setPingTimer(timer);
   };
 
-  ws.onclose = () => {
-    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-    ws = null;
-    helloSent = false;
+  socket.onclose = () => {
+    if (ss_getPingTimer()) { clearInterval(ss_getPingTimer()); ss_setPingTimer(null); }
+    ss_setWs(null);
+    ss_setHelloSent(false);
     scheduleReconnect();
   };
 
-  ws.onerror = () => {
+  socket.onerror = () => {
+    const ws = ss_getWs();
     try { if (ws) ws.close(); } catch (e) {}
   };
 
-  ws.onmessage = (evt) => {
+  socket.onmessage = (evt) => {
     let msg;
     try { msg = JSON.parse(evt.data); } catch (e) { return; }
     handleMessage(msg);
@@ -226,11 +185,6 @@ function openSocket() {
 function applyPatch(peer, patch) {
   if (!patch) return;
   if (typeof patch.pattern === 'string') {
-    // STORAGE POINT 1 (remote): a peer's program as this browser received it.
-    // Only on a real change and only when text is involved on either side of
-    // it — peer updates arrive at metrics rate and carry the pattern every
-    // time. Losing text here means the sender never sent it; every browser
-    // paints from its own copy of this string.
     if (patch.pattern !== peer.pattern && (hasTextCycles(patch.pattern) || hasTextCycles(peer.pattern))) {
       textLog('peer-state:pattern-in', {
         peer: peer.peerId,
@@ -260,72 +214,32 @@ function applyPatch(peer, patch) {
   if (typeof patch.pipelineMs === 'number' || patch.pipelineMs === null) peer.pipelineMs = patch.pipelineMs;
   if (typeof patch.canEditMetaprogram === 'boolean') peer.canEditMetaprogram = patch.canEditMetaprogram;
   if (typeof patch.canWriteModulation === 'boolean') peer.canWriteModulation = patch.canWriteModulation;
-  // Data packs feed the shared reference registry rather than sitting on the
-  // peer: "Weather:3" has to resolve identically on every client, so the
-  // registry keys them by owner and never prefers the local browser's copy.
   if (Array.isArray(patch.dataPacks)) {
     peer.dataPacks = patch.dataPacks;
     setPeerPacks(peer.peerId, patch.dataPacks);
   }
 }
 
-function defaultPeer(peerId) {
-  return {
-    peerId,
-    roomIndex: null,
-    jitsiId: null,
-    displayName: null,
-    isBot: false,
-    isAggregator: false,
-    muted: false,
-    videoOn: false,
-    pattern: '',
-    compiledCss: '',
-    dataPacks: [],
-    effects: { distortion: false, noise: false, reverb: false },
-    playing: false,
-    rtt: null,
-    jitter: null,
-    packetLoss: null,
-    rtcRtt: null,
-    rtcJitter: null,
-    jitterBufferMs: null,
-    pipelineMs: null,
-    canEditMetaprogram: true,
-    canWriteModulation: true
-  };
-}
-
 function upsertPeer(record) {
-  const existing = peersByPeerId.get(record.peerId) || defaultPeer(record.peerId);
+  const existing = ss_getPeersByPeerId().get(record.peerId) || defaultPeer(record.peerId);
   if (record.roomIndex !== undefined) existing.roomIndex = record.roomIndex;
   if (record.jitsiId !== undefined) existing.jitsiId = record.jitsiId;
   if (record.displayName !== undefined) existing.displayName = record.displayName;
   if (record.isBot !== undefined) existing.isBot = !!record.isBot;
   if (record.isAggregator !== undefined) existing.isAggregator = !!record.isAggregator;
   applyPatch(existing, record);
-  peersByPeerId.set(existing.peerId, existing);
-  if (existing.jitsiId) peerIdByJitsiId.set(existing.jitsiId, existing.peerId);
+  ss_getPeersByPeerId().set(existing.peerId, existing);
+  if (existing.jitsiId) ss_getPeerIdByJitsiId().set(existing.jitsiId, existing.peerId);
   return existing;
 }
 
 function handleMessage(msg) {
   switch (msg.type) {
     case 'welcome':
-      myPeerId = msg.peerId || null;
-      // Packs loaded from IndexedDB before the handshake finished have no owner
-      // to be keyed under yet; now they do. (Their outbound message is already
-      // safe — safeSend buffers until hello completes.)
-      if (myPeerId && localPeer.dataPacks.length) setPeerPacks(myPeerId, localPeer.dataPacks);
+      ss_setMyPeerId(msg.peerId || null);
+      if (ss_getMyPeerId() && ss_getLocalPeer().dataPacks.length) setPeerPacks(ss_getMyPeerId(), ss_getLocalPeer().dataPacks);
       sendHelloIfReady();
-      // Fires on EVERY successful handshake, not just the first — including a
-      // reconnect the WS's own ping/pong liveness check (or the server side
-      // dropping/recreating the connection) can trigger mid-session. A fresh
-      // welcome means a fresh peerId and an EMPTY server-side record: whatever
-      // this browser had announced before is gone from the room's point of
-      // view even though nothing about what it's actually doing changed. See
-      // index.js's subscriber for what re-announces after this.
-      emit('connected', { peerId: myPeerId });
+      emit('connected', { peerId: ss_getMyPeerId() });
       break;
 
     case 'roster':
@@ -335,11 +249,9 @@ function handleMessage(msg) {
           emit('peer-upsert', peer);
         }
       }
-      // `you` carries our own server-assigned room index (immutable for the
-      // meeting) — the server never repeats our record in later broadcasts.
       if (msg.you && msg.you.roomIndex != null) {
-        localPeer.roomIndex = msg.you.roomIndex;
-        emit('peer-upsert', localPeer);
+        ss_getLocalPeer().roomIndex = msg.you.roomIndex;
+        emit('peer-upsert', ss_getLocalPeer());
       }
       break;
 
@@ -351,13 +263,10 @@ function handleMessage(msg) {
     }
 
     case 'peer-leave': {
-      const peer = peersByPeerId.get(msg.peerId);
+      const peer = ss_getPeersByPeerId().get(msg.peerId);
       if (peer) {
-        peersByPeerId.delete(peer.peerId);
-        if (peer.jitsiId) peerIdByJitsiId.delete(peer.jitsiId);
-        // Their uploads leave with them: a reference to a departed peer's pack
-        // must stop resolving everywhere at once, not linger on whichever
-        // clients happened to have cached it.
+        ss_getPeersByPeerId().delete(peer.peerId);
+        if (peer.jitsiId) ss_getPeerIdByJitsiId().delete(peer.jitsiId);
         removePeerPacks(peer.peerId);
         emit('peer-leave', peer);
       }
@@ -365,37 +274,35 @@ function handleMessage(msg) {
     }
 
     case 'peer-update': {
-      const peer = peersByPeerId.get(msg.peerId);
+      const peer = ss_getPeersByPeerId().get(msg.peerId);
       if (!peer) break;
       applyPatch(peer, msg.patch);
       emit('peer-upsert', peer);
       break;
     }
 
-    // CSS Cycles: our own SCSS came back compiled. Applied to localPeer rather
-    // than the roster echo, which getAllPeers deliberately skips.
     case 'scss-compiled':
-      localPeer.compiledCss = typeof msg.css === 'string' ? msg.css : '';
-      emit('peer-upsert', localPeer);
+      ss_getLocalPeer().compiledCss = typeof msg.css === 'string' ? msg.css : '';
+      emit('peer-upsert', ss_getLocalPeer());
       break;
 
     case 'scss-error':
-      // A stylesheet that will not compile is the performer's to fix, so it is
-      // surfaced rather than swallowed.
       console.error('[css-cycles] the sidecar refused our SCSS:', msg.message);
       document.dispatchEvent(new CustomEvent('trussal-css-errors', { detail: [String(msg.message ?? '')] }));
       break;
 
     case 'fleet-status':
-      // Fleet service reporting back (spawn results, ceiling hits, teardown).
       emit('fleet-status', msg);
       break;
 
-    // File-attachment patterns (image()/video()/textFile()/pdfFile()/
-    // soundFile(), see src/file-cycles.js): one peer's file, broadcast once
-    // by the sidecar to everyone else in the room. Not roster state — nothing
-    // here belongs on a peer record — so it is relayed straight through as
-    // its own event rather than folded into peer-upsert.
+    case 'aggregator-slot-taken':
+      if (!ss_getAggregatorSlotTaken()) {
+        ss_setAggregatorSlotTaken(true);
+        console.warn('[peer-state] another aggregator already holds this room\'s slot; standing down');
+      }
+      emit('aggregator-slot-taken', msg);
+      break;
+
     case 'chat-file':
       emit('chat-file', {
         fromIndex: msg.fromIndex ?? null,
@@ -406,7 +313,6 @@ function handleMessage(msg) {
       });
       break;
 
-    // Meeting-poll click-to-vote (src/polls.js), relayed from another peer.
     case 'poll-vote':
       emit('poll-vote', {
         pollId: msg.pollId,
@@ -417,185 +323,160 @@ function handleMessage(msg) {
       break;
 
     case 'crdt-update':
-      // Shared metaprogram doc sync (Yjs update, base64). Consumed by
-      // MetaprogrammerCrdtSync; peer-state just relays it off the socket.
       if (typeof msg.update === 'string') {
         emit('crdt-update', { update: msg.update, authorIndex: msg.authorIndex ?? null, modality: msg.modality });
       }
       break;
 
     case 'crdt-state':
-      // Late-joiner catch-up: full doc history.
       if (Array.isArray(msg.updates)) emit('crdt-state', { updates: msg.updates });
       break;
 
     case 'jp-active':
-      // Aggregator's current ring turn — the participant token whose audio is
-      // streaming this slot, plus the ring-slot index that disambiguates a
-      // token listed more than once. Surfaced as a DOM event so the metaprogram
-      // highlighter can outline the exact occurrence.
-      //
-      // A REST arrives as kind:'rest' with no token, and its index addresses
-      // the program's rests rather than its participants — the room is resting
-      // at that written `~`. No token and no kind means no turn at all, which
-      // clears the outline.
-      activeJPatternToken = typeof msg.token === 'string' ? msg.token : null;
-      activeJPatternIndex = Number.isInteger(msg.index) ? msg.index : null;
-      activeJPatternKind = msg.kind === 'rest' ? 'rest' : null;
+      ss_setActiveJPatternToken(typeof msg.token === 'string' ? msg.token : null);
+      ss_setActiveJPatternIndex(Number.isInteger(msg.index) ? msg.index : null);
+      ss_setActiveJPatternKind(msg.kind === 'rest' ? 'rest' : null);
       document.dispatchEvent(new CustomEvent('trussal-jpattern-active', {
         detail: {
-          token: activeJPatternToken,
-          index: activeJPatternIndex,
-          kind: activeJPatternKind,
+          token: ss_getActiveJPatternToken(),
+          index: ss_getActiveJPatternIndex(),
+          kind: ss_getActiveJPatternKind(),
         }
       }));
       break;
 
     case 'remote-control': {
-      // We are the target of an operator action (only bots receive these — the
-      // server gates on isBot). Reflect it on our local record and surface it as
-      // a DOM event so the bot page can re-evaluate its Strudel / mute its audio.
       if (msg.action === 'pattern' && typeof msg.code === 'string') {
-        // A bot's page carries the full bundle but its actual instrument is a
-        // separate bare @strudel/repl that cannot import anything. So a mondo
-        // ($ head / # method) edit pushed from the studio is lowered to the
-        // Strudel form HERE, the one place on the bot's page that can, before
-        // it reaches that REPL (pageRemoteControl) or peer.pattern.
         const code = detectNotation(msg.code) === 'mondo' ? mondoToMini(msg.code) : msg.code;
-        localPeer.pattern = code;
-        // A retroactive relatch (fleet-service.js's #relatchToken) rides its
-        // owner's CURRENT sample manifest along with the new code, so a bank
-        // uploaded/shared after this bot's original boot still resolves —
-        // see pageRemoteControl's merge-before-re-register step. Absent on a
-        // human's own direct per-bot edit from Studio, which carries no
-        // manifest of its own.
+        ss_getLocalPeer().pattern = code;
         document.dispatchEvent(new CustomEvent('trussal-remote-pattern', {
           detail: { code, samples: msg.samples },
         }));
-        emit('peer-upsert', localPeer);
+        emit('peer-upsert', ss_getLocalPeer());
       } else if (msg.action === 'mute') {
-        localPeer.muted = !!msg.muted;
-        document.dispatchEvent(new CustomEvent('trussal-remote-mute', { detail: { muted: localPeer.muted } }));
-        emit('peer-upsert', localPeer);
+        ss_getLocalPeer().muted = !!msg.muted;
+        document.dispatchEvent(new CustomEvent('trussal-remote-mute', { detail: { muted: ss_getLocalPeer().muted } }));
+        emit('peer-upsert', ss_getLocalPeer());
       } else if (msg.action === 'video') {
-        localPeer.videoOn = !!msg.videoOn;
-        document.dispatchEvent(new CustomEvent('trussal-remote-video', { detail: { videoOn: localPeer.videoOn } }));
-        emit('peer-upsert', localPeer);
+        ss_getLocalPeer().videoOn = !!msg.videoOn;
+        document.dispatchEvent(new CustomEvent('trussal-remote-video', { detail: { videoOn: ss_getLocalPeer().videoOn } }));
+        emit('peer-upsert', ss_getLocalPeer());
       } else if (msg.action === 'stop') {
-        // Room-wide Stop reaching a bot. No local/roster state to keep —
-        // page-scripts.js's fan-gain gate is the only consumer.
         document.dispatchEvent(new CustomEvent('trussal-remote-stop', { detail: { stopped: !!msg.stopped } }));
       }
       break;
     }
 
     case 'pong': {
-      lastPongAt = Date.now();
+      ss_setLastPongAt(Date.now());
       const rtt = (typeof msg.clientSentAt === 'number') ? Date.now() - msg.clientSentAt : msg.rtt;
       if (typeof rtt !== 'number' || !isFinite(rtt) || rtt < 0) break;
-      rttSamples.push(rtt);
-      if (rttSamples.length > 5) rttSamples.shift();
-      const mean = rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length;
-      const variance = rttSamples.map(x => (x - mean) ** 2).reduce((a, b) => a + b, 0) / rttSamples.length;
-      localRtt = rtt;
-      localJitter = Math.sqrt(variance);
-      localPeer.rtt = localRtt;
-      localPeer.jitter = localJitter;
-      safeSend({ type: 'metrics', rtt: localRtt, jitter: localJitter });
-      emit('local-metrics', { rtt: localRtt, jitter: localJitter });
-      emit('peer-upsert', localPeer);
+      const samples = ss_getRttSamples();
+      samples.push(rtt);
+      if (samples.length > 5) samples.shift();
+      const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+      const variance = samples.map(x => (x - mean) ** 2).reduce((a, b) => a + b, 0) / samples.length;
+      const newRtt = rtt;
+      const newJitter = Math.sqrt(variance);
+      ss_setLocalRtt(newRtt);
+      ss_setLocalJitter(newJitter);
+      ss_getLocalPeer().rtt = newRtt;
+      ss_getLocalPeer().jitter = newJitter;
+      safeSend({ type: 'metrics', rtt: newRtt, jitter: newJitter });
+      emit('local-metrics', { rtt: newRtt, jitter: newJitter });
+      emit('peer-upsert', ss_getLocalPeer());
       break;
     }
   }
 }
 
+// --- Participant Subscription ---
+
 subscribeParticipants((event, payload) => {
   if (event === 'local-leave') {
-    // We've left the Jitsi conference but the tab is still open (see
-    // participants.js) — nothing else here reacts to a Jitsi-level departure,
-    // so left unhandled this WS would stay open indefinitely under the old
-    // jitsiId: the sidecar never sees a close (no peer-leave broadcast, so a
-    // departed peer's slot — e.g. the aggregator's rotation — never frees),
-    // and a same-tab rejoin would find `ws` still set and skip re-announcing
-    // (sendHelloIfReady() is a no-op once helloSent), leaving the sidecar
-    // pinned to the stale identity forever. Close explicitly so the server
-    // sees a real disconnect now, and so the next 'local' (rejoin) takes the
-    // `!ws` branch below and opens a fresh connection with a fresh hello.
-    wantConnection = false;
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    ss_setWantConnection(false);
+    if (ss_getReconnectTimer()) { clearTimeout(ss_getReconnectTimer()); ss_setReconnectTimer(null); }
+    if (ss_getPingTimer()) { clearInterval(ss_getPingTimer()); ss_setPingTimer(null); }
+    const ws = ss_getWs();
     if (ws) {
       ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
       try { ws.close(); } catch (e) {}
-      ws = null;
+      ss_setWs(null);
     }
-    helloSent = false;
-    localPeer.jitsiId = null;
+    ss_setHelloSent(false);
+    ss_getLocalPeer().jitsiId = null;
     return;
   }
   if (event === 'local' || event === 'local-update') {
     if (payload && payload.id) {
-      localPeer.jitsiId = payload.id;
-      localPeer.displayName = payload.displayName;
-      emit('peer-upsert', localPeer);
+      ss_getLocalPeer().jitsiId = payload.id;
+      ss_getLocalPeer().displayName = payload.displayName;
+      emit('peer-upsert', ss_getLocalPeer());
     }
-    // Local identity arrived (or changed). Connect to the room and announce.
     const room = getRoomNameFromUrl();
     if (!room) return;
-    if (room !== currentRoom) {
-      currentRoom = room;
-      wantConnection = true;
+    if (room !== ss_getCurrentRoom()) {
+      ss_setCurrentRoom(room);
+      ss_setWantConnection(true);
       openSocket();
-    } else if (event === 'local-update' && ws && ws.readyState === WebSocket.OPEN) {
-      // Re-hello to update displayName server-side.
-      helloSent = false;
+    } else if (event === 'local-update' && ss_getWs() && ss_getWs().readyState === WebSocket.OPEN) {
+      ss_setHelloSent(false);
       sendHelloIfReady();
-    } else if (!ws) {
-      wantConnection = true;
+    } else if (!ss_getWs()) {
+      ss_setWantConnection(true);
       openSocket();
     }
   }
 });
 
 window.addEventListener('online', () => {
-  if (!wantConnection) return;
-  reconnectDelay = 1000;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (!ss_getWantConnection()) return;
+  ss_setReconnectDelay(1000);
+  if (ss_getReconnectTimer()) { clearTimeout(ss_getReconnectTimer()); ss_setReconnectTimer(null); }
   openSocket();
 });
 
 // --- Public API -----------------------------------------------------------
 
 export function subscribePeerState(fn) {
-  subscribers.add(fn);
-  if (localPeer.jitsiId) fn('peer-upsert', localPeer);
-  for (const p of peersByPeerId.values()) fn('peer-upsert', p);
-  if (localRtt != null) fn('local-metrics', { rtt: localRtt, jitter: localJitter });
-  return () => subscribers.delete(fn);
+  const subs = ss_getSubscribers();
+  subs.add(fn);
+  if (ss_getLocalPeer().jitsiId) fn('peer-upsert', ss_getLocalPeer());
+  for (const p of ss_getPeersByPeerId().values()) fn('peer-upsert', p);
+  if (ss_getLocalRtt() != null) fn('local-metrics', { rtt: ss_getLocalRtt(), jitter: ss_getLocalJitter() });
+  return () => subs.delete(fn);
 }
 
 export function getPeerByJitsiId(jitsiId) {
   if (!jitsiId) return null;
-  if (localPeer.jitsiId === jitsiId) return localPeer;
-  const peerId = peerIdByJitsiId.get(jitsiId);
-  return peerId ? peersByPeerId.get(peerId) || null : null;
+  if (ss_getLocalPeer().jitsiId === jitsiId) return ss_getLocalPeer();
+  const peerId = ss_getPeerIdByJitsiId().get(jitsiId);
+  return peerId ? ss_getPeersByPeerId().get(peerId) || null : null;
 }
 
-export function getLocalPeer() { return localPeer; }
+export function getLocalPeerExported() { return ss_getLocalPeer(); }
+
+// Re-export with original name for backward compatibility
+export { getLocalPeerExported as getLocalPeer };
+
+// True once the sidecar has refused this page's aggregator hello because the
+// room already has an aggregator ('aggregator-slot-taken'). Only ever true on
+// an aggregator page, and only ever false for the room's one real aggregator.
+export function isAggregatorSlotTaken() { return ss_getAggregatorSlotTaken(); }
 
 // The participant token the aggregator is streaming this turn (jp-active), or
 // null if unknown / no aggregator has reported. Also emitted as the DOM event
 // 'trussal-jpattern-active' on each change.
-export function getActiveJPatternToken() { return activeJPatternToken; }
+export function getActiveJPatternToken() { return ss_getActiveJPatternToken(); }
 
 // The ring-slot index of that turn, disambiguating a token listed more than
 // once (null when unknown). Indexes the program's PARTICIPANTS normally and
 // its RESTS when the turn is a rest — see getActiveJPatternKind.
-export function getActiveJPatternIndex() { return activeJPatternIndex; }
+export function getActiveJPatternIndex() { return ss_getActiveJPatternIndex(); }
 
 // 'rest' when the current turn is a written `~` (no participant is streaming
 // and the index addresses the rests), null otherwise.
-export function getActiveJPatternKind() { return activeJPatternKind; }
+export function getActiveJPatternKind() { return ss_getActiveJPatternKind(); }
 
 // The one rule for "is it this peer's turn right now" — shared by every
 // silent-by-construction renderer (Text Cycles, CSS Cycles) that needs to
@@ -608,22 +489,21 @@ export function getActiveJPatternKind() { return activeJPatternKind; }
 // reported, or the peer has no roomIndex) — an unknown state must not hide a
 // performer's own output before their token is even assigned.
 export function isPeerJPatternTurn(jitsiId) {
-  if (activeJPatternToken == null) return true;
+  if (ss_getActiveJPatternToken() == null) return true;
   const peer = getPeerByJitsiId(jitsiId);
   if (!peer || peer.roomIndex == null) return true;
-  return String(peer.roomIndex) === String(activeJPatternToken);
+  return String(peer.roomIndex) === String(ss_getActiveJPatternToken());
 }
 
 export function getAllPeers() {
   const all = [];
   const seenJitsiIds = new Set();
-  if (localPeer.jitsiId) {
-    all.push(localPeer);
-    seenJitsiIds.add(localPeer.jitsiId);
+  const local = ss_getLocalPeer();
+  if (local.jitsiId) {
+    all.push(local);
+    seenJitsiIds.add(local.jitsiId);
   }
-  for (const p of peersByPeerId.values()) {
-    // Skip our own echoed entry and any duplicate jitsiId (e.g. from a stale
-    // server entry left over from a reconnect before the old socket closed).
+  for (const p of ss_getPeersByPeerId().values()) {
     if (!p.jitsiId || seenJitsiIds.has(p.jitsiId)) continue;
     seenJitsiIds.add(p.jitsiId);
     all.push(p);
@@ -633,130 +513,82 @@ export function getAllPeers() {
 
 export function getLocalMetrics() {
   return {
-    rtt: localRtt, jitter: localJitter, packetLoss: localPeer.packetLoss,
-    rtcRtt: localPeer.rtcRtt, rtcJitter: localPeer.rtcJitter
+    rtt: ss_getLocalRtt(), jitter: ss_getLocalJitter(), packetLoss: ss_getLocalPeer().packetLoss,
+    rtcRtt: ss_getLocalPeer().rtcRtt, rtcJitter: ss_getLocalPeer().rtcJitter
   };
 }
 
 const NET_STAT_FIELDS = ['rtcRtt', 'rtcJitter', 'packetLoss', 'jitterBufferMs', 'pipelineMs'];
 
-// RTCStats-derived sample from NetStats.js. rtt/jitter keep their WS
-// ping/pong semantics (fallback path); rtcRtt/rtcJitter (media path) and
-// packetLoss ride the same `metrics` broadcast so every browser computes
-// identical worst-case values.
-//
-// rtcJitter is the RTP inter-arrival jitter of the audio actually being
-// played, so it belongs to the same media path as rtcRtt and the de-jitter
-// buffer that WCL is built from. The WS ping/pong `jitter` measures the
-// signalling leg to the sidecar instead, and stays only as the fallback for
-// a peer with no RTCStats sample yet.
-//
-// Each field is three-state. A NUMBER sets it; an explicit `null` means
-// "looked, nothing there" and CLEARS it, locally and over the wire; an ABSENT
-// key means "not reporting on this field" and leaves it untouched. That last
-// distinction is what lets the two callers compose — NetStats always passes
-// all four of its fields (null where the stat was missing) while
-// PipelineLatency sends `{ pipelineMs }` alone, and neither clobbers the
-// other. Only the keys actually supplied are broadcast.
-//
-// Without the clear, a value that stops being measured is rebroadcast
-// forever: a peer left alone in a room has no inbound-rtp at all, but the
-// candidate pair still yields rtcRtt, so every poll would keep re-sending the
-// last jitter reading and pin the room's WCJ — and so its turn length — to a
-// measurement with nothing behind it.
 export function sendLocalNetStats(sample = {}) {
   const msg = { type: 'metrics' };
   let reported = false;
   for (const key of NET_STAT_FIELDS) {
     const value = sample[key];
     if (value === undefined) continue;
-    localPeer[key] = (typeof value === 'number' && isFinite(value)) ? value : null;
-    msg[key] = localPeer[key];
+    ss_getLocalPeer()[key] = (typeof value === 'number' && isFinite(value)) ? value : null;
+    msg[key] = ss_getLocalPeer()[key];
     reported = true;
   }
   if (!reported) return;
   safeSend(msg);
   emit('local-metrics', getLocalMetrics());
-  emit('peer-upsert', localPeer);
+  emit('peer-upsert', ss_getLocalPeer());
 }
 
 export function sendLocalPattern(code) {
   const next = typeof code === 'string' ? code : '';
-  // STORAGE POINT 1 (local): the editor's text, on its way out. This is the
-  // first place the program is held outside the textarea, and the copy every
-  // other browser will paint from.
-  if (next !== localPeer.pattern && (hasTextCycles(next) || hasTextCycles(localPeer.pattern))) {
+  if (next !== ss_getLocalPeer().pattern && (hasTextCycles(next) || hasTextCycles(ss_getLocalPeer().pattern))) {
     textLog('peer-state:pattern-out', {
       declaresText: hasTextCycles(next),
-      playing: localPeer.playing,
-      roomIndex: localPeer.roomIndex,
+      playing: ss_getLocalPeer().playing,
+      roomIndex: ss_getLocalPeer().roomIndex,
       code: clip(next),
     });
   }
-  localPeer.pattern = next;
-  safeSend({ type: 'pattern', code: localPeer.pattern });
-  emit('peer-upsert', localPeer);
+  ss_getLocalPeer().pattern = next;
+  safeSend({ type: 'pattern', code: ss_getLocalPeer().pattern });
+  emit('peer-upsert', ss_getLocalPeer());
 }
 
-// CSS Cycles: hand our SCSS to the sidecar to compile. The compiled sheet
-// comes back as a peer-update for everyone, ourselves included, so there is
-// one compile per edit for the whole room and no browser ships a compiler.
 export function sendLocalScss(scss) {
   safeSend({ type: 'scss', source: typeof scss === 'string' ? scss : '' });
 }
 
-// CSS Cycles for a bot: a bot's own connection never runs installCssCycles
-// (its REPL is a bare @strudel/repl, see bots/src/bot/page-scripts.js), so no
-// browser is ever "local" to a bot's peer id and its SCSS would otherwise
-// never be sent. Every human's browser builds the same bot sheets from its
-// parroted css() statements (buildBotSilentBlock), so any of them may compile
-// and send on the bot's behalf — the server only accepts this for a peer it
-// has recorded as a bot, never for a human.
 export function sendPeerScss(targetPeerId, scss) {
   if (!targetPeerId) return;
   safeSend({ type: 'scss', targetPeerId, source: typeof scss === 'string' ? scss : '' });
 }
 
-// Mirror our JSON/CSV/TSV packs to the room. They ride the bus rather than
-// staying local because the combined program is evaluated in EVERY browser and
-// by the aggregator: a peer without the values would evaluate a different
-// program than its author, and the same pattern would sound different on every
-// listener. Registered locally under our own peerId too, so our own references
-// resolve by the same room-wide rule as everyone else's.
 export function sendLocalDataPacks(packs) {
   const list = Array.isArray(packs) ? packs : [];
-  localPeer.dataPacks = list;
-  if (myPeerId) setPeerPacks(myPeerId, list);
+  ss_getLocalPeer().dataPacks = list;
+  if (ss_getMyPeerId()) setPeerPacks(ss_getMyPeerId(), list);
   safeSend({ type: 'datapacks', packs: list });
-  emit('peer-upsert', localPeer);
+  emit('peer-upsert', ss_getLocalPeer());
 }
 
 export function sendLocalEffects(effects) {
-  localPeer.effects = {
+  ss_getLocalPeer().effects = {
     distortion: !!effects.distortion,
     noise: !!effects.noise,
     reverb: !!effects.reverb
   };
-  safeSend({ type: 'effects', state: localPeer.effects });
-  emit('peer-upsert', localPeer);
+  safeSend({ type: 'effects', state: ss_getLocalPeer().effects });
+  emit('peer-upsert', ss_getLocalPeer());
 }
 
 export function sendLocalPlaying(playing) {
-  localPeer.playing = !!playing;
+  ss_getLocalPeer().playing = !!playing;
   safeSend({ type: playing ? 'play' : 'stop' });
-  emit('peer-upsert', localPeer);
+  emit('peer-upsert', ss_getLocalPeer());
 }
 
-// Operator → another peer. The server applies these only to bot targets, then
-// relays the action to the bot and broadcasts the resulting state to everyone.
 export function sendRemotePattern(targetPeerId, code) {
   if (!targetPeerId) return;
   const c = typeof code === 'string' ? code : '';
   safeSend({ type: 'remote-control', targetPeerId, action: 'pattern', code: c });
-  // Optimistically reflect the edit on the local cache + UI. Without this the
-  // editor snaps back to the old pattern on the next (frequent, metrics-driven)
-  // re-render, before the server's confirming peer-update round-trips back.
-  const peer = peersByPeerId.get(targetPeerId);
+  const peer = ss_getPeersByPeerId().get(targetPeerId);
   if (peer) {
     peer.pattern = c;
     emit('peer-upsert', peer);
@@ -768,69 +600,44 @@ export function sendRemoteMute(targetPeerId, muted) {
   safeSend({ type: 'remote-control', targetPeerId, action: 'mute', muted: !!muted });
 }
 
-// A room-wide Stop's reach into a bot's audio: independent of the manual
-// per-bot mute toggle above (both are gain gates page-scripts.js multiplies
-// together — see trussal-remote-stop), so Stop/Apply never clobbers a
-// deliberate individual mute, and unmuting one never un-stops the other.
 export function sendRemoteStop(targetPeerId, stopped) {
   if (!targetPeerId) return;
   safeSend({ type: 'remote-control', targetPeerId, action: 'stop', stopped: !!stopped });
 }
 
-// Turn one of your own bots' tiles on or off. Bots join dark like every other
-// non-aggregator participant; what appears when this is on is the bot's Hydra
-// output, or black if its script has none.
 export function sendRemoteVideo(targetPeerId, videoOn) {
   if (!targetPeerId) return;
   safeSend({ type: 'remote-control', targetPeerId, action: 'video', videoOn: !!videoOn });
 }
 
-// Shared metaprogram doc: outbound Yjs update (base64). `snapshot` marks a
-// full-state update that subsumes history server-side; `modality` records
-// how the edit was made (keyboard / head-cursor / gesture / bot / mcp).
 export function sendCrdtUpdate(update, { snapshot = false, modality = 'keyboard', channel = 'metaprogram' } = {}) {
   if (typeof update !== 'string' || !update) return;
   safeSend({ type: 'crdt-update', update, snapshot, modality, channel });
 }
 
-// Research telemetry: appended to the server-side session JSONL, never
-// relayed to peers (scheduler cycle boundaries, health actions, …).
 export function sendResearchEvent(kind, data = null) {
   if (typeof kind !== 'string' || !kind) return;
   safeSend({ type: 'research-event', kind, data });
 }
 
-// Ask the fleet service for cluster changes on our behalf. The server stamps
-// the request with our room index; bots cannot send these.
 export function sendFleetRequest(action, { count, targets, code } = {}) {
   const msg = { type: 'fleet-request', action };
   if (typeof count === 'number') msg.count = count;
   if (targets !== undefined) msg.targets = targets;
-  // The requester's editor text — the master their cluster plays and the
-  // carrier of their botConfig(...). The relay forwards this field explicitly;
-  // anything not named there is dropped before the fleet ever sees it.
   if (typeof code === 'string') msg.code = code;
   safeSend(msg);
 }
 
-// One of the local performer's uploaded samples, on its way to their bots.
-// The relay forwards this to the fleet alone rather than broadcasting it, so
-// a sample library costs one upload rather than one per participant.
 export function sendSampleFile({ bank, name, data }) {
   if (typeof bank !== 'string' || typeof name !== 'string' || typeof data !== 'string') return;
   safeSend({ type: 'sample-file', bank, name, data });
 }
 
-// A file-attachment pattern's bytes, on their way to every other browser in
-// the room (see src/file-cycles.js — sent once per filename, the first time
-// a trigger fires for it in the authoring browser, never on a repeat).
 export function sendChatFile({ kind, name, mime, data }) {
   if (typeof kind !== 'string' || typeof name !== 'string' || typeof mime !== 'string' || typeof data !== 'string') return;
   safeSend({ type: 'chat-file', kind, name, mime, data });
 }
 
-// A meeting-poll click-to-vote, on its way to every other browser so their
-// tally for this poll agrees with ours (see src/polls.js).
 export function sendPollVote({ pollId, option, previousOption, voterToken }) {
   if (typeof pollId !== 'string' || typeof voterToken !== 'string') return;
   safeSend({ type: 'poll-vote', pollId, option: option ?? null, previousOption: previousOption ?? null, voterToken });

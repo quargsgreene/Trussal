@@ -38,6 +38,9 @@ import { subscribePeerState } from './peer-state.js';
 // published-video override and hand back the canvas the room sees, leaving
 // `s0` (and this panel) showing their own output instead of the camera.
 import { openCamera } from './published-video.js';
+import hvStyles from './hydra-video.css';
+import { upsertStyle } from './style-injection.js';
+
 
 export const MODE_SPLIT  = 'split';
 export const MODE_DIRECT = 'direct';
@@ -307,16 +310,19 @@ function _applyEffects() {
       const saturate   = (1 - _hpCutoff * 0.5).toFixed(2);
       filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturate})`;
     }
-    el.style.filter = filter;
+    // The properties are read by hydra-video.css; removing one hands the
+    // element back to its stylesheet value (the video's scaleX(-1) mirror,
+    // no filter on the Hydra canvas).
+    if (filter) el.style.setProperty('--hv-filter', filter);
+    else        el.style.removeProperty('--hv-filter');
 
     // Reverb stretch: oscillating scaleY / scaleX at incommensurate frequencies.
     if (_stretchAmt > 0) {
       const sy = (1 + _stretchAmt * Math.sin(t * Math.PI)).toFixed(4);
       const sx = (1 + _stretchAmt * 0.5 * Math.sin(t * Math.PI * 1.41)).toFixed(4);
-      el.style.transform       = `scaleY(${sy}) scaleX(${sx})`;
-      el.style.transformOrigin = 'center center';
+      el.style.setProperty('--hv-transform', `scaleY(${sy}) scaleX(${sx})`);
     } else {
-      el.style.transform = '';
+      el.style.removeProperty('--hv-transform');
     }
   }
 
@@ -343,7 +349,7 @@ function _updateNoiseOverlay(key, targetEl) {
   let ov = _noiseOverlays.get(key);
   if (!ov) {
     ov = document.createElement('canvas');
-    ov.style.cssText = 'position:fixed;pointer-events:none;z-index:9999998;mix-blend-mode:screen;';
+    ov.className = 'hv-noise-overlay';
     document.body.appendChild(ov);
     _noiseOverlays.set(key, ov);
   }
@@ -356,10 +362,10 @@ function _updateNoiseOverlay(key, targetEl) {
   const w = Math.max(1, Math.round(rect.width  * scale));
   const h = Math.max(1, Math.round(rect.height * scale));
   if (ov.width !== w || ov.height !== h) { ov.width = w; ov.height = h; }
-  ov.style.left   = rect.left   + 'px';
-  ov.style.top    = rect.top    + 'px';
-  ov.style.width  = rect.width  + 'px';
-  ov.style.height = rect.height + 'px';
+  ov.style.setProperty('--hv-ov-x', rect.left   + 'px');
+  ov.style.setProperty('--hv-ov-y', rect.top    + 'px');
+  ov.style.setProperty('--hv-ov-w', rect.width  + 'px');
+  ov.style.setProperty('--hv-ov-h', rect.height + 'px');
 
   const ctx  = ov.getContext('2d');
   const data = ctx.createImageData(w, h);
@@ -387,62 +393,9 @@ function _removeNoiseOverlay(key) {
 // ---------------------------------------------------------------------------
 
 function _injectStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  // Authored against the per-user Personal Theme vars (src/theme-context.js):
-  // --trussal-primary / --trussal-secondary / --trussal-font / --trussal-font-scale
-  // on :root, each keeping its previous literal as the var() fallback, so this
-  // panel retints with the Strudel overlay and the rest of the app.
-  s.textContent = `
-    #${PANEL_ID} {
-      position:fixed; top:64px; right:16px; z-index:1000000;
-      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
-      border:1px solid var(--trussal-secondary, #111111); border-radius:10px;
-      font-family:var(--trussal-font, Arial, Helvetica, sans-serif); font-size:calc(12px * var(--trussal-font-scale, 1));
-      padding:10px 12px; width:300px;
-      display:none; flex-direction:column; gap:8px;
-      box-shadow:0 8px 24px rgba(0,0,0,0.2); user-select:none;
-    }
-    #${PANEL_ID} video {
-      width:100%; border-radius:4px; display:block; transform:scaleX(-1);
-      background:var(--trussal-secondary, #111111);
-    }
-    #${PANEL_ID} .hv-mode-row { display:flex; gap:6px; }
-    #${PANEL_ID} .hv-mode-btn {
-      flex:1; padding:3px 0; border-radius:4px;
-      border:1px solid var(--trussal-secondary, #111111);
-      background:var(--trussal-primary, #eeeeee); color:var(--trussal-secondary, #111111);
-      font-size:calc(11px * var(--trussal-font-scale, 1)); cursor:pointer; text-align:center;
-      transition:background 0.15s, color 0.15s;
-    }
-    #${PANEL_ID} .hv-mode-btn.on {
-      background:var(--trussal-secondary, #111111); color:var(--trussal-primary, #eeeeee);
-      border-color:var(--trussal-secondary, #111111);
-    }
-    #${PANEL_ID} .hv-header { display:flex; align-items:center; justify-content:space-between; }
-    #${PANEL_ID} .hv-title { font-weight:600; color:var(--trussal-secondary, #111111); }
-    #${PANEL_ID} .hv-collapse-btn {
-      background:none; border:none; color:var(--trussal-secondary, #111111); cursor:pointer;
-      font-size:calc(13px * var(--trussal-font-scale, 1)); line-height:1; padding:0 2px; transition:color 0.15s;
-    }
-    #${PANEL_ID} .hv-collapse-btn:hover { color:var(--trussal-secondary, #111111); }
-    #${PANEL_ID} .hv-body { display:flex; flex-direction:column; gap:8px; overflow:hidden; }
-    #${PANEL_ID} .hv-body.collapsed { display:none; }
-    #${PANEL_ID} .hv-status { font-size:calc(10px * var(--trussal-font-scale, 1)); color:var(--trussal-secondary, #111111); line-height:1.5; }
-
-    #${TOGGLE_ID} {
-      background:var(--trussal-primary, #eeeeee); border:1px solid var(--trussal-secondary, #111111);
-      cursor:pointer; padding:3px 8px; border-radius:4px; color:var(--trussal-secondary, #111111);
-      transition:color 0.15s, background 0.15s, border-color 0.15s;
-      line-height:1; display:flex; align-items:center; gap:4px;
-      font-size:calc(11px * var(--trussal-font-scale, 1)); font-family:var(--trussal-font, Arial, Helvetica, sans-serif); white-space:nowrap;
-    }
-    #${TOGGLE_ID}:hover { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); }
-    #${TOGGLE_ID}.on { color:var(--trussal-primary, #eeeeee); background:var(--trussal-secondary, #111111); border-color:var(--trussal-secondary, #111111); }
-  `;
-  document.head.appendChild(s);
+  upsertStyle(STYLE_ID, hvStyles);
 }
+
 
 function _ensurePanel() {
   if (document.getElementById(PANEL_ID)) return;
