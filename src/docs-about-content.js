@@ -793,13 +793,7 @@ export function buildDocsBody() {
   return `
     <h3>Creating or Joining a Meeting</h3>
         <h4> Starting a new meeting </h4>
-        <p>To create a new meeting room, focus the "Room name:" field.
-        <figure>
-          <img
-            src="https://trussal-docs.quargsgreene.workers.dev/trussal_blank_meeting_name.png"
-            alt="The Trussal welcome page, showing the Room name field and the Join session button" />
-          <figcaption>The Trussal welcome page's Room name field and Join session button.</figcaption>
-        </figure>
+        <p>To create a new meeting room, focus the "Room name:" field.</p>
         Then enter a meeting room name 1023 characters or less using letters, numbers, "-", or "_". 
         <figure>
           <img
@@ -821,7 +815,7 @@ export function buildDocsBody() {
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
-            alt="The prejoin screen with the display name 'someone' entered" />
+            alt="The prejoin screen with the display name 'someone' entered"/>
           <figcaption>The prejoin screen with the display name 'someone' entered</figcaption>
         </figure> 
 
@@ -885,6 +879,36 @@ export function buildDocsBody() {
         and rotates the icon 90 degrees, upon which clicking re-expands the keyboard. To the left of the keyboard,
         a grayscale face mesh will appear and can be moved, scaled and hidden using the same buttons in its respective toolbar.
         The face mesh UI will also display each of the default gesture mappings as they are detected. </p>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/button_focus_media_pipe.png"
+            alt="Focusing the 'Start meeting' button" />
+          <figcaption>Focusing the 'Start meeting' button</figcaption>
+        </figure>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/resize_keyboard.png"
+            alt="Resizing the keyboard by focusing the ⇲ button on the virtual keyboard" />
+          <figcaption>Resizing the keyboard by focusing the ⇲ button on the virtual keyboard. Focus each of the buttons with the head cursor.</figcaption>
+        </figure>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/enlarge_face.png"
+            alt="Resizing the face panel by focus" />
+          <figcaption>The face panel can be resized, in addition to dragged, and collapsed with the head cursor as well.</figcaption>
+        </figure>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/drag_keyboard.png"
+            alt="Dragging the keyboard by focusing the ✥ button" />
+          <figcaption>Dragging the keyboard by focusing the ✥ button</figcaption>
+        </figure>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/collapse_keyboard.png"
+            alt="Collapsing the keyboard by focusing the &#9660 button" />
+          <figcaption>Collapsing the keyboard by focusing the &#9660 button</figcaption>
+        </figure>
 
     <h3>Navigating the Meeting Room</h3>
         <p>Much of a Trussal meeting room operates as it does within Jitsi Meet. However, there are some key differences that are discussed below. </p>
