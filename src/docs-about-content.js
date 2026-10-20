@@ -755,7 +755,7 @@ export const ABOUT_HTML = `
        through to the room catch-all and is returned as text/html, which nosniff
        rejects -> only this alt text would show. -->
   <img
-    src="/css/src/docs-images/about-trussal-in-action.png"
+    src="https://trussal-docs.quargsgreene.workers.dev/about-trussal-in-action.png"
     alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
   <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
 </figure>
@@ -796,14 +796,14 @@ export function buildDocsBody() {
         <p>To create a new meeting room, focus the "Room name:" field.
         <figure>
           <img
-            src="/css/src/docs-images/trussal_meeting_name.png"
+            src="https://trussal-docs.quargsgreene.workers.dev/trussal_blank_meeting_name.png"
             alt="The Trussal welcome page, showing the Room name field and the Join session button" />
           <figcaption>The Trussal welcome page's Room name field and Join session button.</figcaption>
         </figure>
         Then enter a meeting room name 1023 characters or less using letters, numbers, "-", or "_". 
         <figure>
           <img
-            src="/css/src/docs-images/about-trussal-in-action.png"
+            src="https://trussal-docs.quargsgreene.workers.dev/trussal_meeting_name_example.png"
             alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
           <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
         </figure>
@@ -811,16 +811,16 @@ export function buildDocsBody() {
         the message "Use letters, numbers, -, or _, starting with a letter or number" will appear beneath the "Join session" button. 
         <figure>
           <img
-            src="/css/src/docs-images/about-trussal-in-action.png"
+            src="https://trussal-docs.quargsgreene.workers.dev/invalid_meeting_name.png"
             alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
           <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
         </figure>
         Once a valid meeting name has been entered, click the 
-        "Join session" button, which then brings the user to the prejoin screen, where one may optionally 
+        "Join meeting" button, which then brings the user to the prejoin screen, where one may optionally 
         enter a display name containing any characters. To enter the meeting room, click the "Join meeting" button.
         <figure>
           <img
-            src="/css/src/docs-images/about-trussal-in-action.png"
+            src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
             alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
           <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
         </figure> 
@@ -828,10 +828,17 @@ export function buildDocsBody() {
         <h4> Joining a Preexisting Meeting Room </h4>
         <p>A list of previously joined meetings will appear below the "Join meeting" button in reverse chronological order. 
         To rejoin a meeting room, click on one of the meetings in the list. 
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/meeting_list.png"
+            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
+          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+        </figure>
         One will again reach the prejoin screen, where the most recently entered screen name will prepopulate.
         However, one may change one's display name again at this time and an unlimited number of times throughout the meeting.
         Clearing browser data will clear the list of previously joined meetings, as well as one's previously-chosen display name.
         Clicking on the trash can icon can remove individual meetings from the list of existing meetings.
+        <br />
         Note that clicking on the trash can icon or clearing browsing data <strong>does not</strong> end an existing meeting.
         Meetings may only be ended by a participant clicking on the telephone icon attached to the meeting room toolbar inside of the meeting,
         or when no human meeting participant has been present inside of a meeting room for more than two minutes.
@@ -842,10 +849,28 @@ export function buildDocsBody() {
         <p> To invite users to an existing meeting, once inside a meeting room, click the icon that depicts a
         humanoid bust with a plus icon to its top right, which is the icon that is the third from the right 
         within the bottom toolbar and situated between the phone and three-dot icons.
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/invite_to_meeting_toolbar.png"
+            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
+          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+        </figure>
         Upon hovering over the correct icon, a tooltip that reads "Invite people" will appear, and once clicked,
         a modal window will appear with a button underneath "Invite more people" and "Share the meeting link to invite others"
         dialogs. Click this button, which contains an icon of two overlapping squares on the far left side, to copy
         the meeting URL to the clipboard. Exit this modal window by clicking the "x" icon. </p>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
+            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
+          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+        </figure>
+        <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/prejoin.png"
+            alt="One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh" />
+          <figcaption>One human performer and seven bot performers whose Aggregator applies the echo effect to itself. Photo credit: Jennifer Deafenbaugh</figcaption>
+        </figure>
 
         <h4> Using Landmark & Gesture Mode to join a meeting </h4>
         <p>To activate Landmark & Gesture Mode on the landing page, close your left eye for at least two seconds or press the

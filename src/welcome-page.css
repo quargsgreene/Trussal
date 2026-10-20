@@ -67,7 +67,7 @@
 
 /* ── Jitsi prejoin patch classes ─────────────────────────────────────────── */
 
-/* Flat #111 fill for the prejoin "Join session" button (Emotion-rendered). */
+/* Flat #111 fill for the prejoin "Join meeting" button (Emotion-rendered). */
 .trussal-flat-join {
   background: var(--trussal-secondary, #111111) !important;
   background-color: var(--trussal-secondary, #111111) !important;

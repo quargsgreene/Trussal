@@ -30,7 +30,7 @@ let hideObserver = null;
 // Single source for the join button label: the welcome overlay renders it,
 // and patchPrejoinButton renames Jitsi's own "Join meeting" lobby button to
 // match. Change it here and both follow.
-const JOIN_LABEL = 'Join session';
+const JOIN_LABEL = 'Join meeting';
 
 export const MAX_ROOM_NAME_LENGTH = 1023;
 const ROOM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -203,9 +203,15 @@ function patchPrejoinButton() {
         // forever (a textContent write is itself a mutation).
         (applied && applied !== JOIN_LABEL && (text === applied || aria === applied))
       ) {
-        el.textContent = JOIN_LABEL;
-        el.setAttribute('aria-label', JOIN_LABEL);
-        el.dataset.trussalJoinLabel = JOIN_LABEL;
+        // Write only values that actually change. Assigning textContent
+        // replaces the text node and is itself a DOM mutation, so writing
+        // the same label re-triggers this observer forever. That is exactly
+        // what happens when JOIN_LABEL is Jitsi's own "Join meeting": every
+        // candidate matches on every tick, and the callback spins the main
+        // thread instead of patching once.
+        if (text !== JOIN_LABEL) el.textContent = JOIN_LABEL;
+        if (aria !== JOIN_LABEL) el.setAttribute('aria-label', JOIN_LABEL);
+        if (applied !== JOIN_LABEL) el.dataset.trussalJoinLabel = JOIN_LABEL;
       }
     }
 
