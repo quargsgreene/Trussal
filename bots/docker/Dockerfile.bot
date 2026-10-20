@@ -28,6 +28,11 @@ COPY bots/package.json ./
 RUN npm install --omit=dev
 
 COPY bots/src ./src
+# The output stage's vendored libraries (p5.js + three.js), read by the
+# aggregator only when a program actually asks for a shape — so the COPY
+# lands them at bots/vendor/, the path ../../vendor/ resolves to from the
+# bot source, and a no-shape program still never pays the read.
+COPY bots/vendor ./vendor
 # Shared repo-root trees, kept at their repo-relative paths so the same
 # import specifiers work in dev and in the image. The node_modules symlink
 # lets bare specifiers used by the shared modules (yjs) resolve by walking
@@ -74,6 +79,10 @@ COPY src/file-cycles-core.js /repo/src/file-cycles-core.js
 # hydra-code.js also imports it: POLL_CALL_RE, the poll() call shape. Same two
 # entries.
 COPY src/polls-core.js /repo/src/polls-core.js
+# HMR stable-state (for persistent Yjs/WS state across hot reloads).
+# Required by MetaprogrammerCrdtSync.js in the bot image.
+COPY src/stable-state.js /repo/src/stable-state.js
+COPY src/hmr-runtime.js /repo/src/hmr-runtime.js
 COPY latency-instrument /repo/latency-instrument
 COPY public/lib /repo/public/lib
 RUN ln -s bots/node_modules /repo/node_modules

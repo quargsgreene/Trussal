@@ -1,0 +1,26 @@
+/* Styles for elements the bot page scripts stage inside the Jitsi page.
+ *
+ * These are off-screen rather than `display: none` because the browser does
+ * not guarantee compositing (and therefore frame production) for a canvas
+ * that is not rendered. `position: fixed` keeps them out of layout, and the
+ * large negative `left` keeps them out of the captured video without making
+ * them unrenderable.
+ *
+ * The two surfaces need different offsets:
+ *   .trussal-offscreen         published canvas + mosaic container
+ *   .trussal-offscreen-editor  the Strudel REPL web component, which must be
+ *                              in the DOM to run but must never be visible
+ */
+
+.trussal-offscreen {
+  position: fixed;
+  top: 0;
+  left: -20000px;
+  pointer-events: none;
+}
+
+.trussal-offscreen-editor {
+  position: fixed;
+  left: -10000px;
+  pointer-events: none;
+}

@@ -115,6 +115,11 @@ services:
       # CDN cache invalidation, so it is deliberately NOT mounted.
       - ./jitsi-web/custom-config.js:/usr/share/jitsi-meet/custom-config.js:ro
       - ./jitsi-web/assets:/usr/share/jitsi-meet/assets:ro
+      # The standalone /documentation + /about pages (build-pages.mjs).
+      # Bind-mounted like custom-config.js so `build.mjs --watch --deploy`
+      # updates them in a running container without an image rebuild.
+      - ./jitsi-web/documentation.html:/usr/share/jitsi-meet/documentation.html:ro
+      - ./jitsi-web/about.html:/usr/share/jitsi-meet/about.html:ro
     labels:
       service: "jitsi-web"
     environment:

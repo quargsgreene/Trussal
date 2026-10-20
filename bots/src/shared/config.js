@@ -104,6 +104,14 @@ export const defaultConfig = Object.freeze({
   // long enough silence on its metrics reports as death and respawns it.
   aggregatorStartupGraceMs: 15000,         // no metrics expected before this (docker run + Chromium + Jitsi join)
   aggregatorStaleMs: 8000,                 // silence beyond this, past the startup grace, is treated as dead
+  // A never-reported aggregator can only be convicted once the boot itself has
+  // had long enough: `docker run` + Chromium + the Jitsi join routinely outlast
+  // the grace above on a loaded machine, and reaping a boot that is merely slow
+  // respawns it into the same slow boot — a loop that leaves the room
+  // permanently without an aggregator (so nothing gates participants into their
+  // turns). Until this deadline passes a boot is presumed alive; a container
+  // docker already reports gone (runner.isRunning) cuts it short.
+  aggregatorBootDeadlineMs: 120000,
   // A bot (aggregator OR player) can be perfectly ALIVE — process running,
   // metrics reporting on schedule — while its Jitsi conference is gone out
   // from under it (e.g. a moderator's "End meeting for all" destroys the
@@ -116,8 +124,11 @@ export const defaultConfig = Object.freeze({
   // Both #reapDeadAggregator and the player-bot orphan check in healthTick
   // treat sustained diag.jitsiJoined:false (not a single reading — a normal
   // ICE reconnect blip can flip this transiently) past this long since it
-  // was last confirmed joined (or since it started, if never yet joined) as
-  // death, and respawn/replace accordingly.
+  // was last confirmed joined as death, and respawn/replace accordingly. A
+  // bot that has NEVER yet confirmed a join counts from its own startedAt —
+  // except the aggregator, whose slower boot is judged against
+  // aggregatorBootDeadlineMs instead (nothing to confirm is not the same as
+  // a confirmed join having lapsed).
   jitsiJoinGraceMs: 15000,
 });
 

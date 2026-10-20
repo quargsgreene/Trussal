@@ -1,4 +1,5 @@
 import { Bot } from './bot.js';
+import { randomUUID } from 'crypto';
 import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium-args.js';
 import {
   pageMarkBot, pageMarkAggregator, pageAudioBridge, pageGumOverride,
@@ -9,9 +10,10 @@ import {
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
   pageSetMasterCrush, pageSetMasterEcho,
   pageMosaic, pageSetMosaicCells, pageSetMosaicActive, pageSetMosaicEnabled, pageSetMosaicCycle,
-  pageMosaicDiag, pageSetMosaicVideo,
+  pageMosaicDiag, pageSetMosaicVideo, pageSetMosaicOutput, pageInstallOutputVendor,
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
+  pageInstallPageStyles, PAGE_SCRIPTS_CSS,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
@@ -29,6 +31,8 @@ import { echoParams } from '../../../src/audio-net/av-effects/Echo.js';
 import { chainHasValuePattern, PATTERN_TICK_MS } from '../../../src/audio-net/ValuePattern.js';
 import { entryAffects } from '../../../src/audio-net/EffectMedia.js';
 import { videoStateFor, videoStateIsNeutral } from '../../../src/audio-net/av-effects/VideoState.js';
+import { outputStateFor, outputStageActive } from '../../../src/audio-net/av-effects/OutputState.js';
+import { readFileSync } from 'fs';
 import { makeClockSyncOverO2 } from '../../../src/audio-net/ClockSync.js';
 import O2LiteClient from '../../../public/lib/o2lite-web.js';
 import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramScheduler.js';
@@ -102,6 +106,26 @@ const DEFAULT_GAIN_CEILING = 1.0;
 // up and joining anyway: a claim we can't obtain must not strand the (possibly
 // only) aggregator forever if the bus is briefly unreachable at startup.
 const CLAIM_TIMEOUT_MS = 5000;
+// How often the held claim is renewed over the probe connection. Well inside
+// the sidecar's lease (30s), so a healthy probe never lets the slot lapse, and
+// the renewal doubles as the liveness signal that keeps the claim ours across
+// proxy idle timeouts and sidecar restarts — the probe reconnects as a NEW
+// connection, and re-claiming with the same token is what re-holds the slot
+// atomically instead of leaving a window another aggregator could claim in.
+const CLAIM_RENEW_MS = 10000;
+// Longest a denied claim will wait out the current holder's lease before giving
+// up (AGGREGATOR_SLOT_TAKEN). The holder is usually a predecessor whose
+// container died without releasing (SIGKILL, OOM) — its lease is at most
+// 30s — and a room should end up WITH an aggregator rather than waiting for the
+// fleet's next reap cycle to notice the slot is free.
+const CLAIM_RETRY_MAX_MS = 90000;
+// How long the page-side election may continuously say "you are not the active
+// aggregator" before this bot concludes it is a duplicate that slipped past the
+// claim gate and leaves the meeting. Deliberately far longer than any startup
+// transient (the roster takes a moment to arrive, the bundle a moment to load,
+// and both are read fail-active) — a genuine lone aggregator never sees a
+// sustained miss, while a real second one converges to this within a slot.
+const DEFAULT_SLOT_YIELD_MS = 30000;
 // Election-gate hysteresis window. Once the bot HAS been the active aggregator,
 // a transient "not active" reading (a bot-join storm can momentarily drop it
 // from the page-side election roster) is held for this long before it actually
@@ -246,6 +270,15 @@ export class AggregatorBot extends Bot {
     // can't silence the room mid-stream.
     #everActive = false;
     #lastActiveAt = 0;
+    // When the page-side election FIRST said "not you" without a break since.
+    // Kept off the raw predicate reading (not the hysteretic one) and reset the
+    // moment the election says yes again; once it has stood for slotYieldMs the
+    // bot has been a duplicate for long enough to conclude it and leave (see
+    // #isActiveNow / #loseSlot).
+    #rawInactiveSince = null;
+    // Set once #loseSlot has fired, so a sustained stand-down and a lost claim
+    // renewal can't both report (and the caller can't be re-entered).
+    #slotLostReported = false;
     // Playback-loop interval handle and the setInterval/clearInterval wrappers
     // (see the constructor for why the wrappers exist), kept private. The ingest-
     // loop handle (this.ingestTimer) is public instead — a test reads it to assert
@@ -256,6 +289,22 @@ export class AggregatorBot extends Bot {
     // The aggregator-claim probe connection to the sidecar, held open for our
     // lifetime so nothing else can claim the room's single aggregator slot.
     #claimConn = null;
+    // Our claim's identity, minted once per bot start and presented with every
+    // claim (the initial one, every renewal, and any reconnect of the probe).
+    // The sidecar keys the slot on THIS, not on the socket, so a probe that
+    // drops and reconnects re-holds the same slot instead of racing the room
+    // for it again — and the roster record our page announces can carry it, so
+    // the sidecar can tell our own page apart from a second aggregator.
+    #claimToken = randomUUID();
+    // The lease the sidecar granted with the last accepted claim, mirrored for
+    // diagnostics (the renewal period is derived from cfg, deliberately well
+    // inside it).
+    #claimLeaseMs = 0;
+    // Set while waiting out another holder's lease after a denial (see
+    // #requestAggregatorClaim); null once we've stopped retrying.
+    #claimRetryAt = null;
+    // Claim-renewal interval handle (see #startClaimRenewal).
+    #claimRenewTimer = null;
     // Second, persistent sidecar connection dedicated to metaprogram sync
     // (crdt-state/crdt-update). Separate from #claimConn: the claim probe
     // never sends `hello` so it never joins the room's broadcast set (see
@@ -296,6 +345,14 @@ export class AggregatorBot extends Bot {
     // The applied program's whole `#` chain, for the video counterpart.
     #chain = [];
     #lastVideoPushJson = undefined;
+    // The shape stage's push, deduped on the same tick as the video one. Its
+    // own field rather than sharing video's: a chain can move its shape
+    // without touching crush/echo, and vice versa.
+    #lastOutputPushJson = undefined;
+    // The vendored p5/three sources, read at most once per process — only
+    // when a program actually asks for a shape, so the read (1.7MB) is work
+    // the common no-shape program never does.
+    #outputVendorCache = null;
     #lastRoomPushJson = 'null';
     #noiseChain = null;
     #lastNoisePushJson = 'null';
@@ -333,7 +390,7 @@ export class AggregatorBot extends Bot {
     #lastMosaicEnabled = null;
     #lastMosaicActive = undefined;
 
-    constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl } = {}, buffers = {}, bufferSize = 1024) {
+    constructor(cfg, { launcher, reporter, logIngest = true, now, isActive, connectSidecar, webSocketImpl, onSlotLost } = {}, buffers = {}, bufferSize = 1024) {
         super(cfg, { launcher });
         // Individual dimension: token -> RingBuffer. Pre-seedable for tests.
         this.buffers = buffers;
@@ -405,6 +462,13 @@ export class AggregatorBot extends Bot {
         // immediately (a genuine second aggregator must not stream). Only a miss
         // sustained past activeGraceMs actually yields the slot.
         this.activeGraceMs = Math.max(0, Number(cfg.activeGraceMs ?? DEFAULT_ACTIVE_GRACE_MS));
+        // How long the election may continuously name ANOTHER aggregator before
+        // this bot concludes it is a duplicate and leaves the meeting (see
+        // #loseSlot). A non-positive value disables the yield (pure stand-down),
+        // which is what keeps a directly-driven unit test from ever leaving.
+        this.slotYieldMs = Math.max(0, Number(cfg.slotYieldMs ?? DEFAULT_SLOT_YIELD_MS));
+        // Reported to when the slot is conclusively lost (see #loseSlot).
+        this.onSlotLost = typeof onSlotLost === 'function' ? onSlotLost : null;
         // Pre-join gate: how the bot claims the room's single aggregator slot
         // from the sidecar BEFORE launching its browser. A `(url, {onOpen,
         // onMessage}) => { send, close }` connector (production injects the
@@ -459,9 +523,14 @@ export class AggregatorBot extends Bot {
         await this.page.evaluateOnNewDocument(pageMarkBot, typeof ownerIndex === 'string' ? ownerIndex : '');
         // Announce as the room's aggregator so every other client silences all
         // non-aggregator peers, leaving this bot's assembled master the only
-        // audio source they hear.
-        await this.page.evaluateOnNewDocument(pageMarkAggregator);
+        // audio source they hear. The claim token names the sidecar claim we
+        // won the slot with, so the relay can tie our page's roster record to
+        // that claim (see the sidecar's 'aggregator-claim' handler).
+        await this.page.evaluateOnNewDocument(pageMarkAggregator, this.#claimToken);
         await this.page.evaluateOnNewDocument(pageAudioBridge);
+        // Off-screen staging CSS for page scripts (page-scripts.css).
+        // Registered before the scripts that create staged elements.
+        await this.page.evaluateOnNewDocument(pageInstallPageStyles, PAGE_SCRIPTS_CSS);
         // The mosaic's cells are Hydra WebGL canvases that get drawImage'd into
         // the published frame. A WebGL context clears its drawing buffer after
         // each composite, so without this the cell reads back empty exactly as
@@ -631,6 +700,19 @@ export class AggregatorBot extends Bot {
         const now = this.now();
         if (activeStatus && !this.#everActive) this.#everActive = true;
         if (activeStatus) this.#lastActiveAt = now;
+        // Duplicate-yield deadline (see DEFAULT_SLOT_YIELD_MS): the RAW reading,
+        // not the hysteretic one — holding the slot through a transient miss
+        // must not also postpone the conclusion that a sustained miss draws. A
+        // real second aggregator's own page election names the other one tick
+        // after tick, so this fires once and the bot leaves the meeting; a
+        // lone aggregator never sees a miss long enough to reach it.
+        if (activeStatus) {
+            this.#rawInactiveSince = null;
+        } else if (this.#rawInactiveSince == null) {
+            this.#rawInactiveSince = now;
+        } else if (this.slotYieldMs > 0 && (now - this.#rawInactiveSince) >= this.slotYieldMs) {
+            this.#loseSlot('another aggregator has won the room\'s election for the whole yield window');
+        }
         const lastActiveNow = this.#lastActiveAt - now === 0;              // active this very tick
         const beforeActiveGraceMs = (now - this.#lastActiveAt) < this.activeGraceMs;
         // Holding the slot on a false read (ever-active, still inside the grace
@@ -881,13 +963,14 @@ export class AggregatorBot extends Bot {
         this.#syncMosaicEnabled(mosaicEnabled(ast));
     }
 
-    /** Push all four master-bus effects, and the chain's video counterpart. */
+    /** Push all four master-bus effects, and the chain's video counterparts. */
     #syncMasterEffects() {
         this.#syncMasterRoom();
         this.#syncMasterNoise();
         this.#syncMasterCrush();
         this.#syncMasterEcho();
         this.#syncMosaicVideo();
+        this.#syncMosaicOutput();
     }
 
     /**
@@ -914,6 +997,82 @@ export class AggregatorBot extends Bot {
             this.#lastVideoPushJson = 'stale';
             console.error('[aggregator-bot] mosaic video push failed', e);
         });
+    }
+
+    /**
+     * The chain's SHAPE counterpart for the published frame: which shape (if
+     * any) the composed mosaic is rendered onto, and the layers that stack
+     * around it — skybox, particles, tessellation, tiling, background —
+     * resolved by av-effects/OutputState.js.
+     *
+     * Same triggers and dedupe as #syncMosaicVideo: it is the same directive
+     * stream, so the picture's ground moves on the same tick as its glaze.
+     *
+     * The push ANSWERS with whatever vendored library the state needs and the
+     * page has not been given, and the install rides back on that answer
+     * rather than at startup: p5.js and three.js together are 1.7MB of source
+     * that a program without a shape should never carry. The page's own stage
+     * takes it from there on its next frame — no re-push of the state, since
+     * the stage re-checks for its libraries every frame while it waits.
+     *
+     * A failed or rejected push (or an answer whose page never got the state
+     * at all — a navigation the bot has not seen) marks the dedupe stale so
+     * the next sync retries instead of believing the frame was delivered.
+     */
+    #syncMosaicOutput() {
+        if (!this.page) return;
+        const state = outputStateFor(this.#chain, this.#cycleContext());
+        const payload = outputStageActive(state) ? state : null;
+        const json = JSON.stringify(payload);
+        if (json === this.#lastOutputPushJson) return;
+        this.#lastOutputPushJson = json;
+        Promise.resolve(this.page.evaluate(pageSetMosaicOutput, payload))
+            .then((res) => {
+                if (!res || res.ok !== true) {
+                    this.#lastOutputPushJson = 'stale';
+                    return;
+                }
+                if (Array.isArray(res.wants) && res.wants.length) {
+                    this.#installOutputVendor(res.wants);
+                }
+            })
+            .catch((e) => {
+                this.#lastOutputPushJson = 'stale';
+                console.error('[aggregator-bot] mosaic output push failed', e);
+            });
+    }
+
+    /**
+     * Answer a page's library request with the vendored source text — only
+     * what was named, since the two libraries evaluate independently and a
+     * program that later grows a skybox should not have been carrying p5 from
+     * the start. Read from bots/vendor/ once per process; an unreadable file
+     * warns once and caches null, which leaves the stage on the plain mosaic
+     * (the same fallback it shows while a library is still landing) rather
+     * than failing the frame.
+     */
+    #installOutputVendor(wants) {
+        if (!this.page || !Array.isArray(wants) || !wants.length) return;
+        if (!this.#outputVendorCache) {
+            const read = (file) => {
+                try {
+                    return readFileSync(new URL(`../../vendor/${file}`, import.meta.url), 'utf8');
+                } catch (e) {
+                    console.warn(`[aggregator-bot] output vendor ${file} unavailable — shape directives stay on the plain mosaic: ${e.message}`);
+                    return null;
+                }
+            };
+            this.#outputVendorCache = {
+                three: read('three.module.min.js'),
+                p5: read('p5.min.js'),
+            };
+        }
+        const three = wants.includes('three') ? this.#outputVendorCache.three : null;
+        const p5 = wants.includes('p5') ? this.#outputVendorCache.p5 : null;
+        if (!three && !p5) return;
+        Promise.resolve(this.page.evaluate(pageInstallOutputVendor, three, p5))
+            .then((have) => console.log('[aggregator-bot] output vendor installed', have))
+            .catch((e) => console.error('[aggregator-bot] output vendor install failed', e));
     }
 
     /**
@@ -2284,13 +2443,10 @@ export class AggregatorBot extends Bot {
 
     async stop () {
         // Stop streaming, drop buffered audio, release the aggregator claim, and
-        // close the page + browser. Releasing the claim (closing the probe) lets
-        // a replacement aggregator take the slot.
-        if (this.#claimConn) {
-            try { this.#claimConn.close(); }
-            catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
-            this.#claimConn = null;
-        }
+        // close the page + browser. Releasing the claim (an explicit release
+        // message, then closing the probe) lets a replacement aggregator take
+        // the slot immediately instead of waiting out the sidecar's lease.
+        this.#releaseClaim();
         if (this.#metaprogramConn) {
             try { this.#metaprogramConn.close(); }
             catch (e) { console.error(`[aggregator-bot] failed to close metaprogram bus connection: ${e.message}`); }
@@ -2593,23 +2749,29 @@ export class AggregatorBot extends Bot {
             // Someone else holds the room's single aggregator slot. Release our
             // probe and refuse to join — the caller (start) propagates the throw
             // so the container exits instead of joining the meeting.
-            if (this.#claimConn) {
-                try { this.#claimConn.close(); }
-                catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
-                this.#claimConn = null;
-            }
+            this.#releaseClaim();
             const err = new Error(`[aggregator-bot] room already has an aggregator; refusing to join (${url})`);
             err.code = AGGREGATOR_SLOT_TAKEN;
             throw err;
         }
-        // Granted: keep the probe connection open for our lifetime (closed in
-        // stop()) so nothing else can claim the slot while we are the aggregator.
+        // Granted: keep the probe connection open for our lifetime, renewing the
+        // claim on a cadence so the slot can never lapse under us, and release
+        // it explicitly in stop() so a replacement needn't wait out the lease.
+        this.#startClaimRenewal();
     }
 
     #requestAggregatorClaim(url) {
         return new Promise((resolve) => {
             let settled = false;
-            const finish = (granted) => { if (!settled) { settled = true; resolve(granted); } };
+            let retryTimer = null;
+            let retryWatchdog = null;
+            const finish = (granted) => {
+                if (settled) return;
+                settled = true;
+                if (retryTimer) clearTimeout(retryTimer);
+                if (retryWatchdog) clearTimeout(retryWatchdog);
+                resolve(granted);
+            };
             // Fail OPEN on timeout: if the bus doesn't answer, a lone aggregator
             // must still come up. The client-side election + stand-down remain as
             // a backstop if this lets a second one slip through.
@@ -2617,16 +2779,119 @@ export class AggregatorBot extends Bot {
                 console.warn(`[aggregator-bot] aggregator-claim timed out after ${CLAIM_TIMEOUT_MS}ms; proceeding`);
                 finish(true);
             }, CLAIM_TIMEOUT_MS);
+            const onClaimMessage = (msg) => {
+                if (!msg || msg.type !== 'aggregator-claim-result') return;
+                if (settled) {
+                    // A renewal answer arriving after startup. A denial here
+                    // means the room's slot has passed to someone else (our
+                    // lease lapsed and another aggregator took it) — this bot
+                    // is now the duplicate and must leave the meeting.
+                    if (!msg.granted) this.#loseSlot('the aggregator claim was taken over');
+                    return;
+                }
+                clearTimeout(timer);
+                if (msg.granted) {
+                    this.#claimLeaseMs = Number(msg.leaseMs) > 0 ? Number(msg.leaseMs) : CLAIM_RENEW_MS * 3;
+                    finish(true);
+                    return;
+                }
+                // Denied. When the sidecar says a live claim holds the slot
+                // and for how long, wait it out (once) rather than giving the
+                // room up: the holder is usually a predecessor whose container
+                // died without releasing, and its lease is bounded.
+                const heldForMs = Number(msg.heldForMs);
+                if (!Number.isFinite(heldForMs) || heldForMs <= 0 || this.#claimRetryAt != null) {
+                    finish(false);
+                    return;
+                }
+                this.#claimRetryAt = Date.now() + heldForMs;
+                // Re-arm the fail-open timeout across the wait: the retry's
+                // answer must not be able to hang start() forever if the bus
+                // goes away mid-retry.
+                retryWatchdog = setTimeout(() => {
+                    if (settled) return;
+                    console.warn(`[aggregator-bot] aggregator-claim retry unanswered after ${CLAIM_TIMEOUT_MS}ms; proceeding`);
+                    finish(true);
+                }, CLAIM_TIMEOUT_MS);
+                retryTimer = setTimeout(() => {
+                    if (settled) return;
+                    // Re-present the claim over a FRESH connection rather than
+                    // the stale one: the sidecar's answer handlers key off the
+                    // socket that asked, and the lease-wait retry must look
+                    // like a claimant (re)appearing with our own token — the
+                    // same shape as a proxy-dropped reconnect. The old conn's
+                    // close is safe here: closing a probe never releases the
+                    // claim (only expiry or an explicit release does).
+                    try { this.#claimConn?.close(); } catch (e) { /* already gone */ }
+                    this.#claimConn = this.connectSidecar(url, {
+                        onOpen: (send) => send({ type: 'aggregator-claim', token: this.#claimToken }),
+                        onMessage: onClaimMessage,
+                    });
+                }, Math.min(heldForMs + 500, CLAIM_RETRY_MAX_MS));
+            };
             this.#claimConn = this.connectSidecar(url, {
-                onOpen: (send) => send({ type: 'aggregator-claim' }),
-                onMessage: (msg) => {
-                    if (msg && msg.type === 'aggregator-claim-result') {
-                        clearTimeout(timer);
-                        finish(!!msg.granted);
-                    }
-                },
+                onOpen: (send) => send({ type: 'aggregator-claim', token: this.#claimToken }),
+                onMessage: onClaimMessage,
             });
         });
+    }
+
+    // Re-claim the slot over the (re)opened probe connection. Runs on the
+    // connector's onOpen, so a reconnect re-presents our own token: the sidecar
+    // recognises it as the same holder and re-holds the lease atomically, rather
+    // than the reconnect looking like a NEW claimant racing whoever is next.
+    #renewClaim() {
+        this.#claimConn?.send({ type: 'aggregator-claim', token: this.#claimToken });
+    }
+
+    #startClaimRenewal() {
+        if (!this.#setInterval || this.#claimRenewTimer) return;
+        const configured = Number(this.cfg.claimRenewMs ?? CLAIM_RENEW_MS);
+        const period = Number.isFinite(configured) && configured > 0
+            ? Math.max(10, configured) // low floor so tests can drive a fast cadence
+            : CLAIM_RENEW_MS;
+        this.#claimRenewTimer = this.#setInterval(() => this.#renewClaim(), period);
+        if (this.#claimRenewTimer && this.#claimRenewTimer.unref) this.#claimRenewTimer.unref();
+    }
+
+    // Free the room's aggregator slot immediately (a stopping aggregator) so a
+    // replacement needn't wait out the sidecar's lease. Closing the probe alone
+    // only stops the renewals — the lease is what bounds the gap.
+    #releaseClaim() {
+        if (this.#claimConn) {
+            try { this.#claimConn.send({ type: 'aggregator-claim-release', token: this.#claimToken }); }
+            catch (e) { console.error(`[aggregator-bot] failed to release aggregator claim: ${e.message}`); }
+            try { this.#claimConn.close(); }
+            catch (e) { console.error(`[aggregator-bot] failed to close aggregator claim connection: ${e.message}`); }
+            this.#claimConn = null;
+        }
+        if (this.#claimRenewTimer && this.#clearInterval) this.#clearInterval(this.#claimRenewTimer);
+        this.#claimRenewTimer = null;
+    }
+
+    /**
+     * This bot has conclusively lost the room's single aggregator slot — the
+     * claim went to someone else, or the election has named another aggregator
+     * for the whole yield window. It must LEAVE the meeting rather than linger
+     * as a second Aggregator tile: two aggregators each tap and re-emit the
+     * other's master, so both mixes feed back and mute.
+     *
+     * Reported once, via the injected onSlotLost (production stops the bot and
+     * exits the container cleanly — the same "a losing aggregator leaves"
+     * contract the pre-join claim denial follows). Without a callback there is
+     * nothing to drive a teardown from here (unit tests drive the bot directly),
+     * so the stand-down from the election gate still applies and the loss is
+     * only logged.
+     */
+    #loseSlot(reason) {
+        if (this.#slotLostReported) return;
+        this.#slotLostReported = true;
+        console.warn(`[aggregator-bot] yielding the aggregator slot: ${reason}`);
+        if (typeof this.onSlotLost === 'function') {
+            Promise.resolve(this.onSlotLost(reason)).catch((e) => {
+                console.error(`[aggregator-bot] onSlotLost failed: ${e.message}`);
+            });
+        }
     }
 
     async #queryActiveFromPage() {

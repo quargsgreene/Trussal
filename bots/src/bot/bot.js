@@ -16,7 +16,7 @@ import { browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from './chromium
 import {
   pageAudioBridge, pageForcePreserveDrawingBuffer, pageGumOverride, pageStrudelBoot,
   pageEnsureAudioPublished, pageInstallVideoPublisher, pageFpsSampler, pageReadSamples,
-  pageMarkBot, pageRemoteControl,
+  pageMarkBot, pageRemoteControl, pageInstallPageStyles, PAGE_SCRIPTS_CSS,
 } from './page-scripts.js';
 
 export class Bot {
@@ -95,6 +95,9 @@ export class Bot {
       // the same way the browser's normalizePeerCode strips it.
       directive: DIRECTIVE_LINE_PATTERN,
     });
+    // Off-screen staging CSS for page scripts (page-scripts.css). Registered
+    // before the scripts that create staged elements.
+    await this.page.evaluateOnNewDocument(pageInstallPageStyles, PAGE_SCRIPTS_CSS);
     // Before Hydra creates its WebGL canvas, so captureStream of it isn't blank.
     await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
     await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15, bandwidth.videoHeight ?? 360);

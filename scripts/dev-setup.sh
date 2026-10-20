@@ -94,10 +94,13 @@ $MARKER
 # docker-jitsi-meet/ as its project directory.
 COMPOSE_PROJECT_NAME=trussal-dev
 
-# HTTPS with the image's own self-signed cert. Browsers expose getUserMedia
-# (camera/mic) only in a secure context; http://localhost counts as secure in
-# Chrome/Firefox, but docker-jitsi-meet's config template derives its BOSH/WS
-# URLs by trimming only an "https://" prefix, so a plain-http PUBLIC_URL yields
+# HTTPS with the locally trusted dev certificate: scripts/dev-certs.sh
+# generates a localhost cert and the override below mounts it into web,
+# replacing the image's own self-signed default that every browser flags.
+# Browsers expose getUserMedia (camera/mic) only in a secure context;
+# http://localhost counts as secure in Chrome/Firefox, but
+# docker-jitsi-meet's config template derives its BOSH/WS URLs by trimming
+# only an "https://" prefix, so a plain-http PUBLIC_URL yields
 # 'https://http://host/...' and signalling breaks. Use HTTPS on a free port.
 PUBLIC_URL=https://localhost:${DEV_HTTPS_PORT}
 ENABLE_LETSENCRYPT=0
@@ -184,6 +187,13 @@ services:
     ports: !override
       - "${EFFECTIVE_HTTPS_PORT}:443"
       - "${EFFECTIVE_HTTP_PORT}:80"
+    volumes:
+      # Locally trusted localhost certificate (scripts/dev-certs.sh), mounted
+      # over the self-signed pair the image would otherwise generate on first
+      # boot — that default is what browsers flag as "not private". The CONFIG
+      # variable comes from this directory's .env.
+      - \${CONFIG}/dev-certs/cert.crt:/config/keys/cert.crt:ro,Z
+      - \${CONFIG}/dev-certs/cert.key:/config/keys/cert.key:ro,Z
 EOF
 
 # --- 4. Config tree ------------------------------------------------------------
@@ -203,20 +213,31 @@ mkdir -p \
 # the bundle's assets are served as text/html and no pattern ever ticks.
 cp "$REPO/custom-config/web/nginx/custom-routes.conf" "$CFG/web/nginx/custom-routes.conf"
 
+# --- 4b. Dev TLS certificate ---------------------------------------------------
+# HTTPS is the human entry point, and the web image only ships a self-signed
+# certificate — the "not private" warning. dev-certs.sh generates a localhost
+# certificate signed by a repo-local CA and installs that CA into this user's
+# Chrome/Firefox trust stores; the override above mounts the pair into web.
+# Must run before the first `docker compose up` (see `npm run dev`): Docker
+# creates a DIRECTORY for a missing bind-mount source, which then breaks nginx.
+log "ensuring the local dev TLS certificate"
+bash "$REPO/scripts/dev-certs.sh"
+
 # --- 5. Bundle -----------------------------------------------------------------
 # The web image COPYs custom-config.js + assets at build time, so they must
 # exist before the first `docker compose build`.
 log "building custom-config.js"
 ( cd "$REPO" && node build.mjs --deploy )
 
-# --- 6. Bots fleet (conductor + aggregator) ------------------------------------
+# --- 6. Bots fleet (conductor: aggregator + players) ---------------------------
 # The conductor is the orchestrator that watches room activity over the
-# sidecar's control channel and spawns ONE aggregator per active room. The
-# aggregator needs no host audio: it taps every participant's audio inside its
-# own page and streams the assembled mix back (the entrypoint boots no ALSA for
-# it), unlike player bots, which need the host's snd-aloop kernel module. So the
-# aggregator leg can run on this one machine; host audio is still the reason
-# player bots (the Spawn button) are not part of this flow.
+# sidecar's control channel. It spawns ONE aggregator per active room — the
+# aggregator taps every participant's audio inside its own page and streams
+# the assembled mix back — plus the player clusters the studio's Spawn button
+# asks for. No bot needs host audio: each publishes through its own in-page
+# tap, and where the production snd-aloop cards are absent the entrypoint
+# falls back to a silent null ALSA device instead of a real card, so the whole
+# fleet runs on this one machine.
 BOTS_DIR="$REPO/bots"
 BOTS_ENV="$BOTS_DIR/.env"
 BOTS_OVERRIDE="$BOTS_DIR/docker-compose.override.yml"
@@ -251,7 +272,7 @@ $BOTS_MARKER
 #
 # Plain http on the dev stack's published HTTP port: tokens derived from it
 # (/ws, /o2, the page itself) are all plain ws/http, so nothing in the fleet
-# has to trust the dev stack's self-signed certificate. The "/0" is only a
+# has to trust the dev stack's HTTPS certificate. The "/0" is only a
 # template — the conductor rewrites the room segment per meeting.
 JITSI_URL=http://localhost:${EFFECTIVE_HTTP_PORT}/0
 
@@ -271,10 +292,11 @@ cat >"$BOTS_OVERRIDE" <<EOF
 # Compose auto-loads this file next to bots/docker-compose.yml.
 #
 # Attach the conductor to the dev stack's own network so it reaches the latency
-# sidecar by service name (ws://latency:8081/ws — plain ws, so a self-signed
-# dev stack costs nothing). It is the conductor's ONLY network: the bot
-# containers it spawns run with host networking and reach both it (localhost:7700)
-# and the dev stack (http://localhost:${EFFECTIVE_HTTP_PORT}) directly.
+# sidecar by service name (ws://latency:8081/ws — plain ws, so the dev stack's
+# HTTPS certificate is irrelevant here). It is the conductor's ONLY network:
+# the bot containers it spawns run with host networking and reach both it
+# (localhost:7700) and the dev stack (http://localhost:${EFFECTIVE_HTTP_PORT})
+# directly.
 services:
   conductor:
     networks:
@@ -291,11 +313,13 @@ cat <<EOF
 
   Start the dev stack:   npm run dev
   Then open:             https://localhost:${EFFECTIVE_HTTPS_PORT}/<any-room-name>
-                         (accept the self-signed certificate warning once)
+                         (certificate already trusted — no warning; restart a
+                         browser that was already running when this setup ran)
 
-  The aggregator: each room gets one automatically a few seconds after a human
-  joins it (name: "Aggregator"). Player bots are NOT part of this flow — they
-  still need the host's snd-aloop audio module.
+  Bots: each room gets an "Aggregator" a few seconds after a human joins it,
+  and the studio's Spawn button grows player-bot clusters ("Tyrolean Hound",
+  …) that play into the room through their in-page audio tap. Both are reaped
+  a few seconds after the last human leaves; no host audio device is used.
 
   Tear it down with:     npm run dev:down
 

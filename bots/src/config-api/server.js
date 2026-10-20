@@ -23,7 +23,7 @@ const REMOTELY_TUNABLE = new Set([
   'metricsIntervalMs', 'healthTickMs',
   'jitsiChannelLastN', 'jitsiVideoHeight', 'jitsiStartBitrateKbps', 'captureFps',
   'ownerLeaveGraceMs', 'meetingEndGraceMs',
-  'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'jitsiJoinGraceMs',
+  'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'aggregatorBootDeadlineMs', 'jitsiJoinGraceMs',
 ]);
 
 // Loaded once at startup: the page is static; all live data arrives via

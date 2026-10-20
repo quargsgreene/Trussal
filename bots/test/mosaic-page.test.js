@@ -10,7 +10,9 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pageMosaic, pageGumOverride } from '../src/bot/page-scripts.js';
+import {
+  pageMosaic, pageGumOverride, pageSetMosaicOutput, pageInstallOutputVendor,
+} from '../src/bot/page-scripts.js';
 
 // --- the smallest DOM that pageMosaic touches ---------------------------------
 
@@ -143,4 +145,100 @@ test('mosaic page: a cycle anchor drives the H() clock forward', () => {
   // Nonsense anchors are refused rather than freezing the clock at NaN.
   m.setCycle({ cycle: 9, seconds: 0 });
   assert.equal(m.diag().cyclePos, 4.5);
+});
+
+// --- the output stage (shape programs) ---------------------------------------
+//
+// pageSetMosaicOutput is what the aggregator's #syncMosaicOutput pushes: the
+// resolved stage state, answered with `{ ok, wants }` naming the vendored
+// libraries the page still needs. These run against the DOM stub with no
+// vendor installed and no WebGL, which is exactly the state a real page is in
+// between the first push and the install landing — the stage must sit on the
+// plain mosaic, ask for what it needs, and never try to half-render.
+
+test('output stage: a page with no shape program has no stage at all', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  assert.deepEqual(m.diag().output, { active: false, libs: {} });
+  assert.deepEqual(m.outputVendorNeeds(), [], 'nothing to source');
+
+  assert.deepEqual(pageSetMosaicOutput(null), { ok: true, wants: [] });
+  assert.deepEqual(m.diag().output, { active: false, libs: {} },
+    'a null push does not build a stage');
+});
+
+test('output stage: a three.js shape asks for its library and stays off until it lands', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const res = pageSetMosaicOutput({
+    shape: { name: 'tetrahedron', family: 'three', geometry: [1.5], scene: [], animation: [] },
+    tiling: null, skybox: false, particle2: null, particle3: null,
+    tessellation: null, background: null,
+  });
+  assert.equal(res.ok, true, 'the state reached the page');
+  assert.deepEqual(res.wants, ['three'], 'the page names what it is missing');
+
+  const out = m.diag().output;
+  assert.equal(out.active, false, 'never a half-composed frame: no lib, no stage');
+  assert.deepEqual(out.libs, { three: 'waiting', p5: 'off' });
+  assert.equal(out.state.shape.name, 'tetrahedron');
+  assert.equal(out.state.shape.family, 'three');
+  assert.equal(out.state.background, null);
+  assert.deepEqual(m.outputVendorNeeds(), ['three'],
+    'the handshake repeats until the install answers it');
+});
+
+test('output stage: a p5 shape asks for p5, and layers can need both libraries', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const base = {
+    tiling: null, skybox: false, particle2: null, particle3: null,
+    tessellation: null, background: null,
+  };
+
+  pageSetMosaicOutput({
+    ...base,
+    shape: { name: 'star', family: 'p5', geometry: [100, 5, 0.4], scene: [], animation: [] },
+  });
+  assert.deepEqual(m.outputVendorNeeds(), ['p5']);
+  assert.deepEqual(m.diag().output.libs, { three: 'off', p5: 'waiting' });
+
+  // Independent layers stack: a skybox needs three.js while the p5 shape and
+  // the 2D particle cloud need p5 — both requested, three named first.
+  const res = pageSetMosaicOutput({
+    ...base,
+    skybox: true,
+    particle2: { count: 400, size: 3, speed: 1 },
+    shape: { name: 'star', family: 'p5', geometry: [100, 5, 0.4], scene: [], animation: [] },
+  });
+  assert.deepEqual(res.wants, ['three', 'p5']);
+});
+
+test('output stage: a background alone never asks for a library or arms the stage', () => {
+  pageMosaic({ width: 1280, height: 720 });
+  const m = window.__trussalMosaic;
+  const res = pageSetMosaicOutput({
+    shape: null, tiling: null, skybox: false, particle2: null, particle3: null,
+    tessellation: null, background: { type: 'color', color: '#123456' },
+  });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.wants, [],
+    'drawable() is false — a backdrop has nothing to sit behind');
+  const out = m.diag().output;
+  assert.equal(out.active, false);
+  assert.equal(out.state.background, 'color');
+  assert.deepEqual(out.libs, { three: 'off', p5: 'off' });
+});
+
+test('output vendor: install is per-library and a missing argument never clobbers', () => {
+  assert.deepEqual(pageInstallOutputVendor('THREE-SRC', null), { three: true, p5: false });
+  assert.equal(window.__trussalVendor.three, 'THREE-SRC');
+
+  assert.deepEqual(pageInstallOutputVendor(null, 'P5-SRC'), { three: true, p5: true },
+    'a null three does not clobber the installed one');
+  assert.equal(window.__trussalVendor.three, 'THREE-SRC');
+  assert.equal(window.__trussalVendor.p5, 'P5-SRC');
+
+  assert.deepEqual(pageInstallOutputVendor('THREE-SRC', 'P5-SRC'), { three: true, p5: true },
+    're-installing the same sources is a no-op');
 });

@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import esbuild from 'esbuild';
-import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync } from 'node:fs';
+import { mkdirSync, copyFileSync, readdirSync, existsSync, cpSync, watch } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildPages, PAGE_FILES } from './build-pages.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STRUDEL_FORK_WEB = resolve(__dirname, 'strudel-fork/packages/web');
@@ -32,6 +33,13 @@ function copyStrudelAssets() {
 	}
 }
 
+// The static /documentation + /about pages (build-pages.mjs) mirror into the
+// same bind mount, so their next request picks the fresh files up without an
+// image rebuild — same contract as custom-config.js above.
+function copyPagesToContainer() {
+	for (const name of PAGE_FILES) copyFileSync(join('dist', name), join(DEPLOY_DIR, name));
+}
+
 // Mirror dist/ into the container's bind-mount dir (same effect as the
 // `deploy:local` npm script, but callable on every incremental rebuild).
 function deployToContainer() {
@@ -39,6 +47,17 @@ function deployToContainer() {
 	const assetsDest = join(DEPLOY_DIR, 'assets');
 	mkdirSync(assetsDest, { recursive: true });
 	cpSync('dist/assets', assetsDest, { recursive: true });
+	copyPagesToContainer();
+
+	// Copy docs-images so they're served from /css/src/docs-images/ via the
+	// bind mount (docker-compose.yml mounts ../src -> /usr/share/jitsi-meet/css/src).
+	// This ensures images are available even if the src/ bind mount has issues.
+	const docsImagesSrc = join(__dirname, 'src', 'docs-images');
+	const docsImagesDest = join(DEPLOY_DIR, 'css', 'src', 'docs-images');
+	if (existsSync(docsImagesSrc)) {
+		mkdirSync(docsImagesDest, { recursive: true });
+		cpSync(docsImagesSrc, docsImagesDest, { recursive: true });
+	}
 }
 
 // esbuild runs onEnd after every (re)build — including the first — so the copy
@@ -48,10 +67,13 @@ const postBuild = {
 	setup(build) {
 		build.onEnd((result) => {
 			if (result.errors.length) return; // leave stale output on a failed rebuild
+			// These are the production/deployed copies: no dev reload poll.
+			// (The Vite dev server rebuilds dist pages with the poll itself.)
+			buildPages('dist', { hotReload: false });
 			copyStrudelAssets();
 			if (DEPLOY) {
 				deployToContainer();
-				console.log(`[build] deployed → docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);
+				console.log(`[build] deployed -> docker-jitsi-meet/jitsi-web/  ${new Date().toLocaleTimeString()}`);
 			}
 		});
 	},
@@ -72,6 +94,9 @@ const options = {
 		// The Mondo parser/runner is vendored at src/audio-net/mondo.mjs (see
 		// its header); this alias only catches any stray bare `mondolang` import.
 		'mondolang': resolve(__dirname, 'src/audio-net/mondo.mjs'),
+		// Stable state for HMR persistence
+		'@stable-state': resolve(__dirname, 'src/stable-state.js'),
+		'@hmr-runtime': resolve(__dirname, 'src/hmr-runtime.js'),
 	},
 	// Capture our own <script> URL synchronously at script load so
 	// `import.meta.url` (used by Strudel for its SharedWorker asset) resolves
@@ -81,20 +106,53 @@ const options = {
 		js: `var __TRUSSAL_BUNDLE_URL = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || (typeof location !== 'undefined' ? location.href : '');`
 	},
 	define: {
-		'import.meta.url': '__TRUSSAL_BUNDLE_URL'
+		'import.meta.url': '__TRUSSAL_BUNDLE_URL',
+		'__DEV__': 'false',
 	},
 	// Modules inject their own <style> tags at runtime (no <link> mechanism
 	// exists for this bundle to hook into Jitsi's page with), so a .css
 	// import is pulled in as a plain string rather than esbuild's own CSS
 	// loader (which would try to bundle/emit it as a separate stylesheet).
 	loader: { '.css': 'text' },
+	// stable-state.js reads `import.meta.hot.data` in dev to carry its live
+	// state across an update. In this iife bundle import.meta is empty, so the
+	// guard is dead code by design; silence the expected "import.meta is not
+	// available with the iife output format" warning.
+	logOverride: { 'empty-import-meta': 'silent' },
 	plugins: [postBuild],
 };
 
 if (WATCH) {
 	const ctx = await esbuild.context(options);
 	await ctx.watch();
-	console.log('[build] watching src/ for changes… (Ctrl-C to stop)');
+
+	// esbuild only watches files in its own graph. The static pages are built
+	// from two sources outside it (the content module and the page-mode CSS —
+	// docs-about.css is in the graph, so it already triggers the rebuild),
+	// so watch them here and regenerate the pages on each save.
+	const pageSources = ['src/docs-about-content.js', 'src/docs-page.css'];
+	let debounce = null;
+	const regeneratePages = () => {
+		clearTimeout(debounce);
+		debounce = setTimeout(() => {
+			try {
+				buildPages('dist', { hotReload: false });
+				if (DEPLOY) copyPagesToContainer();
+				console.log(`[build] regenerated pages -> dist/  ${new Date().toLocaleTimeString()}`);
+			} catch (e) {
+				console.error('[build] page regeneration failed:', e);
+			}
+		}, 60);
+	};
+	for (const f of pageSources) {
+		try { watch(f, regeneratePages); } catch (e) { console.warn('[build] cannot watch', f, e.message); }
+	}
+
+	console.log('[build] watching src/ for changes... (Ctrl-C to stop)');
+
+	process.on('SIGINT', () => {
+		process.exit(0);
+	});
 } else {
 	await esbuild.build(options);
 }

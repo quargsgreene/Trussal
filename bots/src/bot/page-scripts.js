@@ -31,6 +31,31 @@
  * conductor state via GET /api/bots.
  */
 
+import { readFileSync } from 'node:fs';
+
+// Read on the Node side and handed to pageInstallPageStyles as an argument:
+// functions passed to page.evaluateOnNewDocument() are serialized, so they
+// cannot close over this module's scope.
+export const PAGE_SCRIPTS_CSS = readFileSync(new URL('./page-scripts.css', import.meta.url), 'utf8');
+
+/**
+ * Install page-scripts.css in the bot's page. Registered as its own
+ * evaluateOnNewDocument() script before the functional page scripts, so the
+ * rules exist by the time they create staged elements.
+ */
+export function pageInstallPageStyles(css) {
+  const install = () => {
+    if (!css || document.getElementById('trussal-page-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'trussal-page-styles';
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+  };
+  // At document-start there may be no <head> yet; install once it exists.
+  if (document.head) install();
+  else document.addEventListener('DOMContentLoaded', install, { once: true });
+}
+
 /**
  * Audio tap, installed via evaluateOnNewDocument so it exists before Strudel
  * (or anything) creates an AudioContext. WebAudio nodes can't cross contexts
@@ -158,9 +183,17 @@ export function pageMarkBot(ownerIndex) {
  * leaving the aggregator's assembled master mix as the sole audio source. Runs
  * alongside pageMarkBot (the aggregator is also a bot). Must run at
  * document-start.
+ *
+ * The claim token rides along so the hello can name the sidecar claim this
+ * aggregator won the slot with: the probe that holds the claim and the socket
+ * this page speaks over are DIFFERENT connections, so without it the relay
+ * cannot tell this aggregator's own page from a second aggregator arriving.
  */
-export function pageMarkAggregator() {
+export function pageMarkAggregator(claimToken) {
   window.__trussalIsAggregator = true;
+  if (typeof claimToken === 'string' && claimToken) {
+    window.__trussalAggregatorClaimToken = claimToken;
+  }
 }
 
 /**
@@ -775,7 +808,7 @@ export function pageGumOverride(captureFps = 15, videoHeight = 360) {
     // produce captureStream() frames — same reasoning as published-video.js's
     // ensureCanvas. Kept out of sight but composited: off-screen, not
     // display:none.
-    publishCanvas.style.cssText = 'position:fixed;left:-20000px;top:0;pointer-events:none;';
+    publishCanvas.className = 'trussal-offscreen';
     (document.body || document.documentElement).appendChild(publishCanvas);
     publishCtx = publishCanvas.getContext('2d');
     drawPublishFrame();
@@ -1206,8 +1239,8 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
       });
     }
     const editor = document.createElement('strudel-editor');
-    editor.style.position = 'fixed';
-    editor.style.left = '-10000px'; // present in DOM (required to run), invisible to the video feed
+    // Present in DOM (required to run), invisible to the video feed.
+    editor.className = 'trussal-offscreen-editor';
     editor.setAttribute('code', code);
     document.body.appendChild(editor);
     // Expose the editor + the Hydra preamble so pageRemoteControl can re-evaluate
@@ -2489,8 +2522,7 @@ export function pageMosaic(options = {}) {
   // drawImage.
   const container = document.createElement('div');
   container.id = 'trussal-mosaic';
-  container.style.cssText =
-    'position:fixed;left:-20000px;top:0;width:' + width + 'px;height:' + height + 'px;';
+  container.className = 'trussal-offscreen';
   // The output canvas MUST be in the document: the gUM override finds it with
   // document.querySelector, which cannot match a detached node. Left detached,
   // that lookup falls through to "largest canvas in the page" — which is no
@@ -2872,7 +2904,9 @@ export function pageMosaic(options = {}) {
   // repeats produced, then lay the grain on top.
 
   let videoFx = null;        // { blurPx, blurWet, pixelBlock, grain, crossfadeS, crossfadeGain }
+  let outputStage = null;    // the p5/three output stage; created on first push
   let work = null;           // the scene, when effects need it off-canvas first
+  let texBuf = null;         // the scene as a TEXTURE source, when the stage is live
   let small = null;          // pixelation buffer
   let fade = null;           // the outgoing turn's last frame, for the crossfade
   let fadeStartedAt = 0;
@@ -2942,14 +2976,33 @@ export function pageMosaic(options = {}) {
       try { live.hydra.tick(dt); } catch (e) { noteError(`tick ${activeToken}`, e); }
     }
 
-    if (!fxActive()) {
+    // Where the scene lands depends on what follows it. Nothing after it:
+    // straight onto the published canvas. Effects only: into the scene buffer
+    // as before. The output stage live: into the TEXTURE buffer, and the
+    // stage's composition is what the effects chain then reads — background,
+    // shape, particles and glaze in that order, ground to surface.
+    const staged = Boolean(outputStage && outputStage.active());
+    if (!staged && !fxActive()) {
       drawScene(out);
       return;
     }
 
-    work = buffer(work, width, height);
-    drawScene(work);
-    let source = work;
+    let source;
+    if (staged) {
+      texBuf = buffer(texBuf, width, height);
+      drawScene(texBuf);
+      if (!fxActive()) {
+        outputStage.render(texBuf, out);
+        return;
+      }
+      work = buffer(work, width, height);
+      outputStage.render(texBuf, work);
+      source = work;
+    } else {
+      work = buffer(work, width, height);
+      drawScene(work);
+      source = work;
+    }
 
     // crush — spatial decimation. Draw small, then back up with smoothing
     // off, which is what makes it read as blocks rather than as a soft image.
@@ -3059,6 +3112,33 @@ export function pageMosaic(options = {}) {
       videoFx = state || null;
       if (!videoFx || !(videoFx.crossfadeS > 0)) fade = null;
     },
+    // The `#` chain's shape counterpart: which shape the composed frame is
+    // rendered onto, and what surrounds it (skybox, particles, tessellation,
+    // tiling, background) — resolved Node-side by av-effects/OutputState.js.
+    // Null (or a stage with nothing to draw) restores the plain mosaic; the
+    // stage itself is only ever created once something asks for it, so a
+    // program with no shape directives allocates no libraries, no canvases
+    // and no WebGL contexts.
+    setOutput(state) {
+      const wanted = state || null;
+      if (wanted && !outputStage) {
+        try {
+          outputStage = createOutputStage({ container, width, height, noteError, cyclePos });
+        } catch (e) {
+          noteError('output stage', e);
+          outputStage = null;
+          return;
+        }
+      }
+      if (outputStage) outputStage.setState(wanted);
+    },
+    // Which vendored libraries the CURRENT output state needs but the page
+    // does not have yet. The aggregator answers with the source text, so a
+    // shape directive works even if its push raced ahead of the install, and
+    // a program that never asks for a shape never ships 1.7MB of vendor code.
+    outputVendorNeeds() {
+      return outputStage ? outputStage.vendorNeeds() : [];
+    },
     setEnabled(on) {
       enabled = !!on;
     },
@@ -3102,6 +3182,10 @@ export function pageMosaic(options = {}) {
         slots,
         cyclePos: cyclePos(),
         patternApi: Boolean(window.__trussalHydraParams),
+        // The shape stage: whether one exists at all, whether it is drawing,
+        // and which libraries it is waiting on (none needed / sourcing /
+        // loaded). `state` is the summary the Node side pushed.
+        output: outputStage ? outputStage.diag() : { active: false, libs: {} },
         cells: cells.map((c) => ({ token: c.token, source: c.source })),
         instances: [...instances.entries()].map(([token, e]) => ({
           token,
@@ -3116,6 +3200,865 @@ export function pageMosaic(options = {}) {
   };
 
   setInterval(() => window.__trussalMosaic.retryAttachments(), 1000);
+}
+
+// --- the output stage ---------------------------------------------------------
+//
+// The `#` chain's shape layer: what the composed mosaic BECOMES. The stage
+// sits between drawScene and the effects chain — frame() draws the scene into
+// a texture buffer, the stage composes background → three.js layers → p5
+// layers onto a canvas, and crush/blur/grain/echo then read that result — so
+// the stage is ground and form, and the existing effects are the glaze over
+// it, in the same painter's order they already had over the plain mosaic.
+//
+// Everything is lazy and self-healing:
+//   • the stage object is only created by setOutput, so a program with no
+//     shape directive allocates no canvases, no libraries, no contexts;
+//   • three.js (an ES module) evaluates from a blob URL and p5.js (UMD) from
+//     a script tag, only once the bot has handed over the vendored source
+//     AND a directive asks for them — until both land, active() is false and
+//     frame() falls through to the untouched mosaic;
+//   • every render is wrapped: a failing context logs to diag and the frame
+//     stays up rather than wedging the compositor.
+//
+// Composition model mirrors OutputState.js: ONE shape at a time (last wins),
+// with skybox / particle2 / particle3 / tessellation / tiling / background
+// stacking freely as layers. Spin params are turns per CYCLE — read from
+// cyclePos(), so the picture moves with the grid rather than with the clock.
+function createOutputStage({ container, width, height, noteError, cyclePos }) {
+  const TAU = Math.PI * 2;
+  const ASPECT = width / Math.max(1, height);
+  // FOV 50°: half-height at distance d is tan(25°)·d. The fit below walks a
+  // composition's half-extent through this to park the camera in front of it.
+  const TAN_HALF = Math.tan((50 / 2) * (Math.PI / 180));
+
+  let state = null;
+
+  // Libraries. `three` is the built scene bundle (renderer/scene/camera),
+  // separate from window.THREE (the module itself) because the bundle is only
+  // worth building once a directive actually renders. Failed loads are sticky:
+  // retrying a context that could not come up would burn WebGL contexts.
+  let threeLoading = null, threeFailed = false;
+  let p5Loading = null, p5Failed = false;
+  let three = null;
+  let p5Inst = null, p5Canvas = null, p5Frame = null;
+
+  // One downscaled readback of the scene per frame, shared by both particle
+  // systems — 192×108 pixels instead of 921k, which is what makes sampling
+  // the video's own colors per particle affordable under software GL.
+  const TINY_W = 192, TINY_H = 108;
+  let tiny = null, tinyData = null;
+
+  // The `# background` image, loaded once per URL.
+  let bgImage = null, bgWanted = null;
+
+  // particle2's base field — positions are fixed; only their drift and their
+  // sampled colors move each frame.
+  let p2Sig = '', p2Base = null, p2Phase = null;
+
+  // A positive parameter, or the default — the parser only ever produces
+  // positive reals, and `~` arrives as null, which lands here too.
+  const n = (v, d) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : d);
+  // A finite parameter including zero (spins may legitimately be silenced),
+  // else zero.
+  const slot = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  // A rounded parameter clamped into a band (segment counts, sides…).
+  const ip = (v, d, lo, hi) => {
+    const x = typeof v === 'number' && isFinite(v) ? Math.round(v) : d;
+    return Math.min(hi, Math.max(lo, x));
+  };
+  const i1 = (v, d = 1) => (typeof v === 'number' && isFinite(v) ? Math.round(v) : d);
+
+  // Whether there is anything at all for the stage to draw. Background alone
+  // does not count: with no shape the frame IS the video, so there is nothing
+  // for a backdrop to sit behind (and OutputState gates the push the same
+  // way).
+  function drawable() {
+    return !!(state && (state.shape || state.skybox || state.particle2
+      || state.particle3 || state.tessellation));
+  }
+
+  // Which libraries the current state needs — the same table OutputState's
+  // outputStageLibraries computes Node-side, kept here so the page (and diag)
+  // can judge readiness without a round trip.
+  function libNeeds() {
+    const need = { three: false, p5: false };
+    if (!state) return need;
+    const fam = state.shape ? state.shape.family : null;
+    need.three = !!(state.skybox || state.particle3 || fam === 'three');
+    need.p5 = !!(state.particle2 || state.tessellation || fam === 'p5');
+    return need;
+  }
+
+  // What the current state needs that the page has not been GIVEN yet. The
+  // bot answers this with source text, so a shape directive works even if its
+  // first push raced ahead of the install — and a program that never asks for
+  // a shape never ships 1.7MB of vendor code into the page.
+  function vendorNeeds() {
+    if (!drawable()) return [];
+    const need = libNeeds();
+    const vendor = window.__trussalVendor || {};
+    const want = [];
+    if (need.three && !vendor.three) want.push('three');
+    if (need.p5 && !vendor.p5) want.push('p5');
+    return want;
+  }
+
+  // Kick off evaluation of whichever vendored source is present but uneval'd.
+  // Called from setState and from every active() — the second path is what
+  // self-heals when the bot's install lands AFTER the state push.
+  function ensureLoaders() {
+    const need = libNeeds();
+    const vendor = window.__trussalVendor || {};
+    if (need.three && vendor.three && !window.THREE && !threeLoading && !threeFailed) {
+      startThree(vendor.three);
+    }
+    if (need.p5 && vendor.p5 && !window.p5 && !p5Loading && !p5Failed) {
+      startP5(vendor.p5);
+    }
+  }
+
+  // three.module.min.js is an ES module, and a `<script>` cannot run one —
+  // so it goes up as a blob URL and in through dynamic import, the same door
+  // hydra-synth comes through.
+  function startThree(src) {
+    let url;
+    try {
+      url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    } catch (e) {
+      threeFailed = true;
+      noteError('three stage', e);
+      return null;
+    }
+    threeLoading = import(/* webpackIgnore: true */ url)
+      .then((mod) => {
+        if (!mod || !mod.WebGLRenderer) throw new Error('three vendor evaluated without a renderer');
+        window.THREE = mod;
+      })
+      .catch((e) => {
+        threeFailed = true;
+        noteError('three load', e);
+      })
+      .then(() => {
+        threeLoading = null;
+        try { URL.revokeObjectURL(url); } catch (e) { /* already gone */ }
+      });
+    return threeLoading;
+  }
+
+  // p5.min.js is UMD — a plain script tag is the whole install.
+  function startP5(src) {
+    p5Loading = new Promise((resolve, reject) => {
+      try {
+        const el = document.createElement('script');
+        el.textContent = src;
+        el.onload = () => (window.p5 ? resolve() : reject(new Error('p5 vendor evaluated without exposing p5')));
+        el.onerror = () => reject(new Error('p5 vendor failed to evaluate'));
+        (document.head || document.documentElement).appendChild(el);
+      } catch (e) {
+        reject(e);
+      }
+    })
+      .catch((e) => {
+        p5Failed = true;
+        noteError('p5 load', e);
+      })
+      .then(() => { p5Loading = null; });
+    return p5Loading;
+  }
+
+  // The gate frame() reads. False until everything the state asks for is
+  // actually up — a directive arriving before its library lands shows the
+  // plain mosaic for the frames in between, never a half-composed one.
+  function active() {
+    if (!drawable()) return false;
+    const need = libNeeds();
+    if (need.three) {
+      if (!window.THREE) { ensureLoaders(); return false; }
+      if (!three && !makeThree()) return false;
+    }
+    if (need.p5) {
+      if (!window.p5) { ensureLoaders(); return false; }
+      if (!p5Inst && !makeP5()) return false;
+    }
+    return true;
+  }
+
+  function setState(next) {
+    state = next || null;
+    ensureLoaders();
+  }
+
+  // --- three.js ----------------------------------------------------------------
+
+  function makeThree() {
+    const T = window.THREE;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.className = 'trussal-output-three';
+      container.appendChild(canvas);
+      const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: false, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      // Transparent clear: the 2D background layer painted underneath shows
+      // around whatever the scene draws on top of it.
+      renderer.setClearColor(0x000000, 0);
+      const scene = new T.Scene();
+      const camera = new T.PerspectiveCamera(50, ASPECT, 0.05, 600);
+      const root = new T.Group();
+      scene.add(root);
+      three = { T, canvas, renderer, scene, camera, root, tex: null, skyTex: null, sky: null, meshes: [], points: null, geo: null, mat: null, boundR: 1, shapeSig: '', pointsSig: '' };
+      return true;
+    } catch (e) {
+      threeFailed = true;
+      three = null;
+      noteError('three stage', e);
+      return false;
+    }
+  }
+
+  // Shape-specific geometry, parameter-by-parameter straight from
+  // THREE_SHAPES in the parser — a null slot (or an absent group) falls back
+  // to three.js's own default, which is also what the docs quote.
+  function makeGeometry(T, name, g) {
+    const gr = g || [];
+    const num = (i, d) => n(gr[i], d);
+    const seg = (i, d) => ip(gr[i], d, 3, 128);
+    switch (name) {
+      case 'tetrahedron': return new T.TetrahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+      case 'box': return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
+      case 'sphere': return new T.SphereGeometry(num(0, 1), seg(1, 32), seg(2, 16));
+      case 'icosahedron': return new T.IcosahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+      case 'octahedron': return new T.OctahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+      case 'dodecahedron': return new T.DodecahedronGeometry(num(0, 1), ip(gr[1], 0, 0, 6));
+      case 'torus': return new T.TorusGeometry(num(0, 1), num(1, 0.4), seg(2, 12), seg(3, 48));
+      case 'torusknot': return new T.TorusKnotGeometry(num(0, 1), num(1, 0.4), seg(2, 64), seg(3, 8), ip(gr[4], 2, 1, 32), ip(gr[5], 3, 1, 32));
+      case 'cylinder': return new T.CylinderGeometry(num(0, 1), num(1, 1), num(2, 1), seg(3, 32));
+      case 'cone': return new T.ConeGeometry(num(0, 1), num(1, 1), seg(2, 32));
+      default: return new T.BoxGeometry(num(0, 1), num(1, 1), num(2, 1));
+    }
+  }
+
+  function rebuildShape(st) {
+    const T = three.T;
+    for (const m of three.meshes) three.root.remove(m);
+    three.meshes = [];
+    if (three.geo) { three.geo.dispose(); three.geo = null; }
+    if (three.mat) { three.mat.dispose(); three.mat = null; }
+    three.boundR = 1;
+    if (!st) return;
+    const geo = makeGeometry(T, st.name, st.geometry);
+    geo.computeBoundingSphere();
+    three.geo = geo;
+    three.boundR = (geo.boundingSphere && geo.boundingSphere.radius) || 1;
+    // Unlit on purpose: the frame's own colors are the surface — lighting it
+    // would tint the video.
+    const mat = new T.MeshBasicMaterial({ map: three.tex, side: T.DoubleSide });
+    three.mat = mat;
+    const count = cellCount(state.tiling);
+    for (let i = 0; i < count; i++) {
+      const mesh = new T.Mesh(geo, mat);
+      three.root.add(mesh);
+      three.meshes.push(mesh);
+    }
+  }
+
+  function cellCount(tiling) {
+    if (!tiling || tiling.mode === 'none') return 1;
+    return Math.min(12, Math.max(1, Math.round(tiling.count || 1)));
+  }
+
+  // Where the shape's instances sit, in world units. Cells are sized around
+  // the shape's own extent, so a lattice of radius-r shapes is spaced by
+  // ~2.15·r regardless of how big the shapes are — the camera fit below then
+  // frames the lattice, which is what keeps nine copies legible instead of a
+  // distant smear.
+  function layoutCells(tiling, baseR) {
+    const count = cellCount(tiling);
+    if (count === 1 || !tiling || tiling.mode === 'none') return [{ x: 0, y: 0 }];
+    const cols = tiling.mode === 'strip'
+      ? count
+      : Math.max(1, Math.ceil(Math.sqrt(count * ASPECT)));
+    const rows = Math.max(1, Math.ceil(count / cols));
+    const cell = 2.15 * baseR;
+    const hex = tiling.mode === 'hex';
+    const rowStep = hex ? cell * 0.86 : cell;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      // Hex is the brick reading of the grid: alternate rows half-step
+      // sideways, the pair offset symmetrically about the center so the
+      // lattice does not drift right.
+      const stagger = hex ? (row % 2 ? 0.25 : -0.25) : 0;
+      out.push({
+        x: (col - (cols - 1) / 2 + stagger) * cell,
+        y: (row - (rows - 1) / 2) * rowStep,
+      });
+    }
+    return out;
+  }
+
+  // Instance layout plus the camera distance that frames it — recomputed
+  // every frame because the scene's scale parameter moves without a rebuild.
+  function frameFit(st) {
+    const sc = (st && st.scene) || [];
+    const scale = n(sc[0], 1);
+    const baseR = Math.max(0.02, (st ? three.boundR : 1) * scale);
+    const cells = layoutCells(st && st.tiling, baseR);
+    let hw = baseR, hh = baseR;
+    for (const c of cells) {
+      hw = Math.max(hw, Math.abs(c.x) + baseR);
+      hh = Math.max(hh, Math.abs(c.y) + baseR);
+    }
+    const fit = Math.max(hh / TAN_HALF, hw / (TAN_HALF * ASPECT)) * 1.14;
+    return { scale, cells, dist: Math.max(0.6, fit) };
+  }
+
+  function rebuildPoints(st) {
+    const T = three.T;
+    if (three.points) {
+      three.root.remove(three.points);
+      three.points.geometry.dispose();
+      three.points.material.dispose();
+      three.points = null;
+    }
+    const cfg = state.particle3;
+    if (!cfg) return;
+    const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
+    const posArr = new Float32Array(count * 3);
+    const colArr = new Float32Array(count * 3);
+    const uvArr = new Float32Array(count * 2);
+    colArr.fill(0.8); // visible before the first sample lands
+    // On the shape's surface when there is a three.js shape (its own vertices
+    // and UVs, so the cloud hugs the form and inherits its texture mapping);
+    // a unit shell otherwise.
+    const sp = three.geo && three.geo.attributes && three.geo.attributes.position;
+    const su = three.geo && three.geo.attributes && three.geo.attributes.uv;
+    if (st && sp && sp.count) {
+      for (let i = 0; i < count; i++) {
+        const vi = Math.floor(Math.random() * sp.count);
+        posArr[i * 3] = sp.getX(vi);
+        posArr[i * 3 + 1] = sp.getY(vi);
+        posArr[i * 3 + 2] = sp.getZ(vi);
+        if (su) {
+          uvArr[i * 2] = su.getX(vi);
+          uvArr[i * 2 + 1] = su.getY(vi);
+        } else {
+          uvArr[i * 2] = 0.5;
+          uvArr[i * 2 + 1] = 0.5;
+        }
+      }
+    } else {
+      const ga = Math.PI * (3 - Math.sqrt(5)); // fibonacci sphere: even spread
+      for (let i = 0; i < count; i++) {
+        const y = count === 1 ? 0 : 1 - (i / (count - 1)) * 2;
+        const rad = Math.sqrt(Math.max(0, 1 - y * y));
+        const th = ga * i;
+        const x = Math.cos(th) * rad, z = Math.sin(th) * rad;
+        posArr[i * 3] = x;
+        posArr[i * 3 + 1] = y;
+        posArr[i * 3 + 2] = z;
+        uvArr[i * 2] = (Math.atan2(z, x) / TAU + 0.5 + 1) % 1;
+        uvArr[i * 2 + 1] = Math.acos(Math.max(-1, Math.min(1, y))) / Math.PI;
+      }
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.BufferAttribute(posArr, 3));
+    const colAttr = new T.BufferAttribute(colArr, 3);
+    if (T.DynamicDrawUsage) colAttr.setUsage(T.DynamicDrawUsage);
+    geo.setAttribute('color', colAttr);
+    const mat = new T.PointsMaterial({ size: cfg.size, sizeAttenuation: false, vertexColors: true });
+    const pts = new T.Points(geo, mat);
+    pts.userData.uv = uvArr;
+    three.root.add(pts);
+    three.points = pts;
+  }
+
+  // Recolor the cloud from the scene buffer each frame — sampled through the
+  // particles' UVs, so a sphere shell reads the panorama around it and a
+  // shape-surface cloud reads the video through the shape's own mapping.
+  function updatePoints(pos) {
+    const P = three.points;
+    const cfg = state.particle3;
+    if (!P || !cfg) return;
+    P.material.size = cfg.size;
+    P.rotation.y = pos * n(cfg.speed, 1) * TAU * 0.25;
+    if (!tinyData) return;
+    const uv = P.userData.uv;
+    const arr = P.geometry.attributes.color.array;
+    for (let i = 0; i < uv.length / 2; i++) {
+      const u = uv[i * 2], v = uv[i * 2 + 1];
+      const x = Math.min(TINY_W - 1, Math.max(0, Math.round(u * (TINY_W - 1))));
+      // three's V runs up, the readback's rows run down.
+      const y = Math.min(TINY_H - 1, Math.max(0, Math.round((1 - v) * (TINY_H - 1))));
+      const o = (y * TINY_W + x) * 4;
+      arr[i * 3] = data255(o);
+      arr[i * 3 + 1] = data255(o + 1);
+      arr[i * 3 + 2] = data255(o + 2);
+    }
+    P.geometry.attributes.color.needsUpdate = true;
+  }
+
+  function data255(o) {
+    return (tinyData[o] || 0) / 255;
+  }
+
+  function ensureSky(tex) {
+    const T = three.T;
+    if (state.skybox) {
+      if (!three.skyTex) {
+        three.skyTex = new T.CanvasTexture(tex);
+        three.skyTex.generateMipmaps = false;
+        three.skyTex.minFilter = T.LinearFilter;
+        if (T.SRGBColorSpace) three.skyTex.colorSpace = T.SRGBColorSpace;
+      }
+      three.skyTex.image = tex;
+      three.skyTex.needsUpdate = true;
+      if (!three.sky) {
+        const mat = new T.MeshBasicMaterial({ map: three.skyTex, side: T.BackSide, depthWrite: false });
+        const mesh = new T.Mesh(new T.SphereGeometry(200, 48, 24), mat);
+        three.sky = mesh;
+        three.scene.add(mesh);
+      }
+    } else if (three.sky) {
+      three.scene.remove(three.sky);
+      three.sky.geometry.dispose();
+      three.sky.material.dispose();
+      three.sky = null;
+    }
+  }
+
+  function renderThree(tex, pos) {
+    const T = three.T;
+    // The scene buffer as a texture. Mipmaps off: 1280×720 is not power-of-
+    // two and regenerating them every frame under software rasterization
+    // costs more than the minification shimmer they would hide.
+    if (!three.tex) {
+      three.tex = new T.CanvasTexture(tex);
+      three.tex.wrapS = three.tex.wrapT = T.RepeatWrapping;
+      three.tex.generateMipmaps = false;
+      three.tex.minFilter = T.LinearFilter;
+      // Round-trip the frame as sRGB: without this the colorspace math
+      // brightens every frame the stage touches.
+      if (T.SRGBColorSpace) three.tex.colorSpace = T.SRGBColorSpace;
+    }
+    three.tex.image = tex;
+    three.tex.needsUpdate = true;
+    ensureSky(tex);
+
+    // Rebuild only when the shape itself (or its tiling) moves — scene and
+    // animation parameters are per-frame state, not structure.
+    const st = state.shape && state.shape.family === 'three' ? state.shape : null;
+    const shapeSig = st ? JSON.stringify([st.name, st.geometry, state.tiling]) : '';
+    if (shapeSig !== three.shapeSig) {
+      three.shapeSig = shapeSig;
+      rebuildShape(st);
+    }
+
+    const fit = frameFit(st);
+    for (let i = 0; i < three.meshes.length; i++) {
+      const m = three.meshes[i], c = fit.cells[i];
+      if (!m || !c) continue;
+      m.position.set(c.x, c.y, 0);
+      m.scale.setScalar(fit.scale);
+    }
+    if (st) {
+      const sc = st.scene || [];
+      three.tex.repeat.set(n(sc[2], 1), n(sc[3], 1));
+      // Spin: turns per cycle on each axis. An absent animation group keeps
+      // the default turn; a written one silences the slots it rests (`~`),
+      // so `[0 ~ ~]` parks X and Z and leaves Y.
+      const a = spinOf(st.animation, [0, 0.5, 0]);
+      three.root.rotation.set(slot(a[0]) * pos * TAU, slot(a[1]) * pos * TAU, slot(a[2]) * pos * TAU);
+      const d = n(sc[1], NaN);
+      three.camera.position.set(0, 0, isFinite(d) ? d : fit.dist);
+    } else {
+      three.root.rotation.set(0, 0, 0);
+      three.camera.position.set(0, 0, fit.dist);
+    }
+    three.camera.lookAt(0, 0, 0);
+
+    const pointsSig = state.particle3
+      ? JSON.stringify([state.particle3.count, st ? st.name : null, st ? st.geometry : null])
+      : '';
+    if (pointsSig !== three.pointsSig) {
+      three.pointsSig = pointsSig;
+      rebuildPoints(st);
+    }
+    if (three.points) three.points.scale.setScalar(fit.scale);
+    updatePoints(pos);
+
+    three.renderer.render(three.scene, three.camera);
+  }
+
+  // --- p5.js -------------------------------------------------------------------
+
+  function makeP5() {
+    try {
+      p5Inst = new window.p5((p) => {
+        p.setup = () => {
+          const r = p.createCanvas(width, height);
+          p5Canvas = (r && (r.elt || r.canvas)) || p5Canvas || container.querySelector('canvas');
+          p.noLoop();
+        };
+        p.draw = () => {
+          if (p5Frame) drawP5(p.drawingContext, p5Frame);
+        };
+      }, container);
+      if (!p5Canvas) p5Canvas = container.querySelector('canvas');
+      return true;
+    } catch (e) {
+      p5Failed = true;
+      p5Inst = null;
+      noteError('p5 stage', e);
+      return false;
+    }
+  }
+
+  function spinOf(group, dflt) {
+    if (!group || group.length === 0) return dflt;
+    return group.map(slot);
+  }
+
+  // The 2D shape's path, centered on the current transform, returning its
+  // half-extent so the caller knows how far the video fill must reach.
+  // Defaults scale with the frame — a bare `# square` is a poster block, a
+  // bare `# circle` a disc — and a written geometry slot replaces its default
+  // wholesale, exactly as the tables in MetaprogrammerParser.js describe.
+  function p5ShapePath(dc, shape, scale) {
+    const g = shape.geometry || [];
+    const m = Math.min(width, height);
+    dc.beginPath();
+    switch (shape.name) {
+      case 'square': {
+        const s = n(g[0], m * 0.6) * scale;
+        dc.rect(-s / 2, -s / 2, s, s);
+        return s / 2;
+      }
+      case 'circle': {
+        const r = n(g[0], m * 0.33) * scale;
+        dc.arc(0, 0, r, 0, TAU);
+        return r;
+      }
+      case 'triangle': {
+        const r = n(g[0], m * 0.4) * scale;
+        for (let i = 0; i < 3; i++) {
+          const a = -Math.PI / 2 + (i * TAU) / 3;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+        }
+        dc.closePath();
+        return r;
+      }
+      case 'star': {
+        const R = n(g[0], m * 0.36) * scale;
+        const points = ip(g[1], 5, 3, 24);
+        const inner = Math.min(0.95, Math.max(0.2, n(g[2], 0.45)));
+        for (let i = 0; i < points * 2; i++) {
+          const r = i % 2 === 0 ? R : R * inner;
+          const a = -Math.PI / 2 + (i * Math.PI) / points;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+        }
+        dc.closePath();
+        return R;
+      }
+      case 'polygon': {
+        const sides = ip(g[0], 6, 3, 32);
+        const r = n(g[1], m * 0.36) * scale;
+        for (let i = 0; i < sides; i++) {
+          const a = -Math.PI / 2 + (i * TAU) / sides;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0) dc.moveTo(x, y); else dc.lineTo(x, y);
+        }
+        dc.closePath();
+        return r;
+      }
+      default: {
+        const s = m * 0.6 * scale;
+        dc.rect(-s / 2, -s / 2, s, s);
+        return s / 2;
+      }
+    }
+  }
+
+  // Cover-fit the frame into a box (crop, never letterbox — a texture fills
+  // its region), optionally as a repeatU×repeatV grid of itself, which is
+  // what the scene group's repeat slots mean in 2D.
+  function drawTiledVideo(dc, tex, x, y, w, h, rU, rV) {
+    const tw0 = tex.width || width, th0 = tex.height || height;
+    const tw = w / rU, th = h / rV;
+    const sa = Math.max(tw / tw0, th / th0);
+    const dw = tw0 * sa, dh = th0 * sa;
+    for (let i = 0; i < rU; i++) {
+      for (let j = 0; j < rV; j++) {
+        const tx = x + i * tw, ty = y + j * th;
+        const dx = tx + (tw - dw) / 2, dy = ty + (th - dh) / 2;
+        if (rU === 1 && rV === 1) {
+          dc.drawImage(tex, dx, dy, dw, dh);
+          continue;
+        }
+        dc.save();
+        dc.beginPath();
+        dc.rect(tx, ty, tw, th);
+        dc.clip();
+        dc.drawImage(tex, dx, dy, dw, dh);
+        dc.restore();
+      }
+    }
+  }
+
+  function drawP5Shape(dc, st, frame) {
+    const sc = st.scene || [];
+    const scale = n(sc[0], 1);
+    const rU = Math.min(16, Math.max(1, i1(sc[1])));
+    const rV = Math.min(16, Math.max(1, i1(sc[2])));
+    const spin = slot(spinOf(st.animation, [0.25])[0]);
+    dc.save();
+    dc.translate(width / 2, height / 2);
+    dc.rotate(frame.pos * spin * TAU);
+    const half = p5ShapePath(dc, st.shape, scale);
+    dc.clip();
+    drawTiledVideo(dc, frame.tex, -half, -half, half * 2, half * 2, rU, rV);
+    dc.restore();
+  }
+
+  // The quilt reading of the frame: a cols×rows lattice, every cell cover-
+  // fitting the video, alternate rows and columns mirrored so seams match
+  // edge to edge — the eye reads the interlock rather than a strip of repeats.
+  // The whole lattice turns with the spin param; the corners it uncovers show
+  // the background layer through.
+  function drawTessellation(dc, ts, frame) {
+    const cols = Math.min(16, Math.max(1, Math.round(ts.cols || 4)));
+    const rows = Math.min(12, Math.max(1, Math.round(ts.rows || 3)));
+    const spin = slot(ts.spin);
+    const cw = width / cols, ch = height / rows;
+    const tw0 = frame.tex.width || width, th0 = frame.tex.height || height;
+    const sa = Math.max(cw / tw0, ch / th0);
+    const dw = tw0 * sa, dh = th0 * sa;
+    dc.save();
+    dc.translate(width / 2, height / 2);
+    dc.rotate(frame.pos * spin * TAU);
+    dc.translate(-width / 2, -height / 2);
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        dc.save();
+        dc.beginPath();
+        dc.rect(i * cw, j * ch, cw, ch);
+        dc.clip();
+        dc.translate(i * cw + cw / 2, j * ch + ch / 2);
+        if (i % 2) dc.scale(-1, 1);
+        if (j % 2) dc.scale(1, -1);
+        dc.drawImage(frame.tex, -dw / 2, -dh / 2, dw, dh);
+        dc.restore();
+      }
+    }
+    dc.restore();
+  }
+
+  // particle2: the frame's own pixels set loose — each particle keeps a home
+  // cell on a jittered grid, drifts around it once per cycle (speed is the
+  // rate in cycles, so the swarm breathes with the grid), and paints itself
+  // from the video at its LIVE position. With a 2D shape active the whole
+  // swarm is clipped to it, particles filling the form the way the texture
+  // does.
+  function drawParticle2(dc, st, frame) {
+    const cfg = st.particle2;
+    const count = Math.min(8000, Math.max(16, Math.round(cfg.count)));
+    const size = n(cfg.size, 3);
+    const speed = n(cfg.speed, 1);
+    ensureP2(count);
+    const amp = size * 2.5;
+    const sh = st.shape && st.shape.family === 'p5' ? st.shape : null;
+    const rot = sh ? frame.pos * slot(spinOf(sh.animation, [0.25])[0]) * TAU : 0;
+    if (sh) {
+      dc.save();
+      dc.translate(width / 2, height / 2);
+      dc.rotate(rot);
+      p5ShapePath(dc, sh, n((sh.scene || [])[0], 1));
+      dc.clip();
+      // Clip first, then unwind the transform: the region is fixed in device
+      // space, and the particles below want plain canvas coordinates.
+      dc.rotate(-rot);
+      dc.translate(-width / 2, -height / 2);
+    }
+    for (let i = 0; i < count; i++) {
+      const bx = p2Base[i * 2], by = p2Base[i * 2 + 1], ph = p2Phase[i];
+      const x = bx * width + Math.sin(ph + frame.pos * speed * TAU) * amp;
+      const y = by * height + Math.cos(ph * 1.7 + frame.pos * speed * TAU) * amp;
+      const c = sampleAt(x, y);
+      dc.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+      dc.fillRect(x - size / 2, y - size / 2, size, size);
+    }
+    if (sh) dc.restore();
+  }
+
+  function ensureP2(count) {
+    if (p2Base && p2Sig === String(count)) return;
+    p2Sig = String(count);
+    p2Base = new Float32Array(count * 2);
+    p2Phase = new Float32Array(count);
+    const cols = Math.max(1, Math.ceil(Math.sqrt(count * ASPECT)));
+    const rows = Math.max(1, Math.ceil(count / cols));
+    for (let i = 0; i < count; i++) {
+      p2Base[i * 2] = ((i % cols) + 0.15 + Math.random() * 0.7) / cols;
+      p2Base[i * 2 + 1] = (Math.floor(i / cols) + 0.15 + Math.random() * 0.7) / rows;
+      p2Phase[i] = Math.random() * TAU;
+    }
+  }
+
+  function ensureTiny(tex) {
+    try {
+      if (!tiny) {
+        tiny = document.createElement('canvas');
+        tiny.width = TINY_W;
+        tiny.height = TINY_H;
+      }
+      const tc = tiny.getContext('2d', { willReadFrequently: true });
+      tc.drawImage(tex, 0, 0, TINY_W, TINY_H);
+      tinyData = tc.getImageData(0, 0, TINY_W, TINY_H).data;
+    } catch (e) {
+      tinyData = null; // particles fall back to a flat tint rather than dying
+      noteError('particle sample', e);
+    }
+  }
+
+  function sampleAt(x, y) {
+    if (!tinyData) return [200, 200, 200];
+    const tx = Math.min(TINY_W - 1, Math.max(0, Math.round((x / width) * (TINY_W - 1))));
+    const ty = Math.min(TINY_H - 1, Math.max(0, Math.round((y / height) * (TINY_H - 1))));
+    const o = (ty * TINY_W + tx) * 4;
+    return [tinyData[o], tinyData[o + 1], tinyData[o + 2]];
+  }
+
+  function drawP5(dc, frame) {
+    if (!dc) return;
+    dc.setTransform(1, 0, 0, 1, 0, 0);
+    dc.globalAlpha = 1;
+    dc.globalCompositeOperation = 'source-over';
+    dc.filter = 'none';
+    dc.clearRect(0, 0, width, height); // transparent: background shows through
+    const st = state;
+    if (st.shape && st.shape.family === 'p5') drawP5Shape(dc, st, frame);
+    if (st.tessellation) drawTessellation(dc, st.tessellation, frame);
+    if (st.particle2) drawParticle2(dc, st, frame);
+  }
+
+  // --- background ---------------------------------------------------------------
+
+  // Ground before form: the backdrop is painted onto the target first, so
+  // every layer composites over it. An image is requested in CORS mode — if
+  // the host does not allow it the load fails and the base stays, which is
+  // what keeps the published canvas untainted (a taint would make the whole
+  // frame unpublishable).
+  function paintBackground(dc) {
+    const bg = state && state.background;
+    if (!bg) return;
+    if (bg.type === 'color') {
+      if (bg.color) {
+        dc.fillStyle = bg.color;
+        dc.fillRect(0, 0, width, height);
+      }
+      return;
+    }
+    if (bg.type === 'gradient') {
+      const a = ((typeof bg.angle === 'number' && isFinite(bg.angle) ? bg.angle : 90) * Math.PI) / 180;
+      const cx = width / 2, cy = height / 2;
+      const L = (Math.abs(width * Math.cos(a)) + Math.abs(height * Math.sin(a))) / 2;
+      const grad = dc.createLinearGradient(
+        cx - Math.cos(a) * L, cy - Math.sin(a) * L,
+        cx + Math.cos(a) * L, cy + Math.sin(a) * L
+      );
+      grad.addColorStop(0, bg.from || '#ff00aa');
+      grad.addColorStop(1, bg.to || '#002244');
+      dc.fillStyle = grad;
+      dc.fillRect(0, 0, width, height);
+      return;
+    }
+    if (bg.type === 'image' && bg.url) {
+      if (bgWanted !== bg.url) {
+        bgWanted = bg.url;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => { if (bgWanted === bg.url) bgImage = img; };
+        img.onerror = () => {
+          if (bgWanted === bg.url) {
+            bgImage = null;
+            noteError('background image', new Error(`could not load ${bg.url}`));
+          }
+        };
+        img.src = bg.url;
+      }
+      if (bgImage && bgImage.naturalWidth) {
+        const s = Math.max(width / bgImage.naturalWidth, height / bgImage.naturalHeight);
+        const w = bgImage.naturalWidth * s, h = bgImage.naturalHeight * s;
+        dc.drawImage(bgImage, (width - w) / 2, (height - h) / 2, w, h);
+      }
+    }
+  }
+
+  // --- composition --------------------------------------------------------------
+
+  // Ground to surface: black, backdrop, three.js layers (skybox → shape →
+  // cloud), p5 layers (shape → tessellation → particles). The result is what
+  // the effects chain then reads — crush, blur, grain and echo treat a
+  // rendered sphere exactly as they treat the flat mosaic.
+  function render(tex, target) {
+    if (!state) return;
+    const dc = target.getContext('2d');
+    if (!dc) return;
+    const need = libNeeds();
+    const frame = { tex, pos: cyclePos() };
+    try {
+      dc.setTransform(1, 0, 0, 1, 0, 0);
+      dc.globalAlpha = 1;
+      dc.globalCompositeOperation = 'source-over';
+      dc.filter = 'none';
+      dc.fillStyle = '#000';
+      dc.fillRect(0, 0, width, height);
+      paintBackground(dc);
+      if (need.particle2 || need.particle3) ensureTiny(tex);
+      if (need.three && three) {
+        renderThree(tex, frame.pos);
+        dc.drawImage(three.canvas, 0, 0);
+      }
+      if (need.p5 && p5Inst) {
+        p5Frame = frame;
+        try { p5Inst.redraw(); } catch (e) { noteError('p5 redraw', e); }
+        if (p5Canvas) dc.drawImage(p5Canvas, 0, 0);
+      }
+    } catch (e) {
+      noteError('output render', e);
+    }
+  }
+
+  function diag() {
+    const need = libNeeds();
+    const vendor = window.__trussalVendor || {};
+    const lib = (wanted, failed, built, present, src) => (
+      failed ? 'error' : !wanted ? 'off' : (built || present) ? 'ready' : (src) ? 'loading' : 'waiting'
+    );
+    return {
+      active: active(),
+      state: state ? {
+        shape: state.shape ? { name: state.shape.name, family: state.shape.family } : null,
+        tiling: state.tiling ? state.tiling.mode : null,
+        skybox: !!state.skybox,
+        particle2: !!state.particle2,
+        particle3: !!state.particle3,
+        tessellation: !!state.tessellation,
+        background: state.background ? state.background.type : null,
+      } : null,
+      libs: {
+        three: lib(need.three, threeFailed, three, window.THREE, vendor.three),
+        p5: lib(need.p5, p5Failed, p5Inst, window.p5, vendor.p5),
+      },
+    };
+  }
+
+  return { setState, vendorNeeds, active, render, diag };
 }
 
 /** Push the current mosaic cells + layout into the page. */
@@ -3144,6 +4087,42 @@ export function pageSetMosaicVideo(state) {
   if (!m) return false;
   m.setVideo(state);
   return true;
+}
+
+/**
+ * The `#` chain's shape counterpart — which shape the composed frame is
+ * rendered onto plus its surrounding layers (skybox, particles, tessellation,
+ * tiling, background), resolved Node-side by av-effects/OutputState.js. Null
+ * restores the plain mosaic.
+ *
+ * Returns `{ ok, wants }`: `wants` names the vendored libraries the pushed
+ * state needs but the page has NOT been given yet. The bot answers with the
+ * source text — the handshake that keeps 1.7MB of vendor code out of pages
+ * whose programs never ask for a shape, while still landing it in time for a
+ * directive that raced ahead of the install.
+ */
+export function pageSetMosaicOutput(state) {
+  const m = window.__trussalMosaic;
+  if (!m) return { ok: false, wants: [] };
+  try {
+    m.setOutput(state || null);
+  } catch (e) {
+    return { ok: false, wants: [], error: String((e && e.message) || e) };
+  }
+  return { ok: true, wants: m.outputVendorNeeds ? m.outputVendorNeeds() : [] };
+}
+
+/**
+ * Hand the page the vendored library sources for the output stage. Idempotent
+ * per library, and never clobbers one with a missing argument — the bot
+ * installs only what the current state wants, so the two push rounds for a
+ * program that grows a skybox later do not fight.
+ */
+export function pageInstallOutputVendor(threeSrc, p5Src) {
+  const v = window.__trussalVendor || (window.__trussalVendor = {});
+  if (typeof threeSrc === 'string' && threeSrc) v.three = threeSrc;
+  if (typeof p5Src === 'string' && p5Src) v.p5 = p5Src;
+  return { three: !!v.three, p5: !!v.p5 };
 }
 
 /** Anchor the mosaic's cycle clock, which `H(...)` parameters are read off. */

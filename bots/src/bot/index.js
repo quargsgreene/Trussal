@@ -9,16 +9,12 @@
  * POST
  */
 
-import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 import WebSocket from 'ws';
 import { Bot } from './bot.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN } from './aggregator-bot.js';
 import { makeWsSidecarConnector } from '../orchestrator/fleet-service.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
-import { gainForBotCount } from '../shared/audio-math.js';
-import { frequencyBand } from '../script-gen/variation.js';
 import { absoluteSampleUrls } from '../shared/sample-urls.js';
 import { usesExternalSource } from '../../../src/hydra-code.js';
 
@@ -118,7 +114,21 @@ async function aggregatorMain() {
     backlogMs: env('BACKLOG_MS', '') ? Number(env('BACKLOG_MS', '')) : undefined,
     // Claim the room's single aggregator slot before joining; a losing bot exits
     // without ever joining Jitsi (see AggregatorBot #claimAggregatorSlot).
-  }, { launcher: puppeteer, connectSidecar: makeWsSidecarConnector(WebSocket), webSocketImpl: WebSocket }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
+    // onSlotLost: losing the slot AFTER joining (the claim passed to another
+    // aggregator, or the page election named a different one for the whole
+    // yield window) is the same event and gets the same response — stop and
+    // exit cleanly so the room converges back to exactly ONE aggregator rather
+    // than keeping a redundant, mutually-muting second one around.
+  }, {
+    launcher: puppeteer,
+    connectSidecar: makeWsSidecarConnector(WebSocket),
+    webSocketImpl: WebSocket,
+    onSlotLost: async (reason) => {
+      console.log(`[aggregator-bot] leaving the meeting: ${reason}`);
+      await bot.stop().catch((e) => console.error(`[aggregator-bot] cleanup after losing the slot failed: ${e.message}`));
+      process.exit(0);
+    },
+  }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
   try {
     await bot.start();
   } catch (err) {
@@ -143,8 +153,7 @@ async function aggregatorMain() {
 }
 
 async function playerMain() {
-  const { script, botCount, samples } = await fetchAssignment();
-  const sidecars = startSidecars(botCount);
+  const { script, samples } = await fetchAssignment();
   const ownerIndex = env('BOT_OWNER_INDEX', '');
   const bandwidth = bandwidthFromEnv();
   // A copied preamble that reads an External Source (s0-s3) can't be
@@ -178,7 +187,6 @@ async function playerMain() {
   startMetricsReporting(bot);
 
   const shutdown = async () => {
-    sidecars.forEach((p) => p.kill('SIGTERM'));
     await bot.stop();
     process.exit(0);
   };

@@ -197,12 +197,20 @@ export class FleetService {
         aggregatorId: null,
         aggregatorRunning: false,
         aggregatorMetrics: null,
-        // When this room's aggregator was last confirmed alive: set on a
-        // successful start, refreshed by every metrics report.
-        // #reapDeadAggregator reads it to tell "hasn't reported yet, still
-        // starting up" (age < aggregatorStartupGraceMs) apart from "was alive,
-        // has gone silent" (no metrics for aggregatorStaleMs).
+        // When this room's aggregator start was BEGUN — set before runner.start()
+        // is awaited, nulled again if it throws. It is the boot clock:
+        // #reapDeadAggregator measures "hasn't reported yet, still starting up"
+        // (age < aggregatorStartupGraceMs, and never-reported beyond that
+        // until aggregatorBootDeadlineMs) against it. It must be set before
+        // the await: during `docker run` there is no container to inspect and
+        // no metrics yet, and reading a not-yet-set timestamp as "started at 0"
+        // made even a just-launched aggregator look decades stale.
         aggregatorStartedAt: null,
+        // True once runner.start() has RETURNED for the current attempt, false
+        // while it is in flight and after every stop. Container liveness may
+        // only be consulted once this is true: runner.start() begins with
+        // `docker rm -f`, so mid-start "no such container" says nothing.
+        aggregatorContainerUp: false,
         // When diag.jitsiJoined was last observed true (defaults to
         // aggregatorStartedAt at the read site, covering "never yet joined,
         // still within its own startup grace"). A sustained gap since this
@@ -823,6 +831,9 @@ export class FleetService {
       state.aggregatorRunning = true; // set first so concurrent joins don't double-spawn
       const botId = state.aggregatorId ?? this.#allocateAggregatorId();
       state.aggregatorId = botId;
+      // The boot clock starts at the attempt, not at its completion: see the
+      // aggregatorStartedAt comment in #existingRoom.
+      state.aggregatorStartedAt = Date.now();
       try {
         // JITSI_URL is what puts the container in THIS meeting: the aggregator
         // bot derives its Jitsi room, sidecar claim, metaprogram bus and O2
@@ -832,9 +843,11 @@ export class FleetService {
           BOT_ROLE: 'aggregator',
           JITSI_URL: jitsiUrlForRoom(this.cfg.jitsiUrl, room),
         });
-        state.aggregatorStartedAt = Date.now();
+        state.aggregatorContainerUp = true;
       } catch (err) {
         state.aggregatorRunning = false;
+        state.aggregatorContainerUp = false;
+        state.aggregatorStartedAt = null;
         state.aggregatorId = null;
         console.error(`[fleet] failed to start aggregator for room ${room}:`, err.message);
       }
@@ -847,6 +860,7 @@ export class FleetService {
       if (!state || !state.aggregatorRunning) return;
       const botId = state.aggregatorId;
       state.aggregatorRunning = false;
+      state.aggregatorContainerUp = false;
       state.aggregatorMetrics = null;
       state.aggregatorStartedAt = null;
       state.aggregatorLastJoinedAt = null;
@@ -887,6 +901,17 @@ export class FleetService {
    *      container. Detected via sustained diag.jitsiJoined:false — not a
    *      single reading, which a normal ICE reconnect blip can also cause.
    *
+   * Before EITHER of those can be judged there is a third state: the boot.
+   * `docker run` + Chromium + the Jitsi join routinely outlast the startup
+   * grace on a loaded machine, and during it there are no metrics to be stale
+   * and no join to be orphaned. A never-reported aggregator therefore gets
+   * the full aggregatorBootDeadlineMs before it is declared dead — unless
+   * runner.start() has returned and docker itself says the container is gone,
+   * which is an immediate verdict. Reading a not-yet-set startedAt as "started
+   * at 0" or a never-joined one against the join grace made the reaper kill a
+   * booting aggregator, which respawned, booted, and was killed again: the
+   * room then spent its whole life without the gating an aggregator supplies.
+   *
    * Either way: reap + immediately respawn if a human is still around to want
    * one. runner.stop() on an already-dead container is safe (docker-runner's
    * stop/rm are self-catching), so reaping never fails on the cleanup side.
@@ -894,16 +919,44 @@ export class FleetService {
   async #reapDeadAggregator(room) {
     const state = this.#existingRoom(room);
     if (!state || !state.aggregatorRunning) return;
-    const age = Date.now() - (state.aggregatorStartedAt || 0);
+    const startedAt = state.aggregatorStartedAt;
+    if (startedAt == null) return; // no start attempt recorded: nothing to judge
+    const age = Date.now() - startedAt;
     if (age < this.cfg.aggregatorStartupGraceMs) return; // hasn't had a chance to report yet
 
-    const lastMetricsAt = state.aggregatorMetrics ? state.aggregatorMetrics.receivedAt : state.aggregatorStartedAt;
-    const metricsStaleMs = Date.now() - lastMetricsAt;
+    const reportedAt = state.aggregatorMetrics ? state.aggregatorMetrics.receivedAt : null;
+
+    if (reportedAt == null) {
+      // Never reported: still booting, or dead before its first report.
+      // Silence alone cannot tell those apart, so the boot gets a long,
+      // dedicated deadline; the container state — consulted only once
+      // runner.start() has returned, since mid-start it begins with a
+      // `docker rm -f` that would fake a missing container — can cut it short.
+      const gone = state.aggregatorContainerUp
+        && typeof this.runner.isRunning === 'function'
+        && (await this.runner.isRunning(state.aggregatorId).catch(() => null)) === false;
+      if (!gone && age < this.cfg.aggregatorBootDeadlineMs) return;
+      const why = gone
+        ? 'its container is gone before it ever reported metrics'
+        : `never reported metrics ${age}ms after start`;
+      console.warn(`[fleet] aggregator for room ${room} ${why}; reaping and respawning`);
+      await this.#stopAggregator(room);
+      const humansPresent = [...state.presentIndices.values()].some((p) => !p.isBot);
+      if (humansPresent) await this.#ensureAggregator(room);
+      return;
+    }
+
+    const metricsStaleMs = Date.now() - reportedAt;
     const metricsStale = metricsStaleMs >= this.cfg.aggregatorStaleMs;
 
-    const lastJoinedAt = state.aggregatorLastJoinedAt || state.aggregatorStartedAt;
-    const orphanedMs = Date.now() - lastJoinedAt;
-    const orphaned = orphanedMs >= this.cfg.jitsiJoinGraceMs;
+    // A sustained gap since the join was last CONFIRMED means the conference
+    // is gone even while metrics keep flowing. A never-yet-joined aggregator
+    // is judged by the boot deadline instead (see above), not the join grace.
+    const joinedAt = state.aggregatorLastJoinedAt;
+    const orphanedMs = joinedAt != null ? Date.now() - joinedAt : age;
+    const orphaned = joinedAt != null
+      ? orphanedMs >= this.cfg.jitsiJoinGraceMs
+      : age >= this.cfg.aggregatorBootDeadlineMs;
 
     if (!metricsStale && !orphaned) return; // alive and either reporting or genuinely still joined
     const reason = metricsStale

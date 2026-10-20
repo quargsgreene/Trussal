@@ -8,16 +8,23 @@ import { crushParams } from '../../src/audio-net/av-effects/Crush.js';
 
 // A fake sidecar connector (shape: (url, {onOpen, onMessage}) => {send, close})
 // that answers the aggregator-claim with a fixed verdict. Records the URL it was
-// asked to reach and whether the connection was closed.
+// asked to reach, every message the bot sent over it, and whether the
+// connection was closed. `rec.emit` replays a late sidecar message (a renewal
+// answer arriving after startup), which is how the mid-life claim tests drive
+// the reconnect/steal paths without a real relay.
 function fakeClaimConnector(granted) {
-  const rec = { url: null, closed: false };
+  const rec = { url: null, closed: false, sent: [], emit: null };
   const connect = (url, { onOpen, onMessage }) => {
     rec.url = url;
+    rec.emit = onMessage;
     setTimeout(() => {
-      onOpen(() => {}); // bot sends aggregator-claim; we ignore the payload
-      onMessage({ type: 'aggregator-claim-result', granted });
+      onOpen((msg) => rec.sent.push(msg)); // bot sends aggregator-claim
+      onMessage({ type: 'aggregator-claim-result', granted, leaseMs: 30000, heldForMs: 0 });
     }, 0);
-    return { send: () => {}, close: () => { rec.closed = true; } };
+    return {
+      send: (msg) => rec.sent.push(msg),
+      close: () => { rec.closed = true; },
+    };
   };
   return { connect, rec };
 }
@@ -45,11 +52,12 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
 
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
-function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [] } = {}) {
+function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [], pageOutputWants = [] } = {}) {
   const calls = {
     evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false,
     roomPushes: [], noisePushes: [], crushPushes: [], echoPushes: [],
     mosaicCells: [], mosaicActive: [], mosaicEnabled: [], mosaicCycle: [],
+    mosaicOutput: [], outputVendor: [],
   };
   const fakePage = {
     setUserAgent: async () => {},
@@ -72,6 +80,20 @@ function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [] } = {}
       if (/setActive\(/.test(s)) { calls.mosaicActive.push(args[0]); return true; }      // pageSetMosaicActive
       if (/setEnabled\(/.test(s)) { calls.mosaicEnabled.push(args[0]); return true; }    // pageSetMosaicEnabled
       if (/setCycle\(/.test(s)) { calls.mosaicCycle.push(args[0]); return true; }        // pageSetMosaicCycle
+      // The output stage: the shape-state push answers with whatever vendored
+      // libraries this fake page claims to still be missing, and the install
+      // hands back which sources actually arrived.
+      if (/\.setOutput\(/.test(s)) {                                          // pageSetMosaicOutput
+        const state = args[0];
+        calls.mosaicOutput.push(state);
+        // A null push wants nothing: the real page answers wants from
+        // outputVendorNeeds(), [] whenever the stage is not drawable.
+        return { ok: true, wants: state ? pageOutputWants : [] };
+      }
+      if (/__trussalVendor/.test(s)) {                                        // pageInstallOutputVendor
+        calls.outputVendor.push({ three: args[0], p5: args[1] });
+        return { three: !!args[0], p5: !!args[1] };
+      }
       if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
         calls.enqueued.push(args[0]);
         return (args[0] || []).length;
@@ -406,9 +428,15 @@ test('claim gate: winning the claim lets the bot join (browser launched, slot UR
   assert.ok(calls.launchOpts, 'browser launched after the claim was granted');
   assert.equal(calls.goto.length, 1, 'joined the Jitsi room');
   assert.match(rec.url, /^ws:\/\/localhost\/ws\?room=0&role=aggregator-probe$/, 'claimed the slot for the room derived from jitsiUrl');
+  const claim = rec.sent.find((m) => m.type === 'aggregator-claim');
+  assert.ok(claim && typeof claim.token === 'string' && claim.token.length, 'the claim carries a token (the slot\'s identity, not the socket\'s)');
 
   await bot.stop();
   assert.equal(rec.closed, true, 'stop() releases the claim (closes the probe)');
+  const release = rec.sent.find((m) => m.type === 'aggregator-claim-release');
+  assert.ok(release, 'stop() sends an explicit release so a replacement needn\'t wait out the lease');
+  assert.equal(release.token, claim.token, 'the release names the token that holds the slot');
+  assert.equal(rec.sent.at(-1), release, 'the release is the last thing sent, before the probe closes');
 });
 
 test('claim gate: losing the claim throws AGGREGATOR_SLOT_TAKEN and never launches the browser', async () => {
@@ -429,6 +457,94 @@ test('claim gate: with no connector wired the claim is skipped (unit/standalone 
   await bot.start();
   assert.ok(calls.launchOpts, 'joins without a claim when no sidecar connector is injected');
   await bot.stop();
+});
+
+test('claim gate: every renewal re-presents the SAME token, so a reconnect re-holds rather than re-races the room', async () => {
+  // The probe is a long-lived socket that proxies and heartbeats routinely drop;
+  // each reconnect is a NEW connection, and a claim keyed to the connection
+  // would open a window (or, worse, be denied by the aggregator's own roster
+  // record) every time it blipped. The token is what makes the reconnect the
+  // same holder.
+  const { calls, fakeLauncher } = makeFakes();
+  const { connect, rec } = fakeClaimConnector(true);
+  const bot = new AggregatorBot(
+    { ...cfg, claimRenewMs: 10 },
+    { launcher: fakeLauncher, logIngest: false, connectSidecar: connect },
+  );
+  await bot.start();
+
+  await new Promise((r) => setTimeout(r, 60));
+  const claims = rec.sent.filter((m) => m.type === 'aggregator-claim');
+  assert.ok(claims.length >= 2, `the claim is renewed on a cadence (saw ${claims.length})`);
+  assert.equal(new Set(claims.map((m) => m.token)).size, 1, 'every renewal carries the one claim token');
+
+  await bot.stop();
+});
+
+test('claim gate: losing the claim mid-flight reports the slot lost exactly once', async () => {
+  // A denial AFTER startup means the room's slot has passed to someone else (our
+  // lease lapsed and another aggregator took it): this bot is now the duplicate
+  // and must leave the meeting, not linger as a second Aggregator tile.
+  const { calls, fakeLauncher } = makeFakes();
+  const { connect, rec } = fakeClaimConnector(true);
+  const losses = [];
+  const bot = new AggregatorBot(cfg, {
+    launcher: fakeLauncher, logIngest: false, connectSidecar: connect,
+    onSlotLost: async (reason) => losses.push(reason),
+  });
+  await bot.start();
+
+  rec.emit({ type: 'aggregator-claim-result', granted: false });
+  rec.emit({ type: 'aggregator-claim-result', granted: false }); // a repeat must not re-report
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.equal(losses.length, 1, 'reported once');
+  assert.match(losses[0], /taken over/, 'with the reason the slot was lost');
+
+  await bot.stop();
+});
+
+test('claim gate: a denial that names a live lease is waited out once, then the claim is won', async () => {
+  // The holder is usually a predecessor whose container died without releasing
+  // (SIGKILL, OOM): its lease is bounded, and a room should end up WITH an
+  // aggregator rather than waiting for the fleet's next reap cycle.
+  const { calls, fakeLauncher } = makeFakes();
+  const rec = { url: null, closed: false, sent: [] };
+  let attempts = 0;
+  const connect = (url, { onOpen, onMessage }) => {
+    rec.url = url;
+    onOpen((msg) => rec.sent.push(msg));
+    attempts += 1;
+    setTimeout(() => {
+      onMessage(attempts === 1
+        ? { type: 'aggregator-claim-result', granted: false, heldForMs: 30 }
+        : { type: 'aggregator-claim-result', granted: true, leaseMs: 30000, heldForMs: 0 });
+    }, 0);
+    return { send: (msg) => rec.sent.push(msg), close: () => { rec.closed = true; } };
+  };
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false, connectSidecar: connect });
+
+  await bot.start();
+
+  assert.ok(calls.launchOpts, 'joined after the stale lease was waited out');
+  assert.equal(rec.sent.filter((m) => m.type === 'aggregator-claim').length, 2, 're-claimed once the lease had expired');
+
+  await bot.stop();
+});
+
+test('claim gate: a denial that keeps standing exits with AGGREGATOR_SLOT_TAKEN', async () => {
+  const { calls, fakeLauncher } = makeFakes();
+  const rec = { closed: false, sent: [] };
+  const connect = (url, { onOpen, onMessage }) => {
+    onOpen((msg) => rec.sent.push(msg));
+    setTimeout(() => onMessage({ type: 'aggregator-claim-result', granted: false, heldForMs: 20 }), 0);
+    return { send: (msg) => rec.sent.push(msg), close: () => { rec.closed = true; } };
+  };
+  const bot = new AggregatorBot(cfg, { launcher: fakeLauncher, logIngest: false, connectSidecar: connect });
+
+  await assert.rejects(() => bot.start(), (err) => err.code === AGGREGATOR_SLOT_TAKEN);
+  assert.equal(calls.launchOpts, undefined, 'never launched a browser');
+  assert.equal(rec.closed, true, 'released the probe on denial');
 });
 
 // --- single-aggregator election gate -----------------------------------------
@@ -1915,12 +2031,19 @@ test('an unusable slot grid falls back to the write pointer instead of going sil
 // --- master-bus room reverb (`# room wcl …`) ----------------------------------
 
 // A sidecar connector that hands the test the bot's own onMessage callback, so
-// roster/metrics frames can be delivered the way the real bus would.
+// roster/metrics frames can be delivered the way the real bus would. The
+// pre-join claim probe (a separate connection over the same connector) is
+// answered immediately rather than left to sit out the claim's fail-open
+// timeout — it is not what these tests are exercising.
 function fakeMetaprogramBus() {
   const rec = { deliver: null, sent: [] };
   const connect = (url, { onOpen, onMessage }) => {
-    rec.deliver = onMessage;
     onOpen((msg) => rec.sent.push(msg));
+    if (/role=aggregator-probe/.test(String(url))) {
+      onMessage({ type: 'aggregator-claim-result', granted: true, leaseMs: 30000, heldForMs: 0 });
+    } else {
+      rec.deliver = onMessage;
+    }
     return { send: (msg) => rec.sent.push(msg), close: () => {} };
   };
   return { connect, rec };
@@ -2137,8 +2260,8 @@ const HYDRA_CAM = 'await initHydra()\nsrc(s0).out()';
 
 // 720p so the rectangles below read in round numbers; the frame is derived
 // from the same videoHeight the join URL caps the send side at.
-async function mosaicBot({ bandwidth = { videoHeight: 720 }, now, slotMs } = {}) {
-  const { calls, fakeLauncher } = makeFakes();
+async function mosaicBot({ bandwidth = { videoHeight: 720 }, now, slotMs, pageOutputWants } = {}) {
+  const { calls, fakeLauncher } = makeFakes(pageOutputWants != null ? { pageOutputWants } : {});
   const bus = fakeMetaprogramBus();
   const extra = {};
   if (slotMs != null) extra.slotMs = slotMs;
@@ -2157,6 +2280,87 @@ test('mosaic: the frame follows the configured send-side video height, at 16:9',
     bus.rec.deliver({ type: 'roster', peers: [{ peerId: 'p0', roomIndex: '0', jitsiId: 'j0', pattern: HYDRA }] });
     assert.deepEqual(calls.mosaicCells.at(-1).layout[0].rect, { x: 0, y: 0, w: 640, h: 360 },
       'a 360p cap publishes a 640x360 mosaic, not a 720p frame the bridge would only downscale');
+  } finally {
+    await bot.stop();
+  }
+});
+
+// --- the output stage ----------------------------------------------------------
+//
+// The shape program's stage state rides the SAME synchronous sync as every
+// other # effect (#syncMosaicOutput), and the vendored p5/three sources ride
+// back on the push's ANSWER — installed only when the page says it still needs
+// them, so a program without a shape never carries 1.7MB of vendor code.
+
+const JP_HEADER = "'metaprogram editor'\n";
+
+test('mosaic output: a shape program pushes the stage state, synchronously with the program', async () => {
+  const { calls, bot } = await mosaicBot();
+  try {
+    const errors = bot.applyProgramText(
+      JP_HEADER + '$ participants <0>\n# tetrahedron [1.5] [2 4 2 4] [0.5 ~ 0.1]\n');
+    assert.deepEqual(errors, [], 'the program parses');
+    const state = calls.mosaicOutput.at(-1);
+    assert.ok(state, 'the stage state rode the same sync as the program');
+    assert.equal(state.shape.name, 'tetrahedron');
+    assert.equal(state.shape.family, 'three');
+    assert.deepEqual(state.shape.geometry, [1.5]);
+    assert.deepEqual(state.shape.scene, [2, 4, 2, 4]);
+    assert.deepEqual(state.shape.animation, [0.5, null, 0.1]);
+    assert.equal(state.skybox, false, 'layers the program did not write stay off');
+    assert.equal(state.tiling, null);
+    assert.equal(state.background, null);
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic output: dropping the shape clears to null, and an unchanged state is not re-pushed', async () => {
+  const { calls, bot } = await mosaicBot();
+  try {
+    assert.deepEqual(bot.applyProgramText(JP_HEADER + '$ participants <0>\n# square [80]\n'), []);
+    assert.equal(calls.mosaicOutput.at(-1).shape.name, 'square');
+    const pushes = calls.mosaicOutput.length;
+
+    // Same program again: the JSON dedupe holds, no page traffic.
+    assert.deepEqual(bot.applyProgramText(JP_HEADER + '$ participants <0>\n# square [80]\n'), []);
+    assert.equal(calls.mosaicOutput.length, pushes, 'an unchanged stage state is not re-pushed');
+
+    // Shape dropped, background left behind: nothing drawable → null.
+    assert.deepEqual(
+      bot.applyProgramText(JP_HEADER + '$ participants <0>\n# background "#123456"\n'), []);
+    assert.equal(calls.mosaicOutput.length, pushes + 1, 'the changed state does push');
+    assert.equal(calls.mosaicOutput.at(-1), null,
+      'a background alone never arms the stage — null restores the plain mosaic');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic output: the stage’s library wants ride back as the vendored source', async () => {
+  const { calls, bot } = await mosaicBot({ pageOutputWants: ['three'] });
+  try {
+    assert.deepEqual(bot.applyProgramText(JP_HEADER + '$ participants <0>\n# tetrahedron [1.5]\n'), []);
+    assert.equal(calls.mosaicOutput.at(-1).shape.name, 'tetrahedron');
+    assert.deepEqual(calls.outputVendor, [], 'nothing installed until the page answers the push');
+
+    await new Promise((resolve) => setImmediate(resolve)); // the answer + install are microtasks
+    assert.equal(calls.outputVendor.length, 1, 'the wants[] landed and the bot answered it');
+    const install = calls.outputVendor.at(-1);
+    assert.equal(typeof install.three, 'string', 'the three.js source rode back');
+    assert.match(install.three, /WebGLRenderer/, 'the real module, not a placeholder');
+    assert.equal(install.p5, null, 'only what was wanted — p5 stays out of a three-only program');
+  } finally {
+    await bot.stop();
+  }
+});
+
+test('mosaic output: with nothing wanted, no vendor rides along', async () => {
+  const { calls, bot } = await mosaicBot();
+  try {
+    assert.deepEqual(bot.applyProgramText(JP_HEADER + '$ participants <0>\n# square [80]\n'), []);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls.outputVendor, [], 'wants:[] → no source read, no install push');
   } finally {
     await bot.stop();
   }

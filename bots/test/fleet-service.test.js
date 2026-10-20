@@ -13,8 +13,13 @@ function makeFakeRunner() {
   // container by name before running a fresh one).
   const log = [];
   let stopGate = null; // when set, stop() awaits it before resolving (simulates docker stop -t 15 still in flight)
+  let startGate = null; // when set, start() awaits it (simulates docker run + boot still in flight)
+  let containerRunning = true; // what isRunning() reports; tests flip it to model a container that died
+  let isRunningError = null; // models a docker hiccup: inspect fails with a non-"no such" error
   return {
     calls, log,
+    setContainerRunning(v) { containerRunning = v; },
+    setIsRunningError(e) { isRunningError = e; },
     // Arms a gate that the NEXT stop() call awaits before resolving (simulates
     // `docker stop -t 15` still in flight). Returns the function that releases it.
     holdNextStop() {
@@ -22,9 +27,18 @@ function makeFakeRunner() {
       stopGate = new Promise((resolve) => { release = resolve; });
       return () => release();
     },
+    // Arms a gate that the NEXT start() call awaits (simulates a boot still in
+    // progress: no container to inspect yet, no metrics possible). Returns the
+    // function that releases it.
+    holdNextStart() {
+      let release;
+      startGate = new Promise((resolve) => { release = resolve; });
+      return () => release();
+    },
     async start(botId, extraEnv) {
       log.push(`start-begin:${botId}`);
       calls.started.push({ botId, extraEnv });
+      if (startGate) { const gate = startGate; startGate = null; await gate; }
       log.push(`start-end:${botId}`);
     },
     async stop(botId) {
@@ -32,6 +46,10 @@ function makeFakeRunner() {
       calls.stopped.push(botId);
       if (stopGate) { const gate = stopGate; stopGate = null; await gate; }
       log.push(`stop-end:${botId}`);
+    },
+    async isRunning() {
+      if (isRunningError) throw isRunningError;
+      return containerRunning;
     },
   };
 }
@@ -340,16 +358,16 @@ test('aggregator: a rejoin during in-flight teardown waits for the stop instead 
 // flag was staying stuck true forever, and every future #ensureAggregator
 // call (a human reusing the same room URL) would silently no-op, even though
 // no aggregator actually existed anymore.
-test('aggregator: a dead aggregator (metrics gone silent) is reaped and respawned while a human is present', async () => {
+test('aggregator: a dead aggregator (container gone, no metrics yet) is reaped and respawned while a human is present', async () => {
   await withFleet(async ({ fleet, runner }) => {
     await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);
     assert.equal(fleet.aggregatorStatus(ROOM).running, true);
     assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1);
 
-    // No metrics ever arrive — models the container self-exiting right after
-    // "starting" from fleet-service's point of view (runner.start() itself
-    // succeeded; the process inside died moments later).
-    await new Promise((r) => setTimeout(r, 70)); // past aggregatorStartupGraceMs(30) + aggregatorStaleMs(30)
+    // runner.start() succeeded; the process inside died moments later and no
+    // metrics ever arrive. Docker's own verdict on the container is immediate.
+    runner.setContainerRunning(false);
+    await new Promise((r) => setTimeout(r, 40)); // past aggregatorStartupGraceMs(30)
     await fleet.healthTick();
 
     assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'reaped, then immediately respawned since the human is still here');
@@ -357,6 +375,90 @@ test('aggregator: a dead aggregator (metrics gone silent) is reaped and respawne
     assert.equal(starts.length, 2, 'the dead aggregator was reaped and a fresh one started in its place');
     assert.ok(runner.calls.stopped.includes(AGGREGATOR_BOT_ID), 'the dead container is cleaned up too, not just forgotten');
   }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30 });
+});
+
+test('aggregator: a never-reporting boot whose container is still up gets the full boot deadline', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true);
+
+    // Container running, metrics not yet possible (Chromium + Jitsi join):
+    // inside the deadline nothing may conclude death...
+    await new Promise((r) => setTimeout(r, 50)); // past grace(30) + stale(30), inside bootDeadline(100)
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1, 'booting aggregator not reaped inside its deadline');
+
+    // ...and past it, silence convicts it.
+    await new Promise((r) => setTimeout(r, 70)); // total age > 100ms
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 2, 'a boot that never reports is reaped past the deadline');
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30, aggregatorBootDeadlineMs: 100 });
+});
+
+// Liveness is a shortcut only when docker is certain. A daemon hiccup while
+// inspecting the aggregator's container must not read as "gone": that would
+// reap a still-booting aggregator the moment one tick lands badly — the same
+// gating loss (reap now, respawn later, no aggregator in between) as the
+// boot-clock race. Unknown liveness therefore falls back to the boot
+// deadline, which still convicts a boot that never reports.
+test('aggregator: an isRunning error is unknown, not gone — the boot deadline decides', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true);
+
+    // Past grace(30), inside bootDeadline(100): docker cannot answer (and the
+    // container would even look absent), so the boot keeps its full deadline.
+    runner.setContainerRunning(false);
+    runner.setIsRunningError(new Error('Cannot connect to the Docker daemon'));
+    await new Promise((r) => setTimeout(r, 50));
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1, 'no reap on a docker hiccup');
+
+    // Docker answers again and says running — but the boot never reported.
+    // Silence past the deadline still convicts it.
+    runner.setIsRunningError(null);
+    runner.setContainerRunning(true);
+    await new Promise((r) => setTimeout(r, 70)); // total age > 100ms
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 2, 'a silent boot past its deadline is still reaped');
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30, aggregatorBootDeadlineMs: 100 });
+});
+
+// The reap race that motivated aggregatorBootDeadlineMs, directly: while
+// runner.start() is in flight there is no container to inspect and no metrics
+// can have arrived; the old code read the not-yet-set startedAt as "started
+// at 0" and reaped with "metrics stale for <56 years>" — a boot that was
+// killed, respawned, killed again, leaving the room permanently without the
+// aggregator that gates participants into their turns. A held start must
+// survive ticks.
+test('aggregator: a start still in flight (docker run + boot) is never reaped', async () => {
+  await withFleet(async ({ fleet, runner }) => {
+    const releaseStart = runner.holdNextStart();
+    await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true);
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1);
+
+    // Tick squarely inside the start, past grace + stale: the old code reaped
+    // here. The boot clock now runs from the attempt, so it cannot.
+    await new Promise((r) => setTimeout(r, 70)); // past grace(30) + stale(30)
+    await fleet.healthTick();
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'a booting aggregator is not reaped');
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1, 'no respawn storm');
+    assert.equal(runner.calls.stopped.length, 0, 'nothing was stopped');
+
+    // The boot completes and reports: still alive, still one instance.
+    releaseStart();
+    await new Promise((r) => setTimeout(r, 10));
+    await fetch(`http://127.0.0.1:${fleet.port}/metrics`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', diag: { jitsiJoined: true } }),
+    });
+    await fleet.healthTick();
+    assert.equal(runner.calls.started.filter((c) => c.botId === AGGREGATOR_BOT_ID).length, 1);
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true);
+  }, { aggregatorStartupGraceMs: 30, aggregatorStaleMs: 30, aggregatorBootDeadlineMs: 5000 });
 });
 
 test('aggregator: a live aggregator posting metrics on schedule is never reaped', async () => {
@@ -392,7 +494,10 @@ test('aggregator: a dead aggregator is reaped but NOT respawned once no human is
     // NORMAL meeting-end teardown (covered elsewhere) cannot be what stops
     // the aggregator here — only #reapDeadAggregator's own staleness check
     // can, isolating the "no human present" branch of the reap path itself.
-    await new Promise((r) => setTimeout(r, 70)); // past aggregatorStartupGraceMs(30) + aggregatorStaleMs(30)
+    // Death is modeled the way production learns it promptly: the container
+    // is gone (a process that died never posts metrics to go silent).
+    runner.setContainerRunning(false);
+    await new Promise((r) => setTimeout(r, 70)); // past aggregatorStartupGraceMs(30)
     await fleet.healthTick();
 
     assert.equal(fleet.aggregatorStatus(ROOM).running, false, 'reaped');
@@ -421,10 +526,18 @@ test('aggregator: sustained jitsiJoined:false (conference orphaned) is reaped an
       body: JSON.stringify({ botId: AGGREGATOR_BOT_ID, role: 'aggregator', fps: 30, ramBytes: 1e6, latencyMs: 5, diag: { jitsiJoined } }),
     });
 
+    // It joined normally first — that is the clock the orphan check reads.
     await new Promise((r) => setTimeout(r, 30)); // past aggregatorStartupGraceMs(20)
+    await postMetrics(true);
+    await fleet.healthTick();
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'joined and reporting: alive');
+
+    // Then the conference is gone out from under it: metrics keep flowing,
+    // jitsiJoined never recovers.
+    await new Promise((r) => setTimeout(r, 60));
     await postMetrics(false);
     await fleet.healthTick();
-    assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'not yet — jitsiJoinGraceMs(80) hasn\'t elapsed since start');
+    assert.equal(fleet.aggregatorStatus(ROOM).running, true, 'not yet — jitsiJoinGraceMs(80) hasn\'t elapsed since the last confirmed join');
 
     await new Promise((r) => setTimeout(r, 60));
     await postMetrics(false);
