@@ -554,6 +554,18 @@ div.hangup-menu-button svg {
   border-color: var(--trussal-secondary, #111111) !important;
 }
 
+/* Tooltips (the toolbar hover labels above all) are portaled into
+   `.popover-content`; the Tooltip root is its direct child carrying the
+   hashed `css-<hash>-container` label. Jitsi ships that surface dark
+   (`#040404`) with white text, a leftover of its dark design — force the
+   theme's light surface and #111 label so the tooltip reads on the flat
+   chrome (and stays legible over a light page). */
+.popover-content > [class*="-container"] {
+  background: var(--trussal-primary, #eeeeee) !important;
+  background-color: var(--trussal-primary, #eeeeee) !important;
+  color: var(--trussal-secondary, #111111) !important;
+}
+
 /* Panel / dialog headings ship white or a pale grey (`#c2c2c2`), both
    designed for the dark bg — e.g. the participants-pane "Meeting
    participants (N)" title is `.css-…-heading { color:#c2c2c2 }`. */
@@ -778,6 +790,36 @@ svg[class*="trash_svg__"] path,
 .overflow-menu path,
 #modal-header-close-button svg,
 #modal-header-close-button path {
+  fill: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-secondary, #111111) !important;
+}
+
+/* Invite dialog. The copy-link row is Jitsi's CopyButton — stable id
+   `#add-people-copy-link-button` (the hashed `-copyButton` suffix changes per
+   build) — which ships the blue `action01` fill + white text. Flatten it to
+   the inverted pill: #111 surface, #eee label and glyph. The children need
+   the same treatment because the global default would otherwise paint the
+   inner content div #eee with #111 text on top of the dark button. The email
+   share glyphs (`-iconContainer` rows) ship white for the dark dialog and
+   vanish on the light surface; flip them to #111. */
+#add-people-copy-link-button,
+#add-people-copy-link-button:hover,
+#add-people-copy-link-button.clicked {
+  background: var(--trussal-secondary, #111111) !important;
+  background-color: var(--trussal-secondary, #111111) !important;
+  color: var(--trussal-primary, #eeeeee) !important;
+  border: 1px solid var(--trussal-secondary, #111111) !important;
+}
+#add-people-copy-link-button *,
+#add-people-copy-link-button svg,
+#add-people-copy-link-button path {
+  color: var(--trussal-primary, #eeeeee) !important;
+  fill: var(--trussal-primary, #eeeeee) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+.invite-more-dialog [class*="-iconContainer"] svg,
+.invite-more-dialog [class*="-iconContainer"] path {
   fill: var(--trussal-secondary, #111111) !important;
   color: var(--trussal-secondary, #111111) !important;
 }
