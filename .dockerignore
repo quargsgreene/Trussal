@@ -17,6 +17,8 @@
 !src/polls-core.js
 !src/breakout-core.js
 !src/strudel-voice.js
+!src/stable-state.js
+!src/hmr-runtime.js
 !latency-instrument
 !public/lib
 bots/node_modules
