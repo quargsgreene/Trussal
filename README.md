@@ -24,4 +24,5 @@
 Documentation can be found [here](https://trussal.com).
 
 ## 3. Running locally
-Simply clone this repository, install the dependencies, and run `npm run dev` and visit `https://localhost:8443`.
+Clone the repository and install the dependencies. You also need Docker installed. Then run `npm run dev:setup` to build the application. Then run `npm run dev` and navigate to one of the specified URLs in your browser of choice. You should be able to see updates in your browser for most of the application upon saving the corresponding modified file(s). If not, stop the dev server and rebuild. If a port remains stuck in use, try running `npm run dev:down` before further troubleshooting.
+>>>>>>> 4ddfd07 (update dev server instructions to include hot reloading, build, and teardown instructions)
