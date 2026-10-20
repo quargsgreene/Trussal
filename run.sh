@@ -77,6 +77,16 @@ else
   echo "COMPOSE_PROFILES=$COMPOSE_PROFILES (coturn + ddns run here)"
 fi
 
+# The runtime CONFIG tree is created once and is gitignored, so nginx routes
+# added in later commits never reach it on their own. Without this sync,
+# /about and /documentation fall through meet.conf's room catch-all and open a
+# prejoin for a room named "about"/"documentation" instead of the static pages.
+# scripts/dev.sh performs the same copy for the local stack.
+NGINX_CFG_DIR="$CFG_REAL/web/nginx"
+mkdir -p "$NGINX_CFG_DIR"
+cp "$REPO/custom-config/web/nginx/custom-routes.conf" "$NGINX_CFG_DIR/custom-routes.conf"
+echo "Synced nginx routes: $NGINX_CFG_DIR/custom-routes.conf"
+
 # Repair prosody's /config ownership. The image only ever fixes this on a FIRST
 # run, because its cont-init guard keys off the top-level dir:
 #
