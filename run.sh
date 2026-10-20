@@ -32,6 +32,38 @@ case "$CFG_REAL/" in "$REPO_REAL"/*)
 
 echo "CONFIG OK: $CFG_REAL"
 
+# `npm ci` below replaces node_modules wholesale. A Vite dev server or the
+# build watcher already running from this checkout would lose those files out
+# from under it (Vite starts returning empty replies; the esbuild watcher can
+# no longer rebuild), so refuse instead of breaking the live session. This is
+# a no-op for the normal `make deploy-all`, which runs this script on the video
+# VM, where neither process exists.
+if command -v pgrep >/dev/null 2>&1; then
+  live_pid=""
+  live_pattern=""
+  for pattern in \
+    "node_modules/vite/bin/vite.js" \
+    "node_modules/.bin/vite" \
+    "build.mjs --watch"; do
+    for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
+      [ "$pid" = "$$" ] && continue
+      # Match this checkout only: `npm run watch` starts `node build.mjs` with
+      # a relative path, so the command line alone cannot identify the repo.
+      [ "$(readlink "/proc/$pid/cwd" 2>/dev/null || true)" = "$REPO_REAL" ] || continue
+      live_pid="$pid"
+      live_pattern="$pattern"
+      break 2
+    done
+  done
+  if [ -n "$live_pid" ]; then
+    echo "FATAL: a dev/build process is running from this checkout:"
+    echo "  pid $live_pid — $live_pattern"
+    echo "  npm ci would replace its node_modules underneath it."
+    echo "  Stop the dev session first (npm run dev:down), then re-run the deploy."
+    exit 1
+  fi
+fi
+
 # EDGE_MODE=shard: this host is one shard of a rack behind the edge LB
 # (edge/README.md), so the DNS updater and the TURN relay run once on the edge,
 # not here. Anything else (unset / "standalone") is the single-box / full-stack
