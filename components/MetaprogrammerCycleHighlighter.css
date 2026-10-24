@@ -13,10 +13,10 @@
    metrics are the one exception — see below): custom.css's
    `html, body, body * { background: #ffffff }` is a default, not a forced
    override (fixed in 0f02e39), and these class selectors already outspecify
-   the bare `body *` they once had to beat. This host mounts inside
-   #trussal-studio-overlay, a Trussal root, so leaving them plain lets a CSS
-   Cycles sheet targeting .jp-play-overlay/.jp-play-box win normally through
-   the cascade instead of being unconditionally refused. */
+   the bare `body *` they once had to beat. This host mounts inside a
+   .ts-window, a Trussal root, so leaving them plain lets a CSS Cycles sheet
+   targeting .jp-play-overlay/.jp-play-box win normally through the cascade
+   instead of being unconditionally refused. */
 
 .jp-play-host { position: relative; }
 

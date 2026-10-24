@@ -12,19 +12,7 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-// Config keys a remote caller may change: the fleet's tuning knobs — how many
-// bots, how they are stratified, the health thresholds and grace periods. Keys
-// that decide WHERE the fleet connects or WHO it authenticates as (jitsiUrl,
-// jamulusServer, sidecarWsUrl, conductorPort, adminPort) are deliberately
-// absent, because this port has no auth: see the POST /api/config handler.
-const REMOTELY_TUNABLE = new Set([
-  'maxBots', 'sessionSeed', 'varyHydra', 'roles', 'staggerSubdivisions',
-  'fpsMin', 'memLimitMb', 'percentileCutoff', 'replaceLatencyFloorMs', 'replaceRamFloorMb',
-  'metricsIntervalMs', 'healthTickMs',
-  'jitsiChannelLastN', 'jitsiVideoHeight', 'jitsiStartBitrateKbps', 'captureFps',
-  'ownerLeaveGraceMs', 'meetingEndGraceMs',
-  'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'aggregatorBootDeadlineMs', 'jitsiJoinGraceMs',
-]);
+import { REMOTELY_TUNABLE } from '../shared/config.js';
 
 // Loaded once at startup: the page is static; all live data arrives via
 // fetch('/api/...') from the inline script.

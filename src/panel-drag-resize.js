@@ -29,11 +29,8 @@
 // so modules that keep their own drag/resize (on-screen-keyboard.js) can write
 // the same properties instead of picking their own.
 
-import panelDragResizeStyles from './panel-drag-resize.css';
-import { upsertStyle } from './style-injection.js';
 
 
-const STYLE_ID = 'trussal-panel-dr-style';
 const HINT_ID  = 'trussal-panel-dr-hint';
 
 const DEFAULT_MIN_W = 280;
@@ -65,6 +62,10 @@ export function isHeadDragActive() {
 export function pinTopLeft(panel, rect) {
   panel.style.setProperty('--tdr-bottom', 'auto');
   panel.style.setProperty('--tdr-right', 'auto');
+  // Once the window is top-anchored, it no longer needs the bottom-dock
+  // clearance that limits its authored max-height. Restore the viewport cap
+  // used by the resize code (innerHeight - 20 in this module).
+  panel.style.setProperty('--tdr-max-h', 'calc(100vh - var(--ts-edge-gap, 20px))');
   panel.style.setProperty('--tdr-top', `${rect.top}px`);
   panel.style.setProperty('--tdr-left', `${rect.left}px`);
 }
@@ -78,10 +79,6 @@ export function setPanelBox(panel, { top, left, width, height } = {}) {
   if (left != null)   panel.style.setProperty('--tdr-left', `${left}px`);
   if (width != null)  panel.style.setProperty('--tdr-w', `${width}px`);
   if (height != null) panel.style.setProperty('--tdr-h', `${height}px`);
-}
-
-function _injectStyles() {
-  upsertStyle(STYLE_ID, panelDragResizeStyles);
 }
 
 
@@ -171,7 +168,6 @@ function _isParked(p) {
 }
 
 function _startHeadMode(panel, kind, minW, minH, forced) {
-  _injectStyles();
   if (_headMode) _stopHeadMode();
   // A synthetic re-click from a dwell loop the instant after a drop would
   // re-grab the panel forever; a real (trusted) mouse click never waits.
@@ -325,7 +321,6 @@ function _makeHeadButtons(panel, host, minW, minH) {
 /** Mouse drag (on `handle`) + four corner resize grips. */
 export function attachMouseDragResize(panel, opts = {}) {
   if (typeof document === 'undefined' || !panel) return;
-  _injectStyles();
   _ensureGrips(panel);
   _makeMouseDraggable(panel, opts.handle || panel);
   _makeMouseResizable(panel, opts.minW || DEFAULT_MIN_W, opts.minH || DEFAULT_MIN_H);
@@ -334,7 +329,6 @@ export function attachMouseDragResize(panel, opts = {}) {
 /** The ✥ / ⇲ head-cursor buttons in `handle` (or `headButtonHost`). */
 export function attachHeadDragResize(panel, opts = {}) {
   if (typeof document === 'undefined' || !panel) return;
-  _injectStyles();
   _makeHeadButtons(
     panel,
     opts.headButtonHost || opts.handle || panel,

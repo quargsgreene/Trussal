@@ -39,15 +39,9 @@ import { textLog, textLogChanged, textHapLog, textWarn, registerTextProbe, clip 
 // mutations are pure and SEEDED there, so every browser paints the same
 // characters from the same shared program.
 import { crushWord, noiseWord, mutateNumber } from './audio-net/av-effects/TextState.js';
-import textCyclesStyles from './text-cycles.css';
-import { upsertStyle } from './style-injection.js';
-
 
 const CONTAINER_ID = 'trussal-text-cycles';
 const STYLE_ID = 'trussal-text-cycles-style';
-// The static base rules live in their own sheet (text-cycles.css) so the
-// STYLE_ID element below only ever holds generated :hover rules.
-const BASE_STYLE_ID = 'trussal-text-cycles-base-style';
 // Chat scrollback cap. Bubbles are per cycle, so a fast pattern still only adds
 // one per cycle per performer, but a long set would grow without this.
 const MAX_BUBBLES = 200;
@@ -100,7 +94,6 @@ function peerOf(value) {
 }
 
 function ensureStyle() {
-  ensureBaseStyle();
   if (styleEl && document.contains(styleEl)) return styleEl;
   styleEl = document.getElementById(STYLE_ID) || document.createElement('style');
   styleEl.id = STYLE_ID;
@@ -110,13 +103,9 @@ function ensureStyle() {
 
 // The static base rules (bubble margin, name opacity, line wrapping, and the
 // custom-property hooks for the effect values) are authored in text-cycles.css
-// and upserted in place so CSS edits hot-reload. Deliberately minimal: with no
-// user CSS, words must
-// inherit Jitsi's own chat typography, so nothing there sets a font, colour or
-// size.
-function ensureBaseStyle() {
-  upsertStyle(BASE_STYLE_ID, textCyclesStyles);
-}
+// and installed by src/styles.css. Deliberately minimal: with no user CSS, words
+// must inherit Jitsi's own chat typography, so nothing there sets a font,
+// colour or size.
 
 
 // Attach (or re-attach) our container inside Jitsi's chat log. The panel is
@@ -268,7 +257,7 @@ function ensureChatEntry() {
 // One reusable hover rule per (participant, declaration) pair. Inline styles
 // cannot express :hover, so these are the only generated stylesheet rules —
 // appended to the STYLE_ID sheet (the static base rules live in
-// text-cycles.css, a separate element).
+// text-cycles.css, installed by src/styles.css).
 function hoverClassFor(peerClass, declarations) {
   const decls = sanitizeDeclarations(declarations);
   if (!decls.length) return null;

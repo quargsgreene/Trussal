@@ -289,6 +289,81 @@ test('admin API verbatim on the fleet: /api/bots and /api/config keep serving mc
   });
 });
 
+test('conductor settings panel: get returns the admin-form values, set applies them', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await fleet.handleBusMessage(
+      { type: 'fleet-request', action: 'conductor-settings-get', fromIndex: '1', requestId: 'r1' },
+      ROOM
+    );
+    const loaded = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings' && m.requestId === 'r1');
+    assert.ok(loaded);
+    assert.deepEqual(loaded.settings, {
+      maxBots: 5,
+      varyHydra: false,
+      roles: { frequencyBands: false, staggeredRound: false, unison: true, stereoTiles: false },
+      fpsMin: 15,
+      memLimitMb: 900,
+    });
+    // Endpoint keys must never ride the room bus back to a browser.
+    assert.equal(loaded.settings.jitsiUrl, undefined);
+    assert.equal(loaded.settings.sidecarWsUrl, undefined);
+
+    await fleet.handleBusMessage({
+      type: 'fleet-request',
+      action: 'conductor-settings-set',
+      fromIndex: '1',
+      requestId: 'r2',
+      settings: {
+        maxBots: 3,
+        varyHydra: true,
+        roles: { frequencyBands: true, staggeredRound: false, unison: true, stereoTiles: false },
+        fpsMin: 20,
+        memLimitMb: 1200,
+      },
+    }, ROOM);
+
+    const applied = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings' && m.requestId === 'r2');
+    assert.ok(applied && applied.applied, 'marks the answer as applied');
+    assert.equal(applied.settings.maxBots, 3);
+    assert.equal(applied.settings.varyHydra, true);
+    assert.equal(applied.settings.fpsMin, 20);
+    assert.equal(applied.settings.memLimitMb, 1200);
+    assert.deepEqual(applied.settings.roles, {
+      frequencyBands: true, staggeredRound: false, unison: true, stereoTiles: false,
+    });
+    assert.equal(fleet.cfg.maxBots, 3);
+  });
+});
+
+test('conductor settings panel: endpoint keys and unknown roles are rejected', async () => {
+  await withFleet(async ({ fleet, sent }) => {
+    await fleet.handleBusMessage({
+      type: 'fleet-request',
+      action: 'conductor-settings-set',
+      fromIndex: '1',
+      requestId: 'bad1',
+      settings: { sidecarWsUrl: 'ws://attacker.example/ws' },
+    }, ROOM);
+    const blocked = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad1');
+    assert.match(blocked.reason, /not remotely configurable: sidecarWsUrl/);
+    assert.equal(fleet.cfg.sidecarWsUrl, 'ws://localhost:8081/ws');
+
+    await fleet.handleBusMessage({
+      type: 'fleet-request',
+      action: 'conductor-settings-set',
+      fromIndex: '1',
+      requestId: 'bad2',
+      settings: { roles: { notARole: true } },
+    }, ROOM);
+    const badRole = sent.find((m) =>
+      m.type === 'fleet-status' && m.action === 'conductor-settings-error' && m.requestId === 'bad2');
+    assert.match(badRole.reason, /unknown role: notARole/);
+  });
+});
+
 test('aggregator: spawns once when a human is present, excluded from clusters/ceiling', async () => {
   await withFleet(async ({ fleet, runner }) => {
     await fleet.handleBusMessage({ type: 'peer-join', peer: { peerId: 'h', roomIndex: '0', isBot: false } }, ROOM);

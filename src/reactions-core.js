@@ -10,6 +10,15 @@
 // one; see text-cycles-core.js for the fuller version of this problem). The
 // abbreviations exist for exactly that reason, so — unlike word() — a
 // reaction() pattern needs no atom minting at all.
+//
+// The `id` must be Jitsi's OWN reaction id, because sendJitsiReaction() hands
+// it straight to Jitsi's reactions middleware, which looks it up in its REACTIONS
+// table (react/features/reactions/constants.ts). The heart reaction's Jitsi id
+// is `love` (emoji 💖), not `heart` — and an unknown id is not merely ignored:
+// flushReactionBuffer()'s getReactionMessageFromBuffer() does
+// REACTIONS[reaction].message, so an unknown id throws inside the middleware's
+// batch BEFORE next(action), leaving the buffer stuck and swallowing every
+// reaction that shares that flush. Keep this table's ids in sync with Jitsi's.
 
 export const REACTIONS = {
   tu: { id: 'like', label: 'Thumbs Up', emoji: '👍' },
@@ -17,7 +26,7 @@ export const REACTIONS = {
   si: { id: 'silence', label: 'Silence', emoji: '🤫' },
   la: { id: 'laugh', label: 'Laugh', emoji: '😂' },
   b: { id: 'boo', label: 'Boo', emoji: '👎' },
-  h: { id: 'heart', label: 'Heart', emoji: '❤️' },
+  h: { id: 'love', label: 'Love', emoji: '💖' },
   c: { id: 'clap', label: 'Clap', emoji: '👏' },
 };
 

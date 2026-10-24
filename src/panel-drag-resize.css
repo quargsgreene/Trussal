@@ -3,7 +3,7 @@
    once via that module's _injectStyles() under the id `trussal-panel-dr-style`.
 
    The window geometry itself is a contract, not a rule set: panels that opt
-   into drag/resize (Studio's overlay, the on-screen keyboard, the
+   into drag/resize (the three Studio windows, the on-screen keyboard, the
    facial-control panel) declare their own position/size in their own
    stylesheets, reading these custom properties with their authored values as
    the fallbacks:

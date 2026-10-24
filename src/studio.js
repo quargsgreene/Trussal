@@ -1,13 +1,3 @@
-// Unified Trussal Studio UI.
-//
-// One toggleable overlay surfaces a participant strip + a detail panel split
-// into a Latency Effects card and a Strudel card. Every participant gets a
-// chip with effect indicators, play state, and an "audio routed" dot — making
-// it obvious that each person owns their own chain and editor.
-
-import studioStyles from './studio.css';
-import { upsertStyle } from './style-injection.js';
-
 import { getRoomNameFromUrl } from './get-room-name-from-url.js';
 import {
   subscribeParticipants,
@@ -78,14 +68,57 @@ import {
   MAX_FONT_SCALE,
 } from './theme-context.js';
 
-const BUTTON_ID  = 'trussal-studio-toggle';
-const OVERLAY_ID = 'trussal-studio-overlay';
-const STYLE_ID   = 'trussal-studio-style';
+const TOOLBAR_ID = 'trussal-studio-toolbar';
+const TOOLBAR_BUTTONS_ID = 'trussal-studio-buttons';
+const TOOLBAR_INPUTS_ID = 'trussal-studio-inputs';
 const STORAGE_KEY = 'trussal.studio.pattern';
+
+// The one Studio overlay became three independent windows. Each keeps the
+// same window chrome (drag, corner resize, collapse, close) and owns only the
+// content named here; all of them read the same participant selection, so
+// switching chips in the Personal Editor also retargets the Network Dashboard.
+const WINDOWS = {
+  metaprogram: {
+    id: 'trussal-metaprogram-window',
+    title: 'Metaprogram Editor',
+    button: 'Metaprogram Editor',
+    shortButton: 'Metaprogram',
+    minW: 360,
+    minH: 260,
+  },
+  personal: {
+    id: 'trussal-personal-window',
+    title: 'Personal Editor',
+    button: 'Personal Editor',
+    shortButton: 'Personal',
+    minW: 360,
+    minH: 300,
+  },
+  network: {
+    id: 'trussal-network-window',
+    title: 'Network Dashboard',
+    button: 'Network Dashboard',
+    shortButton: 'Network',
+    minW: 320,
+    minH: 220,
+  },
+  theme: {
+    id: 'trussal-theme-window',
+    title: 'Personal Theme Settings',
+    button: 'Personal Theme Settings',
+    shortButton: 'Theme',
+    minW: 320,
+    minH: 260,
+  },
+};
+const WINDOW_NAMES = Object.keys(WINDOWS);
 
 let selectedJitsiId = null;
 let selectedPeerKey = null;
 let initedRoom = null;
+let seededRoom = null;
+let samplesInitialized = false;
+let windowStack = 0;
 let codeDebounce = null;
 let lastStatus = 'Idle';
 let routedSet = new Set();
@@ -178,14 +211,9 @@ function reconcileList(container, items, keyFn, createFn, updateFn) {
   for (const node of existing.values()) node.remove();
 }
 
-// Styles live in studio.css (imported as raw text — see build.mjs's '.css':
-// 'text' loader) rather than a template literal here. #trussal-studio-overlay
-// and #trussal-studio-toggle in that file are OVERLAY_ID/BUTTON_ID hardcoded
-// as literal strings; keep them in sync if either constant is ever renamed.
-function injectStyles() {
-  upsertStyle(STYLE_ID, studioStyles);
-}
-
+// Styles live in studio.css. The window IDs in WINDOWS and the toolbar IDs
+// above are referenced as literal strings in that file; keep them in sync if a
+// constant is ever renamed.
 
 // Feeds the --ts-chip-color / --ts-detail-color custom properties. The flat
 // monochrome theme (studio.css) no longer reads either, so this has no visual
@@ -385,11 +413,12 @@ subscribeFleetStatus((status) => {
   if (line) setStatus(line);
 });
 
-// The Personal Theme card replaces the old Bot Cluster panel. Every control is
-// local-only: Apply writes this viewer's own theme (src/theme-context.js) and
-// repaints just this browser — nothing goes on the wire. Built once per
-// peer-selection; it reads the stored theme at build time and needs no
-// per-tick patch, so there is no update* counterpart.
+// The Personal Theme Settings window's form (it replaced the old Bot Cluster
+// panel, and then the Personal Theme card that used to sit in the Personal
+// Editor). Every control is local-only: Apply writes this viewer's own theme
+// (src/theme-context.js) and repaints just this browser — nothing goes on the
+// wire. Built once when the window is first opened; syncThemePickerForm keeps
+// its fields in step with any later setTheme call from elsewhere.
 function createThemePickerSection() {
   const el = document.createElement('div');
   el.className = 'ts-section ts-theme-section';
@@ -456,6 +485,25 @@ function createThemePickerSection() {
   return el;
 }
 
+// Patch an already-built theme form to the stored theme, without touching the
+// field the user is currently editing. Called each time the settings window is
+// opened so a console setTheme() (or another tab's saved state) is reflected.
+function syncThemePickerForm(container) {
+  const section = container.querySelector('.ts-theme-section');
+  if (!section) return;
+  const t = getTheme();
+  section.querySelectorAll('[data-theme]').forEach((node) => {
+    const key = node.dataset.theme;
+    if (node.type === 'checkbox') {
+      node.checked = !!t[key];
+    } else if (document.activeElement !== node) {
+      node.value = key === 'fontScale' ? String(t[key]) : (t[key] || '');
+    }
+  });
+  const statusEl = section.querySelector('.ts-theme-status');
+  if (statusEl) statusEl.textContent = '';
+}
+
 // Resolves whichever peer is currently selected, repairing selectedJitsiId
 // if it's gone stale (see selectedPeerKey's declaration comment) rather than
 // letting a caller fall back to the local peer on a merely-renamed jitsiId.
@@ -485,9 +533,13 @@ function resolveSelectedPeer() {
 // Top-level entry point, called every tick. Decides whether the selected
 // peer's identity actually changed (rare — a deliberate chip click, or the
 // very first render) and only rebuilds structure then; otherwise it just
-// patches the existing structure with fresh data. See buildDetailShell and
-// patchDetailForPeer for what each half does.
-function renderDetail(container) {
+// patches the existing structure with fresh data. See buildPersonalShell,
+// buildNetworkShell and patchDetailForPeer for what each half does.
+//
+// `kind` is 'personal' or 'network'. Both windows read the same selection;
+// only the Personal Editor has an editable code box, so only it carries an
+// unsent edit across a shell rebuild.
+function renderDetail(container, kind) {
   let peer = resolveSelectedPeer();
   if (!peer) {
     const local = getLocalPeer();
@@ -535,13 +587,15 @@ function renderDetail(container) {
     // below even though patchLocalProgramSection's own hasUnsentEdit guard
     // would have protected the very same edit one tick earlier or later.
     // Carry it across the rebuild instead of losing it.
-    const prevCodeEl = container.querySelector('.ts-code');
-    const samePeer = !isLocal && container.dataset.jitsiId === (peer.jitsiId || '');
+    const isPersonal = kind === 'personal';
+    const prevCodeEl = isPersonal ? container.querySelector('.ts-code') : null;
+    const samePeer = isPersonal && !isLocal && container.dataset.jitsiId === (peer.jitsiId || '');
     const unsent = (samePeer && prevCodeEl && document.activeElement === prevCodeEl
       && prevCodeEl.value !== prevCodeEl.dataset.lastSynced)
       ? { value: prevCodeEl.value, selStart: prevCodeEl.selectionStart, selEnd: prevCodeEl.selectionEnd }
       : null;
-    buildDetailShell(container, peer, peerKey, isLocal);
+    if (isPersonal) buildPersonalShell(container, peer, peerKey, isLocal);
+    else buildNetworkShell(container, peer, peerKey, isLocal);
     container.dataset.jitsiId = peer.jitsiId || '';
     if (unsent) {
       const codeEl = container.querySelector('.ts-code');
@@ -550,22 +604,24 @@ function renderDetail(container) {
       codeEl.setSelectionRange(unsent.selStart, unsent.selEnd);
     }
   }
-  patchDetailForPeer(container, peer, isLocal);
+  if (kind === 'personal') patchPersonalForPeer(container, peer, isLocal);
+  else patchNetworkForPeer(container, peer, isLocal);
 }
 
-function buildDetailShell(container, peer, peerKey, isLocal) {
-  container.innerHTML = '';
-  container.dataset.peerKey = peerKey;
-  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
-
+function buildDetailHeader(container) {
   const header = document.createElement('div');
   header.className = 'ts-detail-header';
   header.innerHTML = `<div class="ts-detail-name"></div>`;
   container.appendChild(header);
+}
 
-  container.appendChild(createMetricsSection());
+function buildPersonalShell(container, peer, peerKey, isLocal) {
+  container.innerHTML = '';
+  container.dataset.peerKey = peerKey;
+  container.dataset.detailKind = 'personal';
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
 
-  if (isLocal) container.appendChild(createThemePickerSection());
+  buildDetailHeader(container);
 
   const localProgram = createLocalProgramSection(isLocal);
   container.appendChild(localProgram);
@@ -574,6 +630,16 @@ function buildDetailShell(container, peer, peerKey, isLocal) {
   const status = document.createElement('div');
   status.className = 'ts-status';
   container.appendChild(status);
+}
+
+function buildNetworkShell(container, peer, peerKey, isLocal) {
+  container.innerHTML = '';
+  container.dataset.peerKey = peerKey;
+  container.dataset.detailKind = 'network';
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
+
+  buildDetailHeader(container);
+  container.appendChild(createMetricsSection());
 }
 
 function createLocalProgramSection(isLocal) {
@@ -616,7 +682,7 @@ function createLocalProgramSection(isLocal) {
 }
 
 // Binds everything that only needs binding once per peer selection — this
-// runs a single time when buildDetailShell creates the section, not on every
+// runs a single time when buildPersonalShell creates the section, not on every
 // data tick, so it's safe to close over `peer`/`isLocal`/`targetPeerId`
 // (fixed for the shell's whole lifetime). Anything that needs a value that
 // can change while the shell is alive (peer.muted, peer.pattern) re-reads it
@@ -761,12 +827,7 @@ function bindLocalProgramSection(el, peer, isLocal) {
   }
 }
 
-// Runs on every peer-state tick (far more often than buildDetailShell —
-// every ~2s per peer) and only ever touches text/classes/values inside the
-// existing structure, never the structure itself.
-function patchDetailForPeer(container, peer, isLocal) {
-  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
-
+function patchDetailHeader(container, peer, isLocal) {
   const header = container.querySelector('.ts-detail-header');
   header.querySelector('.ts-detail-name').textContent = isLocal ? 'You' : (peer.displayName || 'Participant');
   let botBadge = header.querySelector('.ts-bot-badge');
@@ -779,16 +840,28 @@ function patchDetailForPeer(container, peer, isLocal) {
   } else if (!showBadge && botBadge) {
     botBadge.remove();
   }
+}
 
-  updateMetricsSection(container.querySelector('.ts-metrics-section'), peer, '');
+// Runs on every peer-state tick (far more often than shell rebuilds — every
+// ~2s per peer) and only ever touches text/classes/values inside the existing
+// structure, never the structure itself.
+function patchPersonalForPeer(container, peer, isLocal) {
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
+  patchDetailHeader(container, peer, isLocal);
 
-  // The Personal Theme card is user-driven (Apply) and reads its values from
+  // The Personal Theme Settings form is user-driven (Apply) and reads its values from
   // the store at build time — nothing to patch per tick.
 
   patchLocalProgramSection(container.querySelector('.ts-local-program-section'), peer, isLocal);
 
   const status = isLocal ? lastStatus : (peer.muted ? 'Muted' : (peer.playing ? 'Playing' : 'Idle'));
   container.querySelector('.ts-status').textContent = status;
+}
+
+function patchNetworkForPeer(container, peer, isLocal) {
+  container.style.setProperty('--ts-detail-color', chipColor(peer.jitsiId, isLocal));
+  patchDetailHeader(container, peer, isLocal);
+  updateMetricsSection(container.querySelector('.ts-metrics-section'), peer, '');
 }
 
 function patchLocalProgramSection(el, peer, isLocal) {
@@ -1050,13 +1123,14 @@ function renderSliders(container, sliders) {
 
 function setStatus(text) {
   lastStatus = text;
-  const statusEl = document.querySelector(`#${OVERLAY_ID} .ts-status`);
-  if (statusEl) statusEl.textContent = text;
+  document.querySelectorAll('.ts-window[data-window="personal"] .ts-status').forEach((statusEl) => {
+    statusEl.textContent = text;
+  });
 }
 
 // Every entry point in this file that used to mean "something changed, tear
 // down and rebuild" now just means "resync" — renderStrip/renderDetail patch
-// their existing DOM in place (see reconcileList and buildDetailShell's
+// their existing DOM in place (see reconcileList and buildPersonalShell's
 // comment) rather than blowing it away, so calling this on every peer-state
 // broadcast (every ~2s per peer) or click no longer costs a focused input's
 // cursor, a click gesture in flight, or a scroll position. rAF-batched so a
@@ -1067,105 +1141,243 @@ function renderAll() {
   renderQueued = true;
   requestAnimationFrame(() => {
     renderQueued = false;
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (!overlay) return;
-    const strip = overlay.querySelector('.ts-strip');
-    const detail = overlay.querySelector('.ts-detail');
-    if (strip) renderStrip(strip);
+    const windows = document.querySelectorAll('.ts-window');
+    if (!windows.length) return;
+    windows.forEach((win) => {
+      const strip = win.querySelector('.ts-strip');
+      if (strip) renderStrip(strip);
+    });
+
+    const personalDetails = document.querySelectorAll('.ts-window[data-window="personal"] .ts-detail');
     // A native file picker opened by wireUpload's Samples/Data button holds a
     // reference to the .ts-data-input/.ts-samples-input node inside this very
     // panel. That node is now stable across ordinary patches (see
-    // buildDetailShell), so the only remaining way to detach it from under an
-    // open dialog is a genuine peer-selection change landing in that window —
-    // still worth guarding against, since Chromium never fires 'change' on a
+    // buildPersonalShell), so the only remaining way to detach it from under
+    // an open dialog is a genuine peer-selection change landing in that window
+    // — still worth guarding against, since Chromium never fires 'change' on a
     // detached input and the upload would silently go nowhere.
-    if (detail && !uploadPending) renderDetail(detail);
-    if (detail) renderSliders(detail, currentSliders);
+    if (!uploadPending) personalDetails.forEach((detail) => renderDetail(detail, 'personal'));
+    personalDetails.forEach((detail) => renderSliders(detail, currentSliders));
+
+    document.querySelectorAll('.ts-window[data-window="network"] .ts-detail')
+      .forEach((detail) => renderDetail(detail, 'network'));
   });
 }
 
 document.addEventListener('trussal-sliders-updated', (e) => {
   currentSliders = e.detail || [];
-  const detail = document.querySelector(`#${OVERLAY_ID} .ts-detail`);
-  if (detail) renderSliders(detail, currentSliders);
+  document.querySelectorAll('.ts-window[data-window="personal"] .ts-detail')
+    .forEach((detail) => renderSliders(detail, currentSliders));
 });
 
-function ensureOverlay() {
-  let overlay = document.getElementById(OVERLAY_ID);
-  if (overlay) return overlay;
+// The Jitsi button row is the row our buttons belong in — not a floating bar
+// above it. `.toolbox-content-items` is the flex container React fills with
+// the mic/camera/share/chat/... icons; appending our node there (and making
+// it display:contents in studio.css) puts each Studio button in that same
+// row, sharing its spacing, height and hover behaviour. React does not own
+// our node, so a rerender can drop it; every tick reattaches it before the
+// native hang-up button to keep the conventional leave-at-the-end order.
+function toolbarHost() {
+  const nativeToolbar = document.getElementById('new-toolbox');
+  if (!nativeToolbar) return null;
+  return nativeToolbar.querySelector('.toolbox-content-items')
+    || nativeToolbar.querySelector('.toolbox-content-wrapper')
+    || nativeToolbar;
+}
+
+// The hang-up item is the last direct child of the row. Walk up from its
+// icon so the anchor works regardless of how many wrappers this Jitsi build
+// nests around it, and fall back to the final child when it is absent.
+function hangupItem(host) {
+  let node = host.querySelector('.hangup-button');
+  while (node && node.parentElement !== host) node = node.parentElement;
+  return node && node !== host.lastElementChild ? node : host.lastElementChild;
+}
+
+function ensureToolbar() {
   if (!document.body) return null;
+  const host = toolbarHost();
+  if (!host) return null;
 
-  injectStyles();
-  overlay = document.createElement('div');
-  overlay.id = OVERLAY_ID;
-  overlay.innerHTML = `
-    <div class="ts-header">
-      <div class="ts-title">Trussal Studio <small>each participant owns their own instrument</small></div>
-      <button class="ts-dwell-btn ts-collapse-btn" id="trussal-studio-collapse" type="button" title="Collapse / expand panel">▼</button>
-      <button class="ts-close" type="button">✕</button>
-    </div>
-    <div class="ts-strip"></div>
-    <div class="ts-jpattern"></div>
-    <div class="ts-detail"></div>
-  `;
-  document.body.appendChild(overlay);
+  let toolbar = document.getElementById(TOOLBAR_ID);
+  if (!toolbar) {
+    toolbar = document.createElement('div');
+    toolbar.id = TOOLBAR_ID;
+    toolbar.className = 'ts-toolbar';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.setAttribute('aria-label', 'Trussal Studio');
+    toolbar.innerHTML = `
+      <div class="ts-toolbar-buttons" id="${TOOLBAR_BUTTONS_ID}">
+        ${WINDOW_NAMES.map((name) => {
+          const def = WINDOWS[name];
+          return `<button class="ts-dwell-btn" type="button"
+            data-studio-window="${name}" title="${def.button}" aria-controls="${def.id}" aria-expanded="false">
+            <span class="ts-btn-full">${def.button}</span><span class="ts-btn-short">${def.shortButton}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="ts-toolbar-inputs" id="${TOOLBAR_INPUTS_ID}"></div>
+    `;
 
-  // The breakout-room panic button was removed from this overlay (see commit
-  // "remove extraneous breakout room button"); leave no dangling listener.
-
-  // Jitsi's own toolbar popovers (hangup menu, "..." overflow menu, etc.)
-  // close themselves on any mousedown/click that bubbles to document and
-  // doesn't land inside their own DOM. Trussal Studio is a separate DOM
-  // subtree, so without this guard every interaction inside it — collapsing,
-  // closing, clicking a button — reads to Jitsi as an outside click and
-  // closes whatever Jitsi menu happens to be open. Stop both event types
-  // here so nothing from within Studio ever reaches document.
-  overlay.addEventListener('mousedown', (e) => e.stopPropagation());
-  overlay.addEventListener('click', (e) => e.stopPropagation());
-
-  // The JPattern card mounts once, outside the re-rendered detail panel,
-  // so the live CRDT-bound textarea survives roster/metrics re-renders.
-  const ncHost = overlay.querySelector('.ts-jpattern');
-  try {
-    mountMetaprogrammerEditor(ncHost);
-    mountMetaprogrammerCycleHighlighter(ncHost);
-  } catch (e) {
-    console.warn('[studio] JPattern card mount failed', e);
-  }
-
-  overlay.querySelector('.ts-close').addEventListener('click', () => {
-    overlay.classList.remove('ts-open');
-    tickKbdUi(); // and take the body-level keyboard panel down with it
-  });
-
-  const studioCollapseBtn = overlay.querySelector('#trussal-studio-collapse');
-  if (studioCollapseBtn) {
-    studioCollapseBtn.addEventListener('click', () => {
-      // The collapsed state lives entirely in CSS: .ts-collapsed hides the
-      // strip + detail and drops the height back to auto, which also takes a
-      // resized window's explicit height out of the picture (height: auto
-      // out-specifies the var(--tdr-h) base) — nothing to save/restore here.
-      const collapsed = overlay.classList.contains('ts-collapsed');
-      overlay.classList.toggle('ts-collapsed', !collapsed);
-      studioCollapseBtn.textContent = collapsed ? '▼' : '▲';
+    // Jitsi closes its own popovers on outside mousedown/click. Our buttons
+    // are now inside the native toolbar, so stop the events here rather than
+    // letting them reach Jitsi's own close-on-click handler.
+    toolbar.addEventListener('mousedown', (e) => e.stopPropagation());
+    toolbar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = e.target.closest('[data-studio-window]');
+      if (!btn) return;
+      e.preventDefault();
+      toggleWindow(btn.dataset.studioWindow);
     });
   }
 
-  injectFacialGestureToggle(overlay.querySelector('.ts-header'));
-  injectKeyboardToggle(overlay.querySelector('.ts-header'));
+  const anchor = hangupItem(host);
+  const reference = anchor && anchor !== toolbar ? anchor : null;
+  if (toolbar.parentElement !== host || (reference && toolbar.nextElementSibling !== reference)) {
+    // insertBefore(null) appends. Re-running this each tick is harmless: an
+    // already-correct toolbar is left exactly where it is.
+    host.insertBefore(toolbar, reference);
+  }
 
-  // Drag/resize the whole overlay by its header (mouse) or the ✥ / ⇲ header
-  // buttons (head cursor) — same window behaviour as the on-screen keyboard.
-  attachPanelControls(overlay, {
-    handle: overlay.querySelector('.ts-header'),
-    minW: 360,
-    minH: 260,
+  const inputs = toolbar.querySelector(`#${TOOLBAR_INPUTS_ID}`);
+  if (inputs && !document.getElementById('trussal-kbd-toggle')) injectKeyboardToggle(inputs);
+  if (inputs && !document.getElementById('trussal-fg-toggle')) injectFacialGestureToggle(inputs);
+
+  if (!samplesInitialized) {
+    samplesInitialized = true;
+    refreshSampleBanks();
+  }
+  return toolbar;
+}
+
+function syncWindowButtons() {
+  document.querySelectorAll(`#${TOOLBAR_BUTTONS_ID} [data-studio-window]`).forEach((btn) => {
+    const open = windowIsOpen(btn.dataset.studioWindow);
+    btn.classList.toggle('on', open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+}
+
+function windowIsOpen(name) {
+  const win = document.getElementById(WINDOWS[name].id);
+  return !!win && win.classList.contains('ts-open');
+}
+
+function bringWindowToFront(win) {
+  if (!win) return;
+  windowStack += 1;
+  win.style.setProperty('--ts-stack', String(999990 + windowStack));
+}
+
+function closeWindow(name) {
+  const win = document.getElementById(WINDOWS[name].id);
+  if (!win) return;
+  win.classList.remove('ts-open');
+  syncWindowButtons();
+}
+
+function toggleWindow(name) {
+  const def = WINDOWS[name];
+  if (!def) return;
+  const win = ensureWindow(name);
+  if (!win) return;
+  const open = win.classList.contains('ts-open');
+  win.classList.toggle('ts-open', !open);
+  if (!open) {
+    bringWindowToFront(win);
+    if (name === 'personal') seedLocalPatternOnce();
+    if (name === 'theme') syncThemePickerForm(win);
+    renderAll();
+  }
+  syncWindowButtons();
+}
+
+function ensureWindow(name) {
+  const def = WINDOWS[name];
+  if (!def || !document.body) return null;
+
+  let win = document.getElementById(def.id);
+  if (win) return win;
+
+  win = document.createElement('div');
+  win.id = def.id;
+  win.className = 'ts-window';
+  win.dataset.window = name;
+  win.setAttribute('role', 'dialog');
+  win.setAttribute('aria-labelledby', `${def.id}-title`);
+  win.innerHTML = `
+    <div class="ts-header">
+      <div class="ts-title" id="${def.id}-title">${def.title}</div>
+      <button class="ts-dwell-btn ts-collapse-btn" id="${def.id}-collapse" type="button"
+        title="Collapse / expand window">▼</button>
+      <button class="ts-close" type="button" title="Close ${def.title}">✕</button>
+    </div>
+    ${name === 'metaprogram'
+      ? '<div class="ts-window-body ts-jpattern"></div>'
+      : name === 'theme'
+        ? '<div class="ts-window-body"><div class="ts-detail ts-theme-detail"></div></div>'
+        : '<div class="ts-window-body"><div class="ts-strip"></div><div class="ts-detail" data-detail="' + name + '"></div></div>'}
+  `;
+  document.body.appendChild(win);
+
+  // The theme form is local-only and has no participant strip: build it once
+  // into its own body, exactly like the JPattern card below.
+  if (name === 'theme') {
+    const themeHost = win.querySelector('.ts-theme-detail');
+    if (themeHost) themeHost.appendChild(createThemePickerSection());
+  }
+
+  // Same outside-click guard as the old single overlay: interactions inside a
+  // Studio window must not read as clicks outside an open Jitsi popover.
+  win.addEventListener('mousedown', (e) => e.stopPropagation());
+  win.addEventListener('click', (e) => e.stopPropagation());
+  win.addEventListener('pointerdown', () => bringWindowToFront(win));
+
+  win.querySelector('.ts-close').addEventListener('click', () => closeWindow(name));
+
+  const collapseBtn = win.querySelector('.ts-collapse-btn');
+  collapseBtn.addEventListener('click', () => {
+    // The collapsed state lives entirely in CSS: .ts-collapsed hides the body
+    // and drops the height back to auto, which also takes a resized window's
+    // explicit height out of the picture — nothing to save/restore here.
+    const collapsed = win.classList.contains('ts-collapsed');
+    win.classList.toggle('ts-collapsed', !collapsed);
+    collapseBtn.textContent = collapsed ? '▼' : '▲';
   });
 
-  refreshSampleBanks();
+  if (name === 'metaprogram') {
+    // The JPattern card mounts once, outside the re-rendered details, so the
+    // live CRDT-bound textarea survives roster/metrics re-renders and closing/
+    // reopening the window.
+    const ncHost = win.querySelector('.ts-jpattern');
+    try {
+      mountMetaprogrammerEditor(ncHost);
+      mountMetaprogrammerCycleHighlighter(ncHost);
+    } catch (e) {
+      console.warn('[studio] JPattern card mount failed', e);
+    }
+  }
 
+  // Drag/resize the window by its header (mouse) or the ✥ / ⇲ header buttons
+  // (head cursor) — same window behaviour as the on-screen keyboard.
+  attachPanelControls(win, {
+    handle: win.querySelector('.ts-header'),
+    minW: def.minW,
+    minH: def.minH,
+  });
+
+  if (name !== 'metaprogram') renderAll();
+  return win;
+}
+
+function seedLocalPatternOnce() {
+  const room = getRoomNameFromUrl();
+  if (!room || seededRoom === room) return;
   const localPeer = getLocalPeer();
-  if (localPeer.jitsiId && !localPeer.pattern) {
+  if (!localPeer.jitsiId) return;
+  seededRoom = room;
+  if (!localPeer.pattern) {
     let seed = DEFAULT_PATTERN;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -1175,44 +1387,21 @@ function ensureOverlay() {
     } catch (e) {}
     sendLocalPattern(seed);
   }
-
-  renderAll();
-  return overlay;
-}
-
-function ensureToggle() {
-  let btn = document.getElementById(BUTTON_ID);
-  if (btn) return btn;
-  if (!document.body) return null;
-  injectStyles();
-
-  btn = document.createElement('button');
-  btn.id = BUTTON_ID;
-  btn.type = 'button';
-  btn.textContent = 'Studio';
-  btn.addEventListener('mousedown', (e) => e.stopPropagation());
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const overlay = ensureOverlay();
-    if (!overlay) return;
-    overlay.classList.toggle('ts-open');
-    if (overlay.classList.contains('ts-open')) renderAll();
-    else tickKbdUi(); // hiding Studio from its toggle takes the keyboard panel too
-  });
-  document.body.appendChild(btn);
-  return btn;
 }
 
 function tickUi() {
   const room = getRoomNameFromUrl();
   if (!room || !isInMeeting()) {
-    const btn = document.getElementById(BUTTON_ID);
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (btn) btn.classList.add('ts-hidden');
-    if (overlay) overlay.classList.remove('ts-open');
-    tickKbdUi(); // retract the body-level keyboard panel once Studio is hidden
+    const toolbar = document.getElementById(TOOLBAR_ID);
+    if (toolbar) toolbar.classList.add('ts-hidden');
+    WINDOW_NAMES.forEach((name) => {
+      const win = document.getElementById(WINDOWS[name].id);
+      if (win) win.classList.remove('ts-open');
+    });
+    syncWindowButtons();
+    tickKbdUi();
     initedRoom = null;
+    seededRoom = null;
     return;
   }
   if (initedRoom !== room) {
@@ -1220,10 +1409,12 @@ function tickUi() {
     const local = getLocalParticipant();
     if (local && !selectedJitsiId) { selectedJitsiId = local.id; selectedPeerKey = 'local'; }
   }
-  const btn = ensureToggle();
-  if (btn) btn.classList.remove('ts-hidden');
+  seedLocalPatternOnce();
+  const toolbar = ensureToolbar();
+  if (toolbar) toolbar.classList.remove('ts-hidden');
+  syncWindowButtons();
 
-  tickKbdUi(); // retract the keyboard panel if Studio was closed while it was open
+  tickKbdUi();
   startNetStatsPolling(sendLocalNetStats);
   // This rig measures its own capture/codec/playout latency by loopback and
   // publishes it, so the room's worst-case bound is built from real hardware
@@ -1249,9 +1440,9 @@ document.addEventListener('trussal-kbd-eval', (e) => {
 
 // Flash the code textarea border whenever an eval fires (from keyboard, gesture, or button).
 // trussal-eval is the personal instrument's signal, so it must not land on the
-// JPattern textarea — which shares .ts-code and sits above it in the overlay.
+// JPattern textarea — which shares .ts-code and lives in its own window.
 document.addEventListener('trussal-eval', () => {
-  const codeEl = document.querySelector(`#${OVERLAY_ID} .ts-code:not(.jp-code)`);
+  const codeEl = document.querySelector('.ts-window[data-window="personal"] .ts-code:not(.jp-code)');
   if (codeEl) {
     codeEl.classList.remove('ts-eval-flash');
     void codeEl.offsetWidth; // force reflow so the animation restarts each time

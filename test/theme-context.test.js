@@ -63,3 +63,4 @@ test('the font list is non-empty and every entry has a label and a value', () =>
     assert.ok(f.value.length > 0);
   }
 });
+

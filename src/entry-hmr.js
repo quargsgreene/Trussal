@@ -13,16 +13,17 @@
 //     downloads and executes the new code.
 //
 // Modules with an injected boundary (see vite-plugin-trussal-hmr.js) never
-// reach this fallback: welcome-page.js and docs-about.js self-accept in dev,
-// and every module that imports a raw-text stylesheet accepts that CSS, so a
-// CSS-only edit just swaps the <style> text. Everything else is handled here,
-// re-running the app graph without a reload.
+// reach this fallback: welcome-page.js and docs-about.js self-accept in dev.
+// src/styles.css is a normal Vite CSS import, so a CSS-only edit is handled by
+// Vite's CSS HMR and never reaches this fallback either. Everything else is
+// handled here, re-running the app graph without a reload.
 //
 // Update sequence for the fallback path, no reload, no WebRTC teardown:
 //
-//   1. the client runs the dispose hook below first, draining the previous
-//      pass's subscriptions/timers (see hmr-runtime.js) before the new
-//      index.js has run;
+//   1. each re-evaluated module first runs its previous instance's cleanup
+//      (stored in hot.data, with a native dispose hook as the direct-update
+//      path). A module that is not invalidated keeps its timer and
+//      subscriptions instead of being torn down and never restarted;
 //   2. the fresh instance of this module executes, and its static import
 //      pulls in the new index.js — top-level initialization runs again
 //      against the surviving stable state (WebSocket, peers, Yjs docs,
@@ -35,19 +36,9 @@
 // `import.meta.hot.data`.
 
 import './index.js';
-import { drainDisposes } from './hmr-runtime.js';
-
-function runDisposes() {
-  for (const fn of drainDisposes()) {
-    try { fn(); } catch (e) { console.warn('[HMR] dispose failed', e); }
-  }
-}
 
 if (import.meta.hot) {
-  // Runs before the updated instance is fetched (the client awaits dispose
-  // hooks before importing the new module): old subscriptions are gone before
-  // the new pass subscribes.
-  import.meta.hot.dispose(runDisposes);
   // Self-accepting: updates below this module stop here (no full reload).
+  // Each invalidated module's own injected dispose hook has already run.
   import.meta.hot.accept();
 }

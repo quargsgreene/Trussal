@@ -10,21 +10,8 @@
 // path: (rtt_i + rtt_j)/2 one-way ms × ~100 km/ms (light in fiber ≈
 // 200 000 km/s). Self-distance is 0.
 //
-// Overlay styles live in Grid.css, imported as raw text and injected on the
-// first render; per-render colour/angle ride as --jp-grid-* custom
-// properties (see the CSS file).
-
-import gridStyles from './Grid.css';
-import { upsertStyle } from '../../style-injection.js';
-
-
-const STYLE_ID = 'trussal-grid-style';
-
-// Overlay styles (Grid.css), upserted in place (style-injection.js).
-function _injectStyles() {
-  upsertStyle(STYLE_ID, gridStyles);
-}
-
+// Overlay styles live in Grid.css, installed by src/styles.css; per-render
+// colour/angle ride as --jp-grid-* custom properties (see the CSS file).
 
 export const KM_PER_ONE_WAY_MS = 100;
 
@@ -83,7 +70,6 @@ function findVideoPanel(jitsiId) {
 }
 
 export function renderGridOverlays(peers, localJitsiId, { landmarks = false, displacement = null } = {}) {
-  _injectStyles();
   const view = gridView(peers, localJitsiId);
   for (const entry of view.shades) {
     const panel = findVideoPanel(entry.jitsiId);

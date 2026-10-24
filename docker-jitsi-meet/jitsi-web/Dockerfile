@@ -28,6 +28,7 @@ COPY custom.css /tmp/custom.css
 RUN cat /tmp/custom.css >> /usr/share/jitsi-meet/css/all.css
 COPY latency-worklet-v2.js     /usr/share/jitsi-meet/latency-worklet-v2.js
 COPY custom-config.js /usr/share/jitsi-meet/custom-config.js
+COPY custom-config.css /usr/share/jitsi-meet/custom-config.css
 # Strudel's SharedWorker is loaded from this path relative to custom-config.js
 COPY assets /usr/share/jitsi-meet/assets
 
@@ -44,20 +45,21 @@ COPY about.html /usr/share/jitsi-meet/about.html
 # Copied by build.mjs --deploy into css/src/docs-images/.
 COPY css/src/docs-images /usr/share/jitsi-meet/css/src/docs-images
 
-# Per-build cache-bust for the two assets a Trussal deploy actually changes.
+# Per-build cache-bust for the three assets a Trussal deploy actually changes.
 # jitsi pins `css/all.css?v=<n>` with a 1-year max-age and body.html loads
-# `/custom-config.js` with no version at all, so Cloudflare's edge cache (per
-# POP, keyed on the exact URL) and the browser kept serving the pre-deploy
-# files — every theme deploy was invisible until a manual CDN purge. The room
-# HTML is assembled with SSI and never cached (`cf-cache-status: DYNAMIC`), so
-# rewriting the query string here makes the next page load fetch fresh URLs
-# with no purge. Only these two — NOT app.bundle.min.js / lib-jitsi-meet.min.js,
-# which don't change between deploys and are multi-MB. run.sh builds web with
-# --no-cache so `date` re-runs every deploy; body.html's mount is removed from
-# docker-compose.yml so this baked copy is the one SSI includes.
+# `/custom-config.js` / `/custom-config.css` with no version at all, so
+# Cloudflare's edge cache (per POP, keyed on the exact URL) and the browser kept
+# serving the pre-deploy files — every theme deploy was invisible until a manual
+# CDN purge. The room HTML is assembled with SSI and never cached
+# (`cf-cache-status: DYNAMIC`), so rewriting the query string here makes the next
+# page load fetch fresh URLs with no purge. Only these three — NOT
+# app.bundle.min.js / lib-jitsi-meet.min.js, which don't change between deploys
+# and are multi-MB. run.sh builds web with --no-cache so `date` re-runs every
+# deploy; body.html's mount is removed from docker-compose.yml so this baked
+# copy is the one SSI includes.
 RUN BID="${ASSET_VERSION:-$(date +%Y%m%d%H%M%S)}" && \
     sed -i -E "s#(all\.css\?v=)[0-9a-zA-Z._-]+#\1${BID}#g" /usr/share/jitsi-meet/*.html && \
-    printf '<script src="/custom-config.js?v=%s"></script>\n' "${BID}" > /usr/share/jitsi-meet/body.html
+    printf '<link rel="stylesheet" id="trussal-styles" href="/custom-config.css?v=%s">\n<script src="/custom-config.js?v=%s"></script>\n' "${BID}" "${BID}" > /usr/share/jitsi-meet/body.html
 
 # **Patch the React bundle fallback strings**
 RUN sed -i \

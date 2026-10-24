@@ -49,6 +49,7 @@ export default defineConfig(({ mode, command }) => {
             // Let Vite handle these (returning the url from bypass skips the
             // proxy; the request then reaches the middleware chain below).
             if (url.startsWith('/custom-config.js') ||
+                url.startsWith('/custom-config.css') ||
                 url.startsWith('/@vite') ||
                 url.startsWith('/@fs/') ||
                 url.startsWith('/@id/') ||
@@ -119,7 +120,8 @@ export default defineConfig(({ mode, command }) => {
       entries: isDev ? ['src/entry-hmr.js'] : [],
     },
     
-    // Ensure CSS imports are handled as text (for Strudel's dynamic style injection)
+    // CSS is a normal Vite module graph concern: src/styles.css is the app's
+    // single entry and Vite injects/hot-updates it like any other stylesheet.
     css: {
       modules: false,
     },
@@ -159,35 +161,6 @@ export default defineConfig(({ mode, command }) => {
             logLevel: 'silent',
           });
           return { code: result.outputFiles[0].text, map: null };
-        },
-      },
-      // Import CSS files as raw strings, like esbuild's '.css': 'text' loader
-      // in build.mjs (the modules inject their own <style> tags).
-      //
-      // vite-plugin-string can't do this: it transforms .css to
-      // `export default "..."`, but Vite's own CSS plugin still owns .css
-      // modules and wraps *that output* as CSS — the served module ends up
-      // being a style-injection module whose css string is the plugin's JS,
-      // with no default export (SyntaxError at import time).
-      //
-      // Running as a post transform instead replaces Vite's style-injection
-      // module entirely with the raw file text as the default export —
-      // exactly what the esbuild text loader emits in production.
-      {
-        name: 'trussal-css-as-string',
-        apply: 'serve',
-        enforce: 'post',
-        transform(code, id) {
-          // Only plain `.css` module requests (no ?query): `?inline`, `?raw`,
-          // `?url`, CSS modules etc. keep Vite's own handling.
-          if (!id.endsWith('.css') || id.startsWith('\0')) return null;
-          let css;
-          try {
-            css = readFileSync(id, 'utf8');
-          } catch {
-            return null; // virtual css id from another plugin: leave as-is
-          }
-          return { code: `export default ${JSON.stringify(css)};`, map: null };
         },
       },
       {
@@ -259,6 +232,16 @@ export default defineConfig(({ mode, command }) => {
             '',
           ].join('\n');
           server.middlewares.use((req, res, next) => {
+            // Production's body.html links the bundled stylesheet. In dev the
+            // CSS comes from Vite's module graph (src/styles.css is imported by
+            // src/index.js), so answer the link with an empty sheet instead of
+            // letting the request fall through to Jitsi.
+            if (req.url && (req.url === '/custom-config.css' || req.url.startsWith('/custom-config.css?'))) {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+              res.setHeader('Content-Type', 'text/css');
+              res.end('/* dev: Vite injects src/styles.css through the module graph */');
+              return;
+            }
             if (req.url && (req.url === '/custom-config.js' || req.url.startsWith('/custom-config.js?'))) {
               res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
               res.setHeader('Pragma', 'no-cache');

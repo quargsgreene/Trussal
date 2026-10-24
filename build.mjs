@@ -44,6 +44,7 @@ function copyPagesToContainer() {
 // `deploy:local` npm script, but callable on every incremental rebuild).
 function deployToContainer() {
 	copyFileSync('dist/custom-config.js', join(DEPLOY_DIR, 'custom-config.js'));
+	copyFileSync('dist/custom-config.css', join(DEPLOY_DIR, 'custom-config.css'));
 	const assetsDest = join(DEPLOY_DIR, 'assets');
 	mkdirSync(assetsDest, { recursive: true });
 	cpSync('dist/assets', assetsDest, { recursive: true });
@@ -94,9 +95,6 @@ const options = {
 		// The Mondo parser/runner is vendored at src/audio-net/mondo.mjs (see
 		// its header); this alias only catches any stray bare `mondolang` import.
 		'mondolang': resolve(__dirname, 'src/audio-net/mondo.mjs'),
-		// Stable state for HMR persistence
-		'@stable-state': resolve(__dirname, 'src/stable-state.js'),
-		'@hmr-runtime': resolve(__dirname, 'src/hmr-runtime.js'),
 	},
 	// Capture our own <script> URL synchronously at script load so
 	// `import.meta.url` (used by Strudel for its SharedWorker asset) resolves
@@ -109,15 +107,11 @@ const options = {
 		'import.meta.url': '__TRUSSAL_BUNDLE_URL',
 		'__DEV__': 'false',
 	},
-	// Modules inject their own <style> tags at runtime (no <link> mechanism
-	// exists for this bundle to hook into Jitsi's page with), so a .css
-	// import is pulled in as a plain string rather than esbuild's own CSS
-	// loader (which would try to bundle/emit it as a separate stylesheet).
-	loader: { '.css': 'text' },
-	// stable-state.js reads `import.meta.hot.data` in dev to carry its live
-	// state across an update. In this iife bundle import.meta is empty, so the
-	// guard is dead code by design; silence the expected "import.meta is not
-	// available with the iife output format" warning.
+	// src/styles.css is the single stylesheet entry. esbuild's normal CSS
+	// loader follows its @imports and emits one custom-config.css next to the
+	// JS bundle; the page loads that sibling with a <link>.
+	// Bundled dependencies may read `import.meta`; the iife format makes it
+	// empty, so silence the expected "import.meta is not available" warning.
 	logOverride: { 'empty-import-meta': 'silent' },
 	plugins: [postBuild],
 };

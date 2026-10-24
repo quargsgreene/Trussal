@@ -38,8 +38,6 @@ import { subscribePeerState } from './peer-state.js';
 // published-video override and hand back the canvas the room sees, leaving
 // `s0` (and this panel) showing their own output instead of the camera.
 import { openCamera } from './published-video.js';
-import hvStyles from './hydra-video.css';
-import { upsertStyle } from './style-injection.js';
 
 
 export const MODE_SPLIT  = 'split';
@@ -83,7 +81,6 @@ const _noiseOverlays = new Map(); // key → canvas
 const PANEL_ID  = 'trussal-hv-panel';
 const TOGGLE_ID = 'trussal-hv-toggle';
 const VIDEO_ID  = 'trussal-hv-video';
-const STYLE_ID  = 'trussal-hv-style';
 
 // ---------------------------------------------------------------------------
 // Video stream sharing (called by facial-gesture.js)
@@ -392,14 +389,9 @@ function _removeNoiseOverlay(key) {
 // Panel DOM
 // ---------------------------------------------------------------------------
 
-function _injectStyles() {
-  upsertStyle(STYLE_ID, hvStyles);
-}
-
 
 function _ensurePanel() {
   if (document.getElementById(PANEL_ID)) return;
-  _injectStyles();
 
   const panel = document.createElement('div');
   panel.id = PANEL_ID;

@@ -17,7 +17,9 @@
 
    Visibility is class-driven: .fg-visible shows the head cursor, .fg-open
    shows the panel, .fg-collapsed shrinks it to the drag handle, .fg-flash-on
-   lights the one-line gesture readout. The cursor position, the dwell ring's
+   lights the one-line gesture readout. The head-cursor tuning sliders live in
+   the panel body (.fg-settings) so those settings sit with the face UI. The
+   cursor position, the dwell ring's
    progress and the panel box ride on custom properties (--fg-cursor-x/y,
    --fg-ring-offset, and the shared --tdr-* window box — see
    panel-drag-resize.css) so nothing here is written as an element style. */
@@ -69,6 +71,32 @@
 #trussal-fg-panel canvas {
   position:absolute; inset:0; width:100%; height:100%;
   border-radius:4px; pointer-events:none; transform:scaleX(-1);
+}
+/* Head-cursor motion tuning, in the face panel beside the mesh it affects.
+   Range inputs are laid out one per row so the labels stay readable at the
+   panel's 200px minimum width. */
+#trussal-fg-panel .fg-settings {
+  display: flex; flex-direction: column; gap: 5px;
+  padding-top: 6px; border-top: 1px solid var(--trussal-secondary, #111111);
+}
+#trussal-fg-panel .fg-settings-title {
+  font-weight: 600; font-size: calc(11px * var(--trussal-font-scale, 1));
+  color: var(--trussal-secondary, #111111);
+}
+#trussal-fg-panel .fg-setting { display: flex; flex-direction: column; gap: 2px; }
+#trussal-fg-panel .fg-setting-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: calc(11px * var(--trussal-font-scale, 1));
+  color: var(--trussal-secondary, #111111);
+}
+#trussal-fg-panel .fg-setting-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(10px * var(--trussal-font-scale, 1));
+  font-variant-numeric: tabular-nums; opacity: 0.75;
+}
+#trussal-fg-panel .fg-setting input[type="range"] {
+  width: 100%; height: 14px; margin: 0; cursor: pointer;
+  accent-color: var(--trussal-secondary, #111111);
 }
 #trussal-fg-panel .fg-flash {
   font-size:calc(11px * var(--trussal-font-scale, 1)); font-weight:600; text-align:center;

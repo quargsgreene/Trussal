@@ -6,15 +6,19 @@
 // only replaces import.meta, it does not remove the branches). This plugin
 // injects the wiring while Vite serves the modules instead:
 //
-//   * every project module that imports a .css file as raw text gets a mutable
-//     binding for that import and an accept callback that rewrites whichever
-//     <style> element holds the previous text. The module keeps calling its own
-//     upsertStyle() injector; it never mentions HMR.
+//   * src/styles.css is the single stylesheet entry. Vite's own CSS HMR owns
+//     it (and its @imports), so nothing CSS-related is injected here.
 //   * true leaves (SELF_ACCEPTING below) get a self-accepting boundary, so an
 //     edit to them does not re-run the app graph, plus a dispose hook that
 //     releases the observers/timers they keep at module scope.
 //   * stable-state.js gets its import.meta.hot.data hand-off, so its singleton
 //     (and every socket, map and timer it holds) survives its own updates.
+//   * the app-level fallback disposers in index.js / conductor-settings.js are
+//     injected as native import.meta.hot.dispose hooks, so Vite runs each one
+//     only when that module is actually being re-evaluated. An unrelated
+//     fallback no longer tears down a module that will stay cached. The HMR
+//     verification probes are injected for the same reason: production source
+//     carries no test counters or dev runtime.
 //
 // Everything here is serve-only, and production uses build.mjs (esbuild), so no
 // injected line can reach dist/custom-config.js.
@@ -63,33 +67,45 @@ const SELF_ACCEPTING = {
 const STABLE_STATE = 'src/stable-state.js';
 const STABLE_STATE_INITIAL = 'const state = createState();';
 
-// Default imports of raw-text stylesheets. The modules all use the plain
-// `import styles from './x.css'` form; anything else (side-effect imports,
-// ?raw/?url queries, CSS modules) is deliberately left to Vite.
-const CSS_IMPORT_RE = /^([ \t]*)import\s+([A-Za-z_$][\w$]*)\s+from\s+(['"])([^'"]+\.css)\3;?[ \t]*$/gm;
+// Cleanup for modules whose top-level work outlives their evaluation
+// (subscriptions, timers, window listeners). Vite does not call a module's
+// dispose hook when that module is re-evaluated incidentally as a dependency of
+// a fallback, so the new instance also runs the previous cleanup stored in
+// hot.data. The guard makes the direct-dispose and re-entry paths idempotent.
+// An unrelated index-only edit therefore leaves conductor-settings untouched.
+const DEV_DISPOSE = {
+  'src/index.js': `  let __trussalDisposed = false;
+  const __trussalDispose = () => {
+    if (__trussalDisposed) return;
+    __trussalDisposed = true;
+    unsubMapperSync();
+    unsubReannounce();
+  };
+  import.meta.hot.data.trussalDispose?.();
+  import.meta.hot.data.trussalDispose = __trussalDispose;
+  import.meta.hot.dispose(__trussalDispose);`,
+  'src/conductor-settings.js': `  let __trussalDisposed = false;
+  const __trussalDispose = () => {
+    if (__trussalDisposed) return;
+    __trussalDisposed = true;
+    clearInterval(tickTimer);
+    unsubscribeFleet();
+    window.removeEventListener('pagehide', onPageHide);
+    closePanel();
+  };
+  import.meta.hot.data.trussalDispose?.();
+  import.meta.hot.data.trussalDispose = __trussalDispose;
+  import.meta.hot.dispose(__trussalDispose);`,
+};
+
+// Counters the HMR verification scripts read. Injected so they aren't test
+// scaffolding in the production bundle.
+const DEV_PROBES = {
+  'src/index.js': 'window.__hmrProbe = (window.__hmrProbe || 0) + 1;',
+  'src/docs-about.js': 'window.__hmrDepProbe = (window.__hmrDepProbe || 0) + 1;',
+};
 
 const relPath = (id) => relative(ROOT, id.split('?')[0]).split(sep).join('/');
-
-function cssWiring(code) {
-  let n = 0;
-  const accepts = [];
-
-  code = code.replace(CSS_IMPORT_RE, (_match, indent, local, quote, spec) => {
-    const initial = `__trussalHmrCss${n++}`;
-    accepts.push({ local, spec });
-    return `${indent}import ${initial} from ${quote}${spec}${quote};\n${indent}let ${local} = ${initial};`;
-  });
-
-  const wiring = accepts.map(({ local, spec }) => `  import.meta.hot.accept(${JSON.stringify(spec)}, (mod) => {
-    const previous = ${local};
-    ${local} = mod.default;
-    for (const el of document.querySelectorAll('style')) {
-      if (el.textContent === previous) el.textContent = mod.default;
-    }
-  });`);
-
-  return { code, wiring };
-}
 
 function selfAcceptWiring(cfg, rel) {
   const wiring = [];
@@ -164,15 +180,22 @@ export function trussalHmr() {
         changed = true;
       }
 
-      const css = cssWiring(code);
-      code = css.code;
-      if (css.wiring.length > 0) changed = true;
-
       const self = SELF_ACCEPTING[rel];
-      const wiring = self ? [...css.wiring, ...selfAcceptWiring(self, rel)] : css.wiring;
+      const wiring = self ? selfAcceptWiring(self, rel) : [];
 
       if (wiring.length > 0) {
         code += `\n// injected by vite-plugin-trussal-hmr (dev only)\nif (import.meta.hot) {\n${wiring.join('\n\n')}\n}\n`;
+        changed = true;
+      }
+
+      const devDispose = DEV_DISPOSE[rel];
+      const probe = DEV_PROBES[rel];
+      if (devDispose) {
+        code += `\n// injected by vite-plugin-trussal-hmr (dev only)\nif (import.meta.hot) {\n${devDispose}\n}\n`;
+        changed = true;
+      }
+      if (probe) {
+        code += `\n${probe}\n`;
         changed = true;
       }
 

@@ -26,12 +26,9 @@ import {
   parsePollLiteral, canVote, applyVoteDelta, switchVote,
 } from './polls-core.js';
 import { ensureChatEntry } from './chat-entry.js';
-import pollsStyles from './polls.css';
-import { upsertStyle } from './style-injection.js';
 
 
 const CONTAINER_ID = 'trussal-polls';
-const STYLE_ID = 'trussal-polls-style';
 
 let atoms = {};   // token -> { text, peer }
 let active = false;
@@ -53,20 +50,13 @@ function peerOf(value) {
   return atom ? atom.peer : null;
 }
 
-// The bubble styles live in polls.css (imported as raw text, per build.mjs's
-// '.css': 'text') and are upserted in place (style-injection.js), so a CSS
-// edit hot-reloads.
-function _injectStyles() {
-  upsertStyle(STYLE_ID, pollsStyles);
-}
-
+// The bubble styles live in polls.css, installed by src/styles.css.
 
 function ensureContainer() {
   if (!container) {
     container = document.createElement('div');
     container.id = CONTAINER_ID;
   }
-  _injectStyles();
   return container;
 }
 

@@ -721,7 +721,15 @@ function createLatencyServer({ port = 8081, server, logDir = null, controlToken 
             // builds their cluster from it and reads their botConfig(...) out
             // of it, so a spawn that loses this field would silently produce
             // generic bots instead of the ones the performer configured.
-            code: typeof msg.code === 'string' ? msg.code : undefined
+            code: typeof msg.code === 'string' ? msg.code : undefined,
+            // The in-room Conductor panel's request payload (only for
+            // conductor-settings-get/set). The fleet applies the same
+            // REMOTELY_TUNABLE allowlist as the admin API, so forwarding the
+            // object here cannot widen what a participant is allowed to change.
+            settings: msg.settings && typeof msg.settings === 'object' && !Array.isArray(msg.settings)
+              ? msg.settings
+              : undefined,
+            requestId: typeof msg.requestId === 'string' ? msg.requestId.slice(0, 64) : undefined
           });
           // The middle of the three botConfig prints (the browser logs what it
           // sent, the fleet logs what it built). This relay is the one hop that

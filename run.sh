@@ -125,7 +125,7 @@ fi
 # `cp dist/custom-config.js ...` below ("cannot overwrite directory with
 # non-directory"). Clear any stale file or directory before (re)building so a
 # fresh bundle can always land.
-rm -rf docker-jitsi-meet/jitsi-web/custom-config.js
+rm -rf docker-jitsi-meet/jitsi-web/custom-config.js docker-jitsi-meet/jitsi-web/custom-config.css
 npm ci --include=dev
 npm run clean
 npm run deploy:local
@@ -136,7 +136,7 @@ npm run deploy:local
 # export ASSET_VERSION="$(git -C "$REPO" rev-parse --short=12 HEAD 2>/dev/null || true)"
 # [ -n "$ASSET_VERSION" ] && ! git -C "$REPO" diff --quiet 2>/dev/null && ASSET_VERSION="${ASSET_VERSION}-dirty"
 # echo "ASSET_VERSION=${ASSET_VERSION:-<none, will use build timestamp>}"
-ASSET_VERSION="cc-$(sha256sum docker-jitsi-meet/jitsi-web/custom-config.js | cut -c1-12)"
+ASSET_VERSION="cc-$(cat docker-jitsi-meet/jitsi-web/custom-config.js docker-jitsi-meet/jitsi-web/custom-config.css | sha256sum | cut -c1-12)"
 export ASSET_VERSION
 
 cd "$REPO/docker-jitsi-meet"

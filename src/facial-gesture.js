@@ -7,11 +7,12 @@ the strudel-fork into Trussal's vanilla-JS context.  All strudel-fork behaviour 
 preserved; the only adaptation is that the "editor" is Trussal's textarea (.ts-code)
 and peer-state bus rather than a CodeMirror REPL.
 
-Since gestureAndLandmarkConfig() (see landmark-gesture-mode.js) this module no
-longer owns any of its own configuration UI.  The panel is just the live face
-mesh plus a one-line readout of the gesture that last fired; the gesture map,
-the on/off state of the head cursor, and the on/off state of gesture actions
-are all set from code.
+Since gestureAndLandmarkConfig() (see landmark-gesture-mode.js) the gesture
+map, the on/off state of the head cursor, and the on/off state of gesture
+actions are all set from code.  The panel owns the live face mesh, a one-line
+readout of the gesture that last fired, and the head-cursor motion settings
+(speed / gain / meeting-load sensitivity) so those live beside the face they
+tune instead of in Jitsi's keyboard-shortcuts dialog.
 
 The camera runs in two states:
   • watch-only — started the moment the bundle loads.  The face landmarker
@@ -40,10 +41,8 @@ import {
   toggleJPatternButtonCode,
 } from './editor-router.js';
 import { attachPanelControls, isHeadDragActive } from './panel-drag-resize.js';
-import { DEFAULT_GESTURE_MAPPINGS } from './landmark-gesture-core.js';
+import { DEFAULT_GESTURE_MAPPINGS, CURSOR_TUNING } from './landmark-gesture-core.js';
 import { applyRegexMutation } from './editor-router-core.js';
-import fgStyles from './facial-gesture.css';
-import { upsertStyle } from './style-injection.js';
 
 
 // Keep in sync with @mediapipe/tasks-vision version in strudel-fork/website/package.json.
@@ -839,8 +838,8 @@ function _detectionLoop() {
 // and the lobby knock screen's name field (#lobby-name-field) — otherwise a
 // performer using only the head cursor + on-screen keyboard (no physical
 // mouse/keyboard) can never get into a room at all. Never both at once with
-// the .ts-code editors: Studio only mounts in a meeting, which is exactly
-// when neither of those screens exists.
+// the .ts-code editors: a Studio window only mounts in a meeting, which is
+// exactly when neither of those screens exists.
 // ---------------------------------------------------------------------------
 function _isEditable(el) {
   if (!el) return false;
@@ -854,7 +853,7 @@ function _isEditable(el) {
 // input (#premeeting-name-input) and the lobby knock name field
 // (#lobby-name-field). Only one screen is ever mounted at a time.
 function _caretFollowCandidates() {
-  const targets = Array.from(document.querySelectorAll('#trussal-studio-overlay textarea.ts-code'));
+  const targets = Array.from(document.querySelectorAll('.ts-window textarea.ts-code'));
   for (const id of ['trussal-room-input', 'premeeting-name-input', 'lobby-name-field']) {
     const el = document.getElementById(id);
     if (el) targets.push(el);
@@ -1034,18 +1033,28 @@ function _stopCamera() {
 // ---------------------------------------------------------------------------
 // DOM — styles, cursor overlay, and the face-mesh panel.
 // ---------------------------------------------------------------------------
-const FG_STYLE_ID  = 'trussal-fg-style';
 const FG_PANEL_ID  = 'trussal-fg-panel';
 const FG_CURSOR_ID = 'trussal-fg-cursor';
 
-function _injectStyles() {
-  upsertStyle(FG_STYLE_ID, fgStyles);
-}
+// Head-cursor motion tuning, shown in the face panel. The ranges/defaults come
+// from landmark-gesture-core.js, so the sliders and gestureAndLandmarkConfig
+// enforce the same limits. Each value is persisted per tab with the rest of the
+// cursor tuning (see _persistCursorTuning).
+const HEAD_CURSOR_ROWS = [
+  { key: 'cursorSpeed',            label: 'Head-cursor speed',        step: 0.01 },
+  { key: 'cursorGain',             label: 'Head-cursor gain',         step: 0.05 },
+  { key: 'meetingLoadSensitivity', label: 'Meeting-load sensitivity', step: 0.05 },
+];
 
+function _cursorTuningValue(key) {
+  if (key === 'cursorSpeed') return _cursorAlpha;
+  if (key === 'cursorGain') return _cursorGain;
+  if (key === 'meetingLoadSensitivity') return _meetingLoadSensitivity;
+  return CURSOR_TUNING[key]?.default ?? 0;
+}
 
 function _ensureDOM() {
   if (document.getElementById(FG_PANEL_ID)) return;
-  _injectStyles();
   initStrudelButton();
 
   // Head cursor overlay.
@@ -1067,9 +1076,20 @@ function _ensureDOM() {
   _cursorEl    = cursor;
   _progressRing = cursor.querySelector('#trussal-fg-ring');
 
-  // Face-mesh panel — the live landmark stream and a one-line readout of the
-  // gesture that last fired. Everything that used to configure the gesture map
-  // is set from code now (gestureAndLandmarkConfig).
+  // Face-mesh panel — the live landmark stream, a one-line readout of the
+  // gesture that last fired, and the head-cursor motion settings those
+  // landmarks drive. Everything that configures the gesture MAP is still set
+  // from code (gestureAndLandmarkConfig); these sliders are the same tuning
+  // values that call writes, kept next to the face they affect.
+  const cursorRows = HEAD_CURSOR_ROWS.map(({ key, label, step }) => {
+    const { min, max } = CURSOR_TUNING[key];
+    const value = _cursorTuningValue(key);
+    return `<label class="fg-setting">
+      <span class="fg-setting-head"><span>${label}</span>
+        <output class="fg-setting-val" data-cursor-output="${key}">${Number(value).toFixed(2)}</output></span>
+      <input type="range" data-cursor-key="${key}" min="${min}" max="${max}" step="${step}" value="${value}">
+    </label>`;
+  }).join('');
   const panel = document.createElement('div');
   panel.id = FG_PANEL_ID;
   panel.innerHTML = `
@@ -1084,6 +1104,10 @@ function _ensureDOM() {
         <video id="trussal-fg-video" muted playsinline></video>
         <canvas id="trussal-fg-canvas"></canvas>
       </div>
+      <div class="fg-settings" role="group" aria-label="Head cursor settings">
+        <div class="fg-settings-title">Head cursor settings</div>
+        ${cursorRows}
+      </div>
       <div class="fg-flash" id="trussal-fg-flash"></div>
     </div>
   `;
@@ -1092,6 +1116,16 @@ function _ensureDOM() {
   _canvasEl  = panel.querySelector('#trussal-fg-canvas');
   _statusEl  = panel.querySelector('#trussal-fg-status');
   _flashEl   = panel.querySelector('#trussal-fg-flash');
+
+  // Live tuning — each slider writes the same value gestureAndLandmarkConfig
+  // would, including the per-tab persistence, and _syncHeadCursorSettings keeps
+  // the output label and any code-driven changes in step.
+  for (const { key } of HEAD_CURSOR_ROWS) {
+    const input = panel.querySelector(`input[data-cursor-key="${key}"]`);
+    input?.addEventListener('input', () => {
+      _setCursorTuningValue(key, parseFloat(input.value));
+    });
+  }
 
   const fgCollapseBtn = panel.querySelector('#trussal-fg-collapse');
   if (fgCollapseBtn) {
@@ -1109,8 +1143,8 @@ function _ensureDOM() {
   // cursor, gesture actions and the on-screen keyboard — and nothing of it
   // comes back until the performer retriggers it: hold one eye shut for 2s (the
   // camera keeps running in its watch-only state, so the enable gesture still
-  // has a detector to fire on), press →, tick the ☰ menu / the Face button, or
-  // call gestureAndLandmarkConfig.
+  // has a detector to fire on), press →, click the Face button, or call
+  // gestureAndLandmarkConfig.
   const fgCloseBtn = panel.querySelector('#trussal-fg-close');
   if (fgCloseBtn) {
     fgCloseBtn.addEventListener('click', () => _disableMediapipeUI());
@@ -1220,19 +1254,48 @@ function _restoreCursorTuning() {
     if (Number.isFinite(t.cursorGain))             _cursorGain = t.cursorGain;
     if (Number.isFinite(t.meetingLoadSensitivity)) _meetingLoadSensitivity = t.meetingLoadSensitivity;
   } catch (e) { /* absent or malformed — keep the defaults */ }
+  _syncHeadCursorSettings();
+}
+
+// Write one tuning value, clamped to landmark-gesture-core's range. This is the
+// single path for both the face panel's sliders and the exported setters, so
+// the panel always mirrors whatever gestureAndLandmarkConfig just applied.
+function _setCursorTuningValue(key, value) {
+  const spec = CURSOR_TUNING[key];
+  if (!spec || !Number.isFinite(value)) return;
+  const v = Math.min(spec.max, Math.max(spec.min, value));
+  if (key === 'cursorSpeed') _cursorAlpha = v;
+  else if (key === 'cursorGain') _cursorGain = v;
+  else if (key === 'meetingLoadSensitivity') _meetingLoadSensitivity = v;
+  _persistCursorTuning();
+  _syncHeadCursorSettings();
+}
+
+// Reflect the live values in the face panel if it is mounted. Never overwrite a
+// range the user is currently dragging (its own input handler owns that value).
+function _syncHeadCursorSettings() {
+  const panel = document.getElementById(FG_PANEL_ID);
+  if (!panel) return;
+  for (const { key } of HEAD_CURSOR_ROWS) {
+    const value = _cursorTuningValue(key);
+    const input = panel.querySelector(`input[data-cursor-key="${key}"]`);
+    const output = panel.querySelector(`output[data-cursor-output="${key}"]`);
+    if (input && document.activeElement !== input) input.value = String(value);
+    if (output) output.textContent = Number(value).toFixed(2);
+  }
 }
 
 /** cursorSpeed — per-frame EMA follow fraction for the head cursor. */
 export function setCursorSpeed(v) {
-  if (Number.isFinite(v)) { _cursorAlpha = v; _persistCursorTuning(); }
+  if (Number.isFinite(v)) _setCursorTuningValue('cursorSpeed', v);
 }
 /** cursorGain — head-displacement amplitude about screen centre. */
 export function setCursorGain(v) {
-  if (Number.isFinite(v)) { _cursorGain = v; _persistCursorTuning(); }
+  if (Number.isFinite(v)) _setCursorTuningValue('cursorGain', v);
 }
 /** meetingLoadSensitivity — how much window._jpLandmarkScale throttling to apply. */
 export function setMeetingLoadSensitivity(v) {
-  if (Number.isFinite(v)) { _meetingLoadSensitivity = v; _persistCursorTuning(); }
+  if (Number.isFinite(v)) _setCursorTuningValue('meetingLoadSensitivity', v);
 }
 
 // ---------------------------------------------------------------------------
@@ -1315,7 +1378,7 @@ export function getGestureConfig() {
 }
 
 /** True once getUserMedia / the model download has failed — the enable paths
- *  that don't need a camera (Right Arrow, the ☰ menu) still work. */
+ *  that don't need a camera (Right Arrow, the Face button) still work. */
 export function isCameraBlocked() { return _cameraBlocked; }
 
 /**
@@ -1328,26 +1391,20 @@ export function isHeadCursorEnabled() {
 }
 
 /**
- * Inject the "Face" toggle into the studio header. It now just flips Landmark
- * and Gesture Mode (keyboard + head cursor + gesture actions) via the shared
- * event, and mirrors the mode's on/off state.
- * Called once from ensureOverlay() in studio.js.
+ * Inject the "Face" toggle into the Trussal Studio toolbar group. It flips
+ * Landmark and Gesture Mode (keyboard + head cursor + gesture actions) via the
+ * shared event, and mirrors the mode's on/off state.
+ * Called from ensureToolbar() in studio.js, next to the Keys toggle.
  */
 export function injectFacialGestureToggle(headerEl) {
   const btn = document.createElement('button');
   btn.id    = 'trussal-fg-toggle';
+  btn.className = 'ts-dwell-btn';
   btn.title = 'Toggle Landmark and Gesture Mode (keyboard + head cursor + face gestures)';
-  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-      fill="currentColor" width="13" height="13" aria-hidden="true">
-    <path d="M12 9a3.75 3.75 0 1 0 0 7.5A3.75 3.75 0 0 0 12 9Z"/>
-    <path fill-rule="evenodd" d="M9.344 3.071a49.52 49.52 0 0 1 5.312 0c.967.052
-      1.83.585 2.332 1.39l.821 1.317c.24.383.645.643 1.11.71.386.054.77.113
-      1.152.177 1.432.239 2.429 1.493 2.429 2.909V18a3 3 0 0 1-3 3h-15a3 3 0
-      0 1-3-3V9.574c0-1.416.997-2.67 2.429-2.909.382-.064.766-.123
-      1.151-.178a1.56 1.56 0 0 0 1.11-.71l.822-1.315a2.942 2.942 0 0 1
-      2.332-1.39ZM6.75 12.75a5.25 5.25 0 1 1 10.5 0 5.25 5.25 0 0 1-10.5
-      0Zm12-1.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd"/>
-  </svg>Face`;
+  // Text-only, like Keys and Conductor. The old camera glyph was left over
+  // from this button's video-control origin and read as a second toolbar
+  // camera next to Jitsi's real one.
+  btn.textContent = 'Face';
 
   btn.addEventListener('click', () => {
     document.dispatchEvent(new CustomEvent('trussal-landmark-gesture-mode', {

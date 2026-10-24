@@ -1,0 +1,224 @@
+/* Styles for the in-meeting Conductor settings window and its fallback
+   overlay (src/conductor-settings.js). Imported as raw text (see build.mjs's
+   '.css': 'text' loader) and injected via upsertStyle() — the same delivery
+   path as studio.css and the other panels. The same text is also adopted by
+   the about:blank settings window (body.trussal-conductor-window below).
+
+   The palette and geometry deliberately match the three Trussal Studio
+   windows (src/studio.css): they are siblings in the toolbar group. The
+   --trussal-primary / --trussal-secondary / --trussal-font /
+   --trussal-font-scale properties are set on :root by the Personal Theme
+   picker (src/theme-context.js); every fallback below is the old literal.
+
+   #trussal-conductor-overlay / #trussal-conductor-toggle are the constants in
+   conductor-settings.js. `.ts-hidden` (studio.css) is the generic hide switch,
+   and .ts-dwell-btn's base/dwell styling comes from facial-gesture.css. */
+
+#trussal-conductor-overlay {
+  position: fixed;
+  right: var(--tdr-right, 16px); 
+  width: var(--tdr-w, min(540px, 92vw));
+  min-width: 300px; min-height: 0;
+  max-width: calc(100vw - 20px); 
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 10px;
+  z-index: 999999;
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+  display: none; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+}
+#trussal-conductor-overlay.ts-open { display: flex; }
+#trussal-conductor-overlay.ts-collapsed .tc-form { display: none; }
+
+#trussal-conductor-overlay .ts-header {
+  display: flex; align-items: center; justify-content: space-between; 
+  /* gap: 8px; */
+  padding: 10px 14px; border-bottom: 1px solid var(--trussal-secondary, #111111);
+  flex: 0 0 auto;
+}
+#trussal-conductor-overlay .ts-title {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600; color: var(--trussal-secondary, #111111); letter-spacing: 0.5px;
+  font-size: calc(1.425rem * var(--trussal-font-scale, 1));
+}
+#trussal-conductor-overlay .ts-header > button { flex: 0 0 auto; }
+#trussal-conductor-overlay .ts-title small {
+  color: var(--trussal-secondary, #111111); font-weight: 400; margin-left: 8px;
+  font-size: 0.78em;
+}
+#trussal-conductor-overlay .ts-close {
+  border: none; background: transparent; color: var(--trussal-secondary, #111111);
+  font-size: calc(1.65rem * var(--trussal-font-scale, 1)); cursor: pointer;
+}
+/* Keep header controls clickable where the top corner resize grips overlap. */
+#trussal-conductor-overlay .ts-header > button { position: relative; z-index: 21; }
+#trussal-conductor-overlay .ts-collapse-btn { margin-left: auto; }
+
+#trussal-conductor-overlay .tc-form {
+  display: flex; flex-direction: column;
+  overflow: hidden; min-height: 0; flex: 1 1 auto;
+}
+#trussal-conductor-overlay .tc-scroll {
+  padding: 12px 14px 0; display: flex; flex-direction: column; 
+  gap: 8px;
+  overflow-y: auto; min-height: 0; flex: 1 1 auto;
+  margin-bottom: 0;
+}
+#trussal-conductor-overlay .ts-section {
+  border: 1px solid var(--trussal-secondary, #111111);
+  border-radius: 8px;
+  background: var(--trussal-primary, #eeeeee);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; 
+  gap: 8px;
+}
+#trussal-conductor-overlay .ts-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; 
+}
+#trussal-conductor-overlay .ts-section-title {
+  font-size: calc(15px * var(--trussal-font-scale, 1)); letter-spacing: 1px;
+  color: var(--trussal-secondary, #111111); font-weight: 600;
+}
+#trussal-conductor-overlay .ts-btn {
+  padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--trussal-secondary, #111111); font-weight: 600;
+  font-size: calc(18px * var(--trussal-font-scale, 1));
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .ts-btn:disabled {
+  opacity: 0.45; cursor: default;
+}
+#trussal-conductor-overlay .ts-btn.tc-apply {
+  background: var(--trussal-secondary, #111111); color: var(--trussal-primary, #eeeeee);
+}
+#trussal-conductor-overlay .tc-range-row {
+  display: grid; grid-template-columns: 1fr auto; 
+  gap: 4px 10px; 
+  align-items: center;
+  font-size: calc(18px * var(--trussal-font-scale, 1));
+  color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .tc-range-row .tc-label { grid-column: 1; }
+#trussal-conductor-overlay .tc-range {
+  grid-column: 1; width: 100%; height: 16px; cursor: pointer;
+  accent-color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .tc-output {
+  grid-column: 2; grid-row: 1 / span 2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(18px * var(--trussal-font-scale, 1));
+  min-width: 2ch; text-align: right;
+}
+#trussal-conductor-overlay .tc-check {
+  display: flex; align-items: flex-start; 
+  cursor: pointer;
+  font-size: calc(18px * var(--trussal-font-scale, 1)); line-height: 1.35;
+  color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .tc-check input {
+  width: 18px; height: 18px; flex: 0 0 auto; margin-top: 2px;
+  accent-color: var(--trussal-secondary, #111111); cursor: pointer;
+}
+#trussal-conductor-overlay .tc-field {
+  display: flex; align-items: center; justify-content: space-between; 
+  font-size: calc(18px * var(--trussal-font-scale, 1));
+  color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .tc-number {
+  width: 112px; box-sizing: border-box; padding: 3px 6px;
+  border: 1px solid var(--trussal-secondary, #111111); border-radius: 4px;
+  background: var(--trussal-primary, #eeeeee); color: var(--trussal-secondary, #111111);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(18px * var(--trussal-font-scale, 1));
+}
+#trussal-conductor-overlay .tc-note {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(14.5px * var(--trussal-font-scale, 1));
+  line-height: 1.35; color: var(--trussal-secondary, #111111);
+}
+#trussal-conductor-overlay .tc-footer {
+  display: flex; 
+  align-items: center; 
+  gap: 8px;  
+  flex-wrap: wrap;
+  padding: 8px 10px 0;
+  margin-bottom: 0;
+  border-top: 1px solid var(--trussal-secondary, #111111);
+  background: var(--trussal-primary, #eeeeee);
+}
+#trussal-conductor-overlay .tc-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(16.5px * var(--trussal-font-scale, 1));
+  color: var(--trussal-secondary, #111111); 
+  overflow-wrap: anywhere; flex: 1 1;
+}
+#trussal-conductor-overlay .tc-status[data-state="error"]::before { content: "⚠ "; }
+#trussal-conductor-overlay .tc-status[data-state="ok"]::before { content: "✓ "; }
+
+/* Head-cursor dwell on the panel's action buttons (same invert-fill feedback
+   as the Studio controls; .ts-dwell-btn's base styling is global). */
+#trussal-conductor-overlay .ts-dwell-btn.strudel-dwell-hover {
+  border-color: var(--trussal-secondary, #111111);
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
+}
+#trussal-conductor-overlay .ts-dwell-btn.strudel-btn-active {
+  border-color: var(--trussal-secondary, #111111);
+  background: var(--trussal-secondary, #111111);
+  color: var(--trussal-primary, #eeeeee);
+}
+
+/* The Conductor toggle is created into #trussal-studio-buttons and is styled
+   by studio.css's #trussal-studio-toolbar button rules. Only the cursor lives
+   here so the popup's standalone stylesheet still works without studio.css. */
+#trussal-conductor-toggle {
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ *
+ * Separate settings window (src/conductor-settings.js openPopup)
+ *
+ * The same panel markup is written into an about:blank window controlled by
+ * the meeting bundle. There it fills the window instead of floating over the
+ * meeting: no fixed anchors, border, radius, shadow or inner drag/resize. The
+ * browser's own title bar moves/resizes it, .tc-scroll scrolls inside, and the
+ * fixed .tc-footer keeps Apply visible.
+ * ------------------------------------------------------------------ */
+body.trussal-conductor-window {
+  margin: 0;
+  padding: 0;
+  display: block;
+  background: var(--trussal-primary, #eeeeee);
+  color: var(--trussal-secondary, #111111);
+  font-family: var(--trussal-font, Arial, Helvetica, sans-serif);
+}
+body.trussal-conductor-window #trussal-conductor-overlay {
+  position: static;
+  width: 100%; 
+  min-width: 0; min-height: 0;
+  max-width: none;
+  border: none; border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex: none;
+}
+/* No inner collapse in a window that can simply be resized; the header's ✕
+   closes it. */
+body.trussal-conductor-window #trussal-conductor-overlay .ts-collapse-btn { display: none; }
+
+@media (max-width: 480px) {
+  #trussal-conductor-overlay {
+    right: var(--tdr-right, 6px); 
+    left: var(--tdr-left, 6px); 
+    width: var(--tdr-w, auto);
+  }
+  #trussal-conductor-overlay .ts-header { padding: 8px 10px; }
+  #trussal-conductor-overlay .tc-footer { padding: 8px; }
+  body.trussal-conductor-window #trussal-conductor-overlay {
+    left: auto; right: auto; width: 100%; 
+  }
+}

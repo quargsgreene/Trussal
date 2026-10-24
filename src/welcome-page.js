@@ -15,10 +15,10 @@
 // "My Jam Session!" into "my-jam-session" would land two people who typed
 // visibly different names in the same room without telling either of them.
 
-import welcomeStyles from './welcome-page.css';
-import { upsertStyle } from './style-injection.js';
-
-const STYLE_ID = 'trussal-welcome-style';
+// Single source for the join button label: the welcome overlay renders it,
+// and patchPrejoinButton renames Jitsi's own "Join meeting" lobby button to
+// match. Change it here and both follow.
+const JOIN_LABEL = 'Join meeting';
 
 // Live handles for the observers/poll installed below, so a repeated render
 // replaces the previous instance instead of stacking duplicates.
@@ -26,11 +26,6 @@ let overlayPoll = null;
 let prejoinObserver = null;
 let recentObserver = null;
 let hideObserver = null;
-
-// Single source for the join button label: the welcome overlay renders it,
-// and patchPrejoinButton renames Jitsi's own "Join meeting" lobby button to
-// match. Change it here and both follow.
-const JOIN_LABEL = 'Join meeting';
 
 export const MAX_ROOM_NAME_LENGTH = 1023;
 const ROOM_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -41,13 +36,10 @@ export function isValidRoomName(name) {
   return ROOM_NAME_RE.test(name);
 }
 
-// welcome-page.css, upserted in place so CSS edits hot-reload. Split out of renderTrussalWelcomeOverlay
-// because the Jitsi patch classes at its bottom are also needed on the
-// prejoin screen (patchPrejoinButton) and the welcome page's Start meeting
-// button (hideStartMeetingButton), neither of which builds the overlay.
-function injectWelcomeStyles() {
-  upsertStyle(STYLE_ID, welcomeStyles);
-}
+// welcome-page.css is installed by src/styles.css at boot. The Jitsi patch
+// classes at its bottom are needed on the prejoin screen (patchPrejoinButton)
+// and the welcome page's Start meeting button (hideStartMeetingButton), not
+// only by the overlay.
 
 function renderTrussalWelcomeOverlay() {
     console.log('[Trussal] renderTrussalWelcomeOverlay() called');
@@ -70,8 +62,6 @@ function renderTrussalWelcomeOverlay() {
       if (submit && submit.textContent !== JOIN_LABEL) submit.textContent = JOIN_LABEL;
       return;
     }
-
-    injectWelcomeStyles();
 
     const overlay = document.createElement('div');
     overlay.id = 'trussal-welcome-overlay';
@@ -241,7 +231,6 @@ function patchPrejoinButton() {
   }
 
 function startPrejoinRender() {
-    injectWelcomeStyles();
     patchPrejoinButton();
 
     // React re-renders a lot, so keep re-patching while the lobby is up. The
@@ -348,12 +337,6 @@ function hideStartMeetingButton() {
   }
 
 export function renderHideStartMeetingButton() {
-    // Styles are injected here, at setup, NOT in hideStartMeetingButton().
-    // That function is this observer's callback, and injectWelcomeStyles()
-    // writes the <style> element — a mutation that re-triggers the observer.
-    // Calling it from the callback is an infinite write→observe→write loop.
-    injectWelcomeStyles();
-
     // Run once on load
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
       hideStartMeetingButton();

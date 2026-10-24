@@ -45,22 +45,15 @@ import {
   LiveRing, EventLog, CursorPath, matchAudioDevice, captureSlug,
   parseLiveCaptureArgs, applyMakeupGainAndLimiter, applyEdgeFade,
 } from './live-capture-core.js';
-import lcStyles from './live-capture.css';
-import { upsertStyle } from './style-injection.js';
 
 
 const RING_SECONDS = 10;
 const RETRY_MS = 10000;
 const SILENT_SOUND = '_livecapsilent';
 const VIDEO_W = 240, VIDEO_H = 180, VIDEO_FRAMES = 120, VIDEO_FPS = 12;
-const LC_STYLE_ID = 'trussal-livecapture-style';
 
-// The overlays' rules (live-capture.css) are upserted lazily — the
+// The overlays' rules (live-capture.css) are installed by src/styles.css; the
 // module loads on every page but a capture is only started by an eval.
-function ensureStyles() {
-  upsertStyle(LC_STYLE_ID, lcStyles);
-}
-
 
 // slug → capture record. Common fields: { medium, name, slug, state, attemptAt,
 // epoch, broken }. Medium-specific fields hang off the same object.
@@ -320,7 +313,6 @@ const TEXT_OVERLAY_ID = 'trussal-livecapture-text';
 function textOverlay() {
   let el = document.getElementById(TEXT_OVERLAY_ID);
   if (!el) {
-    ensureStyles();
     el = document.createElement('div');
     el.id = TEXT_OVERLAY_ID;
     document.body.appendChild(el);
@@ -437,7 +429,6 @@ const CURSOR_DOT_ID = 'trussal-livecapture-cursor';
 function cursorDot() {
   let el = document.getElementById(CURSOR_DOT_ID);
   if (!el) {
-    ensureStyles();
     el = document.createElement('div');
     el.id = CURSOR_DOT_ID;
     document.body.appendChild(el);

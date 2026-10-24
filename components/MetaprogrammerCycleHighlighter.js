@@ -20,15 +20,12 @@
 // wrapping, scroll) with no framework. The pure text→offset half lives in
 // metaprogrammer-cycle-highlighter-core.js (node:test covers it); this file is
 // only the DOM. Its styles (overlay, mirror, outline box) live in
-// MetaprogrammerCycleHighlighter.css, imported as raw text and upserted in
-// place (style-injection.js).
+// MetaprogrammerCycleHighlighter.css, installed by src/styles.css.
 
 import { participantPositions, restPositions } from './metaprogrammer-cycle-highlighter-core.js';
 import {
   getActiveJPatternToken, getActiveJPatternIndex, getActiveJPatternKind
 } from '../src/peer-state.js';
-import highlightStyles from './MetaprogrammerCycleHighlighter.css';
-import { upsertStyle } from '../src/style-injection.js';
 
 
 // Font/box metrics the mirror must share with the textarea for its glyph layout
@@ -43,17 +40,11 @@ const MIRROR_PROPS = [
   'box-sizing'
 ];
 
-const STYLE_ID = 'trussal-jp-play-style';
 
-// The overlay/mirror/box rules live in MetaprogrammerCycleHighlighter.css
-// (imported as raw text — build.mjs's '.css': 'text'), upserted in place so a
-// CSS edit hot-reloads. The
-// CSS file carries the notes on those rules' deliberate lack of !important so
-// a CSS Cycles sheet can still restyle the overlay and box.
-function _injectStyles() {
-  upsertStyle(STYLE_ID, highlightStyles);
-}
-
+// The overlay/mirror/box rules live in MetaprogrammerCycleHighlighter.css,
+// installed by src/styles.css. The CSS file carries the notes on those rules'
+// deliberate lack of !important so a CSS Cycles sheet can still restyle the
+// overlay and box.
 
 export function mountMetaprogrammerCycleHighlighter(container) {
   if (!container) return null;
@@ -62,7 +53,6 @@ export function mountMetaprogrammerCycleHighlighter(container) {
   const host = ta.parentElement;
   if (!host || host.querySelector('.jp-play-overlay')) return null; // idempotent
 
-  _injectStyles();
   if (getComputedStyle(host).position === 'static') host.classList.add('jp-play-host');
 
   const overlay = document.createElement('div');

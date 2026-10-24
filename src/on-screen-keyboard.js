@@ -3,7 +3,8 @@
 // autocomplete ("autopredict"). It types into whichever Trussal Studio code
 // editor was last focused — the personal Strudel textarea or the shared
 // JPattern metaprogram editor — and its Eval key routes the same way
-// studio.js's own eval does. Outside a meeting, where Studio doesn't exist, it targets the two
+// studio.js's own eval does. Outside a meeting, where the Studio toolbar
+// doesn't exist, it targets the two
 // Jitsi-native name fields instead: the prejoin screen's display-name input
 // and the lobby knock screen's name field (Eval is a no-op on those — see
 // _isTypingTarget / PREJOIN_NAME_ID / LOBBY_NAME_ID).
@@ -12,23 +13,19 @@
 // targets, so it only appears while the MediaPipe head cursor (the Face
 // toggle) is on — see isHeadCursorEnabled() in _updatePredictions().
 //
-// The toggle lives IN the Studio header (injectKeyboardToggle), next to the
-// Face button, rather than as a free-floating button pinned to a page corner.
-// The panel itself stays a body-level fixed element so it can be dragged
-// anywhere and span the full width; tickKbdUi() retracts it when Studio is
-// closed or the meeting ends.
+// The toggle lives in the Trussal Studio toolbar group (injectKeyboardToggle),
+// next to the Face button. The panel itself stays a body-level fixed element
+// so it can be dragged anywhere and span the full width; tickKbdUi() retracts
+// it when the meeting ends, but it is no longer tied to any one Studio window.
 
 import { wordPrefixAt, predictCompletions } from './on-screen-keyboard-core.js';
 import { isHeadCursorEnabled, setHeadCursorEnabled, setGestureDetectionEnabled } from './facial-gesture.js';
 import {
   attachHeadDragResize, isHeadDragActive, setPanelBox, pinTopLeft as _pinTopLeft,
 } from './panel-drag-resize.js';
-import kbdStyles from './on-screen-keyboard.css';
-import { upsertStyle } from './style-injection.js';
 
 export { pinTopLeft as _pinTopLeft } from './panel-drag-resize.js';
 
-const KBD_STYLE_ID  = 'trussal-kbd-style';
 const KBD_PANEL_ID  = 'trussal-kbd-panel';
 const KBD_TOGGLE_ID = 'trussal-kbd-toggle';
 const DWELL_MS      = 1000;
@@ -100,9 +97,8 @@ const ROWS = [
     {l:'⇧',k:'ShiftRight',w:2.25},
   ],
   [
-    {l:'←',k:'ArrowLeft',w:1.5},{l:'↑',k:'ArrowUp',w:1.5},{l:'↓',k:'ArrowDown',w:1.5},
-    {l:'space',k:' ',w:6.5},
-    {l:'→',k:'ArrowRight',w:1.5},{l:'↵eval',k:'Eval',w:2},
+    {l:'←',k:'ArrowLeft',w:1.5},{l:'↑',k:'ArrowUp',w:1.5},{l:'↓',k:'ArrowDown',w:1.5}, {l:'→',k:'ArrowRight',w:1.5},
+    {l:'space',k:' ',w:6.5}, {l:'↵eval',k:'Eval',w:2},
   ],
 ];
 
@@ -111,8 +107,8 @@ let _shift        = false;
 let _caps         = false;
 let _visible      = false;
 // Standalone = the keyboard is held open by Landmark and Gesture Mode rather
-// than by the Studio header toggle, so it stays up on the welcome page and
-// prejoin screen too and tickKbdUi() must not retract it.
+// than by the Studio toolbar's Keys button, so it stays up on the welcome page
+// and prejoin screen too and tickKbdUi() must not retract it.
 let _standalone   = false;
 let _collapsed    = false;
 let _lastTA       = null;
@@ -146,10 +142,11 @@ function _getTA() {
   // editor. :not(.jp-code) — the shared JPattern textarea is also a .ts-code.
   if (_lastTA && _lastTA.isConnected) return _lastTA;
   _lastTA = null;
-  return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.jp-code)')
-      || document.querySelector('#trussal-studio-overlay .ts-code:not(.jp-code)')
-      // Studio only mounts in a meeting, which is exactly when none of these
-      // single-line fields exists — never a Studio editor and one of these
+  return document.querySelector('.ts-window[data-window="personal"] .ts-detail .ts-code:not(.jp-code)')
+      || document.querySelector('.ts-window[data-window="personal"] .ts-code:not(.jp-code)')
+      // The personal window only mounts after its toolbar button is clicked,
+      // and the toolbar only mounts in a meeting — exactly when none of these
+      // single-line fields exists, so never a Studio editor and one of these
       // at once.
       || document.getElementById(WELCOME_ROOM_ID)
       || document.getElementById(PREJOIN_NAME_ID)
@@ -360,14 +357,13 @@ function _moveLine(ta, dir) {
 // standalone hold keeps Landmark and Gesture Mode from re-raising the panel
 // under it (tickKbdUi). Everything stays down until the performer retriggers the
 // mode — hold one eye shut for 2s (the camera keeps running watch-only), press
-// →, tick the ☰ menu / the Face button, or call gestureAndLandmarkConfig.
+// →, click the Face button, or call gestureAndLandmarkConfig.
 function _closeKeyboard() {
   _standalone = false;
   _showPanel(false);
   // The event flips the mode off through landmark-gesture-mode's shared handler
-  // so its bookkeeping, gear and instruction card all stay in step; the direct
-  // calls guarantee the cursor and gesture actions are gone even if that flag
-  // had drifted out of sync.
+  // so its bookkeeping stays in step; the direct calls guarantee the cursor and
+  // gesture actions are gone even if that flag had drifted out of sync.
   setHeadCursorEnabled(false);
   setGestureDetectionEnabled(false);
   try {
@@ -466,10 +462,6 @@ function _makeResizable(panel) {
 }
 
 // ── DOM construction ───────────────────────────────────────────────────────────
-function _injectStyles() {
-  upsertStyle(KBD_STYLE_ID, kbdStyles);
-}
-
 
 function _buildPanel() {
   const panel = document.createElement('div');
@@ -565,7 +557,6 @@ function _flash(el) {
 
 function _ensureDOM() {
   if (document.getElementById(KBD_PANEL_ID)) return;
-  _injectStyles();
   _buildPanel();
   _bindEditorActivity();
 }
@@ -683,14 +674,14 @@ function _showPanel(on) {
 }
 
 /**
- * Inject the Keys toggle into the Studio header. Called once from ensureOverlay()
- * in studio.js, right after injectFacialGestureToggle(). The button carries
- * .ts-dwell-btn so facial-gesture.js's head-cursor dwell loop clicks it for
- * free, exactly like the Face and collapse buttons beside it.
+ * Inject the Keys toggle into the Trussal Studio toolbar group. Called from
+ * studio.js ensureToolbar(), which passes the #trussal-studio-inputs host
+ * beside the window buttons. The button carries .ts-dwell-btn so
+ * facial-gesture.js's head-cursor dwell loop clicks it for free, exactly like
+ * the Face and collapse buttons beside it.
  */
 export function injectKeyboardToggle(headerEl) {
   if (!headerEl || document.getElementById(KBD_TOGGLE_ID)) return;
-  _injectStyles();
   const btn = document.createElement('button');
   btn.id    = KBD_TOGGLE_ID;
   btn.type  = 'button';
@@ -709,15 +700,15 @@ export function injectKeyboardToggle(headerEl) {
 
 /**
  * Whether the keyboard is currently held open by Landmark and Gesture Mode
- * (as opposed to the Studio header toggle). gestureAndLandmarkConfig reports
+ * (as opposed to the toolbar's Keys button). gestureAndLandmarkConfig reports
  * this back as `virtualKeyboardEnabled`.
  */
 export function isKeyboardStandalone() { return _standalone; }
 
 /**
  * Landmark and Gesture Mode calls this to show/hide the keyboard independently
- * of Studio — so it is available on the welcome page and prejoin screen, not
- * just in a meeting with Studio open.
+ * of any Studio window — so it is available on the welcome page and prejoin
+ * screen, not just in a meeting with a Studio window open.
  */
 export function setKeyboardStandalone(on) {
   _standalone = !!on;
@@ -725,17 +716,17 @@ export function setKeyboardStandalone(on) {
     try { _ensureDOM(); } catch (e) { console.error('[on-screen-keyboard] panel init failed', e); return; }
     _showPanel(true);
   } else {
-    // Hand visibility back to the Studio toggle — tickKbdUi() retracts the
-    // panel unless a meeting with Studio open still wants it up.
+    // Let the toolbar's Keys button own visibility again; tickKbdUi() keeps
+    // the panel up in a meeting but still retracts it when the room ends.
     tickKbdUi();
   }
 }
 
 /**
  * Housekeeping tick from studio.js's tickUi(). The toggle lives in the Studio
- * header and comes and goes with the overlay on its own; this only has to
- * retract the body-level panel when Studio is closed or the meeting ends —
- * unless Landmark and Gesture Mode is holding it open (standalone).
+ * toolbar and comes and goes with it; this only has to retract the body-level
+ * panel when the meeting ends — unless Landmark and Gesture Mode is holding it
+ * open (standalone).
  */
 export function tickKbdUi() {
   if (_standalone) {
@@ -747,10 +738,7 @@ export function tickKbdUi() {
     return;
   }
   if (!_visible) return;
-  const overlay   = document.getElementById('trussal-studio-overlay');
-  // Studio's open state lives in its .ts-open class (studio.js / studio.css).
-  const studioOpen = !!overlay && overlay.classList.contains('ts-open');
-  if (!studioOpen || !_inMeeting()) { _showPanel(false); return; }
+  if (!_inMeeting()) { _showPanel(false); return; }
   // Reflect a head-cursor toggle on the autopredict row without waiting for
   // the next editor keystroke to call _updatePredictions().
   _updatePredictions();

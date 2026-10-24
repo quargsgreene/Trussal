@@ -620,11 +620,15 @@ export function sendResearchEvent(kind, data = null) {
   safeSend({ type: 'research-event', kind, data });
 }
 
-export function sendFleetRequest(action, { count, targets, code } = {}) {
+export function sendFleetRequest(action, { count, targets, code, settings, requestId } = {}) {
   const msg = { type: 'fleet-request', action };
   if (typeof count === 'number') msg.count = count;
   if (targets !== undefined) msg.targets = targets;
   if (typeof code === 'string') msg.code = code;
+  // The in-room Conductor panel's request/answer correlation. `settings` is
+  // validated against the fleet's remote-tuning allowlist on the far side.
+  if (settings !== undefined) msg.settings = settings;
+  if (typeof requestId === 'string') msg.requestId = requestId;
   safeSend(msg);
 }
 

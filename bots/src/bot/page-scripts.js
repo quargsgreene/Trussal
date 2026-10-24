@@ -1904,8 +1904,8 @@ export function pageMasterPlayer() {
   if (window.__trussalMasterPlayer) return;
   const FRAME = 2048;
   const MAX_CHUNKS = 256;
-  const chunks = [];   // Array<Float32Array> waiting to be emitted
-  let head = 0;        // read offset into chunks[0]
+  const chunks = [];      // Array<Float32Array> waiting to be emitted
+  let readOffset = 0;     // interleaved-sample offset consumed from chunks[0]
   let ctx = null, proc = null, busOut = null;
   // Master-bus effects (`# room wcl …`, `# noise …`, `# crush …`, `# echo …`):
   // applied HERE, on the one mix every client hears, rather than in each
@@ -1943,9 +1943,12 @@ export function pageMasterPlayer() {
         // master keeps the room's stereo field. The `?? 0` guards a malformed
         // odd-length chunk: an out-of-range typed-array read is undefined,
         // which written to a Float32Array lands on the bus as NaN.
-        outL[i] = chunks[0][head++] ?? 0;
-        outR[i] = chunks[0][head++] ?? 0;
-        if (head >= chunks[0].length) { chunks.shift(); head = 0; }
+        outL[i] = chunks[0][readOffset++] ?? 0;
+        outR[i] = chunks[0][readOffset++] ?? 0;
+        if (readOffset >= chunks[0].length) {
+          chunks.shift();
+          readOffset = 0;
+        }
       }
     };
     // proc -> busOut -> fan -> MediaStreamDestination (this bot's mic ->
@@ -2311,9 +2314,13 @@ export function pageMasterPlayer() {
   }
 
   function queued() {
-    let n = -head;
-    for (const c of chunks) n += c.length;
-    return n < 0 ? 0 : n;
+    let bufferedSampleCount = 0;
+    for (const chunk of chunks) bufferedSampleCount += chunk.length;
+    // Subtract the part of the first chunk the audio callback has already
+    // played. readOffset is non-negative; this subtraction is what used to
+    // make the expression look like a negative head.
+    const unplayedSampleCount = bufferedSampleCount - readOffset;
+    return unplayedSampleCount < 0 ? 0 : unplayedSampleCount;
   }
 
   window.__trussalMasterPlayer = {
@@ -2322,7 +2329,7 @@ export function pageMasterPlayer() {
       if (!samples || !samples.length) return queued();
       // Overflow: drop the oldest (currently-playing) chunk and reset the
       // cursor. Only bites when Node has run far ahead of real-time playback.
-      if (chunks.length >= MAX_CHUNKS) { chunks.shift(); head = 0; }
+      if (chunks.length >= MAX_CHUNKS) { chunks.shift(); readOffset = 0; }
       chunks.push(Float32Array.from(samples));
       return queued();
     },
@@ -2336,8 +2343,10 @@ export function pageMasterPlayer() {
 
 /** Push assembled master-mix PCM (a plain Array) into the page playback sink. */
 export function pageEnqueueMaster(samples) {
-  const p = window.__trussalMasterPlayer;
-  return (p && typeof p.enqueue === 'function') ? p.enqueue(samples) : 0;
+  const masterPlayer = window.__trussalMasterPlayer;
+  return (masterPlayer && typeof masterPlayer.enqueue === 'function')
+    ? masterPlayer.enqueue(samples)
+    : 0;
 }
 
 /**
@@ -2346,8 +2355,10 @@ export function pageEnqueueMaster(samples) {
  * and the room's worst-case metrics (aggregator-bot.js #syncMasterRoom).
  */
 export function pageSetMasterRoom(params) {
-  const p = window.__trussalMasterPlayer;
-  if (p && typeof p.setRoom === 'function') p.setRoom(params || null);
+  const masterPlayer = window.__trussalMasterPlayer;
+  if (masterPlayer && typeof masterPlayer.setRoom === 'function') {
+    masterPlayer.setRoom(params || null);
+  }
 }
 
 /**
@@ -2358,8 +2369,10 @@ export function pageSetMasterRoom(params) {
  * arguments may be `<…>` patterns.
  */
 export function pageSetMasterNoise(params) {
-  const p = window.__trussalMasterPlayer;
-  if (p && typeof p.setNoise === 'function') p.setNoise(params || null);
+  const masterPlayer = window.__trussalMasterPlayer;
+  if (masterPlayer && typeof masterPlayer.setNoise === 'function') {
+    masterPlayer.setNoise(params || null);
+  }
 }
 
 /**
@@ -2370,8 +2383,10 @@ export function pageSetMasterNoise(params) {
  * accepts `[…]` subdivisions as well as `<…>` alternation.
  */
 export function pageSetMasterCrush(params) {
-  const p = window.__trussalMasterPlayer;
-  if (p && typeof p.setCrush === 'function') p.setCrush(params || null);
+  const masterPlayer = window.__trussalMasterPlayer;
+  if (masterPlayer && typeof masterPlayer.setCrush === 'function') {
+    masterPlayer.setCrush(params || null);
+  }
 }
 
 /**
@@ -2382,8 +2397,10 @@ export function pageSetMasterCrush(params) {
  * grid.
  */
 export function pageSetMasterEcho(params) {
-  const p = window.__trussalMasterPlayer;
-  if (p && typeof p.setEcho === 'function') p.setEcho(params || null);
+  const masterPlayer = window.__trussalMasterPlayer;
+  if (masterPlayer && typeof masterPlayer.setEcho === 'function') {
+    masterPlayer.setEcho(params || null);
+  }
 }
 
 /**

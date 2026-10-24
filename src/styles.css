@@ -1,0 +1,30 @@
+/* styles.css — the bundle's single stylesheet entry.
+ *
+ * Feature modules author their rules in their own .css files; this file only
+ * fixes the cascade order. The build bundles every @import below into one
+ * `custom-config.css` (esbuild), and Vite serves the same graph in dev with its
+ * normal CSS HMR. No JavaScript module imports CSS text or injects <style>
+ * tags: the page loads this bundle once via <link>.
+ *
+ * Order matters: theme-context defines the custom properties the rest of the
+ * sheets consume, so it stays first. The remaining order preserves the old
+ * registry's insertion order.
+ */
+
+@import './theme-context.css';
+@import './welcome-page.css';
+@import './docs-about.css';
+@import './polls.css';
+@import './hydra-video.css';
+@import './on-screen-keyboard.css';
+@import './studio.css';
+@import './file-cycles.css';
+@import './published-video.css';
+@import './facial-gesture.css';
+@import './audio-net/av-effects/Grid.css';
+@import './panel-drag-resize.css';
+@import './live-capture.css';
+@import './text-cycles.css';
+@import './conductor-settings.css';
+@import '../components/MetaprogrammerCycleHighlighter.css';
+@import '../components/MetaprogrammerEditor.css';

@@ -123,14 +123,6 @@ body.welcome-page #welcome_page .welcome-page-header-text {
   opacity: 0 !important;      /* keep layout but make them invisible */
 }
 
-/* Kill the welcome-page background image. Jitsi's stock rule is
-   `.welcome .header { background-image: linear-gradient(...),
-   url(../images/welcome-background.png); background-color: #002637 }`
-   at (0,0,2,0) — it beats a plain `body.welcome-page div` — so this
-   override is deliberately !important, same class of exception as the
-   video-transparency block at the end of the file. (welcome-background.png
-   is also a solid 1x1 now, so anything this rule misses paints a flat
-   colour rather than the stock photo.) */
 body.welcome-page,
 body.welcome-page .welcome,
 body.welcome-page .header,
@@ -198,19 +190,6 @@ body.welcome-page #trussal-room-input::placeholder {
   opacity: 1; /* some browsers dim the placeholder unless you force this */
 }
 
-
-/* ------------------------------------------------------------------ *
- * Prejoin (premeeting) screen: no camera / avatar preview — just the
- * centred name field + Join button.
- * ------------------------------------------------------------------ */
-
-/* Hide ONLY the camera video and the camera-off avatar placeholder. This
-   Jitsi build renders the prejoin with Emotion CSS-in-JS, so also match the
-   `avatar` label substring. Everything here must be a leaf (the <video> or
-   the avatar circle) — NOT a wrapper: `contentControls` / `paddedContent`
-   wrap the whole prejoin form (title + name input + Join button) in this
-   build, so hiding those blanks the page. `#largeVideo` is scoped to the
-   prejoin so the in-call stage video is untouched. */
 #preview,
 .premeeting-screen video,
 .premeeting-screen #largeVideo,
@@ -482,28 +461,6 @@ div.hangup-menu-button svg {
   position: relative !important;
 }
 
-
-/* ------------------------------------------------------------------ *
- * Jitsi's Emotion (CSS-in-JS) surfaces.
- *
- * Everything above themes Jitsi's plain-CSS components. The React app
- * also ships a whole dark palette through Emotion — hashed class names
- * like `css-169oaf-participantsPane` — at a specificity the bare
- * `html, body, body *` default can't touch, so these panels stayed
- * `#141414` / `#3d3d3d` with a blue (`#4687ed` / `#0074e0`) accent.
- *
- * The hash prefix (`css-169oaf-`) changes every Jitsi build; the
- * semantic suffix (`-participantsPane`, `-modal-dialog`, `-button-primary`,
- * `-input`, `-chatHeader`, `-contextMenuItem-selected`) is stable, so
- * these hook the suffix with `[class*="…"]` plus the stable ids Jitsi
- * gives the same nodes. Same "defeat upstream component CSS" exception
- * as the video-transparency block — hence !important throughout.
- * ------------------------------------------------------------------ */
-
-/* Side panels: chat (`#sideToolbarContainer`) and the participants pane.
-   Border both inner edges (left + right) — whichever faces the video area
-   is the visible separator; the other sits at the window edge. */
-#sideToolbarContainer,
 #participants-pane,
 [class*="-participantsPane"],
 .chat-panel {
@@ -878,25 +835,6 @@ body:has(.modal-dialog) #trussal-welcome-overlay {
   background-color: transparent !important;
 }
 
-
-/* ------------------------------------------------------------------ *
- * In-call: dominant-speaker ring, raised-hand ring/badge, and text
- * selection — the last coloured accents Jitsi ships, all pulled onto
- * the flat #111 / #eee scheme.
- *
- * The thumbnail component (app.bundle.min.js) paints two overlay divs
- * per tile and rings them with an `!important` box-shadow off its
- * palette: `.active-speaker-indicator` at `action01Hover` (a blue) and
- * `.raised-hand-border` at `warning02` (amber). The class names are
- * plain, not hashed. To beat Jitsi's own `.css-<hash>-activeSpeaker
- * .active-speaker-indicator` (0,2,0 + !important, injected at runtime so
- * it wins source-order ties) these qualify with `.videocontainer` AND a
- * `div` type, landing at (0,2,1). Same "defeat upstream component CSS"
- * exception as the video-transparency block above.
- * ------------------------------------------------------------------ */
-
-/* Dominant / active speaker — "speaker focus". #111 ring, like every other
-   focus outline in the theme. */
 .videocontainer div.active-speaker-indicator,
 #largeVideoContainer div.active-speaker-indicator {
   box-shadow: inset 0 0 0 3px var(--trussal-secondary, #111111) !important;

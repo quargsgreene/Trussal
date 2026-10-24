@@ -1,4 +1,5 @@
 import './panic-button.js';
+import './styles.css';
 import {renderPrejoinScreen, renderRecentListText, renderWelcomeOverlay, renderHideStartMeetingButton} from './welcome-page.js';
 import {renderNoAudioToast, renderReturnToLobbyOnMeetingEnd} from './meeting.js';
 import { sendLocalPattern, sendLocalPlaying, subscribePeerState, getAllPeers, getLocalPeer, getPeerByJitsiId, isAggregatorSlotTaken } from './peer-state.js';
@@ -10,32 +11,54 @@ import { sampleDataRefAt } from './data-ref.js';
 import { setDataRefReader } from './audio-net/ValuePattern.js';
 import './theme-context.js';
 import './studio.js';
+import './conductor-settings.js';
 import './landmark-gesture-mode.js';
 import './docs-about.js';
-import { onHmrDispose, hmrState } from './hmr-runtime.js';
+import { getLastAnnouncedPattern, setLastAnnouncedPattern } from './stable-state.js';
 
+// The production shell normally loads /custom-config.css from body.html. Keep
+// a fallback for a web image whose baked body.html predates the split: link
+// the sibling stylesheet using the same cache-busting query as this script.
+// Vite dev has already injected the imported stylesheet; the empty dev shim is
+// harmless if this link is created there.
+function ensureBundledStylesheet() {
+  if (typeof document === 'undefined' || document.getElementById('trussal-styles')) return;
+  const bundleUrl = typeof __TRUSSAL_BUNDLE_URL === 'string' && __TRUSSAL_BUNDLE_URL
+    ? __TRUSSAL_BUNDLE_URL
+    : (typeof location !== 'undefined' ? location.href : '');
+  if (!bundleUrl) return;
+  try {
+    const base = new URL(bundleUrl, location.href);
+    const href = new URL('custom-config.css', base);
+    href.search = base.search;
+    const link = document.createElement('link');
+    link.id = 'trussal-styles';
+    link.rel = 'stylesheet';
+    link.href = href.href;
+    document.head.appendChild(link);
+  } catch {
+    // A malformed script URL is not worth blocking app startup over.
+  }
+}
+
+ensureBundledStylesheet();
 setDataRefReader(sampleDataRefAt);
 const unsubMapperSync = subscribePeerState((event, peer) => syncMapperFromPeerEvent(roomMapper, event, peer));
 
 window.__trussalAnnounceLocalPattern = (code) => {
   const c = typeof code === 'string' ? code : '';
-  hmrState.lastAnnouncedPattern = c;
+  setLastAnnouncedPattern(c);
   sendLocalPattern(c);
   sendLocalPlaying(true);
 };
 
 const unsubReannounce = subscribePeerState((event) => {
-  if (event === 'connected' && hmrState.lastAnnouncedPattern) {
-    sendLocalPattern(hmrState.lastAnnouncedPattern);
+  const pattern = getLastAnnouncedPattern();
+  if (event === 'connected' && pattern) {
+    sendLocalPattern(pattern);
     sendLocalPlaying(true);
   }
 });
-
-// Dev only (onHmrDispose is a no-op in the production bundle): a hot update
-// re-runs this module's top level, so the subscriptions above must be undone
-// before the next pass subscribes again — see entry-hmr.js.
-onHmrDispose(unsubMapperSync);
-onHmrDispose(unsubReannounce);
 
 window.__trussalRoomIndexForJitsiId = (jitsiId) => roomMapper.roomIndexFor(jitsiId);
 window.__trussalJitsiIdForRoomIndex = (roomIndex) => roomMapper.jitsiIdForIndex(roomIndex);
@@ -66,5 +89,3 @@ renderHideStartMeetingButton();
 renderPrejoinScreen();
 renderNoAudioToast();
 renderReturnToLobbyOnMeetingEnd();
-
-window.__hmrProbe = (window.__hmrProbe || 0) + 1;

@@ -131,8 +131,18 @@ const OUTSIDE_TRUSSAL_ALLOW = new Set(
 // The Trussal-owned roots. A rule gets the full property set only where it
 // matches inside one of these; the scoping wrapper is built from this list.
 export const TRUSSAL_ROOTS = [
+  '.ts-window',
   '#trussal-studio-overlay',
   '#trussal-studio-toggle',
+  '#trussal-studio-toolbar',
+  '#trussal-studio-buttons',
+  '#trussal-studio-inputs',
+  '#trussal-metaprogram-window',
+  '#trussal-personal-window',
+  '#trussal-network-window',
+  '#trussal-theme-window',
+  '#trussal-conductor-overlay',
+  '#trussal-conductor-toggle',
   '#trussal-text-cycles',
   '#trussal-hv-panel',
   '#trussal-hv-toggle',
@@ -1123,8 +1133,8 @@ function withPatternedProps(scss, sheet, { allowlistOnly = false } = {}) {
 // fail on the way in.
 
 // Does this selector genuinely stay inside a Trussal root? Starting with the
-// root is not enough — `#trussal-studio-overlay ~ *` starts there and selects
-// everything beside it — so sibling combinators disqualify the selector.
+// root is not enough — `.ts-window ~ *` starts there and selects everything
+// beside it — so sibling combinators disqualify the selector.
 function isTrussalScoped(selectorPart) {
   const sel = String(selectorPart).trim();
   const root = TRUSSAL_ROOTS.find((r) => sel === r || sel.startsWith(`${r} `) || sel.startsWith(`${r}>`)

@@ -10,10 +10,6 @@
 // settings gear and ended up covering it.
 
 const CORNER_ID = 'trussal-da-corner';
-const STYLE_ID  = 'trussal-da-style';
-
-import styles from './docs-about.css';
-import { upsertStyle } from './style-injection.js';
 
 // Live handle for the boot poll, so repeated boots replace the previous one.
 let bootTimer = null;
@@ -21,14 +17,9 @@ let bootTimer = null;
 // ---------------------------------------------------------------------------
 // DOM.
 // ---------------------------------------------------------------------------
-function _injectStyles() {
-  upsertStyle(STYLE_ID, styles);
-}
-
 function _ensureDOM() {
   if (document.getElementById(CORNER_ID)) return;
   if (!document.body) return;
-  _injectStyles();
 
   const corner = document.createElement('div');
   corner.id = CORNER_ID;
@@ -74,5 +65,3 @@ function init() {
 }
 
 init();
-
-window.__hmrDepProbe = (window.__hmrDepProbe || 0) + 1;

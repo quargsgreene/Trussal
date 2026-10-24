@@ -1,16 +1,3 @@
-// docs-about-content.js — the single source of truth for the Documentation and
-// About content. Pure data + string builders: no DOM, no CSS import, so this
-// module serves both the static page generator (build-pages.mjs, run by
-// build.mjs) and any script / test that wants the rendered HTML.
-//
-// The markup produced here is styled by docs-about.css (the same rules that
-// styled the old on-page panels), and lands inside the .trussal-da-panel /
-// .da-body wrapper that build-pages.mjs places on each page.
-// ---------------------------------------------------------------------------
-// Content — the JPattern function reference.
-// ---------------------------------------------------------------------------
-
-//TODO: remove when done
 const JPATTERN_FUNCTIONS = [
   {
     id: 'jp-participants',
@@ -77,6 +64,12 @@ const JPATTERN_FUNCTIONS = [
     name: 'room',
     sig: 'room [network_metric="wcl"] [scale_pattern] [fixed_amount_pattern] [pattern_medium_set]',
     body: `
+      <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/room_wcl_200.png"
+            alt="Room effect in Hydra" />
+          <figcaption>The room effect applied to Hydra output</figcaption>
+      </figure>
       <p>Reverb whose decay time, whitespace amount, or visual blur varies with the supplied network metric value respectively
        regarding the Aggregator's audio, video, or text output. Example(s):</p> 
       <pre># room "wcl" 2 0.4        <span class="da-comment">// fixed 800ms decay</span>
@@ -87,6 +80,12 @@ const JPATTERN_FUNCTIONS = [
     name: 'crush',
     sig: 'crush [network_metric="wcl"] [scale_pattern] [fixed_amount] [pattern_medium_set]',
     body: `
+      <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/crush_hydra.png"
+            alt="Crush effect in Hydra" />
+          <figcaption>The crush effect applied to Hydra output</figcaption>
+      </figure>
       <p>Varies the bit-depth and resolution of the Aggregator's audio and visual output according to the value of the currently
       supplied network metric. Example(s):</p>
       <pre># crush "wcpl" 1 0.25    <span class="da-comment">// pinned at 25% loss: a steady 4 bits</span></pre>`,
@@ -96,6 +95,18 @@ const JPATTERN_FUNCTIONS = [
     name: 'echo',
     sig: 'echo [network_metric="wcl"] [length_in_cycles] [network_metric="wcl"] [feedback_percentage] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
+      <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/echo_hydra.png"
+            alt="Echo effect in Hydra" />
+          <figcaption>The echo effect applied to Hydra output</figcaption>
+      </figure>
+      <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/Echo.png"
+            alt="Echo effect in Hydra with more than one participant in the mosaic view" />
+          <figcaption>Echo effect with more than one participant in the mosaic view</figcaption>
+      </figure>
       <p>Applies a network-modulated echo effect to the Aggregator's audio and video output. Example(s):</p>
       <pre># echo "wcl" 2 "wcpl" 0.3 "wcrtt" 3 1500 20 1200</pre>`,
   },
@@ -104,6 +115,12 @@ const JPATTERN_FUNCTIONS = [
     name: 'noise',
     sig: 'noise [network_metric="wcl"] [lowpass_cutoff_scale_factor] [network_metric="wcl"] [output_mix_volume] [pattern_medium_set]',
     body: `
+      <figure>
+          <img
+            src="https://trussal-docs.quargsgreene.workers.dev/noise_hydra.png"
+            alt="Noise effect in Hydra" />
+          <figcaption>The noise effect applied to Hydra output</figcaption>
+      </figure>
       <p>Adds pink, brown, or white noise to the Aggregator's audio and video output convolved with a lowpass filter, and inserts pseudorandomly-chosen characters
       into the text output. Example(s):</p>
       <pre># noise "wcl" 20 "wcrtt" 10</pre>`,
@@ -465,6 +482,30 @@ const CSS_CYCLES_FUNCTIONS = [
       <code>0.04</code>, <code>blur(80px)</code> becomes <code>blur(8px)</code>
       — rather than refused outright.</p>`,
   },
+  {
+    id: 'css-multi-d',
+    name: 'Multidimensional CSS Patterns',
+    sig: '',
+    body: `        
+        <h3>Multi-Dimensional CSS Values</h3>
+        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
+        in a pair of carets. 
+        <span>Example:</span>
+        <code>$:css(".something")
+        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
+        </code>
+        <code>
+        $ css ".something"
+        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
+        </code>
+        </p>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/css_pat.png"
+          alt="An example of a multidimensional CSS pattern in action" />
+        <figcaption>An example of a multidimensional CSS pattern in action</figcaption>
+      </figure>`
+  }
 ];
 
 const CONFIG_FUNCTIONS = [
@@ -878,7 +919,8 @@ export function buildDocsBody() {
         occurring when respectively moving down or left. Dwelling on the "&#9660" icons collapses the virtual keyboard
         and rotates the icon 90 degrees, upon which clicking re-expands the keyboard. To the left of the keyboard,
         a grayscale face mesh will appear and can be moved, scaled and hidden using the same buttons in its respective toolbar.
-        The face mesh UI will also display each of the default gesture mappings as they are detected. </p>
+        The face mesh UI will also display each of the default gesture mappings as they are detected.
+        Head-cursor speed, gain, and meeting-load sensitivity are adjusted with the sliders in the face panel, beside the mesh they affect. </p>
         <figure>
           <img
             src="https://trussal-docs.quargsgreene.workers.dev/button_focus_media_pipe.png"
@@ -931,50 +973,18 @@ export function buildDocsBody() {
         <p>As is the case regarding video, one cannot hear one's own or other participants' audio by default.
         In order to hear one's own or others' audio, in addition to giving the browser permission to access the microphone,
         one must call the liveCapture method and provide a valid local audio device name. Note that Hydra's audio processing capabilities
-        only visualize audio data and do not support playback. 
+        only visualize audio data and do not support playback. To learn more about liveCapture, refer to the corresponding section below in
+        the JPattern reference.
         </p>
 
         <h4>Meeting Chat, Polls, Screen Sharing, Breakout Rooms, and Reactions</h4>
         <p>Each of these native Jitsi Meet features may be used identically to how they are used in Jitsi Meet.
-        However, patterns manipulating the use of each of these features may be simultaneously applied to the meeting room,
+        However, patterns manipulating the use of these features (Meeting Chat, Polls, Screen Sharing, Reactions) may be simultaneously applied to the meeting room,
         and all updates are sequential with respect to the timestamps of manually-triggered events against the stream scheduling
         performed by the Aggregator.
         </p>
 
-    <h3>The Aggregator and Conductor</h3>
-      <p>The Aggregator is responsible for scheduling each participants streaming turn. It appears in the meeting room as a bot meeting participant with participant index 'pi'.
-      The Aggregator itself cannot be scheduled to have a turn and does not run any of its own code. Its output consists of that of participant who it has currently scheduled.
-      Only the Aggregator outputs the coordinated live coded patterns to the entire meeting room and alters room-wide CSS during a meeting. The conductor monitors the health of 
-      bot participants, as well as compliance with dynamic, automated memory and network bandwidth constraints, removing bot participants from the meeting room, and shutting off 
-      the Aggregator's video feed as it sees fit in order to preserve the navigability of the meeting.
-      </p>
-
-    <h3>Trussal Studio</h3>
-        <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
-        Trussal Studio is where all of the live coding and coordination with the Aggregator happens, as well as the interface for one's personal meeting theming, and
-        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). Changes to the color scheme and font size only appear in one's own editor. There is an editor for each bot and human participant,
-        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code, as well as capture media assets from other participants.
-        Trussal Studio also displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
-        Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
-        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio. As is the case in Strudel, the keyboard
-        shortcut "Ctrl" + "Enter" reevaluates the code in the currently focused editor, and "Ctrl" + "." pauses the running of the code
-        inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
-        Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
-        </p>
-    <h3>Multi-Dimensional CSS Values</h3>
-        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
-        in a pair of carets. 
-        <span>Example:</span>
-        <code>$:css(".something")
-        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
-        </code>
-        <code>
-        $ css ".something"
-        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
-        </code>
-        </p>
-
-    <h3>MediaPipe in the Meeting Room</h3>
+        <h4>MediaPipe in the Meeting Room</h4>
         <p>As is the case regarding the face mesh display and virtual keyboard, dwelling upon the same icons allows one to drag the Trussal Studio user interface.
         One may also focus other menus and text fields using the head landmark cursor. Inside of a meeting room, the virtual keyboard provides JPattern autocomplete suggestions using weighted trie search. 
         By default, various gestures are associated with different changes to JPattern code, including substitutions according to regular expressions, depending on which editor is focused.
@@ -983,18 +993,71 @@ export function buildDocsBody() {
         may be clicked on by all participants, using the head cursor, or manually. Sequences of gesture-associated events can themselves be patterns. Code updates and pauses take place
         respectively by hovering over and dwelling upon any of the "Eval" or "Stop" buttons.
         See the JPattern reference for the proper button creation syntax, as well as for further information regarding the gestureAndLandmarkConfig method.
+      </p>
+
+    <h3>The Aggregator and Conductor</h3>
+      <p>The Aggregator is responsible for scheduling each participants streaming turn. It appears in the meeting room as a bot meeting participant with participant index 'pi'.
+      The Aggregator itself cannot be scheduled to have a turn and does not run any of its own code. Its output consists of that of participant who it has currently scheduled.
+      Only the Aggregator outputs the coordinated live coded patterns to the entire meeting room and alters room-wide CSS during a meeting. The conductor monitors the health of 
+      bot participants, as well as compliance with dynamic, automated memory and network bandwidth constraints, removing bot participants from the meeting room, and shutting off 
+      the Aggregator's video feed as it sees fit in order to preserve the navigability of the meeting.
+      </p>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/agg.png"
+          alt="The Aggregator" />
+        <figcaption>The Aggregator</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/conductor_cropped.png"
+          alt="The Conductor interface" />
+        <figcaption>The Conductor interfacen</figcaption>
+      </figure>
+    <h3>Trussal Studio</h3>
+        <p>In the bottom right corner of the meeting room is a "Studio" button. Clicking or dwelling upon it opens Trussal Studio.
+        Trussal Studio is where all of the live coding and coordination with the Aggregator happens, as well as the interface for one's personal meeting theming, and
+        a dashboard displaying WCL, WCPL, WCRTT, and one's own round-trip time (RTT). Changes to the color scheme and font size only appear in one's own editor. There is an editor for each bot and human participant,
+        and a single Metaprogram editor. All human participants may collaboratively edit the Metaprogram and any bot's code, as well as capture media assets from other participants.
+        Trussal Studio also displays JPattern syntax errors to the user. The Metaprogram is stored in its own conflict-free replicated data type (CRDT). 
+        Each bot editor corresponds to its own CRDT as well. In addition to the aforementioned ways to start hands-free features, one may also open the 
+        gesture and landmark detection using the "Face" and "Keys" buttons in the top right corner of Trussal Studio. The "Personal Theme Settings" button
+        in the same toolbar group opens the color, font, and font-scale controls for one's own browser. As is the case in Strudel, the keyboard
+        shortcut "Ctrl" + "Enter" reevaluates the code in the currently focused editor, and "Ctrl" + "." pauses the running of the code
+        inside of the current editor. In addition to mirroring Strudel's support for uploads and fetching of of audio samples as .wav with a sample rate of 48kHz with a bit-depth of 16 bits,
+        Trussal Studio supports JSON, CSV, and TSV file uploads, as well as fetching of JPEG, PNG, GIF, SVG, BMP, MOV, MP4, TXT, and MP3 files.
         </p>
-        <h4>Adding Inline Buttons</h4>
-        <p>Adding an * to a voice name creates an inline button upon reevaluation.
-        </p>
-        <span>Example:</span>
-        <code>*btn: sound("piano:2")
-        .note("a4 b4 c4)
-        </code>
-        <code>*btn sound "piano:2"
-        # note "a4 b4 c4"
-        </code>
-    <h3>JPattern Reference</h3>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/pe_1.png"
+          alt="The personal editor" />
+        <figcaption>The personal editor</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/pe_2.png"
+          alt="The personal editor in another configuration" />
+        <figcaption>The personal editor in another configuration</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/metaprogram_window.png"
+          alt="The personal editor in another configuration" />
+        <figcaption>The personal editor in another configuration</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/personal_editor_window.png"
+          alt="The personal editor in another configuration" />
+        <figcaption>The personal editor in another configuration</figcaption>
+      </figure>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/net_dash.png"
+          alt="The personal editor in another configuration" />
+        <figcaption>The personal editor in another configuration</figcaption>
+      </figure>
+    <h3>JPattern Overview & Reference</h3>
         <p>
           Using JPattern, one may, in addition to live coding synthesized audio and visuals using Strudel and Hydra, live code text, reactions, polls, gestural sequences, CSS,
           external data fetching, and breakout room assignments. What follows is a reference detailing the syntax, usage examples, and output of JPattern and its associated functions.
@@ -1049,7 +1112,7 @@ export function buildDocsBody() {
             Room effects and other methods can be chained together. 
             Currently, the participants, room, noise, crush, echo, grid, and mosaic, and cycles methods are supported.
             Example:
-            <code>ode generation features.$ participants <1 3 2 0>
+            <code>
             # cycles "wcl" 30
             # room "wcpl" 10
             # noise "wcl" 100 "wcrtt" 0.2
@@ -1072,6 +1135,13 @@ export function buildDocsBody() {
           They are 'metaprogram editor', 'personal editor', and 'bot editor'. Each program must contain 
           a preprocessing directive, even if it only contains Strudel and/or Hydra code.
         </p>
+        <h4>Adding Inline Buttons</h4>
+        <p>Adding an * to a voice name creates an inline button upon reevaluation.
+        </p>
+        <span>Example:</span>
+        <code>*btn: sound("piano:2")
+        .note("a4 b4 c4)
+        </code>
         <h4>Global Room Pattern Functions</h4>
         ${renderFnSection(JPATTERN_FUNCTIONS)} 
 
@@ -1096,4 +1166,5 @@ export function buildDocsBody() {
         <h4>Data Fetching Patterns</h4>
         ${renderFnSection(FETCH_PATTERNS)}
   `
+  
 }

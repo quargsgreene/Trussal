@@ -34,7 +34,7 @@
  */
 
 import http from 'node:http';
-import { mergeConfig } from '../shared/config.js';
+import { mergeConfig, REMOTELY_TUNABLE } from '../shared/config.js';
 import { breedNameFor } from '../shared/dog-breeds.js';
 import { worstCaseLatency, percentile } from '../shared/stats.js';
 import { randomMasterScript, validateMasterScript, variationFor } from '../script-gen/index.js';
@@ -54,6 +54,21 @@ export const AGGREGATOR_BOT_ID = 99999;
 // underscored: nginx drops underscored headers by default, which would silently
 // turn every control connection into an unauthenticated one.
 export const CONTROL_TOKEN_HEADER = 'x-trussal-control-token';
+
+// The subset of config the in-room Conductor panel shows. It mirrors the admin
+// page's config form; endpoint keys (jitsiUrl, sidecarWsUrl, …) are deliberately
+// absent, so this room-bus path can never be used to repoint the fleet. The
+// write side accepts the same keys the admin API does (REMOTELY_TUNABLE), but
+// only these five are ever sent back to a browser.
+export function conductorPanelSettings(cfg) {
+  return {
+    maxBots: cfg.maxBots,
+    varyHydra: !!cfg.varyHydra,
+    roles: { ...cfg.roles },
+    fpsMin: cfg.fpsMin,
+    memLimitMb: cfg.memLimitMb,
+  };
+}
 
 // Point a configured Jitsi URL at a different room. The bundle — and the
 // aggregator bot, which derives its sidecar/O2/claim URLs the same way — keys
@@ -647,6 +662,57 @@ export class FleetService {
       await this.removeCluster(ownerIndex, msg.targets ?? 'all', { reason: 'owner request', room });
     } else if (msg.action === 'removeOne') {
       await this.removeOneBot(ownerIndex, msg.targets, { reason: 'owner request', room });
+    } else if (msg.action === 'conductor-settings-get') {
+      // The in-room Conductor panel cannot call the admin HTTP port: the app is
+      // served over HTTPS while that port is plain HTTP on the bots VM, and the
+      // app has no conductor address to begin with. The same sidecar bus that
+      // carries spawn/remove carries the settings request and answer instead.
+      this.#sendConductorSettings(room, msg.requestId, false);
+    } else if (msg.action === 'conductor-settings-set') {
+      await this.#setConductorSettings(room, msg.settings, msg.requestId);
+    }
+  }
+
+  #sendConductorSettings(room, requestId, applied) {
+    this.#busSend(room, {
+      type: 'fleet-status',
+      action: 'conductor-settings',
+      ...(typeof requestId === 'string' ? { requestId } : {}),
+      ...(applied ? { applied: true } : {}),
+      settings: conductorPanelSettings(this.cfg),
+    });
+  }
+
+  #sendConductorSettingsError(room, requestId, reason) {
+    this.#busSend(room, {
+      type: 'fleet-status',
+      action: 'conductor-settings-error',
+      ...(typeof requestId === 'string' ? { requestId } : {}),
+      reason,
+    });
+  }
+
+  async #setConductorSettings(room, settings, requestId) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      this.#sendConductorSettingsError(room, requestId, 'settings must be an object');
+      return;
+    }
+    // Same allowlist as the admin API: this path is unauthenticated too, so it
+    // must not become a second way to change where the fleet connects. See the
+    // comment on REMOTELY_TUNABLE.
+    const blocked = Object.keys(settings).filter((key) => !REMOTELY_TUNABLE.has(key));
+    if (blocked.length) {
+      this.#sendConductorSettingsError(room, requestId,
+        `not remotely configurable: ${blocked.join(', ')}`);
+      return;
+    }
+    try {
+      await this.applyConfig(settings);
+      this.#sendConductorSettings(room, requestId, true);
+    } catch (err) {
+      // mergeConfig rejects unknown roles/types, and a shrink can fail mid-way;
+      // either way the panel needs a reason rather than a silent no-op.
+      this.#sendConductorSettingsError(room, requestId, err.message);
     }
   }
 

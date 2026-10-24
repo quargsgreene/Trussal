@@ -44,12 +44,13 @@ export function metaprogramReadOnly() {
 function strudelTextarea() {
   // The personal editor is the detail-panel .ts-code that is NOT the shared
   // JPattern one.
-  return document.querySelector('#trussal-studio-overlay .ts-detail .ts-code:not(.jp-code)') ||
-    document.querySelector('#trussal-studio-overlay .ts-code:not(.jp-code)');
+  return document.querySelector('.ts-window[data-window="personal"] .ts-detail .ts-code:not(.jp-code)') ||
+    document.querySelector('.ts-window[data-window="personal"] .ts-code:not(.jp-code)');
 }
 
 function jpatternTextarea() {
-  return document.querySelector('#trussal-studio-overlay .jp-code');
+  return document.querySelector('.ts-window[data-window="metaprogram"] .jp-code') ||
+    document.querySelector('.jp-code');
 }
 
 export function readActiveEditor() {

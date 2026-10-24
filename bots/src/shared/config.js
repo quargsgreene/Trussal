@@ -8,6 +8,23 @@
  * ignoring an operator's setting.
  */
 
+// Config keys a remote caller may change: the fleet's tuning knobs — how many
+// bots, how they are stratified, the health thresholds and grace periods. Keys
+// that decide WHERE the fleet connects or WHO it authenticates as (jitsiUrl,
+// jamulusServer, sidecarWsUrl, conductorPort, adminPort) are deliberately
+// absent, because the admin port and the in-room Conductor panel have no auth:
+// see the POST /api/config handler and FleetService's conductor-settings
+// request. A new endpoint key added to defaultConfig later is non-writable by
+// default, which is the safe direction to fail.
+export const REMOTELY_TUNABLE = new Set([
+  'maxBots', 'sessionSeed', 'varyHydra', 'roles', 'staggerSubdivisions',
+  'fpsMin', 'memLimitMb', 'percentileCutoff', 'replaceLatencyFloorMs', 'replaceRamFloorMb',
+  'metricsIntervalMs', 'healthTickMs',
+  'jitsiChannelLastN', 'jitsiVideoHeight', 'jitsiStartBitrateKbps', 'captureFps',
+  'ownerLeaveGraceMs', 'meetingEndGraceMs',
+  'aggregatorStartupGraceMs', 'aggregatorStaleMs', 'aggregatorBootDeadlineMs', 'jitsiJoinGraceMs',
+]);
+
 export const defaultConfig = Object.freeze({
   // Network endpoints (spec)
   jitsiUrl: 'http://localhost/0',

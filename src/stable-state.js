@@ -10,8 +10,6 @@
 // (or lost to a full reload). Production has no such hand-off and just uses
 // the singleton.
 
-import { registerYjsDoc, registerStrudelInstance, registerPeerStateSubscriber } from './hmr-runtime.js';
-
 // ============ State container ============
 
 function createState() {
@@ -62,6 +60,7 @@ function createState() {
     activeJPatternIndex: null,
     activeJPatternKind: null,
     myPeerId: null,
+    lastAnnouncedPattern: null,
     helloSent: false,
     pingTimer: null,
     reconnectTimer: null,
@@ -94,7 +93,6 @@ export function getYjsDoc(key) {
     import('yjs').then(({ Doc }) => {
       const doc = new Doc();
       state.yjsDocs.set(key, doc);
-      registerYjsDoc(key, doc);
     });
   }
   return state.yjsDocs.get(key);
@@ -102,7 +100,6 @@ export function getYjsDoc(key) {
 
 export function setYjsDoc(key, doc) {
   state.yjsDocs.set(key, doc);
-  registerYjsDoc(key, doc);
 }
 
 // ============ Strudel Instance Registry ============
@@ -113,7 +110,6 @@ export function getStrudelInstance(key) {
 
 export function setStrudelInstance(key, instance) {
   state.strudelInstances.set(key, instance);
-  registerStrudelInstance(key, instance);
 }
 
 // ============ WebSocket Management ============
@@ -139,6 +135,8 @@ export function getActiveJPatternKind() { return state.activeJPatternKind; }
 export function setActiveJPatternKind(val) { state.activeJPatternKind = val; }
 export function getMyPeerId() { return state.myPeerId; }
 export function setMyPeerId(val) { state.myPeerId = val; }
+export function getLastAnnouncedPattern() { return state.lastAnnouncedPattern; }
+export function setLastAnnouncedPattern(val) { state.lastAnnouncedPattern = val; }
 export function getHelloSent() { return state.helloSent; }
 export function setHelloSent(val) { state.helloSent = val; }
 export function getPingTimer() { return state.pingTimer; }
@@ -167,7 +165,6 @@ export { MAX_RECONNECT_DELAY, PONG_TIMEOUT_MS };
 
 export function subscribe(fn) {
   state.subscribers.add(fn);
-  registerPeerStateSubscriber(fn);
   return () => state.subscribers.delete(fn);
 }
 

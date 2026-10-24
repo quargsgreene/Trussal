@@ -8,8 +8,8 @@
 //        .borderRadius("<^2em / 1em 3em^ ^0.2em 1em 4em 1em^>")
 //        .fast(3)
 //
-// `.ts-chip` (the participant strip) is a real selector inside
-// #trussal-studio-overlay, so this is literally paste-able — a class that
+// `.ts-chip` (the participant strip) is a real selector inside a
+// .ts-window, so this is literally paste-able — a class that
 // exists nowhere in the DOM compiles and runs without error but visibly does
 // nothing, since its rule then matches zero elements.
 //

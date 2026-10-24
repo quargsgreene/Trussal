@@ -26,12 +26,9 @@ import { FILE_KINDS, mimeOfFilename, validateUpload } from './file-cycles-core.j
 import { req } from './user-samples.js';
 export { req } from './user-samples.js';
 import { ensureChatEntry } from './chat-entry.js';
-import fileCycleStyles from './file-cycles.css';
-import { upsertStyle } from './style-injection.js';
 
 
 const CONTAINER_ID = 'trussal-file-cycles';
-const STYLE_ID = 'trussal-file-cycles-style';
 const MAX_BUBBLES = 100;
 
 let atoms = {};      // token -> { text, peer }
@@ -196,19 +193,13 @@ subscribePeerState((event, payload) => {
 
 // --- chat rendering ----------------------------------------------------------
 
-// The bubble styles live in file-cycles.css (imported as raw text, per
-// build.mjs's '.css': 'text'), upserted in place so CSS edits hot-reload.
-function _injectStyles() {
-  upsertStyle(STYLE_ID, fileCycleStyles);
-}
-
+// The bubble styles live in file-cycles.css, installed by src/styles.css.
 
 function ensureContainer() {
   if (!container) {
     container = document.createElement('div');
     container.id = CONTAINER_ID;
   }
-  _injectStyles();
   return container;
 }
 
