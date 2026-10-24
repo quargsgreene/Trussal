@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { chromiumArgs, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
+import { chromiumArgs, browserLaunchOptions, spoofedUserAgent, jitsiRoomUrl } from '../src/bot/chromium-args.js';
 import {
   pageAudioBridge, pageGumOverride, pageStrudelBoot, pageFpsSampler, pageReadSamples,
-  pageEnsureAudioPublished, pageMasterPlayer,
+  pageEnsureAudioPublished, pageMasterPlayer, pageCapAnimationFrames,
 } from '../src/bot/page-scripts.js';
 import {
   noiseParams, fillNoise, normalizeRms, NOISE_RMS, NOISE_LOOP_S
@@ -12,6 +12,23 @@ import {
 import { crushParams, makeCrushCurve } from '../../src/audio-net/av-effects/Crush.js';
 import { echoParams, ECHO_MAX_DELAY_S, LIMITER_THRESHOLD_DB } from '../../src/audio-net/av-effects/Echo.js';
 import { Bot } from '../src/bot/bot.js';
+
+// Playout into the ALSA `null` device runs ~272x real time, so WebRTC conceals
+// nearly every received sample; only a container with a real (snd-aloop)
+// playback device may let Chromium open one.
+test('browserLaunchOptions disables audio output unless the container has a real playback device', () => {
+  assert.ok(browserLaunchOptions('/x', { audioOutput: false }).args.includes('--disable-audio-output'));
+  assert.ok(!browserLaunchOptions('/x', { audioOutput: true }).args.includes('--disable-audio-output'));
+  const saved = process.env.ALSA_PLAYBACK_DEVICE;
+  try {
+    delete process.env.ALSA_PLAYBACK_DEVICE;
+    assert.ok(browserLaunchOptions('/x').args.includes('--disable-audio-output'), 'the null-device default (aggregator, rig-less hosts)');
+    process.env.ALSA_PLAYBACK_DEVICE = 'default';
+    assert.ok(!browserLaunchOptions('/x').args.includes('--disable-audio-output'), 'the snd-aloop rig keeps real output');
+  } finally {
+    if (saved === undefined) delete process.env.ALSA_PLAYBACK_DEVICE; else process.env.ALSA_PLAYBACK_DEVICE = saved;
+  }
+});
 
 test('chromiumArgs includes the four spec-required flags plus fake-media + no-prompt flags', () => {
   const args = chromiumArgs();
@@ -71,11 +88,44 @@ test('pageGumOverride publishes the Strudel audio tap as the bot microphone', ()
   assert.match(js, /__trussalMicStream/, 'audio requests resolve to the bridge tap');
 });
 
+// The aggregator renders every frame in software for a track captured at 15
+// fps; frames between captures are pure cost. Driven by hand: each native
+// frame is a vsync at 60 Hz.
+test('pageCapAnimationFrames runs queued callbacks at most fps times a second, in order, and honours cancel', () => {
+  const savedWindow = global.window;
+  const vsync = [];
+  global.window = { requestAnimationFrame: (cb) => { vsync.push(cb); return vsync.length; }, cancelAnimationFrame() {} };
+  const frame = (t) => { const due = vsync.splice(0); for (const cb of due) cb(t); };
+  try {
+    pageCapAnimationFrames(15);
+    const ran = [];
+    const loop = (name) => (t) => { ran.push([name, t]); window.requestAnimationFrame(loop(name)); };
+    window.requestAnimationFrame(loop('a'));
+    window.requestAnimationFrame(loop('b'));
+    const cancelled = window.requestAnimationFrame(() => ran.push(['cancelled']));
+    window.cancelAnimationFrame(cancelled);
+    for (let i = 0; i <= 60; i++) frame(i * (1000 / 60)); // one second of 60 Hz vsync
+    const times = [...new Set(ran.map(([, t]) => t))];
+    assert.equal(times.length, 16, '15 fps over a second: frames at 0, 66.7, … 1000 ms');
+    assert.deepEqual(ran.slice(0, 2).map(([n]) => n), ['a', 'b'], 'same-frame callbacks run together, in order');
+    assert.ok(!ran.some(([n]) => n === 'cancelled'));
+    assert.equal(vsync.length, 1, 'one native frame pending, however many loops wait on it');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+  }
+});
+
 test('pageAudioBridge fans the shared AudioContext destination to hardware and a Jitsi tap', () => {
   const js = String(pageAudioBridge);
   assert.match(js, /createMediaStreamDestination/, 'creates the Jitsi mic track source');
   assert.match(js, /window\.__trussalMicStream/, 'exposes the tap stream to the gUM override');
   assert.match(js, /Object\.defineProperty\([^)]*destination/, 'reroutes audioContext.destination');
+});
+
+test('pageAudioBridge pins the shared AudioContext to 48 kHz, the rate the aggregator slices at', () => {
+  const js = String(pageAudioBridge);
+  assert.match(js, /SAMPLE_RATE\s*=\s*48000/, 'the container sink would otherwise pick 44.1 kHz');
+  assert.match(js, /new Native\(\{.*sampleRate:\s*SAMPLE_RATE\s*\}\)/, 'overrides any caller-requested rate');
 });
 
 test('pageAudioBridge meters the fan output so silence is diagnosable from metrics', () => {
@@ -275,6 +325,13 @@ test('Bot lifecycle: launches injected browser, joins jitsi, evaluates code, rep
 // imports), so it is a hand-kept mirror of Room.js createRoomNode rather than
 // a shared function. This is the copy in the audible path — every client hears
 // the mix the aggregator publishes — so its graph shape is asserted directly.
+// pageInstallAudioWorklet's surface with a load that never settles: the
+// effect-graph tests below exercise the master bus, which ensure() builds
+// synchronously, and never need the player processor to attach.
+const IDLE_WORKLET = { loaded: false, load: () => new Promise(() => {}) };
+// The master bus is the first node ensure() creates in a fresh stub.
+const MASTER_BUS = 'gain#0';
+
 test('pageMasterPlayer: master-room allpass stages are chained in series', () => {
   const edges = [];
   let id = 0;
@@ -292,11 +349,10 @@ test('pageMasterPlayer: master-room allpass stages are chained in series', () =>
     createGain() { return mk('gain'); }
     createDelay() { return mk('delay'); }
     createBiquadFilter() { return Object.assign(mk('biquad'), { type: '' }); }
-    createScriptProcessor() { return Object.assign(mk('proc'), { onaudioprocess: null }); }
   }
 
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
@@ -364,7 +420,6 @@ function masterPlayerStub() {
     createBiquadFilter() { return Object.assign(mk('biquad'), { type: '' }); }
     createWaveShaper() { return Object.assign(mk('shaper'), { curve: null }); }
     createDynamicsCompressor() { const n = mk('comp'); n.threshold = param(n, 'threshold'); return n; }
-    createScriptProcessor() { return Object.assign(mk('proc'), { onaudioprocess: null }); }
     createBuffer(channels, length) {
       const data = new Float32Array(length);
       buffers.push(data);
@@ -389,14 +444,13 @@ const ROOM_PARAMS = {
 test('pageMasterPlayer: the noise bed runs after the room on the master path', () => {
   const { edges, byId, state, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
     player.enqueue([0, 0, 0]); // forces ensure() -> ctx exists
 
-    const proc = [...byId.keys()].find((n) => n.startsWith('proc#'));
-    const busOut = edges.find(([from]) => from === proc)[1];
+    const busOut = MASTER_BUS; // ensure() builds the master bus before anything else
     const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
     assert.deepEqual(sinksOf(busOut), ['destination'], 'bare master bus goes straight out');
 
@@ -451,7 +505,7 @@ test('pageMasterPlayer: the noise bed runs after the room on the master path', (
 test('pageMasterPlayer: the page-side generators match Noise.js in level and character', () => {
   const { buffers, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
@@ -494,14 +548,13 @@ test('pageMasterPlayer: the page-side generators match Noise.js in level and cha
 test('pageMasterPlayer: the master path runs crush -> echo -> room -> noise', () => {
   const { edges, byId, state, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
     player.enqueue([0, 0, 0]); // forces ensure() -> ctx exists
 
-    const proc = [...byId.keys()].find((n) => n.startsWith('proc#'));
-    const busOut = edges.find(([from]) => from === proc)[1];
+    const busOut = MASTER_BUS; // ensure() builds the master bus before anything else
     const sinksOf = (n) => edges.filter(([from]) => from === n).map(([, to]) => to);
 
     // Pushed in the REVERSE of the audio order, so passing this can only mean
@@ -552,7 +605,7 @@ test('pageMasterPlayer: the master path runs crush -> echo -> room -> noise', ()
 test('pageMasterPlayer: the page-side crush curve matches Crush.js, and is rebuilt only on a depth change', () => {
   const { byId, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
@@ -585,7 +638,7 @@ test('pageMasterPlayer: the page-side crush curve matches Crush.js, and is rebui
 test('pageMasterPlayer: the echo keeps the dry path clean, limits only the wet one, and ramps its gains', () => {
   const { edges, byId, ramps, state, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
@@ -638,7 +691,7 @@ test('pageMasterPlayer: the echo keeps the dry path clean, limits only the wet o
 test('pageMasterPlayer: master effects pushed before the context exists are applied on first audio', () => {
   const { edges, byId, StubCtx } = masterPlayerStub();
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  global.window = { AudioContext: StubCtx, __trussalAudioWorklet: IDLE_WORKLET };
   try {
     pageMasterPlayer();
     const player = global.window.__trussalMasterPlayer;
@@ -656,37 +709,53 @@ test('pageMasterPlayer: master effects pushed before the context exists are appl
   }
 });
 
-// The master is the sole audio every client hears in aggregator mode, so the
-// room's stereo field must survive it: Node hands over interleaved stereo
-// (L,R per frame — the layout pageAggregatorCapture captures and the whole
-// pipeline carries), and the player's ScriptProcessor de-interleaves it into
-// the two output channels. The mono player this replaced flattened both
-// channels into one.
-test('pageMasterPlayer: interleaved stereo plays out de-interleaved, channels intact', () => {
-  const { byId, StubCtx } = masterPlayerStub();
+// The master is the sole audio every client hears in aggregator mode. Its
+// queue and the de-interleaving live in the 'trussal-master-player' processor
+// (page-audio-worklet.test.js covers both); the page side must attach that
+// processor to the master bus as stereo, primed to the Node side's cushion,
+// hand it everything enqueued before its module loaded — in order — and
+// report depth as enqueued minus what the processor says it has consumed.
+test('pageMasterPlayer: attaches the player processor to the master bus once loaded and hands it the queue', async () => {
+  const { edges, StubCtx } = masterPlayerStub();
+  const nodes = [];
+  let resolveLoad;
   const savedWindow = global.window;
-  global.window = { AudioContext: StubCtx };
+  const savedNode = global.AudioWorkletNode;
+  global.AudioWorkletNode = class {
+    constructor(ctx, name, opts) {
+      Object.assign(this, { id: 'player', name, opts, posted: [] });
+      this.port = { onmessage: null, postMessage: (m) => this.posted.push(Array.from(m)) };
+      nodes.push(this);
+    }
+    connect(t) { edges.push([this.id, t.id]); }
+  };
+  global.window = {
+    AudioContext: StubCtx,
+    __trussalAudioWorklet: { loaded: false, load: () => new Promise((r) => { resolveLoad = r; }) },
+  };
   try {
-    pageMasterPlayer();
+    pageMasterPlayer(400);
     const player = global.window.__trussalMasterPlayer;
-    player.enqueue([0.5, -0.5, 0.25, -0.25]); // two frames: (0.5,-0.5) (0.25,-0.25)
-    const proc = [...byId.values()].find((n) => n.id.startsWith('proc#'));
+    assert.equal(player.enqueue([0.5, -0.5]), 2);
+    assert.equal(player.enqueue([0.25, -0.25]), 4, 'depth counts audio still waiting for the processor');
+    assert.equal(nodes.length, 0, 'no processor before its module has loaded');
 
-    const left = new Float32Array(4);
-    const right = new Float32Array(4);
-    proc.onaudioprocess({ outputBuffer: { getChannelData: (i) => (i === 0 ? left : right) } });
-    assert.deepEqual([...left], [0.5, 0.25, 0, 0], 'left channel carries the L samples, then silence');
-    assert.deepEqual([...right], [-0.5, -0.25, 0, 0], 'right channel carries the R samples, then silence');
+    resolveLoad(true);
+    await new Promise((r) => setImmediate(r));
+    assert.equal(nodes.length, 1);
+    const [node] = nodes;
+    assert.equal(node.name, 'trussal-master-player');
+    assert.deepEqual(node.opts.outputChannelCount, [2], 'stereo out, so the master keeps the room\'s stereo field');
+    assert.equal(node.opts.processorOptions.primeMs, 400, 'primed to the cushion the Node side tops up to');
+    assert.ok(edges.some(([from, to]) => from === 'player' && to === MASTER_BUS), 'feeds the master bus');
+    assert.deepEqual(node.posted, [[0.5, -0.5], [0.25, -0.25]], 'pending audio handed over in order');
 
-    // A malformed odd-length chunk must not put a NaN on the bus (an
-    // out-of-range typed-array read is undefined -> NaN in a Float32Array).
-    player.enqueue([0.75]);
-    const left2 = new Float32Array(2);
-    const right2 = new Float32Array(2);
-    proc.onaudioprocess({ outputBuffer: { getChannelData: (i) => (i === 0 ? left2 : right2) } });
-    assert.deepEqual([...left2], [0.75, 0]);
-    assert.deepEqual([...right2], [0, 0], 'the missing half of a split frame reads as 0, not NaN');
+    player.enqueue([0.75, -0.75]);
+    assert.deepEqual(node.posted.at(-1), [0.75, -0.75], 'later audio goes straight to the processor');
+    node.port.onmessage({ data: { consumed: 4, underruns: 1, priming: false } });
+    assert.deepEqual(player.state(), { queued: 2, underruns: 1, priming: false });
   } finally {
     if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+    if (savedNode === undefined) delete global.AudioWorkletNode; else global.AudioWorkletNode = savedNode;
   }
 });

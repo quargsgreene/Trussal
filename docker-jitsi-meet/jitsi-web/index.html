@@ -1,11 +1,4 @@
 <!doctype html>
-<!-- Trussal's own page shell.
-     This replaces the Jitsi Meet web app's index.html: the Jitsi app bundle is
-     never loaded, so the web app never draws a prejoin and never joins a
-     conference. lib-jitsi-meet (fetched by the Trussal bundle) is the only
-     client. The room is the URL path (`/<room>`); nginx rewrites that to this
-     file while the browser keeps the room in location.pathname, so the bundle
-     can still read it. -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />

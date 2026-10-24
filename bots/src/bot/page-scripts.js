@@ -37,6 +37,9 @@ import { readFileSync } from 'node:fs';
 // functions passed to page.evaluateOnNewDocument() are serialized, so they
 // cannot close over this module's scope.
 export const PAGE_SCRIPTS_CSS = readFileSync(new URL('./page-scripts.css', import.meta.url), 'utf8');
+// The aggregator's capture and master-player AudioWorklet processors, handed
+// to pageInstallAudioWorklet as text for the same reason.
+export const PAGE_AUDIO_WORKLET_SOURCE = readFileSync(new URL('./page-audio-worklet.js', import.meta.url), 'utf8');
 
 /**
  * Install page-scripts.css in the bot's page. Registered as its own
@@ -87,8 +90,19 @@ export function pageAudioBridge() {
   // whoever asks first creates the one shared instance and its output lands on
   // our fan (the Jitsi tap).
   let shared = null;
+  // Pin the shared context to 48 kHz. Left to the device, it runs at whatever
+  // the container's ALSA sink reports — 44.1 kHz on the null default the
+  // entrypoint writes — while the aggregator's Node side converts every
+  // ms-measured window into samples at SAMPLE_RATE (48 kHz). That mismatch
+  // made each playback slice ~9% longer than the time it was meant to cover,
+  // so the master path ran without a cushion and dropped out constantly. 48 kHz
+  // is also WebRTC/Opus's native rate, so remote tracks enter the capture tap
+  // and the published track leaves it without a resampling round trip.
+  // Overrides any rate a caller asks for: every node on the page lives in this
+  // one context, so there is only one rate to agree on.
+  const SAMPLE_RATE = 48000;
   function build(args) {
-    const ctx = new Native(...args);
+    const ctx = new Native({ ...(args[0] || {}), sampleRate: SAMPLE_RATE });
     const hardware = ctx.destination;
     const tap = ctx.createMediaStreamDestination(); // → Jitsi mic track
     const fan = ctx.createGain();
@@ -141,7 +155,7 @@ export function pageAudioBridge() {
     // by the studio-toggle click; the aggregator boots no studio and clicks
     // nothing, so resume here. Even with --autoplay-policy=no-user-gesture-required
     // this matters: a suspended context runs neither the aggregator's capture
-    // ScriptProcessor (no ingest) nor its playback ScriptProcessor (no output) —
+    // worklets (no ingest) nor its master-player worklet (no output) —
     // the whole round trip goes silent. A failed resume means exactly that
     // silence, so log it and throw rather than swallow it: the rejection surfaces
     // as a page error the bot's error reporting picks up (conductor replace policy).
@@ -159,6 +173,83 @@ export function pageAudioBridge() {
   Wrapped.__trussalWrapped = true;
   window.AudioContext = Wrapped;
   window.webkitAudioContext = Wrapped;
+}
+
+/**
+ * Cap requestAnimationFrame at `fps` for the whole page, at document-start so
+ * every loop that schedules itself through it — the mosaic's frame(), the
+ * publish canvas mirror in pageGumOverride, each Hydra cell, Jitsi's own UI —
+ * runs at the rate the published video is actually captured at rather than
+ * the display's 60 Hz. The aggregator has no GPU: every one of those frames is
+ * rasterized in software (Mesa llvmpipe in the GPU process), and frames drawn
+ * between captures are never seen by anyone. Measured on a live aggregator,
+ * capping at the 15 fps capture rate took it from ~2.2 cores to ~1.2.
+ *
+ * Callbacks queued in the same frame run together, in order, with the frame's
+ * timestamp, as native rAF does; one that throws is reported (reportError)
+ * without stopping the rest.
+ */
+export function pageCapAnimationFrames(fps) {
+  if (window.__trussalRafCapped || !(fps > 0)) return;
+  window.__trussalRafCapped = true;
+  const nativeRaf = window.requestAnimationFrame.bind(window);
+  // A 2 ms allowance so vsync jitter can't skip a frame that is due.
+  const minGapMs = 1000 / fps - 2;
+  let queue = new Map();
+  let nextId = 1;
+  let lastRun = -Infinity;
+  let pumping = false;
+  function pump(t) {
+    if (t - lastRun >= minGapMs) {
+      lastRun = t;
+      const due = queue;
+      queue = new Map();
+      for (const cb of due.values()) {
+        try { cb(t); } catch (e) { reportError(e); }
+      }
+    }
+    if (queue.size) nativeRaf(pump);
+    else pumping = false;
+  }
+  window.requestAnimationFrame = (cb) => {
+    const id = nextId++;
+    queue.set(id, cb);
+    if (!pumping) { pumping = true; nativeRaf(pump); }
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => { queue.delete(id); };
+}
+
+/**
+ * Make the aggregator's AudioWorklet processors (page-audio-worklet.js, passed
+ * in as `source`) loadable into the shared AudioContext. Registered at
+ * document-start, but nothing loads until a consumer calls load(ctx): the
+ * shared context is only built post-navigation (see pageAudioBridge), and
+ * addModule binds to the context it is called on. load() is idempotent and
+ * resolves true once 'trussal-capture' and 'trussal-master-player' can be
+ * constructed; a failed load resolves false and the next call retries.
+ */
+export function pageInstallAudioWorklet(source) {
+  if (window.__trussalAudioWorklet) return;
+  let ready = null;
+  const worklet = {
+    loaded: false,
+    load(ctx) {
+      if (!ready) {
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+        ready = ctx.audioWorklet.addModule(url).then(() => {
+          worklet.loaded = true;
+          return true;
+        }, (e) => {
+          console.error('[trussal] aggregator audio worklet failed to load — no capture, silent master', e);
+          ready = null;
+          return false;
+        });
+      }
+      return ready;
+    },
+  };
+  window.__trussalAudioWorklet = worklet;
 }
 
 /**
@@ -1393,7 +1484,8 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  * Aggregator ingest tap, installed via evaluateOnNewDocument so it is in place
  * before Jitsi renders any remote participant. It enumerates the conference's
  * remote participants (APP.conference._room.getParticipants()) and taps each
- * one's audio JitsiTrack stream into a ScriptProcessor, accumulating that peer's
+ * one's audio JitsiTrack stream into a capture AudioWorklet
+ * (page-audio-worklet.js — needs pageInstallAudioWorklet), accumulating that peer's
  * PCM into a page-side store keyed by the peer's ENDPOINT id (member.getId()).
  * The Node side drains it (via pageDrainParticipantAudio) into the AggregatorBot's
  * per-participant ring buffers — the "clients -> individual buffer queues" hop.
@@ -1461,17 +1553,32 @@ export async function pageStrudelBoot({ strudel, hydra, announceStrudel, samples
  */
 export function pageAggregatorCapture() {
   if (window.__trussalAggCapture) return;
-  const store = new Map();            // endpoint jitsiId -> number[] of accumulated interleaved stereo PCM (L,R per frame)
+  // endpoint jitsiId -> { chunks: Float32Array[], length } of accumulated
+  // interleaved stereo PCM (L,R per frame). Typed chunks, not a number[]: a
+  // push per sample is ~100k array writes a second per peer on the page's
+  // main thread, the same thread the ScriptProcessors run on.
+  const store = new Map();
   const tappedTracks = new WeakSet(); // remote audio JitsiTracks already wired
   const FRAME = 2048;
-  const MAX_BACKLOG = FRAME * 2 * 64; // cap page-side buffering (~1.4s stereo) if Node never drains
-  // jitsiId -> { src, proc, sink }, so a departure can tear the tap down.
+  const MAX_BACKLOG = FRAME * 2 * 64; // cap page-side buffering (~2.7s stereo at 48 kHz) if Node never drains
+
+  // Hand back everything accumulated for one peer as a single Float32Array,
+  // emptying its entry.
+  function takeAll(entry) {
+    const out = new Float32Array(entry.length);
+    let offset = 0;
+    for (const chunk of entry.chunks) { out.set(chunk, offset); offset += chunk.length; }
+    entry.chunks = [];
+    entry.length = 0;
+    return out;
+  }
+  // jitsiId -> { src, capture }, so a departure can tear the tap down.
   // Without this, nothing external references a departed peer's
-  // MediaStreamAudioSourceNode/ScriptProcessorNode/GainNode once the
-  // JitsiTrack is gone, but the graph is still CONNECTED and therefore stays
-  // alive and running per spec — it keeps firing onaudioprocess (silently
-  // refilling `store` under the departed jitsiId, up to MAX_BACKLOG) and
-  // burning CPU for the rest of the page's life.
+  // MediaStreamAudioSourceNode/AudioWorkletNode once the JitsiTrack is gone,
+  // but the graph is still CONNECTED and therefore stays alive and running per
+  // spec — it keeps posting frames (silently refilling `store` under the
+  // departed jitsiId, up to MAX_BACKLOG) and burning CPU for the rest of the
+  // page's life.
   //
   // Deliberately does NOT store/close the AudioContext: pageAudioBridge
   // wraps window.AudioContext into a page-wide SINGLETON (every `new
@@ -1492,11 +1599,11 @@ export function pageAggregatorCapture() {
     const tap = taps.get(jitsiId);
     if (!tap) return;
     taps.delete(jitsiId);
-    const { src, proc, sink } = tap;
-    proc.onaudioprocess = null; // stop delivering frames before disconnecting
+    const { src, capture } = tap;
+    capture.port.onmessage = null; // stop delivering frames before disconnecting
+    capture.port.postMessage('stop'); // lets the processor return false and be collected
     try { src.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: src.disconnect failed for ${jitsiId}: ${e.message}`); }
-    try { proc.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: proc.disconnect failed for ${jitsiId}: ${e.message}`); }
-    try { sink.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: sink.disconnect failed for ${jitsiId}: ${e.message}`); }
+    try { capture.disconnect(); } catch (e) { console.error(`[trussal] aggregator capture: capture.disconnect failed for ${jitsiId}: ${e.message}`); }
   }
 
   function tapTrack(jitsiTrack, jitsiId) {
@@ -1516,11 +1623,17 @@ export function pageAggregatorCapture() {
     if (!stream || !stream.getAudioTracks().length) return;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) throw new Error('aggregator capture: AudioContext is unavailable');
+    const worklet = window.__trussalAudioWorklet;
+    if (!worklet) throw new Error('aggregator capture: pageInstallAudioWorklet is not installed');
+    const ctx = new AudioContext();
+    // The capture processor loads asynchronously, once, into the shared
+    // context. Until it has, leave the track untapped (not marked) so the 1s
+    // rescan wires it then.
+    if (!worklet.loaded) { worklet.load(ctx); return; }
     // A stale tap under this same jitsiId (e.g. its track was replaced rather
     // than removed) would otherwise be orphaned the same way a departure
     // would — tear it down before wiring the replacement.
     teardownTap(jitsiId);
-    const ctx = new AudioContext();
     let src;
     try { src = ctx.createMediaStreamSource(stream); } catch (e) { tappedTracks.add(jitsiTrack); return; }
     // Two channels, INTERLEAVED (L,R per frame) into the store: the room's
@@ -1529,27 +1642,26 @@ export function pageAggregatorCapture() {
     // e.g. the fleet's stereoTiles role, which pans the bots hard left to hard
     // right — before the master mix ever carried it. The Node pipeline, the
     // RingBuffers and pageMasterPlayer all carry this same interleaved layout,
-    // so every count downstream stays a whole number of frames. A mono source
-    // up-mixes to dual-mono (both channels identical), so nothing downstream
-    // special-cases it.
-    const proc = ctx.createScriptProcessor(FRAME, 2, 2);
-    proc.onaudioprocess = (ev) => {
-      const buf = ev.inputBuffer;
-      const left = buf.getChannelData(0);
-      const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
-      let arr = store.get(jitsiId);
-      if (!arr) { arr = []; store.set(jitsiId, arr); }
-      if (arr.length >= MAX_BACKLOG) return;
-      for (let i = 0; i < left.length; i++) arr.push(left[i], right[i]);
+    // so every count downstream stays a whole number of frames. channelCount
+    // 2 / 'explicit' up-mixes a mono source to dual-mono (both channels
+    // identical), so nothing downstream special-cases it. The processor
+    // (page-audio-worklet.js) does the interleaving on the audio thread and
+    // posts finished chunks here.
+    const capture = new AudioWorkletNode(ctx, 'trussal-capture', {
+      numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit',
+    });
+    capture.port.onmessage = (ev) => {
+      const frame = ev.data;
+      let entry = store.get(jitsiId);
+      if (!entry) { entry = { chunks: [], length: 0 }; store.set(jitsiId, entry); }
+      if (entry.length >= MAX_BACKLOG) return;
+      entry.chunks.push(frame);
+      entry.length += frame.length;
     };
-    // A zero-gain sink keeps the ScriptProcessor pulling without re-emitting the
-    // peer's audio to the device a second time.
-    const sink = ctx.createGain();
-    sink.gain.value = 0;
-    src.connect(proc);
-    proc.connect(sink);
-    sink.connect(ctx.destination);
-    taps.set(jitsiId, { src, proc, sink });
+    // No output and no sink: a worklet with an input connected is processed
+    // without being pulled from downstream, so nothing reaches the device.
+    src.connect(capture);
+    taps.set(jitsiId, { src, capture });
     tappedTracks.add(jitsiTrack);
   }
 
@@ -1680,13 +1792,13 @@ export function pageAggregatorCapture() {
       const isPlaying = window.__trussalPeerIsPlaying;
       const playingReady = typeof isPlaying === 'function';
       const out = [];
-      for (const [jitsiId, arr] of store) {
-        if (!arr.length) continue;
+      for (const [jitsiId, entry] of store) {
+        if (!entry.length) continue;
         // A peer no longer in the Jitsi roster delivers nothing: on an in-app
         // hangup the Jitsi presence leave lands BEFORE the sidecar peer-leave
         // (the tab stays open, so the peer-state WS closes ~a second later),
         // and during that lag the playing/resolver gates below are still open
-        // while this peer's ScriptProcessor emits one last tail frame. That
+        // while this peer's capture node posts one last tail frame. That
         // tail used to re-register the ring slot the leave had just compacted
         // — permanently, because markDeparted has already consumed every leave
         // signal, so nothing ever fired again. lastSeen is scan()'s current
@@ -1695,20 +1807,20 @@ export function pageAggregatorCapture() {
         // delivered. A present peer is unaffected: scan() re-adds it every
         // second, and captures only exist for peers a scan has already seen
         // (tapTrack runs after the roster read).
-        if (!lastSeen.has(jitsiId)) { arr.length = 0; continue; }
+        if (!lastSeen.has(jitsiId)) { takeAll(entry); continue; }
         // A peer that is not currently PLAYING delivers nothing: its captured
         // PCM (silence — the published track carries only Strudel output) is
         // DISCARDED, not held, so a peer who joined but never pressed play
         // can't register a ring slot on the Node side, a stopped peer can't
         // re-register the slot scan() just compacted, and pressing play later
         // streams fresh audio rather than a backlog of stale silence.
-        if (playingReady && !isPlaying(jitsiId)) { arr.length = 0; continue; }
+        if (playingReady && !isPlaying(jitsiId)) { takeAll(entry); continue; }
         const token = typeof resolve === 'function' ? resolve(jitsiId) : null;
         if (token == null) continue; // room index not announced yet — keep buffering
         // Carry the jitsiId (the endpoint id) alongside the resolved token so the
         // aggregator can pin the source -> token mapping ONCE for the whole meeting,
         // rather than re-resolving it on every drain.
-        out.push({ jitsiId: String(jitsiId), token: String(token), samples: arr.splice(0) });
+        out.push({ jitsiId: String(jitsiId), token: String(token), samples: takeAll(entry) });
       }
       return out;
     },
@@ -1733,7 +1845,7 @@ export function pageAggregatorCapture() {
     // yet. Full member/track/element correlation lives in pageAggregatorTrackMapDiag.
     diag() {
       const storeSizes = {};
-      for (const [jid, arr] of store) storeSizes[jid] = arr.length;
+      for (const [jid, entry] of store) storeSizes[jid] = entry.length;
       const resolverType = typeof window.__trussalRoomIndexForJitsiId;
       const resolved = {};
       if (resolverType === 'function') {
@@ -1751,9 +1863,9 @@ export function pageAggregatorCapture() {
     // Lets another page-side module (pageMosaic, for a Hydra `initVideo()`
     // clip's own soundtrack) mix extra audio into a participant's EXISTING
     // tap rather than opening a second one: two sources connected to the same
-    // ScriptProcessor sum at its input, so this peer's mic/Strudel tap and
+    // capture node sum at its input, so this peer's mic/Strudel tap and
     // their video clip's audio are captured as one signal through the one
-    // onaudioprocess callback already accumulating their samples — exactly
+    // processor already accumulating their samples — exactly
     // the mix every OTHER listener in the room would hear if this clip's
     // audio reached them at all. Returns false (no tap yet for this jitsiId —
     // they may not have published an audio track yet, or this scan hasn't
@@ -1763,7 +1875,7 @@ export function pageAggregatorCapture() {
       const tap = taps.get(jitsiId);
       if (!tap) return false;
       try {
-        node.connect(tap.proc);
+        node.connect(tap.capture);
       } catch (e) {
         console.error(`[trussal] aggregator capture: addExtraSource failed for ${jitsiId}: ${e.message}`);
         return false;
@@ -1771,19 +1883,36 @@ export function pageAggregatorCapture() {
       return true;
     },
     // Undoes addExtraSource. A no-op (not an error) once the tap itself is
-    // already gone — teardownTap disconnects `proc` wholesale, so there is
+    // already gone — teardownTap disconnects `capture` wholesale, so there is
     // nothing left to unhook this node from.
     removeExtraSource(jitsiId, node) {
       const tap = taps.get(jitsiId);
       if (!tap) return;
-      try { node.disconnect(tap.proc); } catch (e) { /* already disconnected */ }
+      try { node.disconnect(tap.capture); } catch (e) { /* already disconnected */ }
     },
   };
 }
 
-/** Drain the accumulated per-participant PCM the aggregator tap has captured. */
+/**
+ * Drain the accumulated per-participant PCM the aggregator tap has captured,
+ * each take's samples as base64-encoded little-endian Float32 (`pcm`) — the
+ * wire format bots/src/bot/pcm-wire.js decodes. A JSON array of numbers costs
+ * ~20 bytes a sample to build, ship over CDP and parse; base64 costs 5.3, and
+ * at 96k samples a second per participant that serialization was itself
+ * stalling the page's main thread the ScriptProcessors run on.
+ */
 export function pageDrainParticipantAudio() {
-  return (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+  const takes = (window.__trussalAggCapture && window.__trussalAggCapture.drain()) || [];
+  return takes.map(({ jitsiId, token, samples }) => {
+    const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
+    let binary = '';
+    // Chunked: String.fromCharCode.apply overflows the call stack on a whole
+    // drain's worth of bytes.
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return { jitsiId, token, pcm: btoa(binary) };
+  });
 }
 
 /** Drain the endpoint ids that have left the conference since the last call. */
@@ -1879,8 +2008,9 @@ export function pageAggregatorTrackMapDiag() {
  * Aggregator playback sink — the return leg of the round trip, mirror of
  * pageAggregatorCapture. The Node side hands assembled master-mix PCM
  * (interleaved stereo, L,R per frame — the one layout the whole pipeline
- * carries) to enqueue(); a stereo ScriptProcessor de-interleaves and streams
- * it out through the SHARED AudioContext's
+ * carries) to enqueue(); the 'trussal-master-player' AudioWorklet
+ * (page-audio-worklet.js — needs pageInstallAudioWorklet) de-interleaves and
+ * streams it out through the SHARED AudioContext's
  * destination, which pageAudioBridge has rerouted to the fan → the
  * MediaStreamDestination that is the bot's published "microphone". So the
  * assembled master reaches every other client. When the queue is starved
@@ -1892,21 +2022,30 @@ export function pageAggregatorTrackMapDiag() {
  * constructor so `new AudioContext()` returns that instance), so its output
  * lands on the same fan as everything else — no second output device.
  *
- * Chunk queue rather than a flat sample array: the audio callback consumes the
- * head chunk through an offset cursor, so enqueue is O(added) and playback never
- * pays the O(n) cost of shifting a large sample array every frame. Past
- * MAX_CHUNKS the oldest chunk is dropped, so a slow Node drain bounds added
- * latency instead of growing the page heap without limit. enqueue() and the
- * ScriptProcessor callback both run on the page's main thread (the legacy
- * ScriptProcessor is not a worklet), so they never touch the queue concurrently.
+ * Safety buffer: the processor holds output (silence) until `primeMs` of audio
+ * is queued, and if the queue ever runs dry mid-stream it re-primes rather than
+ * playing each late chunk the instant it lands. Node delivers on a timer and
+ * over CDP, so its chunks arrive with jitter; without the cushion every late
+ * delivery was a hole in the published track — several a second. The Node side
+ * reads state() each tick and tops the queue back up to the same primeMs. The
+ * queue itself lives in the processor, on the audio thread, so a busy main
+ * thread delays deliveries into it but can no longer stall playback.
+ *
+ * The master bus and its effects are built synchronously on first use; the
+ * processor attaches to the bus once its module has loaded. Chunks enqueued
+ * before then wait here (`pending`), capped at MAX_CHUNKS like the
+ * processor's own queue.
  */
-export function pageMasterPlayer() {
+export function pageMasterPlayer(primeMs = 400) {
   if (window.__trussalMasterPlayer) return;
-  const FRAME = 2048;
   const MAX_CHUNKS = 256;
-  const chunks = [];      // Array<Float32Array> waiting to be emitted
-  let readOffset = 0;     // interleaved-sample offset consumed from chunks[0]
-  let ctx = null, proc = null, busOut = null;
+  const pending = [];     // Float32Array chunks enqueued before the processor exists
+  let enqueued = 0;       // interleaved samples handed to the player, ever (minus pending drops)
+  // The processor's last position report. Queue depth is enqueued − consumed:
+  // a report is at most ~21 ms old, so the depth reads slightly high, which
+  // only makes the Node side send a little less on that tick.
+  let report = { consumed: 0, underruns: 0, priming: true };
+  let ctx = null, node = null, busOut = null;
   // Master-bus effects (`# room wcl …`, `# noise …`, `# crush …`, `# echo …`):
   // applied HERE, on the one mix every client hears, rather than in each
   // browser. Node computes the pure params (src/audio-net/av-effects/Room.js
@@ -1931,37 +2070,41 @@ export function pageMasterPlayer() {
       console.error('[trussal] master player could not open an AudioContext', e);
       return;
     }
-    proc = ctx.createScriptProcessor(FRAME, 2, 2);
-    proc.onaudioprocess = (ev) => {
-      const outL = ev.outputBuffer.getChannelData(0);
-      const outR = ev.outputBuffer.getChannelData(1);
-      for (let i = 0; i < outL.length; i++) {
-        if (!chunks.length) { outL[i] = 0; outR[i] = 0; continue; } // starved -> silence
-        // Chunks are interleaved stereo (L,R per frame — the layout
-        // pageAggregatorCapture captures and the whole Node pipeline carries),
-        // de-interleaved here into the two output channels so the published
-        // master keeps the room's stereo field. The `?? 0` guards a malformed
-        // odd-length chunk: an out-of-range typed-array read is undefined,
-        // which written to a Float32Array lands on the bus as NaN.
-        outL[i] = chunks[0][readOffset++] ?? 0;
-        outR[i] = chunks[0][readOffset++] ?? 0;
-        if (readOffset >= chunks[0].length) {
-          chunks.shift();
-          readOffset = 0;
-        }
-      }
-    };
-    // proc -> busOut -> fan -> MediaStreamDestination (this bot's mic ->
+    // node -> busOut -> fan -> MediaStreamDestination (this bot's mic ->
     // every other client) + hardware. busOut is the master insert point:
     // relink() re-routes it through whichever effects exist without touching
-    // proc.
+    // the player node.
     busOut = ctx.createGain();
-    proc.connect(busOut);
     busOut.connect(ctx.destination);
     if (pendingCrush) { const p = pendingCrush; pendingCrush = null; setCrush(p); }
     if (pendingEcho) { const p = pendingEcho; pendingEcho = null; setEcho(p); }
     if (pendingRoom) { const p = pendingRoom; pendingRoom = null; setRoom(p); }
     if (pendingNoise) { const p = pendingNoise; pendingNoise = null; setNoise(p); }
+    attachPlayer();
+  }
+
+  // Build the player processor once its module is in the shared context and
+  // hand it everything enqueued so far. Interleaved stereo in, two channels
+  // out (outputChannelCount), so the published master keeps the room's stereo
+  // field. A failed load retries every few seconds rather than on every
+  // enqueue, which would print the same failure ten times a second.
+  function attachPlayer() {
+    const worklet = window.__trussalAudioWorklet;
+    if (!worklet) {
+      console.error('[trussal] master player: pageInstallAudioWorklet is not installed — the master is silent');
+      return;
+    }
+    worklet.load(ctx).then((ok) => {
+      if (!ok) { setTimeout(attachPlayer, 5000); return; }
+      if (node) return;
+      node = new AudioWorkletNode(ctx, 'trussal-master-player', {
+        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+        processorOptions: { primeMs, maxChunks: MAX_CHUNKS },
+      });
+      node.port.onmessage = (ev) => { report = ev.data; };
+      node.connect(busOut);
+      for (const chunk of pending.splice(0)) node.port.postMessage(chunk, [chunk.buffer]);
+    });
   }
 
   // busOut -> crush? -> echo? -> room? -> noise? -> destination. The order is
@@ -2313,27 +2456,29 @@ export function pageMasterPlayer() {
     rampGain(echo.wet.gain, params.wetGain);
   }
 
+  // Interleaved samples enqueued and not yet played (or dropped).
   function queued() {
-    let bufferedSampleCount = 0;
-    for (const chunk of chunks) bufferedSampleCount += chunk.length;
-    // Subtract the part of the first chunk the audio callback has already
-    // played. readOffset is non-negative; this subtraction is what used to
-    // make the expression look like a negative head.
-    const unplayedSampleCount = bufferedSampleCount - readOffset;
-    return unplayedSampleCount < 0 ? 0 : unplayedSampleCount;
+    const unplayed = enqueued - report.consumed;
+    return unplayed < 0 ? 0 : unplayed;
   }
 
   window.__trussalMasterPlayer = {
     enqueue(samples) {
       ensure();
       if (!samples || !samples.length) return queued();
-      // Overflow: drop the oldest (currently-playing) chunk and reset the
-      // cursor. Only bites when Node has run far ahead of real-time playback.
-      if (chunks.length >= MAX_CHUNKS) { chunks.shift(); readOffset = 0; }
-      chunks.push(Float32Array.from(samples));
+      // A private copy: its buffer is transferred to the processor.
+      const chunk = Float32Array.from(samples);
+      enqueued += chunk.length;
+      if (node) {
+        node.port.postMessage(chunk, [chunk.buffer]);
+      } else {
+        if (pending.length >= MAX_CHUNKS) enqueued -= pending.shift().length;
+        pending.push(chunk);
+      }
       return queued();
     },
     queued,
+    state() { return { queued: queued(), underruns: report.underruns, priming: report.priming }; },
     setRoom,
     setNoise,
     setCrush,
@@ -2341,12 +2486,29 @@ export function pageMasterPlayer() {
   };
 }
 
-/** Push assembled master-mix PCM (a plain Array) into the page playback sink. */
-export function pageEnqueueMaster(samples) {
+/**
+ * Push assembled master-mix PCM into the page playback sink. `pcm` is
+ * base64-encoded little-endian Float32 (bots/src/bot/pcm-wire.js), the same
+ * wire format pageDrainParticipantAudio sends the other way. Returns the
+ * player's queued sample count afterwards.
+ */
+export function pageEnqueueMaster(pcm) {
   const masterPlayer = window.__trussalMasterPlayer;
-  return (masterPlayer && typeof masterPlayer.enqueue === 'function')
-    ? masterPlayer.enqueue(samples)
-    : 0;
+  if (!masterPlayer || typeof masterPlayer.enqueue !== 'function') return 0;
+  const binary = atob(typeof pcm === 'string' ? pcm : '');
+  const bytes = new Uint8Array(binary.length - (binary.length % 4));
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return masterPlayer.enqueue(new Float32Array(bytes.buffer));
+}
+
+/**
+ * The master player's queue depth (interleaved samples) and how many times it
+ * has run dry mid-stream — what the Node side reads each playback tick to send
+ * exactly enough to keep the safety buffer full. Null before the player exists.
+ */
+export function pageMasterPlayerState() {
+  const masterPlayer = window.__trussalMasterPlayer;
+  return (masterPlayer && typeof masterPlayer.state === 'function') ? masterPlayer.state() : null;
 }
 
 /**

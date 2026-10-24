@@ -6,7 +6,7 @@ import {
   pageAggregatorCapture, pageDrainParticipantAudio, pageDrainParticipantLeaves,
   pageDrainParticipantStopped,
   pageAggregatorCaptureDiag, pageFpsSampler,
-  pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageIsActiveAggregator,
+  pageEnsureAudioPublished, pageMasterPlayer, pageEnqueueMaster, pageMasterPlayerState, pageIsActiveAggregator,
   pageReportStudioStatus, pageAggregatorTrackMapDiag, pageSetMasterRoom, pageSetMasterNoise,
   pageSetMasterCrush, pageSetMasterEcho,
   pageMosaic, pageSetMosaicCells, pageSetMosaicActive, pageSetMosaicEnabled, pageSetMosaicCycle,
@@ -14,8 +14,10 @@ import {
   pageEnsureVideoPublished, pageInstallVideoPublisher,
   pageForcePreserveDrawingBuffer,
   pageInstallPageStyles, PAGE_SCRIPTS_CSS,
+  pageInstallAudioWorklet, PAGE_AUDIO_WORKLET_SOURCE, pageCapAnimationFrames,
 } from './page-scripts.js';
 import { RingBuffer } from './ring-buffer.js';
+import { encodePcm, decodePcm } from './pcm-wire.js';
 import { CircularParticipantQueue, tokenOrder } from './circular-participant-queue.js';
 import { createMetaprogramDoc, connectMetaprogramSync } from '../../../src/audio-net/MetaprogrammerCrdtSync.js';
 import { parseMetaprogram, buildDefaultProgram, resolveEffectParams, mosaicEnabled } from '../../../src/audio-net/MetaprogrammerParser.js';
@@ -39,9 +41,27 @@ import { MetaprogramScheduler } from '../../../src/audio-net/MetaprogramSchedule
 import { orderTokens } from '../../../src/audio-net/TurnRing.js';
 
 // How often the ingest loop drains the page tap into the buffers.
-const DEFAULT_INGEST_INTERVAL_MS = 500;
+const DEFAULT_INGEST_INTERVAL_MS = 100;
 // How often the playback loop assembles the master and streams it back out.
-const DEFAULT_PLAYBACK_INTERVAL_MS = 250;
+const DEFAULT_PLAYBACK_INTERVAL_MS = 100;
+// The master player's safety buffer: how much assembled audio the page keeps
+// queued ahead of what it is playing. Audio reaches the active participant's
+// ring at most one ingest interval late and leaves for the page at most one
+// playback interval after that, so the cushion has to outlast both plus the
+// jitter of two timers and two CDP round trips through a busy page.
+const DEFAULT_MASTER_CUSHION_MS = 400;
+// Extra ring capacity above the hold window, so the ON-turn participant — whose
+// ring opens its turn at the hold and then takes an ingest batch on top every
+// tick — is never evicted mid-turn (an eviction there is a splice in the live
+// stream). Off-turn rings are trimmed back to the hold instead, before anyone
+// hears them.
+const LIVE_HEADROOM_MS = 1000;
+// Per-tick progress logs (drains, assembled/played slices, the ingest dump)
+// print at most this often: at 10 ticks a second, unthrottled they would
+// flood stdout, and console output is synchronous on a Linux pipe.
+const AUDIO_LOG_MS = 1000;
+// How often the capture/track-map diagnostics are dumped during ingest.
+const CAPTURE_DIAG_MS = 5000;
 // Round-robin turn length (ms) before the metaprogram schedules slots for real:
 // stream one participant, then the next, so the alternation is audible.
 const DEFAULT_SLOT_MS = 4000;
@@ -310,8 +330,12 @@ export class AggregatorBot extends Bot {
     // never sends `hello` so it never joins the room's broadcast set (see
     // #metaprogramBusUrl for why this one does, with role=fleet).
     #metaprogramConn = null;
-    // Throttle counter for the capture-diag heartbeat (every ~10th drain).
-    #drainTicks = 0;
+    // When the capture-diag heartbeat last ran (every CAPTURE_DIAG_MS).
+    #lastCaptureDiagAt = -Infinity;
+    // key -> when that per-tick progress log last printed (see #throttledLog).
+    #audioLogAt = new Map();
+    // The page master player's underrun count as of the last playback tick.
+    #masterUnderruns = 0;
     // Anchor for schedulerClockSeconds, latched on first read so the bot's scheduler
     // clock counts from its own start rather than the Unix epoch.
     #localT0 = null;
@@ -403,11 +427,20 @@ export class AggregatorBot extends Bot {
         // the TIME window is what stays constant); otherwise the explicit
         // bufferSize (samples) is used directly so unit tests can pin an exact
         // capacity.
+        //
+        // holdSamples is what an OFF-turn participant keeps; the ring's
+        // capacity adds LIVE_HEADROOM_MS on top so the ON-turn participant is
+        // never evicted mid-turn (see writeTo…, which trims off-turn rings back
+        // to the hold). On the explicit-bufferSize path the two are the same
+        // number, so the trim never fires and tests keep their exact capacity.
         this.sampleRate = Math.max(1, Number(cfg.sampleRate ?? DEFAULT_SAMPLE_RATE));
         this.holdMs = cfg.holdMs != null ? Math.max(1, Number(cfg.holdMs)) : null;
-        this.bufferSize = this.holdMs != null
+        this.holdSamples = this.holdMs != null
             ? this.#audioSamplesForMs(this.holdMs)
             : Math.max(1, Math.floor(bufferSize));
+        this.bufferSize = this.holdMs != null
+            ? this.#audioSamplesForMs(this.holdMs + LIVE_HEADROOM_MS)
+            : this.holdSamples;
         this.epoch = null;
         // Delayed Streaming: the room-wide toggle's boot default (env
         // DELAYED_STREAMING=1) and the per-participant backlog cap in ms. The
@@ -433,6 +466,12 @@ export class AggregatorBot extends Bot {
         const playbackMs = Number(cfg.playbackIntervalMs) > 0
             ? Number(cfg.playbackIntervalMs) : DEFAULT_PLAYBACK_INTERVAL_MS;
         this.masterSliceSamples = this.#audioSamplesForMs(playbackMs);
+        // The page player's safety buffer (see DEFAULT_MASTER_CUSHION_MS). The
+        // live playback loop sends whatever tops the page queue back up to it
+        // (#masterDemandSamples) rather than a fixed masterSliceSamples, so the
+        // page's audio clock — not this process's timers — sets the pace.
+        this.masterCushionMs = Math.max(1, Number(cfg.masterCushionMs ?? DEFAULT_MASTER_CUSHION_MS));
+        this.masterCushionSamples = this.#audioSamplesForMs(this.masterCushionMs);
         // How much of a participant's most-recently-STREAMED audio to retain for a
         // ghost replay: one full turn (slotMs — the ~4s "cycle" a turn lasts), so a
         // departed ghost's turn replays a whole cycle of distinct audio rather than
@@ -531,6 +570,12 @@ export class AggregatorBot extends Bot {
         // Off-screen staging CSS for page scripts (page-scripts.css).
         // Registered before the scripts that create staged elements.
         await this.page.evaluateOnNewDocument(pageInstallPageStyles, PAGE_SCRIPTS_CSS);
+        // Every animation loop on this page draws only for the published track,
+        // which is captured at captureFps — so render at that rate, not 60 Hz.
+        // Ahead of the mosaic and the gUM override, whose loops it paces. Safe
+        // for fleet scaling: the aggregator's fps is reported separately and
+        // never enters the player-bot median computeMaxBots reads.
+        await this.page.evaluateOnNewDocument(pageCapAnimationFrames, bandwidth.captureFps ?? 15);
         // The mosaic's cells are Hydra WebGL canvases that get drawImage'd into
         // the published frame. A WebGL context clears its drawing buffer after
         // each composite, so without this the cell reads back empty exactly as
@@ -538,11 +583,15 @@ export class AggregatorBot extends Bot {
         await this.page.evaluateOnNewDocument(pageForcePreserveDrawingBuffer);
         await this.page.evaluateOnNewDocument(pageMosaic, this.#mosaicFrame());
         await this.page.evaluateOnNewDocument(pageGumOverride, bandwidth.captureFps ?? 15, bandwidth.videoHeight ?? 360);
+        // The AudioWorklet processors (page-audio-worklet.js) that the next two
+        // — the capture tap and the master player — load into the shared context.
+        await this.page.evaluateOnNewDocument(pageInstallAudioWorklet, PAGE_AUDIO_WORKLET_SOURCE);
         // The ingest tap: accumulates every remote <audio> element's PCM.
         await this.page.evaluateOnNewDocument(pageAggregatorCapture);
         // The return-path sink: streams the assembled master mix back out through
-        // the bot's published track. Installed before navigation like the tap.
-        await this.page.evaluateOnNewDocument(pageMasterPlayer);
+        // the bot's published track. Installed before navigation like the tap,
+        // primed to the same cushion the playback loop keeps it topped up to.
+        await this.page.evaluateOnNewDocument(pageMasterPlayer, this.masterCushionMs);
         await this.page.evaluateOnNewDocument(pageInstallVideoPublisher);
         await this.page.evaluateOnNewDocument(pageFpsSampler);
 
@@ -682,8 +731,61 @@ export class AggregatorBot extends Bot {
         // down aggregator publishes silence, so it can't feed back into the
         // active one's mix (which taps every participant, including this bot).
         if (!(await this.#isActiveNow())) return;
-        await this.readAndAssembleMasterBuffer();
+        await this.readAndAssembleMasterBuffer(await this.#masterDemandSamples());
         await this.playMasterBufferToClient();
+    }
+
+    /**
+     * How much master audio to send this tick: whatever refills the page
+     * player's queue to masterCushionSamples. Sending to the page's measured
+     * depth, rather than a fixed slice per timer tick, slaves the whole master
+     * path to the page's audio clock — a late tick is made up by the next one
+     * and an early one sends less, instead of each landing as a hole or a pile-up.
+     * Falls back to the fixed masterSliceSamples when the page can't say (no
+     * page yet, a navigation in progress, a player that predates state()).
+     */
+    async #masterDemandSamples() {
+        if (!this.page || typeof this.page.evaluate !== 'function') return this.masterSliceSamples;
+        let state;
+        try {
+            state = await this.page.evaluate(pageMasterPlayerState);
+        } catch (e) {
+            console.error(`[aggregator-bot] master player state read failed: ${e.message}`);
+            return this.masterSliceSamples;
+        }
+        if (!state || !Number.isFinite(state.queued)) return this.masterSliceSamples;
+        this.#noteMasterUnderruns(state.underruns);
+        const want = Math.max(0, this.masterCushionSamples - state.queued);
+        return want - (want % AUDIO_CHANNELS); // whole frames
+    }
+
+    /**
+     * Surface the page player running dry while a participant is on turn — the
+     * one condition the safety buffer exists to prevent, and so the first thing
+     * to check if the room hears dropouts again. Running dry at a rest or with
+     * nobody playing is expected (there is nothing to send) and not reported.
+     */
+    #noteMasterUnderruns(underruns) {
+        if (!Number.isFinite(underruns)) return;
+        const fresh = underruns - this.#masterUnderruns;
+        this.#masterUnderruns = underruns;
+        if (fresh > 0 && this.#activeToken) {
+            this.#throttledLog('underrun', () => console.warn(
+                `[aggregator-bot] master player ran dry ${underruns} time(s) so far with token=${this.#activeToken} ` +
+                `on turn — audio reached the page later than its ${this.masterCushionMs}ms cushion covers ` +
+                '(ingest or the page main thread stalled)'));
+        }
+    }
+
+    /**
+     * Run `log` at most once per AUDIO_LOG_MS per key: the per-tick progress
+     * logs fire ~10 times a second.
+     */
+    #throttledLog(key, log) {
+        const now = Date.now();
+        if (now - (this.#audioLogAt.get(key) ?? -Infinity) < AUDIO_LOG_MS) return;
+        this.#audioLogAt.set(key, now);
+        log();
     }
 
     /**
@@ -1975,6 +2077,12 @@ export class AggregatorBot extends Bot {
             const rb = this.participantBuffer(token);
             const evictedBefore = rb.evicted;
             rb.write(samples);
+            // Off turn, a participant keeps only its hold window (requirement
+            // 4). Trimmed here, not by filling the ring to capacity, so its turn
+            // opens with headroom above it: the on-turn ring takes an ingest
+            // batch on top every tick and must not evict while it is being
+            // heard.
+            if (token !== this.#activeToken) rb.trimTo(this.holdSamples);
             // Delayed Streaming: every arriving frame also banks into the
             // participant's off-turn backlog. Written unconditionally (on-turn
             // frames included) — the FIFO is drained only during their turn, so
@@ -1988,15 +2096,21 @@ export class AggregatorBot extends Bot {
             };
         }
         // Only print once audio has reached the bot — silent while the room is
-        // empty or before anyone unmutes.
+        // empty or before anyone unmutes — and at most once per AUDIO_LOG_MS.
         if (this.logIngest && arrived.length) {
-            this.logIncomingAudio(arrived);
-            this.logBuffersAndStats();
+            this.#throttledLog('ingest', () => {
+                this.logIncomingAudio(arrived);
+                this.logBuffersAndStats();
+            });
         }
         return summary;
     }
 
-    async readAndAssembleMasterBuffer() {
+    // `sliceSamples`: how much to release this tick. The live playback loop
+    // passes the page player's demand (#masterDemandSamples); called bare (the
+    // tests, or a page that can't report its depth) it is one fixed playback
+    // interval's worth, masterSliceSamples.
+    async readAndAssembleMasterBuffer(sliceSamples = this.masterSliceSamples) {
         // Cyclic turn-taking: one participant is active at a time and only that
         // participant's audio is concatenated into the shared master. ORDER,
         // MEMBERSHIP and TIMING all follow the room's metaprogram (see
@@ -2050,10 +2164,11 @@ export class AggregatorBot extends Bot {
         // or undefined when the active token has no buffer yet — hence the
         // guard below.
         const currentRingBuffer = this.buffers[active];
-        // Release at most ONE playback interval's worth of the active buffer per
-        // tick (masterSliceSamples), rate-matching the drain to real time: draining
-        // the whole buffer dumped a full hold-window burst at every slot flip, so
-        // the real-time-paced page player fell further behind each slot.
+        // Release at most sliceSamples of the active buffer per tick — what the
+        // page player has room for below its cushion — rate-matching the drain to
+        // real time: draining the whole buffer dumped a full hold-window burst at
+        // every slot flip, so the real-time-paced page player fell further behind
+        // each slot.
         //
         // A live participant's buffer is DRAINED (read): releasing this turn's
         // audio and, relative to the previous turn, evicting what was released a
@@ -2073,7 +2188,7 @@ export class AggregatorBot extends Bot {
         let held;
         let heldFrom;
         if (departed) {
-            held = this.#replayDepartedGhost(active, newTurn);
+            held = this.#replayDepartedGhost(active, newTurn, sliceSamples);
             heldFrom = 'ghost-replay';
         } else if (this.#delayedStreaming) {
             // Delayed Streaming: serve the head of this performer's OFF-TURN
@@ -2082,7 +2197,7 @@ export class AggregatorBot extends Bot {
             // next turn, so their audio plays through continuously, one
             // turn/cycle per turn, delayed rather than onsetting live.
             this.#ghostReplayOffset.delete(active);
-            held = this.#drainDelayed(active, currentRingBuffer);
+            held = this.#drainDelayed(active, currentRingBuffer, sliceSamples);
             const backlog = this.#backlog.get(active);
             heldFrom = (backlog && backlog.length) ? 'delayed-backlog' : 'delayed-underrun';
         } else if (!currentRingBuffer) {
@@ -2090,15 +2205,18 @@ export class AggregatorBot extends Bot {
             heldFrom = 'no-buffer';
         } else {
             this.#ghostReplayOffset.delete(active);
-            held = currentRingBuffer.read(Math.min(currentRingBuffer.length, this.masterSliceSamples));
+            held = currentRingBuffer.read(Math.min(currentRingBuffer.length, sliceSamples));
             this.#retainScheduled(active, held);
             heldFrom = 'live-drain';
         }
         // A turn that streams NOTHING while the room is unmuted is the shape of
         // every silence bug this thing has had, and "samples=0" alone never says
         // which branch produced it. Name the branch and its inputs, rate-limited
-        // so a legitimately silent stretch cannot flood the log.
-        if (!held.length) this.#logEmptyTurn(active, heldFrom, currentRingBuffer, departed, newTurn);
+        // so a legitimately silent stretch cannot flood the log. A zero slice
+        // (the page's cushion is already full) is not an empty turn.
+        if (!held.length && sliceSamples > 0) {
+            this.#logEmptyTurn(active, heldFrom, currentRingBuffer, departed, newTurn, sliceSamples);
+        }
         // Gain-stage the master before it is streamed (requirement 6).
         const { gain, samples } = this.computeGainStaging(held);
         // Single-slot handoff to playMasterBufferToClient (drained + cleared there
@@ -2106,10 +2224,10 @@ export class AggregatorBot extends Bot {
         // returns one even for an empty slice), so #pendingMaster is never null and
         // the drain there can test `!samples.length` without a null guard.
         this.#pendingMaster = samples;
-        console.log(
+        this.#throttledLog('assembled', () => console.log(
             `[aggregator-bot] assembled master from token=${active} samples=${samples.length} ` +
             `gain=${gain.toFixed(3)}${lapped ? ' (pointer lapped)' : ''}`,
-        );
+        ));
         return { active, assembled: samples.length, gain, lapped };
     }
 
@@ -2139,7 +2257,7 @@ export class AggregatorBot extends Bot {
      * it and the state that decided the branch. Rate-limited rather than
      * silenced entirely, because the interesting case is the one that persists.
      */
-    #logEmptyTurn(token, from, ringBuffer, departed, newTurn) {
+    #logEmptyTurn(token, from, ringBuffer, departed, newTurn, sliceSamples) {
         const now = this.now();
         if (now - this.#lastEmptyTurnLogAt < EMPTY_TURN_LOG_MS) return;
         this.#lastEmptyTurnLogAt = now;
@@ -2150,7 +2268,7 @@ export class AggregatorBot extends Bot {
             `newTurn=${newTurn} bufferLen=${ringBuffer ? ringBuffer.length : 'NO-BUFFER'} ` +
             `retainedLen=${retained ? retained.length : 0} ghostOffset=${this.#ghostReplayOffset.get(token) ?? 0} ` +
             `delayed=${this.#delayedStreaming} backlogLen=${backlog ? backlog.length : 0} ` +
-            `slice=${this.masterSliceSamples} bufferTokens=[${Object.keys(this.buffers)}] ring=[${this.order.order()}]`,
+            `slice=${sliceSamples} bufferTokens=[${Object.keys(this.buffers)}] ring=[${this.order.order()}]`,
         );
     }
 
@@ -2230,7 +2348,7 @@ export class AggregatorBot extends Bot {
      * dropped only when the metaprogram retires the token (see
      * #applyOrderFromProgram), so a listed ghost never plays silence.
      */
-    #replayDepartedGhost(token, newTurn) {
+    #replayDepartedGhost(token, newTurn, sliceSamples) {
         let source = this.#lastScheduledBuffer.get(token);
         if (!source || !source.length) {
             const ringBuffer = this.buffers[token];
@@ -2239,7 +2357,7 @@ export class AggregatorBot extends Bot {
         }
         if (!source.length) return new Float32Array(0);
         const offset = newTurn ? 0 : (this.#ghostReplayOffset.get(token) || 0);
-        const slice = this.#loopSlice(source, offset, this.masterSliceSamples);
+        const slice = this.#loopSlice(source, offset, sliceSamples);
         this.#ghostReplayOffset.set(token, offset + slice.length);
         return slice;
     }
@@ -2404,8 +2522,8 @@ export class AggregatorBot extends Bot {
      * topped-up sample is never served twice. Also feeds #retainScheduled so a
      * later departure still has a ghost-replay window.
      */
-    #drainDelayed(token, liveRing) {
-        const need = this.masterSliceSamples;
+    #drainDelayed(token, liveRing, sliceSamples) {
+        const need = sliceSamples;
         const backlog = this.#backlog.get(token);
         const fromBacklog = backlog ? backlog.read(Math.min(backlog.length, need)) : new Float32Array(0);
         let out = fromBacklog;
@@ -2432,7 +2550,7 @@ export class AggregatorBot extends Bot {
         if (!samples.length) return { played: 0 };
         this.#masterWritten += samples.length;
         await this.#enqueueMasterSamples(samples);
-        console.log(`[aggregator-bot] played master samples=${samples.length}`);
+        this.#throttledLog('played', () => console.log(`[aggregator-bot] played master samples=${samples.length}`));
         return { played: samples.length };
     }
     
@@ -2914,17 +3032,18 @@ export class AggregatorBot extends Bot {
         if (!this.page || typeof this.page.evaluate !== 'function') return [];
         try {
             const takes = await this.page.evaluate(pageDrainParticipantAudio);
-            console.log(`[aggregator-bot] drained ${takes.length} participant captures from the page`);
+            this.#throttledLog('drained', () => console.log(
+                `[aggregator-bot] drained ${Array.isArray(takes) ? takes.length : 0} participant captures from the page`));
             // Capture-diag heartbeat: dump the tap's audio-element / store / resolver
-            // state every ~10th drain — EMPTY OR NOT — so a multi-participant
+            // state every CAPTURE_DIAG_MS — EMPTY OR NOT — so a multi-participant
             // subscription problem (only one remote stream reaching the tap) is
             // visible during an ACTIVE session, not just at startup. Localizes a
             // fault to a stage: no stream on the element (subscription/bundle) vs a
             // jitsiId in the store that never resolves to a token (resolver).
             // Best-effort telemetry — log a failure but never throw, so a diag
             // hiccup can't wedge ingest.
-            this.#drainTicks += 1;
-            if (this.#drainTicks % 10 === 1) {
+            if (Date.now() - this.#lastCaptureDiagAt >= CAPTURE_DIAG_MS) {
+                this.#lastCaptureDiagAt = Date.now();
                 try {
                     const diag = await this.page.evaluate(pageAggregatorCaptureDiag);
                     console.log('[aggregator-bot] capture diag', JSON.stringify(diag));
@@ -2942,7 +3061,11 @@ export class AggregatorBot extends Bot {
                     console.error(`[aggregator-bot] track-map diag failed: ${e.message}`);
                 }
             }
-            return Array.isArray(takes) ? takes : [];
+            // The page ships each take's PCM as base64 Float32 (see
+            // pageDrainParticipantAudio); everything from here on sees samples.
+            return Array.isArray(takes)
+                ? takes.map(({ pcm, ...take }) => ({ ...take, samples: decodePcm(pcm) }))
+                : [];
         } catch (e) {
             console.error(`[aggregator-bot] failed to drain participant captures: ${e.message}`);
             return [];
@@ -2975,8 +3098,9 @@ export class AggregatorBot extends Bot {
         if (!this.page || typeof this.page.evaluate !== 'function') return;
         try {
             // Puppeteer serializes evaluate() arguments structurally; a
-            // Float32Array does not survive that, so hand the page a plain Array.
-            await this.page.evaluate(pageEnqueueMaster, Array.from(samples));
+            // Float32Array does not survive that, and a plain Array of numbers
+            // is ~4x the bytes of the base64 Float32 the page decodes.
+            await this.page.evaluate(pageEnqueueMaster, encodePcm(samples));
         } catch (e) {
             console.error(`[aggregator-bot] failed to enqueue master samples: ${e.message}`);
             // A late Jitsi navigation tears down the context; the next tick

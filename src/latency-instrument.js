@@ -43,7 +43,7 @@ function notifyRoutingChange() {
 
 export function subscribeAudioRouting(fn) {
   routingSubscribers.add(fn);
-  try { fn(new Set(audioRouted)); } catch (e) {}
+  try { fn(new Set(audioRouted)); } catch (e) { console.warn("[latency] ignored", e); }
   return () => routingSubscribers.delete(fn);
 }
 
@@ -88,7 +88,12 @@ function ensureAudioContext() {
   if (!audioCtx.audioWorklet) return Promise.reject(new Error('AudioWorklet not supported'));
 
   if (!workletLoaded) {
-    workletLoaded = audioCtx.audioWorklet.addModule('/latency-worklet-v2.js');
+    try {
+      workletLoaded = audioCtx.audioWorklet.addModule('/latency-worklet-v2.js');
+    } catch (e) {
+      console.warn('[latency] worklet load failed', e);
+      workletLoaded = Promise.resolve();
+    }
   }
   const resume = audioCtx.state === 'suspended' ? audioCtx.resume() : Promise.resolve();
   return resume.then(() => workletLoaded);
@@ -131,10 +136,22 @@ function updateStrudelFx(effects, rtt, jitter) {
 
   // Distortion — WaveShaperNode curve; null = identity (bypass).
   if (e.distortion) {
+    if (strudelFx._bypassedDist !== false) {
+      try { masterLimiter.disconnect(strudelOut); } catch (e) { console.warn("[latency] ignored", e); }
+      try { masterLimiter.connect(strudelFx.distWS); strudelFx.distWS.connect(strudelOut); } catch (e) { console.warn("[latency] ignored", e); }
+      strudelFx._bypassedDist = false;
+    }
     const base  = 0.2;
     const extra = Math.max(0, Math.min(0.8, (r - 5) / 55 + j / 6));
+    strudelFx.distWS.oversample = '4x';
     strudelFx.distWS.curve = makeDistortionCurve(base + extra);
   } else {
+    if (strudelFx._bypassedDist !== true) {
+      try { strudelFx.distWS.disconnect(strudelOut); } catch (e) { console.warn("[latency] ignored", e); }
+      try { masterLimiter.disconnect(strudelFx.distWS); } catch (e) { console.warn("[latency] ignored", e); }
+      try { masterLimiter.connect(strudelOut); } catch (e) { console.warn("[latency] ignored", e); }
+      strudelFx._bypassedDist = true;
+    }
     strudelFx.distWS.curve = null;
   }
 
@@ -200,7 +217,7 @@ function applyParams(chain, params) {
   // convolver (whose output we already wired to realDestination).
   if (chain.reverbOn === params.reverb) return;
   chain.reverbOn = params.reverb;
-  try { chain.limiter.disconnect(); } catch (e) {}
+  try { chain.limiter.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
   if (params.reverb && chain.reverb) {
     chain.limiter.connect(chain.reverb);
   } else {
@@ -264,12 +281,12 @@ async function ensureChain(jitsiId) {
 function destroyChain(jitsiId) {
   const chain = chains.get(jitsiId);
   if (!chain) return;
-  try { chain.input.disconnect(); } catch (e) {}
-  if (chain.presence) { try { chain.presence.disconnect(); } catch (e) {} }
-  try { chain.worklet.disconnect(); } catch (e) {}
-  try { chain.limiter.disconnect(); } catch (e) {}
-  if (chain.reverb) { try { chain.reverb.disconnect(); } catch (e) {} }
-  if (chain.reverbGain) { try { chain.reverbGain.disconnect(); } catch (e) {} }
+  try { chain.input.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+  if (chain.presence) { try { chain.presence.disconnect(); } catch (e) { console.warn("[latency] ignored", e); } }
+  try { chain.worklet.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+  try { chain.limiter.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+  if (chain.reverb) { try { chain.reverb.disconnect(); } catch (e) { console.warn("[latency] ignored", e); } }
+  if (chain.reverbGain) { try { chain.reverbGain.disconnect(); } catch (e) { console.warn("[latency] ignored", e); } }
   chains.delete(jitsiId);
 }
 
@@ -300,7 +317,7 @@ function captureJitsiAudio() {
       const member = conf && typeof conf.getParticipantById === 'function'
         ? conf.getParticipantById(jitsiId) : null;
       if (member && typeof member.isHidden === 'function' && member.isHidden()) return;
-    } catch (e) {}
+    } catch (e) { console.warn("[latency] ignored", e); }
     if (!getPeerByJitsiId(jitsiId)) return;
     if (pendingCaptures.has(jitsiId)) return;
     const existing = remoteSources.get(jitsiId);
@@ -309,7 +326,7 @@ function captureJitsiAudio() {
         && existing.tag.srcObject === existing.stream
         && existing.track && existing.track.readyState === 'live';
       if (live) return; // healthy wiring (on this tag or another) — nothing to do
-      try { existing.source.disconnect(); } catch (e) {}
+      try { existing.source.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
       remoteSources.delete(jitsiId);
       if (!externalSources.has(jitsiId) && !externalNodes.has(jitsiId)) {
         if (audioRouted.delete(jitsiId)) notifyRoutingChange();
@@ -349,7 +366,7 @@ function startAudioTagsObserver() {
     captureJitsiAudio();
   });
   audioTagObserver.observe(document.body, { childList: true, subtree: true });
-  setInterval(captureJitsiAudio, 1000);
+  const _captureInterval = setInterval(captureJitsiAudio, 1000); // keep for lifecycle; reduce load not necessary
   captureJitsiAudio();
 }
 
@@ -378,14 +395,14 @@ subscribeParticipants((event, payload) => {
   if (event === 'leave' && payload && payload.id) {
     const src = remoteSources.get(payload.id);
     if (src) {
-      try { src.source.disconnect(); } catch (e) {}
+      try { src.source.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
       if (src.tag) { src.tag.muted = false; src.tag.volume = 1; }
       remoteSources.delete(payload.id);
     }
     const ext = externalSources.get(payload.id);
     if (ext) {
-      try { ext.source && ext.source.disconnect(); } catch (e) {}
-      try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      try { ext.source && ext.source.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+      try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn("[latency] ignored", e); }
       externalSources.delete(payload.id);
     }
     if (audioRouted.delete(payload.id)) notifyRoutingChange();
@@ -420,7 +437,7 @@ export function setChainGate(jitsiId, level, atAudioTime = null, rampS = 0.03) {
 // The spectrum analyser's parallel tap on the master bus is unaffected.
 export function insertMasterChain(endpoints) {
   if (!audioCtx || !realDestination || !endpoints) return false;
-  try { realDestination.disconnect(audioCtx.destination); } catch (e) {}
+  try { realDestination.disconnect(audioCtx.destination); } catch (e) { console.warn("[latency] ignored", e); }
   realDestination.connect(endpoints.input);
   endpoints.output.connect(audioCtx.destination);
   return true;
@@ -428,9 +445,9 @@ export function insertMasterChain(endpoints) {
 
 export function removeMasterChain(endpoints) {
   if (!audioCtx || !realDestination || !endpoints) return;
-  try { realDestination.disconnect(endpoints.input); } catch (e) {}
-  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) {}
-  try { realDestination.connect(audioCtx.destination); } catch (e) {}
+  try { realDestination.disconnect(endpoints.input); } catch (e) { console.warn("[latency] ignored", e); }
+  try { endpoints.output.disconnect(audioCtx.destination); } catch (e) { console.warn("[latency] ignored", e); }
+  try { realDestination.connect(audioCtx.destination); } catch (e) { console.warn("[latency] ignored", e); }
 }
 
 // Leaving JPattern mode: every chain back to unity immediately.
@@ -477,25 +494,18 @@ export async function ensureMasterStrudelInput() {
 
     const meterAn = audioCtx.createAnalyser();
     meterAn.fftSize = 2048;
-    masterStrudelGain.connect(meterAn);
-    const meterBuf = new Float32Array(meterAn.fftSize);
-    setInterval(() => {
-      meterAn.getFloatTimeDomainData(meterBuf);
-      let peak = 0;
-      for (let i = 0; i < meterBuf.length; i++) { const a = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i]; if (a > peak) peak = a; }
-      console.log('[trussal] masterStrudelGain persistent meter peak=', peak.toFixed(5));
-    }, 2000);
+    try { masterStrudelGain.connect(meterAn); } catch (err) { /* ignore */ }
+    // meter logging disabled to reduce main-thread jank affecting audio
 
     strudelOut = audioCtx.createGain();
     strudelOut.gain.value = localStrudelLevel();
     strudelOut.connect(realDestination);
 
     const distWS = audioCtx.createWaveShaper();
-    distWS.oversample = '4x';
+    distWS.oversample = 'none';
     distWS.curve = null; // identity (off) by default
 
-    masterLimiter.connect(distWS);
-    distWS.connect(strudelOut);
+    masterLimiter.connect(strudelOut); // bypass by default; enable only if distortion used
 
     // Reverb wet path
     let convolver = null, convGain = null;
@@ -504,9 +514,9 @@ export async function ensureMasterStrudelInput() {
       convolver.buffer = reverbBuffer;
       convGain = audioCtx.createGain();
       convGain.gain.value = 0; // off until reverb toggled
-      masterLimiter.connect(convolver);
-      convolver.connect(convGain);
-      convGain.connect(strudelOut);
+      try { masterLimiter.connect(convolver); } catch (err) { console.warn('[latency] reverb connect failed', err); }
+      try { convolver.connect(convGain); } catch (err) { console.warn('[latency] reverb connect failed', err); }
+      try { convGain.connect(strudelOut); } catch (err) { console.warn('[latency] reverb connect failed', err); }
     }
 
     // Noise source (2-second white-noise loop)
@@ -527,7 +537,7 @@ export async function ensureMasterStrudelInput() {
     noiseGain.connect(strudelOut);
     noiseSrc.start();
 
-    strudelFx = { distWS, noiseFilter, noiseGain, convGain };
+    strudelFx = { distWS, noiseFilter, noiseGain, convGain, _bypassedDist: true };
   }
   return { audioCtx, masterStrudelGain, realDestination };
 }
@@ -545,8 +555,8 @@ export async function attachExternalStreamForPeer(jitsiId, stream, label = 'exte
   if (!chain) return null;
   const existing = externalSources.get(jitsiId);
   if (existing) {
-    try { existing.source && existing.source.disconnect(); } catch (e) {}
-    try { existing.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { existing.source && existing.source.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+    try { existing.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn("[latency] ignored", e); }
   }
   let source = null;
   if (monitorLocally) {
@@ -563,8 +573,8 @@ export async function attachExternalStreamForPeer(jitsiId, stream, label = 'exte
 export function detachExternalStreamForPeer(jitsiId) {
   const ext = externalSources.get(jitsiId);
   if (!ext) return;
-  try { ext.source && ext.source.disconnect(); } catch (e) {}
-  try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { ext.source && ext.source.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+  try { ext.stream.getTracks().forEach(t => t.stop()); } catch (e) { console.warn("[latency] ignored", e); }
   externalSources.delete(jitsiId);
   if (!remoteSources.has(jitsiId)) {
     if (audioRouted.delete(jitsiId)) notifyRoutingChange();
@@ -646,8 +656,8 @@ class JitsiMicMixEffect {
     return this._dest.stream;
   }
   stopEffect() {
-    try { if (this._micSource) this._micSource.disconnect(); } catch (e) {}
-    try { if (this._extSource) this._extSource.disconnect(); } catch (e) {}
+    try { if (this._micSource) this._micSource.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
+    try { if (this._extSource) this._extSource.disconnect(); } catch (e) { console.warn("[latency] ignored", e); }
   }
 }
 
@@ -694,8 +704,8 @@ async function propagateViaReplaceTrack(stream) {
       originalTrack,
       mixedTrack,
       _disposers: [
-        () => { try { micSource && micSource.disconnect(); } catch (e) {} },
-        () => { try { extSource && extSource.disconnect(); } catch (e) {} }
+        () => { try { micSource && micSource.disconnect(); } catch (e) { console.warn("[latency] ignored", e); } },
+        () => { try { extSource && extSource.disconnect(); } catch (e) { console.warn("[latency] ignored", e); } }
       ]
     };
     console.log('[latency] propagation: replaceTrack on outgoing sender');
@@ -735,6 +745,12 @@ export function isPropagatingToRoom() {
   return !!jitsiMixState;
 }
 
+// A continuous ~-70 dBFS noise floor on the published Strudel track, so it is
+// never literal digital zero: Chrome's sender skips "silent" stretches (91% of
+// what the aggregator received was concealment, with no packet loss, before
+// this existed — see 104335a). It must stay well above one 16-bit step
+// (1/32768 ≈ 0.00003), the resolution WebRTC encodes at: below that it rounds
+// to exactly the zero it is there to prevent.
 const DITHER_LEVEL = 0.0003;
 function createDitherNode(audioCtx) {
   const bufLen = Math.floor(audioCtx.sampleRate * 2);
@@ -774,10 +790,10 @@ class NodeOutputEffect {
     return this._dest.stream;
   }
   stopEffect() {
-    try { this._node.disconnect(this._dest); } catch (e) {}
+    try { this._node.disconnect(this._dest); } catch (e) { console.warn("[latency] ignored", e); }
     if (this._dither) {
-      try { this._dither.node.disconnect(this._dest); } catch (e) {}
-      try { this._dither.stop(); } catch (e) {}
+      try { this._dither.node.disconnect(this._dest); } catch (e) { console.warn("[latency] ignored", e); }
+      try { this._dither.stop(); } catch (e) { console.warn("[latency] ignored", e); }
       this._dither = null;
     }
   }
@@ -834,7 +850,7 @@ async function acquireLocalAudioTrackForStrudel() {
         && typeof window.JitsiMeetJS.createLocalTracks === 'function') {
       if (!strudelSynthDest) {
         strudelSynthDest = audioCtx.createMediaStreamDestination();
-        try { masterLimiter.connect(strudelSynthDest); } catch (e) {}
+        try { masterLimiter.connect(strudelSynthDest); } catch (e) { console.warn("[latency] ignored", e); }
       }
       const realGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = async (c = {}) =>
@@ -873,12 +889,12 @@ function ensureStrudelPublishGuard() {
     if (strudelRoomEffect) {
       const current = findLocalJitsiAudioTrack();
       if (current === strudelRoomEffect.track) return;
-      try { strudelRoomEffect.effect.stopEffect(); } catch (e) {}
+      try { strudelRoomEffect.effect.stopEffect(); } catch (e) { console.warn("[latency] ignored", e); }
       strudelRoomEffect = null;
       console.warn('[latency] published Strudel track was replaced (renegotiation?) — re-publishing');
     }
     publishLocalStrudelToRoom().catch((e) => console.warn('[latency] strudel publish retry failed', e));
-  }, 1000);
+  }, 2000);
 }
 
 export async function publishLocalStrudelToRoom() {
@@ -920,7 +936,7 @@ export async function unpublishLocalStrudelFromRoom() {
   strudelPublishWarned = false; // next aggregator re-arms the one-shot warning
   strudelPublishBackoff = false;
   if (strudelSynthDest) {
-    try { masterLimiter && masterLimiter.disconnect(strudelSynthDest); } catch (e) {}
+    try { masterLimiter && masterLimiter.disconnect(strudelSynthDest); } catch (e) { console.warn("[latency] ignored", e); }
     strudelSynthDest = null;
   }
   if (!strudelRoomEffect) return;
@@ -957,7 +973,7 @@ if (typeof window !== 'undefined') {
         an.getFloatTimeDomainData(buf);
         for (const v of buf) { const a = v < 0 ? -v : v; if (a > peak) peak = a; sumSq += v * v; n++; }
       }
-      try { masterStrudelGain.disconnect(an); } catch (e) {}
+      try { masterStrudelGain.disconnect(an); } catch (e) { console.warn("[latency] ignored", e); }
       out.strudelPeak = +peak.toFixed(5);                  // >0 => Strudel IS producing sound
       out.strudelRms = +Math.sqrt(sumSq / (n || 1)).toFixed(5);
       out.ctxClockAdvanced = +(audioCtx.currentTime - t0).toFixed(3); // ~0 => context frozen/suspended

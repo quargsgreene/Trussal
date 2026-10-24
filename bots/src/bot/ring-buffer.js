@@ -74,6 +74,20 @@ export class RingBuffer {
     return out;
   }
 
+  /**
+   * Evict the oldest samples until at most `maxLength` remain — the eviction a
+   * full buffer applies on write, at a lower watermark. Counted in `evicted`.
+   * Returns the number of samples dropped.
+   */
+  trimTo(maxLength) {
+    const drop = this._filled - Math.max(0, Math.floor(maxLength));
+    if (drop <= 0) return 0;
+    this._read = (this._read + drop) % this.capacity;
+    this._filled -= drop;
+    this.evicted += drop;
+    return drop;
+  }
+
   /** Copy up to `n` oldest samples without consuming them (default: all). */
   peek(n = this._filled) {
     const count = Math.min(n, this._filled);

@@ -97,13 +97,17 @@ async function aggregatorMain() {
     jitsiUrl,
     executablePath,
     bandwidth: aggregatorBandwidthFromEnv(),
-    ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '500')),
-    playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '250')),
+    ingestIntervalMs: Number(env('INGEST_INTERVAL_MS', '100')),
+    playbackIntervalMs: Number(env('PLAYBACK_INTERVAL_MS', '100')),
+    // The page master player's safety buffer (ms): what it keeps queued ahead
+    // of playback so late deliveries from this process don't become gaps.
+    masterCushionMs: Number(env('MASTER_CUSHION_MS', '400')),
     slotMs: Number(env('SLOT_MS', '4000')),
-    // Per-participant hold window. HOLD_MS (ms) is the ms-measured knob; when
-    // unset the per-participant buffers fall back to the RING_BUFFER_SIZE sample
-    // count below (default 48000 = 1s @ 48kHz), preserving prior behavior.
-    holdMs: env('HOLD_MS', '') ? Number(env('HOLD_MS', '')) : undefined,
+    // Per-participant hold window (ms): the audio a participant keeps while off
+    // turn. Its ring holds this plus headroom, so the participant on turn is
+    // never evicted mid-stream. (The old sample-count default, 48000, was only
+    // 0.5s once the pipeline went stereo.)
+    holdMs: Number(env('HOLD_MS', '') || '1000'),
     sampleRate: Number(env('SAMPLE_RATE', '48000')),
     // Gain-staging ceiling for the assembled master (full scale = 1.0).
     gainCeiling: Number(env('GAIN_CEILING', '1.0')),
@@ -128,7 +132,7 @@ async function aggregatorMain() {
       await bot.stop().catch((e) => console.error(`[aggregator-bot] cleanup after losing the slot failed: ${e.message}`));
       process.exit(0);
     },
-  }, {}, Number(env('RING_BUFFER_SIZE', '48000')));
+  });
   try {
     await bot.start();
   } catch (err) {

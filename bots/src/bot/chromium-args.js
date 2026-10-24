@@ -49,12 +49,27 @@ export function chromiumArgs({ width = 1280, height = 720 } = {}) {
  * headless:false because Xvfb is already up per bot, eadless:'new' would route
  * Web Audio to a null sink. extraArgs lets the build smoke test add
  * --disable-dev-shm-usage for the constrained 64 MB /dev/shm build environment.
+ *
+ * --disable-audio-output unless the container has a real playback device
+ * (the entrypoint exports ALSA_PLAYBACK_DEVICE only when it wired the
+ * snd-aloop rig): on the ALSA `null` default every other container gets,
+ * Chromium's media-element playout runs free — measured at ~272x real time —
+ * so WebRTC's jitter buffer is pulled dry between packets and conceals 99.6%
+ * of every received track. The aggregator taps exactly those tracks, so the
+ * master was built from fragments of real audio between stretches of invented
+ * silence, and every bot burned CPU decoding remote audio at that speed.
+ * Chromium's fake output stream paces playout (and Web Audio) on a real-time
+ * timer instead, and never opens a sound card at all.
  */
-export function browserLaunchOptions(executablePath, { extraArgs = [], userDataDir = '/tmp/chrome-profile' } = {}) {
+export function browserLaunchOptions(executablePath, {
+  extraArgs = [],
+  userDataDir = '/tmp/chrome-profile',
+  audioOutput = Boolean(process.env.ALSA_PLAYBACK_DEVICE),
+} = {}) {
   return {
     headless: false,
     executablePath,
-    args: [...chromiumArgs(), ...extraArgs],
+    args: [...chromiumArgs(), ...(audioOutput ? [] : ['--disable-audio-output']), ...extraArgs],
     ignoreDefaultArgs: true,
     pipe: false,
     userDataDir,

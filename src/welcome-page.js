@@ -1,23 +1,3 @@
-// A typed room name travels three places that each punish a different
-// character class: the URL path (`/<room>`), an XMPP MUC localpart (nodeprep
-// forbids `"&'/:<>@` and whitespace), and the sidecar's `?room=` query. Rather
-// than encode separately for each, accept only characters that are literal in
-// all three. The security benefit is that same restriction read from the other
-// side: a name that clears this carries neither markup nor a `javascript:`
-// scheme, so it stays inert wherever it lands.
-//
-// 1023 is the XMPP localpart ceiling (RFC 6122/7622 nodeprep), which prosody
-// enforces once the room becomes <room>@conference.meet.jitsi. The allowlist is
-// ASCII, so one character is one octet. It is NOT a UI limit — nothing in the
-// Trussal overlay renders the room name — so don't shorten it thinking it is.
-//
-// This validates and rejects rather than normalising: silently reshaping
-// "My Jam Session!" into "my-jam-session" would land two people who typed
-// visibly different names in the same room without telling either of them.
-
-// Single source for the join button label: the welcome overlay renders it,
-// and patchPrejoinButton renames Jitsi's own "Join meeting" lobby button to
-// match. Change it here and both follow.
 const JOIN_LABEL = 'Join meeting';
 
 // Live handles for the observers/poll installed below, so a repeated render
@@ -35,11 +15,6 @@ export function isValidRoomName(name) {
   if (name.length === 0 || name.length > MAX_ROOM_NAME_LENGTH) return false;
   return ROOM_NAME_RE.test(name);
 }
-
-// welcome-page.css is installed by src/styles.css at boot. The Jitsi patch
-// classes at its bottom are needed on the prejoin screen (patchPrejoinButton)
-// and the welcome page's Start meeting button (hideStartMeetingButton), not
-// only by the overlay.
 
 function renderTrussalWelcomeOverlay() {
     console.log('[Trussal] renderTrussalWelcomeOverlay() called');

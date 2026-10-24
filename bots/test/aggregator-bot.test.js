@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { RingBuffer } from '../src/bot/ring-buffer.js';
+import { encodePcm, decodePcm } from '../src/bot/pcm-wire.js';
 import { AggregatorBot, AGGREGATOR_SLOT_TAKEN, AUDIO_CHANNELS } from '../src/bot/aggregator-bot.js';
 import { computeWorstCaseMetrics } from '../../src/audio-net/network-modulation/WorstCaseCalculationUtils.js';
 import { crushParams } from '../../src/audio-net/av-effects/Crush.js';
@@ -50,9 +51,23 @@ test('RingBuffer evicts the oldest samples when full and keeps the newest', () =
   assert.equal(rb.written, 6, 'tracks total ever written');
 });
 
+test('RingBuffer.trimTo evicts the oldest down to a watermark and counts them as evicted', () => {
+  const rb = new RingBuffer(8);
+  rb.write([1, 2, 3, 4, 5, 6]);
+  assert.equal(rb.trimTo(4), 2);
+  assert.deepEqual([...rb.peek()], [3, 4, 5, 6], 'keeps the newest');
+  assert.equal(rb.evicted, 2);
+  assert.equal(rb.trimTo(10), 0, 'a no-op at or under the watermark');
+  rb.write([7, 8, 9, 10, 11]); // wraps: the trim moved the read cursor, not the data
+  assert.deepEqual([...rb.peek()], [4, 5, 6, 7, 8, 9, 10, 11]);
+});
+
 // --- Fakes mirroring bot.test.js ---------------------------------------------
 
-function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [], pageOutputWants = [] } = {}) {
+function makeFakes({
+  pageCaptures = [], pageLeaves = [], pageStopped = [], pageOutputWants = [],
+  pageMasterState = { queued: 0, underruns: 0, priming: true },
+} = {}) {
   const calls = {
     evalOnNewDoc: [], goto: [], evaluate: [], enqueued: [], metrics: 0, closed: false,
     roomPushes: [], noisePushes: [], crushPushes: [], echoPushes: [],
@@ -69,7 +84,13 @@ function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [], pageO
       calls.evaluate.push(s);
       if (/\.drainLeaves\(\)/.test(s)) return pageLeaves;                    // pageDrainParticipantLeaves
       if (/\.drainStopped\(\)/.test(s)) return pageStopped;                  // pageDrainParticipantStopped
-      if (/__trussalAggCapture|\.drain\(\)/.test(s)) return pageCaptures;    // pageDrainParticipantAudio
+      // pageDrainParticipantAudio ships each take's samples as base64 Float32.
+      if (/__trussalAggCapture|\.drain\(\)/.test(s)) {
+        return pageCaptures.map(({ samples, ...take }) => ({ ...take, pcm: encodePcm(samples) }));
+      }
+      // pageMasterPlayerState. Ahead of the enqueue arm, which also names
+      // __trussalMasterPlayer. An empty page queue unless a test says otherwise.
+      if (/\.state\(\)/.test(s)) return pageMasterState;
       // The four master-bus effect pushes. Matched ahead of the enqueue arm
       // because every pageSetMaster* body names __trussalMasterPlayer too.
       if (/\.setRoom\(/.test(s)) { calls.roomPushes.push(args[0]); return undefined; }   // pageSetMasterRoom
@@ -94,9 +115,10 @@ function makeFakes({ pageCaptures = [], pageLeaves = [], pageStopped = [], pageO
         calls.outputVendor.push({ three: args[0], p5: args[1] });
         return { three: !!args[0], p5: !!args[1] };
       }
-      if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster
-        calls.enqueued.push(args[0]);
-        return (args[0] || []).length;
+      if (/__trussalMasterPlayer|\.enqueue\(/.test(s)) {                     // pageEnqueueMaster (base64 Float32)
+        const samples = Array.from(decodePcm(args[0]));
+        calls.enqueued.push(samples);
+        return samples.length;
       }
       if (/muteAudio|muteVideo/.test(s)) return undefined;                   // pageEnsure*Published
       return { fps: 30, errors: [], diag: {} };                             // pageReadSamples
@@ -591,6 +613,68 @@ test('election gate: the active aggregator ingests and streams normally', async 
   assert.equal(calls.enqueued.length, 1, 'active aggregator streams the assembled master back out');
 
   await bot.stop();
+});
+
+// --- master pacing + hold window ----------------------------------------------
+
+test('playback: each tick sends what tops the page player back up to its cushion', async () => {
+  // 10 ms cushion = 960 interleaved samples at 48 kHz stereo; the page says
+  // 160 are still queued, so this tick owes it 800.
+  const { calls, fakeLauncher } = makeFakes({ pageMasterState: { queued: 160, underruns: 0, priming: false } });
+  const bot = new AggregatorBot(
+    { ...cfg, masterCushionMs: 10 },
+    { launcher: fakeLauncher, logIngest: false, isActive: async () => true, now: () => 0 },
+    {}, 8192,
+  );
+  await bot.start();
+  assert.ok(calls.evalOnNewDoc.some((s) => /__trussalAudioWorklet/.test(s)), 'worklet processors installed');
+  bot.buffers['0'] = new RingBuffer(8192);
+  bot.buffers['0'].write(new Array(3000).fill(0.5));
+
+  await bot.playbackTick();
+  assert.equal(calls.enqueued.at(-1).length, 800);
+  assert.equal(bot.buffers['0'].length, 2200, 'the rest stays in the ring for the next tick');
+  await bot.stop();
+});
+
+test('playback: a page that cannot report its depth gets one fixed playback interval', async () => {
+  const { calls, fakeLauncher } = makeFakes({ pageMasterState: null });
+  const bot = new AggregatorBot(
+    cfg,
+    { launcher: fakeLauncher, logIngest: false, isActive: async () => true, now: () => 0 },
+    {}, 48000,
+  );
+  await bot.start();
+  bot.buffers['0'] = new RingBuffer(48000);
+  bot.buffers['0'].write(new Array(30000).fill(0.5));
+
+  await bot.playbackTick();
+  assert.equal(calls.enqueued.at(-1).length, bot.masterSliceSamples);
+  await bot.stop();
+});
+
+test('hold window: off-turn rings keep holdMs, the on-turn ring gets headroom and is never trimmed', async () => {
+  const { fakeLauncher } = makeFakes();
+  // holdMs 10 = 960 samples held off turn; capacity adds 1 s of headroom.
+  const bot = new AggregatorBot(
+    { ...cfg, holdMs: 10 },
+    { launcher: fakeLauncher, logIngest: false, now: () => 0 },
+  );
+  assert.equal(bot.holdSamples, 960);
+  assert.equal(bot.bufferSize, 960 + 96000);
+
+  await bot.writeToIndividualParticipantBufferQueues([{ token: '0', samples: new Array(2000).fill(0.5) }]);
+  assert.equal(bot.buffers['0'].length, 960, 'nobody is on turn yet: trimmed to the hold');
+
+  const a = await bot.readAndAssembleMasterBuffer();
+  assert.equal(a.active, '0');
+  await bot.writeToIndividualParticipantBufferQueues([
+    { token: '0', samples: new Array(2000).fill(0.5) },
+    { token: '1', samples: new Array(2000).fill(0.25) },
+  ]);
+  assert.equal(bot.buffers['0'].length, 2000, 'on turn: the whole batch kept, no eviction mid-turn');
+  assert.equal(bot.buffers['1'].length, 960, 'off turn: back to the hold');
+  assert.equal(bot.buffers['0'].evicted, 2000 - 960, 'only the pre-turn trim ever evicted from 0');
 });
 
 test('election gate: default isActive polls the page election helper', async () => {

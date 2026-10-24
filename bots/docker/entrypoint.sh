@@ -25,7 +25,10 @@ BOT_ROLE="${BOT_ROLE:-player}"
 # hears bots through their in-page tap — and a container sharing the host's
 # /dev/snd must never fall through to a real card (on a dev machine, the
 # speakers!). The player rig below overwrites this only when snd-aloop cards
-# exist to claim; the aggregator branch keeps it.
+# exist to claim; the aggregator branch keeps it. Chromium itself is never
+# pointed at this device: without ALSA_PLAYBACK_DEVICE (exported only by the
+# rig) it launches with --disable-audio-output, because playout into `null`
+# runs free and wrecks WebRTC receive (see chromium-args.js).
 cat > /etc/asound.conf <<EOF
 pcm.!default {
     type null

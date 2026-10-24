@@ -6,16 +6,17 @@ import { pageAggregatorCapture } from '../src/bot/page-scripts.js';
 /**
  * Runs the page-side aggregator capture tap outside a browser so its gate
  * logic is testable under node:test: a fake `window`/`APP.conference._room`,
- * an AudioContext stand-in that hands each participant's ScriptProcessor back
- * to the test (so PCM frames are pushed by hand), and the tap's 1s roster
- * scan captured from setInterval so tests advance it explicitly.
+ * an AudioWorkletNode stand-in that hands each participant's capture node back
+ * to the test (so the processor's interleaved chunks are posted by hand — the
+ * processor itself is covered in page-audio-worklet.test.js), and the tap's 1s
+ * roster scan captured from setInterval so tests advance it explicitly.
  *
  * The scenarios mirror the leave sequences observed live (2026-07-13):
  * which of the three drain() gates — roster membership, playing flag,
  * resolver — is still open at each instant is exactly what these tests pin.
  */
 function installTap() {
-  const procsByJitsiId = new Map(); // jitsiId -> that peer's ScriptProcessor stand-in
+  const procsByJitsiId = new Map(); // jitsiId -> that peer's capture AudioWorkletNode stand-in
 
   // Every fake node tracks its own disconnect so teardown is observable.
   const fakeNode = (extra = {}) => ({ connect() {}, disconnected: false, disconnect() { this.disconnected = true; }, ...extra });
@@ -33,11 +34,6 @@ function installTap() {
     createMediaStreamSource(stream) {
       this._ownerId = stream.ownerId;
       return fakeNode();
-    }
-    createScriptProcessor() {
-      const proc = fakeNode({ onaudioprocess: null });
-      procsByJitsiId.set(this._ownerId, proc);
-      return proc;
     }
     createGain() {
       return fakeNode({ gain: { value: 1 } });
@@ -75,9 +71,23 @@ function installTap() {
   const resolverMap = new Map(); // jitsiId -> room-index token (sidecar view)
   const playingSet = new Set();  // jitsiIds the peer-state bus reports playing
 
+  // The capture node: built right after the participant's stream source, so
+  // the context's last-seen owner names whose tap it is. Its port records what
+  // the page posts to the processor (teardown's 'stop').
+  globalThis.AudioWorkletNode = class {
+    constructor(ctx, name) {
+      assert.equal(name, 'trussal-capture');
+      Object.assign(this, fakeNode());
+      this.port = { onmessage: null, posted: [], postMessage(m) { this.posted.push(m); } };
+      procsByJitsiId.set(ctx._ownerId, this);
+    }
+  };
+
   globalThis.APP = { conference: { _room: { getParticipants: () => roster.slice() } } };
   globalThis.window = {
     AudioContext: FakeAudioContext,
+    // pageInstallAudioWorklet's surface, already loaded, so the first scan taps.
+    __trussalAudioWorklet: { loaded: true, load: () => Promise.resolve(true) },
     __trussalRoomIndexForJitsiId: (jitsiId) => resolverMap.get(jitsiId) ?? null,
     __trussalPeerIsPlaying: (jitsiId) => playingSet.has(jitsiId),
   };
@@ -105,17 +115,13 @@ function installTap() {
     procs: procsByJitsiId,
     // The one shared AudioContext every participant's tap actually uses.
     sharedCtx: () => sharedCtx,
-    // One ScriptProcessor frame from this peer's tap (2048 frames × 2
-    // channels, like the real stereo FRAME). Works after the participant has
-    // been scanned once.
+    // One capture-processor message from this peer's tap (2048 frames × 2
+    // channels, interleaved, like the real processor posts). Works after the
+    // participant has been scanned once.
     pushFrame: (jitsiId, sample = 0.1) => {
-      const proc = procsByJitsiId.get(jitsiId);
-      assert.ok(proc && proc.onaudioprocess, `tap exists for ${jitsiId}`);
-      const left = new Float32Array(2048).fill(sample);
-      const right = new Float32Array(2048).fill(sample);
-      proc.onaudioprocess({
-        inputBuffer: { numberOfChannels: 2, getChannelData: (i) => (i === 0 ? left : right) },
-      });
+      const node = procsByJitsiId.get(jitsiId);
+      assert.ok(node && node.port.onmessage, `tap exists for ${jitsiId}`);
+      node.port.onmessage({ data: new Float32Array(2048 * 2).fill(sample) });
     },
   };
 }
@@ -123,32 +129,61 @@ function installTap() {
 // Stereo: the tap must carry BOTH channels, interleaved L,R per frame — the
 // room's instruments are stereo (ENABLE_STEREO + stereo Opus end to end), and
 // the mono tap this replaced collapsed the stereo field (panned sources like
-// the fleet's stereoTiles role) before the master mix ever carried it.
-test('the tap captures stereo, interleaved L,R per frame', () => {
+// the fleet's stereoTiles role) before the master mix ever carried it. The
+// processor interleaves (page-audio-worklet.test.js); the page must deliver
+// its chunks back to back, untouched, and up-mix a mono source to dual-mono.
+test('the tap delivers the processor\'s interleaved stereo chunks in order, as one take', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
   tap.playingSet.add('human-a');
   tap.scan();
 
-  const proc = tap.procs.get('human-a');
-  const left = Float32Array.from([1, 0.5, -0.5]);
-  const right = Float32Array.from([-1, 0.25, -0.25]);
-  proc.onaudioprocess({
-    inputBuffer: { numberOfChannels: 2, getChannelData: (i) => (i === 0 ? left : right) },
-  });
+  const node = tap.procs.get('human-a');
+  node.port.onmessage({ data: Float32Array.from([1, -1, 0.5, 0.25]) });
+  node.port.onmessage({ data: Float32Array.from([-0.5, -0.25]) });
+  const takes = tap.cap.drain();
+  assert.equal(takes.length, 1);
+  assert.ok(takes[0].samples instanceof Float32Array, 'drained as one typed array, not a number[]');
   assert.deepEqual(
-    tap.cap.drain()[0].samples,
+    Array.from(takes[0].samples),
     [1, -1, 0.5, 0.25, -0.5, -0.25],
     'frames land interleaved L,R so the master mix keeps the stereo field',
   );
+  assert.deepEqual(tap.cap.drain(), [], 'drained once');
+});
 
-  // A mono source (a one-channel input buffer) up-mixes to dual-mono rather
-  // than dropping half of every frame.
-  proc.onaudioprocess({
-    inputBuffer: { numberOfChannels: 1, getChannelData: () => Float32Array.from([0.5, 0.25]) },
-  });
-  assert.deepEqual(tap.cap.drain()[0].samples, [0.5, 0.5, 0.25, 0.25]);
+test('the capture node is stereo-explicit, so a mono source arrives as dual-mono', () => {
+  const tap = installTap();
+  let opts = null;
+  const Real = globalThis.AudioWorkletNode;
+  globalThis.AudioWorkletNode = class extends Real {
+    constructor(ctx, name, o) { super(ctx, name); opts = o; }
+  };
+  tap.addToRoster('human-a');
+  tap.scan();
+  assert.equal(opts.channelCount, 2);
+  assert.equal(opts.channelCountMode, 'explicit');
+  assert.equal(opts.numberOfOutputs, 0, 'nothing downstream: the tap must never re-emit the peer');
+});
+
+test('a track is left untapped until the capture processor has loaded, then tapped on a rescan', async () => {
+  const tap = installTap();
+  let resolveLoad;
+  const loads = [];
+  globalThis.window.__trussalAudioWorklet = {
+    loaded: false,
+    load(ctx) { loads.push(ctx); return new Promise((r) => { resolveLoad = r; }); },
+  };
+  tap.addToRoster('human-a');
+  tap.scan();
+  assert.equal(loads.length, 1, 'the first scan starts loading the processor into the shared context');
+  assert.equal(tap.procs.get('human-a'), undefined, 'no tap before the processor exists');
+
+  globalThis.window.__trussalAudioWorklet.loaded = true;
+  resolveLoad(true);
+  tap.scan();
+  assert.ok(tap.procs.get('human-a'), 'the rescan taps the track once loaded');
 });
 
 // The live incident, step for step: on an in-app hangup the Jitsi presence
@@ -184,7 +219,7 @@ test('hangup race: a departed peer\'s post-leave capture tail is discarded, not 
   tap.scan();
   assert.deepEqual(tap.cap.drainLeaves(), ['human-b'], 'roster backstop queues the departure');
 
-  // B's ScriptProcessor outlives the WebRTC track for a bit (teardown is
+  // B's capture node outlives the WebRTC track for a bit (teardown is
   // grace-windowed, not immediate) and emits one last frame.
   tap.pushFrame('human-b');
   tap.pushFrame('human-a');
@@ -260,14 +295,14 @@ test('a present peer that stops and resumes playing delivers again (no roster-ga
 });
 
 // The resource leak: markDeparted used to only clear the store/bookkeeping
-// Sets, leaving the departed peer's ScriptProcessor+GainNode+source CONNECTED
+// Sets, leaving the departed peer's capture node + source CONNECTED
 // — which per spec keeps them alive and running (silently refilling `store`
 // under the departed id) for the rest of the page's life. A departure must
 // eventually tear the tap down: stop delivering frames and disconnect the
 // per-participant graph. Teardown is grace-windowed (TAP_TEARDOWN_GRACE_SCANS
 // consecutive misses), not immediate — see the glitch-tolerance test below
 // for why — so this drives scan() past the window to observe it.
-test('sustained absence eventually tears down the peer\'s ScriptProcessor (no leaked tap)', () => {
+test('sustained absence eventually tears down the peer\'s capture node (no leaked tap)', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');
@@ -276,20 +311,21 @@ test('sustained absence eventually tears down the peer\'s ScriptProcessor (no le
   tap.pushFrame('human-a');
   assert.equal(tap.cap.drain().length, 1, 'tap is live while present');
 
-  const proc = tap.procs.get('human-a');
-  assert.ok(proc, 'tap resources exist before departure');
+  const node = tap.procs.get('human-a');
+  assert.ok(node, 'tap resources exist before departure');
 
   tap.removeFromRoster('human-a');
   tap.scan(); // roster backstop fires markDeparted immediately (bookkeeping only)
   assert.deepEqual(tap.cap.drainLeaves(), ['human-a']);
-  assert.notEqual(proc.onaudioprocess, null, 'tap is NOT torn down on the first miss');
+  assert.notEqual(node.port.onmessage, null, 'tap is NOT torn down on the first miss');
 
   tap.scan(); // still within the grace window
-  assert.notEqual(proc.onaudioprocess, null, 'tap still survives a second consecutive miss');
+  assert.notEqual(node.port.onmessage, null, 'tap still survives a second consecutive miss');
 
   tap.scan(); // grace window elapses on this, the third consecutive miss
-  assert.equal(proc.onaudioprocess, null, 'processor stops delivering frames once sustained absence is confirmed');
-  assert.equal(proc.disconnected, true, 'processor is disconnected on departure');
+  assert.equal(node.port.onmessage, null, 'processor stops delivering frames once sustained absence is confirmed');
+  assert.equal(node.disconnected, true, 'processor is disconnected on departure');
+  assert.deepEqual(node.port.posted, ['stop'], 'the processor is told to stop, so it can be collected');
 });
 
 // The regression this session found LIVE: a single glitchy
@@ -307,24 +343,24 @@ test('a still-present peer survives a transient roster glitch (tap not torn down
   tap.playingSet.add('human-a');
   tap.scan();
 
-  const proc = tap.procs.get('human-a');
+  const node = tap.procs.get('human-a');
 
   // Simulates a burst of joins causing Jitsi's roster to momentarily omit a
   // still-present peer: absent for one scan, then reappears.
   tap.removeFromRoster('human-a');
   tap.scan();
-  assert.notEqual(proc.onaudioprocess, null, 'tap survives the glitch tick');
+  assert.notEqual(node.port.onmessage, null, 'tap survives the glitch tick');
 
   tap.addToRoster('human-a');
   tap.scan();
-  assert.notEqual(proc.onaudioprocess, null, 'tap is untouched once the peer reappears');
+  assert.notEqual(node.port.onmessage, null, 'tap is untouched once the peer reappears');
 
   // Confirms the miss streak actually reset, not just paused: several more
   // ticks of continuous presence must not accumulate toward teardown.
   tap.scan();
   tap.scan();
   tap.scan();
-  assert.notEqual(proc.onaudioprocess, null, 'still delivering after the peer has been present all along');
+  assert.notEqual(node.port.onmessage, null, 'still delivering after the peer has been present all along');
 
   tap.pushFrame('human-a');
   assert.equal(tap.cap.drain().length, 1, 'audio still flows normally after the glitch');
@@ -351,7 +387,7 @@ test('tearing down a departed peer\'s tap never closes the shared AudioContext, 
   tap.scan();
   tap.scan();
   tap.scan(); // grace window elapses -> human-b's tap is torn down
-  assert.equal(tap.procs.get('human-b').onaudioprocess, null, 'the departed peer\'s tap is torn down');
+  assert.equal(tap.procs.get('human-b').port.onmessage, null, 'the departed peer\'s tap is torn down');
 
   assert.equal(tap.sharedCtx().closed, false, 'the shared AudioContext used by the whole page is NEVER closed');
   tap.pushFrame('human-a');
@@ -365,7 +401,7 @@ test('tearing down a departed peer\'s tap never closes the shared AudioContext, 
 // addExtraSource/removeExtraSource: pageMosaic's hook for mixing a Hydra
 // `initVideo()` clip's own soundtrack into the same peer's existing mic/
 // Strudel tap, so both reach the master as one signal rather than two.
-test('addExtraSource: connects into the SAME ScriptProcessor the mic tap uses, so the two sum', () => {
+test('addExtraSource: connects into the SAME capture node the mic tap uses, so the two sum', () => {
   const tap = installTap();
   tap.addToRoster('human-a');
   tap.resolverMap.set('human-a', '0');

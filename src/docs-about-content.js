@@ -2,55 +2,42 @@ const JPATTERN_FUNCTIONS = [
   {
     id: 'jp-participants',
     name: '$ participants',
-    sig: 'participants([participant_tokens])\nparticipants [participant_tokens]',
+    sig: 'participants([participant_tokens])',
     body: `
       <p>Orders participants' turns when ring is set to false.</p>
       <p>Turn-modifying operators are written glued to the token, no spaces:</p>
       <code>
         $: participants("<0 9>")
       </code>
-      <code>
-        $ participants <0 9>
-      </code>
       `,
   },
   {
     id: 'jp-ring',
     name: 'ring',
-    sig: 'ring([boolean])\nring boolean',
+    sig: 'ring([boolean])',
     body: `
       <p>Sets the Metaprogram into consistent hashing mode.</p>
       <code>
         $: participants(3)
         .ring(true)
       </code>
-      <code>
-        $ participants 3
-        # ring true
-      </code>
       `,
   },
   {
     id: 'jp-cycles',
     name: 'cycles',
-    sig: 'cycles "wcl" | "wcpl"  [scale factor]  [fixed amount]',
+    sig: 'cycles [network_metric_abbreviation="wcl"] [scale factor]  [fixed amount]',
     body: `
       <p>Sets how long one cycle — and so one performer's turn — lasts, as a
       multiple of a live network metric: <code>"wcl"</code> (worst-case
-      mouth-to-ear latency) or <code>"wcpl"</code> (worst-case packet loss).
-      With just a scale factor the target tracks the metric live:
-      <code># cycles "wcl" 3</code> is 3× the current WCL. A third number
-      <em>pins</em> the metric at that fixed value (seconds for wcl, a 0–1
-      fraction for wcpl) while the scale still multiplies it — everything
-      else (effect intensities, the readout) keeps following the real
-      network. Exactly one <code># cycles</code> line is allowed per
+      mouth-to-ear latency), <code>wcj</code>, <code>wcrtt</code>, or <code>"wcpl"</code> (worst-case packet loss). Exactly one <code># cycles</code> line is allowed per
       program. Metric names are always quoted.</p>
       <pre># cycles "wcl" 10 0.3   <span class="da-comment">// WCL pinned at 300ms, scaled ×10 → every cycle is 3s</span></pre>`,
   },
   {
     id: 'jp-tempo',
     name: 'tempo ',
-    sig: 'tempo <number>[/<int>]  bpm | cps | cpm',
+    sig: 'tempo [number=120] [tempo_unit="cpm"]',
     body: `
       <p>Sets the tempo cycle boundaries quantize against. Takes a quantity
       (a plain number, or a fraction like <code>90/4</code>) and a unit:
@@ -439,10 +426,6 @@ const TEXT_CYCLES_FUNCTIONS = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Content — CSS Cycles (src/css-cycles.js, src/features/csscycles.md).
-// Also a personal/bot-editor Strudel function, not a JPattern `#` directive.
-// ---------------------------------------------------------------------------
 const CSS_CYCLES_FUNCTIONS = [
   {
     id: 'css-call',
@@ -482,30 +465,6 @@ const CSS_CYCLES_FUNCTIONS = [
       <code>0.04</code>, <code>blur(80px)</code> becomes <code>blur(8px)</code>
       — rather than refused outright.</p>`,
   },
-  {
-    id: 'css-multi-d',
-    name: 'Multidimensional CSS Patterns',
-    sig: '',
-    body: `        
-        <h3>Multi-Dimensional CSS Values</h3>
-        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
-        in a pair of carets. 
-        <span>Example:</span>
-        <code>$:css(".something")
-        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
-        </code>
-        <code>
-        $ css ".something"
-        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
-        </code>
-        </p>
-      <figure>
-        <img
-          src="https://trussal-docs.quargsgreene.workers.dev/css_pat.png"
-          alt="An example of a multidimensional CSS pattern in action" />
-        <figcaption>An example of a multidimensional CSS pattern in action</figcaption>
-      </figure>`
-  }
 ];
 
 const CONFIG_FUNCTIONS = [
@@ -547,13 +506,7 @@ const CONFIG_FUNCTIONS = [
       .cycles("wcpl", 100)
       .grid(true)
       .fast(1.2)
-      </code>
-      <code>
-      $  participants <1 0 3z>
-      # cycles "wcpl" 100
-      # grid true
-      # fast 1.2
-      </code>  
+      </code> 
       `,
   },
   {
@@ -571,12 +524,6 @@ const CONFIG_FUNCTIONS = [
       .cycles("wcl", 35)
       .mosaic(true)
       .slow(3)
-      </code>
-      <code>
-      $  participants "0 1"
-      # cycles "wcl" 35
-      # mosaic true
-      # slow 3
       </code>     
       `,
   }
@@ -627,10 +574,6 @@ const UI_PATTERN_FUNCTIONS = [
       `,
   },
 ]
-// ---------------------------------------------------------------------------
-// Content — liveCapture() (src/live-capture.js, src/features/live-capture.md).
-// A Strudel source function, not a JPattern `#` directive.
-// ---------------------------------------------------------------------------
 const LIVE_CAPTURE_FUNCTIONS = [
   {
     id: 'lc-main',
@@ -649,72 +592,72 @@ const LIVE_CAPTURE_FUNCTIONS = [
   },
 ];
 
-const STRUDEL_OVERLOAD = [
-  {
-    id: 'jp-ply',
-    name: 'ply — repeat each turn\'s buffer n times',
-    sig: 'ply <n>',
-    body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
-      buffer into <em>n</em> repeats.</p>
-      <pre># ply 2</pre>`,
-  },
-  {
-    id: 'jp-chop',
-    name: 'chop — chop each turn\'s buffer into n pieces',
-    sig: 'chop <n>',
-    body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
-      buffer into <em>n</em> consecutive pieces.</p>
-      <pre># chop 2</pre>`,
-  },
-  {
-    id: 'jp-shuffle',
-    name: 'shuffle — randomize buffer-piece order',
-    sig: 'shuffle [n]',
-    body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
-      of (optionally, <em>n</em>) buffer pieces, seeded so every listener
-      hears the same shuffle.</p>`,
-  },
-  {
-    id: 'jp-degrade',
-    name: 'degrade / degradeBy — drop events at random',
-    sig: 'degrade\ndegradeBy <probability 0–1>',
-    body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
-      default; <code>degradeBy</code> takes an explicit probability. Seeded,
-      so the draw is identical for every listener.</p>
-      <pre># degradeBy 0.25</pre>`,
-  },
-  {
-    id: 'jp-undegrade',
-    name: 'undegrade / undegradeBy — the inverse of degrade',
-    sig: 'undegrade\nundegradeBy <probability 0–1>',
-    body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
-      would have dropped — the complementary draw, same seed.</p>`,
-  },
-  {
-    id: 'jp-hush',
-    name: 'hush — silence the voice',
-    sig: 'hush',
-    body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
-      voice's output entirely without removing it from the scheduling
-      sequence.</p>`,
-  },
-  {
-    id: 'jp-jux',
-    name: 'jux — a stacked, cycle-offset duplicate',
-    sig: 'jux',
-    body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
-      metaprogram analog of Strudel's <code>.jux()</code>/the stack
-      (<code>,</code>) operator.</p>`,
-  },
-  {
-    id: 'jp-superimpose',
-    name: 'superimpose — layer a second sequence on top',
-    sig: 'superimpose [<sequence>]',
-    body: `<p>Like <code># jux</code>, but the optional bracketed sequence
-      lets the superimposed layer be a different pattern, not a plain copy.</p>
-      <pre># superimpose &lt;0 2&gt;</pre>`,
-  },
-];
+// const STRUDEL_OVERLOAD = [
+//   {
+//     id: 'jp-ply',
+//     name: 'ply — repeat each turn\'s buffer n times',
+//     sig: 'ply <n>',
+//     body: `<p>Same as Strudel's <code>.ply()</code>: subdivides each turn's
+//       buffer into <em>n</em> repeats.</p>
+//       <pre># ply 2</pre>`,
+//   },
+//   {
+//     id: 'jp-chop',
+//     name: 'chop — chop each turn\'s buffer into n pieces',
+//     sig: 'chop <n>',
+//     body: `<p>Same as Strudel's <code>.chop()</code>: slices each turn's
+//       buffer into <em>n</em> consecutive pieces.</p>
+//       <pre># chop 2</pre>`,
+//   },
+//   {
+//     id: 'jp-shuffle',
+//     name: 'shuffle — randomize buffer-piece order',
+//     sig: 'shuffle [n]',
+//     body: `<p>Same as Strudel's <code>.shuffle()</code>: randomizes the order
+//       of (optionally, <em>n</em>) buffer pieces, seeded so every listener
+//       hears the same shuffle.</p>`,
+//   },
+//   {
+//     id: 'jp-degrade',
+//     name: 'degrade / degradeBy — drop events at random',
+//     sig: 'degrade\ndegradeBy <probability 0–1>',
+//     body: `<p><code>degrade</code> drops events at the fixed 50% Strudel
+//       default; <code>degradeBy</code> takes an explicit probability. Seeded,
+//       so the draw is identical for every listener.</p>
+//       <pre># degradeBy 0.25</pre>`,
+//   },
+//   {
+//     id: 'jp-undegrade',
+//     name: 'undegrade / undegradeBy — the inverse of degrade',
+//     sig: 'undegrade\nundegradeBy <probability 0–1>',
+//     body: `<p>Keeps only the events <code>degrade</code>/<code>degradeBy</code>
+//       would have dropped — the complementary draw, same seed.</p>`,
+//   },
+//   {
+//     id: 'jp-hush',
+//     name: 'hush — silence the voice',
+//     sig: 'hush',
+//     body: `<p>Same as Strudel's <code>.hush()</code>: mutes the chained
+//       voice's output entirely without removing it from the scheduling
+//       sequence.</p>`,
+//   },
+//   {
+//     id: 'jp-jux',
+//     name: 'jux — a stacked, cycle-offset duplicate',
+//     sig: 'jux',
+//     body: `<p>Duplicates the voice, offsetting the copy by one cycle — the
+//       metaprogram analog of Strudel's <code>.jux()</code>/the stack
+//       (<code>,</code>) operator.</p>`,
+//   },
+//   {
+//     id: 'jp-superimpose',
+//     name: 'superimpose — layer a second sequence on top',
+//     sig: 'superimpose [<sequence>]',
+//     body: `<p>Like <code># jux</code>, but the optional bracketed sequence
+//       lets the superimposed layer be a different pattern, not a plain copy.</p>
+//       <pre># superimpose &lt;0 2&gt;</pre>`,
+//   },
+// ];
 
 const FETCH_PATTERNS = [
   {
@@ -767,9 +710,7 @@ const FETCH_PATTERNS = [
   },
 
 ]
-// ---------------------------------------------------------------------------
-// Content — About.
-// ---------------------------------------------------------------------------
+
 export const DOCS_TITLE = 'JPattern Docs';
 export const ABOUT_TITLE = 'About Trussal';
 
@@ -790,11 +731,6 @@ export const ABOUT_HTML = `
   Trussal began with Quargs Greene in 2025 during master's work initially funded by Boston University.
   See the <a href="https://github.com/quargsgreene/Trussal">Trussal GitHub repository</a> for more information on contributing and to file an issue or feature request.
   <figure>
-  <!-- Served from the repo's src/ tree (mounted at /usr/share/jitsi-meet/css/src
-       and exposed by nginx's /css/src/ location). Jitsi's meet.conf static
-       allowlist has no /docs-images/ entry, so an image under that path falls
-       through to the room catch-all and is returned as text/html, which nosniff
-       rejects -> only this alt text would show. -->
   <img
     src="https://trussal-docs.quargsgreene.workers.dev/about-trussal-in-action.png"
     alt="A person at a computer running a Trussal meeting Photo credit: Jennifer Deafenbaugh" />
@@ -803,18 +739,10 @@ export const ABOUT_HTML = `
 </p>
 `;
 
-// fn.sig is plain text containing literal `<token>`-style placeholders —
-// escape it before interpolating into innerHTML, or the angle brackets are
-// parsed as markup instead of shown. fn.name and fn.body are authored HTML
-// (body deliberately so, for its <code>/<pre>/<table> markup).
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Renders one function-reference section: a jump-link row over the fn cards.
-// `fn.id` is required and must be unique across every section on the page,
-// since the jump links use page-wide element ids (plain #anchor hrefs, so the
-// table of contents works with or without JS).
 function renderFnSection(fns) {
   const toc = fns
     .map((fn) => `<a href="#trussal-da-fn-${fn.id}">${fn.name.split(' — ')[0]}</a>`)
@@ -1091,9 +1019,6 @@ export function buildDocsBody() {
             <code>
             $ participants <0 2a 1 0>
             </code>
-            <code>
-            $: participants("<0 2a 1 0>")
-            </code>
             Alternatively, one may allow the meeting participant turn ordering to be dictated by consistent hashing.
             This means that every participant's ordinal identifier will be hashed as a node and any existing instructions
             dictating ordering a literal ordering of a proper subset of the meeting participants will be overidden.
@@ -1125,7 +1050,7 @@ export function buildDocsBody() {
               <tr><td><code>0@n</code></td><td>0 holds the ring for <em>n</em> cycles (in <code>&lt;…&gt;</code>) or a share of one cycle (in <code>[…]</code>).</td></tr>
               <tr><td><code>0!n</code></td><td>0 takes n turns in a row. Bare <code>!</code> means <code>!2</code>.</td></tr>
               <tr><td><code>0?</code> / <code>0?p</code></td><td>0's turn is silently dropped with probability 0.5 (or <em>p</em>) — the cycle still advances.</td></tr>
-              <tr><td><code>&lt;…&gt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
+              <tr><td><code>&lt;…&An example of a multidimensional CSS pattern in actiongt;*n</code> / <code>/n</code> / <code>%n</code></td><td>Speeds up, slows down, or fixes the steps-per-cycle of the whole ring.</td></tr>
               <tr><td><code>0*n</code> / <code>0/n</code></td><td>The same, applied to one token's own slot only.</td></tr>
             </table> 
             </p>
@@ -1144,12 +1069,42 @@ export function buildDocsBody() {
         </code>
         <h4>Global Room Pattern Functions</h4>
         ${renderFnSection(JPATTERN_FUNCTIONS)} 
+        <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/tc_window.png"
+          alt="The words 'I' and 'exist' in the chat window appearing in red, green, and blue" />
+        <figcaption>An example of a multicolor text pattern output</figcaption>
+        </figure>
 
         <h4>Text Patterns</h4>
         ${renderFnSection(TEXT_CYCLES_FUNCTIONS)}
+        <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/tc_window.png"
+          alt="The words 'I' and 'exist' in the chat window appearing in red, green, and blue" />
+        <figcaption>An example of a multicolor text pattern output</figcaption>
+        </figure>
 
         <h4>CSS Patterns</h4>
         ${renderFnSection(CSS_CYCLES_FUNCTIONS)}
+        <h3>Multi-Dimensional CSS Values</h3>
+        <p>In order to create patterns with multi-dimensional CSS values, enclose the value 
+        in a pair of carets. 
+        <span>Example:</span>
+        <code>$:css(".something")
+        .borderRadius("<^1em 2em 3em 4em^ ^2em 4em 6em 8em^>")
+        </code>
+        <code>
+        $ css ".something"
+        # borderRadius <^1em 2em 3em 4em^ ^2em 4em 6em 8em^>
+        </code>
+        </p>
+      <figure>
+        <img
+          src="https://trussal-docs.quargsgreene.workers.dev/css_pat.png"
+          alt="An example of a multidimensional CSS pattern in action" />
+        <figcaption>An example of a multidimensional CSS pattern in action</figcaption>
+      </figure>
 
         <h4>Configuration Methods</h4>
         ${renderFnSection(CONFIG_FUNCTIONS)}
@@ -1159,9 +1114,6 @@ export function buildDocsBody() {
 
         <h4>Jitsi UI Patterns</h4>
         ${renderFnSection(UI_PATTERN_FUNCTIONS)}
-
-        <h4>Other Overloaded Strudel Functions</h4>
-        ${renderFnSection(STRUDEL_OVERLOAD)}
 
         <h4>Data Fetching Patterns</h4>
         ${renderFnSection(FETCH_PATTERNS)}
